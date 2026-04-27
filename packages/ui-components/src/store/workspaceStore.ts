@@ -388,6 +388,25 @@ type WorkspaceStore = {
    */
   pinLinkedVersion: (id: string, version: string | null) => void;
 
+  /**
+   * Declare a new required secret key on a linked workspace card.
+   * Keys are de-duped. Use `provisionLinkedSecret` to fill in the value.
+   */
+  addLinkedRequiredKey: (linkId: string, keyId: string) => void;
+  /**
+   * Drop a required key from the link AND remove its provisioned vault
+   * secret (if any). Use ConfirmDialog at the call site to gate the
+   * destructive part.
+   */
+  removeLinkedRequiredKey: (linkId: string, keyId: string) => Promise<void>;
+  /**
+   * Encrypt + persist a value for a required key. Creates a Secret
+   * Vault entry tagged `origin: 'linked'` with the linkedWorkspaceId
+   * + linkedKeyId set; rotates the ciphertext when the key is already
+   * provisioned. Returns the secret entry id.
+   */
+  provisionLinkedSecret: (linkId: string, keyId: string, value: string) => Promise<string>;
+
   executeActiveRequest: () => Promise<void>;
 };
 
@@ -1139,6 +1158,77 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     void saveSynced(next);
   },
 
+  addLinkedRequiredKey: (linkId, keyId) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const link = synced.linkedWorkspaces[linkId];
+    if (!link) throw new Error(`Linked workspace ${linkId} not found`);
+    const trimmed = keyId.trim();
+    if (!trimmed) throw new Error('Key id cannot be empty');
+    if (link.requiredSecretKeyIds.includes(trimmed)) return;
+    const next: WorkspaceSynced = {
+      ...synced,
+      linkedWorkspaces: {
+        ...synced.linkedWorkspaces,
+        [linkId]: {
+          ...link,
+          requiredSecretKeyIds: [...link.requiredSecretKeyIds, trimmed],
+        },
+      },
+      meta: { ...synced.meta, updatedAt: new Date().toISOString() },
+    };
+    set({ synced: next });
+    void saveSynced(next);
+  },
+
+  removeLinkedRequiredKey: async (linkId, keyId) => {
+    const synced = get().synced;
+    const local = get().local;
+    if (!synced || !local) return;
+    const link = synced.linkedWorkspaces[linkId];
+    if (!link) throw new Error(`Linked workspace ${linkId} not found`);
+    // Drop the key from the list…
+    const next: WorkspaceSynced = {
+      ...synced,
+      linkedWorkspaces: {
+        ...synced.linkedWorkspaces,
+        [linkId]: {
+          ...link,
+          requiredSecretKeyIds: link.requiredSecretKeyIds.filter((k) => k !== keyId),
+        },
+      },
+      meta: { ...synced.meta, updatedAt: new Date().toISOString() },
+    };
+    set({ synced: next });
+    void saveSynced(next);
+    // …and the matching provisioned vault entry, if any.
+    const provisioned = findProvisionedSecretId(local, linkId, keyId);
+    if (provisioned) {
+      await get().removeSecret(provisioned);
+    }
+  },
+
+  provisionLinkedSecret: async (linkId, keyId, value) => {
+    const local = get().local;
+    const synced = get().synced;
+    if (!local || !synced) throw new Error('Workspace not ready');
+    const link = synced.linkedWorkspaces[linkId];
+    if (!link) throw new Error(`Linked workspace ${linkId} not found`);
+    const existing = findProvisionedSecretId(local, linkId, keyId);
+    if (existing) {
+      await get().setSecretValue(existing, value);
+      return existing;
+    }
+    const id = await get().addSecret({
+      label: `link:${link.name}:${keyId}`,
+      value,
+      origin: 'linked',
+      linkedWorkspaceId: linkId,
+      linkedKeyId: keyId,
+    });
+    return id;
+  },
+
   unlinkWorkspace: (id) => {
     const synced = get().synced;
     if (!synced || !synced.linkedWorkspaces[id]) return;
@@ -1358,6 +1448,28 @@ function parseLinkedWorkspaceJson(text: string): LinkedWorkspaceProbe {
       ? (releasesValue as { self?: ReleaseHistory | null })
       : undefined;
   return { workspaceName: name, releases };
+}
+
+/**
+ * Find the vault entry that provisions a given (linkId, keyId) pair, if
+ * any. Used to rotate the ciphertext on re-provision and to clean up on
+ * key removal.
+ */
+function findProvisionedSecretId(
+  local: WorkspaceLocal,
+  linkId: string,
+  keyId: string,
+): string | null {
+  for (const entry of Object.values(local.secretIndex.entries)) {
+    if (
+      entry.origin === 'linked' &&
+      entry.linkedWorkspaceId === linkId &&
+      entry.linkedKeyId === keyId
+    ) {
+      return entry.id;
+    }
+  }
+  return null;
 }
 
 async function decryptSessionToken(local: WorkspaceLocal): Promise<string> {

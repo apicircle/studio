@@ -248,6 +248,66 @@ describe('workspaceStore.refreshLinkedWorkspace + unlinkWorkspace', () => {
   });
 });
 
+describe('workspaceStore required secret keys', () => {
+  beforeEach(async () => {
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrate();
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  async function linkOnce(): Promise<string> {
+    await setupSession();
+    const remoteJson = JSON.stringify({ workspaceName: 'API', releases: { self: null } });
+    vi.stubGlobal('fetch', queuedFetch([fileContents(remoteJson)]));
+    const link = await useWorkspaceStore
+      .getState()
+      .linkPrivateWorkspace({ repoFullName: 'me/api', branch: 'main' });
+    return link.id;
+  }
+
+  it('addLinkedRequiredKey appends + dedupes, rejects empty', async () => {
+    const id = await linkOnce();
+    useWorkspaceStore.getState().addLinkedRequiredKey(id, 'API_KEY');
+    useWorkspaceStore.getState().addLinkedRequiredKey(id, 'API_KEY');
+    expect(useWorkspaceStore.getState().synced!.linkedWorkspaces[id].requiredSecretKeyIds).toEqual([
+      'API_KEY',
+    ]);
+    expect(() => useWorkspaceStore.getState().addLinkedRequiredKey(id, '   ')).toThrow(
+      /cannot be empty/,
+    );
+  });
+
+  it('provisionLinkedSecret tags vault entry as origin=linked and rotates on re-provision', async () => {
+    const id = await linkOnce();
+    useWorkspaceStore.getState().addLinkedRequiredKey(id, 'API_KEY');
+    const sid = await useWorkspaceStore.getState().provisionLinkedSecret(id, 'API_KEY', 'secret-1');
+    const entry = useWorkspaceStore.getState().local!.secretIndex.entries[sid];
+    expect(entry.origin).toBe('linked');
+    expect(entry.linkedWorkspaceId).toBe(id);
+    expect(entry.linkedKeyId).toBe('API_KEY');
+
+    // Re-provisioning the same (link, key) re-uses the same id (rotates value).
+    const again = await useWorkspaceStore
+      .getState()
+      .provisionLinkedSecret(id, 'API_KEY', 'secret-2');
+    expect(again).toBe(sid);
+    const decrypted = await useWorkspaceStore.getState().decryptSecret(sid);
+    expect(decrypted).toBe('secret-2');
+  });
+
+  it('removeLinkedRequiredKey drops the key list entry AND the provisioned secret', async () => {
+    const id = await linkOnce();
+    useWorkspaceStore.getState().addLinkedRequiredKey(id, 'API_KEY');
+    const sid = await useWorkspaceStore.getState().provisionLinkedSecret(id, 'API_KEY', 'v');
+    await useWorkspaceStore.getState().removeLinkedRequiredKey(id, 'API_KEY');
+    expect(useWorkspaceStore.getState().synced!.linkedWorkspaces[id].requiredSecretKeyIds).toEqual(
+      [],
+    );
+    expect(useWorkspaceStore.getState().local!.secretIndex.entries[sid]).toBeUndefined();
+  });
+});
+
 describe('workspaceStore.pinLinkedVersion', () => {
   beforeEach(async () => {
     await act(async () => {

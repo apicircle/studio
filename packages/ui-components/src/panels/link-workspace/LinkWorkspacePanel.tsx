@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { GitBranch, Link2, Package, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
+import { GitBranch, Key, Link2, Package, Plus, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
 import { GitHubError, MissingScopeError } from '@apicircle-v2/git';
 import { sortVersionsDesc } from '@apicircle-v2/core';
 import type { LinkedWorkspace } from '@apicircle-v2/shared';
@@ -330,6 +330,9 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
           {refreshError}
         </p>
       )}
+
+      <RequiredKeysSection link={link} />
+
       <div className="mt-3 flex gap-2">
         <button
           type="button"
@@ -403,5 +406,196 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
         }}
       />
     </div>
+  );
+}
+
+function RequiredKeysSection({ link }: { link: LinkedWorkspace }) {
+  const addLinkedRequiredKey = useWorkspaceStore((s) => s.addLinkedRequiredKey);
+  const [newKey, setNewKey] = useState('');
+
+  const onAdd = () => {
+    const trimmed = newKey.trim();
+    if (!trimmed) return;
+    try {
+      addLinkedRequiredKey(link.id, trimmed);
+      setNewKey('');
+    } catch {
+      // Empty/invalid — leave the input as-is for user to fix.
+    }
+  };
+
+  return (
+    <section className="mt-3 rounded-sm border border-border-subtle bg-surface p-2">
+      <div className="mb-1.5 flex items-center gap-2">
+        <Key size={12} className="text-text-dim" aria-hidden="true" />
+        <h3 className="text-[11px] font-medium uppercase tracking-wider text-text-dim">
+          Required secret keys
+        </h3>
+      </div>
+      {link.requiredSecretKeyIds.length === 0 ? (
+        <p className="text-[11px] text-text-dim">
+          No required keys declared. Add the names this linked workspace expects you to provide.
+        </p>
+      ) : (
+        <ul className="space-y-1.5">
+          {link.requiredSecretKeyIds.map((keyId) => (
+            <RequiredKeyRow key={keyId} link={link} keyId={keyId} />
+          ))}
+        </ul>
+      )}
+      <div className="mt-2 flex gap-1">
+        <input
+          value={newKey}
+          onChange={(e) => setNewKey(e.target.value)}
+          placeholder="API_KEY"
+          aria-label="Add required key"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onAdd();
+          }}
+          className="h-7 flex-1 rounded-sm border border-border bg-card px-2 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none"
+        />
+        <button
+          type="button"
+          onClick={onAdd}
+          disabled={!newKey.trim()}
+          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
+        >
+          <Plus size={10} />
+          Add key
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function RequiredKeyRow({ link, keyId }: { link: LinkedWorkspace; keyId: string }) {
+  const provisionLinkedSecret = useWorkspaceStore((s) => s.provisionLinkedSecret);
+  const removeLinkedRequiredKey = useWorkspaceStore((s) => s.removeLinkedRequiredKey);
+  const provisionedId = useWorkspaceStore((s) => {
+    const local = s.local;
+    if (!local) return null;
+    for (const entry of Object.values(local.secretIndex.entries)) {
+      if (
+        entry.origin === 'linked' &&
+        entry.linkedWorkspaceId === link.id &&
+        entry.linkedKeyId === keyId
+      ) {
+        return entry.id;
+      }
+    }
+    return null;
+  });
+
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [removeOpen, setRemoveOpen] = useState(false);
+
+  const onSave = async () => {
+    if (!value) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await provisionLinkedSecret(link.id, keyId, value);
+      setValue('');
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <li className="flex items-center gap-2 rounded-sm border border-border bg-card px-2 py-1.5">
+      <code className="flex-1 text-[11px] text-text-primary">{keyId}</code>
+      <span
+        className={
+          provisionedId
+            ? 'rounded-sm border border-success/40 bg-success/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-success'
+            : 'rounded-sm border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-warning'
+        }
+      >
+        {provisionedId ? 'set' : 'missing'}
+      </span>
+      {editing ? (
+        <>
+          <input
+            type="password"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="value"
+            aria-label={`Value for ${keyId}`}
+            className="h-6 w-32 rounded-sm border border-border bg-surface px-1.5 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void onSave();
+              if (e.key === 'Escape') setEditing(false);
+            }}
+            autoFocus
+          />
+          <button
+            type="button"
+            onClick={() => void onSave()}
+            disabled={saving || !value}
+            className="inline-flex h-6 items-center rounded-sm border border-accent/40 bg-accent/10 px-2 text-[10px] text-accent hover:bg-accent/20 disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setEditing(false);
+              setValue('');
+            }}
+            className="text-[10px] text-text-dim hover:text-text-muted"
+          >
+            cancel
+          </button>
+        </>
+      ) : (
+        <>
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="inline-flex h-6 items-center rounded-sm border border-border bg-surface px-2 text-[10px] text-text-muted hover:border-border-strong hover:text-text-primary"
+          >
+            {provisionedId ? 'Update' : 'Set value'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setRemoveOpen(true)}
+            aria-label={`Remove key ${keyId}`}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-sm border border-danger/30 bg-danger/5 text-danger hover:bg-danger/10"
+          >
+            <Trash2 size={10} />
+          </button>
+        </>
+      )}
+      {error && (
+        <span className="text-[10px] text-danger" role="alert">
+          {error}
+        </span>
+      )}
+
+      <ConfirmDialog
+        open={removeOpen}
+        title={`Remove required key ${keyId}?`}
+        tone="danger"
+        confirmLabel="Remove"
+        description={
+          <p>
+            Drops the key from the link declaration{' '}
+            {provisionedId ? 'and removes its value from the secret vault' : ''}. The source
+            workspace itself is untouched.
+          </p>
+        }
+        onCancel={() => setRemoveOpen(false)}
+        onConfirm={async () => {
+          await removeLinkedRequiredKey(link.id, keyId);
+          setRemoveOpen(false);
+        }}
+      />
+    </li>
   );
 }

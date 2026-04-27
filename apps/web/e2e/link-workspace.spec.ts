@@ -155,6 +155,55 @@ test.describe('Link Workspace (P5.2)', () => {
     await expect(pinSelect).toHaveValue('0.1.0');
   });
 
+  test('required-key flow: declare → provision value → remove', async ({ app }) => {
+    await setupSession(app);
+    const remoteJson = JSON.stringify({ workspaceName: 'API', releases: { self: null } });
+    const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
+    await app.route(
+      'https://api.github.com/repos/me/api/contents/workspace.json**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify({
+            type: 'file',
+            path: 'workspace.json',
+            sha: 's',
+            size: remoteJson.length,
+            content: base64,
+            encoding: 'base64',
+          }),
+        });
+      },
+    );
+
+    await app.getByRole('button', { name: /Link Workspace/ }).click();
+    await app.getByRole('button', { name: /Link a private workspace/ }).click();
+    await app.getByLabel('Linked repo full name').fill('me/api');
+    await app.getByRole('button', { name: /Review .* link/ }).click();
+    await app.getByRole('button', { name: 'Link', exact: true }).click();
+
+    // Empty state.
+    await expect(app.getByText(/No required keys declared/)).toBeVisible();
+
+    // Declare a required key.
+    await app.getByLabel('Add required key').fill('API_KEY');
+    await app.getByRole('button', { name: /Add key/ }).click();
+    await expect(app.getByText('API_KEY')).toBeVisible();
+    await expect(app.getByText('missing').first()).toBeVisible();
+
+    // Provision a value.
+    await app.getByRole('button', { name: 'Set value' }).click();
+    await app.getByLabel('Value for API_KEY').fill('top-secret');
+    await app.getByRole('button', { name: 'Save' }).click();
+    await expect(app.getByText('set').first()).toBeVisible();
+
+    // Remove the key (requires confirm).
+    await app.getByRole('button', { name: 'Remove key API_KEY' }).click();
+    await app.getByRole('button', { name: 'Remove', exact: true }).last().click();
+    await expect(app.getByText(/No required keys declared/)).toBeVisible();
+  });
+
   test('unlink removes the card', async ({ app }) => {
     await setupSession(app);
     const remoteJson = JSON.stringify({ workspaceName: 'X', releases: { self: null } });
