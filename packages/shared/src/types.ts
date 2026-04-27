@@ -228,6 +228,10 @@ export interface WorkspaceLocal {
   sessions: {
     github: GitHubSession | null;
   };
+  // The GitHub repo the user has bound this workspace to. Holds metadata
+  // copied from `GET /repos/:owner/:repo` at connect time so the UI can
+  // render without re-fetching. Cleared on disconnect.
+  connectedRepo: ConnectedRepo | null;
   workingBranch: WorkingBranch | null;
   // 3-way diff snapshot for conflict-safe sync. See Sync section in the plan.
   sync: SyncSnapshot;
@@ -312,10 +316,30 @@ export interface PlanRun {
   steps: Array<{ requestRunId: string; passed: boolean }>;
 }
 
-export interface WorkingBranch {
+export interface ConnectedRepo {
+  fullName: string;
+  owner: string;
   name: string;
+  defaultBranch: string;
+  visibility: 'public' | 'private' | 'internal';
+  isPrivate: boolean;
+  pushable: boolean;
+  connectedAt: string;
+}
+
+export interface WorkingBranch {
+  /** Branch name on GitHub, e.g. `apicircle/payments-a3f9c2`. */
+  name: string;
+  /** Base branch (typically the repo's default — `main` / `master`). */
   baseBranch: string;
+  /** `owner/name` on GitHub. */
   repoFullName: string;
+  /** Owner login, stored redundantly so call sites don't have to re-split. */
+  repoOwner: string;
+  /** Repo name, same idea. */
+  repoName: string;
+  /** Commit SHA on this branch's HEAD at creation (= base SHA initially). */
+  headSha: string;
   createdAt: string;
   lastPushedSha: string | null;
   diffSummary: { ahead: number; behind: number; staleAt: string } | null;

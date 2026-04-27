@@ -14,6 +14,7 @@ export type {
   ExecutionPlan,
   RequestRun,
   PlanRun,
+  ConnectedRepo,
   WorkingBranch,
   ItemOverride,
   SecretIndex,

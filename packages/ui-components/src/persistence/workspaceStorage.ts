@@ -61,6 +61,7 @@ export function createEmptyWorkspace(): { synced: WorkspaceSynced; local: Worksp
     history: { requestRuns: [], planRuns: [] },
     secretIndex: { entries: {} },
     sessions: { github: null },
+    connectedRepo: null,
     workingBranch: null,
     sync: {
       lastPulledSnapshot: null,

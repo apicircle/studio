@@ -1,6 +1,7 @@
 import type {
   AttachmentRef,
   Assertion,
+  ConnectedRepo,
   Environment,
   FormDataRow,
   GitHubSession,
@@ -10,10 +11,11 @@ import type {
   RequestBody,
   RequestRun,
   ThemeId,
+  WorkingBranch,
   WorkspaceLocal,
   WorkspaceSynced,
 } from '@apicircle-v2/shared';
-import { GitHubClient, MissingScopeError } from '@apicircle-v2/git';
+import { type GitHubRepo, GitHubClient, MissingScopeError } from '@apicircle-v2/git';
 import { generateId } from '@apicircle-v2/shared';
 import {
   type AttachmentResolver,
@@ -22,10 +24,12 @@ import {
   decryptString,
   encryptString,
   executeRequest as coreExecuteRequest,
+  generateWorkingBranchName,
   resolveString,
   runAssertions,
   serializePayload,
   tryParsePayload,
+  validateBranchName,
 } from '@apicircle-v2/core';
 import { create } from 'zustand';
 import {
@@ -224,6 +228,32 @@ type WorkspaceStore = {
   updateGitHubToken: (token: string) => Promise<GitHubSession>;
   /** Disconnect: free the encrypted token, clear the session entry. */
   disconnectGitHubSession: () => Promise<void>;
+
+  // Repo + working-branch flow (P4.2)
+  /**
+   * Validate access to a GitHub repo via `GET /repos/:owner/:name` and
+   * persist the connection metadata into `local.connectedRepo`. Throws
+   * when no GitHub session is active or the repo is inaccessible.
+   */
+  connectRepo: (owner: string, name: string) => Promise<ConnectedRepo>;
+  /**
+   * Drop the connected repo and any working branch tied to it.
+   */
+  disconnectRepo: () => void;
+  /**
+   * Auto-create a new branch from `connectedRepo.defaultBranch` (or
+   * caller-supplied baseBranch). Generates `apicircle/<slug>-<id>` when
+   * no name is supplied. Throws on validation failure or GitHub error.
+   */
+  createWorkingBranch: (opts?: {
+    branchName?: string;
+    baseBranch?: string;
+  }) => Promise<WorkingBranch>;
+  /**
+   * Drop the working branch slot without touching the remote ref. The
+   * user typically rotates after a PR merges.
+   */
+  discardWorkingBranch: () => void;
 
   executeActiveRequest: () => Promise<void>;
 };
@@ -676,7 +706,111 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const next: WorkspaceLocal = {
       ...indexCleared,
       sessions: { github: null },
+      // Disconnecting the session also drops the repo + branch — they're
+      // unusable without an authenticated client.
+      connectedRepo: null,
+      workingBranch: null,
     };
+    set({ local: next });
+    void saveLocal(next);
+  },
+
+  // --- Repo + working-branch (P4.2) -------------------------------------
+
+  connectRepo: async (owner, name) => {
+    const local = get().local;
+    if (!local) throw new Error('Workspace not ready');
+    const token = await decryptSessionToken(local);
+
+    const client = new GitHubClient();
+    const repo: GitHubRepo = await client.getRepo(token, owner.trim(), name.trim());
+
+    const connected: ConnectedRepo = {
+      fullName: repo.fullName,
+      owner: repo.owner,
+      name: repo.name,
+      defaultBranch: repo.defaultBranch,
+      visibility: repo.visibility,
+      isPrivate: repo.isPrivate,
+      pushable: repo.pushable,
+      connectedAt: new Date().toISOString(),
+    };
+    const next: WorkspaceLocal = {
+      ...local,
+      connectedRepo: connected,
+      // If the user re-connects to a different repo, drop any branch tied
+      // to the old one — pushing to the wrong repo would be a disaster.
+      workingBranch:
+        local.workingBranch?.repoFullName === connected.fullName ? local.workingBranch : null,
+    };
+    set({ local: next });
+    void saveLocal(next);
+    return connected;
+  },
+
+  disconnectRepo: () => {
+    const local = get().local;
+    if (!local) return;
+    if (!local.connectedRepo && !local.workingBranch) return;
+    const next: WorkspaceLocal = {
+      ...local,
+      connectedRepo: null,
+      workingBranch: null,
+    };
+    set({ local: next });
+    void saveLocal(next);
+  },
+
+  createWorkingBranch: async (opts) => {
+    const local = get().local;
+    const synced = get().synced;
+    if (!local || !synced) throw new Error('Workspace not ready');
+    const repo = local.connectedRepo;
+    if (!repo) throw new Error('Connect a repo before creating a working branch');
+
+    const baseBranch = opts?.baseBranch?.trim() || repo.defaultBranch;
+    const branchName =
+      opts?.branchName?.trim() ||
+      generateWorkingBranchName({ workspaceName: synced.workspaceName });
+
+    const validationError = validateBranchName(branchName);
+    if (validationError) throw new Error(validationError);
+
+    const token = await decryptSessionToken(local);
+    const client = new GitHubClient();
+
+    // Read the base branch HEAD, then create the new ref.
+    const head = await client.getBranchHead(token, repo.owner, repo.name, baseBranch);
+    const created = await client.createBranch(
+      token,
+      repo.owner,
+      repo.name,
+      branchName,
+      head.commitSha,
+    );
+
+    const branch: WorkingBranch = {
+      name: created.name,
+      baseBranch,
+      repoFullName: repo.fullName,
+      repoOwner: repo.owner,
+      repoName: repo.name,
+      headSha: created.commitSha,
+      createdAt: new Date().toISOString(),
+      lastPushedSha: null,
+      diffSummary: null,
+      openPrUrl: null,
+    };
+    const next: WorkspaceLocal = { ...local, workingBranch: branch };
+    set({ local: next });
+    void saveLocal(next);
+    return branch;
+  },
+
+  discardWorkingBranch: () => {
+    const local = get().local;
+    if (!local || !local.workingBranch) return;
+    const next: WorkspaceLocal = { ...local, workingBranch: null };
     set({ local: next });
     void saveLocal(next);
   },
@@ -727,6 +861,20 @@ type SetState = (
   partial: Partial<WorkspaceStore> | ((state: WorkspaceStore) => Partial<WorkspaceStore>),
 ) => void;
 type GetState = () => WorkspaceStore;
+
+/**
+ * Decrypt the active GitHub PAT via the master key. Throws when no session
+ * exists or the encrypted payload is missing — both surface in the UI as
+ * "no GitHub connection."
+ */
+async function decryptSessionToken(local: WorkspaceLocal): Promise<string> {
+  const session = local.sessions.github;
+  if (!session) throw new Error('No GitHub session — connect a PAT first');
+  const payload = await getSecretPayload(session.tokenSecretId);
+  if (!payload) throw new Error('Stored token is missing — reconnect to refresh');
+  const masterKey = await getMasterKey();
+  return decryptString(payload, masterKey);
+}
 
 function commitSynced(
   set: SetState,

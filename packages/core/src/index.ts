@@ -40,3 +40,6 @@ export {
   tryParsePayload,
 } from './secrets/crypto';
 export type { EncryptedPayload } from './secrets/crypto';
+
+export { generateWorkingBranchName, slugify, validateBranchName } from './git/branchNames';
+export type { BranchNameOptions } from './git/branchNames';

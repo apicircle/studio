@@ -22,6 +22,22 @@ export interface ScopeInfo {
   acceptedRequired?: string[];
 }
 
+export interface GitHubRepo {
+  /** owner/name, the canonical workspace identifier on GitHub. */
+  fullName: string;
+  owner: string;
+  name: string;
+  defaultBranch: string;
+  visibility: 'public' | 'private' | 'internal';
+  isPrivate: boolean;
+  pushable: boolean;
+}
+
+export interface GitHubBranch {
+  name: string;
+  commitSha: string;
+}
+
 export interface GitHubClientOptions {
   /** Override the API base URL (e.g. GitHub Enterprise). */
   baseUrl?: string;
@@ -73,6 +89,86 @@ export class GitHubClient {
       },
       scopes: parseScopes(response.headers),
     };
+  }
+
+  /**
+   * List repositories the authenticated user can access. Used by the repo
+   * picker. Capped at 100 sorted by recent push; users with thousands of
+   * repos can paginate later.
+   */
+  async listAccessibleRepos(token: string, opts: CallOptions = {}): Promise<GitHubRepo[]> {
+    const { json } = await this.call<RawRepo[]>(
+      token,
+      '/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member',
+      opts,
+    );
+    return json.map(normalizeRepo);
+  }
+
+  /**
+   * Fetch a specific repo. Validates the user-supplied owner/name pair
+   * exists + is accessible, and exposes the default branch.
+   */
+  async getRepo(
+    token: string,
+    owner: string,
+    name: string,
+    opts: CallOptions = {},
+  ): Promise<GitHubRepo> {
+    const { json } = await this.call<RawRepo>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
+      opts,
+    );
+    return normalizeRepo(json);
+  }
+
+  /**
+   * Read the head SHA of a branch. Used to seed a new working branch from
+   * main before any edits land.
+   */
+  async getBranchHead(
+    token: string,
+    owner: string,
+    name: string,
+    branch: string,
+    opts: CallOptions = {},
+  ): Promise<GitHubBranch> {
+    const { json } = await this.call<RawBranch>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/branches/${encodeURIComponent(branch)}`,
+      opts,
+    );
+    return { name: json.name, commitSha: json.commit.sha };
+  }
+
+  /**
+   * Create a new branch ref pointing at `sha`. The auto-branch flow calls
+   * this with the head SHA from `getBranchHead(main)`.
+   *
+   * GitHub returns 422 with "Reference already exists" when the branch
+   * already exists; that surfaces as a GitHubError(422) so the UI can
+   * prompt for a different name.
+   */
+  async createBranch(
+    token: string,
+    owner: string,
+    name: string,
+    branchName: string,
+    sha: string,
+    opts: CallOptions = {},
+  ): Promise<GitHubBranch> {
+    const { json } = await this.call<RawRefResponse>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/git/refs`,
+      {
+        ...opts,
+        method: 'POST',
+        body: { ref: `refs/heads/${branchName}`, sha },
+        requiredScopes: ['repo'],
+      },
+    );
+    return { name: branchName, commitSha: json.object.sha };
   }
 
   // --- low-level call ----------------------------------------------------
@@ -129,6 +225,44 @@ interface RawUser {
   id: number;
   name?: string | null;
   avatar_url?: string;
+}
+
+interface RawRepo {
+  full_name: string;
+  name: string;
+  owner: { login: string };
+  default_branch: string;
+  visibility?: 'public' | 'private' | 'internal';
+  private?: boolean;
+  permissions?: { push?: boolean; admin?: boolean };
+}
+
+interface RawBranch {
+  name: string;
+  commit: { sha: string };
+}
+
+interface RawRefResponse {
+  ref: string;
+  object: { sha: string };
+}
+
+function normalizeRepo(raw: RawRepo): GitHubRepo {
+  const visibility: GitHubRepo['visibility'] =
+    raw.visibility ?? (raw.private === true ? 'private' : 'public');
+  const isPrivate = raw.private ?? visibility !== 'public';
+  // `permissions` is only included when the caller is authenticated; absence
+  // means we can't push (e.g. listing a public repo through an app token).
+  const pushable = raw.permissions?.push === true || raw.permissions?.admin === true;
+  return {
+    fullName: raw.full_name,
+    owner: raw.owner.login,
+    name: raw.name,
+    defaultBranch: raw.default_branch,
+    visibility,
+    isPrivate,
+    pushable,
+  };
 }
 
 function parseScopes(headers: Headers): ScopeInfo {
