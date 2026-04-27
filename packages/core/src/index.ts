@@ -1,3 +1,23 @@
-// Phase 1 placeholder. Request execution, env resolution, and assertions
-// will be ported here in Phase 2.
-export const CORE_PACKAGE_VERSION = '0.1.0';
+export {
+  applyContentTypeForBodyType,
+  getBodyTypeForContentType,
+  getContentTypeForBodyType,
+} from './request/bodyTypeContentType';
+export type { HeaderEntry as ContentTypeHeaderEntry } from './request/bodyTypeContentType';
+
+export {
+  HTTP_HEADERS_MAP,
+  getHeaderEntry,
+  getHeaderValues,
+  suggestHeaders,
+} from './request/headersDictionary';
+export type { HeaderEntry } from './request/headersDictionary';
+
+export { buildRequest, composeBody, composeHeaders, composeUrl } from './request/buildRequest';
+export type { BuiltRequest } from './request/buildRequest';
+
+export { executeRequest } from './request/executeRequest';
+export type { ExecuteOptions, ExecutionResult } from './request/executeRequest';
+
+export { readJsonPath, runAssertions } from './assertions/runAssertions';
+export type { AssertionResult } from './assertions/runAssertions';

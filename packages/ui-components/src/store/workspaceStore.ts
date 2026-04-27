@@ -1,7 +1,35 @@
-import type { PanelId, ThemeId, WorkspaceLocal, WorkspaceSynced } from '@apicircle-v2/shared';
+import type {
+  Assertion,
+  BodyType,
+  HttpMethod,
+  PanelId,
+  Request as ApiRequest,
+  RequestRun,
+  ThemeId,
+  WorkspaceLocal,
+  WorkspaceSynced,
+} from '@apicircle-v2/shared';
+import { generateId } from '@apicircle-v2/shared';
+import {
+  type ExecutionResult,
+  executeRequest as coreExecuteRequest,
+  runAssertions,
+} from '@apicircle-v2/core';
 import { create } from 'zustand';
 import { loadWorkspace, saveLocal, saveSynced } from '../persistence/workspaceStorage';
 import { applyTheme } from '../theme/applyTheme';
+import {
+  addFolder as addFolderAction,
+  addRequest as addRequestAction,
+  removeRequest as removeRequestAction,
+  setRequestAssertions as setRequestAssertionsAction,
+  setRequestBody as setRequestBodyAction,
+  setRequestHeaders as setRequestHeadersAction,
+  setRequestMethod as setRequestMethodAction,
+  setRequestQuery as setRequestQueryAction,
+  setRequestUrl as setRequestUrlAction,
+  renameRequest as renameRequestAction,
+} from './editorActions';
 
 const PANEL_STORAGE_KEY = 'apicircle-v2:active-panel';
 const VALID_PANELS: PanelId[] = [
@@ -13,6 +41,9 @@ const VALID_PANELS: PanelId[] = [
   'history',
   'help',
 ];
+// Cap on the number of request runs kept in local history. Older runs get
+// dropped — execution history is a circular buffer to keep IDB writes cheap.
+const MAX_REQUEST_RUNS = 500;
 
 function readStoredPanel(): PanelId {
   if (typeof localStorage === 'undefined') return 'editor';
@@ -39,9 +70,13 @@ type WorkspaceStore = {
   synced: WorkspaceSynced | null;
   local: WorkspaceLocal | null;
 
-  // UI-only state lives in the store but not in the persisted local doc.
   activePanel: PanelId;
   secretVaultOpen: boolean;
+  // Per-request last-run cache. Not persisted — request runs land in
+  // local.history once they complete; this is the live working result for
+  // the editor panel.
+  lastRun: Record<string, ExecutionResult | null>;
+  isExecuting: Record<string, boolean>;
 
   hydrate: () => Promise<void>;
 
@@ -53,6 +88,19 @@ type WorkspaceStore = {
 
   openSecretVault: () => void;
   closeSecretVault: () => void;
+
+  addRequest: (parentFolderId: string | null) => string;
+  addFolder: (parentFolderId: string | null, name?: string) => string;
+  removeRequest: (id: string) => void;
+  renameRequest: (id: string, name: string) => void;
+  setRequestMethod: (id: string, method: HttpMethod) => void;
+  setRequestUrl: (id: string, url: string) => void;
+  setRequestBody: (id: string, body: { type: BodyType; content: string }) => void;
+  setRequestHeaders: (id: string, headers: ApiRequest['headers']) => void;
+  setRequestQuery: (id: string, query: ApiRequest['query']) => void;
+  setRequestAssertions: (id: string, assertions: Assertion[]) => void;
+
+  executeActiveRequest: () => Promise<void>;
 };
 
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
@@ -61,6 +109,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   local: null,
   activePanel: readStoredPanel(),
   secretVaultOpen: false,
+  lastRun: {},
+  isExecuting: {},
 
   hydrate: async () => {
     const { synced, local } = await loadWorkspace();
@@ -118,4 +168,102 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   openSecretVault: () => set({ secretVaultOpen: true }),
   closeSecretVault: () => set({ secretVaultOpen: false }),
+
+  addRequest: (parentFolderId) => {
+    const synced = get().synced;
+    if (!synced) return '';
+    const { synced: nextSynced, request } = addRequestAction(synced, parentFolderId);
+    set({ synced: nextSynced });
+    void saveSynced(nextSynced);
+    // Auto-select the new request.
+    get().setActiveRequestId(request.id);
+    return request.id;
+  },
+
+  addFolder: (parentFolderId, name) => {
+    const synced = get().synced;
+    if (!synced) return '';
+    const { synced: nextSynced, folder } = addFolderAction(synced, parentFolderId, name);
+    set({ synced: nextSynced });
+    void saveSynced(nextSynced);
+    return folder.id;
+  },
+
+  removeRequest: (id) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const next = removeRequestAction(synced, id);
+    if (next === synced) return;
+    set({ synced: next });
+    void saveSynced(next);
+    if (get().local?.ui.activeRequestId === id) get().setActiveRequestId(null);
+  },
+
+  renameRequest: (id, name) => commitSynced(set, get, (s) => renameRequestAction(s, id, name)),
+  setRequestMethod: (id, method) =>
+    commitSynced(set, get, (s) => setRequestMethodAction(s, id, method)),
+  setRequestUrl: (id, url) => commitSynced(set, get, (s) => setRequestUrlAction(s, id, url)),
+  setRequestBody: (id, body) => commitSynced(set, get, (s) => setRequestBodyAction(s, id, body)),
+  setRequestHeaders: (id, headers) =>
+    commitSynced(set, get, (s) => setRequestHeadersAction(s, id, headers)),
+  setRequestQuery: (id, query) =>
+    commitSynced(set, get, (s) => setRequestQueryAction(s, id, query)),
+  setRequestAssertions: (id, assertions) =>
+    commitSynced(set, get, (s) => setRequestAssertionsAction(s, id, assertions)),
+
+  executeActiveRequest: async () => {
+    const state = get();
+    const id = state.local?.ui.activeRequestId;
+    const synced = state.synced;
+    if (!id || !synced) return;
+    const request = synced.collections.requests[id];
+    if (!request) return;
+
+    set((s) => ({ isExecuting: { ...s.isExecuting, [id]: true } }));
+    try {
+      const result = await coreExecuteRequest(request);
+      const assertionResults = runAssertions(request.assertions, result);
+      const run: RequestRun = {
+        id: generateId(),
+        requestId: id,
+        startedAt: result.startedAt,
+        durationMs: result.durationMs,
+        status: result.status,
+        ok: result.ok,
+        error: result.error,
+        assertions: assertionResults,
+      };
+      const local = get().local;
+      if (local) {
+        const trimmed = [run, ...local.history.requestRuns].slice(0, MAX_REQUEST_RUNS);
+        const next: WorkspaceLocal = {
+          ...local,
+          history: { ...local.history, requestRuns: trimmed },
+        };
+        set({ local: next });
+        void saveLocal(next);
+      }
+      set((s) => ({ lastRun: { ...s.lastRun, [id]: result } }));
+    } finally {
+      set((s) => ({ isExecuting: { ...s.isExecuting, [id]: false } }));
+    }
+  },
 }));
+
+type SetState = (
+  partial: Partial<WorkspaceStore> | ((state: WorkspaceStore) => Partial<WorkspaceStore>),
+) => void;
+type GetState = () => WorkspaceStore;
+
+function commitSynced(
+  set: SetState,
+  get: GetState,
+  reducer: (s: WorkspaceSynced) => WorkspaceSynced,
+): void {
+  const synced = get().synced;
+  if (!synced) return;
+  const next = reducer(synced);
+  if (next === synced) return;
+  set({ synced: next });
+  void saveSynced(next);
+}

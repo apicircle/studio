@@ -7,6 +7,9 @@ import { cleanup } from '@testing-library/react';
 import { __resetDbForTests } from '../src/persistence/db';
 import { useWorkspaceStore } from '../src/store/workspaceStore';
 
+// Snapshot the store's initial state on import. Action closures (which carry
+// references to the original `set`/`get`) come along, so resetting via
+// `setState(initial, true)` restores everything atomically.
 const initialStoreState = useWorkspaceStore.getState();
 
 beforeEach(async () => {
@@ -14,27 +17,7 @@ beforeEach(async () => {
   globalThis.indexedDB = new IDBFactory();
   __resetDbForTests();
   if (typeof localStorage !== 'undefined') localStorage.clear();
-  // Reset the Zustand singleton so prior-test theme/panel/secret-vault state
-  // doesn't bleed into the next test.
-  useWorkspaceStore.setState(
-    {
-      ready: false,
-      synced: null,
-      local: null,
-      activePanel: 'editor',
-      secretVaultOpen: false,
-      hydrate: initialStoreState.hydrate,
-      setActivePanel: initialStoreState.setActivePanel,
-      setActiveRequestId: initialStoreState.setActiveRequestId,
-      toggleSidebarSection: initialStoreState.toggleSidebarSection,
-      setThemeId: initialStoreState.setThemeId,
-      setWorkspaceName: initialStoreState.setWorkspaceName,
-      openSecretVault: initialStoreState.openSecretVault,
-      closeSecretVault: initialStoreState.closeSecretVault,
-    },
-    true,
-  );
-  // Clear any data-theme attribute the previous test may have set.
+  useWorkspaceStore.setState(initialStoreState, true);
   document.documentElement.removeAttribute('data-theme');
 });
 
