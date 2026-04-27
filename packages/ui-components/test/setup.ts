@@ -4,6 +4,7 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
+import { __resetAttachmentsForTests } from '../src/persistence/attachments';
 import { __resetDbForTests } from '../src/persistence/db';
 import { useWorkspaceStore } from '../src/store/workspaceStore';
 
@@ -16,6 +17,7 @@ beforeEach(async () => {
   const { IDBFactory } = await import('fake-indexeddb');
   globalThis.indexedDB = new IDBFactory();
   __resetDbForTests();
+  __resetAttachmentsForTests();
   if (typeof localStorage !== 'undefined') localStorage.clear();
   useWorkspaceStore.setState(initialStoreState, true);
   document.documentElement.removeAttribute('data-theme');

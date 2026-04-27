@@ -8,13 +8,15 @@ export interface BuiltRequest {
 }
 
 /**
- * Compose the final URL by merging enabled query params into the request URL.
- * Existing query params on the URL are preserved; param entries are appended.
- *
- * Falls back to manual concatenation when the URL is not parseable (e.g.
- * contains template placeholders like `{{BASE_URL}}/foo`). In that case, env-
- * resolution should run first (P3) — but we still surface a usable URL.
+ * Resolves an attachment slotId to a Blob (with filename for form-data).
+ * The host (UI layer) reads this from its IndexedDB attachments store.
+ * Returns null when the attachment is missing — composeBody treats missing
+ * attachments as empty fields rather than throwing.
  */
+export type AttachmentResolver = (
+  slotId: string,
+) => Promise<{ blob: Blob; filename: string } | null>;
+
 export function composeUrl(
   rawUrl: string,
   params: ReadonlyArray<{ key: string; value: string; enabled: boolean }>,
@@ -33,7 +35,6 @@ export function composeUrl(
     return parsed.toString();
   }
 
-  // Fallback: append as a query string, respecting existing '?'
   const query = enabled
     .map((p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
     .join('&');
@@ -41,11 +42,6 @@ export function composeUrl(
   return rawUrl.includes('?') ? `${rawUrl}&${query}` : `${rawUrl}?${query}`;
 }
 
-/**
- * Reduce header rows to a single Record<string,string>, dropping disabled and
- * empty-key entries. Later entries with the same (case-insensitive) name win
- * — same semantics as `new Headers()` in the browser.
- */
 export function composeHeaders(
   rows: ReadonlyArray<{ key: string; value: string; enabled: boolean }>,
 ): Record<string, string> {
@@ -60,19 +56,29 @@ export function composeHeaders(
 }
 
 /**
- * Serialize a request body for fetch(). For 'none' returns null. For 'json'
- * returns the trimmed string as-is (we don't validate JSON here — the editor
- * does that and the assertion layer can flag invalid responses).
- *
- * 'urlencoded' content is parsed as `key=value\nkey=value` lines (matches what
- * the editor renders).
- *
- * 'form-data', 'binary', and 'graphql' are stubbed for P2 — the executor
- * forwards the raw string and the user's Content-Type header. Full editors
- * for these land later.
+ * Strip Content-Type from a header set. Used for form-data and binary bodies
+ * where the browser must set Content-Type itself (multipart boundary, blob's
+ * own type) — a manually-set header would corrupt the request.
  */
-export function composeBody(body: ApiRequest['body']): BodyInit | null {
+function stripContentType(headers: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(headers)) {
+    if (k.trim().toLowerCase() === 'content-type') continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * Serialize a request body for fetch(). Async because form-data and binary
+ * may need to read attachment blobs from the host's storage layer.
+ */
+export async function composeBody(
+  body: ApiRequest['body'],
+  resolveAttachment?: AttachmentResolver,
+): Promise<BodyInit | null> {
   if (body.type === 'none') return null;
+
   if (
     body.type === 'json' ||
     body.type === 'text' ||
@@ -81,6 +87,7 @@ export function composeBody(body: ApiRequest['body']): BodyInit | null {
   ) {
     return body.content;
   }
+
   if (body.type === 'urlencoded') {
     const params = new URLSearchParams();
     for (const line of body.content.split(/\r?\n/)) {
@@ -93,16 +100,48 @@ export function composeBody(body: ApiRequest['body']): BodyInit | null {
     }
     return params.toString();
   }
-  // form-data and binary — defer to a later phase. Forward the raw content so
-  // the request is at least sendable.
-  return body.content;
+
+  if (body.type === 'form-data') {
+    const fd = new FormData();
+    for (const row of body.formRows ?? []) {
+      if (!row.enabled || !row.key.trim()) continue;
+      if (row.kind === 'text') {
+        fd.append(row.key, row.value);
+      } else if (row.slotId && resolveAttachment) {
+        const file = await resolveAttachment(row.slotId);
+        if (file) fd.append(row.key, file.blob, file.filename);
+      }
+    }
+    return fd;
+  }
+
+  if (body.type === 'binary') {
+    if (body.attachment?.slotId && resolveAttachment) {
+      const file = await resolveAttachment(body.attachment.slotId);
+      if (file) return file.blob;
+    }
+    return null;
+  }
+
+  return null;
 }
 
-export function buildRequest(req: ApiRequest): BuiltRequest {
+export async function buildRequest(
+  req: ApiRequest,
+  resolveAttachment?: AttachmentResolver,
+): Promise<BuiltRequest> {
+  const headers = composeHeaders(req.headers);
+  // form-data and binary: let fetch set Content-Type from the FormData
+  // boundary or the Blob's own type. Any user-set Content-Type would break
+  // the request.
+  const sanitizedHeaders =
+    req.body.type === 'form-data' || req.body.type === 'binary'
+      ? stripContentType(headers)
+      : headers;
   return {
     url: composeUrl(req.url, req.query),
     method: req.method,
-    headers: composeHeaders(req.headers),
-    body: composeBody(req.body),
+    headers: sanitizedHeaders,
+    body: await composeBody(req.body, resolveAttachment),
   };
 }

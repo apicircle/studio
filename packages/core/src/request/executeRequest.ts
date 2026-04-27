@@ -1,5 +1,5 @@
 import type { Request as ApiRequest } from '@apicircle-v2/shared';
-import { buildRequest } from './buildRequest';
+import { buildRequest, type AttachmentResolver } from './buildRequest';
 
 export interface ExecutionResult {
   startedAt: string;
@@ -20,6 +20,10 @@ export interface ExecuteOptions {
   // Hard timeout in ms. Defaults to 30s; null disables.
   timeoutMs?: number | null;
   signal?: AbortSignal;
+  // Resolver for form-data file rows and binary bodies. Wired to the IDB
+  // attachments store on the host side. When omitted, file rows in form-data
+  // are skipped and binary bodies send as null.
+  resolveAttachment?: AttachmentResolver;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -33,7 +37,7 @@ export async function executeRequest(
   req: ApiRequest,
   opts: ExecuteOptions = {},
 ): Promise<ExecutionResult> {
-  const built = buildRequest(req);
+  const built = await buildRequest(req, opts.resolveAttachment);
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
   const timeoutMs = opts.timeoutMs === undefined ? DEFAULT_TIMEOUT_MS : opts.timeoutMs;
 

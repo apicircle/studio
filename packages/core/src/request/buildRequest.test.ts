@@ -1,5 +1,5 @@
 import type { Request as ApiRequest } from '@apicircle-v2/shared';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { buildRequest, composeBody, composeHeaders, composeUrl } from './buildRequest';
 
 describe('composeUrl', () => {
@@ -73,59 +73,189 @@ describe('composeHeaders', () => {
 });
 
 describe('composeBody', () => {
-  it('returns null for body type "none"', () => {
-    expect(composeBody({ type: 'none', content: '{"x":1}' })).toBeNull();
+  it('returns null for body type "none"', async () => {
+    expect(await composeBody({ type: 'none', content: '{"x":1}' })).toBeNull();
   });
 
-  it('returns the raw content for json/text/xml/graphql', () => {
-    expect(composeBody({ type: 'json', content: '{"x":1}' })).toBe('{"x":1}');
-    expect(composeBody({ type: 'text', content: 'hello' })).toBe('hello');
-    expect(composeBody({ type: 'xml', content: '<root/>' })).toBe('<root/>');
-    expect(composeBody({ type: 'graphql', content: 'query { x }' })).toBe('query { x }');
+  it('returns the raw content for json/text/xml/graphql', async () => {
+    expect(await composeBody({ type: 'json', content: '{"x":1}' })).toBe('{"x":1}');
+    expect(await composeBody({ type: 'text', content: 'hello' })).toBe('hello');
+    expect(await composeBody({ type: 'xml', content: '<root/>' })).toBe('<root/>');
+    expect(await composeBody({ type: 'graphql', content: 'query { x }' })).toBe('query { x }');
   });
 
-  it('serializes urlencoded body from key=value lines', () => {
-    const body = composeBody({ type: 'urlencoded', content: 'a=1\nb=hello world\nc=' });
+  it('serializes urlencoded body from key=value lines', async () => {
+    const body = await composeBody({ type: 'urlencoded', content: 'a=1\nb=hello world\nc=' });
     expect(body).toBe('a=1&b=hello+world&c=');
   });
 
-  it('skips lines without "="', () => {
-    const body = composeBody({ type: 'urlencoded', content: 'a=1\njust a line\nb=2' });
+  it('skips lines without "="', async () => {
+    const body = await composeBody({ type: 'urlencoded', content: 'a=1\njust a line\nb=2' });
     expect(body).toBe('a=1&b=2');
   });
 
-  it('skips lines with empty key', () => {
-    const body = composeBody({ type: 'urlencoded', content: '=ignored\na=1' });
+  it('skips lines with empty key', async () => {
+    const body = await composeBody({ type: 'urlencoded', content: '=ignored\na=1' });
     expect(body).toBe('a=1');
   });
 
-  it('forwards form-data and binary content as-is for now', () => {
-    expect(composeBody({ type: 'form-data', content: 'raw' })).toBe('raw');
-    expect(composeBody({ type: 'binary', content: 'raw' })).toBe('raw');
+  describe('form-data', () => {
+    it('builds a FormData with text rows', async () => {
+      const result = await composeBody({
+        type: 'form-data',
+        content: '',
+        formRows: [
+          { kind: 'text', key: 'name', value: 'alice', enabled: true },
+          { kind: 'text', key: 'role', value: 'admin', enabled: true },
+        ],
+      });
+      expect(result).toBeInstanceOf(FormData);
+      const fd = result as FormData;
+      expect(fd.get('name')).toBe('alice');
+      expect(fd.get('role')).toBe('admin');
+    });
+
+    it('skips disabled rows and rows with empty keys', async () => {
+      const result = await composeBody({
+        type: 'form-data',
+        content: '',
+        formRows: [
+          { kind: 'text', key: '', value: 'x', enabled: true },
+          { kind: 'text', key: 'k', value: 'v', enabled: false },
+          { kind: 'text', key: 'real', value: 'r', enabled: true },
+        ],
+      });
+      const fd = result as FormData;
+      expect(fd.has('')).toBe(false);
+      expect(fd.has('k')).toBe(false);
+      expect(fd.get('real')).toBe('r');
+    });
+
+    it('appends a file via the attachment resolver with filename', async () => {
+      const blob = new Blob([new Uint8Array([1, 2, 3])], { type: 'application/octet-stream' });
+      const resolver = vi.fn(async (slotId: string) =>
+        slotId === 'slot-A' ? { blob, filename: 'avatar.png' } : null,
+      );
+      const result = await composeBody(
+        {
+          type: 'form-data',
+          content: '',
+          formRows: [
+            { kind: 'text', key: 'name', value: 'alice', enabled: true },
+            { kind: 'file', key: 'avatar', slotId: 'slot-A', enabled: true },
+          ],
+        },
+        resolver,
+      );
+      const fd = result as FormData;
+      const file = fd.get('avatar');
+      expect(file).toBeInstanceOf(File);
+      expect((file as File).name).toBe('avatar.png');
+      expect(resolver).toHaveBeenCalledWith('slot-A');
+    });
+
+    it('skips file rows when the resolver returns null', async () => {
+      const resolver = vi.fn(async () => null);
+      const result = await composeBody(
+        {
+          type: 'form-data',
+          content: '',
+          formRows: [{ kind: 'file', key: 'avatar', slotId: 'missing', enabled: true }],
+        },
+        resolver,
+      );
+      const fd = result as FormData;
+      expect(fd.has('avatar')).toBe(false);
+    });
+
+    it('skips file rows when no resolver is provided', async () => {
+      const result = await composeBody({
+        type: 'form-data',
+        content: '',
+        formRows: [{ kind: 'file', key: 'avatar', slotId: 'slot-A', enabled: true }],
+      });
+      const fd = result as FormData;
+      expect(fd.has('avatar')).toBe(false);
+    });
+  });
+
+  describe('binary', () => {
+    it('returns the resolved blob as the body', async () => {
+      const blob = new Blob([new Uint8Array([9, 8, 7])], { type: 'application/pdf' });
+      const result = await composeBody(
+        { type: 'binary', content: '', attachment: { slotId: 'bin-1' } },
+        async (id) => (id === 'bin-1' ? { blob, filename: 'doc.pdf' } : null),
+      );
+      expect(result).toBe(blob);
+    });
+
+    it('returns null when no attachment is set', async () => {
+      const result = await composeBody({ type: 'binary', content: '' });
+      expect(result).toBeNull();
+    });
+
+    it('returns null when the attachment resolver returns null', async () => {
+      const result = await composeBody(
+        { type: 'binary', content: '', attachment: { slotId: 'missing' } },
+        async () => null,
+      );
+      expect(result).toBeNull();
+    });
   });
 });
 
 describe('buildRequest', () => {
-  it('composes all four pieces from a Request', () => {
-    const req: ApiRequest = {
-      id: 'r1',
-      name: 'Get user',
-      folderId: null,
-      method: 'POST',
-      url: 'https://api.example.com/users',
-      headers: [{ key: 'X-Auth', value: 't', enabled: true }],
-      query: [{ key: 'verbose', value: 'true', enabled: true }],
-      body: { type: 'json', content: '{"x":1}' },
-      contextVars: [],
-      assertions: [],
-      createdAt: '2026-04-27T00:00:00.000Z',
-      updatedAt: '2026-04-27T00:00:00.000Z',
-    };
-    expect(buildRequest(req)).toEqual({
+  const baseReq = (overrides: Partial<ApiRequest> = {}): ApiRequest => ({
+    id: 'r1',
+    name: 'Get user',
+    folderId: null,
+    method: 'POST',
+    url: 'https://api.example.com/users',
+    headers: [{ key: 'X-Auth', value: 't', enabled: true }],
+    query: [{ key: 'verbose', value: 'true', enabled: true }],
+    body: { type: 'json', content: '{"x":1}' },
+    contextVars: [],
+    assertions: [],
+    createdAt: '2026-04-27T00:00:00.000Z',
+    updatedAt: '2026-04-27T00:00:00.000Z',
+    ...overrides,
+  });
+
+  it('composes all four pieces from a Request', async () => {
+    const built = await buildRequest(baseReq());
+    expect(built).toEqual({
       url: 'https://api.example.com/users?verbose=true',
       method: 'POST',
       headers: { 'X-Auth': 't' },
       body: '{"x":1}',
     });
+  });
+
+  it('strips Content-Type for form-data so fetch can set the multipart boundary', async () => {
+    const built = await buildRequest(
+      baseReq({
+        headers: [
+          { key: 'Content-Type', value: 'multipart/form-data', enabled: true },
+          { key: 'X-Auth', value: 't', enabled: true },
+        ],
+        body: { type: 'form-data', content: '', formRows: [] },
+      }),
+    );
+    expect(built.headers).not.toHaveProperty('Content-Type');
+    expect(built.headers['X-Auth']).toBe('t');
+    expect(built.body).toBeInstanceOf(FormData);
+  });
+
+  it('strips Content-Type for binary so the blob type wins', async () => {
+    const blob = new Blob([new Uint8Array([1, 2])], { type: 'image/png' });
+    const built = await buildRequest(
+      baseReq({
+        headers: [{ key: 'Content-Type', value: 'application/octet-stream', enabled: true }],
+        body: { type: 'binary', content: '', attachment: { slotId: 'b1' } },
+      }),
+      async () => ({ blob, filename: 'pic.png' }),
+    );
+    expect(built.headers).not.toHaveProperty('Content-Type');
+    expect(built.body).toBe(blob);
   });
 });

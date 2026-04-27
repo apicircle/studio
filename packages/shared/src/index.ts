@@ -24,4 +24,7 @@ export type {
   HttpMethod,
   BodyType,
   Assertion,
+  RequestBody,
+  FormDataRow,
+  AttachmentRef,
 } from './types';

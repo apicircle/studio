@@ -64,6 +64,9 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-assignment': 'off',
       '@typescript-eslint/no-unsafe-call': 'off',
       '@typescript-eslint/unbound-method': 'off',
+      // Tests often declare async arrow functions to satisfy a typed
+      // resolver contract (Promise<T>) without needing to await internally.
+      '@typescript-eslint/require-await': 'off',
     },
   },
 );

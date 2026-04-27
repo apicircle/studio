@@ -1,9 +1,9 @@
 import type {
   Assertion,
-  BodyType,
   Folder,
   HttpMethod,
   Request as ApiRequest,
+  RequestBody,
   WorkspaceSynced,
 } from '@apicircle-v2/shared';
 import { generateId } from '@apicircle-v2/shared';
@@ -131,9 +131,26 @@ export function setRequestUrl(synced: WorkspaceSynced, id: string, url: string):
 export function setRequestBody(
   synced: WorkspaceSynced,
   id: string,
-  body: { type: BodyType; content: string },
+  body: RequestBody,
 ): WorkspaceSynced {
   return updateRequest(synced, id, { body });
+}
+
+/**
+ * Walk a request and collect every attachment slotId it owns. Used on
+ * delete to free the corresponding blobs in the local attachments store.
+ */
+export function collectRequestSlotIds(req: ApiRequest): string[] {
+  const ids: string[] = [];
+  if (req.body.type === 'form-data' && req.body.formRows) {
+    for (const row of req.body.formRows) {
+      if (row.kind === 'file' && row.slotId) ids.push(row.slotId);
+    }
+  }
+  if (req.body.type === 'binary' && req.body.attachment?.slotId) {
+    ids.push(req.body.attachment.slotId);
+  }
+  return ids;
 }
 
 export function setRequestHeaders(

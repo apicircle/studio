@@ -20,8 +20,8 @@ export type ThemeId =
 // No 'settings' panel — Secret Vault and Theme moved to TopBar.
 // No 'command' panel — feature dropped per revision #2.
 export type PanelId =
-  | 'workspace'        // renamed from 'git'
-  | 'link-workspace'   // renamed from 'api-connections'
+  | 'workspace' // renamed from 'git'
+  | 'link-workspace' // renamed from 'api-connections'
   | 'editor'
   | 'env'
   | 'execution'
@@ -95,11 +95,46 @@ export interface Request {
   url: string;
   headers: Array<{ key: string; value: string; enabled: boolean }>;
   query: Array<{ key: string; value: string; enabled: boolean }>;
-  body: { type: BodyType; content: string };
+  body: RequestBody;
   contextVars: Array<{ key: string; value: string }>;
   assertions: Assertion[];
   createdAt: string;
   updatedAt: string;
+}
+
+// Body content. For text-shaped types (json/text/xml/graphql/urlencoded)
+// the payload is `content` (string). For form-data the rows describe each
+// field — text rows carry their own value, file rows reference an
+// attachment by slotId. For binary the whole body is a single attachment.
+//
+// Attachments themselves (the actual blobs + filename/mimeType) live only
+// in the local IndexedDB `attachments` store; the synced doc only carries
+// the slotId reference plus minimal display metadata. Blobs never round-
+// trip through Git.
+export interface RequestBody {
+  type: BodyType;
+  content: string;
+  formRows?: FormDataRow[];
+  attachment?: AttachmentRef;
+}
+
+export type FormDataRow =
+  | { kind: 'text'; key: string; value: string; enabled: boolean }
+  | {
+      kind: 'file';
+      key: string;
+      slotId: string | null;
+      filename?: string;
+      size?: number;
+      mimeType?: string;
+      enabled: boolean;
+    };
+
+export interface AttachmentRef {
+  slotId: string | null;
+  filename?: string;
+  size?: number;
+  mimeType?: string;
 }
 
 export interface Assertion {

@@ -14,7 +14,7 @@ export {
 export type { HeaderEntry } from './request/headersDictionary';
 
 export { buildRequest, composeBody, composeHeaders, composeUrl } from './request/buildRequest';
-export type { BuiltRequest } from './request/buildRequest';
+export type { AttachmentResolver, BuiltRequest } from './request/buildRequest';
 
 export { executeRequest } from './request/executeRequest';
 export type { ExecuteOptions, ExecutionResult } from './request/executeRequest';
