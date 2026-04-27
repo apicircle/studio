@@ -45,3 +45,6 @@ export { generateWorkingBranchName, slugify, validateBranchName } from './git/br
 export type { BranchNameOptions } from './git/branchNames';
 
 export { serializeWorkspaceForGit } from './git/serializeWorkspace';
+
+export { collectAttachmentSlots } from './git/collectAttachments';
+export type { AttachmentSlotRef } from './git/collectAttachments';

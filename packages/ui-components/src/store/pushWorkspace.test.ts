@@ -1,5 +1,6 @@
 import { act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { putAttachment } from '../persistence/attachments';
 import { useWorkspaceStore } from './workspaceStore';
 
 interface ResponseSpec {
@@ -157,6 +158,110 @@ describe('workspaceStore.pushWorkspace', () => {
       message: string;
     };
     expect(body.message).toBe('chore: sync workspace via API Circle Studio');
+  });
+
+  it('uploads referenced attachments as blobs and bundles them into the tree commit', async () => {
+    await setupConnectedBranch();
+
+    // Seed an attachment record + a binary request that points at it. The
+    // request lands directly in the synced doc; putAttachment writes the
+    // bytes into the attachments IDB the push reads from.
+    const slotId = 'slot-test';
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    await putAttachment({
+      slotId,
+      filename: 'pic.png',
+      mimeType: 'image/png',
+      size: bytes.length,
+      sha256: 'aabb',
+      savedAt: '2026-04-27T00:00:00.000Z',
+      bytes,
+    });
+    const id = useWorkspaceStore.getState().addRequest(null);
+    useWorkspaceStore.getState().setRequestBody(id, {
+      type: 'binary',
+      content: '',
+      attachment: {
+        slotId,
+        filename: 'pic.png',
+        mimeType: 'image/png',
+        size: bytes.length,
+        sha256: 'aabb',
+      },
+    });
+
+    const fetchMock = queuedFetch([
+      // getRef
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
+      // getCommit
+      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
+      // createBlob (one per referenced attachment)
+      { body: { sha: 'blob-1', size: bytes.length } },
+      // createTree
+      { body: { sha: 'tree-new' } },
+      // createCommit
+      { body: { sha: 'commit-new', message: 'm', tree: { sha: 'tree-new' } } },
+      // updateRef
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'commit-new' } } },
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await useWorkspaceStore.getState().pushWorkspace();
+
+    // createBlob body carries base64 content + encoding.
+    const createBlobCall = fetchMock.mock.calls[2];
+    expect(createBlobCall[0]).toBe('https://api.github.com/repos/me/api/git/blobs');
+    const blobBody = JSON.parse((createBlobCall[1] as RequestInit).body as string) as {
+      content: string;
+      encoding: string;
+    };
+    expect(blobBody.encoding).toBe('base64');
+    expect(blobBody.content).toBe(btoa(String.fromCharCode(...bytes)));
+
+    // createTree body has both workspace.json (content) and the attachment (sha).
+    const createTreeCall = fetchMock.mock.calls[3];
+    const treeBody = JSON.parse((createTreeCall[1] as RequestInit).body as string) as {
+      tree: { path: string; content?: string; sha?: string }[];
+    };
+    expect(treeBody.tree).toHaveLength(2);
+    expect(treeBody.tree[0]).toMatchObject({ path: 'workspace.json' });
+    expect(treeBody.tree[1]).toMatchObject({
+      path: `.apicircle/attachments/${slotId}`,
+      sha: 'blob-1',
+    });
+  });
+
+  it('skips slots whose bytes are not in local IDB (pulled but not downloaded)', async () => {
+    await setupConnectedBranch();
+
+    // Reference a slotId that has no attachment record locally — the push
+    // should silently skip its blob upload and leave base_tree intact.
+    const id = useWorkspaceStore.getState().addRequest(null);
+    useWorkspaceStore.getState().setRequestBody(id, {
+      type: 'binary',
+      content: '',
+      attachment: { slotId: 'absent-slot', filename: 'gone.bin' },
+    });
+
+    const fetchMock = queuedFetch([
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
+      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
+      // No createBlob — straight to createTree.
+      { body: { sha: 'tree-new' } },
+      { body: { sha: 'commit-new', message: 'm', tree: { sha: 'tree-new' } } },
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'commit-new' } } },
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await useWorkspaceStore.getState().pushWorkspace();
+
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    // Tree carries only workspace.json — no attachment entry was added.
+    const treeBody = JSON.parse((fetchMock.mock.calls[2][1] as RequestInit).body as string) as {
+      tree: { path: string }[];
+    };
+    expect(treeBody.tree).toHaveLength(1);
+    expect(treeBody.tree[0].path).toBe('workspace.json');
   });
 
   it('propagates GitHub errors mid-flow without partial state mutation', async () => {

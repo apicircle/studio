@@ -21,6 +21,7 @@ import {
   type AttachmentResolver,
   type ExecutionResult,
   buildScope,
+  collectAttachmentSlots,
   decryptString,
   encryptString,
   executeRequest as coreExecuteRequest,
@@ -44,6 +45,8 @@ import {
 import { getMasterKey } from '../persistence/secretKey';
 import { loadWorkspace, saveLocal, saveSynced } from '../persistence/workspaceStorage';
 import { applyTheme } from '../theme/applyTheme';
+import { bytesToBase64 } from './attachmentBlobs';
+import type { TreeEntryInput } from '@apicircle-v2/git';
 import {
   addFolder as addFolderAction,
   addRequest as addRequestAction,
@@ -257,14 +260,18 @@ type WorkspaceStore = {
   discardWorkingBranch: () => void;
 
   /**
-   * Atomically commit the current synced doc as `workspace.json` on the
-   * working branch. Round-trip is: read branch ref → read its tree →
-   * create new tree (base_tree + workspace.json inline) → create commit
-   * → fast-forward the ref. On success, updates `workingBranch.headSha`
+   * Atomically commit the current synced doc + every referenced
+   * attachment as one Git Tree commit on the working branch. Round-trip
+   * is: read branch ref → read its tree → upload each new attachment as
+   * a blob → create new tree (base_tree + workspace.json inline +
+   * `.apicircle/attachments/<slotId>` per attachment) → create commit →
+   * fast-forward the ref. On success, updates `workingBranch.headSha`
    * and `lastPushedSha`. Throws on missing-session, missing-repo,
    * missing-branch, or any GitHub error.
    *
-   * Attachments are NOT yet bundled — that arrives in P4.3b.
+   * Attachments whose bytes aren't in local IDB (e.g. pulled but not
+   * downloaded) are skipped — `base_tree` keeps the existing entry
+   * intact, so they don't get overwritten on the remote.
    */
   pushWorkspace: (commitMessage?: string) => Promise<{ commitSha: string }>;
 
@@ -846,26 +853,43 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const head = await client.getRef(token, owner, name, branch.name);
     // 2. Read its tree SHA.
     const headCommit = await client.getCommit(token, owner, name, head.sha);
-    // 3. Build the new tree, layering workspace.json over base_tree.
+    // 3. Upload every locally-cached attachment as a blob. Slots whose
+    //    bytes aren't in local IDB are skipped — base_tree keeps the
+    //    remote entry intact (or absent, on first push).
+    const slots = collectAttachmentSlots(synced);
+    const attachmentEntries: TreeEntryInput[] = [];
+    for (const slot of slots) {
+      const record = await getAttachment(slot.slotId);
+      if (!record) continue;
+      const blob = await client.createBlob(token, owner, name, {
+        content: bytesToBase64(record.bytes),
+        encoding: 'base64',
+      });
+      attachmentEntries.push({
+        path: `.apicircle/attachments/${slot.slotId}`,
+        sha: blob.sha,
+      });
+    }
+    // 4. Build the new tree, layering workspace.json + attachments over base_tree.
     const content = serializeWorkspaceForGit(synced);
     const newTree = await client.createTree(token, owner, name, {
       baseTreeSha: headCommit.treeSha,
-      entries: [{ path: 'workspace.json', content }],
+      entries: [{ path: 'workspace.json', content }, ...attachmentEntries],
     });
-    // 4. Create the commit.
+    // 5. Create the commit.
     const message = (commitMessage ?? '').trim() || 'chore: sync workspace via API Circle Studio';
     const newCommit = await client.createCommit(token, owner, name, {
       message,
       treeSha: newTree.sha,
       parents: [head.sha],
     });
-    // 5. Fast-forward the branch ref.
+    // 6. Fast-forward the branch ref.
     await client.updateRef(token, owner, name, {
       branch: branch.name,
       sha: newCommit.sha,
     });
 
-    // 6. Persist the new local branch state.
+    // 7. Persist the new local branch state.
     const updatedBranch: WorkingBranch = {
       ...branch,
       headSha: newCommit.sha,

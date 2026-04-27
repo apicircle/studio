@@ -77,6 +77,11 @@ export interface CreatedCommit {
   treeSha: string;
 }
 
+export interface CreatedBlob {
+  sha: string;
+  size: number;
+}
+
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 interface CallOptions {
@@ -241,6 +246,36 @@ export class GitHubClient {
       treeSha: json.tree.sha,
       message: json.message,
     };
+  }
+
+  /**
+   * Upload a blob to the repo and return its SHA. Used by push-to-save
+   * (P4.3b) for binary attachments — text files go straight into a tree
+   * entry's `content`, but binary bytes have to go through a blob first.
+   *
+   * `content` is base64 when `encoding === 'base64'`. GitHub stores blobs
+   * deduplicated by their git-sha1 (not our sha256), so re-uploading the
+   * same bytes is cheap on their side; we save a roundtrip locally by
+   * tracking lastPushedBlobSha per slot in a future revision.
+   */
+  async createBlob(
+    token: string,
+    owner: string,
+    name: string,
+    args: { content: string; encoding: 'utf-8' | 'base64' },
+    opts: CallOptions = {},
+  ): Promise<CreatedBlob> {
+    const { json } = await this.call<{ sha: string; size?: number }>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/git/blobs`,
+      {
+        ...opts,
+        method: 'POST',
+        body: { content: args.content, encoding: args.encoding },
+        requiredScopes: ['repo'],
+      },
+    );
+    return { sha: json.sha, size: json.size ?? 0 };
   }
 
   /**

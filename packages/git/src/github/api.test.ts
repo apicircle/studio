@@ -389,6 +389,30 @@ describe('GitHubClient.getCommit', () => {
   });
 });
 
+describe('GitHubClient.createBlob', () => {
+  it('POSTs base64 content + encoding and returns the new blob SHA', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () => jsonResponse({ sha: 'blob-sha', size: 12 }));
+    const client = new GitHubClient({ fetchImpl });
+    const blob = await client.createBlob('tok', 'me', 'api', {
+      content: 'aGVsbG8=', // "hello" in base64
+      encoding: 'base64',
+    });
+    expect(blob).toEqual({ sha: 'blob-sha', size: 12 });
+    const [url, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe('https://api.github.com/repos/me/api/git/blobs');
+    expect((init as RequestInit).method).toBe('POST');
+    const body = JSON.parse(((init as RequestInit).body as string) ?? '');
+    expect(body).toEqual({ content: 'aGVsbG8=', encoding: 'base64' });
+  });
+
+  it('falls back to size=0 when GitHub omits the size field', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () => jsonResponse({ sha: 'blob-sha' }));
+    const client = new GitHubClient({ fetchImpl });
+    const blob = await client.createBlob('tok', 'me', 'api', { content: 'x', encoding: 'utf-8' });
+    expect(blob).toEqual({ sha: 'blob-sha', size: 0 });
+  });
+});
+
 describe('GitHubClient.createTree', () => {
   it('POSTs base_tree + entries with default mode/type filled in', async () => {
     const fetchImpl: typeof fetch = vi.fn(async () => jsonResponse({ sha: 'new-tree' }));
