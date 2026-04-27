@@ -466,6 +466,83 @@ describe('GitHubClient.createCommit', () => {
   });
 });
 
+describe('GitHubClient.getContents', () => {
+  it('decodes base64 content as UTF-8 and returns the path/sha/size', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({
+        type: 'file',
+        path: 'workspace.json',
+        sha: 'blob-sha-1',
+        size: 5,
+        content: 'aGVsbG8=', // "hello"
+        encoding: 'base64',
+      }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const file = await client.getContents('tok', 'me', 'api', 'workspace.json', 'apicircle/wb');
+    expect(file).toEqual({
+      content: 'hello',
+      sha: 'blob-sha-1',
+      path: 'workspace.json',
+      size: 5,
+    });
+    const url = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).toBe(
+      'https://api.github.com/repos/me/api/contents/workspace.json?ref=apicircle%2Fwb',
+    );
+  });
+
+  it('handles GitHub line-wrapped base64 content', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({
+        type: 'file',
+        path: 'workspace.json',
+        sha: 'b',
+        size: 5,
+        content: 'aGVs\nbG8=',
+        encoding: 'base64',
+      }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const file = await client.getContents('tok', 'me', 'api', 'workspace.json', 'main');
+    expect(file?.content).toBe('hello');
+  });
+
+  it('returns null on 404 (file does not exist on this ref)', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({ message: 'Not Found' }, { status: 404 }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const file = await client.getContents('tok', 'me', 'api', 'workspace.json', 'apicircle/wb');
+    expect(file).toBeNull();
+  });
+
+  it('throws when the path resolves to a directory', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () => jsonResponse([{ type: 'dir', path: 'p' }]));
+    const client = new GitHubClient({ fetchImpl });
+    await expect(client.getContents('tok', 'me', 'api', 'p', 'main')).rejects.toThrow(/not a file/);
+  });
+
+  it('encodes nested paths segment-by-segment', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({
+        type: 'file',
+        path: '.apicircle/attachments/slot a',
+        sha: 'b',
+        size: 0,
+        content: '',
+        encoding: 'base64',
+      }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    await client.getContents('tok', 'me', 'api', '.apicircle/attachments/slot a', 'main');
+    const url = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).toBe(
+      'https://api.github.com/repos/me/api/contents/.apicircle/attachments/slot%20a?ref=main',
+    );
+  });
+});
+
 describe('GitHubClient.createPullRequest', () => {
   it('POSTs title/body/head/base and returns the normalized PR summary', async () => {
     const fetchImpl: typeof fetch = vi.fn(async () =>

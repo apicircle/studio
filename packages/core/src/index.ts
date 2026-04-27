@@ -48,3 +48,13 @@ export { serializeWorkspaceForGit } from './git/serializeWorkspace';
 
 export { collectAttachmentSlots } from './git/collectAttachments';
 export type { AttachmentSlotRef } from './git/collectAttachments';
+
+export { applyMerge, computeThreeWayDiff } from './git/threeWayDiff';
+export type {
+  ConflictResolution,
+  DiffEntry,
+  DiffStatus,
+  EntityBucket,
+  ResolutionMap,
+  ThreeWayDiff,
+} from './git/threeWayDiff';

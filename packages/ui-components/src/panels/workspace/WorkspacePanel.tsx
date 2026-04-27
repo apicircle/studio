@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   CheckCircle2,
   ExternalLink,
@@ -8,12 +8,18 @@ import {
   KeyRound,
   Lock,
   Plus,
+  RefreshCw,
   ShieldAlert,
   Upload,
   X,
 } from 'lucide-react';
 import { GitHubError, MissingScopeError } from '@apicircle-v2/git';
-import { generateWorkingBranchName, validateBranchName } from '@apicircle-v2/core';
+import {
+  type DiffEntry,
+  type ResolutionMap,
+  generateWorkingBranchName,
+  validateBranchName,
+} from '@apicircle-v2/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { Modal } from '../../primitives/Modal';
 import { cn } from '../../primitives/cn';
@@ -73,10 +79,159 @@ export function WorkspacePanel() {
       )}
 
       <p className="max-w-2xl text-[11px] text-text-dim">
-        Refresh + 3-way conflict resolver arrive in P4.5. Push to save and PR creation are wired up
-        above on the working-branch card.
+        Push, refresh, and PR creation are wired up on the working-branch card. Refresh runs a 3-way
+        diff against the last pulled snapshot; conflicts open the resolver below.
       </p>
+
+      <ConflictResolverModal />
     </div>
+  );
+}
+
+function ConflictResolverModal() {
+  const pending = useWorkspaceStore((s) => s.pendingRefresh);
+  const commitRefresh = useWorkspaceStore((s) => s.commitRefresh);
+  const cancelRefresh = useWorkspaceStore((s) => s.cancelRefresh);
+
+  const [resolutions, setResolutions] = useState<ResolutionMap>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const conflicts = useMemo(() => pending?.diff.conflicts ?? [], [pending]);
+  const allResolved = useMemo(
+    () => conflicts.every((c) => resolutions[`${c.bucket}:${c.key}`]),
+    [conflicts, resolutions],
+  );
+
+  const onClose = () => {
+    cancelRefresh();
+    setResolutions({});
+    setError(null);
+  };
+
+  const onCommit = async () => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      await commitRefresh(resolutions);
+      setResolutions({});
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to apply merge');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!pending) return null;
+
+  return (
+    <Modal open={true} onClose={onClose} title="Resolve conflicts" className="max-w-3xl">
+      <div className="space-y-3">
+        <p className="text-[11px] text-text-dim">
+          Local and remote both edited the entries below. Pick a side for each one before merging.
+          Cancel keeps the local doc untouched.
+        </p>
+        <ul className="space-y-2">
+          {conflicts.map((c) => (
+            <ConflictRow
+              key={`${c.bucket}:${c.key}`}
+              entry={c}
+              resolution={resolutions[`${c.bucket}:${c.key}`] ?? null}
+              onPick={(r) => setResolutions((prev) => ({ ...prev, [`${c.bucket}:${c.key}`]: r }))}
+            />
+          ))}
+        </ul>
+        {error && (
+          <p className="text-xs text-danger" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void onCommit()}
+            disabled={submitting || !allResolved}
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+          >
+            <GitMerge size={11} />
+            {submitting ? 'Merging…' : 'Apply merge'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ConflictRow({
+  entry,
+  resolution,
+  onPick,
+}: {
+  entry: DiffEntry;
+  resolution: 'mine' | 'theirs' | null;
+  onPick: (r: 'mine' | 'theirs') => void;
+}) {
+  return (
+    <li className="rounded-sm border border-border bg-surface p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-xs font-medium text-text-primary">
+          <code className="text-text-muted">{entry.bucket}</code>
+          {entry.key && <span className="text-text-dim"> · {entry.key}</span>}
+          <span className="ml-2">{entry.label}</span>
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-[11px]">
+        <ConflictSide
+          title="Mine (local)"
+          selected={resolution === 'mine'}
+          value={entry.local}
+          onSelect={() => onPick('mine')}
+        />
+        <ConflictSide
+          title="Theirs (remote)"
+          selected={resolution === 'theirs'}
+          value={entry.remote}
+          onSelect={() => onPick('theirs')}
+        />
+      </div>
+    </li>
+  );
+}
+
+function ConflictSide({
+  title,
+  selected,
+  value,
+  onSelect,
+}: {
+  title: string;
+  selected: boolean;
+  value: unknown;
+  onSelect: () => void;
+}) {
+  const preview = value === undefined ? '(deleted)' : JSON.stringify(value, null, 2).slice(0, 240);
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={cn(
+        'flex flex-col items-stretch gap-1 rounded-sm border px-2 py-2 text-left transition-colors',
+        selected
+          ? 'border-accent bg-accent/10 text-text-primary'
+          : 'border-border bg-card text-text-muted hover:border-border-strong',
+      )}
+    >
+      <span className="text-[10px] uppercase tracking-wider text-text-dim">{title}</span>
+      <pre className="whitespace-pre-wrap break-words font-mono text-[10px]">{preview}</pre>
+    </button>
   );
 }
 
@@ -329,16 +484,55 @@ function BranchSection() {
 
 function BranchCard() {
   const branch = useWorkspaceStore((s) => s.local!.workingBranch!);
+  const lastPulledAt = useWorkspaceStore((s) => s.local?.sync.lastPulledAt ?? null);
   const discardWorkingBranch = useWorkspaceStore((s) => s.discardWorkingBranch);
   const pushWorkspace = useWorkspaceStore((s) => s.pushWorkspace);
+  const refreshWorkspace = useWorkspaceStore((s) => s.refreshWorkspace);
 
   const [message, setMessage] = useState('');
   const [showMessageField, setShowMessageField] = useState(false);
   const [pushing, setPushing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshNotice, setRefreshNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [justPushedSha, setJustPushedSha] = useState<string | null>(null);
   const [prModalOpen, setPrModalOpen] = useState(false);
   const [missingScope, setMissingScope] = useState<string[] | null>(null);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    setError(null);
+    setRefreshNotice(null);
+    try {
+      const result = await refreshWorkspace();
+      switch (result.status) {
+        case 'no-remote':
+          setRefreshNotice('No workspace.json on the working branch yet — push first.');
+          break;
+        case 'up-to-date':
+          setRefreshNotice('Up to date with the remote.');
+          break;
+        case 'merged':
+          setRefreshNotice('Pulled remote changes — fast-forward merge applied.');
+          break;
+        case 'conflicts':
+          // The Conflict Resolver modal renders in response to pendingRefresh.
+          break;
+      }
+    } catch (err) {
+      if (err instanceof MissingScopeError) {
+        setMissingScope(err.missingScopes);
+      } else if (err instanceof GitHubError) {
+        setError(`GitHub ${err.status}: ${err.message}`);
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Refresh failed — unknown error');
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const onPush = async () => {
     setPushing(true);
@@ -386,6 +580,12 @@ function BranchCard() {
         )}
         {isClean && branch.lastPushedSha && <span className="ml-1 text-success">· up to date</span>}
       </p>
+      {lastPulledAt && (
+        <p className="text-[11px] text-text-dim">
+          Last pulled:{' '}
+          <span className="text-text-primary">{new Date(lastPulledAt).toLocaleString()}</span>
+        </p>
+      )}
 
       {showMessageField && (
         <div className="mt-2">
@@ -414,6 +614,12 @@ function BranchCard() {
           Pushed <code>{justPushedSha.slice(0, 7)}</code>
         </p>
       )}
+      {refreshNotice && !error && (
+        <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-text-muted">
+          <RefreshCw size={11} aria-hidden="true" />
+          {refreshNotice}
+        </p>
+      )}
 
       {branch.openPrUrl && (
         <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-accent">
@@ -440,6 +646,15 @@ function BranchCard() {
         >
           <Upload size={11} />
           {pushing ? 'Pushing…' : 'Push to save'}
+        </button>
+        <button
+          type="button"
+          onClick={() => void onRefresh()}
+          disabled={refreshing}
+          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
+        >
+          <RefreshCw size={11} className={refreshing ? 'animate-spin' : undefined} />
+          {refreshing ? 'Refreshing…' : 'Refresh'}
         </button>
         <button
           type="button"

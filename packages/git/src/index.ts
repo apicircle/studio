@@ -3,6 +3,7 @@ export type {
   CreatedBlob,
   CreatedCommit,
   CreatedTree,
+  FileContents,
   GitCommitSummary,
   GitHubBranch,
   GitHubClientOptions,

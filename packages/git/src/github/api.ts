@@ -90,6 +90,16 @@ export interface PullRequestSummary {
   title: string;
 }
 
+export interface FileContents {
+  /** Raw file bytes decoded from GitHub's base64 transport. */
+  content: string;
+  /** Git blob SHA — used for fast equality checks across pulls. */
+  sha: string;
+  /** Path returned by GitHub (matches what we requested). */
+  path: string;
+  size: number;
+}
+
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 interface CallOptions {
@@ -372,6 +382,47 @@ export class GitHubClient {
   }
 
   /**
+   * Fetch a single file's contents from a branch / commit. Returns
+   * `null` when GitHub answers 404 (file simply doesn't exist on that
+   * ref — the common case for the very first pull). Other failures
+   * surface as the usual typed errors.
+   *
+   * Used by the refresh flow to read remote `workspace.json` so the
+   * 3-way diff can compare it against the local doc.
+   */
+  async getContents(
+    token: string,
+    owner: string,
+    name: string,
+    path: string,
+    ref: string,
+    opts: CallOptions = {},
+  ): Promise<FileContents | null> {
+    const query = `?ref=${encodeURIComponent(ref)}`;
+    try {
+      const { json } = await this.call<RawFileContents>(
+        token,
+        `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/contents/${path
+          .split('/')
+          .map(encodeURIComponent)
+          .join('/')}${query}`,
+        opts,
+      );
+      // GitHub may return an array for directories — we only care about files.
+      if (Array.isArray(json) || json.type !== 'file') {
+        throw new GitHubError(`Path ${path} is not a file`, 422, json);
+      }
+      // GitHub wraps base64 in lines of 60 chars + \n; strip them before decoding.
+      const cleaned = json.content.replace(/\n/g, '');
+      const decoded = decodeBase64Utf8(cleaned);
+      return { content: decoded, sha: json.sha, path: json.path, size: json.size };
+    } catch (err) {
+      if (err instanceof GitHubError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  /**
    * Open a pull request from `head` (the working branch) into `base` (the
    * repo's default branch). PR creation needs the `pull_request` scope on
    * top of `repo`; missing-scope errors flow through MissingScopeError so
@@ -504,6 +555,26 @@ interface RawPullRequest {
   html_url: string;
   state: 'open' | 'closed';
   title: string;
+}
+
+interface RawFileContents {
+  type: string;
+  content: string;
+  sha: string;
+  path: string;
+  size: number;
+  encoding: string;
+}
+
+/**
+ * Decode GitHub's base64 file content as UTF-8. Pure — doesn't depend on
+ * `Buffer` (we run in browsers + jsdom).
+ */
+function decodeBase64Utf8(b64: string): string {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder('utf-8').decode(bytes);
 }
 
 function normalizeRepo(raw: RawRepo): GitHubRepo {

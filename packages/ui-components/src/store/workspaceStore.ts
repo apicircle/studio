@@ -20,8 +20,12 @@ import { generateId } from '@apicircle-v2/shared';
 import {
   type AttachmentResolver,
   type ExecutionResult,
+  type ResolutionMap,
+  type ThreeWayDiff,
+  applyMerge,
   buildScope,
   collectAttachmentSlots,
+  computeThreeWayDiff,
   decryptString,
   encryptString,
   executeRequest as coreExecuteRequest,
@@ -117,6 +121,18 @@ function writeStoredPanel(panel: PanelId): void {
   }
 }
 
+export type RefreshOutcome =
+  | { status: 'no-remote' }
+  | { status: 'up-to-date' }
+  | { status: 'merged' }
+  | { status: 'conflicts'; diff: ThreeWayDiff };
+
+interface PendingRefresh {
+  diff: ThreeWayDiff;
+  remote: WorkspaceSynced;
+  remoteSha: string;
+}
+
 type WorkspaceStore = {
   ready: boolean;
   synced: WorkspaceSynced | null;
@@ -124,6 +140,8 @@ type WorkspaceStore = {
 
   activePanel: PanelId;
   secretVaultOpen: boolean;
+  /** Stashed during refreshWorkspace when conflicts surface; consumed by commitRefresh. */
+  pendingRefresh: PendingRefresh | null;
   // Per-request last-run cache. Not persisted — request runs land in
   // local.history once they complete; this is the live working result for
   // the editor panel.
@@ -292,6 +310,30 @@ type WorkspaceStore = {
     draft?: boolean;
   }) => Promise<{ number: number; htmlUrl: string }>;
 
+  /**
+   * Pull remote `workspace.json` from the working branch and reconcile
+   * it with local via 3-way diff (plan §3.5). Outcomes:
+   *   - 'no-remote': the working branch has no workspace.json yet (the
+   *     first push hasn't happened) → returned as a no-op.
+   *   - 'up-to-date': local + remote agree → only the snapshot/sha is
+   *     refreshed.
+   *   - 'merged': diff was non-empty but had no conflicts; all
+   *     fast-forwards applied and persisted.
+   *   - 'conflicts': diff has conflicts. The pending diff + remote doc
+   *     are stashed in store state for the resolver modal; the caller
+   *     finishes the merge by calling `commitRefresh(resolutions)`.
+   */
+  refreshWorkspace: () => Promise<RefreshOutcome>;
+
+  /**
+   * Apply user-resolved conflicts from the resolver modal. Picks up the
+   * pending diff stashed by `refreshWorkspace`, runs `applyMerge`, and
+   * persists the merged synced doc + updated sync snapshot.
+   */
+  commitRefresh: (resolutions: ResolutionMap) => Promise<void>;
+  /** Drop the pending refresh without applying anything. */
+  cancelRefresh: () => void;
+
   executeActiveRequest: () => Promise<void>;
 };
 
@@ -310,6 +352,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   local: null,
   activePanel: readStoredPanel(),
   secretVaultOpen: false,
+  pendingRefresh: null,
   lastRun: {},
   isExecuting: {},
 
@@ -918,6 +961,70 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     return { commitSha: newCommit.sha };
   },
 
+  refreshWorkspace: async () => {
+    const local = get().local;
+    const synced = get().synced;
+    if (!local || !synced) throw new Error('Workspace not ready');
+    const branch = local.workingBranch;
+    if (!branch) throw new Error('Create a working branch before refreshing');
+
+    const token = await decryptSessionToken(local);
+    const client = new GitHubClient();
+    const file = await client.getContents(
+      token,
+      branch.repoOwner,
+      branch.repoName,
+      'workspace.json',
+      branch.name,
+    );
+    if (file === null) {
+      // Branch has no workspace.json yet — first push hasn't happened.
+      return { status: 'no-remote' };
+    }
+
+    const remote = JSON.parse(file.content) as WorkspaceSynced;
+    const base = local.sync.lastPulledSnapshot;
+    const diff = computeThreeWayDiff(base, synced, remote);
+
+    if (diff.entries.length === 0) {
+      // Local + remote agree — nothing to merge, just refresh the snapshot.
+      const next: WorkspaceLocal = {
+        ...get().local!,
+        sync: {
+          ...local.sync,
+          lastPulledSnapshot: remote,
+          lastPulledSha: file.sha,
+          lastPulledAt: new Date().toISOString(),
+        },
+      };
+      set({ local: next });
+      void saveLocal(next);
+      return { status: 'up-to-date' };
+    }
+
+    if (diff.conflicts.length === 0) {
+      // No conflicts — auto-merge.
+      const merged = applyMerge(synced, remote, diff, {});
+      await persistMerged(set, get, merged, file.sha);
+      return { status: 'merged' };
+    }
+
+    // Conflicts — stash the diff and let the modal drive commitRefresh.
+    set({ pendingRefresh: { diff, remote, remoteSha: file.sha } });
+    return { status: 'conflicts', diff };
+  },
+
+  commitRefresh: async (resolutions) => {
+    const pending = get().pendingRefresh;
+    const synced = get().synced;
+    if (!pending || !synced) throw new Error('No pending refresh to commit');
+    const merged = applyMerge(synced, pending.remote, pending.diff, resolutions);
+    await persistMerged(set, get, merged, pending.remoteSha);
+    set({ pendingRefresh: null });
+  },
+
+  cancelRefresh: () => set({ pendingRefresh: null }),
+
   createPullRequest: async (args) => {
     const local = get().local;
     if (!local) throw new Error('Workspace not ready');
@@ -999,6 +1106,32 @@ type GetState = () => WorkspaceStore;
  * exists or the encrypted payload is missing — both surface in the UI as
  * "no GitHub connection."
  */
+/**
+ * Persist a 3-way-merged synced doc + roll the sync snapshot forward.
+ * Both the synced and local stores are touched in one transactional pair
+ * — the sync snapshot is meaningless if the synced doc can't be saved.
+ */
+async function persistMerged(
+  set: SetState,
+  get: GetState,
+  merged: WorkspaceSynced,
+  remoteSha: string,
+): Promise<void> {
+  const local = get().local;
+  if (!local) return;
+  const nextLocal: WorkspaceLocal = {
+    ...local,
+    sync: {
+      ...local.sync,
+      lastPulledSnapshot: merged,
+      lastPulledSha: remoteSha,
+      lastPulledAt: new Date().toISOString(),
+    },
+  };
+  set({ synced: merged, local: nextLocal });
+  await Promise.all([saveSynced(merged), saveLocal(nextLocal)]);
+}
+
 async function decryptSessionToken(local: WorkspaceLocal): Promise<string> {
   const session = local.sessions.github;
   if (!session) throw new Error('No GitHub session — connect a PAT first');

@@ -137,6 +137,109 @@ test.describe('Push to save (P4.3a)', () => {
   });
 });
 
+test.describe('Refresh + 3-way conflict resolver (P4.5)', () => {
+  test('up-to-date refresh updates the last-pulled timestamp', async ({ app }) => {
+    await setupConnectedBranch(app);
+    // Snapshot the local synced doc so the remote we mock matches it byte-
+    // for-byte (force the up-to-date branch).
+    const localJson = await app.evaluate(async () => {
+      const open = (): Promise<IDBDatabase> =>
+        new Promise((resolve, reject) => {
+          const req = indexedDB.open('apicircle-workspace');
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error ?? new Error('open failed'));
+        });
+      const db = await open();
+      const synced = await new Promise<unknown>((resolve, reject) => {
+        const tx = db.transaction('synced', 'readonly');
+        const r = tx.objectStore('synced').get('current');
+        r.onsuccess = () => resolve(r.result);
+        r.onerror = () => reject(r.error ?? new Error('read failed'));
+      });
+      return JSON.stringify(synced);
+    });
+    const base64 = Buffer.from(localJson, 'utf-8').toString('base64');
+
+    await app.route(
+      'https://api.github.com/repos/me/api/contents/workspace.json**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify({
+            type: 'file',
+            path: 'workspace.json',
+            sha: 'remote-sha-1',
+            size: localJson.length,
+            content: base64,
+            encoding: 'base64',
+          }),
+        });
+      },
+    );
+
+    await app.getByRole('button', { name: /^Refresh$/ }).click();
+    await expect(app.getByText(/Up to date with the remote/)).toBeVisible();
+    await expect(app.getByText(/Last pulled:/)).toBeVisible();
+  });
+
+  test('divergent edits open the resolver, picking remote applies the merge', async ({ app }) => {
+    await setupConnectedBranch(app);
+    // Local renames the workspace; remote.json has a different name → conflict.
+    await app.getByLabel('Workspace name').fill('Mine');
+
+    const remoteSynced = await app.evaluate(async () => {
+      const open = (): Promise<IDBDatabase> =>
+        new Promise((resolve, reject) => {
+          const req = indexedDB.open('apicircle-workspace');
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error ?? new Error('open failed'));
+        });
+      const db = await open();
+      const synced = (await new Promise<Record<string, unknown>>((resolve, reject) => {
+        const tx = db.transaction('synced', 'readonly');
+        const r = tx.objectStore('synced').get('current');
+        r.onsuccess = () => resolve(r.result as Record<string, unknown>);
+        r.onerror = () => reject(r.error ?? new Error('read failed'));
+      })) as Record<string, unknown>;
+      // Override workspaceName on the remote-shaped doc.
+      return JSON.stringify({ ...synced, workspaceName: 'Theirs' });
+    });
+    const base64 = Buffer.from(remoteSynced, 'utf-8').toString('base64');
+
+    await app.route(
+      'https://api.github.com/repos/me/api/contents/workspace.json**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify({
+            type: 'file',
+            path: 'workspace.json',
+            sha: 'remote-sha-2',
+            size: remoteSynced.length,
+            content: base64,
+            encoding: 'base64',
+          }),
+        });
+      },
+    );
+
+    await app.getByRole('button', { name: /^Refresh$/ }).click();
+    // Conflict resolver opens.
+    await expect(app.getByRole('dialog', { name: /Resolve conflicts/ })).toBeVisible();
+    // Pick the remote side for the workspaceName conflict.
+    await app
+      .getByRole('button', { name: /Theirs.*Theirs/s })
+      .first()
+      .click();
+    await app.getByRole('button', { name: /Apply merge/ }).click();
+
+    // After merge the workspace name input shows 'Theirs'.
+    await expect(app.getByLabel('Workspace name')).toHaveValue('Theirs');
+  });
+});
+
 test.describe('Create PR (P4.4)', () => {
   test('happy-path: open PR after push, link surfaces on the branch card', async ({ app }) => {
     await setupConnectedBranch(app);
