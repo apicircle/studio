@@ -47,6 +47,7 @@ export function EnvironmentsPanel() {
           When a request references <code>{'{{NAME}}'}</code>, the resolver walks{' '}
           <span className="text-text-primary">context vars</span> →{' '}
           <span className="text-text-primary">active env</span> → this list. First match wins.
+          Plan-level priority overrides this list during plan runs.
         </p>
         <ul role="list" aria-label="Priority order" className="flex flex-col gap-1">
           {priorityOrder.map((name, i) => (

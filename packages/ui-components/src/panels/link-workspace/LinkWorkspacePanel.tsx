@@ -520,6 +520,7 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
               setPendingPin(v === '__unpinned__' ? null : v);
             }}
             disabled={sortedVersions.length === 0}
+            title="Switching versions opens a confirm dialog. Updates require explicit confirmation."
             className="h-7 rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none disabled:opacity-50"
           >
             <option value="__unpinned__">Unpinned (track latest)</option>

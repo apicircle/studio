@@ -87,6 +87,7 @@ export function EditorPanel() {
             type="button"
             onClick={() => void executeActiveRequest()}
             disabled={isExecuting}
+            title="Sends with the active environment + secrets resolved (Ctrl/Cmd+Enter)."
             className="inline-flex h-9 items-center gap-2 rounded-sm border border-accent/40 bg-accent/15 px-4 text-xs font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
           >
             <Send size={14} />

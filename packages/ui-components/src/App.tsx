@@ -6,6 +6,7 @@ import { Sidebar } from './layout/Sidebar';
 import { PanelContent } from './layout/PanelContent';
 import { SecretVaultModal } from './layout/SecretVaultModal';
 import { MissingScopeGate } from './layout/MissingScopeGate';
+import { KeyboardShortcuts } from './layout/KeyboardShortcuts';
 
 export function App() {
   const ready = useWorkspaceStore((s) => s.ready);
@@ -33,6 +34,7 @@ export function App() {
       </div>
       <SecretVaultModal />
       <MissingScopeGate />
+      <KeyboardShortcuts />
     </div>
   );
 }

@@ -968,6 +968,7 @@ function BranchCard() {
           type="button"
           onClick={() => void onRefresh()}
           disabled={refreshing}
+          title="Pulls the working branch and reconciles changes. Conflicts open the resolver."
           className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
         >
           <RefreshCw size={11} className={refreshing ? 'animate-spin' : undefined} />
@@ -977,6 +978,7 @@ function BranchCard() {
           type="button"
           onClick={() => void onSyncAttachments()}
           disabled={syncing}
+          title="Downloads any attachment blobs referenced by workspace.json that aren't yet in your local IDB."
           className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
         >
           <Download size={11} className={syncing ? 'animate-spin' : undefined} />

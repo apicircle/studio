@@ -87,6 +87,12 @@ export function FormDataEditor({ request }: FormDataEditorProps) {
           Add file
         </button>
       </div>
+      {rows.some((r) => r.kind === 'file') && (
+        <p className="mt-1 text-[11px] text-text-dim">
+          Files are stored locally and pushed to <code>.apicircle/attachments/</code> on save.
+          Refused above 100 MB.
+        </p>
+      )}
     </div>
   );
 }
