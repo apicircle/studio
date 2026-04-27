@@ -59,6 +59,13 @@ import {
   setPriorityOrder as setPriorityOrderAction,
   setVariables as setVariablesAction,
 } from './envActions';
+import {
+  addSecretEntry as addSecretEntryAction,
+  removeSecretEntry as removeSecretEntryAction,
+  renameSecretEntry as renameSecretEntryAction,
+} from './secretActions';
+import { recomputeUsedIn } from './usedInAggregator';
+import { deleteSecretPayload, getSecretPayload, putSecretPayload } from '../persistence/secrets';
 
 const attachmentResolver: AttachmentResolver = async (slotId) => {
   const record = await getAttachment(slotId);
@@ -167,6 +174,33 @@ type WorkspaceStore = {
     value: string,
     encrypted: boolean,
   ) => Promise<void>;
+
+  // Secret Vault
+  /**
+   * Create a Secret Vault entry. The plaintext is encrypted under the local
+   * master key and persisted in the secrets IDB; the index entry (label,
+   * origin, usedIn) lives in `WorkspaceLocal.secretIndex`. Resolves to the
+   * generated secret id.
+   */
+  addSecret: (args: {
+    label: string;
+    value: string;
+    origin?: 'workspace' | 'linked';
+    linkedWorkspaceId?: string;
+    linkedKeyId?: string;
+  }) => Promise<string>;
+  /**
+   * Replace the encrypted value for an existing secret. Returns true on
+   * success, false when the id is unknown.
+   */
+  setSecretValue: (id: string, value: string) => Promise<boolean>;
+  /** Decrypt and return the plaintext value of a vault secret. */
+  decryptSecret: (id: string) => Promise<string | null>;
+  renameSecret: (id: string, label: string) => void;
+  /** Remove the secret index entry and its encrypted payload. */
+  removeSecret: (id: string) => Promise<void>;
+  /** Force-recompute the `usedIn` index for every secret. */
+  recomputeSecretUsage: () => void;
 
   executeActiveRequest: () => Promise<void>;
 };
@@ -422,6 +456,83 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     commitSynced(set, get, (s) => setVariablesAction(s, envName, nextVars));
   },
 
+  // --- Secret Vault ------------------------------------------------------
+
+  addSecret: async ({ label, value, origin, linkedWorkspaceId, linkedKeyId }) => {
+    const local = get().local;
+    if (!local) return '';
+    const id = generateId();
+    const key = await getMasterKey();
+    const payload = await encryptString(value, key);
+    await putSecretPayload(id, payload);
+    const next = addSecretEntryAction(local, {
+      id,
+      label,
+      origin,
+      linkedWorkspaceId,
+      linkedKeyId,
+    });
+    if (next === local) {
+      // Reducer rejected (duplicate / empty label) — clean up the orphan blob.
+      await deleteSecretPayload(id);
+      return '';
+    }
+    set({ local: next });
+    void saveLocal(next);
+    get().recomputeSecretUsage();
+    return id;
+  },
+
+  setSecretValue: async (id, value) => {
+    const local = get().local;
+    if (!local || !local.secretIndex.entries[id]) return false;
+    const key = await getMasterKey();
+    const payload = await encryptString(value, key);
+    await putSecretPayload(id, payload);
+    return true;
+  },
+
+  decryptSecret: async (id) => {
+    const local = get().local;
+    if (!local || !local.secretIndex.entries[id]) return null;
+    const payload = await getSecretPayload(id);
+    if (!payload) return null;
+    try {
+      const key = await getMasterKey();
+      return await decryptString(payload, key);
+    } catch {
+      return null;
+    }
+  },
+
+  renameSecret: (id, label) => {
+    const local = get().local;
+    if (!local) return;
+    const next = renameSecretEntryAction(local, id, label);
+    if (next === local) return;
+    set({ local: next });
+    void saveLocal(next);
+  },
+
+  removeSecret: async (id) => {
+    const local = get().local;
+    if (!local || !local.secretIndex.entries[id]) return;
+    await deleteSecretPayload(id);
+    const next = removeSecretEntryAction(local, id);
+    set({ local: next });
+    void saveLocal(next);
+  },
+
+  recomputeSecretUsage: () => {
+    const synced = get().synced;
+    const local = get().local;
+    if (!synced || !local) return;
+    const next = recomputeUsedIn(synced, local);
+    if (next === local) return;
+    set({ local: next });
+    void saveLocal(next);
+  },
+
   executeActiveRequest: async () => {
     const state = get();
     const id = state.local?.ui.activeRequestId;
@@ -432,7 +543,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
     set((s) => ({ isExecuting: { ...s.isExecuting, [id]: true } }));
     try {
-      const resolved = await resolveRequest(request, synced);
+      const resolved = await resolveRequest(request, synced, get().local);
       const result = await coreExecuteRequest(resolved, {
         resolveAttachment: attachmentResolver,
       });
@@ -480,6 +591,17 @@ function commitSynced(
   if (next === synced) return;
   set({ synced: next });
   void saveSynced(next);
+  // Refresh the secret usedIn map whenever synced state moves; aggregator
+  // is O(refs × secrets) and a no-op when nothing the secrets reference
+  // changed, so this is cheap to do unconditionally.
+  const local = get().local;
+  if (local && Object.keys(local.secretIndex.entries).length > 0) {
+    const updatedLocal = recomputeUsedIn(next, local);
+    if (updatedLocal !== local) {
+      set({ local: updatedLocal });
+      void saveLocal(updatedLocal);
+    }
+  }
 }
 
 /**
@@ -492,8 +614,13 @@ function commitSynced(
  * key is fetched once, decryption runs in parallel for the variables that
  * need it, and the resulting plaintext-only env map feeds the resolver.
  */
-async function resolveRequest(request: ApiRequest, synced: WorkspaceSynced): Promise<ApiRequest> {
+async function resolveRequest(
+  request: ApiRequest,
+  synced: WorkspaceSynced,
+  local: WorkspaceLocal | null,
+): Promise<ApiRequest> {
   const envs = await decryptEnvironments(synced.environments.items);
+  const secrets = local ? await decryptVaultSecrets(local) : {};
 
   const contextVars = request.contextVars;
   const scope = buildScope({
@@ -501,6 +628,7 @@ async function resolveRequest(request: ApiRequest, synced: WorkspaceSynced): Pro
     environments: envs,
     activeEnvName: synced.environments.activeName,
     priorityOrder: synced.environments.priorityOrder,
+    secrets,
   });
 
   const url = resolveString(request.url, scope).value;
@@ -549,6 +677,31 @@ async function resolveRequest(request: ApiRequest, synced: WorkspaceSynced): Pro
  * verbatim. Decryption failures fall back to the ciphertext literal so the
  * user can see something went wrong rather than silently sending garbage.
  */
+/**
+ * Decrypt every Secret Vault entry into a flat label → plaintext map. The
+ * resolver scope's `secrets` layer reads from this. Decryption failures
+ * (lost master key, tampered ciphertext) drop the entry — the resolver
+ * falls back to leaving the placeholder verbatim, which surfaces the
+ * problem to the user rather than silently sending an empty value.
+ */
+async function decryptVaultSecrets(local: WorkspaceLocal): Promise<Record<string, string>> {
+  const ids = Object.keys(local.secretIndex.entries);
+  if (ids.length === 0) return {};
+  const key = await getMasterKey();
+  const out: Record<string, string> = {};
+  for (const id of ids) {
+    const entry = local.secretIndex.entries[id];
+    const payload = await getSecretPayload(id);
+    if (!payload) continue;
+    try {
+      out[entry.label] = await decryptString(payload, key);
+    } catch {
+      // skip on decrypt failure
+    }
+  }
+  return out;
+}
+
 async function decryptEnvironments(
   items: Record<string, Environment>,
 ): Promise<Record<string, Record<string, string>>> {
