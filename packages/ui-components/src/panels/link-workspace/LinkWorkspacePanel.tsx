@@ -1,5 +1,17 @@
 import { useMemo, useState } from 'react';
-import { GitBranch, Key, Link2, Package, Plus, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
+import {
+  GitBranch,
+  Globe,
+  Key,
+  Link2,
+  Package,
+  Plus,
+  RefreshCw,
+  Search,
+  ShieldAlert,
+  Star,
+  Trash2,
+} from 'lucide-react';
 import { GitHubError, MissingScopeError } from '@apicircle-v2/git';
 import { sortVersionsDesc } from '@apicircle-v2/core';
 import type { LinkedWorkspace } from '@apicircle-v2/shared';
@@ -32,7 +44,10 @@ export function LinkWorkspacePanel() {
         <NoSessionCard />
       ) : (
         <>
-          <LinkPrivateForm />
+          <div className="flex flex-wrap gap-2">
+            <LinkPrivateForm />
+            <MarketplaceSearchForm />
+          </div>
           {linkArray.length > 0 && (
             <section className="space-y-3">
               <h2 className="text-xs font-medium uppercase tracking-wider text-text-dim">
@@ -75,7 +90,7 @@ function NoSessionCard() {
 function LinkPrivateForm() {
   const [open, setOpen] = useState(false);
   return (
-    <div className="max-w-2xl">
+    <>
       <button
         type="button"
         onClick={() => setOpen(true)}
@@ -85,7 +100,198 @@ function LinkPrivateForm() {
         Link a private workspace
       </button>
       <LinkPrivateModal open={open} onClose={() => setOpen(false)} />
-    </div>
+    </>
+  );
+}
+
+function MarketplaceSearchForm() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex h-8 items-center gap-2 rounded-sm border border-border bg-card px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary"
+      >
+        <Globe size={13} />
+        Search marketplace
+      </button>
+      <MarketplaceSearchModal open={open} onClose={() => setOpen(false)} />
+    </>
+  );
+}
+
+function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const searchMarketplace = useWorkspaceStore((s) => s.searchMarketplace);
+  const linkPublicWorkspace = useWorkspaceStore((s) => s.linkPublicWorkspace);
+
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<
+    Array<{
+      fullName: string;
+      owner: string;
+      name: string;
+      description: string;
+      topics: string[];
+      stargazers: number;
+      defaultBranch: string;
+    }>
+  >([]);
+  const [searching, setSearching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [linking, setLinking] = useState<string | null>(null);
+  const [confirmTarget, setConfirmTarget] = useState<(typeof results)[number] | null>(null);
+
+  const onSearch = async () => {
+    if (!query.trim()) return;
+    setSearching(true);
+    setError(null);
+    try {
+      const items = await searchMarketplace(query);
+      setResults(items);
+    } catch (err) {
+      if (err instanceof MissingScopeError) {
+        setError(`Token missing scope(s): ${err.missingScopes.join(', ')}`);
+      } else if (err instanceof GitHubError) {
+        setError(`GitHub ${err.status}: ${err.message}`);
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Search failed');
+      }
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const onConfirmLink = async () => {
+    if (!confirmTarget) return;
+    setLinking(confirmTarget.fullName);
+    try {
+      await linkPublicWorkspace({
+        repoFullName: confirmTarget.fullName,
+        branch: confirmTarget.defaultBranch,
+        marketplace: {
+          listedAs: confirmTarget.fullName,
+          tags: confirmTarget.topics,
+          summary: confirmTarget.description,
+        },
+      });
+      setConfirmTarget(null);
+      onClose();
+      setQuery('');
+      setResults([]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Link failed');
+    } finally {
+      setLinking(null);
+    }
+  };
+
+  return (
+    <>
+      <Modal open={open} onClose={onClose} title="Search marketplace" className="max-w-2xl">
+        <div className="space-y-3">
+          <p className="text-[11px] text-text-dim">
+            Searches public GitHub repos tagged <code>topic:apicircle-marketplace</code>. Linking
+            uses the repo&apos;s default branch.
+          </p>
+          <div className="flex gap-2">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="payments, weather, …"
+              aria-label="Marketplace query"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void onSearch();
+              }}
+              className="h-8 flex-1 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => void onSearch()}
+              disabled={searching || !query.trim()}
+              className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+            >
+              <Search size={11} />
+              {searching ? 'Searching…' : 'Search'}
+            </button>
+          </div>
+          {error && (
+            <p className="text-xs text-danger" role="alert">
+              {error}
+            </p>
+          )}
+          {results.length > 0 && (
+            <ul className="max-h-96 space-y-1.5 overflow-y-auto">
+              {results.map((repo) => (
+                <li key={repo.fullName} className="rounded-sm border border-border bg-surface p-2">
+                  <div className="flex items-center gap-2">
+                    <code className="text-xs text-text-primary">{repo.fullName}</code>
+                    <span className="inline-flex items-center gap-1 text-[10px] text-text-dim">
+                      <Star size={9} aria-hidden="true" />
+                      {repo.stargazers}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmTarget(repo)}
+                      disabled={linking !== null}
+                      className="ml-auto inline-flex h-6 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[10px] text-accent hover:bg-accent/20 disabled:opacity-50"
+                    >
+                      <Link2 size={10} />
+                      Link
+                    </button>
+                  </div>
+                  {repo.description && (
+                    <p className="mt-1 text-[11px] text-text-muted">{repo.description}</p>
+                  )}
+                  {repo.topics.length > 0 && (
+                    <p className="mt-1 flex flex-wrap gap-1 text-[10px] text-text-dim">
+                      {repo.topics.map((t) => (
+                        <span
+                          key={t}
+                          className="rounded-sm border border-border bg-card px-1.5 py-0.5 text-text-muted"
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {!searching && results.length === 0 && query && !error && (
+            <p className="text-[11px] text-text-dim">No results.</p>
+          )}
+          <div className="flex justify-end pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={confirmTarget !== null}
+        title={`Link ${confirmTarget?.fullName ?? ''}?`}
+        confirmLabel="Link"
+        description={
+          <p>
+            About to link <code>{confirmTarget?.fullName}</code>@
+            <code>{confirmTarget?.defaultBranch}</code> as a <strong>public</strong> workspace.
+            Defaults to the source&apos;s currentVersion; you can pin to a specific version after
+            linking.
+          </p>
+        }
+        onCancel={() => setConfirmTarget(null)}
+        onConfirm={onConfirmLink}
+      />
+    </>
   );
 }
 

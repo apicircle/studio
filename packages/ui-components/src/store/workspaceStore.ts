@@ -371,6 +371,34 @@ type WorkspaceStore = {
   }) => Promise<LinkedWorkspace>;
 
   /**
+   * Same fetch flow as `linkPrivateWorkspace` but tags the result as
+   * `kind: 'public'`. Used by the marketplace "Link to workspace"
+   * action — the source workspace is publicly readable on GitHub.
+   */
+  linkPublicWorkspace: (args: {
+    repoFullName: string;
+    branch: string;
+    pinnedVersion?: string | null;
+    marketplace?: { listedAs: string; tags: string[]; summary: string };
+  }) => Promise<LinkedWorkspace>;
+
+  /**
+   * Search GitHub for repos tagged `topic:apicircle-marketplace` plus
+   * the user-supplied query. Returns at most 30 results.
+   */
+  searchMarketplace: (query: string) => Promise<
+    Array<{
+      fullName: string;
+      owner: string;
+      name: string;
+      description: string;
+      topics: string[];
+      stargazers: number;
+      defaultBranch: string;
+    }>
+  >;
+
+  /**
    * Re-fetch the linked workspace's `workspace.json` and refresh the
    * cached release ledger in `releases.perLink[id]`. Throws when the
    * link is unknown.
@@ -1050,55 +1078,16 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     commitSynced(set, get, (s) => yankReleaseAction(s, version));
   },
 
-  linkPrivateWorkspace: async ({ repoFullName, branch, pinnedVersion }) => {
-    const local = get().local;
-    const synced = get().synced;
-    if (!local || !synced) throw new Error('Workspace not ready');
-    const trimmedRepo = repoFullName.trim();
-    const trimmedBranch = branch.trim() || 'main';
-    if (!trimmedRepo.includes('/')) {
-      throw new Error('Repo must be `owner/name`');
-    }
-    const [owner, name] = trimmedRepo.split('/', 2);
+  linkPrivateWorkspace: async (args) => doLinkWorkspace(set, get, { ...args, kind: 'private' }),
 
+  linkPublicWorkspace: async (args) => doLinkWorkspace(set, get, { ...args, kind: 'public' }),
+
+  searchMarketplace: async (query) => {
+    const local = get().local;
+    if (!local) throw new Error('Workspace not ready');
     const token = await decryptSessionToken(local);
     const client = new GitHubClient();
-    const file = await client.getContents(token, owner, name, 'workspace.json', trimmedBranch);
-    if (file === null) {
-      throw new Error(`workspace.json not found on ${trimmedRepo}@${trimmedBranch}`);
-    }
-    const parsed = parseLinkedWorkspaceJson(file.content);
-
-    const id = generateId();
-    const link: LinkedWorkspace = {
-      id,
-      kind: 'private',
-      name: parsed.workspaceName,
-      source: { provider: 'github', repoFullName: trimmedRepo, branch: trimmedBranch },
-      scope: ['collections', 'environments'],
-      pinnedVersion: pinnedVersion ?? parsed.releases?.self?.currentVersion ?? null,
-      updatePolicy: 'manual',
-      linkedAt: new Date().toISOString(),
-      requiredSecretKeyIds: [],
-    };
-
-    const cachedLedger: ReleaseHistory = parsed.releases?.self ?? {
-      versions: [],
-      currentVersion: null,
-    };
-
-    const next: WorkspaceSynced = {
-      ...synced,
-      linkedWorkspaces: { ...synced.linkedWorkspaces, [id]: link },
-      releases: {
-        ...synced.releases,
-        perLink: { ...synced.releases.perLink, [id]: cachedLedger },
-      },
-      meta: { ...synced.meta, updatedAt: link.linkedAt },
-    };
-    set({ synced: next });
-    void saveSynced(next);
-    return link;
+    return client.searchMarketplaceRepos(token, query);
   },
 
   refreshLinkedWorkspace: async (id) => {
@@ -1415,6 +1404,74 @@ async function persistMerged(
   };
   set({ synced: merged, local: nextLocal });
   await Promise.all([saveSynced(merged), saveLocal(nextLocal)]);
+}
+
+/**
+ * Shared link flow used by both `linkPrivateWorkspace` and
+ * `linkPublicWorkspace`. Fetches the source's workspace.json, parses
+ * it, builds the LinkedWorkspace entry, caches the source ledger, and
+ * persists. Splitting this out keeps the action signatures clean while
+ * the only difference between the two is `kind` + the optional
+ * marketplace metadata.
+ */
+async function doLinkWorkspace(
+  set: SetState,
+  get: GetState,
+  args: {
+    repoFullName: string;
+    branch: string;
+    pinnedVersion?: string | null;
+    kind: 'private' | 'public';
+    marketplace?: { listedAs: string; tags: string[]; summary: string };
+  },
+): Promise<LinkedWorkspace> {
+  const local = get().local;
+  const synced = get().synced;
+  if (!local || !synced) throw new Error('Workspace not ready');
+  const trimmedRepo = args.repoFullName.trim();
+  const trimmedBranch = args.branch.trim() || 'main';
+  if (!trimmedRepo.includes('/')) {
+    throw new Error('Repo must be `owner/name`');
+  }
+  const [owner, name] = trimmedRepo.split('/', 2);
+
+  const token = await decryptSessionToken(local);
+  const client = new GitHubClient();
+  const file = await client.getContents(token, owner, name, 'workspace.json', trimmedBranch);
+  if (file === null) {
+    throw new Error(`workspace.json not found on ${trimmedRepo}@${trimmedBranch}`);
+  }
+  const parsed = parseLinkedWorkspaceJson(file.content);
+
+  const id = generateId();
+  const link: LinkedWorkspace = {
+    id,
+    kind: args.kind,
+    name: parsed.workspaceName,
+    source: { provider: 'github', repoFullName: trimmedRepo, branch: trimmedBranch },
+    scope: ['collections', 'environments'],
+    pinnedVersion: args.pinnedVersion ?? parsed.releases?.self?.currentVersion ?? null,
+    updatePolicy: 'manual',
+    linkedAt: new Date().toISOString(),
+    requiredSecretKeyIds: [],
+    ...(args.marketplace ? { marketplace: args.marketplace } : {}),
+  };
+  const cachedLedger: ReleaseHistory = parsed.releases?.self ?? {
+    versions: [],
+    currentVersion: null,
+  };
+  const next: WorkspaceSynced = {
+    ...synced,
+    linkedWorkspaces: { ...synced.linkedWorkspaces, [id]: link },
+    releases: {
+      ...synced.releases,
+      perLink: { ...synced.releases.perLink, [id]: cachedLedger },
+    },
+    meta: { ...synced.meta, updatedAt: link.linkedAt },
+  };
+  set({ synced: next });
+  void saveSynced(next);
+  return link;
 }
 
 /**

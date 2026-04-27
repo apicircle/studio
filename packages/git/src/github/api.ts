@@ -90,6 +90,16 @@ export interface PullRequestSummary {
   title: string;
 }
 
+export interface MarketplaceRepo {
+  fullName: string;
+  owner: string;
+  name: string;
+  description: string;
+  topics: string[];
+  stargazers: number;
+  defaultBranch: string;
+}
+
 export interface FileContents {
   /** Raw file bytes decoded from GitHub's base64 transport. */
   content: string;
@@ -382,6 +392,24 @@ export class GitHubClient {
   }
 
   /**
+   * Search GitHub for repos in the public marketplace. Per plan §5.4 we
+   * append `topic:apicircle-marketplace` to the user-supplied query, so
+   * only repos that opt into the topic surface in results. Top 30 by
+   * default sort (best match).
+   */
+  async searchMarketplaceRepos(
+    token: string,
+    query: string,
+    opts: CallOptions = {},
+  ): Promise<MarketplaceRepo[]> {
+    const fullQuery = `${query.trim()} topic:apicircle-marketplace`.trim();
+    const path = `/search/repositories?q=${encodeURIComponent(fullQuery)}&per_page=30`;
+    const { json } = await this.call<{ items?: RawSearchRepo[] }>(token, path, opts);
+    const items = json.items ?? [];
+    return items.map(normalizeMarketplaceRepo);
+  }
+
+  /**
    * Fetch a single file's contents from a branch / commit. Returns
    * `null` when GitHub answers 404 (file simply doesn't exist on that
    * ref — the common case for the very first pull). Other failures
@@ -555,6 +583,28 @@ interface RawPullRequest {
   html_url: string;
   state: 'open' | 'closed';
   title: string;
+}
+
+interface RawSearchRepo {
+  full_name: string;
+  name: string;
+  owner: { login: string };
+  description?: string | null;
+  topics?: string[];
+  stargazers_count?: number;
+  default_branch?: string;
+}
+
+function normalizeMarketplaceRepo(raw: RawSearchRepo): MarketplaceRepo {
+  return {
+    fullName: raw.full_name,
+    owner: raw.owner.login,
+    name: raw.name,
+    description: raw.description ?? '',
+    topics: raw.topics ?? [],
+    stargazers: raw.stargazers_count ?? 0,
+    defaultBranch: raw.default_branch ?? 'main',
+  };
 }
 
 interface RawFileContents {

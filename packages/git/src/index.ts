@@ -10,6 +10,7 @@ export type {
   GitHubRepo,
   GitHubViewer,
   GitRef,
+  MarketplaceRepo,
   PullRequestSummary,
   ScopeInfo,
   TreeEntryInput,

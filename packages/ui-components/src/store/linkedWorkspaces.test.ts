@@ -308,6 +308,78 @@ describe('workspaceStore required secret keys', () => {
   });
 });
 
+describe('workspaceStore marketplace flow', () => {
+  beforeEach(async () => {
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrate();
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('searchMarketplace forwards the query and returns normalized repos', async () => {
+    await setupSession();
+    vi.stubGlobal(
+      'fetch',
+      queuedFetch([
+        {
+          body: {
+            items: [
+              {
+                full_name: 'org/payments-api',
+                name: 'payments-api',
+                owner: { login: 'org' },
+                description: 'desc',
+                topics: ['apicircle-marketplace'],
+                stargazers_count: 5,
+                default_branch: 'main',
+              },
+            ],
+          },
+        },
+      ]),
+    );
+    const results = await useWorkspaceStore.getState().searchMarketplace('payments');
+    expect(results).toHaveLength(1);
+    expect(results[0].fullName).toBe('org/payments-api');
+    expect(results[0].topics).toContain('apicircle-marketplace');
+  });
+
+  it('linkPublicWorkspace persists with kind=public + marketplace metadata', async () => {
+    await setupSession();
+    const remoteJson = JSON.stringify({
+      workspaceName: 'Public API',
+      releases: {
+        self: {
+          versions: [
+            {
+              version: '2.0.0',
+              publishedAt: 't',
+              notes: '',
+              workspaceSnapshot: 'a'.repeat(64),
+              deprecated: false,
+              yanked: false,
+            },
+          ],
+          currentVersion: '2.0.0',
+        },
+      },
+    });
+    vi.stubGlobal('fetch', queuedFetch([fileContents(remoteJson)]));
+    const link = await useWorkspaceStore.getState().linkPublicWorkspace({
+      repoFullName: 'org/public-api',
+      branch: 'main',
+      marketplace: {
+        listedAs: 'Public API',
+        tags: ['apicircle-marketplace', 'rest'],
+        summary: 'Public API workspace',
+      },
+    });
+    expect(link.kind).toBe('public');
+    expect(link.marketplace?.listedAs).toBe('Public API');
+    expect(link.pinnedVersion).toBe('2.0.0');
+  });
+});
+
 describe('workspaceStore.pinLinkedVersion', () => {
   beforeEach(async () => {
     await act(async () => {

@@ -204,6 +204,72 @@ test.describe('Link Workspace (P5.2)', () => {
     await expect(app.getByText(/No required keys declared/)).toBeVisible();
   });
 
+  test('marketplace search → link a public workspace', async ({ app }) => {
+    await setupSession(app);
+    // Mock the search endpoint.
+    await app.route('https://api.github.com/search/repositories**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'application/json', ...corsHeaders },
+        body: JSON.stringify({
+          items: [
+            {
+              full_name: 'org/payments-api',
+              name: 'payments-api',
+              owner: { login: 'org' },
+              description: 'Payments REST collection',
+              topics: ['apicircle-marketplace', 'payments'],
+              stargazers_count: 42,
+              default_branch: 'main',
+            },
+          ],
+        }),
+      });
+    });
+    // Mock the contents fetch for linking.
+    const remoteJson = JSON.stringify({
+      workspaceName: 'Payments API',
+      releases: { self: { versions: [], currentVersion: null } },
+    });
+    const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
+    await app.route(
+      'https://api.github.com/repos/org/payments-api/contents/workspace.json**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify({
+            type: 'file',
+            path: 'workspace.json',
+            sha: 's',
+            size: remoteJson.length,
+            content: base64,
+            encoding: 'base64',
+          }),
+        });
+      },
+    );
+
+    await app.getByRole('button', { name: /Link Workspace/ }).click();
+    await app.getByRole('button', { name: /Search marketplace/ }).click();
+    await app.getByLabel('Marketplace query').fill('payments');
+    await app.getByRole('button', { name: /^Search$/ }).click();
+    await expect(app.getByText('Payments REST collection')).toBeVisible();
+
+    await app
+      .getByRole('button', { name: /^Link$/ })
+      .first()
+      .click();
+    const dialog = app.getByRole('dialog', { name: /Link org\/payments-api/ });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Link', exact: true }).click();
+
+    // After link, the modal closes and the card shows in the list with the
+    // public-kind badge.
+    await expect(app.getByText('Payments API')).toBeVisible();
+    await expect(app.getByText('public', { exact: true }).first()).toBeVisible();
+  });
+
   test('unlink removes the card', async ({ app }) => {
     await setupSession(app);
     const remoteJson = JSON.stringify({ workspaceName: 'X', releases: { self: null } });

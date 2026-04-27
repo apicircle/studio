@@ -466,6 +466,71 @@ describe('GitHubClient.createCommit', () => {
   });
 });
 
+describe('GitHubClient.searchMarketplaceRepos', () => {
+  it('appends `topic:apicircle-marketplace` to the user query', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () => jsonResponse({ items: [] }));
+    const client = new GitHubClient({ fetchImpl });
+    await client.searchMarketplaceRepos('tok', 'payments');
+    const url = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).toBe(
+      'https://api.github.com/search/repositories?q=payments%20topic%3Aapicircle-marketplace&per_page=30',
+    );
+  });
+
+  it('normalizes the results into MarketplaceRepo[] with safe defaults', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({
+        items: [
+          {
+            full_name: 'org/payments-api',
+            name: 'payments-api',
+            owner: { login: 'org' },
+            description: 'Payments REST collection',
+            topics: ['apicircle-marketplace', 'payments'],
+            stargazers_count: 42,
+            default_branch: 'main',
+          },
+          {
+            full_name: 'me/widgets',
+            name: 'widgets',
+            owner: { login: 'me' },
+            // description, topics, stargazers omitted intentionally.
+          },
+        ],
+      }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const repos = await client.searchMarketplaceRepos('tok', 'payments');
+    expect(repos).toEqual([
+      {
+        fullName: 'org/payments-api',
+        owner: 'org',
+        name: 'payments-api',
+        description: 'Payments REST collection',
+        topics: ['apicircle-marketplace', 'payments'],
+        stargazers: 42,
+        defaultBranch: 'main',
+      },
+      {
+        fullName: 'me/widgets',
+        owner: 'me',
+        name: 'widgets',
+        description: '',
+        topics: [],
+        stargazers: 0,
+        defaultBranch: 'main',
+      },
+    ]);
+  });
+
+  it('returns [] when GitHub omits the items array', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () => jsonResponse({}));
+    const client = new GitHubClient({ fetchImpl });
+    const repos = await client.searchMarketplaceRepos('tok', 'x');
+    expect(repos).toEqual([]);
+  });
+});
+
 describe('GitHubClient.getContents', () => {
   it('decodes base64 content as UTF-8 and returns the path/sha/size', async () => {
     const fetchImpl: typeof fetch = vi.fn(async () =>
