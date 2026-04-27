@@ -1,0 +1,33 @@
+{
+  "name": "studio-v2",
+  "version": "0.1.0",
+  "private": true,
+  "description": "API Circle Studio v2 — Tailwind rebuild with two-document workspace schema",
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "turbo dev",
+    "dev:web": "turbo dev --filter=@apicircle-v2/web",
+    "build": "turbo build",
+    "test": "turbo test",
+    "check": "turbo check",
+    "lint": "turbo lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "clean": "turbo clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "prettier": "^3.2.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "jsdom": "^25.0.1"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}
