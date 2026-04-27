@@ -137,6 +137,14 @@ test.describe('Push to save (P4.3a)', () => {
   });
 });
 
+test.describe('Sync attachments (P4.6b)', () => {
+  test('Sync attachments button reports counts when no slots are referenced', async ({ app }) => {
+    await setupConnectedBranch(app);
+    await app.getByRole('button', { name: /Sync attachments/ }).click();
+    await expect(app.getByText(/No attachments referenced/)).toBeVisible();
+  });
+});
+
 test.describe('Refresh + 3-way conflict resolver (P4.5)', () => {
   test('up-to-date refresh updates the last-pulled timestamp', async ({ app }) => {
     await setupConnectedBranch(app);
@@ -265,6 +273,37 @@ test.describe('Create PR (P4.4)', () => {
     // The branch card surfaces the open PR link.
     await expect(app.getByText('PR open:')).toBeVisible();
     await expect(app.getByRole('link', { name: /me\/api\/pull\/7/ })).toBeVisible();
+  });
+
+  test('push that 403s with missing scope routes through the global gate', async ({ app }) => {
+    await setupConnectedBranch(app);
+    // First call (getRef) fails with 403 + missing `repo` to simulate the
+    // user's token being downgraded between connect and push.
+    await app.route(
+      'https://api.github.com/repos/me/api/git/refs/heads/apicircle%2Fwb-test',
+      async (route) => {
+        if (route.request().method() === 'GET') {
+          await route.fulfill({
+            status: 403,
+            headers: {
+              'content-type': 'application/json',
+              ...corsHeaders,
+              'x-oauth-scopes': 'public_repo',
+              'x-accepted-oauth-scopes': 'repo',
+            },
+            body: JSON.stringify({ message: 'Resource not accessible by personal access token' }),
+          });
+          return;
+        }
+        await route.fallback();
+      },
+    );
+
+    await app.getByRole('button', { name: /Push to save/ }).click();
+    // Global gate fires — same modal that PR creation uses, lifted from
+    // BranchCard local state into store-driven rendering at the App root.
+    await expect(app.getByText('Token is missing required scope')).toBeVisible();
+    await expect(app.getByRole('button', { name: /Open Sessions/ })).toBeVisible();
   });
 
   test('missing pull_request scope opens the update-token modal', async ({ app }) => {

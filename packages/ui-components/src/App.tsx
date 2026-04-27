@@ -5,6 +5,7 @@ import { PanelTabs } from './layout/PanelTabs';
 import { Sidebar } from './layout/Sidebar';
 import { PanelContent } from './layout/PanelContent';
 import { SecretVaultModal } from './layout/SecretVaultModal';
+import { MissingScopeGate } from './layout/MissingScopeGate';
 
 export function App() {
   const ready = useWorkspaceStore((s) => s.ready);
@@ -31,6 +32,7 @@ export function App() {
         <PanelContent />
       </div>
       <SecretVaultModal />
+      <MissingScopeGate />
     </div>
   );
 }

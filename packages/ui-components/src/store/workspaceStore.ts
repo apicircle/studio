@@ -148,6 +148,13 @@ type WorkspaceStore = {
   secretVaultOpen: boolean;
   /** Stashed during refreshWorkspace when conflicts surface; consumed by commitRefresh. */
   pendingRefresh: PendingRefresh | null;
+  /**
+   * Plan §3.7: any 401/403 missing-scope from a GitHub action surfaces a
+   * modal that points the user to the Sessions tab. Lives in store state
+   * so a failure on one panel can render the modal regardless of which
+   * panel is active.
+   */
+  missingScopePrompt: string[] | null;
   // Per-request last-run cache. Not persisted — request runs land in
   // local.history once they complete; this is the live working result for
   // the editor panel.
@@ -164,6 +171,11 @@ type WorkspaceStore = {
 
   openSecretVault: () => void;
   closeSecretVault: () => void;
+
+  /** Open the missing-scope prompt with the supplied list of scopes. */
+  surfaceMissingScope: (scopes: string[]) => void;
+  /** Dismiss the prompt without changing anything else. */
+  dismissMissingScope: () => void;
 
   addRequest: (parentFolderId: string | null) => string;
   addFolder: (parentFolderId: string | null, name?: string) => string;
@@ -317,6 +329,15 @@ type WorkspaceStore = {
   }) => Promise<{ number: number; htmlUrl: string }>;
 
   /**
+   * Walk every attachment slot referenced in the synced doc; for each
+   * one whose bytes aren't in local IDB (or whose recorded sha256 has
+   * drifted), pull the blob from `.apicircle/attachments/<slotId>` on
+   * the working branch and persist it. Returns counts so the UI can
+   * report results (plan §7.6 — refresh attachment download).
+   */
+  syncAttachments: () => Promise<{ fetched: number; alreadyPresent: number; failed: number }>;
+
+  /**
    * Pull remote `workspace.json` from the working branch and reconcile
    * it with local via 3-way diff (plan §3.5). Outcomes:
    *   - 'no-remote': the working branch has no workspace.json yet (the
@@ -454,6 +475,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   activePanel: readStoredPanel(),
   secretVaultOpen: false,
   pendingRefresh: null,
+  missingScopePrompt: null,
   lastRun: {},
   isExecuting: {},
 
@@ -513,6 +535,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   openSecretVault: () => set({ secretVaultOpen: true }),
   closeSecretVault: () => set({ secretVaultOpen: false }),
+
+  surfaceMissingScope: (scopes) => set({ missingScopePrompt: scopes }),
+  dismissMissingScope: () => set({ missingScopePrompt: null }),
 
   addRequest: (parentFolderId) => {
     const synced = get().synced;
@@ -581,6 +606,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   attachFormFile: async (requestId, rowIndex, file) => {
+    enforceAttachmentSize(file);
     const synced = get().synced;
     if (!synced) return;
     const existing = synced.collections.requests[requestId];
@@ -631,6 +657,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   attachBinaryFile: async (requestId, file) => {
+    enforceAttachmentSize(file);
     const synced = get().synced;
     if (!synced) return;
     const existing = synced.collections.requests[requestId];
@@ -1235,6 +1262,60 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     void saveSynced(next);
   },
 
+  syncAttachments: async () => {
+    const local = get().local;
+    const synced = get().synced;
+    if (!local || !synced) throw new Error('Workspace not ready');
+    const branch = local.workingBranch;
+    if (!branch) throw new Error('Create a working branch before syncing attachments');
+
+    const slots = collectAttachmentSlots(synced);
+    if (slots.length === 0) return { fetched: 0, alreadyPresent: 0, failed: 0 };
+
+    const token = await decryptSessionToken(local);
+    const client = new GitHubClient();
+    let fetched = 0;
+    let alreadyPresent = 0;
+    let failed = 0;
+
+    for (const slot of slots) {
+      // Skip when local already has bytes whose sha256 matches the synced ref.
+      const existing = await getAttachment(slot.slotId);
+      if (existing && existing.sha256 === slot.sha256) {
+        alreadyPresent++;
+        continue;
+      }
+      try {
+        const file = await client.getBinaryContents(
+          token,
+          branch.repoOwner,
+          branch.repoName,
+          `.apicircle/attachments/${slot.slotId}`,
+          branch.name,
+        );
+        if (!file) {
+          failed++;
+          continue;
+        }
+        await putAttachment({
+          slotId: slot.slotId,
+          filename: slot.filename ?? slot.slotId,
+          mimeType: slot.mimeType ?? 'application/octet-stream',
+          size: file.bytes.length,
+          // Trust the recorded sha256 for now; mismatch detection is a future
+          // tightening (plan §7.6 mentions "surfaces tampering and corruption").
+          sha256: slot.sha256 ?? (await sha256HexBytes(file.bytes)),
+          savedAt: new Date().toISOString(),
+          bytes: file.bytes,
+        });
+        fetched++;
+      } catch {
+        failed++;
+      }
+    }
+    return { fetched, alreadyPresent, failed };
+  },
+
   refreshWorkspace: async () => {
     const local = get().local;
     const synced = get().synced;
@@ -1505,6 +1586,44 @@ function parseLinkedWorkspaceJson(text: string): LinkedWorkspaceProbe {
       ? (releasesValue as { self?: ReleaseHistory | null })
       : undefined;
   return { workspaceName: name, releases };
+}
+
+/**
+ * SHA-256 fallback for attachment bytes when the synced doc lacks a
+ * recorded sha256 (older workspaces from before P5). Same algorithm as
+ * persistence/attachments.ts; duplicated rather than re-exported to keep
+ * that module's API surface narrow.
+ */
+/**
+ * Plan §7.6: warn at 10 MB, refuse at GitHub's 100 MB hard limit. The
+ * hard refusal throws; the soft warn lands in console (a future
+ * revision can lift this into a toast).
+ */
+const ATTACHMENT_SOFT_LIMIT_BYTES = 10 * 1024 * 1024;
+const ATTACHMENT_HARD_LIMIT_BYTES = 100 * 1024 * 1024;
+
+function enforceAttachmentSize(file: File): void {
+  if (file.size > ATTACHMENT_HARD_LIMIT_BYTES) {
+    const mb = (file.size / 1024 / 1024).toFixed(1);
+    throw new Error(
+      `Attachment "${file.name}" is ${mb} MB, which exceeds GitHub's 100 MB limit for blob uploads.`,
+    );
+  }
+  if (file.size > ATTACHMENT_SOFT_LIMIT_BYTES) {
+    console.warn(
+      `Attachment "${file.name}" is ${(file.size / 1024 / 1024).toFixed(1)} MB — pushes will be slow and the GitHub diff will be unreviewable. Consider Git LFS for files > 10 MB.`,
+    );
+  }
+}
+
+async function sha256HexBytes(bytes: Uint8Array): Promise<string> {
+  // TS 5.9's BufferSource constraint rejects Uint8Array<ArrayBufferLike>
+  // because the buffer type isn't pinned to ArrayBuffer. Cast through
+  // unknown to satisfy the parameter; same pattern used in
+  // persistence/attachments.ts.
+  const source = bytes as unknown as BufferSource;
+  const digest = await crypto.subtle.digest('SHA-256', source);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**

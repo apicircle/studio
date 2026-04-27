@@ -2,6 +2,7 @@ export { GitHubClient } from './github/api';
 export type {
   CreatedBlob,
   CreatedCommit,
+  BinaryFileContents,
   CreatedTree,
   FileContents,
   GitCommitSummary,

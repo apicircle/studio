@@ -125,6 +125,7 @@ function MarketplaceSearchForm() {
 function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const searchMarketplace = useWorkspaceStore((s) => s.searchMarketplace);
   const linkPublicWorkspace = useWorkspaceStore((s) => s.linkPublicWorkspace);
+  const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<
@@ -152,7 +153,8 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
       setResults(items);
     } catch (err) {
       if (err instanceof MissingScopeError) {
-        setError(`Token missing scope(s): ${err.missingScopes.join(', ')}`);
+        onClose();
+        surfaceMissingScope(err.missingScopes);
       } else if (err instanceof GitHubError) {
         setError(`GitHub ${err.status}: ${err.message}`);
       } else if (err instanceof Error) {
@@ -298,6 +300,7 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
 
 function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const linkPrivateWorkspace = useWorkspaceStore((s) => s.linkPrivateWorkspace);
+  const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
   const [repoFullName, setRepoFullName] = useState('');
   const [branch, setBranch] = useState('main');
   const [pin, setPin] = useState('');
@@ -335,7 +338,8 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
     } catch (err) {
       setConfirmOpen(false);
       if (err instanceof MissingScopeError) {
-        setError(`Token missing scope(s): ${err.missingScopes.join(', ')}`);
+        onClose();
+        surfaceMissingScope(err.missingScopes);
       } else if (err instanceof GitHubError) {
         setError(`GitHub ${err.status}: ${err.message}`);
       } else if (err instanceof Error) {
@@ -451,6 +455,7 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
   const refreshLinkedWorkspace = useWorkspaceStore((s) => s.refreshLinkedWorkspace);
   const unlinkWorkspace = useWorkspaceStore((s) => s.unlinkWorkspace);
   const pinLinkedVersion = useWorkspaceStore((s) => s.pinLinkedVersion);
+  const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [unlinkOpen, setUnlinkOpen] = useState(false);
@@ -468,8 +473,13 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
     try {
       await refreshLinkedWorkspace(link.id);
     } catch (err) {
-      if (err instanceof Error) setRefreshError(err.message);
-      else setRefreshError('Refresh failed');
+      if (err instanceof MissingScopeError) {
+        surfaceMissingScope(err.missingScopes);
+      } else if (err instanceof Error) {
+        setRefreshError(err.message);
+      } else {
+        setRefreshError('Refresh failed');
+      }
     } finally {
       setRefreshing(false);
     }

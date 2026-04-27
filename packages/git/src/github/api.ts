@@ -110,6 +110,14 @@ export interface FileContents {
   size: number;
 }
 
+export interface BinaryFileContents {
+  /** Raw file bytes — used for binary attachments where UTF-8 decoding would corrupt the data. */
+  bytes: Uint8Array;
+  sha: string;
+  path: string;
+  size: number;
+}
+
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 interface CallOptions {
@@ -451,6 +459,42 @@ export class GitHubClient {
   }
 
   /**
+   * Same as `getContents` but returns the raw bytes instead of UTF-8
+   * decoding the file. Used by the refresh flow to pull
+   * `.apicircle/attachments/<slotId>` blobs into local IDB without
+   * mangling binary data through TextDecoder.
+   */
+  async getBinaryContents(
+    token: string,
+    owner: string,
+    name: string,
+    path: string,
+    ref: string,
+    opts: CallOptions = {},
+  ): Promise<BinaryFileContents | null> {
+    const query = `?ref=${encodeURIComponent(ref)}`;
+    try {
+      const { json } = await this.call<RawFileContents>(
+        token,
+        `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/contents/${path
+          .split('/')
+          .map(encodeURIComponent)
+          .join('/')}${query}`,
+        opts,
+      );
+      if (Array.isArray(json) || json.type !== 'file') {
+        throw new GitHubError(`Path ${path} is not a file`, 422, json);
+      }
+      const cleaned = json.content.replace(/\n/g, '');
+      const bytes = decodeBase64Bytes(cleaned);
+      return { bytes, sha: json.sha, path: json.path, size: json.size };
+    } catch (err) {
+      if (err instanceof GitHubError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  /**
    * Open a pull request from `head` (the working branch) into `base` (the
    * repo's default branch). PR creation needs the `pull_request` scope on
    * top of `repo`; missing-scope errors flow through MissingScopeError so
@@ -621,10 +665,18 @@ interface RawFileContents {
  * `Buffer` (we run in browsers + jsdom).
  */
 function decodeBase64Utf8(b64: string): string {
+  return new TextDecoder('utf-8').decode(decodeBase64Bytes(b64));
+}
+
+/**
+ * Decode GitHub's base64 file content into raw bytes. Used for binary
+ * attachments where UTF-8 decoding would corrupt the data.
+ */
+function decodeBase64Bytes(b64: string): Uint8Array {
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return new TextDecoder('utf-8').decode(bytes);
+  return bytes;
 }
 
 function normalizeRepo(raw: RawRepo): GitHubRepo {

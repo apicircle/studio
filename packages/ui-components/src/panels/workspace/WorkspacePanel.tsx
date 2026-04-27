@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
+  Download,
   ExternalLink,
   GitBranch,
   GitMerge,
@@ -773,15 +774,47 @@ function BranchCard() {
   const pushWorkspace = useWorkspaceStore((s) => s.pushWorkspace);
   const refreshWorkspace = useWorkspaceStore((s) => s.refreshWorkspace);
 
+  const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
+  const syncAttachments = useWorkspaceStore((s) => s.syncAttachments);
   const [message, setMessage] = useState('');
   const [showMessageField, setShowMessageField] = useState(false);
   const [pushing, setPushing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshNotice, setRefreshNotice] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [justPushedSha, setJustPushedSha] = useState<string | null>(null);
   const [prModalOpen, setPrModalOpen] = useState(false);
-  const [missingScope, setMissingScope] = useState<string[] | null>(null);
+
+  const onSyncAttachments = async () => {
+    setSyncing(true);
+    setError(null);
+    setRefreshNotice(null);
+    try {
+      const result = await syncAttachments();
+      if (result.fetched === 0 && result.alreadyPresent === 0 && result.failed === 0) {
+        setRefreshNotice('No attachments referenced.');
+      } else {
+        setRefreshNotice(
+          `Attachments: ${result.fetched} fetched, ${result.alreadyPresent} already present` +
+            (result.failed > 0 ? `, ${result.failed} failed` : '') +
+            '.',
+        );
+      }
+    } catch (err) {
+      if (err instanceof MissingScopeError) {
+        surfaceMissingScope(err.missingScopes);
+      } else if (err instanceof GitHubError) {
+        setError(`GitHub ${err.status}: ${err.message}`);
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Sync failed');
+      }
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -805,7 +838,7 @@ function BranchCard() {
       }
     } catch (err) {
       if (err instanceof MissingScopeError) {
-        setMissingScope(err.missingScopes);
+        surfaceMissingScope(err.missingScopes);
       } else if (err instanceof GitHubError) {
         setError(`GitHub ${err.status}: ${err.message}`);
       } else if (err instanceof Error) {
@@ -829,7 +862,7 @@ function BranchCard() {
       setShowMessageField(false);
     } catch (err) {
       if (err instanceof MissingScopeError) {
-        setError(`Token missing scope(s): ${err.missingScopes.join(', ')}`);
+        surfaceMissingScope(err.missingScopes);
       } else if (err instanceof GitHubError) {
         setError(`GitHub ${err.status}: ${err.message}`);
       } else if (err instanceof Error) {
@@ -942,6 +975,15 @@ function BranchCard() {
         </button>
         <button
           type="button"
+          onClick={() => void onSyncAttachments()}
+          disabled={syncing}
+          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
+        >
+          <Download size={11} className={syncing ? 'animate-spin' : undefined} />
+          {syncing ? 'Syncing…' : 'Sync attachments'}
+        </button>
+        <button
+          type="button"
           onClick={() => setPrModalOpen(true)}
           disabled={!canCreatePr}
           title={
@@ -974,34 +1016,15 @@ function BranchCard() {
         </button>
       </div>
 
-      <CreatePrModal
-        open={prModalOpen}
-        onClose={() => setPrModalOpen(false)}
-        onMissingScope={(scopes) => {
-          setPrModalOpen(false);
-          setMissingScope(scopes);
-        }}
-      />
-      <MissingScopeModal
-        open={missingScope !== null}
-        scopes={missingScope ?? []}
-        onClose={() => setMissingScope(null)}
-      />
+      <CreatePrModal open={prModalOpen} onClose={() => setPrModalOpen(false)} />
     </div>
   );
 }
 
-function CreatePrModal({
-  open,
-  onClose,
-  onMissingScope,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onMissingScope: (scopes: string[]) => void;
-}) {
+function CreatePrModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const branch = useWorkspaceStore((s) => s.local?.workingBranch ?? null);
   const createPullRequest = useWorkspaceStore((s) => s.createPullRequest);
+  const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
 
   const [title, setTitle] = useState('APICircle workspace updates');
   const [body, setBody] = useState('');
@@ -1020,7 +1043,8 @@ function CreatePrModal({
       setBody('');
     } catch (err) {
       if (err instanceof MissingScopeError) {
-        onMissingScope(err.missingScopes);
+        onClose();
+        surfaceMissingScope(err.missingScopes);
       } else if (err instanceof GitHubError) {
         setError(`GitHub ${err.status}: ${err.message}`);
       } else if (err instanceof Error) {
@@ -1094,63 +1118,11 @@ function CreatePrModal({
   );
 }
 
-function MissingScopeModal({
-  open,
-  scopes,
-  onClose,
-}: {
-  open: boolean;
-  scopes: string[];
-  onClose: () => void;
-}) {
-  const openSecretVault = useWorkspaceStore((s) => s.openSecretVault);
-  return (
-    <Modal open={open} onClose={onClose} title="Token is missing required scope">
-      <div className="space-y-3 text-xs text-text-muted">
-        <p>
-          GitHub denied this action because the active token is missing the following scope
-          {scopes.length === 1 ? '' : 's'}:
-        </p>
-        <ul className="ml-4 list-disc">
-          {scopes.map((s) => (
-            <li key={s}>
-              <code className="text-text-primary">{s}</code>
-            </li>
-          ))}
-        </ul>
-        <p>
-          Update the token in the Secret Vault → Sessions tab. Your branch and any pushes are
-          preserved — only the encrypted token is replaced.
-        </p>
-        <div className="flex justify-end gap-2 pt-1">
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary"
-          >
-            Later
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              onClose();
-              openSecretVault();
-            }}
-            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20"
-          >
-            <KeyRound size={11} />
-            Open Sessions
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
 function CreateBranchForm() {
   const repo = useWorkspaceStore((s) => s.local!.connectedRepo!);
   const workspaceName = useWorkspaceStore((s) => s.synced?.workspaceName ?? 'workspace');
   const createWorkingBranch = useWorkspaceStore((s) => s.createWorkingBranch);
+  const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
 
   const [name, setName] = useState(() => generateWorkingBranchName({ workspaceName }));
   const [submitting, setSubmitting] = useState(false);
@@ -1171,7 +1143,7 @@ function CreateBranchForm() {
       if (err instanceof GitHubError && err.status === 422) {
         setError(`Branch \`${name}\` already exists on GitHub. Pick a different name.`);
       } else if (err instanceof MissingScopeError) {
-        setError(`Token missing scope(s): ${err.missingScopes.join(', ')}`);
+        surfaceMissingScope(err.missingScopes);
       } else if (err instanceof Error) {
         setError(err.message);
       } else {

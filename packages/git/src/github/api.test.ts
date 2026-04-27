@@ -608,6 +608,52 @@ describe('GitHubClient.getContents', () => {
   });
 });
 
+describe('GitHubClient.getBinaryContents', () => {
+  it('returns the raw bytes (not UTF-8 decoded)', async () => {
+    // Mix of bytes that would be invalid UTF-8 (0xff 0xfe is the start of a
+    // BOM sequence; bytes >0x7f without a leading multibyte marker are
+    // invalid as UTF-8). Round-trip through base64.
+    const raw = new Uint8Array([0xff, 0xfe, 0x00, 0x42]);
+    const b64 = Buffer.from(raw).toString('base64');
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({
+        type: 'file',
+        path: '.apicircle/attachments/slot-1',
+        sha: 'blob-sha',
+        size: raw.length,
+        content: b64,
+        encoding: 'base64',
+      }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const file = await client.getBinaryContents(
+      'tok',
+      'me',
+      'api',
+      '.apicircle/attachments/slot-1',
+      'wb',
+    );
+    expect(file).not.toBeNull();
+    expect(file!.bytes).toEqual(raw);
+    expect(file!.sha).toBe('blob-sha');
+  });
+
+  it('returns null on 404', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({ message: 'Not Found' }, { status: 404 }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const file = await client.getBinaryContents(
+      'tok',
+      'me',
+      'api',
+      '.apicircle/attachments/missing',
+      'wb',
+    );
+    expect(file).toBeNull();
+  });
+});
+
 describe('GitHubClient.createPullRequest', () => {
   it('POSTs title/body/head/base and returns the normalized PR summary', async () => {
     const fetchImpl: typeof fetch = vi.fn(async () =>
