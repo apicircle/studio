@@ -4,6 +4,7 @@ import {
   Globe,
   Key,
   Link2,
+  Notebook,
   Package,
   Plus,
   RefreshCw,
@@ -454,6 +455,7 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [unlinkOpen, setUnlinkOpen] = useState(false);
   const [pendingPin, setPendingPin] = useState<string | null | undefined>(undefined);
+  const [changelogOpen, setChangelogOpen] = useState(false);
 
   const sortedVersions = useMemo(
     () => (ledger ? sortVersionsDesc(ledger.versions.map((v) => v.version)) : []),
@@ -551,6 +553,15 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
         </button>
         <button
           type="button"
+          onClick={() => setChangelogOpen(true)}
+          disabled={sortedVersions.length === 0}
+          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
+        >
+          <Notebook size={11} />
+          Changelog
+        </button>
+        <button
+          type="button"
           onClick={() => setUnlinkOpen(true)}
           className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-danger/30 bg-danger/5 px-3 text-xs text-danger hover:bg-danger/10"
         >
@@ -558,6 +569,12 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
           Unlink
         </button>
       </div>
+
+      <LinkedChangelogModal
+        open={changelogOpen}
+        onClose={() => setChangelogOpen(false)}
+        link={link}
+      />
 
       <ConfirmDialog
         open={pendingPin !== undefined}
@@ -612,6 +629,95 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
         }}
       />
     </div>
+  );
+}
+
+function LinkedChangelogModal({
+  open,
+  onClose,
+  link,
+}: {
+  open: boolean;
+  onClose: () => void;
+  link: LinkedWorkspace;
+}) {
+  const ledger = useWorkspaceStore((s) => s.synced?.releases.perLink[link.id] ?? null);
+  const sortedEntries = useMemo(() => {
+    if (!ledger) return [];
+    const order = sortVersionsDesc(ledger.versions.map((v) => v.version));
+    return order
+      .map((v) => ledger.versions.find((entry) => entry.version === v))
+      .filter((v): v is NonNullable<typeof v> => v !== undefined);
+  }, [ledger]);
+
+  return (
+    <Modal open={open} onClose={onClose} title={`${link.name} — changelog`} className="max-w-2xl">
+      <div className="space-y-2">
+        <p className="text-[11px] text-text-dim">
+          Cached from{' '}
+          <code>
+            {link.source.repoFullName}@{link.source.branch}
+          </code>{' '}
+          at the last refresh. Refresh the ledger to pull newly-published versions.
+        </p>
+        {sortedEntries.length === 0 ? (
+          <p className="text-[11px] text-text-dim">No published versions in the cached ledger.</p>
+        ) : (
+          <ul className="max-h-96 space-y-2 overflow-y-auto">
+            {sortedEntries.map((entry) => {
+              const isPinned = entry.version === link.pinnedVersion;
+              return (
+                <li key={entry.version} className="rounded-sm border border-border bg-surface p-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <code className="text-xs text-text-primary">v{entry.version}</code>
+                    {isPinned && (
+                      <span className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-accent">
+                        pinned
+                      </span>
+                    )}
+                    {entry.deprecated && (
+                      <span className="rounded-sm border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-warning">
+                        deprecated
+                      </span>
+                    )}
+                    {entry.yanked && (
+                      <span className="rounded-sm border border-danger/40 bg-danger/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-danger">
+                        yanked
+                      </span>
+                    )}
+                    <span className="ml-auto text-[10px] text-text-dim">
+                      {new Date(entry.publishedAt).toLocaleString()}
+                    </span>
+                  </div>
+                  {entry.notes ? (
+                    <p className="mt-1 whitespace-pre-wrap text-[11px] text-text-muted">
+                      {entry.notes}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-[11px] text-text-dim italic">no release notes</p>
+                  )}
+                  <p
+                    className="mt-1 font-mono text-[10px] text-text-dim"
+                    title={entry.workspaceSnapshot}
+                  >
+                    snapshot {entry.workspaceSnapshot.slice(0, 12)}…
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <div className="flex justify-end pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

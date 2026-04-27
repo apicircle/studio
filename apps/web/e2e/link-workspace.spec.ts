@@ -270,6 +270,68 @@ test.describe('Link Workspace (P5.2)', () => {
     await expect(app.getByText('public', { exact: true }).first()).toBeVisible();
   });
 
+  test('changelog viewer lists every cached version with notes + flags', async ({ app }) => {
+    await setupSession(app);
+    const remoteJson = JSON.stringify({
+      workspaceName: 'API',
+      releases: {
+        self: {
+          versions: [
+            {
+              version: '0.1.0',
+              publishedAt: '2026-04-01T00:00:00.000Z',
+              notes: 'Initial release',
+              workspaceSnapshot: 'a'.repeat(64),
+              deprecated: true,
+              yanked: false,
+            },
+            {
+              version: '0.2.0',
+              publishedAt: '2026-04-15T00:00:00.000Z',
+              notes: 'Added the rebrand endpoint',
+              workspaceSnapshot: 'b'.repeat(64),
+              deprecated: false,
+              yanked: false,
+            },
+          ],
+          currentVersion: '0.2.0',
+        },
+      },
+    });
+    const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
+    await app.route(
+      'https://api.github.com/repos/me/api/contents/workspace.json**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify({
+            type: 'file',
+            path: 'workspace.json',
+            sha: 's',
+            size: remoteJson.length,
+            content: base64,
+            encoding: 'base64',
+          }),
+        });
+      },
+    );
+
+    await app.getByRole('button', { name: /Link Workspace/ }).click();
+    await app.getByRole('button', { name: /Link a private workspace/ }).click();
+    await app.getByLabel('Linked repo full name').fill('me/api');
+    await app.getByRole('button', { name: /Review .* link/ }).click();
+    await app.getByRole('button', { name: 'Link', exact: true }).click();
+
+    await app.getByRole('button', { name: 'Changelog' }).click();
+    const dialog = app.getByRole('dialog', { name: /API — changelog/ });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText('Initial release')).toBeVisible();
+    await expect(dialog.getByText('Added the rebrand endpoint')).toBeVisible();
+    await expect(dialog.getByText('deprecated')).toBeVisible();
+    await expect(dialog.getByText('pinned')).toBeVisible();
+  });
+
   test('unlink removes the card', async ({ app }) => {
     await setupSession(app);
     const remoteJson = JSON.stringify({ workspaceName: 'X', releases: { self: null } });
