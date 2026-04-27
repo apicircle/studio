@@ -6,7 +6,9 @@ import type {
   FormDataRow,
   GitHubSession,
   HttpMethod,
+  LinkedWorkspace,
   PanelId,
+  ReleaseHistory,
   Request as ApiRequest,
   RequestBody,
   RequestRun,
@@ -350,6 +352,33 @@ type WorkspaceStore = {
   deprecateRelease: (version: string) => void;
   /** Flip `yanked: true` on a published version. Soft destructive. */
   yankRelease: (version: string) => void;
+
+  // --- Linked workspaces (P5.2) ---------------------------------------
+  /**
+   * Link another workspace as a private dependency. Fetches its
+   * `workspace.json` from `repoFullName@branch` via the active GitHub
+   * session, persists a LinkedWorkspace entry, and caches the source's
+   * release ledger into `releases.perLink[id]`.
+   *
+   * Pin defaults to the source's `currentVersion` (or null when the
+   * source hasn't published anything yet). Throws on missing session,
+   * 404, or invalid remote JSON.
+   */
+  linkPrivateWorkspace: (args: {
+    repoFullName: string;
+    branch: string;
+    pinnedVersion?: string | null;
+  }) => Promise<LinkedWorkspace>;
+
+  /**
+   * Re-fetch the linked workspace's `workspace.json` and refresh the
+   * cached release ledger in `releases.perLink[id]`. Throws when the
+   * link is unknown.
+   */
+  refreshLinkedWorkspace: (id: string) => Promise<void>;
+
+  /** Drop a linked workspace + its cached release ledger. */
+  unlinkWorkspace: (id: string) => void;
 
   executeActiveRequest: () => Promise<void>;
 };
@@ -994,6 +1023,107 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     commitSynced(set, get, (s) => yankReleaseAction(s, version));
   },
 
+  linkPrivateWorkspace: async ({ repoFullName, branch, pinnedVersion }) => {
+    const local = get().local;
+    const synced = get().synced;
+    if (!local || !synced) throw new Error('Workspace not ready');
+    const trimmedRepo = repoFullName.trim();
+    const trimmedBranch = branch.trim() || 'main';
+    if (!trimmedRepo.includes('/')) {
+      throw new Error('Repo must be `owner/name`');
+    }
+    const [owner, name] = trimmedRepo.split('/', 2);
+
+    const token = await decryptSessionToken(local);
+    const client = new GitHubClient();
+    const file = await client.getContents(token, owner, name, 'workspace.json', trimmedBranch);
+    if (file === null) {
+      throw new Error(`workspace.json not found on ${trimmedRepo}@${trimmedBranch}`);
+    }
+    const parsed = parseLinkedWorkspaceJson(file.content);
+
+    const id = generateId();
+    const link: LinkedWorkspace = {
+      id,
+      kind: 'private',
+      name: parsed.workspaceName,
+      source: { provider: 'github', repoFullName: trimmedRepo, branch: trimmedBranch },
+      scope: ['collections', 'environments'],
+      pinnedVersion: pinnedVersion ?? parsed.releases?.self?.currentVersion ?? null,
+      updatePolicy: 'manual',
+      linkedAt: new Date().toISOString(),
+      requiredSecretKeyIds: [],
+    };
+
+    const cachedLedger: ReleaseHistory = parsed.releases?.self ?? {
+      versions: [],
+      currentVersion: null,
+    };
+
+    const next: WorkspaceSynced = {
+      ...synced,
+      linkedWorkspaces: { ...synced.linkedWorkspaces, [id]: link },
+      releases: {
+        ...synced.releases,
+        perLink: { ...synced.releases.perLink, [id]: cachedLedger },
+      },
+      meta: { ...synced.meta, updatedAt: link.linkedAt },
+    };
+    set({ synced: next });
+    void saveSynced(next);
+    return link;
+  },
+
+  refreshLinkedWorkspace: async (id) => {
+    const local = get().local;
+    const synced = get().synced;
+    if (!local || !synced) throw new Error('Workspace not ready');
+    const link = synced.linkedWorkspaces[id];
+    if (!link) throw new Error(`Linked workspace ${id} not found`);
+
+    const token = await decryptSessionToken(local);
+    const client = new GitHubClient();
+    const [owner, name] = link.source.repoFullName.split('/', 2);
+    const file = await client.getContents(token, owner, name, 'workspace.json', link.source.branch);
+    if (file === null) {
+      throw new Error(
+        `workspace.json missing on ${link.source.repoFullName}@${link.source.branch}`,
+      );
+    }
+    const parsed = parseLinkedWorkspaceJson(file.content);
+    const cachedLedger: ReleaseHistory = parsed.releases?.self ?? {
+      versions: [],
+      currentVersion: null,
+    };
+    const next: WorkspaceSynced = {
+      ...synced,
+      releases: {
+        ...synced.releases,
+        perLink: { ...synced.releases.perLink, [id]: cachedLedger },
+      },
+      meta: { ...synced.meta, updatedAt: new Date().toISOString() },
+    };
+    set({ synced: next });
+    void saveSynced(next);
+  },
+
+  unlinkWorkspace: (id) => {
+    const synced = get().synced;
+    if (!synced || !synced.linkedWorkspaces[id]) return;
+    const linkedWorkspaces = { ...synced.linkedWorkspaces };
+    delete linkedWorkspaces[id];
+    const perLink = { ...synced.releases.perLink };
+    delete perLink[id];
+    const next: WorkspaceSynced = {
+      ...synced,
+      linkedWorkspaces,
+      releases: { ...synced.releases, perLink },
+      meta: { ...synced.meta, updatedAt: new Date().toISOString() },
+    };
+    set({ synced: next });
+    void saveSynced(next);
+  },
+
   refreshWorkspace: async () => {
     const local = get().local;
     const synced = get().synced;
@@ -1163,6 +1293,39 @@ async function persistMerged(
   };
   set({ synced: merged, local: nextLocal });
   await Promise.all([saveSynced(merged), saveLocal(nextLocal)]);
+}
+
+/**
+ * Parse a linked workspace's `workspace.json`. We only consume the
+ * narrow surface needed for linking (workspaceName + releases.self),
+ * not the full schema — leniency here means a partially-malformed
+ * remote doesn't kill the link flow.
+ */
+interface LinkedWorkspaceProbe {
+  workspaceName: string;
+  releases?: { self?: ReleaseHistory | null };
+}
+function parseLinkedWorkspaceJson(text: string): LinkedWorkspaceProbe {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    throw new Error('Remote workspace.json is not valid JSON');
+  }
+  if (typeof raw !== 'object' || raw === null) {
+    throw new Error('Remote workspace.json is not an object');
+  }
+  const obj = raw as Record<string, unknown>;
+  const name = obj.workspaceName;
+  if (typeof name !== 'string' || name.length === 0) {
+    throw new Error('Remote workspace.json missing workspaceName');
+  }
+  const releasesValue = obj.releases;
+  const releases =
+    typeof releasesValue === 'object' && releasesValue !== null
+      ? (releasesValue as { self?: ReleaseHistory | null })
+      : undefined;
+  return { workspaceName: name, releases };
 }
 
 async function decryptSessionToken(local: WorkspaceLocal): Promise<string> {

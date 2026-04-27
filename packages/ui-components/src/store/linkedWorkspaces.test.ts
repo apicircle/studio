@@ -1,0 +1,249 @@
+import { act } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useWorkspaceStore } from './workspaceStore';
+
+interface ResponseSpec {
+  body: unknown;
+  status?: number;
+  headers?: Record<string, string>;
+}
+
+function fakeResponse(spec: ResponseSpec): Response {
+  return new Response(JSON.stringify(spec.body), {
+    status: spec.status ?? 200,
+    statusText: 'OK',
+    headers: { 'content-type': 'application/json', ...(spec.headers ?? {}) },
+  });
+}
+
+function queuedFetch(queue: ResponseSpec[]): ReturnType<typeof vi.fn> {
+  let i = 0;
+  return vi.fn(async () => {
+    if (i >= queue.length) throw new Error(`unexpected fetch call #${i + 1}`);
+    return fakeResponse(queue[i++]);
+  });
+}
+
+function fileContents(json: string, sha = 'remote-sha'): ResponseSpec {
+  const content = btoa(unescape(encodeURIComponent(json)));
+  return {
+    body: {
+      type: 'file',
+      path: 'workspace.json',
+      sha,
+      size: json.length,
+      content,
+      encoding: 'base64',
+    },
+  };
+}
+
+async function setupSession(): Promise<void> {
+  vi.stubGlobal(
+    'fetch',
+    queuedFetch([
+      { body: { login: 'me', id: 1 }, headers: { 'x-oauth-scopes': 'repo, pull_request' } },
+    ]),
+  );
+  await useWorkspaceStore.getState().connectGitHubSession('tok');
+  vi.unstubAllGlobals();
+}
+
+describe('workspaceStore.linkPrivateWorkspace', () => {
+  beforeEach(async () => {
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrate();
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('throws when no GitHub session is active', async () => {
+    await expect(
+      useWorkspaceStore.getState().linkPrivateWorkspace({
+        repoFullName: 'me/api',
+        branch: 'main',
+      }),
+    ).rejects.toThrow(/No GitHub session/);
+  });
+
+  it('rejects malformed repo full names', async () => {
+    await setupSession();
+    await expect(
+      useWorkspaceStore
+        .getState()
+        .linkPrivateWorkspace({ repoFullName: 'just-a-name', branch: 'main' }),
+    ).rejects.toThrow(/owner\/name/);
+  });
+
+  it('persists a LinkedWorkspace and caches the source ledger', async () => {
+    await setupSession();
+    const remoteJson = JSON.stringify({
+      workspaceName: 'Payments API',
+      releases: {
+        self: {
+          versions: [
+            {
+              version: '1.0.0',
+              publishedAt: 't',
+              notes: 'first',
+              workspaceSnapshot: 'a'.repeat(64),
+              deprecated: false,
+              yanked: false,
+            },
+          ],
+          currentVersion: '1.0.0',
+        },
+      },
+    });
+    vi.stubGlobal('fetch', queuedFetch([fileContents(remoteJson)]));
+
+    const link = await useWorkspaceStore.getState().linkPrivateWorkspace({
+      repoFullName: 'org/payments-api',
+      branch: 'main',
+    });
+
+    expect(link.kind).toBe('private');
+    expect(link.name).toBe('Payments API');
+    expect(link.source).toEqual({
+      provider: 'github',
+      repoFullName: 'org/payments-api',
+      branch: 'main',
+    });
+    expect(link.pinnedVersion).toBe('1.0.0');
+
+    const synced = useWorkspaceStore.getState().synced!;
+    expect(synced.linkedWorkspaces[link.id]).toEqual(link);
+    expect(synced.releases.perLink[link.id].currentVersion).toBe('1.0.0');
+    expect(synced.releases.perLink[link.id].versions).toHaveLength(1);
+  });
+
+  it('defaults to branch=main and pinnedVersion=null when source has no releases', async () => {
+    await setupSession();
+    const remoteJson = JSON.stringify({ workspaceName: 'Empty', releases: { self: null } });
+    vi.stubGlobal('fetch', queuedFetch([fileContents(remoteJson)]));
+
+    const link = await useWorkspaceStore
+      .getState()
+      .linkPrivateWorkspace({ repoFullName: 'me/empty', branch: '' });
+    expect(link.source.branch).toBe('main');
+    expect(link.pinnedVersion).toBeNull();
+  });
+
+  it('throws when the remote workspace.json is missing', async () => {
+    await setupSession();
+    vi.stubGlobal('fetch', queuedFetch([{ body: { message: 'Not Found' }, status: 404 }]));
+    await expect(
+      useWorkspaceStore
+        .getState()
+        .linkPrivateWorkspace({ repoFullName: 'me/missing', branch: 'main' }),
+    ).rejects.toThrow(/not found/);
+  });
+
+  it('rejects remote files that are not valid JSON / lack workspaceName', async () => {
+    await setupSession();
+    vi.stubGlobal('fetch', queuedFetch([fileContents('not-json')]));
+    await expect(
+      useWorkspaceStore.getState().linkPrivateWorkspace({ repoFullName: 'me/bad', branch: 'main' }),
+    ).rejects.toThrow(/not valid JSON/);
+
+    vi.stubGlobal('fetch', queuedFetch([fileContents(JSON.stringify({ foo: 1 }))]));
+    await expect(
+      useWorkspaceStore
+        .getState()
+        .linkPrivateWorkspace({ repoFullName: 'me/bad2', branch: 'main' }),
+    ).rejects.toThrow(/missing workspaceName/);
+  });
+});
+
+describe('workspaceStore.refreshLinkedWorkspace + unlinkWorkspace', () => {
+  beforeEach(async () => {
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrate();
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('refresh re-fetches and updates the cached ledger', async () => {
+    await setupSession();
+    const initial = JSON.stringify({
+      workspaceName: 'API',
+      releases: {
+        self: {
+          versions: [
+            {
+              version: '0.1.0',
+              publishedAt: 't',
+              notes: '',
+              workspaceSnapshot: 'a'.repeat(64),
+              deprecated: false,
+              yanked: false,
+            },
+          ],
+          currentVersion: '0.1.0',
+        },
+      },
+    });
+    vi.stubGlobal('fetch', queuedFetch([fileContents(initial)]));
+    const link = await useWorkspaceStore
+      .getState()
+      .linkPrivateWorkspace({ repoFullName: 'me/api', branch: 'main' });
+
+    const updated = JSON.stringify({
+      workspaceName: 'API',
+      releases: {
+        self: {
+          versions: [
+            {
+              version: '0.1.0',
+              publishedAt: 't',
+              notes: '',
+              workspaceSnapshot: 'a'.repeat(64),
+              deprecated: false,
+              yanked: false,
+            },
+            {
+              version: '0.2.0',
+              publishedAt: 't',
+              notes: '',
+              workspaceSnapshot: 'b'.repeat(64),
+              deprecated: false,
+              yanked: false,
+            },
+          ],
+          currentVersion: '0.2.0',
+        },
+      },
+    });
+    vi.stubGlobal('fetch', queuedFetch([fileContents(updated)]));
+    await useWorkspaceStore.getState().refreshLinkedWorkspace(link.id);
+    const ledger = useWorkspaceStore.getState().synced!.releases.perLink[link.id];
+    expect(ledger.currentVersion).toBe('0.2.0');
+    expect(ledger.versions).toHaveLength(2);
+  });
+
+  it('unlink removes the link entry and its cached ledger', async () => {
+    await setupSession();
+    vi.stubGlobal(
+      'fetch',
+      queuedFetch([fileContents(JSON.stringify({ workspaceName: 'X', releases: { self: null } }))]),
+    );
+    const link = await useWorkspaceStore
+      .getState()
+      .linkPrivateWorkspace({ repoFullName: 'me/x', branch: 'main' });
+
+    useWorkspaceStore.getState().unlinkWorkspace(link.id);
+    const synced = useWorkspaceStore.getState().synced!;
+    expect(synced.linkedWorkspaces[link.id]).toBeUndefined();
+    expect(synced.releases.perLink[link.id]).toBeUndefined();
+  });
+
+  it('refresh throws when the link id is unknown', async () => {
+    await setupSession();
+    await expect(
+      useWorkspaceStore.getState().refreshLinkedWorkspace('non-existent'),
+    ).rejects.toThrow(/not found/);
+  });
+});
