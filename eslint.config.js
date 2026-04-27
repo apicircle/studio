@@ -59,6 +59,24 @@ export default tseslint.config(
       eqeqeq: ['error', 'always', { null: 'ignore' }],
     },
   },
+  // Build scripts and Electron main/preload run in Node — give them the
+  // node globals so `process`, `console`, `URL`, etc. resolve.
+  {
+    files: ['{apps,packages}/**/scripts/**/*.{js,mjs,cjs}', 'apps/desktop/src/main/**/*.ts'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        URL: 'readonly',
+        Buffer: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+      },
+    },
+    rules: {
+      'no-console': 'off',
+    },
+  },
   // Tests can use console freely and may need looser typing.
   {
     files: ['{apps,packages}/**/*.test.{ts,tsx}', '{apps,packages}/**/test/**/*.{ts,tsx}'],

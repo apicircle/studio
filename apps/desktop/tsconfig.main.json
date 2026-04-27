@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "lib": ["ES2022"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "outDir": "./dist/main",
+    "rootDir": "./src/main",
+    "sourceMap": true,
+    "declaration": true,
+    "declarationMap": false,
+    "noEmit": false
+  },
+  "include": ["src/main/**/*.ts"]
+}
