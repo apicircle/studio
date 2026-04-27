@@ -1,0 +1,354 @@
+{
+  "schemaVersion": 1,
+  "workspaceId": "demo-workspace-fixture",
+  "workspaceName": "Demo Workspace",
+  "collections": {
+    "tree": {
+      "id": "demo-root",
+      "type": "root",
+      "children": [
+        "folder-none",
+        "folder-json",
+        "folder-text",
+        "folder-xml",
+        "folder-urlencoded",
+        "folder-form-data",
+        "folder-graphql",
+        "folder-binary",
+        "folder-assertions"
+      ]
+    },
+    "folders": {
+      "folder-none": {
+        "id": "folder-none",
+        "name": "1. None body",
+        "parentId": null,
+        "children": ["req-health"]
+      },
+      "folder-json": {
+        "id": "folder-json",
+        "name": "2. JSON body",
+        "parentId": null,
+        "children": ["req-create-user"]
+      },
+      "folder-text": {
+        "id": "folder-text",
+        "name": "3. Text body",
+        "parentId": null,
+        "children": ["req-text-form"]
+      },
+      "folder-xml": {
+        "id": "folder-xml",
+        "name": "4. XML body",
+        "parentId": null,
+        "children": ["req-xml-form"]
+      },
+      "folder-urlencoded": {
+        "id": "folder-urlencoded",
+        "name": "5. URL-encoded body",
+        "parentId": null,
+        "children": ["req-urlencoded-form"]
+      },
+      "folder-form-data": {
+        "id": "folder-form-data",
+        "name": "6. Form-data body",
+        "parentId": null,
+        "children": ["req-multipart"]
+      },
+      "folder-graphql": {
+        "id": "folder-graphql",
+        "name": "7. GraphQL body",
+        "parentId": null,
+        "children": ["req-graphql"]
+      },
+      "folder-binary": {
+        "id": "folder-binary",
+        "name": "8. Binary body",
+        "parentId": null,
+        "children": ["req-binary"]
+      },
+      "folder-assertions": {
+        "id": "folder-assertions",
+        "name": "9. Assertion samples",
+        "parentId": null,
+        "children": ["req-json-tree", "req-echo-headers", "req-slow", "req-error-503"]
+      }
+    },
+    "requests": {
+      "req-health": {
+        "id": "req-health",
+        "name": "GET /health",
+        "folderId": "folder-none",
+        "method": "GET",
+        "url": "{{BASE_URL}}/health",
+        "headers": [],
+        "query": [],
+        "body": { "type": "none", "content": "" },
+        "contextVars": [],
+        "assertions": [
+          { "id": "a-health-status", "kind": "status", "op": "equals", "expected": 200 }
+        ],
+        "createdAt": "2026-04-27T00:00:00.000Z",
+        "updatedAt": "2026-04-27T00:00:00.000Z"
+      },
+      "req-create-user": {
+        "id": "req-create-user",
+        "name": "POST /users (JSON)",
+        "folderId": "folder-json",
+        "method": "POST",
+        "url": "{{BASE_URL}}/users",
+        "headers": [{ "key": "Content-Type", "value": "application/json", "enabled": true }],
+        "query": [],
+        "body": {
+          "type": "json",
+          "content": "{\n  \"name\": \"Demo User\",\n  \"email\": \"demo@example.test\"\n}"
+        },
+        "contextVars": [],
+        "assertions": [
+          { "id": "a-create-status", "kind": "status", "op": "equals", "expected": 201 },
+          {
+            "id": "a-create-id",
+            "kind": "json-path",
+            "op": "matches",
+            "target": "$.id",
+            "expected": "^\\d+$"
+          }
+        ],
+        "createdAt": "2026-04-27T00:00:00.000Z",
+        "updatedAt": "2026-04-27T00:00:00.000Z"
+      },
+      "req-text-form": {
+        "id": "req-text-form",
+        "name": "POST /forms/text (text)",
+        "folderId": "folder-text",
+        "method": "POST",
+        "url": "{{BASE_URL}}/forms/text",
+        "headers": [
+          { "key": "Content-Type", "value": "application/x-www-form-urlencoded", "enabled": true }
+        ],
+        "query": [],
+        "body": { "type": "text", "content": "name=Demo&note=plain-text-body" },
+        "contextVars": [],
+        "assertions": [
+          { "id": "a-text-status", "kind": "status", "op": "equals", "expected": 200 }
+        ],
+        "createdAt": "2026-04-27T00:00:00.000Z",
+        "updatedAt": "2026-04-27T00:00:00.000Z"
+      },
+      "req-xml-form": {
+        "id": "req-xml-form",
+        "name": "POST /forms/text (XML)",
+        "folderId": "folder-xml",
+        "method": "POST",
+        "url": "{{BASE_URL}}/forms/text",
+        "headers": [{ "key": "Content-Type", "value": "application/xml", "enabled": true }],
+        "query": [],
+        "body": {
+          "type": "xml",
+          "content": "<user>\n  <name>Demo</name>\n  <note>xml-body</note>\n</user>"
+        },
+        "contextVars": [],
+        "assertions": [{ "id": "a-xml-status", "kind": "status", "op": "equals", "expected": 200 }],
+        "createdAt": "2026-04-27T00:00:00.000Z",
+        "updatedAt": "2026-04-27T00:00:00.000Z"
+      },
+      "req-urlencoded-form": {
+        "id": "req-urlencoded-form",
+        "name": "POST /forms/text (urlencoded)",
+        "folderId": "folder-urlencoded",
+        "method": "POST",
+        "url": "{{BASE_URL}}/forms/text",
+        "headers": [
+          { "key": "Content-Type", "value": "application/x-www-form-urlencoded", "enabled": true }
+        ],
+        "query": [],
+        "body": { "type": "urlencoded", "content": "name=Demo&note=urlencoded-body" },
+        "contextVars": [],
+        "assertions": [
+          { "id": "a-urlenc-status", "kind": "status", "op": "equals", "expected": 200 }
+        ],
+        "createdAt": "2026-04-27T00:00:00.000Z",
+        "updatedAt": "2026-04-27T00:00:00.000Z"
+      },
+      "req-multipart": {
+        "id": "req-multipart",
+        "name": "POST /forms/multipart (form-data + file)",
+        "folderId": "folder-form-data",
+        "method": "POST",
+        "url": "{{BASE_URL}}/forms/multipart",
+        "headers": [],
+        "query": [],
+        "body": {
+          "type": "form-data",
+          "content": "",
+          "formRows": [
+            { "kind": "text", "key": "name", "value": "Demo", "enabled": true },
+            { "kind": "file", "key": "avatar", "slotId": null, "enabled": true }
+          ]
+        },
+        "contextVars": [],
+        "assertions": [
+          { "id": "a-multipart-status", "kind": "status", "op": "equals", "expected": 200 }
+        ],
+        "createdAt": "2026-04-27T00:00:00.000Z",
+        "updatedAt": "2026-04-27T00:00:00.000Z"
+      },
+      "req-graphql": {
+        "id": "req-graphql",
+        "name": "POST /graphql ({ greeting })",
+        "folderId": "folder-graphql",
+        "method": "POST",
+        "url": "{{BASE_URL}}/graphql",
+        "headers": [{ "key": "Content-Type", "value": "application/json", "enabled": true }],
+        "query": [],
+        "body": { "type": "graphql", "content": "{ greeting }" },
+        "contextVars": [],
+        "assertions": [
+          { "id": "a-graphql-status", "kind": "status", "op": "equals", "expected": 200 },
+          {
+            "id": "a-graphql-greeting",
+            "kind": "json-path",
+            "op": "contains",
+            "target": "$.data.greeting",
+            "expected": "hello"
+          }
+        ],
+        "createdAt": "2026-04-27T00:00:00.000Z",
+        "updatedAt": "2026-04-27T00:00:00.000Z"
+      },
+      "req-binary": {
+        "id": "req-binary",
+        "name": "POST /binary/upload",
+        "folderId": "folder-binary",
+        "method": "POST",
+        "url": "{{BASE_URL}}/binary/upload",
+        "headers": [],
+        "query": [],
+        "body": { "type": "binary", "content": "" },
+        "contextVars": [],
+        "assertions": [
+          { "id": "a-binary-status", "kind": "status", "op": "equals", "expected": 200 }
+        ],
+        "createdAt": "2026-04-27T00:00:00.000Z",
+        "updatedAt": "2026-04-27T00:00:00.000Z"
+      },
+      "req-json-tree": {
+        "id": "req-json-tree",
+        "name": "GET /json-tree (json-path assertion)",
+        "folderId": "folder-assertions",
+        "method": "GET",
+        "url": "{{BASE_URL}}/json-tree",
+        "headers": [],
+        "query": [],
+        "body": { "type": "none", "content": "" },
+        "contextVars": [],
+        "assertions": [
+          {
+            "id": "a-tree-org-name",
+            "kind": "json-path",
+            "op": "equals",
+            "target": "$.org.name",
+            "expected": "API Circle"
+          },
+          {
+            "id": "a-tree-team-count",
+            "kind": "json-path",
+            "op": "equals",
+            "target": "$.org.teams.length",
+            "expected": 2
+          }
+        ],
+        "createdAt": "2026-04-27T00:00:00.000Z",
+        "updatedAt": "2026-04-27T00:00:00.000Z"
+      },
+      "req-echo-headers": {
+        "id": "req-echo-headers",
+        "name": "GET /echo-headers (header assertion)",
+        "folderId": "folder-assertions",
+        "method": "GET",
+        "url": "{{BASE_URL}}/echo-headers",
+        "headers": [{ "key": "X-Demo", "value": "hello", "enabled": true }],
+        "query": [],
+        "body": { "type": "none", "content": "" },
+        "contextVars": [],
+        "assertions": [
+          {
+            "id": "a-echo-content-type",
+            "kind": "header",
+            "op": "contains",
+            "target": "content-type",
+            "expected": "application/json"
+          }
+        ],
+        "createdAt": "2026-04-27T00:00:00.000Z",
+        "updatedAt": "2026-04-27T00:00:00.000Z"
+      },
+      "req-slow": {
+        "id": "req-slow",
+        "name": "GET /slow?ms=100 (duration assertion)",
+        "folderId": "folder-assertions",
+        "method": "GET",
+        "url": "{{BASE_URL}}/slow",
+        "headers": [],
+        "query": [{ "key": "ms", "value": "100", "enabled": true }],
+        "body": { "type": "none", "content": "" },
+        "contextVars": [],
+        "assertions": [
+          { "id": "a-slow-min", "kind": "duration", "op": "gt", "expected": 50 },
+          { "id": "a-slow-max", "kind": "duration", "op": "lt", "expected": 5000 }
+        ],
+        "createdAt": "2026-04-27T00:00:00.000Z",
+        "updatedAt": "2026-04-27T00:00:00.000Z"
+      },
+      "req-error-503": {
+        "id": "req-error-503",
+        "name": "GET /error/503 (negative path)",
+        "folderId": "folder-assertions",
+        "method": "GET",
+        "url": "{{BASE_URL}}/error/503",
+        "headers": [],
+        "query": [],
+        "body": { "type": "none", "content": "" },
+        "contextVars": [],
+        "assertions": [{ "id": "a-503-status", "kind": "status", "op": "equals", "expected": 503 }],
+        "createdAt": "2026-04-27T00:00:00.000Z",
+        "updatedAt": "2026-04-27T00:00:00.000Z"
+      }
+    }
+  },
+  "environments": {
+    "items": {
+      "local": {
+        "name": "local",
+        "variables": [
+          { "key": "BASE_URL", "value": "http://localhost:4040", "encrypted": false },
+          { "key": "BEARER_TOKEN", "value": "demo-bearer-token", "encrypted": false }
+        ]
+      }
+    },
+    "activeName": "local",
+    "priorityOrder": ["local"]
+  },
+  "linkedWorkspaces": {},
+  "releases": {
+    "self": {
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishedAt": "2026-04-27T00:00:00.000Z",
+          "notes": "First release of the demo workspace — exercises every body type + assertion kind against the Hono mock server.",
+          "workspaceSnapshot": "0000000000000000000000000000000000000000000000000000000000000000",
+          "deprecated": false,
+          "yanked": false
+        }
+      ],
+      "currentVersion": "0.1.0"
+    },
+    "perLink": {}
+  },
+  "meta": {
+    "createdAt": "2026-04-27T00:00:00.000Z",
+    "updatedAt": "2026-04-27T00:00:00.000Z",
+    "appVersion": "0.1.0"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "@apicircle-v2/mock-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Tiny Hono mock server for the demo workspace + Playwright fixtures. Plan §10.1.",
+  "scripts": {
+    "dev": "MOCK_SERVER_AUTOSTART=true tsx watch src/server.ts",
+    "start": "MOCK_SERVER_AUTOSTART=true tsx src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.0",
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0"
+  }
+}
