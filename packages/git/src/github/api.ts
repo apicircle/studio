@@ -82,6 +82,14 @@ export interface CreatedBlob {
   size: number;
 }
 
+export interface PullRequestSummary {
+  number: number;
+  /** GitHub UI URL (e.g. https://github.com/me/api/pull/12) — what we link to. */
+  htmlUrl: string;
+  state: 'open' | 'closed';
+  title: string;
+}
+
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 interface CallOptions {
@@ -363,6 +371,51 @@ export class GitHubClient {
     return { ref: json.ref, sha: json.object.sha };
   }
 
+  /**
+   * Open a pull request from `head` (the working branch) into `base` (the
+   * repo's default branch). PR creation needs the `pull_request` scope on
+   * top of `repo`; missing-scope errors flow through MissingScopeError so
+   * the UI can prompt the user to update the token without losing branch
+   * state (Plan §3.7).
+   *
+   * GitHub returns 422 when:
+   *   - head/base are equal (nothing to merge)
+   *   - a PR already exists between this head and base
+   *   - the head branch doesn't exist
+   * All three surface as a plain GitHubError(422); the UI message is
+   * picked up from response.body.message.
+   */
+  async createPullRequest(
+    token: string,
+    owner: string,
+    name: string,
+    args: { title: string; body: string; head: string; base: string; draft?: boolean },
+    opts: CallOptions = {},
+  ): Promise<PullRequestSummary> {
+    const { json } = await this.call<RawPullRequest>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/pulls`,
+      {
+        ...opts,
+        method: 'POST',
+        body: {
+          title: args.title,
+          body: args.body,
+          head: args.head,
+          base: args.base,
+          draft: args.draft ?? false,
+        },
+        requiredScopes: ['repo', 'pull_request'],
+      },
+    );
+    return {
+      number: json.number,
+      htmlUrl: json.html_url,
+      state: json.state,
+      title: json.title,
+    };
+  }
+
   // --- low-level call ----------------------------------------------------
 
   private async call<T>(
@@ -444,6 +497,13 @@ interface RawCommit {
   message: string;
   tree: { sha: string };
   parents?: { sha: string }[];
+}
+
+interface RawPullRequest {
+  number: number;
+  html_url: string;
+  state: 'open' | 'closed';
+  title: string;
 }
 
 function normalizeRepo(raw: RawRepo): GitHubRepo {

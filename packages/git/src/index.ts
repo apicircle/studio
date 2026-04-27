@@ -9,6 +9,7 @@ export type {
   GitHubRepo,
   GitHubViewer,
   GitRef,
+  PullRequestSummary,
   ScopeInfo,
   TreeEntryInput,
 } from './github/api';

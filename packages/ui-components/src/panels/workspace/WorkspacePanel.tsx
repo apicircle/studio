@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import {
   CheckCircle2,
+  ExternalLink,
   GitBranch,
   GitMerge,
+  GitPullRequest,
   KeyRound,
   Lock,
   Plus,
@@ -13,6 +15,7 @@ import {
 import { GitHubError, MissingScopeError } from '@apicircle-v2/git';
 import { generateWorkingBranchName, validateBranchName } from '@apicircle-v2/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { Modal } from '../../primitives/Modal';
 import { cn } from '../../primitives/cn';
 
 export function WorkspacePanel() {
@@ -70,8 +73,8 @@ export function WorkspacePanel() {
       )}
 
       <p className="max-w-2xl text-[11px] text-text-dim">
-        Push to save, refresh, and PR creation arrive in the next P4 slices. The session, repo, and
-        working-branch state above is what those flows will operate on.
+        Refresh + 3-way conflict resolver arrive in P4.5. Push to save and PR creation are wired up
+        above on the working-branch card.
       </p>
     </div>
   );
@@ -334,6 +337,8 @@ function BranchCard() {
   const [pushing, setPushing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [justPushedSha, setJustPushedSha] = useState<string | null>(null);
+  const [prModalOpen, setPrModalOpen] = useState(false);
+  const [missingScope, setMissingScope] = useState<string[] | null>(null);
 
   const onPush = async () => {
     setPushing(true);
@@ -360,6 +365,7 @@ function BranchCard() {
   };
 
   const isClean = branch.headSha === branch.lastPushedSha;
+  const canCreatePr = branch.lastPushedSha !== null && branch.openPrUrl === null;
 
   return (
     <div className="rounded-sm border border-border bg-card p-3">
@@ -409,6 +415,22 @@ function BranchCard() {
         </p>
       )}
 
+      {branch.openPrUrl && (
+        <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-accent">
+          <GitPullRequest size={11} aria-hidden="true" />
+          PR open:{' '}
+          <a
+            href={branch.openPrUrl}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-flex items-center gap-1 underline hover:text-accent/80"
+          >
+            {branch.openPrUrl.replace(/^https:\/\/github\.com\//, '')}
+            <ExternalLink size={10} aria-hidden="true" />
+          </a>
+        </p>
+      )}
+
       <div className="mt-2 flex flex-wrap gap-2">
         <button
           type="button"
@@ -418,6 +440,22 @@ function BranchCard() {
         >
           <Upload size={11} />
           {pushing ? 'Pushing…' : 'Push to save'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setPrModalOpen(true)}
+          disabled={!canCreatePr}
+          title={
+            !branch.lastPushedSha
+              ? 'Push to save before opening a PR'
+              : branch.openPrUrl
+                ? 'A PR is already open for this branch'
+                : undefined
+          }
+          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <GitPullRequest size={11} />
+          Create PR
         </button>
         <button
           type="button"
@@ -436,11 +474,177 @@ function BranchCard() {
           Discard branch
         </button>
       </div>
-      <p className="mt-2 text-[11px] text-text-dim">
-        Push commits <code>workspace.json</code> to <code>{branch.name}</code> via the Git Tree API.
-        Attachments join the same commit in the next slice (P4.3b); PR creation arrives in P4.4.
-      </p>
+
+      <CreatePrModal
+        open={prModalOpen}
+        onClose={() => setPrModalOpen(false)}
+        onMissingScope={(scopes) => {
+          setPrModalOpen(false);
+          setMissingScope(scopes);
+        }}
+      />
+      <MissingScopeModal
+        open={missingScope !== null}
+        scopes={missingScope ?? []}
+        onClose={() => setMissingScope(null)}
+      />
     </div>
+  );
+}
+
+function CreatePrModal({
+  open,
+  onClose,
+  onMissingScope,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onMissingScope: (scopes: string[]) => void;
+}) {
+  const branch = useWorkspaceStore((s) => s.local?.workingBranch ?? null);
+  const createPullRequest = useWorkspaceStore((s) => s.createPullRequest);
+
+  const [title, setTitle] = useState('APICircle workspace updates');
+  const [body, setBody] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!branch) return null;
+
+  const submit = async () => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      await createPullRequest({ title, body });
+      onClose();
+      setTitle('APICircle workspace updates');
+      setBody('');
+    } catch (err) {
+      if (err instanceof MissingScopeError) {
+        onMissingScope(err.missingScopes);
+      } else if (err instanceof GitHubError) {
+        setError(`GitHub ${err.status}: ${err.message}`);
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('PR creation failed — unknown error');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Open pull request">
+      <div className="space-y-3">
+        <p className="text-[11px] text-text-dim">
+          From <code className="text-text-muted">{branch.name}</code> →{' '}
+          <code className="text-text-muted">{branch.baseBranch}</code> on{' '}
+          <code className="text-text-muted">{branch.repoFullName}</code>.
+        </p>
+        <div>
+          <label htmlFor="pr-title-input" className="block text-[11px] text-text-dim">
+            Title
+          </label>
+          <input
+            id="pr-title-input"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            aria-label="PR title"
+            className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+          />
+        </div>
+        <div>
+          <label htmlFor="pr-body-input" className="block text-[11px] text-text-dim">
+            Description (markdown)
+          </label>
+          <textarea
+            id="pr-body-input"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            aria-label="PR body"
+            rows={6}
+            className="mt-1 w-full resize-y rounded-sm border border-border bg-surface px-2 py-1.5 text-xs text-text-primary focus:border-accent focus:outline-none"
+          />
+        </div>
+        {error && (
+          <p className="text-xs text-danger" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={submitting || !title.trim()}
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+          >
+            <GitPullRequest size={11} />
+            {submitting ? 'Creating PR…' : 'Open PR'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function MissingScopeModal({
+  open,
+  scopes,
+  onClose,
+}: {
+  open: boolean;
+  scopes: string[];
+  onClose: () => void;
+}) {
+  const openSecretVault = useWorkspaceStore((s) => s.openSecretVault);
+  return (
+    <Modal open={open} onClose={onClose} title="Token is missing required scope">
+      <div className="space-y-3 text-xs text-text-muted">
+        <p>
+          GitHub denied this action because the active token is missing the following scope
+          {scopes.length === 1 ? '' : 's'}:
+        </p>
+        <ul className="ml-4 list-disc">
+          {scopes.map((s) => (
+            <li key={s}>
+              <code className="text-text-primary">{s}</code>
+            </li>
+          ))}
+        </ul>
+        <p>
+          Update the token in the Secret Vault → Sessions tab. Your branch and any pushes are
+          preserved — only the encrypted token is replaced.
+        </p>
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary"
+          >
+            Later
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              openSecretVault();
+            }}
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20"
+          >
+            <KeyRound size={11} />
+            Open Sessions
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

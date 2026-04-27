@@ -275,6 +275,23 @@ type WorkspaceStore = {
    */
   pushWorkspace: (commitMessage?: string) => Promise<{ commitSha: string }>;
 
+  /**
+   * Open a pull request from the working branch into its base. Requires a
+   * prior push (lastPushedSha != null) — there's nothing to merge before
+   * the first commit. Defaults: title "APICircle workspace updates",
+   * body empty, draft false. On success, persists `openPrUrl` on
+   * workingBranch and returns the PR number + URL.
+   *
+   * Throws MissingScopeError when the token lacks `pull_request` — the UI
+   * catches that to prompt the user to update their token without losing
+   * branch state (Plan §3.7).
+   */
+  createPullRequest: (args?: {
+    title?: string;
+    body?: string;
+    draft?: boolean;
+  }) => Promise<{ number: number; htmlUrl: string }>;
+
   executeActiveRequest: () => Promise<void>;
 };
 
@@ -899,6 +916,35 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set({ local: next });
     void saveLocal(next);
     return { commitSha: newCommit.sha };
+  },
+
+  createPullRequest: async (args) => {
+    const local = get().local;
+    if (!local) throw new Error('Workspace not ready');
+    const branch = local.workingBranch;
+    if (!branch) throw new Error('Create a working branch first');
+    if (!branch.lastPushedSha) {
+      throw new Error('Push to save before opening a PR');
+    }
+    if (branch.openPrUrl) {
+      throw new Error('A pull request is already open for this branch');
+    }
+
+    const token = await decryptSessionToken(local);
+    const client = new GitHubClient();
+    const pr = await client.createPullRequest(token, branch.repoOwner, branch.repoName, {
+      title: args?.title?.trim() || 'APICircle workspace updates',
+      body: args?.body ?? '',
+      head: branch.name,
+      base: branch.baseBranch,
+      draft: args?.draft ?? false,
+    });
+
+    const updatedBranch: WorkingBranch = { ...branch, openPrUrl: pr.htmlUrl };
+    const next: WorkspaceLocal = { ...get().local!, workingBranch: updatedBranch };
+    set({ local: next });
+    void saveLocal(next);
+    return { number: pr.number, htmlUrl: pr.htmlUrl };
   },
 
   executeActiveRequest: async () => {

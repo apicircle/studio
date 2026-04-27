@@ -466,6 +466,105 @@ describe('GitHubClient.createCommit', () => {
   });
 });
 
+describe('GitHubClient.createPullRequest', () => {
+  it('POSTs title/body/head/base and returns the normalized PR summary', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({
+        number: 12,
+        html_url: 'https://github.com/me/api/pull/12',
+        state: 'open',
+        title: 'APICircle workspace updates',
+      }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const pr = await client.createPullRequest('tok', 'me', 'api', {
+      title: 'APICircle workspace updates',
+      body: 'auto',
+      head: 'apicircle/wb',
+      base: 'main',
+    });
+    expect(pr).toEqual({
+      number: 12,
+      htmlUrl: 'https://github.com/me/api/pull/12',
+      state: 'open',
+      title: 'APICircle workspace updates',
+    });
+    const [url, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe('https://api.github.com/repos/me/api/pulls');
+    expect((init as RequestInit).method).toBe('POST');
+    const body = JSON.parse(((init as RequestInit).body as string) ?? '');
+    expect(body).toEqual({
+      title: 'APICircle workspace updates',
+      body: 'auto',
+      head: 'apicircle/wb',
+      base: 'main',
+      draft: false,
+    });
+  });
+
+  it('passes through draft: true when requested', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({ number: 1, html_url: 'u', state: 'open', title: 't' }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    await client.createPullRequest('tok', 'me', 'api', {
+      title: 't',
+      body: 'b',
+      head: 'h',
+      base: 'main',
+      draft: true,
+    });
+    const [, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
+    const body = JSON.parse(((init as RequestInit).body as string) ?? '');
+    expect(body.draft).toBe(true);
+  });
+
+  it('surfaces 422 (PR already exists / head==base) as a plain GitHubError', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse(
+        { message: 'A pull request already exists for me:apicircle/wb.' },
+        { status: 422 },
+      ),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    try {
+      await client.createPullRequest('tok', 'me', 'api', {
+        title: 't',
+        body: 'b',
+        head: 'apicircle/wb',
+        base: 'main',
+      });
+      throw new Error('expected throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(GitHubError);
+      expect((err as GitHubError).status).toBe(422);
+      expect((err as Error).message).toMatch(/already exists/);
+    }
+  });
+
+  it('surfaces missing pull_request scope on 403', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse(
+        { message: 'Resource not accessible by personal access token' },
+        { status: 403, headers: { 'x-oauth-scopes': 'repo' } },
+      ),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    try {
+      await client.createPullRequest('tok', 'me', 'api', {
+        title: 't',
+        body: 'b',
+        head: 'h',
+        base: 'main',
+      });
+      throw new Error('expected throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(MissingScopeError);
+      expect((err as MissingScopeError).missingScopes).toEqual(['pull_request']);
+    }
+  });
+});
+
 describe('GitHubClient.updateRef', () => {
   it('PATCHes the branch ref with the new SHA, force=false by default', async () => {
     const fetchImpl: typeof fetch = vi.fn(async () =>
