@@ -247,3 +247,74 @@ describe('workspaceStore.refreshLinkedWorkspace + unlinkWorkspace', () => {
     ).rejects.toThrow(/not found/);
   });
 });
+
+describe('workspaceStore.pinLinkedVersion', () => {
+  beforeEach(async () => {
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrate();
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  async function linkWithTwoVersions(): Promise<string> {
+    await setupSession();
+    const remoteJson = JSON.stringify({
+      workspaceName: 'API',
+      releases: {
+        self: {
+          versions: [
+            {
+              version: '0.1.0',
+              publishedAt: 't',
+              notes: '',
+              workspaceSnapshot: 'a'.repeat(64),
+              deprecated: false,
+              yanked: false,
+            },
+            {
+              version: '0.2.0',
+              publishedAt: 't',
+              notes: '',
+              workspaceSnapshot: 'b'.repeat(64),
+              deprecated: false,
+              yanked: false,
+            },
+          ],
+          currentVersion: '0.2.0',
+        },
+      },
+    });
+    vi.stubGlobal('fetch', queuedFetch([fileContents(remoteJson)]));
+    const link = await useWorkspaceStore
+      .getState()
+      .linkPrivateWorkspace({ repoFullName: 'me/api', branch: 'main' });
+    return link.id;
+  }
+
+  it('switches the pin between cached versions', async () => {
+    const id = await linkWithTwoVersions();
+    expect(useWorkspaceStore.getState().synced!.linkedWorkspaces[id].pinnedVersion).toBe('0.2.0');
+
+    useWorkspaceStore.getState().pinLinkedVersion(id, '0.1.0');
+    expect(useWorkspaceStore.getState().synced!.linkedWorkspaces[id].pinnedVersion).toBe('0.1.0');
+  });
+
+  it('null unpins (track latest)', async () => {
+    const id = await linkWithTwoVersions();
+    useWorkspaceStore.getState().pinLinkedVersion(id, null);
+    expect(useWorkspaceStore.getState().synced!.linkedWorkspaces[id].pinnedVersion).toBeNull();
+  });
+
+  it('throws when the version is not in the cached ledger', async () => {
+    const id = await linkWithTwoVersions();
+    expect(() => useWorkspaceStore.getState().pinLinkedVersion(id, '9.9.9')).toThrow(
+      /not in the cached ledger/,
+    );
+  });
+
+  it('throws when the link id is unknown', async () => {
+    expect(() => useWorkspaceStore.getState().pinLinkedVersion('nope', '1.0.0')).toThrow(
+      /not found/,
+    );
+  });
+});

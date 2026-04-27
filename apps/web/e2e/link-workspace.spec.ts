@@ -88,7 +88,71 @@ test.describe('Link Workspace (P5.2)', () => {
 
     await expect(app.getByText('Payments API')).toBeVisible();
     await expect(app.getByText('org/payments-api@main')).toBeVisible();
-    await expect(app.getByText(/v1\.0\.0/).first()).toBeVisible();
+    await expect(app.getByLabel('Pin Payments API version')).toHaveValue('1.0.0');
+  });
+
+  test('switching the pin opens a confirm dialog and applies the new version', async ({ app }) => {
+    await setupSession(app);
+    const remoteJson = JSON.stringify({
+      workspaceName: 'API',
+      releases: {
+        self: {
+          versions: [
+            {
+              version: '0.1.0',
+              publishedAt: 't',
+              notes: 'first',
+              workspaceSnapshot: 'a'.repeat(64),
+              deprecated: false,
+              yanked: false,
+            },
+            {
+              version: '0.2.0',
+              publishedAt: 't',
+              notes: 'second',
+              workspaceSnapshot: 'b'.repeat(64),
+              deprecated: false,
+              yanked: false,
+            },
+          ],
+          currentVersion: '0.2.0',
+        },
+      },
+    });
+    const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
+    await app.route(
+      'https://api.github.com/repos/me/api/contents/workspace.json**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify({
+            type: 'file',
+            path: 'workspace.json',
+            sha: 's',
+            size: remoteJson.length,
+            content: base64,
+            encoding: 'base64',
+          }),
+        });
+      },
+    );
+
+    await app.getByRole('button', { name: /Link Workspace/ }).click();
+    await app.getByRole('button', { name: /Link a private workspace/ }).click();
+    await app.getByLabel('Linked repo full name').fill('me/api');
+    await app.getByRole('button', { name: /Review .* link/ }).click();
+    await app.getByRole('button', { name: 'Link', exact: true }).click();
+
+    // The select reflects the auto-pinned currentVersion.
+    const pinSelect = app.getByLabel('Pin API version');
+    await expect(pinSelect).toHaveValue('0.2.0');
+
+    // Switching opens the confirm dialog.
+    await pinSelect.selectOption('0.1.0');
+    await expect(app.getByRole('dialog', { name: /Pin API to v0\.1\.0/ })).toBeVisible();
+    await app.getByRole('button', { name: 'Pin', exact: true }).click();
+    await expect(pinSelect).toHaveValue('0.1.0');
   });
 
   test('unlink removes the card', async ({ app }) => {

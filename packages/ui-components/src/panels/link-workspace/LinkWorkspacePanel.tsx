@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { GitBranch, Link2, Package, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
 import { GitHubError, MissingScopeError } from '@apicircle-v2/git';
+import { sortVersionsDesc } from '@apicircle-v2/core';
 import type { LinkedWorkspace } from '@apicircle-v2/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
@@ -242,9 +243,16 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
   const ledger = useWorkspaceStore((s) => s.synced?.releases.perLink[link.id] ?? null);
   const refreshLinkedWorkspace = useWorkspaceStore((s) => s.refreshLinkedWorkspace);
   const unlinkWorkspace = useWorkspaceStore((s) => s.unlinkWorkspace);
+  const pinLinkedVersion = useWorkspaceStore((s) => s.pinLinkedVersion);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [unlinkOpen, setUnlinkOpen] = useState(false);
+  const [pendingPin, setPendingPin] = useState<string | null | undefined>(undefined);
+
+  const sortedVersions = useMemo(
+    () => (ledger ? sortVersionsDesc(ledger.versions.map((v) => v.version)) : []),
+    [ledger],
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -285,8 +293,32 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
           {link.source.repoFullName}@{link.source.branch}
         </dd>
         <dt className="text-text-dim">Pinned version</dt>
-        <dd className="text-text-primary">
-          {link.pinnedVersion ? <code>v{link.pinnedVersion}</code> : <em>unpinned</em>}
+        <dd className="flex items-center gap-2 text-text-primary">
+          <select
+            aria-label={`Pin ${link.name} version`}
+            value={link.pinnedVersion ?? '__unpinned__'}
+            onChange={(e) => {
+              const v = e.target.value;
+              setPendingPin(v === '__unpinned__' ? null : v);
+            }}
+            disabled={sortedVersions.length === 0}
+            className="h-7 rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none disabled:opacity-50"
+          >
+            <option value="__unpinned__">Unpinned (track latest)</option>
+            {sortedVersions.map((v) => {
+              const entry = ledger?.versions.find((x) => x.version === v);
+              return (
+                <option key={v} value={v}>
+                  v{v}
+                  {entry?.deprecated ? ' · deprecated' : ''}
+                  {entry?.yanked ? ' · yanked' : ''}
+                </option>
+              );
+            })}
+          </select>
+          {sortedVersions.length === 0 && (
+            <span className="text-[11px] text-text-dim">no cached versions yet</span>
+          )}
         </dd>
         <dt className="text-text-dim">Cached versions</dt>
         <dd className="text-text-primary">{ledger?.versions.length ?? 0}</dd>
@@ -317,6 +349,40 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
           Unlink
         </button>
       </div>
+
+      <ConfirmDialog
+        open={pendingPin !== undefined}
+        title={
+          pendingPin === null ? `Unpin ${link.name}?` : `Pin ${link.name} to v${pendingPin ?? ''}?`
+        }
+        confirmLabel={pendingPin === null ? 'Unpin' : 'Pin'}
+        description={
+          <p>
+            {pendingPin === null ? (
+              <>
+                Will track the source workspace's latest published version. Future updates need a
+                new pin to lock in.
+              </>
+            ) : (
+              <>
+                Switch from{' '}
+                {link.pinnedVersion ? <code>v{link.pinnedVersion}</code> : <em>unpinned</em>} to{' '}
+                <code>v{pendingPin}</code>. Local context vars referencing the previous version will
+                resolve against the new one.
+              </>
+            )}
+          </p>
+        }
+        onCancel={() => setPendingPin(undefined)}
+        onConfirm={() => {
+          if (pendingPin === undefined) return;
+          try {
+            pinLinkedVersion(link.id, pendingPin);
+          } finally {
+            setPendingPin(undefined);
+          }
+        }}
+      />
 
       <ConfirmDialog
         open={unlinkOpen}

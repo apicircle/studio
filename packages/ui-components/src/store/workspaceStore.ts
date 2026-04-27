@@ -380,6 +380,14 @@ type WorkspaceStore = {
   /** Drop a linked workspace + its cached release ledger. */
   unlinkWorkspace: (id: string) => void;
 
+  /**
+   * Pin (or unpin via `null`) a linked workspace to a specific version.
+   * Throws when the link is unknown, or when `version` is non-null but
+   * doesn't appear in the cached `releases.perLink[id]` ledger — pin to
+   * something we can't see is a footgun.
+   */
+  pinLinkedVersion: (id: string, version: string | null) => void;
+
   executeActiveRequest: () => Promise<void>;
 };
 
@@ -1100,6 +1108,30 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       releases: {
         ...synced.releases,
         perLink: { ...synced.releases.perLink, [id]: cachedLedger },
+      },
+      meta: { ...synced.meta, updatedAt: new Date().toISOString() },
+    };
+    set({ synced: next });
+    void saveSynced(next);
+  },
+
+  pinLinkedVersion: (id, version) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const link = synced.linkedWorkspaces[id];
+    if (!link) throw new Error(`Linked workspace ${id} not found`);
+    if (version !== null) {
+      const cached = synced.releases.perLink[id]?.versions ?? [];
+      if (!cached.find((v) => v.version === version)) {
+        throw new Error(`Version ${version} is not in the cached ledger — refresh the link first`);
+      }
+    }
+    if (link.pinnedVersion === version) return;
+    const next: WorkspaceSynced = {
+      ...synced,
+      linkedWorkspaces: {
+        ...synced.linkedWorkspaces,
+        [id]: { ...link, pinnedVersion: version },
       },
       meta: { ...synced.meta, updatedAt: new Date().toISOString() },
     };
