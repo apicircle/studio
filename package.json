@@ -2,28 +2,54 @@
   "name": "studio-v2",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "API Circle Studio v2 — Tailwind rebuild with two-document workspace schema",
   "license": "Apache-2.0",
   "scripts": {
     "dev": "turbo dev",
     "dev:web": "turbo dev --filter=@apicircle-v2/web",
     "build": "turbo build",
-    "test": "turbo test",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "check": "turbo check",
-    "lint": "turbo lint",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "clean": "turbo clean && rm -rf node_modules"
+    "clean": "turbo clean && rm -rf node_modules",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "@commitlint/cli": "^19.0.0",
+    "@commitlint/config-conventional": "^19.0.0",
+    "@eslint/js": "^9.0.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.0",
     "@types/node": "^20.11.0",
+    "@vitest/coverage-v8": "^2.1.9",
+    "eslint": "^9.0.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "eslint-plugin-react-refresh": "^0.4.0",
+    "fake-indexeddb": "^6.0.0",
+    "husky": "^9.0.0",
+    "jsdom": "^25.0.1",
+    "lint-staged": "^15.2.0",
     "prettier": "^3.2.0",
     "turbo": "^2.0.0",
     "typescript": "^5.4.0",
-    "vitest": "^2.0.0",
-    "@testing-library/jest-dom": "^6.6.3",
-    "@testing-library/react": "^16.3.0",
-    "jsdom": "^25.0.1"
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^2.1.9"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,css,yml,yaml}": [
+      "prettier --write"
+    ]
   },
   "packageManager": "pnpm@9.15.0",
   "engines": {

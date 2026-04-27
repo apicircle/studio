@@ -26,9 +26,14 @@ export function WorkspacePanel() {
       </header>
 
       <section className="max-w-2xl">
-        <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">Identity</h2>
-        <label className="block text-xs text-text-muted">Workspace name</label>
+        <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
+          Identity
+        </h2>
+        <label htmlFor="workspace-name-input" className="block text-xs text-text-muted">
+          Workspace name
+        </label>
         <input
+          id="workspace-name-input"
           value={workspaceName}
           onChange={(e) => setWorkspaceName(e.target.value)}
           className="mt-1 h-9 w-full rounded-sm border border-border bg-card px-3 text-sm text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
