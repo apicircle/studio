@@ -66,14 +66,24 @@ function VaultTab() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-text-muted">
-        Cross-workspace secret storage. Keys defined here are available to requests, environment
-        variables, and as inputs on linked-workspace cards. Each entry is tagged by{' '}
-        <span className="text-text-primary">origin</span> (workspace-defined or required by a linked
-        workspace) and shows where it&apos;s consumed.
+        AES-GCM encryption is now wired. The fastest path today is{' '}
+        <span className="text-text-primary">encrypted environment variables</span> — flip the{' '}
+        <span className="text-text-primary">Encrypted</span> toggle on any variable in the
+        Environments panel. The ciphertext is what gets pushed to Git; only this browser holds the
+        master key needed to decrypt it.
       </p>
-      <div className="rounded-sm border border-dashed border-border-subtle p-6 text-center text-xs text-text-dim">
-        Phase 3 — secret CRUD, AES-GCM encryption, origin badges, and the &quot;where used&quot;
-        expander land here.
+      <div className="rounded-sm border border-border bg-card p-3 text-xs text-text-muted">
+        <p className="mb-1 text-text-primary">Master key</p>
+        <p>
+          Generated automatically on first use and stored in IndexedDB on this device only.
+          Reinstalling the app or clearing site data drops the key — re-enter encrypted values
+          afterwards.
+        </p>
+      </div>
+      <div className="rounded-sm border border-dashed border-border-subtle p-3 text-xs text-text-dim">
+        Cross-workspace named secrets, origin badges, and the &quot;where used&quot; expander land
+        in P3.x — this tab will show vault entries with their consumers once that ships. For now,
+        encrypt directly on the variable.
       </div>
     </div>
   );

@@ -21,3 +21,22 @@ export type { ExecuteOptions, ExecutionResult } from './request/executeRequest';
 
 export { readJsonPath, runAssertions } from './assertions/runAssertions';
 export type { AssertionResult } from './assertions/runAssertions';
+
+export {
+  buildScope,
+  lookup,
+  resolveString,
+  resolveStringMap,
+} from './environment/variableResolver';
+export type { ResolutionScope, ResolveResult } from './environment/variableResolver';
+
+export {
+  decryptString,
+  encryptString,
+  exportKey,
+  generateAesKey,
+  importKey,
+  serializePayload,
+  tryParsePayload,
+} from './secrets/crypto';
+export type { EncryptedPayload } from './secrets/crypto';

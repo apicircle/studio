@@ -127,6 +127,10 @@ export type FormDataRow =
       filename?: string;
       size?: number;
       mimeType?: string;
+      // SHA-256 of the file bytes at attach time. Lives in the synced doc so
+      // pulls can skip re-downloading already-cached blobs and so the CLI /
+      // teammates can detect tampering or corruption.
+      sha256?: string;
       enabled: boolean;
     };
 
@@ -135,6 +139,7 @@ export interface AttachmentRef {
   filename?: string;
   size?: number;
   mimeType?: string;
+  sha256?: string;
 }
 
 export interface Assertion {

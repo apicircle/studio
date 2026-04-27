@@ -17,6 +17,9 @@ export interface AttachmentRecord {
   filename: string;
   mimeType: string;
   size: number;
+  // SHA-256 hex digest of `bytes`. Mirrored into the synced doc so the CLI
+  // and teammates can verify integrity without trusting the IDB cache.
+  sha256: string;
   savedAt: string;
   bytes: Uint8Array;
 }
@@ -103,7 +106,8 @@ async function bytesFromFile(file: File): Promise<Uint8Array> {
 /**
  * Build an AttachmentRecord from a File picked through `<input type="file">`.
  * The caller passes the slotId so it can be stored in the request body's
- * reference at the same time.
+ * reference at the same time. Computes a SHA-256 hex digest in the same
+ * pass so the synced doc can carry it for integrity checks.
  */
 export async function createAttachmentFromFile(
   file: File,
@@ -115,9 +119,19 @@ export async function createAttachmentFromFile(
     filename: file.name,
     mimeType: file.type || 'application/octet-stream',
     size: file.size,
+    sha256: await sha256Hex(bytes),
     savedAt: new Date().toISOString(),
     bytes,
   };
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  // SubtleCrypto.digest accepts BufferSource. Cast the Uint8Array to satisfy
+  // TS 5.9's `Uint8Array<ArrayBufferLike>` typing without re-wrapping the
+  // buffer (jsdom rejects detached `.buffer` references on round-trip).
+  const source = bytes as unknown as BufferSource;
+  const digest = await crypto.subtle.digest('SHA-256', source);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /** Materialize an AttachmentRecord into a Blob for fetch(). */

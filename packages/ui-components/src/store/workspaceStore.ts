@@ -1,6 +1,7 @@
 import type {
   AttachmentRef,
   Assertion,
+  Environment,
   FormDataRow,
   HttpMethod,
   PanelId,
@@ -15,8 +16,14 @@ import { generateId } from '@apicircle-v2/shared';
 import {
   type AttachmentResolver,
   type ExecutionResult,
+  buildScope,
+  decryptString,
+  encryptString,
   executeRequest as coreExecuteRequest,
+  resolveString,
   runAssertions,
+  serializePayload,
+  tryParsePayload,
 } from '@apicircle-v2/core';
 import { create } from 'zustand';
 import {
@@ -27,6 +34,7 @@ import {
   materializeAttachment,
   putAttachment,
 } from '../persistence/attachments';
+import { getMasterKey } from '../persistence/secretKey';
 import { loadWorkspace, saveLocal, saveSynced } from '../persistence/workspaceStorage';
 import { applyTheme } from '../theme/applyTheme';
 import {
@@ -42,6 +50,15 @@ import {
   setRequestUrl as setRequestUrlAction,
   renameRequest as renameRequestAction,
 } from './editorActions';
+import {
+  addEnvironment as addEnvironmentAction,
+  addVariableRow as addVariableRowAction,
+  removeEnvironment as removeEnvironmentAction,
+  renameEnvironment as renameEnvironmentAction,
+  setActiveEnvironment as setActiveEnvironmentAction,
+  setPriorityOrder as setPriorityOrderAction,
+  setVariables as setVariablesAction,
+} from './envActions';
 
 const attachmentResolver: AttachmentResolver = async (slotId) => {
   const record = await getAttachment(slotId);
@@ -131,6 +148,25 @@ type WorkspaceStore = {
   // sets body.attachment to point at it, and frees any previous slot.
   attachBinaryFile: (requestId: string, file: File) => Promise<void>;
   detachBinaryFile: (requestId: string) => Promise<void>;
+
+  // Environments
+  addEnvironment: (name: string) => void;
+  removeEnvironment: (name: string) => void;
+  renameEnvironment: (oldName: string, newName: string) => void;
+  setActiveEnvironment: (name: string | null) => void;
+  setPriorityOrder: (order: string[]) => void;
+  setVariables: (envName: string, variables: Environment['variables']) => void;
+  addVariableRow: (envName: string) => void;
+  /**
+   * Set a variable's value, encrypting it on the way in if `encrypted` is
+   * true. Existing encrypted ciphertext is rotated under the same key.
+   */
+  setVariableValue: (
+    envName: string,
+    index: number,
+    value: string,
+    encrypted: boolean,
+  ) => Promise<void>;
 
   executeActiveRequest: () => Promise<void>;
 };
@@ -288,6 +324,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       filename: record.filename,
       size: record.size,
       mimeType: record.mimeType,
+      sha256: record.sha256,
     };
     const nextRows = existing.body.formRows.map((r, i) => (i === rowIndex ? nextRow : r));
     const nextBody: RequestBody = { ...existing.body, formRows: nextRows };
@@ -333,6 +370,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       filename: record.filename,
       size: record.size,
       mimeType: record.mimeType,
+      sha256: record.sha256,
     };
     const nextBody: RequestBody = { type: 'binary', content: '', attachment: ref };
     commitSynced(set, get, (s) => setRequestBodyAction(s, requestId, nextBody));
@@ -351,6 +389,39 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (previousSlot) await deleteAttachment(previousSlot);
   },
 
+  // --- environments ------------------------------------------------------
+
+  addEnvironment: (name) => commitSynced(set, get, (s) => addEnvironmentAction(s, name)),
+  removeEnvironment: (name) => commitSynced(set, get, (s) => removeEnvironmentAction(s, name)),
+  renameEnvironment: (oldName, newName) =>
+    commitSynced(set, get, (s) => renameEnvironmentAction(s, oldName, newName)),
+  setActiveEnvironment: (name) =>
+    commitSynced(set, get, (s) => setActiveEnvironmentAction(s, name)),
+  setPriorityOrder: (order) => commitSynced(set, get, (s) => setPriorityOrderAction(s, order)),
+  setVariables: (envName, variables) =>
+    commitSynced(set, get, (s) => setVariablesAction(s, envName, variables)),
+  addVariableRow: (envName) => commitSynced(set, get, (s) => addVariableRowAction(s, envName)),
+
+  setVariableValue: async (envName, index, value, encrypted) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const env = synced.environments.items[envName];
+    if (!env) return;
+    const existing = env.variables[index];
+    if (!existing) return;
+
+    let storedValue = value;
+    if (encrypted) {
+      const key = await getMasterKey();
+      const payload = await encryptString(value, key);
+      storedValue = serializePayload(payload);
+    }
+    const nextVars: Environment['variables'] = env.variables.map((v, i) =>
+      i === index ? { ...v, value: storedValue, encrypted } : v,
+    );
+    commitSynced(set, get, (s) => setVariablesAction(s, envName, nextVars));
+  },
+
   executeActiveRequest: async () => {
     const state = get();
     const id = state.local?.ui.activeRequestId;
@@ -361,7 +432,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
     set((s) => ({ isExecuting: { ...s.isExecuting, [id]: true } }));
     try {
-      const result = await coreExecuteRequest(request, { resolveAttachment: attachmentResolver });
+      const resolved = await resolveRequest(request, synced);
+      const result = await coreExecuteRequest(resolved, {
+        resolveAttachment: attachmentResolver,
+      });
       const assertionResults = runAssertions(request.assertions, result);
       const run: RequestRun = {
         id: generateId(),
@@ -406,4 +480,101 @@ function commitSynced(
   if (next === synced) return;
   set({ synced: next });
   void saveSynced(next);
+}
+
+/**
+ * Apply variable substitution + secret decryption to a request before it
+ * goes to the executor. URL, query params, headers, body content, and
+ * (for json/text/xml/graphql) the raw body string are all resolved against
+ * the workspace scope (context vars > active env > priority list > secrets).
+ *
+ * Encrypted env-var values are decrypted in this single pass — the master
+ * key is fetched once, decryption runs in parallel for the variables that
+ * need it, and the resulting plaintext-only env map feeds the resolver.
+ */
+async function resolveRequest(request: ApiRequest, synced: WorkspaceSynced): Promise<ApiRequest> {
+  const envs = await decryptEnvironments(synced.environments.items);
+
+  const contextVars = request.contextVars;
+  const scope = buildScope({
+    contextVars,
+    environments: envs,
+    activeEnvName: synced.environments.activeName,
+    priorityOrder: synced.environments.priorityOrder,
+  });
+
+  const url = resolveString(request.url, scope).value;
+  const headers = request.headers.map((h) => ({
+    ...h,
+    key: resolveString(h.key, scope).value,
+    value: resolveString(h.value, scope).value,
+  }));
+  const query = request.query.map((q) => ({
+    ...q,
+    key: resolveString(q.key, scope).value,
+    value: resolveString(q.value, scope).value,
+  }));
+
+  let body: RequestBody = request.body;
+  if (
+    body.type === 'json' ||
+    body.type === 'text' ||
+    body.type === 'xml' ||
+    body.type === 'graphql' ||
+    body.type === 'urlencoded'
+  ) {
+    body = { ...body, content: resolveString(body.content, scope).value };
+  } else if (body.type === 'form-data' && body.formRows) {
+    body = {
+      ...body,
+      formRows: body.formRows.map((row) => {
+        if (row.kind === 'text') {
+          return {
+            ...row,
+            key: resolveString(row.key, scope).value,
+            value: resolveString(row.value, scope).value,
+          };
+        }
+        return { ...row, key: resolveString(row.key, scope).value };
+      }),
+    };
+  }
+
+  return { ...request, url, headers, query, body };
+}
+
+/**
+ * Decrypt every encrypted variable in the workspace's env map and return a
+ * plaintext map keyed by env name. Plain (non-encrypted) values pass through
+ * verbatim. Decryption failures fall back to the ciphertext literal so the
+ * user can see something went wrong rather than silently sending garbage.
+ */
+async function decryptEnvironments(
+  items: Record<string, Environment>,
+): Promise<Record<string, Record<string, string>>> {
+  const needsKey = Object.values(items).some((env) =>
+    env.variables.some((v) => v.encrypted && tryParsePayload(v.value)),
+  );
+  const key = needsKey ? await getMasterKey() : null;
+  const out: Record<string, Record<string, string>> = {};
+  for (const [name, env] of Object.entries(items)) {
+    const flat: Record<string, string> = {};
+    for (const v of env.variables) {
+      if (!v.key) continue;
+      if (v.encrypted && key) {
+        const payload = tryParsePayload(v.value);
+        if (payload) {
+          try {
+            flat[v.key] = await decryptString(payload, key);
+            continue;
+          } catch {
+            // fall through to ciphertext literal
+          }
+        }
+      }
+      flat[v.key] = v.value;
+    }
+    out[name] = flat;
+  }
+  return out;
 }

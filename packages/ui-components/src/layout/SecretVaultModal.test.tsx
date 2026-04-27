@@ -16,7 +16,7 @@ describe('SecretVaultModal', () => {
     act(() => useWorkspaceStore.getState().openSecretVault());
     expect(screen.getByRole('dialog', { name: /Secret Vault/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Vault/ })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByText(/Cross-workspace secret storage/)).toBeInTheDocument();
+    expect(screen.getByText(/AES-GCM encryption is now wired/)).toBeInTheDocument();
   });
 
   it('switches to Sessions tab and shows required scope guidance', async () => {

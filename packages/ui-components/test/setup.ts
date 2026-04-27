@@ -6,6 +6,8 @@ import { afterEach, beforeEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import { __resetAttachmentsForTests } from '../src/persistence/attachments';
 import { __resetDbForTests } from '../src/persistence/db';
+import { __resetSecretKeyForTests } from '../src/persistence/secretKey';
+import { __resetSecretsForTests } from '../src/persistence/secrets';
 import { useWorkspaceStore } from '../src/store/workspaceStore';
 
 // Snapshot the store's initial state on import. Action closures (which carry
@@ -18,6 +20,8 @@ beforeEach(async () => {
   globalThis.indexedDB = new IDBFactory();
   __resetDbForTests();
   __resetAttachmentsForTests();
+  __resetSecretKeyForTests();
+  __resetSecretsForTests();
   if (typeof localStorage !== 'undefined') localStorage.clear();
   useWorkspaceStore.setState(initialStoreState, true);
   document.documentElement.removeAttribute('data-theme');

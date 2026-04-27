@@ -25,11 +25,9 @@ export const sharedTestConfig: ViteUserConfig['test'] = {
       'dist/**',
       // Phase placeholder panels — empty PanelStub wrappers replaced by real
       // components in their target phase. Each gets real tests when it ships.
-      '**/panels/env/**',
       '**/panels/execution/**',
       '**/panels/help/**',
       '**/panels/history/**',
-      '**/panels/editor/**',
       '**/panels/link-workspace/**',
     ],
     thresholds: {

@@ -17,6 +17,7 @@ describe('attachments IDB store', () => {
       filename: 'a.bin',
       mimeType: 'application/octet-stream',
       size: 3,
+      sha256: '00',
       savedAt: '2026-04-27T00:00:00.000Z',
       bytes: new Uint8Array([1, 2, 3]),
     });
@@ -37,6 +38,7 @@ describe('attachments IDB store', () => {
       filename: 'x',
       mimeType: 'text/plain',
       size: 1,
+      sha256: '00',
       savedAt: '2026-04-27T00:00:00.000Z',
       bytes: sampleBytes('x'),
     });
@@ -51,6 +53,7 @@ describe('attachments IDB store', () => {
         filename: id,
         mimeType: 'text/plain',
         size: 1,
+        sha256: '00',
         savedAt: 'now',
         bytes: sampleBytes(id),
       });
@@ -81,6 +84,21 @@ describe('attachments IDB store', () => {
       const record = await createAttachmentFromFile(file, 's');
       expect(record.mimeType).toBe('application/octet-stream');
     });
+
+    it('computes a stable SHA-256 hex digest of the bytes', async () => {
+      const file = new File(['hello'], 'greet.txt', { type: 'text/plain' });
+      const record = await createAttachmentFromFile(file, 'slot-h');
+      // Reference hash of the UTF-8 string "hello".
+      expect(record.sha256).toBe(
+        '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
+      );
+      // Same bytes → same hash.
+      const again = await createAttachmentFromFile(
+        new File(['hello'], 'greet.txt', { type: 'text/plain' }),
+        'slot-h2',
+      );
+      expect(again.sha256).toBe(record.sha256);
+    });
   });
 
   describe('materializeAttachment', () => {
@@ -90,6 +108,7 @@ describe('attachments IDB store', () => {
         filename: 'f',
         mimeType: 'image/png',
         size: 4,
+        sha256: '00',
         savedAt: 'now',
         bytes: new Uint8Array([1, 2, 3, 4]),
       });
