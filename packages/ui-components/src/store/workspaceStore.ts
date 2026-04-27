@@ -3,6 +3,7 @@ import type {
   Assertion,
   Environment,
   FormDataRow,
+  GitHubSession,
   HttpMethod,
   PanelId,
   Request as ApiRequest,
@@ -12,6 +13,7 @@ import type {
   WorkspaceLocal,
   WorkspaceSynced,
 } from '@apicircle-v2/shared';
+import { GitHubClient, MissingScopeError } from '@apicircle-v2/git';
 import { generateId } from '@apicircle-v2/shared';
 import {
   type AttachmentResolver,
@@ -202,8 +204,38 @@ type WorkspaceStore = {
   /** Force-recompute the `usedIn` index for every secret. */
   recomputeSecretUsage: () => void;
 
+  // GitHub session — see Plan §3.6 + revision #6.
+  /**
+   * Connect a GitHub PAT. Verifies it via GET /user, encrypts via the master
+   * key and stores in the secret vault, captures account login + granted
+   * scopes into `local.sessions.github`. Returns the resolved session on
+   * success; throws on rejected token or insufficient base scopes.
+   */
+  connectGitHubSession: (token: string) => Promise<GitHubSession>;
+  /**
+   * Re-verify the active session against GitHub and refresh granted scopes.
+   * Returns the updated scopes or null when no session exists.
+   */
+  verifyGitHubScopes: () => Promise<string[] | null>;
+  /**
+   * Replace the PAT for the active session without losing branch/PR state.
+   * Re-verifies + refreshes scopes in the same pass.
+   */
+  updateGitHubToken: (token: string) => Promise<GitHubSession>;
+  /** Disconnect: free the encrypted token, clear the session entry. */
+  disconnectGitHubSession: () => Promise<void>;
+
   executeActiveRequest: () => Promise<void>;
 };
+
+/**
+ * Required base scopes for the connect flow. Push-to-save needs `repo`;
+ * `pull_request` is required only for PR creation, surfaced as a warning
+ * at connect time via the UI guidance copy. The verify step on connect
+ * throws MissingScopeError when REQUIRED_BASE_SCOPES are missing.
+ */
+const REQUIRED_BASE_SCOPES = ['repo'] as const;
+const GITHUB_TOKEN_LABEL_PREFIX = 'github-token:';
 
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   ready: false,
@@ -529,6 +561,122 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!synced || !local) return;
     const next = recomputeUsedIn(synced, local);
     if (next === local) return;
+    set({ local: next });
+    void saveLocal(next);
+  },
+
+  // --- GitHub session ----------------------------------------------------
+
+  connectGitHubSession: async (token) => {
+    const local = get().local;
+    if (!local) throw new Error('Workspace not ready');
+    const trimmed = token.trim();
+    if (!trimmed) throw new Error('Token is required');
+
+    // Verify via GET /user; throws MissingScopeError when base scopes are missing.
+    const client = new GitHubClient();
+    const { viewer, scopes } = await client.getViewer(trimmed, {
+      requiredScopes: [...REQUIRED_BASE_SCOPES],
+    });
+    const missingBase = REQUIRED_BASE_SCOPES.filter((s) => !scopes.granted.includes(s));
+    if (missingBase.length > 0) {
+      throw new MissingScopeError(
+        `Token is missing required base scopes: ${missingBase.join(', ')}.`,
+        403,
+        [...missingBase],
+        scopes.granted,
+      );
+    }
+
+    // Persist the PAT in the secret vault (re-using the master-key flow).
+    const tokenSecretId = generateId();
+    const masterKey = await getMasterKey();
+    const payload = await encryptString(trimmed, masterKey);
+    await putSecretPayload(tokenSecretId, payload);
+    const indexed = addSecretEntryAction(local, {
+      id: tokenSecretId,
+      label: `${GITHUB_TOKEN_LABEL_PREFIX}${viewer.login}`,
+    });
+    if (indexed === local) {
+      // Label collision (already a session for this account?) — clean up.
+      await deleteSecretPayload(tokenSecretId);
+      throw new Error(`A session for ${viewer.login} already exists`);
+    }
+
+    const session: GitHubSession = {
+      accountLogin: viewer.login,
+      tokenSecretId,
+      grantedScopes: scopes.granted,
+      addedAt: new Date().toISOString(),
+      lastVerifiedAt: new Date().toISOString(),
+    };
+    const next: WorkspaceLocal = { ...indexed, sessions: { github: session } };
+    set({ local: next });
+    void saveLocal(next);
+    return session;
+  },
+
+  verifyGitHubScopes: async () => {
+    const local = get().local;
+    const session = local?.sessions.github ?? null;
+    if (!local || !session) return null;
+    const payload = await getSecretPayload(session.tokenSecretId);
+    if (!payload) return null;
+    const masterKey = await getMasterKey();
+    const token = await decryptString(payload, masterKey);
+    const client = new GitHubClient();
+    const { scopes } = await client.getViewer(token);
+    const updated: GitHubSession = {
+      ...session,
+      grantedScopes: scopes.granted,
+      lastVerifiedAt: new Date().toISOString(),
+    };
+    const next: WorkspaceLocal = { ...local, sessions: { github: updated } };
+    set({ local: next });
+    void saveLocal(next);
+    return scopes.granted;
+  },
+
+  updateGitHubToken: async (token) => {
+    const local = get().local;
+    const session = local?.sessions.github ?? null;
+    if (!local || !session) throw new Error('No active session to update');
+    const trimmed = token.trim();
+    if (!trimmed) throw new Error('Token is required');
+
+    const client = new GitHubClient();
+    const { viewer, scopes } = await client.getViewer(trimmed);
+    if (viewer.login !== session.accountLogin) {
+      throw new Error(
+        `Token belongs to ${viewer.login} but the active session is for ${session.accountLogin}. Disconnect first.`,
+      );
+    }
+    // Rotate the ciphertext under the existing slot id; branch/PR state
+    // (working branch, ahead/behind, etc) is preserved verbatim.
+    const masterKey = await getMasterKey();
+    const payload = await encryptString(trimmed, masterKey);
+    await putSecretPayload(session.tokenSecretId, payload);
+    const updated: GitHubSession = {
+      ...session,
+      grantedScopes: scopes.granted,
+      lastVerifiedAt: new Date().toISOString(),
+    };
+    const next: WorkspaceLocal = { ...local, sessions: { github: updated } };
+    set({ local: next });
+    void saveLocal(next);
+    return updated;
+  },
+
+  disconnectGitHubSession: async () => {
+    const local = get().local;
+    const session = local?.sessions.github ?? null;
+    if (!local || !session) return;
+    await deleteSecretPayload(session.tokenSecretId);
+    const indexCleared = removeSecretEntryAction(local, session.tokenSecretId);
+    const next: WorkspaceLocal = {
+      ...indexCleared,
+      sessions: { github: null },
+    };
     set({ local: next });
     void saveLocal(next);
   },

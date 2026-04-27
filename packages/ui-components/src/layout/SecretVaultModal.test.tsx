@@ -1,6 +1,6 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SecretVaultModal } from './SecretVaultModal';
 import { renderWithStore } from '../../test/renderWithStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
@@ -30,6 +30,8 @@ describe('SecretVaultModal', () => {
     );
     expect(screen.getByText(/repo/)).toBeInTheDocument();
     expect(screen.getByText(/pull_request/)).toBeInTheDocument();
+    // Connect form is visible when no session is active.
+    expect(screen.getByLabelText('GitHub PAT')).toBeInTheDocument();
   });
 
   it('Escape closes the modal', async () => {
@@ -131,6 +133,109 @@ describe('SecretVaultModal', () => {
           el?.tagName === 'LI' && (el.textContent ?? '').includes('request · New request'),
       );
       expect(matches.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Sessions tab — GitHub PAT flow', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('connect → active session card shows account + scopes', async () => {
+      const fetchMock = vi.fn(
+        async () =>
+          new Response(JSON.stringify({ login: 'devaprakash', id: 7 }), {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+              'x-oauth-scopes': 'repo, pull_request',
+            },
+          }),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+
+      await renderWithStore(<SecretVaultModal />);
+      act(() => useWorkspaceStore.getState().openSecretVault());
+      await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+
+      await userEvent.type(screen.getByLabelText('GitHub PAT'), 'ghp_test');
+      await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+
+      expect(await screen.findByText(/Connected as devaprakash/)).toBeInTheDocument();
+      expect(screen.getByText('repo, pull_request')).toBeInTheDocument();
+    });
+
+    it('warns inline when the connected token lacks pull_request scope', async () => {
+      const fetchMock = vi.fn(
+        async () =>
+          new Response(JSON.stringify({ login: 'me', id: 1 }), {
+            status: 200,
+            headers: { 'content-type': 'application/json', 'x-oauth-scopes': 'repo' },
+          }),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+
+      await renderWithStore(<SecretVaultModal />);
+      act(() => useWorkspaceStore.getState().openSecretVault());
+      await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+
+      await userEvent.type(screen.getByLabelText('GitHub PAT'), 'ghp_test');
+      await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+
+      expect(await screen.findByText(/does not include/i)).toBeInTheDocument();
+    });
+
+    it('shows the missing-scope error inline when connect fails on insufficient base scopes', async () => {
+      const fetchMock = vi.fn(
+        async () =>
+          new Response(JSON.stringify({ login: 'me', id: 1 }), {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+              'x-oauth-scopes': 'public_repo',
+            },
+          }),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+
+      await renderWithStore(<SecretVaultModal />);
+      act(() => useWorkspaceStore.getState().openSecretVault());
+      await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+
+      await userEvent.type(screen.getByLabelText('GitHub PAT'), 'ghp_bad');
+      await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+
+      expect(
+        await screen.findByText(
+          (_text, el) => el?.getAttribute('role') === 'alert' && /repo/.test(el.textContent ?? ''),
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it('disconnect requires confirmation then clears the session', async () => {
+      const fetchMock = vi.fn(
+        async () =>
+          new Response(JSON.stringify({ login: 'me', id: 1 }), {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+              'x-oauth-scopes': 'repo, pull_request',
+            },
+          }),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+
+      await renderWithStore(<SecretVaultModal />);
+      act(() => useWorkspaceStore.getState().openSecretVault());
+      await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+      await userEvent.type(screen.getByLabelText('GitHub PAT'), 'tok');
+      await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+      await screen.findByText(/Connected as me/);
+
+      await userEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+      // Now the button reads "Confirm disconnect"; second click clears it.
+      await userEvent.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
+      await waitFor(() => expect(useWorkspaceStore.getState().local!.sessions.github).toBeNull());
     });
   });
 });

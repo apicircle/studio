@@ -108,9 +108,19 @@ export function WorkspacePanel() {
               </dd>
               <dt className="text-text-dim">Last verified</dt>
               <dd className="text-text-primary">
-                {session.lastVerifiedAt ?? <em className="text-text-dim">never</em>}
+                {session.lastVerifiedAt ? (
+                  new Date(session.lastVerifiedAt).toLocaleString()
+                ) : (
+                  <em className="text-text-dim">never</em>
+                )}
               </dd>
             </dl>
+            {!session.grantedScopes.includes('pull_request') && (
+              <p className="mt-3 rounded-sm border border-warning/40 bg-warning/10 p-2 text-[11px] text-warning">
+                Token does not include the <code>pull_request</code> scope. Push will work; PR
+                creation from the app will fail until the token is updated.
+              </p>
+            )}
             <button
               type="button"
               onClick={openSecretVault}

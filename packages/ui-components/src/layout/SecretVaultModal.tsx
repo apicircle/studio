@@ -1,15 +1,19 @@
 import { useState } from 'react';
 import {
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
+  ExternalLink,
   Eye,
   EyeOff,
   KeyRound,
   Plus,
+  RefreshCw,
   ShieldCheck,
   Trash2,
 } from 'lucide-react';
 import type { SecretEntry } from '@apicircle-v2/shared';
+import { MissingScopeError } from '@apicircle-v2/git';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { Modal } from '../primitives/Modal';
 import { cn } from '../primitives/cn';
@@ -325,28 +329,259 @@ function SecretRow({ entry }: SecretRowProps) {
 }
 
 function SessionsTab() {
+  const session = useWorkspaceStore((s) => s.local?.sessions.github ?? null);
   return (
     <div className="space-y-4">
       <p className="text-sm text-text-muted">
-        GitHub PAT sessions. Manage the active token without losing your branch or PR state — use{' '}
-        <span className="text-text-primary">Update token</span> to rotate without logout.
+        GitHub PAT sessions. Manage the active token without losing your working branch or PR state
+        — use <span className="text-text-primary">Update token</span> to rotate without
+        disconnecting.
       </p>
-      <div className="rounded-sm border border-dashed border-border-subtle p-3 text-xs text-text-dim">
-        <p className="mb-2 text-text-muted">When connecting a token, request these scopes:</p>
-        <ul className="ml-4 list-disc space-y-0.5">
-          <li>
-            <code className="text-text-primary">repo</code> — read/write workspace.json on the
-            working branch
-          </li>
-          <li>
-            <code className="text-text-primary">pull_request</code> — open PRs from working branch
-            to base
-          </li>
-        </ul>
+      <ScopeGuidance />
+      {session ? <ActiveSessionCard /> : <ConnectForm />}
+    </div>
+  );
+}
+
+function ScopeGuidance() {
+  return (
+    <div className="rounded-sm border border-border bg-card p-3 text-xs text-text-muted">
+      <p className="mb-2 text-text-primary">Required PAT scopes</p>
+      <ul className="ml-4 list-disc space-y-0.5">
+        <li>
+          <code className="text-text-primary">repo</code> — required for push to save and read of
+          the working branch
+        </li>
+        <li>
+          <code className="text-text-primary">pull_request</code> — required to create PRs from the
+          working branch to <code>main</code>
+        </li>
+      </ul>
+      <a
+        href="https://github.com/settings/tokens?type=beta"
+        target="_blank"
+        rel="noreferrer noopener"
+        className="mt-2 inline-flex items-center gap-1 text-accent hover:underline"
+      >
+        Create a token on github.com
+        <ExternalLink size={10} aria-hidden="true" />
+      </a>
+    </div>
+  );
+}
+
+function ConnectForm() {
+  const connect = useWorkspaceStore((s) => s.connectGitHubSession);
+  const [token, setToken] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      await connect(token);
+      setToken('');
+    } catch (err) {
+      if (err instanceof MissingScopeError) {
+        setError(`Token is missing required scope(s): ${err.missingScopes.join(', ')}`);
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Failed to connect — unknown error');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2 rounded-sm border border-accent/30 bg-accent/5 p-3">
+      <label htmlFor="pat-input" className="block text-xs text-text-muted">
+        Personal access token
+      </label>
+      <input
+        id="pat-input"
+        type="password"
+        value={token}
+        onChange={(e) => setToken(e.target.value)}
+        placeholder="ghp_… or github_pat_…"
+        aria-label="GitHub PAT"
+        className="h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !submitting) void submit();
+        }}
+      />
+      {error && (
+        <p className="text-xs text-danger" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={submitting || !token.trim()}
+          className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+        >
+          {submitting ? 'Verifying…' : 'Connect'}
+        </button>
       </div>
-      <div className="rounded-sm border border-dashed border-border-subtle p-6 text-center text-xs text-text-dim">
-        Phase 4 — connect, verify scopes, rotate token, and scope-failure recovery modal land here.
+      <p className="text-[11px] text-text-dim">
+        We verify the token via <code>GET /user</code> before storing it. The token is encrypted
+        with your local master key — only this browser can decrypt it.
+      </p>
+    </div>
+  );
+}
+
+function ActiveSessionCard() {
+  const session = useWorkspaceStore((s) => s.local!.sessions.github!);
+  const verify = useWorkspaceStore((s) => s.verifyGitHubScopes);
+  const updateToken = useWorkspaceStore((s) => s.updateGitHubToken);
+  const disconnect = useWorkspaceStore((s) => s.disconnectGitHubSession);
+
+  const [verifying, setVerifying] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [showUpdate, setShowUpdate] = useState(false);
+  const [newToken, setNewToken] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+
+  const onVerify = async () => {
+    setVerifying(true);
+    setError(null);
+    try {
+      await verify();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Verify failed');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const onUpdate = async () => {
+    setUpdating(true);
+    setError(null);
+    try {
+      await updateToken(newToken);
+      setNewToken('');
+      setShowUpdate(false);
+    } catch (err) {
+      if (err instanceof MissingScopeError) {
+        setError(`New token still missing scope(s): ${err.missingScopes.join(', ')}`);
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Update failed — unknown error');
+      }
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const hasPullRequest = session.grantedScopes.includes('pull_request');
+
+  return (
+    <div className="space-y-3 rounded-sm border border-success/30 bg-success/5 p-3">
+      <div className="flex items-center gap-2">
+        <CheckCircle2 size={14} className="text-success" aria-hidden="true" />
+        <span className="text-sm font-medium text-text-primary">
+          Connected as {session.accountLogin}
+        </span>
       </div>
+      <dl className="grid grid-cols-[120px_1fr] gap-y-1 text-xs">
+        <dt className="text-text-dim">Granted scopes</dt>
+        <dd className="text-text-primary">
+          {session.grantedScopes.length > 0 ? session.grantedScopes.join(', ') : '—'}
+        </dd>
+        <dt className="text-text-dim">Last verified</dt>
+        <dd className="text-text-primary">
+          {session.lastVerifiedAt ? new Date(session.lastVerifiedAt).toLocaleString() : 'never'}
+        </dd>
+      </dl>
+      {!hasPullRequest && (
+        <p className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-[11px] text-warning">
+          Your token does not include the <code>pull_request</code> scope. Push to save will work,
+          but creating PRs from the app will fail until you update the token.
+        </p>
+      )}
+      {error && (
+        <p className="text-xs text-danger" role="alert">
+          {error}
+        </p>
+      )}
+      {showUpdate ? (
+        <div className="space-y-2 rounded-sm border border-accent/30 bg-accent/5 p-2">
+          <input
+            type="password"
+            value={newToken}
+            onChange={(e) => setNewToken(e.target.value)}
+            placeholder="New PAT (must belong to the same account)"
+            aria-label="New GitHub PAT"
+            className="h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => void onUpdate()}
+              disabled={updating || !newToken.trim()}
+              className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+            >
+              {updating ? 'Verifying…' : 'Update'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowUpdate(false);
+                setNewToken('');
+                setError(null);
+              }}
+              className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:text-text-primary"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void onVerify()}
+            disabled={verifying}
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
+          >
+            <RefreshCw size={12} className={verifying ? 'animate-spin' : ''} />
+            {verifying ? 'Verifying…' : 'Verify scopes'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowUpdate(true)}
+            className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20"
+          >
+            Update token
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (confirmDisconnect) {
+                void disconnect();
+                setConfirmDisconnect(false);
+              } else {
+                setConfirmDisconnect(true);
+              }
+            }}
+            className={cn(
+              'inline-flex h-7 items-center rounded-sm border px-3 text-xs',
+              confirmDisconnect
+                ? 'border-danger/40 bg-danger/10 text-danger hover:bg-danger/20'
+                : 'border-border bg-surface text-text-muted hover:text-text-primary',
+            )}
+          >
+            {confirmDisconnect ? 'Confirm disconnect' : 'Disconnect'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
