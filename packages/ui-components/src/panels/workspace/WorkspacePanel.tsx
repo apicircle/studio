@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
+  AlertTriangle,
   CheckCircle2,
   ExternalLink,
   GitBranch,
@@ -7,9 +8,11 @@ import {
   GitPullRequest,
   KeyRound,
   Lock,
+  Package,
   Plus,
   RefreshCw,
   ShieldAlert,
+  Tag,
   Upload,
   X,
 } from 'lucide-react';
@@ -18,9 +21,12 @@ import {
   type DiffEntry,
   type ResolutionMap,
   generateWorkingBranchName,
+  isValidSemver,
+  sortVersionsDesc,
   validateBranchName,
 } from '@apicircle-v2/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';
 import { cn } from '../../primitives/cn';
 
@@ -78,6 +84,13 @@ export function WorkspacePanel() {
         </section>
       )}
 
+      <section className="max-w-2xl">
+        <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
+          Releases
+        </h2>
+        <ReleasesCard />
+      </section>
+
       <p className="max-w-2xl text-[11px] text-text-dim">
         Push, refresh, and PR creation are wired up on the working-branch card. Refresh runs a 3-way
         diff against the last pulled snapshot; conflicts open the resolver below.
@@ -85,6 +98,277 @@ export function WorkspacePanel() {
 
       <ConflictResolverModal />
     </div>
+  );
+}
+
+function ReleasesCard() {
+  const releases = useWorkspaceStore((s) => s.synced?.releases.self ?? null);
+  const [publishOpen, setPublishOpen] = useState(false);
+
+  const sortedVersions = useMemo(() => {
+    if (!releases) return [];
+    const order = sortVersionsDesc(releases.versions.map((v) => v.version));
+    return order
+      .map((v) => releases.versions.find((entry) => entry.version === v))
+      .filter((v): v is NonNullable<typeof v> => v !== undefined);
+  }, [releases]);
+
+  return (
+    <div className="rounded-sm border border-border bg-card p-4">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm text-text-primary">
+          <Package size={14} className="text-accent" aria-hidden="true" />
+          <span>Workspace ledger</span>
+          {releases?.currentVersion && (
+            <span className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-accent">
+              v{releases.currentVersion}
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => setPublishOpen(true)}
+          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20"
+        >
+          <Tag size={11} />
+          Publish release
+        </button>
+      </div>
+      <p className="mb-3 text-[11px] text-text-dim">
+        Releases live in <code>workspace.json</code> under <code>releases.self.versions[]</code>.
+        Each entry stamps a SHA-256 of the canonical pre-publish workspace so consumers can verify
+        integrity.
+      </p>
+
+      {sortedVersions.length === 0 ? (
+        <p className="text-[11px] text-text-dim">No releases yet. Publish v0.1.0 to get started.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {sortedVersions.map((v) => (
+            <ReleaseRow key={v.version} entry={v} />
+          ))}
+        </ul>
+      )}
+
+      <PublishReleaseModal open={publishOpen} onClose={() => setPublishOpen(false)} />
+    </div>
+  );
+}
+
+function ReleaseRow({
+  entry,
+}: {
+  entry: {
+    version: string;
+    publishedAt: string;
+    notes: string;
+    deprecated: boolean;
+    yanked: boolean;
+    workspaceSnapshot: string;
+  };
+}) {
+  const deprecateRelease = useWorkspaceStore((s) => s.deprecateRelease);
+  const yankRelease = useWorkspaceStore((s) => s.yankRelease);
+  const [deprecateOpen, setDeprecateOpen] = useState(false);
+  const [yankOpen, setYankOpen] = useState(false);
+
+  return (
+    <li className="rounded-sm border border-border bg-surface p-2">
+      <div className="flex items-center gap-2">
+        <code className="text-xs text-text-primary">v{entry.version}</code>
+        {entry.deprecated && (
+          <span className="rounded-sm border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-warning">
+            deprecated
+          </span>
+        )}
+        {entry.yanked && (
+          <span className="rounded-sm border border-danger/40 bg-danger/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-danger">
+            yanked
+          </span>
+        )}
+        <span className="ml-auto text-[10px] text-text-dim">
+          {new Date(entry.publishedAt).toLocaleString()}
+        </span>
+      </div>
+      {entry.notes && (
+        <p className="mt-1 whitespace-pre-wrap text-[11px] text-text-muted">{entry.notes}</p>
+      )}
+      <p className="mt-1 font-mono text-[10px] text-text-dim" title={entry.workspaceSnapshot}>
+        snapshot {entry.workspaceSnapshot.slice(0, 12)}…
+      </p>
+      <div className="mt-1.5 flex gap-2">
+        {!entry.deprecated && !entry.yanked && (
+          <button
+            type="button"
+            onClick={() => setDeprecateOpen(true)}
+            className="inline-flex h-6 items-center rounded-sm border border-border bg-card px-2 text-[10px] text-text-muted hover:border-border-strong hover:text-text-primary"
+          >
+            Deprecate
+          </button>
+        )}
+        {!entry.yanked && (
+          <button
+            type="button"
+            onClick={() => setYankOpen(true)}
+            className="inline-flex h-6 items-center gap-1 rounded-sm border border-danger/30 bg-danger/5 px-2 text-[10px] text-danger hover:bg-danger/10"
+          >
+            <AlertTriangle size={10} />
+            Yank
+          </button>
+        )}
+      </div>
+
+      <ConfirmDialog
+        open={deprecateOpen}
+        title={`Deprecate v${entry.version}?`}
+        description={
+          <p>
+            Marks v{entry.version} as deprecated. Consumers see a warning but the version stays
+            installable.
+          </p>
+        }
+        confirmLabel="Deprecate"
+        onCancel={() => setDeprecateOpen(false)}
+        onConfirm={() => {
+          deprecateRelease(entry.version);
+          setDeprecateOpen(false);
+        }}
+      />
+      <ConfirmDialog
+        open={yankOpen}
+        title={`Yank v${entry.version}?`}
+        tone="danger"
+        confirmLabel="Yank"
+        typedConfirm={`YANK v${entry.version}`}
+        description={
+          <p>
+            Yanking signals the version is broken or unsafe. Consumers will be warned to upgrade or
+            downgrade away from it. Type the exact phrase below to confirm.
+          </p>
+        }
+        onCancel={() => setYankOpen(false)}
+        onConfirm={() => {
+          yankRelease(entry.version);
+          setYankOpen(false);
+        }}
+      />
+    </li>
+  );
+}
+
+function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const releases = useWorkspaceStore((s) => s.synced?.releases.self ?? null);
+  const publishRelease = useWorkspaceStore((s) => s.publishRelease);
+
+  const [version, setVersion] = useState('');
+  const [notes, setNotes] = useState('');
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const trimmedVersion = version.trim();
+  const versionTaken = !!releases?.versions.find((v) => v.version === trimmedVersion);
+  const validation = !trimmedVersion
+    ? 'Enter a version'
+    : !isValidSemver(trimmedVersion)
+      ? 'Must be valid semver (e.g. 1.0.0)'
+      : versionTaken
+        ? `v${trimmedVersion} is already published`
+        : null;
+
+  const reset = () => {
+    setVersion('');
+    setNotes('');
+    setError(null);
+  };
+
+  const onSubmit = () => {
+    if (validation) return;
+    setError(null);
+    setConfirmOpen(true);
+  };
+
+  const onConfirm = async () => {
+    try {
+      await publishRelease({ version: trimmedVersion, notes });
+      setConfirmOpen(false);
+      reset();
+      onClose();
+    } catch (err) {
+      setConfirmOpen(false);
+      setError(err instanceof Error ? err.message : 'Publish failed — unknown error');
+    }
+  };
+
+  return (
+    <>
+      <Modal open={open} onClose={onClose} title="Publish release">
+        <div className="space-y-3">
+          <div>
+            <label htmlFor="release-version-input" className="block text-[11px] text-text-dim">
+              Version (semver)
+            </label>
+            <input
+              id="release-version-input"
+              value={version}
+              onChange={(e) => setVersion(e.target.value)}
+              placeholder="0.1.0"
+              aria-label="Release version"
+              className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+            />
+          </div>
+          <div>
+            <label htmlFor="release-notes-input" className="block text-[11px] text-text-dim">
+              Notes (markdown)
+            </label>
+            <textarea
+              id="release-notes-input"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={5}
+              aria-label="Release notes"
+              className="mt-1 w-full resize-y rounded-sm border border-border bg-surface px-2 py-1.5 text-xs text-text-primary focus:border-accent focus:outline-none"
+            />
+          </div>
+          {validation && <p className="text-[11px] text-warning">{validation}</p>}
+          {error && (
+            <p className="text-xs text-danger" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onSubmit}
+              disabled={!!validation}
+              className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+            >
+              <Tag size={11} />
+              Review &amp; publish
+            </button>
+          </div>
+        </div>
+      </Modal>
+      <ConfirmDialog
+        open={confirmOpen}
+        title={`Publish v${trimmedVersion}?`}
+        confirmLabel="Publish"
+        description={
+          <p>
+            About to append v{trimmedVersion} to <code>releases.self.versions</code> and bump
+            <code> currentVersion</code>. Push to save the change to your working branch.
+          </p>
+        }
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={onConfirm}
+      />
+    </>
   );
 }
 

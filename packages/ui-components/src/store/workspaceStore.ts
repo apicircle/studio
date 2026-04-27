@@ -20,6 +20,7 @@ import { generateId } from '@apicircle-v2/shared';
 import {
   type AttachmentResolver,
   type ExecutionResult,
+  type PublishReleaseArgs,
   type ResolutionMap,
   type ThreeWayDiff,
   applyMerge,
@@ -27,15 +28,18 @@ import {
   collectAttachmentSlots,
   computeThreeWayDiff,
   decryptString,
+  deprecateRelease as deprecateReleaseAction,
   encryptString,
   executeRequest as coreExecuteRequest,
   generateWorkingBranchName,
+  publishRelease as publishReleaseAction,
   resolveString,
   runAssertions,
   serializePayload,
   serializeWorkspaceForGit,
   tryParsePayload,
   validateBranchName,
+  yankRelease as yankReleaseAction,
 } from '@apicircle-v2/core';
 import { create } from 'zustand';
 import {
@@ -333,6 +337,19 @@ type WorkspaceStore = {
   commitRefresh: (resolutions: ResolutionMap) => Promise<void>;
   /** Drop the pending refresh without applying anything. */
   cancelRefresh: () => void;
+
+  // --- Releases (workspace-self) ---------------------------------------
+  /**
+   * Append a new entry to `synced.releases.self.versions` and bump
+   * `currentVersion`. The snapshot SHA is computed over the canonical
+   * pre-publish workspace.json (plan §5.1). Throws on invalid semver or
+   * duplicate version.
+   */
+  publishRelease: (args: PublishReleaseArgs) => Promise<void>;
+  /** Flip `deprecated: true` on a published version. */
+  deprecateRelease: (version: string) => void;
+  /** Flip `yanked: true` on a published version. Soft destructive. */
+  yankRelease: (version: string) => void;
 
   executeActiveRequest: () => Promise<void>;
 };
@@ -959,6 +976,22 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set({ local: next });
     void saveLocal(next);
     return { commitSha: newCommit.sha };
+  },
+
+  publishRelease: async (args) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const next = await publishReleaseAction(synced, args);
+    set({ synced: next });
+    void saveSynced(next);
+  },
+
+  deprecateRelease: (version) => {
+    commitSynced(set, get, (s) => deprecateReleaseAction(s, version));
+  },
+
+  yankRelease: (version) => {
+    commitSynced(set, get, (s) => yankReleaseAction(s, version));
   },
 
   refreshWorkspace: async () => {

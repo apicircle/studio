@@ -49,6 +49,12 @@ export { serializeWorkspaceForGit } from './git/serializeWorkspace';
 export { collectAttachmentSlots } from './git/collectAttachments';
 export type { AttachmentSlotRef } from './git/collectAttachments';
 
+export { compareSemver, isValidSemver, parseSemver, sortVersionsDesc } from './release/semver';
+export type { ParsedVersion } from './release/semver';
+
+export { deprecateRelease, publishRelease, yankRelease } from './release/publishRelease';
+export type { PublishReleaseArgs } from './release/publishRelease';
+
 export { applyMerge, computeThreeWayDiff } from './git/threeWayDiff';
 export type {
   ConflictResolution,
