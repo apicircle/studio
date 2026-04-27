@@ -356,3 +356,122 @@ describe('GitHubClient.createBranch', () => {
     }
   });
 });
+
+describe('GitHubClient.getRef', () => {
+  it('returns the head SHA for a branch ref', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({ ref: 'refs/heads/main', object: { sha: 'abc123' } }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const ref = await client.getRef('tok', 'me', 'api', 'main');
+    expect(ref).toEqual({ ref: 'refs/heads/main', sha: 'abc123' });
+    const url = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).toBe('https://api.github.com/repos/me/api/git/refs/heads/main');
+  });
+});
+
+describe('GitHubClient.getCommit', () => {
+  it('returns commit summary with tree sha + message', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({
+        sha: 'commit-sha',
+        message: 'previous push',
+        tree: { sha: 'tree-sha' },
+      }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const commit = await client.getCommit('tok', 'me', 'api', 'commit-sha');
+    expect(commit).toEqual({
+      sha: 'commit-sha',
+      treeSha: 'tree-sha',
+      message: 'previous push',
+    });
+  });
+});
+
+describe('GitHubClient.createTree', () => {
+  it('POSTs base_tree + entries with default mode/type filled in', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () => jsonResponse({ sha: 'new-tree' }));
+    const client = new GitHubClient({ fetchImpl });
+    const result = await client.createTree('tok', 'me', 'api', {
+      baseTreeSha: 'base-tree',
+      entries: [
+        { path: 'workspace.json', content: '{"x":1}' },
+        { path: '.apicircle/attachments/abc', sha: 'blob-abc' },
+      ],
+    });
+    expect(result).toEqual({ sha: 'new-tree' });
+    const [url, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe('https://api.github.com/repos/me/api/git/trees');
+    expect((init as RequestInit).method).toBe('POST');
+    const body = JSON.parse(((init as RequestInit).body as string) ?? '');
+    expect(body).toEqual({
+      base_tree: 'base-tree',
+      tree: [
+        { path: 'workspace.json', mode: '100644', type: 'blob', content: '{"x":1}' },
+        {
+          path: '.apicircle/attachments/abc',
+          mode: '100644',
+          type: 'blob',
+          sha: 'blob-abc',
+        },
+      ],
+    });
+  });
+});
+
+describe('GitHubClient.createCommit', () => {
+  it('POSTs message + tree + parents', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({ sha: 'new-commit', message: 'sync', tree: { sha: 'new-tree' } }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const commit = await client.createCommit('tok', 'me', 'api', {
+      message: 'sync workspace via API Circle Studio',
+      treeSha: 'new-tree',
+      parents: ['parent-sha'],
+    });
+    expect(commit).toEqual({ sha: 'new-commit', treeSha: 'new-tree' });
+    const [, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
+    const body = JSON.parse(((init as RequestInit).body as string) ?? '');
+    expect(body).toEqual({
+      message: 'sync workspace via API Circle Studio',
+      tree: 'new-tree',
+      parents: ['parent-sha'],
+    });
+  });
+});
+
+describe('GitHubClient.updateRef', () => {
+  it('PATCHes the branch ref with the new SHA, force=false by default', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({ ref: 'refs/heads/wb', object: { sha: 'new-commit' } }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const updated = await client.updateRef('tok', 'me', 'api', {
+      branch: 'wb',
+      sha: 'new-commit',
+    });
+    expect(updated).toEqual({ ref: 'refs/heads/wb', sha: 'new-commit' });
+    const [url, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe('https://api.github.com/repos/me/api/git/refs/heads/wb');
+    expect((init as RequestInit).method).toBe('PATCH');
+    const body = JSON.parse(((init as RequestInit).body as string) ?? '');
+    expect(body).toEqual({ sha: 'new-commit', force: false });
+  });
+
+  it('passes through force: true when requested', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({ ref: 'refs/heads/wb', object: { sha: 'new-commit' } }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    await client.updateRef('tok', 'me', 'api', {
+      branch: 'wb',
+      sha: 'new-commit',
+      force: true,
+    });
+    const [, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
+    const body = JSON.parse(((init as RequestInit).body as string) ?? '');
+    expect(body.force).toBe(true);
+  });
+});

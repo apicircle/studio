@@ -28,6 +28,7 @@ import {
   resolveString,
   runAssertions,
   serializePayload,
+  serializeWorkspaceForGit,
   tryParsePayload,
   validateBranchName,
 } from '@apicircle-v2/core';
@@ -254,6 +255,18 @@ type WorkspaceStore = {
    * user typically rotates after a PR merges.
    */
   discardWorkingBranch: () => void;
+
+  /**
+   * Atomically commit the current synced doc as `workspace.json` on the
+   * working branch. Round-trip is: read branch ref → read its tree →
+   * create new tree (base_tree + workspace.json inline) → create commit
+   * → fast-forward the ref. On success, updates `workingBranch.headSha`
+   * and `lastPushedSha`. Throws on missing-session, missing-repo,
+   * missing-branch, or any GitHub error.
+   *
+   * Attachments are NOT yet bundled — that arrives in P4.3b.
+   */
+  pushWorkspace: (commitMessage?: string) => Promise<{ commitSha: string }>;
 
   executeActiveRequest: () => Promise<void>;
 };
@@ -813,6 +826,55 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const next: WorkspaceLocal = { ...local, workingBranch: null };
     set({ local: next });
     void saveLocal(next);
+  },
+
+  pushWorkspace: async (commitMessage) => {
+    const local = get().local;
+    const synced = get().synced;
+    if (!local || !synced) throw new Error('Workspace not ready');
+    const branch = local.workingBranch;
+    if (!branch) throw new Error('Create a working branch before pushing');
+    const repo = local.connectedRepo;
+    if (!repo) throw new Error('No repo connected');
+
+    const token = await decryptSessionToken(local);
+    const client = new GitHubClient();
+    const owner = branch.repoOwner;
+    const name = branch.repoName;
+
+    // 1. Read the branch's current head SHA.
+    const head = await client.getRef(token, owner, name, branch.name);
+    // 2. Read its tree SHA.
+    const headCommit = await client.getCommit(token, owner, name, head.sha);
+    // 3. Build the new tree, layering workspace.json over base_tree.
+    const content = serializeWorkspaceForGit(synced);
+    const newTree = await client.createTree(token, owner, name, {
+      baseTreeSha: headCommit.treeSha,
+      entries: [{ path: 'workspace.json', content }],
+    });
+    // 4. Create the commit.
+    const message = (commitMessage ?? '').trim() || 'chore: sync workspace via API Circle Studio';
+    const newCommit = await client.createCommit(token, owner, name, {
+      message,
+      treeSha: newTree.sha,
+      parents: [head.sha],
+    });
+    // 5. Fast-forward the branch ref.
+    await client.updateRef(token, owner, name, {
+      branch: branch.name,
+      sha: newCommit.sha,
+    });
+
+    // 6. Persist the new local branch state.
+    const updatedBranch: WorkingBranch = {
+      ...branch,
+      headSha: newCommit.sha,
+      lastPushedSha: newCommit.sha,
+    };
+    const next: WorkspaceLocal = { ...get().local!, workingBranch: updatedBranch };
+    set({ local: next });
+    void saveLocal(next);
+    return { commitSha: newCommit.sha };
   },
 
   executeActiveRequest: async () => {

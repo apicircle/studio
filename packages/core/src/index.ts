@@ -43,3 +43,5 @@ export type { EncryptedPayload } from './secrets/crypto';
 
 export { generateWorkingBranchName, slugify, validateBranchName } from './git/branchNames';
 export type { BranchNameOptions } from './git/branchNames';
+
+export { serializeWorkspaceForGit } from './git/serializeWorkspace';

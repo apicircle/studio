@@ -47,6 +47,36 @@ export interface GitHubClientOptions {
   timeoutMs?: number;
 }
 
+export interface GitRef {
+  ref: string; // e.g. "refs/heads/apicircle/payments-a3f9c2"
+  sha: string;
+}
+
+export interface GitCommitSummary {
+  sha: string;
+  treeSha: string;
+  message: string;
+}
+
+export interface TreeEntryInput {
+  path: string;
+  mode?: '100644' | '100755' | '040000' | '160000' | '120000';
+  type?: 'blob' | 'tree' | 'commit';
+  /** Inline content — used for text files we don't need to base64. */
+  content?: string;
+  /** Pre-uploaded blob sha — used for binary attachments. */
+  sha?: string | null;
+}
+
+export interface CreatedTree {
+  sha: string;
+}
+
+export interface CreatedCommit {
+  sha: string;
+  treeSha: string;
+}
+
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 interface CallOptions {
@@ -171,6 +201,133 @@ export class GitHubClient {
     return { name: branchName, commitSha: json.object.sha };
   }
 
+  /**
+   * Read a branch ref's current commit SHA. Used at the start of push-to-
+   * save to find the parent commit before building the new tree.
+   */
+  async getRef(
+    token: string,
+    owner: string,
+    name: string,
+    branch: string,
+    opts: CallOptions = {},
+  ): Promise<GitRef> {
+    const { json } = await this.call<RawRefResponse>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/git/refs/heads/${encodeURIComponent(branch)}`,
+      opts,
+    );
+    return { ref: json.ref, sha: json.object.sha };
+  }
+
+  /**
+   * Read a commit's tree SHA. Used so the new tree can be built `base_tree`
+   * — every path we don't override is inherited from the parent.
+   */
+  async getCommit(
+    token: string,
+    owner: string,
+    name: string,
+    sha: string,
+    opts: CallOptions = {},
+  ): Promise<GitCommitSummary> {
+    const { json } = await this.call<RawCommit>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/git/commits/${encodeURIComponent(sha)}`,
+      opts,
+    );
+    return {
+      sha: json.sha,
+      treeSha: json.tree.sha,
+      message: json.message,
+    };
+  }
+
+  /**
+   * Build a new tree from `entries`, layered over `baseTreeSha`. Entries
+   * with `content` are inlined (text path); entries with a pre-uploaded
+   * `sha` reference an existing blob (binary path — used by attachments).
+   */
+  async createTree(
+    token: string,
+    owner: string,
+    name: string,
+    args: { baseTreeSha: string; entries: TreeEntryInput[] },
+    opts: CallOptions = {},
+  ): Promise<CreatedTree> {
+    const tree = args.entries.map((e) => ({
+      path: e.path,
+      mode: e.mode ?? '100644',
+      type: e.type ?? 'blob',
+      ...(e.content !== undefined ? { content: e.content } : {}),
+      ...(e.sha !== undefined ? { sha: e.sha } : {}),
+    }));
+    const { json } = await this.call<{ sha: string }>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/git/trees`,
+      {
+        ...opts,
+        method: 'POST',
+        body: { base_tree: args.baseTreeSha, tree },
+        requiredScopes: ['repo'],
+      },
+    );
+    return { sha: json.sha };
+  }
+
+  /**
+   * Create a new commit object pointing at the given tree, with the given
+   * parents. Returns the new commit's SHA + the tree it points at.
+   */
+  async createCommit(
+    token: string,
+    owner: string,
+    name: string,
+    args: { message: string; treeSha: string; parents: string[] },
+    opts: CallOptions = {},
+  ): Promise<CreatedCommit> {
+    const { json } = await this.call<RawCommit>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/git/commits`,
+      {
+        ...opts,
+        method: 'POST',
+        body: {
+          message: args.message,
+          tree: args.treeSha,
+          parents: args.parents,
+        },
+        requiredScopes: ['repo'],
+      },
+    );
+    return { sha: json.sha, treeSha: json.tree.sha };
+  }
+
+  /**
+   * Fast-forward a branch ref to a new commit SHA. Pass `force: true` to
+   * skip the FF check (we don't — push-to-save is always FF over the ref
+   * we just read with getRef()).
+   */
+  async updateRef(
+    token: string,
+    owner: string,
+    name: string,
+    args: { branch: string; sha: string; force?: boolean },
+    opts: CallOptions = {},
+  ): Promise<GitRef> {
+    const { json } = await this.call<RawRefResponse>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/git/refs/heads/${encodeURIComponent(args.branch)}`,
+      {
+        ...opts,
+        method: 'PATCH',
+        body: { sha: args.sha, force: args.force ?? false },
+        requiredScopes: ['repo'],
+      },
+    );
+    return { ref: json.ref, sha: json.object.sha };
+  }
+
   // --- low-level call ----------------------------------------------------
 
   private async call<T>(
@@ -245,6 +402,13 @@ interface RawBranch {
 interface RawRefResponse {
   ref: string;
   object: { sha: string };
+}
+
+interface RawCommit {
+  sha: string;
+  message: string;
+  tree: { sha: string };
+  parents?: { sha: string }[];
 }
 
 function normalizeRepo(raw: RawRepo): GitHubRepo {

@@ -1,5 +1,15 @@
 import { useState } from 'react';
-import { GitBranch, GitMerge, KeyRound, Lock, Plus, ShieldAlert, X } from 'lucide-react';
+import {
+  CheckCircle2,
+  GitBranch,
+  GitMerge,
+  KeyRound,
+  Lock,
+  Plus,
+  ShieldAlert,
+  Upload,
+  X,
+} from 'lucide-react';
 import { GitHubError, MissingScopeError } from '@apicircle-v2/git';
 import { generateWorkingBranchName, validateBranchName } from '@apicircle-v2/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
@@ -317,6 +327,40 @@ function BranchSection() {
 function BranchCard() {
   const branch = useWorkspaceStore((s) => s.local!.workingBranch!);
   const discardWorkingBranch = useWorkspaceStore((s) => s.discardWorkingBranch);
+  const pushWorkspace = useWorkspaceStore((s) => s.pushWorkspace);
+
+  const [message, setMessage] = useState('');
+  const [showMessageField, setShowMessageField] = useState(false);
+  const [pushing, setPushing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [justPushedSha, setJustPushedSha] = useState<string | null>(null);
+
+  const onPush = async () => {
+    setPushing(true);
+    setError(null);
+    setJustPushedSha(null);
+    try {
+      const { commitSha } = await pushWorkspace(message || undefined);
+      setJustPushedSha(commitSha);
+      setMessage('');
+      setShowMessageField(false);
+    } catch (err) {
+      if (err instanceof MissingScopeError) {
+        setError(`Token missing scope(s): ${err.missingScopes.join(', ')}`);
+      } else if (err instanceof GitHubError) {
+        setError(`GitHub ${err.status}: ${err.message}`);
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Push failed — unknown error');
+      }
+    } finally {
+      setPushing(false);
+    }
+  };
+
+  const isClean = branch.headSha === branch.lastPushedSha;
+
   return (
     <div className="rounded-sm border border-border bg-card p-3">
       <div className="mb-1 flex items-center gap-2 text-xs">
@@ -327,15 +371,75 @@ function BranchCard() {
         Created from <code>{branch.baseBranch}</code> at <code>{branch.headSha.slice(0, 7)}</code>{' '}
         on {new Date(branch.createdAt).toLocaleString()}.
       </p>
-      <button
-        type="button"
-        onClick={discardWorkingBranch}
-        className="mt-2 inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary"
-        aria-label="Discard working branch"
-      >
-        <X size={10} />
-        Discard branch
-      </button>
+      <p className="mt-1 text-[11px] text-text-dim">
+        Last pushed:{' '}
+        {branch.lastPushedSha ? (
+          <code className="text-text-primary">{branch.lastPushedSha.slice(0, 7)}</code>
+        ) : (
+          <em>never</em>
+        )}
+        {isClean && branch.lastPushedSha && <span className="ml-1 text-success">· up to date</span>}
+      </p>
+
+      {showMessageField && (
+        <div className="mt-2">
+          <label htmlFor="commit-message-input" className="block text-[11px] text-text-dim">
+            Commit message (optional)
+          </label>
+          <input
+            id="commit-message-input"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="chore: sync workspace via API Circle Studio"
+            aria-label="Commit message"
+            className="mt-1 h-7 w-full rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+          />
+        </div>
+      )}
+
+      {error && (
+        <p className="mt-2 text-xs text-danger" role="alert">
+          {error}
+        </p>
+      )}
+      {justPushedSha && !error && (
+        <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-success">
+          <CheckCircle2 size={11} aria-hidden="true" />
+          Pushed <code>{justPushedSha.slice(0, 7)}</code>
+        </p>
+      )}
+
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void onPush()}
+          disabled={pushing}
+          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+        >
+          <Upload size={11} />
+          {pushing ? 'Pushing…' : 'Push to save'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowMessageField((v) => !v)}
+          className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary"
+        >
+          {showMessageField ? 'Hide message' : 'Custom commit message'}
+        </button>
+        <button
+          type="button"
+          onClick={discardWorkingBranch}
+          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary"
+          aria-label="Discard working branch"
+        >
+          <X size={10} />
+          Discard branch
+        </button>
+      </div>
+      <p className="mt-2 text-[11px] text-text-dim">
+        Push commits <code>workspace.json</code> to <code>{branch.name}</code> via the Git Tree API.
+        Attachments join the same commit in the next slice (P4.3b); PR creation arrives in P4.4.
+      </p>
     </div>
   );
 }
