@@ -46,67 +46,70 @@ export function EditorSidebar() {
         </button>
       </div>
 
-      <ul className="flex flex-col gap-0.5" role="tree" aria-label="Requests">
-        {tree.children.length === 0 && (
-          <li className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-[11px] text-text-dim">
-            No requests yet. Create one to start.
-          </li>
-        )}
-        {tree.children.map((child) => {
-          if (child.kind === 'folder') {
-            const folder = folders[child.id];
-            if (!folder) return null;
+      {tree.children.length === 0 && (
+        <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-[11px] text-text-dim">
+          No requests yet. Create one to start.
+        </p>
+      )}
+
+      {tree.children.length > 0 && (
+        <ul className="flex flex-col gap-0.5" role="tree" aria-label="Requests">
+          {tree.children.map((child) => {
+            if (child.kind === 'folder') {
+              const folder = folders[child.id];
+              if (!folder) return null;
+              return (
+                <li
+                  key={`folder-${child.id}`}
+                  className="rounded-sm border border-border-subtle bg-surface px-2 py-1.5 text-xs text-text-muted"
+                  role="treeitem"
+                >
+                  {folder.name}
+                </li>
+              );
+            }
+            const request = requests[child.id];
+            if (!request) return null;
+            const isActive = request.id === activeRequestId;
             return (
-              <li
-                key={`folder-${child.id}`}
-                className="rounded-sm border border-border-subtle bg-surface px-2 py-1.5 text-xs text-text-muted"
-                role="treeitem"
-              >
-                {folder.name}
+              <li key={`request-${child.id}`} role="treeitem" aria-selected={isActive}>
+                <div
+                  className={cn(
+                    'group flex items-center gap-2 rounded-sm border px-2 py-1.5 text-xs transition-colors',
+                    isActive
+                      ? 'border-accent/40 bg-accent/10 text-text-primary'
+                      : 'border-transparent text-text-muted hover:border-border-subtle hover:bg-surface hover:text-text-primary',
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setActiveRequestId(request.id)}
+                    className="flex flex-1 items-center gap-2 truncate text-left"
+                  >
+                    <span
+                      className={cn(
+                        'shrink-0 font-medium tracking-wider',
+                        METHOD_COLOR[request.method] ?? 'text-text-muted',
+                      )}
+                    >
+                      {request.method}
+                    </span>
+                    <span className="truncate">{request.name}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeRequest(request.id)}
+                    className="shrink-0 text-text-faint opacity-0 transition-opacity hover:text-danger group-hover:opacity-100"
+                    aria-label={`Delete ${request.name}`}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
               </li>
             );
-          }
-          const request = requests[child.id];
-          if (!request) return null;
-          const isActive = request.id === activeRequestId;
-          return (
-            <li key={`request-${child.id}`} role="treeitem" aria-selected={isActive}>
-              <div
-                className={cn(
-                  'group flex items-center gap-2 rounded-sm border px-2 py-1.5 text-xs transition-colors',
-                  isActive
-                    ? 'border-accent/40 bg-accent/10 text-text-primary'
-                    : 'border-transparent text-text-muted hover:border-border-subtle hover:bg-surface hover:text-text-primary',
-                )}
-              >
-                <button
-                  type="button"
-                  onClick={() => setActiveRequestId(request.id)}
-                  className="flex flex-1 items-center gap-2 truncate text-left"
-                >
-                  <span
-                    className={cn(
-                      'shrink-0 font-medium tracking-wider',
-                      METHOD_COLOR[request.method] ?? 'text-text-muted',
-                    )}
-                  >
-                    {request.method}
-                  </span>
-                  <span className="truncate">{request.name}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => removeRequest(request.id)}
-                  className="shrink-0 text-text-faint opacity-0 transition-opacity hover:text-danger group-hover:opacity-100"
-                  aria-label={`Delete ${request.name}`}
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+          })}
+        </ul>
+      )}
     </div>
   );
 }

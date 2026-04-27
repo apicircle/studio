@@ -17,6 +17,12 @@ export default tseslint.config(
       'vitest.workspace.ts',
       'vitest.shared.ts',
       '**/test/setup.ts',
+      // Playwright specs use their own tsconfig.e2e.json + the Playwright
+      // test runner does its own type-check. ESLint type-aware rules don't
+      // resolve them through the project service, so ignore them here.
+      'apps/web/e2e/**',
+      '**/playwright-report/**',
+      '**/test-results/**',
       '.husky/**',
     ],
   },
