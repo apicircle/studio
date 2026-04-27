@@ -11,6 +11,13 @@ export async function loadWorkspace(): Promise<{
     readRecord<WorkspaceLocal>(LOCAL_STORE),
   ]);
   if (synced && local && synced.workspaceId === local.workspaceId) {
+    // Forward-compatible shim: add `linkedCollections` to legacy local
+    // records that pre-date P5.8. This lets older workspaces load
+    // without a hard schema bump while new persistence always writes
+    // the field.
+    if (!local.linkedCollections) {
+      return { synced, local: { ...local, linkedCollections: {} } };
+    }
     return { synced, local };
   }
   // First boot, schema mismatch, or split records — reset to a fresh pair.
@@ -69,6 +76,7 @@ export function createEmptyWorkspace(): { synced: WorkspaceSynced; local: Worksp
       lastPulledAt: null,
       dirtyKeys: [],
     },
+    linkedCollections: {},
     ui: {
       activeRequestId: null,
       sidebarExpandedSections: [],

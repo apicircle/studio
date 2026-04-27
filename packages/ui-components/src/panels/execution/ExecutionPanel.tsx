@@ -53,6 +53,8 @@ function EmptyState() {
 function PlanEditor({ plan }: { plan: ExecutionPlan }) {
   const requests = useWorkspaceStore((s) => s.synced?.collections.requests ?? {});
   const envItems = useWorkspaceStore((s) => s.synced?.environments.items ?? {});
+  const linkedWorkspaces = useWorkspaceStore((s) => s.synced?.linkedWorkspaces ?? {});
+  const linkedCollections = useWorkspaceStore((s) => s.local?.linkedCollections ?? {});
   const renamePlan = useWorkspaceStore((s) => s.renamePlan);
   const removePlan = useWorkspaceStore((s) => s.removePlan);
   const addPlanStep = useWorkspaceStore((s) => s.addPlanStep);
@@ -73,6 +75,19 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
 
   const requestArray = useMemo(() => Object.values(requests), [requests]);
   const envNames = useMemo(() => Object.keys(envItems), [envItems]);
+  // Linked workspace request groups for the picker. Skips links whose
+  // collections snapshot hasn't been pulled yet (refresh first to
+  // populate). Plan §6 §11.1: cross-workspace plan steps.
+  const linkedGroups = useMemo(
+    () =>
+      Object.values(linkedWorkspaces)
+        .map((link) => ({
+          link,
+          requests: Object.values(linkedCollections[link.id]?.collections.requests ?? {}),
+        }))
+        .filter((g) => g.requests.length > 0),
+    [linkedWorkspaces, linkedCollections],
+  );
 
   const onRun = async (withAssertions: boolean) => {
     setRunning(true);
@@ -127,23 +142,55 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
           </button>
         </div>
         {pickerOpen && (
-          <ul className="mb-2 max-h-40 overflow-y-auto rounded-sm border border-border bg-card">
-            {requestArray.map((r) => (
-              <li key={r.id}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    addPlanStep(plan.id, r.id);
-                    setPickerOpen(false);
-                  }}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-text-muted hover:bg-surface hover:text-text-primary"
-                >
-                  <span className="text-[10px] uppercase text-text-dim">{r.method}</span>
-                  <span className="truncate">{r.name}</span>
-                </button>
-              </li>
+          <div className="mb-2 max-h-60 overflow-y-auto rounded-sm border border-border bg-card">
+            <p className="border-b border-border-subtle px-3 py-1 text-[10px] uppercase tracking-wider text-text-dim">
+              This workspace
+            </p>
+            <ul>
+              {requestArray.map((r) => (
+                <li key={r.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      addPlanStep(plan.id, r.id);
+                      setPickerOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-text-muted hover:bg-surface hover:text-text-primary"
+                  >
+                    <span className="text-[10px] uppercase text-text-dim">{r.method}</span>
+                    <span className="truncate">{r.name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {linkedGroups.map((group) => (
+              <div key={group.link.id}>
+                <p className="border-b border-t border-border-subtle px-3 py-1 text-[10px] uppercase tracking-wider text-text-dim">
+                  {group.link.name}
+                  <span className="ml-1 text-text-dim normal-case">
+                    · {group.link.source.repoFullName}@{group.link.source.branch}
+                  </span>
+                </p>
+                <ul>
+                  {group.requests.map((r) => (
+                    <li key={`${group.link.id}:${r.id}`}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          addPlanStep(plan.id, r.id, group.link.id);
+                          setPickerOpen(false);
+                        }}
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-text-muted hover:bg-surface hover:text-text-primary"
+                      >
+                        <span className="text-[10px] uppercase text-text-dim">{r.method}</span>
+                        <span className="truncate">{r.name}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ))}
-          </ul>
+          </div>
         )}
         {plan.steps.length === 0 ? (
           <p className="rounded-sm border border-dashed border-border bg-card p-3 text-[11px] text-text-dim">
@@ -151,18 +198,27 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
           </p>
         ) : (
           <ul className="space-y-1">
-            {plan.steps.map((step, i) => (
-              <PlanStepRow
-                key={`${step.requestId}-${i}`}
-                request={requests[step.requestId]}
-                index={i}
-                isFirst={i === 0}
-                isLast={i === plan.steps.length - 1}
-                onRemove={() => removePlanStep(plan.id, i)}
-                onMoveUp={() => reorderPlanSteps(plan.id, i, i - 1)}
-                onMoveDown={() => reorderPlanSteps(plan.id, i, i + 1)}
-              />
-            ))}
+            {plan.steps.map((step, i) => {
+              const linkedRequest = step.linkedWorkspaceId
+                ? linkedCollections[step.linkedWorkspaceId]?.collections.requests[step.requestId]
+                : undefined;
+              const linkedName = step.linkedWorkspaceId
+                ? linkedWorkspaces[step.linkedWorkspaceId]?.name
+                : undefined;
+              return (
+                <PlanStepRow
+                  key={`${step.requestId}-${i}`}
+                  request={step.linkedWorkspaceId ? linkedRequest : requests[step.requestId]}
+                  linkedName={linkedName}
+                  index={i}
+                  isFirst={i === 0}
+                  isLast={i === plan.steps.length - 1}
+                  onRemove={() => removePlanStep(plan.id, i)}
+                  onMoveUp={() => reorderPlanSteps(plan.id, i, i - 1)}
+                  onMoveDown={() => reorderPlanSteps(plan.id, i, i + 1)}
+                />
+              );
+            })}
           </ul>
         )}
       </section>
@@ -228,6 +284,7 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
 
 function PlanStepRow({
   request,
+  linkedName,
   index,
   isFirst,
   isLast,
@@ -236,6 +293,7 @@ function PlanStepRow({
   onMoveDown,
 }: {
   request: ApiRequest | undefined;
+  linkedName?: string | undefined;
   index: number;
   isFirst: boolean;
   isLast: boolean;
@@ -250,10 +308,17 @@ function PlanStepRow({
         <>
           <span className="text-[10px] uppercase text-text-dim">{request.method}</span>
           <span className="flex-1 truncate text-xs text-text-primary">{request.name}</span>
+          {linkedName && (
+            <span className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-accent">
+              from {linkedName}
+            </span>
+          )}
         </>
       ) : (
         <span className="flex-1 truncate text-xs italic text-warning">
-          Request no longer exists
+          {linkedName
+            ? `Request not in cached snapshot of "${linkedName}" — refresh the link`
+            : 'Request no longer exists'}
         </span>
       )}
       <button

@@ -5,6 +5,7 @@ export type {
   WorkspaceSynced,
   WorkspaceLocal,
   LinkedWorkspace,
+  LinkedSnapshot,
   ReleaseHistory,
   ReleaseVersion,
   Request,

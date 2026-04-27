@@ -78,6 +78,56 @@ describe('workspaceStore.linkPrivateWorkspace', () => {
     ).rejects.toThrow(/owner\/name/);
   });
 
+  it('caches the source collections + environments into local.linkedCollections', async () => {
+    await setupSession();
+    const remoteJson = JSON.stringify({
+      workspaceName: 'API',
+      collections: {
+        tree: { id: 'r', type: 'root', children: ['req-1'] },
+        requests: {
+          'req-1': {
+            id: 'req-1',
+            name: 'Greet',
+            folderId: null,
+            method: 'GET',
+            url: 'https://example.test/hello',
+            headers: [],
+            query: [],
+            body: { type: 'none', content: '' },
+            contextVars: [],
+            assertions: [],
+            createdAt: 't',
+            updatedAt: 't',
+          },
+        },
+        folders: {},
+      },
+      environments: {
+        items: {
+          dev: {
+            name: 'dev',
+            variables: [{ key: 'BASE_URL', value: 'https://dev', encrypted: false }],
+          },
+        },
+        activeName: 'dev',
+        priorityOrder: ['dev'],
+      },
+      releases: { self: { versions: [], currentVersion: null } },
+    });
+    vi.stubGlobal('fetch', queuedFetch([fileContents(remoteJson)]));
+
+    const link = await useWorkspaceStore
+      .getState()
+      .linkPrivateWorkspace({ repoFullName: 'me/api', branch: 'main' });
+
+    const snapshot = useWorkspaceStore.getState().local!.linkedCollections[link.id];
+    expect(snapshot).toBeDefined();
+    expect(snapshot.workspaceName).toBe('API');
+    expect(snapshot.collections.requests['req-1'].name).toBe('Greet');
+    expect(snapshot.environments.activeName).toBe('dev');
+    expect(snapshot.ref).toMatch(/^HEAD@main$|^v/);
+  });
+
   it('persists a LinkedWorkspace and caches the source ledger', async () => {
     await setupSession();
     const remoteJson = JSON.stringify({
@@ -222,6 +272,28 @@ describe('workspaceStore.refreshLinkedWorkspace + unlinkWorkspace', () => {
     const ledger = useWorkspaceStore.getState().synced!.releases.perLink[link.id];
     expect(ledger.currentVersion).toBe('0.2.0');
     expect(ledger.versions).toHaveLength(2);
+  });
+
+  it('unlink also clears the cached collections snapshot', async () => {
+    await setupSession();
+    const remoteJson = JSON.stringify({
+      workspaceName: 'X',
+      collections: {
+        tree: { id: 'r', type: 'root', children: [] },
+        requests: {},
+        folders: {},
+      },
+      environments: { items: {}, activeName: null, priorityOrder: [] },
+      releases: { self: null },
+    });
+    vi.stubGlobal('fetch', queuedFetch([fileContents(remoteJson)]));
+    const link = await useWorkspaceStore
+      .getState()
+      .linkPrivateWorkspace({ repoFullName: 'me/x', branch: 'main' });
+    expect(useWorkspaceStore.getState().local!.linkedCollections[link.id]).toBeDefined();
+
+    useWorkspaceStore.getState().unlinkWorkspace(link.id);
+    expect(useWorkspaceStore.getState().local!.linkedCollections[link.id]).toBeUndefined();
   });
 
   it('unlink removes the link entry and its cached ledger', async () => {

@@ -235,6 +235,11 @@ export interface WorkspaceLocal {
   workingBranch: WorkingBranch | null;
   // 3-way diff snapshot for conflict-safe sync. See Sync section in the plan.
   sync: SyncSnapshot;
+  // Cached collections + environments pulled from each linked workspace at
+  // link / refresh time. Local-only because the consumer's own pushed JSON
+  // shouldn't carry the source's whole tree — it's a materialization of
+  // intent, not intent itself. Keyed by linkedWorkspace.id.
+  linkedCollections: Record<string, LinkedSnapshot>;
   // No `activePanel` — top nav controls this and persists in localStorage so
   // it doesn't bloat the workspace doc.
   ui: {
@@ -242,6 +247,24 @@ export interface WorkspaceLocal {
     sidebarExpandedSections: string[];
     themeId: ThemeId;
   };
+}
+
+/**
+ * Snapshot of a linked source workspace at a specific ref. Lives only
+ * in `WorkspaceLocal.linkedCollections[id]`. Refreshed on demand via
+ * the link card's Refresh ledger button (which pulls workspace.json
+ * and re-derives this snapshot).
+ *
+ * `ref` is the pinnedVersion when the link is pinned, otherwise
+ * `HEAD@<branch>` to make it obvious which moving target the snapshot
+ * is tracking.
+ */
+export interface LinkedSnapshot {
+  workspaceName: string;
+  pulledAt: string;
+  ref: string;
+  collections: WorkspaceSynced['collections'];
+  environments: WorkspaceSynced['environments'];
 }
 
 export interface SecretIndex {

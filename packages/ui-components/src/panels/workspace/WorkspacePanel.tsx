@@ -30,6 +30,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';
 import { cn } from '../../primitives/cn';
+import { formatRelativeTime } from '../../primitives/relativeTime';
 
 export function WorkspacePanel() {
   const workspaceName = useWorkspaceStore((s) => s.synced?.workspaceName ?? '');
@@ -898,9 +899,9 @@ function BranchCard() {
         {isClean && branch.lastPushedSha && <span className="ml-1 text-success">· up to date</span>}
       </p>
       {lastPulledAt && (
-        <p className="text-[11px] text-text-dim">
-          Last pulled:{' '}
-          <span className="text-text-primary">{new Date(lastPulledAt).toLocaleString()}</span>
+        <p className="text-[11px] text-text-dim" title={new Date(lastPulledAt).toLocaleString()}>
+          Last pulled: <span className="text-text-primary">{formatRelativeTime(lastPulledAt)}</span>
+          . Refresh to pull remote changes.
         </p>
       )}
 

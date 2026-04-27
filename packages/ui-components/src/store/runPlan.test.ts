@@ -110,6 +110,126 @@ describe('workspaceStore.runPlan', () => {
     expect(orphanRun?.error).toMatch(/no longer exists/);
   });
 
+  it('runs a cross-workspace step against a cached linked snapshot', async () => {
+    // Stand up a session, link a workspace whose source carries one
+    // request + one environment, and then run a plan that references
+    // that linked request.
+    vi.stubGlobal(
+      'fetch',
+      queuedFetch([
+        { body: { login: 'me', id: 1 }, headers: { 'x-oauth-scopes': 'repo' } },
+        {
+          body: {
+            type: 'file',
+            path: 'workspace.json',
+            sha: 's',
+            size: 10,
+            content: btoa(
+              unescape(
+                encodeURIComponent(
+                  JSON.stringify({
+                    workspaceName: 'Linked',
+                    collections: {
+                      tree: { id: 'r', type: 'root', children: ['linked-req'] },
+                      requests: {
+                        'linked-req': {
+                          id: 'linked-req',
+                          name: 'Greet',
+                          folderId: null,
+                          method: 'GET',
+                          url: '{{BASE_URL}}/hello',
+                          headers: [],
+                          query: [],
+                          body: { type: 'none', content: '' },
+                          contextVars: [],
+                          assertions: [],
+                          createdAt: 't',
+                          updatedAt: 't',
+                        },
+                      },
+                      folders: {},
+                    },
+                    environments: {
+                      items: {
+                        prod: {
+                          name: 'prod',
+                          variables: [{ key: 'BASE_URL', value: 'https://prod', encrypted: false }],
+                        },
+                      },
+                      activeName: 'prod',
+                      priorityOrder: ['prod'],
+                    },
+                    releases: { self: null },
+                  }),
+                ),
+              ),
+            ),
+            encoding: 'base64',
+          },
+        },
+      ]),
+    );
+    await useWorkspaceStore.getState().connectGitHubSession('tok');
+    const link = await useWorkspaceStore
+      .getState()
+      .linkPrivateWorkspace({ repoFullName: 'org/api', branch: 'main' });
+    vi.unstubAllGlobals();
+
+    // Build a plan where the step targets the linked request explicitly.
+    const planId = useWorkspaceStore.getState().addPlan('cross');
+    useWorkspaceStore.getState().addPlanStep(planId, 'linked-req');
+    // The store action doesn't currently take linkedWorkspaceId, so wire
+    // it directly through commitLocal — the executor reads it from the
+    // step record either way.
+    const local = useWorkspaceStore.getState().local!;
+    const updated = {
+      ...local,
+      executionPlans: {
+        ...local.executionPlans,
+        [planId]: {
+          ...local.executionPlans[planId],
+          steps: [{ requestId: 'linked-req', linkedWorkspaceId: link.id }],
+        },
+      },
+    };
+    useWorkspaceStore.setState({ local: updated });
+
+    const fetchMock = queuedFetch([{ body: { ok: 1 } }]);
+    vi.stubGlobal('fetch', fetchMock);
+    const planRun = await useWorkspaceStore.getState().runPlan(planId);
+    expect(planRun.steps[0].passed).toBe(true);
+
+    // The URL the executor sent uses the LINKED workspace's BASE_URL,
+    // not the consumer's (which has none).
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url.startsWith('https://prod')).toBe(true);
+  });
+
+  it('records orphan failure when a linked step has no cached snapshot', async () => {
+    // Build a plan with a linked step but no actual linked workspace —
+    // simulates the case where the user pulled a workspace whose plans
+    // reference a link they haven't materialized yet.
+    const planId = useWorkspaceStore.getState().addPlan('p');
+    const local = useWorkspaceStore.getState().local!;
+    useWorkspaceStore.setState({
+      local: {
+        ...local,
+        executionPlans: {
+          ...local.executionPlans,
+          [planId]: {
+            ...local.executionPlans[planId],
+            steps: [{ requestId: 'whatever', linkedWorkspaceId: 'phantom-link' }],
+          },
+        },
+      },
+    });
+
+    const planRun = await useWorkspaceStore.getState().runPlan(planId);
+    expect(planRun.steps[0].passed).toBe(false);
+    const orphan = useWorkspaceStore.getState().local!.history.requestRuns[0];
+    expect(orphan.error).toMatch(/Linked workspace was unlinked/);
+  });
+
   it('honors plan-level env priority during runs', async () => {
     // Two envs: dev sets BASE_URL=https://dev, prod sets BASE_URL=https://prod.
     // Workspace priority = ['dev'], plan priority = ['prod'] → BASE_URL

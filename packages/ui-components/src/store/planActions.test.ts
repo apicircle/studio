@@ -26,6 +26,7 @@ const baseLocal = (): WorkspaceLocal => ({
     lastPulledAt: null,
     dirtyKeys: [],
   },
+  linkedCollections: {},
   ui: {
     activeRequestId: null,
     sidebarExpandedSections: [],
@@ -114,6 +115,15 @@ describe('addPlanStep + removePlanStep + reorderPlanSteps', () => {
       'r3',
       'r1',
     ]);
+  });
+
+  it('addPlanStep records linkedWorkspaceId on the step when supplied', () => {
+    const { local: a, plan } = addPlan(baseLocal());
+    const next = addPlanStep(a, plan.id, 'r-from-link', 'lw-1');
+    expect(next.executionPlans[plan.id].steps[0]).toEqual({
+      requestId: 'r-from-link',
+      linkedWorkspaceId: 'lw-1',
+    });
   });
 
   it('rejects out-of-range remove / reorder indices by returning the same reference', () => {

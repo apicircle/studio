@@ -3,6 +3,7 @@ import type {
   Assertion,
   ConnectedRepo,
   Environment,
+  LinkedSnapshot,
   FormDataRow,
   GitHubSession,
   HttpMethod,
@@ -455,7 +456,7 @@ type WorkspaceStore = {
   /** Drop a plan AND its plan-run history rows. */
   removePlan: (id: string) => void;
   renamePlan: (id: string, name: string) => void;
-  addPlanStep: (planId: string, requestId: string) => void;
+  addPlanStep: (planId: string, requestId: string, linkedWorkspaceId?: string) => void;
   removePlanStep: (planId: string, stepIndex: number) => void;
   reorderPlanSteps: (planId: string, fromIndex: number, toIndex: number) => void;
   /**
@@ -1189,8 +1190,18 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       },
       meta: { ...synced.meta, updatedAt: new Date().toISOString() },
     };
-    set({ synced: next });
+    // Refresh the cached collections + environments alongside the
+    // ledger. When the source's workspace.json doesn't ship those
+    // fields we leave any existing snapshot untouched rather than
+    // wiping it (it might still be useful from an earlier successful
+    // pull).
+    const snapshot = buildLinkedSnapshot(parsed, link);
+    const nextLocal = snapshot
+      ? { ...local, linkedCollections: { ...local.linkedCollections, [id]: snapshot } }
+      : local;
+    set({ synced: next, ...(snapshot ? { local: nextLocal } : {}) });
     void saveSynced(next);
+    if (snapshot) void saveLocal(nextLocal);
   },
 
   pinLinkedVersion: (id, version) => {
@@ -1290,6 +1301,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   unlinkWorkspace: (id) => {
     const synced = get().synced;
+    const local = get().local;
     if (!synced || !synced.linkedWorkspaces[id]) return;
     const linkedWorkspaces = { ...synced.linkedWorkspaces };
     delete linkedWorkspaces[id];
@@ -1301,8 +1313,23 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       releases: { ...synced.releases, perLink },
       meta: { ...synced.meta, updatedAt: new Date().toISOString() },
     };
-    set({ synced: next });
-    void saveSynced(next);
+    // Drop the cached collections snapshot too — orphan state in
+    // local.linkedCollections would just confuse the cross-workspace
+    // step picker.
+    let nextLocal = local;
+    if (local && local.linkedCollections[id]) {
+      const linkedCollections = { ...local.linkedCollections };
+      delete linkedCollections[id];
+      nextLocal = { ...local, linkedCollections };
+    }
+    if (nextLocal !== local && nextLocal) {
+      set({ synced: next, local: nextLocal });
+      void saveSynced(next);
+      void saveLocal(nextLocal);
+    } else {
+      set({ synced: next });
+      void saveSynced(next);
+    }
   },
 
   // --- Execution plans (P6) ----------------------------------------------
@@ -1329,8 +1356,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   renamePlan: (id, name) => commitLocal(set, get, (l) => renamePlanAction(l, id, name)),
-  addPlanStep: (planId, requestId) =>
-    commitLocal(set, get, (l) => addPlanStepAction(l, planId, requestId)),
+  addPlanStep: (planId, requestId, linkedWorkspaceId) =>
+    commitLocal(set, get, (l) => addPlanStepAction(l, planId, requestId, linkedWorkspaceId)),
   removePlanStep: (planId, stepIndex) =>
     commitLocal(set, get, (l) => removePlanStepAction(l, planId, stepIndex)),
   reorderPlanSteps: (planId, fromIndex, toIndex) =>
@@ -1353,10 +1380,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const newRequestRuns: RequestRun[] = [];
 
     for (const step of plan.steps) {
-      const request = synced.collections.requests[step.requestId];
-      if (!request) {
-        // Step references a request that's been deleted — record as a
-        // failure rather than aborting the whole plan.
+      // Cross-workspace steps look the request up in the cached linked
+      // snapshot rather than synced.collections.requests. The snapshot
+      // is populated by linkPrivate/linkPublic/refreshLinkedWorkspace;
+      // a missing snapshot means the user hasn't refreshed since the
+      // schema landed (or the source's workspace.json doesn't ship
+      // collections). We record an orphan failure either way.
+      const lookup = lookupPlanStepRequest(step, synced, local);
+      if (!lookup.request) {
         const runId = generateId();
         const orphanRun: RequestRun = {
           id: runId,
@@ -1365,17 +1396,27 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           durationMs: 0,
           status: null,
           ok: false,
-          error: 'Request no longer exists in workspace',
+          error: lookup.error,
           assertions: [],
         };
         newRequestRuns.push(orphanRun);
         stepRecords.push({ requestRunId: runId, passed: false });
         continue;
       }
+      const request = lookup.request;
       const planScope = {
         envPriorityOrder: plan.envPriorityOrder.length > 0 ? plan.envPriorityOrder : undefined,
       };
-      const resolved = await resolveRequest(request, synced, get().local, planScope);
+      // For linked steps the request expects to resolve against the
+      // SOURCE workspace's environments (the consumer hasn't seen the
+      // source's BASE_URL etc.). We pass a virtual synced doc that uses
+      // the linked snapshot's environments while keeping the consumer's
+      // secret vault.
+      const resolveSynced =
+        step.linkedWorkspaceId && lookup.linkedEnvironments
+          ? { ...synced, environments: lookup.linkedEnvironments }
+          : synced;
+      const resolved = await resolveRequest(request, resolveSynced, get().local, planScope);
       const result = await coreExecuteRequest(resolved, {
         resolveAttachment: attachmentResolver,
       });
@@ -1718,20 +1759,96 @@ async function doLinkWorkspace(
     },
     meta: { ...synced.meta, updatedAt: link.linkedAt },
   };
-  set({ synced: next });
+  // Cache the source's collections + environments locally so cross-
+  // workspace plan steps and "use this linked workspace's request" paths
+  // have the data without a network roundtrip. Only persist when the
+  // source actually shipped these fields.
+  const snapshot = buildLinkedSnapshot(parsed, link);
+  const nextLocal = snapshot
+    ? { ...local, linkedCollections: { ...local.linkedCollections, [id]: snapshot } }
+    : local;
+  set({ synced: next, ...(snapshot ? { local: nextLocal } : {}) });
   void saveSynced(next);
+  if (snapshot) void saveLocal(nextLocal);
   return link;
 }
 
 /**
- * Parse a linked workspace's `workspace.json`. We only consume the
- * narrow surface needed for linking (workspaceName + releases.self),
- * not the full schema — leniency here means a partially-malformed
- * remote doesn't kill the link flow.
+ * Resolve a plan step's `requestId` against either the local workspace
+ * (when no linkedWorkspaceId is set) or the cached linked snapshot.
+ * Returns the request + the source's environments when the step is
+ * linked, plus a typed error message when the lookup fails.
+ */
+function lookupPlanStepRequest(
+  step: { requestId: string; linkedWorkspaceId?: string },
+  synced: WorkspaceSynced,
+  local: WorkspaceLocal,
+): {
+  request: ApiRequest | null;
+  linkedEnvironments?: WorkspaceSynced['environments'];
+  error?: string;
+} {
+  if (!step.linkedWorkspaceId) {
+    const request = synced.collections.requests[step.requestId];
+    return request
+      ? { request }
+      : { request: null, error: 'Request no longer exists in workspace' };
+  }
+  const link = synced.linkedWorkspaces[step.linkedWorkspaceId];
+  if (!link) {
+    return { request: null, error: 'Linked workspace was unlinked' };
+  }
+  const snapshot = local.linkedCollections[step.linkedWorkspaceId];
+  if (!snapshot) {
+    return {
+      request: null,
+      error: `No cached snapshot for "${link.name}" — refresh the link card first`,
+    };
+  }
+  const request = snapshot.collections.requests[step.requestId];
+  if (!request) {
+    return {
+      request: null,
+      error: `Request not present in the cached snapshot of "${link.name}"`,
+    };
+  }
+  return { request, linkedEnvironments: snapshot.environments };
+}
+
+function buildLinkedSnapshot(
+  parsed: LinkedWorkspaceProbe,
+  link: LinkedWorkspace,
+): LinkedSnapshot | null {
+  if (!parsed.collections && !parsed.environments) return null;
+  return {
+    workspaceName: parsed.workspaceName,
+    pulledAt: link.linkedAt,
+    ref: link.pinnedVersion ? `v${link.pinnedVersion}` : `HEAD@${link.source.branch}`,
+    collections: parsed.collections ?? {
+      tree: { id: 'remote-root', type: 'root', children: [] },
+      requests: {},
+      folders: {},
+    },
+    environments: parsed.environments ?? {
+      items: {},
+      activeName: null,
+      priorityOrder: [],
+    },
+  };
+}
+
+/**
+ * Parse a linked workspace's `workspace.json`. Pulls workspaceName,
+ * releases.self, and the collections + environments we want to cache
+ * locally for cross-workspace plan steps (P5.8). Leniency on missing
+ * keys: a partially-malformed remote can still be linked; the caller
+ * checks each field before relying on it.
  */
 interface LinkedWorkspaceProbe {
   workspaceName: string;
   releases?: { self?: ReleaseHistory | null };
+  collections?: WorkspaceSynced['collections'];
+  environments?: WorkspaceSynced['environments'];
 }
 function parseLinkedWorkspaceJson(text: string): LinkedWorkspaceProbe {
   let raw: unknown;
@@ -1753,7 +1870,17 @@ function parseLinkedWorkspaceJson(text: string): LinkedWorkspaceProbe {
     typeof releasesValue === 'object' && releasesValue !== null
       ? (releasesValue as { self?: ReleaseHistory | null })
       : undefined;
-  return { workspaceName: name, releases };
+  const collectionsValue = obj.collections;
+  const collections =
+    typeof collectionsValue === 'object' && collectionsValue !== null
+      ? (collectionsValue as WorkspaceSynced['collections'])
+      : undefined;
+  const environmentsValue = obj.environments;
+  const environments =
+    typeof environmentsValue === 'object' && environmentsValue !== null
+      ? (environmentsValue as WorkspaceSynced['environments'])
+      : undefined;
+  return { workspaceName: name, releases, collections, environments };
 }
 
 /**

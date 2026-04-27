@@ -58,10 +58,12 @@ export function addPlanStep(
   local: WorkspaceLocal,
   planId: string,
   requestId: string,
+  linkedWorkspaceId?: string,
 ): WorkspaceLocal {
   const plan = local.executionPlans[planId];
   if (!plan) return local;
-  return updatePlan(local, planId, { steps: [...plan.steps, { requestId }] });
+  const step = linkedWorkspaceId ? { requestId, linkedWorkspaceId } : { requestId };
+  return updatePlan(local, planId, { steps: [...plan.steps, step] });
 }
 
 export function removePlanStep(
