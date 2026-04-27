@@ -3,10 +3,45 @@ import { create } from 'zustand';
 import { loadWorkspace, saveLocal, saveSynced } from '../persistence/workspaceStorage';
 import { applyTheme } from '../theme/applyTheme';
 
+const PANEL_STORAGE_KEY = 'apicircle-v2:active-panel';
+const VALID_PANELS: PanelId[] = [
+  'workspace',
+  'link-workspace',
+  'editor',
+  'env',
+  'execution',
+  'history',
+  'help',
+];
+
+function readStoredPanel(): PanelId {
+  if (typeof localStorage === 'undefined') return 'editor';
+  try {
+    const stored = localStorage.getItem(PANEL_STORAGE_KEY);
+    if (stored && (VALID_PANELS as string[]).includes(stored)) return stored as PanelId;
+  } catch {
+    // ignore
+  }
+  return 'editor';
+}
+
+function writeStoredPanel(panel: PanelId): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(PANEL_STORAGE_KEY, panel);
+  } catch {
+    // ignore
+  }
+}
+
 type WorkspaceStore = {
   ready: boolean;
   synced: WorkspaceSynced | null;
   local: WorkspaceLocal | null;
+
+  // UI-only state lives in the store but not in the persisted local doc.
+  activePanel: PanelId;
+  secretVaultOpen: boolean;
 
   hydrate: () => Promise<void>;
 
@@ -15,12 +50,17 @@ type WorkspaceStore = {
   toggleSidebarSection: (section: string) => void;
   setThemeId: (themeId: ThemeId) => void;
   setWorkspaceName: (name: string) => void;
+
+  openSecretVault: () => void;
+  closeSecretVault: () => void;
 };
 
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   ready: false,
   synced: null,
   local: null,
+  activePanel: readStoredPanel(),
+  secretVaultOpen: false,
 
   hydrate: async () => {
     const { synced, local } = await loadWorkspace();
@@ -29,11 +69,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   setActivePanel: (panel) => {
-    const local = get().local;
-    if (!local) return;
-    const next: WorkspaceLocal = { ...local, ui: { ...local.ui, activePanel: panel } };
-    set({ local: next });
-    void saveLocal(next);
+    writeStoredPanel(panel);
+    set({ activePanel: panel });
   },
 
   setActiveRequestId: (id) => {
@@ -78,4 +115,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set({ synced: nextSynced });
     void saveSynced(nextSynced);
   },
+
+  openSecretVault: () => set({ secretVaultOpen: true }),
+  closeSecretVault: () => set({ secretVaultOpen: false }),
 }));

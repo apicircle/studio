@@ -5,8 +5,8 @@
 // Git repo (working branch). Push-to-save only ever reads this document.
 //
 // `WorkspaceLocal` lives only in IndexedDB and is never pushed. Local edits,
-// history, executions, working-branch metadata, UI state — anything that must
-// survive a sync round-trip without leaking into Git lives here.
+// history, executions, working-branch metadata, secret index, sessions, and
+// sync snapshots all live here so they can never leak into commits.
 // =============================================================================
 
 export type ThemeId =
@@ -17,14 +17,15 @@ export type ThemeId =
   | 'paper-light'
   | 'high-contrast-dark';
 
+// No 'settings' panel — Secret Vault and Theme moved to TopBar.
+// No 'command' panel — feature dropped per revision #2.
 export type PanelId =
-  | 'git'
-  | 'api-connections'
+  | 'workspace'        // renamed from 'git'
+  | 'link-workspace'   // renamed from 'api-connections'
   | 'editor'
   | 'env'
   | 'execution'
   | 'history'
-  | 'settings'
   | 'help';
 
 // ---------------------------------------------------------------------------
@@ -45,9 +46,15 @@ export interface WorkspaceSynced {
     activeName: string | null;
     priorityOrder: string[];
   };
-  apiConnections: Record<string, ApiConnection>;
+  // Renamed from `apiConnections`. Each entry represents a workspace this one
+  // links to (private session-bound or public marketplace).
+  linkedWorkspaces: Record<string, LinkedWorkspace>;
   releases: {
-    perConnection: Record<string, ConnectionReleaseHistory>;
+    // This workspace's own release ledger — drives version updates without
+    // depending on GitHub Actions / tag automation.
+    self: ReleaseHistory | null;
+    // Cached release history of each linked workspace, keyed by linkedWorkspaceId.
+    perLink: Record<string, ReleaseHistory>;
   };
   meta: {
     createdAt: string;
@@ -70,7 +77,15 @@ export interface Folder {
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
-export type BodyType = 'none' | 'json' | 'text' | 'form-data' | 'urlencoded' | 'binary' | 'xml' | 'graphql';
+export type BodyType =
+  | 'none'
+  | 'json'
+  | 'text'
+  | 'form-data'
+  | 'urlencoded'
+  | 'binary'
+  | 'xml'
+  | 'graphql';
 
 export interface Request {
   id: string;
@@ -91,7 +106,7 @@ export interface Assertion {
   id: string;
   kind: 'status' | 'header' | 'json-path' | 'duration';
   op: 'equals' | 'not-equals' | 'contains' | 'lt' | 'gt' | 'matches';
-  target?: string; // header name or JSON path
+  target?: string;
   expected: string | number;
 }
 
@@ -100,8 +115,10 @@ export interface Environment {
   variables: Array<{ key: string; value: string; encrypted: boolean }>;
 }
 
-// API Connections — replaces v1's Repo + apiConnectionSessions split.
-export interface ApiConnection {
+// LinkedWorkspace — replaces v1's Repo + apiConnectionSessions. Every
+// version-update action requires explicit user confirmation; updatePolicy is
+// fixed to 'manual' for v2.0.
+export interface LinkedWorkspace {
   id: string;
   kind: 'private' | 'public';
   name: string;
@@ -111,9 +128,15 @@ export interface ApiConnection {
     repoFullName: string;
     branch: string;
   };
-  scope: Array<'collections' | 'environments' | 'commands'>;
-  pinnedVersion: string | null; // null = floating to latest
+  // 'commands' scope removed per revision #2.
+  scope: Array<'collections' | 'environments'>;
+  pinnedVersion: string | null;
+  updatePolicy: 'manual';
   linkedAt: string;
+  // Secret-vault key IDs the linked workspace expects values for. The consumer
+  // fills these in via the connection card; values land in the consumer's
+  // secret vault tagged with origin: 'linked'.
+  requiredSecretKeyIds: string[];
   marketplace?: {
     listedAs: string;
     tags: string[];
@@ -121,19 +144,22 @@ export interface ApiConnection {
   };
 }
 
-// Per-connection release history — replaces v1's workspace-global apiRelease.
-export interface ConnectionReleaseHistory {
-  connectionId: string;
+// Workspace-owned release ledger. Source of truth lives in workspace.json,
+// not in GitHub tags.
+export interface ReleaseHistory {
   versions: ReleaseVersion[];
   currentVersion: string | null;
-  automationMode: 'manual' | 'app';
 }
 
 export interface ReleaseVersion {
-  version: string;
+  version: string; // semver
   publishedAt: string;
-  notes: string;
-  sha: string;
+  notes: string; // markdown
+  // SHA-256 of workspace.synced.json at publish time. Verifiable on the
+  // consumer side to detect tampering.
+  workspaceSnapshot: string;
+  sha?: string; // optional git commit SHA on the source branch
+  tagName?: string; // optional git tag name
   deprecated: boolean;
   yanked: boolean;
 }
@@ -153,21 +179,65 @@ export interface WorkspaceLocal {
     requestRuns: RequestRun[];
     planRuns: PlanRun[];
   };
-  secretIndex: {
-    entries: Record<string, { id: string; label: string; createdAt: string }>;
+  // Cross-workspace global secret vault. Distinguishes workspace-defined vs
+  // required-by-linked-workspace, and tracks usage so the user can see where
+  // each key is consumed before deleting it.
+  secretIndex: SecretIndex;
+  // GitHub session(s) — managed in the Sessions tab of the Secret Vault modal.
+  // Allows token rotation without losing branch/PR state.
+  sessions: {
+    github: GitHubSession | null;
   };
   workingBranch: WorkingBranch | null;
+  // 3-way diff snapshot for conflict-safe sync. See Sync section in the plan.
+  sync: SyncSnapshot;
+  // No `activePanel` — top nav controls this and persists in localStorage so
+  // it doesn't bloat the workspace doc.
   ui: {
-    activePanel: PanelId;
     activeRequestId: string | null;
     sidebarExpandedSections: string[];
     themeId: ThemeId;
   };
 }
 
+export interface SecretIndex {
+  entries: Record<string, SecretEntry>;
+}
+
+export interface SecretEntry {
+  id: string;
+  label: string;
+  createdAt: string;
+  origin: 'workspace' | 'linked';
+  // Populated when origin === 'linked':
+  linkedWorkspaceId?: string;
+  linkedKeyId?: string; // the key ID as defined in the linked workspace
+  // Where this key is consumed — populated lazily; helps the user before
+  // delete and powers the "where used" view in the modal.
+  usedIn: SecretUsage[];
+}
+
+export interface SecretUsage {
+  kind: 'request' | 'environment-var' | 'linked-workspace-input';
+  id: string; // request id, environment var path, or linked workspace id
+  label: string;
+}
+
+export interface GitHubSession {
+  accountLogin: string;
+  // Points into secretIndex.entries — the actual encrypted PAT lives in the
+  // separate web-secrets store.
+  tokenSecretId: string;
+  // Scopes the token currently grants, e.g. ['repo', 'pull_request'].
+  // Refreshed by an explicit "Verify scopes" call (GET /user via API).
+  grantedScopes: string[];
+  addedAt: string;
+  lastVerifiedAt: string | null;
+}
+
 export interface ItemOverride {
-  // Key in the parent record is `${connectionId}:${itemId}`.
-  connectionId: string;
+  // Key in the parent record is `${linkedWorkspaceId}:${itemId}`.
+  linkedWorkspaceId: string;
   itemId: string;
   patch: Record<string, unknown>;
   updatedAt: string;
@@ -176,8 +246,8 @@ export interface ItemOverride {
 export interface ExecutionPlan {
   id: string;
   name: string;
-  steps: Array<{ requestId: string; connectionId?: string }>;
-  envPriorityOrder: string[]; // overrides global priority for this plan
+  steps: Array<{ requestId: string; linkedWorkspaceId?: string }>;
+  envPriorityOrder: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -208,7 +278,19 @@ export interface WorkingBranch {
   repoFullName: string;
   createdAt: string;
   lastPushedSha: string | null;
-  lastPulledSha: string | null;
   diffSummary: { ahead: number; behind: number; staleAt: string } | null;
   openPrUrl: string | null;
+}
+
+// 3-way diff snapshot. localDiff = currentSynced - lastPulledSnapshot;
+// remoteDiff = remote - lastPulledSnapshot. Conflict iff both diffs touch
+// the same entity key.
+export interface SyncSnapshot {
+  lastPulledSnapshot: WorkspaceSynced | null;
+  lastPulledSha: string | null;
+  lastPulledAt: string | null;
+  // Optional optimization: entity keys edited locally since last successful
+  // push. Format: 'requests:<id>', 'environments:<name>', 'linkedWorkspaces:<id>',
+  // 'releases.self'. Cleared after push succeeds.
+  dirtyKeys: string[];
 }

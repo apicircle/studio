@@ -1,13 +1,12 @@
 import type { PanelId } from '@apicircle-v2/shared';
 import {
-  Boxes,
-  GitBranch,
   HelpCircle,
   History,
   Layers,
+  Link2,
   PencilLine,
   PlayCircle,
-  Settings,
+  Workflow,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -18,16 +17,16 @@ export interface PanelDef {
   hasSidebar: boolean;
 }
 
-// Same order as v1's top nav: Git → API Connections → Editor → Environments
-// → Execution → History → Settings → Help Center.
+// Top nav per revisions: 'Workspace' (was Git) → 'Link Workspace' (was API
+// Connections) → Editor → Environments → Execution → History → Help Center.
+// Settings panel removed; Secret Vault and Theme moved to TopBar.
 export const PANELS: ReadonlyArray<PanelDef> = [
-  { id: 'git', label: 'Git', icon: GitBranch, hasSidebar: true },
-  { id: 'api-connections', label: 'API Connections', icon: Boxes, hasSidebar: true },
+  { id: 'workspace', label: 'Workspace', icon: Workflow, hasSidebar: true },
+  { id: 'link-workspace', label: 'Link Workspace', icon: Link2, hasSidebar: true },
   { id: 'editor', label: 'Editor', icon: PencilLine, hasSidebar: true },
   { id: 'env', label: 'Environments', icon: Layers, hasSidebar: true },
   { id: 'execution', label: 'Execution', icon: PlayCircle, hasSidebar: true },
   { id: 'history', label: 'History', icon: History, hasSidebar: true },
-  { id: 'settings', label: 'Settings', icon: Settings, hasSidebar: true },
   { id: 'help', label: 'Help Center', icon: HelpCircle, hasSidebar: false },
 ];
 

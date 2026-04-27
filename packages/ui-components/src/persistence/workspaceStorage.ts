@@ -49,8 +49,8 @@ export function createEmptyWorkspace(): { synced: WorkspaceSynced; local: Worksp
       activeName: null,
       priorityOrder: [],
     },
-    apiConnections: {},
-    releases: { perConnection: {} },
+    linkedWorkspaces: {},
+    releases: { self: null, perLink: {} },
     meta: { createdAt: now, updatedAt: now, appVersion: '0.1.0' },
   };
   const local: WorkspaceLocal = {
@@ -60,9 +60,15 @@ export function createEmptyWorkspace(): { synced: WorkspaceSynced; local: Worksp
     executionPlans: {},
     history: { requestRuns: [], planRuns: [] },
     secretIndex: { entries: {} },
+    sessions: { github: null },
     workingBranch: null,
+    sync: {
+      lastPulledSnapshot: null,
+      lastPulledSha: null,
+      lastPulledAt: null,
+      dirtyKeys: [],
+    },
     ui: {
-      activePanel: 'editor',
       activeRequestId: null,
       sidebarExpandedSections: [],
       themeId: 'studio-dark',

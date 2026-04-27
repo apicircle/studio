@@ -1,15 +1,14 @@
 import { useWorkspaceStore } from '../store/workspaceStore';
-import { GitSidebar } from '../panels/git/GitSidebar';
-import { ApiConnectionsSidebar } from '../panels/api-connections/ApiConnectionsSidebar';
+import { WorkspaceSidebar } from '../panels/workspace/WorkspaceSidebar';
+import { LinkWorkspaceSidebar } from '../panels/link-workspace/LinkWorkspaceSidebar';
 import { EditorSidebar } from '../panels/editor/EditorSidebar';
 import { EnvironmentsSidebar } from '../panels/env/EnvironmentsSidebar';
 import { ExecutionSidebar } from '../panels/execution/ExecutionSidebar';
 import { HistorySidebar } from '../panels/history/HistorySidebar';
-import { SettingsSidebar } from '../panels/settings/SettingsSidebar';
 import { getPanel } from './panels';
 
 export function Sidebar() {
-  const activePanel = useWorkspaceStore((s) => s.local?.ui.activePanel ?? 'editor');
+  const activePanel = useWorkspaceStore((s) => s.activePanel);
   const panel = getPanel(activePanel);
   if (!panel.hasSidebar) return null;
 
@@ -19,13 +18,12 @@ export function Sidebar() {
         {panel.label}
       </header>
       <div className="flex-1 overflow-y-auto p-2">
-        {activePanel === 'git' && <GitSidebar />}
-        {activePanel === 'api-connections' && <ApiConnectionsSidebar />}
+        {activePanel === 'workspace' && <WorkspaceSidebar />}
+        {activePanel === 'link-workspace' && <LinkWorkspaceSidebar />}
         {activePanel === 'editor' && <EditorSidebar />}
         {activePanel === 'env' && <EnvironmentsSidebar />}
         {activePanel === 'execution' && <ExecutionSidebar />}
         {activePanel === 'history' && <HistorySidebar />}
-        {activePanel === 'settings' && <SettingsSidebar />}
       </div>
     </aside>
   );
