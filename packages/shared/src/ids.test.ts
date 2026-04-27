@@ -20,13 +20,33 @@ describe('generateId', () => {
   });
 
   it('falls back to getRandomValues when randomUUID is missing', () => {
-    const original = crypto.randomUUID;
-    delete (crypto as { randomUUID?: unknown }).randomUUID;
+    // Some Node versions define randomUUID as non-configurable, so
+    // stubbing the type is more reliable than `delete`.
+    const stub = vi
+      .spyOn(crypto, 'randomUUID')
+      .mockImplementation(
+        () => undefined as unknown as `${string}-${string}-${string}-${string}-${string}`,
+      );
+    // Replace on the function-typeof check by overwriting the property
+    // descriptor so the runtime check `typeof crypto.randomUUID === 'function'`
+    // returns false. The mock doesn't change typeof, so we explicitly
+    // delete + reassign with vi.stubGlobal.
+    stub.mockRestore();
+    const originalCrypto = globalThis.crypto;
+    Object.defineProperty(globalThis, 'crypto', {
+      value: { getRandomValues: originalCrypto.getRandomValues.bind(originalCrypto) },
+      configurable: true,
+      writable: true,
+    });
     try {
       const id = generateId();
       expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     } finally {
-      (crypto as { randomUUID: typeof original }).randomUUID = original;
+      Object.defineProperty(globalThis, 'crypto', {
+        value: originalCrypto,
+        configurable: true,
+        writable: true,
+      });
     }
   });
 

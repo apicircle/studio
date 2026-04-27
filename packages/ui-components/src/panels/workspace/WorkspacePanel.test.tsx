@@ -207,5 +207,146 @@ describe('WorkspacePanel', () => {
       await userEvent.click(screen.getByRole('button', { name: /Create working branch/ }));
       expect(await screen.findByText(/already exists on GitHub/i)).toBeInTheDocument();
     });
+
+    it('disconnect repo clears connectedRepo + the working branch', async () => {
+      await renderWithStore(<WorkspacePanel />);
+      await act(async () => {
+        useWorkspaceStore.setState({
+          local: {
+            ...useWorkspaceStore.getState().local!,
+            sessions: {
+              github: {
+                accountLogin: 'me',
+                tokenSecretId: 's',
+                grantedScopes: ['repo'],
+                addedAt: 't',
+                lastVerifiedAt: 't',
+              },
+            },
+            connectedRepo: {
+              fullName: 'me/api',
+              owner: 'me',
+              name: 'api',
+              defaultBranch: 'main',
+              visibility: 'public',
+              isPrivate: false,
+              pushable: true,
+              connectedAt: 't',
+            },
+          },
+        });
+      });
+      await userEvent.click(screen.getByRole('button', { name: /Disconnect repo/ }));
+      expect(useWorkspaceStore.getState().local!.connectedRepo).toBeNull();
+    });
+
+    it('discard branch clears the working branch slot', async () => {
+      await renderWithStore(<WorkspacePanel />);
+      await act(async () => {
+        useWorkspaceStore.setState({
+          local: {
+            ...useWorkspaceStore.getState().local!,
+            sessions: {
+              github: {
+                accountLogin: 'me',
+                tokenSecretId: 's',
+                grantedScopes: ['repo'],
+                addedAt: 't',
+                lastVerifiedAt: 't',
+              },
+            },
+            connectedRepo: {
+              fullName: 'me/api',
+              owner: 'me',
+              name: 'api',
+              defaultBranch: 'main',
+              visibility: 'public',
+              isPrivate: false,
+              pushable: true,
+              connectedAt: 't',
+            },
+            workingBranch: {
+              name: 'apicircle/wb',
+              baseBranch: 'main',
+              repoFullName: 'me/api',
+              repoOwner: 'me',
+              repoName: 'api',
+              headSha: 'abc',
+              createdAt: 't',
+              lastPushedSha: null,
+              diffSummary: null,
+              openPrUrl: null,
+            },
+          },
+        });
+      });
+      await userEvent.click(screen.getByLabelText('Discard working branch'));
+      expect(useWorkspaceStore.getState().local!.workingBranch).toBeNull();
+    });
+  });
+
+  describe('Releases card', () => {
+    it('publishes a new version end-to-end through the modal + confirm dialog', async () => {
+      await renderWithStore(<WorkspacePanel />);
+      const user = userEvent.setup();
+      // Open the publish modal.
+      await user.click(screen.getByRole('button', { name: /Publish release/ }));
+      // Validation: empty version input disables review.
+      const versionInput = screen.getByLabelText('Release version');
+      expect(screen.getByRole('button', { name: /Review .* publish/ })).toBeDisabled();
+      // Invalid semver surfaces inline.
+      await user.type(versionInput, 'not-semver');
+      expect(screen.getByText(/valid semver/)).toBeInTheDocument();
+      await user.tripleClick(versionInput);
+      await user.keyboard('0.1.0');
+      await user.type(screen.getByLabelText('Release notes'), 'first cut');
+      await user.click(screen.getByRole('button', { name: /Review .* publish/ }));
+      // Confirm dialog → Publish.
+      await user.click(screen.getByRole('button', { name: 'Publish' }));
+      const synced = useWorkspaceStore.getState().synced!;
+      expect(synced.releases.self?.currentVersion).toBe('0.1.0');
+    });
+
+    it('rejects duplicate versions with an inline error', async () => {
+      await renderWithStore(<WorkspacePanel />);
+      // Pre-publish 0.1.0 via the store action.
+      await act(async () => {
+        await useWorkspaceStore.getState().publishRelease({ version: '0.1.0', notes: 'first' });
+      });
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: /Publish release/ }));
+      await user.type(screen.getByLabelText('Release version'), '0.1.0');
+      // Validation message surfaces before review can fire.
+      expect(screen.getByText(/already published/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Review .* publish/ })).toBeDisabled();
+    });
+
+    it('deprecate via per-row confirm flips the badge', async () => {
+      await renderWithStore(<WorkspacePanel />);
+      await act(async () => {
+        await useWorkspaceStore.getState().publishRelease({ version: '0.1.0', notes: '' });
+      });
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: 'Deprecate' }));
+      // Confirm dialog has its own "Deprecate" button.
+      const deprecateButtons = screen.getAllByRole('button', { name: 'Deprecate' });
+      await user.click(deprecateButtons[deprecateButtons.length - 1]);
+      expect(useWorkspaceStore.getState().synced!.releases.self!.versions[0].deprecated).toBe(true);
+    });
+
+    it('yank requires typed confirmation and flips the yanked flag', async () => {
+      await renderWithStore(<WorkspacePanel />);
+      await act(async () => {
+        await useWorkspaceStore.getState().publishRelease({ version: '0.1.0', notes: '' });
+      });
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: /Yank/ }));
+      const yankButton = screen.getAllByRole('button', { name: 'Yank' });
+      const modalYank = yankButton[yankButton.length - 1];
+      expect(modalYank).toBeDisabled();
+      await user.type(screen.getByLabelText('Type to confirm'), 'YANK v0.1.0');
+      await user.click(modalYank);
+      expect(useWorkspaceStore.getState().synced!.releases.self!.versions[0].yanked).toBe(true);
+    });
   });
 });
