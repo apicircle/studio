@@ -8,6 +8,7 @@ import type {
   HttpMethod,
   LinkedWorkspace,
   PanelId,
+  PlanRun,
   ReleaseHistory,
   Request as ApiRequest,
   RequestBody,
@@ -84,6 +85,15 @@ import {
   removeSecretEntry as removeSecretEntryAction,
   renameSecretEntry as renameSecretEntryAction,
 } from './secretActions';
+import {
+  addPlan as addPlanAction,
+  addPlanStep as addPlanStepAction,
+  removePlan as removePlanAction,
+  removePlanStep as removePlanStepAction,
+  renamePlan as renamePlanAction,
+  reorderPlanSteps as reorderPlanStepsAction,
+  setPlanEnvPriority as setPlanEnvPriorityAction,
+} from './planActions';
 import { recomputeUsedIn } from './usedInAggregator';
 import { deleteSecretPayload, getSecretPayload, putSecretPayload } from '../persistence/secrets';
 
@@ -106,6 +116,9 @@ const VALID_PANELS: PanelId[] = [
 // Cap on the number of request runs kept in local history. Older runs get
 // dropped — execution history is a circular buffer to keep IDB writes cheap.
 const MAX_REQUEST_RUNS = 500;
+// Plan-runs are coarser-grained than request-runs; cap separately so the
+// list stays browsable without competing for the request-run buffer.
+const MAX_PLAN_RUNS = 200;
 
 function readStoredPanel(): PanelId {
   if (typeof localStorage === 'undefined') return 'editor';
@@ -148,6 +161,12 @@ type WorkspaceStore = {
   secretVaultOpen: boolean;
   /** Stashed during refreshWorkspace when conflicts surface; consumed by commitRefresh. */
   pendingRefresh: PendingRefresh | null;
+  /**
+   * In-memory selection for the Execution panel — the plan whose editor
+   * is currently open. Not persisted: a fresh tab opens to "first plan
+   * by updatedAt desc, or empty state".
+   */
+  activePlanId: string | null;
   /**
    * Plan §3.7: any 401/403 missing-scope from a GitHub action surfaces a
    * modal that points the user to the Sessions tab. Lives in store state
@@ -429,6 +448,29 @@ type WorkspaceStore = {
   /** Drop a linked workspace + its cached release ledger. */
   unlinkWorkspace: (id: string) => void;
 
+  // --- Execution plans (P6) -------------------------------------------
+  setActivePlanId: (id: string | null) => void;
+  /** Create a new local-only execution plan. Returns the new plan's id. */
+  addPlan: (name?: string) => string;
+  /** Drop a plan AND its plan-run history rows. */
+  removePlan: (id: string) => void;
+  renamePlan: (id: string, name: string) => void;
+  addPlanStep: (planId: string, requestId: string) => void;
+  removePlanStep: (planId: string, stepIndex: number) => void;
+  reorderPlanSteps: (planId: string, fromIndex: number, toIndex: number) => void;
+  /**
+   * Plan-level env priority overrides the workspace's global order
+   * during runs of this plan. Empty array = no override.
+   */
+  setPlanEnvPriority: (planId: string, priorityOrder: readonly string[]) => void;
+  /**
+   * Run every step of a plan in order. With assertions enabled, each
+   * request's assertions are evaluated and the verdict aggregated into
+   * the plan-run summary; without, only the request runs themselves are
+   * persisted (no assertion verdicts in the plan-run row).
+   */
+  runPlan: (planId: string, opts?: { withAssertions?: boolean }) => Promise<PlanRun>;
+
   /**
    * Pin (or unpin via `null`) a linked workspace to a specific version.
    * Throws when the link is unknown, or when `version` is non-null but
@@ -476,6 +518,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   secretVaultOpen: false,
   pendingRefresh: null,
   missingScopePrompt: null,
+  activePlanId: null,
   lastRun: {},
   isExecuting: {},
 
@@ -1262,6 +1305,131 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     void saveSynced(next);
   },
 
+  // --- Execution plans (P6) ----------------------------------------------
+
+  setActivePlanId: (id) => set({ activePlanId: id }),
+
+  addPlan: (name) => {
+    const local = get().local;
+    if (!local) return '';
+    const { local: next, plan } = addPlanAction(local, name);
+    set({ local: next, activePlanId: plan.id });
+    void saveLocal(next);
+    return plan.id;
+  },
+
+  removePlan: (id) => {
+    const local = get().local;
+    if (!local) return;
+    const next = removePlanAction(local, id);
+    if (next === local) return;
+    const wasActive = get().activePlanId === id;
+    set({ local: next, ...(wasActive ? { activePlanId: null } : {}) });
+    void saveLocal(next);
+  },
+
+  renamePlan: (id, name) => commitLocal(set, get, (l) => renamePlanAction(l, id, name)),
+  addPlanStep: (planId, requestId) =>
+    commitLocal(set, get, (l) => addPlanStepAction(l, planId, requestId)),
+  removePlanStep: (planId, stepIndex) =>
+    commitLocal(set, get, (l) => removePlanStepAction(l, planId, stepIndex)),
+  reorderPlanSteps: (planId, fromIndex, toIndex) =>
+    commitLocal(set, get, (l) => reorderPlanStepsAction(l, planId, fromIndex, toIndex)),
+  setPlanEnvPriority: (planId, priorityOrder) =>
+    commitLocal(set, get, (l) => setPlanEnvPriorityAction(l, planId, priorityOrder)),
+
+  runPlan: async (planId, opts) => {
+    const local = get().local;
+    const synced = get().synced;
+    if (!local || !synced) throw new Error('Workspace not ready');
+    const plan = local.executionPlans[planId];
+    if (!plan) throw new Error(`Plan ${planId} not found`);
+
+    const withAssertions = opts?.withAssertions ?? false;
+    const startedAt = new Date().toISOString();
+    const planRunId = generateId();
+    const t0 = Date.now();
+    const stepRecords: Array<{ requestRunId: string; passed: boolean }> = [];
+    const newRequestRuns: RequestRun[] = [];
+
+    for (const step of plan.steps) {
+      const request = synced.collections.requests[step.requestId];
+      if (!request) {
+        // Step references a request that's been deleted — record as a
+        // failure rather than aborting the whole plan.
+        const runId = generateId();
+        const orphanRun: RequestRun = {
+          id: runId,
+          requestId: step.requestId,
+          startedAt: new Date().toISOString(),
+          durationMs: 0,
+          status: null,
+          ok: false,
+          error: 'Request no longer exists in workspace',
+          assertions: [],
+        };
+        newRequestRuns.push(orphanRun);
+        stepRecords.push({ requestRunId: runId, passed: false });
+        continue;
+      }
+      const planScope = {
+        envPriorityOrder: plan.envPriorityOrder.length > 0 ? plan.envPriorityOrder : undefined,
+      };
+      const resolved = await resolveRequest(request, synced, get().local, planScope);
+      const result = await coreExecuteRequest(resolved, {
+        resolveAttachment: attachmentResolver,
+      });
+      const assertionResults = withAssertions ? runAssertions(request.assertions, result) : [];
+      const allPassed = result.ok && (!withAssertions || assertionResults.every((a) => a.passed));
+      const runId = generateId();
+      const requestRun: RequestRun = {
+        id: runId,
+        requestId: request.id,
+        startedAt: result.startedAt,
+        durationMs: result.durationMs,
+        status: result.status,
+        ok: result.ok,
+        error: result.error,
+        assertions: assertionResults,
+      };
+      newRequestRuns.push(requestRun);
+      stepRecords.push({ requestRunId: runId, passed: allPassed });
+    }
+
+    const planRun: PlanRun = {
+      id: planRunId,
+      planId,
+      startedAt,
+      durationMs: Date.now() - t0,
+      withAssertions,
+      steps: stepRecords,
+    };
+
+    const persistLocal = get().local;
+    if (persistLocal) {
+      // Prepend newest-first: the last step to run sits at index 0 of the
+      // history buffer (matches the convention executeActiveRequest uses
+      // for single-request runs).
+      const reversed = [...newRequestRuns].reverse();
+      const trimmedRequestRuns = [...reversed, ...persistLocal.history.requestRuns].slice(
+        0,
+        MAX_REQUEST_RUNS,
+      );
+      const trimmedPlanRuns = [planRun, ...persistLocal.history.planRuns].slice(0, MAX_PLAN_RUNS);
+      const nextLocal: WorkspaceLocal = {
+        ...persistLocal,
+        history: {
+          ...persistLocal.history,
+          requestRuns: trimmedRequestRuns,
+          planRuns: trimmedPlanRuns,
+        },
+      };
+      set({ local: nextLocal });
+      void saveLocal(nextLocal);
+    }
+    return planRun;
+  },
+
   syncAttachments: async () => {
     const local = get().local;
     const synced = get().synced;
@@ -1682,6 +1850,25 @@ function commitSynced(
 }
 
 /**
+ * Mirror of commitSynced for reducers that touch only `local`. Used by
+ * plan / overrides / history actions that don't bleed into the synced
+ * doc. Returns nothing — the reducer is expected to return the same
+ * reference when the change was a no-op.
+ */
+function commitLocal(
+  set: SetState,
+  get: GetState,
+  reducer: (l: WorkspaceLocal) => WorkspaceLocal,
+): void {
+  const local = get().local;
+  if (!local) return;
+  const next = reducer(local);
+  if (next === local) return;
+  set({ local: next });
+  void saveLocal(next);
+}
+
+/**
  * Apply variable substitution + secret decryption to a request before it
  * goes to the executor. URL, query params, headers, body content, and
  * (for json/text/xml/graphql) the raw body string are all resolved against
@@ -1695,16 +1882,23 @@ async function resolveRequest(
   request: ApiRequest,
   synced: WorkspaceSynced,
   local: WorkspaceLocal | null,
+  overrides?: { envPriorityOrder?: readonly string[] },
 ): Promise<ApiRequest> {
   const envs = await decryptEnvironments(synced.environments.items);
   const secrets = local ? await decryptVaultSecrets(local) : {};
 
   const contextVars = request.contextVars;
+  // Plan-level priority overrides the workspace's global order when the
+  // plan supplied a non-empty list (plan §6 P6 + §11.1 inline guidance).
+  const priorityOrder =
+    overrides?.envPriorityOrder && overrides.envPriorityOrder.length > 0
+      ? [...overrides.envPriorityOrder]
+      : synced.environments.priorityOrder;
   const scope = buildScope({
     contextVars,
     environments: envs,
     activeEnvName: synced.environments.activeName,
-    priorityOrder: synced.environments.priorityOrder,
+    priorityOrder,
     secrets,
   });
 
