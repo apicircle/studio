@@ -1,4 +1,4 @@
-# API Circle Studio v2
+# API Circle Studio
 
 Greenfield rebuild of API Circle Studio with:
 

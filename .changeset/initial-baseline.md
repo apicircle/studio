@@ -5,7 +5,7 @@
 '@apicircle/ui-components': minor
 ---
 
-P1–P9 baseline. First release-ready cut of API Circle Studio v2:
+P1–P9 baseline. First release-ready cut of API Circle Studio:
 
 - Two-document workspace schema (synced + local) with stable JSON
   serialization for clean Git diffs.

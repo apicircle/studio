@@ -1,9 +1,9 @@
 {
-  "name": "studio-v2",
+  "name": "studio",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "API Circle Studio v2 — Tailwind rebuild with two-document workspace schema",
+  "description": "API Circle Studio — greenfield API workspace with Git-backed sync, local mock servers, and an MCP server for AI clients",
   "license": "Apache-2.0",
   "scripts": {
     "dev": "turbo dev",
