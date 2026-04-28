@@ -1,4 +1,4 @@
-import type { Request as ApiRequest } from '@apicircle-v2/shared';
+import type { Request as ApiRequest } from '@apicircle/shared';
 import { describe, expect, it, vi } from 'vitest';
 import { executeRequest } from './executeRequest';
 
@@ -11,7 +11,9 @@ const baseReq = (overrides: Partial<ApiRequest> = {}): ApiRequest => ({
   headers: [],
   query: [],
   body: { type: 'none', content: '' },
+  auth: { type: 'none' },
   contextVars: [],
+  extractions: [],
   assertions: [],
   createdAt: '2026-04-27T00:00:00.000Z',
   updatedAt: '2026-04-27T00:00:00.000Z',

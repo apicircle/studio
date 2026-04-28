@@ -1,12 +1,13 @@
 {
-  "name": "@apicircle-v2/core",
+  "name": "@apicircle/core",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./workspace/file-backed": "./src/workspace/fileBackedWorkspace.ts"
   },
   "scripts": {
     "check": "tsc --noEmit",
@@ -14,9 +15,11 @@
     "clean": "rm -rf dist node_modules"
   },
   "dependencies": {
-    "@apicircle-v2/shared": "workspace:*"
+    "@apicircle/shared": "workspace:*",
+    "proper-lockfile": "^4.1.2"
   },
   "devDependencies": {
+    "@types/proper-lockfile": "^4.1.4",
     "typescript": "^5.4.0",
     "vitest": "^2.0.0"
   }

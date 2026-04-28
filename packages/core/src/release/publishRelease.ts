@@ -1,4 +1,4 @@
-import type { ReleaseHistory, ReleaseVersion, WorkspaceSynced } from '@apicircle-v2/shared';
+import type { ReleaseHistory, ReleaseVersion, WorkspaceSynced } from '@apicircle/shared';
 import { serializeWorkspaceForGit } from '../git/serializeWorkspace';
 import { isValidSemver } from './semver';
 

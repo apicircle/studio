@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ArrowDown, ArrowUp, Eye, EyeOff, Lock, Plus, Trash2 } from 'lucide-react';
-import type { Environment } from '@apicircle-v2/shared';
-import { decryptString, tryParsePayload } from '@apicircle-v2/core';
+import type { Environment } from '@apicircle/shared';
+import { decryptString, tryParsePayload } from '@apicircle/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { getMasterKey } from '../../persistence/secretKey';
 import { cn } from '../../primitives/cn';

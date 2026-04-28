@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { WorkspaceLocal } from '@apicircle-v2/shared';
+import type { WorkspaceLocal } from '@apicircle/shared';
 import {
   addPlan,
   addPlanStep,
@@ -27,6 +27,8 @@ const baseLocal = (): WorkspaceLocal => ({
     dirtyKeys: [],
   },
   linkedCollections: {},
+  globalContext: {},
+  mockRuntime: { active: {} },
   ui: {
     activeRequestId: null,
     sidebarExpandedSections: [],

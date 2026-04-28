@@ -1,6 +1,8 @@
-import { FilePlus2, FolderPlus, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { FilePlus2, FolderPlus, Terminal, Trash2 } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
+import { ImportCurlModal } from './ImportCurlModal';
 
 const METHOD_COLOR: Record<string, string> = {
   GET: 'text-http-get',
@@ -21,6 +23,7 @@ export function EditorSidebar() {
   const addFolder = useWorkspaceStore((s) => s.addFolder);
   const removeRequest = useWorkspaceStore((s) => s.removeRequest);
   const setActiveRequestId = useWorkspaceStore((s) => s.setActiveRequestId);
+  const [curlModalOpen, setCurlModalOpen] = useState(false);
 
   if (!tree) return null;
 
@@ -38,6 +41,15 @@ export function EditorSidebar() {
         </button>
         <button
           type="button"
+          onClick={() => setCurlModalOpen(true)}
+          className="inline-flex h-7 items-center justify-center gap-1.5 rounded-sm border border-border bg-surface px-2 text-xs text-text-muted transition-colors hover:border-accent hover:text-text-primary"
+          aria-label="Import cURL"
+          title="Import a cURL command"
+        >
+          <Terminal size={12} />
+        </button>
+        <button
+          type="button"
           onClick={() => addFolder(null)}
           className="inline-flex h-7 items-center justify-center gap-1.5 rounded-sm border border-border bg-surface px-2 text-xs text-text-muted transition-colors hover:border-accent hover:text-text-primary"
           aria-label="New folder"
@@ -45,6 +57,7 @@ export function EditorSidebar() {
           <FolderPlus size={12} />
         </button>
       </div>
+      <ImportCurlModal open={curlModalOpen} onClose={() => setCurlModalOpen(false)} />
 
       {tree.children.length === 0 && (
         <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-[11px] text-text-dim">

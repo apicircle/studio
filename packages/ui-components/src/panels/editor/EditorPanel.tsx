@@ -1,13 +1,18 @@
 import { useState } from 'react';
 import { Send } from 'lucide-react';
-import type { HttpMethod } from '@apicircle-v2/shared';
+import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
+import type { HttpMethod } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 import { ParamsTab } from './ParamsTab';
 import { HeadersTab } from './HeadersTab';
 import { BodyTab } from './BodyTab';
 import { AssertionsTab } from './AssertionsTab';
+import { AuthTab } from './AuthTab';
+import { ContextTab } from './ContextTab';
 import { ResponseViewer } from './ResponseViewer';
+import { VariableAutocompleteField } from '../../editors/VariableAutocompleteField';
+import { useVariableScope } from '../../editors/useVariableScope';
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 const METHOD_COLOR: Record<HttpMethod, string> = {
@@ -20,7 +25,33 @@ const METHOD_COLOR: Record<HttpMethod, string> = {
   OPTIONS: 'text-http-options',
 };
 
-type Tab = 'params' | 'headers' | 'body' | 'assertions';
+type Tab = 'params' | 'headers' | 'auth' | 'body' | 'context' | 'assertions';
+
+function authBadge(type: string): string {
+  switch (type) {
+    case 'bearer':
+      return 'Bearer';
+    case 'basic':
+      return 'Basic';
+    case 'api-key':
+      return 'API Key';
+    case 'custom-header':
+      return 'Header';
+    case 'aws-sigv4':
+      return 'SigV4';
+    case 'jwt-bearer':
+      return 'JWT';
+    case 'inherit':
+      return 'Inherit';
+    case 'digest':
+    case 'ntlm':
+    case 'hawk':
+      return type.toUpperCase();
+    default:
+      if (type.startsWith('oauth2-')) return 'OAuth2';
+      return '';
+  }
+}
 
 export function EditorPanel() {
   const activeRequestId = useWorkspaceStore((s) => s.local?.ui.activeRequestId ?? null);
@@ -42,6 +73,7 @@ export function EditorPanel() {
   );
 
   const [tab, setTab] = useState<Tab>('params');
+  const scope = useVariableScope(request);
 
   if (!request) {
     return (
@@ -76,13 +108,16 @@ export function EditorPanel() {
               </option>
             ))}
           </select>
-          <input
-            value={request.url}
-            onChange={(e) => setRequestUrl(request.id, e.target.value)}
-            placeholder="https://api.example.com/v1"
-            aria-label="Request URL"
-            className="h-9 flex-1 rounded-sm border border-border bg-card px-3 text-sm text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
-          />
+          <div className="flex-1">
+            <VariableAutocompleteField
+              value={request.url}
+              onChange={(v) => setRequestUrl(request.id, v)}
+              scope={scope}
+              ariaLabel="Request URL"
+              placeholder="https://api.example.com/v1"
+              className="h-9 px-3 text-sm focus:ring-2"
+            />
+          </div>
           <button
             type="button"
             onClick={() => void executeActiveRequest()}
@@ -97,7 +132,7 @@ export function EditorPanel() {
       </header>
 
       <div className="flex border-b border-border-subtle px-2">
-        {(['params', 'headers', 'body', 'assertions'] as const).map((t) => (
+        {(['params', 'headers', 'auth', 'body', 'context', 'assertions'] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -113,23 +148,46 @@ export function EditorPanel() {
             {t === 'params' && `Params${request.query.length ? ` (${request.query.length})` : ''}`}
             {t === 'headers' &&
               `Headers${request.headers.length ? ` (${request.headers.length})` : ''}`}
+            {t === 'auth' &&
+              `Auth${request.auth && request.auth.type !== 'none' ? ` · ${authBadge(request.auth.type)}` : ''}`}
             {t === 'body' && 'Body'}
+            {t === 'context' &&
+              `Context${request.contextVars.length + request.extractions.length > 0 ? ` (${request.contextVars.length + request.extractions.length})` : ''}`}
             {t === 'assertions' &&
               `Assertions${request.assertions.length ? ` (${request.assertions.length})` : ''}`}
           </button>
         ))}
       </div>
 
-      <div className="grid flex-1 grid-rows-2 overflow-hidden">
-        <div className="overflow-auto p-3">
-          {tab === 'params' && <ParamsTab request={request} />}
-          {tab === 'headers' && <HeadersTab request={request} />}
-          {tab === 'body' && <BodyTab request={request} />}
-          {tab === 'assertions' && <AssertionsTab request={request} />}
-        </div>
-        <div className="overflow-hidden border-t border-border-subtle">
-          <ResponseViewer result={lastRun} lastRun={lastHistoryRun} isExecuting={isExecuting} />
-        </div>
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <PanelGroup direction="vertical" autoSaveId="apicircle:editor:request-response">
+          <Panel defaultSize={50} minSize={20}>
+            <div
+              className={cn(
+                'flex h-full min-h-0 flex-col overflow-hidden',
+                tab === 'body' ? 'p-3' : 'overflow-auto p-3',
+              )}
+            >
+              {tab === 'params' && <ParamsTab request={request} />}
+              {tab === 'headers' && <HeadersTab request={request} />}
+              {tab === 'auth' && <AuthTab request={request} />}
+              {tab === 'body' && <BodyTab request={request} />}
+              {tab === 'context' && <ContextTab request={request} />}
+              {tab === 'assertions' && <AssertionsTab request={request} />}
+            </div>
+          </Panel>
+          <PanelResizeHandle
+            aria-label="Resize request and response"
+            className="group flex h-1.5 cursor-row-resize items-center justify-center border-y border-border-subtle bg-surface hover:bg-accent/20"
+          >
+            <span className="h-0.5 w-8 rounded-full bg-border group-hover:bg-accent" />
+          </PanelResizeHandle>
+          <Panel defaultSize={50} minSize={20}>
+            <div className="h-full overflow-hidden">
+              <ResponseViewer result={lastRun} lastRun={lastHistoryRun} isExecuting={isExecuting} />
+            </div>
+          </Panel>
+        </PanelGroup>
       </div>
     </div>
   );

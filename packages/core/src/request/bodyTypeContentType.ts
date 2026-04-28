@@ -1,4 +1,4 @@
-import type { BodyType } from '@apicircle-v2/shared';
+import type { BodyType } from '@apicircle/shared';
 
 // Single source of truth for body-type ↔ Content-Type mapping. The Editor
 // uses this to (a) seed the Content-Type header when the user picks a body

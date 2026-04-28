@@ -1,5 +1,5 @@
 import { act } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useWorkspaceStore } from './workspaceStore';
 
 describe('workspaceStore', () => {
@@ -78,5 +78,140 @@ describe('workspaceStore', () => {
     expect(useWorkspaceStore.getState().secretVaultOpen).toBe(true);
     useWorkspaceStore.getState().closeSecretVault();
     expect(useWorkspaceStore.getState().secretVaultOpen).toBe(false);
+  });
+
+  describe('post-run context extraction', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('writes extracted vars into local.globalContext after a successful send', async () => {
+      const fetchMock = vi.fn(() =>
+        Promise.resolve(
+          new Response('{"data":{"token":"abc-123"}}', {
+            status: 201,
+            statusText: 'Created',
+            headers: { 'content-type': 'application/json', 'x-trace-id': 'tr-9' },
+          }),
+        ),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+
+      await act(async () => {
+        await useWorkspaceStore.getState().hydrate();
+      });
+      const id = useWorkspaceStore.getState().addRequest(null);
+      useWorkspaceStore.getState().setRequestUrl(id, 'https://api.test/auth/login');
+      useWorkspaceStore.getState().setActiveRequestId(id);
+      useWorkspaceStore.getState().setRequestExtractions(id, [
+        { id: 'x1', variable: 'TOKEN', source: 'body', path: 'data.token', enabled: true },
+        { id: 'x2', variable: 'TRACE', source: 'header', path: 'x-trace-id', enabled: true },
+        { id: 'x3', variable: 'CODE', source: 'status', path: '', enabled: true },
+      ]);
+
+      await act(async () => {
+        await useWorkspaceStore.getState().executeActiveRequest();
+      });
+
+      const ctx = useWorkspaceStore.getState().local!.globalContext;
+      expect(ctx).toMatchObject({ TOKEN: 'abc-123', TRACE: 'tr-9', CODE: '201' });
+    });
+
+    it('skips extraction when the list is empty (no globalContext mutation)', async () => {
+      const fetchMock = vi.fn(() =>
+        Promise.resolve(new Response('{}', { status: 200, statusText: 'OK' })),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+      await act(async () => {
+        await useWorkspaceStore.getState().hydrate();
+      });
+      const id = useWorkspaceStore.getState().addRequest(null);
+      useWorkspaceStore.getState().setActiveRequestId(id);
+      const before = useWorkspaceStore.getState().local!.globalContext;
+      await act(async () => {
+        await useWorkspaceStore.getState().executeActiveRequest();
+      });
+      const after = useWorkspaceStore.getState().local!.globalContext;
+      expect(after).toEqual(before);
+    });
+  });
+
+  describe('history clearing', () => {
+    async function seed() {
+      await act(async () => {
+        await useWorkspaceStore.getState().hydrate();
+      });
+      const local = useWorkspaceStore.getState().local!;
+      useWorkspaceStore.setState({
+        local: {
+          ...local,
+          history: {
+            requestRuns: [
+              {
+                id: 'r1',
+                requestId: 'q1',
+                startedAt: 't',
+                durationMs: 1,
+                status: 200,
+                ok: true,
+                assertions: [],
+              },
+              {
+                id: 'r2',
+                requestId: 'q2',
+                startedAt: 't',
+                durationMs: 1,
+                status: 500,
+                ok: false,
+                assertions: [],
+              },
+            ],
+            planRuns: [
+              {
+                id: 'p1',
+                planId: 'plan-x',
+                startedAt: 't',
+                durationMs: 1,
+                withAssertions: false,
+                steps: [],
+              },
+            ],
+          },
+        },
+      });
+    }
+
+    it('removeRequestRun drops the matching run', async () => {
+      await seed();
+      useWorkspaceStore.getState().removeRequestRun('r1');
+      const ids = useWorkspaceStore.getState().local!.history.requestRuns.map((r) => r.id);
+      expect(ids).toEqual(['r2']);
+    });
+
+    it('removePlanRun drops the matching plan run', async () => {
+      await seed();
+      useWorkspaceStore.getState().removePlanRun('p1');
+      expect(useWorkspaceStore.getState().local!.history.planRuns).toEqual([]);
+    });
+
+    it('clearRequestRuns with no predicate wipes them all', async () => {
+      await seed();
+      useWorkspaceStore.getState().clearRequestRuns();
+      expect(useWorkspaceStore.getState().local!.history.requestRuns).toEqual([]);
+    });
+
+    it('clearRequestRuns with a predicate preserves matching runs', async () => {
+      await seed();
+      // predicate returns true for runs to KEEP
+      useWorkspaceStore.getState().clearRequestRuns((r) => r.id === 'r1');
+      const ids = useWorkspaceStore.getState().local!.history.requestRuns.map((r) => r.id);
+      expect(ids).toEqual(['r1']);
+    });
+
+    it('clearPlanRuns with no predicate wipes them all', async () => {
+      await seed();
+      useWorkspaceStore.getState().clearPlanRuns();
+      expect(useWorkspaceStore.getState().local!.history.planRuns).toEqual([]);
+    });
   });
 });

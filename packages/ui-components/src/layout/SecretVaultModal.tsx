@@ -12,8 +12,8 @@ import {
   ShieldCheck,
   Trash2,
 } from 'lucide-react';
-import type { SecretEntry } from '@apicircle-v2/shared';
-import { MissingScopeError } from '@apicircle-v2/git';
+import type { SecretEntry } from '@apicircle/shared';
+import { MissingScopeError } from '@apicircle/git';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { Modal } from '../primitives/Modal';
 import { cn } from '../primitives/cn';

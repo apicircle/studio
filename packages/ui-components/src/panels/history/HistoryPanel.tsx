@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { CheckCircle2, Layers, Send, XCircle } from 'lucide-react';
-import type { PlanRun, RequestRun } from '@apicircle-v2/shared';
+import { useMemo, useState } from 'react';
+import { CheckCircle2, Layers, Send, Trash2, XCircle } from 'lucide-react';
+import type { PlanRun, RequestRun } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 
 type Tab = 'requests' | 'plans';
 
@@ -9,14 +10,25 @@ export function HistoryPanel() {
   const requestRuns = useWorkspaceStore((s) => s.local?.history.requestRuns ?? []);
   const planRuns = useWorkspaceStore((s) => s.local?.history.planRuns ?? []);
   const [tab, setTab] = useState<Tab>('requests');
+  const [filter, setFilter] = useState('');
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-surface">
-      <header className="flex items-baseline gap-3 border-b border-border-subtle px-6 py-3">
+      <header className="flex items-center gap-3 border-b border-border-subtle px-6 py-3">
         <h1 className="text-lg font-medium text-text-primary">History</h1>
         <p className="text-[11px] text-text-dim">Local-only — never pushed to Git.</p>
+        <div className="ml-auto flex items-center gap-2">
+          <input
+            type="search"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter…"
+            aria-label="Filter history"
+            className="h-7 w-44 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+          />
+        </div>
       </header>
-      <div className="flex border-b border-border-subtle px-6">
+      <div className="flex items-center border-b border-border-subtle px-6">
         <TabButton active={tab === 'requests'} onClick={() => setTab('requests')}>
           <Send size={11} aria-hidden="true" />
           Requests <span className="ml-1 text-text-dim">({requestRuns.length})</span>
@@ -25,12 +37,28 @@ export function HistoryPanel() {
           <Layers size={11} aria-hidden="true" />
           Plans <span className="ml-1 text-text-dim">({planRuns.length})</span>
         </TabButton>
+        <div className="ml-auto py-2">
+          {tab === 'requests' && (
+            <ClearRequestsButton
+              hasFilter={filter.trim().length > 0}
+              runs={requestRuns}
+              filter={filter}
+            />
+          )}
+          {tab === 'plans' && (
+            <ClearPlansButton
+              hasFilter={filter.trim().length > 0}
+              runs={planRuns}
+              filter={filter}
+            />
+          )}
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto p-6">
         {tab === 'requests' ? (
-          <RequestRunList runs={requestRuns} />
+          <RequestRunList runs={requestRuns} filter={filter} />
         ) : (
-          <PlanRunList runs={planRuns} />
+          <PlanRunList runs={planRuns} filter={filter} />
         )}
       </div>
     </div>
@@ -63,8 +91,143 @@ function TabButton({
   );
 }
 
-function RequestRunList({ runs }: { runs: readonly RequestRun[] }) {
+function ClearRequestsButton({
+  hasFilter,
+  runs,
+  filter,
+}: {
+  hasFilter: boolean;
+  runs: readonly RequestRun[];
+  filter: string;
+}) {
+  const clearRequestRuns = useWorkspaceStore((s) => s.clearRequestRuns);
   const requests = useWorkspaceStore((s) => s.synced?.collections.requests ?? {});
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const filteredCount = useMemo(
+    () => runs.filter((r) => matchesRequestFilter(r, requests, filter)).length,
+    [filter, requests, runs],
+  );
+  const disabled = runs.length === 0;
+  const label = hasFilter ? `Clear matching (${filteredCount})` : 'Clear all';
+  return (
+    <>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setConfirmOpen(true)}
+        className="inline-flex items-center gap-1.5 rounded-sm border border-border bg-card px-2 py-1 text-[11px] text-text-muted hover:text-text-primary disabled:opacity-50"
+      >
+        <Trash2 size={11} aria-hidden="true" />
+        {label}
+      </button>
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Clear request runs"
+        description={
+          hasFilter
+            ? `Delete ${filteredCount} request run${filteredCount === 1 ? '' : 's'} matching "${filter}"? This can't be undone.`
+            : `Delete all ${runs.length} request run${runs.length === 1 ? '' : 's'}? This can't be undone.`
+        }
+        confirmLabel="Clear"
+        tone="danger"
+        onConfirm={() => {
+          if (hasFilter) {
+            clearRequestRuns((r) => !matchesRequestFilter(r, requests, filter));
+          } else {
+            clearRequestRuns();
+          }
+          setConfirmOpen(false);
+        }}
+        onCancel={() => setConfirmOpen(false)}
+      />
+    </>
+  );
+}
+
+function ClearPlansButton({
+  hasFilter,
+  runs,
+  filter,
+}: {
+  hasFilter: boolean;
+  runs: readonly PlanRun[];
+  filter: string;
+}) {
+  const clearPlanRuns = useWorkspaceStore((s) => s.clearPlanRuns);
+  const plans = useWorkspaceStore((s) => s.local?.executionPlans ?? {});
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const filteredCount = useMemo(
+    () => runs.filter((r) => matchesPlanFilter(r, plans, filter)).length,
+    [filter, plans, runs],
+  );
+  const disabled = runs.length === 0;
+  const label = hasFilter ? `Clear matching (${filteredCount})` : 'Clear all';
+  return (
+    <>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setConfirmOpen(true)}
+        className="inline-flex items-center gap-1.5 rounded-sm border border-border bg-card px-2 py-1 text-[11px] text-text-muted hover:text-text-primary disabled:opacity-50"
+      >
+        <Trash2 size={11} aria-hidden="true" />
+        {label}
+      </button>
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Clear plan runs"
+        description={
+          hasFilter
+            ? `Delete ${filteredCount} plan run${filteredCount === 1 ? '' : 's'} matching "${filter}"? This can't be undone.`
+            : `Delete all ${runs.length} plan run${runs.length === 1 ? '' : 's'}? This can't be undone.`
+        }
+        confirmLabel="Clear"
+        tone="danger"
+        onConfirm={() => {
+          if (hasFilter) {
+            clearPlanRuns((r) => !matchesPlanFilter(r, plans, filter));
+          } else {
+            clearPlanRuns();
+          }
+          setConfirmOpen(false);
+        }}
+        onCancel={() => setConfirmOpen(false)}
+      />
+    </>
+  );
+}
+
+function matchesRequestFilter(
+  run: RequestRun,
+  requests: Record<string, { name?: string; method?: string }>,
+  filter: string,
+): boolean {
+  const q = filter.trim().toLowerCase();
+  if (!q) return true;
+  const r = requests[run.requestId];
+  const haystack = `${r?.name ?? ''} ${r?.method ?? ''} ${run.status ?? ''}`.toLowerCase();
+  return haystack.includes(q);
+}
+
+function matchesPlanFilter(
+  run: PlanRun,
+  plans: Record<string, { name?: string }>,
+  filter: string,
+): boolean {
+  const q = filter.trim().toLowerCase();
+  if (!q) return true;
+  const planName = plans[run.planId]?.name ?? '';
+  return planName.toLowerCase().includes(q);
+}
+
+function RequestRunList({ runs, filter }: { runs: readonly RequestRun[]; filter: string }) {
+  const requests = useWorkspaceStore((s) => s.synced?.collections.requests ?? {});
+  const removeRequestRun = useWorkspaceStore((s) => s.removeRequestRun);
+  const visible = useMemo(
+    () => runs.filter((r) => matchesRequestFilter(r, requests, filter)),
+    [filter, requests, runs],
+  );
+
   if (runs.length === 0) {
     return (
       <EmptyHistory
@@ -74,9 +237,16 @@ function RequestRunList({ runs }: { runs: readonly RequestRun[] }) {
       />
     );
   }
+  if (visible.length === 0) {
+    return (
+      <p className="pt-6 text-center text-xs text-text-dim">
+        No runs match &ldquo;{filter}&rdquo;.
+      </p>
+    );
+  }
   return (
     <ul className="space-y-1.5">
-      {runs.map((run) => {
+      {visible.map((run) => {
         const r = requests[run.requestId];
         const passedAssertions = run.assertions.filter((a) => a.passed).length;
         return (
@@ -108,6 +278,15 @@ function RequestRunList({ runs }: { runs: readonly RequestRun[] }) {
             <span className="text-[10px] text-text-dim">
               {new Date(run.startedAt).toLocaleTimeString()}
             </span>
+            <button
+              type="button"
+              onClick={() => removeRequestRun(run.id)}
+              aria-label={`Delete request run from ${new Date(run.startedAt).toLocaleString()}`}
+              title="Delete this run"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:bg-danger/10 hover:text-danger"
+            >
+              <Trash2 size={11} aria-hidden="true" />
+            </button>
           </li>
         );
       })}
@@ -115,8 +294,13 @@ function RequestRunList({ runs }: { runs: readonly RequestRun[] }) {
   );
 }
 
-function PlanRunList({ runs }: { runs: readonly PlanRun[] }) {
+function PlanRunList({ runs, filter }: { runs: readonly PlanRun[]; filter: string }) {
   const plans = useWorkspaceStore((s) => s.local?.executionPlans ?? {});
+  const removePlanRun = useWorkspaceStore((s) => s.removePlanRun);
+  const visible = useMemo(
+    () => runs.filter((r) => matchesPlanFilter(r, plans, filter)),
+    [filter, plans, runs],
+  );
   if (runs.length === 0) {
     return (
       <EmptyHistory
@@ -126,16 +310,36 @@ function PlanRunList({ runs }: { runs: readonly PlanRun[] }) {
       />
     );
   }
+  if (visible.length === 0) {
+    return (
+      <p className="pt-6 text-center text-xs text-text-dim">
+        No plan runs match &ldquo;{filter}&rdquo;.
+      </p>
+    );
+  }
   return (
     <ul className="space-y-1.5">
-      {runs.map((run) => (
-        <PlanRunRow key={run.id} run={run} planName={plans[run.planId]?.name} />
+      {visible.map((run) => (
+        <PlanRunRow
+          key={run.id}
+          run={run}
+          planName={plans[run.planId]?.name}
+          onDelete={() => removePlanRun(run.id)}
+        />
       ))}
     </ul>
   );
 }
 
-function PlanRunRow({ run, planName }: { run: PlanRun; planName?: string }) {
+function PlanRunRow({
+  run,
+  planName,
+  onDelete,
+}: {
+  run: PlanRun;
+  planName?: string;
+  onDelete: () => void;
+}) {
   const okCount = run.steps.filter((s) => s.passed).length;
   const total = run.steps.length;
   const allPassed = okCount === total;
@@ -166,6 +370,15 @@ function PlanRunRow({ run, planName }: { run: PlanRun; planName?: string }) {
         <span className="text-[10px] text-text-dim">
           {new Date(run.startedAt).toLocaleString()}
         </span>
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label={`Delete plan run from ${new Date(run.startedAt).toLocaleString()}`}
+          title="Delete this run"
+          className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:bg-danger/10 hover:text-danger"
+        >
+          <Trash2 size={11} aria-hidden="true" />
+        </button>
       </div>
     </li>
   );

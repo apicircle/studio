@@ -1,5 +1,5 @@
 {
-  "name": "@apicircle-v2/ui-components",
+  "name": "@apicircle/ui-components",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,10 +14,13 @@
     "clean": "rm -rf dist node_modules"
   },
   "dependencies": {
-    "@apicircle-v2/core": "workspace:*",
-    "@apicircle-v2/git": "workspace:*",
-    "@apicircle-v2/shared": "workspace:*",
+    "@apicircle/core": "workspace:*",
+    "@apicircle/git": "workspace:*",
+    "@apicircle/shared": "workspace:*",
+    "@monaco-editor/react": "^4.6.0",
     "lucide-react": "^0.575.0",
+    "monaco-editor": "^0.52.0",
+    "react-resizable-panels": "^2.1.0",
     "zustand": "^4.5.0"
   },
   "peerDependencies": {

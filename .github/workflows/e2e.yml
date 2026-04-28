@@ -44,10 +44,10 @@ jobs:
         run: pnpm test:e2e:install
 
       - name: Install Playwright OS deps (always — fast no-op on cache hit)
-        run: pnpm --filter @apicircle-v2/web exec playwright install-deps chromium
+        run: pnpm --filter @apicircle/web exec playwright install-deps chromium
 
       - name: Build web app
-        run: pnpm --filter @apicircle-v2/web build
+        run: pnpm --filter @apicircle/web build
 
       - name: Run E2E suite
         run: pnpm test:e2e

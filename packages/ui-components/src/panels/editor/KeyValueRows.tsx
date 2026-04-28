@@ -1,5 +1,7 @@
 import { Plus, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
+import type { ResolutionScope } from '@apicircle/core';
+import { VariableAutocompleteField } from '../../editors/VariableAutocompleteField';
 
 export interface KeyValueRow {
   key: string;
@@ -17,6 +19,11 @@ interface KeyValueRowsProps {
   // Optional renderer for an extra column on the right (e.g. value picker)
   rightSlot?: (row: KeyValueRow, index: number) => ReactNode;
   ariaLabel: string;
+  /**
+   * Optional — enables `{{var}}` autocomplete on the value column. When
+   * absent, falls back to a plain <input>.
+   */
+  valueScope?: ResolutionScope;
 }
 
 // Generic key/value editor used by Params and Headers tabs. Designed to be
@@ -29,6 +36,7 @@ export function KeyValueRows({
   keySuggestions,
   rightSlot,
   ariaLabel,
+  valueScope,
 }: KeyValueRowsProps) {
   const update = (index: number, patch: Partial<KeyValueRow>) => {
     onChange(rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
@@ -61,14 +69,27 @@ export function KeyValueRows({
             aria-label={`${ariaLabel} key ${index + 1}`}
             className="h-7 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
           />
-          <input
-            type="text"
-            value={row.value}
-            placeholder={valuePlaceholder}
-            onChange={(e) => update(index, { value: e.target.value })}
-            aria-label={`${ariaLabel} value ${index + 1}`}
-            className="h-7 flex-[2] rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
-          />
+          {valueScope ? (
+            <div className="flex-[2]">
+              <VariableAutocompleteField
+                value={row.value}
+                onChange={(v) => update(index, { value: v })}
+                scope={valueScope}
+                ariaLabel={`${ariaLabel} value ${index + 1}`}
+                placeholder={valuePlaceholder}
+                className="h-7"
+              />
+            </div>
+          ) : (
+            <input
+              type="text"
+              value={row.value}
+              placeholder={valuePlaceholder}
+              onChange={(e) => update(index, { value: e.target.value })}
+              aria-label={`${ariaLabel} value ${index + 1}`}
+              className="h-7 flex-[2] rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+            />
+          )}
           {rightSlot?.(row, index)}
           <button
             type="button"

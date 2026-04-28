@@ -1,4 +1,4 @@
-# @apicircle-v2/mock-server
+# @apicircle/example-mock-server
 
 Tiny Hono mock backend that exercises every canonical request shape
 the demo workspace targets. Plan §10.1.
@@ -6,7 +6,7 @@ the demo workspace targets. Plan §10.1.
 ## Run
 
 ```sh
-pnpm --filter @apicircle-v2/mock-server start
+pnpm --filter @apicircle/example-mock-server start
 ```
 
 Defaults to `http://localhost:4040`. Override with `PORT=N`.

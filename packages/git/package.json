@@ -1,5 +1,5 @@
 {
-  "name": "@apicircle-v2/git",
+  "name": "@apicircle/git",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
     "clean": "rm -rf dist node_modules"
   },
   "dependencies": {
-    "@apicircle-v2/shared": "workspace:*"
+    "@apicircle/shared": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

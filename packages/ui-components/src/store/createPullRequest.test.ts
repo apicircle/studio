@@ -1,6 +1,6 @@
 import { act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MissingScopeError } from '@apicircle-v2/git';
+import { MissingScopeError } from '@apicircle/git';
 import { useWorkspaceStore } from './workspaceStore';
 
 interface ResponseSpec {

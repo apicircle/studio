@@ -22,7 +22,7 @@ const pass = (msg) => {
 };
 
 if (!existsSync(distMain)) {
-  fail(`main bundle missing at ${distMain} — run \`pnpm --filter @apicircle-v2/desktop build\` first`);
+  fail(`main bundle missing at ${distMain} — run \`pnpm --filter @apicircle/desktop build\` first`);
 } else {
   const mainSrc = readFileSync(distMain, 'utf8');
   for (const channel of [

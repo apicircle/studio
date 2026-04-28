@@ -1,4 +1,4 @@
-import type { Request as ApiRequest } from '@apicircle-v2/shared';
+import type { Request as ApiRequest } from '@apicircle/shared';
 import { describe, expect, it, vi } from 'vitest';
 import { buildRequest, composeBody, composeHeaders, composeUrl } from './buildRequest';
 
@@ -77,11 +77,10 @@ describe('composeBody', () => {
     expect(await composeBody({ type: 'none', content: '{"x":1}' })).toBeNull();
   });
 
-  it('returns the raw content for json/text/xml/graphql', async () => {
+  it('returns the raw content for json/text/xml', async () => {
     expect(await composeBody({ type: 'json', content: '{"x":1}' })).toBe('{"x":1}');
     expect(await composeBody({ type: 'text', content: 'hello' })).toBe('hello');
     expect(await composeBody({ type: 'xml', content: '<root/>' })).toBe('<root/>');
-    expect(await composeBody({ type: 'graphql', content: 'query { x }' })).toBe('query { x }');
   });
 
   it('serializes urlencoded body from key=value lines', async () => {
@@ -202,6 +201,35 @@ describe('composeBody', () => {
       expect(result).toBeNull();
     });
   });
+
+  describe('graphql', () => {
+    it('wraps the query into a JSON envelope when no variables are set', async () => {
+      const result = await composeBody({ type: 'graphql', content: 'query { hello }' });
+      expect(typeof result).toBe('string');
+      expect(JSON.parse(result as string)).toEqual({ query: 'query { hello }' });
+    });
+
+    it('parses the variables JSON and includes it in the envelope', async () => {
+      const result = await composeBody({
+        type: 'graphql',
+        content: 'query Q($id: ID!) { user(id: $id) { name } }',
+        variables: '{"id":"42"}',
+      });
+      expect(JSON.parse(result as string)).toEqual({
+        query: 'query Q($id: ID!) { user(id: $id) { name } }',
+        variables: { id: '42' },
+      });
+    });
+
+    it('falls back to variables=null on malformed JSON', async () => {
+      const result = await composeBody({
+        type: 'graphql',
+        content: '{ x }',
+        variables: '{ broken',
+      });
+      expect(JSON.parse(result as string)).toEqual({ query: '{ x }', variables: null });
+    });
+  });
 });
 
 describe('buildRequest', () => {
@@ -214,7 +242,9 @@ describe('buildRequest', () => {
     headers: [{ key: 'X-Auth', value: 't', enabled: true }],
     query: [{ key: 'verbose', value: 'true', enabled: true }],
     body: { type: 'json', content: '{"x":1}' },
+    auth: { type: 'none' },
     contextVars: [],
+    extractions: [],
     assertions: [],
     createdAt: '2026-04-27T00:00:00.000Z',
     updatedAt: '2026-04-27T00:00:00.000Z',

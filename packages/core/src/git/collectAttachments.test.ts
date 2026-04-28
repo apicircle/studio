@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Request as ApiRequest, WorkspaceSynced } from '@apicircle-v2/shared';
+import type { Request as ApiRequest, WorkspaceSynced } from '@apicircle/shared';
 import { collectAttachmentSlots } from './collectAttachments';
 
 function workspace(requests: Record<string, ApiRequest>): WorkspaceSynced {
@@ -11,6 +11,8 @@ function workspace(requests: Record<string, ApiRequest>): WorkspaceSynced {
     environments: { items: {}, activeName: null, priorityOrder: [] },
     linkedWorkspaces: {},
     releases: { self: null, perLink: {} },
+    globalAssets: { schemas: {}, graphql: {} },
+    mockServers: {},
     meta: { createdAt: 't', updatedAt: 't', appVersion: '0.1.0' },
   };
 }
@@ -25,7 +27,9 @@ function req(id: string, body: ApiRequest['body']): ApiRequest {
     headers: [],
     query: [],
     body,
+    auth: { type: 'none' },
     contextVars: [],
+    extractions: [],
     assertions: [],
     createdAt: 't',
     updatedAt: 't',

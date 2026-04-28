@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildScope,
+  collectVariableSuggestions,
+  getVariableAutocomplete,
   lookup,
   resolveString,
   resolveStringMap,
@@ -201,5 +203,71 @@ describe('buildScope', () => {
       secrets: { TOKEN: 'abc' },
     });
     expect(scope.secrets).toEqual({ TOKEN: 'abc' });
+  });
+});
+
+describe('collectVariableSuggestions', () => {
+  it('returns one entry per unique key in precedence order', () => {
+    const scope: ResolutionScope = {
+      contextVars: { A: 'ctx-a' },
+      activeEnv: { A: 'env-a', B: 'env-b' },
+      priorityEnvs: [{ B: 'fallback-b', C: 'fallback-c' }],
+      secrets: { TOKEN: 'plain' },
+    };
+    const out = collectVariableSuggestions(scope);
+    const map = Object.fromEntries(out.map((s) => [s.key, s]));
+    expect(map['A']?.source).toBe('context');
+    expect(map['A']?.preview).toBe('ctx-a');
+    expect(map['B']?.source).toBe('active-env');
+    expect(map['B']?.preview).toBe('env-b');
+    expect(map['C']?.source).toBe('priority-env');
+    expect(map['TOKEN']?.source).toBe('secret');
+    expect(map['TOKEN']?.preview).toBe('••••');
+  });
+
+  it('returns suggestions sorted by key', () => {
+    const out = collectVariableSuggestions({
+      contextVars: { Z: '1', A: '2' },
+      activeEnv: {},
+      priorityEnvs: [],
+      secrets: {},
+    });
+    expect(out.map((s) => s.key)).toEqual(['A', 'Z']);
+  });
+});
+
+describe('getVariableAutocomplete', () => {
+  const scope: ResolutionScope = {
+    contextVars: { BASE_URL: 'https://api', TOKEN: 't' },
+    activeEnv: { ACCOUNT_ID: '42' },
+    priorityEnvs: [],
+    secrets: {},
+  };
+
+  it('returns null when the cursor is not inside an open token', () => {
+    expect(getVariableAutocomplete('hello', 5, scope)).toBeNull();
+  });
+
+  it('returns null when the token is already closed', () => {
+    expect(getVariableAutocomplete('{{X}}', 5, scope)).toBeNull();
+  });
+
+  it('returns all suggestions when the open token is empty', () => {
+    const out = getVariableAutocomplete('{{', 2, scope);
+    expect(out?.map((s) => s.key)).toEqual(['ACCOUNT_ID', 'BASE_URL', 'TOKEN']);
+  });
+
+  it('filters by partial token text (case-insensitive)', () => {
+    const out = getVariableAutocomplete('{{tok', 5, scope);
+    expect(out?.map((s) => s.key)).toEqual(['TOKEN']);
+  });
+
+  it('considers cursor position, not the full string', () => {
+    // Cursor sits inside `{{B|` while the rest of the line continues — the
+    // token after the cursor is irrelevant.
+    const text = '{{BASE}} more';
+    const out = getVariableAutocomplete(text, 4, scope);
+    // before-cursor = '{{BA', so it filters by 'BA'
+    expect(out?.map((s) => s.key)).toEqual(['BASE_URL']);
   });
 });

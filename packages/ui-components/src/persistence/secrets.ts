@@ -6,7 +6,7 @@
 // Encrypted values never round-trip through Git: only the local browser
 // holds the master key needed to decrypt them.
 
-import type { EncryptedPayload } from '@apicircle-v2/core';
+import type { EncryptedPayload } from '@apicircle/core';
 
 const DB_NAME = 'apicircle-secret-vault';
 const DB_VERSION = 1;

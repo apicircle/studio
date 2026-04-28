@@ -1,4 +1,4 @@
-import type { Request as ApiRequest } from '@apicircle-v2/shared';
+import type { Request as ApiRequest } from '@apicircle/shared';
 import { buildRequest, type AttachmentResolver } from './buildRequest';
 
 export interface ExecutionResult {

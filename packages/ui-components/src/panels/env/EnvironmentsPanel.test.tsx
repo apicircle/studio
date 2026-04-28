@@ -1,7 +1,7 @@
 import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import { tryParsePayload } from '@apicircle-v2/core';
+import { tryParsePayload } from '@apicircle/core';
 import { EnvironmentsPanel } from './EnvironmentsPanel';
 import { renderWithStore } from '../../../test/renderWithStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';

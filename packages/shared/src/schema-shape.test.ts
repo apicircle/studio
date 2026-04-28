@@ -28,6 +28,8 @@ describe('WorkspaceSynced shape (regression)', () => {
       environments: { items: {}, activeName: null, priorityOrder: [] },
       linkedWorkspaces: {},
       releases: { self: null, perLink: {} },
+      globalAssets: { schemas: {}, graphql: {} },
+      mockServers: {},
       meta: {
         createdAt: '2026-04-27T00:00:00.000Z',
         updatedAt: '2026-04-27T00:00:00.000Z',
@@ -40,14 +42,17 @@ describe('WorkspaceSynced shape (regression)', () => {
       [
         'collections',
         'environments',
+        'globalAssets',
         'linkedWorkspaces',
         'meta',
+        'mockServers',
         'releases',
         'schemaVersion',
         'workspaceId',
         'workspaceName',
       ].sort(),
     );
+    expect(Object.keys(empty.globalAssets).sort()).toEqual(['graphql', 'schemas'].sort());
     expect(Object.keys(empty.collections).sort()).toEqual(['folders', 'requests', 'tree'].sort());
     expect(Object.keys(empty.environments).sort()).toEqual(
       ['activeName', 'items', 'priorityOrder'].sort(),
@@ -76,6 +81,8 @@ describe('WorkspaceLocal shape (regression)', () => {
         dirtyKeys: [],
       },
       linkedCollections: {},
+      globalContext: {},
+      mockRuntime: { active: {} },
       ui: {
         activeRequestId: null,
         sidebarExpandedSections: [],
@@ -87,8 +94,10 @@ describe('WorkspaceLocal shape (regression)', () => {
       [
         'connectedRepo',
         'executionPlans',
+        'globalContext',
         'history',
         'linkedCollections',
+        'mockRuntime',
         'overrides',
         'schemaVersion',
         'secretIndex',

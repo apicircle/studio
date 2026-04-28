@@ -1,5 +1,5 @@
-import type { ExecutionPlan, WorkspaceLocal } from '@apicircle-v2/shared';
-import { generateId } from '@apicircle-v2/shared';
+import type { ExecutionPlan, WorkspaceLocal } from '@apicircle/shared';
+import { generateId } from '@apicircle/shared';
 
 // Pure reducers for ExecutionPlan CRUD on WorkspaceLocal.executionPlans.
 // Plans are local-only (never pushed to Git) — they're per-user playbooks

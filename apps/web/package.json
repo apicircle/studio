@@ -1,5 +1,5 @@
 {
-  "name": "@apicircle-v2/web",
+  "name": "@apicircle/web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,10 +14,10 @@
     "clean": "rm -rf dist node_modules"
   },
   "dependencies": {
-    "@apicircle-v2/core": "workspace:*",
-    "@apicircle-v2/git": "workspace:*",
-    "@apicircle-v2/shared": "workspace:*",
-    "@apicircle-v2/ui-components": "workspace:*",
+    "@apicircle/core": "workspace:*",
+    "@apicircle/git": "workspace:*",
+    "@apicircle/shared": "workspace:*",
+    "@apicircle/ui-components": "workspace:*",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "zustand": "^4.5.0"

@@ -7,8 +7,15 @@
 import { app, BrowserWindow, safeStorage } from 'electron';
 import * as path from 'path';
 import { ipcMain } from 'electron';
+import { MockManager } from './mock/mockManager';
+import { McpManager } from './mcp/mcpManager';
+import { registerMockBridge } from './ipc/mockBridge';
+import { registerMcpBridge } from './ipc/mcpBridge';
 
 const WEB_DIST_INDEX = path.resolve(__dirname, '../../../web/dist/index.html');
+
+const mockManager = new MockManager();
+let mcpManager: McpManager | null = null;
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -50,6 +57,11 @@ ipcMain.handle('apicircle:secret:decrypt', (_event, ciphertextBase64: string) =>
 });
 
 void app.whenReady().then(() => {
+  // McpManager is constructed after `app` is ready because it reads
+  // `app.getPath('userData')`, which is only valid post-ready.
+  mcpManager = new McpManager();
+  registerMockBridge(mockManager);
+  registerMcpBridge(mcpManager);
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -59,5 +71,12 @@ void app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   // macOS apps stay alive when the last window closes; everywhere else
   // we shut down so the dock / taskbar icon disappears.
+  void mockManager.stopAll();
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  // Belt-and-braces: if the user quits via the app menu / Cmd-Q, ensure
+  // every spawned mock server is torn down before the process exits.
+  void mockManager.stopAll();
 });

@@ -7,13 +7,13 @@
   "license": "Apache-2.0",
   "scripts": {
     "dev": "turbo dev",
-    "dev:web": "turbo dev --filter=@apicircle-v2/web",
+    "dev:web": "turbo dev --filter=@apicircle/web",
     "build": "turbo build",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "pnpm --filter @apicircle-v2/web test:e2e",
-    "test:e2e:install": "pnpm --filter @apicircle-v2/web test:e2e:install",
+    "test:e2e": "pnpm --filter @apicircle/web test:e2e",
+    "test:e2e:install": "pnpm --filter @apicircle/web test:e2e:install",
     "check": "turbo check",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -22,6 +22,9 @@
     "clean": "turbo clean && rm -rf node_modules",
     "changeset": "changeset",
     "release": "changeset version && pnpm install --lockfile-only",
+    "release:publish": "changeset publish",
+    "release:binaries": "node scripts/release/buildBinaries.mjs",
+    "release:installers": "node scripts/release/buildDesktopInstallers.mjs",
     "prepare": "husky"
   },
   "devDependencies": {

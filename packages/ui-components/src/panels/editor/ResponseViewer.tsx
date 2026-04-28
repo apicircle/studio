@@ -1,8 +1,10 @@
-import type { ExecutionResult } from '@apicircle-v2/core';
-import type { RequestRun } from '@apicircle-v2/shared';
+import type { ExecutionResult } from '@apicircle/core';
+import type { RequestRun } from '@apicircle/shared';
 import { useState } from 'react';
-import { CheckCircle2, XCircle } from 'lucide-react';
+import { CheckCircle2, Maximize2, XCircle } from 'lucide-react';
 import { cn } from '../../primitives/cn';
+import { FullscreenOverlay } from '../../primitives/FullscreenOverlay';
+import { MonacoResponseViewer } from '../../editors/MonacoResponseViewer';
 
 interface ResponseViewerProps {
   result: ExecutionResult | null;
@@ -12,8 +14,16 @@ interface ResponseViewerProps {
 
 type ResponseTab = 'body' | 'headers' | 'assertions';
 
+function findResponseContentType(headers: Record<string, string>): string | undefined {
+  for (const [k, v] of Object.entries(headers)) {
+    if (k.toLowerCase() === 'content-type') return v;
+  }
+  return undefined;
+}
+
 export function ResponseViewer({ result, lastRun, isExecuting }: ResponseViewerProps) {
   const [tab, setTab] = useState<ResponseTab>('body');
+  const [fullscreen, setFullscreen] = useState(false);
 
   if (isExecuting) {
     return (
@@ -37,7 +47,16 @@ export function ResponseViewer({ result, lastRun, isExecuting }: ResponseViewerP
       ? 'border-success/40 bg-success/10 text-success'
       : 'border-warning/40 bg-warning/10 text-warning';
 
-  const formattedBody = formatBody(result);
+  const responseContentType = findResponseContentType(result.headers);
+
+  const bodyEditor = (
+    <MonacoResponseViewer
+      value={result.body.length === 0 ? '(empty body)' : result.body}
+      contentType={responseContentType}
+      ariaLabel="Response body"
+      height="100%"
+    />
+  );
 
   return (
     <div className="flex h-full flex-col">
@@ -56,6 +75,19 @@ export function ResponseViewer({ result, lastRun, isExecuting }: ResponseViewerP
             {result.error}
           </span>
         )}
+        <div className="ml-auto">
+          {tab === 'body' && (
+            <button
+              type="button"
+              onClick={() => setFullscreen(true)}
+              aria-label="Fullscreen response body"
+              title="Fullscreen (Esc to exit)"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-sm border border-border bg-surface text-text-muted hover:text-text-primary"
+            >
+              <Maximize2 size={12} />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex border-b border-border-subtle px-2">
@@ -79,62 +111,61 @@ export function ResponseViewer({ result, lastRun, isExecuting }: ResponseViewerP
         ))}
       </div>
 
-      <div className="flex-1 overflow-auto p-3">
+      <div className="min-h-0 flex-1 overflow-hidden">
         {tab === 'body' && (
-          <pre className="whitespace-pre-wrap break-words font-mono text-[11px] text-text-primary">
-            {formattedBody}
-          </pre>
+          <div className="h-full w-full">
+            {!fullscreen && bodyEditor}
+            <FullscreenOverlay
+              open={fullscreen}
+              onClose={() => setFullscreen(false)}
+              title="Response body"
+            >
+              <div className="h-full w-full">{bodyEditor}</div>
+            </FullscreenOverlay>
+          </div>
         )}
         {tab === 'headers' && (
-          <table className="w-full font-mono text-[11px]">
-            <tbody>
-              {Object.entries(result.headers).map(([key, value]) => (
-                <tr key={key} className="border-b border-border-subtle/60">
-                  <td className="py-1 pr-3 text-text-muted">{key}</td>
-                  <td className="py-1 text-text-primary">{value}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="h-full overflow-auto p-3">
+            <table className="w-full font-mono text-[11px]">
+              <tbody>
+                {Object.entries(result.headers).map(([key, value]) => (
+                  <tr key={key} className="border-b border-border-subtle/60">
+                    <td className="py-1 pr-3 text-text-muted">{key}</td>
+                    <td className="py-1 text-text-primary">{value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
         {tab === 'assertions' && (
-          <ul className="flex flex-col gap-1.5">
-            {(lastRun?.assertions ?? []).length === 0 && (
-              <li className="text-xs text-text-dim">No assertions defined for this request.</li>
-            )}
-            {lastRun?.assertions.map((a) => (
-              <li
-                key={a.assertionId}
-                className={cn(
-                  'flex items-start gap-2 rounded-sm border px-2 py-1.5 text-xs',
-                  a.passed
-                    ? 'border-success/30 bg-success/5 text-text-primary'
-                    : 'border-danger/30 bg-danger/5 text-text-primary',
-                )}
-              >
-                {a.passed ? (
-                  <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-success" />
-                ) : (
-                  <XCircle size={14} className="mt-0.5 shrink-0 text-danger" />
-                )}
-                <span>{a.detail ?? (a.passed ? 'Passed' : 'Failed')}</span>
-              </li>
-            ))}
-          </ul>
+          <div className="h-full overflow-auto p-3">
+            <ul className="flex flex-col gap-1.5">
+              {(lastRun?.assertions ?? []).length === 0 && (
+                <li className="text-xs text-text-dim">No assertions defined for this request.</li>
+              )}
+              {lastRun?.assertions.map((a) => (
+                <li
+                  key={a.assertionId}
+                  className={cn(
+                    'flex items-start gap-2 rounded-sm border px-2 py-1.5 text-xs',
+                    a.passed
+                      ? 'border-success/30 bg-success/5 text-text-primary'
+                      : 'border-danger/30 bg-danger/5 text-text-primary',
+                  )}
+                >
+                  {a.passed ? (
+                    <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-success" />
+                  ) : (
+                    <XCircle size={14} className="mt-0.5 shrink-0 text-danger" />
+                  )}
+                  <span>{a.detail ?? (a.passed ? 'Passed' : 'Failed')}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
     </div>
   );
-}
-
-function formatBody(result: ExecutionResult): string {
-  if (result.body.length === 0) return '(empty body)';
-  if (result.bodyKind === 'json') {
-    try {
-      return JSON.stringify(JSON.parse(result.body), null, 2);
-    } catch {
-      return result.body;
-    }
-  }
-  return result.body;
 }

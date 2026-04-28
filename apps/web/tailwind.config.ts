@@ -38,7 +38,12 @@ const config: Config = {
         'http-options': 'rgb(var(--http-options) / <alpha-value>)',
       },
       fontFamily: {
-        mono: ['"JetBrains Mono"', '"Fira Code"', '"Courier New"', 'monospace'],
+        // `--app-font` is set by the FontPicker on boot. The fallback chain
+        // mirrors `system-mono` (the default preset) so the UI stays
+        // readable even when the variable is unset (SSR, first paint).
+        mono: [
+          'var(--app-font, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace)',
+        ],
       },
       borderRadius: {
         sm: '8px',

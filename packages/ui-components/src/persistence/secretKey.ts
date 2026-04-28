@@ -13,7 +13,7 @@
 // touches IndexedDB. Web has no bridge → JWK lands in IDB unwrapped, same
 // as today. Both paths share the same `getMasterKey()` API.
 
-import { exportKey, generateAesKey, importKey } from '@apicircle-v2/core';
+import { exportKey, generateAesKey, importKey } from '@apicircle/core';
 import { getNativeSecretBridge } from './nativeSecretBridge';
 
 const DB_NAME = 'apicircle-secret-key';

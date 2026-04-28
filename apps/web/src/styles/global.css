@@ -6,7 +6,15 @@
  * Theme tokens are RGB triplets (no #, no rgb()) so Tailwind's
  * `rgb(var(--token) / <alpha-value>)` syntax in tailwind.config.ts works.
  * Default = studio-dark; other themes are applied via [data-theme="..."] on <html>.
+ *
+ * --app-font is set by the FontPicker (see ui-components/src/theme/applyFont.ts).
+ * The default below is the `system-mono` preset, used before main.tsx's boot-time
+ * apply runs and as a safe fallback when localStorage is unreachable.
  */
+
+:root {
+  --app-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Courier New', monospace;
+}
 
 :root,
 [data-theme='studio-dark'] {

@@ -4,7 +4,7 @@ import { useWorkspaceStore } from './workspaceStore';
 
 // Tests for the P4.2 repo + working-branch store actions. We mock global
 // fetch with canned GitHub responses; the tests run against the real
-// @apicircle-v2/git client.
+// @apicircle/git client.
 
 interface ResponseSpec {
   body: unknown;

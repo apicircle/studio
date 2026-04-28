@@ -1,4 +1,4 @@
-import type { Assertion } from '@apicircle-v2/shared';
+import type { Assertion } from '@apicircle/shared';
 import { describe, expect, it } from 'vitest';
 import type { ExecutionResult } from '../request/executeRequest';
 import { readJsonPath, runAssertions } from './runAssertions';

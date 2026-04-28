@@ -17,7 +17,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { GitHubError, MissingScopeError } from '@apicircle-v2/git';
+import { GitHubError, MissingScopeError } from '@apicircle/git';
 import {
   type DiffEntry,
   type ResolutionMap,
@@ -25,7 +25,7 @@ import {
   isValidSemver,
   sortVersionsDesc,
   validateBranchName,
-} from '@apicircle-v2/core';
+} from '@apicircle/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';

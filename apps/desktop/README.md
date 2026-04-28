@@ -1,4 +1,4 @@
-# @apicircle-v2/desktop
+# @apicircle/desktop
 
 Electron shell that hosts the API Circle Studio web build with native
 OS-keychain secret storage.
@@ -19,7 +19,7 @@ OS-keychain secret storage.
 ## Build
 
 ```sh
-pnpm --filter @apicircle-v2/desktop build
+pnpm --filter @apicircle/desktop build
 ```
 
 This runs the web renderer build first (so `apps/web/dist/` exists),
@@ -28,7 +28,7 @@ then `tsc` for the main process. Output: `apps/desktop/dist/main/`.
 ## Run
 
 ```sh
-pnpm --filter @apicircle-v2/desktop start
+pnpm --filter @apicircle/desktop start
 ```
 
 ## Smoke test
@@ -41,7 +41,7 @@ need a display.
 ## Why a shell, not a fork
 
 The plan (§1) calls for "web-first; port Electron shell after web is
-stable". This shell deliberately re-uses `@apicircle-v2/web`'s built
+stable". This shell deliberately re-uses `@apicircle/web`'s built
 output rather than maintaining a separate renderer entry point —
 features land in the web app and the desktop picks them up on the
 next renderer build.

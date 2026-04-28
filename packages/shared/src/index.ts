@@ -1,4 +1,16 @@
 export { generateId } from './ids';
+export { REQUEST_AUTH_TYPES, defaultAuthFor, normalizeAuth } from './authDefaults';
+export type { RequestAuthType } from './authDefaults';
+export { MCP_TOOL_NAMES } from './mcp';
+export type { McpToolName, McpError } from './mcp';
+export type {
+  MockServer,
+  MockServerSource,
+  MockEndpoint,
+  MockEndpointOverride,
+  MockRuntime,
+  MockRuntimeEntry,
+} from './mock';
 export type {
   PanelId,
   ThemeId,
@@ -29,4 +41,20 @@ export type {
   RequestBody,
   FormDataRow,
   AttachmentRef,
+  ContextExtraction,
+  GlobalSchema,
+  GlobalGraphQL,
+  RequestAuth,
+  OAuth2TokenState,
+  OAuth2ClientCredentialsAuth,
+  OAuth2AuthCodeAuth,
+  OAuth2PkceAuth,
+  OAuth2PasswordAuth,
+  OAuth2ImplicitAuth,
+  OAuth2DeviceAuth,
+  AwsSigV4Auth,
+  DigestAuth,
+  NtlmAuth,
+  HawkAuth,
+  JwtBearerAuth,
 } from './types';

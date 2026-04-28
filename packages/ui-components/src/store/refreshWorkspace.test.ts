@@ -1,6 +1,6 @@
 import { act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { WorkspaceSynced } from '@apicircle-v2/shared';
+import type { WorkspaceSynced } from '@apicircle/shared';
 import { useWorkspaceStore } from './workspaceStore';
 
 interface ResponseSpec {
@@ -122,7 +122,9 @@ describe('workspaceStore.refreshWorkspace', () => {
             headers: [],
             query: [],
             body: { type: 'none', content: '' },
+            auth: { type: 'none' },
             contextVars: [],
+            extractions: [],
             assertions: [],
             createdAt: 't',
             updatedAt: 't',

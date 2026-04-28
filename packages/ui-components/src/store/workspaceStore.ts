@@ -11,16 +11,20 @@ import type {
   PanelId,
   PlanRun,
   ReleaseHistory,
+  ContextExtraction,
+  GlobalGraphQL,
+  GlobalSchema,
   Request as ApiRequest,
+  RequestAuth,
   RequestBody,
   RequestRun,
   ThemeId,
   WorkingBranch,
   WorkspaceLocal,
   WorkspaceSynced,
-} from '@apicircle-v2/shared';
-import { type GitHubRepo, GitHubClient, MissingScopeError } from '@apicircle-v2/git';
-import { generateId } from '@apicircle-v2/shared';
+} from '@apicircle/shared';
+import { type GitHubRepo, GitHubClient, MissingScopeError } from '@apicircle/git';
+import { generateId } from '@apicircle/shared';
 import {
   type AttachmentResolver,
   type ExecutionResult,
@@ -35,7 +39,9 @@ import {
   deprecateRelease as deprecateReleaseAction,
   encryptString,
   executeRequest as coreExecuteRequest,
+  extractContext,
   generateWorkingBranchName,
+  parseCurl,
   publishRelease as publishReleaseAction,
   resolveString,
   runAssertions,
@@ -44,7 +50,7 @@ import {
   tryParsePayload,
   validateBranchName,
   yankRelease as yankReleaseAction,
-} from '@apicircle-v2/core';
+} from '@apicircle/core';
 import { create } from 'zustand';
 import {
   createAttachmentFromFile,
@@ -58,20 +64,33 @@ import { getMasterKey } from '../persistence/secretKey';
 import { loadWorkspace, saveLocal, saveSynced } from '../persistence/workspaceStorage';
 import { applyTheme } from '../theme/applyTheme';
 import { bytesToBase64 } from './attachmentBlobs';
-import type { TreeEntryInput } from '@apicircle-v2/git';
+import type { TreeEntryInput } from '@apicircle/git';
 import {
   addFolder as addFolderAction,
   addRequest as addRequestAction,
   collectRequestSlotIds,
   removeRequest as removeRequestAction,
   setRequestAssertions as setRequestAssertionsAction,
+  setRequestAuth as setRequestAuthAction,
   setRequestBody as setRequestBodyAction,
+  setRequestBodySchemaId as setRequestBodySchemaIdAction,
+  setRequestContextVars as setRequestContextVarsAction,
+  setRequestExtractions as setRequestExtractionsAction,
+  setRequestGraphqlSchemaId as setRequestGraphqlSchemaIdAction,
   setRequestHeaders as setRequestHeadersAction,
   setRequestMethod as setRequestMethodAction,
   setRequestQuery as setRequestQueryAction,
   setRequestUrl as setRequestUrlAction,
   renameRequest as renameRequestAction,
 } from './editorActions';
+import {
+  addGlobalGraphQL as addGlobalGraphQLAction,
+  addGlobalSchema as addGlobalSchemaAction,
+  removeGlobalGraphQL as removeGlobalGraphQLAction,
+  removeGlobalSchema as removeGlobalSchemaAction,
+  updateGlobalGraphQL as updateGlobalGraphQLAction,
+  updateGlobalSchema as updateGlobalSchemaAction,
+} from './globalAssetsActions';
 import {
   addEnvironment as addEnvironmentAction,
   addVariableRow as addVariableRowAction,
@@ -179,6 +198,19 @@ type WorkspaceStore = {
   // local.history once they complete; this is the live working result for
   // the editor panel.
   lastRun: Record<string, ExecutionResult | null>;
+  // Transient per-plan run details, keyed by planId. Populated after each
+  // runPlan completes so the Execution panel can show per-step request,
+  // status, response body, and assertion verdicts. Not persisted.
+  lastPlanResults: Record<
+    string,
+    Array<{
+      result: ExecutionResult;
+      assertionResults: ReadonlyArray<{ assertionId: string; passed: boolean; detail?: string }>;
+      passed: boolean;
+      requestName: string;
+      requestMethod: string;
+    }>
+  >;
   isExecuting: Record<string, boolean>;
 
   hydrate: () => Promise<void>;
@@ -198,6 +230,16 @@ type WorkspaceStore = {
   dismissMissingScope: () => void;
 
   addRequest: (parentFolderId: string | null) => string;
+  /**
+   * Parse a `curl` command and create a new request seeded with the
+   * parsed method/URL/headers/body/auth. Selects the new request as
+   * active. Returns its id + any warnings the parser surfaced (unknown
+   * flags, file fields that need re-attaching, etc).
+   */
+  addRequestFromCurl: (
+    curl: string,
+    parentFolderId?: string | null,
+  ) => { id: string; warnings: string[] };
   addFolder: (parentFolderId: string | null, name?: string) => string;
   removeRequest: (id: string) => void;
   renameRequest: (id: string, name: string) => void;
@@ -207,6 +249,59 @@ type WorkspaceStore = {
   setRequestHeaders: (id: string, headers: ApiRequest['headers']) => void;
   setRequestQuery: (id: string, query: ApiRequest['query']) => void;
   setRequestAssertions: (id: string, assertions: Assertion[]) => void;
+  setRequestAuth: (id: string, auth: RequestAuth) => void;
+  setRequestExtractions: (id: string, extractions: ContextExtraction[]) => void;
+  setRequestContextVars: (id: string, contextVars: ApiRequest['contextVars']) => void;
+  setRequestBodySchemaId: (id: string, schemaId: string | null) => void;
+  setRequestGraphqlSchemaId: (id: string, schemaId: string | null) => void;
+
+  // --- Global Assets library (P17) -----------------------------------
+  addGlobalSchema: (init: { name: string; schema?: string; description?: string }) => string;
+  updateGlobalSchema: (id: string, patch: Partial<Omit<GlobalSchema, 'id' | 'createdAt'>>) => void;
+  removeGlobalSchema: (id: string) => void;
+  addGlobalGraphQL: (init: {
+    name: string;
+    source?: string;
+    kind?: GlobalGraphQL['kind'];
+    description?: string;
+  }) => string;
+  updateGlobalGraphQL: (
+    id: string,
+    patch: Partial<Omit<GlobalGraphQL, 'id' | 'createdAt'>>,
+  ) => void;
+  removeGlobalGraphQL: (id: string) => void;
+  /** Open/close the Global Assets library modal. */
+  globalAssetsOpen: boolean;
+  openGlobalAssets: () => void;
+  closeGlobalAssets: () => void;
+
+  // --- Linked-request overrides (P20) ---------------------------------
+  /**
+   * Replace the override patch for a linked workspace's request. The
+   * patch may only include override-allowed fields: headers, contextVars,
+   * assertions, extractions. Other fields are read straight from the
+   * source workspace's snapshot.
+   *
+   * Pass an empty patch to clear the override (it'll round-trip to no-op
+   * via the mergeRequestOverride helper) — or call clearLinkedRequestOverride.
+   */
+  setLinkedRequestOverride: (
+    linkedWorkspaceId: string,
+    itemId: string,
+    patch: Record<string, unknown>,
+  ) => void;
+  /** Drop any local override for a linked workspace's request. */
+  clearLinkedRequestOverride: (linkedWorkspaceId: string, itemId: string) => void;
+  /** Currently-viewed linked request, if any. Drives LinkedRequestEditor. */
+  activeLinkedRequest: { linkedWorkspaceId: string; itemId: string } | null;
+  setActiveLinkedRequest: (id: { linkedWorkspaceId: string; itemId: string } | null) => void;
+  /**
+   * Drop a single key from the local-only globalContext map. Used by the
+   * Context tab's "Forget extracted value" action.
+   */
+  removeGlobalContextKey: (key: string) => void;
+  /** Clear every key in globalContext. */
+  clearGlobalContext: () => void;
 
   // Form-data: replace the rows array. The store cleans up orphaned
   // attachment blobs (rows whose slotId is no longer present) automatically.
@@ -472,6 +567,26 @@ type WorkspaceStore = {
    */
   runPlan: (planId: string, opts?: { withAssertions?: boolean }) => Promise<PlanRun>;
 
+  // --- History (local-only) -------------------------------------------
+  /**
+   * Drop a single request run from local history. Used by the per-row
+   * delete control in HistoryPanel.
+   */
+  removeRequestRun: (runId: string) => void;
+  /**
+   * Drop a single plan run from local history.
+   */
+  removePlanRun: (runId: string) => void;
+  /**
+   * Wipe all request runs. Optional `predicate` filters which rows
+   * survive — used by "clear runs for this request" actions.
+   */
+  clearRequestRuns: (predicate?: (run: RequestRun) => boolean) => void;
+  /**
+   * Wipe all plan runs. Optional `predicate` filters which rows survive.
+   */
+  clearPlanRuns: (predicate?: (run: PlanRun) => boolean) => void;
+
   /**
    * Pin (or unpin via `null`) a linked workspace to a specific version.
    * Throws when the link is unknown, or when `version` is non-null but
@@ -517,10 +632,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   local: null,
   activePanel: readStoredPanel(),
   secretVaultOpen: false,
+  globalAssetsOpen: false,
+  activeLinkedRequest: null,
   pendingRefresh: null,
   missingScopePrompt: null,
   activePlanId: null,
   lastRun: {},
+  lastPlanResults: {},
   isExecuting: {},
 
   hydrate: async () => {
@@ -594,6 +712,47 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     return request.id;
   },
 
+  addRequestFromCurl: (curl, parentFolderId = null) => {
+    const synced = get().synced;
+    if (!synced) return { id: '', warnings: ['Workspace not ready'] };
+    const parsed = parseCurl(curl);
+    const { synced: withRequest, request } = addRequestAction(synced, parentFolderId);
+    // Build a friendlier name from the URL path.
+    let displayName = request.name;
+    try {
+      const u = new URL(parsed.url);
+      const path = u.pathname.replace(/\/$/, '') || '/';
+      displayName = `${parsed.method} ${path}`;
+    } catch {
+      if (parsed.url) displayName = `${parsed.method} ${parsed.url}`;
+    }
+    const seeded = {
+      ...withRequest,
+      collections: {
+        ...withRequest.collections,
+        requests: {
+          ...withRequest.collections.requests,
+          [request.id]: {
+            ...request,
+            name: displayName,
+            method: parsed.method,
+            url: parsed.url,
+            headers: parsed.headers,
+            query: parsed.query,
+            body: parsed.body,
+            auth: parsed.auth,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      },
+      meta: { ...withRequest.meta, updatedAt: new Date().toISOString() },
+    };
+    set({ synced: seeded });
+    void saveSynced(seeded);
+    get().setActiveRequestId(request.id);
+    return { id: request.id, warnings: parsed.warnings };
+  },
+
   addFolder: (parentFolderId, name) => {
     const synced = get().synced;
     if (!synced) return '';
@@ -629,6 +788,88 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     commitSynced(set, get, (s) => setRequestQueryAction(s, id, query)),
   setRequestAssertions: (id, assertions) =>
     commitSynced(set, get, (s) => setRequestAssertionsAction(s, id, assertions)),
+  setRequestAuth: (id, auth) => commitSynced(set, get, (s) => setRequestAuthAction(s, id, auth)),
+  setRequestExtractions: (id, extractions) =>
+    commitSynced(set, get, (s) => setRequestExtractionsAction(s, id, extractions)),
+  setRequestContextVars: (id, contextVars) =>
+    commitSynced(set, get, (s) => setRequestContextVarsAction(s, id, contextVars)),
+  setRequestBodySchemaId: (id, schemaId) =>
+    commitSynced(set, get, (s) => setRequestBodySchemaIdAction(s, id, schemaId)),
+  setRequestGraphqlSchemaId: (id, schemaId) =>
+    commitSynced(set, get, (s) => setRequestGraphqlSchemaIdAction(s, id, schemaId)),
+
+  addGlobalSchema: (init) => {
+    const synced = get().synced;
+    if (!synced) throw new Error('Workspace not ready');
+    const result = addGlobalSchemaAction(synced, init);
+    commitSynced(set, get, () => result.synced);
+    return result.schema.id;
+  },
+  updateGlobalSchema: (id, patch) =>
+    commitSynced(set, get, (s) => updateGlobalSchemaAction(s, id, patch)),
+  removeGlobalSchema: (id) => commitSynced(set, get, (s) => removeGlobalSchemaAction(s, id)),
+  addGlobalGraphQL: (init) => {
+    const synced = get().synced;
+    if (!synced) throw new Error('Workspace not ready');
+    const result = addGlobalGraphQLAction(synced, init);
+    commitSynced(set, get, () => result.synced);
+    return result.graphql.id;
+  },
+  updateGlobalGraphQL: (id, patch) =>
+    commitSynced(set, get, (s) => updateGlobalGraphQLAction(s, id, patch)),
+  removeGlobalGraphQL: (id) => commitSynced(set, get, (s) => removeGlobalGraphQLAction(s, id)),
+  openGlobalAssets: () => set({ globalAssetsOpen: true }),
+  closeGlobalAssets: () => set({ globalAssetsOpen: false }),
+
+  setLinkedRequestOverride: (linkedWorkspaceId, itemId, patch) => {
+    const local = get().local;
+    if (!local) return;
+    const key = `${linkedWorkspaceId}:${itemId}`;
+    const next: WorkspaceLocal = {
+      ...local,
+      overrides: {
+        ...local.overrides,
+        items: {
+          ...local.overrides.items,
+          [key]: { linkedWorkspaceId, itemId, patch, updatedAt: new Date().toISOString() },
+        },
+      },
+    };
+    set({ local: next });
+    void saveLocal(next);
+  },
+  clearLinkedRequestOverride: (linkedWorkspaceId, itemId) => {
+    const local = get().local;
+    if (!local) return;
+    const key = `${linkedWorkspaceId}:${itemId}`;
+    if (!local.overrides.items[key]) return;
+    const { [key]: _drop, ...rest } = local.overrides.items;
+    void _drop;
+    const next: WorkspaceLocal = {
+      ...local,
+      overrides: { ...local.overrides, items: rest },
+    };
+    set({ local: next });
+    void saveLocal(next);
+  },
+  setActiveLinkedRequest: (id) => set({ activeLinkedRequest: id }),
+  removeGlobalContextKey: (key) => {
+    const local = get().local;
+    if (!local) return;
+    if (!(key in local.globalContext)) return;
+    const { [key]: _omit, ...rest } = local.globalContext;
+    void _omit;
+    const next: WorkspaceLocal = { ...local, globalContext: rest };
+    set({ local: next });
+    void saveLocal(next);
+  },
+  clearGlobalContext: () => {
+    const local = get().local;
+    if (!local) return;
+    const next: WorkspaceLocal = { ...local, globalContext: {} };
+    set({ local: next });
+    void saveLocal(next);
+  },
 
   setRequestFormRows: (id, rows) => {
     const synced = get().synced;
@@ -1378,6 +1619,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const t0 = Date.now();
     const stepRecords: Array<{ requestRunId: string; passed: boolean }> = [];
     const newRequestRuns: RequestRun[] = [];
+    const planResultDetails: WorkspaceStore['lastPlanResults'][string] = [];
 
     for (const step of plan.steps) {
       // Cross-workspace steps look the request up in the cached linked
@@ -1401,6 +1643,25 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         };
         newRequestRuns.push(orphanRun);
         stepRecords.push({ requestRunId: runId, passed: false });
+        planResultDetails.push({
+          result: {
+            startedAt: orphanRun.startedAt,
+            durationMs: 0,
+            status: null,
+            ok: false,
+            statusText: '',
+            headers: {},
+            body: '',
+            bodyKind: 'empty',
+            error: lookup.error,
+            url: '',
+            method: '',
+          },
+          assertionResults: [],
+          passed: false,
+          requestName: 'Missing request',
+          requestMethod: '—',
+        });
         continue;
       }
       const request = lookup.request;
@@ -1435,6 +1696,29 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       };
       newRequestRuns.push(requestRun);
       stepRecords.push({ requestRunId: runId, passed: allPassed });
+      planResultDetails.push({
+        result,
+        assertionResults,
+        passed: allPassed,
+        requestName: request.name,
+        requestMethod: request.method,
+      });
+
+      // Carry extracted ctx vars into the rolling globalContext so the next
+      // step's resolveRequest sees them. Linked-workspace steps still
+      // contribute back to the consumer's local context — the value is what
+      // matters, not which workspace produced it.
+      if (request.extractions && request.extractions.length > 0) {
+        const stepExtraction = extractContext(result, request.extractions);
+        const liveLocal = get().local;
+        if (liveLocal) {
+          const merged: WorkspaceLocal = {
+            ...liveLocal,
+            globalContext: { ...liveLocal.globalContext, ...stepExtraction.extracted },
+          };
+          set({ local: merged });
+        }
+      }
     }
 
     const planRun: PlanRun = {
@@ -1445,6 +1729,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       withAssertions,
       steps: stepRecords,
     };
+
+    set((s) => ({ lastPlanResults: { ...s.lastPlanResults, [planId]: planResultDetails } }));
 
     const persistLocal = get().local;
     if (persistLocal) {
@@ -1618,6 +1904,62 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     return { number: pr.number, htmlUrl: pr.htmlUrl };
   },
 
+  removeRequestRun: (runId) => {
+    const local = get().local;
+    if (!local) return;
+    const next: WorkspaceLocal = {
+      ...local,
+      history: {
+        ...local.history,
+        requestRuns: local.history.requestRuns.filter((r) => r.id !== runId),
+      },
+    };
+    set({ local: next });
+    void saveLocal(next);
+  },
+
+  removePlanRun: (runId) => {
+    const local = get().local;
+    if (!local) return;
+    const next: WorkspaceLocal = {
+      ...local,
+      history: {
+        ...local.history,
+        planRuns: local.history.planRuns.filter((r) => r.id !== runId),
+      },
+    };
+    set({ local: next });
+    void saveLocal(next);
+  },
+
+  clearRequestRuns: (predicate) => {
+    const local = get().local;
+    if (!local) return;
+    const next: WorkspaceLocal = {
+      ...local,
+      history: {
+        ...local.history,
+        requestRuns: predicate ? local.history.requestRuns.filter(predicate) : [],
+      },
+    };
+    set({ local: next });
+    void saveLocal(next);
+  },
+
+  clearPlanRuns: (predicate) => {
+    const local = get().local;
+    if (!local) return;
+    const next: WorkspaceLocal = {
+      ...local,
+      history: {
+        ...local.history,
+        planRuns: predicate ? local.history.planRuns.filter(predicate) : [],
+      },
+    };
+    set({ local: next });
+    void saveLocal(next);
+  },
+
   executeActiveRequest: async () => {
     const state = get();
     const id = state.local?.ui.activeRequestId;
@@ -1643,12 +1985,20 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         error: result.error,
         assertions: assertionResults,
       };
+      // Apply the request's post-run extractions into local.globalContext.
+      // Failures are logged as warnings but do not block the run.
+      const extractionResult =
+        request.extractions && request.extractions.length > 0
+          ? extractContext(result, request.extractions)
+          : { extracted: {}, warnings: [] };
+
       const local = get().local;
       if (local) {
         const trimmed = [run, ...local.history.requestRuns].slice(0, MAX_REQUEST_RUNS);
         const next: WorkspaceLocal = {
           ...local,
           history: { ...local.history, requestRuns: trimmed },
+          globalContext: { ...local.globalContext, ...extractionResult.extracted },
         };
         set({ local: next });
         void saveLocal(next);
@@ -1659,6 +2009,16 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
   },
 }));
+
+// Test-only window bridge. Lets Playwright specs seed otherwise hard-to-
+// reach state (linked-workspace snapshots, secret-vault contents, GitHub
+// session) without going through the full connect/refresh flow. Reading
+// from the store via this hook is safe; writing is allowed but only
+// expected from e2e specs.
+if (typeof window !== 'undefined') {
+  (window as unknown as { __apicircleStore?: typeof useWorkspaceStore }).__apicircleStore =
+    useWorkspaceStore;
+}
 
 type SetState = (
   partial: Partial<WorkspaceStore> | ((state: WorkspaceStore) => Partial<WorkspaceStore>),
@@ -1805,14 +2165,38 @@ function lookupPlanStepRequest(
       error: `No cached snapshot for "${link.name}" — refresh the link card first`,
     };
   }
-  const request = snapshot.collections.requests[step.requestId];
-  if (!request) {
+  const baseRequest = snapshot.collections.requests[step.requestId];
+  if (!baseRequest) {
     return {
       request: null,
       error: `Request not present in the cached snapshot of "${link.name}"`,
     };
   }
+  // Apply consumer-side override patch on top of the linked snapshot.
+  // Only the fields the user can override (headers, contextVars,
+  // assertions, extractions) are merged — everything else is read straight
+  // from the source workspace.
+  const overrideKey = `${step.linkedWorkspaceId}:${step.requestId}`;
+  const override = local.overrides.items[overrideKey];
+  const request = override ? mergeRequestOverride(baseRequest, override.patch) : baseRequest;
   return { request, linkedEnvironments: snapshot.environments };
+}
+
+function mergeRequestOverride(base: ApiRequest, patch: Record<string, unknown>): ApiRequest {
+  const merged: ApiRequest = { ...base };
+  if (Array.isArray(patch.headers)) {
+    merged.headers = patch.headers as ApiRequest['headers'];
+  }
+  if (Array.isArray(patch.contextVars)) {
+    merged.contextVars = patch.contextVars as ApiRequest['contextVars'];
+  }
+  if (Array.isArray(patch.assertions)) {
+    merged.assertions = patch.assertions as ApiRequest['assertions'];
+  }
+  if (Array.isArray(patch.extractions)) {
+    merged.extractions = patch.extractions as ApiRequest['extractions'];
+  }
+  return merged;
 }
 
 function buildLinkedSnapshot(
@@ -2014,7 +2398,15 @@ async function resolveRequest(
   const envs = await decryptEnvironments(synced.environments.items);
   const secrets = local ? await decryptVaultSecrets(local) : {};
 
-  const contextVars = request.contextVars;
+  // Per-request contextVars + workspace globalContext both feed the
+  // contextVars layer of the resolver. Per-request entries shadow global
+  // ones with the same key — that's how an override on this request wins
+  // over a stale extracted value from a sibling request.
+  const ctxMap: Record<string, string> = { ...(local?.globalContext ?? {}) };
+  for (const v of request.contextVars) {
+    if (v.key) ctxMap[v.key] = v.value;
+  }
+  const contextVars = Object.entries(ctxMap).map(([key, value]) => ({ key, value }));
   // Plan-level priority overrides the workspace's global order when the
   // plan supplied a non-empty list (plan §6 P6 + §11.1 inline guidance).
   const priorityOrder =

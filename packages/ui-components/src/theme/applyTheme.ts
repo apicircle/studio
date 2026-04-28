@@ -1,4 +1,4 @@
-import type { ThemeId } from '@apicircle-v2/shared';
+import type { ThemeId } from '@apicircle/shared';
 
 const THEME_STORAGE_KEY = 'apicircle-v2:theme';
 

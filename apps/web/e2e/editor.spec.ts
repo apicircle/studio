@@ -7,7 +7,7 @@ import { expect, test } from './fixtures/app';
 // tree empties.
 
 test.describe('Editor golden path', () => {
-  test('create → edit → send → assertions → delete', async ({ app, mockApi }) => {
+  test('create → edit → send → assertions → delete', async ({ app, mockApi, monaco }) => {
     // 1. Land on the Editor (default panel).
     await expect(app.getByRole('button', { name: /^Editor$/, exact: false })).toHaveAttribute(
       'aria-current',
@@ -36,7 +36,7 @@ test.describe('Editor golden path', () => {
     // 6. Body tab → JSON. Content-Type header should be auto-set.
     await app.getByRole('button', { name: 'Body' }).first().click();
     await app.getByRole('radio', { name: 'JSON' }).click();
-    await app.getByLabel('Request body').fill('{"name":"alice"}');
+    await monaco.fill('Request body', '{"name":"alice"}');
 
     await app
       .getByRole('button', { name: /^Headers/ })
@@ -55,7 +55,7 @@ test.describe('Editor golden path', () => {
 
     // 9. Status badge + body render in the response viewer.
     await expect(app.getByText('201')).toBeVisible();
-    await expect(app.getByText(/"name": "alice"/)).toBeVisible();
+    await expect.poll(() => monaco.read('Response body')).toContain('"name": "alice"');
 
     // Switch to response Headers tab. The editor's tab is "Headers (1)"
     // (the auto-set Content-Type takes the count to 1); the response

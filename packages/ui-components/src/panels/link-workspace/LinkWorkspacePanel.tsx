@@ -13,9 +13,9 @@ import {
   Star,
   Trash2,
 } from 'lucide-react';
-import { GitHubError, MissingScopeError } from '@apicircle-v2/git';
-import { sortVersionsDesc } from '@apicircle-v2/core';
-import type { LinkedWorkspace } from '@apicircle-v2/shared';
+import { GitHubError, MissingScopeError } from '@apicircle/git';
+import { sortVersionsDesc } from '@apicircle/core';
+import type { LinkedWorkspace } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';
@@ -639,6 +639,54 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
           setUnlinkOpen(false);
         }}
       />
+
+      <LinkedRequestsList linkId={link.id} />
+    </div>
+  );
+}
+
+function LinkedRequestsList({ linkId }: { linkId: string }) {
+  const snapshot = useWorkspaceStore((s) => s.local?.linkedCollections[linkId] ?? null);
+  const overrides = useWorkspaceStore((s) => s.local?.overrides.items ?? {});
+  const setActiveLinkedRequest = useWorkspaceStore((s) => s.setActiveLinkedRequest);
+  const [open, setOpen] = useState(false);
+  const requests = snapshot ? Object.values(snapshot.collections.requests) : [];
+  if (requests.length === 0) return null;
+  return (
+    <div className="mt-3 border-t border-border-subtle pt-3 text-xs">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="text-text-muted hover:text-text-primary"
+      >
+        {open ? '▾' : '▸'} Browse requests ({requests.length})
+      </button>
+      {open && (
+        <ul className="mt-2 flex flex-col gap-1">
+          {requests.map((req) => {
+            const overridden = `${linkId}:${req.id}` in overrides;
+            return (
+              <li key={req.id}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveLinkedRequest({ linkedWorkspaceId: linkId, itemId: req.id })
+                  }
+                  className="flex w-full items-center gap-2 rounded-sm border border-border bg-surface px-2 py-1 text-left text-text-primary hover:border-border-strong"
+                >
+                  <span className="text-[10px] uppercase text-text-dim">{req.method}</span>
+                  <span className="flex-1 truncate font-mono">{req.name}</span>
+                  {overridden && (
+                    <span className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-accent">
+                      override
+                    </span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

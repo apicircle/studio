@@ -163,6 +163,69 @@ describe('ExecutionPanel — plan editor', () => {
   });
 });
 
+describe('ExecutionPanel — per-step run details', () => {
+  beforeEach(hydrate);
+
+  it('renders one collapsible row per step with status, duration, and assertion verdict', async () => {
+    const planId = useWorkspaceStore.getState().addPlan('p');
+    useWorkspaceStore.setState({
+      lastPlanResults: {
+        [planId]: [
+          {
+            requestName: 'Get user',
+            requestMethod: 'GET',
+            passed: true,
+            assertionResults: [{ assertionId: 'a-1', passed: true, detail: 'ok' }],
+            result: {
+              startedAt: 't',
+              durationMs: 42,
+              status: 200,
+              ok: true,
+              statusText: 'OK',
+              headers: { 'content-type': 'application/json' },
+              body: '{"id":1}',
+              bodyKind: 'json',
+              url: 'https://api.test/users/1',
+              method: 'GET',
+            },
+          },
+          {
+            requestName: 'Update user',
+            requestMethod: 'PUT',
+            passed: false,
+            assertionResults: [
+              { assertionId: 'a-1', passed: false, detail: 'expected 200, got 500' },
+            ],
+            result: {
+              startedAt: 't',
+              durationMs: 999,
+              status: 500,
+              ok: false,
+              statusText: 'Internal',
+              headers: {},
+              body: '',
+              bodyKind: 'empty',
+              url: 'https://api.test/users/1',
+              method: 'PUT',
+            },
+          },
+        ],
+      },
+    });
+    useWorkspaceStore.setState({ activePlanId: planId });
+    render(<ExecutionPanel />);
+
+    expect(screen.getByText('Last run · per-step details')).toBeInTheDocument();
+    expect(screen.getByText('Get user')).toBeInTheDocument();
+    expect(screen.getByText('Update user')).toBeInTheDocument();
+    // First row is open by default — should show URL.
+    expect(screen.getByText('https://api.test/users/1')).toBeInTheDocument();
+    // Click to open the second row.
+    await userEvent.click(screen.getByRole('button', { expanded: false, name: /Update user/ }));
+    expect(screen.getByText('expected 200, got 500')).toBeInTheDocument();
+  });
+});
+
 describe('ExecutionSidebar', () => {
   beforeEach(hydrate);
 

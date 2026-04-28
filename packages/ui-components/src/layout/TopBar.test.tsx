@@ -27,4 +27,15 @@ describe('TopBar', () => {
     await renderWithStore(<TopBar />);
     expect(screen.getByRole('button', { name: /Choose theme/ })).toBeInTheDocument();
   });
+
+  it('renders the font picker next to the theme picker', async () => {
+    await renderWithStore(<TopBar />);
+    expect(screen.getByRole('button', { name: /Choose font family/ })).toBeInTheDocument();
+  });
+
+  it('opens the Global Assets library from the top bar', async () => {
+    await renderWithStore(<TopBar />);
+    await userEvent.click(screen.getByRole('button', { name: /Open Global Assets library/ }));
+    expect(useWorkspaceStore.getState().globalAssetsOpen).toBe(true);
+  });
 });

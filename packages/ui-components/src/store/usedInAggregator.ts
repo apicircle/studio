@@ -1,4 +1,4 @@
-import type { SecretEntry, WorkspaceLocal, WorkspaceSynced } from '@apicircle-v2/shared';
+import type { SecretEntry, WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
 
 // Build a map of secret-id → SecretUsage[] by scanning every place a
 // `{{LABEL}}` placeholder can appear:

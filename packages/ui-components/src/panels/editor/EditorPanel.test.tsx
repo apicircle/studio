@@ -1,4 +1,4 @@
-import { act, screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EditorPanel } from './EditorPanel';
@@ -78,7 +78,9 @@ describe('EditorPanel', () => {
 
       await userEvent.click(screen.getByRole('button', { name: /Send/i }));
       await waitFor(() => expect(screen.getByText('200 OK')).toBeInTheDocument());
-      expect(screen.getByText(/"hello": "world"/)).toBeInTheDocument();
+      const responseRegion = await screen.findByLabelText('Response body');
+      const editorTextarea = within(responseRegion).getByTestId('monaco-editor-mock');
+      expect(editorTextarea).toHaveValue('{\n  "hello": "world"\n}');
       expect(fetchMock).toHaveBeenCalledOnce();
     });
 

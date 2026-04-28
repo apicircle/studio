@@ -19,16 +19,32 @@ export type { AttachmentResolver, BuiltRequest } from './request/buildRequest';
 export { executeRequest } from './request/executeRequest';
 export type { ExecuteOptions, ExecutionResult } from './request/executeRequest';
 
+export { applyAuth } from './request/applyAuth';
+export type { AuthApplyResult, AuthApplyTarget } from './request/applyAuth';
+
+export { parseCurl, tokenizeCurl } from './request/parseCurl';
+export type { ParsedCurl } from './request/parseCurl';
+
 export { readJsonPath, runAssertions } from './assertions/runAssertions';
 export type { AssertionResult } from './assertions/runAssertions';
 
 export {
   buildScope,
+  collectVariableSuggestions,
+  getVariableAutocomplete,
   lookup,
   resolveString,
   resolveStringMap,
 } from './environment/variableResolver';
-export type { ResolutionScope, ResolveResult } from './environment/variableResolver';
+export type {
+  ResolutionScope,
+  ResolveResult,
+  VariableSource,
+  VariableSuggestion,
+} from './environment/variableResolver';
+
+export { extractContext } from './environment/extractContext';
+export type { ContextExtractionResult } from './environment/extractContext';
 
 export {
   decryptString,
@@ -55,6 +71,17 @@ export type { ParsedVersion } from './release/semver';
 export { deprecateRelease, publishRelease, yankRelease } from './release/publishRelease';
 export type { PublishReleaseArgs } from './release/publishRelease';
 
+export {
+  getLanguageFromBodyType,
+  getLanguageFromContentType,
+  normalizeContentType,
+  supportedContentTypeLanguageMap,
+} from './editors/contentTypeLanguageMap';
+export type { MonacoLanguage } from './editors/contentTypeLanguageMap';
+
+export { parseGraphqlSchema } from './editors/graphqlSchemaParser';
+export type { GraphQLField, GraphQLSchemaInfo } from './editors/graphqlSchemaParser';
+
 export { applyMerge, computeThreeWayDiff } from './git/threeWayDiff';
 export type {
   ConflictResolution,
@@ -64,3 +91,7 @@ export type {
   ResolutionMap,
   ThreeWayDiff,
 } from './git/threeWayDiff';
+
+export { applyMutation } from './workspace/applyMutation';
+export type { ApplyMutationOptions, ApplyMutationResult } from './workspace/applyMutation';
+export type { WorkspacePatch, WorkspacePatchKind, WorkspaceState } from './workspace/patches';

@@ -1,4 +1,4 @@
-import type { Environment, WorkspaceSynced } from '@apicircle-v2/shared';
+import type { Environment, WorkspaceSynced } from '@apicircle/shared';
 
 // Pure reducers for environment CRUD + active selection + priority order.
 // All mirror the editorActions pattern: take a synced doc, return a new

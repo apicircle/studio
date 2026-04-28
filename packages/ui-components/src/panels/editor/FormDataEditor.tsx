@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { FileUp, Plus, Trash2, X } from 'lucide-react';
-import type { FormDataRow, Request as ApiRequest } from '@apicircle-v2/shared';
+import type { FormDataRow, Request as ApiRequest } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 

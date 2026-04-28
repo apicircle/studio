@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { WorkspaceSynced } from '@apicircle-v2/shared';
+import type { WorkspaceSynced } from '@apicircle/shared';
 import { deprecateRelease, publishRelease, yankRelease } from './publishRelease';
 
 const empty: WorkspaceSynced = {
@@ -10,6 +10,8 @@ const empty: WorkspaceSynced = {
   environments: { items: {}, activeName: null, priorityOrder: [] },
   linkedWorkspaces: {},
   releases: { self: null, perLink: {} },
+  globalAssets: { schemas: {}, graphql: {} },
+  mockServers: {},
   meta: { createdAt: 't', updatedAt: 't', appVersion: '0.1.0' },
 };
 

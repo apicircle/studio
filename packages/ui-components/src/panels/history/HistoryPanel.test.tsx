@@ -1,7 +1,7 @@
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { PlanRun, RequestRun, WorkspaceLocal } from '@apicircle-v2/shared';
+import type { PlanRun, RequestRun, WorkspaceLocal } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { HistoryPanel } from './HistoryPanel';
 
@@ -153,6 +153,73 @@ describe('HistoryPanel — plan rows', () => {
     // The `assertions` tag only renders when withAssertions is true.
     const assertionsTags = screen.getAllByText('assertions');
     expect(assertionsTags).toHaveLength(1);
+  });
+});
+
+describe('HistoryPanel — clear history', () => {
+  beforeEach(hydrate);
+
+  function seedTwoRuns() {
+    seedHistory({
+      requestNames: { 'r-keep': 'Keep me', 'r-drop': 'Drop me' },
+      requestRuns: [
+        {
+          id: 'run-keep',
+          requestId: 'r-keep',
+          startedAt: '2026-04-27T12:00:00.000Z',
+          durationMs: 1,
+          status: 200,
+          ok: true,
+          assertions: [],
+        },
+        {
+          id: 'run-drop',
+          requestId: 'r-drop',
+          startedAt: '2026-04-27T12:00:00.000Z',
+          durationMs: 1,
+          status: 500,
+          ok: false,
+          assertions: [],
+        },
+      ],
+    });
+  }
+
+  it('per-row delete removes only that run', async () => {
+    seedTwoRuns();
+    render(<HistoryPanel />);
+    const dropRow = screen.getByText('Drop me').closest('li');
+    if (!dropRow) throw new Error('row not found');
+    await userEvent.click(within(dropRow).getByRole('button', { name: /Delete request run/i }));
+    expect(screen.queryByText('Drop me')).not.toBeInTheDocument();
+    expect(screen.getByText('Keep me')).toBeInTheDocument();
+    const remaining = useWorkspaceStore.getState().local!.history.requestRuns;
+    expect(remaining.map((r) => r.id)).toEqual(['run-keep']);
+  });
+
+  it('Clear all wipes every request run after confirmation', async () => {
+    seedTwoRuns();
+    render(<HistoryPanel />);
+    await userEvent.click(screen.getByRole('button', { name: /^Clear all$/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(useWorkspaceStore.getState().local!.history.requestRuns).toEqual([]);
+    expect(screen.getByText(/No request runs yet/)).toBeInTheDocument();
+  });
+
+  it('Clear matching wipes only filtered rows', async () => {
+    seedTwoRuns();
+    render(<HistoryPanel />);
+    const filterInput = screen.getByLabelText('Filter history');
+    await userEvent.type(filterInput, 'Drop');
+    await userEvent.click(screen.getByRole('button', { name: /^Clear matching/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    const remaining = useWorkspaceStore.getState().local!.history.requestRuns;
+    expect(remaining.map((r) => r.id)).toEqual(['run-keep']);
+  });
+
+  it('Clear button is disabled when there are no runs', () => {
+    render(<HistoryPanel />);
+    expect(screen.getByRole('button', { name: /^Clear all$/ })).toBeDisabled();
   });
 });
 

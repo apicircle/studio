@@ -1,5 +1,5 @@
-import type { Assertion, Request as ApiRequest } from '@apicircle-v2/shared';
-import { generateId } from '@apicircle-v2/shared';
+import type { Assertion, Request as ApiRequest } from '@apicircle/shared';
+import { generateId } from '@apicircle/shared';
 import { Plus, Trash2 } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 

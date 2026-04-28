@@ -1,5 +1,6 @@
-import type { Request as ApiRequest } from '@apicircle-v2/shared';
+import type { Request as ApiRequest } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { useVariableScope } from '../../editors/useVariableScope';
 import { KeyValueRows } from './KeyValueRows';
 
 interface ParamsTabProps {
@@ -8,6 +9,7 @@ interface ParamsTabProps {
 
 export function ParamsTab({ request }: ParamsTabProps) {
   const setRequestQuery = useWorkspaceStore((s) => s.setRequestQuery);
+  const scope = useVariableScope(request);
 
   return (
     <KeyValueRows
@@ -16,6 +18,7 @@ export function ParamsTab({ request }: ParamsTabProps) {
       onChange={(rows) => setRequestQuery(request.id, rows)}
       keyPlaceholder="Param key"
       valuePlaceholder="Param value"
+      valueScope={scope}
     />
   );
 }

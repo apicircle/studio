@@ -1,8 +1,8 @@
 ---
-'@apicircle-v2/shared': minor
-'@apicircle-v2/core': minor
-'@apicircle-v2/git': minor
-'@apicircle-v2/ui-components': minor
+'@apicircle/shared': minor
+'@apicircle/core': minor
+'@apicircle/git': minor
+'@apicircle/ui-components': minor
 ---
 
 P1–P9 baseline. First release-ready cut of API Circle Studio v2:

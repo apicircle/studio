@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { FileUp, X } from 'lucide-react';
-import type { Request as ApiRequest } from '@apicircle-v2/shared';
+import type { Request as ApiRequest } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 
 interface BinaryEditorProps {

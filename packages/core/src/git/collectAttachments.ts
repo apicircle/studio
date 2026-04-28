@@ -1,4 +1,4 @@
-import type { WorkspaceSynced } from '@apicircle-v2/shared';
+import type { WorkspaceSynced } from '@apicircle/shared';
 
 // Attachment slots referenced by the synced doc. Push (P4.3b) walks
 // every request body and bundles each referenced blob into the same

@@ -6,7 +6,7 @@ import { renderWithStore } from '../../test/renderWithStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
 
 describe('PanelTabs', () => {
-  it('renders 7 tabs (no Settings, no Commands)', async () => {
+  it('renders the agreed tab set (no Settings, no Commands)', async () => {
     await renderWithStore(<PanelTabs />);
     const tabs = screen.getAllByRole('button');
     const labels = tabs.map((t) => t.textContent);
@@ -17,6 +17,8 @@ describe('PanelTabs', () => {
       'Environments',
       'Execution',
       'History',
+      'Mocks',
+      'MCP',
       'Help Center',
     ]);
   });

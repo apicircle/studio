@@ -4,7 +4,7 @@
     {
       "name": "studio-v2-web",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@apicircle-v2/web", "dev"],
+      "runtimeArgs": ["--filter", "@apicircle/web", "dev"],
       "port": 5174
     }
   ]

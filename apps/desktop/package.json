@@ -1,12 +1,12 @@
 {
-  "name": "@apicircle-v2/desktop",
+  "name": "@apicircle/desktop",
   "version": "0.1.0",
   "private": true,
   "description": "Electron shell that hosts the API Circle Studio UI with native OS-keychain secret storage.",
   "main": "dist/main/main.js",
   "scripts": {
     "build:main": "tsc -p tsconfig.main.json",
-    "build:renderer": "pnpm --filter @apicircle-v2/web build",
+    "build:renderer": "pnpm --filter @apicircle/web build",
     "build": "pnpm build:renderer && pnpm build:main",
     "check": "tsc -p tsconfig.main.json --noEmit",
     "smoke": "node scripts/build-smoke.mjs",
@@ -15,12 +15,16 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@apicircle-v2/ui-components": "workspace:*",
-    "@apicircle-v2/web": "workspace:*"
+    "@apicircle/mcp-server": "workspace:*",
+    "@apicircle/mock-server-core": "workspace:*",
+    "@apicircle/shared": "workspace:*",
+    "@apicircle/ui-components": "workspace:*",
+    "@apicircle/web": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "electron": "^32.0.0",
+    "electron-builder": "^25.0.0",
     "typescript": "^5.4.0",
     "vitest": "^2.0.0"
   }

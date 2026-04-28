@@ -4,9 +4,10 @@
 // wrap the master JWK with the OS keychain.
 //
 // Surface kept tight — every method here adds attack surface, so we
-// only ship the three calls `NativeSecretBridge` actually needs.
+// only ship the calls renderer features actually need.
 
 import { contextBridge, ipcRenderer } from 'electron';
+import type { MockServer, MockRuntimeEntry, McpToolName } from '@apicircle/shared';
 
 const bridge = {
   encryptString: (plaintext: string): Promise<string> =>
@@ -15,6 +16,35 @@ const bridge = {
     ipcRenderer.invoke('apicircle:secret:decrypt', ciphertext) as Promise<string>,
   isEncryptionAvailable: (): Promise<boolean> =>
     ipcRenderer.invoke('apicircle:secret:isAvailable') as Promise<boolean>,
+
+  mock: {
+    start: (server: MockServer, opts?: { port?: number }): Promise<MockRuntimeEntry> =>
+      ipcRenderer.invoke('apicircle:mock:start', server, opts) as Promise<MockRuntimeEntry>,
+    stop: (serverId: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('apicircle:mock:stop', serverId) as Promise<{ ok: boolean }>,
+    list: (): Promise<Array<{ serverId: string; runtime: MockRuntimeEntry }>> =>
+      ipcRenderer.invoke('apicircle:mock:list') as Promise<
+        Array<{ serverId: string; runtime: MockRuntimeEntry }>
+      >,
+    getRuntime: (serverId: string): Promise<MockRuntimeEntry | null> =>
+      ipcRenderer.invoke('apicircle:mock:getRuntime', serverId) as Promise<MockRuntimeEntry | null>,
+    stopAll: (): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('apicircle:mock:stopAll') as Promise<{ ok: boolean }>,
+  },
+
+  mcp: {
+    status: (): Promise<{ workspaceDir: string; binary: string }> =>
+      ipcRenderer.invoke('apicircle:mcp:status') as Promise<{
+        workspaceDir: string;
+        binary: string;
+      }>,
+    getConfigSnippet: (client: string): Promise<string> =>
+      ipcRenderer.invoke('apicircle:mcp:getConfigSnippet', client) as Promise<string>,
+    getConfigPath: (client: string): Promise<string | null> =>
+      ipcRenderer.invoke('apicircle:mcp:getConfigPath', client) as Promise<string | null>,
+    toolCatalog: (): Promise<readonly McpToolName[]> =>
+      ipcRenderer.invoke('apicircle:mcp:toolCatalog') as Promise<readonly McpToolName[]>,
+  },
 };
 
 contextBridge.exposeInMainWorld('apicircleDesktop', bridge);

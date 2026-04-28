@@ -3,14 +3,17 @@ import {
   ArrowDown,
   ArrowUp,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Layers,
   Play,
   Plus,
   Trash2,
   XCircle,
 } from 'lucide-react';
-import type { ExecutionPlan, Request as ApiRequest } from '@apicircle-v2/shared';
+import type { ExecutionPlan, Request as ApiRequest } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { MonacoResponseViewer } from '../../editors/MonacoResponseViewer';
 
 export function ExecutionPanel() {
   const plans = useWorkspaceStore((s) => s.local?.executionPlans ?? {});
@@ -278,8 +281,145 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
           </p>
         )}
       </section>
+
+      <PlanRunDetails planId={plan.id} />
     </div>
   );
+}
+
+function PlanRunDetails({ planId }: { planId: string }) {
+  const results = useWorkspaceStore((s) => s.lastPlanResults[planId] ?? []);
+  const [openIndex, setOpenIndex] = useState<number | null>(0);
+  if (results.length === 0) return null;
+
+  return (
+    <section aria-label="Per-step run details">
+      <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
+        Last run · per-step details
+      </h2>
+      <ul className="space-y-1">
+        {results.map((step, i) => {
+          const open = openIndex === i;
+          return (
+            <li key={i} className="rounded-sm border border-border bg-card">
+              <button
+                type="button"
+                onClick={() => setOpenIndex(open ? null : i)}
+                aria-expanded={open}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left"
+              >
+                {open ? (
+                  <ChevronDown size={11} className="text-text-dim" aria-hidden="true" />
+                ) : (
+                  <ChevronRight size={11} className="text-text-dim" aria-hidden="true" />
+                )}
+                <span className="w-6 text-center text-[10px] text-text-dim">{i + 1}.</span>
+                <StepStatusBadge passed={step.passed} status={step.result.status} />
+                <span className="text-[10px] uppercase text-text-dim">{step.requestMethod}</span>
+                <span className="flex-1 truncate text-xs text-text-primary">
+                  {step.requestName}
+                </span>
+                <span className="font-mono text-[10px] text-text-dim">
+                  {step.result.durationMs} ms
+                </span>
+                {step.assertionResults.length > 0 && (
+                  <span
+                    className={
+                      'rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ' +
+                      (step.assertionResults.every((a) => a.passed)
+                        ? 'border-success/40 bg-success/10 text-success'
+                        : 'border-warning/40 bg-warning/10 text-warning')
+                    }
+                  >
+                    {step.assertionResults.filter((a) => a.passed).length}/
+                    {step.assertionResults.length}
+                  </span>
+                )}
+              </button>
+              {open && (
+                <div className="border-t border-border-subtle px-3 py-2 text-xs">
+                  {step.result.error && (
+                    <p className="mb-2 text-danger">Error: {step.result.error}</p>
+                  )}
+                  <div className="grid grid-cols-[80px_1fr] gap-y-1">
+                    <span className="text-text-dim">URL</span>
+                    <code className="truncate font-mono text-text-primary">{step.result.url}</code>
+                    <span className="text-text-dim">Status</span>
+                    <span className="text-text-primary">
+                      {step.result.status ?? '—'} {step.result.statusText}
+                    </span>
+                  </div>
+                  {step.assertionResults.length > 0 && (
+                    <ul className="mt-2 space-y-1 text-[11px]">
+                      {step.assertionResults.map((a) => (
+                        <li
+                          key={a.assertionId}
+                          className={
+                            'flex items-start gap-2 rounded-sm border px-2 py-1 ' +
+                            (a.passed
+                              ? 'border-success/30 bg-success/5'
+                              : 'border-danger/30 bg-danger/5')
+                          }
+                        >
+                          {a.passed ? (
+                            <CheckCircle2 size={11} className="text-success" aria-hidden="true" />
+                          ) : (
+                            <XCircle size={11} className="text-danger" aria-hidden="true" />
+                          )}
+                          <span className="text-text-primary">
+                            {a.detail ?? (a.passed ? 'Passed' : 'Failed')}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {step.result.body && (
+                    <div className="mt-2 h-48 overflow-hidden rounded-sm border border-border">
+                      <MonacoResponseViewer
+                        value={step.result.body}
+                        contentType={pickContentType(step.result.headers)}
+                        ariaLabel={`Step ${i + 1} response body`}
+                        height="100%"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+function StepStatusBadge({ passed, status }: { passed: boolean; status: number | null }) {
+  if (status === null) {
+    return (
+      <span className="inline-flex items-center rounded-sm border border-danger/40 bg-danger/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-danger">
+        ERR
+      </span>
+    );
+  }
+  return (
+    <span
+      className={
+        'inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ' +
+        (passed
+          ? 'border-success/40 bg-success/10 text-success'
+          : 'border-warning/40 bg-warning/10 text-warning')
+      }
+    >
+      {status}
+    </span>
+  );
+}
+
+function pickContentType(headers: Record<string, string>): string | undefined {
+  for (const [k, v] of Object.entries(headers)) {
+    if (k.toLowerCase() === 'content-type') return v;
+  }
+  return undefined;
 }
 
 function PlanStepRow({

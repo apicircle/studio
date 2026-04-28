@@ -1,4 +1,4 @@
-import type { WorkspaceSynced } from '@apicircle-v2/shared';
+import type { WorkspaceSynced } from '@apicircle/shared';
 
 // Canonical serializer for the workspace.json that lands in Git. Stable
 // key order so re-pushing the same logical state produces byte-identical

@@ -62,7 +62,11 @@ export default tseslint.config(
   // Build scripts and Electron main/preload run in Node — give them the
   // node globals so `process`, `console`, `URL`, etc. resolve.
   {
-    files: ['{apps,packages}/**/scripts/**/*.{js,mjs,cjs}', 'apps/desktop/src/main/**/*.ts'],
+    files: [
+      '{apps,packages}/**/scripts/**/*.{js,mjs,cjs}',
+      'scripts/**/*.{js,mjs,cjs}',
+      'apps/desktop/src/main/**/*.ts',
+    ],
     languageOptions: {
       globals: {
         process: 'readonly',
@@ -71,10 +75,43 @@ export default tseslint.config(
         Buffer: 'readonly',
         __dirname: 'readonly',
         __filename: 'readonly',
+        setTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearTimeout: 'readonly',
+        clearInterval: 'readonly',
+        queueMicrotask: 'readonly',
       },
     },
     rules: {
       'no-console': 'off',
+    },
+  },
+  // Boundary code that handles untyped external input (MCP tool arguments
+  // from arbitrary AI clients, JSON specs from arbitrary OpenAPI / Postman
+  // / Insomnia files, Electron IPC events). The `no-unsafe-*` rules here
+  // would force us to wrap every field access in a runtime guard or cast
+  // chain — Zod already validates at the entry point of each MCP tool,
+  // and the parsers each have warnings for the malformed cases.
+  //
+  // Provider implementations (in-memory / file-backed / in-process) match
+  // an async interface even when their bodies are synchronous, so
+  // `require-await` would force a contortion that adds no value.
+  {
+    files: [
+      'packages/mcp-server/src/**/*.ts',
+      'packages/mock-server-core/src/parsers/**/*.ts',
+      'packages/mock-server-core/src/handlers/**/*.ts',
+      'packages/mock-server-core/src/faker/**/*.ts',
+      'apps/desktop/src/main/ipc/**/*.ts',
+      'apps/desktop/src/main/preload.ts',
+    ],
+    rules: {
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/require-await': 'off',
     },
   },
   // Tests can use console freely and may need looser typing.
@@ -87,10 +124,16 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-member-access': 'off',
       '@typescript-eslint/no-unsafe-assignment': 'off',
       '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
       '@typescript-eslint/unbound-method': 'off',
       // Tests often declare async arrow functions to satisfy a typed
       // resolver contract (Promise<T>) without needing to await internally.
       '@typescript-eslint/require-await': 'off',
+      // Casts like `as HTMLTextAreaElement` are runtime-narrow truths the
+      // static types don't capture (RTL's `getByLabelText` returns
+      // HTMLElement). The auto-fixer would strip them and break tsc.
+      '@typescript-eslint/no-unnecessary-type-assertion': 'off',
     },
   },
 );

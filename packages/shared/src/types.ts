@@ -9,6 +9,8 @@
 // sync snapshots all live here so they can never leak into commits.
 // =============================================================================
 
+import type { MockServer, MockRuntime } from './mock';
+
 export type ThemeId =
   | 'studio-dark'
   | 'graphite-dark'
@@ -19,6 +21,7 @@ export type ThemeId =
 
 // No 'settings' panel — Secret Vault and Theme moved to TopBar.
 // No 'command' panel — feature dropped per revision #2.
+// 'mocks' and 'mcp' added in P27 (mock-server runtime + MCP config snippets).
 export type PanelId =
   | 'workspace' // renamed from 'git'
   | 'link-workspace' // renamed from 'api-connections'
@@ -26,6 +29,8 @@ export type PanelId =
   | 'env'
   | 'execution'
   | 'history'
+  | 'mocks'
+  | 'mcp'
   | 'help';
 
 // ---------------------------------------------------------------------------
@@ -56,6 +61,19 @@ export interface WorkspaceSynced {
     // Cached release history of each linked workspace, keyed by linkedWorkspaceId.
     perLink: Record<string, ReleaseHistory>;
   };
+  // Workspace-wide library of reusable JSON Schemas + GraphQL schema
+  // definitions. Requests opt in by setting `bodySchemaId` /
+  // `graphqlSchemaId`. Lives in the synced doc so teams share definitions
+  // through the regular push/pull flow.
+  globalAssets: {
+    schemas: Record<string, GlobalSchema>;
+    graphql: Record<string, GlobalGraphQL>;
+  };
+  // Workspace-wide mock-server library. Definitions push to git so a
+  // teammate cloning the repo can spin up the same mocks via Desktop or
+  // CLI. Runtime status (port, pid, request count) lives in
+  // `WorkspaceLocal.mockRuntime` and is host-specific.
+  mockServers: Record<string, MockServer>;
   meta: {
     createdAt: string;
     updatedAt: string;
@@ -96,10 +114,203 @@ export interface Request {
   headers: Array<{ key: string; value: string; enabled: boolean }>;
   query: Array<{ key: string; value: string; enabled: boolean }>;
   body: RequestBody;
+  // Discriminated union covering all 15 supported auth schemes. Defaults to
+  // { type: 'none' }. Older synced docs without this field are upgraded by
+  // workspaceStore on hydrate (see normalizeRequest).
+  auth: RequestAuth;
   contextVars: Array<{ key: string; value: string }>;
+  // Per-request post-run extractors. After a successful send the extracted
+  // values land in WorkspaceLocal.globalContext (local-only, never pushed)
+  // and become available as `{{name}}` to subsequent requests + plan steps.
+  extractions: ContextExtraction[];
+  // Optional reference to a workspace-wide JSON Schema (in
+  // WorkspaceSynced.globalAssets.schemas) used for body validation in the
+  // editor (P18). Null/undefined means "no schema."
+  bodySchemaId?: string | null;
+  // Optional reference to a workspace-wide GraphQL schema definition. Used
+  // for GraphQL request body autocomplete (P19).
+  graphqlSchemaId?: string | null;
   assertions: Assertion[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ContextExtraction {
+  id: string;
+  variable: string;
+  source: 'body' | 'header' | 'cookie' | 'status';
+  /**
+   * Source-specific path:
+   *   - body: JSON path (dot/bracket, e.g. `data.token` or `items[0].id`)
+   *   - header: header name (case-insensitive)
+   *   - cookie: cookie name
+   *   - status: ignored — the HTTP status code is the value
+   */
+  path: string;
+  enabled: boolean;
+}
+
+// Workspace-wide library of reusable schemas. Lives in the synced doc so
+// teams share definitions, and Requests reference them by id (see
+// Request.bodySchemaId / graphqlSchemaId added in §P17).
+export interface GlobalSchema {
+  id: string;
+  name: string;
+  description?: string;
+  /** JSON Schema document, stored as a string so the user can paste any draft. */
+  schema: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// GraphQL schema definitions. `kind: 'sdl'` is the canonical Schema
+// Definition Language (`type Query { ... }`); `kind: 'introspection'` is a
+// JSON dump from `query IntrospectionQuery { __schema { ... } }`. The
+// editor accepts either; downstream features (P19) parse whichever is
+// supplied.
+export interface GlobalGraphQL {
+  id: string;
+  name: string;
+  description?: string;
+  kind: 'sdl' | 'introspection';
+  source: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// All 15 auth schemes supported by Studio v2. Mirrors v1's discriminated
+// union (see studio/packages/core/src/request/types.ts) so request import
+// paths stay symmetrical. The companion `applyAuth` in @apicircle/core
+// translates each variant into headers / query / signature on the wire.
+export type RequestAuth =
+  | { type: 'none' }
+  | { type: 'inherit' }
+  | { type: 'bearer'; token: string }
+  | { type: 'basic'; username: string; password: string }
+  | { type: 'api-key'; key: string; value: string; addTo: 'header' | 'query' | 'cookie' }
+  | { type: 'custom-header'; key: string; value: string }
+  | OAuth2ClientCredentialsAuth
+  | OAuth2AuthCodeAuth
+  | OAuth2PkceAuth
+  | OAuth2PasswordAuth
+  | OAuth2ImplicitAuth
+  | OAuth2DeviceAuth
+  | AwsSigV4Auth
+  | DigestAuth
+  | NtlmAuth
+  | HawkAuth
+  | JwtBearerAuth;
+
+export interface OAuth2TokenState {
+  accessToken: string;
+  tokenType: string; // 'Bearer' by default
+  refreshToken: string;
+  expiresAt: string | null; // ISO timestamp; null if unknown
+}
+
+export interface OAuth2ClientCredentialsAuth extends OAuth2TokenState {
+  type: 'oauth2-client-credentials';
+  tokenUrl: string;
+  clientId: string;
+  clientSecret: string;
+  scope: string;
+  clientAuthMethod: 'header' | 'body';
+}
+
+export interface OAuth2AuthCodeAuth extends OAuth2TokenState {
+  type: 'oauth2-auth-code';
+  authUrl: string;
+  tokenUrl: string;
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  scope: string;
+  state: string;
+}
+
+export interface OAuth2PkceAuth extends OAuth2TokenState {
+  type: 'oauth2-pkce';
+  authUrl: string;
+  tokenUrl: string;
+  clientId: string;
+  clientSecret: string; // optional public client when blank
+  redirectUri: string;
+  scope: string;
+  state: string;
+  codeVerifier: string;
+  codeChallengeMethod: 'S256' | 'plain';
+}
+
+export interface OAuth2PasswordAuth extends OAuth2TokenState {
+  type: 'oauth2-password';
+  tokenUrl: string;
+  clientId: string;
+  clientSecret: string;
+  username: string;
+  password: string;
+  scope: string;
+}
+
+export interface OAuth2ImplicitAuth extends Omit<OAuth2TokenState, 'refreshToken'> {
+  type: 'oauth2-implicit';
+  authUrl: string;
+  clientId: string;
+  redirectUri: string;
+  scope: string;
+}
+
+export interface OAuth2DeviceAuth extends OAuth2TokenState {
+  type: 'oauth2-device';
+  deviceAuthUrl: string;
+  tokenUrl: string;
+  clientId: string;
+  scope: string;
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+}
+
+export interface AwsSigV4Auth {
+  type: 'aws-sigv4';
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken: string;
+  region: string;
+  service: string;
+  addTo: 'header' | 'query';
+}
+
+export interface DigestAuth {
+  type: 'digest';
+  username: string;
+  password: string;
+}
+
+export interface NtlmAuth {
+  type: 'ntlm';
+  username: string;
+  password: string;
+  domain: string;
+  workstation: string;
+}
+
+export interface HawkAuth {
+  type: 'hawk';
+  hawkId: string;
+  hawkKey: string;
+  algorithm: 'sha256' | 'sha1';
+  ext: string;
+}
+
+export interface JwtBearerAuth {
+  type: 'jwt-bearer';
+  algorithm: 'HS256' | 'HS384' | 'HS512' | 'RS256' | 'RS384' | 'RS512' | 'ES256';
+  secretOrKey: string;
+  payload: string; // JSON
+  jwtHeaders: string; // JSON
+  // Pre-computed token. UI fills this on demand via the "Generate token"
+  // button; HS algorithms sign locally, RS/ES require user-supplied PEM.
+  token: string;
 }
 
 // Body content. For text-shaped types (json/text/xml/graphql/urlencoded)
@@ -116,6 +327,10 @@ export interface RequestBody {
   content: string;
   formRows?: FormDataRow[];
   attachment?: AttachmentRef;
+  // GraphQL-only: the user-supplied variables JSON. Sent alongside the
+  // query in the standard `{ query, variables }` envelope. Empty / missing
+  // means no variables. Pre-P19 docs simply lack the field.
+  variables?: string;
 }
 
 export type FormDataRow =
@@ -240,6 +455,16 @@ export interface WorkspaceLocal {
   // shouldn't carry the source's whole tree — it's a materialization of
   // intent, not intent itself. Keyed by linkedWorkspace.id.
   linkedCollections: Record<string, LinkedSnapshot>;
+  // Local-only workspace-wide context. Populated by the post-run
+  // extractions defined on each request. Latest write wins. Survives
+  // reload (it's persisted in IDB) but never round-trips through Git.
+  // Surfaced into `ResolutionScope.contextVars` as a fallback layer
+  // sitting between per-request context and the active environment.
+  globalContext: Record<string, string>;
+  // Per-host mock-server runtime status. Maps mockServerId → live port /
+  // pid / counters when running. Cleared on app shutdown — restart re-
+  // populates as the user starts mocks.
+  mockRuntime: MockRuntime;
   // No `activePanel` — top nav controls this and persists in localStorage so
   // it doesn't bloat the workspace doc.
   ui: {

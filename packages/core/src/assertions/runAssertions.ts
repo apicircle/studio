@@ -1,4 +1,4 @@
-import type { Assertion } from '@apicircle-v2/shared';
+import type { Assertion } from '@apicircle/shared';
 import type { ExecutionResult } from '../request/executeRequest';
 
 export interface AssertionResult {

@@ -4,11 +4,36 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
+import React from 'react';
 import { __resetAttachmentsForTests } from '../src/persistence/attachments';
 import { __resetDbForTests } from '../src/persistence/db';
 import { __resetSecretKeyForTests } from '../src/persistence/secretKey';
 import { __resetSecretsForTests } from '../src/persistence/secrets';
 import { useWorkspaceStore } from '../src/store/workspaceStore';
+
+// Monaco can't render in jsdom (no canvas, no IntersectionObserver, dynamic
+// import resolves to a stub). Replace `@monaco-editor/react` with a textarea
+// that mirrors the API contract our wrappers depend on (value, onChange,
+// readOnly, aria-label) so component tests can drive the editor as a normal
+// form field.
+vi.mock('@monaco-editor/react', () => {
+  const Editor = ({
+    value,
+    onChange,
+    options,
+  }: {
+    value?: string;
+    onChange?: (value: string | undefined) => void;
+    options?: { readOnly?: boolean };
+  }) =>
+    React.createElement('textarea', {
+      'data-testid': 'monaco-editor-mock',
+      value: value ?? '',
+      readOnly: options?.readOnly ?? false,
+      onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => onChange?.(e.target.value),
+    });
+  return { default: Editor };
+});
 
 // Snapshot the store's initial state on import. Action closures (which carry
 // references to the original `set`/`get`) come along, so resetting via

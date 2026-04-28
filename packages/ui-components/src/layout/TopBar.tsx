@@ -1,9 +1,11 @@
-import { KeyRound, Orbit } from 'lucide-react';
+import { BookOpen, KeyRound, Orbit } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { ThemePicker } from './ThemePicker';
+import { FontPicker } from './FontPicker';
 
 export function TopBar() {
   const openSecretVault = useWorkspaceStore((s) => s.openSecretVault);
+  const openGlobalAssets = useWorkspaceStore((s) => s.openGlobalAssets);
   const workspaceName = useWorkspaceStore((s) => s.synced?.workspaceName ?? '');
 
   return (
@@ -26,9 +28,21 @@ export function TopBar() {
           <KeyRound size={14} />
           Secret Vault
         </button>
+        <button
+          type="button"
+          onClick={openGlobalAssets}
+          className="inline-flex h-8 items-center gap-2 rounded-sm border border-border bg-surface px-2.5 text-xs text-text-muted transition-colors hover:border-border-strong hover:text-text-primary"
+          aria-label="Open Global Assets library"
+        >
+          <BookOpen size={14} />
+          Global Assets
+        </button>
       </div>
 
-      <ThemePicker />
+      <div className="flex items-center gap-2">
+        <FontPicker />
+        <ThemePicker />
+      </div>
     </div>
   );
 }

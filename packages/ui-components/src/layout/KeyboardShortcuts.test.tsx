@@ -35,12 +35,14 @@ describe('KeyboardShortcuts', () => {
     vi.restoreAllMocks();
   });
 
-  it('Ctrl+1..7 switches the active panel by side effect', () => {
+  it('Ctrl+1..9 switches the active panel by side effect', () => {
     pressKey({ key: '3', ctrl: true });
     expect(useWorkspaceStore.getState().activePanel).toBe('editor');
     pressKey({ key: '6', ctrl: true });
     expect(useWorkspaceStore.getState().activePanel).toBe('history');
     pressKey({ key: '7', ctrl: true });
+    expect(useWorkspaceStore.getState().activePanel).toBe('mocks');
+    pressKey({ key: '9', ctrl: true });
     expect(useWorkspaceStore.getState().activePanel).toBe('help');
   });
 

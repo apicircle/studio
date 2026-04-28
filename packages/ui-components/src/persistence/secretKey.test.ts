@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decryptString, encryptString } from '@apicircle-v2/core';
+import { decryptString, encryptString } from '@apicircle/core';
 import { __resetSecretKeyForTests, getMasterKey } from './secretKey';
 
 describe('master secret key', () => {

@@ -119,3 +119,66 @@ export function buildScope(args: {
     secrets: args.secrets ?? {},
   };
 }
+
+// --- Autocomplete ------------------------------------------------------
+
+export type VariableSource = 'context' | 'active-env' | 'priority-env' | 'secret';
+
+export interface VariableSuggestion {
+  key: string;
+  source: VariableSource;
+  /** Display-only — secrets always show as the placeholder string. */
+  preview: string;
+}
+
+const SECRET_PREVIEW = '••••';
+
+/**
+ * Walk a ResolutionScope in precedence order and produce one suggestion
+ * per unique key. Used by the editor's `{{` autocomplete and Monaco's
+ * completion provider.
+ */
+export function collectVariableSuggestions(scope: ResolutionScope): VariableSuggestion[] {
+  const seen = new Map<string, VariableSuggestion>();
+  const push = (key: string, source: VariableSource, preview: string) => {
+    if (!seen.has(key)) seen.set(key, { key, source, preview });
+  };
+  for (const [k, v] of Object.entries(scope.contextVars)) {
+    push(k, 'context', v);
+  }
+  for (const [k, v] of Object.entries(scope.activeEnv)) {
+    push(k, 'active-env', v);
+  }
+  for (const env of scope.priorityEnvs) {
+    for (const [k, v] of Object.entries(env)) {
+      push(k, 'priority-env', v);
+    }
+  }
+  for (const k of Object.keys(scope.secrets)) {
+    push(k, 'secret', SECRET_PREVIEW);
+  }
+  return [...seen.values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/**
+ * Suggestions to show given a cursor position inside a text field. Returns
+ * `null` when the cursor isn't inside an open `{{ … }}` token, so callers
+ * can hide the popup. When inside a token, returns matches filtered by the
+ * partial token text.
+ */
+export function getVariableAutocomplete(
+  text: string,
+  cursorPosition: number,
+  scope: ResolutionScope,
+): VariableSuggestion[] | null {
+  const before = text.slice(0, cursorPosition);
+  const openIdx = before.lastIndexOf('{{');
+  if (openIdx === -1) return null;
+  const fragment = before.slice(openIdx + 2);
+  // If the user already closed the token, don't suggest anymore.
+  if (fragment.includes('}}')) return null;
+  const query = fragment.trim().toLowerCase();
+  return collectVariableSuggestions(scope).filter((s) =>
+    query.length === 0 ? true : s.key.toLowerCase().includes(query),
+  );
+}

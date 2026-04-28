@@ -1,4 +1,4 @@
-import type { SecretEntry, WorkspaceLocal } from '@apicircle-v2/shared';
+import type { SecretEntry, WorkspaceLocal } from '@apicircle/shared';
 
 // Pure reducers for the cross-workspace Secret Vault index. The encrypted
 // payload itself lives in the secrets IDB store (see persistence/secrets.ts);

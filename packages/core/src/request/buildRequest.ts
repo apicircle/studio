@@ -1,4 +1,5 @@
-import type { Request as ApiRequest } from '@apicircle-v2/shared';
+import type { Request as ApiRequest } from '@apicircle/shared';
+import { applyAuth } from './applyAuth';
 
 export interface BuiltRequest {
   url: string;
@@ -79,13 +80,27 @@ export async function composeBody(
 ): Promise<BodyInit | null> {
   if (body.type === 'none') return null;
 
-  if (
-    body.type === 'json' ||
-    body.type === 'text' ||
-    body.type === 'xml' ||
-    body.type === 'graphql'
-  ) {
+  if (body.type === 'json' || body.type === 'text' || body.type === 'xml') {
     return body.content;
+  }
+
+  if (body.type === 'graphql') {
+    // Standard GraphQL-over-HTTP envelope: `{ "query": string, "variables": object|null }`.
+    // The variables pane in the editor is plain JSON; if it doesn't parse,
+    // we send `null` so the server reports the parse error rather than the
+    // request silently failing on our side.
+    let variables: unknown = undefined;
+    if (body.variables && body.variables.trim().length > 0) {
+      try {
+        variables = JSON.parse(body.variables);
+      } catch {
+        variables = null;
+      }
+    }
+    return JSON.stringify({
+      query: body.content,
+      ...(variables !== undefined ? { variables } : {}),
+    });
   }
 
   if (body.type === 'urlencoded') {
@@ -138,10 +153,22 @@ export async function buildRequest(
     req.body.type === 'form-data' || req.body.type === 'binary'
       ? stripContentType(headers)
       : headers;
+  const url = composeUrl(req.url, req.query);
+  const body = await composeBody(req.body, resolveAttachment);
+
+  // Auth runs last — schemes like AWS SigV4 read the final URL + headers +
+  // body to compute their signature. Older synced docs may lack `auth`;
+  // workspace store hydration normalises it, but be defensive here too.
+  const auth = req.auth ?? { type: 'none' };
+  const applied = await applyAuth(
+    { url, method: req.method, headers: sanitizedHeaders, body },
+    auth,
+  );
+
   return {
-    url: composeUrl(req.url, req.query),
+    url: applied.url,
     method: req.method,
-    headers: sanitizedHeaders,
-    body: await composeBody(req.body, resolveAttachment),
+    headers: applied.headers,
+    body,
   };
 }

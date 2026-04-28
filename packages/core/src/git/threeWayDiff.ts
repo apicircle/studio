@@ -1,4 +1,4 @@
-import type { WorkspaceSynced } from '@apicircle-v2/shared';
+import type { WorkspaceSynced } from '@apicircle/shared';
 
 // 3-way diff for the refresh / pull flow (plan §3.5). The "base" is the
 // snapshot from the last successful pull, captured in

@@ -1,12 +1,14 @@
 import type {
   Assertion,
+  ContextExtraction,
   Folder,
   HttpMethod,
   Request as ApiRequest,
+  RequestAuth,
   RequestBody,
   WorkspaceSynced,
-} from '@apicircle-v2/shared';
-import { generateId } from '@apicircle-v2/shared';
+} from '@apicircle/shared';
+import { generateId } from '@apicircle/shared';
 
 // Pure helpers — no IDB / Zustand dependencies. Each returns a new
 // `WorkspaceSynced` snapshot so callers can wrap them in a single store
@@ -23,7 +25,9 @@ export function createRequest(parentFolderId: string | null): ApiRequest {
     headers: [],
     query: [],
     body: { type: 'none', content: '' },
+    auth: { type: 'none' },
     contextVars: [],
+    extractions: [],
     assertions: [],
     createdAt: now,
     updatedAt: now,
@@ -134,6 +138,46 @@ export function setRequestBody(
   body: RequestBody,
 ): WorkspaceSynced {
   return updateRequest(synced, id, { body });
+}
+
+export function setRequestAuth(
+  synced: WorkspaceSynced,
+  id: string,
+  auth: RequestAuth,
+): WorkspaceSynced {
+  return updateRequest(synced, id, { auth });
+}
+
+export function setRequestExtractions(
+  synced: WorkspaceSynced,
+  id: string,
+  extractions: ContextExtraction[],
+): WorkspaceSynced {
+  return updateRequest(synced, id, { extractions });
+}
+
+export function setRequestContextVars(
+  synced: WorkspaceSynced,
+  id: string,
+  contextVars: ApiRequest['contextVars'],
+): WorkspaceSynced {
+  return updateRequest(synced, id, { contextVars });
+}
+
+export function setRequestBodySchemaId(
+  synced: WorkspaceSynced,
+  id: string,
+  bodySchemaId: string | null,
+): WorkspaceSynced {
+  return updateRequest(synced, id, { bodySchemaId });
+}
+
+export function setRequestGraphqlSchemaId(
+  synced: WorkspaceSynced,
+  id: string,
+  graphqlSchemaId: string | null,
+): WorkspaceSynced {
+  return updateRequest(synced, id, { graphqlSchemaId });
 }
 
 /**

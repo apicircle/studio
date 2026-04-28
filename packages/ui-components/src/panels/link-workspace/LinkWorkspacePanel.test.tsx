@@ -1,7 +1,7 @@
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { LinkedWorkspace, ReleaseHistory, WorkspaceLocal } from '@apicircle-v2/shared';
+import type { LinkedWorkspace, ReleaseHistory, WorkspaceLocal } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { LinkWorkspacePanel } from './LinkWorkspacePanel';
 

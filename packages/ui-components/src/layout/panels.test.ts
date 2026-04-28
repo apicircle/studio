@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { PANELS, getPanel } from './panels';
 
 describe('panels registry', () => {
-  it('lists exactly 7 panels in the agreed order', () => {
+  it('lists the agreed panel set in the agreed order', () => {
+    // Workspace / Link Workspace / Editor / Env / Execution / History — the
+    // P1 navigation bones. Mocks + MCP are P27 additions; Help Center stays
+    // last as the catch-all reference panel.
     expect(PANELS.map((p) => p.id)).toEqual([
       'workspace',
       'link-workspace',
@@ -10,13 +13,15 @@ describe('panels registry', () => {
       'env',
       'execution',
       'history',
+      'mocks',
+      'mcp',
       'help',
     ]);
   });
 
-  it('only Help Center has hasSidebar=false', () => {
+  it('Mocks, MCP, and Help Center have hasSidebar=false', () => {
     const noSidebar = PANELS.filter((p) => !p.hasSidebar).map((p) => p.id);
-    expect(noSidebar).toEqual(['help']);
+    expect(noSidebar).toEqual(['mocks', 'mcp', 'help']);
   });
 
   it('getPanel returns the matching def', () => {

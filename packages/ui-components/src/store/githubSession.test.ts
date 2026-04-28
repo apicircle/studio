@@ -4,7 +4,7 @@ import { useWorkspaceStore } from './workspaceStore';
 
 // Tests for the GitHub session store actions. We mock global fetch with
 // canned GitHub-shaped responses so the tests run against the real client
-// in @apicircle-v2/git without hitting the network.
+// in @apicircle/git without hitting the network.
 
 interface MockResponseSpec {
   body: unknown;

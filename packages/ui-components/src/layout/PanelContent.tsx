@@ -5,6 +5,8 @@ import { EditorPanel } from '../panels/editor/EditorPanel';
 import { EnvironmentsPanel } from '../panels/env/EnvironmentsPanel';
 import { ExecutionPanel } from '../panels/execution/ExecutionPanel';
 import { HistoryPanel } from '../panels/history/HistoryPanel';
+import { MockServersPanel } from '../panels/mocks/MockServersPanel';
+import { McpServerPanel } from '../panels/mcp/McpServerPanel';
 import { HelpPanel } from '../panels/help/HelpPanel';
 
 export function PanelContent() {
@@ -18,6 +20,8 @@ export function PanelContent() {
       {activePanel === 'env' && <EnvironmentsPanel />}
       {activePanel === 'execution' && <ExecutionPanel />}
       {activePanel === 'history' && <HistoryPanel />}
+      {activePanel === 'mocks' && <MockServersPanel />}
+      {activePanel === 'mcp' && <McpServerPanel />}
       {activePanel === 'help' && <HelpPanel />}
     </main>
   );

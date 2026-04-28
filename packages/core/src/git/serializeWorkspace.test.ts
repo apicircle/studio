@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { WorkspaceSynced } from '@apicircle-v2/shared';
+import type { WorkspaceSynced } from '@apicircle/shared';
 import { serializeWorkspaceForGit } from './serializeWorkspace';
 
 const empty: WorkspaceSynced = {
@@ -14,6 +14,8 @@ const empty: WorkspaceSynced = {
   environments: { items: {}, activeName: null, priorityOrder: [] },
   linkedWorkspaces: {},
   releases: { self: null, perLink: {} },
+  globalAssets: { schemas: {}, graphql: {} },
+  mockServers: {},
   meta: {
     createdAt: '2026-04-27T00:00:00.000Z',
     updatedAt: '2026-04-27T00:00:00.000Z',
@@ -32,6 +34,8 @@ describe('serializeWorkspaceForGit', () => {
     const reordered: WorkspaceSynced = {
       meta: empty.meta,
       releases: empty.releases,
+      globalAssets: empty.globalAssets,
+      mockServers: empty.mockServers,
       linkedWorkspaces: empty.linkedWorkspaces,
       environments: empty.environments,
       collections: empty.collections,
@@ -79,7 +83,9 @@ describe('serializeWorkspaceForGit', () => {
             headers: [],
             query: [],
             body: { type: 'none', content: '' },
+            auth: { type: 'none' },
             contextVars: [],
+            extractions: [],
             assertions: [],
             createdAt: '2026-04-27T00:00:00.000Z',
             updatedAt: '2026-04-27T00:00:00.000Z',

@@ -1,7 +1,13 @@
-import type { BodyType, Request as ApiRequest, RequestBody } from '@apicircle-v2/shared';
-import { applyContentTypeForBodyType } from '@apicircle-v2/core';
+import { useState } from 'react';
+import { Maximize2 } from 'lucide-react';
+import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
+import type { BodyType, Request as ApiRequest, RequestBody } from '@apicircle/shared';
+import { applyContentTypeForBodyType } from '@apicircle/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
+import { FullscreenOverlay } from '../../primitives/FullscreenOverlay';
+import { MonacoBodyEditor } from '../../editors/MonacoBodyEditor';
+import { MonacoEditorBase } from '../../editors/MonacoEditorBase';
 import { FormDataEditor } from './FormDataEditor';
 import { BinaryEditor } from './BinaryEditor';
 
@@ -20,25 +26,19 @@ const BODY_TYPES: Array<{ id: BodyType; label: string }> = [
   { id: 'binary', label: 'binary' },
 ];
 
-const PLACEHOLDER: Record<BodyType, string> = {
-  none: '',
-  json: '{\n  "key": "value"\n}',
-  text: 'Plain text body',
-  xml: '<root>\n  <key>value</key>\n</root>',
-  urlencoded: 'key=value\nanother=value',
-  'form-data': '',
-  graphql: 'query {\n  user(id: 1) { name }\n}',
-  binary: '',
-};
+function findContentType(headers: ApiRequest['headers']): string | undefined {
+  const entry = headers.find((h) => h.enabled && h.key.trim().toLowerCase() === 'content-type');
+  return entry?.value || undefined;
+}
 
 export function BodyTab({ request }: BodyTabProps) {
   const setRequestBody = useWorkspaceStore((s) => s.setRequestBody);
   const setRequestHeaders = useWorkspaceStore((s) => s.setRequestHeaders);
   const detachBinaryFile = useWorkspaceStore((s) => s.detachBinaryFile);
+  const [fullscreen, setFullscreen] = useState(false);
 
   const onChangeType = (next: BodyType) => {
     if (next === request.body.type) return;
-    // When leaving binary, clean up any held attachment.
     if (request.body.type === 'binary' && request.body.attachment?.slotId) {
       void detachBinaryFile(request.id);
     }
@@ -49,14 +49,10 @@ export function BodyTab({ request }: BodyTabProps) {
     } else if (next === 'binary') {
       nextBody = { type: 'binary', content: '', attachment: request.body.attachment };
     } else {
-      // Text-shaped types share the `content` field. Carry it across so users
-      // don't lose their JSON when they accidentally toggle to text and back.
       nextBody = { type: next, content: request.body.content };
     }
     setRequestBody(request.id, nextBody);
 
-    // Sync Content-Type header to match the new body type. The reverse sync
-    // (header edit → body type) lives in HeadersTab via a future hook.
     const updated = applyContentTypeForBodyType(request.headers, next);
     setRequestHeaders(request.id, updated);
   };
@@ -65,26 +61,100 @@ export function BodyTab({ request }: BodyTabProps) {
     setRequestBody(request.id, { ...request.body, content });
   };
 
+  const showMonaco =
+    request.body.type !== 'none' &&
+    request.body.type !== 'form-data' &&
+    request.body.type !== 'binary';
+
+  const contentType = findContentType(request.headers);
+  const editorAriaLabel = 'Request body';
+
+  const isGraphQL = request.body.type === 'graphql';
+  const queryEditor = showMonaco ? (
+    <MonacoBodyEditor
+      value={request.body.content}
+      bodyType={request.body.type}
+      contentType={contentType}
+      onChange={onChangeContent}
+      modelPath={`inmemory://apicircle/request/${request.id}.body`}
+      ariaLabel={isGraphQL ? 'GraphQL query' : editorAriaLabel}
+      height="100%"
+      minHeight={120}
+      request={request}
+    />
+  ) : null;
+
+  const onChangeVariables = (vars: string) => {
+    setRequestBody(request.id, { ...request.body, variables: vars });
+  };
+
+  const editorElement = isGraphQL ? (
+    <PanelGroup direction="vertical" autoSaveId={`apicircle:graphql:${request.id}`}>
+      <Panel defaultSize={70} minSize={20}>
+        <div className="h-full w-full">{queryEditor}</div>
+      </Panel>
+      <PanelResizeHandle
+        aria-label="Resize GraphQL query and variables"
+        className="group flex h-1.5 cursor-row-resize items-center justify-center border-y border-border-subtle bg-surface hover:bg-accent/20"
+      >
+        <span className="h-0.5 w-8 rounded-full bg-border group-hover:bg-accent" />
+      </PanelResizeHandle>
+      <Panel defaultSize={30} minSize={15}>
+        <div className="flex h-full w-full flex-col">
+          <span className="px-2 py-1 text-[11px] uppercase tracking-wide text-text-dim">
+            Variables (JSON)
+          </span>
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <MonacoEditorBase
+              value={request.body.variables ?? ''}
+              language="json"
+              onChange={onChangeVariables}
+              ariaLabel="GraphQL variables"
+              height="100%"
+              modelPath={`inmemory://apicircle/request/${request.id}.gql-vars`}
+            />
+          </div>
+        </div>
+      </Panel>
+    </PanelGroup>
+  ) : (
+    queryEditor
+  );
+
   return (
-    <div className="flex flex-col gap-2">
-      <div role="radiogroup" aria-label="Body type" className="flex flex-wrap gap-1">
-        {BODY_TYPES.map((bt) => (
+    <div className="flex h-full flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <div role="radiogroup" aria-label="Body type" className="flex flex-wrap gap-1">
+          {BODY_TYPES.map((bt) => (
+            <button
+              key={bt.id}
+              type="button"
+              role="radio"
+              aria-checked={request.body.type === bt.id}
+              onClick={() => onChangeType(bt.id)}
+              className={cn(
+                'inline-flex h-6 items-center rounded-sm border px-2 text-[11px] transition-colors',
+                request.body.type === bt.id
+                  ? 'border-accent/40 bg-accent/10 text-accent'
+                  : 'border-border bg-surface text-text-muted hover:text-text-primary',
+              )}
+            >
+              {bt.label}
+            </button>
+          ))}
+        </div>
+
+        {showMonaco && (
           <button
-            key={bt.id}
             type="button"
-            role="radio"
-            aria-checked={request.body.type === bt.id}
-            onClick={() => onChangeType(bt.id)}
-            className={cn(
-              'inline-flex h-6 items-center rounded-sm border px-2 text-[11px] transition-colors',
-              request.body.type === bt.id
-                ? 'border-accent/40 bg-accent/10 text-accent'
-                : 'border-border bg-surface text-text-muted hover:text-text-primary',
-            )}
+            onClick={() => setFullscreen(true)}
+            aria-label="Fullscreen request body"
+            title="Fullscreen (Esc to exit)"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-sm border border-border bg-surface text-text-muted hover:text-text-primary"
           >
-            {bt.label}
+            <Maximize2 size={12} />
           </button>
-        ))}
+        )}
       </div>
 
       {request.body.type === 'none' && (
@@ -97,18 +167,102 @@ export function BodyTab({ request }: BodyTabProps) {
 
       {request.body.type === 'binary' && <BinaryEditor request={request} />}
 
-      {request.body.type !== 'none' &&
-        request.body.type !== 'form-data' &&
-        request.body.type !== 'binary' && (
-          <textarea
-            value={request.body.content}
-            onChange={(e) => onChangeContent(e.target.value)}
-            placeholder={PLACEHOLDER[request.body.type]}
-            aria-label="Request body"
-            className="min-h-[160px] w-full rounded-sm border border-border bg-card p-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
-            spellCheck={false}
-          />
-        )}
+      {showMonaco && !fullscreen && (
+        <div className="flex min-h-0 flex-1 overflow-hidden rounded-sm border border-border">
+          {editorElement}
+        </div>
+      )}
+
+      <FullscreenOverlay
+        open={fullscreen && showMonaco}
+        onClose={() => setFullscreen(false)}
+        title={`Request body — ${request.name || 'Untitled'}`}
+      >
+        <div className="h-full w-full">{editorElement}</div>
+      </FullscreenOverlay>
+
+      {request.body.type === 'json' && <JsonSchemaPicker request={request} />}
+      {request.body.type === 'graphql' && <GraphqlSchemaPicker request={request} />}
+    </div>
+  );
+}
+
+function JsonSchemaPicker({ request }: { request: ApiRequest }) {
+  const schemas = useWorkspaceStore((s) =>
+    s.synced ? Object.values(s.synced.globalAssets.schemas) : [],
+  );
+  const setRequestBodySchemaId = useWorkspaceStore((s) => s.setRequestBodySchemaId);
+  const openGlobalAssets = useWorkspaceStore((s) => s.openGlobalAssets);
+
+  return (
+    <div className="flex items-center gap-2">
+      <label
+        className="text-[11px] uppercase tracking-wide text-text-dim"
+        htmlFor={`schema-${request.id}`}
+      >
+        Validate against
+      </label>
+      <select
+        id={`schema-${request.id}`}
+        aria-label="JSON schema"
+        value={request.bodySchemaId ?? ''}
+        onChange={(e) => setRequestBodySchemaId(request.id, e.target.value || null)}
+        className="h-7 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+      >
+        <option value="">No schema</option>
+        {schemas.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={openGlobalAssets}
+        className="text-[11px] text-text-muted hover:text-accent"
+      >
+        Manage…
+      </button>
+    </div>
+  );
+}
+
+function GraphqlSchemaPicker({ request }: { request: ApiRequest }) {
+  const schemas = useWorkspaceStore((s) =>
+    s.synced ? Object.values(s.synced.globalAssets.graphql) : [],
+  );
+  const setRequestGraphqlSchemaId = useWorkspaceStore((s) => s.setRequestGraphqlSchemaId);
+  const openGlobalAssets = useWorkspaceStore((s) => s.openGlobalAssets);
+
+  return (
+    <div className="flex items-center gap-2">
+      <label
+        className="text-[11px] uppercase tracking-wide text-text-dim"
+        htmlFor={`gql-${request.id}`}
+      >
+        GraphQL schema
+      </label>
+      <select
+        id={`gql-${request.id}`}
+        aria-label="GraphQL schema"
+        value={request.graphqlSchemaId ?? ''}
+        onChange={(e) => setRequestGraphqlSchemaId(request.id, e.target.value || null)}
+        className="h-7 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+      >
+        <option value="">No schema</option>
+        {schemas.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={openGlobalAssets}
+        className="text-[11px] text-text-muted hover:text-accent"
+      >
+        Manage…
+      </button>
     </div>
   );
 }

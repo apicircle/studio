@@ -16,7 +16,7 @@ the studio against the local mock server. Plan §10.1.
 
 ```sh
 # In one terminal: start the mock backend
-pnpm --filter @apicircle-v2/mock-server start
+pnpm --filter @apicircle/example-mock-server start
 
 # In another terminal: start the web app
 pnpm dev:web

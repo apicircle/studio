@@ -1,6 +1,7 @@
-import type { Request as ApiRequest } from '@apicircle-v2/shared';
-import { suggestHeaders } from '@apicircle-v2/core';
+import type { Request as ApiRequest } from '@apicircle/shared';
+import { suggestHeaders } from '@apicircle/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { useVariableScope } from '../../editors/useVariableScope';
 import { KeyValueRows } from './KeyValueRows';
 
 interface HeadersTabProps {
@@ -9,6 +10,7 @@ interface HeadersTabProps {
 
 export function HeadersTab({ request }: HeadersTabProps) {
   const setRequestHeaders = useWorkspaceStore((s) => s.setRequestHeaders);
+  const scope = useVariableScope(request);
 
   return (
     <KeyValueRows
@@ -20,6 +22,7 @@ export function HeadersTab({ request }: HeadersTabProps) {
       keySuggestions={(prefix) =>
         suggestHeaders(prefix, 30).map((h) => ({ name: h.name, description: h.description }))
       }
+      valueScope={scope}
     />
   );
 }

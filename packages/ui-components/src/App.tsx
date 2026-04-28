@@ -7,6 +7,8 @@ import { PanelContent } from './layout/PanelContent';
 import { SecretVaultModal } from './layout/SecretVaultModal';
 import { MissingScopeGate } from './layout/MissingScopeGate';
 import { KeyboardShortcuts } from './layout/KeyboardShortcuts';
+import { GlobalAssetsPanel } from './panels/globalAssets/GlobalAssetsPanel';
+import { LinkedRequestEditor } from './panels/link-workspace/LinkedRequestEditor';
 
 export function App() {
   const ready = useWorkspaceStore((s) => s.ready);
@@ -33,6 +35,8 @@ export function App() {
         <PanelContent />
       </div>
       <SecretVaultModal />
+      <GlobalAssetsPanel />
+      <LinkedRequestEditor />
       <MissingScopeGate />
       <KeyboardShortcuts />
     </div>
