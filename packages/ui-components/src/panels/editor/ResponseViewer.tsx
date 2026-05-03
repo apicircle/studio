@@ -1,14 +1,27 @@
 import type { ExecutionResult } from '@apicircle/core';
-import type { RequestRun } from '@apicircle/shared';
 import { useState } from 'react';
 import { CheckCircle2, Maximize2, XCircle } from 'lucide-react';
 import { cn } from '../../primitives/cn';
 import { FullscreenOverlay } from '../../primitives/FullscreenOverlay';
 import { MonacoResponseViewer } from '../../editors/MonacoResponseViewer';
+import { ResponseSizeHint } from './ResponseSizeHint';
+
+/**
+ * Minimal assertion shape ResponseViewer needs to render. Both
+ * `RequestRun.assertions[]` (persisted, snapshotted) and `AssertionResult[]`
+ * (live, returned from `runAssertions`) satisfy this — we don't need the
+ * extra fields here, so a thin contract keeps callers from feeling
+ * coupled to the persisted shape.
+ */
+export interface ResponseAssertion {
+  assertionId: string;
+  passed: boolean;
+  detail?: string;
+}
 
 interface ResponseViewerProps {
   result: ExecutionResult | null;
-  lastRun: RequestRun | null;
+  assertions: readonly ResponseAssertion[];
   isExecuting: boolean;
 }
 
@@ -21,7 +34,7 @@ function findResponseContentType(headers: Record<string, string>): string | unde
   return undefined;
 }
 
-export function ResponseViewer({ result, lastRun, isExecuting }: ResponseViewerProps) {
+export function ResponseViewer({ result, assertions, isExecuting }: ResponseViewerProps) {
   const [tab, setTab] = useState<ResponseTab>('body');
   const [fullscreen, setFullscreen] = useState(false);
 
@@ -58,7 +71,7 @@ export function ResponseViewer({ result, lastRun, isExecuting }: ResponseViewerP
     />
   );
 
-  return (
+  const panelContent = (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b border-border-subtle px-3 py-2 text-xs">
         <span
@@ -70,24 +83,23 @@ export function ResponseViewer({ result, lastRun, isExecuting }: ResponseViewerP
           {result.error ? 'ERR' : `${result.status ?? '—'} ${result.statusText}`.trim()}
         </span>
         <span className="text-text-muted">{result.durationMs} ms</span>
+        <ResponseSizeHint body={result.body} contentType={responseContentType} />
         {result.error && (
           <span className="truncate text-danger" title={result.error}>
             {result.error}
           </span>
         )}
-        <div className="ml-auto">
-          {tab === 'body' && (
-            <button
-              type="button"
-              onClick={() => setFullscreen(true)}
-              aria-label="Fullscreen response body"
-              title="Fullscreen (Esc to exit)"
-              className="inline-flex h-6 w-6 items-center justify-center rounded-sm border border-border bg-surface text-text-muted hover:text-text-primary"
-            >
-              <Maximize2 size={12} />
-            </button>
-          )}
-        </div>
+        {!fullscreen && (
+          <button
+            type="button"
+            onClick={() => setFullscreen(true)}
+            aria-label="Fullscreen response panel"
+            title="Fullscreen (Esc to exit)"
+            className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded-sm border border-border bg-surface text-text-muted hover:text-text-primary"
+          >
+            <Maximize2 size={12} />
+          </button>
+        )}
       </div>
 
       <div className="flex border-b border-border-subtle px-2">
@@ -104,26 +116,15 @@ export function ResponseViewer({ result, lastRun, isExecuting }: ResponseViewerP
             )}
             aria-current={tab === t ? 'page' : undefined}
           >
-            {t === 'assertions' && lastRun
-              ? `Assertions (${lastRun.assertions.filter((a) => a.passed).length}/${lastRun.assertions.length})`
+            {t === 'assertions' && assertions.length > 0
+              ? `Assertions (${assertions.filter((a) => a.passed).length}/${assertions.length})`
               : t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
         ))}
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        {tab === 'body' && (
-          <div className="h-full w-full">
-            {!fullscreen && bodyEditor}
-            <FullscreenOverlay
-              open={fullscreen}
-              onClose={() => setFullscreen(false)}
-              title="Response body"
-            >
-              <div className="h-full w-full">{bodyEditor}</div>
-            </FullscreenOverlay>
-          </div>
-        )}
+        {tab === 'body' && <div className="h-full w-full">{bodyEditor}</div>}
         {tab === 'headers' && (
           <div className="h-full overflow-auto p-3">
             <table className="w-full font-mono text-[11px]">
@@ -141,10 +142,10 @@ export function ResponseViewer({ result, lastRun, isExecuting }: ResponseViewerP
         {tab === 'assertions' && (
           <div className="h-full overflow-auto p-3">
             <ul className="flex flex-col gap-1.5">
-              {(lastRun?.assertions ?? []).length === 0 && (
+              {assertions.length === 0 && (
                 <li className="text-xs text-text-dim">No assertions defined for this request.</li>
               )}
-              {lastRun?.assertions.map((a) => (
+              {assertions.map((a) => (
                 <li
                   key={a.assertionId}
                   className={cn(
@@ -167,5 +168,14 @@ export function ResponseViewer({ result, lastRun, isExecuting }: ResponseViewerP
         )}
       </div>
     </div>
+  );
+
+  return (
+    <>
+      {!fullscreen && panelContent}
+      <FullscreenOverlay open={fullscreen} onClose={() => setFullscreen(false)} title="Response">
+        <div className="h-full w-full">{panelContent}</div>
+      </FullscreenOverlay>
+    </>
   );
 }

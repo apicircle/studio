@@ -4,11 +4,50 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { PlanRun, RequestRun, WorkspaceLocal } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { HistoryPanel } from './HistoryPanel';
+import { HistorySidebar } from './HistorySidebar';
+
+/**
+ * The real layout puts `HistorySidebar` (filters, tabs, search, date range)
+ * in the global sidebar slot and `HistoryPanel` (run list + detail) in the
+ * main area. Tests render them together so the same DOM tree is exercised.
+ */
+function renderHistory() {
+  return render(
+    <div className="flex h-full">
+      <HistorySidebar />
+      <HistoryPanel />
+    </div>,
+  );
+}
 
 async function hydrate(): Promise<void> {
   await act(async () => {
     await useWorkspaceStore.getState().hydrate();
   });
+}
+
+/** Build a RequestRun fixture, defaulting the wire-detail fields the new
+ * History detail view reads. */
+function makeRun(overrides: Partial<RequestRun>): RequestRun {
+  return {
+    id: 'run',
+    requestId: 'req',
+    startedAt: '2026-04-27T12:00:00.000Z',
+    durationMs: 1,
+    status: 200,
+    statusText: 'OK',
+    ok: true,
+    url: 'https://api.example.com/x',
+    method: 'GET',
+    requestHeaders: {},
+    requestBodyPreview: null,
+    responseHeaders: {},
+    responseBodyPreview: '',
+    responseBodyKind: 'empty',
+    responseTruncated: false,
+    assertions: [],
+    ...overrides,
+  };
 }
 
 function seedHistory(args: {
@@ -18,10 +57,9 @@ function seedHistory(args: {
   planNames?: Record<string, string>;
 }): void {
   const local = useWorkspaceStore.getState().local!;
-  // Optionally seed requests so the History rows can resolve names.
   if (args.requestNames) {
     for (const [id, name] of Object.entries(args.requestNames)) {
-      const newId = useWorkspaceStore.getState().addRequest(null);
+      const newId = useWorkspaceStore.getState().addRequest(null, name);
       // Patch the request id so it matches the run record.
       const synced = useWorkspaceStore.getState().synced!;
       const req = synced.collections.requests[newId];
@@ -58,13 +96,13 @@ describe('HistoryPanel — empty states', () => {
   beforeEach(hydrate);
 
   it('renders the Requests empty hint by default', () => {
-    render(<HistoryPanel />);
+    renderHistory();
     expect(screen.getByText(/No request runs yet/)).toBeInTheDocument();
   });
 
   it('switches to the Plans tab and shows its empty hint', async () => {
-    render(<HistoryPanel />);
-    await userEvent.click(screen.getByRole('button', { name: /^Plans/ }));
+    renderHistory();
+    await userEvent.click(screen.getByRole('tab', { name: /^Plans/ }));
     expect(screen.getByText(/No plan runs yet/)).toBeInTheDocument();
   });
 });
@@ -76,39 +114,73 @@ describe('HistoryPanel — request rows', () => {
     seedHistory({
       requestNames: { 'req-known': 'Get user' },
       requestRuns: [
-        {
+        makeRun({
           id: 'run-1',
           requestId: 'req-known',
-          startedAt: '2026-04-27T12:00:00.000Z',
-          durationMs: 42,
+          method: 'GET',
           status: 200,
           ok: true,
+          durationMs: 42,
           assertions: [{ assertionId: 'a-1', passed: true }],
-        },
-        {
+        }),
+        makeRun({
           id: 'run-2',
           requestId: 'deleted-id',
-          startedAt: '2026-04-27T12:00:00.000Z',
-          durationMs: 99,
+          method: 'POST',
           status: 500,
           ok: false,
+          durationMs: 99,
+          statusText: 'Server Error',
           assertions: [
             { assertionId: 'a-1', passed: false },
             { assertionId: 'a-2', passed: true },
           ],
-        },
+        }),
       ],
     });
-    render(<HistoryPanel />);
+    renderHistory();
     expect(screen.getByText('Get user')).toBeInTheDocument();
-    // Deleted request renders as italic placeholder.
     expect(screen.getByText('deleted request')).toBeInTheDocument();
-    // Status codes appear.
     expect(screen.getByText('200')).toBeInTheDocument();
     expect(screen.getByText('500')).toBeInTheDocument();
-    // Assertion badges: 1/1 passes (success), 1/2 fails (warning).
     expect(screen.getByText('1/1')).toBeInTheDocument();
     expect(screen.getByText('1/2')).toBeInTheDocument();
+  });
+
+  it('clicking a row opens the inline detail block with request + response sections', async () => {
+    seedHistory({
+      requestNames: { 'req-known': 'Get user' },
+      requestRuns: [
+        makeRun({
+          id: 'run-1',
+          requestId: 'req-known',
+          status: 200,
+          ok: true,
+          url: 'https://api.example.com/users/42',
+          method: 'GET',
+          requestHeaders: { 'X-Auth': 'token' },
+          responseHeaders: { 'content-type': 'application/json' },
+          responseBodyPreview: '{"id":42}',
+          responseBodyKind: 'json',
+        }),
+      ],
+    });
+    renderHistory();
+    await userEvent.click(screen.getByText('Get user'));
+    expect(screen.getByText('https://api.example.com/users/42')).toBeInTheDocument();
+    expect(screen.getByText('Request')).toBeInTheDocument();
+    expect(screen.getByText('Response')).toBeInTheDocument();
+    // Request column still shows the captured request headers inline.
+    expect(screen.getByText('X-Auth')).toBeInTheDocument();
+    // Response side is now the same ResponseViewer used in the Editor —
+    // the body editor is loaded with the captured wire body, and response
+    // headers move behind the Headers tab.
+    const bodyEditor = within(screen.getByLabelText('Response body')).getByTestId(
+      'monaco-editor-mock',
+    );
+    expect(bodyEditor).toHaveValue('{\n  "id": 42\n}');
+    await userEvent.click(screen.getByRole('button', { name: /^Headers$/ }));
+    expect(screen.getByText('content-type')).toBeInTheDocument();
   });
 });
 
@@ -143,16 +215,16 @@ describe('HistoryPanel — plan rows', () => {
         },
       ],
     });
-    render(<HistoryPanel />);
-    await userEvent.click(screen.getByRole('button', { name: /^Plans/ }));
+    renderHistory();
+    await userEvent.click(screen.getByRole('tab', { name: /^Plans/ }));
 
     expect(screen.getByText('Smoke checks')).toBeInTheDocument();
     expect(screen.getByText('deleted plan')).toBeInTheDocument();
-    expect(screen.getByText('2/2')).toBeInTheDocument();
-    expect(screen.getByText('1/2')).toBeInTheDocument();
-    // The `assertions` tag only renders when withAssertions is true.
-    const assertionsTags = screen.getAllByText('assertions');
-    expect(assertionsTags).toHaveLength(1);
+    expect(screen.getByText('2/2 req')).toBeInTheDocument();
+    expect(screen.getByText('1/2 req')).toBeInTheDocument();
+    // Assertion-tally chip shows up only on runs launched with assertions.
+    // Test fixtures have no child assertion records, so the tally is 0/0.
+    expect(screen.getByText('0/0 ✓')).toBeInTheDocument();
   });
 });
 
@@ -163,31 +235,27 @@ describe('HistoryPanel — clear history', () => {
     seedHistory({
       requestNames: { 'r-keep': 'Keep me', 'r-drop': 'Drop me' },
       requestRuns: [
-        {
+        makeRun({
           id: 'run-keep',
           requestId: 'r-keep',
-          startedAt: '2026-04-27T12:00:00.000Z',
-          durationMs: 1,
+          method: 'GET',
           status: 200,
           ok: true,
-          assertions: [],
-        },
-        {
+        }),
+        makeRun({
           id: 'run-drop',
           requestId: 'r-drop',
-          startedAt: '2026-04-27T12:00:00.000Z',
-          durationMs: 1,
+          method: 'POST',
           status: 500,
           ok: false,
-          assertions: [],
-        },
+        }),
       ],
     });
   }
 
   it('per-row delete removes only that run', async () => {
     seedTwoRuns();
-    render(<HistoryPanel />);
+    renderHistory();
     const dropRow = screen.getByText('Drop me').closest('li');
     if (!dropRow) throw new Error('row not found');
     await userEvent.click(within(dropRow).getByRole('button', { name: /Delete request run/i }));
@@ -199,7 +267,7 @@ describe('HistoryPanel — clear history', () => {
 
   it('Clear all wipes every request run after confirmation', async () => {
     seedTwoRuns();
-    render(<HistoryPanel />);
+    renderHistory();
     await userEvent.click(screen.getByRole('button', { name: /^Clear all$/ }));
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
     expect(useWorkspaceStore.getState().local!.history.requestRuns).toEqual([]);
@@ -208,8 +276,8 @@ describe('HistoryPanel — clear history', () => {
 
   it('Clear matching wipes only filtered rows', async () => {
     seedTwoRuns();
-    render(<HistoryPanel />);
-    const filterInput = screen.getByLabelText('Filter history');
+    renderHistory();
+    const filterInput = screen.getByLabelText('Filter by search');
     await userEvent.type(filterInput, 'Drop');
     await userEvent.click(screen.getByRole('button', { name: /^Clear matching/ }));
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
@@ -218,8 +286,17 @@ describe('HistoryPanel — clear history', () => {
   });
 
   it('Clear button is disabled when there are no runs', () => {
-    render(<HistoryPanel />);
+    renderHistory();
     expect(screen.getByRole('button', { name: /^Clear all$/ })).toBeDisabled();
+  });
+
+  it('status filter chips narrow the list', async () => {
+    seedTwoRuns();
+    renderHistory();
+    // Click the 5xx chip — only the Drop me (500) row should remain visible.
+    await userEvent.click(screen.getByRole('button', { name: '5xx' }));
+    expect(screen.queryByText('Keep me')).not.toBeInTheDocument();
+    expect(screen.getByText('Drop me')).toBeInTheDocument();
   });
 });
 
@@ -228,17 +305,7 @@ describe('HistoryPanel — tab counters', () => {
 
   it('shows the run count next to each tab label', () => {
     seedHistory({
-      requestRuns: [
-        {
-          id: 'r',
-          requestId: 'x',
-          startedAt: 't',
-          durationMs: 1,
-          status: 200,
-          ok: true,
-          assertions: [],
-        },
-      ],
+      requestRuns: [makeRun({ id: 'r', requestId: 'x', method: 'GET', status: 200, ok: true })],
       planRuns: [
         {
           id: 'p',
@@ -250,8 +317,8 @@ describe('HistoryPanel — tab counters', () => {
         },
       ],
     });
-    render(<HistoryPanel />);
-    const tabs = screen.getAllByRole('button', { name: /^(Requests|Plans)/ });
+    renderHistory();
+    const tabs = screen.getAllByRole('tab');
     expect(within(tabs[0]).getByText('(1)')).toBeInTheDocument();
     expect(within(tabs[1]).getByText('(1)')).toBeInTheDocument();
   });

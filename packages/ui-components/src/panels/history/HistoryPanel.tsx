@@ -1,114 +1,119 @@
-import { useMemo, useState } from 'react';
-import { CheckCircle2, Layers, Send, Trash2, XCircle } from 'lucide-react';
+import { useMemo } from 'react';
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Download,
+  Layers,
+  Send,
+  Trash2,
+  XCircle,
+} from 'lucide-react';
 import type { PlanRun, RequestRun } from '@apicircle/shared';
-import { useWorkspaceStore } from '../../store/workspaceStore';
+import { requestRunToExecutionResult } from '@apicircle/core';
+import { useWorkspaceStore, type HistoryUiState } from '../../store/workspaceStore';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
+import { cn } from '../../primitives/cn';
+import { ResponseViewer } from '../editor/ResponseViewer';
+import { useState } from 'react';
 
-type Tab = 'requests' | 'plans';
+type StatusBucket = 'ok' | '4xx' | '5xx' | 'error';
+
+function isFilterActive(f: HistoryUiState): boolean {
+  return (
+    f.search.trim().length > 0 ||
+    f.statusBuckets.length > 0 ||
+    f.methods.length > 0 ||
+    f.fromDate !== null ||
+    f.toDate !== null
+  );
+}
+
+function bucketForStatus(run: RequestRun): StatusBucket {
+  if (run.status === null) return 'error';
+  if (run.status >= 500) return '5xx';
+  if (run.status >= 400) return '4xx';
+  return 'ok';
+}
 
 export function HistoryPanel() {
   const requestRuns = useWorkspaceStore((s) => s.local?.history.requestRuns ?? []);
   const planRuns = useWorkspaceStore((s) => s.local?.history.planRuns ?? []);
-  const [tab, setTab] = useState<Tab>('requests');
-  const [filter, setFilter] = useState('');
+  const requests = useWorkspaceStore((s) => s.synced?.collections.requests ?? {});
+  const plans = useWorkspaceStore((s) => s.local?.executionPlans ?? {});
+  const ui = useWorkspaceStore((s) => s.historyUi);
+  const setUi = useWorkspaceStore((s) => s.setHistoryUi);
+  const tab = ui.tab;
+  const selectedRunId = ui.selectedRunId;
+
+  const visibleRequestRuns = useMemo(
+    () => requestRuns.filter((r) => matchesRequestFilter(r, requests, ui)),
+    [ui, requests, requestRuns],
+  );
+  const visiblePlanRuns = useMemo(
+    () => planRuns.filter((r) => matchesPlanFilter(r, plans, ui)),
+    [ui, plans, planRuns],
+  );
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-surface">
-      <header className="flex items-center gap-3 border-b border-border-subtle px-6 py-3">
-        <h1 className="text-lg font-medium text-text-primary">History</h1>
-        <p className="text-[11px] text-text-dim">Local-only — never pushed to Git.</p>
-        <div className="ml-auto flex items-center gap-2">
-          <input
-            type="search"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter…"
-            aria-label="Filter history"
-            className="h-7 w-44 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
-          />
-        </div>
-      </header>
-      <div className="flex items-center border-b border-border-subtle px-6">
-        <TabButton active={tab === 'requests'} onClick={() => setTab('requests')}>
-          <Send size={11} aria-hidden="true" />
-          Requests <span className="ml-1 text-text-dim">({requestRuns.length})</span>
-        </TabButton>
-        <TabButton active={tab === 'plans'} onClick={() => setTab('plans')}>
-          <Layers size={11} aria-hidden="true" />
-          Plans <span className="ml-1 text-text-dim">({planRuns.length})</span>
-        </TabButton>
-        <div className="ml-auto py-2">
-          {tab === 'requests' && (
-            <ClearRequestsButton
-              hasFilter={filter.trim().length > 0}
-              runs={requestRuns}
-              filter={filter}
+    <div className="flex h-full overflow-hidden bg-surface">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex items-center gap-3 border-b border-border-subtle px-6 py-3">
+          <h1 className="text-lg font-medium text-text-primary">History</h1>
+          <p className="text-[11px] text-text-dim">Local-only — never pushed to Git.</p>
+          <div className="ml-auto">
+            {tab === 'requests' ? (
+              <ClearRequestsButton
+                hasFilter={isFilterActive(ui)}
+                runs={requestRuns}
+                visibleIds={visibleRequestRuns.map((r) => r.id)}
+              />
+            ) : (
+              <ClearPlansButton
+                hasFilter={isFilterActive(ui)}
+                runs={planRuns}
+                visibleIds={visiblePlanRuns.map((r) => r.id)}
+              />
+            )}
+          </div>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">
+          {tab === 'requests' ? (
+            <RequestRunList
+              runs={visibleRequestRuns}
+              totalCount={requestRuns.length}
+              filterActive={isFilterActive(ui)}
+              selectedRunId={selectedRunId}
+              onSelect={(id) => setUi({ selectedRunId: id === selectedRunId ? null : id })}
+            />
+          ) : (
+            <PlanRunList
+              runs={visiblePlanRuns}
+              totalCount={planRuns.length}
+              filterActive={isFilterActive(ui)}
             />
           )}
-          {tab === 'plans' && (
-            <ClearPlansButton
-              hasFilter={filter.trim().length > 0}
-              runs={planRuns}
-              filter={filter}
-            />
-          )}
         </div>
-      </div>
-      <div className="flex-1 overflow-y-auto p-6">
-        {tab === 'requests' ? (
-          <RequestRunList runs={requestRuns} filter={filter} />
-        ) : (
-          <PlanRunList runs={planRuns} filter={filter} />
-        )}
       </div>
     </div>
-  );
-}
-
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={
-        'inline-flex items-center gap-2 border-b-2 px-3 py-2 text-xs transition-colors ' +
-        (active
-          ? 'border-accent text-accent'
-          : 'border-transparent text-text-muted hover:text-text-primary')
-      }
-    >
-      {children}
-    </button>
   );
 }
 
 function ClearRequestsButton({
   hasFilter,
   runs,
-  filter,
+  visibleIds,
 }: {
   hasFilter: boolean;
   runs: readonly RequestRun[];
-  filter: string;
+  visibleIds: readonly string[];
 }) {
   const clearRequestRuns = useWorkspaceStore((s) => s.clearRequestRuns);
-  const requests = useWorkspaceStore((s) => s.synced?.collections.requests ?? {});
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const filteredCount = useMemo(
-    () => runs.filter((r) => matchesRequestFilter(r, requests, filter)).length,
-    [filter, requests, runs],
-  );
+  const visibleCount = visibleIds.length;
   const disabled = runs.length === 0;
-  const label = hasFilter ? `Clear matching (${filteredCount})` : 'Clear all';
+  const label = hasFilter ? `Clear matching (${visibleCount})` : 'Clear all';
   return (
     <>
       <button
@@ -125,14 +130,16 @@ function ClearRequestsButton({
         title="Clear request runs"
         description={
           hasFilter
-            ? `Delete ${filteredCount} request run${filteredCount === 1 ? '' : 's'} matching "${filter}"? This can't be undone.`
+            ? `Delete ${visibleCount} request run${visibleCount === 1 ? '' : 's'} matching the current filters? This can't be undone.`
             : `Delete all ${runs.length} request run${runs.length === 1 ? '' : 's'}? This can't be undone.`
         }
         confirmLabel="Clear"
         tone="danger"
         onConfirm={() => {
           if (hasFilter) {
-            clearRequestRuns((r) => !matchesRequestFilter(r, requests, filter));
+            const ids = new Set(visibleIds);
+            // clearRequestRuns predicate semantics: "true to keep".
+            clearRequestRuns((r) => !ids.has(r.id));
           } else {
             clearRequestRuns();
           }
@@ -147,21 +154,17 @@ function ClearRequestsButton({
 function ClearPlansButton({
   hasFilter,
   runs,
-  filter,
+  visibleIds,
 }: {
   hasFilter: boolean;
   runs: readonly PlanRun[];
-  filter: string;
+  visibleIds: readonly string[];
 }) {
   const clearPlanRuns = useWorkspaceStore((s) => s.clearPlanRuns);
-  const plans = useWorkspaceStore((s) => s.local?.executionPlans ?? {});
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const filteredCount = useMemo(
-    () => runs.filter((r) => matchesPlanFilter(r, plans, filter)).length,
-    [filter, plans, runs],
-  );
+  const visibleCount = visibleIds.length;
   const disabled = runs.length === 0;
-  const label = hasFilter ? `Clear matching (${filteredCount})` : 'Clear all';
+  const label = hasFilter ? `Clear matching (${visibleCount})` : 'Clear all';
   return (
     <>
       <button
@@ -178,14 +181,15 @@ function ClearPlansButton({
         title="Clear plan runs"
         description={
           hasFilter
-            ? `Delete ${filteredCount} plan run${filteredCount === 1 ? '' : 's'} matching "${filter}"? This can't be undone.`
+            ? `Delete ${visibleCount} plan run${visibleCount === 1 ? '' : 's'} matching the current filters? This can't be undone.`
             : `Delete all ${runs.length} plan run${runs.length === 1 ? '' : 's'}? This can't be undone.`
         }
         confirmLabel="Clear"
         tone="danger"
         onConfirm={() => {
           if (hasFilter) {
-            clearPlanRuns((r) => !matchesPlanFilter(r, plans, filter));
+            const ids = new Set(visibleIds);
+            clearPlanRuns((r) => !ids.has(r.id));
           } else {
             clearPlanRuns();
           }
@@ -200,35 +204,66 @@ function ClearPlansButton({
 function matchesRequestFilter(
   run: RequestRun,
   requests: Record<string, { name?: string; method?: string }>,
-  filter: string,
+  filter: HistoryUiState,
 ): boolean {
-  const q = filter.trim().toLowerCase();
-  if (!q) return true;
-  const r = requests[run.requestId];
-  const haystack = `${r?.name ?? ''} ${r?.method ?? ''} ${run.status ?? ''}`.toLowerCase();
-  return haystack.includes(q);
+  const q = filter.search.trim().toLowerCase();
+  if (q) {
+    const r = requests[run.requestId];
+    const haystack = `${r?.name ?? ''} ${run.method} ${run.status ?? ''} ${run.url}`.toLowerCase();
+    if (!haystack.includes(q)) return false;
+  }
+  if (filter.statusBuckets.length > 0 && !filter.statusBuckets.includes(bucketForStatus(run)))
+    return false;
+  if (filter.methods.length > 0 && !filter.methods.includes(run.method)) return false;
+  if (!matchesDateRange(run.startedAt, filter)) return false;
+  return true;
 }
 
 function matchesPlanFilter(
   run: PlanRun,
   plans: Record<string, { name?: string }>,
-  filter: string,
+  filter: HistoryUiState,
 ): boolean {
-  const q = filter.trim().toLowerCase();
-  if (!q) return true;
-  const planName = plans[run.planId]?.name ?? '';
-  return planName.toLowerCase().includes(q);
+  const q = filter.search.trim().toLowerCase();
+  if (q) {
+    const planName = plans[run.planId]?.name ?? '';
+    if (!planName.toLowerCase().includes(q)) return false;
+  }
+  if (!matchesDateRange(run.startedAt, filter)) return false;
+  return true;
 }
 
-function RequestRunList({ runs, filter }: { runs: readonly RequestRun[]; filter: string }) {
+function matchesDateRange(iso: string, filter: HistoryUiState): boolean {
+  if (!filter.fromDate && !filter.toDate) return true;
+  const t = new Date(iso).getTime();
+  if (filter.fromDate) {
+    const fromT = new Date(`${filter.fromDate}T00:00:00`).getTime();
+    if (t < fromT) return false;
+  }
+  if (filter.toDate) {
+    const toT = new Date(`${filter.toDate}T23:59:59.999`).getTime();
+    if (t > toT) return false;
+  }
+  return true;
+}
+
+function RequestRunList({
+  runs,
+  totalCount,
+  filterActive,
+  selectedRunId,
+  onSelect,
+}: {
+  runs: readonly RequestRun[];
+  totalCount: number;
+  filterActive: boolean;
+  selectedRunId: string | null;
+  onSelect: (id: string) => void;
+}) {
   const requests = useWorkspaceStore((s) => s.synced?.collections.requests ?? {});
   const removeRequestRun = useWorkspaceStore((s) => s.removeRequestRun);
-  const visible = useMemo(
-    () => runs.filter((r) => matchesRequestFilter(r, requests, filter)),
-    [filter, requests, runs],
-  );
 
-  if (runs.length === 0) {
+  if (totalCount === 0) {
     return (
       <EmptyHistory
         icon={<Send size={28} aria-hidden="true" />}
@@ -237,56 +272,84 @@ function RequestRunList({ runs, filter }: { runs: readonly RequestRun[]; filter:
       />
     );
   }
-  if (visible.length === 0) {
+  if (runs.length === 0) {
     return (
       <p className="pt-6 text-center text-xs text-text-dim">
-        No runs match &ldquo;{filter}&rdquo;.
+        {filterActive ? 'No runs match the current filters.' : 'No runs to show.'}
       </p>
     );
   }
   return (
     <ul className="space-y-1.5">
-      {visible.map((run) => {
+      {runs.map((run) => {
         const r = requests[run.requestId];
         const passedAssertions = run.assertions.filter((a) => a.passed).length;
+        const isSelected = run.id === selectedRunId;
         return (
           <li
             key={run.id}
-            className="flex items-center gap-2 rounded-sm border border-border bg-card px-3 py-2"
+            className={cn(
+              'overflow-hidden rounded-sm border bg-card',
+              isSelected ? 'border-accent/60' : 'border-border',
+            )}
           >
-            <StatusIcon ok={run.ok} />
-            <span className="text-[10px] uppercase text-text-dim">{r?.method ?? '—'}</span>
-            <span className="flex-1 truncate text-xs text-text-primary">
-              {r?.name ?? <em className="text-text-dim">deleted request</em>}
-            </span>
-            {run.status !== null && (
-              <span className="font-mono text-[11px] text-text-muted">{run.status}</span>
-            )}
-            <span className="font-mono text-[10px] text-text-dim">{run.durationMs} ms</span>
-            {run.assertions.length > 0 && (
-              <span
-                className={
-                  'rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ' +
-                  (passedAssertions === run.assertions.length
-                    ? 'border-success/40 bg-success/10 text-success'
-                    : 'border-warning/40 bg-warning/10 text-warning')
-                }
-              >
-                {passedAssertions}/{run.assertions.length}
-              </span>
-            )}
-            <span className="text-[10px] text-text-dim">
-              {new Date(run.startedAt).toLocaleTimeString()}
-            </span>
             <button
               type="button"
-              onClick={() => removeRequestRun(run.id)}
-              aria-label={`Delete request run from ${new Date(run.startedAt).toLocaleString()}`}
-              title="Delete this run"
-              className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:bg-danger/10 hover:text-danger"
+              onClick={() => onSelect(run.id)}
+              aria-expanded={isSelected}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-surface"
             >
-              <Trash2 size={11} aria-hidden="true" />
+              {isSelected ? (
+                <ChevronDown size={11} className="shrink-0 text-text-faint" />
+              ) : (
+                <ChevronRight size={11} className="shrink-0 text-text-faint" />
+              )}
+              <StatusIcon ok={run.ok} />
+              <span className="text-[10px] uppercase text-text-dim">{run.method}</span>
+              <span className="flex-1 truncate text-xs text-text-primary">
+                {r?.name ?? <em className="text-text-dim">deleted request</em>}
+              </span>
+              {run.status !== null && (
+                <span className="font-mono text-[11px] text-text-muted">{run.status}</span>
+              )}
+              <span className="font-mono text-[10px] text-text-dim">{run.durationMs} ms</span>
+              {run.assertions.length > 0 && (
+                <span
+                  className={cn(
+                    'rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider',
+                    passedAssertions === run.assertions.length
+                      ? 'border-success/40 bg-success/10 text-success'
+                      : 'border-warning/40 bg-warning/10 text-warning',
+                  )}
+                >
+                  {passedAssertions}/{run.assertions.length}
+                </span>
+              )}
+              <span className="text-[10px] text-text-dim">
+                {new Date(run.startedAt).toLocaleTimeString()}
+              </span>
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeRequestRun(run.id);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    removeRequestRun(run.id);
+                  }
+                }}
+                aria-label={`Delete request run from ${new Date(run.startedAt).toLocaleString()}`}
+                title="Delete this run"
+                className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:bg-danger/10 hover:text-danger"
+              >
+                <Trash2 size={11} aria-hidden="true" />
+              </span>
             </button>
+            {isSelected && <RequestRunDetail run={run} />}
           </li>
         );
       })}
@@ -294,14 +357,195 @@ function RequestRunList({ runs, filter }: { runs: readonly RequestRun[]; filter:
   );
 }
 
-function PlanRunList({ runs, filter }: { runs: readonly PlanRun[]; filter: string }) {
-  const plans = useWorkspaceStore((s) => s.local?.executionPlans ?? {});
-  const removePlanRun = useWorkspaceStore((s) => s.removePlanRun);
-  const visible = useMemo(
-    () => runs.filter((r) => matchesPlanFilter(r, plans, filter)),
-    [filter, plans, runs],
+function RequestRunDetail({ run }: { run: RequestRun }) {
+  return (
+    <div className="border-t border-border-subtle bg-surface p-3 text-xs">
+      <DetailGrid>
+        <DetailRow label="When">{new Date(run.startedAt).toLocaleString()}</DetailRow>
+        <DetailRow label="URL">
+          <code className="break-all font-mono">{run.url || '—'}</code>
+        </DetailRow>
+        {run.error && (
+          <DetailRow label="Error">
+            <code className="font-mono text-danger">{run.error}</code>
+          </DetailRow>
+        )}
+      </DetailGrid>
+
+      <div className="mt-3 space-y-3">
+        <DetailColumn title="Request">
+          <DetailGrid>
+            <DetailRow label="Method">
+              <code className="font-mono">{run.method}</code>
+            </DetailRow>
+            <DetailRow label="Headers">
+              <HeaderTable headers={run.requestHeaders} />
+            </DetailRow>
+          </DetailGrid>
+          <DetailColumnBody label="Body" empty={run.requestBodyPreview === null}>
+            {run.requestBodyPreview && <BodyPreview text={run.requestBodyPreview} />}
+          </DetailColumnBody>
+        </DetailColumn>
+        <DetailColumn title={`Response${run.responseTruncated ? ' (body truncated)' : ''}`}>
+          <div className="flex justify-end">
+            {run.responseBodyPreview && <DownloadResponseButton run={run} />}
+          </div>
+          <div className="h-96">
+            <ResponseViewer
+              result={requestRunToExecutionResult(run)}
+              assertions={run.assertions}
+              isExecuting={false}
+            />
+          </div>
+        </DetailColumn>
+      </div>
+    </div>
   );
-  if (runs.length === 0) {
+}
+
+function DetailGrid({ children }: { children: React.ReactNode }) {
+  return <dl className="grid grid-cols-[100px_1fr] gap-x-3 gap-y-1">{children}</dl>;
+}
+
+function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <>
+      <dt className="text-[10px] uppercase tracking-wider text-text-dim">{label}</dt>
+      <dd className="min-w-0 text-text-muted">{children}</dd>
+    </>
+  );
+}
+
+function DetailColumn({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col gap-2 rounded-sm border border-border-subtle bg-card p-3">
+      <h3 className="text-[10px] font-medium uppercase tracking-wider text-text-dim">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function DetailColumnBody({
+  label,
+  empty,
+  children,
+  actions,
+}: {
+  label: string;
+  empty: boolean;
+  children?: React.ReactNode;
+  actions?: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between">
+        <p className="text-[10px] uppercase tracking-wider text-text-dim">{label}</p>
+        {actions}
+      </div>
+      {empty ? (
+        <p className="rounded-sm border border-dashed border-border-subtle p-2 text-[11px] text-text-dim">
+          (empty)
+        </p>
+      ) : (
+        children
+      )}
+    </div>
+  );
+}
+
+function DownloadResponseButton({ run }: { run: RequestRun }) {
+  const onClick = () => {
+    // Pick a best-effort filename + extension from the bodyKind + the
+    // Content-Type header. A fallback to `.txt` keeps the file readable.
+    const extension = pickExtension(run.responseBodyKind, run.responseHeaders);
+    const safeStamp = run.startedAt.replace(/[:.]/g, '-');
+    const filename = `apicircle-${run.method.toLowerCase()}-${safeStamp}.${extension}`;
+    const blob = new Blob([run.responseBodyPreview], {
+      type: run.responseHeaders['content-type'] ?? 'text/plain',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={
+        run.responseTruncated
+          ? 'Body was truncated for storage — download what we kept'
+          : 'Download the response body to a file'
+      }
+      aria-label="Download response body"
+      className="inline-flex h-5 items-center gap-1 rounded-sm border border-border bg-surface px-1.5 text-[10px] text-text-muted hover:border-accent hover:text-text-primary"
+    >
+      <Download size={10} />
+      Download
+    </button>
+  );
+}
+
+function pickExtension(
+  kind: RequestRun['responseBodyKind'],
+  headers: Record<string, string>,
+): string {
+  if (kind === 'json') return 'json';
+  if (kind === 'binary') return 'bin';
+  const ct = headers['content-type'] ?? '';
+  if (ct.includes('xml')) return 'xml';
+  if (ct.includes('html')) return 'html';
+  if (ct.includes('csv')) return 'csv';
+  if (ct.includes('javascript')) return 'js';
+  if (ct.includes('yaml')) return 'yaml';
+  return 'txt';
+}
+
+function HeaderTable({ headers }: { headers: Record<string, string> }) {
+  const entries = Object.entries(headers);
+  if (entries.length === 0) return <span className="text-text-dim">(none)</span>;
+  return (
+    <ul className="flex flex-col gap-0.5">
+      {entries.map(([k, v]) => (
+        <li key={k} className="grid grid-cols-[140px_1fr] gap-1 font-mono text-[10px]">
+          <span className="truncate text-text-muted">{k}</span>
+          <span className="break-all text-text-primary" title={v}>
+            {v}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function BodyPreview({ text }: { text: string }) {
+  return (
+    <pre className="max-h-64 overflow-auto rounded-sm border border-border bg-surface p-2 font-mono text-[10px] text-text-primary">
+      {text}
+    </pre>
+  );
+}
+
+function PlanRunList({
+  runs,
+  totalCount,
+  filterActive,
+}: {
+  runs: readonly PlanRun[];
+  totalCount: number;
+  filterActive: boolean;
+}) {
+  const plans = useWorkspaceStore((s) => s.local?.executionPlans ?? {});
+  const requestRuns = useWorkspaceStore((s) => s.local?.history.requestRuns ?? []);
+  const requests = useWorkspaceStore((s) => s.synced?.collections.requests ?? {});
+  const removePlanRun = useWorkspaceStore((s) => s.removePlanRun);
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  if (totalCount === 0) {
     return (
       <EmptyHistory
         icon={<Layers size={28} aria-hidden="true" />}
@@ -310,76 +554,236 @@ function PlanRunList({ runs, filter }: { runs: readonly PlanRun[]; filter: strin
       />
     );
   }
-  if (visible.length === 0) {
+  if (runs.length === 0) {
     return (
       <p className="pt-6 text-center text-xs text-text-dim">
-        No plan runs match &ldquo;{filter}&rdquo;.
+        {filterActive ? 'No plan runs match the current filters.' : 'No plan runs to show.'}
       </p>
     );
   }
+  // Index request runs by id once for the per-step lookups.
+  const runsById = new Map(requestRuns.map((r) => [r.id, r]));
+
   return (
     <ul className="space-y-1.5">
-      {visible.map((run) => (
-        <PlanRunRow
-          key={run.id}
-          run={run}
-          planName={plans[run.planId]?.name}
-          onDelete={() => removePlanRun(run.id)}
-        />
-      ))}
+      {runs.map((run) => {
+        const isOpen = run.id === openId;
+        return (
+          <PlanRunRow
+            key={run.id}
+            run={run}
+            isOpen={isOpen}
+            planName={plans[run.planId]?.name}
+            onToggle={() => setOpenId(isOpen ? null : run.id)}
+            onDelete={() => removePlanRun(run.id)}
+            requests={requests}
+            runsById={runsById}
+          />
+        );
+      })}
     </ul>
   );
 }
 
 function PlanRunRow({
   run,
+  isOpen,
   planName,
+  onToggle,
   onDelete,
+  requests,
+  runsById,
 }: {
   run: PlanRun;
+  isOpen: boolean;
   planName?: string;
+  onToggle: () => void;
   onDelete: () => void;
+  requests: Record<string, { name?: string; method?: string }>;
+  runsById: Map<string, RequestRun>;
 }) {
   const okCount = run.steps.filter((s) => s.passed).length;
   const total = run.steps.length;
   const allPassed = okCount === total;
+  // Aggregate assertion verdicts across all child request runs. Steps whose
+  // RequestRun has rolled out of the buffer contribute 0/0 to the totals —
+  // not strictly accurate, but the alternative (hiding the chip) hides
+  // signal from runs that the user can still partially inspect.
+  let assertionsPassed = 0;
+  let assertionsTotal = 0;
+  for (const step of run.steps) {
+    const child = runsById.get(step.requestRunId);
+    if (!child) continue;
+    for (const a of child.assertions) {
+      assertionsTotal++;
+      if (a.passed) assertionsPassed++;
+    }
+  }
+  const assertionsAllPassed = assertionsPassed === assertionsTotal;
   return (
-    <li className="rounded-sm border border-border bg-card px-3 py-2">
-      <div className="flex items-center gap-2">
+    <li className="overflow-hidden rounded-sm border border-border bg-card">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={isOpen}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-surface"
+      >
+        {isOpen ? (
+          <ChevronDown size={11} className="shrink-0 text-text-faint" />
+        ) : (
+          <ChevronRight size={11} className="shrink-0 text-text-faint" />
+        )}
         <StatusIcon ok={allPassed} />
         <Layers size={12} className="text-accent" aria-hidden="true" />
         <span className="flex-1 truncate text-xs text-text-primary">
           {planName ?? <em className="text-text-dim">deleted plan</em>}
         </span>
         <span
-          className={
-            'rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ' +
-            (allPassed
+          aria-label={`${okCount} of ${total} requests succeeded`}
+          title={`${okCount}/${total} requests succeeded`}
+          className={cn(
+            'rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider',
+            allPassed
               ? 'border-success/40 bg-success/10 text-success'
-              : 'border-warning/40 bg-warning/10 text-warning')
-          }
+              : 'border-warning/40 bg-warning/10 text-warning',
+          )}
         >
-          {okCount}/{total}
+          {okCount}/{total} req
         </span>
         {run.withAssertions && (
-          <span className="rounded-sm border border-border bg-surface px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-text-muted">
-            assertions
+          <span
+            aria-label={`${assertionsPassed} of ${assertionsTotal} assertions passed`}
+            title={`${assertionsPassed}/${assertionsTotal} assertions passed`}
+            className={cn(
+              'rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider',
+              assertionsAllPassed
+                ? 'border-success/40 bg-success/10 text-success'
+                : 'border-warning/40 bg-warning/10 text-warning',
+            )}
+          >
+            {assertionsPassed}/{assertionsTotal} ✓
           </span>
         )}
         <span className="font-mono text-[10px] text-text-dim">{run.durationMs} ms</span>
         <span className="text-[10px] text-text-dim">
           {new Date(run.startedAt).toLocaleString()}
         </span>
-        <button
-          type="button"
-          onClick={onDelete}
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              e.stopPropagation();
+              onDelete();
+            }
+          }}
           aria-label={`Delete plan run from ${new Date(run.startedAt).toLocaleString()}`}
           title="Delete this run"
           className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:bg-danger/10 hover:text-danger"
         >
           <Trash2 size={11} aria-hidden="true" />
-        </button>
-      </div>
+        </span>
+      </button>
+      {isOpen && (
+        <div className="border-t border-border-subtle bg-surface p-3 text-xs">
+          <h4 className="mb-1.5 text-[10px] uppercase tracking-wider text-text-dim">
+            Per-step results ({total})
+          </h4>
+          <ul className="flex flex-col gap-1.5">
+            {run.steps.map((step, i) => {
+              const childRun = runsById.get(step.requestRunId);
+              const reqMeta = childRun ? requests[childRun.requestId] : null;
+              return (
+                <PlanRunStep
+                  key={`${step.requestRunId}-${i}`}
+                  index={i}
+                  passed={step.passed}
+                  childRun={childRun}
+                  requestName={reqMeta?.name}
+                />
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </li>
+  );
+}
+
+/**
+ * Single step inside an expanded plan run. Mirrors the live Execution panel:
+ * a one-line summary that opens into the full ResponseViewer (status badge,
+ * size hint, body / headers / assertions tabs) so the history detail view
+ * is feature-parity with the live "I just ran this" view. The first request
+ * in a plan run frequently fails — being able to inspect the response body
+ * and assertion verdicts directly from history is the whole point of
+ * keeping the buffer in the first place.
+ *
+ * When the underlying RequestRun has rolled out of the capped buffer
+ * (`childRun === undefined`), we render a non-expandable placeholder
+ * instead of a misleading empty disclosure.
+ */
+function PlanRunStep({
+  index,
+  passed,
+  childRun,
+  requestName,
+}: {
+  index: number;
+  passed: boolean;
+  childRun: RequestRun | undefined;
+  requestName?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  if (!childRun) {
+    return (
+      <li className="flex items-center gap-2 rounded-sm border border-border-subtle bg-card px-2 py-1 text-[11px]">
+        <span className="w-5 text-center text-text-dim">{index + 1}.</span>
+        <StatusIcon ok={passed} />
+        <span className="flex-1 italic text-text-dim">
+          Step run no longer in history (rolled out of buffer)
+        </span>
+      </li>
+    );
+  }
+  return (
+    <li className="overflow-hidden rounded-sm border border-border-subtle bg-card">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 px-2 py-1 text-left text-[11px] hover:bg-surface"
+      >
+        {open ? (
+          <ChevronDown size={11} className="shrink-0 text-text-faint" />
+        ) : (
+          <ChevronRight size={11} className="shrink-0 text-text-faint" />
+        )}
+        <span className="w-5 text-center text-text-dim">{index + 1}.</span>
+        <StatusIcon ok={passed} />
+        <span className="text-[10px] uppercase text-text-dim">{childRun.method}</span>
+        <span className="flex-1 truncate text-text-primary">
+          {requestName ?? <em className="text-text-dim">deleted request</em>}
+        </span>
+        {childRun.status !== null && (
+          <span className="font-mono text-text-muted">{childRun.status}</span>
+        )}
+        <span className="font-mono text-text-dim">{childRun.durationMs} ms</span>
+      </button>
+      {open && (
+        <div className="h-80 border-t border-border-subtle">
+          <ResponseViewer
+            result={requestRunToExecutionResult(childRun)}
+            assertions={childRun.assertions}
+            isExecuting={false}
+          />
+        </div>
+      )}
     </li>
   );
 }

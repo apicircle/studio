@@ -3,7 +3,14 @@
 // import here so the helper is usable in non-browser contexts (e.g.
 // the mock server's response shaping).
 
-export type MonacoLanguage = 'json' | 'xml' | 'html' | 'graphql' | 'javascript' | 'plaintext';
+export type MonacoLanguage =
+  | 'json'
+  | 'xml'
+  | 'html'
+  | 'graphql'
+  | 'javascript'
+  | 'yaml'
+  | 'plaintext';
 
 const CONTENT_TYPE_LANGUAGE_MAP: Readonly<Record<string, MonacoLanguage>> = {
   'application/json': 'json',
@@ -13,6 +20,12 @@ const CONTENT_TYPE_LANGUAGE_MAP: Readonly<Record<string, MonacoLanguage>> = {
   'application/graphql': 'graphql',
   'application/javascript': 'javascript',
   'text/javascript': 'javascript',
+  // YAML and TOON share Monaco's YAML highlighter — TOON is a tabular
+  // superset of compact YAML and reads correctly under YAML rules.
+  'application/x-yaml': 'yaml',
+  'application/yaml': 'yaml',
+  'text/yaml': 'yaml',
+  'text/x-yaml': 'yaml',
   'text/plain': 'plaintext',
 };
 

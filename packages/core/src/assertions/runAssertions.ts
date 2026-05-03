@@ -1,9 +1,21 @@
 import type { Assertion } from '@apicircle/shared';
 import type { ExecutionResult } from '../request/executeRequest';
 
+/**
+ * Result of evaluating one assertion against a response. Carries a snapshot
+ * of the assertion definition so downstream UI (History detail view, run
+ * exports, plan reports) can render the verdict without joining back to the
+ * source request — which may have been renamed, edited, or deleted by the
+ * time the user looks at history.
+ */
 export interface AssertionResult {
   assertionId: string;
+  kind: Assertion['kind'];
+  op: Assertion['op'];
+  target?: string;
+  expected: string | number;
   passed: boolean;
+  /** Human-readable description of the failure (or pass detail). */
   detail?: string;
 }
 
@@ -27,16 +39,28 @@ function runOne(a: Assertion, exec: ExecutionResult): AssertionResult {
   }
 }
 
-function pass(id: string): AssertionResult {
-  return { assertionId: id, passed: true };
+function snapshot(
+  a: Assertion,
+): Pick<AssertionResult, 'assertionId' | 'kind' | 'op' | 'target' | 'expected'> {
+  return {
+    assertionId: a.id,
+    kind: a.kind,
+    op: a.op,
+    target: a.target,
+    expected: a.expected,
+  };
 }
-function fail(id: string, detail: string): AssertionResult {
-  return { assertionId: id, passed: false, detail };
+
+function pass(a: Assertion, detail?: string): AssertionResult {
+  return { ...snapshot(a), passed: true, ...(detail ? { detail } : {}) };
+}
+function fail(a: Assertion, detail: string): AssertionResult {
+  return { ...snapshot(a), passed: false, detail };
 }
 
 function checkStatus(a: Assertion, exec: ExecutionResult): AssertionResult {
   const got = exec.status;
-  if (got === null) return fail(a.id, `request did not complete (got null status)`);
+  if (got === null) return fail(a, `request did not complete (got null status)`);
   return compareNumber(a, got, 'status');
 }
 
@@ -45,27 +69,27 @@ function checkDuration(a: Assertion, exec: ExecutionResult): AssertionResult {
 }
 
 function checkHeader(a: Assertion, exec: ExecutionResult): AssertionResult {
-  if (!a.target) return fail(a.id, 'header assertion missing target header name');
+  if (!a.target) return fail(a, 'header assertion missing target header name');
   const value = exec.headers[a.target.toLowerCase()] ?? exec.headers[a.target];
   if (value === undefined) {
-    if (a.op === 'not-equals') return pass(a.id);
-    return fail(a.id, `header "${a.target}" not present`);
+    if (a.op === 'not-equals') return pass(a);
+    return fail(a, `header "${a.target}" not present`);
   }
   return compareString(a, value, `header "${a.target}"`);
 }
 
 function checkJsonPath(a: Assertion, exec: ExecutionResult): AssertionResult {
-  if (!a.target) return fail(a.id, 'json-path assertion missing path');
+  if (!a.target) return fail(a, 'json-path assertion missing path');
   let parsed: unknown;
   try {
     parsed = JSON.parse(exec.body);
   } catch {
-    return fail(a.id, 'response body is not valid JSON');
+    return fail(a, 'response body is not valid JSON');
   }
   const value = readJsonPath(parsed, a.target);
   if (value === undefined) {
-    if (a.op === 'not-equals') return pass(a.id);
-    return fail(a.id, `path "${a.target}" not found in response`);
+    if (a.op === 'not-equals') return pass(a);
+    return fail(a, `path "${a.target}" not found in response`);
   }
   if (typeof value === 'number') return compareNumber(a, value, `path "${a.target}"`);
   // For non-primitive values (objects, arrays), serialize as JSON so the
@@ -84,27 +108,25 @@ function checkJsonPath(a: Assertion, exec: ExecutionResult): AssertionResult {
 function compareNumber(a: Assertion, actual: number, label: string): AssertionResult {
   const expected = Number(a.expected);
   if (!Number.isFinite(expected))
-    return fail(a.id, `${label}: expected a number, got "${a.expected}"`);
+    return fail(a, `${label}: expected a number, got "${a.expected}"`);
   switch (a.op) {
     case 'equals':
       return actual === expected
-        ? pass(a.id)
-        : fail(a.id, `${label}: expected ${expected}, got ${actual}`);
+        ? pass(a)
+        : fail(a, `${label}: expected ${expected}, got ${actual}`);
     case 'not-equals':
-      return actual !== expected
-        ? pass(a.id)
-        : fail(a.id, `${label}: expected not to equal ${expected}`);
+      return actual !== expected ? pass(a) : fail(a, `${label}: expected not to equal ${expected}`);
     case 'lt':
       return actual < expected
-        ? pass(a.id)
-        : fail(a.id, `${label}: expected < ${expected}, got ${actual}`);
+        ? pass(a)
+        : fail(a, `${label}: expected < ${expected}, got ${actual}`);
     case 'gt':
       return actual > expected
-        ? pass(a.id)
-        : fail(a.id, `${label}: expected > ${expected}, got ${actual}`);
+        ? pass(a)
+        : fail(a, `${label}: expected > ${expected}, got ${actual}`);
     case 'contains':
     case 'matches':
-      return fail(a.id, `${label}: op "${a.op}" not supported for numeric values`);
+      return fail(a, `${label}: op "${a.op}" not supported for numeric values`);
   }
 }
 
@@ -113,30 +135,28 @@ function compareString(a: Assertion, actual: string, label: string): AssertionRe
   switch (a.op) {
     case 'equals':
       return actual === expected
-        ? pass(a.id)
-        : fail(a.id, `${label}: expected "${expected}", got "${actual}"`);
+        ? pass(a)
+        : fail(a, `${label}: expected "${expected}", got "${actual}"`);
     case 'not-equals':
       return actual !== expected
-        ? pass(a.id)
-        : fail(a.id, `${label}: expected not to equal "${expected}"`);
+        ? pass(a)
+        : fail(a, `${label}: expected not to equal "${expected}"`);
     case 'contains':
       return actual.includes(expected)
-        ? pass(a.id)
-        : fail(a.id, `${label}: expected to contain "${expected}", got "${actual}"`);
+        ? pass(a)
+        : fail(a, `${label}: expected to contain "${expected}", got "${actual}"`);
     case 'matches': {
       let re: RegExp;
       try {
         re = new RegExp(expected);
       } catch {
-        return fail(a.id, `${label}: expected pattern is not a valid regex: ${expected}`);
+        return fail(a, `${label}: expected pattern is not a valid regex: ${expected}`);
       }
-      return re.test(actual)
-        ? pass(a.id)
-        : fail(a.id, `${label}: did not match pattern /${expected}/`);
+      return re.test(actual) ? pass(a) : fail(a, `${label}: did not match pattern /${expected}/`);
     }
     case 'lt':
     case 'gt':
-      return fail(a.id, `${label}: op "${a.op}" not supported for string values`);
+      return fail(a, `${label}: op "${a.op}" not supported for string values`);
   }
 }
 

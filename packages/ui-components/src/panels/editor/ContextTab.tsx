@@ -1,22 +1,22 @@
-// Per-request Context tab. Two columns:
+// Per-request Context tab. Two sections:
 //
-//   • Manual context vars (top) — key/value pairs entered by the user.
+//   • Manual context vars — key/value pairs entered by the user.
 //     These live on the request itself (`request.contextVars`) and are
 //     git-synced. They take precedence over the workspace-wide globalContext.
 //
-//   • Extractors (bottom) — rules that pull a value out of the response
-//     after every successful run. The extracted value lands in
-//     `local.globalContext` (local-only, never pushed to Git) and becomes
-//     visible to subsequent requests + plan steps as `{{name}}`.
-//
-// The "Recent extractions" list at the bottom shows what's currently in
-// globalContext so the user can verify what got captured / forget a key.
+//   • Extractors — rules that pull a value out of the response after every
+//     successful run. The variable name + path is git-synced (on the request);
+//     the extracted *value* lands in `local.globalContext` (local-only, never
+//     pushed to Git) and becomes visible to subsequent requests + plan steps
+//     as `{{name}}`. The local store survives reload via IDB.
 
-import { Plus, Trash2, X } from 'lucide-react';
+import { useState } from 'react';
+import { Crosshair, Plus, Trash2 } from 'lucide-react';
 import type { ContextExtraction, Request as ApiRequest } from '@apicircle/shared';
 import { generateId } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
+import { JsonPathPicker } from './JsonPathPicker';
 
 interface ContextTabProps {
   request: ApiRequest;
@@ -36,9 +36,9 @@ const SOURCES: Array<{ id: ContextExtraction['source']; label: string; placehold
 export function ContextTab({ request }: ContextTabProps) {
   const setContextVars = useWorkspaceStore((s) => s.setRequestContextVars);
   const setExtractions = useWorkspaceStore((s) => s.setRequestExtractions);
-  const globalContext = useWorkspaceStore((s) => s.local?.globalContext ?? {});
-  const removeGlobalKey = useWorkspaceStore((s) => s.removeGlobalContextKey);
-  const clearGlobal = useWorkspaceStore((s) => s.clearGlobalContext);
+  const lastRunBody = useWorkspaceStore((s) => s.lastRun[request.id]?.body ?? '');
+  const lastRunBodyKind = useWorkspaceStore((s) => s.lastRun[request.id]?.bodyKind ?? null);
+  const [pickerForExtractionId, setPickerForExtractionId] = useState<string | null>(null);
 
   const updateRow = (index: number, patch: Partial<{ key: string; value: string }>): void => {
     setContextVars(
@@ -69,8 +69,6 @@ export function ContextTab({ request }: ContextTabProps) {
       request.id,
       request.extractions.filter((e) => e.id !== id),
     );
-
-  const globalEntries = Object.entries(globalContext).sort(([a], [b]) => a.localeCompare(b));
 
   return (
     <div className="flex flex-col gap-4">
@@ -126,7 +124,8 @@ export function ContextTab({ request }: ContextTabProps) {
         <header className="flex items-center justify-between">
           <h3 className={sectionTitle}>Auto-extract from response</h3>
           <span className="text-[11px] text-text-dim">
-            Latest run wins · local-only · feeds <code>{'{{var}}'}</code> in next requests.
+            Names + paths pushed to Git · captured values stay local · feed <code>{'{{var}}'}</code>{' '}
+            in next requests.
           </span>
         </header>
         <div className="flex flex-col gap-1">
@@ -165,14 +164,34 @@ export function ContextTab({ request }: ContextTabProps) {
                   </option>
                 ))}
               </select>
-              <input
-                value={ex.path}
-                onChange={(e) => updateExtraction(ex.id, { path: e.target.value })}
-                aria-label={`Extraction ${idx + 1} path`}
-                placeholder={SOURCES.find((s) => s.id === ex.source)?.placeholder}
-                disabled={ex.source === 'status'}
-                className={cn(inputClass, 'font-mono', ex.source === 'status' && 'opacity-50')}
-              />
+              <div className="flex items-center gap-1">
+                <input
+                  value={ex.path}
+                  onChange={(e) => updateExtraction(ex.id, { path: e.target.value })}
+                  aria-label={`Extraction ${idx + 1} path`}
+                  placeholder={SOURCES.find((s) => s.id === ex.source)?.placeholder}
+                  disabled={ex.source === 'status'}
+                  className={cn(inputClass, 'font-mono', ex.source === 'status' && 'opacity-50')}
+                />
+                {ex.source === 'body' && (
+                  <button
+                    type="button"
+                    onClick={() => setPickerForExtractionId(ex.id)}
+                    disabled={!lastRunBody || lastRunBodyKind !== 'json'}
+                    aria-label={`Pick JSON path for extraction ${idx + 1}`}
+                    title={
+                      !lastRunBody
+                        ? 'Send the request first to capture a response'
+                        : lastRunBodyKind !== 'json'
+                          ? 'Last response is not JSON'
+                          : 'Pick a JSON path from the last response'
+                    }
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-border bg-surface text-text-muted hover:border-accent hover:text-text-primary disabled:opacity-30"
+                  >
+                    <Crosshair size={12} />
+                  </button>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => removeExtraction(ex.id)}
@@ -194,49 +213,16 @@ export function ContextTab({ request }: ContextTabProps) {
         </div>
       </section>
 
-      <section aria-label="Captured context" className="flex flex-col gap-2">
-        <header className="flex items-center justify-between">
-          <h3 className={sectionTitle}>Captured globals (local-only)</h3>
-          {globalEntries.length > 0 && (
-            <button
-              type="button"
-              onClick={() => clearGlobal()}
-              className="text-[11px] text-text-muted hover:text-danger"
-            >
-              Clear all
-            </button>
-          )}
-        </header>
-        {globalEntries.length === 0 ? (
-          <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-xs text-text-dim">
-            Nothing captured yet. Run a request whose extractor matches.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-1">
-            {globalEntries.map(([key, value]) => (
-              <li
-                key={key}
-                className="flex items-center gap-2 rounded-sm border border-border bg-card px-2 py-1.5 font-mono text-[11px]"
-              >
-                <span className="font-semibold text-text-primary">{key}</span>
-                <span className="text-text-dim">=</span>
-                <span className="flex-1 truncate text-text-muted" title={value}>
-                  {value || '(empty)'}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => removeGlobalKey(key)}
-                  aria-label={`Forget ${key}`}
-                  title={`Forget ${key}`}
-                  className="text-text-faint hover:text-danger"
-                >
-                  <X size={11} />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {pickerForExtractionId && (
+        <JsonPathPicker
+          jsonText={lastRunBody}
+          title={request.name}
+          onClose={() => setPickerForExtractionId(null)}
+          onPick={(path) => {
+            updateExtraction(pickerForExtractionId, { path });
+          }}
+        />
+      )}
     </div>
   );
 }

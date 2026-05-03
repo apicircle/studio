@@ -29,10 +29,15 @@ describe('EditorPanel', () => {
       expect(screen.getByRole('button', { name: /Send/i })).toBeInTheDocument();
     });
 
-    it('persists the renamed request through the store', async () => {
+    it('persists the renamed request through the store on blur', async () => {
       const input = screen.getByLabelText('Request name');
       await userEvent.clear(input);
       await userEvent.type(input, 'Get user');
+      // Buffered input: store commits on blur (or Enter), not per keystroke.
+      expect(useWorkspaceStore.getState().synced!.collections.requests[id].name).toBe(
+        'New request',
+      );
+      input.blur();
       expect(useWorkspaceStore.getState().synced!.collections.requests[id].name).toBe('Get user');
     });
 

@@ -1,7 +1,6 @@
 import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import { tryParsePayload } from '@apicircle/core';
 import { EnvironmentsPanel } from './EnvironmentsPanel';
 import { renderWithStore } from '../../../test/renderWithStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
@@ -12,39 +11,20 @@ describe('EnvironmentsPanel', () => {
     expect(screen.getByText(/Create an environment from the sidebar/i)).toBeInTheDocument();
   });
 
-  it('renders the priority-order list with the active marker', async () => {
-    await renderWithStore(<EnvironmentsPanel />);
-    act(() => {
-      useWorkspaceStore.getState().addEnvironment('dev');
-      useWorkspaceStore.getState().addEnvironment('prod');
-      useWorkspaceStore.getState().setActiveEnvironment('dev');
-    });
-    const priority = await screen.findByRole('list', { name: 'Priority order' });
-    expect(priority).toHaveTextContent('1.');
-    expect(priority).toHaveTextContent('dev');
-    expect(priority).toHaveTextContent('prod');
-    expect(priority).toHaveTextContent('active');
-  });
-
-  it('move-up reorders priority', async () => {
+  it('shows layer position chip when the focused env is in the priority layer', async () => {
     await renderWithStore(<EnvironmentsPanel />);
     act(() => {
       useWorkspaceStore.getState().addEnvironment('dev');
       useWorkspaceStore.getState().addEnvironment('prod');
     });
-    await screen.findByRole('list', { name: 'Priority order' });
-    await userEvent.click(screen.getByLabelText('Move prod up'));
-    expect(useWorkspaceStore.getState().synced!.environments.priorityOrder).toEqual([
-      'prod',
-      'dev',
-    ]);
+    await screen.findByRole('group', { name: 'Variables for dev' });
+    expect(screen.getByText(/Layer position 1 of 2/i)).toBeInTheDocument();
   });
 
   it('add variable + commit value persists a plain row', async () => {
     await renderWithStore(<EnvironmentsPanel />);
     act(() => {
       useWorkspaceStore.getState().addEnvironment('dev');
-      useWorkspaceStore.getState().setActiveEnvironment('dev');
     });
     await screen.findByRole('group', { name: 'Variables for dev' });
     await userEvent.click(screen.getByRole('button', { name: /Add variable/ }));
@@ -58,7 +38,7 @@ describe('EnvironmentsPanel', () => {
 
     await waitFor(() => {
       const env = useWorkspaceStore.getState().synced!.environments.items.dev;
-      expect(env.variables[0]).toEqual({
+      expect(env.variables[0]).toMatchObject({
         key: 'BASE_URL',
         value: 'https://api.example.com',
         encrypted: false,
@@ -66,29 +46,44 @@ describe('EnvironmentsPanel', () => {
     });
   });
 
-  it('toggling a row to encrypted then committing stores ciphertext (enc:v1: prefix)', async () => {
+  it('binding a variable to a vault secret key locks the value field and stores secretKeyId', async () => {
     await renderWithStore(<EnvironmentsPanel />);
-    act(() => {
+    let secretId = '';
+    await act(async () => {
       useWorkspaceStore.getState().addEnvironment('dev');
-      useWorkspaceStore.getState().setActiveEnvironment('dev');
       useWorkspaceStore.getState().addVariableRow('dev');
-      useWorkspaceStore
-        .getState()
-        .setVariables('dev', [{ key: 'TOKEN', value: '', encrypted: false }]);
+      secretId = await useWorkspaceStore.getState().addSecret({
+        label: 'PROD_TOKEN',
+        value: 'super-secret',
+        origin: 'workspace',
+      });
     });
     await screen.findByRole('group', { name: 'Variables for dev' });
 
-    // Toggle Plain → Encrypted, then commit a value.
-    await userEvent.click(screen.getByRole('button', { name: 'Toggle encrypted' }));
-    const valueInput = screen.getByLabelText('Variable value');
-    await userEvent.type(valueInput, 'super-secret');
-    await userEvent.tab();
+    // Open the picker via the "Encrypt" button.
+    await userEvent.click(screen.getByRole('button', { name: 'Encrypt' }));
+    const dialog = await screen.findByRole('dialog', {
+      name: /Pick or create a Secret Vault key/i,
+    });
+    await userEvent.click(within(dialog, /PROD_TOKEN/i));
 
     await waitFor(() => {
       const v = useWorkspaceStore.getState().synced!.environments.items.dev.variables[0];
       expect(v.encrypted).toBe(true);
-      expect(v.value.startsWith('enc:v1:')).toBe(true);
-      expect(tryParsePayload(v.value)).not.toBeNull();
+      expect(v.secretKeyId).toBe(secretId);
+      expect(v.value).toBe('');
     });
+    // Synced labels map should include the bound key for collaborator visibility.
+    expect(useWorkspaceStore.getState().synced!.secretKeys?.[secretId]?.label).toBe('PROD_TOKEN');
   });
 });
+
+// Helper: click the first button-like element inside a container whose text
+// matches the regex. Inlined to keep the file dependency-free.
+function within(container: HTMLElement, pattern: RegExp): HTMLElement {
+  const matches = Array.from(container.querySelectorAll('button')).filter((el) =>
+    pattern.test(el.textContent ?? ''),
+  );
+  if (matches.length === 0) throw new Error(`no button matched ${pattern}`);
+  return matches[0] as HTMLElement;
+}

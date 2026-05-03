@@ -13,7 +13,7 @@ export function PanelContent() {
   const activePanel = useWorkspaceStore((s) => s.activePanel);
 
   return (
-    <main className="flex flex-1 flex-col overflow-hidden bg-surface">
+    <main className="flex h-full flex-1 flex-col overflow-hidden bg-surface">
       {activePanel === 'workspace' && <WorkspacePanel />}
       {activePanel === 'link-workspace' && <LinkWorkspacePanel />}
       {activePanel === 'editor' && <EditorPanel />}

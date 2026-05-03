@@ -1,12 +1,14 @@
 import { expect, test } from './fixtures/app';
 import type { Page } from '@playwright/test';
 
-// P13 — Auth tab. Covers all 17 schemes the dropdown surfaces:
+// Auth tab UI specs. Covers all 17 schemes the dropdown surfaces:
 // none / inherit / bearer / basic / api-key / custom-header
 // + 6 OAuth2 grants + AWS SigV4 / Digest / NTLM / Hawk / JWT Bearer.
-// We don't run real OAuth2 dances — these tests verify the form fields
-// render + persist into the synced doc, and the simpler schemes are
-// exercised end-to-end via the Send button.
+// These specs verify the form fields render + persist into the synced
+// doc; the actual token-acquisition pipeline is covered end-to-end at
+// the protocol layer in packages/core/src/auth/oauth2/e2e.test.ts
+// against an in-process mock IdP (every grant including auth-code,
+// PKCE, implicit, device, refresh).
 //
 // SecretInput-backed fields collide with `getByLabel(name)` because the
 // show/hide toggle is `aria-label="Show <name>"`. Use the textbox role

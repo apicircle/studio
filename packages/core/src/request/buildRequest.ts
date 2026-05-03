@@ -1,11 +1,50 @@
 import type { Request as ApiRequest } from '@apicircle/shared';
-import { applyAuth } from './applyAuth';
+import { applyAuth, type AuthApplyOptions, type AuthApplyWarning } from './applyAuth';
 
 export interface BuiltRequest {
   url: string;
   method: string;
   headers: Record<string, string>;
   body: BodyInit | null;
+  /**
+   * Non-fatal warnings raised by applyAuth (bad JWT key, malformed
+   * payload JSON, etc). executeRequest forwards these into
+   * `ExecutionResult.authWarnings` so the UI can surface them alongside
+   * the response — without them, a misconfigured JWT silently produces
+   * a 401 with no clue why.
+   */
+  authWarnings: AuthApplyWarning[];
+}
+
+/** Auto-fed headers identifying APICircle Studio. User-set values win. */
+export interface RuntimeIdentity {
+  /** e.g. 'apicircle-studio/web', 'apicircle-studio/desktop', 'apicircle-cli/0.1.0'. */
+  runtimeTag: string;
+  /** Override the default UUID generator. Useful for tests + deterministic snapshots. */
+  traceId?: string;
+}
+
+const DEFAULT_RUNTIME: RuntimeIdentity = { runtimeTag: 'apicircle-studio/web' };
+
+function randomTraceId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
+  // Fallback: 16 hex chars + timestamp. Not RFC4122 but sufficient for tracing.
+  return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 18)}`;
+}
+
+function injectRuntimeHeaders(
+  headers: Record<string, string>,
+  runtime: RuntimeIdentity,
+): Record<string, string> {
+  const lookup = new Set(Object.keys(headers).map((k) => k.toLowerCase()));
+  const out = { ...headers };
+  if (!lookup.has('x-apicircle-trace-id')) {
+    out['X-APICircle-Trace-Id'] = runtime.traceId ?? randomTraceId();
+  }
+  if (!lookup.has('x-apicircle-runtime')) {
+    out['X-APICircle-Runtime'] = runtime.runtimeTag;
+  }
+  return out;
 }
 
 /**
@@ -17,6 +56,137 @@ export interface BuiltRequest {
 export type AttachmentResolver = (
   slotId: string,
 ) => Promise<{ blob: Blob; filename: string } | null>;
+
+/**
+ * Match URL placeholders in either Express-style (`:name`) or OpenAPI-style
+ * (`{name}`). Names follow `[A-Za-z_][\w-]*`. The negative lookbehind/lookahead
+ * on `{...}` excludes our `{{var}}` template-variable syntax, which sits
+ * between two curlies and would otherwise match incorrectly.
+ *
+ * We also restrict the scan to the URL's *path portion* (everything before
+ * the first `?`) — query values often contain `{{NAME}}` references, and we
+ * never want those classified as path params.
+ */
+const PATH_PLACEHOLDER = /(?::([A-Za-z_][\w-]*)|(?<!\{)\{([A-Za-z_][\w-]*)\}(?!\}))/g;
+
+function splitOnQuery(rawUrl: string): { path: string; rest: string } {
+  const q = rawUrl.indexOf('?');
+  if (q < 0) return { path: rawUrl, rest: '' };
+  return { path: rawUrl.slice(0, q), rest: rawUrl.slice(q) };
+}
+
+/**
+ * Split a typed URL into the base part (everything before `?`) and a
+ * structured query-row list. Used by the editor's URL input to keep the
+ * URL field and the Query Params sub-tab in sync — when the user types or
+ * pastes `?key=val`, the rows surface in the Params list automatically.
+ *
+ * Variable references like `{{NAME}}` in keys or values are preserved
+ * verbatim — they stay templated and resolve at send time. We use
+ * permissive splitting (split on `&` then on the first `=`) rather than
+ * `URLSearchParams` because URLSearchParams percent-decodes `{{` into `{{`
+ * fine but also collapses whitespace and strips empty keys, which fights
+ * the user's intent during in-progress typing.
+ */
+export function parseUrlQuery(rawUrl: string): {
+  base: string;
+  query: Array<{ key: string; value: string; enabled: boolean }>;
+} {
+  const q = rawUrl.indexOf('?');
+  if (q < 0) return { base: rawUrl, query: [] };
+  const base = rawUrl.slice(0, q);
+  const queryString = rawUrl.slice(q + 1);
+  // Strip a trailing `#fragment` if present — fragments aren't sent over the
+  // wire and would otherwise leak into the last query row's value.
+  const hashIdx = queryString.indexOf('#');
+  const cleaned = hashIdx >= 0 ? queryString.slice(0, hashIdx) : queryString;
+  if (cleaned.length === 0) return { base, query: [] };
+  const rows = cleaned.split('&').map((segment) => {
+    const eq = segment.indexOf('=');
+    const key = eq < 0 ? segment : segment.slice(0, eq);
+    const value = eq < 0 ? '' : segment.slice(eq + 1);
+    return {
+      // Decode percent-encoded keys/values but leave `{{var}}` alone — those
+      // never get percent-encoded by Postman/curl pastes.
+      key: tryDecode(key),
+      value: tryDecode(value),
+      enabled: true,
+    };
+  });
+  return { base, query: rows };
+}
+
+function tryDecode(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
+/**
+ * Inverse of `parseUrlQuery`. Renders the structured query rows back into a
+ * URL-bar-friendly string, skipping disabled or empty-key rows. Values are
+ * left as-is (no double-encoding) — `composeUrl` runs at send time and
+ * handles wire encoding properly.
+ */
+export function composeUrlWithQuery(
+  base: string,
+  query: ReadonlyArray<{ key: string; value: string; enabled: boolean }>,
+): string {
+  const enabled = query.filter((q) => q.enabled && q.key.trim().length > 0);
+  if (enabled.length === 0) return base;
+  const rendered = enabled.map((q) => `${q.key}=${q.value}`).join('&');
+  return `${base}?${rendered}`;
+}
+
+/** Extract the placeholder names appearing in a URL, in document order, deduped. */
+export function findPathPlaceholders(rawUrl: string): string[] {
+  const { path } = splitOnQuery(rawUrl);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  PATH_PLACEHOLDER.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = PATH_PLACEHOLDER.exec(path)) !== null) {
+    const name = m[1] ?? m[2];
+    if (name && !seen.has(name)) {
+      seen.add(name);
+      out.push(name);
+    }
+  }
+  return out;
+}
+
+/**
+ * Substitute `:name` and `{name}` placeholders in a URL's path with the
+ * matching values from `pathParams`. The query string passes through
+ * untouched — a `{{var}}` in there is a variable reference, not a path
+ * placeholder. Missing keys substitute to empty string; the Editor surfaces
+ * unbound placeholders as a UI warning, not a runtime error.
+ */
+export function applyPathParams(rawUrl: string, pathParams: Record<string, string>): string {
+  const { path, rest } = splitOnQuery(rawUrl);
+  PATH_PLACEHOLDER.lastIndex = 0;
+  const substituted = path.replace(PATH_PLACEHOLDER, (_full, exprName, braceName) => {
+    const name = (exprName ?? braceName) as string;
+    const value = pathParams[name];
+    return value === undefined ? '' : encodeURIComponent(value);
+  });
+  return substituted + rest;
+}
+
+/**
+ * Build a `Cookie` header value from a list of name/value pairs. Skips
+ * disabled or empty-key rows. Returns the empty string when nothing applies.
+ */
+export function composeCookieHeader(
+  rows: ReadonlyArray<{ key: string; value: string; enabled: boolean }>,
+): string {
+  return rows
+    .filter((r) => r.enabled && r.key.trim().length > 0)
+    .map((r) => `${r.key.trim()}=${r.value}`)
+    .join('; ');
+}
 
 export function composeUrl(
   rawUrl: string,
@@ -141,11 +311,34 @@ export async function composeBody(
   return null;
 }
 
+export interface BuildRequestOptions {
+  resolveAttachment?: AttachmentResolver;
+  /** Identity for auto-fed APICircle headers. Defaults to web studio. */
+  runtime?: RuntimeIdentity;
+  /**
+   * applyAuth options — most importantly the `onTokenRefreshed`
+   * callback that lets the store persist refreshed OAuth2 tokens.
+   * Forwarded as-is.
+   */
+  authOptions?: AuthApplyOptions;
+}
+
 export async function buildRequest(
   req: ApiRequest,
-  resolveAttachment?: AttachmentResolver,
+  opts: BuildRequestOptions = {},
 ): Promise<BuiltRequest> {
-  const headers = composeHeaders(req.headers);
+  const runtime = opts.runtime ?? DEFAULT_RUNTIME;
+
+  const baseHeaders = composeHeaders(req.headers);
+  // Merge cookies into a single Cookie header. A user-set Cookie row in the
+  // headers list wins (no override) — that's the natural escape hatch when
+  // someone wants full control over the wire format.
+  const headers = ((): Record<string, string> => {
+    const cookieValue = composeCookieHeader(req.cookies ?? []);
+    if (!cookieValue) return baseHeaders;
+    const hasUserCookie = Object.keys(baseHeaders).some((k) => k.toLowerCase() === 'cookie');
+    return hasUserCookie ? baseHeaders : { ...baseHeaders, Cookie: cookieValue };
+  })();
   // form-data and binary: let fetch set Content-Type from the FormData
   // boundary or the Blob's own type. Any user-set Content-Type would break
   // the request.
@@ -153,8 +346,9 @@ export async function buildRequest(
     req.body.type === 'form-data' || req.body.type === 'binary'
       ? stripContentType(headers)
       : headers;
-  const url = composeUrl(req.url, req.query);
-  const body = await composeBody(req.body, resolveAttachment);
+  const urlWithPath = applyPathParams(req.url, req.pathParams ?? {});
+  const url = composeUrl(urlWithPath, req.query);
+  const body = await composeBody(req.body, opts.resolveAttachment);
 
   // Auth runs last — schemes like AWS SigV4 read the final URL + headers +
   // body to compute their signature. Older synced docs may lack `auth`;
@@ -163,12 +357,14 @@ export async function buildRequest(
   const applied = await applyAuth(
     { url, method: req.method, headers: sanitizedHeaders, body },
     auth,
+    opts.authOptions,
   );
 
   return {
     url: applied.url,
     method: req.method,
-    headers: applied.headers,
+    headers: injectRuntimeHeaders(applied.headers, runtime),
     body,
+    authWarnings: applied.warnings ?? [],
   };
 }

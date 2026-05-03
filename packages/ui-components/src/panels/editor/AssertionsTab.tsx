@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import type { Assertion, Request as ApiRequest } from '@apicircle/shared';
 import { generateId } from '@apicircle/shared';
-import { Plus, Trash2 } from 'lucide-react';
+import { Crosshair, Plus, Trash2 } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { JsonPathPicker } from './JsonPathPicker';
 
 interface AssertionsTabProps {
   request: ApiRequest;
@@ -30,6 +32,9 @@ function newAssertion(): Assertion {
 export function AssertionsTab({ request }: AssertionsTabProps) {
   const setRequestAssertions = useWorkspaceStore((s) => s.setRequestAssertions);
   const lastRun = useWorkspaceStore((s) => s.lastRun[request.id] ?? null);
+  const lastRunBody = useWorkspaceStore((s) => s.lastRun[request.id]?.body ?? '');
+  const lastRunBodyKind = useWorkspaceStore((s) => s.lastRun[request.id]?.bodyKind ?? null);
+  const [pickerForAssertionId, setPickerForAssertionId] = useState<string | null>(null);
 
   const update = (index: number, patch: Partial<Assertion>) => {
     setRequestAssertions(
@@ -71,14 +76,34 @@ export function AssertionsTab({ request }: AssertionsTabProps) {
               ))}
             </select>
             {def.needsTarget && (
-              <input
-                type="text"
-                value={a.target ?? ''}
-                onChange={(e) => update(i, { target: e.target.value })}
-                placeholder={a.kind === 'header' ? 'Header name' : 'JSON path'}
-                aria-label={`Assertion ${i + 1} target`}
-                className="h-7 flex-[1.5] rounded-sm border border-border bg-card px-2 text-xs"
-              />
+              <div className="flex flex-[1.5] items-center gap-1">
+                <input
+                  type="text"
+                  value={a.target ?? ''}
+                  onChange={(e) => update(i, { target: e.target.value })}
+                  placeholder={a.kind === 'header' ? 'Header name' : 'JSON path'}
+                  aria-label={`Assertion ${i + 1} target`}
+                  className="h-7 flex-1 rounded-sm border border-border bg-card px-2 text-xs"
+                />
+                {a.kind === 'json-path' && (
+                  <button
+                    type="button"
+                    onClick={() => setPickerForAssertionId(a.id)}
+                    disabled={!lastRunBody || lastRunBodyKind !== 'json'}
+                    aria-label={`Pick JSON path for assertion ${i + 1}`}
+                    title={
+                      !lastRunBody
+                        ? 'Send the request first to capture a response'
+                        : lastRunBodyKind !== 'json'
+                          ? 'Last response is not JSON'
+                          : 'Pick a JSON path from the last response'
+                    }
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-border bg-surface text-text-muted hover:border-accent hover:text-text-primary disabled:opacity-30"
+                  >
+                    <Crosshair size={12} />
+                  </button>
+                )}
+              </div>
             )}
             <select
               value={a.op}
@@ -124,6 +149,17 @@ export function AssertionsTab({ request }: AssertionsTabProps) {
         <Plus size={12} />
         Add assertion
       </button>
+      {pickerForAssertionId && (
+        <JsonPathPicker
+          jsonText={lastRunBody}
+          title={request.name}
+          onClose={() => setPickerForAssertionId(null)}
+          onPick={(path) => {
+            const idx = request.assertions.findIndex((a) => a.id === pickerForAssertionId);
+            if (idx >= 0) update(idx, { target: path });
+          }}
+        />
+      )}
     </div>
   );
 }

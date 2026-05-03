@@ -14,16 +14,18 @@ import { generateId } from '@apicircle/shared';
 // `WorkspaceSynced` snapshot so callers can wrap them in a single store
 // transition + persist.
 
-export function createRequest(parentFolderId: string | null): ApiRequest {
+export function createRequest(parentFolderId: string | null, name = 'New request'): ApiRequest {
   const now = new Date().toISOString();
   return {
     id: generateId(),
-    name: 'New request',
+    name,
     folderId: parentFolderId,
     method: 'GET',
     url: 'https://httpbin.org/anything',
     headers: [],
     query: [],
+    pathParams: {},
+    cookies: [],
     body: { type: 'none', content: '' },
     auth: { type: 'none' },
     contextVars: [],
@@ -38,11 +40,61 @@ export function createFolder(parentFolderId: string | null, name = 'New folder')
   return { id: generateId(), name, parentId: parentFolderId };
 }
 
+/**
+ * Returns true when `name` is unused for that kind within `parentFolderId`
+ * (case-insensitive, whitespace-trimmed). `ignoreId` lets callers exclude
+ * the current node from the check (useful during rename).
+ */
+export function isNameAvailableInFolder(
+  synced: WorkspaceSynced,
+  parentFolderId: string | null,
+  kind: 'folder' | 'request',
+  name: string,
+  ignoreId?: string,
+): boolean {
+  const trimmed = name.trim().toLowerCase();
+  if (!trimmed) return false;
+  const collection: Record<string, Folder | ApiRequest> =
+    kind === 'folder' ? synced.collections.folders : synced.collections.requests;
+  for (const node of Object.values(collection)) {
+    if (node.id === ignoreId) continue;
+    const matchesParent =
+      kind === 'folder'
+        ? (node as Folder).parentId === parentFolderId
+        : (node as ApiRequest).folderId === parentFolderId;
+    if (!matchesParent) continue;
+    if (node.name.trim().toLowerCase() === trimmed) return false;
+  }
+  return true;
+}
+
+/**
+ * Append " (n)" to `base` until the resulting name doesn't collide with an
+ * existing folder/request in the same parent. n starts at 2.
+ */
+function uniquifyName(
+  synced: WorkspaceSynced,
+  parentFolderId: string | null,
+  kind: 'folder' | 'request',
+  base: string,
+): string {
+  if (isNameAvailableInFolder(synced, parentFolderId, kind, base)) return base;
+  let n = 2;
+  while (!isNameAvailableInFolder(synced, parentFolderId, kind, `${base} (${n})`)) {
+    n += 1;
+    if (n > 999) return `${base} (${n})`; // pragmatic upper bound
+  }
+  return `${base} (${n})`;
+}
+
 export function addRequest(
   synced: WorkspaceSynced,
   parentFolderId: string | null,
+  name?: string,
 ): { synced: WorkspaceSynced; request: ApiRequest } {
-  const request = createRequest(parentFolderId);
+  const desired = (name ?? 'New request').trim() || 'New request';
+  const finalName = uniquifyName(synced, parentFolderId, 'request', desired);
+  const request = createRequest(parentFolderId, finalName);
   const next = pushChild(synced, parentFolderId, { kind: 'request', id: request.id });
   return {
     synced: {
@@ -62,7 +114,9 @@ export function addFolder(
   parentFolderId: string | null,
   name?: string,
 ): { synced: WorkspaceSynced; folder: Folder } {
-  const folder = createFolder(parentFolderId, name);
+  const desired = (name ?? 'New folder').trim() || 'New folder';
+  const finalName = uniquifyName(synced, parentFolderId, 'folder', desired);
+  const folder = createFolder(parentFolderId, finalName);
   const next = pushChild(synced, parentFolderId, { kind: 'folder', id: folder.id });
   return {
     synced: {
@@ -92,6 +146,60 @@ export function removeRequest(synced: WorkspaceSynced, id: string): WorkspaceSyn
   };
 }
 
+/**
+ * Cascade-remove a folder and everything inside it (nested folders +
+ * requests). Returns the new synced doc plus the list of request IDs that
+ * were deleted, so the store can free their attachment slots.
+ */
+export function removeFolder(
+  synced: WorkspaceSynced,
+  folderId: string,
+): { synced: WorkspaceSynced; deletedRequestIds: string[] } {
+  if (!synced.collections.folders[folderId]) {
+    return { synced, deletedRequestIds: [] };
+  }
+  // Collect every descendant folder + request via parentId/folderId chains.
+  const folderIds = new Set<string>([folderId]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const f of Object.values(synced.collections.folders)) {
+      if (f.parentId && folderIds.has(f.parentId) && !folderIds.has(f.id)) {
+        folderIds.add(f.id);
+        grew = true;
+      }
+    }
+  }
+  const requestIds = new Set<string>();
+  for (const r of Object.values(synced.collections.requests)) {
+    if (r.folderId && folderIds.has(r.folderId)) requestIds.add(r.id);
+  }
+
+  const folders = { ...synced.collections.folders };
+  for (const id of folderIds) delete folders[id];
+  const requests = { ...synced.collections.requests };
+  for (const id of requestIds) delete requests[id];
+
+  // Strip any references that survive at the root tree level (legacy data
+  // may have child entries that used to live at root).
+  let tree = synced.collections.tree;
+  for (const id of folderIds) {
+    tree = removeChildFromTree(tree, { kind: 'folder', id });
+  }
+  for (const id of requestIds) {
+    tree = removeChildFromTree(tree, { kind: 'request', id });
+  }
+
+  return {
+    synced: {
+      ...synced,
+      collections: { ...synced.collections, folders, requests, tree },
+      meta: { ...synced.meta, updatedAt: new Date().toISOString() },
+    },
+    deletedRequestIds: [...requestIds],
+  };
+}
+
 export function updateRequest(
   synced: WorkspaceSynced,
   id: string,
@@ -117,7 +225,28 @@ export function updateRequest(
 }
 
 export function renameRequest(synced: WorkspaceSynced, id: string, name: string): WorkspaceSynced {
-  return updateRequest(synced, id, { name });
+  const trimmed = name.trim();
+  const request = synced.collections.requests[id];
+  if (!request || !trimmed || trimmed === request.name) return synced;
+  // Reject duplicates against siblings in the same folder.
+  if (!isNameAvailableInFolder(synced, request.folderId, 'request', trimmed, id)) return synced;
+  return updateRequest(synced, id, { name: trimmed });
+}
+
+export function renameFolder(synced: WorkspaceSynced, id: string, name: string): WorkspaceSynced {
+  const trimmed = name.trim();
+  const folder = synced.collections.folders[id];
+  if (!folder || !trimmed || trimmed === folder.name) return synced;
+  if (!isNameAvailableInFolder(synced, folder.parentId, 'folder', trimmed, id)) return synced;
+  const next: Folder = { ...folder, name: trimmed };
+  return {
+    ...synced,
+    collections: {
+      ...synced.collections,
+      folders: { ...synced.collections.folders, [id]: next },
+    },
+    meta: { ...synced.meta, updatedAt: new Date().toISOString() },
+  };
 }
 
 export function setRequestMethod(
@@ -213,6 +342,44 @@ export function setRequestQuery(
   return updateRequest(synced, id, { query });
 }
 
+export function setRequestPathParams(
+  synced: WorkspaceSynced,
+  id: string,
+  pathParams: Record<string, string>,
+): WorkspaceSynced {
+  return updateRequest(synced, id, { pathParams });
+}
+
+export function setRequestCookies(
+  synced: WorkspaceSynced,
+  id: string,
+  cookies: NonNullable<ApiRequest['cookies']>,
+): WorkspaceSynced {
+  return updateRequest(synced, id, { cookies });
+}
+
+/**
+ * Set folder-level auth. Pass `undefined` (or omit) to clear the field — that
+ * lets the resolver continue walking up the chain on `inherit`.
+ */
+export function setFolderAuth(
+  synced: WorkspaceSynced,
+  folderId: string,
+  auth: RequestAuth | undefined,
+): WorkspaceSynced {
+  const folder = synced.collections.folders[folderId];
+  if (!folder) return synced;
+  const next: Folder = { ...folder, auth };
+  return {
+    ...synced,
+    collections: {
+      ...synced.collections,
+      folders: { ...synced.collections.folders, [folderId]: next },
+    },
+    meta: { ...synced.meta, updatedAt: new Date().toISOString() },
+  };
+}
+
 export function setRequestAssertions(
   synced: WorkspaceSynced,
   id: string,
@@ -228,14 +395,10 @@ function pushChild(
   parentFolderId: string | null,
   child: { kind: 'folder' | 'request'; id: string },
 ): WorkspaceSynced {
-  // For now, every new entry attaches at the root tree node since v2 P2 does
-  // not yet implement nested folder placement. Folder hierarchy lands when
-  // tree DnD/move actions are added in a follow-up.
-  if (parentFolderId !== null) {
-    // Tagged for later: parentFolderId is recorded on the entity itself
-    // (request.folderId / folder.parentId) — the tree placement just defaults
-    // to root for now.
-  }
+  // Only the root list is materialized in the tree node. Nested children are
+  // derived from request.folderId / folder.parentId at render time, so we
+  // skip the tree push when the entry belongs inside a folder.
+  if (parentFolderId !== null) return synced;
   return {
     ...synced,
     collections: {

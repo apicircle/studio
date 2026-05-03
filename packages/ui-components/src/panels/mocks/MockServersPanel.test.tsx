@@ -82,7 +82,10 @@ describe('MockServersPanel', () => {
   it('shows the desktop banner when the bridge is missing', async () => {
     delete (window as unknown as { apicircleDesktop?: unknown }).apicircleDesktop;
     await renderWithStore(<MockServersPanel />);
-    expect(screen.getByText(/Desktop App/i)).toBeInTheDocument();
+    // The banner copy + the empty-state guidance both reference Desktop —
+    // assert via the banner's runtime warning to pin the runtime gating
+    // distinctly from the creation-paths copy.
+    expect(screen.getByText(/cannot bind a port/i)).toBeInTheDocument();
   });
 
   it('Start button calls into the bridge when present', async () => {

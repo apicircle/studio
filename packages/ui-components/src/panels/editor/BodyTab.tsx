@@ -89,17 +89,20 @@ export function BodyTab({ request }: BodyTabProps) {
   };
 
   const editorElement = isGraphQL ? (
-    <PanelGroup direction="vertical" autoSaveId={`apicircle:graphql:${request.id}`}>
-      <Panel defaultSize={70} minSize={20}>
-        <div className="h-full w-full">{queryEditor}</div>
+    <PanelGroup direction="horizontal" autoSaveId={`apicircle:graphql:${request.id}`}>
+      <Panel defaultSize={60} minSize={20}>
+        <div className="flex h-full w-full flex-col">
+          <span className="px-2 py-1 text-[11px] uppercase tracking-wide text-text-dim">Query</span>
+          <div className="min-h-0 flex-1 overflow-hidden">{queryEditor}</div>
+        </div>
       </Panel>
       <PanelResizeHandle
         aria-label="Resize GraphQL query and variables"
-        className="group flex h-1.5 cursor-row-resize items-center justify-center border-y border-border-subtle bg-surface hover:bg-accent/20"
+        className="group flex w-1.5 cursor-col-resize items-center justify-center border-x border-border-subtle bg-surface hover:bg-accent/20"
       >
-        <span className="h-0.5 w-8 rounded-full bg-border group-hover:bg-accent" />
+        <span className="h-8 w-0.5 rounded-full bg-border group-hover:bg-accent" />
       </PanelResizeHandle>
-      <Panel defaultSize={30} minSize={15}>
+      <Panel defaultSize={40} minSize={20}>
         <div className="flex h-full w-full flex-col">
           <span className="px-2 py-1 text-[11px] uppercase tracking-wide text-text-dim">
             Variables (JSON)

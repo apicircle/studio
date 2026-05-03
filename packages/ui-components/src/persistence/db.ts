@@ -5,7 +5,14 @@
 // in `readwrite` mode.
 
 const DB_NAME = 'apicircle-workspace';
-const DB_VERSION = 1;
+// v2 (2026-04): bumped from 1 to force `onupgradeneeded` to (idempotently)
+// recreate any missing object store. In the wild we hit DBs whose `synced` or
+// `local` store had been dropped — possibly by an earlier dev-build race —
+// causing every transaction() call to throw "object store not found". The
+// upgrade handler is idempotent (`if (!contains) createObjectStore`), so this
+// version bump is non-destructive: existing records survive, missing stores
+// reappear.
+const DB_VERSION = 2;
 export const SYNCED_STORE = 'synced';
 export const LOCAL_STORE = 'local';
 const KEY = 'current';
@@ -37,7 +44,17 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(SYNCED_STORE)) db.createObjectStore(SYNCED_STORE);
       if (!db.objectStoreNames.contains(LOCAL_STORE)) db.createObjectStore(LOCAL_STORE);
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      const db = req.result;
+      // Release the cached connection if another tab (or the dev tools in
+      // this tab) opens the DB at a higher version. Without this, a pending
+      // upgrade transaction blocks indefinitely.
+      db.onversionchange = () => {
+        db.close();
+        dbPromise = null;
+      };
+      resolve(db);
+    };
     req.onerror = () => reject(asError(req.error, 'IndexedDB open failed'));
   });
   return dbPromise;

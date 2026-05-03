@@ -13,8 +13,8 @@ export function Sidebar() {
   if (!panel.hasSidebar) return null;
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col border-r border-border-subtle bg-card">
-      <header className="flex h-10 items-center border-b border-border-subtle px-3 text-xs font-medium uppercase tracking-wider text-text-dim">
+    <aside className="flex h-full w-full flex-col border-r border-border-subtle bg-card">
+      <header className="flex h-10 shrink-0 items-center border-b border-border-subtle px-3 text-xs font-medium uppercase tracking-wider text-text-dim">
         {panel.label}
       </header>
       <div className="flex-1 overflow-y-auto p-2">

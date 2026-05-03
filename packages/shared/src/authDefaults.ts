@@ -30,7 +30,8 @@ const oauth2TokenDefaults = {
   accessToken: '',
   tokenType: 'Bearer',
   refreshToken: '',
-  expiresAt: null as string | null,
+  expiresAt: null as number | null,
+  obtainedScope: '',
 };
 
 const FACTORIES: { [K in RequestAuthType]: () => Extract<RequestAuth, { type: K }> } = {
@@ -92,6 +93,7 @@ const FACTORIES: { [K in RequestAuthType]: () => Extract<RequestAuth, { type: K 
     accessToken: '',
     tokenType: 'Bearer',
     expiresAt: null,
+    obtainedScope: '',
   }),
   'oauth2-device': (): OAuth2DeviceAuth => ({
     type: 'oauth2-device',

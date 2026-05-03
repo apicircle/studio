@@ -147,6 +147,21 @@ export const HTTP_HEADERS_MAP: HeaderEntry[] = [
     description: 'Originating IP when proxied',
     values: [],
   },
+  {
+    name: 'X-APICircle-Trace-Id',
+    description: 'APICircle Studio per-send trace identifier (auto)',
+    values: [],
+    reserved: 'app',
+    reservedNote: 'Auto-generated UUID per send. Override by adding the header manually.',
+  },
+  {
+    name: 'X-APICircle-Runtime',
+    description: 'APICircle Studio runtime tag (auto)',
+    values: [],
+    reserved: 'app',
+    reservedNote:
+      'Identifies the APICircle host (e.g. apicircle-studio/web). Override by adding the header manually.',
+  },
 ];
 
 const HEADER_MAP = new Map<string, HeaderEntry>(

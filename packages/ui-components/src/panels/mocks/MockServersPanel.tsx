@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Server, AlertTriangle, Play, Square, Trash2 } from 'lucide-react';
 import type { MockServer, MockRuntimeEntry } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 
 // =============================================================================
 // MockServersPanel — lists workspace mock servers and (when running inside
@@ -24,11 +25,14 @@ function getMockBridge(): DesktopMockBridge | null {
 
 export function MockServersPanel() {
   const mockServers = useWorkspaceStore((s) => s.synced?.mockServers ?? {});
+  const removeMock = useWorkspaceStore((s) => s.removeMockServer);
   const bridge = getMockBridge();
   const [running, setRunning] = useState<Record<string, MockRuntimeEntry>>({});
   const [error, setError] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const list = useMemo(() => Object.values(mockServers), [mockServers]);
+  const pendingDelete = pendingDeleteId ? mockServers[pendingDeleteId] : null;
 
   // Poll the runtime list whenever the bridge is present so the UI stays in
   // sync if a mock crashes or someone stops one from another window.
@@ -102,13 +106,44 @@ export function MockServersPanel() {
 
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {list.length === 0 ? (
-          <div className="mx-auto flex max-w-md flex-col items-center gap-2 pt-12 text-center text-text-dim">
+          <div className="mx-auto flex max-w-xl flex-col items-center gap-3 pt-12 text-center text-text-dim">
             <Server size={28} aria-hidden="true" />
             <p className="text-sm text-text-primary">No mock servers yet.</p>
-            <p className="text-xs text-text-muted">
-              Use the MCP <code>mock.create_from_openapi</code> tool, or import an OpenAPI / Postman
-              file from the editor (Phase 2).
-            </p>
+            <div className="rounded-sm border border-border-subtle bg-card/50 px-4 py-3 text-left text-xs text-text-muted">
+              <p className="mb-1.5 text-text-primary">Three ways to create one:</p>
+              <ul className="list-disc space-y-1 pl-4">
+                <li>
+                  <strong>MCP tool</strong> (works from web): call{' '}
+                  <code className="rounded-sm bg-surface px-1 py-0.5 font-mono text-[10px]">
+                    mock.create_from_openapi
+                  </code>{' '}
+                  /{' '}
+                  <code className="rounded-sm bg-surface px-1 py-0.5 font-mono text-[10px]">
+                    mock.create_from_postman
+                  </code>{' '}
+                  /{' '}
+                  <code className="rounded-sm bg-surface px-1 py-0.5 font-mono text-[10px]">
+                    mock.create_from_insomnia
+                  </code>{' '}
+                  with the spec content.
+                </li>
+                <li>
+                  <strong>CLI</strong>:{' '}
+                  <code className="rounded-sm bg-surface px-1 py-0.5 font-mono text-[10px]">
+                    npx @apicircle/cli mock create --openapi spec.yaml
+                  </code>
+                </li>
+                <li>
+                  <strong>Desktop App</strong> (P29): bundles a UI importer + the local runtime so
+                  the mock can be both created and started in-app.
+                </li>
+              </ul>
+              <p className="mt-2 text-[10px] text-text-dim">
+                A web-only "Create" button isn't shipped because the OpenAPI / Postman parsers pull
+                in Node-only dependencies (<code>swagger-parser</code>, etc). Once we swap to a
+                browser-safe parser stack, this list can move into the UI directly.
+              </p>
+            </div>
           </div>
         ) : (
           <ul className="mx-auto max-w-2xl space-y-3">
@@ -155,9 +190,11 @@ export function MockServersPanel() {
                       )}
                       <button
                         type="button"
-                        disabled
-                        title="Delete via MCP `mock.delete` tool — UI shortcut lands in P27 polish"
-                        className="inline-flex items-center gap-1 rounded-sm border border-border-subtle px-2 py-1 text-[11px] text-text-dim opacity-40"
+                        onClick={() => setPendingDeleteId(mock.id)}
+                        disabled={!!runtime}
+                        title={runtime ? 'Stop the mock before deleting' : `Delete ${mock.name}`}
+                        aria-label={`Delete ${mock.name}`}
+                        className="inline-flex items-center gap-1 rounded-sm border border-border-subtle px-2 py-1 text-[11px] text-text-muted hover:border-danger/40 hover:text-danger disabled:opacity-40"
                       >
                         <Trash2 size={10} aria-hidden="true" />
                       </button>
@@ -169,6 +206,21 @@ export function MockServersPanel() {
           </ul>
         )}
       </div>
+
+      {pendingDelete && (
+        <ConfirmDialog
+          open
+          title="Delete mock server"
+          description={`Delete "${pendingDelete.name}"? This removes the definition from the workspace. The captured spec is kept in git history.`}
+          confirmLabel="Delete"
+          tone="danger"
+          onConfirm={() => {
+            removeMock(pendingDelete.id);
+            setPendingDeleteId(null);
+          }}
+          onCancel={() => setPendingDeleteId(null)}
+        />
+      )}
     </div>
   );
 }

@@ -14,6 +14,7 @@ const baseExec: ExecutionResult = {
   bodyKind: 'json',
   url: 'https://api.example.com',
   method: 'GET',
+  authWarnings: [],
 };
 
 const a = (overrides: Partial<Assertion>): Assertion => ({
@@ -54,11 +55,14 @@ describe('readJsonPath', () => {
 });
 
 describe('runAssertions: status', () => {
-  it('passes when status equals expected', () => {
+  it('passes when status equals expected and snapshots the assertion definition', () => {
     expect(
       runAssertions([a({ kind: 'status', op: 'equals', expected: 200 })], baseExec)[0],
     ).toEqual({
       assertionId: 'a1',
+      kind: 'status',
+      op: 'equals',
+      expected: 200,
       passed: true,
     });
   });

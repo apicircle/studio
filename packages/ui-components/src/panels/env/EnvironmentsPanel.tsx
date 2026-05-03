@@ -1,28 +1,23 @@
-import { useState } from 'react';
-import { ArrowDown, ArrowUp, Eye, EyeOff, Lock, Plus, Trash2 } from 'lucide-react';
-import type { Environment } from '@apicircle/shared';
-import { decryptString, tryParsePayload } from '@apicircle/core';
+import { useEffect, useMemo, useState } from 'react';
+import { KeyRound, Lock, Plus, Trash2, Unlock } from 'lucide-react';
+import type { Environment, EnvironmentVariable, SecretEntry } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
-import { getMasterKey } from '../../persistence/secretKey';
-import { cn } from '../../primitives/cn';
 
 export function EnvironmentsPanel() {
   const items = useWorkspaceStore((s) => s.synced?.environments.items ?? {});
-  const activeName = useWorkspaceStore((s) => s.synced?.environments.activeName ?? null);
   const priorityOrder = useWorkspaceStore((s) => s.synced?.environments.priorityOrder ?? []);
-  const setActiveEnvironment = useWorkspaceStore((s) => s.setActiveEnvironment);
-  const setPriorityOrder = useWorkspaceStore((s) => s.setPriorityOrder);
   const renameEnvironment = useWorkspaceStore((s) => s.renameEnvironment);
+  const envFocus = useWorkspaceStore((s) => s.envFocus);
+  const setEnvFocus = useWorkspaceStore((s) => s.setEnvFocus);
 
-  const [editingPanel, setEditingPanel] = useState<string | null>(null);
-  // Use the first env as default focus when none selected.
-  const focusName =
-    editingPanel && items[editingPanel]
-      ? editingPanel
-      : (activeName ?? Object.keys(items)[0] ?? null);
-  const env = focusName ? items[focusName] : null;
+  const allNames = Object.keys(items);
+  const defaultFocus = priorityOrder.find((n) => items[n]) ?? allNames[0] ?? null;
+  useEffect(() => {
+    if (!envFocus && defaultFocus) setEnvFocus(defaultFocus);
+    if (envFocus && !items[envFocus] && defaultFocus !== envFocus) setEnvFocus(defaultFocus);
+  }, [envFocus, defaultFocus, items, setEnvFocus]);
 
-  if (Object.keys(items).length === 0) {
+  if (allNames.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-6 text-sm text-text-muted">
         Create an environment from the sidebar to start.
@@ -30,100 +25,51 @@ export function EnvironmentsPanel() {
     );
   }
 
+  const focusName = envFocus && items[envFocus] ? envFocus : defaultFocus;
+  const env = focusName ? items[focusName] : null;
+  if (!env) return null;
+
+  const layered = priorityOrder.filter((n) => items[n]);
+  const layerPos = layered.indexOf(env.name);
+
   return (
-    <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
+    <div className="flex h-full flex-col gap-4 overflow-y-auto p-6">
       <header className="flex items-baseline gap-3">
-        <h1 className="text-lg font-medium text-text-primary">Environments</h1>
-        <span className="rounded-sm border border-border bg-card px-2 py-0.5 text-[10px] uppercase tracking-wider text-text-muted">
-          {activeName ? `Active: ${activeName}` : 'No active env'}
-        </span>
+        <span className="text-xs uppercase tracking-wider text-text-dim">Variables in</span>
+        <input
+          key={env.name}
+          defaultValue={env.name}
+          onBlur={(e) => {
+            const next = e.target.value.trim();
+            if (next && next !== env.name) {
+              renameEnvironment(env.name, next);
+              setEnvFocus(next);
+            }
+          }}
+          aria-label="Environment name"
+          className="rounded-sm border border-transparent bg-transparent px-1 text-base font-medium text-text-primary hover:border-border focus:border-accent focus:outline-none"
+        />
+        {layerPos >= 0 ? (
+          <span
+            className="rounded-sm border border-accent/40 bg-accent/5 px-2 py-0.5 text-[10px] uppercase tracking-wider text-accent"
+            title="Position in the global resolver layer"
+          >
+            Layer position {layerPos + 1} of {layered.length}
+          </span>
+        ) : (
+          <span className="rounded-sm border border-border bg-card px-2 py-0.5 text-[10px] uppercase tracking-wider text-text-dim">
+            Not in global layer
+          </span>
+        )}
       </header>
-
-      <section className="max-w-3xl">
-        <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
-          Priority order
-        </h2>
-        <p className="mb-2 text-xs text-text-muted">
-          When a request references <code>{'{{NAME}}'}</code>, the resolver walks{' '}
-          <span className="text-text-primary">context vars</span> →{' '}
-          <span className="text-text-primary">active env</span> → this list. First match wins.
-          Plan-level priority overrides this list during plan runs.
-        </p>
-        <ul role="list" aria-label="Priority order" className="flex flex-col gap-1">
-          {priorityOrder.map((name, i) => (
-            <li
-              key={name}
-              className="flex items-center gap-2 rounded-sm border border-border-subtle bg-card px-2 py-1.5 text-xs"
-            >
-              <span className="w-5 text-text-dim">{i + 1}.</span>
-              <span className="flex-1 text-text-primary">{name}</span>
-              {name === activeName && (
-                <span className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent">
-                  active
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={() => setPriorityOrder(swap(priorityOrder, i, i - 1))}
-                disabled={i === 0}
-                aria-label={`Move ${name} up`}
-                className="text-text-faint hover:text-text-primary disabled:opacity-30"
-              >
-                <ArrowUp size={12} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setPriorityOrder(swap(priorityOrder, i, i + 1))}
-                disabled={i === priorityOrder.length - 1}
-                aria-label={`Move ${name} down`}
-                className="text-text-faint hover:text-text-primary disabled:opacity-30"
-              >
-                <ArrowDown size={12} />
-              </button>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      {env && (
-        <section className="max-w-3xl">
-          <h2 className="mb-2 flex items-center gap-3 text-xs font-medium uppercase tracking-wider text-text-dim">
-            Variables in
-            <input
-              value={env.name}
-              onBlur={(e) => {
-                const next = e.target.value.trim();
-                if (next && next !== env.name) {
-                  renameEnvironment(env.name, next);
-                  setEditingPanel(next);
-                }
-              }}
-              onChange={(e) => setEditingPanel(e.target.value)}
-              aria-label="Environment name"
-              className="rounded-sm border border-transparent bg-transparent px-1 text-xs uppercase tracking-wider text-text-primary hover:border-border focus:border-accent focus:outline-none"
-            />
-            {env.name !== activeName && (
-              <button
-                type="button"
-                onClick={() => setActiveEnvironment(env.name)}
-                className="ml-auto rounded-sm border border-border px-2 py-0.5 text-[10px] normal-case tracking-normal text-text-muted hover:border-accent hover:text-text-primary"
-              >
-                Set active
-              </button>
-            )}
-          </h2>
-          <VariableTable env={env} />
-        </section>
-      )}
+      <p className="text-xs text-text-muted">
+        The resolver walks <span className="text-text-primary">context vars</span> → the global
+        layer (in sidebar order) → <span className="text-text-primary">vault secrets</span> when
+        expanding <code>{'{{NAME}}'}</code> in a request. First match wins.
+      </p>
+      <VariableTable env={env} />
     </div>
   );
-}
-
-function swap<T>(arr: ReadonlyArray<T>, a: number, b: number): T[] {
-  if (a < 0 || b < 0 || a >= arr.length || b >= arr.length || a === b) return [...arr];
-  const next = [...arr];
-  [next[a], next[b]] = [next[b], next[a]];
-  return next;
 }
 
 interface VariableTableProps {
@@ -134,6 +80,8 @@ function VariableTable({ env }: VariableTableProps) {
   const setVariables = useWorkspaceStore((s) => s.setVariables);
   const addVariableRow = useWorkspaceStore((s) => s.addVariableRow);
   const setVariableValue = useWorkspaceStore((s) => s.setVariableValue);
+  const bindVariableToSecretKey = useWorkspaceStore((s) => s.bindVariableToSecretKey);
+  const unbindVariableSecretKey = useWorkspaceStore((s) => s.unbindVariableSecretKey);
 
   return (
     <div role="group" aria-label={`Variables for ${env.name}`} className="flex flex-col gap-1">
@@ -144,7 +92,7 @@ function VariableTable({ env }: VariableTableProps) {
       )}
       {env.variables.map((v, i) => (
         <VariableRow
-          key={i}
+          key={`${env.name}-${i}`}
           envName={env.name}
           index={i}
           row={v}
@@ -152,17 +100,11 @@ function VariableTable({ env }: VariableTableProps) {
             const next = env.variables.map((r, idx) => (idx === i ? { ...r, key } : r));
             setVariables(env.name, next);
           }}
-          onCommitValue={(value, encrypted) => {
-            void setVariableValue(env.name, i, value, encrypted);
+          onCommitValue={(value) => {
+            void setVariableValue(env.name, i, value, false);
           }}
-          onToggleEncrypted={(encrypted) => {
-            // Toggle without re-encrypt: leave the literal value in place. The
-            // user is expected to re-enter the value afterward — toggling
-            // encryption on a non-empty plaintext is a separate flow handled
-            // by the on-commit path.
-            const next = env.variables.map((r, idx) => (idx === i ? { ...r, encrypted } : r));
-            setVariables(env.name, next);
-          }}
+          onBindKey={(secretKeyId) => bindVariableToSecretKey(env.name, i, secretKeyId)}
+          onUnbind={() => unbindVariableSecretKey(env.name, i)}
           onRemove={() => {
             const next = env.variables.filter((_, idx) => idx !== i);
             setVariables(env.name, next);
@@ -178,8 +120,10 @@ function VariableTable({ env }: VariableTableProps) {
         Add variable
       </button>
       <p className="mt-2 text-[11px] text-text-dim">
-        Encrypted values are AES-GCM-encrypted with your local master key. The ciphertext is what
-        gets pushed to Git; only this browser holds the key to decrypt them.
+        Encrypted values must be bound to a Secret Vault key. The synced workspace stores only the
+        key id + label — the actual value lives in your local vault and (for CLI runs) is supplied
+        via <code>APICIRCLE_SECRET_&lt;id&gt;</code> env vars or{' '}
+        <code>--secrets &lt;file&gt;.json</code>.
       </p>
     </div>
   );
@@ -188,59 +132,37 @@ function VariableTable({ env }: VariableTableProps) {
 interface VariableRowProps {
   envName: string;
   index: number;
-  row: Environment['variables'][number];
+  row: EnvironmentVariable;
   onKey: (key: string) => void;
-  onCommitValue: (value: string, encrypted: boolean) => void;
-  onToggleEncrypted: (encrypted: boolean) => void;
+  onCommitValue: (value: string) => void;
+  onBindKey: (secretKeyId: string) => void;
+  onUnbind: () => void;
   onRemove: () => void;
 }
 
-function VariableRow({ row, onKey, onCommitValue, onToggleEncrypted, onRemove }: VariableRowProps) {
+function VariableRow({
+  row,
+  onKey,
+  onCommitValue,
+  onBindKey,
+  onUnbind,
+  onRemove,
+}: VariableRowProps) {
+  const secretEntries = useWorkspaceStore((s) => s.local?.secretIndex.entries ?? {});
   const [draftValue, setDraftValue] = useState<string | null>(null);
-  const [reveal, setReveal] = useState(false);
-  const [revealed, setRevealed] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
-  const placeholder = row.encrypted ? 'enter value to encrypt and store' : 'value';
-  const displayedStored = row.encrypted ? '••••••••' : row.value;
-  const liveValue = draftValue ?? displayedStored;
-
+  const liveValue = draftValue ?? row.value;
   const onValueBlur = () => {
     if (draftValue === null) return;
-    onCommitValue(draftValue, row.encrypted);
+    onCommitValue(draftValue);
     setDraftValue(null);
-    setRevealed(null);
-    setReveal(false);
   };
 
-  const onReveal = async () => {
-    if (!row.encrypted || !row.value) {
-      setReveal((r) => !r);
-      return;
-    }
-    if (reveal) {
-      setReveal(false);
-      setRevealed(null);
-      return;
-    }
-    const payload = tryParsePayload(row.value);
-    if (!payload) {
-      setRevealed('(unparseable ciphertext)');
-      setReveal(true);
-      return;
-    }
-    try {
-      const key = await getMasterKey();
-      const plaintext = await decryptString(payload, key);
-      setRevealed(plaintext);
-      setReveal(true);
-    } catch {
-      setRevealed('(decrypt failed — wrong key)');
-      setReveal(true);
-    }
-  };
+  const boundLabel = row.secretKeyId ? secretEntries[row.secretKeyId]?.label : null;
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="relative flex items-center gap-2">
       <input
         type="text"
         value={row.key}
@@ -249,51 +171,225 @@ function VariableRow({ row, onKey, onCommitValue, onToggleEncrypted, onRemove }:
         aria-label="Variable key"
         className="h-7 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
       />
-      <input
-        type={row.encrypted && !reveal ? 'password' : 'text'}
-        value={reveal && revealed !== null ? revealed : liveValue}
-        onChange={(e) => {
-          setDraftValue(e.target.value);
-          setRevealed(null);
-        }}
-        onBlur={onValueBlur}
-        placeholder={placeholder}
-        aria-label="Variable value"
-        className="h-7 flex-[2] rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
-      />
-      {row.encrypted && (
+      {row.encrypted && row.secretKeyId ? (
+        <div
+          className="flex h-7 flex-[2] items-center gap-2 rounded-sm border border-amber/30 bg-amber/5 px-2 text-xs"
+          aria-label="Variable value (bound to secret key)"
+        >
+          <Lock size={12} className="text-amber" />
+          <span className="truncate text-text-primary">
+            {boundLabel ?? '(secret key missing locally)'}
+          </span>
+          <span className="ml-auto rounded-sm border border-border bg-surface px-1 text-[10px] text-text-dim">
+            id: {row.secretKeyId.slice(0, 6)}…
+          </span>
+        </div>
+      ) : (
+        <input
+          type="text"
+          value={liveValue}
+          onChange={(e) => setDraftValue(e.target.value)}
+          onBlur={onValueBlur}
+          placeholder="value"
+          aria-label="Variable value"
+          className="h-7 flex-[2] rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+        />
+      )}
+      {row.encrypted && row.secretKeyId ? (
+        <>
+          <button
+            type="button"
+            onClick={() => setPickerOpen((o) => !o)}
+            className="inline-flex h-7 items-center gap-1 rounded-sm border border-amber/40 bg-amber/10 px-2 text-[10px] text-amber hover:border-amber/70"
+            aria-label="Change secret key"
+            aria-expanded={pickerOpen}
+          >
+            <KeyRound size={12} />
+            Change key
+          </button>
+          <button
+            type="button"
+            onClick={onUnbind}
+            className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[10px] text-text-muted hover:border-accent hover:text-text-primary"
+            aria-label="Unbind secret key"
+            title="Unbind — return to plain value"
+          >
+            <Unlock size={12} />
+            Unbind
+          </button>
+        </>
+      ) : (
         <button
           type="button"
-          onClick={() => void onReveal()}
-          className="text-text-faint hover:text-text-primary"
-          aria-label={reveal ? 'Hide value' : 'Reveal value'}
+          onClick={() => setPickerOpen((o) => !o)}
+          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[10px] text-text-muted hover:border-accent hover:text-text-primary"
+          aria-label="Encrypt"
+          aria-expanded={pickerOpen}
+          title="Bind this value to a Secret Vault key"
         >
-          {reveal ? <EyeOff size={12} /> : <Eye size={12} />}
+          <Lock size={12} />
+          Encrypt
         </button>
       )}
       <button
         type="button"
-        onClick={() => onToggleEncrypted(!row.encrypted)}
-        className={cn(
-          'inline-flex h-6 items-center gap-1 rounded-sm border px-1.5 text-[10px]',
-          row.encrypted
-            ? 'border-amber/40 bg-amber/10 text-amber'
-            : 'border-border bg-surface text-text-muted',
-        )}
-        aria-pressed={row.encrypted}
-        aria-label="Toggle encrypted"
-      >
-        <Lock size={10} />
-        {row.encrypted ? 'Encrypted' : 'Plain'}
-      </button>
-      <button
-        type="button"
         onClick={onRemove}
-        className="text-text-faint hover:text-danger"
+        className="inline-flex h-7 w-7 items-center justify-center text-text-faint hover:text-danger"
         aria-label="Remove variable"
+        title="Remove variable"
       >
-        <Trash2 size={12} />
+        <Trash2 size={14} />
       </button>
+      {pickerOpen && (
+        <SecretKeyPicker
+          onClose={() => setPickerOpen(false)}
+          onPick={(id) => {
+            onBindKey(id);
+            setPickerOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+interface SecretKeyPickerProps {
+  onClose: () => void;
+  onPick: (id: string) => void;
+}
+
+function SecretKeyPicker({ onClose, onPick }: SecretKeyPickerProps) {
+  const entries = useWorkspaceStore((s) => s.local?.secretIndex.entries ?? {});
+  const addSecret = useWorkspaceStore((s) => s.addSecret);
+  const list: SecretEntry[] = useMemo(
+    () => Object.values(entries).sort((a, b) => a.label.localeCompare(b.label)),
+    [entries],
+  );
+  const [filter, setFilter] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [newLabel, setNewLabel] = useState('');
+  const [newValue, setNewValue] = useState('');
+  const [busy, setBusy] = useState(false);
+  const filtered = list.filter(
+    (e) => filter === '' || e.label.toLowerCase().includes(filter.toLowerCase()),
+  );
+
+  const submitCreate = async () => {
+    if (!newLabel.trim() || busy) return;
+    setBusy(true);
+    try {
+      const id = await addSecret({ label: newLabel.trim(), value: newValue, origin: 'workspace' });
+      if (id) onPick(id);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-label="Pick or create a Secret Vault key"
+      className="absolute right-0 top-8 z-30 flex w-80 flex-col gap-2 rounded-sm border border-border bg-card p-2 shadow-lg"
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-wider text-text-dim">Secret keys</span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-text-faint hover:text-text-primary"
+          aria-label="Close picker"
+        >
+          ×
+        </button>
+      </div>
+
+      {!creating && (
+        <>
+          <input
+            autoFocus
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter labels…"
+            aria-label="Filter labels"
+            className="h-7 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+          />
+          {filtered.length === 0 ? (
+            <p className="px-1 py-2 text-[11px] text-text-dim">
+              {list.length === 0 ? 'No secret keys yet — create one below.' : 'No matches.'}
+            </p>
+          ) : (
+            <ul role="listbox" className="max-h-48 overflow-y-auto">
+              {filtered.map((entry) => (
+                <li key={entry.id}>
+                  <button
+                    type="button"
+                    onClick={() => onPick(entry.id)}
+                    className="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1 text-left text-xs text-text-muted hover:bg-surface hover:text-text-primary"
+                  >
+                    <span className="truncate">{entry.label}</span>
+                    <span className="text-[10px] text-text-dim">id {entry.id.slice(0, 6)}…</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setCreating(true);
+              setNewLabel(filter);
+              setFilter('');
+            }}
+            className="inline-flex h-7 items-center justify-center gap-1 rounded-sm border border-dashed border-accent bg-accent/5 text-[11px] text-accent hover:bg-accent/10"
+          >
+            <Plus size={12} />
+            New secret key
+          </button>
+        </>
+      )}
+
+      {creating && (
+        <div className="flex flex-col gap-2">
+          <input
+            autoFocus
+            value={newLabel}
+            onChange={(e) => setNewLabel(e.target.value)}
+            placeholder="Label (e.g. PROD_API_TOKEN)"
+            aria-label="Secret key label"
+            className="h-7 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+          />
+          <input
+            type="password"
+            value={newValue}
+            onChange={(e) => setNewValue(e.target.value)}
+            placeholder="Value (stays in your local vault)"
+            aria-label="Secret key value"
+            className="h-7 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+          />
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                setCreating(false);
+                setNewLabel('');
+                setNewValue('');
+              }}
+              className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-accent hover:text-text-primary"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void submitCreate()}
+              disabled={!newLabel.trim() || busy}
+              className="h-7 flex-1 rounded-sm border border-accent bg-accent/10 px-2 text-[11px] text-text-primary hover:bg-accent/20 disabled:opacity-50"
+            >
+              {busy ? 'Creating…' : 'Create & bind'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

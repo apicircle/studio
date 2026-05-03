@@ -14,6 +14,7 @@ const baseResult = (overrides: Partial<ExecutionResult> = {}): ExecutionResult =
   bodyKind: 'empty',
   url: 'https://x',
   method: 'GET',
+  authWarnings: [],
   ...overrides,
 });
 

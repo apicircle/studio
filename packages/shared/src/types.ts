@@ -74,6 +74,14 @@ export interface WorkspaceSynced {
   // CLI. Runtime status (port, pid, request count) lives in
   // `WorkspaceLocal.mockRuntime` and is host-specific.
   mockServers: Record<string, MockServer>;
+  // Synced labels for secret keys referenced by environment variables.
+  // The actual secret values live in WorkspaceLocal vault (and are
+  // supplied at runtime for the CLI). This map exists so collaborators
+  // see consistent human labels for the same id. Optional so older
+  // workspaces can load without a hard schema bump; the normalizer in
+  // workspaceStorage backfills `{}` on read and the store always writes
+  // a populated value.
+  secretKeys?: Record<string, SecretKeyMeta>;
   meta: {
     createdAt: string;
     updatedAt: string;
@@ -91,6 +99,13 @@ export interface Folder {
   id: string;
   name: string;
   parentId: string | null;
+  /**
+   * Optional folder-level auth. When a request has `auth.type === 'inherit'`,
+   * the runner walks up the folder chain and uses the first explicit
+   * (non-`inherit`, non-`none`) auth it finds. Absent here = no folder-level
+   * auth at this level (continue walking up).
+   */
+  auth?: RequestAuth;
 }
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
@@ -113,6 +128,18 @@ export interface Request {
   url: string;
   headers: Array<{ key: string; value: string; enabled: boolean }>;
   query: Array<{ key: string; value: string; enabled: boolean }>;
+  /**
+   * Values for URL path placeholders (`:name` Express-style or `{name}`
+   * OpenAPI-style). Keys are expected to match placeholder names found in
+   * `url`. Missing keys substitute to empty string at send time. Absent =
+   * empty (no path params), so the field is optional in storage.
+   */
+  pathParams?: Record<string, string>;
+  /**
+   * Cookies sent with the request. Joined into a single `Cookie` header at
+   * send time (existing user-set Cookie header wins). Absent = no cookies.
+   */
+  cookies?: Array<{ key: string; value: string; enabled: boolean }>;
   body: RequestBody;
   // Discriminated union covering all 15 supported auth schemes. Defaults to
   // { type: 'none' }. Older synced docs without this field are upgraded by
@@ -205,7 +232,20 @@ export interface OAuth2TokenState {
   accessToken: string;
   tokenType: string; // 'Bearer' by default
   refreshToken: string;
-  expiresAt: string | null; // ISO timestamp; null if unknown
+  /**
+   * Epoch milliseconds when the access token expires, or 0 / null when
+   * unknown. Stored as number so all comparisons are direct
+   * `Date.now() < expiresAt` without round-tripping through Date()
+   * parsing on the hot path. Workspace serialization rolls it through
+   * JSON unchanged — git-side this is a number, not an ISO string.
+   */
+  expiresAt: number | null;
+  /**
+   * Scope the IdP actually granted (may differ from the request's
+   * `scope` field if the user/client is missing some). Refresh keeps
+   * this; clearing the token resets to ''.
+   */
+  obtainedScope: string;
 }
 
 export interface OAuth2ClientCredentialsAuth extends OAuth2TokenState {
@@ -300,11 +340,31 @@ export interface HawkAuth {
   hawkKey: string;
   algorithm: 'sha256' | 'sha1';
   ext: string;
+  /**
+   * When true, the request body is folded into the Hawk MAC via the
+   * payload-hash extension (Hawk spec §3.2.5). Required for servers
+   * configured with strict body-binding; leave false for the looser
+   * "header-only" form that most public Hawk APIs accept.
+   */
+  bindPayload?: boolean;
 }
 
 export interface JwtBearerAuth {
   type: 'jwt-bearer';
-  algorithm: 'HS256' | 'HS384' | 'HS512' | 'RS256' | 'RS384' | 'RS512' | 'ES256';
+  algorithm:
+    | 'HS256'
+    | 'HS384'
+    | 'HS512'
+    | 'RS256'
+    | 'RS384'
+    | 'RS512'
+    | 'PS256'
+    | 'PS384'
+    | 'PS512'
+    | 'ES256'
+    | 'ES384'
+    | 'ES512'
+    | 'EdDSA';
   secretOrKey: string;
   payload: string; // JSON
   jwtHeaders: string; // JSON
@@ -367,7 +427,26 @@ export interface Assertion {
 
 export interface Environment {
   name: string;
-  variables: Array<{ key: string; value: string; encrypted: boolean }>;
+  variables: EnvironmentVariable[];
+}
+
+// Encrypted variables MUST set `secretKeyId`, which references
+// WorkspaceSynced.secretKeys[id]. The actual secret value is never synced
+// to Git — it lives in the local vault. CLI runs receive values via
+// APICIRCLE_SECRET_<id>=… or `--secrets <file>.json`.
+export interface EnvironmentVariable {
+  key: string;
+  value: string;
+  encrypted: boolean;
+  secretKeyId?: string;
+}
+
+// Synced metadata for secret keys. Holds id + label so collaborators see
+// what each `{{NAME}}` ref points to. Values stay in WorkspaceLocal vault.
+export interface SecretKeyMeta {
+  id: string;
+  label: string;
+  createdAt: string;
 }
 
 // LinkedWorkspace — replaces v1's Repo + apiConnectionSessions. Every
@@ -544,16 +623,57 @@ export interface ExecutionPlan {
   updatedAt: string;
 }
 
+/**
+ * Captured wire detail for a request run, written when the run completes.
+ * Stored on `WorkspaceLocal.history` (capped, IDB-only). Body fields are
+ * truncated past `RUN_BODY_PREVIEW_LIMIT` so a hundred history rows can't
+ * blow up the IDB record.
+ */
 export interface RequestRun {
   id: string;
   requestId: string;
   startedAt: string;
   durationMs: number;
   status: number | null;
+  /** Empty string for network errors (status === null). */
+  statusText: string;
   ok: boolean;
   error?: string;
-  assertions: Array<{ assertionId: string; passed: boolean; detail?: string }>;
+  /** Final URL after path-param substitution + query composition. */
+  url: string;
+  method: string;
+  /** Final headers actually sent on the wire (post-auth). */
+  requestHeaders: Record<string, string>;
+  /**
+   * Best-effort string preview of the request body. `null` for binary/form
+   * bodies (where the body isn't a string) or no body. Truncated past
+   * `RUN_BODY_PREVIEW_LIMIT` bytes.
+   */
+  requestBodyPreview: string | null;
+  /** Headers received from the server. */
+  responseHeaders: Record<string, string>;
+  /** Truncated string preview of the response body. */
+  responseBodyPreview: string;
+  responseBodyKind: 'json' | 'text' | 'binary' | 'empty';
+  responseTruncated: boolean;
+  /**
+   * Verdicts captured at run time. Snapshots the assertion definition so the
+   * History detail view can render kind/op/target/expected even when the
+   * source request has since been edited or deleted.
+   */
+  assertions: Array<{
+    assertionId: string;
+    kind: Assertion['kind'];
+    op: Assertion['op'];
+    target?: string;
+    expected: string | number;
+    passed: boolean;
+    detail?: string;
+  }>;
 }
+
+/** Soft cap for body previews stored on a RequestRun (each side). */
+export const RUN_BODY_PREVIEW_LIMIT = 64 * 1024;
 
 export interface PlanRun {
   id: string;

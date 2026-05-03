@@ -24,10 +24,12 @@ import type {
   WorkspaceSynced,
 } from '@apicircle/shared';
 import { type GitHubRepo, GitHubClient, MissingScopeError } from '@apicircle/git';
-import { generateId } from '@apicircle/shared';
+import { RUN_BODY_PREVIEW_LIMIT, generateId } from '@apicircle/shared';
 import {
   type AttachmentResolver,
   type ExecutionResult,
+  type ParsedPostmanCollection,
+  type ParsedPostmanEnvironment,
   type PublishReleaseArgs,
   type ResolutionMap,
   type ThreeWayDiff,
@@ -43,9 +45,9 @@ import {
   generateWorkingBranchName,
   parseCurl,
   publishRelease as publishReleaseAction,
+  resolveInheritedAuth,
   resolveString,
   runAssertions,
-  serializePayload,
   serializeWorkspaceForGit,
   tryParsePayload,
   validateBranchName,
@@ -61,7 +63,14 @@ import {
   putAttachment,
 } from '../persistence/attachments';
 import { getMasterKey } from '../persistence/secretKey';
-import { loadWorkspace, saveLocal, saveSynced } from '../persistence/workspaceStorage';
+import {
+  WorkspaceMismatchError,
+  loadWorkspace,
+  recoverPartialWorkspace,
+  resetWorkspace as resetWorkspaceStorage,
+  saveLocal,
+  saveSynced,
+} from '../persistence/workspaceStorage';
 import { applyTheme } from '../theme/applyTheme';
 import { bytesToBase64 } from './attachmentBlobs';
 import type { TreeEntryInput } from '@apicircle/git';
@@ -69,16 +78,21 @@ import {
   addFolder as addFolderAction,
   addRequest as addRequestAction,
   collectRequestSlotIds,
+  removeFolder as removeFolderAction,
   removeRequest as removeRequestAction,
   setRequestAssertions as setRequestAssertionsAction,
   setRequestAuth as setRequestAuthAction,
   setRequestBody as setRequestBodyAction,
+  renameFolder as renameFolderAction,
+  setFolderAuth as setFolderAuthAction,
   setRequestBodySchemaId as setRequestBodySchemaIdAction,
   setRequestContextVars as setRequestContextVarsAction,
+  setRequestCookies as setRequestCookiesAction,
   setRequestExtractions as setRequestExtractionsAction,
   setRequestGraphqlSchemaId as setRequestGraphqlSchemaIdAction,
   setRequestHeaders as setRequestHeadersAction,
   setRequestMethod as setRequestMethodAction,
+  setRequestPathParams as setRequestPathParamsAction,
   setRequestQuery as setRequestQueryAction,
   setRequestUrl as setRequestUrlAction,
   renameRequest as renameRequestAction,
@@ -140,6 +154,83 @@ const MAX_REQUEST_RUNS = 500;
 // list stays browsable without competing for the request-run buffer.
 const MAX_PLAN_RUNS = 200;
 
+/** Truncate `value` to `RUN_BODY_PREVIEW_LIMIT` UTF-16 code units. */
+function clampPreview(value: string): { preview: string; truncated: boolean } {
+  if (value.length <= RUN_BODY_PREVIEW_LIMIT) return { preview: value, truncated: false };
+  return { preview: value.slice(0, RUN_BODY_PREVIEW_LIMIT), truncated: true };
+}
+
+/**
+ * Pull a stringy preview of the request body for history. Returns null for
+ * binary / form-data / no-body cases — those don't make sense to display
+ * inline in the History detail view.
+ */
+function previewRequestBody(req: ApiRequest): string | null {
+  const body = req.body;
+  if (
+    body.type === 'json' ||
+    body.type === 'text' ||
+    body.type === 'xml' ||
+    body.type === 'urlencoded'
+  ) {
+    return clampPreview(body.content ?? '').preview;
+  }
+  if (body.type === 'graphql') {
+    const envelope = JSON.stringify(
+      { query: body.content ?? '', variables: body.variables ?? '' },
+      null,
+      2,
+    );
+    return clampPreview(envelope).preview;
+  }
+  return null;
+}
+
+/** Build a RequestRun record from a resolved request + the executor result. */
+function buildRequestRun(
+  resolvedRequest: ApiRequest,
+  result: ExecutionResult,
+  assertions: RequestRun['assertions'],
+): RequestRun {
+  const { preview: responseBodyPreview, truncated } = clampPreview(result.body ?? '');
+  return {
+    id: generateId(),
+    requestId: resolvedRequest.id,
+    startedAt: result.startedAt,
+    durationMs: result.durationMs,
+    status: result.status,
+    statusText: result.statusText,
+    ok: result.ok,
+    error: result.error,
+    url: result.url,
+    method: result.method,
+    requestHeaders: composeWireHeaders(resolvedRequest.headers),
+    requestBodyPreview: previewRequestBody(resolvedRequest),
+    responseHeaders: result.headers,
+    responseBodyPreview,
+    responseBodyKind: result.bodyKind,
+    responseTruncated: truncated,
+    assertions,
+  };
+}
+
+/**
+ * Local stand-in for `composeHeaders` from core — kept inline so this file
+ * doesn't grow another core import. Mirrors the exact shape we send.
+ */
+function composeWireHeaders(
+  rows: ReadonlyArray<{ key: string; value: string; enabled: boolean }>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const row of rows) {
+    if (!row.enabled) continue;
+    const k = row.key.trim();
+    if (!k) continue;
+    out[k] = row.value;
+  }
+  return out;
+}
+
 function readStoredPanel(): PanelId {
   if (typeof localStorage === 'undefined') return 'editor';
   try {
@@ -172,8 +263,48 @@ interface PendingRefresh {
   remoteSha: string;
 }
 
+/**
+ * Ephemeral UI state for the History panel. Filters + selected-run live here
+ * so the sidebar (filters) and main area (run list + detail) stay in sync
+ * without prop-drilling.
+ */
+export interface HistoryUiState {
+  tab: 'requests' | 'plans';
+  search: string;
+  /** Status buckets to keep visible. Empty = no status filter. */
+  statusBuckets: Array<'ok' | '4xx' | '5xx' | 'error'>;
+  /** HTTP methods to keep visible. Empty = no method filter. */
+  methods: string[];
+  fromDate: string | null;
+  toDate: string | null;
+  selectedRunId: string | null;
+}
+
+const EMPTY_HISTORY_UI: HistoryUiState = {
+  tab: 'requests',
+  search: '',
+  statusBuckets: [],
+  methods: [],
+  fromDate: null,
+  toDate: null,
+  selectedRunId: null,
+};
+
+/** Surfaced when `hydrate()` cannot load the persisted workspace cleanly. */
+export interface HydrationError {
+  message: string;
+  /** When known, the workspaceIds we found in IDB (helps the user understand what they'd lose if they reset). */
+  syncedWorkspaceId: string | null;
+  localWorkspaceId: string | null;
+}
+
 type WorkspaceStore = {
   ready: boolean;
+  /**
+   * Set when hydrate() fails (unreadable IDB record, schema mismatch, etc.).
+   * The App renders a recovery UI rather than auto-wiping the user's data.
+   */
+  hydrationError: HydrationError | null;
   synced: WorkspaceSynced | null;
   local: WorkspaceLocal | null;
 
@@ -194,6 +325,13 @@ type WorkspaceStore = {
    * panel is active.
    */
   missingScopePrompt: string[] | null;
+  /**
+   * Ephemeral UI state for the History panel — not persisted. Lives on the
+   * store so the sidebar (filters) and main area (run list + detail) can
+   * share state without a parent prop drill.
+   */
+  historyUi: HistoryUiState;
+  setHistoryUi: (next: Partial<HistoryUiState>) => void;
   // Per-request last-run cache. Not persisted — request runs land in
   // local.history once they complete; this is the live working result for
   // the editor panel.
@@ -205,7 +343,7 @@ type WorkspaceStore = {
     string,
     Array<{
       result: ExecutionResult;
-      assertionResults: ReadonlyArray<{ assertionId: string; passed: boolean; detail?: string }>;
+      assertionResults: ReadonlyArray<RequestRun['assertions'][number]>;
       passed: boolean;
       requestName: string;
       requestMethod: string;
@@ -221,6 +359,9 @@ type WorkspaceStore = {
   setThemeId: (themeId: ThemeId) => void;
   setWorkspaceName: (name: string) => void;
 
+  /** Remove a mock definition from the workspace. No runtime side effect. */
+  removeMockServer: (id: string) => void;
+
   openSecretVault: () => void;
   closeSecretVault: () => void;
 
@@ -229,7 +370,7 @@ type WorkspaceStore = {
   /** Dismiss the prompt without changing anything else. */
   dismissMissingScope: () => void;
 
-  addRequest: (parentFolderId: string | null) => string;
+  addRequest: (parentFolderId: string | null, name?: string) => string;
   /**
    * Parse a `curl` command and create a new request seeded with the
    * parsed method/URL/headers/body/auth. Selects the new request as
@@ -241,15 +382,48 @@ type WorkspaceStore = {
     parentFolderId?: string | null,
   ) => { id: string; warnings: string[] };
   addFolder: (parentFolderId: string | null, name?: string) => string;
+  removeFolder: (id: string) => void;
   removeRequest: (id: string) => void;
   renameRequest: (id: string, name: string) => void;
+  renameFolder: (id: string, name: string) => void;
+  /**
+   * Wipes both IDB records and re-seeds an empty workspace. Only invoke from
+   * an explicit user confirmation flow (e.g. the recovery banner shown after
+   * `hydrationError` fires). The hydrate path no longer calls this implicitly.
+   */
+  resetWorkspace: () => Promise<void>;
+  /**
+   * Best-effort recovery from a partial-record state. Preserves whichever
+   * side has data and rebuilds the missing partner with a matching
+   * workspaceId. Returns `'recovered'` on success, `'no-data'` if both
+   * records are empty (caller may want to fall through to resetWorkspace).
+   */
+  recoverPartialWorkspace: () => Promise<'recovered' | 'no-data'>;
   setRequestMethod: (id: string, method: HttpMethod) => void;
   setRequestUrl: (id: string, url: string) => void;
   setRequestBody: (id: string, body: RequestBody) => void;
   setRequestHeaders: (id: string, headers: ApiRequest['headers']) => void;
   setRequestQuery: (id: string, query: ApiRequest['query']) => void;
+  setRequestPathParams: (id: string, pathParams: Record<string, string>) => void;
+  setRequestCookies: (id: string, cookies: NonNullable<ApiRequest['cookies']>) => void;
   setRequestAssertions: (id: string, assertions: Assertion[]) => void;
   setRequestAuth: (id: string, auth: RequestAuth) => void;
+  /** Set folder-level auth. Pass `undefined` to clear (folder becomes transparent on `inherit` walks). */
+  setFolderAuth: (folderId: string, auth: RequestAuth | undefined) => void;
+  /**
+   * Import a parsed Postman v2.1 collection into the synced workspace. Wraps
+   * the imported tree in a folder named after the collection. Returns counts
+   * (`folders` includes the wrapper).
+   */
+  importPostmanCollection: (
+    parsed: ParsedPostmanCollection,
+    parentFolderId?: string | null,
+  ) => { folders: number; requests: number };
+  /**
+   * Import a parsed Postman environment. Returns the final env name
+   * (uniquified if it collided), or null if no synced doc was loaded.
+   */
+  importPostmanEnvironment: (parsed: ParsedPostmanEnvironment) => string | null;
   setRequestExtractions: (id: string, extractions: ContextExtraction[]) => void;
   setRequestContextVars: (id: string, contextVars: ApiRequest['contextVars']) => void;
   setRequestBodySchemaId: (id: string, schemaId: string | null) => void;
@@ -329,12 +503,18 @@ type WorkspaceStore = {
    * Set a variable's value, encrypting it on the way in if `encrypted` is
    * true. Existing encrypted ciphertext is rotated under the same key.
    */
-  setVariableValue: (
-    envName: string,
-    index: number,
-    value: string,
-    encrypted: boolean,
-  ) => Promise<void>;
+  setVariableValue: (envName: string, index: number, value: string, encrypted: boolean) => void;
+  /**
+   * Bind an environment variable to a vault secret-key id. Sets
+   * encrypted=true, clears any stale plaintext value, and backfills the
+   * synced `secretKeys` map so collaborators see the label.
+   */
+  bindVariableToSecretKey: (envName: string, index: number, secretKeyId: string) => void;
+  /** Reverse of bindVariableToSecretKey: clear secretKeyId + return to plain. */
+  unbindVariableSecretKey: (envName: string, index: number) => void;
+  /** Transient panel focus — which env's variables the panel is editing. */
+  envFocus: string | null;
+  setEnvFocus: (name: string | null) => void;
 
   // Secret Vault
   /**
@@ -628,8 +808,11 @@ const GITHUB_TOKEN_LABEL_PREFIX = 'github-token:';
 
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   ready: false,
+  hydrationError: null,
   synced: null,
   local: null,
+  historyUi: EMPTY_HISTORY_UI,
+  setHistoryUi: (next) => set((s) => ({ historyUi: { ...s.historyUi, ...next } })),
   activePanel: readStoredPanel(),
   secretVaultOpen: false,
   globalAssetsOpen: false,
@@ -640,11 +823,64 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   lastRun: {},
   lastPlanResults: {},
   isExecuting: {},
+  envFocus: null,
 
   hydrate: async () => {
-    const { synced, local } = await loadWorkspace();
+    try {
+      const { synced, local } = await loadWorkspace();
+      applyTheme(local.ui.themeId);
+      // One-shot legacy migration: rows that were encrypted with the master
+      // key (no secretKeyId) get decrypted in-place to plaintext, so the
+      // new vault-key-only encryption model has a clean baseline.
+      const migrated = await migrateLegacyEncryptedEnvVars(synced);
+      if (migrated !== synced) {
+        try {
+          await saveSynced(migrated);
+        } catch (saveErr) {
+          console.error('[workspace.hydrate] legacy env-var migration could not persist', saveErr);
+        }
+      }
+      set({ ready: true, hydrationError: null, synced: migrated, local });
+    } catch (err) {
+      // Surface the failure instead of overwriting IDB. The previous behavior
+      // (auto-reset to a fresh workspace) destroyed user data on any
+      // transient hiccup. Keep IDB intact and render a recovery UI in App.
+      console.error('[workspace.hydrate] failed', err);
+      const message = err instanceof Error ? err.message : String(err);
+      const syncedWorkspaceId =
+        err instanceof WorkspaceMismatchError ? err.syncedWorkspaceId : null;
+      const localWorkspaceId = err instanceof WorkspaceMismatchError ? err.localWorkspaceId : null;
+      set({
+        ready: false,
+        hydrationError: { message, syncedWorkspaceId, localWorkspaceId },
+        synced: null,
+        local: null,
+      });
+    }
+  },
+
+  /**
+   * Deliberate user-initiated reset. Wipes both IDB records and re-seeds an
+   * empty workspace. Only call from a confirmation flow surfaced after a
+   * hydrationError — never automatically.
+   */
+  resetWorkspace: async () => {
+    const { synced, local } = await resetWorkspaceStorage();
     applyTheme(local.ui.themeId);
-    set({ ready: true, synced, local });
+    set({ ready: true, hydrationError: null, synced, local });
+  },
+
+  recoverPartialWorkspace: async () => {
+    const result = await recoverPartialWorkspace();
+    if (!result) return 'no-data';
+    applyTheme(result.local.ui.themeId);
+    set({
+      ready: true,
+      hydrationError: null,
+      synced: result.synced,
+      local: result.local,
+    });
+    return 'recovered';
   },
 
   setActivePanel: (panel) => {
@@ -695,16 +931,37 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     void saveSynced(nextSynced);
   },
 
+  // Delete a mock definition. Pure data op — the runtime is the Desktop
+  // bridge's job and stays gated behind `apicircleDesktop.mock`.
+  // Creation is intentionally MCP-only in the web UI: the OpenAPI /
+  // Postman / Insomnia parsers (swagger-parser et al) are Node-only and
+  // can't run in the browser without significant rework. See
+  // MockServersPanel for the empty-state guidance pointing users at the
+  // MCP `mock.create_from_*` tools / CLI / Desktop instead.
+  removeMockServer: (id) => {
+    const synced = get().synced;
+    if (!synced || !synced.mockServers[id]) return;
+    const { [id]: _drop, ...rest } = synced.mockServers;
+    void _drop;
+    const nextSynced: WorkspaceSynced = {
+      ...synced,
+      mockServers: rest,
+      meta: { ...synced.meta, updatedAt: new Date().toISOString() },
+    };
+    set({ synced: nextSynced });
+    void saveSynced(nextSynced);
+  },
+
   openSecretVault: () => set({ secretVaultOpen: true }),
   closeSecretVault: () => set({ secretVaultOpen: false }),
 
   surfaceMissingScope: (scopes) => set({ missingScopePrompt: scopes }),
   dismissMissingScope: () => set({ missingScopePrompt: null }),
 
-  addRequest: (parentFolderId) => {
+  addRequest: (parentFolderId, name) => {
     const synced = get().synced;
     if (!synced) return '';
-    const { synced: nextSynced, request } = addRequestAction(synced, parentFolderId);
+    const { synced: nextSynced, request } = addRequestAction(synced, parentFolderId, name);
     set({ synced: nextSynced });
     void saveSynced(nextSynced);
     // Auto-select the new request.
@@ -762,6 +1019,26 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     return folder.id;
   },
 
+  removeFolder: (id) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const { synced: next, deletedRequestIds } = removeFolderAction(synced, id);
+    if (next === synced) return;
+    set({ synced: next });
+    void saveSynced(next);
+    // Free attachments of every cascaded request, mirroring removeRequest.
+    const slotIds: string[] = [];
+    for (const rid of deletedRequestIds) {
+      const original = synced.collections.requests[rid];
+      if (original) slotIds.push(...collectRequestSlotIds(original));
+    }
+    if (slotIds.length > 0) void deleteManyAttachments(slotIds);
+    const activeId = get().local?.ui.activeRequestId ?? null;
+    if (activeId && deletedRequestIds.includes(activeId)) {
+      get().setActiveRequestId(null);
+    }
+  },
+
   removeRequest: (id) => {
     const synced = get().synced;
     if (!synced) return;
@@ -778,6 +1055,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   renameRequest: (id, name) => commitSynced(set, get, (s) => renameRequestAction(s, id, name)),
+  renameFolder: (id, name) => commitSynced(set, get, (s) => renameFolderAction(s, id, name)),
   setRequestMethod: (id, method) =>
     commitSynced(set, get, (s) => setRequestMethodAction(s, id, method)),
   setRequestUrl: (id, url) => commitSynced(set, get, (s) => setRequestUrlAction(s, id, url)),
@@ -786,9 +1064,92 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     commitSynced(set, get, (s) => setRequestHeadersAction(s, id, headers)),
   setRequestQuery: (id, query) =>
     commitSynced(set, get, (s) => setRequestQueryAction(s, id, query)),
+  setRequestPathParams: (id, pathParams) =>
+    commitSynced(set, get, (s) => setRequestPathParamsAction(s, id, pathParams)),
+  setRequestCookies: (id, cookies) =>
+    commitSynced(set, get, (s) => setRequestCookiesAction(s, id, cookies)),
   setRequestAssertions: (id, assertions) =>
     commitSynced(set, get, (s) => setRequestAssertionsAction(s, id, assertions)),
   setRequestAuth: (id, auth) => commitSynced(set, get, (s) => setRequestAuthAction(s, id, auth)),
+  setFolderAuth: (folderId, auth) =>
+    commitSynced(set, get, (s) => setFolderAuthAction(s, folderId, auth)),
+
+  importPostmanCollection: (parsed, parentFolderId = null) => {
+    const synced = get().synced;
+    if (!synced) return { folders: 0, requests: 0 };
+    let cur = synced;
+    // Map from path-id stringification -> created folder id, so requests
+    // attaching to nested folders can resolve their parent in O(1).
+    const pathToFolderId = new Map<string, string>();
+    pathToFolderId.set('', parentFolderId ?? '');
+    // Create the top-level container folder so the imported tree doesn't
+    // pollute the root with its requests.
+    const { synced: afterRoot, folder: rootFolder } = addFolderAction(
+      cur,
+      parentFolderId,
+      parsed.collectionName,
+    );
+    cur = afterRoot;
+    const rootKey = '';
+    pathToFolderId.set(rootKey, rootFolder.id);
+
+    for (const folder of parsed.folders) {
+      const parentKey = folder.parentPathIds ? folder.parentPathIds.join('.') : rootKey;
+      const parentId = pathToFolderId.get(parentKey) ?? rootFolder.id;
+      const { synced: next, folder: created } = addFolderAction(cur, parentId, folder.name);
+      cur = next;
+      pathToFolderId.set(folder.pathIds.join('.'), created.id);
+    }
+
+    for (const req of parsed.requests) {
+      const parentKey = req.folderPathIds ? req.folderPathIds.join('.') : rootKey;
+      const parentId = pathToFolderId.get(parentKey) ?? rootFolder.id;
+      const { synced: next, request } = addRequestAction(cur, parentId, req.name);
+      cur = next;
+      // Patch the freshly-created request with the imported fields. We go
+      // through `updateRequest` shape — same path renameRequest etc. use.
+      const r = cur.collections.requests[request.id];
+      const patched = {
+        ...r,
+        method: req.method,
+        url: req.url,
+        headers: req.headers,
+        query: req.query,
+        body: req.body,
+        auth: req.auth,
+        updatedAt: new Date().toISOString(),
+      };
+      cur = {
+        ...cur,
+        collections: {
+          ...cur.collections,
+          requests: { ...cur.collections.requests, [request.id]: patched },
+        },
+      };
+    }
+
+    set({ synced: cur });
+    void saveSynced(cur);
+    return { folders: parsed.folders.length + 1, requests: parsed.requests.length };
+  },
+
+  importPostmanEnvironment: (parsed) => {
+    const state = get();
+    if (!state.synced) return null;
+    const { name, variables } = parsed;
+    // Uniquify the name against existing environments — env names are unique
+    // keys in the items map; collision would silently no-op the add.
+    const existing = state.synced.environments.items;
+    let finalName = name;
+    let n = 2;
+    while (existing[finalName]) {
+      finalName = `${name} (${n})`;
+      n += 1;
+    }
+    state.addEnvironment(finalName);
+    state.setVariables(finalName, variables);
+    return finalName;
+  },
   setRequestExtractions: (id, extractions) =>
     commitSynced(set, get, (s) => setRequestExtractionsAction(s, id, extractions)),
   setRequestContextVars: (id, contextVars) =>
@@ -991,7 +1352,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     commitSynced(set, get, (s) => setVariablesAction(s, envName, variables)),
   addVariableRow: (envName) => commitSynced(set, get, (s) => addVariableRowAction(s, envName)),
 
-  setVariableValue: async (envName, index, value, encrypted) => {
+  setVariableValue: (envName, index, value, encrypted) => {
     const synced = get().synced;
     if (!synced) return;
     const env = synced.environments.items[envName];
@@ -999,16 +1360,62 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const existing = env.variables[index];
     if (!existing) return;
 
-    let storedValue = value;
-    if (encrypted) {
-      const key = await getMasterKey();
-      const payload = await encryptString(value, key);
-      storedValue = serializePayload(payload);
-    }
+    // Encryption now flows exclusively through bindVariableToSecretKey:
+    // the only legitimate way for a row to be `encrypted: true` is to be
+    // bound to a vault secretKeyId. A direct setVariableValue call always
+    // updates plaintext (and clears any stale secretKeyId).
     const nextVars: Environment['variables'] = env.variables.map((v, i) =>
-      i === index ? { ...v, value: storedValue, encrypted } : v,
+      i === index ? { ...v, value, encrypted: false, secretKeyId: undefined } : v,
+    );
+    void encrypted; // legacy callers may still pass true; ignored intentionally.
+    commitSynced(set, get, (s) => setVariablesAction(s, envName, nextVars));
+  },
+
+  bindVariableToSecretKey: (envName, index, secretKeyId) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const env = synced.environments.items[envName];
+    if (!env) return;
+    const local = get().local;
+    if (!local || !local.secretIndex.entries[secretKeyId]) return;
+    const entry = local.secretIndex.entries[secretKeyId];
+
+    // Backfill the synced label map so collaborators see what this id is for.
+    const existingMeta = synced.secretKeys?.[secretKeyId];
+    const nextSecretKeys = {
+      ...(synced.secretKeys ?? {}),
+      [secretKeyId]: existingMeta ?? {
+        id: secretKeyId,
+        label: entry.label,
+        createdAt: entry.createdAt,
+      },
+    };
+
+    const nextVars: Environment['variables'] = env.variables.map((v, i) =>
+      i === index ? { ...v, encrypted: true, secretKeyId, value: '' } : v,
+    );
+
+    commitSynced(set, get, (s) => ({
+      ...setVariablesAction(s, envName, nextVars),
+      secretKeys: nextSecretKeys,
+    }));
+  },
+
+  unbindVariableSecretKey: (envName, index) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const env = synced.environments.items[envName];
+    if (!env) return;
+    const nextVars: Environment['variables'] = env.variables.map((v, i) =>
+      i === index ? { ...v, encrypted: false, secretKeyId: undefined, value: '' } : v,
     );
     commitSynced(set, get, (s) => setVariablesAction(s, envName, nextVars));
+  },
+
+  setEnvFocus: (name) => {
+    const items = get().synced?.environments.items ?? {};
+    if (name && !items[name]) return;
+    set({ envFocus: name });
   },
 
   // --- Secret Vault ------------------------------------------------------
@@ -1637,8 +2044,17 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           startedAt: new Date().toISOString(),
           durationMs: 0,
           status: null,
+          statusText: '',
           ok: false,
           error: lookup.error,
+          url: '',
+          method: '',
+          requestHeaders: {},
+          requestBodyPreview: null,
+          responseHeaders: {},
+          responseBodyPreview: '',
+          responseBodyKind: 'empty',
+          responseTruncated: false,
           assertions: [],
         };
         newRequestRuns.push(orphanRun);
@@ -1656,6 +2072,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
             error: lookup.error,
             url: '',
             method: '',
+            authWarnings: [],
           },
           assertionResults: [],
           passed: false,
@@ -1668,14 +2085,24 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const planScope = {
         envPriorityOrder: plan.envPriorityOrder.length > 0 ? plan.envPriorityOrder : undefined,
       };
-      // For linked steps the request expects to resolve against the
-      // SOURCE workspace's environments (the consumer hasn't seen the
-      // source's BASE_URL etc.). We pass a virtual synced doc that uses
-      // the linked snapshot's environments while keeping the consumer's
-      // secret vault.
+      // For linked steps the request expects to resolve against the SOURCE
+      // workspace's environments + folders (the consumer hasn't seen the
+      // source's BASE_URL or its folder hierarchy). We pass a virtual synced
+      // doc that uses the linked snapshot's environments + folders, while
+      // keeping the consumer's secret vault. Without the folder swap, a
+      // request whose `auth.type === 'inherit'` would walk up the consumer's
+      // folder tree (which doesn't know about the source) and silently fall
+      // back to no auth.
       const resolveSynced =
         step.linkedWorkspaceId && lookup.linkedEnvironments
-          ? { ...synced, environments: lookup.linkedEnvironments }
+          ? {
+              ...synced,
+              environments: lookup.linkedEnvironments,
+              collections: {
+                ...synced.collections,
+                folders: lookup.linkedFolders ?? {},
+              },
+            }
           : synced;
       const resolved = await resolveRequest(request, resolveSynced, get().local, planScope);
       const result = await coreExecuteRequest(resolved, {
@@ -1683,19 +2110,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       });
       const assertionResults = withAssertions ? runAssertions(request.assertions, result) : [];
       const allPassed = result.ok && (!withAssertions || assertionResults.every((a) => a.passed));
-      const runId = generateId();
-      const requestRun: RequestRun = {
-        id: runId,
-        requestId: request.id,
-        startedAt: result.startedAt,
-        durationMs: result.durationMs,
-        status: result.status,
-        ok: result.ok,
-        error: result.error,
-        assertions: assertionResults,
-      };
+      const requestRun = buildRequestRun(resolved, result, assertionResults);
       newRequestRuns.push(requestRun);
-      stepRecords.push({ requestRunId: runId, passed: allPassed });
+      stepRecords.push({ requestRunId: requestRun.id, passed: allPassed });
       planResultDetails.push({
         result,
         assertionResults,
@@ -1975,16 +2392,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         resolveAttachment: attachmentResolver,
       });
       const assertionResults = runAssertions(request.assertions, result);
-      const run: RequestRun = {
-        id: generateId(),
-        requestId: id,
-        startedAt: result.startedAt,
-        durationMs: result.durationMs,
-        status: result.status,
-        ok: result.ok,
-        error: result.error,
-        assertions: assertionResults,
-      };
+      const run = buildRequestRun(resolved, result, assertionResults);
       // Apply the request's post-run extractions into local.globalContext.
       // Failures are logged as warnings but do not block the run.
       const extractionResult =
@@ -2146,6 +2554,10 @@ function lookupPlanStepRequest(
 ): {
   request: ApiRequest | null;
   linkedEnvironments?: WorkspaceSynced['environments'];
+  // Folders from the source workspace's snapshot. The plan runner needs these
+  // so that requests with `auth.type === 'inherit'` can walk up the source's
+  // folder chain (not the consumer's, which doesn't know about the source).
+  linkedFolders?: WorkspaceSynced['collections']['folders'];
   error?: string;
 } {
   if (!step.linkedWorkspaceId) {
@@ -2179,7 +2591,11 @@ function lookupPlanStepRequest(
   const overrideKey = `${step.linkedWorkspaceId}:${step.requestId}`;
   const override = local.overrides.items[overrideKey];
   const request = override ? mergeRequestOverride(baseRequest, override.patch) : baseRequest;
-  return { request, linkedEnvironments: snapshot.environments };
+  return {
+    request,
+    linkedEnvironments: snapshot.environments,
+    linkedFolders: snapshot.collections.folders,
+  };
 }
 
 function mergeRequestOverride(base: ApiRequest, patch: Record<string, unknown>): ApiRequest {
@@ -2395,8 +2811,9 @@ async function resolveRequest(
   local: WorkspaceLocal | null,
   overrides?: { envPriorityOrder?: readonly string[] },
 ): Promise<ApiRequest> {
-  const envs = await decryptEnvironments(synced.environments.items);
-  const secrets = local ? await decryptVaultSecrets(local) : {};
+  const vault = local ? await decryptVault(local) : { byLabel: {}, byId: {} };
+  const envs = decryptEnvironments(synced.environments.items, vault.byId);
+  const secrets = vault.byLabel;
 
   // Per-request contextVars + workspace globalContext both feed the
   // contextVars layer of the resolver. Per-request entries shadow global
@@ -2416,7 +2833,9 @@ async function resolveRequest(
   const scope = buildScope({
     contextVars,
     environments: envs,
-    activeEnvName: synced.environments.activeName,
+    // The "active env" concept is gone in favor of an ordered global layer —
+    // priorityOrder is the sole list the resolver consults.
+    activeEnvName: null,
     priorityOrder,
     secrets,
   });
@@ -2458,7 +2877,16 @@ async function resolveRequest(
     };
   }
 
-  return { ...request, url, headers, query, body };
+  // Resolve folder-level inheritance: if request.auth.type === 'inherit',
+  // walk up the folder chain and pick the first explicit auth. The resolver
+  // returns the original auth unchanged for non-inherit types.
+  const auth = resolveInheritedAuth({
+    requestAuth: request.auth ?? { type: 'none' },
+    folderId: request.folderId,
+    folders: synced.collections.folders,
+  });
+
+  return { ...request, url, headers, query, body, auth };
 }
 
 /**
@@ -2474,46 +2902,122 @@ async function resolveRequest(
  * falls back to leaving the placeholder verbatim, which surfaces the
  * problem to the user rather than silently sending an empty value.
  */
-async function decryptVaultSecrets(local: WorkspaceLocal): Promise<Record<string, string>> {
+/**
+ * Decrypt every vault entry available in this browser. Returns parallel
+ * label→plaintext and id→plaintext maps so callers can resolve either
+ * `{{LABEL}}` template references or `secretKeyId`-linked env variables in
+ * the same pass.
+ */
+async function decryptVault(
+  local: WorkspaceLocal,
+): Promise<{ byLabel: Record<string, string>; byId: Record<string, string> }> {
   const ids = Object.keys(local.secretIndex.entries);
-  if (ids.length === 0) return {};
+  const empty = { byLabel: {}, byId: {} };
+  if (ids.length === 0) return empty;
   const key = await getMasterKey();
-  const out: Record<string, string> = {};
+  const byLabel: Record<string, string> = {};
+  const byId: Record<string, string> = {};
   for (const id of ids) {
     const entry = local.secretIndex.entries[id];
     const payload = await getSecretPayload(id);
     if (!payload) continue;
     try {
-      out[entry.label] = await decryptString(payload, key);
+      const plaintext = await decryptString(payload, key);
+      byLabel[entry.label] = plaintext;
+      byId[id] = plaintext;
     } catch {
       // skip on decrypt failure
     }
   }
-  return out;
+  return { byLabel, byId };
 }
 
-async function decryptEnvironments(
+/**
+ * One-shot migration: walk every environment variable; any row that carries
+ * an `encrypted: true` flag without a `secretKeyId` is from the legacy
+ * master-key flow. Decrypt it with the local master key and re-store as a
+ * plaintext row (the new model only allows encryption via vault references).
+ *
+ * Returns the same `synced` reference unchanged when there's nothing to
+ * migrate. Failures fall back to clearing the value so the row never blocks
+ * the app on a stale cipher.
+ */
+async function migrateLegacyEncryptedEnvVars(synced: WorkspaceSynced): Promise<WorkspaceSynced> {
+  const items = synced.environments.items;
+  const candidates: Array<{ envName: string; index: number; cipher: string }> = [];
+  for (const [envName, env] of Object.entries(items)) {
+    env.variables.forEach((v, index) => {
+      if (v.encrypted && !v.secretKeyId && v.value)
+        candidates.push({ envName, index, cipher: v.value });
+    });
+  }
+  if (candidates.length === 0) return synced;
+
+  let masterKey: CryptoKey | null = null;
+  try {
+    masterKey = await getMasterKey();
+  } catch {
+    masterKey = null;
+  }
+
+  const decrypted = new Map<string, string>();
+  for (const { cipher } of candidates) {
+    if (decrypted.has(cipher)) continue;
+    if (!masterKey) {
+      decrypted.set(cipher, '');
+      continue;
+    }
+    const payload = tryParsePayload(cipher);
+    if (!payload) {
+      decrypted.set(cipher, '');
+      continue;
+    }
+    try {
+      decrypted.set(cipher, await decryptString(payload, masterKey));
+    } catch {
+      decrypted.set(cipher, '');
+    }
+  }
+
+  const nextItems: Record<string, Environment> = {};
+  for (const [envName, env] of Object.entries(items)) {
+    const nextVars = env.variables.map((v) => {
+      if (v.encrypted && !v.secretKeyId && v.value) {
+        return { key: v.key, value: decrypted.get(v.value) ?? '', encrypted: false };
+      }
+      return v;
+    });
+    nextItems[envName] = { ...env, variables: nextVars };
+  }
+
+  return {
+    ...synced,
+    environments: { ...synced.environments, items: nextItems },
+    meta: { ...synced.meta, updatedAt: new Date().toISOString() },
+  };
+}
+
+function decryptEnvironments(
   items: Record<string, Environment>,
-): Promise<Record<string, Record<string, string>>> {
-  const needsKey = Object.values(items).some((env) =>
-    env.variables.some((v) => v.encrypted && tryParsePayload(v.value)),
-  );
-  const key = needsKey ? await getMasterKey() : null;
+  vaultById: Record<string, string>,
+): Record<string, Record<string, string>> {
+  // Legacy master-key blobs are migrated to plaintext during hydrate, so the
+  // only encrypted rows we still have to translate are the new model:
+  // `encrypted: true` + `secretKeyId` → look up the decrypted vault value by id.
   const out: Record<string, Record<string, string>> = {};
   for (const [name, env] of Object.entries(items)) {
     const flat: Record<string, string> = {};
     for (const v of env.variables) {
       if (!v.key) continue;
-      if (v.encrypted && key) {
-        const payload = tryParsePayload(v.value);
-        if (payload) {
-          try {
-            flat[v.key] = await decryptString(payload, key);
-            continue;
-          } catch {
-            // fall through to ciphertext literal
-          }
+      if (v.encrypted && v.secretKeyId) {
+        const fromVault = vaultById[v.secretKeyId];
+        if (typeof fromVault === 'string') {
+          flat[v.key] = fromVault;
+          continue;
         }
+        // Vault entry missing locally — leave the var unresolved so the
+        // resolver flags it (and the editor can surface a warning).
+        continue;
       }
       flat[v.key] = v.value;
     }

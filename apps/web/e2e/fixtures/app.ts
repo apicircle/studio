@@ -49,8 +49,10 @@ export const test = base.extend<Fixtures>({
   // eslint-disable-next-line no-empty-pattern
   app: async ({ page }, use) => {
     await page.goto('/');
-    // The shell renders the brand once the workspace is hydrated.
-    await expect(page.getByText('API Circle Studio')).toBeVisible();
+    // The shell renders the brand once the workspace is hydrated. Use
+    // exact match because a welcome banner ("Welcome to API Circle Studio")
+    // would otherwise match too and trip strict mode.
+    await expect(page.getByText('API Circle Studio', { exact: true })).toBeVisible();
     await use(page);
   },
   mockApi: async ({ page }, use) => {

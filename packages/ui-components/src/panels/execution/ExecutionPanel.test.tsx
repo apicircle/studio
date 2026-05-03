@@ -34,33 +34,27 @@ describe('ExecutionPanel — plan editor', () => {
   it('renames a plan, adds + reorders + removes steps', async () => {
     const user = userEvent.setup();
     // Seed two requests so the picker has something to show.
-    const r1 = useWorkspaceStore.getState().addRequest(null);
+    const r1 = useWorkspaceStore.getState().addRequest(null, 'first');
     useWorkspaceStore.getState().setRequestUrl(r1, 'https://x/a');
-    const r2 = useWorkspaceStore.getState().addRequest(null);
+    const r2 = useWorkspaceStore.getState().addRequest(null, 'second');
     useWorkspaceStore.getState().setRequestUrl(r2, 'https://x/b');
     const planId = useWorkspaceStore.getState().addPlan('orig');
 
     render(<ExecutionPanel />);
     expect(useWorkspaceStore.getState().local!.executionPlans[planId].name).toBe('orig');
 
-    // Rename via the input. Clear-then-type races the controlled-component
-    // re-render in jsdom, so use triple-click + type to fully replace the
-    // value in one user-visible interaction.
+    // Rename via the input.
     const nameInput = screen.getByLabelText('Plan name');
     await user.tripleClick(nameInput);
     await user.keyboard('Smoke');
     expect(useWorkspaceStore.getState().local!.executionPlans[planId].name).toBe('Smoke');
 
-    // Add both requests as steps. Both seeded requests are auto-named
-    // "New request", so we click the first match each time — addPlanStep
-    // appends, so calling twice yields [r1, r2] in plan order regardless
-    // of which row we picked.
+    // Open the multi-select picker and add both requests in one shot. Verifies
+    // bulk-add: a single Add steps click commits all selections.
     await user.click(screen.getByRole('button', { name: /Add step/ }));
-    const pickerOptions = screen.getAllByRole('button', { name: /GET\s+New request/ });
-    await user.click(pickerOptions[0]);
-    await user.click(screen.getByRole('button', { name: /Add step/ }));
-    const pickerOptions2 = screen.getAllByRole('button', { name: /GET\s+New request/ });
-    await user.click(pickerOptions2[0]);
+    await user.click(screen.getByRole('checkbox', { name: 'Select first' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select second' }));
+    await user.click(screen.getByRole('button', { name: /Add 2 steps/ }));
     expect(useWorkspaceStore.getState().local!.executionPlans[planId].steps).toHaveLength(2);
 
     // Move-up disabled on first row, move-down disabled on last.
@@ -95,8 +89,9 @@ describe('ExecutionPanel — plan editor', () => {
 
     render(<ExecutionPanel />);
     await user.click(screen.getByRole('button', { name: /^Run$/ }));
-    // The summary line appears once the run completes.
-    expect(await screen.findByText(/1\/1 passed/)).toBeVisible();
+    // Verdict label now disambiguates HTTP success from assertion verdicts;
+    // a no-assertions Run shows just the request-success tally.
+    expect(await screen.findByText(/1\/1 requests succeeded/)).toBeVisible();
   });
 
   it('surfaces an error when the run rejects', async () => {
@@ -187,6 +182,7 @@ describe('ExecutionPanel — per-step run details', () => {
               bodyKind: 'json',
               url: 'https://api.test/users/1',
               method: 'GET',
+              authWarnings: [],
             },
           },
           {
@@ -207,6 +203,7 @@ describe('ExecutionPanel — per-step run details', () => {
               bodyKind: 'empty',
               url: 'https://api.test/users/1',
               method: 'PUT',
+              authWarnings: [],
             },
           },
         ],
@@ -219,9 +216,13 @@ describe('ExecutionPanel — per-step run details', () => {
     expect(screen.getByText('Get user')).toBeInTheDocument();
     expect(screen.getByText('Update user')).toBeInTheDocument();
     // First row is open by default — should show URL.
-    expect(screen.getByText('https://api.test/users/1')).toBeInTheDocument();
+    expect(screen.getAllByText('https://api.test/users/1').length).toBeGreaterThan(0);
     // Click to open the second row.
     await userEvent.click(screen.getByRole('button', { expanded: false, name: /Update user/ }));
+    // Assertion detail now lives in the ResponseViewer's Assertions tab
+    // (matching the editor's request-execution view); switch to it.
+    const assertionsTabs = screen.getAllByRole('button', { name: /Assertions \(0\/1\)/ });
+    await userEvent.click(assertionsTabs[assertionsTabs.length - 1]);
     expect(screen.getByText('expected 200, got 500')).toBeInTheDocument();
   });
 });

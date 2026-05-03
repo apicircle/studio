@@ -1,13 +1,30 @@
 // Translate a RequestAuth into outbound headers / query / cookies.
 //
 // Pure function — given a RequestAuth and the partially-built request, it
-// returns a new partially-built request with auth applied. Crypto-heavy
-// schemes (AWS SigV4, Hawk, JWT-HS) use WebCrypto when available and a
-// portable JS fallback elsewhere; deferred 401-challenge schemes (Digest,
-// NTLM) only stash credentials — actual challenge handling happens in
-// executeRequest's retry loop and is tracked separately.
+// returns a new partially-built request with auth applied. The signing
+// primitives live in `../auth/*` so this module is mostly orchestration:
+// pick the right helper for the auth type and stitch its output into the
+// request.
+//
+// Three categories of auth types:
+//   1. Token / shared-secret (bearer, basic, api-key, custom-header,
+//      oauth2-*, jwt-bearer, hawk, aws-sigv4): everything we need is in
+//      `auth` already; we sign + return one headers object.
+//   2. Challenge-response that bootstraps from an unauthenticated send
+//      (digest): we send no auth on the first request and let
+//      executeRequest's 401-retry loop run buildDigestAuthHeader after
+//      reading the server's WWW-Authenticate.
+//   3. Challenge-response that bootstraps from a Type-1 Negotiate (ntlm):
+//      we attach the Type-1 here so the server immediately challenges
+//      with Type-2; executeRequest then computes Type-3 and re-sends.
 
 import type { RequestAuth } from '@apicircle/shared';
+import { applyAwsSigV4 } from '../auth/awsSigV4';
+import { buildHawkAuthHeader } from '../auth/hawk';
+import { signJwt } from '../auth/jwt';
+import { buildNtlmType1Negotiate } from '../auth/ntlm';
+import { refreshToken as runRefreshToken } from '../auth/oauth2/grants';
+import { OAuth2TokenError, type OAuth2TokenResponse } from '../auth/oauth2/fetchToken';
 
 export interface AuthApplyTarget {
   url: string;
@@ -16,9 +33,66 @@ export interface AuthApplyTarget {
   body: BodyInit | null;
 }
 
+export interface AuthApplyOptions {
+  /**
+   * Called when applyAuth refreshes an expired OAuth2 access token. The
+   * store wires this to persist the new accessToken / refreshToken /
+   * expiresAt onto the request's auth payload — without it the refresh
+   * works for THIS request but the next request would re-refresh because
+   * the in-memory state didn't catch up.
+   */
+  onTokenRefreshed?: (
+    auth: Extract<
+      RequestAuth,
+      | { type: 'oauth2-client-credentials' }
+      | { type: 'oauth2-auth-code' }
+      | { type: 'oauth2-pkce' }
+      | { type: 'oauth2-password' }
+      | { type: 'oauth2-implicit' }
+      | { type: 'oauth2-device' }
+    >,
+    next: {
+      accessToken: string;
+      tokenType: string;
+      refreshToken?: string;
+      expiresAt: number;
+      obtainedScope?: string;
+    },
+  ) => void | Promise<void>;
+  /**
+   * Test seam for the refresh fetch. When omitted, the global fetch is
+   * used (matching production behavior).
+   */
+  fetchImpl?: typeof fetch;
+  /**
+   * Refresh tokens when they have less than this many milliseconds left.
+   * Default: 60_000 (1 min). Set to 0 to disable proactive refresh.
+   */
+  refreshLeewayMs?: number;
+}
+
 export interface AuthApplyResult {
   url: string;
   headers: Record<string, string>;
+  /**
+   * Non-fatal warnings raised while applying auth (bad JWT key, malformed
+   * payload JSON, etc). The request still goes out — usually unauthenticated
+   * — but executeRequest surfaces these to the user so they don't see a
+   * mysterious 401 with no clue why their auth config didn't apply.
+   */
+  warnings?: AuthApplyWarning[];
+}
+
+export interface AuthApplyWarning {
+  /** Stable code so callers can match without parsing message strings. */
+  code:
+    | 'jwt-payload-json-invalid'
+    | 'jwt-headers-json-invalid'
+    | 'jwt-sign-failed'
+    | 'hawk-url-invalid'
+    | 'oauth2-refresh-failed';
+  /** Human-readable message — safe to surface in the UI. */
+  message: string;
 }
 
 function setHeader(
@@ -35,6 +109,127 @@ function setHeader(
   }
   out[key] = value;
   return out;
+}
+
+/**
+ * Inspect an OAuth2 auth's expiry; if it's within `refreshLeewayMs` of
+ * now AND a refreshToken is on file, swap in a freshly-refreshed token.
+ * Failures are silent — applyAuth still tries to apply whatever token
+ * we have, the user gets a 401, and the auth panel surfaces the
+ * staleness via the token-state summary.
+ *
+ * Returns the refreshed auth (caller swaps it in for the rest of the
+ * apply pass), or null when no refresh fired.
+ */
+/**
+ * In-flight refresh dedupe map. Keyed by `tokenUrl|clientId|refreshToken`
+ * so two concurrent sends with the same expiring token coalesce into a
+ * single POST against the IdP. Without this, N parallel sends with an
+ * expired token = N parallel refresh requests, which most IdPs rate-
+ * limit and which wastes a refresh_token if the IdP rotates them per
+ * call. The map is process-local; cleared as soon as the refresh
+ * settles either way.
+ */
+const inflightRefreshes = new Map<string, Promise<OAuth2TokenResponse>>();
+
+async function maybeAutoRefresh(
+  auth: RequestAuth,
+  opts: AuthApplyOptions,
+  warnings: AuthApplyWarning[],
+): Promise<RequestAuth | null> {
+  if (
+    auth.type !== 'oauth2-client-credentials' &&
+    auth.type !== 'oauth2-auth-code' &&
+    auth.type !== 'oauth2-pkce' &&
+    auth.type !== 'oauth2-password' &&
+    auth.type !== 'oauth2-device'
+  ) {
+    return null;
+  }
+  // implicit doesn't issue refresh_tokens — skip.
+  const expiresAt = (auth as { expiresAt?: number }).expiresAt ?? 0;
+  if (expiresAt <= 0) return null;
+  const leeway = opts.refreshLeewayMs ?? 60_000;
+  if (Date.now() + leeway < expiresAt) return null;
+  const refreshTokenValue = (auth as { refreshToken?: string }).refreshToken ?? '';
+  if (!refreshTokenValue.trim()) return null;
+  try {
+    const dedupeKey = `${auth.tokenUrl}|${auth.clientId}|${refreshTokenValue}`;
+    const existing = inflightRefreshes.get(dedupeKey);
+    const refreshPromise =
+      existing ??
+      runRefreshToken({
+        tokenUrl: auth.tokenUrl,
+        clientId: auth.clientId,
+        clientSecret: (auth as { clientSecret?: string }).clientSecret || undefined,
+        refreshToken: refreshTokenValue,
+        scope: (auth as { scope?: string }).scope || undefined,
+        fetchImpl: opts.fetchImpl,
+      });
+    if (!existing) {
+      inflightRefreshes.set(dedupeKey, refreshPromise);
+      // Always clear the entry once the promise settles, success or
+      // failure. We MUST attach a catch as well — otherwise a refresh
+      // rejection would propagate as an unhandled-rejection warning
+      // (we await `refreshPromise` directly below, but the fan-out
+      // `.finally(...)` here is its own promise chain that needs
+      // explicit error consumption).
+      refreshPromise
+        .catch(() => {
+          /* ignored — caller awaits the original promise and surfaces */
+        })
+        .finally(() => {
+          inflightRefreshes.delete(dedupeKey);
+        });
+    }
+    const next = await refreshPromise;
+    const merged = {
+      ...auth,
+      accessToken: next.accessToken,
+      tokenType: next.tokenType,
+      refreshToken: next.refreshToken ?? refreshTokenValue,
+      expiresAt: next.expiresIn ? Date.now() + next.expiresIn * 1000 : 0,
+      obtainedScope: next.scope ?? (auth as { obtainedScope?: string }).obtainedScope ?? '',
+    } as RequestAuth;
+    if (opts.onTokenRefreshed) {
+      try {
+        await opts.onTokenRefreshed(
+          merged as Parameters<NonNullable<AuthApplyOptions['onTokenRefreshed']>>[0],
+          {
+            accessToken: next.accessToken,
+            tokenType: next.tokenType,
+            refreshToken: next.refreshToken,
+            expiresAt: next.expiresIn ? Date.now() + next.expiresIn * 1000 : 0,
+            obtainedScope: next.scope,
+          },
+        );
+      } catch {
+        // Persistence failures shouldn't block the request — the
+        // refreshed token still applies for THIS send.
+      }
+    }
+    return merged;
+  } catch (err) {
+    // Refresh failed — surface to the user via authWarnings so they can
+    // see WHY their request went out unauthenticated. Falls through with
+    // the original (stale) token; the request will hit a 401 but at
+    // least the user has a clear refresh-failure message in the panel.
+    const message =
+      err instanceof OAuth2TokenError
+        ? `OAuth2 token refresh failed: ${err.message}`
+        : `OAuth2 token refresh failed: ${err instanceof Error ? err.message : String(err)}`;
+    warnings.push({ code: 'oauth2-refresh-failed', message });
+    return null;
+  }
+}
+
+/** Read a header by name case-insensitively. */
+function findHeaderValue(headers: Record<string, string>, key: string): string | undefined {
+  const lower = key.toLowerCase();
+  for (const [k, v] of Object.entries(headers)) {
+    if (k.toLowerCase() === lower) return v;
+  }
+  return undefined;
 }
 
 function appendQueryParam(rawUrl: string, key: string, value: string): string {
@@ -62,9 +257,9 @@ function appendCookie(
   return { ...headers, Cookie: pair };
 }
 
-// Reach for Buffer through globalThis so the web bundle (which doesn't
-// include node types) still typechecks. Modern Node ≥18 exposes btoa
-// natively, so the fallback only fires on truly ancient runtimes.
+// btoa exists everywhere we run today (browsers, Node ≥ 18). The Buffer
+// fallback is kept for the unlikely case of a sandbox that strips both —
+// we'd rather degrade with a clear message than silently send no auth.
 function nodeBufferToBase64(input: string | Uint8Array): string {
   const buf = (
     globalThis as unknown as {
@@ -87,210 +282,104 @@ function base64(text: string): string {
   return nodeBufferToBase64(text);
 }
 
-function base64UrlFromBytes(bytes: Uint8Array): string {
-  let bin = '';
-  for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
-  const b64 = typeof btoa === 'function' ? btoa(bin) : nodeBufferToBase64(bytes);
-  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
+// ── jwt-bearer plumbing ────────────────────────────────────────────────────────
 
-function utf8Bytes(text: string): Uint8Array {
-  return new TextEncoder().encode(text);
-}
-
-// `Uint8Array<ArrayBufferLike>` and `BufferSource` are subtly different
-// under strict TS because Uint8Array's underlying buffer can be a
-// SharedArrayBuffer in theory. Tightening the slice into a fresh
-// ArrayBuffer-backed view satisfies the SubtleCrypto signature without
-// changing runtime behavior.
-function asBufferSource(bytes: Uint8Array): ArrayBuffer {
-  const buf = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(buf).set(bytes);
-  return buf;
-}
-
-async function hmacSha(
-  algorithm: 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512',
-  keyBytes: Uint8Array,
-  data: Uint8Array,
-): Promise<Uint8Array> {
-  const subtle = globalThis.crypto?.subtle;
-  if (!subtle) {
-    throw new Error('WebCrypto SubtleCrypto is required for HMAC-based auth');
-  }
-  const key = await subtle.importKey(
-    'raw',
-    asBufferSource(keyBytes),
-    { name: 'HMAC', hash: algorithm },
-    false,
-    ['sign'],
-  );
-  const sig = await subtle.sign('HMAC', key, asBufferSource(data));
-  return new Uint8Array(sig);
-}
-
-async function sha256Hex(data: Uint8Array | string): Promise<string> {
-  const subtle = globalThis.crypto?.subtle;
-  if (!subtle) throw new Error('WebCrypto required for SHA-256');
-  const buf = typeof data === 'string' ? utf8Bytes(data) : data;
-  const hash = await subtle.digest('SHA-256', asBufferSource(buf));
-  return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-function bytesToHex(bytes: Uint8Array): string {
-  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-// --- AWS Signature v4 ----------------------------------------------------
-
-async function applyAwsSigV4(
-  target: AuthApplyTarget,
-  auth: Extract<RequestAuth, { type: 'aws-sigv4' }>,
-): Promise<AuthApplyResult> {
-  if (!auth.accessKeyId || !auth.secretAccessKey || !auth.region || !auth.service) {
-    return { url: target.url, headers: target.headers };
-  }
-  const url = new URL(target.url);
-  const method = target.method.toUpperCase();
-  const now = new Date();
-  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
-  const dateStamp = amzDate.slice(0, 8);
-
-  const headers: Record<string, string> = { ...target.headers };
-  // Host is required in the canonical headers.
-  headers['x-amz-date'] = amzDate;
-  headers['host'] = url.host;
-  if (auth.sessionToken) headers['x-amz-security-token'] = auth.sessionToken;
-
-  // Canonical request bits.
-  const canonicalUri = url.pathname || '/';
-  const sortedParams = [...url.searchParams.entries()].sort(([a], [b]) =>
-    a < b ? -1 : a > b ? 1 : 0,
-  );
-  const canonicalQuery = sortedParams
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-    .join('&');
-
-  const headerEntries = Object.entries(headers)
-    .map(([k, v]) => [k.toLowerCase(), v.replace(/\s+/g, ' ').trim()] as [string, string])
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  const canonicalHeaders = headerEntries.map(([k, v]) => `${k}:${v}\n`).join('');
-  const signedHeaders = headerEntries.map(([k]) => k).join(';');
-
-  const bodyText = typeof target.body === 'string' ? target.body : target.body == null ? '' : '';
-  const payloadHash = await sha256Hex(bodyText);
-
-  const canonicalRequest = [
-    method,
-    canonicalUri,
-    canonicalQuery,
-    canonicalHeaders,
-    signedHeaders,
-    payloadHash,
-  ].join('\n');
-
-  const credScope = `${dateStamp}/${auth.region}/${auth.service}/aws4_request`;
-  const stringToSign = [
-    'AWS4-HMAC-SHA256',
-    amzDate,
-    credScope,
-    await sha256Hex(canonicalRequest),
-  ].join('\n');
-
-  const kDate = await hmacSha(
-    'SHA-256',
-    utf8Bytes(`AWS4${auth.secretAccessKey}`),
-    utf8Bytes(dateStamp),
-  );
-  const kRegion = await hmacSha('SHA-256', kDate, utf8Bytes(auth.region));
-  const kService = await hmacSha('SHA-256', kRegion, utf8Bytes(auth.service));
-  const kSigning = await hmacSha('SHA-256', kService, utf8Bytes('aws4_request'));
-  const signature = bytesToHex(await hmacSha('SHA-256', kSigning, utf8Bytes(stringToSign)));
-
-  if (auth.addTo === 'query') {
-    let nextUrl = appendQueryParam(target.url, 'X-Amz-Algorithm', 'AWS4-HMAC-SHA256');
-    nextUrl = appendQueryParam(nextUrl, 'X-Amz-Credential', `${auth.accessKeyId}/${credScope}`);
-    nextUrl = appendQueryParam(nextUrl, 'X-Amz-Date', amzDate);
-    nextUrl = appendQueryParam(nextUrl, 'X-Amz-SignedHeaders', signedHeaders);
-    nextUrl = appendQueryParam(nextUrl, 'X-Amz-Signature', signature);
-    if (auth.sessionToken)
-      nextUrl = appendQueryParam(nextUrl, 'X-Amz-Security-Token', auth.sessionToken);
-    return { url: nextUrl, headers: target.headers };
-  }
-  const authHeader = `AWS4-HMAC-SHA256 Credential=${auth.accessKeyId}/${credScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-  return {
-    url: target.url,
-    headers: setHeader(headers, 'Authorization', authHeader),
-  };
-}
-
-// --- Hawk ---------------------------------------------------------------
-
-async function applyHawk(
-  target: AuthApplyTarget,
-  auth: Extract<RequestAuth, { type: 'hawk' }>,
-): Promise<AuthApplyResult> {
-  if (!auth.hawkId || !auth.hawkKey) return { url: target.url, headers: target.headers };
-  const parsed = (() => {
-    try {
-      return new URL(target.url);
-    } catch {
-      return null;
-    }
-  })();
-  if (!parsed) return { url: target.url, headers: target.headers };
-
-  const ts = Math.floor(Date.now() / 1000).toString();
-  // 12 random url-safe chars; collision risk is irrelevant per Hawk spec.
-  const nonce = base64UrlFromBytes(crypto.getRandomValues(new Uint8Array(8))).slice(0, 12);
-  const port = parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
-  const resource = parsed.pathname + parsed.search;
-  const normalized = `hawk.1.header\n${ts}\n${nonce}\n${target.method.toUpperCase()}\n${resource}\n${parsed.hostname}\n${port}\n\n${auth.ext ?? ''}\n`;
-
-  const algo = auth.algorithm === 'sha1' ? 'SHA-1' : 'SHA-256';
-  const macBytes = await hmacSha(algo, utf8Bytes(auth.hawkKey), utf8Bytes(normalized));
-  const mac = base64UrlFromBytes(macBytes).replace(/-/g, '+').replace(/_/g, '/');
-  const padded = mac + '='.repeat((4 - (mac.length % 4)) % 4);
-
-  const headerVal = `Hawk id="${auth.hawkId}", ts="${ts}", nonce="${nonce}"${auth.ext ? `, ext="${auth.ext}"` : ''}, mac="${padded}"`;
-  return {
-    url: target.url,
-    headers: setHeader(target.headers, 'Authorization', headerVal),
-  };
-}
-
-// --- JWT (HS algorithms — sign locally with WebCrypto) -----------------
-
+/**
+ * Either return the user-supplied pre-computed token, or sign a fresh
+ * one using the algorithm + key the auth config specifies. Returns the
+ * token plus any warnings raised along the way (malformed JSON, signing
+ * failure). Token is null when there's nothing to send; warnings are
+ * non-empty when the config was malformed in a way the user should see.
+ */
 async function buildJwtToken(
   auth: Extract<RequestAuth, { type: 'jwt-bearer' }>,
-): Promise<string | null> {
-  if (auth.token.trim().length > 0) return auth.token.trim();
-  if (!auth.algorithm.startsWith('HS')) return null;
-  let payload: unknown;
+): Promise<{ token: string | null; warnings: AuthApplyWarning[] }> {
+  const warnings: AuthApplyWarning[] = [];
+  if (auth.token.trim().length > 0) return { token: auth.token.trim(), warnings };
+  if (!auth.algorithm || !auth.secretOrKey) return { token: null, warnings };
+  let payload: Record<string, unknown> = {};
   let extraHeaders: Record<string, unknown> = {};
-  try {
-    payload = JSON.parse(auth.payload || '{}') as unknown;
-    if (auth.jwtHeaders.trim())
-      extraHeaders = JSON.parse(auth.jwtHeaders) as Record<string, unknown>;
-  } catch {
-    return null;
+  if (auth.payload.trim()) {
+    try {
+      payload = JSON.parse(auth.payload) as Record<string, unknown>;
+    } catch (err) {
+      warnings.push({
+        code: 'jwt-payload-json-invalid',
+        message: `JWT payload is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      return { token: null, warnings };
+    }
   }
-  const headerObj = { typ: 'JWT', alg: auth.algorithm, ...extraHeaders };
-  const headerB64 = base64UrlFromBytes(utf8Bytes(JSON.stringify(headerObj)));
-  const payloadB64 = base64UrlFromBytes(utf8Bytes(JSON.stringify(payload)));
-  const signingInput = `${headerB64}.${payloadB64}`;
-  const algo: 'SHA-256' | 'SHA-384' | 'SHA-512' =
-    auth.algorithm === 'HS256' ? 'SHA-256' : auth.algorithm === 'HS384' ? 'SHA-384' : 'SHA-512';
-  const sig = await hmacSha(algo, utf8Bytes(auth.secretOrKey || ''), utf8Bytes(signingInput));
-  return `${signingInput}.${base64UrlFromBytes(sig)}`;
+  if (auth.jwtHeaders.trim()) {
+    try {
+      extraHeaders = JSON.parse(auth.jwtHeaders) as Record<string, unknown>;
+    } catch (err) {
+      warnings.push({
+        code: 'jwt-headers-json-invalid',
+        message: `JWT additional-headers is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      return { token: null, warnings };
+    }
+  }
+  try {
+    const token = await signJwt({
+      algorithm: auth.algorithm,
+      secretOrKey: auth.secretOrKey,
+      payload,
+      additionalHeaders: extraHeaders,
+    });
+    return { token, warnings };
+  } catch (err) {
+    warnings.push({
+      code: 'jwt-sign-failed',
+      message: `JWT signing failed: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    return { token: null, warnings };
+  }
 }
 
-// --- Public entry point -------------------------------------------------
+// ── Public entry point ────────────────────────────────────────────────────────
 
 export async function applyAuth(
   target: AuthApplyTarget,
   auth: RequestAuth,
+  opts: AuthApplyOptions = {},
 ): Promise<AuthApplyResult> {
+  // Warnings collected as we go — emitted on the result so executeRequest
+  // can surface them in `ExecutionResult.authWarnings` (UI displays
+  // them next to the response). Refresh failures, JWT signing errors,
+  // and Hawk URL parse failures all flow through here.
+  const warnings: AuthApplyWarning[] = [];
+
+  // Auto-refresh OAuth2 tokens that are expired or about to expire. The
+  // refresh fires BEFORE the auth-injection switch below so the refreshed
+  // accessToken is what we end up putting on the wire.
+  const refreshed = await maybeAutoRefresh(auth, opts, warnings);
+  if (refreshed) auth = refreshed;
+
+  const result = await applyAuthBody(target, auth, opts, warnings);
+  if (warnings.length > 0) {
+    return {
+      ...result,
+      warnings: [...(result.warnings ?? []), ...warnings],
+    };
+  }
+  return result;
+}
+
+/**
+ * Inner switch — split out from `applyAuth` so the outer wrapper can
+ * combine post-refresh warnings with per-type warnings without
+ * re-walking the auth shape.
+ */
+async function applyAuthBody(
+  target: AuthApplyTarget,
+  auth: RequestAuth,
+  opts: AuthApplyOptions,
+  warnings: AuthApplyWarning[],
+): Promise<AuthApplyResult> {
+  void warnings; // body-level switch doesn't push warnings today; refresh + JWT helpers do.
+  void opts;
   switch (auth.type) {
     case 'none':
     case 'inherit': // inheritance is resolved upstream; if we still see it here, do nothing
@@ -346,29 +435,98 @@ export async function applyAuth(
       };
     }
 
-    case 'aws-sigv4':
-      return applyAwsSigV4(target, auth);
+    case 'aws-sigv4': {
+      if (!auth.accessKeyId || !auth.secretAccessKey || !auth.region || !auth.service) {
+        return { url: target.url, headers: target.headers };
+      }
+      // Pass the body through as-is — the signer accepts every BodyInit
+      // shape and falls back to UNSIGNED-PAYLOAD for FormData /
+      // ReadableStream where pre-fetch hashing isn't possible.
+      const signed = await applyAwsSigV4({
+        method: target.method,
+        url: target.url,
+        headers: target.headers,
+        body: target.body as Parameters<typeof applyAwsSigV4>[0]['body'],
+        accessKeyId: auth.accessKeyId,
+        secretAccessKey: auth.secretAccessKey,
+        region: auth.region,
+        service: auth.service,
+        sessionToken: auth.sessionToken || undefined,
+        addTo: auth.addTo,
+      });
+      return { url: signed.url, headers: signed.headers };
+    }
 
-    case 'hawk':
-      return applyHawk(target, auth);
+    case 'hawk': {
+      if (!auth.hawkId || !auth.hawkKey) return { url: target.url, headers: target.headers };
+      try {
+        // When bindPayload is on AND the body is hashable, fold the body
+        // into the MAC. We pull the content-type from the request's own
+        // headers (case-insensitively); if the body is FormData /
+        // ReadableStream we can't hash pre-fetch — silently fall back to
+        // header-only signing, same as Hawk reference clients.
+        let payload: { body: string | ArrayBuffer | Uint8Array; contentType: string } | undefined;
+        if (auth.bindPayload && target.body != null) {
+          const ct = findHeaderValue(target.headers, 'content-type') ?? 'application/octet-stream';
+          if (typeof target.body === 'string') payload = { body: target.body, contentType: ct };
+          else if (target.body instanceof ArrayBuffer)
+            payload = { body: target.body, contentType: ct };
+          else if (target.body instanceof Uint8Array)
+            payload = { body: target.body, contentType: ct };
+          else if (typeof URLSearchParams !== 'undefined' && target.body instanceof URLSearchParams)
+            payload = {
+              body: target.body.toString(),
+              contentType: 'application/x-www-form-urlencoded',
+            };
+        }
+        const headerValue = await buildHawkAuthHeader({
+          method: target.method,
+          url: target.url,
+          hawkId: auth.hawkId,
+          hawkKey: auth.hawkKey,
+          algorithm: auth.algorithm,
+          ext: auth.ext,
+          payload,
+        });
+        return {
+          url: target.url,
+          headers: setHeader(target.headers, 'Authorization', headerValue),
+        };
+      } catch {
+        // Malformed URL etc. — let the request fly without auth.
+        return { url: target.url, headers: target.headers };
+      }
+    }
 
     case 'jwt-bearer': {
-      const token = await buildJwtToken(auth);
-      if (!token) return { url: target.url, headers: target.headers };
+      const { token, warnings } = await buildJwtToken(auth);
+      if (!token) {
+        return { url: target.url, headers: target.headers, warnings };
+      }
       return {
         url: target.url,
         headers: setHeader(target.headers, 'Authorization', `Bearer ${token}`),
+        warnings: warnings.length ? warnings : undefined,
       };
     }
 
     case 'digest':
-    case 'ntlm': {
-      // Challenge-based — the server must respond 401 with a challenge
-      // before credentials can be applied. v2's executeRequest doesn't yet
-      // implement the challenge retry; the credentials are stashed in the
-      // workspace for a future P-phase. Send the request unauthenticated
-      // and surface the 401 to the user as-is.
+      // Digest is challenge-driven: send unauthenticated. executeRequest's
+      // 401-retry path inspects WWW-Authenticate, runs buildDigestAuthHeader,
+      // and re-fetches with the right Authorization on its own.
       return { url: target.url, headers: target.headers };
+
+    case 'ntlm': {
+      // NTLM bootstraps from a Type-1 Negotiate so the server immediately
+      // returns 401 + Type-2 challenge. Sending nothing would let the
+      // server respond with a generic auth-required error that's
+      // indistinguishable from "credentials wrong"; emitting Type-1
+      // explicitly lights up the handshake.
+      const type1 = buildNtlmType1Negotiate(auth.domain, auth.workstation);
+      return {
+        url: target.url,
+        headers: setHeader(target.headers, 'Authorization', `NTLM ${type1}`),
+      };
     }
   }
 }

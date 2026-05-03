@@ -1,4 +1,6 @@
 export { generateId } from './ids';
+export { formatBytes, utf8ByteLength } from './format';
+export { RUN_BODY_PREVIEW_LIMIT } from './types';
 export { REQUEST_AUTH_TYPES, defaultAuthFor, normalizeAuth } from './authDefaults';
 export type { RequestAuthType } from './authDefaults';
 export { MCP_TOOL_NAMES } from './mcp';
@@ -24,6 +26,8 @@ export type {
   Folder,
   FolderNode,
   Environment,
+  EnvironmentVariable,
+  SecretKeyMeta,
   ExecutionPlan,
   RequestRun,
   PlanRun,

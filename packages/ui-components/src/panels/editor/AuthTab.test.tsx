@@ -27,9 +27,7 @@ describe('AuthTab', () => {
     const id = makeRequestId();
     render(<LiveAuthTab requestId={id} />);
     expect(screen.getByLabelText('Auth type')).toHaveValue('none');
-    expect(
-      screen.getByText(/No authentication will be added to this request./),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/No authentication will be added\./)).toBeInTheDocument();
   });
 
   it('switching to Bearer reveals a Token field and persists the type', async () => {
@@ -126,10 +124,12 @@ describe('AuthTab', () => {
     expect(screen.getByLabelText('Hawk algorithm')).toBeInTheDocument();
   });
 
-  it('Inherit shows an explanatory note', async () => {
+  it('Inherit shows an explanatory note about folder walk-up', async () => {
     const id = makeRequestId();
     render(<LiveAuthTab requestId={id} />);
     await userEvent.selectOptions(screen.getByLabelText('Auth type'), 'inherit');
-    expect(screen.getByText(/Auth will be inherited from the parent folder/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/walks up the folder chain and uses the first folder/i),
+    ).toBeInTheDocument();
   });
 });

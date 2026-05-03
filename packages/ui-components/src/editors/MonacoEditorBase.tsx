@@ -236,6 +236,35 @@ function MonacoEditorBaseComponent({
     [ariaLabel, onEditorMount],
   );
 
+  // automaticLayout's ResizeObserver misses the initial sizing when Monaco
+  // mounts into a container that gets its real size from a sibling
+  // flex/Panel transition (e.g. ResponseViewer swapping its empty state
+  // for the body editor on Send). Force layout on mount + on container
+  // resizes — staggered timeouts catch cases where the parent's final
+  // dimensions only settle after subsequent React commits.
+  useEffect(() => {
+    if (!editorInstance) return;
+    const node = editorInstance.getContainerDomNode().parentElement;
+    const relayout = () => {
+      const r = node?.getBoundingClientRect();
+      if (r && r.width > 0 && r.height > 0) {
+        editorInstance.layout({ width: r.width, height: r.height });
+      } else {
+        editorInstance.layout();
+      }
+    };
+    const timeouts = [setTimeout(relayout, 0), setTimeout(relayout, 50), setTimeout(relayout, 200)];
+    let ro: ResizeObserver | null = null;
+    if (node && typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(relayout);
+      ro.observe(node);
+    }
+    return () => {
+      timeouts.forEach(clearTimeout);
+      ro?.disconnect();
+    };
+  }, [editorInstance]);
+
   const handleChange = useCallback<NonNullable<EditorProps['onChange']>>(
     (nextValue) => {
       onChange?.(nextValue ?? '');

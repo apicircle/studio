@@ -1,5 +1,7 @@
 import { BookOpen, KeyRound, Orbit } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { useActiveVariableScope } from '../editors/useVariableScope';
+import { VariableHints } from '../editors/VariableHints';
 import { ThemePicker } from './ThemePicker';
 import { FontPicker } from './FontPicker';
 
@@ -7,6 +9,11 @@ export function TopBar() {
   const openSecretVault = useWorkspaceStore((s) => s.openSecretVault);
   const openGlobalAssets = useWorkspaceStore((s) => s.openGlobalAssets);
   const workspaceName = useWorkspaceStore((s) => s.synced?.workspaceName ?? '');
+  const activePanel = useWorkspaceStore((s) => s.activePanel);
+  const variableScope = useActiveVariableScope();
+  // The trigger label nudges the user toward what they'll see: editor scope
+  // is request-bound, plan scope is layered by the active plan's env order.
+  const variableTriggerLabel = activePanel === 'execution' ? 'Plan variables' : 'Variables';
 
   return (
     <div className="flex h-12 shrink-0 items-center justify-between border-b border-border-subtle bg-card px-3">
@@ -37,6 +44,7 @@ export function TopBar() {
           <BookOpen size={14} />
           Global Assets
         </button>
+        <VariableHints scope={variableScope} triggerLabel={variableTriggerLabel} />
       </div>
 
       <div className="flex items-center gap-2">

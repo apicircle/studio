@@ -45,6 +45,32 @@ const bridge = {
     toolCatalog: (): Promise<readonly McpToolName[]> =>
       ipcRenderer.invoke('apicircle:mcp:toolCatalog') as Promise<readonly McpToolName[]>,
   },
+
+  // OAuth2 callback bridge — wraps the localhost http server in main.ts.
+  // The renderer drives flows via Auth tab UI; this surface stays small
+  // (find a port, run a flow) so the attack surface is contained.
+  oauth2: {
+    findFreePort: (preferred: number): Promise<number> =>
+      ipcRenderer.invoke('apicircle:oauth2:findFreePort', preferred) as Promise<number>,
+    startFlow: (args: {
+      authorizeUrl: string;
+      port: number;
+      mode: 'code' | 'token';
+      callbackPath?: string;
+      timeoutMs?: number;
+    }): Promise<{
+      code?: string;
+      accessToken?: string;
+      tokenType?: string;
+      expiresIn?: number;
+      scope?: string;
+      state?: string;
+      error?: string;
+      errorDescription?: string;
+      port: number;
+      redirectUri: string;
+    }> => ipcRenderer.invoke('apicircle:oauth2:startFlow', args),
+  },
 };
 
 contextBridge.exposeInMainWorld('apicircleDesktop', bridge);

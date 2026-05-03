@@ -15,7 +15,7 @@ describe('integration: env resolution at send time', () => {
     vi.unstubAllGlobals();
   });
 
-  it('substitutes {{BASE_URL}} in URL and decrypts {{TOKEN}} for headers', async () => {
+  it('substitutes {{BASE_URL}} in URL and resolves {{TOKEN}} bound to a vault secret key', async () => {
     const fetchImpl: typeof fetch = () =>
       Promise.resolve(
         new Response('{"ok":true}', {
@@ -30,22 +30,28 @@ describe('integration: env resolution at send time', () => {
     render(<App />);
     await screen.findByText('API Circle Studio');
 
-    // Set up an env, then encrypt one of its variables through the live path
-    // so master-key generation + ciphertext serialization run end to end.
-    act(() => {
+    // Seed a vault secret key, then bind an env variable to it. Encryption
+    // now flows exclusively through the vault — master-key blobs in env
+    // values are gone.
+    let secretId = '';
+    await act(async () => {
       useWorkspaceStore.getState().addEnvironment('dev');
-      useWorkspaceStore.getState().setActiveEnvironment('dev');
+      useWorkspaceStore.getState().setPriorityOrder(['dev']);
       useWorkspaceStore.getState().setVariables('dev', [
         { key: 'BASE_URL', value: 'https://api.example.com', encrypted: false },
         { key: 'TOKEN', value: '', encrypted: false },
       ]);
+      secretId = await useWorkspaceStore.getState().addSecret({
+        label: 'API_TOKEN',
+        value: 'super-secret',
+        origin: 'workspace',
+      });
+      useWorkspaceStore.getState().bindVariableToSecretKey('dev', 1, secretId);
     });
-    await act(async () => {
-      await useWorkspaceStore.getState().setVariableValue('dev', 1, 'super-secret', true);
-    });
-    expect(useWorkspaceStore.getState().synced!.environments.items.dev.variables[1].value).toMatch(
-      /^enc:v1:/,
-    );
+    const tokenVar = useWorkspaceStore.getState().synced!.environments.items.dev.variables[1];
+    expect(tokenVar.encrypted).toBe(true);
+    expect(tokenVar.secretKeyId).toBe(secretId);
+    expect(tokenVar.value).toBe('');
 
     // Create a request that uses both placeholders.
     act(() => {

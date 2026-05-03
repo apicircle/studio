@@ -251,13 +251,24 @@ describe('buildRequest', () => {
     ...overrides,
   });
 
-  it('composes all four pieces from a Request', async () => {
-    const built = await buildRequest(baseReq());
+  // Deterministic runtime so the auto-fed APICircle headers are easy to assert
+  // without snapshotting a UUID.
+  const fixedRuntime = { runtimeTag: 'test/runtime', traceId: 'fixed-trace-id' };
+
+  it('composes all four pieces from a Request and auto-feeds APICircle headers', async () => {
+    const built = await buildRequest(baseReq(), { runtime: fixedRuntime });
     expect(built).toEqual({
       url: 'https://api.example.com/users?verbose=true',
       method: 'POST',
-      headers: { 'X-Auth': 't' },
+      headers: {
+        'X-Auth': 't',
+        'X-APICircle-Trace-Id': 'fixed-trace-id',
+        'X-APICircle-Runtime': 'test/runtime',
+      },
       body: '{"x":1}',
+      // Empty when applyAuth had nothing to warn about — populated when
+      // e.g. JWT signing fails. See applyAuth.test.ts for the warnings shape.
+      authWarnings: [],
     });
   });
 
@@ -270,6 +281,7 @@ describe('buildRequest', () => {
         ],
         body: { type: 'form-data', content: '', formRows: [] },
       }),
+      { runtime: fixedRuntime },
     );
     expect(built.headers).not.toHaveProperty('Content-Type');
     expect(built.headers['X-Auth']).toBe('t');
@@ -283,9 +295,131 @@ describe('buildRequest', () => {
         headers: [{ key: 'Content-Type', value: 'application/octet-stream', enabled: true }],
         body: { type: 'binary', content: '', attachment: { slotId: 'b1' } },
       }),
-      async () => ({ blob, filename: 'pic.png' }),
+      {
+        resolveAttachment: async () => ({ blob, filename: 'pic.png' }),
+        runtime: fixedRuntime,
+      },
     );
     expect(built.headers).not.toHaveProperty('Content-Type');
     expect(built.body).toBe(blob);
+  });
+
+  it('user-set X-APICircle-Trace-Id wins over the auto-fed header (case-insensitive)', async () => {
+    const built = await buildRequest(
+      baseReq({
+        headers: [{ key: 'x-apicircle-trace-id', value: 'user-supplied', enabled: true }],
+      }),
+      { runtime: fixedRuntime },
+    );
+    // The user's casing is preserved, the auto-fed copy is suppressed.
+    expect(built.headers['x-apicircle-trace-id']).toBe('user-supplied');
+    expect(built.headers).not.toHaveProperty('X-APICircle-Trace-Id');
+    // Runtime header is still injected because the user didn't set one.
+    expect(built.headers['X-APICircle-Runtime']).toBe('test/runtime');
+  });
+
+  it('default runtime tag is the web studio when no runtime is supplied', async () => {
+    const built = await buildRequest(baseReq());
+    expect(built.headers['X-APICircle-Runtime']).toBe('apicircle-studio/web');
+    // Trace-id is auto-generated UUID (length is non-zero hex)
+    expect(built.headers['X-APICircle-Trace-Id']).toMatch(/.+/);
+  });
+
+  it('substitutes :name and {name} placeholders from pathParams', async () => {
+    const built = await buildRequest(
+      baseReq({
+        url: 'https://api.example.com/users/:userId/posts/{postId}',
+        query: [],
+        pathParams: { userId: 'u-42', postId: '99' },
+      }),
+      { runtime: fixedRuntime },
+    );
+    expect(built.url).toBe('https://api.example.com/users/u-42/posts/99');
+  });
+
+  it('URL-encodes path param values', async () => {
+    const built = await buildRequest(
+      baseReq({
+        url: 'https://api.example.com/files/{name}',
+        query: [],
+        pathParams: { name: 'a b/c' },
+      }),
+      { runtime: fixedRuntime },
+    );
+    expect(built.url).toBe('https://api.example.com/files/a%20b%2Fc');
+  });
+
+  it('missing path param substitutes to empty string (no runtime error)', async () => {
+    const built = await buildRequest(
+      baseReq({
+        url: 'https://api.example.com/users/{userId}/profile',
+        query: [],
+        pathParams: {},
+      }),
+      { runtime: fixedRuntime },
+    );
+    expect(built.url).toBe('https://api.example.com/users//profile');
+  });
+
+  it('combines cookies into a Cookie header (skips disabled rows)', async () => {
+    const built = await buildRequest(
+      baseReq({
+        cookies: [
+          { key: 'session', value: 'abc', enabled: true },
+          { key: 'tracking', value: 'off', enabled: false },
+          { key: 'theme', value: 'dark', enabled: true },
+        ],
+      }),
+      { runtime: fixedRuntime },
+    );
+    expect(built.headers.Cookie).toBe('session=abc; theme=dark');
+  });
+
+  it('user-set Cookie header wins over composed cookies (case-insensitive)', async () => {
+    const built = await buildRequest(
+      baseReq({
+        headers: [{ key: 'cookie', value: 'manual=1', enabled: true }],
+        cookies: [{ key: 'auto', value: 'should-not-appear', enabled: true }],
+      }),
+      { runtime: fixedRuntime },
+    );
+    expect(built.headers.cookie).toBe('manual=1');
+    expect(built.headers).not.toHaveProperty('Cookie');
+    expect(JSON.stringify(built.headers)).not.toContain('should-not-appear');
+  });
+});
+
+describe('findPathPlaceholders', () => {
+  it('extracts both :name and {name} forms in document order', async () => {
+    const { findPathPlaceholders } = await import('./buildRequest');
+    expect(findPathPlaceholders('https://x/:a/{b}/:c')).toEqual(['a', 'b', 'c']);
+  });
+
+  it('dedupes repeated placeholders', async () => {
+    const { findPathPlaceholders } = await import('./buildRequest');
+    expect(findPathPlaceholders('https://x/:id/posts/:id')).toEqual(['id']);
+  });
+
+  it('ignores anything in the query string', async () => {
+    const { findPathPlaceholders } = await import('./buildRequest');
+    expect(findPathPlaceholders('https://x/users/{id}?q=:bogus&n={alsoBogus}')).toEqual(['id']);
+  });
+
+  it('does NOT match {{NAME}} template-variable syntax', async () => {
+    const { findPathPlaceholders } = await import('./buildRequest');
+    // The Cookie test case from the bug report: the URL `?greeting={{GREETING}}`
+    // used to surface GREETING as a path param. It must not.
+    expect(findPathPlaceholders('https://httpbin.org/anything?greeting={{GREETING}}')).toEqual([]);
+    // Even without the query-string guard, `{{NAME}}` in the path itself
+    // mustn't match.
+    expect(findPathPlaceholders('https://x/{{TENANT}}/users/{id}')).toEqual(['id']);
+  });
+
+  it('applyPathParams leaves the query string untouched', async () => {
+    const { applyPathParams } = await import('./buildRequest');
+    const url = 'https://x/users/{id}/posts?q={{var}}&p={alsoNotPath}';
+    expect(applyPathParams(url, { id: '42' })).toBe(
+      'https://x/users/42/posts?q={{var}}&p={alsoNotPath}',
+    );
   });
 });

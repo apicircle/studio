@@ -26,16 +26,16 @@ function LiveHeadersTab({ requestId }: { requestId: string }) {
 describe('HeadersTab', () => {
   beforeEach(hydrate);
 
-  it('renders KeyValueRows + a datalist of header suggestions', () => {
+  it('shows the empty-state and the auto-fed APICircle headers aside', () => {
     const id = makeRequestId();
     render(<LiveHeadersTab requestId={id} />);
-    expect(screen.getByText(/No entries yet/)).toBeInTheDocument();
-    const list = document.getElementById('Headers-keys');
-    expect(list).not.toBeNull();
-    expect(list!.querySelectorAll('option').length).toBeGreaterThan(0);
+    expect(screen.getByText(/No headers yet/i)).toBeInTheDocument();
+    expect(screen.getByLabelText('Auto-fed headers')).toBeInTheDocument();
+    expect(screen.getByText(/X-APICircle-Trace-Id/)).toBeInTheDocument();
+    expect(screen.getByText(/X-APICircle-Runtime/)).toBeInTheDocument();
   });
 
-  it('Add row + edit values writes through to setRequestHeaders', async () => {
+  it('Add row + edit key writes through to setRequestHeaders', async () => {
     const id = makeRequestId();
     const user = userEvent.setup();
     render(<LiveHeadersTab requestId={id} />);
@@ -45,5 +45,18 @@ describe('HeadersTab', () => {
     expect(useWorkspaceStore.getState().synced!.collections.requests[id].headers[0].key).toBe(
       'Authorization',
     );
+  });
+
+  it('typing a header prefix opens the rich suggestion listbox', async () => {
+    const id = makeRequestId();
+    const user = userEvent.setup();
+    render(<LiveHeadersTab requestId={id} />);
+    await user.click(screen.getByRole('button', { name: /Add row/ }));
+    await user.type(screen.getByLabelText('Headers key 1'), 'Cont');
+    const listbox = await screen.findByRole('listbox', { name: 'Header suggestions' });
+    const options = listbox.querySelectorAll('[role="option"]');
+    expect(options.length).toBeGreaterThan(0);
+    // At least one match should mention Content-Type.
+    expect(listbox.textContent).toMatch(/Content-Type/);
   });
 });

@@ -60,36 +60,4 @@ describe('ContextTab', () => {
     await userEvent.selectOptions(screen.getByLabelText('Extraction 1 source'), 'status');
     expect(screen.getByLabelText('Extraction 1 path')).toBeDisabled();
   });
-
-  it('Captured globals section lists keys from local.globalContext', async () => {
-    const id = makeRequestId();
-    useWorkspaceStore.setState({
-      local: { ...useWorkspaceStore.getState().local!, globalContext: { TOKEN: 'tk1', ID: '42' } },
-    });
-    render(<LiveContextTab requestId={id} />);
-    expect(screen.getByText('TOKEN')).toBeInTheDocument();
-    expect(screen.getByText('tk1')).toBeInTheDocument();
-    expect(screen.getByText('ID')).toBeInTheDocument();
-  });
-
-  it('Forget button drops one captured key', async () => {
-    const id = makeRequestId();
-    useWorkspaceStore.setState({
-      local: { ...useWorkspaceStore.getState().local!, globalContext: { TOKEN: 'tk1', ID: '42' } },
-    });
-    render(<LiveContextTab requestId={id} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Forget TOKEN' }));
-    const after = useWorkspaceStore.getState().local!.globalContext;
-    expect(after).toEqual({ ID: '42' });
-  });
-
-  it('Clear all wipes the captured globals', async () => {
-    const id = makeRequestId();
-    useWorkspaceStore.setState({
-      local: { ...useWorkspaceStore.getState().local!, globalContext: { A: '1', B: '2' } },
-    });
-    render(<LiveContextTab requestId={id} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Clear all' }));
-    expect(useWorkspaceStore.getState().local!.globalContext).toEqual({});
-  });
 });

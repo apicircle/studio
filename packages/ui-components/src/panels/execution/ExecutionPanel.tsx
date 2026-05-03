@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Eye,
   Layers,
   Play,
   Plus,
@@ -13,7 +14,8 @@ import {
 } from 'lucide-react';
 import type { ExecutionPlan, Request as ApiRequest } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
-import { MonacoResponseViewer } from '../../editors/MonacoResponseViewer';
+import { ResponseViewer } from '../editor/ResponseViewer';
+import { RequestQuickView } from './RequestQuickView';
 
 export function ExecutionPanel() {
   const plans = useWorkspaceStore((s) => s.local?.executionPlans ?? {});
@@ -55,6 +57,7 @@ function EmptyState() {
 
 function PlanEditor({ plan }: { plan: ExecutionPlan }) {
   const requests = useWorkspaceStore((s) => s.synced?.collections.requests ?? {});
+  const folders = useWorkspaceStore((s) => s.synced?.collections.folders ?? {});
   const envItems = useWorkspaceStore((s) => s.synced?.environments.items ?? {});
   const linkedWorkspaces = useWorkspaceStore((s) => s.synced?.linkedWorkspaces ?? {});
   const linkedCollections = useWorkspaceStore((s) => s.local?.linkedCollections ?? {});
@@ -67,14 +70,36 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
   const runPlan = useWorkspaceStore((s) => s.runPlan);
 
   const [running, setRunning] = useState(false);
+  /**
+   * Verdict from the most recent plan run, broken into two independent
+   * tallies so the UI can be unambiguous about WHAT passed:
+   *
+   *  - `httpOkCount / total`: requests that returned a 2xx response (or
+   *    completed without error). Always populated.
+   *  - `assertionsPassed / assertionsTotal`: assertion verdicts aggregated
+   *    across every step. `null` when the run was launched without the
+   *    "Run with assertions" button — there's nothing to report and
+   *    showing 0/0 would look like a failure.
+   */
   const [lastResult, setLastResult] = useState<{
-    passed: boolean;
     total: number;
-    okCount: number;
+    httpOkCount: number;
+    assertionsPassed: number | null;
+    assertionsTotal: number | null;
+    withAssertions: boolean;
     durationMs: number;
   } | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  /**
+   * State for the quick-view drawer: holds the resolved request + its source
+   * label (when linked). Set by the eye button on a PlanStepRow.
+   */
+  const [quickView, setQuickView] = useState<{
+    request: ApiRequest;
+    linkedWorkspaceName?: string;
+    localOpenable: boolean;
+  } | null>(null);
 
   const requestArray = useMemo(() => Object.values(requests), [requests]);
   const envNames = useMemo(() => Object.keys(envItems), [envItems]);
@@ -87,6 +112,9 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
         .map((link) => ({
           link,
           requests: Object.values(linkedCollections[link.id]?.collections.requests ?? {}),
+          // Source-side folders so the picker breadcrumb walks the correct
+          // tree for cross-workspace requests.
+          folders: linkedCollections[link.id]?.collections.folders ?? {},
         }))
         .filter((g) => g.requests.length > 0),
     [linkedWorkspaces, linkedCollections],
@@ -98,11 +126,19 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
     setLastResult(null);
     try {
       const planRun = await runPlan(plan.id, { withAssertions });
-      const okCount = planRun.steps.filter((s) => s.passed).length;
+      const details = useWorkspaceStore.getState().lastPlanResults[plan.id] ?? [];
+      const httpOkCount = details.filter((s) => s.result.ok).length;
+      const assertionsTotal = details.reduce((sum, s) => sum + s.assertionResults.length, 0);
+      const assertionsPassed = details.reduce(
+        (sum, s) => sum + s.assertionResults.filter((a) => a.passed).length,
+        0,
+      );
       setLastResult({
-        passed: okCount === planRun.steps.length,
         total: planRun.steps.length,
-        okCount,
+        httpOkCount,
+        assertionsPassed: withAssertions ? assertionsPassed : null,
+        assertionsTotal: withAssertions ? assertionsTotal : null,
+        withAssertions,
         durationMs: planRun.durationMs,
       });
     } catch (err) {
@@ -145,55 +181,18 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
           </button>
         </div>
         {pickerOpen && (
-          <div className="mb-2 max-h-60 overflow-y-auto rounded-sm border border-border bg-card">
-            <p className="border-b border-border-subtle px-3 py-1 text-[10px] uppercase tracking-wider text-text-dim">
-              This workspace
-            </p>
-            <ul>
-              {requestArray.map((r) => (
-                <li key={r.id}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      addPlanStep(plan.id, r.id);
-                      setPickerOpen(false);
-                    }}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-text-muted hover:bg-surface hover:text-text-primary"
-                  >
-                    <span className="text-[10px] uppercase text-text-dim">{r.method}</span>
-                    <span className="truncate">{r.name}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            {linkedGroups.map((group) => (
-              <div key={group.link.id}>
-                <p className="border-b border-t border-border-subtle px-3 py-1 text-[10px] uppercase tracking-wider text-text-dim">
-                  {group.link.name}
-                  <span className="ml-1 text-text-dim normal-case">
-                    · {group.link.source.repoFullName}@{group.link.source.branch}
-                  </span>
-                </p>
-                <ul>
-                  {group.requests.map((r) => (
-                    <li key={`${group.link.id}:${r.id}`}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          addPlanStep(plan.id, r.id, group.link.id);
-                          setPickerOpen(false);
-                        }}
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-text-muted hover:bg-surface hover:text-text-primary"
-                      >
-                        <span className="text-[10px] uppercase text-text-dim">{r.method}</span>
-                        <span className="truncate">{r.name}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
+          <PlanStepPicker
+            requestArray={requestArray}
+            localFolders={folders}
+            linkedGroups={linkedGroups}
+            onClose={() => setPickerOpen(false)}
+            onAdd={(picks) => {
+              for (const pick of picks) {
+                addPlanStep(plan.id, pick.requestId, pick.linkedWorkspaceId);
+              }
+              setPickerOpen(false);
+            }}
+          />
         )}
         {plan.steps.length === 0 ? (
           <p className="rounded-sm border border-dashed border-border bg-card p-3 text-[11px] text-text-dim">
@@ -208,17 +207,39 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
               const linkedName = step.linkedWorkspaceId
                 ? linkedWorkspaces[step.linkedWorkspaceId]?.name
                 : undefined;
+              const stepRequest = step.linkedWorkspaceId ? linkedRequest : requests[step.requestId];
+              // Walk the folder chain so the user can see which collection
+              // node a step came from. For linked steps we walk the source
+              // workspace's folders (cached in the linked snapshot) — the
+              // consumer's tree doesn't know about them.
+              const stepFolders = step.linkedWorkspaceId
+                ? (linkedCollections[step.linkedWorkspaceId]?.collections.folders ?? {})
+                : folders;
+              const breadcrumb = stepRequest
+                ? buildFolderBreadcrumb(stepRequest.folderId, stepFolders)
+                : [];
               return (
                 <PlanStepRow
                   key={`${step.requestId}-${i}`}
-                  request={step.linkedWorkspaceId ? linkedRequest : requests[step.requestId]}
+                  request={stepRequest}
                   linkedName={linkedName}
+                  breadcrumb={breadcrumb}
                   index={i}
                   isFirst={i === 0}
                   isLast={i === plan.steps.length - 1}
                   onRemove={() => removePlanStep(plan.id, i)}
                   onMoveUp={() => reorderPlanSteps(plan.id, i, i - 1)}
                   onMoveDown={() => reorderPlanSteps(plan.id, i, i + 1)}
+                  onQuickView={
+                    stepRequest
+                      ? () =>
+                          setQuickView({
+                            request: stepRequest,
+                            linkedWorkspaceName: linkedName,
+                            localOpenable: !step.linkedWorkspaceId,
+                          })
+                      : undefined
+                  }
                 />
               );
             })}
@@ -262,18 +283,7 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
             <Play size={11} />
             Run with assertions
           </button>
-          {lastResult &&
-            (lastResult.passed ? (
-              <span className="inline-flex items-center gap-1 text-[11px] text-success">
-                <CheckCircle2 size={11} aria-hidden="true" />
-                {lastResult.okCount}/{lastResult.total} passed · {lastResult.durationMs} ms
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 text-[11px] text-danger">
-                <XCircle size={11} aria-hidden="true" />
-                {lastResult.okCount}/{lastResult.total} passed · {lastResult.durationMs} ms
-              </span>
-            ))}
+          {lastResult && <RunVerdict result={lastResult} />}
         </div>
         {runError && (
           <p className="mt-2 text-xs text-danger" role="alert">
@@ -283,7 +293,68 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
       </section>
 
       <PlanRunDetails planId={plan.id} />
+
+      {quickView && (
+        <RequestQuickView
+          request={quickView.request}
+          linkedWorkspaceName={quickView.linkedWorkspaceName}
+          localOpenable={quickView.localOpenable}
+          onClose={() => setQuickView(null)}
+        />
+      )}
     </div>
+  );
+}
+
+interface RunVerdictData {
+  total: number;
+  httpOkCount: number;
+  assertionsPassed: number | null;
+  assertionsTotal: number | null;
+  withAssertions: boolean;
+  durationMs: number;
+}
+
+/**
+ * Two-line verdict for the most recent plan run. The previous "X/X passed"
+ * label was ambiguous — without assertions enabled, "passed" only meant
+ * "got a 2xx" (no validation). Splitting HTTP-success and assertion
+ * tallies makes that distinction visible at a glance:
+ *
+ *   ✓ 3/3 requests succeeded · 245 ms              ← Run (no assertions)
+ *   ✓ 3/3 requests succeeded · 5/5 assertions ✓ · 245 ms   ← Run with assertions
+ *   ⚠ 2/3 requests succeeded · 4/5 assertions ✓ · 245 ms   ← partial failure
+ */
+function RunVerdict({ result }: { result: RunVerdictData }) {
+  const httpAllOk = result.httpOkCount === result.total;
+  const assertionsAllPassed =
+    result.assertionsTotal === null || result.assertionsPassed === result.assertionsTotal;
+  const overallPassed = httpAllOk && assertionsAllPassed;
+  return (
+    <span
+      className={
+        'inline-flex items-center gap-2 text-[11px] ' +
+        (overallPassed ? 'text-success' : 'text-danger')
+      }
+    >
+      {overallPassed ? (
+        <CheckCircle2 size={11} aria-hidden="true" />
+      ) : (
+        <XCircle size={11} aria-hidden="true" />
+      )}
+      <span>
+        {result.httpOkCount}/{result.total} requests succeeded
+      </span>
+      {result.withAssertions && result.assertionsTotal !== null && (
+        <span>
+          ·{' '}
+          {result.assertionsTotal === 0
+            ? 'no assertions defined'
+            : `${result.assertionsPassed}/${result.assertionsTotal} assertions passed`}
+        </span>
+      )}
+      <span className="text-text-muted">· {result.durationMs} ms</span>
+    </span>
   );
 }
 
@@ -337,52 +408,18 @@ function PlanRunDetails({ planId }: { planId: string }) {
                 )}
               </button>
               {open && (
-                <div className="border-t border-border-subtle px-3 py-2 text-xs">
-                  {step.result.error && (
-                    <p className="mb-2 text-danger">Error: {step.result.error}</p>
-                  )}
-                  <div className="grid grid-cols-[80px_1fr] gap-y-1">
+                <div className="border-t border-border-subtle">
+                  <div className="grid grid-cols-[80px_1fr] gap-y-1 px-3 py-2 text-xs">
                     <span className="text-text-dim">URL</span>
                     <code className="truncate font-mono text-text-primary">{step.result.url}</code>
-                    <span className="text-text-dim">Status</span>
-                    <span className="text-text-primary">
-                      {step.result.status ?? '—'} {step.result.statusText}
-                    </span>
                   </div>
-                  {step.assertionResults.length > 0 && (
-                    <ul className="mt-2 space-y-1 text-[11px]">
-                      {step.assertionResults.map((a) => (
-                        <li
-                          key={a.assertionId}
-                          className={
-                            'flex items-start gap-2 rounded-sm border px-2 py-1 ' +
-                            (a.passed
-                              ? 'border-success/30 bg-success/5'
-                              : 'border-danger/30 bg-danger/5')
-                          }
-                        >
-                          {a.passed ? (
-                            <CheckCircle2 size={11} className="text-success" aria-hidden="true" />
-                          ) : (
-                            <XCircle size={11} className="text-danger" aria-hidden="true" />
-                          )}
-                          <span className="text-text-primary">
-                            {a.detail ?? (a.passed ? 'Passed' : 'Failed')}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {step.result.body && (
-                    <div className="mt-2 h-48 overflow-hidden rounded-sm border border-border">
-                      <MonacoResponseViewer
-                        value={step.result.body}
-                        contentType={pickContentType(step.result.headers)}
-                        ariaLabel={`Step ${i + 1} response body`}
-                        height="100%"
-                      />
-                    </div>
-                  )}
+                  <div className="h-80 border-t border-border-subtle">
+                    <ResponseViewer
+                      result={step.result}
+                      assertions={step.assertionResults}
+                      isExecuting={false}
+                    />
+                  </div>
                 </div>
               )}
             </li>
@@ -415,78 +452,376 @@ function StepStatusBadge({ passed, status }: { passed: boolean; status: number |
   );
 }
 
-function pickContentType(headers: Record<string, string>): string | undefined {
-  for (const [k, v] of Object.entries(headers)) {
-    if (k.toLowerCase() === 'content-type') return v;
+/**
+ * Compact breadcrumb chip used in the Add Step picker. Truncates the middle
+ * when the trail is long: `Auth › … › subfolder`.
+ */
+function BreadcrumbTrail({ trail }: { trail: readonly string[] }) {
+  const display = trail.length > 3 ? [trail[0], '…', trail[trail.length - 1]] : trail;
+  return (
+    <nav
+      aria-label="Folder path"
+      className="flex items-center gap-0.5 truncate text-[10px] text-text-dim"
+    >
+      {display.map((name, i) => (
+        <span key={`${name}-${i}`} className="flex items-center gap-0.5">
+          {i > 0 && <ChevronRight size={8} className="text-text-faint" />}
+          <span className="truncate">{name}</span>
+        </span>
+      ))}
+    </nav>
+  );
+}
+
+/**
+ * Walk a request's folder chain back to root, returning the folder names
+ * top-down. Defends against parentId cycles (defensive — the data model
+ * doesn't allow them today but it's cheap).
+ */
+function buildFolderBreadcrumb(
+  folderId: string | null,
+  folders: Record<string, { id: string; name: string; parentId: string | null }>,
+): string[] {
+  const out: string[] = [];
+  let cursor = folderId;
+  const visited = new Set<string>();
+  while (cursor) {
+    if (visited.has(cursor)) break;
+    visited.add(cursor);
+    const folder = folders[cursor];
+    if (!folder) break;
+    out.unshift(folder.name);
+    cursor = folder.parentId;
   }
-  return undefined;
+  return out;
+}
+
+interface PickEntry {
+  requestId: string;
+  /** Undefined for local workspace requests; the link id for cross-workspace. */
+  linkedWorkspaceId?: string;
+}
+
+interface PickerLinkedGroup {
+  link: { id: string; name: string; source: { repoFullName: string; branch: string } };
+  requests: ApiRequest[];
+  /** Source workspace's folders, for breadcrumb display. */
+  folders: Record<string, { id: string; name: string; parentId: string | null }>;
+}
+
+/**
+ * Multi-select picker for "Add step". Lets the user check several requests
+ * — local + linked — across workspaces and add them to the plan in one
+ * click. Filter narrows the visible list by name. Each row shows its folder
+ * breadcrumb so same-named requests in different folders can be told apart.
+ */
+function PlanStepPicker({
+  requestArray,
+  localFolders,
+  linkedGroups,
+  onAdd,
+  onClose,
+}: {
+  requestArray: ApiRequest[];
+  localFolders: Record<string, { id: string; name: string; parentId: string | null }>;
+  linkedGroups: PickerLinkedGroup[];
+  onAdd: (picks: PickEntry[]) => void;
+  onClose: () => void;
+}) {
+  // Selection key format: `${linkedWorkspaceId ?? 'local'}:${requestId}`.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [filter, setFilter] = useState('');
+  const q = filter.trim().toLowerCase();
+
+  const matches = (name: string): boolean => {
+    if (!q) return true;
+    return name.toLowerCase().includes(q);
+  };
+
+  const toggle = (key: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const localFiltered = requestArray.filter((r) => matches(r.name));
+  const linkedFiltered = linkedGroups
+    .map((g) => ({ ...g, requests: g.requests.filter((r) => matches(r.name)) }))
+    .filter((g) => g.requests.length > 0);
+  const totalVisible =
+    localFiltered.length + linkedFiltered.reduce((acc, g) => acc + g.requests.length, 0);
+
+  const allVisibleKeys = useMemo(() => {
+    const keys: string[] = [];
+    for (const r of localFiltered) keys.push(`local:${r.id}`);
+    for (const g of linkedFiltered) for (const r of g.requests) keys.push(`${g.link.id}:${r.id}`);
+    return keys;
+  }, [localFiltered, linkedFiltered]);
+  const allVisibleSelected =
+    allVisibleKeys.length > 0 && allVisibleKeys.every((k) => selected.has(k));
+
+  const commit = () => {
+    if (selected.size === 0) {
+      onClose();
+      return;
+    }
+    const picks: PickEntry[] = [];
+    for (const key of selected) {
+      const sep = key.indexOf(':');
+      const prefix = key.slice(0, sep);
+      const requestId = key.slice(sep + 1);
+      picks.push({
+        requestId,
+        linkedWorkspaceId: prefix === 'local' ? undefined : prefix,
+      });
+    }
+    onAdd(picks);
+  };
+
+  return (
+    <div className="mb-2 flex flex-col rounded-sm border border-border bg-card">
+      <header className="flex items-center gap-2 border-b border-border-subtle px-3 py-2">
+        <input
+          type="search"
+          autoFocus
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter by name…"
+          aria-label="Filter requests"
+          className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+        />
+        <button
+          type="button"
+          disabled={totalVisible === 0}
+          onClick={() => {
+            setSelected((prev) => {
+              const next = new Set(prev);
+              if (allVisibleSelected) {
+                for (const k of allVisibleKeys) next.delete(k);
+              } else {
+                for (const k of allVisibleKeys) next.add(k);
+              }
+              return next;
+            });
+          }}
+          className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-accent hover:text-text-primary disabled:opacity-30"
+        >
+          {allVisibleSelected ? 'Clear visible' : 'Select visible'}
+        </button>
+      </header>
+
+      <div className="max-h-72 overflow-y-auto">
+        {totalVisible === 0 ? (
+          <p className="px-3 py-4 text-center text-[11px] text-text-dim">
+            {q ? `No requests match “${filter}”.` : 'No requests yet.'}
+          </p>
+        ) : (
+          <>
+            {localFiltered.length > 0 && (
+              <>
+                <p className="border-b border-border-subtle px-3 py-1 text-[10px] uppercase tracking-wider text-text-dim">
+                  This workspace
+                </p>
+                <ul>
+                  {localFiltered.map((r) => {
+                    const key = `local:${r.id}`;
+                    const checked = selected.has(key);
+                    const breadcrumb = buildFolderBreadcrumb(r.folderId, localFolders);
+                    return (
+                      <li key={key}>
+                        <label className="flex w-full cursor-pointer items-start gap-2 px-3 py-1.5 text-xs text-text-muted hover:bg-surface hover:text-text-primary">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggle(key)}
+                            aria-label={`Select ${r.name}`}
+                            style={{ accentColor: 'var(--purple)' }}
+                            className="mt-0.5 h-3 w-3"
+                          />
+                          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] uppercase text-text-dim">
+                                {r.method}
+                              </span>
+                              <span className="truncate">{r.name}</span>
+                            </div>
+                            {breadcrumb.length > 0 && <BreadcrumbTrail trail={breadcrumb} />}
+                          </div>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )}
+            {linkedFiltered.map((group) => (
+              <div key={group.link.id}>
+                <p className="border-b border-t border-border-subtle px-3 py-1 text-[10px] uppercase tracking-wider text-text-dim">
+                  {group.link.name}
+                  <span className="ml-1 text-text-dim normal-case">
+                    · {group.link.source.repoFullName}@{group.link.source.branch}
+                  </span>
+                </p>
+                <ul>
+                  {group.requests.map((r) => {
+                    const key = `${group.link.id}:${r.id}`;
+                    const checked = selected.has(key);
+                    const breadcrumb = buildFolderBreadcrumb(r.folderId, group.folders);
+                    return (
+                      <li key={key}>
+                        <label className="flex w-full cursor-pointer items-start gap-2 px-3 py-1.5 text-xs text-text-muted hover:bg-surface hover:text-text-primary">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggle(key)}
+                            aria-label={`Select ${r.name} from ${group.link.name}`}
+                            style={{ accentColor: 'var(--purple)' }}
+                            className="mt-0.5 h-3 w-3"
+                          />
+                          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] uppercase text-text-dim">
+                                {r.method}
+                              </span>
+                              <span className="truncate">{r.name}</span>
+                            </div>
+                            {breadcrumb.length > 0 && <BreadcrumbTrail trail={breadcrumb} />}
+                          </div>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+
+      <footer className="flex items-center justify-between border-t border-border-subtle px-3 py-2">
+        <span className="text-[11px] text-text-dim">
+          {selected.size === 0 ? 'Pick one or more' : `${selected.size} selected`}
+        </span>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-accent hover:text-text-primary"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={commit}
+            disabled={selected.size === 0}
+            className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/15 px-3 text-[11px] text-accent hover:bg-accent/25 disabled:opacity-40"
+          >
+            {selected.size <= 1 ? 'Add step' : `Add ${selected.size} steps`}
+          </button>
+        </div>
+      </footer>
+    </div>
+  );
 }
 
 function PlanStepRow({
   request,
   linkedName,
+  breadcrumb,
   index,
   isFirst,
   isLast,
   onRemove,
   onMoveUp,
   onMoveDown,
+  onQuickView,
 }: {
   request: ApiRequest | undefined;
   linkedName?: string | undefined;
+  breadcrumb: string[];
   index: number;
   isFirst: boolean;
   isLast: boolean;
   onRemove: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  onQuickView?: () => void;
 }) {
   return (
-    <li className="flex items-center gap-2 rounded-sm border border-border bg-card px-2 py-1.5">
-      <span className="w-6 text-center text-[10px] text-text-dim">{index + 1}.</span>
-      {request ? (
-        <>
-          <span className="text-[10px] uppercase text-text-dim">{request.method}</span>
-          <span className="flex-1 truncate text-xs text-text-primary">{request.name}</span>
-          {linkedName && (
-            <span className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-accent">
-              from {linkedName}
+    <li className="flex flex-col gap-0.5 rounded-sm border border-border bg-card px-2 py-1.5">
+      <div className="flex items-center gap-2">
+        <span className="w-6 text-center text-[10px] text-text-dim">{index + 1}.</span>
+        {request ? (
+          <>
+            <span className="text-[10px] uppercase text-text-dim">{request.method}</span>
+            <span className="flex-1 truncate text-xs text-text-primary">{request.name}</span>
+            {linkedName && (
+              <span className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-accent">
+                from {linkedName}
+              </span>
+            )}
+          </>
+        ) : (
+          <span className="flex-1 truncate text-xs italic text-warning">
+            {linkedName
+              ? `Request not in cached snapshot of "${linkedName}" — refresh the link`
+              : 'Request no longer exists'}
+          </span>
+        )}
+        {onQuickView && (
+          <button
+            type="button"
+            onClick={onQuickView}
+            aria-label={`Quick view step ${index + 1}`}
+            title="Quick view"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:text-text-primary"
+          >
+            <Eye size={11} />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onMoveUp}
+          disabled={isFirst}
+          aria-label="Move step up"
+          className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:text-text-primary disabled:opacity-30"
+        >
+          <ArrowUp size={11} />
+        </button>
+        <button
+          type="button"
+          onClick={onMoveDown}
+          disabled={isLast}
+          aria-label="Move step down"
+          className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:text-text-primary disabled:opacity-30"
+        >
+          <ArrowDown size={11} />
+        </button>
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label="Remove step"
+          className="inline-flex h-6 w-6 items-center justify-center rounded-sm border border-danger/30 bg-danger/5 text-danger hover:bg-danger/10"
+        >
+          <Trash2 size={10} />
+        </button>
+      </div>
+      {breadcrumb.length > 0 && (
+        <nav
+          aria-label={`Folder path for step ${index + 1}`}
+          className="ml-6 flex items-center gap-1 text-[10px] text-text-dim"
+        >
+          {breadcrumb.map((name, i) => (
+            <span key={`${name}-${i}`} className="flex items-center gap-1">
+              {i > 0 && <ChevronRight size={9} className="text-text-faint" />}
+              <span className="truncate">{name}</span>
             </span>
-          )}
-        </>
-      ) : (
-        <span className="flex-1 truncate text-xs italic text-warning">
-          {linkedName
-            ? `Request not in cached snapshot of "${linkedName}" — refresh the link`
-            : 'Request no longer exists'}
-        </span>
+          ))}
+        </nav>
       )}
-      <button
-        type="button"
-        onClick={onMoveUp}
-        disabled={isFirst}
-        aria-label="Move step up"
-        className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:text-text-primary disabled:opacity-30"
-      >
-        <ArrowUp size={11} />
-      </button>
-      <button
-        type="button"
-        onClick={onMoveDown}
-        disabled={isLast}
-        aria-label="Move step down"
-        className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:text-text-primary disabled:opacity-30"
-      >
-        <ArrowDown size={11} />
-      </button>
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label="Remove step"
-        className="inline-flex h-6 w-6 items-center justify-center rounded-sm border border-danger/30 bg-danger/5 text-danger hover:bg-danger/10"
-      >
-        <Trash2 size={10} />
-      </button>
     </li>
   );
 }
