@@ -36,7 +36,7 @@
     "@apicircle/mcp-server": "workspace:*",
     "@apicircle/mock-server-core": "workspace:*",
     "@apicircle/shared": "workspace:*",
-    "commander": "^12.0.0",
+    "commander": "^14.0.3",
     "kleur": "^4.1.5"
   },
   "devDependencies": {
