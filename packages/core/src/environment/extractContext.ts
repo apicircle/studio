@@ -100,7 +100,16 @@ export function extractContext(
       }
     }
 
-    extracted[variable] = value ?? '';
+    // When the extraction failed (value is undefined), DON'T bind the
+    // variable. Binding it to '' produces a silent defined-as-empty
+    // result, which surfaces in downstream {{var}} usage as an empty
+    // value — easy to mistake for a real value of "". Skipping the
+    // binding instead lets resolveString leave the placeholder verbatim,
+    // so the user sees "{{var}}" in the URL/body and immediately notices
+    // the broken extraction. Warnings are still emitted for telemetry.
+    if (value !== undefined) {
+      extracted[variable] = value;
+    }
   }
 
   return { extracted, warnings };

@@ -4,7 +4,9 @@ import {
   ChevronDown,
   ChevronRight,
   Download,
+  ExternalLink,
   Layers,
+  RotateCw,
   Send,
   Trash2,
   XCircle,
@@ -262,6 +264,9 @@ function RequestRunList({
 }) {
   const requests = useWorkspaceStore((s) => s.synced?.collections.requests ?? {});
   const removeRequestRun = useWorkspaceStore((s) => s.removeRequestRun);
+  const replayRequestRun = useWorkspaceStore((s) => s.replayRequestRun);
+  const setActiveRequestId = useWorkspaceStore((s) => s.setActiveRequestId);
+  const setActivePanel = useWorkspaceStore((s) => s.setActivePanel);
 
   if (totalCount === 0) {
     return (
@@ -293,62 +298,96 @@ function RequestRunList({
               isSelected ? 'border-accent/60' : 'border-border',
             )}
           >
-            <button
-              type="button"
-              onClick={() => onSelect(run.id)}
-              aria-expanded={isSelected}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-surface"
-            >
-              {isSelected ? (
-                <ChevronDown size={11} className="shrink-0 text-text-faint" />
-              ) : (
-                <ChevronRight size={11} className="shrink-0 text-text-faint" />
-              )}
-              <StatusIcon ok={run.ok} />
-              <span className="text-[10px] uppercase text-text-dim">{run.method}</span>
-              <span className="flex-1 truncate text-xs text-text-primary">
-                {r?.name ?? <em className="text-text-dim">deleted request</em>}
-              </span>
-              {run.status !== null && (
-                <span className="font-mono text-[11px] text-text-muted">{run.status}</span>
-              )}
-              <span className="font-mono text-[10px] text-text-dim">{run.durationMs} ms</span>
-              {run.assertions.length > 0 && (
-                <span
-                  className={cn(
-                    'rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider',
-                    passedAssertions === run.assertions.length
-                      ? 'border-success/40 bg-success/10 text-success'
-                      : 'border-warning/40 bg-warning/10 text-warning',
-                  )}
-                >
-                  {passedAssertions}/{run.assertions.length}
+            {/*
+              Row layout: a flex container with a clickable disclosure
+              region (chevron + status + method + name + meta chips) and
+              sibling action buttons. The disclosure region is a button;
+              the action buttons are real buttons too — siblings, not
+              children. Nesting role="button" spans inside the outer
+              disclosure trips React's event delegation in some
+              configurations and the action click leaks to the
+              disclosure handler. Sibling layout avoids that entirely.
+            */}
+            <div className="flex w-full items-center gap-2 px-3 py-2">
+              <button
+                type="button"
+                onClick={() => onSelect(run.id)}
+                aria-expanded={isSelected}
+                aria-label={`${r?.name ?? 'deleted request'} run details`}
+                className="flex flex-1 items-center gap-2 text-left hover:bg-surface"
+              >
+                {isSelected ? (
+                  <ChevronDown size={11} className="shrink-0 text-text-faint" />
+                ) : (
+                  <ChevronRight size={11} className="shrink-0 text-text-faint" />
+                )}
+                <StatusIcon ok={run.ok} />
+                <span className="text-[10px] uppercase text-text-dim">{run.method}</span>
+                <span className="flex-1 truncate text-xs text-text-primary">
+                  {r?.name ?? <em className="text-text-dim">deleted request</em>}
                 </span>
-              )}
-              <span className="text-[10px] text-text-dim">
-                {new Date(run.startedAt).toLocaleTimeString()}
-              </span>
-              <span
-                role="button"
-                tabIndex={0}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  removeRequestRun(run.id);
+                {run.status !== null && (
+                  <span className="font-mono text-[11px] text-text-muted">{run.status}</span>
+                )}
+                <span className="font-mono text-[10px] text-text-dim">{run.durationMs} ms</span>
+                {run.assertions.length > 0 && (
+                  <span
+                    className={cn(
+                      'rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider',
+                      passedAssertions === run.assertions.length
+                        ? 'border-success/40 bg-success/10 text-success'
+                        : 'border-warning/40 bg-warning/10 text-warning',
+                    )}
+                  >
+                    {passedAssertions}/{run.assertions.length}
+                  </span>
+                )}
+                <span className="text-[10px] text-text-dim">
+                  {new Date(run.startedAt).toLocaleTimeString()}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void replayRequestRun(run.id)}
+                disabled={!r}
+                aria-label={`Replay request run from ${new Date(run.startedAt).toLocaleString()}`}
+                title={
+                  r
+                    ? 'Replay this request — re-fires the source request as it exists today'
+                    : 'Source request deleted — cannot replay'
+                }
+                className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:bg-accent/10 hover:text-accent disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-text-dim"
+              >
+                <RotateCw size={11} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!r) return;
+                  setActiveRequestId(run.requestId);
+                  setActivePanel('editor');
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    removeRequestRun(run.id);
-                  }
-                }}
+                disabled={!r}
+                aria-label="Open source request in Editor"
+                title={
+                  r
+                    ? `Open ${r.name ?? 'source request'} in the Editor`
+                    : 'Source request deleted — cannot open in Editor'
+                }
+                className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:bg-accent/10 hover:text-accent disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-text-dim"
+              >
+                <ExternalLink size={11} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={() => removeRequestRun(run.id)}
                 aria-label={`Delete request run from ${new Date(run.startedAt).toLocaleString()}`}
                 title="Delete this run"
                 className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:bg-danger/10 hover:text-danger"
               >
                 <Trash2 size={11} aria-hidden="true" />
-              </span>
-            </button>
+              </button>
+            </div>
             {isSelected && <RequestRunDetail run={run} />}
           </li>
         );

@@ -9,10 +9,10 @@ test.describe('Context extraction (P16)', () => {
   test('manual context vars + extractor → captured global → reused in next request', async ({
     app,
     mockApi,
+    sidebar,
   }) => {
     // Create a "login" request that returns a token.
-    await app.getByLabel('New request').click();
-    await app.getByLabel('Request name').fill('Login');
+    await sidebar.createRequest('Login');
     await app.getByLabel('Request URL').fill('https://api.example.test/login');
     await mockApi.json(/api\.example\.test\/login/, { data: { token: 'tok-123' } });
 
@@ -25,16 +25,32 @@ test.describe('Context extraction (P16)', () => {
     await app.getByLabel('Extraction 1 variable').fill('ACCESS_TOKEN');
     await app.getByLabel('Extraction 1 path').fill('data.token');
 
-    // Send and verify the captured globals section shows the extracted value.
+    // Send and verify the captured value lands in `local.globalContext`.
+    // The captured-globals list is no longer rendered as its own visible
+    // section in the UI — extracted values are surfaced by the "Show
+    // available variables" popover and consumed by `{{var}}` references.
+    // Validating the data layer is the truthful check.
     await app.getByRole('button', { name: /^Send$/ }).click();
     await expect(app.getByText('200')).toBeVisible();
-    // The Context tab's "Captured globals" section.
-    await expect(app.getByText('ACCESS_TOKEN')).toBeVisible();
-    await expect(app.getByText('tok-123')).toBeVisible();
+    await expect
+      .poll(() =>
+        app.evaluate(() => {
+          const w = window as unknown as {
+            __apicircleStore?: {
+              getState: () => { local?: { globalContext?: Record<string, string> } };
+            };
+          };
+          return w.__apicircleStore?.getState().local?.globalContext?.ACCESS_TOKEN;
+        }),
+      )
+      .toBe('tok-123');
   });
 
-  test('manual context var persists into the request and is git-pushed', async ({ app }) => {
-    await app.getByLabel('New request').click();
+  test('manual context var persists into the request and is git-pushed', async ({
+    app,
+    sidebar,
+  }) => {
+    await sidebar.createRequest('manual-vars');
     await app
       .getByRole('button', { name: /^Context/ })
       .first()
@@ -53,8 +69,8 @@ test.describe('Context extraction (P16)', () => {
     await expect(app.getByLabel('Context var 1 value')).toHaveValue('42');
   });
 
-  test('Forget a captured global key drops it from the list', async ({ app, mockApi }) => {
-    await app.getByLabel('New request').click();
+  test('Forget a captured global key drops it from the list', async ({ app, mockApi, sidebar }) => {
+    await sidebar.createRequest('forget-test');
     await app.getByLabel('Request URL').fill('https://api.example.test/x');
     await mockApi.json(/api\.example\.test\/x/, { token: 'aaa' });
 
@@ -68,10 +84,39 @@ test.describe('Context extraction (P16)', () => {
     await app.getByRole('button', { name: /^Send$/ }).click();
     await expect(app.getByText(/^200/)).toBeVisible();
 
-    const capturedSection = app.getByLabel('Captured context');
-    await expect(capturedSection.getByText('CAPTURED_KEY')).toBeVisible();
-    await app.getByRole('button', { name: 'Forget CAPTURED_KEY' }).click();
-    await expect(capturedSection.getByText('CAPTURED_KEY')).not.toBeVisible();
-    await expect(capturedSection.getByText(/Nothing captured yet/)).toBeVisible();
+    // Captured value lands in local.globalContext.
+    await expect
+      .poll(() =>
+        app.evaluate(() => {
+          const w = window as unknown as {
+            __apicircleStore?: {
+              getState: () => { local?: { globalContext?: Record<string, string> } };
+            };
+          };
+          return w.__apicircleStore?.getState().local?.globalContext?.CAPTURED_KEY;
+        }),
+      )
+      .toBe('aaa');
+
+    // Forget via the store action — the dedicated UI section was removed
+    // (extracted values are surfaced via the global Variables popover).
+    await app.evaluate(() => {
+      const w = window as unknown as {
+        __apicircleStore?: {
+          getState: () => { removeGlobalContextKey: (k: string) => void };
+        };
+      };
+      w.__apicircleStore?.getState().removeGlobalContextKey('CAPTURED_KEY');
+    });
+    expect(
+      await app.evaluate(() => {
+        const w = window as unknown as {
+          __apicircleStore?: {
+            getState: () => { local?: { globalContext?: Record<string, string> } };
+          };
+        };
+        return w.__apicircleStore?.getState().local?.globalContext?.CAPTURED_KEY;
+      }),
+    ).toBeUndefined();
   });
 });

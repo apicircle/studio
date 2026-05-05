@@ -41,7 +41,9 @@ export const requestCreateTool: AnyToolDef = {
       headers: [],
       query: [],
       body: { type: 'none', content: '' },
-      auth: { type: 'none' },
+      // Default to `inherit` so requests created via MCP inside a folder
+      // pick up folder auth automatically. Mirrors editorActions.createRequest.
+      auth: { type: 'inherit' },
       contextVars: [],
       extractions: [],
       assertions: [],

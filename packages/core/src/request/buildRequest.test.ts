@@ -251,19 +251,36 @@ describe('buildRequest', () => {
     ...overrides,
   });
 
-  // Deterministic runtime so the auto-fed APICircle headers are easy to assert
-  // without snapshotting a UUID.
-  const fixedRuntime = { runtimeTag: 'test/runtime', traceId: 'fixed-trace-id' };
+  // Deterministic auto-header overrides so the per-send tracing fields
+  // (X-Trace-Span-Id, traceparent) are easy to assert without snapshotting
+  // random hex. `platform: 'web'` keeps Origin/Referer suppressed in tests.
+  const fixedAuto = {
+    autoHeaderOverrides: {
+      spanId: 'fixed-span-id',
+      traceparent: '00-fixedtrace-fixedspan-01',
+      platform: 'web' as const,
+      version: '0.1.0',
+      name: 'APICircle Studio',
+    },
+  };
+
+  // Headers every send injects when the user has set none of them.
+  const expectedAutoHeaders = {
+    'X-Client-Name': 'APICircle Studio',
+    'X-Client-Platform': 'web',
+    'X-Client-Version': '0.1.0',
+    'X-Trace-Span-Id': 'fixed-span-id',
+    traceparent: '00-fixedtrace-fixedspan-01',
+  };
 
   it('composes all four pieces from a Request and auto-feeds APICircle headers', async () => {
-    const built = await buildRequest(baseReq(), { runtime: fixedRuntime });
+    const built = await buildRequest(baseReq(), fixedAuto);
     expect(built).toEqual({
       url: 'https://api.example.com/users?verbose=true',
       method: 'POST',
       headers: {
         'X-Auth': 't',
-        'X-APICircle-Trace-Id': 'fixed-trace-id',
-        'X-APICircle-Runtime': 'test/runtime',
+        ...expectedAutoHeaders,
       },
       body: '{"x":1}',
       // Empty when applyAuth had nothing to warn about — populated when
@@ -281,7 +298,7 @@ describe('buildRequest', () => {
         ],
         body: { type: 'form-data', content: '', formRows: [] },
       }),
-      { runtime: fixedRuntime },
+      fixedAuto,
     );
     expect(built.headers).not.toHaveProperty('Content-Type');
     expect(built.headers['X-Auth']).toBe('t');
@@ -297,32 +314,60 @@ describe('buildRequest', () => {
       }),
       {
         resolveAttachment: async () => ({ blob, filename: 'pic.png' }),
-        runtime: fixedRuntime,
+        ...fixedAuto,
       },
     );
     expect(built.headers).not.toHaveProperty('Content-Type');
     expect(built.body).toBe(blob);
   });
 
-  it('user-set X-APICircle-Trace-Id wins over the auto-fed header (case-insensitive)', async () => {
+  it('user-set X-Client-Version wins over the auto-fed header (case-insensitive)', async () => {
     const built = await buildRequest(
       baseReq({
-        headers: [{ key: 'x-apicircle-trace-id', value: 'user-supplied', enabled: true }],
+        headers: [{ key: 'x-client-version', value: 'user-supplied', enabled: true }],
       }),
-      { runtime: fixedRuntime },
+      fixedAuto,
     );
     // The user's casing is preserved, the auto-fed copy is suppressed.
-    expect(built.headers['x-apicircle-trace-id']).toBe('user-supplied');
-    expect(built.headers).not.toHaveProperty('X-APICircle-Trace-Id');
-    // Runtime header is still injected because the user didn't set one.
-    expect(built.headers['X-APICircle-Runtime']).toBe('test/runtime');
+    expect(built.headers['x-client-version']).toBe('user-supplied');
+    expect(built.headers).not.toHaveProperty('X-Client-Version');
+    // Other auto headers are still injected because the user didn't set them.
+    expect(built.headers['X-Client-Name']).toBe('APICircle Studio');
+    expect(built.headers['X-Trace-Span-Id']).toBe('fixed-span-id');
   });
 
-  it('default runtime tag is the web studio when no runtime is supplied', async () => {
+  it('user-set traceparent wins over the auto-fed traceparent', async () => {
+    const built = await buildRequest(
+      baseReq({
+        headers: [{ key: 'traceparent', value: '00-aaa-bbb-01', enabled: true }],
+      }),
+      fixedAuto,
+    );
+    expect(built.headers.traceparent).toBe('00-aaa-bbb-01');
+    // X-Trace-Span-Id is always regenerated even if traceparent is overridden.
+    expect(built.headers['X-Trace-Span-Id']).toBe('fixed-span-id');
+  });
+
+  it('desktop platform also auto-feeds Origin and Referer', async () => {
+    const built = await buildRequest(baseReq(), {
+      autoHeaderOverrides: {
+        ...fixedAuto.autoHeaderOverrides,
+        platform: 'desktop',
+      },
+    });
+    expect(built.headers['X-Client-Platform']).toBe('desktop');
+    expect(built.headers.Origin).toBe('http://app.studio.apicircle.dev');
+    expect(built.headers.Referer).toBe('http://app.studio.apicircle.dev/');
+  });
+
+  it('defaults regenerate trace ids per send when no overrides are supplied', async () => {
     const built = await buildRequest(baseReq());
-    expect(built.headers['X-APICircle-Runtime']).toBe('apicircle-studio/web');
-    // Trace-id is auto-generated UUID (length is non-zero hex)
-    expect(built.headers['X-APICircle-Trace-Id']).toMatch(/.+/);
+    // X-Trace-Span-Id is 16 hex chars (W3C span format).
+    expect(built.headers['X-Trace-Span-Id']).toMatch(/^[0-9a-f]{16}$/);
+    // traceparent is `00-<32 hex>-<16 hex>-01`.
+    expect(built.headers.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
+    expect(built.headers['X-Client-Name']).toBe('APICircle Studio');
+    expect(built.headers['X-Client-Version']).toBe('0.1.0');
   });
 
   it('substitutes :name and {name} placeholders from pathParams', async () => {
@@ -332,7 +377,7 @@ describe('buildRequest', () => {
         query: [],
         pathParams: { userId: 'u-42', postId: '99' },
       }),
-      { runtime: fixedRuntime },
+      fixedAuto,
     );
     expect(built.url).toBe('https://api.example.com/users/u-42/posts/99');
   });
@@ -344,7 +389,7 @@ describe('buildRequest', () => {
         query: [],
         pathParams: { name: 'a b/c' },
       }),
-      { runtime: fixedRuntime },
+      fixedAuto,
     );
     expect(built.url).toBe('https://api.example.com/files/a%20b%2Fc');
   });
@@ -356,7 +401,7 @@ describe('buildRequest', () => {
         query: [],
         pathParams: {},
       }),
-      { runtime: fixedRuntime },
+      fixedAuto,
     );
     expect(built.url).toBe('https://api.example.com/users//profile');
   });
@@ -370,7 +415,7 @@ describe('buildRequest', () => {
           { key: 'theme', value: 'dark', enabled: true },
         ],
       }),
-      { runtime: fixedRuntime },
+      fixedAuto,
     );
     expect(built.headers.Cookie).toBe('session=abc; theme=dark');
   });
@@ -381,7 +426,7 @@ describe('buildRequest', () => {
         headers: [{ key: 'cookie', value: 'manual=1', enabled: true }],
         cookies: [{ key: 'auto', value: 'should-not-appear', enabled: true }],
       }),
-      { runtime: fixedRuntime },
+      fixedAuto,
     );
     expect(built.headers.cookie).toBe('manual=1');
     expect(built.headers).not.toHaveProperty('Cookie');

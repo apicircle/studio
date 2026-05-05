@@ -81,6 +81,7 @@ export async function loadWorkspace(): Promise<{
       linkedCollections: local.linkedCollections ?? {},
       globalContext: local.globalContext ?? {},
       mockRuntime: local.mockRuntime ?? { active: {} },
+      settings: local.settings ?? { validateOnSend: true },
     };
     return { synced: upgradedSynced, local: upgradedLocal };
   }
@@ -212,7 +213,7 @@ export function createEmptyWorkspace(): { synced: WorkspaceSynced; local: Worksp
     headers: [{ key: 'Accept', value: 'application/json', enabled: true }],
     query: [{ key: 'greeting', value: '{{GREETING}}', enabled: true }],
     body: { type: 'none', content: '' },
-    auth: { type: 'none' },
+    auth: { type: 'inherit' },
     contextVars: [{ key: 'GREETING', value: 'hello-from-apicircle' }],
     extractions: [],
     assertions: [],
@@ -268,6 +269,7 @@ export function createEmptyWorkspace(): { synced: WorkspaceSynced; local: Worksp
       sidebarExpandedSections: [],
       themeId: 'studio-dark',
     },
+    settings: { validateOnSend: true },
   };
   return { synced, local };
 }

@@ -7,7 +7,8 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./workspace/file-backed": "./src/workspace/fileBackedWorkspace.ts"
+    "./workspace/file-backed": "./src/workspace/fileBackedWorkspace.ts",
+    "./test/mock-idp": "./src/auth/oauth2/__fixtures__/mockIdp.ts"
   },
   "scripts": {
     "check": "tsc --noEmit",

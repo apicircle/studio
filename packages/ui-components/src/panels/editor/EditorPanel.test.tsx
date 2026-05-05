@@ -122,7 +122,9 @@ describe('EditorPanel', () => {
       );
       expect(responseAssertionsTab).toBeDefined();
       await userEvent.click(responseAssertionsTab!);
-      expect(screen.getByText('Passed')).toBeInTheDocument();
+      // Pass case now carries a positive explanation rather than the
+      // literal word "Passed" — the response panel surfaces it directly.
+      expect(screen.getByText('status: 200 equals 200')).toBeInTheDocument();
       expect(screen.getByText(/path "id".*expected 99, got 42/)).toBeInTheDocument();
     });
 

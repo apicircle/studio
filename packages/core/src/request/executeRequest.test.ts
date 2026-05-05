@@ -83,7 +83,16 @@ describe('executeRequest', () => {
         headers: [{ key: 'X-A', value: '1', enabled: true }],
         body: { type: 'json', content: '{"x":1}' },
       }),
-      { fetchImpl, runtime: { runtimeTag: 'test/runtime', traceId: 'fixed-trace' } },
+      {
+        fetchImpl,
+        autoHeaderOverrides: {
+          spanId: 'fixed-span',
+          traceparent: '00-fixed-trace-fixed-span-01',
+          platform: 'web',
+          version: '0.1.0',
+          name: 'APICircle Studio',
+        },
+      },
     );
     expect(fetchImpl).toHaveBeenCalledOnce();
     const [url, init] = fetchImpl.mock.calls[0];
@@ -91,8 +100,11 @@ describe('executeRequest', () => {
     expect(init.method).toBe('POST');
     expect(init.headers).toEqual({
       'X-A': '1',
-      'X-APICircle-Trace-Id': 'fixed-trace',
-      'X-APICircle-Runtime': 'test/runtime',
+      'X-Client-Name': 'APICircle Studio',
+      'X-Client-Platform': 'web',
+      'X-Client-Version': '0.1.0',
+      'X-Trace-Span-Id': 'fixed-span',
+      traceparent: '00-fixed-trace-fixed-span-01',
     });
     expect(init.body).toBe('{"x":1}');
   });

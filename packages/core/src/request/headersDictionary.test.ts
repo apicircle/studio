@@ -30,9 +30,12 @@ describe('suggestHeaders', () => {
     );
   });
 
-  it('returns sorted alphabetically', () => {
+  it('returns sorted alphabetically (case-insensitive)', () => {
     const names = suggestHeaders('').map((h) => h.name);
-    const sorted = [...names].sort();
+    // Match the implementation's localeCompare ordering — that's case-
+    // insensitive, so "baggage" sorts between "Authorization" and
+    // "Cache-Control" rather than after "X-XSS-Protection".
+    const sorted = [...names].sort((a, b) => a.localeCompare(b));
     expect(names).toEqual(sorted);
   });
 

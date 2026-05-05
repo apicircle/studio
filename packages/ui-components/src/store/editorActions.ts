@@ -27,7 +27,13 @@ export function createRequest(parentFolderId: string | null, name = 'New request
     pathParams: {},
     cookies: [],
     body: { type: 'none', content: '' },
-    auth: { type: 'none' },
+    // Default to `inherit` so requests created inside a folder pick up
+    // folder auth automatically. Resolver returns `{ type: 'none' }` at
+    // the root when no ancestor has auth set, so behavior at the root is
+    // unchanged. Users who want a request to bypass folder auth flip to
+    // 'none' explicitly — and `<FolderAuthBypassCue>` warns them when they
+    // do that inside a folder that DOES have auth.
+    auth: { type: 'inherit' },
     contextVars: [],
     extractions: [],
     assertions: [],

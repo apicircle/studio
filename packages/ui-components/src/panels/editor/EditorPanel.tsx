@@ -22,6 +22,7 @@ import { ContextTab } from './ContextTab';
 import { ResponseViewer } from './ResponseViewer';
 import { VariableAutocompleteField } from '../../editors/VariableAutocompleteField';
 import { useVariableScope } from '../../editors/useVariableScope';
+import { PreSendPanel, usePreSendValidation } from './PreSendPanel';
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 const METHOD_COLOR: Record<HttpMethod, string> = {
@@ -184,6 +185,13 @@ export function EditorPanel() {
   const addRequestFromCurl = useWorkspaceStore((s) => s.addRequestFromCurl);
   const scope = useVariableScope(request);
 
+  // Pre-send validation — gated by user setting. Returns warnings (yellow,
+  // non-blocking) and blockers (red, Send disabled until resolved). Hidden
+  // entirely when the toggle is off.
+  const validateOnSend = useWorkspaceStore((s) => s.local?.settings?.validateOnSend ?? true);
+  const validation = usePreSendValidation(request, scope, validateOnSend);
+  const sendBlocked = validation.blockers.length > 0;
+
   // One-shot reconciliation when a request opens whose URL still contains a
   // `?key=val` portion. The two-way URL↔Query sync stores the *base* in
   // `request.url` and rows in `request.query`, so on first observation we
@@ -269,8 +277,12 @@ export function EditorPanel() {
           <button
             type="button"
             onClick={() => void executeActiveRequest()}
-            disabled={isExecuting}
-            title="Sends with the active environment + secrets resolved (Ctrl/Cmd+Enter)."
+            disabled={isExecuting || sendBlocked}
+            title={
+              sendBlocked
+                ? 'Resolve the validation blockers above before sending.'
+                : 'Sends with the active environment + secrets resolved (Ctrl/Cmd+Enter).'
+            }
             className="inline-flex h-9 items-center gap-2 rounded-sm border border-accent/40 bg-accent/15 px-4 text-xs font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
           >
             <Send size={14} />
@@ -278,6 +290,7 @@ export function EditorPanel() {
           </button>
         </div>
         <EffectiveRequestPreview request={request} scope={scope} />
+        <PreSendPanel request={request} scope={scope} enabled={validateOnSend} />
         {pendingCurlPaste && (
           <CurlPasteConfirm
             curl={pendingCurlPaste}

@@ -78,7 +78,9 @@ test.describe('Body Schema picker integration (P18 surface)', () => {
     await app.keyboard.press('Escape');
 
     // Open a request and switch the body to JSON.
-    await app.getByLabel('New request').click();
+    await app.getByLabel('New request', { exact: true }).first().click();
+    await app.getByLabel('Inline rename request').fill('schema-json');
+    await app.keyboard.press('Enter');
     await app.getByRole('button', { name: 'Body' }).first().click();
     await app.getByRole('radio', { name: 'JSON' }).click();
 
@@ -96,7 +98,9 @@ test.describe('Body Schema picker integration (P18 surface)', () => {
     await app.getByLabel('GraphQL schema name').fill('PetsAPI');
     await app.keyboard.press('Escape');
 
-    await app.getByLabel('New request').click();
+    await app.getByLabel('New request', { exact: true }).first().click();
+    await app.getByLabel('Inline rename request').fill('schema-graphql');
+    await app.keyboard.press('Enter');
     await app.getByRole('button', { name: 'Body' }).first().click();
     await app.getByRole('radio', { name: 'GraphQL' }).click();
 

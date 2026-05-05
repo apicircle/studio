@@ -1,5 +1,6 @@
 import type { Request as ApiRequest } from '@apicircle/shared';
-import { buildRequest, type AttachmentResolver, type RuntimeIdentity } from './buildRequest';
+import { buildRequest, type AttachmentResolver } from './buildRequest';
+import type { AutoHeaderOverrides } from './autoHeaders';
 import { type AuthApplyOptions, type AuthApplyWarning } from './applyAuth';
 import { buildDigestAuthHeader, parseDigestChallenge } from '../auth/digest';
 import {
@@ -38,14 +39,18 @@ export interface ExecuteOptions {
   // attachments store on the host side. When omitted, file rows in form-data
   // are skipped and binary bodies send as null.
   resolveAttachment?: AttachmentResolver;
-  // Identity for the auto-fed APICircle headers. CLI / desktop pass their own.
-  runtime?: RuntimeIdentity;
   /**
    * applyAuth options — `onTokenRefreshed` is the important one for
    * production: the store wires it to persist refreshed OAuth2 tokens
    * back into `RequestAuth` so subsequent sends see the new state.
    */
   authOptions?: AuthApplyOptions;
+  /**
+   * Test-only override hooks for the auto-fed headers. Lets specs feed
+   * deterministic values for `X-Trace-Span-Id`, `traceparent`, etc.
+   * Production callers omit this.
+   */
+  autoHeaderOverrides?: AutoHeaderOverrides;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -68,8 +73,8 @@ export async function executeRequest(
 ): Promise<ExecutionResult> {
   const built = await buildRequest(req, {
     resolveAttachment: opts.resolveAttachment,
-    runtime: opts.runtime,
     authOptions: opts.authOptions,
+    autoHeaderOverrides: opts.autoHeaderOverrides,
   });
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
   const timeoutMs = opts.timeoutMs === undefined ? DEFAULT_TIMEOUT_MS : opts.timeoutMs;

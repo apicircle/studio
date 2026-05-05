@@ -5,6 +5,7 @@
 import type { Request as ApiRequest } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { AuthEditor } from './AuthEditor';
+import { FolderAuthBypassCue } from './FolderAuthBypassCue';
 
 interface AuthTabProps {
   request: ApiRequest;
@@ -12,13 +13,22 @@ interface AuthTabProps {
 
 export function AuthTab({ request }: AuthTabProps) {
   const setRequestAuth = useWorkspaceStore((s) => s.setRequestAuth);
+  const folders = useWorkspaceStore((s) => s.synced?.collections.folders ?? {});
   const auth = request.auth ?? { type: 'none' };
 
   return (
-    <AuthEditor
-      auth={auth}
-      onChange={(next) => setRequestAuth(request.id, next)}
-      idPrefix={request.id}
-    />
+    <>
+      <FolderAuthBypassCue
+        requestAuth={auth}
+        folderId={request.folderId}
+        folders={folders}
+        onUseFolderAuth={() => setRequestAuth(request.id, { type: 'inherit' })}
+      />
+      <AuthEditor
+        auth={auth}
+        onChange={(next) => setRequestAuth(request.id, next)}
+        idPrefix={request.id}
+      />
+    </>
   );
 }

@@ -64,6 +64,7 @@ describe('runAssertions: status', () => {
       op: 'equals',
       expected: 200,
       passed: true,
+      detail: 'status: 200 equals 200',
     });
   });
 
@@ -231,5 +232,94 @@ describe('runAssertions: json-path', () => {
       baseExec,
     )[0];
     expect(r.passed).toBe(true);
+  });
+});
+
+describe('runAssertions: pass explanations', () => {
+  // Every pass case must populate `detail` with a positive description so the
+  // Editor / Execution / History response panels can render assertions that
+  // got passed alongside the why — not just a green checkmark.
+
+  it('numeric equals → "X equals Y"', () => {
+    const r = runAssertions([a({ kind: 'status', op: 'equals', expected: 200 })], baseExec)[0];
+    expect(r.detail).toBe('status: 200 equals 200');
+  });
+
+  it('numeric not-equals → "X does not equal Y"', () => {
+    const r = runAssertions([a({ kind: 'status', op: 'not-equals', expected: 500 })], baseExec)[0];
+    expect(r.detail).toBe('status: 200 does not equal 500');
+  });
+
+  it('numeric lt / gt → comparator phrasing', () => {
+    expect(
+      runAssertions([a({ kind: 'status', op: 'lt', expected: 300 })], baseExec)[0]?.detail,
+    ).toBe('status: 200 < 300');
+    expect(
+      runAssertions([a({ kind: 'duration', op: 'gt', expected: 50 })], baseExec)[0]?.detail,
+    ).toBe('duration: 120 > 50');
+  });
+
+  it('header equals / contains / matches → quoted explanations', () => {
+    expect(
+      runAssertions(
+        [
+          a({
+            kind: 'header',
+            op: 'equals',
+            target: 'Content-Type',
+            expected: 'application/json',
+          }),
+        ],
+        baseExec,
+      )[0]?.detail,
+    ).toBe('header "Content-Type": "application/json" equals "application/json"');
+
+    expect(
+      runAssertions(
+        [a({ kind: 'header', op: 'contains', target: 'content-type', expected: 'json' })],
+        baseExec,
+      )[0]?.detail,
+    ).toBe('header "content-type": "application/json" contains "json"');
+
+    expect(
+      runAssertions(
+        [a({ kind: 'header', op: 'matches', target: 'x-request-id', expected: '^abc-' })],
+        baseExec,
+      )[0]?.detail,
+    ).toBe('header "x-request-id": "abc-123" matches /^abc-/');
+  });
+
+  it('header not-equals on missing header → explains the absence', () => {
+    const r = runAssertions(
+      [a({ kind: 'header', op: 'not-equals', target: 'X-Missing', expected: 'x' })],
+      baseExec,
+    )[0];
+    expect(r.detail).toBe('header "X-Missing" not present (passes not-equals)');
+  });
+
+  it('json-path equals against numeric path → numeric phrasing', () => {
+    expect(
+      runAssertions(
+        [a({ kind: 'json-path', op: 'equals', target: 'id', expected: 42 })],
+        baseExec,
+      )[0]?.detail,
+    ).toBe('path "id": 42 equals 42');
+  });
+
+  it('json-path contains against string path → quoted phrasing', () => {
+    expect(
+      runAssertions(
+        [a({ kind: 'json-path', op: 'contains', target: 'name', expected: 'lic' })],
+        baseExec,
+      )[0]?.detail,
+    ).toBe('path "name": "alice" contains "lic"');
+  });
+
+  it('json-path not-equals on missing path → explains the absence', () => {
+    const r = runAssertions(
+      [a({ kind: 'json-path', op: 'not-equals', target: 'missing', expected: 1 })],
+      baseExec,
+    )[0];
+    expect(r.detail).toBe('path "missing" not found (passes not-equals)');
   });
 });

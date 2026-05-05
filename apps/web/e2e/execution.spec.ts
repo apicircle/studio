@@ -4,7 +4,7 @@ import { expect, test } from './fixtures/app';
 // History. Local-only flow — no GitHub session needed.
 
 test.describe('Execution plans (P6)', () => {
-  test('build → run → step results land in plan history', async ({ app }) => {
+  test('build → run → step results land in plan history', async ({ app, sidebar }) => {
     // Mock outbound HTTP so the executor doesn't actually hit the network.
     await app.route('https://api.example/**', async (route) => {
       await route.fulfill({
@@ -20,9 +20,7 @@ test.describe('Execution plans (P6)', () => {
     // Create three requests pointing at different example endpoints.
     await app.getByRole('button', { name: /^Editor$/ }).click();
     for (const path of ['users', 'posts', 'comments']) {
-      // The toolbar "New request" button is aria-labelled — there are also
-      // tree rows with the same text content, so use the label.
-      await app.getByLabel('New request', { exact: true }).first().click();
+      await sidebar.createRequest(`req-${path}`);
       await app.getByLabel('Request URL').fill(`https://api.example/${path}`);
     }
 
@@ -34,29 +32,24 @@ test.describe('Execution plans (P6)', () => {
     await app.getByRole('button', { name: 'Create plan' }).first().click();
     await app.getByLabel('Plan name').fill('Smoke checks');
 
-    // Add all three requests as steps.
-    for (let i = 0; i < 3; i++) {
-      await app.getByRole('button', { name: 'Add step' }).click();
-      // Picker shows the requests by name (auto-named "New request" by the
-      // editor). The most-recent one ends up first; we click whichever is at
-      // the top each time, which produces the order we created them in.
-      await app
-        .getByRole('button', { name: /^GET\s+New request/ })
-        .first()
-        .click();
+    // Add all three requests as steps via the multi-select picker.
+    await app.getByRole('button', { name: 'Add step' }).first().click();
+    for (const path of ['users', 'posts', 'comments']) {
+      await app.getByRole('checkbox', { name: `Select req-${path}` }).click();
     }
+    await app.getByRole('button', { name: /^Add 3 steps?$/ }).click();
 
     // Run with assertions (none defined → all pass since result.ok=true).
     await app.getByRole('button', { name: 'Run with assertions' }).click();
-    await expect(app.getByText('3/3 passed')).toBeVisible({ timeout: 10_000 });
+    await expect(app.getByText('3/3 requests succeeded')).toBeVisible({ timeout: 10_000 });
 
     // Switch to History and confirm the plan run is listed under Plans tab.
     await app.getByRole('button', { name: /^History$/ }).click();
-    await app.getByRole('button', { name: /^Plans/ }).click();
+    await app.getByRole('tab', { name: /^Plans/ }).click();
     await expect(app.getByText('Smoke checks')).toBeVisible();
     await expect(app.getByText('3/3').first()).toBeVisible();
     // Each step also lands in the request-runs buffer.
-    await app.getByRole('button', { name: /^Requests/ }).click();
+    await app.getByRole('tab', { name: /^Requests/ }).click();
     const requestRows = app.getByRole('list').getByRole('listitem');
     await expect(requestRows.first()).toBeVisible();
   });

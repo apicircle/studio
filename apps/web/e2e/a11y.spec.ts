@@ -14,13 +14,45 @@ const TABS = [
   'Environments',
   'Execution',
   'History',
+  'Mocks',
+  'MCP',
   'Help Center',
 ];
+
+// Editor inner tabs — exercised against a freshly-created request so the
+// editor surface is in its post-creation state (request name + URL +
+// method + tab strip rendered). Catches violations that only show up
+// once a request is selected (e.g. labels missing on dynamically
+// rendered tab content).
+const EDITOR_TABS = ['Params', 'Headers', 'Auth', 'Body', 'Context', 'Assertions'];
 
 test.describe('a11y sweep', () => {
   for (const tab of TABS) {
     test(`${tab} panel has zero WCAG 2.1 AA violations`, async ({ app }) => {
       await app.getByRole('button', { name: new RegExp(`^${tab}$`) }).click();
+      const results = await new AxeBuilder({ page: app })
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+        .disableRules(['region', 'color-contrast'])
+        .analyze();
+      expect(results.violations).toEqual([]);
+    });
+  }
+
+  for (const tab of EDITOR_TABS) {
+    test(`Editor → ${tab} tab has zero WCAG 2.1 AA violations`, async ({ app, sidebar }) => {
+      // Editor is the default panel — create a request so the editor
+      // surface is fully rendered, then click the inner tab. The Body
+      // tab name collides with the response viewer's body tab post-Send,
+      // but pre-Send only the editor tab strip is rendered.
+      await sidebar.createRequest(`a11y-${tab.toLowerCase()}`);
+      // exact:true disambiguates inner tabs from the response viewer's
+      // tab strip; auth's accessible name is "Auth · Inherit" (or the
+      // current scheme), so we match it loosely instead.
+      const tabButton =
+        tab === 'Auth'
+          ? app.getByRole('button', { name: /^Auth(\s·\s|$)/ }).first()
+          : app.getByRole('button', { name: tab, exact: true }).first();
+      await tabButton.click();
       const results = await new AxeBuilder({ page: app })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
         .disableRules(['region', 'color-contrast'])

@@ -3,6 +3,8 @@ import { createEmptyWorkspace } from '../persistence/workspaceStorage';
 import {
   addEnvironment,
   addVariableRow,
+  duplicateEnvironment,
+  exportEnvironment,
   removeEnvironment,
   renameEnvironment,
   setActiveEnvironment,
@@ -147,6 +149,94 @@ describe('envActions', () => {
       const { synced } = createEmptyWorkspace();
       expect(setVariables(synced, 'nope', [])).toBe(synced);
       expect(addVariableRow(synced, 'nope')).toBe(synced);
+    });
+  });
+
+  describe('duplicateEnvironment', () => {
+    it('clones variables under "<name> (copy)" + appends to priorityOrder', () => {
+      const { synced } = createEmptyWorkspace();
+      const a = addEnvironment(synced, 'dev');
+      const b = setVariables(a, 'dev', [
+        { key: 'API', value: 'live', encrypted: false },
+        { key: 'PORT', value: '8080', encrypted: false },
+      ]);
+      const c = duplicateEnvironment(b, 'dev');
+      expect(c.environments.items).toHaveProperty('dev (copy)');
+      // Variables are deep-copied (new array, new objects).
+      expect(c.environments.items['dev (copy)']?.variables).toEqual(
+        b.environments.items.dev?.variables,
+      );
+      expect(c.environments.items['dev (copy)']?.variables).not.toBe(
+        b.environments.items.dev?.variables,
+      );
+      expect(c.environments.priorityOrder).toEqual(['dev', 'dev (copy)']);
+    });
+
+    it('avoids name collisions with "<name> (copy 2)", … on repeated dupes', () => {
+      const { synced } = createEmptyWorkspace();
+      const a = addEnvironment(synced, 'dev');
+      const b = duplicateEnvironment(a, 'dev'); // dev (copy)
+      const c = duplicateEnvironment(b, 'dev'); // dev (copy 2)
+      const d = duplicateEnvironment(c, 'dev'); // dev (copy 3)
+      expect(c.environments.items).toHaveProperty('dev (copy 2)');
+      expect(d.environments.items).toHaveProperty('dev (copy 3)');
+    });
+
+    it('preserves encrypted-var bindings (secretKeyId carries through)', () => {
+      const { synced } = createEmptyWorkspace();
+      const a = addEnvironment(synced, 'dev');
+      const b = setVariables(a, 'dev', [
+        { key: 'TOKEN', value: '', encrypted: true, secretKeyId: 'sec_abc' },
+      ]);
+      const c = duplicateEnvironment(b, 'dev');
+      expect(c.environments.items['dev (copy)']?.variables).toEqual([
+        { key: 'TOKEN', value: '', encrypted: true, secretKeyId: 'sec_abc' },
+      ]);
+    });
+
+    it('is a no-op for unknown source names', () => {
+      const { synced } = createEmptyWorkspace();
+      expect(duplicateEnvironment(synced, 'nope')).toBe(synced);
+    });
+  });
+
+  describe('exportEnvironment', () => {
+    it('returns null for unknown env names', () => {
+      const { synced } = createEmptyWorkspace();
+      expect(exportEnvironment(synced, 'nope')).toBeNull();
+    });
+
+    it('serializes plain vars verbatim under apicircleEnvironment v1 shape', () => {
+      const { synced } = createEmptyWorkspace();
+      const a = addEnvironment(synced, 'dev');
+      const b = setVariables(a, 'dev', [
+        { key: 'A', value: '1', encrypted: false },
+        { key: 'B', value: 'two', encrypted: false },
+      ]);
+      const json = exportEnvironment(b, 'dev');
+      expect(json).not.toBeNull();
+      const parsed = JSON.parse(json!);
+      expect(parsed).toEqual({
+        apicircleEnvironment: 1,
+        name: 'dev',
+        variables: [
+          { key: 'A', value: '1', encrypted: false },
+          { key: 'B', value: 'two', encrypted: false },
+        ],
+      });
+    });
+
+    it('omits the value for encrypted vars (only secretKeyId travels)', () => {
+      const { synced } = createEmptyWorkspace();
+      const a = addEnvironment(synced, 'dev');
+      const b = setVariables(a, 'dev', [
+        { key: 'TOKEN', value: 'should-be-stripped', encrypted: true, secretKeyId: 'sec_abc' },
+      ]);
+      const parsed = JSON.parse(exportEnvironment(b, 'dev')!);
+      expect(parsed.variables).toEqual([{ key: 'TOKEN', encrypted: true, secretKeyId: 'sec_abc' }]);
+      // Defense-in-depth: the JSON payload must never contain the
+      // ciphertext / plaintext value, even by accident.
+      expect(exportEnvironment(b, 'dev')).not.toContain('should-be-stripped');
     });
   });
 });

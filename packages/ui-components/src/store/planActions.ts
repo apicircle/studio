@@ -96,6 +96,100 @@ export function reorderPlanSteps(
 }
 
 /**
+ * Toggle a step's `enabled` flag. Disabled steps stay in the plan but
+ * are skipped by `runPlan`. Default is `true` (enabled) when the field
+ * is missing on older persisted plans.
+ */
+export function setPlanStepEnabled(
+  local: WorkspaceLocal,
+  planId: string,
+  stepIndex: number,
+  enabled: boolean,
+): WorkspaceLocal {
+  const plan = local.executionPlans[planId];
+  if (!plan || stepIndex < 0 || stepIndex >= plan.steps.length) return local;
+  const cur = plan.steps[stepIndex];
+  // Treat undefined as true; only update when the effective value flips.
+  const curEnabled = cur.enabled !== false;
+  if (curEnabled === enabled) return local;
+  const steps = plan.steps.map((s, i) => (i === stepIndex ? { ...s, enabled } : s));
+  return updatePlan(local, planId, { steps });
+}
+
+/**
+ * Set the plan's `stopOnAssertionFailure` flag. Only honored by runPlan
+ * when launched `withAssertions`.
+ */
+export function setPlanStopOnFailure(
+  local: WorkspaceLocal,
+  planId: string,
+  stopOnAssertionFailure: boolean,
+): WorkspaceLocal {
+  const plan = local.executionPlans[planId];
+  if (!plan) return local;
+  if ((plan.stopOnAssertionFailure ?? false) === stopOnAssertionFailure) return local;
+  return updatePlan(local, planId, { stopOnAssertionFailure });
+}
+
+/**
+ * Replace the plan's variable list. Plan vars sit between context vars
+ * and the env priority list in the resolver chain.
+ */
+export function setPlanVariables(
+  local: WorkspaceLocal,
+  planId: string,
+  variables: ReadonlyArray<{ key: string; value: string }>,
+): WorkspaceLocal {
+  const plan = local.executionPlans[planId];
+  if (!plan) return local;
+  return updatePlan(local, planId, { variables: variables.map((v) => ({ ...v })) });
+}
+
+/**
+ * Clone a plan under "<name> (copy)" with the same steps + envPriorityOrder
+ * + variables + stopOnAssertionFailure. The clone gets a fresh id and
+ * timestamps so plan-run history rows stay scoped to their original plan.
+ */
+export function duplicatePlan(
+  local: WorkspaceLocal,
+  planId: string,
+): {
+  local: WorkspaceLocal;
+  plan: ExecutionPlan | null;
+} {
+  const src = local.executionPlans[planId];
+  if (!src) return { local, plan: null };
+  // Pick the first non-colliding "(copy)" / "(copy 2)" / ... — same
+  // algorithm as duplicateEnvironment / duplicateRequest.
+  const existingNames = new Set(Object.values(local.executionPlans).map((p) => p.name));
+  let candidate = `${src.name} (copy)`;
+  let n = 2;
+  while (existingNames.has(candidate)) {
+    candidate = `${src.name} (copy ${n})`;
+    n += 1;
+  }
+  const id = generateId();
+  const now = new Date().toISOString();
+  const plan: ExecutionPlan = {
+    id,
+    name: candidate,
+    steps: src.steps.map((s) => ({ ...s })),
+    envPriorityOrder: [...src.envPriorityOrder],
+    variables: src.variables ? src.variables.map((v) => ({ ...v })) : undefined,
+    stopOnAssertionFailure: src.stopOnAssertionFailure,
+    createdAt: now,
+    updatedAt: now,
+  };
+  return {
+    local: {
+      ...local,
+      executionPlans: { ...local.executionPlans, [id]: plan },
+    },
+    plan,
+  };
+}
+
+/**
  * Plan-level environment priority overrides the workspace's global
  * order during plan runs. Empty array means "no override — fall back to
  * the workspace's order".

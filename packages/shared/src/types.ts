@@ -551,6 +551,19 @@ export interface WorkspaceLocal {
     sidebarExpandedSections: string[];
     themeId: ThemeId;
   };
+  /**
+   * User-tunable client-side settings. Local-only; never round-trips
+   * through Git so each developer can keep their own preferences.
+   *
+   * - `validateOnSend`: when true, the Editor surfaces a pre-send
+   *   validation panel (warnings + blockers from
+   *   `core/preSendValidation`) above the Send button. Default: true.
+   */
+  settings: WorkspaceLocalSettings;
+}
+
+export interface WorkspaceLocalSettings {
+  validateOnSend: boolean;
 }
 
 /**
@@ -617,8 +630,29 @@ export interface ItemOverride {
 export interface ExecutionPlan {
   id: string;
   name: string;
-  steps: Array<{ requestId: string; linkedWorkspaceId?: string }>;
+  /**
+   * Steps run sequentially in this order. `enabled: false` skips the step
+   * entirely at run time — useful for keeping a step in the plan while
+   * temporarily routing around it. Defaults to `true` when missing on
+   * older persisted plans (pre-`enabled` plans that haven't been touched
+   * since the field landed).
+   */
+  steps: Array<{ requestId: string; linkedWorkspaceId?: string; enabled?: boolean }>;
   envPriorityOrder: string[];
+  /**
+   * Plan-level variables sit between context vars and the env priority
+   * list in the resolver chain — they let a plan override an env value
+   * without mutating the env. Keys are case-sensitive; later entries
+   * silently win on duplicate keys (consistent with env vars).
+   */
+  variables?: Array<{ key: string; value: string }>;
+  /**
+   * When `true`, runPlan halts the loop the first time a step's
+   * assertions don't all pass. Only consulted when the run is launched
+   * `withAssertions` — `Run` (without assertions) never short-circuits.
+   * Defaults to `false` (continue past failed assertions).
+   */
+  stopOnAssertionFailure?: boolean;
   createdAt: string;
   updatedAt: string;
 }

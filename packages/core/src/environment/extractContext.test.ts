@@ -41,9 +41,13 @@ describe('extractContext', () => {
     expect(out.extracted).toEqual({ OUT: 'abc-123' });
   });
 
-  it('warns and emits an empty string when a header is missing', () => {
+  it('warns and skips the variable when a header is missing', () => {
+    // Failed extractions must NOT bind the variable — leaving it unset
+    // means downstream {{var}} usage keeps the placeholder verbatim, so
+    // the user sees the broken extraction in the URL/body rather than a
+    // silent defined-as-empty value.
     const out = extractContext(baseResult(), [ext({ source: 'header', path: 'X-Missing' })]);
-    expect(out.extracted).toEqual({ OUT: '' });
+    expect(out.extracted).toEqual({});
     expect(out.warnings[0]).toMatch(/Header "X-Missing" not found/);
   });
 
@@ -56,12 +60,26 @@ describe('extractContext', () => {
     expect(out.extracted).toEqual({ TOKEN: 'tk-1', ID: '7' });
   });
 
-  it('warns when body is not JSON', () => {
+  it('warns when body is not JSON and skips the variable', () => {
     const out = extractContext(baseResult({ body: '<not json>', bodyKind: 'text' }), [
       ext({ source: 'body', path: 'whatever' }),
     ]);
     expect(out.warnings[0]).toMatch(/Body is not JSON/);
-    expect(out.extracted).toEqual({ OUT: '' });
+    expect(out.extracted).toEqual({});
+  });
+
+  it('skips the variable when body is empty', () => {
+    const out = extractContext(baseResult({ body: '' }), [ext({ source: 'body', path: 'x' })]);
+    expect(out.warnings[0]).toMatch(/Body is empty/);
+    expect(out.extracted).toEqual({});
+  });
+
+  it('skips the variable when a body path does not resolve', () => {
+    const out = extractContext(baseResult({ body: JSON.stringify({ a: 1 }) }), [
+      ext({ source: 'body', path: 'b.c' }),
+    ]);
+    expect(out.warnings[0]).toMatch(/did not resolve/);
+    expect(out.extracted).toEqual({});
   });
 
   it('reads cookies from a Set-Cookie header', () => {

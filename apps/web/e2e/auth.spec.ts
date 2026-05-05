@@ -14,17 +14,27 @@ import type { Page } from '@playwright/test';
 // show/hide toggle is `aria-label="Show <name>"`. Use the textbox role
 // + exact:true to disambiguate.
 
-async function openAuthTab(app: Page): Promise<void> {
-  await app.getByLabel('New request').click();
+async function openAuthTab(app: Page, name = 'auth-test-req'): Promise<void> {
+  // Name-first flow: New request opens an inline-rename input, Enter
+  // commits the new request and switches the editor to it.
+  await app.getByLabel('New request', { exact: true }).first().click();
+  const input = app.getByLabel('Inline rename request');
+  await input.fill(`${name}-${Math.random().toString(36).slice(2, 8)}`);
+  await input.press('Enter');
   await app.getByRole('button', { name: /^Auth/ }).first().click();
 }
 
 const tx = (app: Page, name: string) => app.getByRole('textbox', { name, exact: true });
 
 test.describe('Auth tab (P13)', () => {
-  test('renders the No Auth note by default', async ({ app }) => {
+  test('renders the Inherit note by default (folder-auth ergonomic default)', async ({ app }) => {
     await openAuthTab(app);
-    await expect(app.getByText(/No authentication will be added/)).toBeVisible();
+    // Default flipped from `none` → `inherit` so requests created inside
+    // a folder pick up folder auth automatically.
+    await expect(app.getByLabel('Auth type')).toHaveValue('inherit');
+    await expect(
+      app.getByText(/walks up the folder chain and uses the first folder/i),
+    ).toBeVisible();
   });
 
   test('Bearer token form persists into the request', async ({ app, mockApi }) => {
@@ -166,6 +176,8 @@ test.describe('Auth tab (P13)', () => {
   test('Inherit shows the parent-folder explanatory note', async ({ app }) => {
     await openAuthTab(app);
     await app.getByLabel('Auth type').selectOption('inherit');
-    await expect(app.getByText(/Auth will be inherited from the parent folder/i)).toBeVisible();
+    await expect(
+      app.getByText(/walks up the folder chain and uses the first folder/i),
+    ).toBeVisible();
   });
 });

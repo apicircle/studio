@@ -15,7 +15,13 @@ export interface AssertionResult {
   target?: string;
   expected: string | number;
   passed: boolean;
-  /** Human-readable description of the failure (or pass detail). */
+  /**
+   * Human-readable explanation. Always populated by `runAssertions` — pass
+   * cases get positive descriptions ("status: 200 equals 200"), fail cases
+   * get the diff. Optional in the type because the persisted shape in
+   * `RequestRun.assertions` predates this and may carry undefined for older
+   * history entries.
+   */
   detail?: string;
 }
 
@@ -51,8 +57,8 @@ function snapshot(
   };
 }
 
-function pass(a: Assertion, detail?: string): AssertionResult {
-  return { ...snapshot(a), passed: true, ...(detail ? { detail } : {}) };
+function pass(a: Assertion, detail: string): AssertionResult {
+  return { ...snapshot(a), passed: true, detail };
 }
 function fail(a: Assertion, detail: string): AssertionResult {
   return { ...snapshot(a), passed: false, detail };
@@ -72,7 +78,8 @@ function checkHeader(a: Assertion, exec: ExecutionResult): AssertionResult {
   if (!a.target) return fail(a, 'header assertion missing target header name');
   const value = exec.headers[a.target.toLowerCase()] ?? exec.headers[a.target];
   if (value === undefined) {
-    if (a.op === 'not-equals') return pass(a);
+    if (a.op === 'not-equals')
+      return pass(a, `header "${a.target}" not present (passes not-equals)`);
     return fail(a, `header "${a.target}" not present`);
   }
   return compareString(a, value, `header "${a.target}"`);
@@ -88,7 +95,7 @@ function checkJsonPath(a: Assertion, exec: ExecutionResult): AssertionResult {
   }
   const value = readJsonPath(parsed, a.target);
   if (value === undefined) {
-    if (a.op === 'not-equals') return pass(a);
+    if (a.op === 'not-equals') return pass(a, `path "${a.target}" not found (passes not-equals)`);
     return fail(a, `path "${a.target}" not found in response`);
   }
   if (typeof value === 'number') return compareNumber(a, value, `path "${a.target}"`);
@@ -112,17 +119,19 @@ function compareNumber(a: Assertion, actual: number, label: string): AssertionRe
   switch (a.op) {
     case 'equals':
       return actual === expected
-        ? pass(a)
+        ? pass(a, `${label}: ${actual} equals ${expected}`)
         : fail(a, `${label}: expected ${expected}, got ${actual}`);
     case 'not-equals':
-      return actual !== expected ? pass(a) : fail(a, `${label}: expected not to equal ${expected}`);
+      return actual !== expected
+        ? pass(a, `${label}: ${actual} does not equal ${expected}`)
+        : fail(a, `${label}: expected not to equal ${expected}`);
     case 'lt':
       return actual < expected
-        ? pass(a)
+        ? pass(a, `${label}: ${actual} < ${expected}`)
         : fail(a, `${label}: expected < ${expected}, got ${actual}`);
     case 'gt':
       return actual > expected
-        ? pass(a)
+        ? pass(a, `${label}: ${actual} > ${expected}`)
         : fail(a, `${label}: expected > ${expected}, got ${actual}`);
     case 'contains':
     case 'matches':
@@ -135,15 +144,15 @@ function compareString(a: Assertion, actual: string, label: string): AssertionRe
   switch (a.op) {
     case 'equals':
       return actual === expected
-        ? pass(a)
+        ? pass(a, `${label}: "${actual}" equals "${expected}"`)
         : fail(a, `${label}: expected "${expected}", got "${actual}"`);
     case 'not-equals':
       return actual !== expected
-        ? pass(a)
+        ? pass(a, `${label}: "${actual}" does not equal "${expected}"`)
         : fail(a, `${label}: expected not to equal "${expected}"`);
     case 'contains':
       return actual.includes(expected)
-        ? pass(a)
+        ? pass(a, `${label}: "${actual}" contains "${expected}"`)
         : fail(a, `${label}: expected to contain "${expected}", got "${actual}"`);
     case 'matches': {
       let re: RegExp;
@@ -152,7 +161,9 @@ function compareString(a: Assertion, actual: string, label: string): AssertionRe
       } catch {
         return fail(a, `${label}: expected pattern is not a valid regex: ${expected}`);
       }
-      return re.test(actual) ? pass(a) : fail(a, `${label}: did not match pattern /${expected}/`);
+      return re.test(actual)
+        ? pass(a, `${label}: "${actual}" matches /${expected}/`)
+        : fail(a, `${label}: did not match pattern /${expected}/`);
     }
     case 'lt':
     case 'gt':

@@ -130,4 +130,59 @@ describe('resolveInheritedAuth', () => {
       }),
     ).toEqual(NONE);
   });
+
+  it('inherits api-key auth with addTo=header (the X-API-Key folder-auth bug)', () => {
+    // Regression: a folder set to inject `X-API-Key` as a request header
+    // must propagate to descendants whose request auth is `inherit`. The
+    // resolver returning the api-key auth unchanged is what enables
+    // `applyAuth` to set the header on the wire.
+    const apiKeyAuth: RequestAuth = {
+      type: 'api-key',
+      key: 'X-API-Key',
+      value: 'secret-123',
+      addTo: 'header',
+    };
+    const folders = { f1: folder('f1', null, apiKeyAuth) };
+    expect(
+      resolveInheritedAuth({
+        requestAuth: INHERIT,
+        folderId: 'f1',
+        folders,
+      }),
+    ).toEqual(apiKeyAuth);
+  });
+
+  it('inherits api-key auth with addTo=cookie (cookie auth via api-key path)', () => {
+    const apiKeyCookie: RequestAuth = {
+      type: 'api-key',
+      key: 'session',
+      value: 'abc',
+      addTo: 'cookie',
+    };
+    const folders = { f1: folder('f1', null, apiKeyCookie) };
+    expect(
+      resolveInheritedAuth({
+        requestAuth: INHERIT,
+        folderId: 'f1',
+        folders,
+      }),
+    ).toEqual(apiKeyCookie);
+  });
+
+  it('inherits api-key auth with addTo=query', () => {
+    const apiKeyQuery: RequestAuth = {
+      type: 'api-key',
+      key: 'apiKey',
+      value: 'q-val',
+      addTo: 'query',
+    };
+    const folders = { f1: folder('f1', null, apiKeyQuery) };
+    expect(
+      resolveInheritedAuth({
+        requestAuth: INHERIT,
+        folderId: 'f1',
+        folders,
+      }),
+    ).toEqual(apiKeyQuery);
+  });
 });

@@ -9,8 +9,10 @@
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test --project=chromium",
+    "test:e2e:full-sweep": "node scripts/run-full-sweep.mjs",
     "test:e2e:install": "playwright install --with-deps chromium",
+    "test:e2e:regression-freeze": "node scripts/regression-freeze.mjs",
     "clean": "rm -rf dist node_modules"
   },
   "dependencies": {

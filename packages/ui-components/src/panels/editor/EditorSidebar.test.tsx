@@ -12,14 +12,14 @@ const toolbarFolder = () => screen.getByLabelText('New folder');
 
 async function createRequestNamed(name: string): Promise<void> {
   await userEvent.click(toolbarNew());
-  const input = screen.getByLabelText('New request name');
+  const input = screen.getByLabelText('Inline rename request');
   await userEvent.type(input, name);
   await userEvent.keyboard('{Enter}');
 }
 
 async function createFolderNamed(name: string): Promise<void> {
   await userEvent.click(toolbarFolder());
-  const input = screen.getByLabelText('New folder name');
+  const input = screen.getByLabelText('Inline rename folder');
   await userEvent.type(input, name);
   await userEvent.keyboard('{Enter}');
 }
@@ -33,14 +33,14 @@ describe('EditorSidebar', () => {
   it('clicking "New request" opens the name-first input', async () => {
     await renderWithStore(<EditorSidebar />);
     await userEvent.click(toolbarNew());
-    expect(screen.getByLabelText('New request name')).toBeInTheDocument();
+    expect(screen.getByLabelText('Inline rename request')).toBeInTheDocument();
   });
 
   it('Esc cancels the name-first prompt without creating', async () => {
     await renderWithStore(<EditorSidebar />);
     await userEvent.click(toolbarNew());
     await userEvent.keyboard('{Escape}');
-    expect(screen.queryByLabelText('New request name')).toBeNull();
+    expect(screen.queryByLabelText('Inline rename request')).toBeNull();
     expect(Object.keys(useWorkspaceStore.getState().synced!.collections.requests)).toHaveLength(0);
   });
 
@@ -59,7 +59,7 @@ describe('EditorSidebar', () => {
     await renderWithStore(<EditorSidebar />);
     await createRequestNamed('login');
     await userEvent.click(toolbarNew());
-    const input = screen.getByLabelText('New request name');
+    const input = screen.getByLabelText('Inline rename request');
     await userEvent.type(input, 'login');
     expect(screen.getByText(/Name already used/i)).toBeInTheDocument();
     await userEvent.keyboard('{Enter}');

@@ -1,9 +1,10 @@
+import { useState } from 'react';
 import { Plus, Sparkles, Trash2 } from 'lucide-react';
 import type { Request as ApiRequest } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useVariableScope } from '../../editors/useVariableScope';
 import { VariableAutocompleteField } from '../../editors/VariableAutocompleteField';
-import { HeaderKeyAutocomplete, HeaderValueSuggestions } from './HeaderAutocomplete';
+import { HeaderKeyAutocomplete, HeaderValueRecommendations } from './HeaderAutocomplete';
 
 interface HeadersTabProps {
   request: ApiRequest;
@@ -12,6 +13,10 @@ interface HeadersTabProps {
 export function HeadersTab({ request }: HeadersTabProps) {
   const setRequestHeaders = useWorkspaceStore((s) => s.setRequestHeaders);
   const scope = useVariableScope(request);
+  // Tracks which row's value input currently holds focus. Drives the
+  // inline `<HeaderValueRecommendations>` popover — only one row's
+  // recommendations are visible at a time.
+  const [focusedValueRow, setFocusedValueRow] = useState<number | null>(null);
 
   const update = (
     index: number,
@@ -53,19 +58,31 @@ export function HeadersTab({ request }: HeadersTabProps) {
               ariaLabel={`Headers key ${index + 1}`}
               placeholder="Header name"
             />
-            <div className="flex flex-[2] items-center gap-1">
-              <div className="flex-1">
-                <VariableAutocompleteField
-                  value={row.value}
-                  onChange={(v) => update(index, { value: v })}
-                  scope={scope}
-                  ariaLabel={`Headers value ${index + 1}`}
-                  placeholder="Header value"
-                  className="h-7"
-                />
-              </div>
-              <HeaderValueSuggestions
+            <div
+              className="relative flex-[2]"
+              // onFocus/onBlur on the wrapper bubble from the inner input.
+              // `relatedTarget` is the element receiving focus next — when
+              // it's still inside this wrapper (e.g. clicking a popover
+              // option) we keep the recommendations open.
+              onFocus={() => setFocusedValueRow(index)}
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget)) {
+                  setFocusedValueRow((current) => (current === index ? null : current));
+                }
+              }}
+            >
+              <VariableAutocompleteField
+                value={row.value}
+                onChange={(v) => update(index, { value: v })}
+                scope={scope}
+                ariaLabel={`Headers value ${index + 1}`}
+                placeholder="Header value"
+                className="h-7"
+              />
+              <HeaderValueRecommendations
                 headerKey={row.key}
+                currentValue={row.value}
+                isFocused={focusedValueRow === index}
                 onPick={(v) => update(index, { value: v })}
                 ariaLabel={`Common values for header ${index + 1}`}
               />
@@ -100,12 +117,25 @@ export function HeadersTab({ request }: HeadersTabProps) {
         </div>
         <ul className="flex flex-col gap-0.5 text-text-muted">
           <li>
-            <code className="text-text-primary">X-APICircle-Trace-Id</code> — fresh UUID per send
-            for cross-request tracing
+            <code className="text-text-primary">X-Client-Name</code> — <code>APICircle Studio</code>
           </li>
           <li>
-            <code className="text-text-primary">X-APICircle-Runtime</code> — identifies the host
-            (e.g. <code>apicircle-studio/web</code>)
+            <code className="text-text-primary">X-Client-Platform</code> — <code>desktop</code> or{' '}
+            <code>web</code> based on host
+          </li>
+          <li>
+            <code className="text-text-primary">X-Client-Version</code> — current app version
+          </li>
+          <li>
+            <code className="text-text-primary">X-Trace-Span-Id</code> — fresh 64-bit hex per send
+          </li>
+          <li>
+            <code className="text-text-primary">traceparent</code> — fresh W3C trace context per
+            send
+          </li>
+          <li>
+            <code className="text-text-primary">Origin</code> /{' '}
+            <code className="text-text-primary">Referer</code> — desktop only
           </li>
         </ul>
         <p className="mt-1 text-text-dim">Add a row above with the same name to override.</p>

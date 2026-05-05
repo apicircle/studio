@@ -24,12 +24,26 @@ export {
   findPathPlaceholders,
   parseUrlQuery,
 } from './request/buildRequest';
+export type { AttachmentResolver, BuildRequestOptions, BuiltRequest } from './request/buildRequest';
+
+export {
+  buildAutoHeaders,
+  DESKTOP_APP_ORIGIN,
+  generateSpanId,
+  generateTraceParent,
+  mergeWithAutoHeaders,
+} from './request/autoHeaders';
+export type { AutoHeaderOverrides } from './request/autoHeaders';
+
+export { isDesktop } from './request/platformDetection';
+
+export { preSendValidation } from './request/preSendValidation';
 export type {
-  AttachmentResolver,
-  BuildRequestOptions,
-  BuiltRequest,
-  RuntimeIdentity,
-} from './request/buildRequest';
+  PreSendBlocker,
+  PreSendValidationInput,
+  PreSendValidationResult,
+  PreSendWarning,
+} from './request/preSendValidation';
 
 export { executeRequest } from './request/executeRequest';
 export type { ExecuteOptions, ExecutionResult } from './request/executeRequest';

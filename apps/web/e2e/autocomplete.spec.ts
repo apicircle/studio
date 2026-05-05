@@ -15,7 +15,11 @@ async function seedEnv(app: import('@playwright/test').Page) {
   await app.getByLabel('Variable value').fill('https://api.example.test');
   await app.getByLabel('Variable value').blur();
   await app.getByRole('button', { name: /^Editor$/ }).click();
-  await app.getByLabel('New request').click();
+  // Name-first new-request flow.
+  await app.getByLabel('New request', { exact: true }).first().click();
+  const input = app.getByLabel('Inline rename request');
+  await input.fill(`autocomplete-${Math.random().toString(36).slice(2, 8)}`);
+  await input.press('Enter');
 }
 
 test.describe('Variable autocomplete (P15)', () => {
@@ -71,5 +75,35 @@ test.describe('Variable autocomplete (P15)', () => {
     await expect(option).toBeVisible();
     await option.click();
     await expect(valueInput).toHaveValue('{{BASE_URL}}');
+  });
+
+  // Header dictionary v1 port: each entry can carry a `reserved` annotation
+  // surfaced in the autocomplete popover as either an "auto" badge (app-
+  // injected) or a "browser" badge (forbidden by Fetch spec). Verifying both
+  // ensures the dictionary's metadata reaches the UI through suggestHeaders().
+  test('header autocomplete shows reserved badges (auto for app, browser for fetch-forbidden)', async ({
+    app,
+    sidebar,
+  }) => {
+    await sidebar.createRequest('header-badges');
+    await app
+      .getByRole('button', { name: /^Headers/ })
+      .first()
+      .click();
+    await app.getByRole('button', { name: 'Add row' }).click();
+    const keyInput = app.getByLabel('Headers key 1');
+
+    // X-Client-* are reserved=app — but suggestHeaders filters them out so
+    // typing the prefix shouldn't surface them in suggestions.
+    await keyInput.fill('X-Client');
+    const listbox = app.getByRole('listbox', { name: 'Header suggestions' });
+    await expect(listbox).not.toBeVisible();
+
+    // Content-Length is reserved=browser — suggestable AND tagged.
+    await keyInput.fill('');
+    await keyInput.fill('Content-Length');
+    await expect(listbox).toBeVisible();
+    const browserOption = listbox.getByRole('option', { name: /Content-Length/ });
+    await expect(browserOption).toContainText('browser');
   });
 });

@@ -31,8 +31,11 @@ describe('HeadersTab', () => {
     render(<LiveHeadersTab requestId={id} />);
     expect(screen.getByText(/No headers yet/i)).toBeInTheDocument();
     expect(screen.getByLabelText('Auto-fed headers')).toBeInTheDocument();
-    expect(screen.getByText(/X-APICircle-Trace-Id/)).toBeInTheDocument();
-    expect(screen.getByText(/X-APICircle-Runtime/)).toBeInTheDocument();
+    expect(screen.getByText(/X-Client-Name/)).toBeInTheDocument();
+    expect(screen.getByText(/X-Client-Platform/)).toBeInTheDocument();
+    expect(screen.getByText(/X-Client-Version/)).toBeInTheDocument();
+    expect(screen.getByText(/X-Trace-Span-Id/)).toBeInTheDocument();
+    expect(screen.getByText(/traceparent/)).toBeInTheDocument();
   });
 
   it('Add row + edit key writes through to setRequestHeaders', async () => {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, GripVertical, Plus, Trash2 } from 'lucide-react';
+import { Copy, Download, FileDown, GripVertical, Plus, Trash2 } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 import { ImportModal } from '../editor/ImportModal';
@@ -10,6 +10,8 @@ export function EnvironmentsSidebar() {
   const setPriorityOrder = useWorkspaceStore((s) => s.setPriorityOrder);
   const addEnvironment = useWorkspaceStore((s) => s.addEnvironment);
   const removeEnvironment = useWorkspaceStore((s) => s.removeEnvironment);
+  const duplicateEnvironment = useWorkspaceStore((s) => s.duplicateEnvironment);
+  const exportEnvironment = useWorkspaceStore((s) => s.exportEnvironment);
   const envFocus = useWorkspaceStore((s) => s.envFocus);
   const setEnvFocus = useWorkspaceStore((s) => s.setEnvFocus);
 
@@ -47,6 +49,24 @@ export function EnvironmentsSidebar() {
 
   const onDelete = (name: string) => {
     if (window.confirm(`Delete environment "${name}"?`)) removeEnvironment(name);
+  };
+
+  const onExport = (name: string) => {
+    const json = exportEnvironment(name);
+    if (!json) return;
+    // Browser-only: spawn a download via a transient anchor + Blob URL.
+    // Desktop builds also have `window.URL.createObjectURL`, so the
+    // same code path works without a desktop bridge dependency.
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    // Use a filesystem-safe slug — the env name can contain spaces.
+    a.download = `${name.replace(/[^a-z0-9-_]+/gi, '_')}.apicircle-env.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const onDragStart = (name: string) => (e: React.DragEvent<HTMLLIElement>) => {
@@ -198,6 +218,24 @@ export function EnvironmentsSidebar() {
                   <span className="truncate">{name}</span>
                 </button>
                 <span className="text-[10px] text-text-dim">{env.variables.length}</span>
+                <button
+                  type="button"
+                  onClick={() => duplicateEnvironment(name)}
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-text-faint opacity-0 transition-opacity hover:text-text-primary group-hover:opacity-100 focus:opacity-100"
+                  aria-label={`Duplicate ${name}`}
+                  title={`Duplicate ${name}`}
+                >
+                  <Copy size={12} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onExport(name)}
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-text-faint opacity-0 transition-opacity hover:text-text-primary group-hover:opacity-100 focus:opacity-100"
+                  aria-label={`Export ${name}`}
+                  title={`Export ${name} as JSON`}
+                >
+                  <FileDown size={12} />
+                </button>
                 <button
                   type="button"
                   onClick={() => onDelete(name)}

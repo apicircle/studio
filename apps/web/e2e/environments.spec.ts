@@ -9,6 +9,7 @@ test.describe('Environments', () => {
   test('create + encrypt variable, then send substitutes the placeholder', async ({
     app,
     mockApi,
+    sidebar,
   }) => {
     // 1. Move into the Environments panel.
     await app.getByRole('button', { name: /^Environments$/ }).click();
@@ -24,17 +25,18 @@ test.describe('Environments', () => {
     await app.getByLabel('Variable value').first().fill('https://api.example.test');
     await app.getByLabel('Variable value').first().blur();
 
-    // 4. Add an encrypted TOKEN.
+    // 4. Add a plain TOKEN. Encryption/decryption is exercised at the
+    // unit layer (packages/core/src/secrets/crypto.test.ts); the Encrypt
+    // button now triggers a secret-key picker flow that's covered by the
+    // secret-vault spec. This test focuses on var substitution end-to-end.
     await app.getByRole('button', { name: 'Add variable' }).click();
     await app.getByLabel('Variable key').nth(1).fill('TOKEN');
-    // Toggle the second row to Encrypted before committing the value.
-    await app.getByRole('button', { name: 'Toggle encrypted' }).nth(1).click();
     await app.getByLabel('Variable value').nth(1).fill('super-secret');
     await app.getByLabel('Variable value').nth(1).blur();
 
     // 5. Move into the Editor and create a request that references both.
     await app.getByRole('button', { name: /^Editor$/ }).click();
-    await app.getByLabel('New request').click();
+    await sidebar.createRequest('env-substitution');
     await app.getByLabel('Request URL').fill('{{BASE_URL}}/users');
     await app
       .getByRole('button', { name: /^Headers/ })

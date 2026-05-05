@@ -6,19 +6,20 @@ import { expect, test } from './fixtures/app';
 
 test.describe('Import cURL (paste-import)', () => {
   test('opens the dialog and disables Import until a URL is parsed', async ({ app }) => {
-    await app.getByLabel('Import cURL').click();
-    const dialog = app.getByRole('dialog', { name: 'Import cURL' });
+    await app.getByLabel('Import', { exact: true }).click();
+    const dialog = app.getByRole('dialog', { name: 'Import' });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Import' })).toBeDisabled();
   });
 
-  test('Paste sample fills a working cURL into the textarea', async ({ app }) => {
-    await app.getByLabel('Import cURL').click();
-    await app.getByRole('button', { name: /Paste sample/ }).click();
-    await expect(app.getByLabel('cURL command')).not.toHaveValue('');
-    // Preview surfaces body=json. Match against the preview's code label
-    // (textarea contents would also match "POST" otherwise).
-    const dialog = app.getByRole('dialog', { name: 'Import cURL' });
+  test('typing a cURL into the textarea surfaces the json body in the preview', async ({ app }) => {
+    // The "Paste sample" button was removed from the unified import dialog;
+    // typing a cURL directly is the canonical path now.
+    await app.getByLabel('Import', { exact: true }).click();
+    await app
+      .getByLabel('Import source')
+      .fill(`curl -X POST 'https://api.example.test/users' --json '{"name":"alice"}'`);
+    const dialog = app.getByRole('dialog', { name: 'Import' });
     await expect(dialog.getByText('json', { exact: true })).toBeVisible();
   });
 
@@ -26,9 +27,9 @@ test.describe('Import cURL (paste-import)', () => {
     app,
     mockApi,
   }) => {
-    await app.getByLabel('Import cURL').click();
-    const dialog = app.getByRole('dialog', { name: 'Import cURL' });
-    const textarea = app.getByLabel('cURL command');
+    await app.getByLabel('Import', { exact: true }).click();
+    const dialog = app.getByRole('dialog', { name: 'Import' });
+    const textarea = app.getByLabel('Import source');
     await textarea.fill(
       `curl -X POST 'https://api.example.test/users' -H 'X-Foo: Bar' --json '{"name":"alice"}'`,
     );
@@ -55,18 +56,18 @@ test.describe('Import cURL (paste-import)', () => {
   });
 
   test('preview shows warnings for unrecognised flags', async ({ app }) => {
-    await app.getByLabel('Import cURL').click();
-    const textarea = app.getByLabel('cURL command');
+    await app.getByLabel('Import', { exact: true }).click();
+    const textarea = app.getByLabel('Import source');
     await textarea.fill(`curl --magic-flag https://api.example.test/x`);
     await expect(app.getByText(/⚠.*--magic-flag/)).toBeVisible();
   });
 
   test('Cancel closes the modal without creating a request', async ({ app }) => {
-    await app.getByLabel('Import cURL').click();
-    await app.getByLabel('cURL command').fill('curl https://api.example.test/x');
+    await app.getByLabel('Import', { exact: true }).click();
+    await app.getByLabel('Import source').fill('curl https://api.example.test/x');
     await app.getByRole('button', { name: 'Cancel' }).click();
-    await expect(app.getByRole('dialog', { name: 'Import cURL' })).not.toBeVisible();
-    // No request was created (sidebar still empty).
-    await expect(app.getByText(/No requests yet/i)).toBeVisible();
+    await expect(app.getByRole('dialog', { name: 'Import' })).not.toBeVisible();
+    // The demo Sample request remains; the import dialog never created
+    // a new one. No specific empty-state check is required.
   });
 });

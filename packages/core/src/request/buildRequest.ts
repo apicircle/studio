@@ -1,5 +1,6 @@
 import type { Request as ApiRequest } from '@apicircle/shared';
 import { applyAuth, type AuthApplyOptions, type AuthApplyWarning } from './applyAuth';
+import { mergeWithAutoHeaders, type AutoHeaderOverrides } from './autoHeaders';
 
 export interface BuiltRequest {
   url: string;
@@ -14,37 +15,6 @@ export interface BuiltRequest {
    * a 401 with no clue why.
    */
   authWarnings: AuthApplyWarning[];
-}
-
-/** Auto-fed headers identifying APICircle Studio. User-set values win. */
-export interface RuntimeIdentity {
-  /** e.g. 'apicircle-studio/web', 'apicircle-studio/desktop', 'apicircle-cli/0.1.0'. */
-  runtimeTag: string;
-  /** Override the default UUID generator. Useful for tests + deterministic snapshots. */
-  traceId?: string;
-}
-
-const DEFAULT_RUNTIME: RuntimeIdentity = { runtimeTag: 'apicircle-studio/web' };
-
-function randomTraceId(): string {
-  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
-  // Fallback: 16 hex chars + timestamp. Not RFC4122 but sufficient for tracing.
-  return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 18)}`;
-}
-
-function injectRuntimeHeaders(
-  headers: Record<string, string>,
-  runtime: RuntimeIdentity,
-): Record<string, string> {
-  const lookup = new Set(Object.keys(headers).map((k) => k.toLowerCase()));
-  const out = { ...headers };
-  if (!lookup.has('x-apicircle-trace-id')) {
-    out['X-APICircle-Trace-Id'] = runtime.traceId ?? randomTraceId();
-  }
-  if (!lookup.has('x-apicircle-runtime')) {
-    out['X-APICircle-Runtime'] = runtime.runtimeTag;
-  }
-  return out;
 }
 
 /**
@@ -313,22 +283,24 @@ export async function composeBody(
 
 export interface BuildRequestOptions {
   resolveAttachment?: AttachmentResolver;
-  /** Identity for auto-fed APICircle headers. Defaults to web studio. */
-  runtime?: RuntimeIdentity;
   /**
    * applyAuth options — most importantly the `onTokenRefreshed`
    * callback that lets the store persist refreshed OAuth2 tokens.
    * Forwarded as-is.
    */
   authOptions?: AuthApplyOptions;
+  /**
+   * Test-only override hooks for the auto-fed headers. Lets specs feed
+   * deterministic values for `X-Trace-Span-Id`, `traceparent`, and
+   * `X-Client-Platform`. Production callers omit this.
+   */
+  autoHeaderOverrides?: AutoHeaderOverrides;
 }
 
 export async function buildRequest(
   req: ApiRequest,
   opts: BuildRequestOptions = {},
 ): Promise<BuiltRequest> {
-  const runtime = opts.runtime ?? DEFAULT_RUNTIME;
-
   const baseHeaders = composeHeaders(req.headers);
   // Merge cookies into a single Cookie header. A user-set Cookie row in the
   // headers list wins (no override) — that's the natural escape hatch when
@@ -363,7 +335,7 @@ export async function buildRequest(
   return {
     url: applied.url,
     method: req.method,
-    headers: injectRuntimeHeaders(applied.headers, runtime),
+    headers: mergeWithAutoHeaders(applied.headers, opts.autoHeaderOverrides),
     body,
     authWarnings: applied.warnings ?? [],
   };

@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Copy,
   Eye,
   Layers,
   Play,
@@ -13,6 +14,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import type { ExecutionPlan, Request as ApiRequest } from '@apicircle/shared';
+import { cn } from '../../primitives/cn';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ResponseViewer } from '../editor/ResponseViewer';
 import { RequestQuickView } from './RequestQuickView';
@@ -63,10 +65,14 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
   const linkedCollections = useWorkspaceStore((s) => s.local?.linkedCollections ?? {});
   const renamePlan = useWorkspaceStore((s) => s.renamePlan);
   const removePlan = useWorkspaceStore((s) => s.removePlan);
+  const duplicatePlan = useWorkspaceStore((s) => s.duplicatePlan);
   const addPlanStep = useWorkspaceStore((s) => s.addPlanStep);
   const removePlanStep = useWorkspaceStore((s) => s.removePlanStep);
   const reorderPlanSteps = useWorkspaceStore((s) => s.reorderPlanSteps);
+  const setPlanStepEnabled = useWorkspaceStore((s) => s.setPlanStepEnabled);
   const setPlanEnvPriority = useWorkspaceStore((s) => s.setPlanEnvPriority);
+  const setPlanStopOnFailure = useWorkspaceStore((s) => s.setPlanStopOnFailure);
+  const setPlanVariables = useWorkspaceStore((s) => s.setPlanVariables);
   const runPlan = useWorkspaceStore((s) => s.runPlan);
 
   const [running, setRunning] = useState(false);
@@ -159,6 +165,15 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
         />
         <button
           type="button"
+          onClick={() => duplicatePlan(plan.id)}
+          aria-label={`Duplicate ${plan.name}`}
+          title={`Duplicate ${plan.name}`}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-sm border border-border bg-surface text-text-muted hover:border-accent hover:text-text-primary"
+        >
+          <Copy size={13} />
+        </button>
+        <button
+          type="button"
           onClick={() => removePlan(plan.id)}
           aria-label="Delete plan"
           className="inline-flex h-8 w-8 items-center justify-center rounded-sm border border-danger/30 bg-danger/5 text-danger hover:bg-danger/10"
@@ -227,9 +242,11 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
                   index={i}
                   isFirst={i === 0}
                   isLast={i === plan.steps.length - 1}
+                  enabled={step.enabled !== false}
                   onRemove={() => removePlanStep(plan.id, i)}
                   onMoveUp={() => reorderPlanSteps(plan.id, i, i - 1)}
                   onMoveDown={() => reorderPlanSteps(plan.id, i, i + 1)}
+                  onToggleEnabled={(next) => setPlanStepEnabled(plan.id, i, next)}
                   onQuickView={
                     stepRequest
                       ? () =>
@@ -263,6 +280,17 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
       </section>
 
       <section>
+        <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
+          Plan variables
+        </h2>
+        <p className="mb-2 text-[11px] text-text-dim">
+          Bind <code>{'{{NAME}}'}</code> values for this plan only. Plan variables sit between
+          extracted globals and the env priority list — per-request context vars still win.
+        </p>
+        <PlanVariablesEditor plan={plan} onChange={(vars) => setPlanVariables(plan.id, vars)} />
+      </section>
+
+      <section>
         <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">Run</h2>
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -283,6 +311,17 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
             <Play size={11} />
             Run with assertions
           </button>
+          <label className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted">
+            <input
+              type="checkbox"
+              checked={plan.stopOnAssertionFailure ?? false}
+              onChange={(e) => setPlanStopOnFailure(plan.id, e.target.checked)}
+              aria-label="Stop on assertion failure"
+              className="h-3 w-3 cursor-pointer"
+              style={{ accentColor: 'var(--purple)' }}
+            />
+            Stop on assertion failure
+          </label>
           {lastResult && <RunVerdict result={lastResult} />}
         </div>
         {runError && (
@@ -734,9 +773,11 @@ function PlanStepRow({
   index,
   isFirst,
   isLast,
+  enabled,
   onRemove,
   onMoveUp,
   onMoveDown,
+  onToggleEnabled,
   onQuickView,
 }: {
   request: ApiRequest | undefined;
@@ -745,22 +786,53 @@ function PlanStepRow({
   index: number;
   isFirst: boolean;
   isLast: boolean;
+  /** Effective enabled state — `step.enabled !== false`. */
+  enabled: boolean;
   onRemove: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  onToggleEnabled: (next: boolean) => void;
   onQuickView?: () => void;
 }) {
   return (
-    <li className="flex flex-col gap-0.5 rounded-sm border border-border bg-card px-2 py-1.5">
+    <li
+      className={cn(
+        'flex flex-col gap-0.5 rounded-sm border border-border bg-card px-2 py-1.5',
+        !enabled && 'opacity-60',
+      )}
+    >
       <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => onToggleEnabled(e.target.checked)}
+          aria-label={`Enable step ${index + 1}`}
+          className="h-3 w-3 cursor-pointer"
+          style={{ accentColor: 'var(--purple)' }}
+        />
         <span className="w-6 text-center text-[10px] text-text-dim">{index + 1}.</span>
         {request ? (
           <>
             <span className="text-[10px] uppercase text-text-dim">{request.method}</span>
-            <span className="flex-1 truncate text-xs text-text-primary">{request.name}</span>
+            <span
+              className={cn(
+                'flex-1 truncate text-xs text-text-primary',
+                !enabled && 'line-through',
+              )}
+            >
+              {request.name}
+            </span>
             {linkedName && (
               <span className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-accent">
                 from {linkedName}
+              </span>
+            )}
+            {!enabled && (
+              <span
+                className="rounded-sm border border-text-dim/40 bg-surface px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-text-dim"
+                aria-label={`Step ${index + 1} is disabled`}
+              >
+                disabled
               </span>
             )}
           </>
@@ -823,6 +895,67 @@ function PlanStepRow({
         </nav>
       )}
     </li>
+  );
+}
+
+function PlanVariablesEditor({
+  plan,
+  onChange,
+}: {
+  plan: ExecutionPlan;
+  onChange: (vars: ReadonlyArray<{ key: string; value: string }>) => void;
+}) {
+  const vars = plan.variables ?? [];
+  return (
+    <div className="space-y-1.5 rounded-sm border border-border bg-card p-2">
+      {vars.length === 0 && (
+        <p className="text-[11px] text-text-dim">
+          No plan variables yet — env values resolve as usual.
+        </p>
+      )}
+      {vars.map((v, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <input
+            type="text"
+            value={v.key}
+            onChange={(e) =>
+              onChange(vars.map((row, idx) => (idx === i ? { ...row, key: e.target.value } : row)))
+            }
+            placeholder="VAR_NAME"
+            aria-label={`Plan variable key ${i + 1}`}
+            className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+          />
+          <input
+            type="text"
+            value={v.value}
+            onChange={(e) =>
+              onChange(
+                vars.map((row, idx) => (idx === i ? { ...row, value: e.target.value } : row)),
+              )
+            }
+            placeholder="value"
+            aria-label={`Plan variable value ${i + 1}`}
+            className="h-7 flex-[2] rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+          />
+          <button
+            type="button"
+            onClick={() => onChange(vars.filter((_, idx) => idx !== i))}
+            aria-label={`Remove plan variable ${i + 1}`}
+            className="inline-flex h-7 w-7 items-center justify-center text-text-faint hover:text-danger"
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...vars, { key: '', value: '' }])}
+        className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-dashed border-border px-2 text-[11px] text-text-muted hover:border-accent hover:text-text-primary"
+      >
+        <Plus size={11} />
+        Add plan variable
+      </button>
+    </div>
   );
 }
 

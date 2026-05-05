@@ -23,11 +23,13 @@ function makeRequestId(): string {
 describe('AuthTab', () => {
   beforeEach(hydrate);
 
-  it('renders the type select pre-selected to None', async () => {
+  it('renders the type select pre-selected to Inherit (the new default)', async () => {
     const id = makeRequestId();
     render(<LiveAuthTab requestId={id} />);
-    expect(screen.getByLabelText('Auth type')).toHaveValue('none');
-    expect(screen.getByText(/No authentication will be added\./)).toBeInTheDocument();
+    expect(screen.getByLabelText('Auth type')).toHaveValue('inherit');
+    expect(
+      screen.getByText(/walks up the folder chain and uses the first folder/i),
+    ).toBeInTheDocument();
   });
 
   it('switching to Bearer reveals a Token field and persists the type', async () => {

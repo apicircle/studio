@@ -4,6 +4,7 @@ import { useActiveVariableScope } from '../editors/useVariableScope';
 import { VariableHints } from '../editors/VariableHints';
 import { ThemePicker } from './ThemePicker';
 import { FontPicker } from './FontPicker';
+import { SettingsPicker } from './SettingsPicker';
 
 export function TopBar() {
   const openSecretVault = useWorkspaceStore((s) => s.openSecretVault);
@@ -48,6 +49,7 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-2">
+        <SettingsPicker />
         <FontPicker />
         <ThemePicker />
       </div>

@@ -25,7 +25,7 @@ test.describe('Secret Vault', () => {
     await expect(app.getByText('sk_test_abc')).toBeVisible();
   });
 
-  test('delete is blocked when usedIn is non-empty until confirmed', async ({ app }) => {
+  test('delete is blocked when usedIn is non-empty until confirmed', async ({ app, sidebar }) => {
     // Seed a secret via the vault.
     await app.getByRole('button', { name: /Open Secret Vault/ }).click();
     await app.getByRole('button', { name: 'New secret' }).click();
@@ -37,7 +37,7 @@ test.describe('Secret Vault', () => {
     await app.keyboard.press('Escape');
 
     // Create a request that references the secret label.
-    await app.getByLabel('New request').click();
+    await sidebar.createRequest('secret-ref');
     await app.getByLabel('Request URL').fill('https://api.example.test/{{TOKEN}}');
 
     // Reopen the vault — usedIn is now populated.

@@ -8,8 +8,9 @@ test.describe('GraphQL request body (P19)', () => {
   test('selecting GraphQL splits the body into query + variables panes', async ({
     app,
     monaco,
+    sidebar,
   }) => {
-    await app.getByLabel('New request').click();
+    await sidebar.createRequest('graphql-1');
     await app.getByRole('button', { name: 'Body' }).first().click();
     await app.getByRole('radio', { name: 'GraphQL' }).click();
 
@@ -25,7 +26,11 @@ test.describe('GraphQL request body (P19)', () => {
     expect(await monaco.read('GraphQL variables')).toBe('{"id":"42"}');
   });
 
-  test('Send wraps query + variables into the standard JSON envelope', async ({ app, monaco }) => {
+  test('Send wraps query + variables into the standard JSON envelope', async ({
+    app,
+    monaco,
+    sidebar,
+  }) => {
     let capturedBody: string | null = null;
     await app.route(/api\.example\.test\/graphql/, async (route) => {
       capturedBody = route.request().postData();
@@ -36,7 +41,7 @@ test.describe('GraphQL request body (P19)', () => {
       });
     });
 
-    await app.getByLabel('New request').click();
+    await sidebar.createRequest('graphql-2');
     await app.getByLabel('HTTP method').selectOption('POST');
     await app.getByLabel('Request URL').fill('https://api.example.test/graphql');
     await app.getByRole('button', { name: 'Body' }).first().click();
@@ -57,6 +62,7 @@ test.describe('GraphQL request body (P19)', () => {
   test('GraphQL schema picker maps a workspace SDL definition to the request', async ({
     app,
     monaco,
+    sidebar,
   }) => {
     // Add a workspace SDL definition.
     await app.getByRole('button', { name: /Open Global Assets library/ }).click();
@@ -77,7 +83,7 @@ test.describe('GraphQL request body (P19)', () => {
     await app.keyboard.press('Escape');
 
     // Map it to a new request.
-    await app.getByLabel('New request').click();
+    await sidebar.createRequest('graphql-schema-pick');
     await app.getByRole('button', { name: 'Body' }).first().click();
     await app.getByRole('radio', { name: 'GraphQL' }).click();
     await app.getByLabel('GraphQL schema').selectOption({ label: 'Pets' });

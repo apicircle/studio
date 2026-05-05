@@ -108,6 +108,8 @@ import {
 import {
   addEnvironment as addEnvironmentAction,
   addVariableRow as addVariableRowAction,
+  duplicateEnvironment as duplicateEnvironmentAction,
+  exportEnvironment as exportEnvironmentAction,
   removeEnvironment as removeEnvironmentAction,
   renameEnvironment as renameEnvironmentAction,
   setActiveEnvironment as setActiveEnvironmentAction,
@@ -122,11 +124,15 @@ import {
 import {
   addPlan as addPlanAction,
   addPlanStep as addPlanStepAction,
+  duplicatePlan as duplicatePlanAction,
   removePlan as removePlanAction,
   removePlanStep as removePlanStepAction,
   renamePlan as renamePlanAction,
   reorderPlanSteps as reorderPlanStepsAction,
   setPlanEnvPriority as setPlanEnvPriorityAction,
+  setPlanStepEnabled as setPlanStepEnabledAction,
+  setPlanStopOnFailure as setPlanStopOnFailureAction,
+  setPlanVariables as setPlanVariablesAction,
 } from './planActions';
 import { recomputeUsedIn } from './usedInAggregator';
 import { deleteSecretPayload, getSecretPayload, putSecretPayload } from '../persistence/secrets';
@@ -153,6 +159,16 @@ const MAX_REQUEST_RUNS = 500;
 // Plan-runs are coarser-grained than request-runs; cap separately so the
 // list stays browsable without competing for the request-run buffer.
 const MAX_PLAN_RUNS = 200;
+
+/**
+ * Module-scoped set of plan ids whose `runPlan` is currently in flight.
+ * Populated by `runPlan` for the duration of one execution; a second
+ * `runPlan(samePlanId)` while the first is still running throws
+ * 'plan already running' so the caller can surface a toast rather than
+ * accidentally interleaving two runs on the same plan (their assertion
+ * tallies + globalContext extractions would step on each other).
+ */
+const inflightPlanRuns = new Set<string>();
 
 /** Truncate `value` to `RUN_BODY_PREVIEW_LIMIT` UTF-16 code units. */
 function clampPreview(value: string): { preview: string; truncated: boolean } {
@@ -358,6 +374,8 @@ type WorkspaceStore = {
   toggleSidebarSection: (section: string) => void;
   setThemeId: (themeId: ThemeId) => void;
   setWorkspaceName: (name: string) => void;
+  /** Toggle the pre-send validation panel (local.settings.validateOnSend). */
+  setValidateOnSend: (value: boolean) => void;
 
   /** Remove a mock definition from the workspace. No runtime side effect. */
   removeMockServer: (id: string) => void;
@@ -495,6 +513,18 @@ type WorkspaceStore = {
   addEnvironment: (name: string) => void;
   removeEnvironment: (name: string) => void;
   renameEnvironment: (oldName: string, newName: string) => void;
+  /**
+   * Clone an environment under "<name> (copy)" (or `(copy 2)`, … if a
+   * collision exists). Variables are copied verbatim — encrypted vars
+   * keep their secretKeyId binding and resolve via the same vault key.
+   */
+  duplicateEnvironment: (name: string) => void;
+  /**
+   * Serialize an environment to a JSON string suitable for download or
+   * sharing. Encrypted vars omit their value (only the secretKeyId
+   * survives) so secrets never leave the local vault.
+   */
+  exportEnvironment: (name: string) => string | null;
   setActiveEnvironment: (name: string | null) => void;
   setPriorityOrder: (order: string[]) => void;
   setVariables: (envName: string, variables: Environment['variables']) => void;
@@ -731,21 +761,58 @@ type WorkspaceStore = {
   /** Drop a plan AND its plan-run history rows. */
   removePlan: (id: string) => void;
   renamePlan: (id: string, name: string) => void;
+  /**
+   * Clone a plan under "<name> (copy)" with the same steps + env
+   * priority + variables + stopOnAssertionFailure. The clone gets a
+   * fresh id and timestamps so plan-run history stays scoped to the
+   * original plan. Returns the new plan's id, or null if the source
+   * was unknown.
+   */
+  duplicatePlan: (planId: string) => string | null;
   addPlanStep: (planId: string, requestId: string, linkedWorkspaceId?: string) => void;
   removePlanStep: (planId: string, stepIndex: number) => void;
   reorderPlanSteps: (planId: string, fromIndex: number, toIndex: number) => void;
+  /**
+   * Toggle a step's `enabled` flag. Disabled steps stay in the plan but
+   * are skipped by `runPlan`.
+   */
+  setPlanStepEnabled: (planId: string, stepIndex: number, enabled: boolean) => void;
   /**
    * Plan-level env priority overrides the workspace's global order
    * during runs of this plan. Empty array = no override.
    */
   setPlanEnvPriority: (planId: string, priorityOrder: readonly string[]) => void;
   /**
+   * Set the plan's `stopOnAssertionFailure` flag. Only honored by
+   * runPlan when launched `withAssertions`.
+   */
+  setPlanStopOnFailure: (planId: string, stopOnAssertionFailure: boolean) => void;
+  /** Replace the plan's variable list. */
+  setPlanVariables: (
+    planId: string,
+    variables: ReadonlyArray<{ key: string; value: string }>,
+  ) => void;
+  /**
    * Run every step of a plan in order. With assertions enabled, each
    * request's assertions are evaluated and the verdict aggregated into
    * the plan-run summary; without, only the request runs themselves are
    * persisted (no assertion verdicts in the plan-run row).
+   *
+   * Throws `'plan already running'` if the same plan id is already in
+   * the inflight set — the UI must surface this rather than queue a
+   * second run.
    */
   runPlan: (planId: string, opts?: { withAssertions?: boolean }) => Promise<PlanRun>;
+
+  /**
+   * Replay a recorded request run by re-firing the source request as it
+   * exists today. The original RequestRun captures wire-level detail
+   * but not the full request snapshot — replays use the live request
+   * from `synced.collections.requests`. Returns the new RequestRun, or
+   * `null` if the source request has been deleted (UI surfaces this as
+   * a disabled/tooltipped button).
+   */
+  replayRequestRun: (runId: string) => Promise<RequestRun | null>;
 
   // --- History (local-only) -------------------------------------------
   /**
@@ -915,6 +982,17 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!local) return;
     const next: WorkspaceLocal = { ...local, ui: { ...local.ui, themeId } };
     applyTheme(themeId);
+    set({ local: next });
+    void saveLocal(next);
+  },
+
+  setValidateOnSend: (value) => {
+    const local = get().local;
+    if (!local) return;
+    const next: WorkspaceLocal = {
+      ...local,
+      settings: { ...local.settings, validateOnSend: value },
+    };
     set({ local: next });
     void saveLocal(next);
   },
@@ -1345,6 +1423,15 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   removeEnvironment: (name) => commitSynced(set, get, (s) => removeEnvironmentAction(s, name)),
   renameEnvironment: (oldName, newName) =>
     commitSynced(set, get, (s) => renameEnvironmentAction(s, oldName, newName)),
+  duplicateEnvironment: (name) =>
+    commitSynced(set, get, (s) => duplicateEnvironmentAction(s, name)),
+  exportEnvironment: (name) => {
+    // Pure read — no commit. Return the JSON string so the caller can
+    // pipe it into a Blob/download or copy-to-clipboard.
+    const synced = get().synced;
+    if (!synced) return null;
+    return exportEnvironmentAction(synced, name);
+  },
   setActiveEnvironment: (name) =>
     commitSynced(set, get, (s) => setActiveEnvironmentAction(s, name)),
   setPriorityOrder: (order) => commitSynced(set, get, (s) => setPriorityOrderAction(s, order)),
@@ -2004,14 +2091,29 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   renamePlan: (id, name) => commitLocal(set, get, (l) => renamePlanAction(l, id, name)),
+  duplicatePlan: (planId) => {
+    const local = get().local;
+    if (!local) return null;
+    const { local: next, plan } = duplicatePlanAction(local, planId);
+    if (!plan || next === local) return null;
+    set({ local: next, activePlanId: plan.id });
+    void saveLocal(next);
+    return plan.id;
+  },
   addPlanStep: (planId, requestId, linkedWorkspaceId) =>
     commitLocal(set, get, (l) => addPlanStepAction(l, planId, requestId, linkedWorkspaceId)),
   removePlanStep: (planId, stepIndex) =>
     commitLocal(set, get, (l) => removePlanStepAction(l, planId, stepIndex)),
   reorderPlanSteps: (planId, fromIndex, toIndex) =>
     commitLocal(set, get, (l) => reorderPlanStepsAction(l, planId, fromIndex, toIndex)),
+  setPlanStepEnabled: (planId, stepIndex, enabled) =>
+    commitLocal(set, get, (l) => setPlanStepEnabledAction(l, planId, stepIndex, enabled)),
   setPlanEnvPriority: (planId, priorityOrder) =>
     commitLocal(set, get, (l) => setPlanEnvPriorityAction(l, planId, priorityOrder)),
+  setPlanStopOnFailure: (planId, stopOnAssertionFailure) =>
+    commitLocal(set, get, (l) => setPlanStopOnFailureAction(l, planId, stopOnAssertionFailure)),
+  setPlanVariables: (planId, variables) =>
+    commitLocal(set, get, (l) => setPlanVariablesAction(l, planId, variables)),
 
   runPlan: async (planId, opts) => {
     const local = get().local;
@@ -2020,158 +2122,185 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const plan = local.executionPlans[planId];
     if (!plan) throw new Error(`Plan ${planId} not found`);
 
-    const withAssertions = opts?.withAssertions ?? false;
-    const startedAt = new Date().toISOString();
-    const planRunId = generateId();
-    const t0 = Date.now();
-    const stepRecords: Array<{ requestRunId: string; passed: boolean }> = [];
-    const newRequestRuns: RequestRun[] = [];
-    const planResultDetails: WorkspaceStore['lastPlanResults'][string] = [];
+    // Concurrent-run guard: refuse to start a second run of the same
+    // plan while the first is still in flight. The UI surfaces this as
+    // a toast ("Plan already running"); we don't queue.
+    if (inflightPlanRuns.has(planId)) throw new Error('plan already running');
+    inflightPlanRuns.add(planId);
+    try {
+      const withAssertions = opts?.withAssertions ?? false;
+      const stopOnFailure = withAssertions && (plan.stopOnAssertionFailure ?? false);
+      const startedAt = new Date().toISOString();
+      const planRunId = generateId();
+      const t0 = Date.now();
+      const stepRecords: Array<{ requestRunId: string; passed: boolean }> = [];
+      const newRequestRuns: RequestRun[] = [];
+      const planResultDetails: WorkspaceStore['lastPlanResults'][string] = [];
 
-    for (const step of plan.steps) {
-      // Cross-workspace steps look the request up in the cached linked
-      // snapshot rather than synced.collections.requests. The snapshot
-      // is populated by linkPrivate/linkPublic/refreshLinkedWorkspace;
-      // a missing snapshot means the user hasn't refreshed since the
-      // schema landed (or the source's workspace.json doesn't ship
-      // collections). We record an orphan failure either way.
-      const lookup = lookupPlanStepRequest(step, synced, local);
-      if (!lookup.request) {
-        const runId = generateId();
-        const orphanRun: RequestRun = {
-          id: runId,
-          requestId: step.requestId,
-          startedAt: new Date().toISOString(),
-          durationMs: 0,
-          status: null,
-          statusText: '',
-          ok: false,
-          error: lookup.error,
-          url: '',
-          method: '',
-          requestHeaders: {},
-          requestBodyPreview: null,
-          responseHeaders: {},
-          responseBodyPreview: '',
-          responseBodyKind: 'empty',
-          responseTruncated: false,
-          assertions: [],
-        };
-        newRequestRuns.push(orphanRun);
-        stepRecords.push({ requestRunId: runId, passed: false });
-        planResultDetails.push({
-          result: {
-            startedAt: orphanRun.startedAt,
+      for (const step of plan.steps) {
+        // Disabled steps (`enabled: false`) are skipped silently — they
+        // contribute nothing to the request-run history or the plan-run
+        // tally. The plan-step row stays in the plan; only the run is
+        // skipped.
+        if (step.enabled === false) continue;
+
+        // Cross-workspace steps look the request up in the cached linked
+        // snapshot rather than synced.collections.requests. The snapshot
+        // is populated by linkPrivate/linkPublic/refreshLinkedWorkspace;
+        // a missing snapshot means the user hasn't refreshed since the
+        // schema landed (or the source's workspace.json doesn't ship
+        // collections). We record an orphan failure either way.
+        const lookup = lookupPlanStepRequest(step, synced, local);
+        if (!lookup.request) {
+          const runId = generateId();
+          const orphanRun: RequestRun = {
+            id: runId,
+            requestId: step.requestId,
+            startedAt: new Date().toISOString(),
             durationMs: 0,
             status: null,
-            ok: false,
             statusText: '',
-            headers: {},
-            body: '',
-            bodyKind: 'empty',
+            ok: false,
             error: lookup.error,
             url: '',
             method: '',
-            authWarnings: [],
-          },
-          assertionResults: [],
-          passed: false,
-          requestName: 'Missing request',
-          requestMethod: '—',
-        });
-        continue;
-      }
-      const request = lookup.request;
-      const planScope = {
-        envPriorityOrder: plan.envPriorityOrder.length > 0 ? plan.envPriorityOrder : undefined,
-      };
-      // For linked steps the request expects to resolve against the SOURCE
-      // workspace's environments + folders (the consumer hasn't seen the
-      // source's BASE_URL or its folder hierarchy). We pass a virtual synced
-      // doc that uses the linked snapshot's environments + folders, while
-      // keeping the consumer's secret vault. Without the folder swap, a
-      // request whose `auth.type === 'inherit'` would walk up the consumer's
-      // folder tree (which doesn't know about the source) and silently fall
-      // back to no auth.
-      const resolveSynced =
-        step.linkedWorkspaceId && lookup.linkedEnvironments
-          ? {
-              ...synced,
-              environments: lookup.linkedEnvironments,
-              collections: {
-                ...synced.collections,
-                folders: lookup.linkedFolders ?? {},
-              },
-            }
-          : synced;
-      const resolved = await resolveRequest(request, resolveSynced, get().local, planScope);
-      const result = await coreExecuteRequest(resolved, {
-        resolveAttachment: attachmentResolver,
-      });
-      const assertionResults = withAssertions ? runAssertions(request.assertions, result) : [];
-      const allPassed = result.ok && (!withAssertions || assertionResults.every((a) => a.passed));
-      const requestRun = buildRequestRun(resolved, result, assertionResults);
-      newRequestRuns.push(requestRun);
-      stepRecords.push({ requestRunId: requestRun.id, passed: allPassed });
-      planResultDetails.push({
-        result,
-        assertionResults,
-        passed: allPassed,
-        requestName: request.name,
-        requestMethod: request.method,
-      });
-
-      // Carry extracted ctx vars into the rolling globalContext so the next
-      // step's resolveRequest sees them. Linked-workspace steps still
-      // contribute back to the consumer's local context — the value is what
-      // matters, not which workspace produced it.
-      if (request.extractions && request.extractions.length > 0) {
-        const stepExtraction = extractContext(result, request.extractions);
-        const liveLocal = get().local;
-        if (liveLocal) {
-          const merged: WorkspaceLocal = {
-            ...liveLocal,
-            globalContext: { ...liveLocal.globalContext, ...stepExtraction.extracted },
+            requestHeaders: {},
+            requestBodyPreview: null,
+            responseHeaders: {},
+            responseBodyPreview: '',
+            responseBodyKind: 'empty',
+            responseTruncated: false,
+            assertions: [],
           };
-          set({ local: merged });
+          newRequestRuns.push(orphanRun);
+          stepRecords.push({ requestRunId: runId, passed: false });
+          planResultDetails.push({
+            result: {
+              startedAt: orphanRun.startedAt,
+              durationMs: 0,
+              status: null,
+              ok: false,
+              statusText: '',
+              headers: {},
+              body: '',
+              bodyKind: 'empty',
+              error: lookup.error,
+              url: '',
+              method: '',
+              authWarnings: [],
+            },
+            assertionResults: [],
+            passed: false,
+            requestName: 'Missing request',
+            requestMethod: '—',
+          });
+          continue;
         }
+        const request = lookup.request;
+        const planScope: {
+          envPriorityOrder?: readonly string[];
+          planVariables?: ReadonlyArray<{ key: string; value: string }>;
+        } = {
+          envPriorityOrder: plan.envPriorityOrder.length > 0 ? plan.envPriorityOrder : undefined,
+          planVariables: plan.variables && plan.variables.length > 0 ? plan.variables : undefined,
+        };
+        // For linked steps the request expects to resolve against the SOURCE
+        // workspace's environments + folders (the consumer hasn't seen the
+        // source's BASE_URL or its folder hierarchy). We pass a virtual synced
+        // doc that uses the linked snapshot's environments + folders, while
+        // keeping the consumer's secret vault. Without the folder swap, a
+        // request whose `auth.type === 'inherit'` would walk up the consumer's
+        // folder tree (which doesn't know about the source) and silently fall
+        // back to no auth.
+        const resolveSynced =
+          step.linkedWorkspaceId && lookup.linkedEnvironments
+            ? {
+                ...synced,
+                environments: lookup.linkedEnvironments,
+                collections: {
+                  ...synced.collections,
+                  folders: lookup.linkedFolders ?? {},
+                },
+              }
+            : synced;
+        const resolved = await resolveRequest(request, resolveSynced, get().local, planScope);
+        const result = await coreExecuteRequest(resolved, {
+          resolveAttachment: attachmentResolver,
+        });
+        const assertionResults = withAssertions ? runAssertions(request.assertions, result) : [];
+        const allPassed = result.ok && (!withAssertions || assertionResults.every((a) => a.passed));
+        const requestRun = buildRequestRun(resolved, result, assertionResults);
+        newRequestRuns.push(requestRun);
+        stepRecords.push({ requestRunId: requestRun.id, passed: allPassed });
+        planResultDetails.push({
+          result,
+          assertionResults,
+          passed: allPassed,
+          requestName: request.name,
+          requestMethod: request.method,
+        });
+
+        // Carry extracted ctx vars into the rolling globalContext so the next
+        // step's resolveRequest sees them. Linked-workspace steps still
+        // contribute back to the consumer's local context — the value is what
+        // matters, not which workspace produced it.
+        if (request.extractions && request.extractions.length > 0) {
+          const stepExtraction = extractContext(result, request.extractions);
+          const liveLocal = get().local;
+          if (liveLocal) {
+            const merged: WorkspaceLocal = {
+              ...liveLocal,
+              globalContext: { ...liveLocal.globalContext, ...stepExtraction.extracted },
+            };
+            set({ local: merged });
+          }
+        }
+
+        // Stop-on-assertion-failure: when the plan is launched
+        // `withAssertions` AND `stopOnAssertionFailure` is on, any failed
+        // step halts the loop. We persist the steps that already ran +
+        // the partial verdict; the user sees the failure in the verdict
+        // tally rather than a full-green sweep.
+        if (stopOnFailure && !allPassed) break;
       }
-    }
 
-    const planRun: PlanRun = {
-      id: planRunId,
-      planId,
-      startedAt,
-      durationMs: Date.now() - t0,
-      withAssertions,
-      steps: stepRecords,
-    };
-
-    set((s) => ({ lastPlanResults: { ...s.lastPlanResults, [planId]: planResultDetails } }));
-
-    const persistLocal = get().local;
-    if (persistLocal) {
-      // Prepend newest-first: the last step to run sits at index 0 of the
-      // history buffer (matches the convention executeActiveRequest uses
-      // for single-request runs).
-      const reversed = [...newRequestRuns].reverse();
-      const trimmedRequestRuns = [...reversed, ...persistLocal.history.requestRuns].slice(
-        0,
-        MAX_REQUEST_RUNS,
-      );
-      const trimmedPlanRuns = [planRun, ...persistLocal.history.planRuns].slice(0, MAX_PLAN_RUNS);
-      const nextLocal: WorkspaceLocal = {
-        ...persistLocal,
-        history: {
-          ...persistLocal.history,
-          requestRuns: trimmedRequestRuns,
-          planRuns: trimmedPlanRuns,
-        },
+      const planRun: PlanRun = {
+        id: planRunId,
+        planId,
+        startedAt,
+        durationMs: Date.now() - t0,
+        withAssertions,
+        steps: stepRecords,
       };
-      set({ local: nextLocal });
-      void saveLocal(nextLocal);
+
+      set((s) => ({ lastPlanResults: { ...s.lastPlanResults, [planId]: planResultDetails } }));
+
+      const persistLocal = get().local;
+      if (persistLocal) {
+        // Prepend newest-first: the last step to run sits at index 0 of the
+        // history buffer (matches the convention executeActiveRequest uses
+        // for single-request runs).
+        const reversed = [...newRequestRuns].reverse();
+        const trimmedRequestRuns = [...reversed, ...persistLocal.history.requestRuns].slice(
+          0,
+          MAX_REQUEST_RUNS,
+        );
+        const trimmedPlanRuns = [planRun, ...persistLocal.history.planRuns].slice(0, MAX_PLAN_RUNS);
+        const nextLocal: WorkspaceLocal = {
+          ...persistLocal,
+          history: {
+            ...persistLocal.history,
+            requestRuns: trimmedRequestRuns,
+            planRuns: trimmedPlanRuns,
+          },
+        };
+        set({ local: nextLocal });
+        void saveLocal(nextLocal);
+      }
+      return planRun;
+    } finally {
+      inflightPlanRuns.delete(planId);
     }
-    return planRun;
   },
 
   syncAttachments: async () => {
@@ -2414,6 +2543,49 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       set((s) => ({ lastRun: { ...s.lastRun, [id]: result } }));
     } finally {
       set((s) => ({ isExecuting: { ...s.isExecuting, [id]: false } }));
+    }
+  },
+
+  replayRequestRun: async (runId) => {
+    const state = get();
+    const local = state.local;
+    const synced = state.synced;
+    if (!local || !synced) return null;
+    const run = local.history.requestRuns.find((r) => r.id === runId);
+    if (!run) return null;
+    const request = synced.collections.requests[run.requestId];
+    // Source request was deleted — replay can't resolve a live request,
+    // and replaying the recorded URL/headers/body wouldn't pick up env
+    // changes. Surface as null; UI disables the button.
+    if (!request) return null;
+
+    set((s) => ({ isExecuting: { ...s.isExecuting, [request.id]: true } }));
+    try {
+      const resolved = await resolveRequest(request, synced, get().local);
+      const result = await coreExecuteRequest(resolved, {
+        resolveAttachment: attachmentResolver,
+      });
+      const assertionResults = runAssertions(request.assertions, result);
+      const replayRun = buildRequestRun(resolved, result, assertionResults);
+      const extractionResult =
+        request.extractions && request.extractions.length > 0
+          ? extractContext(result, request.extractions)
+          : { extracted: {}, warnings: [] };
+      const liveLocal = get().local;
+      if (liveLocal) {
+        const trimmed = [replayRun, ...liveLocal.history.requestRuns].slice(0, MAX_REQUEST_RUNS);
+        const next: WorkspaceLocal = {
+          ...liveLocal,
+          history: { ...liveLocal.history, requestRuns: trimmed },
+          globalContext: { ...liveLocal.globalContext, ...extractionResult.extracted },
+        };
+        set({ local: next });
+        void saveLocal(next);
+      }
+      set((s) => ({ lastRun: { ...s.lastRun, [request.id]: result } }));
+      return replayRun;
+    } finally {
+      set((s) => ({ isExecuting: { ...s.isExecuting, [request.id]: false } }));
     }
   },
 }));
@@ -2809,17 +2981,29 @@ async function resolveRequest(
   request: ApiRequest,
   synced: WorkspaceSynced,
   local: WorkspaceLocal | null,
-  overrides?: { envPriorityOrder?: readonly string[] },
+  overrides?: {
+    envPriorityOrder?: readonly string[];
+    /**
+     * Plan-level variables. Sit between request.contextVars and the env
+     * priority list — they override an env value without mutating the
+     * env. Last-wins on duplicate keys (consistent with env vars).
+     */
+    planVariables?: ReadonlyArray<{ key: string; value: string }>;
+  },
 ): Promise<ApiRequest> {
   const vault = local ? await decryptVault(local) : { byLabel: {}, byId: {} };
   const envs = decryptEnvironments(synced.environments.items, vault.byId);
   const secrets = vault.byLabel;
 
-  // Per-request contextVars + workspace globalContext both feed the
-  // contextVars layer of the resolver. Per-request entries shadow global
-  // ones with the same key — that's how an override on this request wins
-  // over a stale extracted value from a sibling request.
+  // contextVars layer ordering (lowest → highest priority):
+  //   1. workspace globalContext (rolling extracted state across runs)
+  //   2. plan-level variables (if this is a plan run; bind for the run)
+  //   3. per-request contextVars (always last → wins on collision)
+  // Below contextVars sits the env layer (priorityOrder), then secrets.
   const ctxMap: Record<string, string> = { ...(local?.globalContext ?? {}) };
+  for (const v of overrides?.planVariables ?? []) {
+    if (v.key) ctxMap[v.key] = v.value;
+  }
   for (const v of request.contextVars) {
     if (v.key) ctxMap[v.key] = v.value;
   }

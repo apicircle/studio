@@ -629,7 +629,7 @@ function CreateInput({ kind, depth, isAvailable, onCommit, onCancel }: CreateInp
             onCancel();
           }
         }}
-        aria-label={`New ${kind} name`}
+        aria-label={`Inline rename ${kind}`}
         aria-invalid={duplicate}
         placeholder={kind === 'folder' ? 'Folder name' : 'Request name'}
         className={cn(

@@ -2,12 +2,13 @@
 // <datalist> with a styled list that shows: header name, description, and a
 // "browser-only" or "auto" badge for reserved entries.
 //
-// Used as a drop-in for the key column. The value column uses
-// `<HeaderValueSuggestions>` further down — a small chevron button that
-// opens a popover of common values for the row's current key.
+// The value column uses `<HeaderValueRecommendations>` further down —
+// rendered as an inline popover that opens when the value input is focused
+// and closes on blur. Replaces the older chevron-driven popover so the UX
+// matches the key column.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Lock, Sparkles } from 'lucide-react';
+import { Lock, Sparkles } from 'lucide-react';
 import { getHeaderEntry, suggestHeaders, type HeaderEntry } from '@apicircle/core';
 import { cn } from '../../primitives/cn';
 
@@ -31,7 +32,15 @@ export function HeaderKeyAutocomplete({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const matches = useMemo(() => suggestHeaders(value, 12), [value]);
+  // When the input is empty (focused but un-typed), surface the full
+  // sorted list — the popover scrolls. With 80+ entries in the dictionary
+  // a small limit would crop the visible window to the alphabetically-first
+  // letter only. Once the user types a prefix, cap to 12 — that's a
+  // focused search, not a browse.
+  const matches = useMemo(() => {
+    const prefix = value.trim();
+    return prefix ? suggestHeaders(prefix, 12) : suggestHeaders('');
+  }, [value]);
   // Hide the popover entirely when there are no matches (typing junk should
   // not trap the user under a "No matches" panel).
   const visible = open && matches.length > 0;
@@ -147,68 +156,81 @@ export function HeaderKeyAutocomplete({
   );
 }
 
-interface HeaderValueSuggestionsProps {
+interface HeaderValueRecommendationsProps {
   headerKey: string;
+  /** Current text in the value input — used to prefix-filter the curated list. */
+  currentValue: string;
+  /** True when the value input (or this popover) currently holds focus. */
+  isFocused: boolean;
   onPick: (value: string) => void;
   ariaLabel: string;
 }
 
-export function HeaderValueSuggestions({
+/**
+ * True when the cursor is inside an unclosed `{{` reference — meaning the
+ * variable autocomplete in `VariableAutocompleteField` is the one driving
+ * the suggestion UX. We yield to it and stay hidden.
+ */
+function hasOpenVariableToken(text: string): boolean {
+  const lastOpen = text.lastIndexOf('{{');
+  if (lastOpen === -1) return false;
+  return !text.slice(lastOpen + 2).includes('}}');
+}
+
+/**
+ * Inline popover that surfaces the dictionary's curated values for the
+ * row's current header. Mirrors the key column UX: appears when the value
+ * input is focused, prefix-filters as the user types, dismisses on blur.
+ */
+export function HeaderValueRecommendations({
   headerKey,
+  currentValue,
+  isFocused,
   onPick,
   ariaLabel,
-}: HeaderValueSuggestionsProps) {
+}: HeaderValueRecommendationsProps) {
   const entry = getHeaderEntry(headerKey);
   const values = entry?.values ?? [];
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [open]);
+  const filtered = useMemo(() => {
+    if (values.length === 0) return [];
+    const prefix = currentValue.trim().toLowerCase();
+    if (!prefix) return values;
+    // Substring match (not just prefix) — composite header values like
+    // `gzip, deflate, br` should surface when the user types `gzip`.
+    return values.filter((v) => v.toLowerCase().includes(prefix));
+  }, [values, currentValue]);
 
+  if (!isFocused) return null;
   if (values.length === 0) return null;
+  if (filtered.length === 0) return null;
+  // Yield to the `{{var}}` autocomplete in VariableAutocompleteField when
+  // the user is mid-token — only one popover should show at a time.
+  if (hasOpenVariableToken(currentValue)) return null;
 
   return (
-    <div ref={wrapRef} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        title={`Common values for ${entry!.name}`}
-        aria-label={ariaLabel}
-        aria-expanded={open}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-sm border border-border bg-surface text-text-muted hover:border-accent hover:text-text-primary"
-      >
-        <ChevronDown size={12} />
-      </button>
-      {open && (
-        <ul
-          role="listbox"
-          aria-label={`Common values for ${entry!.name}`}
-          className="absolute right-0 top-8 z-30 flex max-h-56 min-w-[180px] flex-col overflow-y-auto rounded-sm border border-border bg-card shadow-lg"
-        >
-          {values.map((v) => (
-            <li key={v}>
-              <button
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  onPick(v);
-                  setOpen(false);
-                }}
-                className="block w-full px-2 py-1 text-left text-[11px] text-text-muted hover:bg-surface hover:text-text-primary"
-              >
-                {v}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <ul
+      role="listbox"
+      aria-label={ariaLabel}
+      className="absolute left-0 top-full z-30 mt-0.5 flex max-h-56 w-full min-w-[180px] flex-col overflow-y-auto rounded-sm border border-border bg-card shadow-lg"
+    >
+      {filtered.map((v) => (
+        <li key={v}>
+          <button
+            type="button"
+            // onMouseDown + preventDefault keeps focus on the input so the
+            // parent's onBlur (which closes this popover) doesn't fire
+            // before the click registers.
+            onMouseDown={(e) => {
+              e.preventDefault();
+              onPick(v);
+            }}
+            className="block w-full px-2 py-1 text-left text-[11px] text-text-muted hover:bg-surface hover:text-text-primary"
+          >
+            {v}
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }

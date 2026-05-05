@@ -68,6 +68,58 @@ export function renameEnvironment(
   });
 }
 
+export function duplicateEnvironment(synced: WorkspaceSynced, name: string): WorkspaceSynced {
+  const src = synced.environments.items[name];
+  if (!src) return synced;
+  // Pick the first non-colliding "<name> (copy)", "<name> (copy 2)", … —
+  // mirrors editorActions' duplicateRequest naming.
+  let candidate = `${name} (copy)`;
+  let n = 2;
+  while (synced.environments.items[candidate]) {
+    candidate = `${name} (copy ${n})`;
+    n += 1;
+  }
+  // Variables are copied verbatim. Encrypted vars carry their secretKeyId
+  // unchanged — the same vault key resolves the duplicate. (Users who want
+  // independent secrets should rebind via the Encrypt button after.)
+  const dup: Environment = {
+    name: candidate,
+    variables: src.variables.map((v) => ({ ...v })),
+  };
+  return bumpUpdatedAt({
+    ...synced,
+    environments: {
+      ...synced.environments,
+      items: { ...synced.environments.items, [candidate]: dup },
+      // Land at the end of the priority list, mirroring addEnvironment.
+      priorityOrder: synced.environments.priorityOrder.includes(candidate)
+        ? synced.environments.priorityOrder
+        : [...synced.environments.priorityOrder, candidate],
+    },
+  });
+}
+
+/**
+ * Serialize an environment to a portable JSON string. Encrypted vars
+ * intentionally drop their value — only the bound `secretKeyId` survives,
+ * so importing on another machine requires the user to provide the secret
+ * locally. Plain vars roundtrip in full.
+ */
+export function exportEnvironment(synced: WorkspaceSynced, name: string): string | null {
+  const env = synced.environments.items[name];
+  if (!env) return null;
+  const payload = {
+    apicircleEnvironment: 1 as const,
+    name: env.name,
+    variables: env.variables.map((v) =>
+      v.encrypted && v.secretKeyId
+        ? { key: v.key, encrypted: true as const, secretKeyId: v.secretKeyId }
+        : { key: v.key, value: v.value, encrypted: false as const },
+    ),
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
 export function setActiveEnvironment(
   synced: WorkspaceSynced,
   name: string | null,
