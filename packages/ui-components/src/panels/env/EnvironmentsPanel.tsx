@@ -3,6 +3,7 @@ import { KeyRound, Lock, Plus, Trash2, Unlock } from 'lucide-react';
 import type { Environment, EnvironmentVariable, SecretEntry } from '@apicircle/shared';
 import { cn } from '../../primitives/cn';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { LinkedEnvironmentsSection } from './LinkedEnvironmentsSection';
 
 export function EnvironmentsPanel() {
   const items = useWorkspaceStore((s) => s.synced?.environments.items ?? {});
@@ -20,8 +21,9 @@ export function EnvironmentsPanel() {
 
   if (allNames.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center p-6 text-sm text-text-muted">
-        Create an environment from the sidebar to start.
+      <div className="flex h-full flex-col gap-2 overflow-y-auto p-6 text-sm text-text-muted">
+        <p>Create an environment from the sidebar to start.</p>
+        <LinkedEnvironmentsSection />
       </div>
     );
   }
@@ -69,6 +71,7 @@ export function EnvironmentsPanel() {
         expanding <code>{'{{NAME}}'}</code> in a request. First match wins.
       </p>
       <VariableTable env={env} />
+      <LinkedEnvironmentsSection />
     </div>
   );
 }

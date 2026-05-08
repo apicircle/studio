@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
+import type { MockEndpoint } from '@apicircle/shared';
 import { parseOpenApiToEndpoints } from './openapi';
+
+// Helper accessors — every endpoint stores its parsed response on
+// `defaultResponse`; these wrap that detail so the tests below stay
+// readable.
+const status = (e: MockEndpoint) => e.defaultResponse.status;
+const headers = (e: MockEndpoint) => e.defaultResponse.headers;
+const bodyContent = (e: MockEndpoint) =>
+  e.defaultResponse.body.type === 'json' ||
+  e.defaultResponse.body.type === 'text' ||
+  e.defaultResponse.body.type === 'xml' ||
+  e.defaultResponse.body.type === 'urlencoded'
+    ? e.defaultResponse.body.content
+    : '';
 
 const PETSTORE_JSON = JSON.stringify({
   openapi: '3.0.0',
@@ -80,8 +94,8 @@ describe('parseOpenApiToEndpoints', () => {
     expect(endpoints).toHaveLength(3);
     const listPets = endpoints.find((e) => e.method === 'GET' && e.pathPattern === '/pets');
     expect(listPets).toBeDefined();
-    expect(listPets!.status).toBe(200);
-    expect(listPets!.body).toContain('"name": "Fido"');
+    expect(status(listPets!)).toBe(200);
+    expect(bodyContent(listPets!)).toContain('"name": "Fido"');
   });
 
   it('parses YAML spec', async () => {
@@ -95,8 +109,8 @@ describe('parseOpenApiToEndpoints', () => {
     const { endpoints } = await parseOpenApiToEndpoints(PETSTORE_JSON, 'json');
     const post = endpoints.find((e) => e.method === 'POST');
     expect(post).toBeDefined();
-    expect(post!.status).toBe(201);
-    const body = JSON.parse(post!.body);
+    expect(status(post!)).toBe(201);
+    const body = JSON.parse(bodyContent(post!));
     expect(body).toEqual({ id: 0, name: 'string' });
   });
 
@@ -105,7 +119,7 @@ describe('parseOpenApiToEndpoints', () => {
     const getPet = endpoints.find((e) => e.method === 'GET' && e.pathPattern === '/pets/{id}');
     expect(getPet).toBeDefined();
     expect(getPet!.example).toBe('fido');
-    expect(getPet!.body).toContain('"name": "Fido"');
+    expect(bodyContent(getPet!)).toContain('"name": "Fido"');
   });
 
   it('returns warnings for invalid JSON without throwing', async () => {
@@ -132,7 +146,7 @@ describe('parseOpenApiToEndpoints', () => {
   it('attaches a Content-Type header by default', async () => {
     const { endpoints } = await parseOpenApiToEndpoints(PETSTORE_JSON, 'json');
     for (const e of endpoints) {
-      expect(e.headers.find((h) => h.key.toLowerCase() === 'content-type')).toBeDefined();
+      expect(headers(e).find((h) => h.key.toLowerCase() === 'content-type')).toBeDefined();
     }
   });
 
@@ -152,10 +166,10 @@ describe('parseOpenApiToEndpoints', () => {
       },
     });
     const lowest = await parseOpenApiToEndpoints(spec, 'json');
-    expect(JSON.parse(lowest.endpoints[0].body)).toEqual({ from: '200' });
+    expect(JSON.parse(bodyContent(lowest.endpoints[0]))).toEqual({ from: '200' });
 
     const preferred = await parseOpenApiToEndpoints(spec, 'json', { preferStatus: 201 });
-    expect(JSON.parse(preferred.endpoints[0].body)).toEqual({ from: '201' });
+    expect(JSON.parse(bodyContent(preferred.endpoints[0]))).toEqual({ from: '201' });
   });
 
   it('passes through response headers from the OpenAPI spec', async () => {
@@ -179,9 +193,9 @@ describe('parseOpenApiToEndpoints', () => {
       },
     });
     const { endpoints } = await parseOpenApiToEndpoints(spec, 'json');
-    const trace = endpoints[0].headers.find((h) => h.key === 'X-Trace-Id');
+    const trace = headers(endpoints[0]).find((h) => h.key === 'X-Trace-Id');
     expect(trace?.value).toBe('trace-123');
-    const schemaHeader = endpoints[0].headers.find((h) => h.key === 'X-Schema-Header');
+    const schemaHeader = headers(endpoints[0]).find((h) => h.key === 'X-Schema-Header');
     expect(schemaHeader?.value).toMatch(/^[0-9a-f-]+$/);
   });
 
@@ -226,7 +240,7 @@ describe('parseOpenApiToEndpoints', () => {
     });
     const { endpoints } = await parseOpenApiToEndpoints(swagger2, 'json');
     expect(endpoints).toHaveLength(1);
-    expect(endpoints[0].body).toBe('<root/>');
+    expect(bodyContent(endpoints[0])).toBe('<root/>');
   });
 
   it('serializes non-JSON object payloads without extra whitespace', async () => {
@@ -249,7 +263,7 @@ describe('parseOpenApiToEndpoints', () => {
     });
     const { endpoints } = await parseOpenApiToEndpoints(spec, 'json');
     // For non-JSON content types we fall through to compact JSON serialisation.
-    expect(endpoints[0].body).toBe('{"wrapped":{"value":1}}');
+    expect(bodyContent(endpoints[0])).toBe('{"wrapped":{"value":1}}');
   });
 
   it('falls back to safeJsonParse when YAML parser throws', async () => {
@@ -283,6 +297,6 @@ describe('parseOpenApiToEndpoints', () => {
     });
     const { endpoints } = await parseOpenApiToEndpoints(swagger2, 'json');
     expect(endpoints).toHaveLength(1);
-    expect(JSON.parse(endpoints[0].body)).toEqual({ ok: false });
+    expect(JSON.parse(bodyContent(endpoints[0]))).toEqual({ ok: false });
   });
 });

@@ -394,6 +394,182 @@ export function setRequestAssertions(
   return updateRequest(synced, id, { assertions });
 }
 
+/**
+ * Clone a request inside the same folder as the original. The duplicate
+ * gets a fresh id + timestamps and a uniquified `"<name> (copy)"` /
+ * `"<name> (copy 2)"` style name. All editable fields (headers, body,
+ * params, auth, assertions, extractions, contextVars, schema bindings)
+ * are deep-copied so future edits to the original don't bleed through.
+ *
+ * Returns the new synced doc + the cloned request, or `{ synced, request:
+ * null }` when the source id doesn't exist.
+ */
+export function duplicateRequest(
+  synced: WorkspaceSynced,
+  requestId: string,
+): { synced: WorkspaceSynced; request: ApiRequest | null } {
+  const src = synced.collections.requests[requestId];
+  if (!src) return { synced, request: null };
+  const finalName = uniquifyName(synced, src.folderId, 'request', `${src.name} (copy)`);
+  const now = new Date().toISOString();
+  const dup: ApiRequest = {
+    ...src,
+    id: generateId(),
+    name: finalName,
+    // Deep-clone every nested mutable structure so callers can edit one
+    // without aliasing the other.
+    headers: src.headers.map((h) => ({ ...h })),
+    query: src.query.map((q) => ({ ...q })),
+    pathParams: { ...src.pathParams },
+    cookies: src.cookies?.map((c) => ({ ...c })),
+    body: cloneRequestBody(src.body),
+    auth: cloneRequestAuth(src.auth),
+    contextVars: src.contextVars.map((v) => ({ ...v })),
+    extractions: src.extractions.map((e) => ({ ...e })),
+    assertions: src.assertions.map((a) => ({ ...a })),
+    createdAt: now,
+    updatedAt: now,
+  };
+  // Folder children are derived from `folderId` for nested entries; the
+  // root tree only carries top-level entries, so reuse `pushChild` to
+  // mirror addRequest's behavior at root vs. inside a folder.
+  const next = pushChild(synced, src.folderId, { kind: 'request', id: dup.id });
+  return {
+    synced: {
+      ...next,
+      collections: {
+        ...next.collections,
+        requests: { ...next.collections.requests, [dup.id]: dup },
+      },
+      meta: { ...next.meta, updatedAt: now },
+    },
+    request: dup,
+  };
+}
+
+/**
+ * Clone a folder along with every descendant folder + request, generating
+ * fresh ids for all of them and rewiring `parentId` / `folderId` so the
+ * duplicate is a self-contained subtree alongside the original.
+ *
+ * The new top-level folder gets a `"<name> (copy)"` style label inside
+ * the same parent. Descendant names are preserved verbatim — the editor
+ * only enforces uniqueness within each parent folder, so siblings of the
+ * original keep their natural names inside the cloned subtree.
+ */
+export function duplicateFolder(
+  synced: WorkspaceSynced,
+  folderId: string,
+): { synced: WorkspaceSynced; folder: Folder | null } {
+  const src = synced.collections.folders[folderId];
+  if (!src) return { synced, folder: null };
+
+  // Walk the subtree, allocating new ids for every node we touch.
+  const folderIdMap = new Map<string, string>([[src.id, generateId()]]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const f of Object.values(synced.collections.folders)) {
+      if (folderIdMap.has(f.id)) continue;
+      if (f.parentId && folderIdMap.has(f.parentId)) {
+        folderIdMap.set(f.id, generateId());
+        grew = true;
+      }
+    }
+  }
+  const requestIdMap = new Map<string, string>();
+  for (const r of Object.values(synced.collections.requests)) {
+    if (r.folderId && folderIdMap.has(r.folderId)) {
+      requestIdMap.set(r.id, generateId());
+    }
+  }
+
+  const now = new Date().toISOString();
+
+  // Root folder of the clone gets the "(copy)" label; nested folders
+  // keep their original names because they're scoped under a different
+  // parent now.
+  const newRootId = folderIdMap.get(src.id)!;
+  const newRootName = uniquifyName(synced, src.parentId, 'folder', `${src.name} (copy)`);
+
+  const folders = { ...synced.collections.folders };
+  for (const [oldId, newId] of folderIdMap.entries()) {
+    const original = synced.collections.folders[oldId];
+    if (!original) continue;
+    const parentId =
+      oldId === src.id ? src.parentId : (folderIdMap.get(original.parentId ?? '') ?? null);
+    folders[newId] = {
+      ...original,
+      id: newId,
+      parentId,
+      name: oldId === src.id ? newRootName : original.name,
+      auth: original.auth ? cloneRequestAuth(original.auth) : undefined,
+    };
+  }
+
+  const requests = { ...synced.collections.requests };
+  for (const [oldId, newId] of requestIdMap.entries()) {
+    const original = synced.collections.requests[oldId];
+    if (!original) continue;
+    const newFolderId = folderIdMap.get(original.folderId ?? '') ?? null;
+    requests[newId] = {
+      ...original,
+      id: newId,
+      folderId: newFolderId,
+      headers: original.headers.map((h) => ({ ...h })),
+      query: original.query.map((q) => ({ ...q })),
+      pathParams: { ...original.pathParams },
+      cookies: original.cookies?.map((c) => ({ ...c })),
+      body: cloneRequestBody(original.body),
+      auth: cloneRequestAuth(original.auth),
+      contextVars: original.contextVars.map((v) => ({ ...v })),
+      extractions: original.extractions.map((e) => ({ ...e })),
+      assertions: original.assertions.map((a) => ({ ...a })),
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  // Mirror addFolder's tree behavior — only the new top-level folder
+  // needs a tree entry when `parentId === null`.
+  let next: WorkspaceSynced = synced;
+  next = pushChild(next, src.parentId, { kind: 'folder', id: newRootId });
+
+  return {
+    synced: {
+      ...next,
+      collections: { ...next.collections, folders, requests },
+      meta: { ...next.meta, updatedAt: now },
+    },
+    folder: folders[newRootId] ?? null,
+  };
+}
+
+function cloneRequestBody(body: ApiRequest['body']): ApiRequest['body'] {
+  if (body.type === 'form-data') {
+    return {
+      ...body,
+      formRows: body.formRows?.map((row) => ({ ...row })) ?? body.formRows,
+    };
+  }
+  if (body.type === 'binary') {
+    return {
+      ...body,
+      attachment: body.attachment ? { ...body.attachment } : undefined,
+    };
+  }
+  return { ...body };
+}
+
+function cloneRequestAuth(auth: RequestAuth): RequestAuth {
+  // Every RequestAuth variant in `@apicircle/shared` is a flat record of
+  // string / number / null primitives — no nested objects, arrays, Maps,
+  // Dates, or binary. A single-level spread preserves the discriminant
+  // and copies every field by value. The `as RequestAuth` cast is safe
+  // because TS narrows the spread of a union back to the same union.
+  return { ...auth };
+}
+
 // --- internal helpers --------------------------------------------------------
 
 function pushChild(

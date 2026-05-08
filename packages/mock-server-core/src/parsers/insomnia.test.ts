@@ -45,8 +45,10 @@ describe('parseInsomniaToEndpoints', () => {
   it('synthesizes a 200 + JSON Content-Type for every request', () => {
     const { endpoints } = parseInsomniaToEndpoints(INSOMNIA_EXPORT);
     for (const e of endpoints) {
-      expect(e.status).toBe(200);
-      expect(e.headers.find((h) => h.key === 'Content-Type')?.value).toBe('application/json');
+      expect(e.defaultResponse.status).toBe(200);
+      expect(e.defaultResponse.headers.find((h) => h.key === 'Content-Type')?.value).toBe(
+        'application/json',
+      );
     }
   });
 

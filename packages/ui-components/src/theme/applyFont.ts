@@ -6,15 +6,13 @@
 // the primary face isn't installed and the webfont hasn't loaded yet. The
 // "system-mono" preset is the safe default — it picks each OS's native
 // monospace font and never depends on an external download.
+//
+// The `FontFamilyId` union itself lives in `@apicircle/shared/types.ts`
+// because it's persisted on `WorkspaceLocal.ui.fontId` so font choice
+// switches with the workspace (parity with `themeId`).
 
-export type FontFamilyId =
-  | 'system-mono'
-  | 'jetbrains-mono'
-  | 'fira-code'
-  | 'cascadia-code'
-  | 'ibm-plex-mono'
-  | 'system-sans'
-  | 'inter';
+import type { FontFamilyId } from '@apicircle/shared';
+export type { FontFamilyId } from '@apicircle/shared';
 
 export interface FontFamilyDef {
   id: FontFamilyId;
@@ -84,36 +82,24 @@ export const ALL_FONTS: ReadonlyArray<FontFamilyDef> = [
   },
 ];
 
-const FONT_STORAGE_KEY = 'apicircle-v2:font';
 const WEBFONT_LINK_ATTR = 'data-apicircle-font';
 
 export function getFontDef(id: FontFamilyId): FontFamilyDef {
   return ALL_FONTS.find((f) => f.id === id) ?? ALL_FONTS[0];
 }
 
-/** Apply the font: inject the webfont stylesheet (if any) + write CSS var. */
+/**
+ * Apply the font: inject the webfont stylesheet (if any) + write CSS
+ * var. The chosen font is persisted on `WorkspaceLocal.ui.fontId` (the
+ * store calls applyFont after hydrate / switch / create) — this
+ * function no longer touches localStorage.
+ */
 export function applyFont(id: FontFamilyId): void {
   if (typeof document === 'undefined') return;
   const def = getFontDef(id);
   document.documentElement.style.setProperty('--app-font', def.stack);
   document.documentElement.setAttribute('data-font', id);
   if (def.webfontHref) ensureWebfontLink(def.webfontHref);
-  try {
-    localStorage.setItem(FONT_STORAGE_KEY, id);
-  } catch {
-    // localStorage unavailable — non-fatal
-  }
-}
-
-export function getStoredFontId(): FontFamilyId {
-  if (typeof localStorage === 'undefined') return 'system-mono';
-  try {
-    const stored = localStorage.getItem(FONT_STORAGE_KEY);
-    if (stored && ALL_FONTS.some((f) => f.id === stored)) return stored as FontFamilyId;
-  } catch {
-    // ignore
-  }
-  return 'system-mono';
 }
 
 function ensureWebfontLink(href: string): void {

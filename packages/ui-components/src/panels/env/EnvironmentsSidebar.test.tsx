@@ -61,7 +61,10 @@ describe('EnvironmentsSidebar', () => {
     const originalConfirm = window.confirm;
     window.confirm = () => true;
     try {
-      await userEvent.click(screen.getByLabelText('Delete dev'));
+      // Walk through the kebab menu — the inline icon row was collapsed
+      // into a single ⋮ menu in Phase 3.
+      await userEvent.click(screen.getByLabelText('Environment actions for dev'));
+      await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }));
     } finally {
       window.confirm = originalConfirm;
     }

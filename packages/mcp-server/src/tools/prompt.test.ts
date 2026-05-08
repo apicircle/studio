@@ -20,6 +20,7 @@ function freshState(): { synced: WorkspaceSynced; local: WorkspaceLocal } {
       collections: { tree: { id: 'r', type: 'root', children: [] }, requests: {}, folders: {} },
       environments: { items: {}, activeName: null, priorityOrder: [] },
       linkedWorkspaces: {},
+      linkedOverrides: { requests: {}, environmentVars: {} },
       releases: { self: null, perLink: {} },
       globalAssets: { schemas: {}, graphql: {} },
       mockServers: {},
@@ -28,7 +29,6 @@ function freshState(): { synced: WorkspaceSynced; local: WorkspaceLocal } {
     local: {
       schemaVersion: 1,
       workspaceId: 'ws-1',
-      overrides: { items: {} },
       executionPlans: {},
       history: { requestRuns: [], planRuns: [] },
       secretIndex: { entries: {} },

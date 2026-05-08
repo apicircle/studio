@@ -50,7 +50,7 @@ export function HeadersTab({ request }: HeadersTabProps) {
               checked={row.enabled}
               onChange={(e) => update(index, { enabled: e.target.checked })}
               aria-label={`Enable header ${index + 1}`}
-              style={{ accentColor: 'var(--purple)' }}
+              style={{ accentColor: 'rgb(var(--accent))' }}
             />
             <HeaderKeyAutocomplete
               value={row.key}

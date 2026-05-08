@@ -18,6 +18,7 @@ import SwaggerParser from '@apidevtools/swagger-parser';
 import yaml from 'js-yaml';
 import type { HttpMethod, MockEndpoint } from '@apicircle/shared';
 import { schemaToExample, type JsonSchemaLike } from '../faker/schemaToExample';
+import { buildMockEndpoint } from './buildEndpoint';
 
 const SUPPORTED_METHODS: ReadonlyArray<HttpMethod> = [
   'GET',
@@ -148,15 +149,13 @@ function buildEndpointFromOp(
 
   const headers = pickResponseHeaders(response, contentType);
 
-  return {
+  return buildMockEndpoint({
     id: `op-${index}-${method.toLowerCase()}-${slug(path)}`,
     method,
     pathPattern: path,
-    status,
-    headers,
-    body,
     example: exampleName,
-  };
+    response: { status, headers, body },
+  });
 }
 
 function pickResponsePayload(
@@ -228,11 +227,10 @@ function pickResponsePayload(
   };
 }
 
-function pickResponseHeaders(
-  response: OpenApiResponse,
-  contentType: string,
-): MockEndpoint['headers'] {
-  const headers: MockEndpoint['headers'] = [{ key: 'Content-Type', value: contentType }];
+type ParsedHeader = { key: string; value: string };
+
+function pickResponseHeaders(response: OpenApiResponse, contentType: string): ParsedHeader[] {
+  const headers: ParsedHeader[] = [{ key: 'Content-Type', value: contentType }];
   if (response.headers) {
     for (const [name, def] of Object.entries(response.headers)) {
       if (name.toLowerCase() === 'content-type') continue;

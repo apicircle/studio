@@ -298,6 +298,35 @@ describe('GitHubClient.getBranchHead', () => {
   });
 });
 
+describe('GitHubClient.listBranches', () => {
+  it('returns every branch normalized to { name, commitSha } and caps at per_page=100', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse([
+        { name: 'main', commit: { sha: 'aaa' } },
+        { name: 'develop', commit: { sha: 'bbb' } },
+        { name: 'feature/x', commit: { sha: 'ccc' } },
+      ]),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const branches = await client.listBranches('tok', 'me', 'api');
+    expect(branches).toEqual([
+      { name: 'main', commitSha: 'aaa' },
+      { name: 'develop', commitSha: 'bbb' },
+      { name: 'feature/x', commitSha: 'ccc' },
+    ]);
+    const url = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).toBe('https://api.github.com/repos/me/api/branches?per_page=100');
+  });
+
+  it('encodes owner / repo containing slashes or special chars', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () => jsonResponse([]));
+    const client = new GitHubClient({ fetchImpl });
+    await client.listBranches('tok', 'my org', 'api/v2');
+    const url = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).toBe('https://api.github.com/repos/my%20org/api%2Fv2/branches?per_page=100');
+  });
+});
+
 describe('GitHubClient.createBranch', () => {
   it('POSTs the ref body with the supplied SHA + repo path', async () => {
     const fetchImpl: typeof fetch = vi.fn(async () =>
@@ -528,6 +557,189 @@ describe('GitHubClient.searchMarketplaceRepos', () => {
     const client = new GitHubClient({ fetchImpl });
     const repos = await client.searchMarketplaceRepos('tok', 'x');
     expect(repos).toEqual([]);
+  });
+
+  it('omits the Authorization header when called anonymously (token = null)', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () => jsonResponse({ items: [] }));
+    const client = new GitHubClient({ fetchImpl });
+    await client.searchMarketplaceRepos(null, 'payments');
+    const [, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
+    const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers.Authorization).toBeUndefined();
+    expect(headers.Accept).toBe('application/vnd.github+json');
+  });
+
+  it('still sends the Bearer header when a token is supplied', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () => jsonResponse({ items: [] }));
+    const client = new GitHubClient({ fetchImpl });
+    await client.searchMarketplaceRepos('tok-secret', 'payments');
+    const [, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
+    const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers.Authorization).toBe('Bearer tok-secret');
+  });
+});
+
+describe('GitHubClient.startDeviceFlow (B.5 OAuth)', () => {
+  it('POSTs to login/device/code with client_id + scope and returns the user-facing payload', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({
+        device_code: 'dc-abc',
+        user_code: 'WDJB-MJHT',
+        verification_uri: 'https://github.com/login/device',
+        expires_in: 900,
+        interval: 5,
+      }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const result = await client.startDeviceFlow('cid', 'repo,pull_request');
+    expect(result).toEqual({
+      deviceCode: 'dc-abc',
+      userCode: 'WDJB-MJHT',
+      verificationUri: 'https://github.com/login/device',
+      expiresIn: 900,
+      interval: 5,
+    });
+    const [url, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe('https://github.com/login/device/code');
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      client_id: 'cid',
+      scope: 'repo,pull_request',
+    });
+  });
+
+  it('throws GitHubError when GitHub returns an error payload', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({ error: 'unsupported_grant_type', error_description: 'Device flow disabled' }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    await expect(client.startDeviceFlow('cid', 'repo')).rejects.toBeInstanceOf(GitHubError);
+  });
+});
+
+describe('GitHubClient.pollDeviceToken (B.5 OAuth)', () => {
+  it('returns kind=granted with the access token on success', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({
+        access_token: 'gho_real',
+        token_type: 'bearer',
+        scope: 'repo,pull_request',
+      }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const result = await client.pollDeviceToken('cid', 'dc-abc');
+    expect(result).toEqual({
+      kind: 'granted',
+      accessToken: 'gho_real',
+      tokenType: 'bearer',
+      scope: 'repo,pull_request',
+    });
+  });
+
+  it('returns kind=pending when GitHub responds with authorization_pending', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({ error: 'authorization_pending', error_description: '...' }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const result = await client.pollDeviceToken('cid', 'dc-abc');
+    expect(result).toEqual({ kind: 'pending', slowDown: false });
+  });
+
+  it('returns kind=pending with slowDown=true on slow_down', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () => jsonResponse({ error: 'slow_down' }));
+    const client = new GitHubClient({ fetchImpl });
+    const result = await client.pollDeviceToken('cid', 'dc-abc');
+    expect(result).toEqual({ kind: 'pending', slowDown: true });
+  });
+
+  it('returns kind=expired when the device code TTL elapsed', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () => jsonResponse({ error: 'expired_token' }));
+    const client = new GitHubClient({ fetchImpl });
+    const result = await client.pollDeviceToken('cid', 'dc-abc');
+    expect(result).toEqual({ kind: 'expired' });
+  });
+
+  it('returns kind=denied when the user denied authorization', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({ error: 'access_denied', error_description: 'No.' }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const result = await client.pollDeviceToken('cid', 'dc-abc');
+    expect(result).toEqual({ kind: 'denied', reason: 'No.' });
+  });
+});
+
+describe('GitHubClient.createTag', () => {
+  it('POSTs `refs/tags/<name>` with the supplied commit SHA', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({ ref: 'refs/tags/v1.0.0', object: { sha: 'abc123' } }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const ref = await client.createTag('tok', 'me', 'api', {
+      tagName: 'v1.0.0',
+      sha: 'abc123',
+    });
+    expect(ref).toEqual({ ref: 'refs/tags/v1.0.0', sha: 'abc123' });
+    const [url, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe('https://api.github.com/repos/me/api/git/refs');
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body).toEqual({ ref: 'refs/tags/v1.0.0', sha: 'abc123' });
+  });
+
+  it('surfaces GitHubError on 422 (tag already exists)', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({ message: 'Reference already exists' }, { status: 422 }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    await expect(
+      client.createTag('tok', 'me', 'api', { tagName: 'v1.0.0', sha: 'a' }),
+    ).rejects.toBeInstanceOf(GitHubError);
+  });
+});
+
+describe('GitHubClient.createRelease', () => {
+  it('POSTs the GitHub Release payload and returns the html_url + id', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({
+        id: 12345,
+        html_url: 'https://github.com/me/api/releases/tag/v1.0.0',
+        tag_name: 'v1.0.0',
+      }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const result = await client.createRelease('tok', 'me', 'api', {
+      tagName: 'v1.0.0',
+      releaseName: 'Initial release',
+      body: 'first cut',
+    });
+    expect(result).toEqual({
+      id: 12345,
+      htmlUrl: 'https://github.com/me/api/releases/tag/v1.0.0',
+      tagName: 'v1.0.0',
+    });
+    const [url, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe('https://api.github.com/repos/me/api/releases');
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body).toEqual({
+      tag_name: 'v1.0.0',
+      name: 'Initial release',
+      body: 'first cut',
+      draft: false,
+      prerelease: false,
+    });
+  });
+
+  it('passes prerelease: true through to the request body', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({ id: 1, html_url: 'https://x', tag_name: 'v1.0.0-rc.1' }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    await client.createRelease('tok', 'me', 'api', {
+      tagName: 'v1.0.0-rc.1',
+      prerelease: true,
+    });
+    const [, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.prerelease).toBe(true);
   });
 });
 

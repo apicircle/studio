@@ -11,6 +11,7 @@
 // example, we synthesize a 200 with an empty JSON body.
 
 import type { HttpMethod, MockEndpoint } from '@apicircle/shared';
+import { buildMockEndpoint } from './buildEndpoint';
 
 interface PostmanCollection {
   info?: { name?: string; schema?: string };
@@ -84,28 +85,39 @@ export function parsePostmanToEndpoints(source: string): ParsePostmanResult {
     // the synthesized default below.
     const example = item.response?.[0];
     if (example) {
-      endpoints.push({
-        id: `pm-${endpointId++}-${slug(path)}`,
-        method,
-        pathPattern: path,
-        // Postman's `code` is the canonical numeric status; `status` is a
-        // human-readable label that *sometimes* parses as a number. Try
-        // both, fall back to 200 only when neither yields a finite number.
-        status:
-          example.code ?? (Number.isFinite(Number(example.status)) ? Number(example.status) : 200),
-        headers: (example.header ?? []).map((h) => ({ key: h.key, value: h.value })),
-        body: example.body ?? '',
-        example: example.name,
-      });
+      endpoints.push(
+        buildMockEndpoint({
+          id: `pm-${endpointId++}-${slug(path)}`,
+          name: item.name,
+          method,
+          pathPattern: path,
+          example: example.name,
+          response: {
+            // Postman's `code` is the canonical numeric status; `status` is a
+            // human-readable label that *sometimes* parses as a number. Try
+            // both, fall back to 200 only when neither yields a finite number.
+            status:
+              example.code ??
+              (Number.isFinite(Number(example.status)) ? Number(example.status) : 200),
+            headers: (example.header ?? []).map((h) => ({ key: h.key, value: h.value })),
+            body: example.body ?? '',
+          },
+        }),
+      );
     } else {
-      endpoints.push({
-        id: `pm-${endpointId++}-${slug(path)}`,
-        method,
-        pathPattern: path,
-        status: 200,
-        headers: [{ key: 'Content-Type', value: 'application/json' }],
-        body: '{}',
-      });
+      endpoints.push(
+        buildMockEndpoint({
+          id: `pm-${endpointId++}-${slug(path)}`,
+          name: item.name,
+          method,
+          pathPattern: path,
+          response: {
+            status: 200,
+            headers: [{ key: 'Content-Type', value: 'application/json' }],
+            body: '{}',
+          },
+        }),
+      );
     }
   });
 

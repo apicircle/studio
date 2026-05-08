@@ -12,14 +12,19 @@ function manualMock(id: string): MockServer {
     endpoints: [
       {
         id: 'ep1',
+        name: 'GET /health',
         method: 'GET',
         pathPattern: '/health',
-        status: 200,
-        headers: [{ key: 'Content-Type', value: 'application/json' }],
-        body: '{"ok":true}',
+        requestSchema: { pathParams: [], queryParams: [], headers: [], cookies: [] },
+        requestValidation: [],
+        responseRules: [],
+        defaultResponse: {
+          status: 200,
+          headers: [{ key: 'Content-Type', value: 'application/json', enabled: true }],
+          body: { type: 'json', content: '{"ok":true}' },
+        },
       },
     ],
-    overrides: {},
     defaultPort: 0,
     cors: { enabled: false, origins: [] },
     createdAt: T0,

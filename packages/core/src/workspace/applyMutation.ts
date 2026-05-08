@@ -3,8 +3,11 @@ import type {
   FolderNode,
   Request as ApiRequest,
   WorkspaceLocal,
+  WorkspaceSnapshot,
+  WorkspaceSnapshotTrigger,
   WorkspaceSynced,
 } from '@apicircle/shared';
+import { generateId } from '@apicircle/shared';
 import type { WorkspacePatch, WorkspaceState } from './patches';
 
 // =============================================================================
@@ -70,6 +73,20 @@ export function applyMutation(
       return applyPlanUpsert(state, patch.plan, now);
     case 'plan.delete':
       return applyPlanDelete(state, patch.id);
+    case 'history.delete_run':
+      return applyHistoryDeleteRun(state, patch.runId);
+    case 'history.delete_plan_run':
+      return applyHistoryDeletePlanRun(state, patch.planRunId);
+    case 'history.purge':
+      return applyHistoryPurge(state, patch.olderThanMs);
+    case 'snapshot.capture':
+      return applySnapshotCapture(state, patch, now);
+    case 'snapshot.delete':
+      return applySnapshotDelete(state, patch.id);
+    case 'snapshot.restore':
+      return applySnapshotRestore(state, patch.id, now);
+    case 'snapshot.set_max_bytes':
+      return applySnapshotSetMaxBytes(state, patch.maxBytes);
   }
 }
 
@@ -140,18 +157,10 @@ function applyRequestDelete(state: WorkspaceState, id: string, now: string): App
     },
     meta: { ...state.synced.meta, updatedAt: now },
   };
-  // Drop overrides whose key targets this request id.
-  const overrideEntries = Object.entries(state.local.overrides.items).filter(
-    ([, override]) => override.itemId !== id,
-  );
-  const local: WorkspaceLocal =
-    overrideEntries.length === Object.keys(state.local.overrides.items).length
-      ? state.local
-      : {
-          ...state.local,
-          overrides: { items: Object.fromEntries(overrideEntries) },
-        };
-  return { next: { synced, local }, changedIds: [id] };
+  // Linked-request overrides live on `synced.linkedOverrides.requests`
+  // and are keyed by the LINKED workspace's request id, not by an owned
+  // request id. Deleting an owned request never touches them.
+  return { next: { ...state, synced }, changedIds: [id] };
 }
 
 // ---------------------------------------------------------------------------
@@ -491,4 +500,192 @@ function removeTreeChild(
     ...tree,
     children: tree.children.filter((c) => !(c.kind === child.kind && c.id === child.id)),
   };
+}
+
+// ---------------------------------------------------------------------------
+// History handlers (WorkspaceLocal — never pushed to git). Each is pure: drop
+// the matching row(s) and return the new state. The MCP host uses these to
+// expose "delete a single run" and "purge older than N days" so users can
+// keep their local IDB footprint bounded.
+// ---------------------------------------------------------------------------
+
+function applyHistoryDeleteRun(state: WorkspaceState, runId: string): ApplyMutationResult {
+  const before = state.local.history.requestRuns;
+  const after = before.filter((r) => r.id !== runId);
+  if (after.length === before.length) {
+    return { next: state, changedIds: [] };
+  }
+  const local: WorkspaceLocal = {
+    ...state.local,
+    history: { ...state.local.history, requestRuns: after },
+  };
+  return { next: { ...state, local }, changedIds: [runId] };
+}
+
+function applyHistoryDeletePlanRun(state: WorkspaceState, planRunId: string): ApplyMutationResult {
+  const before = state.local.history.planRuns;
+  const after = before.filter((r) => r.id !== planRunId);
+  if (after.length === before.length) {
+    return { next: state, changedIds: [] };
+  }
+  const local: WorkspaceLocal = {
+    ...state.local,
+    history: { ...state.local.history, planRuns: after },
+  };
+  return { next: { ...state, local }, changedIds: [planRunId] };
+}
+
+// ---------------------------------------------------------------------------
+// Snapshot handlers (WorkspaceLocal.snapshots — never pushed to git). Each
+// snapshot is a verbatim copy of `synced` plus metadata. Capture pushes a
+// new entry and evicts oldest until total size is under `maxBytes`. Restore
+// replaces `synced` with the snapshot's stored doc and clears
+// `local.sync.lastPulledSnapshot` so the next push surfaces the restore as
+// a logical re-fork rather than a no-op.
+// ---------------------------------------------------------------------------
+
+function approxJsonByteLength(value: unknown): number {
+  // JSON.stringify is the closest proxy to what IDB will persist; encoding
+  // costs are ~1 byte/char for ASCII payloads. Multi-byte chars under-count
+  // slightly, which is fine — the cap is a soft eviction trigger, not a
+  // hard quota.
+  try {
+    return JSON.stringify(value).length;
+  } catch {
+    return 0;
+  }
+}
+
+function evictSnapshotsToCap(
+  entries: WorkspaceSnapshot[],
+  maxBytes: number,
+): { entries: WorkspaceSnapshot[]; evictedIds: string[] } {
+  if (!Number.isFinite(maxBytes) || maxBytes <= 0) {
+    return { entries, evictedIds: [] };
+  }
+  let total = entries.reduce((sum, e) => sum + e.sizeBytes, 0);
+  if (total <= maxBytes) return { entries, evictedIds: [] };
+  // Sort oldest-first so we drop the front of the list. We rebuild the
+  // array rather than mutating it in place.
+  const sorted = [...entries].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const evictedIds: string[] = [];
+  while (total > maxBytes && sorted.length > 0) {
+    const dropped = sorted.shift()!;
+    evictedIds.push(dropped.id);
+    total -= dropped.sizeBytes;
+  }
+  // Restore newest-first ordering so callers' "first entry is most recent"
+  // assumption holds (the History panel renders in this order).
+  return {
+    entries: sorted.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    evictedIds,
+  };
+}
+
+function applySnapshotCapture(
+  state: WorkspaceState,
+  args: { trigger: WorkspaceSnapshotTrigger; note?: string; id?: string },
+  now: string,
+): ApplyMutationResult {
+  const id = args.id ?? generateId();
+  const snapshot: WorkspaceSnapshot = {
+    id,
+    createdAt: now,
+    triggeredBy: args.trigger,
+    note: args.note,
+    workspaceSyncedSnapshot: state.synced,
+    sizeBytes: approxJsonByteLength(state.synced),
+  };
+  const ledger = state.local.snapshots;
+  // Newest-first so the History panel can iterate without sorting.
+  const merged = [snapshot, ...ledger.entries];
+  const { entries, evictedIds } = evictSnapshotsToCap(merged, ledger.maxBytes);
+  const local: WorkspaceLocal = {
+    ...state.local,
+    snapshots: { ...ledger, entries },
+  };
+  return { next: { ...state, local }, changedIds: [id, ...evictedIds] };
+}
+
+function applySnapshotDelete(state: WorkspaceState, id: string): ApplyMutationResult {
+  const before = state.local.snapshots.entries;
+  const after = before.filter((s) => s.id !== id);
+  if (after.length === before.length) {
+    return { next: state, changedIds: [] };
+  }
+  const local: WorkspaceLocal = {
+    ...state.local,
+    snapshots: { ...state.local.snapshots, entries: after },
+  };
+  return { next: { ...state, local }, changedIds: [id] };
+}
+
+function applySnapshotRestore(state: WorkspaceState, id: string, now: string): ApplyMutationResult {
+  const target = state.local.snapshots.entries.find((s) => s.id === id);
+  if (!target) {
+    return { next: state, changedIds: [] };
+  }
+  // The synced doc replaces wholesale. The snapshot's own meta.updatedAt
+  // is preserved so the user can see how stale the restored state was;
+  // top-level workspace updatedAt re-stamps to `now` so downstream
+  // consumers (the diff summary, last-pull tracker) see the change.
+  const synced: WorkspaceSynced = {
+    ...target.workspaceSyncedSnapshot,
+    meta: { ...target.workspaceSyncedSnapshot.meta, updatedAt: now },
+  };
+  // Restore is logically a re-fork: anything in the upstream remote will
+  // diverge from our restored state. Clear `lastPulledSnapshot` so the
+  // diff summary surfaces every restored entry as "new" against remote.
+  const local: WorkspaceLocal = {
+    ...state.local,
+    sync: {
+      ...state.local.sync,
+      lastPulledSnapshot: null,
+      lastPulledSha: null,
+    },
+  };
+  return { next: { synced, local }, changedIds: [id] };
+}
+
+function applySnapshotSetMaxBytes(state: WorkspaceState, maxBytes: number): ApplyMutationResult {
+  if (maxBytes < 0) maxBytes = 0;
+  const ledger = state.local.snapshots;
+  const { entries, evictedIds } = evictSnapshotsToCap(ledger.entries, maxBytes);
+  const local: WorkspaceLocal = {
+    ...state.local,
+    snapshots: { entries, maxBytes },
+  };
+  return { next: { ...state, local }, changedIds: evictedIds };
+}
+
+function applyHistoryPurge(state: WorkspaceState, olderThanMs: number): ApplyMutationResult {
+  // `olderThanMs` is the cutoff age in milliseconds. Runs whose `startedAt`
+  // is older than `now - olderThanMs` get dropped. Pass 0 to clear
+  // everything; pass Number.POSITIVE_INFINITY to be a no-op.
+  const cutoff = Date.now() - olderThanMs;
+  const dropped: string[] = [];
+  const requestRuns = state.local.history.requestRuns.filter((r) => {
+    const t = Date.parse(r.startedAt);
+    if (Number.isFinite(t) && t < cutoff) {
+      dropped.push(r.id);
+      return false;
+    }
+    return true;
+  });
+  const planRuns = state.local.history.planRuns.filter((r) => {
+    const t = Date.parse(r.startedAt);
+    if (Number.isFinite(t) && t < cutoff) {
+      dropped.push(r.id);
+      return false;
+    }
+    return true;
+  });
+  if (dropped.length === 0) {
+    return { next: state, changedIds: [] };
+  }
+  const local: WorkspaceLocal = {
+    ...state.local,
+    history: { ...state.local.history, requestRuns, planRuns },
+  };
+  return { next: { ...state, local }, changedIds: dropped };
 }

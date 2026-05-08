@@ -11,10 +11,13 @@ describe('TopBar', () => {
     expect(screen.getByText('API Circle Studio')).toBeInTheDocument();
   });
 
-  it('shows workspace name when set', async () => {
+  it('shows workspace name when set (B.6 — via WorkspaceSwitcher button)', async () => {
     await renderWithStore(<TopBar />);
-    // Default name from createEmptyWorkspace.
-    expect(screen.getByText('/ My Workspace')).toBeInTheDocument();
+    // Default name from createEmptyWorkspace, exposed via the
+    // WorkspaceSwitcher trigger button.
+    expect(screen.getByRole('button', { name: /Switch workspace/ })).toHaveTextContent(
+      'My Workspace',
+    );
   });
 
   it('opens the secret vault when its button is clicked', async () => {

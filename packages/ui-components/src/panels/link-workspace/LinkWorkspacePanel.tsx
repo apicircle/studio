@@ -1,19 +1,23 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
+  ArrowDown,
+  ChevronDown,
   GitBranch,
   Globe,
   Key,
   Link2,
   Notebook,
   Package,
+  Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
   ShieldAlert,
   Star,
   Trash2,
 } from 'lucide-react';
-import { GitHubError, MissingScopeError } from '@apicircle/git';
+import { type GitHubBranch, type GitHubRepo, GitHubError, MissingScopeError } from '@apicircle/git';
 import { sortVersionsDesc } from '@apicircle/core';
 import type { LinkedWorkspace } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
@@ -25,6 +29,7 @@ export function LinkWorkspacePanel() {
   const links = useWorkspaceStore((s) => s.synced?.linkedWorkspaces ?? {});
 
   const linkArray = Object.values(links);
+  const hasSession = session !== null;
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
@@ -38,28 +43,26 @@ export function LinkWorkspacePanel() {
       <p className="max-w-2xl text-xs text-text-muted">
         Pull collections, environments, and releases from another workspace. Each linked workspace
         is pinned to a specific version — pin changes always require explicit confirmation. Public
-        marketplace search arrives in a later slice; private links work today.
+        marketplace search runs anonymously; linking a workspace (public or private) needs a GitHub
+        session.
       </p>
 
-      {session === null ? (
-        <NoSessionCard />
-      ) : (
-        <>
-          <div className="flex flex-wrap gap-2">
-            <LinkPrivateForm />
-            <MarketplaceSearchForm />
-          </div>
-          {linkArray.length > 0 && (
-            <section className="space-y-3">
-              <h2 className="text-xs font-medium uppercase tracking-wider text-text-dim">
-                Linked workspaces
-              </h2>
-              {linkArray.map((link) => (
-                <LinkCard key={link.id} link={link} />
-              ))}
-            </section>
-          )}
-        </>
+      <div className="flex flex-wrap gap-2">
+        <LinkPrivateForm hasSession={hasSession} />
+        <MarketplaceSearchForm />
+      </div>
+
+      {!hasSession && <NoSessionCard />}
+
+      {linkArray.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-xs font-medium uppercase tracking-wider text-text-dim">
+            Linked workspaces
+          </h2>
+          {linkArray.map((link) => (
+            <LinkCard key={link.id} link={link} />
+          ))}
+        </section>
       )}
     </div>
   );
@@ -71,11 +74,12 @@ function NoSessionCard() {
     <div className="max-w-2xl rounded-sm border border-border bg-card p-4">
       <div className="mb-2 flex items-center gap-2 text-sm text-text-primary">
         <ShieldAlert size={14} className="text-amber" aria-hidden="true" />
-        Connect GitHub first
+        Connect GitHub to link a workspace
       </div>
       <p className="mb-3 text-xs text-text-muted">
-        Linking another workspace fetches its <code>workspace.json</code> via the GitHub API. You
-        need an active session in the Secret Vault → Sessions tab.
+        You can browse the public marketplace without signing in. Linking a workspace (public or
+        private) fetches its <code>workspace.json</code> via the GitHub API and needs an active
+        session in the Secret Vault → Sessions tab.
       </p>
       <button
         type="button"
@@ -88,14 +92,16 @@ function NoSessionCard() {
   );
 }
 
-function LinkPrivateForm() {
+function LinkPrivateForm({ hasSession }: { hasSession: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex h-8 items-center gap-2 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20"
+        disabled={!hasSession}
+        title={hasSession ? undefined : 'Connect GitHub in Secret Vault to link a workspace'}
+        className="inline-flex h-8 items-center gap-2 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-50"
       >
         <Link2 size={13} />
         Link a private workspace
@@ -126,6 +132,8 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
   const searchMarketplace = useWorkspaceStore((s) => s.searchMarketplace);
   const linkPublicWorkspace = useWorkspaceStore((s) => s.linkPublicWorkspace);
   const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
+  const openSecretVault = useWorkspaceStore((s) => s.openSecretVault);
+  const hasSession = useWorkspaceStore((s) => s.local?.sessions.github != null);
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<
@@ -199,6 +207,19 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
             Searches public GitHub repos tagged <code>topic:apicircle-marketplace</code>. Linking
             uses the repo&apos;s default branch.
           </p>
+          {!hasSession && (
+            <p className="text-[11px] text-text-dim">
+              Browsing is anonymous. To link a result, connect GitHub in the{' '}
+              <button
+                type="button"
+                onClick={openSecretVault}
+                className="text-accent underline-offset-2 hover:underline"
+              >
+                Secret Vault
+              </button>
+              .
+            </p>
+          )}
           <div className="flex gap-2">
             <input
               value={query}
@@ -238,8 +259,13 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
                     <button
                       type="button"
                       onClick={() => setConfirmTarget(repo)}
-                      disabled={linking !== null}
-                      className="ml-auto inline-flex h-6 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[10px] text-accent hover:bg-accent/20 disabled:opacity-50"
+                      disabled={linking !== null || !hasSession}
+                      title={
+                        hasSession
+                          ? undefined
+                          : 'Connect GitHub in Secret Vault to link this workspace'
+                      }
+                      className="ml-auto inline-flex h-6 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[10px] text-accent hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <Link2 size={10} />
                       Link
@@ -300,26 +326,211 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
 
 function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const linkPrivateWorkspace = useWorkspaceStore((s) => s.linkPrivateWorkspace);
+  const listAccessibleRepos = useWorkspaceStore((s) => s.listAccessibleRepos);
+  const listRepoBranches = useWorkspaceStore((s) => s.listRepoBranches);
+  const probeLinkedRepoVersions = useWorkspaceStore((s) => s.probeLinkedRepoVersions);
   const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
-  const [repoFullName, setRepoFullName] = useState('');
-  const [branch, setBranch] = useState('main');
-  const [pin, setPin] = useState('');
+
+  // Combobox / dropdown state.
+  const [repos, setRepos] = useState<GitHubRepo[] | null>(null);
+  const [reposError, setReposError] = useState<string | null>(null);
+  const [loadingRepos, setLoadingRepos] = useState(false);
+  const [filter, setFilter] = useState('');
+  const [showRepoList, setShowRepoList] = useState(false);
+  const [selectedRepo, setSelectedRepo] = useState<GitHubRepo | null>(null);
+
+  const [branches, setBranches] = useState<GitHubBranch[] | null>(null);
+  const [branchesError, setBranchesError] = useState<string | null>(null);
+  const [loadingBranches, setLoadingBranches] = useState(false);
+  const [selectedBranch, setSelectedBranch] = useState<string>('');
+
+  const [probe, setProbe] = useState<{
+    workspaceName: string;
+    versions: string[];
+    currentVersion: string | null;
+  } | null>(null);
+  const [probeError, setProbeError] = useState<string | null>(null);
+  const [loadingProbe, setLoadingProbe] = useState(false);
+  const [pinChoice, setPinChoice] = useState<'currentVersion' | 'specific'>('currentVersion');
+  const [specificPin, setSpecificPin] = useState<string>('');
+
+  // Manual-entry escape hatch for repos that don't show up in /user/repos
+  // (e.g. private repos in orgs the user has explicit grants on but isn't
+  // a formal member of). Toggling this mode hides the combobox + dropdowns
+  // and shows free-text inputs that match the pre-B.1 flow.
+  const [manualMode, setManualMode] = useState(false);
+  const [manualRepo, setManualRepo] = useState('');
+  const [manualBranch, setManualBranch] = useState('main');
+  const [manualPin, setManualPin] = useState('');
+
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch the user's accessible repos when the modal opens. Cached for
+  // the lifetime of the modal — closing + reopening re-fetches so a
+  // newly-created repo shows up without a hard reload.
+  useEffect(() => {
+    if (!open || manualMode) return;
+    let cancelled = false;
+    setLoadingRepos(true);
+    setReposError(null);
+    setRepos(null);
+    listAccessibleRepos()
+      .then((list) => {
+        if (cancelled) return;
+        setRepos(list);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        if (err instanceof MissingScopeError) {
+          surfaceMissingScope(err.missingScopes);
+          setReposError(`Missing required scopes: ${err.missingScopes.join(', ')}`);
+        } else if (err instanceof Error) {
+          setReposError(err.message);
+        } else {
+          setReposError('Failed to load repos');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingRepos(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, manualMode, listAccessibleRepos, surfaceMissingScope]);
+
+  // Fetch branches whenever the user picks a repo.
+  useEffect(() => {
+    if (!selectedRepo) {
+      setBranches(null);
+      setSelectedBranch('');
+      return;
+    }
+    let cancelled = false;
+    setLoadingBranches(true);
+    setBranchesError(null);
+    setBranches(null);
+    listRepoBranches(selectedRepo.owner, selectedRepo.name)
+      .then((list) => {
+        if (cancelled) return;
+        setBranches(list);
+        // Default to the repo's default branch when present, else first.
+        const preferred =
+          list.find((b) => b.name === selectedRepo.defaultBranch)?.name ?? list[0]?.name ?? '';
+        setSelectedBranch(preferred);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        if (err instanceof Error) setBranchesError(err.message);
+        else setBranchesError('Failed to load branches');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingBranches(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRepo, listRepoBranches]);
+
+  // Probe workspace.json on the selected branch — populates the pin
+  // dropdown. Returning null means the branch has no workspace.json,
+  // which we surface as a soft error so the Link button can be disabled.
+  useEffect(() => {
+    if (!selectedRepo || !selectedBranch) {
+      setProbe(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingProbe(true);
+    setProbeError(null);
+    setProbe(null);
+    setPinChoice('currentVersion');
+    setSpecificPin('');
+    probeLinkedRepoVersions(selectedRepo.owner, selectedRepo.name, selectedBranch)
+      .then((result) => {
+        if (cancelled) return;
+        setProbe(result);
+        if (!result) {
+          setProbeError(
+            `No workspace.json on ${selectedRepo.owner}/${selectedRepo.name}@${selectedBranch}.`,
+          );
+        }
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        if (err instanceof Error) setProbeError(err.message);
+        else setProbeError('Failed to probe workspace.json');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingProbe(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRepo, selectedBranch, probeLinkedRepoVersions]);
+
+  const filteredRepos = useMemo(() => {
+    if (!repos) return [];
+    const trimmed = filter.trim().toLowerCase();
+    if (trimmed.length === 0) return repos.slice(0, 50);
+    return repos
+      .filter(
+        (r) =>
+          r.fullName.toLowerCase().includes(trimmed) ||
+          r.name.toLowerCase().includes(trimmed) ||
+          r.owner.toLowerCase().includes(trimmed),
+      )
+      .slice(0, 50);
+  }, [repos, filter]);
 
   const reset = () => {
-    setRepoFullName('');
-    setBranch('main');
-    setPin('');
+    setSelectedRepo(null);
+    setBranches(null);
+    setSelectedBranch('');
+    setProbe(null);
+    setPinChoice('currentVersion');
+    setSpecificPin('');
+    setFilter('');
+    setShowRepoList(false);
+    setManualMode(false);
+    setManualRepo('');
+    setManualBranch('main');
+    setManualPin('');
     setError(null);
   };
 
-  const onSubmit = () => {
-    if (!repoFullName.trim() || !branch.trim()) {
-      setError('Repo and branch are required');
-      return;
+  const guidedReady =
+    !manualMode &&
+    Boolean(selectedRepo) &&
+    Boolean(selectedBranch) &&
+    probe !== null &&
+    !loadingProbe;
+
+  const manualReady = manualMode && manualRepo.trim().includes('/') && manualBranch.trim();
+
+  const submitDisabled = (manualMode ? !manualReady : !guidedReady) || submitting;
+
+  const linkArgs = (): {
+    repoFullName: string;
+    branch: string;
+    pinnedVersion?: string;
+  } => {
+    if (manualMode) {
+      return {
+        repoFullName: manualRepo.trim(),
+        branch: manualBranch.trim(),
+        pinnedVersion: manualPin.trim() || undefined,
+      };
     }
+    const fullName = `${selectedRepo!.owner}/${selectedRepo!.name}`;
+    const pinnedVersion =
+      pinChoice === 'specific' && specificPin ? specificPin : (probe?.currentVersion ?? undefined);
+    return { repoFullName: fullName, branch: selectedBranch, pinnedVersion };
+  };
+
+  const onSubmit = () => {
+    if (submitDisabled) return;
     setError(null);
     setConfirmOpen(true);
   };
@@ -327,11 +538,7 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
   const onConfirm = async () => {
     setSubmitting(true);
     try {
-      await linkPrivateWorkspace({
-        repoFullName,
-        branch,
-        pinnedVersion: pin.trim() || undefined,
-      });
+      await linkPrivateWorkspace(linkArgs());
       setConfirmOpen(false);
       reset();
       onClose();
@@ -352,54 +559,86 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
     }
   };
 
+  const args = manualMode || guidedReady ? linkArgs() : null;
+
   return (
     <>
       <Modal open={open} onClose={onClose} title="Link a private workspace">
         <div className="space-y-3">
-          <p className="text-[11px] text-text-dim">
-            Reads <code>workspace.json</code> from the source branch using your active GitHub
-            session. The cached release ledger is stored under <code>releases.perLink[id]</code>.
-          </p>
-          <div>
-            <label htmlFor="link-repo-input" className="block text-[11px] text-text-dim">
-              Repo full name
-            </label>
-            <input
-              id="link-repo-input"
-              value={repoFullName}
-              onChange={(e) => setRepoFullName(e.target.value)}
-              placeholder="org/payments-api"
-              aria-label="Linked repo full name"
-              className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-[11px] text-text-dim">
+              Reads <code>workspace.json</code> from the source branch using your active GitHub
+              session. The cached release ledger is stored under <code>releases.perLink[id]</code>.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setManualMode((v) => !v);
+                setError(null);
+              }}
+              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[10px] text-text-muted hover:border-border-strong hover:text-text-primary"
+              aria-label={manualMode ? 'Switch to repo browser' : 'Switch to manual entry'}
+            >
+              <Pencil size={10} />
+              {manualMode ? 'Browse repos' : 'Manual entry'}
+            </button>
+          </div>
+
+          {manualMode ? (
+            <ManualLinkInputs
+              repo={manualRepo}
+              setRepo={setManualRepo}
+              branch={manualBranch}
+              setBranch={setManualBranch}
+              pin={manualPin}
+              setPin={setManualPin}
             />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label htmlFor="link-branch-input" className="block text-[11px] text-text-dim">
-                Branch
-              </label>
-              <input
-                id="link-branch-input"
-                value={branch}
-                onChange={(e) => setBranch(e.target.value)}
-                aria-label="Linked branch"
-                className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+          ) : (
+            <>
+              <RepoCombobox
+                loading={loadingRepos}
+                error={reposError}
+                filter={filter}
+                setFilter={setFilter}
+                showList={showRepoList}
+                setShowList={setShowRepoList}
+                repos={filteredRepos}
+                selectedRepo={selectedRepo}
+                onPick={(r) => {
+                  setSelectedRepo(r);
+                  setShowRepoList(false);
+                  setFilter('');
+                }}
+                onClear={() => {
+                  setSelectedRepo(null);
+                  setShowRepoList(false);
+                  setFilter('');
+                }}
               />
-            </div>
-            <div>
-              <label htmlFor="link-pin-input" className="block text-[11px] text-text-dim">
-                Pin version (optional)
-              </label>
-              <input
-                id="link-pin-input"
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                placeholder="1.0.0"
-                aria-label="Pin version"
-                className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
-              />
-            </div>
-          </div>
+              {selectedRepo && (
+                <BranchPicker
+                  loading={loadingBranches}
+                  error={branchesError}
+                  branches={branches}
+                  selected={selectedBranch}
+                  onPick={setSelectedBranch}
+                  defaultBranch={selectedRepo.defaultBranch}
+                />
+              )}
+              {selectedRepo && selectedBranch && (
+                <PinPicker
+                  loading={loadingProbe}
+                  error={probeError}
+                  probe={probe}
+                  pinChoice={pinChoice}
+                  onPinChoiceChange={setPinChoice}
+                  specificPin={specificPin}
+                  onSpecificPinChange={setSpecificPin}
+                />
+              )}
+            </>
+          )}
+
           {error && (
             <p className="text-xs text-danger" role="alert">
               {error}
@@ -416,7 +655,7 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
             <button
               type="button"
               onClick={onSubmit}
-              disabled={submitting || !repoFullName.trim()}
+              disabled={submitDisabled}
               className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
             >
               <Link2 size={11} />
@@ -430,18 +669,22 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
         title="Link this workspace?"
         confirmLabel="Link"
         description={
-          <p>
-            About to link <code>{repoFullName}</code>@<code>{branch}</code>
-            {pin.trim() ? (
-              <>
-                {' '}
-                pinned at <code>v{pin.trim()}</code>
-              </>
-            ) : (
-              ' (pin defaults to source currentVersion)'
-            )}
-            .
-          </p>
+          args ? (
+            <p>
+              About to link <code>{args.repoFullName}</code>@<code>{args.branch}</code>
+              {args.pinnedVersion ? (
+                <>
+                  {' '}
+                  pinned at <code>v{args.pinnedVersion}</code>
+                </>
+              ) : (
+                ' (unpinned — tracks the source workspace’s latest)'
+              )}
+              .
+            </p>
+          ) : (
+            <p>Loading…</p>
+          )
         }
         onCancel={() => setConfirmOpen(false)}
         onConfirm={onConfirm}
@@ -456,9 +699,24 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
   const unlinkWorkspace = useWorkspaceStore((s) => s.unlinkWorkspace);
   const pinLinkedVersion = useWorkspaceStore((s) => s.pinLinkedVersion);
   const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
+  const previewLinkedUpdateForLink = useWorkspaceStore((s) => s.previewLinkedUpdateForLink);
+  const clearLinkedOverridesFor = useWorkspaceStore((s) => s.clearLinkedOverridesFor);
+  const overrideCount = useWorkspaceStore((s) => {
+    if (!s.synced) return 0;
+    let n = 0;
+    for (const o of Object.values(s.synced.linkedOverrides.requests)) {
+      if (o.linkedWorkspaceId === link.id) n += 1;
+    }
+    for (const o of Object.values(s.synced.linkedOverrides.environmentVars)) {
+      if (o.linkedWorkspaceId === link.id) n += 1;
+    }
+    return n;
+  });
   const [refreshing, setRefreshing] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [unlinkOpen, setUnlinkOpen] = useState(false);
+  const [discardAllOpen, setDiscardAllOpen] = useState(false);
   const [pendingPin, setPendingPin] = useState<string | null | undefined>(undefined);
   const [changelogOpen, setChangelogOpen] = useState(false);
 
@@ -482,6 +740,24 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
       }
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  const onReviewUpdate = async () => {
+    setPreviewing(true);
+    setRefreshError(null);
+    try {
+      await previewLinkedUpdateForLink(link.id);
+    } catch (err) {
+      if (err instanceof MissingScopeError) {
+        surfaceMissingScope(err.missingScopes);
+      } else if (err instanceof Error) {
+        setRefreshError(err.message);
+      } else {
+        setRefreshError('Preview failed');
+      }
+    } finally {
+      setPreviewing(false);
     }
   };
 
@@ -552,7 +828,19 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
 
       <RequiredKeysSection link={link} />
 
-      <div className="mt-3 flex gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
+        {updatesAvailable && (
+          <button
+            type="button"
+            onClick={() => void onReviewUpdate()}
+            disabled={previewing}
+            aria-label={`Review update to v${ledger?.currentVersion}`}
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-warning/40 bg-warning/10 px-3 text-xs text-warning hover:bg-warning/20 disabled:opacity-50"
+          >
+            <ArrowDown size={11} />
+            {previewing ? 'Loading preview…' : `Review update → v${ledger?.currentVersion}`}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => void onRefresh()}
@@ -571,6 +859,17 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
           <Notebook size={11} />
           Changelog
         </button>
+        {overrideCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setDiscardAllOpen(true)}
+            aria-label={`Discard all ${overrideCount} local modification${overrideCount === 1 ? '' : 's'} for ${link.name}`}
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-danger/40 hover:text-danger"
+          >
+            <RotateCcw size={11} />
+            Discard {overrideCount} mod{overrideCount === 1 ? '' : 's'}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setUnlinkOpen(true)}
@@ -580,6 +879,24 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
           Unlink
         </button>
       </div>
+
+      <ConfirmDialog
+        open={discardAllOpen}
+        title={`Discard all modifications for ${link.name}?`}
+        tone="danger"
+        confirmLabel="Discard all"
+        description={
+          <p>
+            Drops every request and env-var override for this linked workspace. The pinned version
+            is unchanged. This cannot be undone.
+          </p>
+        }
+        onCancel={() => setDiscardAllOpen(false)}
+        onConfirm={() => {
+          clearLinkedOverridesFor(link.id);
+          setDiscardAllOpen(false);
+        }}
+      />
 
       <LinkedChangelogModal
         open={changelogOpen}
@@ -647,7 +964,7 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
 
 function LinkedRequestsList({ linkId }: { linkId: string }) {
   const snapshot = useWorkspaceStore((s) => s.local?.linkedCollections[linkId] ?? null);
-  const overrides = useWorkspaceStore((s) => s.local?.overrides.items ?? {});
+  const overrides = useWorkspaceStore((s) => s.synced?.linkedOverrides.requests ?? {});
   const setActiveLinkedRequest = useWorkspaceStore((s) => s.setActiveLinkedRequest);
   const [open, setOpen] = useState(false);
   const requests = snapshot ? Object.values(snapshot.collections.requests) : [];
@@ -709,6 +1026,11 @@ function LinkedChangelogModal({
       .filter((v): v is NonNullable<typeof v> => v !== undefined);
   }, [ledger]);
 
+  // Skip the body when the modal isn't open so we don't pay (or crash) on
+  // children evaluation — Modal returns null on `open=false` but JSX
+  // children are computed eagerly before being passed to it.
+  if (!open) return null;
+
   return (
     <Modal open={open} onClose={onClose} title={`${link.name} — changelog`} className="max-w-2xl">
       <div className="space-y-2">
@@ -755,12 +1077,14 @@ function LinkedChangelogModal({
                   ) : (
                     <p className="mt-1 text-[11px] text-text-dim italic">no release notes</p>
                   )}
-                  <p
-                    className="mt-1 font-mono text-[10px] text-text-dim"
-                    title={entry.workspaceSnapshot}
-                  >
-                    snapshot {entry.workspaceSnapshot.slice(0, 12)}…
-                  </p>
+                  {entry.workspaceSnapshot && (
+                    <p
+                      className="mt-1 font-mono text-[10px] text-text-dim"
+                      title={entry.workspaceSnapshot}
+                    >
+                      snapshot {entry.workspaceSnapshot.slice(0, 12)}…
+                    </p>
+                  )}
                 </li>
               );
             })}
@@ -777,6 +1101,318 @@ function LinkedChangelogModal({
         </div>
       </div>
     </Modal>
+  );
+}
+
+function RepoCombobox({
+  loading,
+  error,
+  filter,
+  setFilter,
+  showList,
+  setShowList,
+  repos,
+  selectedRepo,
+  onPick,
+  onClear,
+}: {
+  loading: boolean;
+  error: string | null;
+  filter: string;
+  setFilter: (v: string) => void;
+  showList: boolean;
+  setShowList: (v: boolean) => void;
+  repos: GitHubRepo[];
+  selectedRepo: GitHubRepo | null;
+  onPick: (r: GitHubRepo) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div>
+      <label htmlFor="link-repo-combobox" className="block text-[11px] text-text-dim">
+        Repository
+      </label>
+      {selectedRepo ? (
+        <div className="mt-1 flex items-center gap-2 rounded-sm border border-accent/40 bg-accent/10 px-2 py-1.5 text-xs">
+          <Package size={11} className="shrink-0 text-accent" aria-hidden="true" />
+          <code className="flex-1 truncate font-mono text-text-primary">
+            {selectedRepo.fullName}
+          </code>
+          <span className="rounded-sm border border-border bg-card px-1.5 py-0.5 text-[10px] text-text-dim">
+            {selectedRepo.visibility}
+          </span>
+          <button
+            type="button"
+            onClick={onClear}
+            aria-label="Change repository"
+            className="text-[10px] text-text-dim hover:text-text-primary"
+          >
+            Change
+          </button>
+        </div>
+      ) : (
+        <div className="relative mt-1">
+          <input
+            id="link-repo-combobox"
+            value={filter}
+            onChange={(e) => {
+              setFilter(e.target.value);
+              if (!showList) setShowList(true);
+            }}
+            onFocus={() => setShowList(true)}
+            placeholder={
+              loading ? 'Loading your repositories…' : 'Filter accessible repos by name or owner…'
+            }
+            aria-label="Filter accessible repos"
+            aria-controls="link-repo-options"
+            aria-expanded={showList}
+            role="combobox"
+            disabled={loading}
+            className="h-8 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none disabled:opacity-50"
+          />
+          {showList && repos.length > 0 && (
+            <ul
+              id="link-repo-options"
+              role="listbox"
+              className="absolute left-0 right-0 top-full z-10 mt-1 max-h-64 overflow-y-auto rounded-sm border border-border bg-card shadow-elevated"
+            >
+              {repos.map((r) => (
+                <li key={r.fullName}>
+                  <button
+                    type="button"
+                    onClick={() => onPick(r)}
+                    role="option"
+                    aria-label={`Pick ${r.fullName}`}
+                    className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs text-text-muted hover:bg-surface hover:text-text-primary"
+                  >
+                    <code className="flex-1 truncate font-mono">{r.fullName}</code>
+                    <span className="shrink-0 rounded-sm border border-border bg-surface px-1 py-0.5 text-[10px] text-text-dim">
+                      {r.visibility}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {showList && !loading && repos.length === 0 && filter.trim().length > 0 && (
+            <p className="mt-1 text-[11px] text-text-dim">No repos match.</p>
+          )}
+        </div>
+      )}
+      {error && (
+        <p className="mt-1 text-[11px] text-danger" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function BranchPicker({
+  loading,
+  error,
+  branches,
+  selected,
+  onPick,
+  defaultBranch,
+}: {
+  loading: boolean;
+  error: string | null;
+  branches: GitHubBranch[] | null;
+  selected: string;
+  onPick: (b: string) => void;
+  defaultBranch: string;
+}) {
+  return (
+    <div>
+      <label htmlFor="link-branch-select" className="block text-[11px] text-text-dim">
+        Branch
+      </label>
+      {loading ? (
+        <p className="mt-1 text-[11px] text-text-dim">Loading branches…</p>
+      ) : error ? (
+        <p className="mt-1 text-[11px] text-danger" role="alert">
+          {error}
+        </p>
+      ) : branches && branches.length > 0 ? (
+        <div className="relative mt-1">
+          <select
+            id="link-branch-select"
+            value={selected}
+            onChange={(e) => onPick(e.target.value)}
+            aria-label="Pick a branch"
+            className="h-8 w-full appearance-none rounded-sm border border-border bg-surface px-2 pr-7 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+          >
+            {branches.map((b) => (
+              <option key={b.name} value={b.name}>
+                {b.name}
+                {b.name === defaultBranch ? ' · default' : ''}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            size={12}
+            aria-hidden="true"
+            className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-text-faint"
+          />
+        </div>
+      ) : (
+        <p className="mt-1 text-[11px] text-text-dim">No branches found.</p>
+      )}
+    </div>
+  );
+}
+
+function PinPicker({
+  loading,
+  error,
+  probe,
+  pinChoice,
+  onPinChoiceChange,
+  specificPin,
+  onSpecificPinChange,
+}: {
+  loading: boolean;
+  error: string | null;
+  probe: { workspaceName: string; versions: string[]; currentVersion: string | null } | null;
+  pinChoice: 'currentVersion' | 'specific';
+  onPinChoiceChange: (c: 'currentVersion' | 'specific') => void;
+  specificPin: string;
+  onSpecificPinChange: (v: string) => void;
+}) {
+  const sortedVersions = useMemo(() => (probe ? sortVersionsDesc(probe.versions) : []), [probe]);
+
+  if (loading) {
+    return <p className="text-[11px] text-text-dim">Probing workspace.json on this branch…</p>;
+  }
+  if (error) {
+    return (
+      <p className="text-[11px] text-danger" role="alert">
+        {error}
+      </p>
+    );
+  }
+  if (!probe) return null;
+
+  return (
+    <div className="rounded-sm border border-border-subtle bg-surface p-2">
+      <p className="mb-1.5 text-[11px] text-text-dim">
+        Source workspace: <strong className="text-text-primary">{probe.workspaceName}</strong>
+        {probe.currentVersion && (
+          <span className="ml-2 rounded-sm border border-border bg-card px-1 py-0.5 font-mono text-[10px]">
+            currentVersion v{probe.currentVersion}
+          </span>
+        )}
+      </p>
+      <fieldset className="flex flex-col gap-1">
+        <legend className="sr-only">Pin version</legend>
+        <label className="flex items-center gap-1.5 text-[11px] text-text-muted">
+          <input
+            type="radio"
+            name="pin-choice"
+            value="currentVersion"
+            checked={pinChoice === 'currentVersion'}
+            onChange={() => onPinChoiceChange('currentVersion')}
+            aria-label="Pin to source currentVersion"
+            style={{ accentColor: 'rgb(var(--accent))' }}
+          />
+          {probe.currentVersion
+            ? `Pin to currentVersion (v${probe.currentVersion})`
+            : 'Track latest (source has no published versions yet)'}
+        </label>
+        <label className="flex items-center gap-1.5 text-[11px] text-text-muted">
+          <input
+            type="radio"
+            name="pin-choice"
+            value="specific"
+            checked={pinChoice === 'specific'}
+            onChange={() => onPinChoiceChange('specific')}
+            disabled={sortedVersions.length === 0}
+            aria-label="Pin to a specific version"
+            style={{ accentColor: 'rgb(var(--accent))' }}
+          />
+          Pin to a specific version
+          {sortedVersions.length === 0 && (
+            <span className="text-[10px] text-text-dim">(no published versions)</span>
+          )}
+        </label>
+        {pinChoice === 'specific' && sortedVersions.length > 0 && (
+          <select
+            value={specificPin || sortedVersions[0]}
+            onChange={(e) => onSpecificPinChange(e.target.value)}
+            aria-label="Specific version to pin"
+            className="ml-5 h-7 rounded-sm border border-border bg-card px-2 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none"
+          >
+            {sortedVersions.map((v) => (
+              <option key={v} value={v}>
+                v{v}
+              </option>
+            ))}
+          </select>
+        )}
+      </fieldset>
+    </div>
+  );
+}
+
+function ManualLinkInputs({
+  repo,
+  setRepo,
+  branch,
+  setBranch,
+  pin,
+  setPin,
+}: {
+  repo: string;
+  setRepo: (v: string) => void;
+  branch: string;
+  setBranch: (v: string) => void;
+  pin: string;
+  setPin: (v: string) => void;
+}) {
+  return (
+    <>
+      <div>
+        <label htmlFor="link-repo-input" className="block text-[11px] text-text-dim">
+          Repo full name
+        </label>
+        <input
+          id="link-repo-input"
+          value={repo}
+          onChange={(e) => setRepo(e.target.value)}
+          placeholder="org/payments-api"
+          aria-label="Linked repo full name"
+          className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label htmlFor="link-branch-input" className="block text-[11px] text-text-dim">
+            Branch
+          </label>
+          <input
+            id="link-branch-input"
+            value={branch}
+            onChange={(e) => setBranch(e.target.value)}
+            aria-label="Linked branch"
+            className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+          />
+        </div>
+        <div>
+          <label htmlFor="link-pin-input" className="block text-[11px] text-text-dim">
+            Pin version (optional)
+          </label>
+          <input
+            id="link-pin-input"
+            value={pin}
+            onChange={(e) => setPin(e.target.value)}
+            placeholder="1.0.0"
+            aria-label="Pin version"
+            className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+          />
+        </div>
+      </div>
+    </>
   );
 }
 

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Copy, Download, FileDown, GripVertical, Plus, Trash2 } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
+import { KebabMenu } from '../../primitives/KebabMenu';
 import { ImportModal } from '../editor/ImportModal';
 
 export function EnvironmentsSidebar() {
@@ -206,7 +207,7 @@ export function EnvironmentsSidebar() {
                   onChange={() => toggleSelected(name)}
                   aria-label={`${isSelected ? 'Remove' : 'Add'} ${name} from global environment layer`}
                   className="h-3 w-3 cursor-pointer"
-                  style={{ accentColor: 'var(--purple)' }}
+                  style={{ accentColor: 'rgb(var(--accent))' }}
                 />
                 <button
                   type="button"
@@ -218,33 +219,34 @@ export function EnvironmentsSidebar() {
                   <span className="truncate">{name}</span>
                 </button>
                 <span className="text-[10px] text-text-dim">{env.variables.length}</span>
-                <button
-                  type="button"
-                  onClick={() => duplicateEnvironment(name)}
-                  className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-text-faint opacity-0 transition-opacity hover:text-text-primary group-hover:opacity-100 focus:opacity-100"
-                  aria-label={`Duplicate ${name}`}
-                  title={`Duplicate ${name}`}
-                >
-                  <Copy size={12} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onExport(name)}
-                  className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-text-faint opacity-0 transition-opacity hover:text-text-primary group-hover:opacity-100 focus:opacity-100"
-                  aria-label={`Export ${name}`}
-                  title={`Export ${name} as JSON`}
-                >
-                  <FileDown size={12} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onDelete(name)}
-                  className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-text-faint opacity-0 transition-opacity hover:text-danger group-hover:opacity-100 focus:opacity-100"
-                  aria-label={`Delete ${name}`}
-                  title={`Delete ${name}`}
-                >
-                  <Trash2 size={12} />
-                </button>
+                <KebabMenu
+                  ariaLabel={`Environment actions for ${name}`}
+                  size="sm"
+                  items={[
+                    {
+                      id: 'duplicate',
+                      label: 'Duplicate',
+                      icon: <Copy size={12} aria-hidden="true" />,
+                      onSelect: () => duplicateEnvironment(name),
+                    },
+                    {
+                      id: 'export',
+                      label: 'Export as JSON',
+                      icon: <FileDown size={12} aria-hidden="true" />,
+                      onSelect: () => onExport(name),
+                    },
+                    {
+                      id: 'delete',
+                      label: 'Delete',
+                      icon: <Trash2 size={12} aria-hidden="true" />,
+                      tone: 'danger',
+                      onSelect: () => onDelete(name),
+                    },
+                  ]}
+                />
+                {/* Suppress lint on no-longer-imported icons. The lucide
+                    imports stay because they're used inside the KebabMenu
+                    items above as icon nodes. */}
               </div>
             </li>
           );

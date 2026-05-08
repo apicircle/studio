@@ -42,6 +42,7 @@ function makeWorkspace(): WorkspaceState {
         priorityOrder: ['dev'],
       },
       linkedWorkspaces: {},
+      linkedOverrides: { requests: {}, environmentVars: {} },
       releases: { self: null, perLink: {} },
       globalAssets: { schemas: {}, graphql: {} },
       mockServers: {},
@@ -57,7 +58,6 @@ function makeWorkspace(): WorkspaceState {
     local: {
       schemaVersion: 1,
       workspaceId: 'ws',
-      overrides: { items: {} },
       executionPlans: {},
       history: { requestRuns: [], planRuns: [] },
       secretIndex: { entries: {} },

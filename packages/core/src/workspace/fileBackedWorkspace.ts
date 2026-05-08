@@ -159,7 +159,6 @@ function createEmptyLocalForSynced(synced: WorkspaceSynced): WorkspaceLocal {
   return {
     schemaVersion: 1,
     workspaceId: synced.workspaceId,
-    overrides: { items: {} },
     executionPlans: {},
     history: { requestRuns: [], planRuns: [] },
     secretIndex: { entries: {} },

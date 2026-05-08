@@ -18,6 +18,7 @@ function makeSynced(overrides: Partial<WorkspaceSynced> = {}): WorkspaceSynced {
     collections: { tree: { id: 'root', type: 'root', children: [] }, requests: {}, folders: {} },
     environments: { items: {}, activeName: null, priorityOrder: [] },
     linkedWorkspaces: {},
+    linkedOverrides: { requests: {}, environmentVars: {} },
     releases: { self: null, perLink: {} },
     globalAssets: { schemas: {}, graphql: {} },
     mockServers: {},
@@ -30,7 +31,6 @@ function makeLocal(overrides: Partial<WorkspaceLocal> = {}): WorkspaceLocal {
   return {
     schemaVersion: 1,
     workspaceId: 'ws-1',
-    overrides: { items: {} },
     executionPlans: {},
     history: { requestRuns: [], planRuns: [] },
     secretIndex: { entries: {} },
@@ -136,7 +136,11 @@ describe('applyMutation — request', () => {
     expect(out.changedIds).toEqual([]);
   });
 
-  it('deletes a request and clears matching local overrides', () => {
+  it('deletes a request and leaves linked-workspace overrides untouched (overrides target source-side requests)', () => {
+    // Linked-request overrides live on `synced.linkedOverrides.requests`
+    // and are keyed by the LINKED workspace's request id, not by an owned
+    // request id. Deleting an owned request must not collateral-damage
+    // them — the test pins this invariant.
     const state = {
       synced: makeSynced({
         collections: {
@@ -144,10 +148,8 @@ describe('applyMutation — request', () => {
           requests: { r1: makeRequest('r1') },
           folders: {},
         },
-      }),
-      local: makeLocal({
-        overrides: {
-          items: {
+        linkedOverrides: {
+          requests: {
             'lw1:r1': {
               linkedWorkspaceId: 'lw1',
               itemId: 'r1',
@@ -161,17 +163,22 @@ describe('applyMutation — request', () => {
               updatedAt: T0,
             },
           },
+          environmentVars: {},
         },
       }),
+      local: makeLocal(),
     };
     const out = applyMutation(state, { kind: 'request.delete', id: 'r1' }, { now: T1 });
     expect(out.next.synced.collections.requests['r1']).toBeUndefined();
     expect(out.next.synced.collections.tree.children).toEqual([]);
-    expect(Object.keys(out.next.local.overrides.items)).toEqual(['lw1:other']);
+    // Linked overrides untouched — both keys still present.
+    expect(Object.keys(out.next.synced.linkedOverrides.requests).sort()).toEqual(
+      ['lw1:other', 'lw1:r1'].sort(),
+    );
     expect(out.changedIds).toEqual(['r1']);
   });
 
-  it('delete leaves local untouched when no overrides matched', () => {
+  it('delete leaves local untouched (no override-cleanup walks local anymore)', () => {
     const state = {
       synced: makeSynced({
         collections: {
@@ -589,7 +596,6 @@ describe('applyMutation — mocks', () => {
     name: 'Petstore',
     source: { kind: 'manual' as const, endpoints: [] },
     endpoints: [],
-    overrides: {},
     defaultPort: null,
     cors: { enabled: false, origins: [] as string[] },
     createdAt: T0,

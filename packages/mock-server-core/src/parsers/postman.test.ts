@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import type { MockEndpoint } from '@apicircle/shared';
 import { parsePostmanToEndpoints } from './postman';
+
+const status = (e: MockEndpoint) => e.defaultResponse.status;
+const bodyContent = (e: MockEndpoint) =>
+  e.defaultResponse.body.type === 'json' ||
+  e.defaultResponse.body.type === 'text' ||
+  e.defaultResponse.body.type === 'xml' ||
+  e.defaultResponse.body.type === 'urlencoded'
+    ? e.defaultResponse.body.content
+    : '';
 
 const POSTMAN_COLLECTION = JSON.stringify({
   info: { name: 'Petstore', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/' },
@@ -46,8 +56,8 @@ describe('parsePostmanToEndpoints', () => {
     const { endpoints } = parsePostmanToEndpoints(POSTMAN_COLLECTION);
     const list = endpoints.find((e) => e.method === 'GET');
     expect(list).toBeDefined();
-    expect(list!.status).toBe(200);
-    expect(list!.body).toBe('[{"id":1,"name":"Fido"}]');
+    expect(status(list!)).toBe(200);
+    expect(bodyContent(list!)).toBe('[{"id":1,"name":"Fido"}]');
     expect(list!.example).toBe('Two pets');
   });
 
@@ -55,8 +65,8 @@ describe('parsePostmanToEndpoints', () => {
     const { endpoints } = parsePostmanToEndpoints(POSTMAN_COLLECTION);
     const create = endpoints.find((e) => e.method === 'POST');
     expect(create).toBeDefined();
-    expect(create!.status).toBe(200);
-    expect(create!.body).toBe('{}');
+    expect(status(create!)).toBe(200);
+    expect(bodyContent(create!)).toBe('{}');
   });
 
   it('extracts the path from absolute URLs', () => {
@@ -147,8 +157,8 @@ describe('parsePostmanToEndpoints', () => {
       ],
     });
     const { endpoints } = parsePostmanToEndpoints(collection);
-    expect(endpoints[0].status).toBe(200);
-    expect(endpoints[0].body).toBe('{}');
+    expect(status(endpoints[0])).toBe(200);
+    expect(bodyContent(endpoints[0])).toBe('{}');
   });
 
   it('reads code from `status` string when `code` is missing', () => {
@@ -163,6 +173,6 @@ describe('parsePostmanToEndpoints', () => {
       ],
     });
     const { endpoints } = parsePostmanToEndpoints(collection);
-    expect(endpoints[0].status).toBe(503);
+    expect(status(endpoints[0])).toBe(503);
   });
 });

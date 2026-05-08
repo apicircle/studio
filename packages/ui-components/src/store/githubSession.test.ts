@@ -203,4 +203,121 @@ describe('workspaceStore — GitHub session', () => {
       await expect(useWorkspaceStore.getState().disconnectGitHubSession()).resolves.toBeUndefined();
     });
   });
+
+  describe('connectGitHubSessionViaDeviceFlow (B.5)', () => {
+    it('throws when VITE_GITHUB_OAUTH_CLIENT_ID is not configured', async () => {
+      // import.meta.env.VITE_GITHUB_OAUTH_CLIENT_ID is undefined by
+      // default in the test bundle.
+      await expect(
+        useWorkspaceStore.getState().connectGitHubSessionViaDeviceFlow({
+          onCodeReady: () => {},
+        }),
+      ).rejects.toThrow(/VITE_GITHUB_OAUTH_CLIENT_ID/);
+    });
+
+    it('orchestrates device-code → poll-pending → granted → session vaulted', async () => {
+      // vi.stubEnv mutates the SAME import.meta.env object the SUT reads.
+      vi.stubEnv('VITE_GITHUB_OAUTH_CLIENT_ID', 'test-client-id');
+
+      // Track calls: 1) startDeviceFlow, 2) pending poll, 3) granted poll,
+      // 4) getViewer (called from connectGitHubSession after grant).
+      const responses = [
+        // startDeviceFlow → user_code + device_code
+        {
+          body: {
+            device_code: 'dc-abc',
+            user_code: 'WDJB-MJHT',
+            verification_uri: 'https://github.com/login/device',
+            expires_in: 900,
+            interval: 0, // no real wait so the test runs quickly
+          },
+        },
+        // First poll → pending
+        { body: { error: 'authorization_pending' } },
+        // Second poll → granted
+        {
+          body: {
+            access_token: 'gho_real',
+            token_type: 'bearer',
+            scope: 'repo,pull_request',
+          },
+        },
+        // getViewer call from connectGitHubSession with the granted token
+        {
+          body: { login: 'me', id: 1 },
+          headers: { 'x-oauth-scopes': 'repo, pull_request' },
+        },
+      ];
+      let callIdx = 0;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          const spec = responses[callIdx++];
+          return new Response(JSON.stringify(spec.body), {
+            status: 200,
+            headers: { 'content-type': 'application/json', ...(spec.headers ?? {}) },
+          });
+        }),
+      );
+
+      let codeReady: { userCode: string; verificationUri: string } | null = null;
+      const session = await useWorkspaceStore.getState().connectGitHubSessionViaDeviceFlow({
+        onCodeReady: (info) => {
+          codeReady = info;
+        },
+      });
+
+      // The user-facing code surfaced via the onCodeReady callback.
+      expect(codeReady).not.toBeNull();
+      expect(codeReady!.userCode).toBe('WDJB-MJHT');
+      expect(codeReady!.verificationUri).toBe('https://github.com/login/device');
+
+      // The session was vaulted via the standard PAT flow (encrypted +
+      // surfaced on local.sessions.github).
+      expect(session.accountLogin).toBe('me');
+      expect(session.grantedScopes).toContain('repo');
+      expect(useWorkspaceStore.getState().local?.sessions.github?.accountLogin).toBe('me');
+
+      vi.unstubAllEnvs();
+    });
+
+    it('surfaces a clear error when GitHub returns access_denied', async () => {
+      const meta = import.meta as { env: Record<string, string | undefined> };
+      const originalEnv = meta.env.VITE_GITHUB_OAUTH_CLIENT_ID;
+      meta.env.VITE_GITHUB_OAUTH_CLIENT_ID = 'test-client-id';
+
+      try {
+        const responses = [
+          {
+            body: {
+              device_code: 'dc-abc',
+              user_code: 'WDJB-MJHT',
+              verification_uri: 'https://github.com/login/device',
+              expires_in: 900,
+              interval: 0,
+            },
+          },
+          { body: { error: 'access_denied', error_description: 'User refused' } },
+        ];
+        let callIdx = 0;
+        vi.stubGlobal(
+          'fetch',
+          vi.fn(async () => {
+            const spec = responses[callIdx++];
+            return new Response(JSON.stringify(spec.body), {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            });
+          }),
+        );
+
+        await expect(
+          useWorkspaceStore.getState().connectGitHubSessionViaDeviceFlow({ onCodeReady: () => {} }),
+        ).rejects.toThrow(/denied/);
+      } finally {
+        meta.env.VITE_GITHUB_OAUTH_CLIENT_ID = originalEnv;
+        vi.unstubAllEnvs();
+      }
+    });
+  });
 });

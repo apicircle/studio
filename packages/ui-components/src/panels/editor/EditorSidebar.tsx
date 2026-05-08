@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   ChevronRight,
+  Copy,
   Download,
   FilePlus2,
   Folder as FolderIcon,
@@ -15,8 +16,10 @@ import type { Folder, Request as ApiRequest } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { isNameAvailableInFolder } from '../../store/editorActions';
 import { cn } from '../../primitives/cn';
+import { KebabMenu } from '../../primitives/KebabMenu';
 import { FolderAuthModal } from './FolderAuthModal';
 import { ImportModal } from './ImportModal';
+import { LinkedWorkspaceTreeSection } from './LinkedWorkspaceTreeSection';
 
 const METHOD_COLOR: Record<string, string> = {
   GET: 'text-http-get',
@@ -44,6 +47,8 @@ export function EditorSidebar() {
   const removeFolder = useWorkspaceStore((s) => s.removeFolder);
   const renameRequest = useWorkspaceStore((s) => s.renameRequest);
   const renameFolder = useWorkspaceStore((s) => s.renameFolder);
+  const duplicateRequest = useWorkspaceStore((s) => s.duplicateRequest);
+  const duplicateFolder = useWorkspaceStore((s) => s.duplicateFolder);
   const setActiveRequestId = useWorkspaceStore((s) => s.setActiveRequestId);
   const [importOpen, setImportOpen] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
@@ -214,6 +219,8 @@ export function EditorSidebar() {
             onAddFolderInside={(parentId) => startCreate('folder', parentId)}
             onRemoveRequest={removeRequest}
             onRemoveFolder={removeFolder}
+            onDuplicateRequest={duplicateRequest}
+            onDuplicateFolder={duplicateFolder}
             onEditFolderAuth={setAuthModalFolderId}
             renamingKey={renamingKey}
             onStartRename={setRenamingKey}
@@ -234,6 +241,8 @@ export function EditorSidebar() {
           />
         ))}
       </ul>
+      <LinkedWorkspaceTreeSection />
+
       {authModalFolderId && folders[authModalFolderId] && (
         <FolderAuthModal
           folder={folders[authModalFolderId]}
@@ -258,6 +267,8 @@ interface TreeNodeProps {
   onAddFolderInside: (parentId: string) => void;
   onRemoveRequest: (id: string) => void;
   onRemoveFolder: (id: string) => void;
+  onDuplicateRequest: (id: string) => string | null;
+  onDuplicateFolder: (id: string) => string | null;
   onEditFolderAuth: (folderId: string) => void;
   renamingKey: string | null;
   onStartRename: (key: string | null) => void;
@@ -290,6 +301,8 @@ function TreeNode(props: TreeNodeProps) {
     onAddFolderInside,
     onRemoveRequest,
     onRemoveFolder,
+    onDuplicateRequest,
+    onDuplicateFolder,
     onEditFolderAuth,
     renamingKey,
     onStartRename,
@@ -356,69 +369,79 @@ function TreeNode(props: TreeNodeProps) {
               <span className="ml-1 text-[10px] text-text-dim">{children.length}</span>
             </button>
           )}
-          {!isRenaming && (
-            <button
-              type="button"
-              onClick={() => onStartRename(renameKey)}
-              className="shrink-0 text-text-faint opacity-0 transition-opacity hover:text-text-primary group-hover:opacity-100"
-              aria-label={`Rename folder ${folder.name}`}
-              title="Rename folder"
-            >
-              <Pencil size={12} />
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => onAddRequestInside(folder.id)}
-            className="shrink-0 text-text-faint opacity-0 transition-opacity hover:text-text-primary group-hover:opacity-100"
-            aria-label={`New request in ${folder.name}`}
-            title="New request in folder"
-          >
-            <FilePlus2 size={12} />
-          </button>
-          <button
-            type="button"
-            onClick={() => onAddFolderInside(folder.id)}
-            className="shrink-0 text-text-faint opacity-0 transition-opacity hover:text-text-primary group-hover:opacity-100"
-            aria-label={`New folder in ${folder.name}`}
-            title="New folder in folder"
-          >
-            <FolderPlus size={12} />
-          </button>
-          <button
-            type="button"
-            onClick={() => onEditFolderAuth(folder.id)}
-            className={cn(
-              'shrink-0 transition-opacity',
-              folder.auth && folder.auth.type !== 'none' && folder.auth.type !== 'inherit'
-                ? 'text-accent opacity-100'
-                : 'text-text-faint opacity-0 hover:text-text-primary group-hover:opacity-100',
+          {/* Auth flag — small accent dot when the folder has its own
+              auth set (anything other than inherit/none). Click opens
+              the auth modal. The kebab menu also includes "Edit auth"
+              for keyboard discovery. */}
+          {!isRenaming &&
+            folder.auth &&
+            folder.auth.type !== 'none' &&
+            folder.auth.type !== 'inherit' && (
+              <button
+                type="button"
+                onClick={() => onEditFolderAuth(folder.id)}
+                aria-label={`Folder auth set (${folder.auth.type}) — edit`}
+                title={`Auth: ${folder.auth.type} — click to edit`}
+                className="shrink-0 rounded-sm p-0.5 text-accent hover:bg-accent/10"
+              >
+                <span aria-hidden="true" className="inline-block h-2 w-2 rounded-full bg-accent" />
+              </button>
             )}
-            aria-label={`Edit auth for ${folder.name}`}
-            title={
-              folder.auth && folder.auth.type !== 'none' && folder.auth.type !== 'inherit'
-                ? `Folder auth: ${folder.auth.type}`
-                : 'Set folder auth'
-            }
-          >
-            <Shield size={12} />
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (
-                window.confirm(
-                  `Delete folder "${folder.name}" and everything inside? This cannot be undone.`,
-                )
-              ) {
-                onRemoveFolder(folder.id);
-              }
-            }}
-            className="shrink-0 text-text-faint opacity-0 transition-opacity hover:text-danger group-hover:opacity-100"
-            aria-label={`Delete folder ${folder.name}`}
-          >
-            <Trash2 size={12} />
-          </button>
+          {!isRenaming && (
+            <KebabMenu
+              ariaLabel={`Folder actions for ${folder.name}`}
+              items={[
+                {
+                  id: 'rename',
+                  label: 'Rename',
+                  icon: <Pencil size={12} aria-hidden="true" />,
+                  onSelect: () => onStartRename(renameKey),
+                },
+                {
+                  id: 'new-request',
+                  label: 'New request inside',
+                  icon: <FilePlus2 size={12} aria-hidden="true" />,
+                  onSelect: () => onAddRequestInside(folder.id),
+                },
+                {
+                  id: 'new-folder',
+                  label: 'New folder inside',
+                  icon: <FolderPlus size={12} aria-hidden="true" />,
+                  onSelect: () => onAddFolderInside(folder.id),
+                },
+                {
+                  id: 'auth',
+                  label:
+                    folder.auth && folder.auth.type !== 'none' && folder.auth.type !== 'inherit'
+                      ? `Edit auth (${folder.auth.type})`
+                      : 'Set auth…',
+                  icon: <Shield size={12} aria-hidden="true" />,
+                  onSelect: () => onEditFolderAuth(folder.id),
+                },
+                {
+                  id: 'duplicate',
+                  label: 'Duplicate',
+                  icon: <Copy size={12} aria-hidden="true" />,
+                  onSelect: () => onDuplicateFolder(folder.id),
+                },
+                {
+                  id: 'delete',
+                  label: 'Delete folder',
+                  icon: <Trash2 size={12} aria-hidden="true" />,
+                  tone: 'danger',
+                  onSelect: () => {
+                    if (
+                      window.confirm(
+                        `Delete folder "${folder.name}" and everything inside? This cannot be undone.`,
+                      )
+                    ) {
+                      onRemoveFolder(folder.id);
+                    }
+                  },
+                },
+              ]}
+            />
+          )}
         </div>
         {isOpen && (
           <ul className="flex flex-col gap-0.5" role="group">
@@ -462,7 +485,7 @@ function TreeNode(props: TreeNodeProps) {
           <div className="flex flex-1 items-center gap-2">
             <span
               className={cn(
-                'shrink-0 font-medium tracking-wider',
+                'shrink-0 text-[10px] font-medium uppercase tracking-wider',
                 METHOD_COLOR[request.method] ?? 'text-text-muted',
               )}
             >
@@ -488,7 +511,7 @@ function TreeNode(props: TreeNodeProps) {
           >
             <span
               className={cn(
-                'shrink-0 font-medium tracking-wider',
+                'shrink-0 text-[10px] font-medium uppercase tracking-wider',
                 METHOD_COLOR[request.method] ?? 'text-text-muted',
               )}
             >
@@ -498,24 +521,31 @@ function TreeNode(props: TreeNodeProps) {
           </button>
         )}
         {!isRenaming && (
-          <button
-            type="button"
-            onClick={() => onStartRename(renameKey)}
-            className="shrink-0 text-text-faint opacity-0 transition-opacity hover:text-text-primary group-hover:opacity-100"
-            aria-label={`Rename ${request.name}`}
-            title="Rename"
-          >
-            <Pencil size={12} />
-          </button>
+          <KebabMenu
+            ariaLabel={`Request actions for ${request.name}`}
+            items={[
+              {
+                id: 'rename',
+                label: 'Rename',
+                icon: <Pencil size={12} aria-hidden="true" />,
+                onSelect: () => onStartRename(renameKey),
+              },
+              {
+                id: 'duplicate',
+                label: 'Duplicate',
+                icon: <Copy size={12} aria-hidden="true" />,
+                onSelect: () => onDuplicateRequest(request.id),
+              },
+              {
+                id: 'delete',
+                label: 'Delete request',
+                icon: <Trash2 size={12} aria-hidden="true" />,
+                tone: 'danger',
+                onSelect: () => onRemoveRequest(request.id),
+              },
+            ]}
+          />
         )}
-        <button
-          type="button"
-          onClick={() => onRemoveRequest(request.id)}
-          className="shrink-0 text-text-faint opacity-0 transition-opacity hover:text-danger group-hover:opacity-100"
-          aria-label={`Delete ${request.name}`}
-        >
-          <Trash2 size={12} />
-        </button>
       </div>
     </li>
   );

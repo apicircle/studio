@@ -30,7 +30,7 @@ export const PANELS: ReadonlyArray<PanelDef> = [
   { id: 'env', label: 'Environments', icon: Layers, hasSidebar: true },
   { id: 'execution', label: 'Execution', icon: PlayCircle, hasSidebar: true },
   { id: 'history', label: 'History', icon: History, hasSidebar: true },
-  { id: 'mocks', label: 'Mocks', icon: Server, hasSidebar: false },
+  { id: 'mocks', label: 'Mocks', icon: Server, hasSidebar: true },
   { id: 'mcp', label: 'MCP', icon: Bot, hasSidebar: false },
   { id: 'help', label: 'Help Center', icon: HelpCircle, hasSidebar: false },
 ];

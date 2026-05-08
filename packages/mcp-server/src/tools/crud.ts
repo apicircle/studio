@@ -247,6 +247,106 @@ export const environmentDeleteTool: AnyToolDef = {
   },
 };
 
+export const environmentSetActiveTool: AnyToolDef = {
+  name: 'environment.set_active',
+  description:
+    'Set (or clear) the active environment. Pass `name: null` to deactivate the current environment.',
+  inputSchema: z.object({ name: z.string().nullable() }),
+  async handler(input, ctx) {
+    const out = await ctx.workspace.apply({
+      kind: 'environment.setActive',
+      name: input.name,
+    });
+    return { changedIds: out.changedIds };
+  },
+};
+
+export const environmentSetPriorityTool: AnyToolDef = {
+  name: 'environment.set_priority',
+  description:
+    'Replace the global environment priority order (highest priority first). Names not in the list keep their current relative order at the end of the priority list.',
+  inputSchema: z.object({ order: z.array(z.string()) }),
+  async handler(input, ctx) {
+    const out = await ctx.workspace.apply({
+      kind: 'environment.setPriority',
+      order: input.order,
+    });
+    return { changedIds: out.changedIds };
+  },
+};
+
+export const environmentExportTool: AnyToolDef = {
+  name: 'environment.export',
+  description:
+    'Serialize an environment to a portable JSON string. Encrypted variables drop their value (only `secretKeyId` survives) so the export can be safely pasted elsewhere — re-attach secrets locally on the receiving side.',
+  inputSchema: z.object({ name: z.string() }),
+  async handler(input, ctx) {
+    const state = await ctx.workspace.read();
+    const env = state.synced.environments.items[input.name];
+    if (!env) return { ok: false as const, error: 'environment not found' as const };
+    const payload = {
+      apicircleEnvironment: 1 as const,
+      name: env.name,
+      variables: env.variables.map((v) =>
+        v.encrypted && v.secretKeyId
+          ? { key: v.key, encrypted: true as const, secretKeyId: v.secretKeyId }
+          : { key: v.key, value: v.value, encrypted: false as const },
+      ),
+    };
+    return { ok: true as const, json: JSON.stringify(payload, null, 2) };
+  },
+};
+
+export const environmentImportTool: AnyToolDef = {
+  name: 'environment.import',
+  description:
+    'Import an environment from the JSON shape produced by `environment.export`. When a target with the same name exists, pass `overwrite: true` to replace it, otherwise the import is rejected.',
+  inputSchema: z.object({
+    json: z.string().min(1),
+    overwrite: z.boolean().default(false),
+  }),
+  async handler(input, ctx) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(input.json);
+    } catch {
+      return { ok: false as const, error: 'invalid JSON' as const };
+    }
+    const obj = parsed as {
+      apicircleEnvironment?: number;
+      name?: string;
+      variables?: Array<
+        | { key: string; encrypted: true; secretKeyId: string }
+        | { key: string; encrypted: false; value: string }
+      >;
+    };
+    if (
+      obj.apicircleEnvironment !== 1 ||
+      typeof obj.name !== 'string' ||
+      !Array.isArray(obj.variables)
+    ) {
+      return { ok: false as const, error: 'unsupported export shape' as const };
+    }
+    const state = await ctx.workspace.read();
+    if (state.synced.environments.items[obj.name] && !input.overwrite) {
+      return {
+        ok: false as const,
+        error: 'environment already exists; pass overwrite:true' as const,
+      };
+    }
+    const env: Environment = {
+      name: obj.name,
+      variables: obj.variables.map((v) =>
+        v.encrypted
+          ? { key: v.key, value: '', encrypted: true, secretKeyId: v.secretKeyId }
+          : { key: v.key, value: v.value, encrypted: false },
+      ),
+    };
+    const out = await ctx.workspace.apply({ kind: 'environment.upsert', environment: env });
+    return { ok: true as const, name: env.name, changedIds: out.changedIds };
+  },
+};
+
 // ---------------------------------------------------------------------------
 // Execution plans
 // ---------------------------------------------------------------------------
@@ -333,6 +433,116 @@ export const planDeleteTool: AnyToolDef = {
   async handler(input, ctx) {
     const out = await ctx.workspace.apply({ kind: 'plan.delete', id: input.id });
     return { changedIds: out.changedIds };
+  },
+};
+
+// Granular plan-step operations. Each fetches the plan, mutates the steps
+// array, and writes the whole plan back via `plan.upsert` — keeping
+// applyMutation patches as the single source of truth.
+
+export const planAddStepTool: AnyToolDef = {
+  name: 'plan.add_step',
+  description:
+    'Append a step to an execution plan. Optional `position` (0-based) inserts at that index instead.',
+  inputSchema: z.object({
+    planId: z.string(),
+    requestId: z.string(),
+    linkedWorkspaceId: z.string().optional(),
+    position: z.number().int().nonnegative().optional(),
+  }),
+  async handler(input, ctx) {
+    const state = await ctx.workspace.read();
+    const plan = state.local.executionPlans[input.planId];
+    if (!plan) return { ok: false as const, error: 'plan not found' as const };
+    const step = {
+      requestId: input.requestId,
+      ...(input.linkedWorkspaceId ? { linkedWorkspaceId: input.linkedWorkspaceId } : {}),
+    };
+    const steps = [...plan.steps];
+    if (input.position !== undefined && input.position <= steps.length) {
+      steps.splice(input.position, 0, step);
+    } else {
+      steps.push(step);
+    }
+    const out = await ctx.workspace.apply({
+      kind: 'plan.upsert',
+      plan: { ...plan, steps, updatedAt: new Date().toISOString() },
+    });
+    return { ok: true as const, changedIds: out.changedIds };
+  },
+};
+
+export const planRemoveStepTool: AnyToolDef = {
+  name: 'plan.remove_step',
+  description: 'Remove a step from a plan by 0-based index.',
+  inputSchema: z.object({
+    planId: z.string(),
+    index: z.number().int().nonnegative(),
+  }),
+  async handler(input, ctx) {
+    const state = await ctx.workspace.read();
+    const plan = state.local.executionPlans[input.planId];
+    if (!plan) return { ok: false as const, error: 'plan not found' as const };
+    if (input.index >= plan.steps.length) {
+      return { ok: false as const, error: 'index out of range' as const };
+    }
+    const steps = plan.steps.filter((_, i) => i !== input.index);
+    const out = await ctx.workspace.apply({
+      kind: 'plan.upsert',
+      plan: { ...plan, steps, updatedAt: new Date().toISOString() },
+    });
+    return { ok: true as const, changedIds: out.changedIds };
+  },
+};
+
+export const planReorderStepsTool: AnyToolDef = {
+  name: 'plan.reorder_steps',
+  description:
+    'Replace the plan steps with a new permutation. The supplied indices must reference valid current step indices.',
+  inputSchema: z.object({
+    planId: z.string(),
+    order: z.array(z.number().int().nonnegative()),
+  }),
+  async handler(input, ctx) {
+    const state = await ctx.workspace.read();
+    const plan = state.local.executionPlans[input.planId];
+    if (!plan) return { ok: false as const, error: 'plan not found' as const };
+    if (input.order.length !== plan.steps.length) {
+      return { ok: false as const, error: 'order length must equal step count' as const };
+    }
+    const order: number[] = input.order;
+    const seen = new Set(order);
+    if (seen.size !== order.length || order.some((i: number) => i >= plan.steps.length)) {
+      return { ok: false as const, error: 'order must be a permutation of step indices' as const };
+    }
+    const steps = order.map((i: number) => plan.steps[i]);
+    const out = await ctx.workspace.apply({
+      kind: 'plan.upsert',
+      plan: { ...plan, steps, updatedAt: new Date().toISOString() },
+    });
+    return { ok: true as const, changedIds: out.changedIds };
+  },
+};
+
+const PLAN_VARIABLE = z.object({ key: z.string(), value: z.string() });
+
+export const planSetVariablesTool: AnyToolDef = {
+  name: 'plan.set_variables',
+  description:
+    'Replace the plan-scoped variables. These live highest-priority during plan runs (above environment vars, below context vars).',
+  inputSchema: z.object({
+    planId: z.string(),
+    variables: z.array(PLAN_VARIABLE),
+  }),
+  async handler(input, ctx) {
+    const state = await ctx.workspace.read();
+    const plan = state.local.executionPlans[input.planId];
+    if (!plan) return { ok: false as const, error: 'plan not found' as const };
+    const out = await ctx.workspace.apply({
+      kind: 'plan.upsert',
+      plan: { ...plan, variables: input.variables, updatedAt: new Date().toISOString() },
+    });
+    return { ok: true as const, changedIds: out.changedIds };
   },
 };
 

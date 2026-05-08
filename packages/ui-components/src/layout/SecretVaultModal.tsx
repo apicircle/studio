@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   CheckCircle2,
   ChevronDown,
@@ -11,9 +11,15 @@ import {
   RefreshCw,
   ShieldCheck,
   Trash2,
+  XCircle,
 } from 'lucide-react';
 import type { SecretEntry } from '@apicircle/shared';
-import { MissingScopeError } from '@apicircle/git';
+import {
+  GitHubError,
+  MissingScopeError,
+  RateLimitedError,
+  UnauthorizedError,
+} from '@apicircle/git';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { Modal } from '../primitives/Modal';
 import { cn } from '../primitives/cn';
@@ -372,9 +378,22 @@ function ScopeGuidance() {
 
 function ConnectForm() {
   const connect = useWorkspaceStore((s) => s.connectGitHubSession);
+  const connectViaDeviceFlow = useWorkspaceStore((s) => s.connectGitHubSessionViaDeviceFlow);
   const [token, setToken] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Device-flow state. While `code` is non-null, the polling loop is
+  // running and the UI shows the user_code + verification URL with a
+  // Cancel button.
+  const [code, setCode] = useState<{
+    userCode: string;
+    verificationUri: string;
+    expiresAt: number;
+  } | null>(null);
+  const [oauthBusy, setOauthBusy] = useState(false);
+  const [oauthError, setOauthError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const submit = async () => {
     setSubmitting(true);
@@ -395,45 +414,227 @@ function ConnectForm() {
     }
   };
 
+  const startOauth = async () => {
+    setOauthError(null);
+    setOauthBusy(true);
+    abortRef.current = new AbortController();
+    try {
+      await connectViaDeviceFlow({
+        onCodeReady: (info) => setCode(info),
+        signal: abortRef.current.signal,
+      });
+      // On success, the session card flips in.
+      setCode(null);
+    } catch (err) {
+      if (err instanceof MissingScopeError) {
+        setOauthError(
+          `Authorized account is missing required scope(s): ${err.missingScopes.join(', ')}`,
+        );
+      } else if (err instanceof Error) {
+        setOauthError(err.message);
+      } else {
+        setOauthError('OAuth sign-in failed — unknown error.');
+      }
+      setCode(null);
+    } finally {
+      setOauthBusy(false);
+      abortRef.current = null;
+    }
+  };
+
+  const cancelOauth = () => {
+    abortRef.current?.abort();
+    setCode(null);
+    setOauthBusy(false);
+  };
+
   return (
-    <div className="space-y-2 rounded-sm border border-accent/30 bg-accent/5 p-3">
-      <label htmlFor="pat-input" className="block text-xs text-text-muted">
-        Personal access token
-      </label>
-      <input
-        id="pat-input"
-        type="password"
-        value={token}
-        onChange={(e) => setToken(e.target.value)}
-        placeholder="ghp_… or github_pat_…"
-        aria-label="GitHub PAT"
-        className="h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !submitting) void submit();
-        }}
-      />
+    <div className="space-y-3">
+      <div className="space-y-2 rounded-sm border border-accent/30 bg-accent/5 p-3">
+        {code ? (
+          <DeviceFlowCard code={code} busy={oauthBusy} onCancel={cancelOauth} error={oauthError} />
+        ) : (
+          <button
+            type="button"
+            onClick={() => void startOauth()}
+            disabled={oauthBusy}
+            className="inline-flex h-8 w-full items-center justify-center gap-2 rounded-sm border border-accent/40 bg-accent/10 px-3 text-sm text-accent hover:bg-accent/20 disabled:opacity-50"
+            aria-label="Sign in with GitHub"
+          >
+            <ShieldCheck size={14} aria-hidden="true" />
+            Sign in with GitHub
+          </button>
+        )}
+        {oauthError && !code && (
+          <p className="text-[11px] text-danger" role="alert">
+            {oauthError}
+          </p>
+        )}
+        <p className="text-[10px] text-text-dim">
+          OAuth uses GitHub's device flow — no client secret stays in the browser. Configure{' '}
+          <code>VITE_GITHUB_OAUTH_CLIENT_ID</code> at build time to enable this.
+        </p>
+      </div>
+
+      <div className="space-y-2 rounded-sm border border-border bg-surface p-3">
+        <p className="text-[11px] font-medium uppercase tracking-wider text-text-dim">
+          Or — paste a personal access token
+        </p>
+        <label htmlFor="pat-input" className="block text-xs text-text-muted">
+          Personal access token
+        </label>
+        <input
+          id="pat-input"
+          type="password"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          placeholder="ghp_… or github_pat_…"
+          aria-label="GitHub PAT"
+          className="h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !submitting) void submit();
+          }}
+        />
+        {error && (
+          <p className="text-xs text-danger" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={submitting || !token.trim()}
+            className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+          >
+            {submitting ? 'Verifying…' : 'Connect'}
+          </button>
+        </div>
+        <p className="text-[11px] text-text-dim">
+          We verify the token via <code>GET /user</code> before storing it. The token is encrypted
+          with your local master key — only this browser can decrypt it.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function DeviceFlowCard({
+  code,
+  busy,
+  onCancel,
+  error,
+}: {
+  code: { userCode: string; verificationUri: string; expiresAt: number };
+  busy: boolean;
+  onCancel: () => void;
+  error: string | null;
+}) {
+  // Tick the expiry every second so the user sees the countdown move.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const remaining = Math.max(0, Math.floor((code.expiresAt - now) / 1000));
+  const minutes = Math.floor(remaining / 60);
+  const seconds = remaining % 60;
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-text-primary">
+        Open{' '}
+        <a
+          href={code.verificationUri}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="inline-flex items-center gap-1 text-accent underline-offset-2 hover:underline"
+        >
+          {code.verificationUri.replace(/^https?:\/\//, '')}
+          <ExternalLink size={11} aria-hidden="true" />
+        </a>{' '}
+        and enter this code:
+      </p>
+      <div className="flex items-center gap-2">
+        <code
+          aria-label="Device flow user code"
+          className="flex-1 select-all rounded-sm border border-accent/40 bg-card px-3 py-2 text-center font-mono text-lg tracking-widest text-text-primary"
+        >
+          {code.userCode}
+        </code>
+        <button
+          type="button"
+          onClick={() => {
+            void navigator.clipboard?.writeText(code.userCode);
+          }}
+          aria-label="Copy device flow code"
+          className="inline-flex h-9 items-center rounded-sm border border-border bg-surface px-3 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary"
+        >
+          Copy
+        </button>
+      </div>
+      <p className="text-[10px] text-text-dim">
+        Expires in{' '}
+        <strong className="text-text-primary">
+          {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
+        </strong>
+        {busy ? ' · waiting for GitHub authorization…' : ''}
+      </p>
       {error && (
-        <p className="text-xs text-danger" role="alert">
+        <p className="text-[11px] text-danger" role="alert">
           {error}
         </p>
       )}
       <div className="flex gap-2">
         <button
           type="button"
-          onClick={() => void submit()}
-          disabled={submitting || !token.trim()}
-          className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+          onClick={onCancel}
+          className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary"
         >
-          {submitting ? 'Verifying…' : 'Connect'}
+          Cancel
         </button>
       </div>
-      <p className="text-[11px] text-text-dim">
-        We verify the token via <code>GET /user</code> before storing it. The token is encrypted
-        with your local master key — only this browser can decrypt it.
-      </p>
     </div>
   );
 }
+
+// Required scopes for the in-app linking + push flow. Surfaced on the
+// session card so the user can see at a glance whether their token
+// covers everything before they hit a 403 mid-link.
+const REQUIRED_SESSION_SCOPES = ['repo'] as const;
+const RECOMMENDED_SESSION_SCOPES = ['pull_request'] as const;
+
+function ScopeChip({ name, ok, required }: { name: string; ok: boolean; required?: boolean }) {
+  const tone = ok
+    ? 'border-success/40 bg-success/10 text-success'
+    : required
+      ? 'border-danger/40 bg-danger/10 text-danger'
+      : 'border-warning/40 bg-warning/10 text-warning';
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 font-mono text-[10px] ${tone}`}
+      aria-label={`${name} scope ${ok ? 'present' : required ? 'missing (required)' : 'missing (recommended)'}`}
+      title={
+        ok
+          ? `${name}: present`
+          : required
+            ? `${name}: missing — required for linking + push`
+            : `${name}: missing — recommended for PR creation`
+      }
+    >
+      {ok ? <CheckCircle2 size={9} aria-hidden="true" /> : <XCircle size={9} aria-hidden="true" />}
+      {name}
+      {required && !ok ? '*' : ''}
+    </span>
+  );
+}
+
+type ConnectionTestResult =
+  | { kind: 'pass'; grantedScopes: string[] }
+  | {
+      kind: 'fail';
+      reason: 'unauthorized' | 'rate-limited' | 'scope' | 'network' | 'other';
+      message: string;
+    };
 
 function ActiveSessionCard() {
   const session = useWorkspaceStore((s) => s.local!.sessions.github!);
@@ -447,14 +648,67 @@ function ActiveSessionCard() {
   const [newToken, setNewToken] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
 
   const onVerify = async () => {
     setVerifying(true);
     setError(null);
+    setTestResult(null);
     try {
-      await verify();
+      const granted = await verify();
+      // verify() returns null when there's no session at all. Treat as fail.
+      if (granted === null) {
+        setTestResult({
+          kind: 'fail',
+          reason: 'other',
+          message: 'No session to test — reconnect.',
+        });
+        return;
+      }
+      setTestResult({ kind: 'pass', grantedScopes: granted });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Verify failed');
+      // Map error types to user-friendly reasons so the user knows what
+      // to fix instead of guessing from a raw stack trace.
+      if (err instanceof UnauthorizedError) {
+        setTestResult({
+          kind: 'fail',
+          reason: 'unauthorized',
+          message:
+            'Token rejected by GitHub (401). The PAT may be revoked or expired — reconnect to refresh.',
+        });
+      } else if (err instanceof RateLimitedError) {
+        setTestResult({
+          kind: 'fail',
+          reason: 'rate-limited',
+          message: 'GitHub rate-limited the verify call. Try again in a few minutes.',
+        });
+      } else if (err instanceof MissingScopeError) {
+        setTestResult({
+          kind: 'fail',
+          reason: 'scope',
+          message: `Token missing required scope(s): ${err.missingScopes.join(', ')}. Update the token from this card.`,
+        });
+      } else if (err instanceof GitHubError) {
+        setTestResult({
+          kind: 'fail',
+          reason: 'other',
+          message: `GitHub error ${err.status}: ${err.message}`,
+        });
+      } else if (err instanceof Error) {
+        // Network error / fetch failure / DNS — TypeError from fetch.
+        const isNetwork = err.name === 'TypeError' || /fetch|network/i.test(err.message);
+        setTestResult({
+          kind: 'fail',
+          reason: isNetwork ? 'network' : 'other',
+          message: isNetwork ? 'Network error — check your connection and try again.' : err.message,
+        });
+      } else {
+        setTestResult({
+          kind: 'fail',
+          reason: 'other',
+          message: 'Test failed with an unknown error.',
+        });
+      }
     } finally {
       setVerifying(false);
     }
@@ -480,7 +734,10 @@ function ActiveSessionCard() {
     }
   };
 
-  const hasPullRequest = session.grantedScopes.includes('pull_request');
+  const missingRequired = REQUIRED_SESSION_SCOPES.filter((s) => !session.grantedScopes.includes(s));
+  const missingRecommended = RECOMMENDED_SESSION_SCOPES.filter(
+    (s) => !session.grantedScopes.includes(s),
+  );
 
   return (
     <div className="space-y-3 rounded-sm border border-success/30 bg-success/5 p-3">
@@ -491,6 +748,15 @@ function ActiveSessionCard() {
         </span>
       </div>
       <dl className="grid grid-cols-[120px_1fr] gap-y-1 text-xs">
+        <dt className="text-text-dim">Required scopes</dt>
+        <dd className="flex flex-wrap items-center gap-1.5 text-text-primary">
+          {REQUIRED_SESSION_SCOPES.map((s) => (
+            <ScopeChip key={s} name={s} ok={session.grantedScopes.includes(s)} required />
+          ))}
+          {RECOMMENDED_SESSION_SCOPES.map((s) => (
+            <ScopeChip key={s} name={s} ok={session.grantedScopes.includes(s)} />
+          ))}
+        </dd>
         <dt className="text-text-dim">Granted scopes</dt>
         <dd className="text-text-primary">
           {session.grantedScopes.length > 0 ? session.grantedScopes.join(', ') : '—'}
@@ -500,10 +766,37 @@ function ActiveSessionCard() {
           {session.lastVerifiedAt ? new Date(session.lastVerifiedAt).toLocaleString() : 'never'}
         </dd>
       </dl>
-      {!hasPullRequest && (
+      {missingRequired.length > 0 && (
+        <p className="rounded-sm border border-danger/40 bg-danger/10 p-2 text-[11px] text-danger">
+          Required scope(s) missing: <code>{missingRequired.join(', ')}</code>. Linking and push to
+          save will fail until you update the token.
+        </p>
+      )}
+      {missingRequired.length === 0 && missingRecommended.length > 0 && (
         <p className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-[11px] text-warning">
-          Your token does not include the <code>pull_request</code> scope. Push to save will work,
-          but creating PRs from the app will fail until you update the token.
+          Recommended scope(s) missing: <code>{missingRecommended.join(', ')}</code>. Push to save
+          works, but creating PRs from the app will fail until you update the token.
+        </p>
+      )}
+      {testResult && (
+        <p
+          role="status"
+          className={
+            testResult.kind === 'pass'
+              ? 'flex items-start gap-1.5 rounded-sm border border-success/40 bg-success/10 p-2 text-[11px] text-success'
+              : 'flex items-start gap-1.5 rounded-sm border border-danger/40 bg-danger/10 p-2 text-[11px] text-danger'
+          }
+        >
+          {testResult.kind === 'pass' ? (
+            <CheckCircle2 size={12} aria-hidden="true" className="mt-0.5 shrink-0" />
+          ) : (
+            <XCircle size={12} aria-hidden="true" className="mt-0.5 shrink-0" />
+          )}
+          <span>
+            {testResult.kind === 'pass'
+              ? `Connection healthy — token verified, scopes refreshed.`
+              : testResult.message}
+          </span>
         </p>
       )}
       {error && (
@@ -549,10 +842,11 @@ function ActiveSessionCard() {
             type="button"
             onClick={() => void onVerify()}
             disabled={verifying}
+            aria-label="Test GitHub connection"
             className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
           >
             <RefreshCw size={12} className={verifying ? 'animate-spin' : ''} />
-            {verifying ? 'Verifying…' : 'Verify scopes'}
+            {verifying ? 'Testing…' : 'Test connection'}
           </button>
           <button
             type="button"

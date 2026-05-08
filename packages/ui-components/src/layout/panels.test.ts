@@ -19,9 +19,9 @@ describe('panels registry', () => {
     ]);
   });
 
-  it('Mocks, MCP, and Help Center have hasSidebar=false', () => {
+  it('MCP and Help Center have hasSidebar=false (Mocks gained a sidebar in the Mocks-redesign)', () => {
     const noSidebar = PANELS.filter((p) => !p.hasSidebar).map((p) => p.id);
-    expect(noSidebar).toEqual(['mocks', 'mcp', 'help']);
+    expect(noSidebar).toEqual(['mcp', 'help']);
   });
 
   it('getPanel returns the matching def', () => {

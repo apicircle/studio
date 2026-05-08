@@ -71,7 +71,9 @@ describe('EditorSidebar', () => {
     await renderWithStore(<EditorSidebar />);
     await createRequestNamed('My request');
     const id = useWorkspaceStore.getState().local!.ui.activeRequestId!;
-    await userEvent.click(screen.getByLabelText('Delete My request'));
+    // Open the kebab, then activate the Delete entry.
+    await userEvent.click(screen.getByLabelText('Request actions for My request'));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete request' }));
     expect(useWorkspaceStore.getState().synced!.collections.requests[id]).toBeUndefined();
     expect(screen.getByText(/No requests yet/i)).toBeInTheDocument();
   });

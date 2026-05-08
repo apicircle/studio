@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Download,
   ExternalLink,
+  FileDiff,
   GitBranch,
   GitMerge,
   GitPullRequest,
@@ -21,9 +22,11 @@ import { GitHubError, MissingScopeError } from '@apicircle/git';
 import {
   type DiffEntry,
   type ResolutionMap,
+  type UnpushedChange,
   generateWorkingBranchName,
   isValidSemver,
   sortVersionsDesc,
+  summarizeUnpushedChanges,
   validateBranchName,
 } from '@apicircle/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
@@ -83,6 +86,7 @@ export function WorkspacePanel() {
             Repo &amp; Working Branch
           </h2>
           {!connectedRepo ? <ConnectRepoForm /> : <RepoCard />}
+          <FirstPullPromptBanner />
         </section>
       )}
 
@@ -261,11 +265,20 @@ function ReleaseRow({
 function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const releases = useWorkspaceStore((s) => s.synced?.releases.self ?? null);
   const publishRelease = useWorkspaceStore((s) => s.publishRelease);
+  // B.4: Tag/release toggles require a working branch + repo. We disable
+  // the checkboxes (and surface a hint) when the prereqs are missing.
+  const hasGitContext = useWorkspaceStore(
+    (s) => Boolean(s.local?.connectedRepo) && Boolean(s.local?.workingBranch),
+  );
 
   const [version, setVersion] = useState('');
   const [notes, setNotes] = useState('');
+  const [createGitTag, setCreateGitTag] = useState(false);
+  const [createGitHubRelease, setCreateGitHubRelease] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [releasedUrl, setReleasedUrl] = useState<string | null>(null);
 
   const trimmedVersion = version.trim();
   const versionTaken = !!releases?.versions.find((v) => v.version === trimmedVersion);
@@ -280,7 +293,10 @@ function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => 
   const reset = () => {
     setVersion('');
     setNotes('');
+    setCreateGitTag(false);
+    setCreateGitHubRelease(false);
     setError(null);
+    setReleasedUrl(null);
   };
 
   const onSubmit = () => {
@@ -290,14 +306,27 @@ function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => 
   };
 
   const onConfirm = async () => {
+    setSubmitting(true);
     try {
-      await publishRelease({ version: trimmedVersion, notes });
+      const result = await publishRelease({
+        version: trimmedVersion,
+        notes,
+        createGitTag,
+        createGitHubRelease,
+      });
       setConfirmOpen(false);
-      reset();
-      onClose();
+      if (result.releaseUrl) {
+        // Keep the modal open so the user can copy the release URL.
+        setReleasedUrl(result.releaseUrl);
+      } else {
+        reset();
+        onClose();
+      }
     } catch (err) {
       setConfirmOpen(false);
       setError(err instanceof Error ? err.message : 'Publish failed — unknown error');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -331,28 +360,91 @@ function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => 
               className="mt-1 w-full resize-y rounded-sm border border-border bg-surface px-2 py-1.5 text-xs text-text-primary focus:border-accent focus:outline-none"
             />
           </div>
+          <fieldset className="rounded-sm border border-border-subtle bg-surface p-2">
+            <legend className="px-1 text-[10px] font-medium uppercase tracking-wider text-text-dim">
+              GitHub
+            </legend>
+            <label className="flex items-start gap-2 text-[11px] text-text-muted">
+              <input
+                type="checkbox"
+                checked={createGitTag || createGitHubRelease}
+                onChange={(e) => {
+                  setCreateGitTag(e.target.checked);
+                  if (!e.target.checked) setCreateGitHubRelease(false);
+                }}
+                disabled={!hasGitContext}
+                aria-label="Create Git tag"
+                style={{ accentColor: 'rgb(var(--accent))' }}
+                className="mt-0.5"
+              />
+              <span>
+                Create Git tag <code>v{trimmedVersion || '<version>'}</code> on the working branch
+                after publishing.
+              </span>
+            </label>
+            <label className="mt-1 flex items-start gap-2 text-[11px] text-text-muted">
+              <input
+                type="checkbox"
+                checked={createGitHubRelease}
+                onChange={(e) => {
+                  setCreateGitHubRelease(e.target.checked);
+                  if (e.target.checked) setCreateGitTag(true);
+                }}
+                disabled={!hasGitContext}
+                aria-label="Create GitHub Release"
+                style={{ accentColor: 'rgb(var(--accent))' }}
+                className="mt-0.5"
+              />
+              <span>
+                Also create a GitHub Release pointing at the tag (uses your release notes as the
+                body).
+              </span>
+            </label>
+            {!hasGitContext && (
+              <p className="mt-1 text-[10px] text-text-dim">
+                Connect a repo and create a working branch from the Workspace panel to enable these.
+              </p>
+            )}
+          </fieldset>
           {validation && <p className="text-[11px] text-warning">{validation}</p>}
           {error && (
             <p className="text-xs text-danger" role="alert">
               {error}
             </p>
           )}
+          {releasedUrl && (
+            <p className="rounded-sm border border-success/40 bg-success/10 p-2 text-[11px] text-success">
+              Released ·{' '}
+              <a
+                href={releasedUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="inline-flex items-center gap-1 underline hover:text-success/80"
+              >
+                {releasedUrl.replace(/^https:\/\/github\.com\//, '')}
+                <ExternalLink size={10} aria-hidden="true" />
+              </a>
+            </p>
+          )}
           <div className="flex justify-end gap-2 pt-1">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => {
+                reset();
+                onClose();
+              }}
               className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary"
             >
-              Cancel
+              {releasedUrl ? 'Done' : 'Cancel'}
             </button>
             <button
               type="button"
               onClick={onSubmit}
-              disabled={!!validation}
+              disabled={!!validation || submitting || Boolean(releasedUrl)}
               className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
             >
               <Tag size={11} />
-              Review &amp; publish
+              {submitting ? 'Publishing…' : 'Review & publish'}
             </button>
           </div>
         </div>
@@ -774,6 +866,12 @@ function BranchCard() {
   const discardWorkingBranch = useWorkspaceStore((s) => s.discardWorkingBranch);
   const pushWorkspace = useWorkspaceStore((s) => s.pushWorkspace);
   const refreshWorkspace = useWorkspaceStore((s) => s.refreshWorkspace);
+  // Inputs for the pre-push diff summary (B.3): the canonical-pulled
+  // snapshot from the last successful pull, plus the consumer's
+  // currently-edited synced doc. The summary is recomputed via useMemo
+  // when either input changes — typically only on store mutations.
+  const lastPulledSnapshot = useWorkspaceStore((s) => s.local?.sync.lastPulledSnapshot ?? null);
+  const syncedDoc = useWorkspaceStore((s) => s.synced);
 
   const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
   const syncAttachments = useWorkspaceStore((s) => s.syncAttachments);
@@ -786,6 +884,15 @@ function BranchCard() {
   const [error, setError] = useState<string | null>(null);
   const [justPushedSha, setJustPushedSha] = useState<string | null>(null);
   const [prModalOpen, setPrModalOpen] = useState(false);
+  const [diffOpen, setDiffOpen] = useState(false);
+
+  const unpushed = useMemo(
+    () =>
+      syncedDoc
+        ? summarizeUnpushedChanges(lastPulledSnapshot, syncedDoc)
+        : { added: 0, modified: 0, removed: 0, total: 0, changes: [], computedAt: '' },
+    [lastPulledSnapshot, syncedDoc],
+  );
 
   const onSyncAttachments = async () => {
     setSyncing(true);
@@ -904,6 +1011,17 @@ function BranchCard() {
           . Refresh to pull remote changes.
         </p>
       )}
+      <UnpushedChangesStrip summary={unpushed} onOpen={() => setDiffOpen(true)} />
+      <UnpushedChangesModal
+        open={diffOpen}
+        onClose={() => setDiffOpen(false)}
+        summary={unpushed}
+        baseLabel={
+          lastPulledAt
+            ? `last pulled ${formatRelativeTime(lastPulledAt)}`
+            : 'first push (no upstream)'
+        }
+      />
 
       {showMessageField && (
         <div className="mt-2">
@@ -1021,6 +1139,152 @@ function BranchCard() {
 
       <CreatePrModal open={prModalOpen} onClose={() => setPrModalOpen(false)} />
     </div>
+  );
+}
+
+function UnpushedChangesStrip({
+  summary,
+  onOpen,
+}: {
+  summary: { added: number; modified: number; removed: number; total: number };
+  onOpen: () => void;
+}) {
+  if (summary.total === 0) {
+    return (
+      <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-success">
+        <CheckCircle2 size={11} aria-hidden="true" />
+        No unpushed changes — workspace matches the last pull.
+      </p>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label="Show unpushed changes preview"
+      className="mt-1 inline-flex items-center gap-2 rounded-sm border border-warning/40 bg-warning/5 px-2 py-1 text-[11px] text-warning hover:bg-warning/10"
+    >
+      <FileDiff size={11} aria-hidden="true" />
+      <span>
+        {summary.added > 0 && <span className="text-success">+{summary.added}</span>}
+        {summary.added > 0 && (summary.modified > 0 || summary.removed > 0) && ' '}
+        {summary.modified > 0 && <span className="text-warning">~{summary.modified}</span>}
+        {summary.modified > 0 && summary.removed > 0 && ' '}
+        {summary.removed > 0 && <span className="text-danger">-{summary.removed}</span>}
+        {' unpushed change'}
+        {summary.total === 1 ? '' : 's'} · click to preview
+      </span>
+    </button>
+  );
+}
+
+function UnpushedChangesModal({
+  open,
+  onClose,
+  summary,
+  baseLabel,
+}: {
+  open: boolean;
+  onClose: () => void;
+  summary: {
+    added: number;
+    modified: number;
+    removed: number;
+    total: number;
+    changes: UnpushedChange[];
+  };
+  baseLabel: string;
+}) {
+  if (!open) return null;
+  return (
+    <Modal open onClose={onClose} title="Unpushed changes preview" className="max-w-3xl">
+      <div className="flex flex-col gap-3">
+        <p className="text-[11px] text-text-dim">
+          Diff against {baseLabel}. Push to save commits these changes to the working branch.
+        </p>
+        <div className="flex gap-2 text-[11px]">
+          <span className="rounded-sm border border-success/40 bg-success/10 px-2 py-0.5 text-success">
+            +{summary.added} added
+          </span>
+          <span className="rounded-sm border border-warning/40 bg-warning/10 px-2 py-0.5 text-warning">
+            ~{summary.modified} modified
+          </span>
+          <span className="rounded-sm border border-danger/40 bg-danger/10 px-2 py-0.5 text-danger">
+            -{summary.removed} removed
+          </span>
+        </div>
+        {summary.total === 0 ? (
+          <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-xs text-text-dim">
+            Nothing to push.
+          </p>
+        ) : (
+          <ul className="max-h-96 space-y-1 overflow-y-auto" aria-label="Unpushed changes">
+            {summary.changes.map((c) => (
+              <UnpushedChangeRow key={`${c.bucket}:${c.key}`} change={c} />
+            ))}
+          </ul>
+        )}
+        <div className="flex justify-end pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function UnpushedChangeRow({ change }: { change: UnpushedChange }) {
+  const [open, setOpen] = useState(false);
+  const tone =
+    change.kind === 'added'
+      ? 'border-success/40 bg-success/5 text-success'
+      : change.kind === 'modified'
+        ? 'border-warning/40 bg-warning/5 text-warning'
+        : 'border-danger/40 bg-danger/5 text-danger';
+  return (
+    <li className="rounded-sm border border-border bg-surface">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-2 px-2 py-1 text-left text-xs"
+        aria-expanded={open}
+        aria-label={`Toggle ${change.kind} ${change.label}`}
+      >
+        <span
+          className={`shrink-0 rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${tone}`}
+        >
+          {change.kind}
+        </span>
+        <span className="rounded-sm border border-border bg-card px-1.5 py-0.5 text-[10px] text-text-dim">
+          {change.bucket}
+        </span>
+        <code className="flex-1 truncate text-text-primary">{change.label}</code>
+        <span className="text-[10px] text-text-dim">{open ? '−' : '+'}</span>
+      </button>
+      {open && (
+        <div className="grid grid-cols-2 gap-2 border-t border-border-subtle p-2 text-[10px]">
+          <div>
+            <p className="mb-1 text-text-dim">Before (last pull)</p>
+            <pre className="max-h-40 overflow-y-auto rounded-sm border border-border bg-card p-1.5 font-mono text-text-muted">
+              {change.base === undefined
+                ? '— (did not exist)'
+                : JSON.stringify(change.base, null, 2)}
+            </pre>
+          </div>
+          <div>
+            <p className="mb-1 text-text-dim">After (current)</p>
+            <pre className="max-h-40 overflow-y-auto rounded-sm border border-border bg-card p-1.5 font-mono text-text-primary">
+              {change.local === undefined ? '— (deleted)' : JSON.stringify(change.local, null, 2)}
+            </pre>
+          </div>
+        </div>
+      )}
+    </li>
   );
 }
 
@@ -1199,6 +1463,84 @@ function CreateBranchForm() {
           aria-label="Regenerate branch name"
         >
           Regenerate
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Surfaced after `createWorkingBranch` if the new branch already had a
+ * `workspace.json` upstream. Prevents the user from accidentally
+ * overwriting populated remote content with their local seed.
+ */
+function FirstPullPromptBanner() {
+  const prompt = useWorkspaceStore((s) => s.firstPullPrompt);
+  const acknowledge = useWorkspaceStore((s) => s.acknowledgeFirstPull);
+  const refreshWorkspace = useWorkspaceStore((s) => s.refreshWorkspace);
+  const [pulling, setPulling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!prompt) return null;
+
+  const onPull = async () => {
+    setPulling(true);
+    setError(null);
+    try {
+      await refreshWorkspace();
+      // Refresh routes through the conflict resolver if it finds local
+      // mods that diverge — that flow handles the rest. Either way,
+      // dismiss the banner now that the user has chosen.
+      acknowledge();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Pull failed');
+    } finally {
+      setPulling(false);
+    }
+  };
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="mt-3 flex flex-col gap-2 rounded-sm border border-warning/40 bg-warning/5 p-3 text-xs"
+    >
+      <div className="flex items-start gap-2">
+        <Download size={14} className="mt-0.5 shrink-0 text-warning" aria-hidden="true" />
+        <div className="flex-1">
+          <p className="font-medium text-warning">This branch already has content</p>
+          <p className="mt-0.5 text-text-muted">
+            <code className="font-mono">workspace.json</code> exists on{' '}
+            <code className="font-mono">{prompt.branchName}</code>. Pull it now to see the diff
+            against your local state before pushing — otherwise your first push will overwrite
+            whatever was there.
+          </p>
+        </div>
+      </div>
+      {error && (
+        <p
+          className="rounded-sm border border-danger/30 bg-danger/5 p-1.5 text-danger"
+          role="alert"
+        >
+          {error}
+        </p>
+      )}
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={acknowledge}
+          className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary"
+        >
+          Skip — I&apos;ll push my local first
+        </button>
+        <button
+          type="button"
+          onClick={() => void onPull()}
+          disabled={pulling}
+          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-warning/40 bg-warning/10 px-3 text-[11px] text-warning hover:bg-warning/20 disabled:opacity-50"
+        >
+          <Download size={11} />
+          {pulling ? 'Pulling…' : 'Pull first'}
         </button>
       </div>
     </div>

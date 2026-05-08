@@ -10,6 +10,7 @@ function workspace(requests: Record<string, ApiRequest>): WorkspaceSynced {
     collections: { tree: { id: 'r', type: 'root', children: [] }, requests, folders: {} },
     environments: { items: {}, activeName: null, priorityOrder: [] },
     linkedWorkspaces: {},
+    linkedOverrides: { requests: {}, environmentVars: {} },
     releases: { self: null, perLink: {} },
     globalAssets: { schemas: {}, graphql: {} },
     mockServers: {},

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { MockServer } from '@apicircle/shared';
+import type { MockEndpoint, MockResponseConfig, MockServer } from '@apicircle/shared';
 import { buildRouter, openApiPathToHono } from './buildRouter';
 
 const baseServer: MockServer = {
@@ -7,12 +7,52 @@ const baseServer: MockServer = {
   name: 'Test',
   source: { kind: 'manual', endpoints: [] },
   endpoints: [],
-  overrides: {},
   defaultPort: null,
   cors: { enabled: false, origins: [] },
   createdAt: 't',
   updatedAt: 't',
 };
+
+interface ResponseShape {
+  status?: number;
+  headers?: Array<{ key: string; value: string; enabled?: boolean }>;
+  body?: string;
+  delayMs?: number;
+}
+
+function makeEndpoint(
+  id: string,
+  method: MockEndpoint['method'],
+  pathPattern: string,
+  response: ResponseShape = {},
+): MockEndpoint {
+  return {
+    id,
+    name: `${method} ${pathPattern}`,
+    method,
+    pathPattern,
+    requestSchema: { pathParams: [], queryParams: [], headers: [], cookies: [] },
+    requestValidation: [],
+    responseRules: [],
+    defaultResponse: makeResponse(response),
+  };
+}
+
+function makeResponse(response: ResponseShape): MockResponseConfig {
+  const status = response.status ?? 200;
+  const headers = (response.headers ?? []).map((h) => ({
+    key: h.key,
+    value: h.value,
+    enabled: h.enabled ?? true,
+  }));
+  const body = response.body ?? '';
+  return {
+    status,
+    headers,
+    body: { type: 'json', content: body },
+    ...(response.delayMs !== undefined ? { delayMs: response.delayMs } : {}),
+  };
+}
 
 describe('openApiPathToHono', () => {
   it('translates {param} to :param', () => {
@@ -32,14 +72,10 @@ describe('buildRouter', () => {
     const app = buildRouter({
       ...baseServer,
       endpoints: [
-        {
-          id: 'e1',
-          method: 'GET',
-          pathPattern: '/health',
-          status: 200,
+        makeEndpoint('e1', 'GET', '/health', {
           headers: [{ key: 'Content-Type', value: 'application/json' }],
           body: '{"status":"ok"}',
-        },
+        }),
       ],
     });
     const res = await app.request('/health');
@@ -51,64 +87,93 @@ describe('buildRouter', () => {
   it('matches a path-templated route', async () => {
     const app = buildRouter({
       ...baseServer,
-      endpoints: [
-        {
-          id: 'e1',
-          method: 'GET',
-          pathPattern: '/pets/{id}',
-          status: 200,
-          headers: [],
-          body: '{"id":"echo"}',
-        },
-      ],
+      endpoints: [makeEndpoint('e1', 'GET', '/pets/{id}', { body: '{"id":"echo"}' })],
     });
     const res = await app.request('/pets/42');
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('{"id":"echo"}');
   });
 
-  it('serves overrides on top of source endpoints', async () => {
+  it('runs response rules ahead of the default response', async () => {
     const app = buildRouter({
       ...baseServer,
       endpoints: [
         {
-          id: 'e1',
-          method: 'GET',
-          pathPattern: '/pets/{id}',
-          status: 200,
-          headers: [],
-          body: '{"id":"original"}',
+          ...makeEndpoint('e1', 'GET', '/pets/{id}', { body: '{"id":"original"}' }),
+          responseRules: [
+            {
+              id: 'r1',
+              name: 'down for maintenance',
+              enabled: true,
+              when: [{ id: 'c1', scope: 'query', target: 'mode', op: 'equals', value: 'down' }],
+              response: makeResponse({ status: 503, body: '{"error":"down"}' }),
+            },
+          ],
         },
       ],
-      overrides: {
-        e1: { status: 503, body: '{"error":"down"}' },
-      },
     });
-    const res = await app.request('/pets/42');
-    expect(res.status).toBe(503);
-    expect(await res.text()).toBe('{"error":"down"}');
+    const matched = await app.request('/pets/42?mode=down');
+    expect(matched.status).toBe(503);
+    expect(await matched.text()).toBe('{"error":"down"}');
+    const fallthrough = await app.request('/pets/42');
+    expect(fallthrough.status).toBe(200);
+    expect(await fallthrough.text()).toBe('{"id":"original"}');
+  });
+
+  it('returns the first failing validation rule response', async () => {
+    const app = buildRouter({
+      ...baseServer,
+      endpoints: [
+        {
+          ...makeEndpoint('e1', 'GET', '/secure', { body: 'ok' }),
+          requestValidation: [
+            {
+              id: 'v1',
+              kind: 'header-required',
+              target: 'authorization',
+              enabled: true,
+              failResponse: makeResponse({ status: 401, body: '{"error":"unauthorized"}' }),
+            },
+          ],
+        },
+      ],
+    });
+    const denied = await app.request('/secure');
+    expect(denied.status).toBe(401);
+    const allowed = await app.request('/secure', {
+      headers: { authorization: 'Bearer x' },
+    });
+    expect(allowed.status).toBe(200);
+  });
+
+  it('skips disabled validation rules', async () => {
+    const app = buildRouter({
+      ...baseServer,
+      endpoints: [
+        {
+          ...makeEndpoint('e1', 'GET', '/secure', { body: 'ok' }),
+          requestValidation: [
+            {
+              id: 'v1',
+              kind: 'header-required',
+              target: 'authorization',
+              enabled: false,
+              failResponse: makeResponse({ status: 401, body: '{"error":"u"}' }),
+            },
+          ],
+        },
+      ],
+    });
+    const res = await app.request('/secure');
+    expect(res.status).toBe(200);
   });
 
   it('prefers literal routes over parameterised ones', async () => {
     const app = buildRouter({
       ...baseServer,
       endpoints: [
-        {
-          id: 'param',
-          method: 'GET',
-          pathPattern: '/pets/{id}',
-          status: 200,
-          headers: [],
-          body: 'param',
-        },
-        {
-          id: 'literal',
-          method: 'GET',
-          pathPattern: '/pets/special',
-          status: 200,
-          headers: [],
-          body: 'literal',
-        },
+        makeEndpoint('param', 'GET', '/pets/{id}', { body: 'param' }),
+        makeEndpoint('literal', 'GET', '/pets/special', { body: 'literal' }),
       ],
     });
     const literal = await app.request('/pets/special');
@@ -130,17 +195,7 @@ describe('buildRouter', () => {
   it('honors per-endpoint delay (smoke test, not timing-dependent)', async () => {
     const app = buildRouter({
       ...baseServer,
-      endpoints: [
-        {
-          id: 'e1',
-          method: 'GET',
-          pathPattern: '/slow',
-          status: 200,
-          headers: [],
-          body: 'ok',
-          delayMs: 1,
-        },
-      ],
+      endpoints: [makeEndpoint('e1', 'GET', '/slow', { body: 'ok', delayMs: 1 })],
     });
     const res = await app.request('/slow');
     expect(res.status).toBe(200);
@@ -149,19 +204,7 @@ describe('buildRouter', () => {
   it('calls onRequest with endpoint metadata', async () => {
     const onRequest = vi.fn();
     const app = buildRouter(
-      {
-        ...baseServer,
-        endpoints: [
-          {
-            id: 'e1',
-            method: 'GET',
-            pathPattern: '/x',
-            status: 200,
-            headers: [],
-            body: '',
-          },
-        ],
-      },
+      { ...baseServer, endpoints: [makeEndpoint('e1', 'GET', '/x', { body: '' })] },
       { onRequest },
     );
     await app.request('/x');
@@ -177,16 +220,7 @@ describe('buildRouter', () => {
     for (const method of methods) {
       const app = buildRouter({
         ...baseServer,
-        endpoints: [
-          {
-            id: `e-${method}`,
-            method,
-            pathPattern: '/ping',
-            status: 200,
-            headers: [],
-            body: method,
-          },
-        ],
+        endpoints: [makeEndpoint(`e-${method}`, method, '/ping', { body: method })],
       });
       const res = await app.request('/ping', { method });
       expect(await res.text()).toBe(method);

@@ -5,6 +5,7 @@ import { EditorSidebar } from '../panels/editor/EditorSidebar';
 import { EnvironmentsSidebar } from '../panels/env/EnvironmentsSidebar';
 import { ExecutionSidebar } from '../panels/execution/ExecutionSidebar';
 import { HistorySidebar } from '../panels/history/HistorySidebar';
+import { MocksSidebar } from '../panels/mocks/MocksSidebar';
 import { getPanel } from './panels';
 
 export function Sidebar() {
@@ -24,6 +25,7 @@ export function Sidebar() {
         {activePanel === 'env' && <EnvironmentsSidebar />}
         {activePanel === 'execution' && <ExecutionSidebar />}
         {activePanel === 'history' && <HistorySidebar />}
+        {activePanel === 'mocks' && <MocksSidebar />}
       </div>
     </aside>
   );

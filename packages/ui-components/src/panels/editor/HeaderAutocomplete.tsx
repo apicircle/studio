@@ -9,7 +9,12 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Lock, Sparkles } from 'lucide-react';
-import { getHeaderEntry, suggestHeaders, type HeaderEntry } from '@apicircle/core';
+import {
+  getHeaderEntry,
+  suggestHeaders,
+  type HeaderEntry,
+  type HeaderSuggestionMode,
+} from '@apicircle/core';
 import { cn } from '../../primitives/cn';
 
 interface HeaderKeyAutocompleteProps {
@@ -18,6 +23,12 @@ interface HeaderKeyAutocompleteProps {
   ariaLabel: string;
   placeholder?: string;
   className?: string;
+  /**
+   * Filter suggestions by request- or response-side relevance. Defaults
+   * to `'request'` for source-compat with the request editor's call
+   * sites; the mock response editor passes `'response'`.
+   */
+  mode?: HeaderSuggestionMode;
 }
 
 export function HeaderKeyAutocomplete({
@@ -26,6 +37,7 @@ export function HeaderKeyAutocomplete({
   ariaLabel,
   placeholder,
   className,
+  mode = 'request',
 }: HeaderKeyAutocompleteProps) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -39,8 +51,8 @@ export function HeaderKeyAutocomplete({
   // focused search, not a browse.
   const matches = useMemo(() => {
     const prefix = value.trim();
-    return prefix ? suggestHeaders(prefix, 12) : suggestHeaders('');
-  }, [value]);
+    return prefix ? suggestHeaders(prefix, 12, mode) : suggestHeaders('', undefined, mode);
+  }, [value, mode]);
   // Hide the popover entirely when there are no matches (typing junk should
   // not trap the user under a "No matches" panel).
   const visible = open && matches.length > 0;

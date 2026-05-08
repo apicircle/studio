@@ -30,7 +30,7 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
     >
       <div
         className={cn(
-          'w-full max-w-lg rounded-md border border-border-strong bg-card shadow-elevated',
+          'flex max-h-[90vh] w-full max-w-lg flex-col rounded-md border border-border-strong bg-card shadow-elevated',
           className,
         )}
         onClick={(e) => e.stopPropagation()}
@@ -39,11 +39,11 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
         aria-label={title}
       >
         {title && (
-          <div className="border-b border-border-subtle px-4 py-3 text-sm font-medium text-text-primary">
+          <div className="shrink-0 border-b border-border-subtle px-4 py-3 text-sm font-medium text-text-primary">
             {title}
           </div>
         )}
-        <div className="p-4">{children}</div>
+        <div className="overflow-y-auto p-4">{children}</div>
       </div>
     </div>
   );

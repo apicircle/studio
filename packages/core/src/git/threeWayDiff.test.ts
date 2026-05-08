@@ -9,6 +9,7 @@ const baseDoc = (overrides: Partial<WorkspaceSynced> = {}): WorkspaceSynced => (
   collections: { tree: { id: 'r', type: 'root', children: [] }, requests: {}, folders: {} },
   environments: { items: {}, activeName: null, priorityOrder: [] },
   linkedWorkspaces: {},
+  linkedOverrides: { requests: {}, environmentVars: {} },
   releases: { self: null, perLink: {} },
   globalAssets: { schemas: {}, graphql: {} },
   mockServers: {},

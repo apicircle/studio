@@ -40,14 +40,19 @@ function fixtureMock(id: string): MockServer {
     endpoints: [
       {
         id: 'e1',
+        name: 'GET /health',
         method: 'GET',
         pathPattern: '/health',
-        status: 200,
-        headers: [],
-        body: '{}',
+        requestSchema: { pathParams: [], queryParams: [], headers: [], cookies: [] },
+        requestValidation: [],
+        responseRules: [],
+        defaultResponse: {
+          status: 200,
+          headers: [],
+          body: { type: 'json', content: '{}' },
+        },
       },
     ],
-    overrides: {},
     defaultPort: 0,
     cors: { enabled: false, origins: [] },
     createdAt: T0,

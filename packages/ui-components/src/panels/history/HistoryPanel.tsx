@@ -17,6 +17,7 @@ import { useWorkspaceStore, type HistoryUiState } from '../../store/workspaceSto
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { cn } from '../../primitives/cn';
 import { ResponseViewer } from '../editor/ResponseViewer';
+import { SnapshotsTimeline } from './SnapshotsTimeline';
 import { useState } from 'react';
 
 type StatusBucket = 'ok' | '4xx' | '5xx' | 'error';
@@ -64,23 +65,25 @@ export function HistoryPanel() {
           <h1 className="text-lg font-medium text-text-primary">History</h1>
           <p className="text-[11px] text-text-dim">Local-only — never pushed to Git.</p>
           <div className="ml-auto">
-            {tab === 'requests' ? (
-              <ClearRequestsButton
-                hasFilter={isFilterActive(ui)}
-                runs={requestRuns}
-                visibleIds={visibleRequestRuns.map((r) => r.id)}
-              />
-            ) : (
-              <ClearPlansButton
-                hasFilter={isFilterActive(ui)}
-                runs={planRuns}
-                visibleIds={visiblePlanRuns.map((r) => r.id)}
-              />
-            )}
+            {
+              tab === 'requests' ? (
+                <ClearRequestsButton
+                  hasFilter={isFilterActive(ui)}
+                  runs={requestRuns}
+                  visibleIds={visibleRequestRuns.map((r) => r.id)}
+                />
+              ) : tab === 'plans' ? (
+                <ClearPlansButton
+                  hasFilter={isFilterActive(ui)}
+                  runs={planRuns}
+                  visibleIds={visiblePlanRuns.map((r) => r.id)}
+                />
+              ) : null /* snapshots tab: no clear-all button — each row has its own */
+            }
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-6">
+        <div className="min-h-0 flex-1 overflow-y-auto p-6 space-y-4">
           {tab === 'requests' ? (
             <RequestRunList
               runs={visibleRequestRuns}
@@ -89,12 +92,14 @@ export function HistoryPanel() {
               selectedRunId={selectedRunId}
               onSelect={(id) => setUi({ selectedRunId: id === selectedRunId ? null : id })}
             />
-          ) : (
+          ) : tab === 'plans' ? (
             <PlanRunList
               runs={visiblePlanRuns}
               totalCount={planRuns.length}
               filterActive={isFilterActive(ui)}
             />
+          ) : (
+            <SnapshotsTimeline />
           )}
         </div>
       </div>

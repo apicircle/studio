@@ -12,6 +12,7 @@ import { MissingScopeGate } from './layout/MissingScopeGate';
 import { KeyboardShortcuts } from './layout/KeyboardShortcuts';
 import { GlobalAssetsPanel } from './panels/globalAssets/GlobalAssetsPanel';
 import { LinkedRequestEditor } from './panels/link-workspace/LinkedRequestEditor';
+import { UpdatePreviewModal } from './panels/link-workspace/UpdatePreviewModal';
 import { OnboardingTips } from './onboarding/OnboardingTips';
 import { getPanel } from './layout/panels';
 
@@ -46,6 +47,7 @@ export function App() {
       <SecretVaultModal />
       <GlobalAssetsPanel />
       <LinkedRequestEditor />
+      <UpdatePreviewModal />
       <MissingScopeGate />
       <KeyboardShortcuts />
       <OnboardingTips />
@@ -113,16 +115,17 @@ function HydrationErrorScreen() {
     probeWorkspaceRecords()
       .then((records) => {
         if (cancelled) return;
+        // Post-B.6 multi-workspace: probeWorkspaceRecords returns the
+        // registry. The recovery banner only needs to know whether
+        // anything is salvageable — the registry's existence is enough.
+        const reg = records.registry;
+        const activeEntry = reg?.workspaces.find((w) => w.id === reg.activeWorkspaceId);
         setRecoverable({
-          syncedHasData: !!records.synced,
-          localHasData: !!records.local,
-          syncedWorkspaceName: records.synced?.workspaceName,
-          syncedRequestCount: records.synced
-            ? Object.keys(records.synced.collections.requests).length
-            : undefined,
-          syncedEnvironmentCount: records.synced
-            ? Object.keys(records.synced.environments.items).length
-            : undefined,
+          syncedHasData: Boolean(reg && reg.workspaces.length > 0),
+          localHasData: Boolean(reg && reg.workspaces.length > 0),
+          syncedWorkspaceName: activeEntry?.name,
+          syncedRequestCount: undefined,
+          syncedEnvironmentCount: undefined,
         });
       })
       .catch(() => {

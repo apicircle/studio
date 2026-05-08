@@ -1,28 +1,32 @@
 import { expect, test } from './fixtures/app';
 
-// P20 — Linked-request overrides. The "browse" surface lives on each
-// LinkCard in the Link Workspace panel. Drives the modal: read-only base
-// fields, override headers + ctx vars + extractions + assertions, reset.
+// Linked-content overrides — covers the schema reshape (A.1) where
+// overrides moved from `local.overrides.items` to
+// `synced.linkedOverrides.requests` and the patch type expanded from 4
+// fields (headers/contextVars/extractions/assertions) to every editable
+// field (name/method/url/body + the originals).
 //
-// Real link/refresh flow needs a GitHub session — we seed a snapshot
-// directly via the e2e store bridge attached to window.__apicircleStore.
+// We seed a fake link directly via the e2e store bridge attached to
+// `window.__apicircleStore`, then drive the LinkedRequestEditor modal.
 
 interface SeedRequest {
   id: string;
   name: string;
-  folderId: null;
+  folderId: string | null;
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
   url: string;
   headers: Array<{ key: string; value: string; enabled: boolean }>;
   query: Array<{ key: string; value: string; enabled: boolean }>;
-  body: { type: 'none'; content: '' };
-  auth: { type: 'none' };
+  body: { type: 'none' | 'json'; content: string };
+  auth: { type: 'none' | 'inherit' | 'bearer'; token?: string };
   contextVars: Array<{ key: string; value: string }>;
   extractions: never[];
   assertions: never[];
   createdAt: string;
   updatedAt: string;
 }
+
+const T0 = '2026-04-27T00:00:00.000Z';
 
 const SOURCE_REQUEST: SeedRequest = {
   id: 'src-1',
@@ -37,8 +41,8 @@ const SOURCE_REQUEST: SeedRequest = {
   contextVars: [],
   extractions: [],
   assertions: [],
-  createdAt: '2026-04-27T00:00:00.000Z',
-  updatedAt: '2026-04-27T00:00:00.000Z',
+  createdAt: T0,
+  updatedAt: T0,
 };
 
 async function seedLink(
@@ -46,13 +50,10 @@ async function seedLink(
   source: SeedRequest = SOURCE_REQUEST,
 ): Promise<void> {
   await app.evaluate(
-    ({ src }) => {
+    ({ src, t0 }) => {
       const w = window as unknown as {
         __apicircleStore?: {
-          getState: () => {
-            synced: unknown;
-            local: unknown;
-          };
+          getState: () => { synced: unknown; local: unknown };
           setState: (partial: unknown) => void;
         };
       };
@@ -71,9 +72,9 @@ async function seedLink(
               name: 'Source workspace',
               source: { provider: 'github', repoFullName: 'a/b', branch: 'main' },
               scope: ['collections'],
-              pinnedVersion: null,
+              pinnedVersion: '1.0.0',
               updatePolicy: 'manual',
-              linkedAt: 't',
+              linkedAt: t0,
               requiredSecretKeyIds: [],
             },
           },
@@ -83,8 +84,8 @@ async function seedLink(
           linkedCollections: {
             'link-1': {
               workspaceName: 'Source',
-              pulledAt: 't',
-              ref: 'main',
+              pulledAt: t0,
+              ref: 'v1.0.0',
               collections: {
                 tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: src.id }] },
                 requests: { [src.id]: src },
@@ -99,18 +100,38 @@ async function seedLink(
               accountLogin: 'tester',
               tokenSecretId: 'sec-fake',
               grantedScopes: ['repo'],
-              addedAt: 't',
-              lastVerifiedAt: 't',
+              addedAt: t0,
+              lastVerifiedAt: t0,
             },
           },
         },
       });
     },
-    { src: source },
+    { src: source, t0: T0 },
   );
 }
 
-test.describe('Linked-request override (P20)', () => {
+async function readRequestOverride(
+  app: import('@playwright/test').Page,
+): Promise<{ patch: Record<string, unknown> } | null> {
+  return app.evaluate(() => {
+    const w = window as unknown as {
+      __apicircleStore?: {
+        getState: () => {
+          synced: {
+            linkedOverrides: {
+              requests: Record<string, { patch: Record<string, unknown> }>;
+            };
+          };
+        };
+      };
+    };
+    const got = w.__apicircleStore?.getState().synced.linkedOverrides.requests['link-1:src-1'];
+    return got ?? null;
+  });
+}
+
+test.describe('Linked-request override (A.1 — overrides moved to synced + full-field patch)', () => {
   test('Browse requests expander lists linked snapshot requests', async ({ app }) => {
     await seedLink(app);
     await app.getByRole('button', { name: /^Link Workspace$/ }).click();
@@ -120,7 +141,7 @@ test.describe('Linked-request override (P20)', () => {
     await expect(app.getByRole('button', { name: /GET\s+Get user/ })).toBeVisible();
   });
 
-  test('clicking a linked request opens the override modal with read-only source fields', async ({
+  test('clicking a linked request opens the override modal with editable inputs pre-filled from source', async ({
     app,
   }) => {
     await seedLink(app);
@@ -130,37 +151,97 @@ test.describe('Linked-request override (P20)', () => {
 
     const dialog = app.getByRole('dialog', { name: /Linked request override/ });
     await expect(dialog).toBeVisible();
-    // Read-only metadata: method, URL, body type, auth type. The method
-    // is rendered inside a <code> — match exactly so we disambiguate from
-    // the source-request pill that also contains "GET".
-    await expect(dialog.getByText('GET', { exact: true })).toBeVisible();
-    await expect(dialog.getByText('https://api.source.test/users/1')).toBeVisible();
+    // The new modal renders Name / Method / URL / Body / Headers as
+    // editable fields pre-filled with the source's values.
+    await expect(dialog.getByLabel('Override name')).toHaveValue('Get user');
+    await expect(dialog.getByLabel('Override method')).toHaveValue('GET');
+    await expect(dialog.getByLabel('Override URL')).toHaveValue('https://api.source.test/users/1');
   });
 
-  test('typing into Override headers persists into the local override patch', async ({ app }) => {
+  test('typing into Override URL persists into synced.linkedOverrides.requests', async ({
+    app,
+  }) => {
     await seedLink(app);
     await app.getByRole('button', { name: /^Link Workspace$/ }).click();
     await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
     await app.getByRole('button', { name: /GET\s+Get user/ }).click();
 
-    const valueInput = app.getByLabel('Override header value 1');
-    await valueInput.fill('overridden-value');
+    const url = app.getByLabel('Override URL');
+    await url.fill('https://staging.source.test/users/1');
 
-    const patch = await app.evaluate(() => {
-      const w = window as unknown as {
-        __apicircleStore?: {
-          getState: () => {
-            local: {
-              overrides: {
-                items: Record<string, { patch: { headers: Array<{ value: string }> } }>;
-              };
-            };
-          };
-        };
-      };
-      return w.__apicircleStore?.getState().local.overrides.items['link-1:src-1']?.patch;
-    });
-    expect(patch?.headers?.[0]?.value).toBe('overridden-value');
+    await expect
+      .poll(async () => (await readRequestOverride(app))?.patch.url)
+      .toBe('https://staging.source.test/users/1');
+  });
+
+  test('changing Method from GET to POST writes a method override', async ({ app }) => {
+    await seedLink(app);
+    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+    await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
+    await app.getByRole('button', { name: /GET\s+Get user/ }).click();
+
+    await app.getByLabel('Override method').selectOption('POST');
+
+    await expect.poll(async () => (await readRequestOverride(app))?.patch.method).toBe('POST');
+  });
+
+  test('typing into Override headers persists alongside other field overrides', async ({ app }) => {
+    await seedLink(app);
+    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+    await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
+    await app.getByRole('button', { name: /GET\s+Get user/ }).click();
+
+    await app.getByLabel('Override URL').fill('https://staging.source.test/x');
+    await app.getByLabel('Override header value 1').fill('overridden-value');
+
+    const stored = await readRequestOverride(app);
+    expect(stored?.patch.url).toBe('https://staging.source.test/x');
+    expect((stored?.patch.headers as Array<{ value: string }>)[0]?.value).toBe('overridden-value');
+  });
+
+  test('per-field "Reset to source" clears that field only, leaving others intact', async ({
+    app,
+  }) => {
+    await seedLink(app);
+    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+    await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
+    await app.getByRole('button', { name: /GET\s+Get user/ }).click();
+
+    await app.getByLabel('Override name').fill('Renamed locally');
+    await app.getByLabel('Override URL').fill('https://staging.source.test/x');
+
+    let stored = await readRequestOverride(app);
+    expect(stored?.patch.name).toBe('Renamed locally');
+    expect(stored?.patch.url).toBe('https://staging.source.test/x');
+
+    // Click the per-field reset for URL specifically. Each modified
+    // field exposes its own "Reset to source" button next to the
+    // section heading.
+    const urlReset = app.getByRole('button', { name: 'Reset this field to source' }).nth(1);
+    await urlReset.click();
+
+    stored = await readRequestOverride(app);
+    expect(stored?.patch.url).toBeUndefined();
+    expect(stored?.patch.name).toBe('Renamed locally');
+  });
+
+  test('whole-override Reset to source clears the entire override entry', async ({ app }) => {
+    await seedLink(app);
+    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+    await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
+    await app.getByRole('button', { name: /GET\s+Get user/ }).click();
+
+    await app.getByLabel('Override URL').fill('https://staging.source.test/x');
+    await app.getByLabel('Override header value 1').fill('hh');
+
+    // The whole-override "Reset to source" button only appears when an
+    // override exists. It opens a confirm dialog (typed-confirm not
+    // required for this one — just a regular Reset / Cancel pair).
+    await app.getByRole('button', { name: 'Reset to source' }).click();
+    await app.getByRole('button', { name: 'Reset', exact: true }).click();
+
+    const stored = await readRequestOverride(app);
+    expect(stored).toBeNull();
   });
 
   test('Browse expander shows the override badge when an override exists', async ({ app }) => {
@@ -168,31 +249,10 @@ test.describe('Linked-request override (P20)', () => {
     await app.getByRole('button', { name: /^Link Workspace$/ }).click();
     await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
     await app.getByRole('button', { name: /GET\s+Get user/ }).click();
-    await app.getByLabel('Override header value 1').fill('x');
+    await app.getByLabel('Override URL').fill('https://staging.x');
 
-    // Close + re-open the expander; the badge should now be visible.
     await app.keyboard.press('Escape');
+    // The LinkedRequestsList renders an `override` chip on the row.
     await expect(app.getByText('override').first()).toBeVisible();
-  });
-
-  test('Reset to source clears the override after confirmation', async ({ app }) => {
-    await seedLink(app);
-    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
-    await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
-    await app.getByRole('button', { name: /GET\s+Get user/ }).click();
-    await app.getByLabel('Override header value 1').fill('temp');
-
-    await app.getByRole('button', { name: 'Reset to source' }).click();
-    await app.getByRole('button', { name: 'Reset', exact: true }).click();
-
-    const exists = await app.evaluate(() => {
-      const w = window as unknown as {
-        __apicircleStore?: {
-          getState: () => { local: { overrides: { items: Record<string, unknown> } } };
-        };
-      };
-      return Boolean(w.__apicircleStore?.getState().local.overrides.items['link-1:src-1']);
-    });
-    expect(exists).toBe(false);
   });
 });

@@ -86,6 +86,13 @@ function MonacoEditorBaseComponent({
   ariaLabel,
 }: MonacoEditorBaseProps) {
   const themeId = useWorkspaceStore((state) => state.local?.ui.themeId ?? 'studio-dark');
+  // Workspace setting: when true, the editor's scrollbar consumes wheel
+  // events and the page won't scroll while the cursor sits in the editor.
+  // Default false — most users find page-scroll-friendly behavior less
+  // surprising than Monaco's default trap.
+  const monacoConsumesWheel = useWorkspaceStore(
+    (state) => state.local?.settings?.monacoConsumesWheel ?? false,
+  );
   const [editorComponent, setEditorComponent] = useState<ComponentType<EditorProps> | null>(null);
   const [editorInstance, setEditorInstance] = useState<editor.IStandaloneCodeEditor | null>(null);
   const [monacoInstance, setMonacoInstance] = useState<Monaco | null>(null);
@@ -168,13 +175,26 @@ function MonacoEditorBaseComponent({
       glyphMargin: false,
       lineDecorationsWidth: 4,
       lineNumbersMinChars: Math.max(2, String(lineCount).length),
+      // Honor the workspace setting. `alwaysConsumeMouseWheel: false`
+      // releases the wheel back to the page once the editor reaches its
+      // top/bottom (or when the editor's content fits in the viewport),
+      // which is what most users expect on long pages with embedded
+      // editors. Power-users who prefer Monaco's default eat-everything
+      // behavior can flip the toggle in Settings.
+      scrollbar: {
+        alwaysConsumeMouseWheel: monacoConsumesWheel,
+      },
     };
     return {
       ...baseOptions,
       ...options,
       minimap: { enabled: false, ...(options?.minimap ?? {}) },
+      scrollbar: {
+        ...baseOptions.scrollbar,
+        ...(options?.scrollbar ?? {}),
+      },
     };
-  }, [isLargePayload, lineCount, options, readOnly]);
+  }, [isLargePayload, lineCount, monacoConsumesWheel, options, readOnly]);
 
   const containerStyle = useMemo<CSSProperties>(
     () => ({

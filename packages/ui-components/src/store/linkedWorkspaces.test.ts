@@ -416,6 +416,33 @@ describe('workspaceStore marketplace flow', () => {
     expect(results[0].topics).toContain('apicircle-marketplace');
   });
 
+  it('searchMarketplace works anonymously (no session) and omits the Authorization header', async () => {
+    const fetchMock = queuedFetch([
+      {
+        body: {
+          items: [
+            {
+              full_name: 'org/anon-api',
+              name: 'anon-api',
+              owner: { login: 'org' },
+              description: 'no-auth desc',
+              topics: ['apicircle-marketplace'],
+              stargazers_count: 0,
+              default_branch: 'main',
+            },
+          ],
+        },
+      },
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+    const results = await useWorkspaceStore.getState().searchMarketplace('anon');
+    expect(results).toHaveLength(1);
+    expect(results[0].fullName).toBe('org/anon-api');
+    const [, init] = fetchMock.mock.calls[0];
+    const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers.Authorization).toBeUndefined();
+  });
+
   it('linkPublicWorkspace persists with kind=public + marketplace metadata', async () => {
     await setupSession();
     const remoteJson = JSON.stringify({

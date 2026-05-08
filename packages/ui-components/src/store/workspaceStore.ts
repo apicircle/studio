@@ -3,11 +3,15 @@ import type {
   Assertion,
   ConnectedRepo,
   Environment,
+  EnvironmentVariableOverride,
   LinkedSnapshot,
   FormDataRow,
   GitHubSession,
   HttpMethod,
   LinkedWorkspace,
+  MockEndpoint,
+  MockResponseBody,
+  MockServerSource,
   PanelId,
   PlanRun,
   ReleaseHistory,
@@ -15,25 +19,38 @@ import type {
   GlobalGraphQL,
   GlobalSchema,
   Request as ApiRequest,
+  FontFamilyId,
   RequestAuth,
   RequestBody,
+  RequestOverridePatch,
   RequestRun,
   ThemeId,
   WorkingBranch,
   WorkspaceLocal,
+  WorkspaceSnapshotTrigger,
   WorkspaceSynced,
 } from '@apicircle/shared';
-import { type GitHubRepo, GitHubClient, MissingScopeError } from '@apicircle/git';
+import {
+  type GitHubBranch,
+  type GitHubRepo,
+  GitHubClient,
+  MissingScopeError,
+} from '@apicircle/git';
+import { applyFont } from '../theme/applyFont';
 import { RUN_BODY_PREVIEW_LIMIT, generateId } from '@apicircle/shared';
 import {
   type AttachmentResolver,
   type ExecutionResult,
+  type LinkedUpdatePreview,
+  type LinkedUpdateResolutionMap,
   type ParsedPostmanCollection,
   type ParsedPostmanEnvironment,
   type PublishReleaseArgs,
   type ResolutionMap,
   type ThreeWayDiff,
+  applyLinkedUpdate as applyLinkedUpdateCore,
   applyMerge,
+  applyMutation as coreApplyMutation,
   buildScope,
   collectAttachmentSlots,
   computeThreeWayDiff,
@@ -44,6 +61,8 @@ import {
   extractContext,
   generateWorkingBranchName,
   parseCurl,
+  parseSemver,
+  previewLinkedUpdate as previewLinkedUpdateCore,
   publishRelease as publishReleaseAction,
   resolveInheritedAuth,
   resolveString,
@@ -65,8 +84,14 @@ import {
 import { getMasterKey } from '../persistence/secretKey';
 import {
   WorkspaceMismatchError,
+  type WorkspaceRegistry,
+  createWorkspace as createWorkspacePersisted,
+  deleteWorkspace as deleteWorkspacePersisted,
   loadWorkspace,
+  loadWorkspaceById,
   recoverPartialWorkspace,
+  setActiveWorkspace as setActiveWorkspacePersisted,
+  updateRegistryEntryName as updateRegistryEntryNamePersisted,
   resetWorkspace as resetWorkspaceStorage,
   saveLocal,
   saveSynced,
@@ -78,6 +103,8 @@ import {
   addFolder as addFolderAction,
   addRequest as addRequestAction,
   collectRequestSlotIds,
+  duplicateFolder as duplicateFolderAction,
+  duplicateRequest as duplicateRequestAction,
   removeFolder as removeFolderAction,
   removeRequest as removeRequestAction,
   setRequestAssertions as setRequestAssertionsAction,
@@ -97,6 +124,10 @@ import {
   setRequestUrl as setRequestUrlAction,
   renameRequest as renameRequestAction,
 } from './editorActions';
+import {
+  duplicateMockEndpoint as duplicateMockEndpointAction,
+  duplicateMockServer as duplicateMockServerAction,
+} from './mockActions';
 import {
   addGlobalGraphQL as addGlobalGraphQLAction,
   addGlobalSchema as addGlobalSchemaAction,
@@ -285,7 +316,7 @@ interface PendingRefresh {
  * without prop-drilling.
  */
 export interface HistoryUiState {
-  tab: 'requests' | 'plans';
+  tab: 'requests' | 'plans' | 'snapshots';
   search: string;
   /** Status buckets to keep visible. Empty = no status filter. */
   statusBuckets: Array<'ok' | '4xx' | '5xx' | 'error'>;
@@ -342,6 +373,15 @@ type WorkspaceStore = {
    */
   missingScopePrompt: string[] | null;
   /**
+   * Surfaced after `createWorkingBranch` when the new branch already has
+   * a `workspace.json` (i.e. the repo was pre-populated). The banner in
+   * WorkspacePanel uses this to offer a "Pull first" path so the user
+   * doesn't accidentally clobber upstream content with their local seed.
+   * `null` once the user accepts or skips.
+   */
+  firstPullPrompt: { branchName: string; remoteSha: string } | null;
+  acknowledgeFirstPull: () => void;
+  /**
    * Ephemeral UI state for the History panel — not persisted. Lives on the
    * store so the sidebar (filters) and main area (run list + detail) can
    * share state without a parent prop drill.
@@ -369,16 +409,124 @@ type WorkspaceStore = {
 
   hydrate: () => Promise<void>;
 
+  // --- Multi-workspace registry (B.6) ---------------------------------
+  /** Snapshot of every registered workspace + which one is currently active. */
+  workspaceRegistry: WorkspaceRegistry | null;
+  /**
+   * Switch the active workspace. Persists to the registry, then loads
+   * the selected workspace's synced + local records and replaces the
+   * in-memory state. Throws if the id isn't in the registry.
+   */
+  switchWorkspace: (workspaceId: string) => Promise<void>;
+  /**
+   * Create a fresh workspace + register it. The new workspace becomes
+   * active. Returns the new workspace's id.
+   */
+  createNewWorkspace: (name: string) => Promise<string>;
+  /**
+   * Delete a workspace. If it was the active one, switches to the
+   * most-recently-opened remaining workspace; if it was the last,
+   * seeds a fresh empty workspace.
+   */
+  deleteWorkspaceById: (workspaceId: string) => Promise<void>;
+
   setActivePanel: (panel: PanelId) => void;
   setActiveRequestId: (id: string | null) => void;
   toggleSidebarSection: (section: string) => void;
   setThemeId: (themeId: ThemeId) => void;
+  /**
+   * Set the workspace-bound font family. Persists via `local.ui.fontId`
+   * so switching workspaces re-applies whichever font that workspace
+   * had selected (parity with theme).
+   */
+  setFontId: (fontId: FontFamilyId) => void;
   setWorkspaceName: (name: string) => void;
   /** Toggle the pre-send validation panel (local.settings.validateOnSend). */
   setValidateOnSend: (value: boolean) => void;
+  /**
+   * Toggle whether Monaco editors consume mouse-wheel events. When false
+   * (default), wheel events bubble so the page can scroll past the editor.
+   */
+  setMonacoConsumesWheel: (value: boolean) => void;
+  /**
+   * Capture a snapshot of the current `synced` doc into the local
+   * snapshot ledger. Used both by destructive ops (push, merge, linked
+   * update, yank, deprecate) and by the user via the History panel
+   * "Take snapshot" button.
+   */
+  captureSnapshot: (args?: { trigger?: WorkspaceSnapshotTrigger; note?: string }) => string | null;
+  /** Restore the synced doc from a snapshot in the ledger. Returns true if found. */
+  restoreSnapshot: (id: string) => boolean;
+  /** Drop a snapshot from the ledger. */
+  deleteSnapshot: (id: string) => void;
+  /**
+   * Update the snapshot ring-buffer cap. Lowering the cap evicts entries
+   * until the total fits.
+   */
+  setSnapshotMaxBytes: (maxBytes: number) => void;
 
   /** Remove a mock definition from the workspace. No runtime side effect. */
   removeMockServer: (id: string) => void;
+  /**
+   * Create a new mock definition in `synced.mockServers`. The `source`
+   * union discriminates between manual-CRUD endpoints and pasted spec
+   * blobs (OpenAPI / Postman / Insomnia). Spec blobs are stored
+   * verbatim with `endpoints: []` — the runtime (Desktop / CLI) parses
+   * the blob at Start time. The web UI never invokes a parser, so it
+   * can create any mock kind regardless of platform.
+   */
+  createMockServer: (args: { name: string; source: MockServerSource }) => string;
+  /** Rename a mock definition. */
+  setMockServerName: (id: string, name: string) => void;
+  /**
+   * Update CORS config on a mock server. CORS is off by default (the runtime
+   * is meant for same-origin probing); turning it on with an origin list is
+   * what lets browser-side apps hit the running mock from a different port.
+   */
+  setMockServerCors: (id: string, cors: { enabled: boolean; origins: string[] }) => void;
+  /** Replace a mock's endpoints (used by manual-mode editor). */
+  setMockServerEndpoints: (id: string, endpoints: MockEndpoint[]) => void;
+  /** Add a new endpoint to a manual-mode mock server. Returns the new endpoint id. */
+  addMockEndpoint: (serverId: string) => string;
+  /** Replace fields on a single endpoint. */
+  updateMockEndpoint: (serverId: string, endpointId: string, patch: Partial<MockEndpoint>) => void;
+  /** Remove an endpoint from a server. */
+  removeMockEndpoint: (serverId: string, endpointId: string) => void;
+  /**
+   * Clone a mock server with all of its endpoints + nested rules. Every
+   * cloned entity gets a fresh id; the legacy `overrides` map is reset
+   * since it keys by old endpoint ids. Returns the new server's id, or
+   * null when the source doesn't exist.
+   */
+  duplicateMockServer: (id: string) => string | null;
+  /**
+   * Clone an endpoint inside the same server. Validation rules,
+   * response rules (and their clauses), and response multipliers all
+   * get fresh ids. Returns the new endpoint's id, or null when the
+   * source doesn't exist.
+   */
+  duplicateMockEndpoint: (serverId: string, endpointId: string) => string | null;
+  /** Active endpoint id (drives the mock editor pane). Per-workspace transient state. */
+  activeMockServerId: string | null;
+  activeMockEndpointId: string | null;
+  setActiveMockEndpoint: (args: { serverId: string; endpointId: string | null }) => void;
+  /** Whether the "Create mock server" modal is open. */
+  mocksCreateModalOpen: boolean;
+  openMocksCreateModal: () => void;
+  closeMocksCreateModal: () => void;
+  /**
+   * Attach a file to a mock endpoint's binary response body. Stores the
+   * blob in the same Global-Assets attachment store the request editor
+   * uses (slotId-based; SHA-256 cached on the synced doc). Returns the
+   * attachment ref written into `defaultResponse.body.attachment`.
+   */
+  attachMockResponseFile: (
+    serverId: string,
+    endpointId: string,
+    file: File,
+  ) => Promise<AttachmentRef>;
+  /** Drop the attachment for a mock endpoint's response body. */
+  detachMockResponseFile: (serverId: string, endpointId: string) => Promise<void>;
 
   openSecretVault: () => void;
   closeSecretVault: () => void;
@@ -404,6 +552,18 @@ type WorkspaceStore = {
   removeRequest: (id: string) => void;
   renameRequest: (id: string, name: string) => void;
   renameFolder: (id: string, name: string) => void;
+  /**
+   * Clone a request inside the same folder, with fresh id + timestamps
+   * and a uniquified `(copy)` name. Returns the new request id, or null
+   * when the source id doesn't exist.
+   */
+  duplicateRequest: (id: string) => string | null;
+  /**
+   * Clone a folder along with every descendant folder + request,
+   * generating fresh ids for everything. Returns the new top-level
+   * folder id, or null when the source id doesn't exist.
+   */
+  duplicateFolder: (id: string) => string | null;
   /**
    * Wipes both IDB records and re-seeds an empty workspace. Only invoke from
    * an explicit user confirmation flow (e.g. the recovery banner shown after
@@ -467,26 +627,80 @@ type WorkspaceStore = {
   openGlobalAssets: () => void;
   closeGlobalAssets: () => void;
 
-  // --- Linked-request overrides (P20) ---------------------------------
+  // --- Linked-content overrides ---------------------------------------
   /**
-   * Replace the override patch for a linked workspace's request. The
-   * patch may only include override-allowed fields: headers, contextVars,
-   * assertions, extractions. Other fields are read straight from the
-   * source workspace's snapshot.
+   * Replace (or merge into) the override patch for a linked workspace's
+   * request. Patch is a delta — every field is optional, present ⇒
+   * replaces source value, absent ⇒ inherits from snapshot. Stored on
+   * `synced.linkedOverrides.requests` so it round-trips through Git.
    *
-   * Pass an empty patch to clear the override (it'll round-trip to no-op
-   * via the mergeRequestOverride helper) — or call clearLinkedRequestOverride.
+   * Pass an empty `patch` to clear (equivalent to clearLinkedRequestOverride).
    */
   setLinkedRequestOverride: (
     linkedWorkspaceId: string,
     itemId: string,
-    patch: Record<string, unknown>,
+    patch: RequestOverridePatch,
   ) => void;
-  /** Drop any local override for a linked workspace's request. */
+  /** Drop the override for a linked workspace's request, restoring source content. */
   clearLinkedRequestOverride: (linkedWorkspaceId: string, itemId: string) => void;
+
+  /**
+   * Set or update a per-variable override on a linked workspace's
+   * environment. Stored on `synced.linkedOverrides.environmentVars`.
+   * The `varKey` may or may not exist in the source's env; in either
+   * case the override row carries the consumer's intent. Pass
+   * `removed: true` to soft-delete a source variable for this consumer.
+   */
+  setLinkedEnvVarOverride: (
+    linkedWorkspaceId: string,
+    envName: string,
+    varKey: string,
+    patch: Pick<EnvironmentVariableOverride, 'value' | 'encrypted' | 'secretKeyId' | 'removed'>,
+  ) => void;
+  clearLinkedEnvVarOverride: (linkedWorkspaceId: string, envName: string, varKey: string) => void;
+
+  /**
+   * Drop every override (request + env-var) for one linked workspace.
+   * Wires the "Discard all my modifications" affordance on the link card.
+   */
+  clearLinkedOverridesFor: (linkedWorkspaceId: string) => void;
+
   /** Currently-viewed linked request, if any. Drives LinkedRequestEditor. */
   activeLinkedRequest: { linkedWorkspaceId: string; itemId: string } | null;
   setActiveLinkedRequest: (id: { linkedWorkspaceId: string; itemId: string } | null) => void;
+
+  /**
+   * Execute the linked request currently open in the LinkedRequestEditor.
+   * Resolves variables against the source workspace's environments (with
+   * the consumer's env-var overrides applied) and walks the source folder
+   * chain for `auth.type === 'inherit'` resolution. Run history is recorded
+   * in the consumer's `local.history.requestRuns` keyed by the linked
+   * request's id (same id space as owned requests; the run tags the
+   * source via its `requestName`).
+   */
+  executeLinkedActiveRequest: () => Promise<void>;
+
+  // --- Linked-workspace update / preview ------------------------------
+  /**
+   * Active update preview for one linked workspace. Set by
+   * `previewLinkedUpdateForLink`; cleared by `clearLinkedUpdatePreview`
+   * or after a successful `applyLinkedUpdateForLink`. Drives
+   * UpdatePreviewModal.
+   */
+  activeLinkedUpdate: {
+    linkedWorkspaceId: string;
+    preview: LinkedUpdatePreview;
+  } | null;
+  /** Fetch the source workspace.json at HEAD@branch and classify changes against the consumer's pinned snapshot. */
+  previewLinkedUpdateForLink: (linkedWorkspaceId: string) => Promise<void>;
+  clearLinkedUpdatePreview: () => void;
+  /**
+   * Apply the active update: bumps `pinnedVersion` to source's current,
+   * replaces the cached snapshot, and rewrites `synced.linkedOverrides`
+   * per the user's resolutions (drop accepted-source, keep accepted-
+   * mine, drop orphans by default).
+   */
+  applyLinkedUpdateForLink: (resolutions: LinkedUpdateResolutionMap) => Promise<void>;
   /**
    * Drop a single key from the local-only globalContext map. Used by the
    * Context tab's "Forget extracted value" action.
@@ -581,6 +795,23 @@ type WorkspaceStore = {
    * success; throws on rejected token or insufficient base scopes.
    */
   connectGitHubSession: (token: string) => Promise<GitHubSession>;
+  /**
+   * Kick off GitHub's OAuth Device Flow. Returns the user-facing code +
+   * verification URL immediately so the UI can render them; the
+   * promise resolves to the final `GitHubSession` once the user
+   * completes the flow on github.com/login/device. The caller passes
+   * progress callbacks to render the polling state and a signal so the
+   * UI can cancel mid-flow.
+   *
+   * Browser-only: GitHub's OAuth public-client path is device flow
+   * (no client_secret involved). Configure the OAuth App client id via
+   * `VITE_GITHUB_OAUTH_CLIENT_ID` and ensure "Enable Device Flow" is
+   * turned on in the App's GitHub settings.
+   */
+  connectGitHubSessionViaDeviceFlow: (args: {
+    onCodeReady: (info: { userCode: string; verificationUri: string; expiresAt: number }) => void;
+    signal?: AbortSignal;
+  }) => Promise<GitHubSession>;
   /**
    * Re-verify the active session against GitHub and refresh granted scopes.
    * Returns the updated scopes or null when no session exists.
@@ -693,7 +924,19 @@ type WorkspaceStore = {
    * pre-publish workspace.json (plan §5.1). Throws on invalid semver or
    * duplicate version.
    */
-  publishRelease: (args: PublishReleaseArgs) => Promise<void>;
+  publishRelease: (
+    args: PublishReleaseArgs & {
+      /**
+       * Create a Git tag (`refs/tags/v<version>`) on the working branch's
+       * head after publishing. Requires an active session + connected
+       * repo + working branch + at least one prior push (we tag the SHA
+       * we get from pushing the new ledger).
+       */
+      createGitTag?: boolean;
+      /** Also create a GitHub Release pointing at the tag. Implies createGitTag. */
+      createGitHubRelease?: boolean;
+    },
+  ) => Promise<{ commitSha?: string; tagRef?: string; releaseUrl?: string }>;
   /** Flip `deprecated: true` on a published version. */
   deprecateRelease: (version: string) => void;
   /** Flip `yanked: true` on a published version. Soft destructive. */
@@ -727,6 +970,37 @@ type WorkspaceStore = {
     pinnedVersion?: string | null;
     marketplace?: { listedAs: string; tags: string[]; summary: string };
   }) => Promise<LinkedWorkspace>;
+
+  /**
+   * List repositories the active GitHub session can access. Powers the
+   * Link Workspace repo browser. Throws when no session is active.
+   */
+  listAccessibleRepos: () => Promise<GitHubRepo[]>;
+
+  /**
+   * List branches on a repo via the active GitHub session. Powers the
+   * branch dropdown in the repo browser; the user picks one before
+   * confirming the link.
+   */
+  listRepoBranches: (owner: string, name: string) => Promise<GitHubBranch[]>;
+
+  /**
+   * Probe a candidate source repo's `workspace.json` for its display
+   * name and published-version list. Used by the repo browser to
+   * pre-populate the pin-version dropdown after the user picks a repo
+   * + branch but before confirming the link. Returns `null` when the
+   * branch has no workspace.json (so the modal can disable Link with a
+   * useful message).
+   */
+  probeLinkedRepoVersions: (
+    owner: string,
+    name: string,
+    branch: string,
+  ) => Promise<{
+    workspaceName: string;
+    versions: string[];
+    currentVersion: string | null;
+  } | null>;
 
   /**
    * Search GitHub for repos tagged `topic:apicircle-marketplace` plus
@@ -886,19 +1160,21 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   activeLinkedRequest: null,
   pendingRefresh: null,
   missingScopePrompt: null,
+  firstPullPrompt: null,
+  acknowledgeFirstPull: () => set({ firstPullPrompt: null }),
   activePlanId: null,
   lastRun: {},
   lastPlanResults: {},
   isExecuting: {},
   envFocus: null,
 
+  workspaceRegistry: null,
+
   hydrate: async () => {
     try {
-      const { synced, local } = await loadWorkspace();
+      const { synced, local, registry } = await loadWorkspace();
       applyTheme(local.ui.themeId);
-      // One-shot legacy migration: rows that were encrypted with the master
-      // key (no secretKeyId) get decrypted in-place to plaintext, so the
-      // new vault-key-only encryption model has a clean baseline.
+      applyFont(local.ui.fontId);
       const migrated = await migrateLegacyEncryptedEnvVars(synced);
       if (migrated !== synced) {
         try {
@@ -907,11 +1183,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           console.error('[workspace.hydrate] legacy env-var migration could not persist', saveErr);
         }
       }
-      set({ ready: true, hydrationError: null, synced: migrated, local });
+      set({
+        ready: true,
+        hydrationError: null,
+        synced: migrated,
+        local,
+        workspaceRegistry: registry,
+      });
     } catch (err) {
-      // Surface the failure instead of overwriting IDB. The previous behavior
-      // (auto-reset to a fresh workspace) destroyed user data on any
-      // transient hiccup. Keep IDB intact and render a recovery UI in App.
       console.error('[workspace.hydrate] failed', err);
       const message = err instanceof Error ? err.message : String(err);
       const syncedWorkspaceId =
@@ -926,26 +1205,97 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
   },
 
-  /**
-   * Deliberate user-initiated reset. Wipes both IDB records and re-seeds an
-   * empty workspace. Only call from a confirmation flow surfaced after a
-   * hydrationError — never automatically.
-   */
+  switchWorkspace: async (workspaceId) => {
+    const registry = get().workspaceRegistry;
+    if (!registry) throw new Error('Registry not loaded');
+    if (workspaceId === registry.activeWorkspaceId) return;
+    const updatedRegistry = await setActiveWorkspacePersisted(registry, workspaceId);
+    const result = await loadWorkspaceById(workspaceId, updatedRegistry);
+    applyTheme(result.local.ui.themeId);
+    applyFont(result.local.ui.fontId);
+    set({
+      ready: true,
+      hydrationError: null,
+      synced: result.synced,
+      local: result.local,
+      workspaceRegistry: result.registry,
+      // Reset transient panel state so the new workspace boots clean.
+      pendingRefresh: null,
+      activePlanId: null,
+      lastRun: {},
+      lastPlanResults: {},
+      isExecuting: {},
+      activeLinkedUpdate: null,
+    });
+  },
+
+  createNewWorkspace: async (name) => {
+    const registry = get().workspaceRegistry;
+    if (!registry) throw new Error('Registry not loaded');
+    const result = await createWorkspacePersisted(registry, name);
+    applyTheme(result.local.ui.themeId);
+    applyFont(result.local.ui.fontId);
+    set({
+      ready: true,
+      hydrationError: null,
+      synced: result.synced,
+      local: result.local,
+      workspaceRegistry: result.registry,
+      pendingRefresh: null,
+      activePlanId: null,
+      lastRun: {},
+      lastPlanResults: {},
+      isExecuting: {},
+      activeLinkedUpdate: null,
+    });
+    return result.synced.workspaceId;
+  },
+
+  deleteWorkspaceById: async (workspaceId) => {
+    const registry = get().workspaceRegistry;
+    if (!registry) throw new Error('Registry not loaded');
+    const result = await deleteWorkspacePersisted(registry, workspaceId);
+    applyTheme(result.local.ui.themeId);
+    applyFont(result.local.ui.fontId);
+    set({
+      ready: true,
+      hydrationError: null,
+      synced: result.synced,
+      local: result.local,
+      workspaceRegistry: result.registry,
+      pendingRefresh: null,
+      activePlanId: null,
+      lastRun: {},
+      lastPlanResults: {},
+      isExecuting: {},
+      activeLinkedUpdate: null,
+    });
+  },
+
   resetWorkspace: async () => {
-    const { synced, local } = await resetWorkspaceStorage();
-    applyTheme(local.ui.themeId);
-    set({ ready: true, hydrationError: null, synced, local });
+    const result = await resetWorkspaceStorage();
+    applyTheme(result.local.ui.themeId);
+    applyFont(result.local.ui.fontId);
+    set({
+      ready: true,
+      hydrationError: null,
+      synced: result.synced,
+      local: result.local,
+      workspaceRegistry: result.registry,
+    });
   },
 
   recoverPartialWorkspace: async () => {
     const result = await recoverPartialWorkspace();
     if (!result) return 'no-data';
     applyTheme(result.local.ui.themeId);
+    applyFont(result.local.ui.fontId);
     set({
       ready: true,
       hydrationError: null,
       synced: result.synced,
       local: result.local,
+      workspaceRegistry: result.registry,
     });
     return 'recovered';
   },
@@ -986,6 +1336,15 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     void saveLocal(next);
   },
 
+  setFontId: (fontId) => {
+    const local = get().local;
+    if (!local) return;
+    const next: WorkspaceLocal = { ...local, ui: { ...local.ui, fontId } };
+    applyFont(fontId);
+    set({ local: next });
+    void saveLocal(next);
+  },
+
   setValidateOnSend: (value) => {
     const local = get().local;
     if (!local) return;
@@ -995,6 +1354,71 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     };
     set({ local: next });
     void saveLocal(next);
+  },
+
+  setMonacoConsumesWheel: (value) => {
+    const local = get().local;
+    if (!local) return;
+    const next: WorkspaceLocal = {
+      ...local,
+      settings: { ...local.settings, monacoConsumesWheel: value },
+    };
+    set({ local: next });
+    void saveLocal(next);
+  },
+
+  captureSnapshot: (args) => {
+    const synced = get().synced;
+    const local = get().local;
+    if (!synced || !local) return null;
+    const result = coreApplyMutation(
+      { synced, local },
+      {
+        kind: 'snapshot.capture',
+        trigger: args?.trigger ?? 'manual',
+        note: args?.note,
+      },
+    );
+    set({ local: result.next.local });
+    void saveLocal(result.next.local);
+    // The first id in changedIds is the new snapshot's id; later entries
+    // are evicted ids. Return the new snapshot id so callers can scroll
+    // to it in the History panel.
+    return result.changedIds[0] ?? null;
+  },
+
+  restoreSnapshot: (id) => {
+    const synced = get().synced;
+    const local = get().local;
+    if (!synced || !local) return false;
+    const result = coreApplyMutation({ synced, local }, { kind: 'snapshot.restore', id });
+    if (result.changedIds.length === 0) return false;
+    set({ synced: result.next.synced, local: result.next.local });
+    void saveSynced(result.next.synced);
+    void saveLocal(result.next.local);
+    return true;
+  },
+
+  deleteSnapshot: (id) => {
+    const synced = get().synced;
+    const local = get().local;
+    if (!synced || !local) return;
+    const result = coreApplyMutation({ synced, local }, { kind: 'snapshot.delete', id });
+    if (result.changedIds.length === 0) return;
+    set({ local: result.next.local });
+    void saveLocal(result.next.local);
+  },
+
+  setSnapshotMaxBytes: (maxBytes) => {
+    const synced = get().synced;
+    const local = get().local;
+    if (!synced || !local) return;
+    const result = coreApplyMutation(
+      { synced, local },
+      { kind: 'snapshot.set_max_bytes', maxBytes },
+    );
+    set({ local: result.next.local });
+    void saveLocal(result.next.local);
   },
 
   setWorkspaceName: (name) => {
@@ -1007,6 +1431,16 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     };
     set({ synced: nextSynced });
     void saveSynced(nextSynced);
+    // Mirror the rename into the workspace registry so the switcher UI
+    // shows the new name without a reload. Fire-and-forget — the
+    // registry write is best-effort; the synced doc is the source of
+    // truth.
+    const registry = get().workspaceRegistry;
+    if (registry) {
+      void updateRegistryEntryNamePersisted(registry, synced.workspaceId, name).then((next) => {
+        set({ workspaceRegistry: next });
+      });
+    }
   },
 
   // Delete a mock definition. Pure data op — the runtime is the Desktop
@@ -1028,6 +1462,282 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     };
     set({ synced: nextSynced });
     void saveSynced(nextSynced);
+  },
+
+  createMockServer: ({ name, source }) => {
+    const synced = get().synced;
+    if (!synced) throw new Error('Workspace not ready');
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error('Mock server name is required');
+    const collision = Object.values(synced.mockServers).some(
+      (m) => m.name.trim().toLowerCase() === trimmed.toLowerCase(),
+    );
+    if (collision) throw new Error(`A mock named "${trimmed}" already exists`);
+    const id = generateId();
+    // Manual-mode mocks carry their endpoints inline. Spec-blob mocks
+    // store the raw text and defer parsing to the runtime (Desktop or
+    // CLI), so the web app can create them without a Node-side parser.
+    const endpoints = source.kind === 'manual' ? source.endpoints : [];
+    const now = new Date().toISOString();
+    const newServer = {
+      id,
+      name: trimmed,
+      source,
+      endpoints,
+      defaultPort: null,
+      cors: { enabled: false, origins: [] as string[] },
+      createdAt: now,
+      updatedAt: now,
+    };
+    const nextSynced: WorkspaceSynced = {
+      ...synced,
+      mockServers: { ...synced.mockServers, [id]: newServer },
+      meta: { ...synced.meta, updatedAt: now },
+    };
+    set({ synced: nextSynced });
+    void saveSynced(nextSynced);
+    return id;
+  },
+
+  setMockServerName: (id, name) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const existing = synced.mockServers[id];
+    if (!existing) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const now = new Date().toISOString();
+    const next = { ...existing, name: trimmed, updatedAt: now };
+    const nextSynced: WorkspaceSynced = {
+      ...synced,
+      mockServers: { ...synced.mockServers, [id]: next },
+      meta: { ...synced.meta, updatedAt: now },
+    };
+    set({ synced: nextSynced });
+    void saveSynced(nextSynced);
+  },
+
+  setMockServerCors: (id, cors) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const existing = synced.mockServers[id];
+    if (!existing) return;
+    // Defensive: trim/dedupe origins so the saved shape stays canonical and
+    // empty strings don't sneak through and trip the runtime's allow-list.
+    const origins = Array.from(
+      new Set(cors.origins.map((o) => o.trim()).filter((o) => o.length > 0)),
+    );
+    const now = new Date().toISOString();
+    const next = {
+      ...existing,
+      cors: { enabled: cors.enabled, origins },
+      updatedAt: now,
+    };
+    const nextSynced: WorkspaceSynced = {
+      ...synced,
+      mockServers: { ...synced.mockServers, [id]: next },
+      meta: { ...synced.meta, updatedAt: now },
+    };
+    set({ synced: nextSynced });
+    void saveSynced(nextSynced);
+  },
+
+  setMockServerEndpoints: (id, endpoints) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const existing = synced.mockServers[id];
+    if (!existing) return;
+    const now = new Date().toISOString();
+    // For manual-mode mocks, mirror the new endpoints into the source
+    // union so the runtime sees the same array regardless of which
+    // field it reads.
+    const source =
+      existing.source.kind === 'manual' ? { kind: 'manual' as const, endpoints } : existing.source;
+    const next = { ...existing, source, endpoints, updatedAt: now };
+    const nextSynced: WorkspaceSynced = {
+      ...synced,
+      mockServers: { ...synced.mockServers, [id]: next },
+      meta: { ...synced.meta, updatedAt: now },
+    };
+    set({ synced: nextSynced });
+    void saveSynced(nextSynced);
+  },
+
+  addMockEndpoint: (serverId) => {
+    const synced = get().synced;
+    if (!synced) return '';
+    const existing = synced.mockServers[serverId];
+    if (!existing) return '';
+    const id = generateId();
+    const newEndpoint: MockEndpoint = {
+      id,
+      name: 'New endpoint',
+      method: 'GET',
+      pathPattern: '/path',
+      requestSchema: { pathParams: [], queryParams: [], headers: [], cookies: [] },
+      requestValidation: [],
+      responseRules: [],
+      defaultResponse: {
+        status: 200,
+        headers: [{ key: 'Content-Type', value: 'application/json', enabled: true }],
+        body: { type: 'json', content: '{\n  "ok": true\n}' },
+      },
+    };
+    const nextEndpoints = [...existing.endpoints, newEndpoint];
+    const source =
+      existing.source.kind === 'manual'
+        ? { kind: 'manual' as const, endpoints: nextEndpoints }
+        : existing.source;
+    const now = new Date().toISOString();
+    const nextSynced: WorkspaceSynced = {
+      ...synced,
+      mockServers: {
+        ...synced.mockServers,
+        [serverId]: { ...existing, source, endpoints: nextEndpoints, updatedAt: now },
+      },
+      meta: { ...synced.meta, updatedAt: now },
+    };
+    set({ synced: nextSynced, activeMockServerId: serverId, activeMockEndpointId: id });
+    void saveSynced(nextSynced);
+    return id;
+  },
+
+  updateMockEndpoint: (serverId, endpointId, patch) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const existing = synced.mockServers[serverId];
+    if (!existing) return;
+    const idx = existing.endpoints.findIndex((e) => e.id === endpointId);
+    if (idx === -1) return;
+    const nextEndpoint = { ...existing.endpoints[idx], ...patch };
+    const nextEndpoints = [...existing.endpoints];
+    nextEndpoints[idx] = nextEndpoint;
+    const source =
+      existing.source.kind === 'manual'
+        ? { kind: 'manual' as const, endpoints: nextEndpoints }
+        : existing.source;
+    const now = new Date().toISOString();
+    const nextSynced: WorkspaceSynced = {
+      ...synced,
+      mockServers: {
+        ...synced.mockServers,
+        [serverId]: { ...existing, source, endpoints: nextEndpoints, updatedAt: now },
+      },
+      meta: { ...synced.meta, updatedAt: now },
+    };
+    set({ synced: nextSynced });
+    void saveSynced(nextSynced);
+  },
+
+  removeMockEndpoint: (serverId, endpointId) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const existing = synced.mockServers[serverId];
+    if (!existing) return;
+    const nextEndpoints = existing.endpoints.filter((e) => e.id !== endpointId);
+    const source =
+      existing.source.kind === 'manual'
+        ? { kind: 'manual' as const, endpoints: nextEndpoints }
+        : existing.source;
+    const now = new Date().toISOString();
+    const nextSynced: WorkspaceSynced = {
+      ...synced,
+      mockServers: {
+        ...synced.mockServers,
+        [serverId]: { ...existing, source, endpoints: nextEndpoints, updatedAt: now },
+      },
+      meta: { ...synced.meta, updatedAt: now },
+    };
+    const nextActive =
+      get().activeMockEndpointId === endpointId ? { activeMockEndpointId: null } : {};
+    set({ synced: nextSynced, ...nextActive });
+    void saveSynced(nextSynced);
+  },
+
+  duplicateMockServer: (id) => {
+    const synced = get().synced;
+    if (!synced) return null;
+    const { synced: nextSynced, server } = duplicateMockServerAction(synced, id);
+    if (!server) return null;
+    set({ synced: nextSynced, activeMockServerId: server.id, activeMockEndpointId: null });
+    void saveSynced(nextSynced);
+    return server.id;
+  },
+
+  duplicateMockEndpoint: (serverId, endpointId) => {
+    const synced = get().synced;
+    if (!synced) return null;
+    const { synced: nextSynced, endpoint } = duplicateMockEndpointAction(
+      synced,
+      serverId,
+      endpointId,
+    );
+    if (!endpoint) return null;
+    set({ synced: nextSynced, activeMockServerId: serverId, activeMockEndpointId: endpoint.id });
+    void saveSynced(nextSynced);
+    return endpoint.id;
+  },
+
+  activeMockServerId: null,
+  activeMockEndpointId: null,
+  setActiveMockEndpoint: ({ serverId, endpointId }) => {
+    set({ activeMockServerId: serverId, activeMockEndpointId: endpointId });
+  },
+
+  mocksCreateModalOpen: false,
+  openMocksCreateModal: () => set({ mocksCreateModalOpen: true }),
+  closeMocksCreateModal: () => set({ mocksCreateModalOpen: false }),
+
+  attachMockResponseFile: async (serverId, endpointId, file) => {
+    enforceAttachmentSize(file);
+    const synced = get().synced;
+    if (!synced) throw new Error('Workspace not ready');
+    const server = synced.mockServers[serverId];
+    if (!server) throw new Error(`Mock server ${serverId} not found`);
+    const endpoint = server.endpoints.find((e) => e.id === endpointId);
+    if (!endpoint) throw new Error(`Endpoint ${endpointId} not found`);
+    const previousSlot =
+      endpoint.defaultResponse.body.type === 'binary'
+        ? (endpoint.defaultResponse.body.attachment?.slotId ?? null)
+        : null;
+    const slotId = generateId();
+    const record = await createAttachmentFromFile(file, slotId);
+    await putAttachment(record);
+    const ref: AttachmentRef = {
+      slotId,
+      filename: record.filename,
+      size: record.size,
+      mimeType: record.mimeType,
+      sha256: record.sha256,
+    };
+    const nextBody: MockResponseBody = {
+      type: 'binary',
+      content: '',
+      attachment: ref,
+    };
+    get().updateMockEndpoint(serverId, endpointId, {
+      defaultResponse: { ...endpoint.defaultResponse, body: nextBody },
+    });
+    if (previousSlot) await deleteAttachment(previousSlot);
+    return ref;
+  },
+
+  detachMockResponseFile: async (serverId, endpointId) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const server = synced.mockServers[serverId];
+    if (!server) return;
+    const endpoint = server.endpoints.find((e) => e.id === endpointId);
+    if (!endpoint || endpoint.defaultResponse.body.type !== 'binary') return;
+    const previousSlot = endpoint.defaultResponse.body.attachment?.slotId ?? null;
+    const nextBody: MockResponseBody = {
+      type: 'binary',
+      content: '',
+    };
+    get().updateMockEndpoint(serverId, endpointId, {
+      defaultResponse: { ...endpoint.defaultResponse, body: nextBody },
+    });
+    if (previousSlot) await deleteAttachment(previousSlot);
   },
 
   openSecretVault: () => set({ secretVaultOpen: true }),
@@ -1092,6 +1802,28 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const synced = get().synced;
     if (!synced) return '';
     const { synced: nextSynced, folder } = addFolderAction(synced, parentFolderId, name);
+    set({ synced: nextSynced });
+    void saveSynced(nextSynced);
+    return folder.id;
+  },
+
+  duplicateRequest: (id) => {
+    const synced = get().synced;
+    if (!synced) return null;
+    const { synced: nextSynced, request } = duplicateRequestAction(synced, id);
+    if (!request) return null;
+    set({ synced: nextSynced });
+    void saveSynced(nextSynced);
+    // Drop the user into the duplicate so they can immediately edit.
+    get().setActiveRequestId(request.id);
+    return request.id;
+  },
+
+  duplicateFolder: (id) => {
+    const synced = get().synced;
+    if (!synced) return null;
+    const { synced: nextSynced, folder } = duplicateFolderAction(synced, id);
+    if (!folder) return null;
     set({ synced: nextSynced });
     void saveSynced(nextSynced);
     return folder.id;
@@ -1261,35 +1993,97 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   closeGlobalAssets: () => set({ globalAssetsOpen: false }),
 
   setLinkedRequestOverride: (linkedWorkspaceId, itemId, patch) => {
-    const local = get().local;
-    if (!local) return;
     const key = `${linkedWorkspaceId}:${itemId}`;
-    const next: WorkspaceLocal = {
-      ...local,
-      overrides: {
-        ...local.overrides,
-        items: {
-          ...local.overrides.items,
-          [key]: { linkedWorkspaceId, itemId, patch, updatedAt: new Date().toISOString() },
+    // An empty patch is a no-op as overrides go — clear instead so the
+    // consumer's diff is clean (no zero-content rows in workspace.json).
+    if (Object.keys(patch).length === 0) {
+      get().clearLinkedRequestOverride(linkedWorkspaceId, itemId);
+      return;
+    }
+    commitSynced(set, get, (synced) => ({
+      ...synced,
+      linkedOverrides: {
+        ...synced.linkedOverrides,
+        requests: {
+          ...synced.linkedOverrides.requests,
+          [key]: {
+            linkedWorkspaceId,
+            itemId,
+            patch,
+            updatedAt: new Date().toISOString(),
+          },
         },
       },
-    };
-    set({ local: next });
-    void saveLocal(next);
+    }));
   },
   clearLinkedRequestOverride: (linkedWorkspaceId, itemId) => {
-    const local = get().local;
-    if (!local) return;
     const key = `${linkedWorkspaceId}:${itemId}`;
-    if (!local.overrides.items[key]) return;
-    const { [key]: _drop, ...rest } = local.overrides.items;
-    void _drop;
-    const next: WorkspaceLocal = {
-      ...local,
-      overrides: { ...local.overrides, items: rest },
-    };
-    set({ local: next });
-    void saveLocal(next);
+    commitSynced(set, get, (synced) => {
+      if (!synced.linkedOverrides.requests[key]) return synced;
+      const { [key]: _drop, ...rest } = synced.linkedOverrides.requests;
+      void _drop;
+      return {
+        ...synced,
+        linkedOverrides: { ...synced.linkedOverrides, requests: rest },
+      };
+    });
+  },
+  setLinkedEnvVarOverride: (linkedWorkspaceId, envName, varKey, patch) => {
+    const key = `${linkedWorkspaceId}:${envName}:${varKey}`;
+    commitSynced(set, get, (synced) => ({
+      ...synced,
+      linkedOverrides: {
+        ...synced.linkedOverrides,
+        environmentVars: {
+          ...synced.linkedOverrides.environmentVars,
+          [key]: {
+            linkedWorkspaceId,
+            envName,
+            varKey,
+            ...patch,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      },
+    }));
+  },
+  clearLinkedEnvVarOverride: (linkedWorkspaceId, envName, varKey) => {
+    const key = `${linkedWorkspaceId}:${envName}:${varKey}`;
+    commitSynced(set, get, (synced) => {
+      if (!synced.linkedOverrides.environmentVars[key]) return synced;
+      const { [key]: _drop, ...rest } = synced.linkedOverrides.environmentVars;
+      void _drop;
+      return {
+        ...synced,
+        linkedOverrides: { ...synced.linkedOverrides, environmentVars: rest },
+      };
+    });
+  },
+  clearLinkedOverridesFor: (linkedWorkspaceId) => {
+    commitSynced(set, get, (synced) => {
+      const requests = Object.fromEntries(
+        Object.entries(synced.linkedOverrides.requests).filter(
+          ([, override]) => override.linkedWorkspaceId !== linkedWorkspaceId,
+        ),
+      );
+      const environmentVars = Object.fromEntries(
+        Object.entries(synced.linkedOverrides.environmentVars).filter(
+          ([, override]) => override.linkedWorkspaceId !== linkedWorkspaceId,
+        ),
+      );
+      // Short-circuit when nothing changed so commitSynced doesn't emit.
+      if (
+        Object.keys(requests).length === Object.keys(synced.linkedOverrides.requests).length &&
+        Object.keys(environmentVars).length ===
+          Object.keys(synced.linkedOverrides.environmentVars).length
+      ) {
+        return synced;
+      }
+      return {
+        ...synced,
+        linkedOverrides: { requests, environmentVars },
+      };
+    });
   },
   setActiveLinkedRequest: (id) => set({ activeLinkedRequest: id }),
   removeGlobalContextKey: (key) => {
@@ -1684,6 +2478,48 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     return updated;
   },
 
+  connectGitHubSessionViaDeviceFlow: async ({ onCodeReady, signal }) => {
+    const clientId = readOAuthClientId();
+    if (!clientId) {
+      throw new Error(
+        'GitHub OAuth client id missing. Set VITE_GITHUB_OAUTH_CLIENT_ID at build time to enable Sign in with GitHub.',
+      );
+    }
+    const local = get().local;
+    if (!local) throw new Error('Workspace not ready');
+    const client = new GitHubClient();
+    // Request the same scopes the PAT path requires so the resulting
+    // session can do everything (link, push, PR creation).
+    const scope = [...REQUIRED_BASE_SCOPES, 'pull_request'].join(',');
+    const flow = await client.startDeviceFlow(clientId, scope);
+    const expiresAt = Date.now() + flow.expiresIn * 1000;
+    onCodeReady({
+      userCode: flow.userCode,
+      verificationUri: flow.verificationUri,
+      expiresAt,
+    });
+
+    // Poll loop. GitHub's `interval` is in seconds; honor `slow_down`
+    // by adding +5s to the next poll. Bail out cleanly on signal abort.
+    let intervalMs = flow.interval * 1000;
+    while (Date.now() < expiresAt) {
+      if (signal?.aborted) throw new Error('Sign-in cancelled.');
+      await wait(intervalMs, signal);
+      const result = await client.pollDeviceToken(clientId, flow.deviceCode);
+      if (result.kind === 'granted') {
+        // Funnel through the existing PAT path so the token gets
+        // vault-encrypted, scope-validated, and the session card lights
+        // up identically to a manual PAT.
+        return get().connectGitHubSession(result.accessToken);
+      }
+      if (result.kind === 'denied')
+        throw new Error(`GitHub authorization denied: ${result.reason}`);
+      if (result.kind === 'expired') throw new Error('Device code expired — try again.');
+      if (result.kind === 'pending' && result.slowDown) intervalMs += 5_000;
+    }
+    throw new Error('Device code expired — try again.');
+  },
+
   disconnectGitHubSession: async () => {
     const local = get().local;
     const session = local?.sessions.github ?? null;
@@ -1791,6 +2627,26 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const next: WorkspaceLocal = { ...local, workingBranch: branch };
     set({ local: next });
     void saveLocal(next);
+
+    // Probe the new branch for an existing `workspace.json`. If it's
+    // there, the repo is pre-populated — the user shouldn't push their
+    // local seed without first reviewing remote content. Surface the
+    // first-pull prompt; the WorkspacePanel banner offers "Pull first"
+    // (refreshWorkspace) vs. "Skip" (acknowledgeFirstPull).
+    try {
+      const file = await client.getContents(
+        token,
+        repo.owner,
+        repo.name,
+        'workspace.json',
+        branchName,
+      );
+      if (file !== null) {
+        set({ firstPullPrompt: { branchName, remoteSha: file.sha } });
+      }
+    } catch {
+      // Probe is best-effort — auth/network blips don't block branch creation.
+    }
     return branch;
   },
 
@@ -1810,6 +2666,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!branch) throw new Error('Create a working branch before pushing');
     const repo = local.connectedRepo;
     if (!repo) throw new Error('No repo connected');
+
+    // Capture a pre-push snapshot so the user can restore the local state
+    // if the upstream gets in a weird shape after the push (force-push
+    // overwrites, branch reset, etc).
+    get().captureSnapshot({ trigger: 'pre-push', note: `Before push to ${branch.name}` });
 
     const token = await decryptSessionToken(local);
     const client = new GitHubClient();
@@ -1870,17 +2731,73 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   publishRelease: async (args) => {
     const synced = get().synced;
-    if (!synced) return;
+    if (!synced) return {};
+    const wantTag = args.createGitTag === true || args.createGitHubRelease === true;
+    const wantRelease = args.createGitHubRelease === true;
+
+    if (wantTag) {
+      const local = get().local;
+      if (!local?.connectedRepo || !local.workingBranch) {
+        throw new Error(
+          'Connect a repo + create a working branch before tagging or releasing on GitHub.',
+        );
+      }
+    }
+
+    // 1. Update the workspace ledger first. The synced doc is the
+    //    source of truth — even if the GitHub side fails, the ledger
+    //    entry persists and can be re-pushed / tagged later.
     const next = await publishReleaseAction(synced, args);
     set({ synced: next });
-    void saveSynced(next);
+    await saveSynced(next);
+
+    if (!wantTag) return {};
+
+    // 2. Push the updated synced doc so the tag points at a commit
+    //    that includes the new ledger entry. pushWorkspace handles
+    //    bundling the synced + attachments into one tree commit.
+    const pushResult = await get().pushWorkspace(`Publish release v${args.version}`);
+    const local = get().local!;
+    const repo = local.connectedRepo!;
+    const token = await decryptSessionToken(local);
+    const client = new GitHubClient();
+
+    const tagName = `v${args.version}`;
+    const tag = await client.createTag(token, repo.owner, repo.name, {
+      tagName,
+      sha: pushResult.commitSha,
+    });
+
+    const result: { commitSha: string; tagRef: string; releaseUrl?: string } = {
+      commitSha: pushResult.commitSha,
+      tagRef: tag.ref,
+    };
+
+    if (wantRelease) {
+      const parsed = parseSemver(args.version);
+      const release = await client.createRelease(token, repo.owner, repo.name, {
+        tagName,
+        releaseName: `v${args.version}`,
+        body: args.notes,
+        prerelease: parsed?.prerelease !== null && parsed?.prerelease !== undefined,
+      });
+      result.releaseUrl = release.htmlUrl;
+    }
+
+    return result;
   },
 
   deprecateRelease: (version) => {
+    // Capture before mutating releases.self so the user can recover the
+    // pre-deprecate state if the version flag was changed by mistake.
+    get().captureSnapshot({ trigger: 'pre-deprecate', note: `Before deprecate v${version}` });
     commitSynced(set, get, (s) => deprecateReleaseAction(s, version));
   },
 
   yankRelease: (version) => {
+    // Yank rewrites the version's `yanked: true` flag — destructive enough
+    // that we want the snapshot in case the user wants to roll back.
+    get().captureSnapshot({ trigger: 'pre-yank', note: `Before yank v${version}` });
     commitSynced(set, get, (s) => yankReleaseAction(s, version));
   },
 
@@ -1891,9 +2808,212 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   searchMarketplace: async (query) => {
     const local = get().local;
     if (!local) throw new Error('Workspace not ready');
-    const token = await decryptSessionToken(local);
+    // Marketplace search runs anonymously when the user has no GitHub
+    // session — discovery shouldn't require a PAT. The token, when
+    // present, only lifts GitHub's anonymous rate limits.
+    const token = await tryDecryptSessionToken(local);
     const client = new GitHubClient();
     return client.searchMarketplaceRepos(token, query);
+  },
+
+  listAccessibleRepos: async () => {
+    const local = get().local;
+    if (!local) throw new Error('Workspace not ready');
+    const token = await decryptSessionToken(local);
+    const client = new GitHubClient();
+    return client.listAccessibleRepos(token);
+  },
+
+  listRepoBranches: async (owner, name) => {
+    const local = get().local;
+    if (!local) throw new Error('Workspace not ready');
+    const token = await decryptSessionToken(local);
+    const client = new GitHubClient();
+    return client.listBranches(token, owner.trim(), name.trim());
+  },
+
+  probeLinkedRepoVersions: async (owner, name, branch) => {
+    const local = get().local;
+    if (!local) throw new Error('Workspace not ready');
+    const token = await decryptSessionToken(local);
+    const client = new GitHubClient();
+    const file = await client.getContents(
+      token,
+      owner.trim(),
+      name.trim(),
+      'workspace.json',
+      branch.trim(),
+    );
+    if (file === null) return null;
+    // parseLinkedWorkspaceJson surfaces typed errors for malformed JSON
+    // / missing workspaceName — let those propagate so the modal can
+    // render a useful message.
+    const parsed = parseLinkedWorkspaceJson(file.content);
+    const ledger = parsed.releases?.self ?? null;
+    return {
+      workspaceName: parsed.workspaceName,
+      versions: (ledger?.versions ?? []).map((v) => v.version),
+      currentVersion: ledger?.currentVersion ?? null,
+    };
+  },
+
+  activeLinkedUpdate: null,
+
+  previewLinkedUpdateForLink: async (id) => {
+    const local = get().local;
+    const synced = get().synced;
+    if (!local || !synced) throw new Error('Workspace not ready');
+    const link = synced.linkedWorkspaces[id];
+    if (!link) throw new Error(`Linked workspace ${id} not found`);
+
+    const token = await decryptSessionToken(local);
+    const client = new GitHubClient();
+    const [owner, name] = link.source.repoFullName.split('/', 2);
+    // Always fetch HEAD of the source branch — that's the source's
+    // currently-published view. (Targeting a specific historical version
+    // would need git tags / commit refs, deferred to a follow-on slice.)
+    const file = await client.getContents(token, owner, name, 'workspace.json', link.source.branch);
+    if (file === null) {
+      throw new Error(
+        `workspace.json missing on ${link.source.repoFullName}@${link.source.branch}`,
+      );
+    }
+    const parsed = parseLinkedWorkspaceJson(file.content);
+    const targetSnapshot = buildLinkedSnapshot(parsed, link);
+    if (!targetSnapshot) {
+      throw new Error(
+        `Source ${link.source.repoFullName}@${link.source.branch} has no collections or environments to preview.`,
+      );
+    }
+    const targetVersion = parsed.releases?.self?.currentVersion ?? targetSnapshot.ref;
+    const baseSnapshot = local.linkedCollections[id] ?? null;
+
+    const requestOverrides = Object.values(synced.linkedOverrides.requests).filter(
+      (o) => o.linkedWorkspaceId === id,
+    );
+    const envVarOverrides = Object.values(synced.linkedOverrides.environmentVars).filter(
+      (o) => o.linkedWorkspaceId === id,
+    );
+
+    const preview = previewLinkedUpdateCore({
+      fromVersion: link.pinnedVersion,
+      toVersion: targetVersion,
+      base: baseSnapshot,
+      target: targetSnapshot,
+      requestOverrides,
+      envVarOverrides,
+    });
+    set({ activeLinkedUpdate: { linkedWorkspaceId: id, preview } });
+  },
+
+  clearLinkedUpdatePreview: () => set({ activeLinkedUpdate: null }),
+
+  applyLinkedUpdateForLink: async (resolutions) => {
+    const state = get();
+    const active = state.activeLinkedUpdate;
+    const synced = state.synced;
+    const local = state.local;
+    if (!active || !synced || !local) return;
+    const link = synced.linkedWorkspaces[active.linkedWorkspaceId];
+    if (!link) {
+      set({ activeLinkedUpdate: null });
+      return;
+    }
+
+    // Linked update apply mutates synced.linkedOverrides + may adopt
+    // upstream changes. Capture pre-state so the user can roll back if
+    // the merge resolutions were wrong.
+    get().captureSnapshot({
+      trigger: 'pre-linked-update',
+      note: `Before linked-update apply for ${link.source.repoFullName}`,
+    });
+
+    const baseSnapshot = local.linkedCollections[active.linkedWorkspaceId] ?? null;
+    // Re-fetch the target — between preview and apply, the source could
+    // have moved. Refetching here keeps the apply honest.
+    const token = await decryptSessionToken(local);
+    const client = new GitHubClient();
+    const [owner, name] = link.source.repoFullName.split('/', 2);
+    const file = await client.getContents(token, owner, name, 'workspace.json', link.source.branch);
+    if (file === null) {
+      throw new Error(
+        `workspace.json missing on ${link.source.repoFullName}@${link.source.branch}`,
+      );
+    }
+    const parsed = parseLinkedWorkspaceJson(file.content);
+    const targetSnapshot = buildLinkedSnapshot(parsed, link);
+    if (!targetSnapshot) {
+      throw new Error('Source has no content to apply.');
+    }
+    const targetVersion = parsed.releases?.self?.currentVersion ?? active.preview.toVersion;
+
+    const requestOverridesForLink = Object.values(synced.linkedOverrides.requests).filter(
+      (o) => o.linkedWorkspaceId === active.linkedWorkspaceId,
+    );
+    const envVarOverridesForLink = Object.values(synced.linkedOverrides.environmentVars).filter(
+      (o) => o.linkedWorkspaceId === active.linkedWorkspaceId,
+    );
+
+    const result = applyLinkedUpdateCore({
+      base: baseSnapshot,
+      target: targetSnapshot,
+      preview: active.preview,
+      resolutions,
+      requestOverrides: requestOverridesForLink,
+      envVarOverrides: envVarOverridesForLink,
+    });
+
+    // Build the next request overrides map: keep entries from OTHER links,
+    // replace this link's entries with the post-apply set.
+    const nextRequestOverrides: WorkspaceSynced['linkedOverrides']['requests'] = {};
+    for (const [k, v] of Object.entries(synced.linkedOverrides.requests)) {
+      if (v.linkedWorkspaceId !== active.linkedWorkspaceId) nextRequestOverrides[k] = v;
+    }
+    for (const o of result.nextRequestOverrides) {
+      nextRequestOverrides[`${o.linkedWorkspaceId}:${o.itemId}`] = o;
+    }
+
+    const nextEnvVarOverrides: WorkspaceSynced['linkedOverrides']['environmentVars'] = {};
+    for (const [k, v] of Object.entries(synced.linkedOverrides.environmentVars)) {
+      if (v.linkedWorkspaceId !== active.linkedWorkspaceId) nextEnvVarOverrides[k] = v;
+    }
+    for (const o of result.nextEnvVarOverrides) {
+      nextEnvVarOverrides[`${o.linkedWorkspaceId}:${o.envName}:${o.varKey}`] = o;
+    }
+
+    const cachedLedger: ReleaseHistory = parsed.releases?.self ?? {
+      versions: [],
+      currentVersion: null,
+    };
+    const nextSynced: WorkspaceSynced = {
+      ...synced,
+      linkedWorkspaces: {
+        ...synced.linkedWorkspaces,
+        [active.linkedWorkspaceId]: { ...link, pinnedVersion: targetVersion },
+      },
+      linkedOverrides: {
+        requests: nextRequestOverrides,
+        environmentVars: nextEnvVarOverrides,
+      },
+      releases: {
+        ...synced.releases,
+        perLink: {
+          ...synced.releases.perLink,
+          [active.linkedWorkspaceId]: cachedLedger,
+        },
+      },
+      meta: { ...synced.meta, updatedAt: new Date().toISOString() },
+    };
+    const nextLocal: WorkspaceLocal = {
+      ...local,
+      linkedCollections: {
+        ...local.linkedCollections,
+        [active.linkedWorkspaceId]: result.nextSnapshot,
+      },
+    };
+    set({ synced: nextSynced, local: nextLocal, activeLinkedUpdate: null });
+    void saveSynced(nextSynced);
+    void saveLocal(nextLocal);
   },
 
   refreshLinkedWorkspace: async (id) => {
@@ -2399,7 +3519,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
 
     if (diff.conflicts.length === 0) {
-      // No conflicts — auto-merge.
+      // No conflicts — auto-merge. Capture pre-merge so the user can
+      // restore even when the merge looked clean (e.g. the remote moved
+      // ahead in a way that drops local entries the user didn't expect).
+      get().captureSnapshot({
+        trigger: 'pre-merge',
+        note: `Before auto-merge from ${branch.name}`,
+      });
       const merged = applyMerge(synced, remote, diff, {});
       await persistMerged(set, get, merged, file.sha);
       return { status: 'merged' };
@@ -2414,6 +3540,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const pending = get().pendingRefresh;
     const synced = get().synced;
     if (!pending || !synced) throw new Error('No pending refresh to commit');
+    // Conflicting merge with user-resolved choices — definitely worth a
+    // pre-merge snapshot so the user can roll back if the resolutions
+    // turned out wrong.
+    get().captureSnapshot({
+      trigger: 'pre-merge',
+      note: 'Before conflict-resolved merge',
+    });
     const merged = applyMerge(synced, pending.remote, pending.diff, resolutions);
     await persistMerged(set, get, merged, pending.remoteSha);
     set({ pendingRefresh: null });
@@ -2504,6 +3637,84 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     };
     set({ local: next });
     void saveLocal(next);
+  },
+
+  executeLinkedActiveRequest: async () => {
+    const state = get();
+    const active = state.activeLinkedRequest;
+    const synced = state.synced;
+    const local = state.local;
+    if (!active || !synced || !local) return;
+
+    const lookup = lookupPlanStepRequest(
+      { requestId: active.itemId, linkedWorkspaceId: active.linkedWorkspaceId },
+      synced,
+      local,
+    );
+    const request = lookup.request;
+    if (!request) {
+      // Surface the typed error on `lastRun` so the modal Send button can
+      // render it the same way as a network failure.
+      const errorResult: ExecutionResult = {
+        startedAt: new Date().toISOString(),
+        durationMs: 0,
+        status: null,
+        statusText: lookup.error ?? 'Linked request unavailable',
+        ok: false,
+        url: '',
+        method: '—',
+        headers: {},
+        body: '',
+        bodyKind: 'empty',
+        error: lookup.error ?? 'Linked request unavailable',
+        authWarnings: [],
+      };
+      set((s) => ({ lastRun: { ...s.lastRun, [active.itemId]: errorResult } }));
+      return;
+    }
+    // Build a "virtual" synced doc that resolves against the source's
+    // environments + folders so `auth.type === 'inherit'` walks the source
+    // chain (not the consumer's, which doesn't know about the source).
+    const resolveSynced: WorkspaceSynced =
+      lookup.linkedEnvironments && lookup.linkedFolders
+        ? {
+            ...synced,
+            environments: lookup.linkedEnvironments,
+            collections: {
+              ...synced.collections,
+              folders: lookup.linkedFolders,
+            },
+          }
+        : synced;
+
+    set((s) => ({ isExecuting: { ...s.isExecuting, [active.itemId]: true } }));
+    try {
+      const resolved = await resolveRequest(request, resolveSynced, local);
+      const result = await coreExecuteRequest(resolved, {
+        resolveAttachment: attachmentResolver,
+      });
+      const assertionResults = runAssertions(request.assertions, result);
+      const run = buildRequestRun(resolved, result, assertionResults);
+      const extractionResult =
+        request.extractions && request.extractions.length > 0
+          ? extractContext(result, request.extractions)
+          : { extracted: {}, warnings: [] };
+
+      const liveLocal = get().local;
+      if (liveLocal) {
+        const trimmed = [run, ...liveLocal.history.requestRuns].slice(0, MAX_REQUEST_RUNS);
+        const next: WorkspaceLocal = {
+          ...liveLocal,
+          history: { ...liveLocal.history, requestRuns: trimmed },
+          globalContext: { ...liveLocal.globalContext, ...extractionResult.extracted },
+        };
+        set({ local: next });
+        void saveLocal(next);
+      }
+      set((s) => ({ lastRun: { ...s.lastRun, [active.itemId]: result } }));
+    } finally {
+      set((s) => ({ isExecuting: { ...s.isExecuting, [active.itemId]: false } }));
+    }
   },
 
   executeActiveRequest: async () => {
@@ -2757,34 +3968,108 @@ function lookupPlanStepRequest(
     };
   }
   // Apply consumer-side override patch on top of the linked snapshot.
-  // Only the fields the user can override (headers, contextVars,
-  // assertions, extractions) are merged — everything else is read straight
-  // from the source workspace.
+  // The patch may carry any editable request field — fields it omits
+  // inherit from the source. Identity / structural fields (id, folderId,
+  // createdAt, updatedAt, schema refs) are not in the patch type so they
+  // always come from the source.
   const overrideKey = `${step.linkedWorkspaceId}:${step.requestId}`;
-  const override = local.overrides.items[overrideKey];
+  const override = synced.linkedOverrides.requests[overrideKey];
   const request = override ? mergeRequestOverride(baseRequest, override.patch) : baseRequest;
   return {
     request,
-    linkedEnvironments: snapshot.environments,
+    linkedEnvironments: applyEnvironmentOverrides(
+      snapshot.environments,
+      step.linkedWorkspaceId,
+      synced,
+    ),
     linkedFolders: snapshot.collections.folders,
   };
 }
 
-function mergeRequestOverride(base: ApiRequest, patch: Record<string, unknown>): ApiRequest {
+function mergeRequestOverride(base: ApiRequest, patch: RequestOverridePatch): ApiRequest {
+  // Spread the patch over the base — any field present in the patch
+  // replaces; absent fields inherit. Body / auth / pathParams / cookies
+  // are object-shaped so a present value replaces wholesale (the user's
+  // edited body is the entire body, not a deep-merged sub-tree).
   const merged: ApiRequest = { ...base };
-  if (Array.isArray(patch.headers)) {
-    merged.headers = patch.headers as ApiRequest['headers'];
-  }
-  if (Array.isArray(patch.contextVars)) {
-    merged.contextVars = patch.contextVars as ApiRequest['contextVars'];
-  }
-  if (Array.isArray(patch.assertions)) {
-    merged.assertions = patch.assertions as ApiRequest['assertions'];
-  }
-  if (Array.isArray(patch.extractions)) {
-    merged.extractions = patch.extractions as ApiRequest['extractions'];
-  }
+  if (patch.name !== undefined) merged.name = patch.name;
+  if (patch.method !== undefined) merged.method = patch.method;
+  if (patch.url !== undefined) merged.url = patch.url;
+  if (patch.headers !== undefined) merged.headers = patch.headers;
+  if (patch.query !== undefined) merged.query = patch.query;
+  if (patch.pathParams !== undefined) merged.pathParams = patch.pathParams;
+  if (patch.cookies !== undefined) merged.cookies = patch.cookies;
+  if (patch.body !== undefined) merged.body = patch.body;
+  if (patch.auth !== undefined) merged.auth = patch.auth;
+  if (patch.contextVars !== undefined) merged.contextVars = patch.contextVars;
+  if (patch.extractions !== undefined) merged.extractions = patch.extractions;
+  if (patch.assertions !== undefined) merged.assertions = patch.assertions;
   return merged;
+}
+
+/**
+ * Project the linked workspace's environments through the consumer's
+ * per-variable overrides for that link. Three composition rules per row:
+ *
+ *   1. Override has `removed: true` → drop the source variable.
+ *   2. Override has a value/encrypted/secretKeyId → replace those fields
+ *      on the existing source variable, keeping its position.
+ *   3. Override targets a varKey that doesn't exist in the source's env
+ *      → append it as a new variable owned by the consumer.
+ */
+function applyEnvironmentOverrides(
+  source: WorkspaceSynced['environments'],
+  linkedWorkspaceId: string,
+  synced: WorkspaceSynced,
+): WorkspaceSynced['environments'] {
+  const overrides = Object.values(synced.linkedOverrides.environmentVars).filter(
+    (o) => o.linkedWorkspaceId === linkedWorkspaceId,
+  );
+  if (overrides.length === 0) return source;
+  const items: WorkspaceSynced['environments']['items'] = {};
+  for (const [envName, env] of Object.entries(source.items)) {
+    const envOverrides = overrides.filter((o) => o.envName === envName);
+    if (envOverrides.length === 0) {
+      items[envName] = env;
+      continue;
+    }
+    const removed = new Set(envOverrides.filter((o) => o.removed).map((o) => o.varKey));
+    const replaceMap = new Map(envOverrides.filter((o) => !o.removed).map((o) => [o.varKey, o]));
+    const variables: Environment['variables'] = [];
+    const seenKeys = new Set<string>();
+    for (const v of env.variables) {
+      if (removed.has(v.key)) continue;
+      const ov = replaceMap.get(v.key);
+      if (ov) {
+        variables.push({
+          key: v.key,
+          value: ov.value ?? v.value,
+          encrypted: ov.encrypted ?? v.encrypted,
+          ...(ov.secretKeyId !== undefined
+            ? { secretKeyId: ov.secretKeyId }
+            : v.secretKeyId !== undefined
+              ? { secretKeyId: v.secretKeyId }
+              : {}),
+        });
+      } else {
+        variables.push(v);
+      }
+      seenKeys.add(v.key);
+    }
+    // Newly-introduced variables: present in overrides but absent in source.
+    for (const ov of envOverrides) {
+      if (ov.removed) continue;
+      if (seenKeys.has(ov.varKey)) continue;
+      variables.push({
+        key: ov.varKey,
+        value: ov.value ?? '',
+        encrypted: ov.encrypted ?? false,
+        ...(ov.secretKeyId !== undefined ? { secretKeyId: ov.secretKeyId } : {}),
+      });
+    }
+    items[envName] = { ...env, variables };
+  }
+  return { ...source, items };
 }
 
 function buildLinkedSnapshot(
@@ -2922,6 +4207,60 @@ async function decryptSessionToken(local: WorkspaceLocal): Promise<string> {
   if (!payload) throw new Error('Stored token is missing — reconnect to refresh');
   const masterKey = await getMasterKey();
   return decryptString(payload, masterKey);
+}
+
+// Variant for paths where missing-session is a normal, non-error state
+// (e.g. anonymous marketplace search). Returns null instead of throwing
+// when the user has no session.
+/**
+ * Read the OAuth client id from build-time env. We try both
+ * `import.meta.env` (Vite production / Vitest with stubEnv) and
+ * `process.env` (Node test fallback). Returning null lets the action
+ * surface a friendly error instead of crashing.
+ *
+ * Exported for tests that need to override it via vi.spyOn.
+ */
+function readOAuthClientId(): string | null {
+  try {
+    const meta = import.meta as { env?: Record<string, string | undefined> };
+    const fromMeta = meta.env?.VITE_GITHUB_OAUTH_CLIENT_ID;
+    if (fromMeta) return fromMeta;
+  } catch {
+    /* import.meta unavailable in some test envs */
+  }
+  if (typeof process !== 'undefined' && process.env?.VITE_GITHUB_OAUTH_CLIENT_ID) {
+    return process.env.VITE_GITHUB_OAUTH_CLIENT_ID;
+  }
+  return null;
+}
+
+/** Promise-based delay that resolves early if the abort signal fires. */
+async function wait(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      cleanup();
+      resolve();
+    };
+    function cleanup() {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    }
+    if (signal?.aborted) {
+      cleanup();
+      resolve();
+    } else {
+      signal?.addEventListener('abort', onAbort, { once: true });
+    }
+  });
+}
+
+async function tryDecryptSessionToken(local: WorkspaceLocal): Promise<string | null> {
+  if (!local.sessions.github) return null;
+  return decryptSessionToken(local);
 }
 
 function commitSynced(

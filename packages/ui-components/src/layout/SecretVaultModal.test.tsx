@@ -182,7 +182,9 @@ describe('SecretVaultModal', () => {
       await userEvent.type(screen.getByLabelText('GitHub PAT'), 'ghp_test');
       await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
 
-      expect(await screen.findByText(/does not include/i)).toBeInTheDocument();
+      // B.2 reworded the warning copy from "does not include" to
+      // "Recommended scope(s) missing" — same intent, clearer phrasing.
+      expect(await screen.findByText(/Recommended scope\(s\) missing/i)).toBeInTheDocument();
     });
 
     it('shows the missing-scope error inline when connect fails on insufficient base scopes', async () => {
@@ -210,6 +212,95 @@ describe('SecretVaultModal', () => {
           (_text, el) => el?.getAttribute('role') === 'alert' && /repo/.test(el.textContent ?? ''),
         ),
       ).toBeInTheDocument();
+    });
+
+    it('B.2 test-connection — pass: shows the "Connection healthy" banner and refreshes scopes', async () => {
+      const fetchMock = vi.fn(
+        async () =>
+          new Response(JSON.stringify({ login: 'me', id: 1 }), {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+              'x-oauth-scopes': 'repo, pull_request',
+            },
+          }),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+
+      await renderWithStore(<SecretVaultModal />);
+      act(() => useWorkspaceStore.getState().openSecretVault());
+      await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+      await userEvent.type(screen.getByLabelText('GitHub PAT'), 'tok');
+      await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+      await screen.findByText(/Connected as me/);
+
+      // Required-scope chip is green for `repo`.
+      expect(screen.getByLabelText('repo scope present')).toBeInTheDocument();
+
+      // Click "Test connection" — verify it fires another /user call and
+      // surfaces the pass banner.
+      await userEvent.click(screen.getByRole('button', { name: 'Test GitHub connection' }));
+      expect(await screen.findByText(/Connection healthy/)).toBeVisible();
+    });
+
+    it('B.2 test-connection — fail: 401 surfaces a "Token rejected" banner with reconnect copy', async () => {
+      // First call: connect succeeds (granted scopes ok).
+      // Second call: verify returns 401 — token revoked between sessions.
+      let callIndex = 0;
+      const fetchMock = vi.fn(async () => {
+        callIndex += 1;
+        if (callIndex === 1) {
+          return new Response(JSON.stringify({ login: 'me', id: 1 }), {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+              'x-oauth-scopes': 'repo, pull_request',
+            },
+          });
+        }
+        return new Response(JSON.stringify({ message: 'Bad credentials' }), {
+          status: 401,
+          headers: { 'content-type': 'application/json' },
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await renderWithStore(<SecretVaultModal />);
+      act(() => useWorkspaceStore.getState().openSecretVault());
+      await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+      await userEvent.type(screen.getByLabelText('GitHub PAT'), 'tok');
+      await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+      await screen.findByText(/Connected as me/);
+
+      await userEvent.click(screen.getByRole('button', { name: 'Test GitHub connection' }));
+      expect(await screen.findByText(/Token rejected by GitHub \(401\)/)).toBeVisible();
+    });
+
+    it('B.2 missing required-scope warning surfaces when token only has narrower scopes', async () => {
+      const fetchMock = vi.fn(
+        async () =>
+          new Response(JSON.stringify({ login: 'me', id: 1 }), {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+              // Tease apart the partial-scope path: token has repo but no pull_request.
+              'x-oauth-scopes': 'repo',
+            },
+          }),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+
+      await renderWithStore(<SecretVaultModal />);
+      act(() => useWorkspaceStore.getState().openSecretVault());
+      await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+      await userEvent.type(screen.getByLabelText('GitHub PAT'), 'tok');
+      await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+      await screen.findByText(/Connected as me/);
+
+      // The pull_request chip is in the missing/recommended state.
+      expect(screen.getByLabelText('pull_request scope missing (recommended)')).toBeInTheDocument();
+      // The yellow "Recommended scope(s) missing" banner surfaces.
+      expect(screen.getByText(/Recommended scope\(s\) missing/)).toBeInTheDocument();
     });
 
     it('disconnect requires confirmation then clears the session', async () => {

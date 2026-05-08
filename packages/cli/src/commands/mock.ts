@@ -46,7 +46,6 @@ export function registerMockCommand(program: Command): void {
         name: path.basename(absolute),
         source,
         endpoints: parsed.endpoints,
-        overrides: {},
         defaultPort: opts.port ? Number(opts.port) : null,
         cors: { enabled: opts.cors !== false, origins: ['*'] },
         createdAt: new Date().toISOString(),

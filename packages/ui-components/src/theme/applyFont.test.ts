@@ -1,15 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ALL_FONTS, applyFont, getFontDef, getStoredFontId } from './applyFont';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { ALL_FONTS, applyFont, getFontDef } from './applyFont';
 
 beforeEach(() => {
   document.documentElement.removeAttribute('data-font');
   document.documentElement.style.removeProperty('--app-font');
   document.head.querySelectorAll('link[data-apicircle-font]').forEach((el) => el.remove());
-  localStorage.clear();
-});
-
-afterEach(() => {
-  localStorage.clear();
 });
 
 describe('applyFont', () => {
@@ -21,9 +16,12 @@ describe('applyFont', () => {
     );
   });
 
-  it('persists the choice to localStorage', () => {
+  it('does NOT touch localStorage anymore — workspace owns the persistence', () => {
+    // Pre-fix this test asserted localStorage write; the workspace store
+    // is now the source of truth via local.ui.fontId.
+    const before = localStorage.length;
     applyFont('inter');
-    expect(localStorage.getItem('apicircle-v2:font')).toBe('inter');
+    expect(localStorage.length).toBe(before);
   });
 
   it('injects the webfont link the first time only', () => {
@@ -42,22 +40,6 @@ describe('applyFont', () => {
   it('falls back to system-mono when given an unknown id', () => {
     const def = getFontDef('not-a-font' as never);
     expect(def.id).toBe('system-mono');
-  });
-});
-
-describe('getStoredFontId', () => {
-  it('returns system-mono when nothing has been stored', () => {
-    expect(getStoredFontId()).toBe('system-mono');
-  });
-
-  it('returns the stored id when valid', () => {
-    localStorage.setItem('apicircle-v2:font', 'inter');
-    expect(getStoredFontId()).toBe('inter');
-  });
-
-  it('falls back when the stored value is not in the catalog', () => {
-    localStorage.setItem('apicircle-v2:font', 'comic-sans');
-    expect(getStoredFontId()).toBe('system-mono');
   });
 });
 

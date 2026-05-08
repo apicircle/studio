@@ -19,6 +19,18 @@ export type ThemeId =
   | 'paper-light'
   | 'high-contrast-dark';
 
+// Font family preference. Matches `ALL_FONTS` in `applyFont.ts` — the
+// bare id lives here because it's persisted on `WorkspaceLocal.ui` so
+// fonts switch with the workspace (parity with theme).
+export type FontFamilyId =
+  | 'system-mono'
+  | 'jetbrains-mono'
+  | 'fira-code'
+  | 'cascadia-code'
+  | 'ibm-plex-mono'
+  | 'system-sans'
+  | 'inter';
+
 // No 'settings' panel — Secret Vault and Theme moved to TopBar.
 // No 'command' panel — feature dropped per revision #2.
 // 'mocks' and 'mcp' added in P27 (mock-server runtime + MCP config snippets).
@@ -54,6 +66,20 @@ export interface WorkspaceSynced {
   // Renamed from `apiConnections`. Each entry represents a workspace this one
   // links to (private session-bound or public marketplace).
   linkedWorkspaces: Record<string, LinkedWorkspace>;
+  // Consumer-side modifications to linked content. Lives in the synced doc
+  // so collaborators see each other's edits to a linked workspace's
+  // requests / env vars when they pull. Reset = drop the entry. The
+  // canonical source content is re-fetched into `WorkspaceLocal.linkedCollections`
+  // (snapshots, device-local) and these patches apply on top at read time.
+  linkedOverrides: {
+    // Keyed `${linkedWorkspaceId}:${requestId}`. Patch is field-level
+    // (only the diverging fields are stored — omitted ⇒ inherit from source).
+    requests: Record<string, RequestOverride>;
+    // Keyed `${linkedWorkspaceId}:${envName}:${varKey}`. Per-variable so we
+    // don't need a "full env replacement" sledgehammer when the user just
+    // tweaks one value.
+    environmentVars: Record<string, EnvironmentVariableOverride>;
+  };
   releases: {
     // This workspace's own release ledger — drives version updates without
     // depending on GitHub Actions / tag automation.
@@ -505,9 +531,6 @@ export interface ReleaseVersion {
 export interface WorkspaceLocal {
   schemaVersion: 1;
   workspaceId: string;
-  overrides: {
-    items: Record<string, ItemOverride>;
-  };
   executionPlans: Record<string, ExecutionPlan>;
   history: {
     requestRuns: RequestRun[];
@@ -550,6 +573,12 @@ export interface WorkspaceLocal {
     activeRequestId: string | null;
     sidebarExpandedSections: string[];
     themeId: ThemeId;
+    /**
+     * Workspace-bound font family. Switching workspaces applies this
+     * font; renaming a workspace does not affect it. Default
+     * `'system-mono'` matches the seed in `createEmptyWorkspace`.
+     */
+    fontId: FontFamilyId;
   };
   /**
    * User-tunable client-side settings. Local-only; never round-trips
@@ -560,10 +589,74 @@ export interface WorkspaceLocal {
    *   `core/preSendValidation`) above the Send button. Default: true.
    */
   settings: WorkspaceLocalSettings;
+  /**
+   * Pre-destructive snapshot ledger. Auto-captured before every operation
+   * that could lose work (push, merge, linked-update apply, yank, deprecate),
+   * and on user demand via the History panel. Local-only; never pushed.
+   *
+   * The ledger acts as a ring buffer: when total `sizeBytes` exceeds
+   * `maxBytes`, the oldest snapshots are evicted until the total drops
+   * back under cap. Set `maxBytes: Number.POSITIVE_INFINITY` to disable
+   * eviction.
+   */
+  snapshots: WorkspaceSnapshotLedger;
 }
 
 export interface WorkspaceLocalSettings {
   validateOnSend: boolean;
+  /**
+   * Whether Monaco editors consume mouse-wheel events even when the user
+   * isn't intending to scroll the editor (e.g. they're hovering over the
+   * editor while scrolling the page). When `false`, wheel events bubble
+   * up to the page so long pages remain scrollable past the editor.
+   * When `true`, the editor scrolls first and only releases the wheel
+   * once it reaches its top/bottom (Monaco's default behavior).
+   *
+   * Default: `false` (page-scroll friendly).
+   */
+  monacoConsumesWheel: boolean;
+}
+
+export type WorkspaceSnapshotTrigger =
+  | 'manual'
+  | 'pre-push'
+  | 'pre-merge'
+  | 'pre-linked-update'
+  | 'pre-yank'
+  | 'pre-deprecate';
+
+export interface WorkspaceSnapshot {
+  /** Stable id; survives ledger updates so restore is idempotent. */
+  id: string;
+  /** ISO timestamp the snapshot was captured at. */
+  createdAt: string;
+  /** What triggered the capture — informational, used for the History badge. */
+  triggeredBy: WorkspaceSnapshotTrigger;
+  /** Optional user-provided note (manual snapshots; the others auto-fill it). */
+  note?: string;
+  /**
+   * Verbatim copy of `WorkspaceSynced` at the moment of capture. Stored
+   * inline so restore is a single state replacement — no IPFS, no SHA-only
+   * placeholder. Cost: ~the size of `workspace.json`. The ring buffer +
+   * cap keep this bounded.
+   */
+  workspaceSyncedSnapshot: WorkspaceSynced;
+  /**
+   * Approximate JSON byte length of `workspaceSyncedSnapshot` at capture
+   * time. Used for the storage meter + ring-buffer eviction; the exact
+   * persisted size after IDB compression may differ.
+   */
+  sizeBytes: number;
+}
+
+export interface WorkspaceSnapshotLedger {
+  entries: WorkspaceSnapshot[];
+  /**
+   * Cap on total `sizeBytes` across all entries. When exceeded, oldest
+   * entries are dropped until the total drops back under cap. Defaults
+   * to 50 MB (52,428,800).
+   */
+  maxBytes: number;
 }
 
 /**
@@ -613,17 +706,70 @@ export interface GitHubSession {
   // separate web-secrets store.
   tokenSecretId: string;
   // Scopes the token currently grants, e.g. ['repo', 'pull_request'].
-  // Refreshed by an explicit "Verify scopes" call (GET /user via API).
+  // Refreshed by an explicit "Test connection" call (GET /user via API).
   grantedScopes: string[];
   addedAt: string;
   lastVerifiedAt: string | null;
 }
 
-export interface ItemOverride {
+/**
+ * Field-level override for a single linked request. Every field is
+ * optional — present ⇒ replaces the source workspace's value, absent ⇒
+ * inherits from the snapshot. Stored as a delta (smallest possible
+ * patch) so reset = drop the entry.
+ *
+ * The five identity / lifecycle fields (`id`, `folderId`, `createdAt`,
+ * `updatedAt`, plus `bodySchemaId` / `graphqlSchemaId` since those
+ * reference the source's globalAssets) are intentionally NOT
+ * overridable — keeping them source-pinned avoids stale references and
+ * keeps the consumer's tree structure under the source's control.
+ */
+export type RequestOverridePatch = Partial<
+  Pick<
+    Request,
+    | 'name'
+    | 'method'
+    | 'url'
+    | 'headers'
+    | 'query'
+    | 'pathParams'
+    | 'cookies'
+    | 'body'
+    | 'auth'
+    | 'contextVars'
+    | 'extractions'
+    | 'assertions'
+  >
+>;
+
+export interface RequestOverride {
   // Key in the parent record is `${linkedWorkspaceId}:${itemId}`.
   linkedWorkspaceId: string;
   itemId: string;
-  patch: Record<string, unknown>;
+  patch: RequestOverridePatch;
+  updatedAt: string;
+}
+
+/**
+ * Per-variable override on a linked workspace's environment. Keyed
+ * `${linkedWorkspaceId}:${envName}:${varKey}` in the parent record.
+ *
+ * Three modes:
+ *   1. Replace value: `value` (and optionally `encrypted` / `secretKeyId`) set,
+ *      `removed` absent. Keeps the source variable but with the consumer's value.
+ *   2. Hide source variable: `removed: true`. The source's variable is dropped
+ *      from the consumer's effective environment.
+ *   3. Inject new variable: the `varKey` does not exist in the source's env;
+ *      the override row introduces it for this consumer only.
+ */
+export interface EnvironmentVariableOverride {
+  linkedWorkspaceId: string;
+  envName: string;
+  varKey: string;
+  value?: string;
+  encrypted?: boolean;
+  secretKeyId?: string;
+  removed?: boolean;
   updatedAt: string;
 }
 

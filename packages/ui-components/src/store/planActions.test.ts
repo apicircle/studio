@@ -17,7 +17,6 @@ import {
 const baseLocal = (): WorkspaceLocal => ({
   schemaVersion: 1,
   workspaceId: 'ws-1',
-  overrides: { items: {} },
   executionPlans: {},
   history: { requestRuns: [], planRuns: [] },
   secretIndex: { entries: {} },
@@ -37,7 +36,10 @@ const baseLocal = (): WorkspaceLocal => ({
     activeRequestId: null,
     sidebarExpandedSections: [],
     themeId: 'studio-dark',
+    fontId: 'system-mono',
   },
+  settings: { validateOnSend: true, monacoConsumesWheel: false },
+  snapshots: { entries: [], maxBytes: 50 * 1024 * 1024 },
 });
 
 describe('addPlan', () => {

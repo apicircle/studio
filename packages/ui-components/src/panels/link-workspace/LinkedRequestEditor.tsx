@@ -1,24 +1,31 @@
 // Modal that opens when the user clicks a request in a linked workspace's
 // snapshot. Shows the source request's URL/method/body/auth as read-only,
-// then exposes editable override sections for the four fields plan §6.5
-// permits to override locally:
+// then exposes editable override sections for headers, contextVars,
+// extractions, and assertions.
 //
-//   • headers          — extra headers tacked on for this consumer
-//   • contextVars      — manual ctx vars, scoped to the consumer's runs
-//   • extractions      — post-run extractors to populate globalContext
-//   • assertions       — extra assertions evaluated on the consumer side
+// Overrides land in `synced.linkedOverrides.requests[`${linkedWorkspaceId}:${itemId}`].patch`
+// and round-trip through Git so collaborators see each other's edits.
 //
-// Overrides land in `local.overrides.items[`${linkedWorkspaceId}:${itemId}`].patch`
-// and never leave the consumer's IndexedDB (the patch is local-only by design).
+// NOTE: This modal is the pre-A.2 placeholder surface. A.2 replaces it
+// with full editing in the main editor panel — these four-field sections
+// stay accurate for now; the rest of the request fields will be editable
+// once the editor integration lands.
 
 import { useMemo, useState } from 'react';
-import { Trash2 } from 'lucide-react';
-import type { Assertion, ContextExtraction, Request as ApiRequest } from '@apicircle/shared';
+import { Send, Trash2 } from 'lucide-react';
+import type {
+  Assertion,
+  ContextExtraction,
+  HttpMethod,
+  Request as ApiRequest,
+} from '@apicircle/shared';
 import { generateId } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { Modal } from '../../primitives/Modal';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { KeyValueRows } from '../editor/KeyValueRows';
+
+const HTTP_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 
 const labelClass = 'text-[11px] uppercase tracking-wide text-text-dim';
 const inputClass =
@@ -49,9 +56,14 @@ function LinkedRequestEditorBody({
   const link = useWorkspaceStore((s) => s.synced?.linkedWorkspaces[linkedWorkspaceId] ?? null);
   const snapshot = useWorkspaceStore((s) => s.local?.linkedCollections[linkedWorkspaceId] ?? null);
   const overrideKey = `${linkedWorkspaceId}:${itemId}`;
-  const override = useWorkspaceStore((s) => s.local?.overrides.items[overrideKey] ?? null);
+  const override = useWorkspaceStore(
+    (s) => s.synced?.linkedOverrides.requests[overrideKey] ?? null,
+  );
   const setOverride = useWorkspaceStore((s) => s.setLinkedRequestOverride);
   const clearOverride = useWorkspaceStore((s) => s.clearLinkedRequestOverride);
+  const executeLinkedActiveRequest = useWorkspaceStore((s) => s.executeLinkedActiveRequest);
+  const isExecuting = useWorkspaceStore((s) => Boolean(s.isExecuting[itemId]));
+  const lastRun = useWorkspaceStore((s) => s.lastRun[itemId] ?? null);
 
   const baseRequest: ApiRequest | null = useMemo(() => {
     return snapshot?.collections.requests[itemId] ?? null;
@@ -65,12 +77,11 @@ function LinkedRequestEditorBody({
     );
   }
 
-  const patch = (override?.patch ?? {}) as {
-    headers?: ApiRequest['headers'];
-    contextVars?: ApiRequest['contextVars'];
-    extractions?: ContextExtraction[];
-    assertions?: Assertion[];
-  };
+  const patch = override?.patch ?? {};
+  const overrideName = patch.name ?? baseRequest.name;
+  const overrideMethod = patch.method ?? baseRequest.method;
+  const overrideUrl = patch.url ?? baseRequest.url;
+  const overrideBody = patch.body ?? baseRequest.body;
   const overrideHeaders = patch.headers ?? baseRequest.headers;
   const overrideContextVars = patch.contextVars ?? baseRequest.contextVars;
   const overrideAssertions = patch.assertions ?? baseRequest.assertions;
@@ -80,28 +91,153 @@ function LinkedRequestEditorBody({
     setOverride(linkedWorkspaceId, itemId, { ...patch, ...next });
   };
 
+  // Per-field "modified" indicator: a field is overridden iff the patch
+  // contains it (regardless of equality with source — the user may have
+  // re-typed the same value intentionally and we treat that as a still-
+  // overridden field until they explicitly Reset).
+  const isModified = (key: keyof typeof patch): boolean => key in patch;
+  const fieldDot = (key: keyof typeof patch) =>
+    isModified(key) ? (
+      <span
+        aria-label="modified"
+        title="Modified locally"
+        className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-accent align-middle"
+      />
+    ) : null;
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-sm border border-border-subtle bg-surface p-3 text-xs">
-        <p className="text-text-muted">
-          From <strong className="text-text-primary">{link.name}</strong> ·{' '}
-          <span className="font-mono text-text-dim">{baseRequest.name}</span>
-        </p>
-        <p className="mt-1 text-text-dim">
-          Source URL, method, body, and auth are read-only. Override headers, context vars,
-          assertions, or extractions below — overrides are local to this workspace.
-        </p>
+      <div className="flex items-start justify-between gap-3 rounded-sm border border-border-subtle bg-surface p-3 text-xs">
+        <div className="flex-1">
+          <p className="text-text-muted">
+            From <strong className="text-text-primary">{link.name}</strong>
+            {link.pinnedVersion && (
+              <span className="ml-2 rounded-sm border border-border bg-card px-1 py-0.5 font-mono text-[10px] text-text-dim">
+                v{link.pinnedVersion}
+              </span>
+            )}
+          </p>
+          <p className="mt-1 text-text-dim">
+            Edit any field to override for this consumer. Empty / unchanged fields inherit from
+            source. Overrides round-trip through Git so collaborators see them on pull.
+          </p>
+          {lastRun && (
+            <p
+              className={`mt-1 font-mono text-[11px] ${
+                lastRun.ok ? 'text-success' : 'text-danger'
+              }`}
+              role="status"
+            >
+              Last run: {lastRun.status || '—'} {lastRun.statusText} · {lastRun.durationMs}ms
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => void executeLinkedActiveRequest()}
+          disabled={isExecuting}
+          aria-label="Send linked request"
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-sm border border-accent bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+        >
+          <Send size={12} />
+          {isExecuting ? 'Sending…' : 'Send'}
+        </button>
       </div>
 
-      <section className="grid grid-cols-[80px_1fr] items-center gap-2">
-        <span className={labelClass}>Method</span>
-        <code className="text-xs text-text-primary">{baseRequest.method}</code>
-        <span className={labelClass}>URL</span>
-        <code className="truncate font-mono text-xs text-text-primary">{baseRequest.url}</code>
-        <span className={labelClass}>Body</span>
-        <code className="text-xs text-text-primary">{baseRequest.body.type}</code>
-        <span className={labelClass}>Auth</span>
-        <code className="text-xs text-text-primary">{baseRequest.auth?.type ?? 'none'}</code>
+      <section>
+        <header className="mb-1 flex items-center justify-between">
+          <h3 className={labelClass}>
+            Name (override)
+            {fieldDot('name')}
+          </h3>
+          {isModified('name') && (
+            <ResetFieldButton onClick={() => updatePatch({ name: undefined })} />
+          )}
+        </header>
+        <input
+          aria-label="Override name"
+          value={overrideName}
+          onChange={(e) => updatePatch({ name: e.target.value })}
+          className={inputClass}
+        />
+      </section>
+
+      <section className="grid grid-cols-[120px_1fr] items-end gap-2">
+        <div>
+          <header className="mb-1">
+            <h3 className={labelClass}>
+              Method
+              {fieldDot('method')}
+            </h3>
+          </header>
+          <select
+            aria-label="Override method"
+            value={overrideMethod}
+            onChange={(e) => updatePatch({ method: e.target.value as HttpMethod })}
+            className={inputClass}
+          >
+            {HTTP_METHODS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <header className="mb-1 flex items-center justify-between">
+            <h3 className={labelClass}>
+              URL
+              {fieldDot('url')}
+            </h3>
+            {isModified('url') && (
+              <ResetFieldButton onClick={() => updatePatch({ url: undefined })} />
+            )}
+          </header>
+          <input
+            aria-label="Override URL"
+            value={overrideUrl}
+            onChange={(e) => updatePatch({ url: e.target.value })}
+            className={inputClass}
+          />
+        </div>
+      </section>
+
+      <section>
+        <header className="mb-1 flex items-center justify-between">
+          <h3 className={labelClass}>
+            Body (override · {overrideBody.type}){fieldDot('body')}
+          </h3>
+          {isModified('body') && (
+            <ResetFieldButton onClick={() => updatePatch({ body: undefined })} />
+          )}
+        </header>
+        {overrideBody.type === 'none' ? (
+          <p className="rounded-sm border border-dashed border-border-subtle p-2 text-center text-[11px] text-text-dim">
+            Source body is &quot;none&quot;. Set a different body type from source to override
+            content.
+          </p>
+        ) : overrideBody.type === 'json' ||
+          overrideBody.type === 'text' ||
+          overrideBody.type === 'xml' ||
+          overrideBody.type === 'graphql' ||
+          overrideBody.type === 'urlencoded' ? (
+          <textarea
+            aria-label="Override body content"
+            value={overrideBody.content}
+            onChange={(e) =>
+              updatePatch({
+                body: { ...overrideBody, content: e.target.value },
+              })
+            }
+            rows={6}
+            className="block w-full rounded-sm border border-border bg-card px-2 py-1.5 font-mono text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+          />
+        ) : (
+          <p className="rounded-sm border border-dashed border-border-subtle p-2 text-center text-[11px] text-text-dim">
+            Body type &quot;{overrideBody.type}&quot; — full editor lands in a later slice. For now,
+            edit body via the dedicated editor on owned requests, or reset to source.
+          </p>
+        )}
       </section>
 
       <section aria-label="Override headers">
@@ -375,6 +511,19 @@ function AssertionRows({
         Add assertion
       </button>
     </div>
+  );
+}
+
+function ResetFieldButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-[10px] text-text-dim hover:text-danger"
+      aria-label="Reset this field to source"
+    >
+      Reset to source
+    </button>
   );
 }
 

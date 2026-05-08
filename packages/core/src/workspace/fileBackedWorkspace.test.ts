@@ -16,6 +16,7 @@ function makeSynced(): WorkspaceSynced {
     collections: { tree: { id: 'root', type: 'root', children: [] }, requests: {}, folders: {} },
     environments: { items: {}, activeName: null, priorityOrder: [] },
     linkedWorkspaces: {},
+    linkedOverrides: { requests: {}, environmentVars: {} },
     releases: { self: null, perLink: {} },
     globalAssets: { schemas: {}, graphql: {} },
     mockServers: {},
@@ -27,7 +28,6 @@ function makeLocal(): WorkspaceLocal {
   return {
     schemaVersion: 1,
     workspaceId: 'ws-1',
-    overrides: { items: {} },
     executionPlans: {},
     history: { requestRuns: [], planRuns: [] },
     secretIndex: { entries: {} },

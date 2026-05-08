@@ -30,6 +30,7 @@ export async function ensureWorkspace(dir: string): Promise<WorkspaceState> {
       },
       environments: { items: {}, activeName: null, priorityOrder: [] },
       linkedWorkspaces: {},
+      linkedOverrides: { requests: {}, environmentVars: {} },
       releases: { self: null, perLink: {} },
       globalAssets: { schemas: {}, graphql: {} },
       mockServers: {},
@@ -38,7 +39,6 @@ export async function ensureWorkspace(dir: string): Promise<WorkspaceState> {
     local: {
       schemaVersion: 1,
       workspaceId,
-      overrides: { items: {} },
       executionPlans: {},
       history: { requestRuns: [], planRuns: [] },
       secretIndex: { entries: {} },

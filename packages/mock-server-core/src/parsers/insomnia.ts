@@ -9,6 +9,7 @@
 // endpoint via the editor.
 
 import type { HttpMethod, MockEndpoint } from '@apicircle/shared';
+import { buildMockEndpoint } from './buildEndpoint';
 
 interface InsomniaExport {
   resources?: InsomniaResource[];
@@ -62,14 +63,19 @@ export function parseInsomniaToEndpoints(source: string): ParseInsomniaResult {
       warnings.push(`Skipping request with no path: ${r.name ?? '(unnamed)'}`);
       continue;
     }
-    endpoints.push({
-      id: `ins-${endpointId++}-${slug(path)}`,
-      method,
-      pathPattern: path,
-      status: 200,
-      headers: [{ key: 'Content-Type', value: 'application/json' }],
-      body: '{}',
-    });
+    endpoints.push(
+      buildMockEndpoint({
+        id: `ins-${endpointId++}-${slug(path)}`,
+        name: r.name,
+        method,
+        pathPattern: path,
+        response: {
+          status: 200,
+          headers: [{ key: 'Content-Type', value: 'application/json' }],
+          body: '{}',
+        },
+      }),
+    );
   }
 
   return { endpoints, warnings };

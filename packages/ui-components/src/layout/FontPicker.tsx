@@ -1,14 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, Type } from 'lucide-react';
-import { ALL_FONTS, applyFont, getStoredFontId, type FontFamilyId } from '../theme/applyFont';
+import type { FontFamilyId } from '@apicircle/shared';
+import { ALL_FONTS } from '../theme/applyFont';
 import { cn } from '../primitives/cn';
+import { useWorkspaceStore } from '../store/workspaceStore';
 
 // Sibling of ThemePicker. Lives in TopBar next to the theme dropdown so a
 // developer can pick a font face that matches what's already installed on
 // their machine — no more "the UI is in Courier New because JetBrains
 // Mono isn't installed" surprise.
+//
+// The chosen font is workspace-bound (parity with the theme picker) —
+// it lives on `local.ui.fontId` so switching workspaces re-applies the
+// per-workspace selection.
 export function FontPicker() {
-  const [fontId, setFontId] = useState<FontFamilyId>(() => getStoredFontId());
+  const fontId = useWorkspaceStore((s) => s.local?.ui.fontId ?? 'system-mono');
+  const setFontId = useWorkspaceStore((s) => s.setFontId);
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
@@ -31,7 +38,6 @@ export function FontPicker() {
   }, [open]);
 
   const choose = (id: FontFamilyId) => {
-    applyFont(id);
     setFontId(id);
     setOpen(false);
   };

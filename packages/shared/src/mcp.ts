@@ -41,15 +41,29 @@ export type McpToolName =
   | 'environment.read'
   | 'environment.update'
   | 'environment.delete'
+  | 'environment.set_active'
+  | 'environment.set_priority'
+  | 'environment.export'
+  | 'environment.import'
   | 'plan.create'
   | 'plan.run'
   | 'plan.read'
   | 'plan.update'
   | 'plan.delete'
+  | 'plan.add_step'
+  | 'plan.remove_step'
+  | 'plan.reorder_steps'
+  | 'plan.set_variables'
   | 'assertion.create'
   | 'assertion.read'
   | 'assertion.update'
   | 'assertion.delete'
+
+  // History (local request/plan run buffers)
+  | 'history.list_runs'
+  | 'history.get_run'
+  | 'history.delete_run'
+  | 'history.purge_by_age'
 
   // Codebase extraction
   | 'codebase.extract_collection'
@@ -63,10 +77,18 @@ export type McpToolName =
   | 'mock.create_from_openapi'
   | 'mock.create_from_postman'
   | 'mock.create_from_insomnia'
+  | 'mock.create_manual'
   | 'mock.list'
+  | 'mock.list_endpoints'
   | 'mock.start'
   | 'mock.stop'
   | 'mock.delete'
+  | 'mock.add_endpoint'
+  | 'mock.update_endpoint'
+  | 'mock.delete_endpoint'
+  | 'mock.set_validation_rules'
+  | 'mock.set_response_rules'
+  | 'mock.set_multipliers'
   | 'mock.import_postman_mock_collection';
 
 export interface McpError {
@@ -97,15 +119,27 @@ export const MCP_TOOL_NAMES: ReadonlyArray<McpToolName> = [
   'environment.read',
   'environment.update',
   'environment.delete',
+  'environment.set_active',
+  'environment.set_priority',
+  'environment.export',
+  'environment.import',
   'plan.create',
   'plan.run',
   'plan.read',
   'plan.update',
   'plan.delete',
+  'plan.add_step',
+  'plan.remove_step',
+  'plan.reorder_steps',
+  'plan.set_variables',
   'assertion.create',
   'assertion.read',
   'assertion.update',
   'assertion.delete',
+  'history.list_runs',
+  'history.get_run',
+  'history.delete_run',
+  'history.purge_by_age',
   'codebase.extract_collection',
   'prompt.create_environment',
   'prompt.create_assertion',
@@ -113,9 +147,17 @@ export const MCP_TOOL_NAMES: ReadonlyArray<McpToolName> = [
   'mock.create_from_openapi',
   'mock.create_from_postman',
   'mock.create_from_insomnia',
+  'mock.create_manual',
   'mock.list',
+  'mock.list_endpoints',
   'mock.start',
   'mock.stop',
   'mock.delete',
+  'mock.add_endpoint',
+  'mock.update_endpoint',
+  'mock.delete_endpoint',
+  'mock.set_validation_rules',
+  'mock.set_response_rules',
+  'mock.set_multipliers',
   'mock.import_postman_mock_collection',
 ];

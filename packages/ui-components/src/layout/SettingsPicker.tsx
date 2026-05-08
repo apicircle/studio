@@ -9,9 +9,24 @@ import { Check, ChevronDown, SlidersHorizontal } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { cn } from '../primitives/cn';
 
+const SNAPSHOT_CAP_OPTIONS: Array<{ label: string; bytes: number }> = [
+  { label: '10 MB', bytes: 10 * 1024 * 1024 },
+  { label: '50 MB', bytes: 50 * 1024 * 1024 },
+  { label: '200 MB', bytes: 200 * 1024 * 1024 },
+  { label: 'Unlimited', bytes: Number.POSITIVE_INFINITY },
+];
+
 export function SettingsPicker() {
   const validateOnSend = useWorkspaceStore((s) => s.local?.settings?.validateOnSend ?? true);
   const setValidateOnSend = useWorkspaceStore((s) => s.setValidateOnSend);
+  const monacoConsumesWheel = useWorkspaceStore(
+    (s) => s.local?.settings?.monacoConsumesWheel ?? false,
+  );
+  const setMonacoConsumesWheel = useWorkspaceStore((s) => s.setMonacoConsumesWheel);
+  const snapshotMaxBytes = useWorkspaceStore(
+    (s) => s.local?.snapshots?.maxBytes ?? 50 * 1024 * 1024,
+  );
+  const setSnapshotMaxBytes = useWorkspaceStore((s) => s.setSnapshotMaxBytes);
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
@@ -61,8 +76,57 @@ export function SettingsPicker() {
             onChange={setValidateOnSend}
             ariaLabel="Validate before sending"
           />
+          <ToggleRow
+            label="Monaco consumes mouse wheel"
+            description="When on, the code editor scrolls first and only releases the wheel at its top/bottom. When off (default), wheel events fall through so the page keeps scrolling past the editor."
+            checked={monacoConsumesWheel}
+            onChange={setMonacoConsumesWheel}
+            ariaLabel="Monaco consumes mouse wheel"
+          />
+          <SnapshotCapRow current={snapshotMaxBytes} onChange={setSnapshotMaxBytes} />
         </div>
       )}
+    </div>
+  );
+}
+
+function SnapshotCapRow({
+  current,
+  onChange,
+}: {
+  current: number;
+  onChange: (bytes: number) => void;
+}) {
+  return (
+    <div className="rounded-sm border border-transparent p-1.5 hover:border-border-subtle">
+      <div className="text-xs text-text-primary">Workspace snapshot cap</div>
+      <p className="mb-1.5 text-[11px] leading-snug text-text-dim">
+        Total size budget for the local snapshot ledger. Auto-captures (push, merge, yank, etc.)
+        keep the latest entries that fit; older snapshots evict when over cap.
+      </p>
+      <div role="radiogroup" aria-label="Workspace snapshot cap" className="flex flex-wrap gap-1">
+        {SNAPSHOT_CAP_OPTIONS.map((opt) => {
+          const active =
+            current === opt.bytes ||
+            (opt.bytes === Number.POSITIVE_INFINITY && !Number.isFinite(current));
+          return (
+            <button
+              key={opt.label}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => onChange(opt.bytes)}
+              className={
+                active
+                  ? 'rounded-sm border border-accent/40 bg-accent/10 px-2 py-0.5 text-[11px] text-accent'
+                  : 'rounded-sm border border-border bg-surface px-2 py-0.5 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary'
+              }
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -1,13 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import type { MockServer } from '@apicircle/shared';
+import type { MockEndpoint, MockServer } from '@apicircle/shared';
 import { createMockApp, parseSourceToEndpoints, startMockServer, stopMockServer } from './index';
+
+function makeEndpoint(
+  id: string,
+  method: MockEndpoint['method'],
+  pathPattern: string,
+  body: string,
+): MockEndpoint {
+  return {
+    id,
+    name: `${method} ${pathPattern}`,
+    method,
+    pathPattern,
+    requestSchema: { pathParams: [], queryParams: [], headers: [], cookies: [] },
+    requestValidation: [],
+    responseRules: [],
+    defaultResponse: {
+      status: 200,
+      headers: [],
+      body: { type: 'json', content: body },
+    },
+  };
+}
 
 const baseServer: MockServer = {
   id: 'm-1',
   name: 'Test',
   source: { kind: 'manual', endpoints: [] },
   endpoints: [],
-  overrides: {},
   defaultPort: null,
   cors: { enabled: false, origins: [] },
   createdAt: 't',
@@ -45,16 +66,7 @@ describe('parseSourceToEndpoints', () => {
   it('passes manual endpoints through verbatim', async () => {
     const result = await parseSourceToEndpoints({
       kind: 'manual',
-      endpoints: [
-        {
-          id: 'e1',
-          method: 'GET',
-          pathPattern: '/x',
-          status: 200,
-          headers: [],
-          body: '',
-        },
-      ],
+      endpoints: [makeEndpoint('e1', 'GET', '/x', '')],
     });
     expect(result.endpoints).toHaveLength(1);
     expect(result.endpoints[0].pathPattern).toBe('/x');
@@ -86,16 +98,7 @@ describe('createMockApp', () => {
   it('produces a Hono app from a MockServer', async () => {
     const app = createMockApp({
       ...baseServer,
-      endpoints: [
-        {
-          id: 'e1',
-          method: 'GET',
-          pathPattern: '/health',
-          status: 200,
-          headers: [],
-          body: 'ok',
-        },
-      ],
+      endpoints: [makeEndpoint('e1', 'GET', '/health', 'ok')],
     });
     const res = await app.request('/health');
     expect(await res.text()).toBe('ok');
@@ -106,16 +109,7 @@ describe('startMockServer / stopMockServer', () => {
   it('starts on a free port and serves the configured endpoints', async () => {
     const server: MockServer = {
       ...baseServer,
-      endpoints: [
-        {
-          id: 'e1',
-          method: 'GET',
-          pathPattern: '/ping',
-          status: 200,
-          headers: [],
-          body: 'pong',
-        },
-      ],
+      endpoints: [makeEndpoint('e1', 'GET', '/ping', 'pong')],
     };
     const handle = await startMockServer(server);
     try {

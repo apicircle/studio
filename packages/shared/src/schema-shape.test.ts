@@ -27,6 +27,7 @@ describe('WorkspaceSynced shape (regression)', () => {
       },
       environments: { items: {}, activeName: null, priorityOrder: [] },
       linkedWorkspaces: {},
+      linkedOverrides: { requests: {}, environmentVars: {} },
       releases: { self: null, perLink: {} },
       globalAssets: { schemas: {}, graphql: {} },
       mockServers: {},
@@ -43,6 +44,7 @@ describe('WorkspaceSynced shape (regression)', () => {
         'collections',
         'environments',
         'globalAssets',
+        'linkedOverrides',
         'linkedWorkspaces',
         'meta',
         'mockServers',
@@ -58,6 +60,9 @@ describe('WorkspaceSynced shape (regression)', () => {
       ['activeName', 'items', 'priorityOrder'].sort(),
     );
     expect(Object.keys(empty.releases).sort()).toEqual(['perLink', 'self'].sort());
+    expect(Object.keys(empty.linkedOverrides).sort()).toEqual(
+      ['environmentVars', 'requests'].sort(),
+    );
     expect(Object.keys(empty.meta).sort()).toEqual(['appVersion', 'createdAt', 'updatedAt'].sort());
   });
 });
@@ -67,7 +72,6 @@ describe('WorkspaceLocal shape (regression)', () => {
     const empty: WorkspaceLocal = {
       schemaVersion: 1,
       workspaceId: 'ws-fixture',
-      overrides: { items: {} },
       executionPlans: {},
       history: { requestRuns: [], planRuns: [] },
       secretIndex: { entries: {} },
@@ -87,7 +91,10 @@ describe('WorkspaceLocal shape (regression)', () => {
         activeRequestId: null,
         sidebarExpandedSections: [],
         themeId: 'studio-dark',
+        fontId: 'system-mono',
       },
+      settings: { validateOnSend: true, monacoConsumesWheel: false },
+      snapshots: { entries: [], maxBytes: 50 * 1024 * 1024 },
     };
 
     expect(Object.keys(empty).sort()).toEqual(
@@ -98,10 +105,10 @@ describe('WorkspaceLocal shape (regression)', () => {
         'history',
         'linkedCollections',
         'mockRuntime',
-        'overrides',
         'schemaVersion',
         'secretIndex',
         'sessions',
+        'settings',
         'sync',
         'ui',
         'workingBranch',
@@ -113,7 +120,7 @@ describe('WorkspaceLocal shape (regression)', () => {
       ['dirtyKeys', 'lastPulledAt', 'lastPulledSha', 'lastPulledSnapshot'].sort(),
     );
     expect(Object.keys(empty.ui).sort()).toEqual(
-      ['activeRequestId', 'sidebarExpandedSections', 'themeId'].sort(),
+      ['activeRequestId', 'fontId', 'sidebarExpandedSections', 'themeId'].sort(),
     );
   });
 });

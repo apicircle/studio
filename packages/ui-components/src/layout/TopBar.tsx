@@ -5,11 +5,11 @@ import { VariableHints } from '../editors/VariableHints';
 import { ThemePicker } from './ThemePicker';
 import { FontPicker } from './FontPicker';
 import { SettingsPicker } from './SettingsPicker';
+import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 
 export function TopBar() {
   const openSecretVault = useWorkspaceStore((s) => s.openSecretVault);
   const openGlobalAssets = useWorkspaceStore((s) => s.openGlobalAssets);
-  const workspaceName = useWorkspaceStore((s) => s.synced?.workspaceName ?? '');
   const activePanel = useWorkspaceStore((s) => s.activePanel);
   const variableScope = useActiveVariableScope();
   // The trigger label nudges the user toward what they'll see: editor scope
@@ -23,9 +23,7 @@ export function TopBar() {
           <Orbit size={18} className="text-accent" aria-hidden="true" />
           <span className="text-sm font-medium text-text-primary">API Circle Studio</span>
         </div>
-        {workspaceName && (
-          <span className="hidden text-xs text-text-dim sm:inline">/ {workspaceName}</span>
-        )}
+        <WorkspaceSwitcher />
         <div className="ml-2 h-5 w-px bg-border-subtle" aria-hidden="true" />
         <button
           type="button"

@@ -149,22 +149,13 @@ test.describe('Refresh + 3-way conflict resolver (P4.5)', () => {
   test('up-to-date refresh updates the last-pulled timestamp', async ({ app }) => {
     await setupConnectedBranch(app);
     // Snapshot the local synced doc so the remote we mock matches it byte-
-    // for-byte (force the up-to-date branch).
-    const localJson = await app.evaluate(async () => {
-      const open = (): Promise<IDBDatabase> =>
-        new Promise((resolve, reject) => {
-          const req = indexedDB.open('apicircle-workspace');
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => reject(req.error ?? new Error('open failed'));
-        });
-      const db = await open();
-      const synced = await new Promise<unknown>((resolve, reject) => {
-        const tx = db.transaction('synced', 'readonly');
-        const r = tx.objectStore('synced').get('current');
-        r.onsuccess = () => resolve(r.result);
-        r.onerror = () => reject(r.error ?? new Error('read failed'));
-      });
-      return JSON.stringify(synced);
+    // for-byte (force the up-to-date branch). B.6 keyed records by
+    // workspaceId — read via the store bridge to stay schema-agnostic.
+    const localJson = await app.evaluate(() => {
+      const w = window as unknown as {
+        __apicircleStore?: { getState: () => { synced: unknown } };
+      };
+      return JSON.stringify(w.__apicircleStore!.getState().synced);
     });
     const base64 = Buffer.from(localJson, 'utf-8').toString('base64');
 
@@ -196,21 +187,13 @@ test.describe('Refresh + 3-way conflict resolver (P4.5)', () => {
     // Local renames the workspace; remote.json has a different name → conflict.
     await app.getByLabel('Workspace name').fill('Mine');
 
-    const remoteSynced = await app.evaluate(async () => {
-      const open = (): Promise<IDBDatabase> =>
-        new Promise((resolve, reject) => {
-          const req = indexedDB.open('apicircle-workspace');
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => reject(req.error ?? new Error('open failed'));
-        });
-      const db = await open();
-      const synced = (await new Promise<Record<string, unknown>>((resolve, reject) => {
-        const tx = db.transaction('synced', 'readonly');
-        const r = tx.objectStore('synced').get('current');
-        r.onsuccess = () => resolve(r.result as Record<string, unknown>);
-        r.onerror = () => reject(r.error ?? new Error('read failed'));
-      })) as Record<string, unknown>;
-      // Override workspaceName on the remote-shaped doc.
+    const remoteSynced = await app.evaluate(() => {
+      const w = window as unknown as {
+        __apicircleStore?: {
+          getState: () => { synced: Record<string, unknown> };
+        };
+      };
+      const synced = w.__apicircleStore!.getState().synced;
       return JSON.stringify({ ...synced, workspaceName: 'Theirs' });
     });
     const base64 = Buffer.from(remoteSynced, 'utf-8').toString('base64');

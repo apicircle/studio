@@ -612,15 +612,97 @@ const SUGGESTABLE_HEADERS = HTTP_HEADERS_MAP.filter((h) => h.reserved !== 'app')
 );
 
 /**
+ * Lower-cased names of headers that meaningfully appear on responses.
+ * Drives `mode: 'response'` filtering for `suggestHeaders` — used by the
+ * mock response editor so its key autocomplete surfaces only headers a
+ * server would realistically set.
+ *
+ * Mix of two groups:
+ *   • Headers that are response-only (Set-Cookie, ETag, Location, etc.).
+ *   • Headers that exist on both sides but where the server-side use is
+ *     the dominant case (Content-Type, Cache-Control, Vary, etc.).
+ */
+const RESPONSE_HEADER_NAMES = new Set([
+  // Content + caching
+  'content-type',
+  'content-length',
+  'content-encoding',
+  'content-disposition',
+  'content-language',
+  'content-location',
+  'cache-control',
+  'expires',
+  'last-modified',
+  'etag',
+  'vary',
+  'age',
+  'pragma',
+  // Auth + cookies
+  'set-cookie',
+  'www-authenticate',
+  'proxy-authenticate',
+  // Connection / framing
+  'server',
+  'date',
+  'connection',
+  'keep-alive',
+  'transfer-encoding',
+  'upgrade',
+  // CORS (response side)
+  'access-control-allow-origin',
+  'access-control-allow-methods',
+  'access-control-allow-headers',
+  'access-control-allow-credentials',
+  'access-control-expose-headers',
+  'access-control-max-age',
+  // Redirect + retry
+  'location',
+  'retry-after',
+  'allow',
+  // Security
+  'strict-transport-security',
+  'content-security-policy',
+  'x-frame-options',
+  'x-content-type-options',
+  'referrer-policy',
+  'permissions-policy',
+  // Observability + reporting
+  'nel',
+  'report-to',
+  'warning',
+  // Custom-x catch-alls users frequently set
+  'x-request-id',
+  'x-correlation-id',
+  'x-rate-limit-limit',
+  'x-rate-limit-remaining',
+  'x-rate-limit-reset',
+]);
+
+/** Filtered view of the suggestable headers, scoped to response-side names. */
+const SUGGESTABLE_RESPONSE_HEADERS = SUGGESTABLE_HEADERS.filter((h) =>
+  RESPONSE_HEADER_NAMES.has(h.name.toLowerCase()),
+);
+
+export type HeaderSuggestionMode = 'request' | 'response';
+
+/**
  * Suggest header names by case-insensitive prefix. Empty prefix returns the
  * full suggestable list; auto-fed (`reserved: 'app'`) headers are excluded.
  * An optional `limit` caps the number of filtered (non-empty prefix) results.
+ *
+ * `mode` filters by whether the header is request- or response-side
+ * relevant. Defaults to `'request'` for back-compat with the request
+ * editor's existing call sites.
  */
-export function suggestHeaders(prefix: string, limit?: number): HeaderEntry[] {
+export function suggestHeaders(
+  prefix: string,
+  limit?: number,
+  mode: HeaderSuggestionMode = 'request',
+): HeaderEntry[] {
+  const source = mode === 'response' ? SUGGESTABLE_RESPONSE_HEADERS : SUGGESTABLE_HEADERS;
   const lower = prefix.toLowerCase().trim();
-  if (!lower)
-    return limit !== undefined ? SUGGESTABLE_HEADERS.slice(0, limit) : SUGGESTABLE_HEADERS;
-  const filtered = SUGGESTABLE_HEADERS.filter((h) => h.name.toLowerCase().startsWith(lower));
+  if (!lower) return limit !== undefined ? source.slice(0, limit) : source;
+  const filtered = source.filter((h) => h.name.toLowerCase().startsWith(lower));
   return limit !== undefined ? filtered.slice(0, limit) : filtered;
 }
 

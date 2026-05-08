@@ -13,6 +13,7 @@ const empty: WorkspaceSynced = {
   },
   environments: { items: {}, activeName: null, priorityOrder: [] },
   linkedWorkspaces: {},
+  linkedOverrides: { requests: {}, environmentVars: {} },
   releases: { self: null, perLink: {} },
   globalAssets: { schemas: {}, graphql: {} },
   mockServers: {},
@@ -36,6 +37,7 @@ describe('serializeWorkspaceForGit', () => {
       releases: empty.releases,
       globalAssets: empty.globalAssets,
       mockServers: empty.mockServers,
+      linkedOverrides: empty.linkedOverrides,
       linkedWorkspaces: empty.linkedWorkspaces,
       environments: empty.environments,
       collections: empty.collections,
@@ -66,6 +68,69 @@ describe('serializeWorkspaceForGit', () => {
     expect(priorityMatch![1].trim()).toMatch(/"prod"[\s,]+"dev"/);
     // ...but the keys of `environments` and its sub-objects ARE sorted.
     expect(out.indexOf('"activeName"')).toBeLessThan(out.indexOf('"items"'));
+  });
+
+  it('round-trips linkedWorkspaces + linkedOverrides verbatim through serialize → parse', () => {
+    const T0 = '2026-04-27T00:00:00.000Z';
+    const populated: WorkspaceSynced = {
+      ...empty,
+      linkedWorkspaces: {
+        'lw-1': {
+          id: 'lw-1',
+          kind: 'private',
+          name: 'Payments',
+          source: { provider: 'github', repoFullName: 'org/payments', branch: 'main' },
+          scope: ['collections', 'environments'],
+          pinnedVersion: '1.0.0',
+          updatePolicy: 'manual',
+          linkedAt: T0,
+          requiredSecretKeyIds: ['DB_TOKEN'],
+        },
+      },
+      linkedOverrides: {
+        requests: {
+          'lw-1:r1': {
+            linkedWorkspaceId: 'lw-1',
+            itemId: 'r1',
+            patch: {
+              url: 'https://staging.example.test/r1',
+              method: 'POST',
+              headers: [{ key: 'X-Override', value: '1', enabled: true }],
+            },
+            updatedAt: T0,
+          },
+        },
+        environmentVars: {
+          'lw-1:dev:BASE_URL': {
+            linkedWorkspaceId: 'lw-1',
+            envName: 'dev',
+            varKey: 'BASE_URL',
+            value: 'https://my-fork.example.test',
+            updatedAt: T0,
+          },
+          'lw-1:dev:OLD_VAR': {
+            linkedWorkspaceId: 'lw-1',
+            envName: 'dev',
+            varKey: 'OLD_VAR',
+            removed: true,
+            updatedAt: T0,
+          },
+        },
+      },
+      releases: {
+        self: null,
+        perLink: {
+          'lw-1': { versions: [], currentVersion: null },
+        },
+      },
+    };
+    const out = serializeWorkspaceForGit(populated);
+    const parsed = JSON.parse(out) as WorkspaceSynced;
+    expect(parsed.linkedWorkspaces).toEqual(populated.linkedWorkspaces);
+    expect(parsed.linkedOverrides).toEqual(populated.linkedOverrides);
+    expect(parsed.releases.perLink).toEqual(populated.releases.perLink);
+    // Re-serialize the parsed doc — output is byte-identical.
+    expect(serializeWorkspaceForGit(parsed)).toBe(out);
   });
 
   it('sorts nested object keys deeply', () => {

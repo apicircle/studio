@@ -6,6 +6,7 @@ import type {
   MockServer,
   Request as ApiRequest,
   WorkspaceLocal,
+  WorkspaceSnapshotTrigger,
   WorkspaceSynced,
 } from '@apicircle/shared';
 
@@ -44,7 +45,16 @@ export type WorkspacePatch =
   | { kind: 'mock.delete'; id: string }
   // ----- Execution plans (local.executionPlans) -----------------------------
   | { kind: 'plan.upsert'; plan: ExecutionPlan }
-  | { kind: 'plan.delete'; id: string };
+  | { kind: 'plan.delete'; id: string }
+  // ----- History (local.history.requestRuns + planRuns) ---------------------
+  | { kind: 'history.delete_run'; runId: string }
+  | { kind: 'history.delete_plan_run'; planRunId: string }
+  | { kind: 'history.purge'; olderThanMs: number }
+  // ----- Workspace snapshots (local.snapshots) ------------------------------
+  | { kind: 'snapshot.capture'; trigger: WorkspaceSnapshotTrigger; note?: string; id?: string }
+  | { kind: 'snapshot.delete'; id: string }
+  | { kind: 'snapshot.restore'; id: string }
+  | { kind: 'snapshot.set_max_bytes'; maxBytes: number };
 
 export type WorkspacePatchKind = WorkspacePatch['kind'];
 

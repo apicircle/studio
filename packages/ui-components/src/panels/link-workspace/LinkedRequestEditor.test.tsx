@@ -69,15 +69,47 @@ describe('LinkedRequestEditor', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('renders the source values read-only when opened', async () => {
+  it('renders the source values pre-filled into editable fields when opened', async () => {
     useWorkspaceStore.getState().setActiveLinkedRequest({
       linkedWorkspaceId: 'link-1',
       itemId: 'src',
     });
     render(<LinkedRequestEditor />);
     expect(screen.getByRole('dialog', { name: /Linked request override/ })).toBeInTheDocument();
-    expect(screen.getByText('GET')).toBeInTheDocument();
-    expect(screen.getByText('https://api.example.test/users/1')).toBeInTheDocument();
+    // Method dropdown defaults to source's method.
+    expect(screen.getByLabelText('Override method')).toHaveValue('GET');
+    // URL input defaults to source's URL.
+    expect(screen.getByLabelText('Override URL')).toHaveValue('https://api.example.test/users/1');
+    // Name input defaults to source's name.
+    expect(screen.getByLabelText('Override name')).toHaveValue('Source request');
+  });
+
+  it('typing in the URL field writes a url override; per-field reset clears it', async () => {
+    useWorkspaceStore.getState().setActiveLinkedRequest({
+      linkedWorkspaceId: 'link-1',
+      itemId: 'src',
+    });
+    render(<LinkedRequestEditor />);
+    const urlInput = screen.getByLabelText('Override URL');
+    await userEvent.clear(urlInput);
+    await userEvent.type(urlInput, 'https://staging.example.test/users/1');
+    let stored = useWorkspaceStore.getState().synced!.linkedOverrides.requests['link-1:src'];
+    expect(stored.patch.url).toBe('https://staging.example.test/users/1');
+    // Per-field reset removes only the URL override, leaving other fields intact.
+    await userEvent.click(screen.getByRole('button', { name: /Reset this field to source/ }));
+    stored = useWorkspaceStore.getState().synced!.linkedOverrides.requests['link-1:src'];
+    expect(stored?.patch.url).toBeUndefined();
+  });
+
+  it('changing the method writes a method override', async () => {
+    useWorkspaceStore.getState().setActiveLinkedRequest({
+      linkedWorkspaceId: 'link-1',
+      itemId: 'src',
+    });
+    render(<LinkedRequestEditor />);
+    await userEvent.selectOptions(screen.getByLabelText('Override method'), 'POST');
+    const stored = useWorkspaceStore.getState().synced!.linkedOverrides.requests['link-1:src'];
+    expect(stored.patch.method).toBe('POST');
   });
 
   it('typing into the override Headers section persists into the override patch', async () => {
@@ -91,7 +123,7 @@ describe('LinkedRequestEditor', () => {
     const valueInput = screen.getByLabelText('Override header value 1');
     await userEvent.clear(valueInput);
     await userEvent.type(valueInput, 'override-value');
-    const stored = useWorkspaceStore.getState().local!.overrides.items['link-1:src'];
+    const stored = useWorkspaceStore.getState().synced!.linkedOverrides.requests['link-1:src'];
     expect(stored).toBeDefined();
     expect((stored.patch as { headers: Array<{ value: string }> }).headers[0]?.value).toBe(
       'override-value',
@@ -109,7 +141,9 @@ describe('LinkedRequestEditor', () => {
     render(<LinkedRequestEditor />);
     await userEvent.click(screen.getByRole('button', { name: 'Reset to source' }));
     await userEvent.click(screen.getByRole('button', { name: 'Reset' }));
-    expect(useWorkspaceStore.getState().local!.overrides.items['link-1:src']).toBeUndefined();
+    expect(
+      useWorkspaceStore.getState().synced!.linkedOverrides.requests['link-1:src'],
+    ).toBeUndefined();
   });
 
   it('shows a fallback message when the snapshot is missing', () => {
@@ -134,7 +168,8 @@ describe('LinkedRequestEditor', () => {
     await userEvent.click(addRowBtn);
     await userEvent.type(screen.getByLabelText('Override context var 1 key'), 'X');
     await userEvent.type(screen.getByLabelText('Override context var 1 value'), '1');
-    const patch = useWorkspaceStore.getState().local!.overrides.items['link-1:src']?.patch as {
+    const patch = useWorkspaceStore.getState().synced!.linkedOverrides.requests['link-1:src']
+      ?.patch as {
       contextVars?: Array<{ key: string; value: string }>;
     };
     expect(patch.contextVars).toEqual([{ key: 'X', value: '1' }]);
@@ -149,7 +184,8 @@ describe('LinkedRequestEditor', () => {
     await userEvent.click(screen.getByRole('button', { name: /^Add extractor$/ }));
     await userEvent.type(screen.getByLabelText('Override extraction 1 variable'), 'TOKEN');
     await userEvent.type(screen.getByLabelText('Override extraction 1 path'), 'data.token');
-    const patch = useWorkspaceStore.getState().local!.overrides.items['link-1:src']?.patch as {
+    const patch = useWorkspaceStore.getState().synced!.linkedOverrides.requests['link-1:src']
+      ?.patch as {
       extractions?: Array<{ variable: string; path: string }>;
     };
     expect(patch.extractions?.[0]).toMatchObject({ variable: 'TOKEN', path: 'data.token' });
@@ -173,7 +209,8 @@ describe('LinkedRequestEditor', () => {
     });
     render(<LinkedRequestEditor />);
     await userEvent.click(screen.getByRole('button', { name: /^Add assertion$/ }));
-    const patch = useWorkspaceStore.getState().local!.overrides.items['link-1:src']?.patch as {
+    const patch = useWorkspaceStore.getState().synced!.linkedOverrides.requests['link-1:src']
+      ?.patch as {
       assertions?: Array<{ kind: string; expected: number | string }>;
     };
     expect(patch.assertions?.[0]).toMatchObject({ kind: 'status', expected: 200 });
@@ -200,14 +237,15 @@ describe('LinkedRequestEditor', () => {
     const expected = screen.getByLabelText('Override assertion 1 expected');
     await userEvent.tripleClick(expected);
     await userEvent.keyboard('404');
-    let patch = useWorkspaceStore.getState().local!.overrides.items['link-1:src']?.patch as {
+    let patch = useWorkspaceStore.getState().synced!.linkedOverrides.requests['link-1:src']
+      ?.patch as {
       assertions?: Array<{ expected: number | string }>;
     };
     expect(patch.assertions?.[0]?.expected).toBe(404);
 
     await userEvent.tripleClick(expected);
     await userEvent.keyboard('not-a-number');
-    patch = useWorkspaceStore.getState().local!.overrides.items['link-1:src']?.patch;
+    patch = useWorkspaceStore.getState().synced!.linkedOverrides.requests['link-1:src']?.patch;
     expect(patch.assertions?.[0]?.expected).toBe('not-a-number');
   });
 
@@ -221,7 +259,8 @@ describe('LinkedRequestEditor', () => {
     });
     render(<LinkedRequestEditor />);
     await userEvent.click(screen.getByRole('button', { name: 'Remove override extraction 1' }));
-    const patch = useWorkspaceStore.getState().local!.overrides.items['link-1:src']?.patch as {
+    const patch = useWorkspaceStore.getState().synced!.linkedOverrides.requests['link-1:src']
+      ?.patch as {
       extractions?: Array<unknown>;
     };
     expect(patch.extractions).toEqual([]);

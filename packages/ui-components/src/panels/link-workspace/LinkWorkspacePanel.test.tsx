@@ -64,10 +64,12 @@ function seedLink(opts: {
 
 describe('LinkWorkspacePanel — no session state', () => {
   beforeEach(hydrate);
+  afterEach(() => vi.unstubAllGlobals());
 
-  it('shows the connect-prompt when no GitHub session exists', () => {
+  it('shows the connect-prompt and disables the private-link CTA when no GitHub session exists', () => {
     render(<LinkWorkspacePanel />);
-    expect(screen.getByText(/Connect GitHub first/)).toBeInTheDocument();
+    expect(screen.getByText(/Connect GitHub to link a workspace/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Link a private workspace/ })).toBeDisabled();
   });
 
   it('the connect button opens the Secret Vault', async () => {
@@ -75,6 +77,40 @@ describe('LinkWorkspacePanel — no session state', () => {
     expect(useWorkspaceStore.getState().secretVaultOpen).toBe(false);
     await userEvent.click(screen.getByRole('button', { name: /Open Secret Vault/ }));
     expect(useWorkspaceStore.getState().secretVaultOpen).toBe(true);
+  });
+
+  it('marketplace search remains usable anonymously; results render but the Link button is disabled', async () => {
+    const user = userEvent.setup();
+    useWorkspaceStore.setState({
+      searchMarketplace: vi.fn(async () => [
+        {
+          fullName: 'org/payments',
+          owner: 'org',
+          name: 'payments',
+          description: 'Payments collection',
+          topics: ['apicircle-marketplace', 'fintech'],
+          stargazers: 12,
+          defaultBranch: 'main',
+        },
+      ]),
+    });
+
+    render(<LinkWorkspacePanel />);
+    // The marketplace CTA is visible without a session.
+    await user.click(screen.getByRole('button', { name: /Search marketplace/ }));
+    // Anonymous-mode hint copy.
+    expect(
+      screen.getByText(
+        (content, node) =>
+          content.includes('Browsing is anonymous') &&
+          node?.textContent?.includes('Secret Vault') === true,
+      ),
+    ).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Marketplace query'), 'pay');
+    await user.click(screen.getByRole('button', { name: /^Search$/ }));
+    expect(await screen.findByText('Payments collection')).toBeInTheDocument();
+    // The per-result Link button is disabled when the user has no session.
+    expect(screen.getByRole('button', { name: /^Link$/ })).toBeDisabled();
   });
 });
 
@@ -91,16 +127,109 @@ describe('LinkWorkspacePanel — connected, no links yet', () => {
     expect(screen.getByRole('button', { name: /Search marketplace/ })).toBeVisible();
   });
 
-  it('the private-link modal validates owner/name format and surfaces error text', async () => {
+  it('the private-link modal — manual-entry path keeps "Review & link" disabled until the repo contains a slash', async () => {
     const user = userEvent.setup();
     render(<LinkWorkspacePanel />);
     await user.click(screen.getByRole('button', { name: /Link a private workspace/ }));
+    // The B.1 modal defaults to the repo browser; switch to manual entry
+    // to exercise the typed `owner/name` precondition. UI-level
+    // validation supersedes the legacy post-submit error string —
+    // disabled button is clearer feedback than a hidden error.
+    await user.click(screen.getByRole('button', { name: /Switch to manual entry/ }));
+    const submit = screen.getByRole('button', { name: /Review .* link/ });
+    expect(submit).toBeDisabled();
     await user.type(screen.getByLabelText('Linked repo full name'), 'just-a-name');
-    await user.click(screen.getByRole('button', { name: /Review .* link/ }));
-    // The confirm dialog opens; clicking Link triggers the store action
-    // which throws "Repo must be `owner/name`".
-    await user.click(screen.getByRole('button', { name: 'Link' }));
-    expect(await screen.findByText(/Repo must be `owner\/name`/)).toBeVisible();
+    expect(submit).toBeDisabled();
+    await user.clear(screen.getByLabelText('Linked repo full name'));
+    await user.type(screen.getByLabelText('Linked repo full name'), 'org/api');
+    expect(submit).toBeEnabled();
+  });
+
+  it('the repo-browser path lists repos, picks one, and probes for the pin-version dropdown', async () => {
+    const user = userEvent.setup();
+    // Stub the store actions the new modal calls so we don't need
+    // network roundtrips. listAccessibleRepos returns two repos; the
+    // user picks one; listRepoBranches returns its branches; the probe
+    // returns one published version (1.2.0).
+    useWorkspaceStore.setState({
+      listAccessibleRepos: vi.fn(async () => [
+        {
+          fullName: 'me/api',
+          owner: 'me',
+          name: 'api',
+          defaultBranch: 'main',
+          visibility: 'private' as const,
+          isPrivate: true,
+          pushable: true,
+        },
+        {
+          fullName: 'me/widgets',
+          owner: 'me',
+          name: 'widgets',
+          defaultBranch: 'main',
+          visibility: 'public' as const,
+          isPrivate: false,
+          pushable: true,
+        },
+      ]),
+      listRepoBranches: vi.fn(async () => [
+        { name: 'main', commitSha: 'aaa' },
+        { name: 'develop', commitSha: 'bbb' },
+      ]),
+      probeLinkedRepoVersions: vi.fn(async () => ({
+        workspaceName: 'API workspace',
+        versions: ['1.0.0', '1.2.0'],
+        currentVersion: '1.2.0',
+      })),
+    });
+
+    render(<LinkWorkspacePanel />);
+    await user.click(screen.getByRole('button', { name: /Link a private workspace/ }));
+
+    // The combobox is available and lists the seeded repos.
+    const combo = await screen.findByLabelText('Filter accessible repos');
+    await user.click(combo);
+    expect(await screen.findByRole('option', { name: /Pick me\/api/ })).toBeVisible();
+    expect(screen.getByRole('option', { name: /Pick me\/widgets/ })).toBeVisible();
+
+    // Pick the first repo. Branches load + default to `main`.
+    await user.click(screen.getByRole('option', { name: /Pick me\/api/ }));
+    expect(await screen.findByLabelText('Pick a branch')).toHaveValue('main');
+
+    // Probe runs and surfaces the workspace name + currentVersion chip.
+    expect(await screen.findByText(/API workspace/)).toBeVisible();
+    expect(screen.getByText(/currentVersion v1\.2\.0/)).toBeVisible();
+
+    // Switching to "Pin to a specific version" reveals the dropdown
+    // populated from the source's published versions, sorted desc.
+    await user.click(screen.getByLabelText('Pin to a specific version'));
+    const pinSelect = await screen.findByLabelText('Specific version to pin');
+    expect(pinSelect).toHaveValue('1.2.0');
+
+    // Review & link is now enabled.
+    expect(screen.getByRole('button', { name: /Review .* link/ })).toBeEnabled();
+  });
+
+  it('switches between repo-browser and manual-entry modes; manual mode hides the combobox', async () => {
+    const user = userEvent.setup();
+    useWorkspaceStore.setState({
+      listAccessibleRepos: vi.fn(async () => []),
+    });
+    render(<LinkWorkspacePanel />);
+    await user.click(screen.getByRole('button', { name: /Link a private workspace/ }));
+
+    // Combobox visible by default.
+    expect(await screen.findByLabelText('Filter accessible repos')).toBeVisible();
+
+    // Toggle to manual entry.
+    await user.click(screen.getByRole('button', { name: /Switch to manual entry/ }));
+    expect(screen.getByLabelText('Linked repo full name')).toBeVisible();
+    expect(screen.queryByLabelText('Filter accessible repos')).not.toBeInTheDocument();
+
+    // Toggle back to repo browser.
+    await user.click(screen.getByRole('button', { name: /Switch to repo browser/ }));
+    expect(screen.getByLabelText('Filter accessible repos')).toBeVisible();
+    expect(screen.queryByLabelText('Linked repo full name')).not.toBeInTheDocument();
   });
 });
 

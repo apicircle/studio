@@ -214,6 +214,25 @@ export class GitHubClient {
   }
 
   /**
+   * List branches on a repo. Used by the Link Workspace repo-browser to
+   * populate the branch dropdown after the user picks a repo. Capped at
+   * 100 (GitHub's max page size); repos with more branches paginate.
+   */
+  async listBranches(
+    token: string,
+    owner: string,
+    name: string,
+    opts: CallOptions = {},
+  ): Promise<GitHubBranch[]> {
+    const { json } = await this.call<RawBranch[]>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/branches?per_page=100`,
+      opts,
+    );
+    return json.map((b) => ({ name: b.name, commitSha: b.commit.sha }));
+  }
+
+  /**
    * Create a new branch ref pointing at `sha`. The auto-branch flow calls
    * this with the head SHA from `getBranchHead(main)`.
    *
@@ -400,13 +419,15 @@ export class GitHubClient {
   }
 
   /**
-   * Search GitHub for repos in the public marketplace. Per plan §5.4 we
-   * append `topic:apicircle-marketplace` to the user-supplied query, so
-   * only repos that opt into the topic surface in results. Top 30 by
-   * default sort (best match).
+   * Search GitHub for repos in the public marketplace. Appends
+   * `topic:apicircle-marketplace` to the user-supplied query so only
+   * repos that opt into the topic surface in results. Top 30 by default
+   * sort (best match). Token is optional — anonymous browsing is
+   * supported (lower GitHub rate limits apply); pass a PAT when one is
+   * available to lift them.
    */
   async searchMarketplaceRepos(
-    token: string,
+    token: string | null,
     query: string,
     opts: CallOptions = {},
   ): Promise<MarketplaceRepo[]> {
@@ -415,6 +436,187 @@ export class GitHubClient {
     const { json } = await this.call<{ items?: RawSearchRepo[] }>(token, path, opts);
     const items = json.items ?? [];
     return items.map(normalizeMarketplaceRepo);
+  }
+
+  /**
+   * Start GitHub's OAuth Device Flow. Returns a user-facing code the
+   * user types into github.com/login/device + a device_code the app
+   * polls with. Pure browser-safe: no client_secret involved (device
+   * flow is the only OAuth path GitHub supports for public clients).
+   *
+   * Requires the OAuth App to have "Enable Device Flow" turned on in
+   * its GitHub settings — surface 400 with `not_supported` to the user
+   * if the App owner hasn't done that yet.
+   */
+  async startDeviceFlow(
+    clientId: string,
+    scope: string,
+    opts: CallOptions = {},
+  ): Promise<{
+    deviceCode: string;
+    userCode: string;
+    verificationUri: string;
+    expiresIn: number;
+    interval: number;
+  }> {
+    const url = 'https://github.com/login/device/code';
+    const response = await this.fetchImpl(url, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: clientId, scope }),
+      signal: opts.signal,
+    });
+    if (!response.ok) {
+      throw new GitHubError(
+        `Device-flow start failed: HTTP ${response.status}`,
+        response.status,
+        {},
+      );
+    }
+    const json = (await response.json()) as {
+      device_code: string;
+      user_code: string;
+      verification_uri: string;
+      expires_in: number;
+      interval: number;
+      error?: string;
+      error_description?: string;
+    };
+    if (json.error) {
+      throw new GitHubError(json.error_description ?? json.error, 400, json);
+    }
+    return {
+      deviceCode: json.device_code,
+      userCode: json.user_code,
+      verificationUri: json.verification_uri,
+      expiresIn: json.expires_in,
+      interval: json.interval,
+    };
+  }
+
+  /**
+   * Poll for the access token after the user has authorized the device
+   * code. GitHub returns `authorization_pending` until the user
+   * completes the flow, `slow_down` if we polled too fast, then a real
+   * token. Caller wraps this in a polling loop bounded by `expiresIn`.
+   */
+  async pollDeviceToken(
+    clientId: string,
+    deviceCode: string,
+    opts: CallOptions = {},
+  ): Promise<
+    | { kind: 'pending'; slowDown: boolean }
+    | { kind: 'denied'; reason: string }
+    | { kind: 'expired' }
+    | { kind: 'granted'; accessToken: string; tokenType: string; scope: string }
+  > {
+    const url = 'https://github.com/login/oauth/access_token';
+    const response = await this.fetchImpl(url, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: clientId,
+        device_code: deviceCode,
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      }),
+      signal: opts.signal,
+    });
+    const json = (await response.json()) as {
+      access_token?: string;
+      token_type?: string;
+      scope?: string;
+      error?: string;
+      error_description?: string;
+    };
+    if (json.access_token) {
+      return {
+        kind: 'granted',
+        accessToken: json.access_token,
+        tokenType: json.token_type ?? 'bearer',
+        scope: json.scope ?? '',
+      };
+    }
+    if (json.error === 'authorization_pending') return { kind: 'pending', slowDown: false };
+    if (json.error === 'slow_down') return { kind: 'pending', slowDown: true };
+    if (json.error === 'expired_token') return { kind: 'expired' };
+    if (json.error === 'access_denied')
+      return { kind: 'denied', reason: json.error_description ?? 'User denied authorization' };
+    // Any other error: throw so the UI surfaces it.
+    throw new GitHubError(
+      json.error_description ?? json.error ?? 'Device-token poll failed',
+      response.status,
+      json,
+    );
+  }
+
+  /**
+   * Create a lightweight Git tag (a ref under `refs/tags/<name>`) on the
+   * given commit SHA. Used by the publish-release flow when the user
+   * opts in to "Create Git tag v<x.y.z>". Returns the resolved ref.
+   *
+   * GitHub returns 422 with "Reference already exists" when the tag is
+   * a duplicate; that surfaces as a GitHubError(422) so the UI can warn
+   * the user without ever overwriting an existing tag.
+   */
+  async createTag(
+    token: string,
+    owner: string,
+    name: string,
+    args: { tagName: string; sha: string },
+    opts: CallOptions = {},
+  ): Promise<GitRef> {
+    const { json } = await this.call<RawRefResponse>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/git/refs`,
+      {
+        ...opts,
+        method: 'POST',
+        body: { ref: `refs/tags/${args.tagName}`, sha: args.sha },
+        requiredScopes: ['repo'],
+      },
+    );
+    return { ref: json.ref, sha: json.object.sha };
+  }
+
+  /**
+   * Create a GitHub Release pointing at an existing tag. Used by the
+   * publish-release flow when the user opts in to "Create GitHub
+   * Release". Returns the release's HTML URL so the UI can show a
+   * "Released — view on GitHub" link.
+   *
+   * Pass `prerelease: true` for semver pre-release identifiers (e.g.
+   * `1.0.0-rc.1`); GitHub's Releases UI flags those distinctly.
+   */
+  async createRelease(
+    token: string,
+    owner: string,
+    name: string,
+    args: {
+      tagName: string;
+      releaseName?: string;
+      body?: string;
+      draft?: boolean;
+      prerelease?: boolean;
+    },
+    opts: CallOptions = {},
+  ): Promise<{ id: number; htmlUrl: string; tagName: string }> {
+    const { json } = await this.call<{
+      id: number;
+      html_url: string;
+      tag_name: string;
+    }>(token, `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/releases`, {
+      ...opts,
+      method: 'POST',
+      body: {
+        tag_name: args.tagName,
+        name: args.releaseName ?? args.tagName,
+        body: args.body ?? '',
+        draft: args.draft ?? false,
+        prerelease: args.prerelease ?? false,
+      },
+      requiredScopes: ['repo'],
+    });
+    return { id: json.id, htmlUrl: json.html_url, tagName: json.tag_name };
   }
 
   /**
@@ -542,7 +744,7 @@ export class GitHubClient {
   // --- low-level call ----------------------------------------------------
 
   private async call<T>(
-    token: string,
+    token: string | null,
     path: string,
     opts: CallOptions = {},
   ): Promise<{ json: T; response: Response }> {
@@ -565,7 +767,7 @@ export class GitHubClient {
         headers: {
           Accept: 'application/vnd.github+json',
           'X-GitHub-Api-Version': '2022-11-28',
-          Authorization: `Bearer ${token}`,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
           ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         },
         body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,

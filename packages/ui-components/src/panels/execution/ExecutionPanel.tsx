@@ -318,7 +318,7 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
               onChange={(e) => setPlanStopOnFailure(plan.id, e.target.checked)}
               aria-label="Stop on assertion failure"
               className="h-3 w-3 cursor-pointer"
-              style={{ accentColor: 'var(--purple)' }}
+              style={{ accentColor: 'rgb(var(--accent))' }}
             />
             Stop on assertion failure
           </label>
@@ -677,7 +677,7 @@ function PlanStepPicker({
                             checked={checked}
                             onChange={() => toggle(key)}
                             aria-label={`Select ${r.name}`}
-                            style={{ accentColor: 'var(--purple)' }}
+                            style={{ accentColor: 'rgb(var(--accent))' }}
                             className="mt-0.5 h-3 w-3"
                           />
                           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -717,7 +717,7 @@ function PlanStepPicker({
                             checked={checked}
                             onChange={() => toggle(key)}
                             aria-label={`Select ${r.name} from ${group.link.name}`}
-                            style={{ accentColor: 'var(--purple)' }}
+                            style={{ accentColor: 'rgb(var(--accent))' }}
                             className="mt-0.5 h-3 w-3"
                           />
                           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -808,7 +808,7 @@ function PlanStepRow({
           onChange={(e) => onToggleEnabled(e.target.checked)}
           aria-label={`Enable step ${index + 1}`}
           className="h-3 w-3 cursor-pointer"
-          style={{ accentColor: 'var(--purple)' }}
+          style={{ accentColor: 'rgb(var(--accent))' }}
         />
         <span className="w-6 text-center text-[10px] text-text-dim">{index + 1}.</span>
         {request ? (

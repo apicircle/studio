@@ -8,7 +8,7 @@
 
 import { useMemo, useState } from 'react';
 import { formatBytes } from '@apicircle/shared';
-import { CalendarRange, Filter, HardDrive, Layers, Send, Trash2 } from 'lucide-react';
+import { CalendarRange, Camera, Filter, HardDrive, Layers, Send, Trash2 } from 'lucide-react';
 import type { PlanRun, RequestRun } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
@@ -35,6 +35,7 @@ export function HistorySidebar() {
   const setUi = useWorkspaceStore((s) => s.setHistoryUi);
   const requestRuns = useWorkspaceStore((s) => s.local?.history.requestRuns ?? []);
   const planRuns = useWorkspaceStore((s) => s.local?.history.planRuns ?? []);
+  const snapshotCount = useWorkspaceStore((s) => s.local?.snapshots.entries.length ?? 0);
   const clearRequestRuns = useWorkspaceStore((s) => s.clearRequestRuns);
   const clearPlanRuns = useWorkspaceStore((s) => s.clearPlanRuns);
 
@@ -147,21 +148,36 @@ export function HistorySidebar() {
 
   return (
     <div className="flex h-full flex-col gap-3 px-1 py-1 text-text-primary">
-      <div role="tablist" aria-label="History tabs" className="flex gap-1">
-        <SidebarTab
-          active={ui.tab === 'requests'}
-          onClick={() => setUi({ tab: 'requests', selectedRunId: null })}
-          icon={<Send size={11} aria-hidden />}
-          label="Requests"
-          count={requestRuns.length}
-        />
-        <SidebarTab
-          active={ui.tab === 'plans'}
-          onClick={() => setUi({ tab: 'plans', selectedRunId: null })}
-          icon={<Layers size={11} aria-hidden />}
-          label="Plans"
-          count={planRuns.length}
-        />
+      {/* Two rows: run-level tabs (Requests / Plans) on the first row,
+          Snapshots on its own row below. Snapshots are a different
+          mental model — workspace-state captures rather than execution
+          runs — so visually separating them keeps the choice clear. */}
+      <div role="tablist" aria-label="History tabs" className="flex flex-col gap-1">
+        <div className="flex gap-1">
+          <SidebarTab
+            active={ui.tab === 'requests'}
+            onClick={() => setUi({ tab: 'requests', selectedRunId: null })}
+            icon={<Send size={11} aria-hidden />}
+            label="Requests"
+            count={requestRuns.length}
+          />
+          <SidebarTab
+            active={ui.tab === 'plans'}
+            onClick={() => setUi({ tab: 'plans', selectedRunId: null })}
+            icon={<Layers size={11} aria-hidden />}
+            label="Plans"
+            count={planRuns.length}
+          />
+        </div>
+        <div className="flex gap-1">
+          <SidebarTab
+            active={ui.tab === 'snapshots'}
+            onClick={() => setUi({ tab: 'snapshots', selectedRunId: null })}
+            icon={<Camera size={11} aria-hidden />}
+            label="Snapshots"
+            count={snapshotCount}
+          />
+        </div>
       </div>
 
       <FilterSection title="Search">

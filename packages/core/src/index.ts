@@ -10,6 +10,7 @@ export {
   getHeaderEntry,
   getHeaderValues,
   suggestHeaders,
+  type HeaderSuggestionMode,
 } from './request/headersDictionary';
 export type { HeaderEntry } from './request/headersDictionary';
 
@@ -187,6 +188,25 @@ export type {
   ResolutionMap,
   ThreeWayDiff,
 } from './git/threeWayDiff';
+
+export {
+  EMPTY_UNPUSHED_SUMMARY,
+  hasUnpushedChanges,
+  summarizeUnpushedChanges,
+} from './git/summarizeUnpushedChanges';
+export type { UnpushedChange, UnpushedSummary } from './git/summarizeUnpushedChanges';
+
+export { applyLinkedUpdate, previewLinkedUpdate } from './git/linkedThreeWayMerge';
+export type {
+  ApplyArgs as LinkedApplyArgs,
+  ApplyResult as LinkedApplyResult,
+  LinkedUpdateBucket,
+  LinkedUpdateEntry,
+  LinkedUpdatePreview,
+  LinkedUpdateResolutionMap,
+  LinkedUpdateStatus,
+  PreviewArgs as LinkedPreviewArgs,
+} from './git/linkedThreeWayMerge';
 
 export { applyMutation } from './workspace/applyMutation';
 export type { ApplyMutationOptions, ApplyMutationResult } from './workspace/applyMutation';
