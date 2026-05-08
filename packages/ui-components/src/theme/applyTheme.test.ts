@@ -2,15 +2,26 @@ import { describe, expect, it, vi } from 'vitest';
 import { ALL_THEMES, applyTheme, getStoredThemeId } from './applyTheme';
 
 describe('applyTheme / getStoredThemeId', () => {
-  it('lists all six theme presets', () => {
-    expect(ALL_THEMES.map((t) => t.id)).toEqual([
-      'studio-dark',
-      'graphite-dark',
-      'midnight-blue',
-      'workbench-light',
-      'paper-light',
-      'high-contrast-dark',
-    ]);
+  it('catalog has at least 30 themes and unique ids', () => {
+    expect(ALL_THEMES.length).toBeGreaterThanOrEqual(30);
+    const ids = new Set<string>();
+    for (const t of ALL_THEMES) {
+      expect(ids.has(t.id)).toBe(false);
+      ids.add(t.id);
+    }
+  });
+
+  it('every theme is dark or light, and HC themes carry the tag', () => {
+    for (const t of ALL_THEMES) {
+      expect(['dark', 'light']).toContain(t.mode);
+      if (t.id.startsWith('high-contrast-')) {
+        expect(t.tag).toBe('high-contrast');
+      }
+    }
+  });
+
+  it('keeps studio-dark as the first entry (boot default)', () => {
+    expect(ALL_THEMES[0].id).toBe('studio-dark');
   });
 
   it('writes data-theme on documentElement', () => {
@@ -28,7 +39,13 @@ describe('applyTheme / getStoredThemeId', () => {
     expect(getStoredThemeId()).toBe('graphite-dark');
   });
 
+  it('getStoredThemeId returns newly-added community themes', () => {
+    applyTheme('dracula');
+    expect(getStoredThemeId()).toBe('dracula');
+  });
+
   it('getStoredThemeId falls back to studio-dark when nothing stored', () => {
+    localStorage.removeItem('apicircle-v2:theme');
     expect(getStoredThemeId()).toBe('studio-dark');
   });
 

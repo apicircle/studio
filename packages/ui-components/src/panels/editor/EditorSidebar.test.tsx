@@ -1,24 +1,32 @@
-import { screen, within } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { EditorSidebar } from './EditorSidebar';
 import { renderWithStore } from '../../../test/renderWithStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 
-// `aria-label` on the toolbar buttons gives us a stable handle that doesn't
-// collide with the default "New request" text on the request row.
-const toolbarNew = () => screen.getByLabelText('New request');
-const toolbarFolder = () => screen.getByLabelText('New folder');
+// The Editor sidebar's "New Request" / "New Folder" / "Import" actions live
+// in a kebab menu rendered by Sidebar.tsx (next to the panel label) — not
+// inside <EditorSidebar /> itself. Tests drive them through the lifted store
+// state so they don't depend on the kebab's render location.
+const triggerNewRequest = () =>
+  act(() => {
+    useWorkspaceStore.getState().setEditorPendingCreate({ kind: 'request', parentId: null });
+  });
+const triggerNewFolder = () =>
+  act(() => {
+    useWorkspaceStore.getState().setEditorPendingCreate({ kind: 'folder', parentId: null });
+  });
 
 async function createRequestNamed(name: string): Promise<void> {
-  await userEvent.click(toolbarNew());
+  triggerNewRequest();
   const input = screen.getByLabelText('Inline rename request');
   await userEvent.type(input, name);
   await userEvent.keyboard('{Enter}');
 }
 
 async function createFolderNamed(name: string): Promise<void> {
-  await userEvent.click(toolbarFolder());
+  triggerNewFolder();
   const input = screen.getByLabelText('Inline rename folder');
   await userEvent.type(input, name);
   await userEvent.keyboard('{Enter}');
@@ -30,15 +38,15 @@ describe('EditorSidebar', () => {
     expect(screen.getByText(/No requests yet/i)).toBeInTheDocument();
   });
 
-  it('clicking "New request" opens the name-first input', async () => {
+  it('triggering "New request" opens the name-first input', async () => {
     await renderWithStore(<EditorSidebar />);
-    await userEvent.click(toolbarNew());
+    triggerNewRequest();
     expect(screen.getByLabelText('Inline rename request')).toBeInTheDocument();
   });
 
   it('Esc cancels the name-first prompt without creating', async () => {
     await renderWithStore(<EditorSidebar />);
-    await userEvent.click(toolbarNew());
+    triggerNewRequest();
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByLabelText('Inline rename request')).toBeNull();
     expect(Object.keys(useWorkspaceStore.getState().synced!.collections.requests)).toHaveLength(0);
@@ -58,7 +66,7 @@ describe('EditorSidebar', () => {
   it('rejects a duplicate name in the same scope (input stays open with warning)', async () => {
     await renderWithStore(<EditorSidebar />);
     await createRequestNamed('login');
-    await userEvent.click(toolbarNew());
+    triggerNewRequest();
     const input = screen.getByLabelText('Inline rename request');
     await userEvent.type(input, 'login');
     expect(screen.getByText(/Name already used/i)).toBeInTheDocument();

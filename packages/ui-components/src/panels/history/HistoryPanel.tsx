@@ -299,8 +299,8 @@ function RequestRunList({
           <li
             key={run.id}
             className={cn(
-              'overflow-hidden rounded-sm border bg-card',
-              isSelected ? 'border-accent/60' : 'border-border',
+              'overflow-hidden rounded-sm border bg-card transition-colors',
+              isSelected ? 'border-accent/60' : 'border-border hover:bg-surface',
             )}
           >
             {/*
@@ -319,7 +319,7 @@ function RequestRunList({
                 onClick={() => onSelect(run.id)}
                 aria-expanded={isSelected}
                 aria-label={`${r?.name ?? 'deleted request'} run details`}
-                className="flex flex-1 items-center gap-2 text-left hover:bg-surface"
+                className="flex flex-1 items-center gap-2 text-left"
               >
                 {isSelected ? (
                   <ChevronDown size={11} className="shrink-0 text-text-faint" />

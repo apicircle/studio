@@ -28,7 +28,7 @@ export function GlobalAssetsPanel() {
 
   if (!open) return null;
   return (
-    <Modal open onClose={close} title="Global Assets library">
+    <Modal open onClose={close} title="Global Assets library" bodyClassName="overflow-hidden">
       <GlobalAssetsBody />
     </Modal>
   );

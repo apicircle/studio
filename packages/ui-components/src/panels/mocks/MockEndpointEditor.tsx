@@ -3,6 +3,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import type { HttpMethod, MockEndpoint, MockServer } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
+import { Select } from '../../primitives/Select';
 import { MockEndpointFlow } from './MockEndpointFlow';
 import { MockNodeEditor, type MockNodeSelection } from './MockNodeEditor';
 
@@ -78,21 +79,19 @@ export function MockEndpointEditor({
   return (
     <div className="flex h-full flex-1 flex-col overflow-hidden">
       <header className="flex flex-wrap items-center gap-2 border-b border-border-subtle bg-card px-4 py-2.5">
-        <select
+        <Select
+          size="md"
           value={endpoint.method}
           onChange={(e) => setEndpoint({ method: e.target.value as HttpMethod })}
           aria-label="Mock endpoint method"
-          className={cn(
-            'h-8 rounded-sm border border-border bg-surface px-2 font-mono text-xs font-medium focus:border-accent focus:outline-none',
-            METHOD_COLOR[endpoint.method],
-          )}
+          className={cn('bg-surface font-mono font-medium', METHOD_COLOR[endpoint.method])}
         >
           {HTTP_METHODS.map((m) => (
             <option key={m} value={m} style={{ color: METHOD_OPTION_COLOR[m] }}>
               {m}
             </option>
           ))}
-        </select>
+        </Select>
         <input
           value={endpoint.pathPattern}
           onChange={(e) => setEndpoint({ pathPattern: e.target.value })}

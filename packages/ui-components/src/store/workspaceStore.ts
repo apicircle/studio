@@ -627,6 +627,45 @@ type WorkspaceStore = {
   openGlobalAssets: () => void;
   closeGlobalAssets: () => void;
 
+  /**
+   * Open/close the Import modal. Driven from sidebar kebab menus (Editor and
+   * Environments) so the kebab can live in the shared Sidebar header without
+   * needing to share local React state with the panel-specific sidebar.
+   */
+  importModalOpen: boolean;
+  openImportModal: () => void;
+  closeImportModal: () => void;
+
+  /**
+   * Pending name-first create flow in the Editor sidebar. Set by the sidebar
+   * header kebab ("New Request" / "New Folder"), consumed by EditorSidebar to
+   * render an inline name input row. Reset to `null` after commit/cancel.
+   */
+  editorPendingCreate: { kind: 'request' | 'folder'; parentId: string | null } | null;
+  setEditorPendingCreate: (
+    value: { kind: 'request' | 'folder'; parentId: string | null } | null,
+  ) => void;
+
+  /**
+   * Pending environment-add flow in the Environments sidebar. `true` shows the
+   * inline name input; `false` hides it. Set by the sidebar header kebab.
+   */
+  envAdding: boolean;
+  setEnvAdding: (value: boolean) => void;
+
+  /** Help Center: search query + selected section id, shared between
+   * HelpSidebar (search input + section list) and HelpPanel (article view). */
+  helpQuery: string;
+  helpSectionId: string | null;
+  setHelpQuery: (value: string) => void;
+  setHelpSectionId: (value: string | null) => void;
+
+  /** MCP: which AI client the sidebar has currently focused. The main panel
+   * still renders a card per client, but selecting in the sidebar scrolls
+   * that client's snippet card into view (and highlights it). */
+  mcpFocusedClient: string | null;
+  setMcpFocusedClient: (value: string | null) => void;
+
   // --- Linked-content overrides ---------------------------------------
   /**
    * Replace (or merge into) the override patch for a linked workspace's
@@ -1157,6 +1196,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   activePanel: readStoredPanel(),
   secretVaultOpen: false,
   globalAssetsOpen: false,
+  importModalOpen: false,
+  editorPendingCreate: null,
+  envAdding: false,
+  helpQuery: '',
+  helpSectionId: null,
+  mcpFocusedClient: null,
   activeLinkedRequest: null,
   pendingRefresh: null,
   missingScopePrompt: null,
@@ -1991,6 +2036,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   removeGlobalGraphQL: (id) => commitSynced(set, get, (s) => removeGlobalGraphQLAction(s, id)),
   openGlobalAssets: () => set({ globalAssetsOpen: true }),
   closeGlobalAssets: () => set({ globalAssetsOpen: false }),
+  openImportModal: () => set({ importModalOpen: true }),
+  closeImportModal: () => set({ importModalOpen: false }),
+  setEditorPendingCreate: (value) => set({ editorPendingCreate: value }),
+  setEnvAdding: (value) => set({ envAdding: value }),
+  setHelpQuery: (value) => set({ helpQuery: value }),
+  setHelpSectionId: (value) => set({ helpSectionId: value }),
+  setMcpFocusedClient: (value) => set({ mcpFocusedClient: value }),
 
   setLinkedRequestOverride: (linkedWorkspaceId, itemId, patch) => {
     const key = `${linkedWorkspaceId}:${itemId}`;

@@ -12,24 +12,77 @@
 import type { MockServer, MockRuntime } from './mock';
 
 export type ThemeId =
+  // Built-in defaults
   | 'studio-dark'
   | 'graphite-dark'
   | 'midnight-blue'
   | 'workbench-light'
   | 'paper-light'
-  | 'high-contrast-dark';
+  | 'high-contrast-dark'
+  // High contrast (companion)
+  | 'high-contrast-light'
+  // Dark — community palettes
+  | 'dracula'
+  | 'nord'
+  | 'tokyo-night'
+  | 'one-dark-pro'
+  | 'monokai-pro'
+  | 'gruvbox-dark'
+  | 'solarized-dark'
+  | 'catppuccin-mocha'
+  | 'catppuccin-macchiato'
+  | 'synthwave-84'
+  | 'cobalt2'
+  | 'rose-pine'
+  | 'ayu-mirage'
+  | 'night-owl'
+  | 'github-dark'
+  | 'material-palenight'
+  // Light — community palettes
+  | 'solarized-light'
+  | 'github-light'
+  | 'catppuccin-latte'
+  | 'ayu-light'
+  | 'atom-one-light'
+  | 'rose-pine-dawn'
+  | 'tokyo-night-day';
 
 // Font family preference. Matches `ALL_FONTS` in `applyFont.ts` — the
 // bare id lives here because it's persisted on `WorkspaceLocal.ui` so
 // fonts switch with the workspace (parity with theme).
 export type FontFamilyId =
+  // Monospace
   | 'system-mono'
   | 'jetbrains-mono'
   | 'fira-code'
   | 'cascadia-code'
   | 'ibm-plex-mono'
+  | 'source-code-pro'
+  | 'roboto-mono'
+  | 'space-mono'
+  | 'hack'
+  | 'inconsolata'
+  | 'anonymous-pro'
+  | 'ubuntu-mono'
+  | 'dm-mono'
+  | 'geist-mono'
+  | 'red-hat-mono'
+  | 'azeret-mono'
+  | 'victor-mono'
+  // Sans-serif
   | 'system-sans'
-  | 'inter';
+  | 'inter'
+  | 'roboto'
+  | 'open-sans'
+  | 'lato'
+  | 'source-sans-3'
+  | 'nunito-sans'
+  | 'manrope'
+  | 'dm-sans'
+  | 'geist'
+  | 'plus-jakarta-sans'
+  | 'ibm-plex-sans'
+  | 'work-sans';
 
 // No 'settings' panel — Secret Vault and Theme moved to TopBar.
 // No 'command' panel — feature dropped per revision #2.

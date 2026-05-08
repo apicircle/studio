@@ -68,6 +68,97 @@ export const ALL_FONTS: ReadonlyArray<FontFamilyDef> = [
       'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap',
   },
   {
+    id: 'source-code-pro',
+    label: 'Source Code Pro',
+    category: 'mono',
+    stack: '"Source Code Pro", ui-monospace, Menlo, Consolas, monospace',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'roboto-mono',
+    label: 'Roboto Mono',
+    category: 'mono',
+    stack: '"Roboto Mono", ui-monospace, Menlo, Consolas, monospace',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'space-mono',
+    label: 'Space Mono',
+    category: 'mono',
+    stack: '"Space Mono", ui-monospace, Menlo, Consolas, monospace',
+    webfontHref: 'https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap',
+  },
+  {
+    id: 'hack',
+    label: 'Hack',
+    category: 'mono',
+    stack: 'Hack, ui-monospace, Menlo, Consolas, monospace',
+    webfontHref: 'https://cdn.jsdelivr.net/npm/@fontsource/hack@5.0.0/index.css',
+  },
+  {
+    id: 'inconsolata',
+    label: 'Inconsolata',
+    category: 'mono',
+    stack: 'Inconsolata, ui-monospace, Menlo, Consolas, monospace',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'anonymous-pro',
+    label: 'Anonymous Pro',
+    category: 'mono',
+    stack: '"Anonymous Pro", ui-monospace, Menlo, Consolas, monospace',
+    webfontHref: 'https://fonts.googleapis.com/css2?family=Anonymous+Pro:wght@400;700&display=swap',
+  },
+  {
+    id: 'ubuntu-mono',
+    label: 'Ubuntu Mono',
+    category: 'mono',
+    stack: '"Ubuntu Mono", ui-monospace, Menlo, Consolas, monospace',
+    webfontHref: 'https://fonts.googleapis.com/css2?family=Ubuntu+Mono:wght@400;700&display=swap',
+  },
+  {
+    id: 'dm-mono',
+    label: 'DM Mono',
+    category: 'mono',
+    stack: '"DM Mono", ui-monospace, Menlo, Consolas, monospace',
+    webfontHref: 'https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap',
+  },
+  {
+    id: 'geist-mono',
+    label: 'Geist Mono',
+    category: 'mono',
+    stack: '"Geist Mono", ui-monospace, Menlo, Consolas, monospace',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'red-hat-mono',
+    label: 'Red Hat Mono',
+    category: 'mono',
+    stack: '"Red Hat Mono", ui-monospace, Menlo, Consolas, monospace',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Red+Hat+Mono:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'azeret-mono',
+    label: 'Azeret Mono',
+    category: 'mono',
+    stack: '"Azeret Mono", ui-monospace, Menlo, Consolas, monospace',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'victor-mono',
+    label: 'Victor Mono',
+    category: 'mono',
+    stack: '"Victor Mono", ui-monospace, Menlo, Consolas, monospace',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Victor+Mono:wght@400;500;600;700&display=swap',
+  },
+  {
     id: 'system-sans',
     label: 'System Sans',
     category: 'sans',
@@ -79,6 +170,91 @@ export const ALL_FONTS: ReadonlyArray<FontFamilyDef> = [
     category: 'sans',
     stack: 'Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
     webfontHref: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'roboto',
+    label: 'Roboto',
+    category: 'sans',
+    stack: 'Roboto, system-ui, -apple-system, "Segoe UI", sans-serif',
+    webfontHref: 'https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap',
+  },
+  {
+    id: 'open-sans',
+    label: 'Open Sans',
+    category: 'sans',
+    stack: '"Open Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'lato',
+    label: 'Lato',
+    category: 'sans',
+    stack: 'Lato, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    webfontHref: 'https://fonts.googleapis.com/css2?family=Lato:wght@400;700&display=swap',
+  },
+  {
+    id: 'source-sans-3',
+    label: 'Source Sans 3',
+    category: 'sans',
+    stack: '"Source Sans 3", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'nunito-sans',
+    label: 'Nunito Sans',
+    category: 'sans',
+    stack: '"Nunito Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'manrope',
+    label: 'Manrope',
+    category: 'sans',
+    stack: 'Manrope, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'dm-sans',
+    label: 'DM Sans',
+    category: 'sans',
+    stack: '"DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'geist',
+    label: 'Geist',
+    category: 'sans',
+    stack: 'Geist, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    webfontHref: 'https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'plus-jakarta-sans',
+    label: 'Plus Jakarta Sans',
+    category: 'sans',
+    stack: '"Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'ibm-plex-sans',
+    label: 'IBM Plex Sans',
+    category: 'sans',
+    stack: '"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'work-sans',
+    label: 'Work Sans',
+    category: 'sans',
+    stack: '"Work Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap',
   },
 ];
 

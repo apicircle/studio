@@ -69,7 +69,7 @@ export function ParamsTab({ request }: ParamsTabProps) {
           >
             <span className="capitalize">{id}</span>
             {counts[id] > 0 && (
-              <span className="rounded-sm bg-card px-1 py-0.5 text-[10px] text-text-dim">
+              <span className="inline-flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-card px-1 text-[10px] leading-none tabular-nums text-text-dim">
                 {counts[id]}
               </span>
             )}

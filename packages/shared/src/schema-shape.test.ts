@@ -109,6 +109,7 @@ describe('WorkspaceLocal shape (regression)', () => {
         'secretIndex',
         'sessions',
         'settings',
+        'snapshots',
         'sync',
         'ui',
         'workingBranch',

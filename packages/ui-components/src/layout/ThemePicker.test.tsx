@@ -11,12 +11,16 @@ describe('ThemePicker', () => {
     expect(screen.getByRole('button', { name: /Choose theme/ })).toHaveTextContent('Studio Dark');
   });
 
-  it('opens listbox on click and lists all 6 themes', async () => {
+  it('opens listbox on click and lists every theme grouped by mode', async () => {
     await renderWithStore(<ThemePicker />);
     await userEvent.click(screen.getByRole('button', { name: /Choose theme/ }));
     const list = screen.getByRole('listbox');
     expect(list).toBeInTheDocument();
-    expect(screen.getAllByRole('option')).toHaveLength(6);
+    expect(screen.getAllByRole('option').length).toBeGreaterThanOrEqual(30);
+    // Group headers are rendered for the three buckets.
+    expect(screen.getByText('Dark')).toBeInTheDocument();
+    expect(screen.getByText('Light')).toBeInTheDocument();
+    expect(screen.getByText('High Contrast')).toBeInTheDocument();
   });
 
   it('selecting an option updates the store and closes the listbox', async () => {

@@ -1,8 +1,8 @@
-import { useState } from 'react';
-import { Copy, Download, FileDown, GripVertical, Plus, Trash2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Copy, Download, FileDown, GripVertical, Plus, Search, Trash2 } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
-import { KebabMenu } from '../../primitives/KebabMenu';
+import { KebabMenu, type KebabMenuItem } from '../../primitives/KebabMenu';
 import { ImportModal } from '../editor/ImportModal';
 
 export function EnvironmentsSidebar() {
@@ -16,11 +16,14 @@ export function EnvironmentsSidebar() {
   const envFocus = useWorkspaceStore((s) => s.envFocus);
   const setEnvFocus = useWorkspaceStore((s) => s.setEnvFocus);
 
-  const [adding, setAdding] = useState(false);
+  const adding = useWorkspaceStore((s) => s.envAdding);
+  const setAdding = useWorkspaceStore((s) => s.setEnvAdding);
+  const importOpen = useWorkspaceStore((s) => s.importModalOpen);
+  const closeImport = useWorkspaceStore((s) => s.closeImportModal);
   const [draftName, setDraftName] = useState('');
   const [dragName, setDragName] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const submitAdd = () => {
     const name = draftName.trim();
@@ -38,7 +41,12 @@ export function EnvironmentsSidebar() {
   const prioritized = priorityOrder.filter((n) => items[n]);
   const selectedSet = new Set(prioritized);
   const unprioritized = allNames.filter((n) => !selectedSet.has(n)).sort();
-  const orderedNames = [...prioritized, ...unprioritized];
+  const fullOrderedNames = [...prioritized, ...unprioritized];
+  const orderedNames = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return fullOrderedNames;
+    return fullOrderedNames.filter((n) => n.toLowerCase().includes(q));
+  }, [fullOrderedNames, searchQuery]);
 
   const toggleSelected = (name: string) => {
     if (selectedSet.has(name)) {
@@ -113,27 +121,22 @@ export function EnvironmentsSidebar() {
 
   return (
     <div className="flex h-full flex-col gap-2">
-      <div className="flex gap-1">
-        <button
-          type="button"
-          onClick={() => setAdding(true)}
-          className="inline-flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm border border-border bg-surface text-xs text-text-muted transition-colors hover:border-accent hover:text-text-primary"
-          aria-label="New environment"
-        >
-          <Plus size={12} />
-          New environment
-        </button>
-        <button
-          type="button"
-          onClick={() => setImportOpen(true)}
-          className="inline-flex h-7 items-center justify-center rounded-sm border border-border bg-surface px-2 text-xs text-text-muted transition-colors hover:border-accent hover:text-text-primary"
-          aria-label="Import environment"
-          title="Import a Postman environment"
-        >
-          <Download size={12} />
-        </button>
+      <ImportModal open={importOpen} onClose={closeImport} />
+
+      <div className="relative">
+        <Search
+          size={11}
+          aria-hidden="true"
+          className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-text-dim"
+        />
+        <input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search environments…"
+          aria-label="Search environments"
+          className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-[11px] text-text-primary focus:border-accent focus:outline-none"
+        />
       </div>
-      <ImportModal open={importOpen} onClose={() => setImportOpen(false)} />
 
       {adding && (
         <input
@@ -155,9 +158,13 @@ export function EnvironmentsSidebar() {
       )}
 
       <ul role="list" aria-label="Environments" className="flex flex-col gap-0.5">
-        {allNames.length === 0 && (
+        {orderedNames.length === 0 && (
           <li className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-[11px] text-text-dim">
-            No environments yet.
+            {searchQuery
+              ? 'No matching environments.'
+              : allNames.length === 0
+                ? 'No environments yet.'
+                : 'No environments yet.'}
           </li>
         )}
         {orderedNames.map((name) => {
@@ -259,4 +266,31 @@ export function EnvironmentsSidebar() {
       </p>
     </div>
   );
+}
+
+/**
+ * Kebab menu rendered next to the "ENVIRONMENTS" label in the shared sidebar
+ * header. Replaces the previous CTA row above the environment list.
+ */
+export function EnvironmentsSidebarActions() {
+  const setAdding = useWorkspaceStore((s) => s.setEnvAdding);
+  const openImport = useWorkspaceStore((s) => s.openImportModal);
+
+  const items: KebabMenuItem[] = [
+    {
+      id: 'new-environment',
+      label: 'New Environment',
+      icon: <Plus size={12} aria-hidden="true" />,
+      onSelect: () => setAdding(true),
+    },
+    {
+      id: 'import',
+      label: 'Import',
+      icon: <Download size={12} aria-hidden="true" />,
+      onSelect: openImport,
+      title: 'Import a Postman environment',
+    },
+  ];
+
+  return <KebabMenu items={items} ariaLabel="Environments actions" size="sm" alwaysVisible />;
 }

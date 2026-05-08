@@ -1,6 +1,6 @@
 # @apicircle/mcp-server
 
-Model Context Protocol server for [APICircle Studio](https://github.com/apicircle/studio-v2). Exposes the workspace as a 40-tool catalog any [MCP-compatible AI client](https://modelcontextprotocol.io) can drive — Claude Desktop, ChatGPT, GitHub Copilot, Cursor, Continue, Cline, Zed, Windsurf, and more.
+Model Context Protocol server for [APICircle Studio](https://github.com/apicircle/studio-v2). Exposes the workspace as a 50-tool catalog any [MCP-compatible AI client](https://modelcontextprotocol.io) can drive — Claude Desktop, ChatGPT, GitHub Copilot, Cursor, Continue, Cline, Zed, Windsurf, and more.
 
 ## Install
 
@@ -40,12 +40,12 @@ await host.connect(); // stdio by default
 
 ## Tool catalog
 
-40 tools across 8 namespaces — see [`docs/mcp-tools-reference.md`](../../docs/mcp-tools-reference.md). Highlights:
+50 tools across 8 namespaces — see [`docs/mcp-tools-reference.md`](../../docs/mcp-tools-reference.md). Highlights:
 
 - **Imports**: `import.{curl,openapi,postman,insomnia,har}`
 - **Codegen**: `generate.code` (curl, fetch, axios, requests, Go, Rust)
 - **Codebase**: `codebase.extract_collection` (Express, FastAPI, NestJS, Spring)
-- **Prompt-driven**: `prompt.{create_environment,create_assertion,create_plan}`
+- **Prompt-driven**: LLM-shaped JSON entry points covering every authoring workflow — `prompt.create_request` / `update_request`, `prompt.create_folder_tree`, `prompt.create_environment`, `prompt.create_assertion`, `prompt.create_plan` / `add_plan_steps` / `set_plan_variables`, `prompt.create_mock_server` / `add_mock_endpoint` / `set_endpoint_{validation,response}_rules` / `set_endpoint_multipliers`
 - **Mock CRUD**: `mock.{create_from_openapi,start,stop,delete,...}`
 - **Entity CRUD**: full read/write surface for requests, folders, environments, plans, assertions
 

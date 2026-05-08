@@ -44,6 +44,10 @@ describe('applyFont', () => {
 });
 
 describe('catalog', () => {
+  it('catalog has at least 30 fonts', () => {
+    expect(ALL_FONTS.length).toBeGreaterThanOrEqual(30);
+  });
+
   it('every font has a unique id and a non-empty stack', () => {
     const seen = new Set<string>();
     for (const f of ALL_FONTS) {
@@ -56,6 +60,14 @@ describe('catalog', () => {
   it('every font is categorised mono or sans', () => {
     for (const f of ALL_FONTS) {
       expect(['mono', 'sans']).toContain(f.category);
+    }
+  });
+
+  it('every webfontHref is a valid https URL', () => {
+    for (const f of ALL_FONTS) {
+      if (f.webfontHref) {
+        expect(f.webfontHref).toMatch(/^https:\/\//);
+      }
     }
   });
 });

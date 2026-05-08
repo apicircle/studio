@@ -4,6 +4,7 @@ import { generateId } from '@apicircle/shared';
 import { Crosshair, Plus, Trash2 } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { JsonPathPicker } from './JsonPathPicker';
+import { Select } from '../../primitives/Select';
 
 interface AssertionsTabProps {
   request: ApiRequest;
@@ -63,18 +64,17 @@ export function AssertionsTab({ request }: AssertionsTabProps) {
           : null;
         return (
           <div key={a.id} className="flex flex-wrap items-center gap-2">
-            <select
+            <Select
               value={a.kind}
               onChange={(e) => update(i, { kind: e.target.value as Assertion['kind'] })}
               aria-label={`Assertion ${i + 1} kind`}
-              className="h-7 rounded-sm border border-border bg-card px-2 text-xs"
             >
               {KINDS.map((k) => (
                 <option key={k.id} value={k.id}>
                   {k.label}
                 </option>
               ))}
-            </select>
+            </Select>
             {def.needsTarget && (
               <div className="flex flex-[1.5] items-center gap-1">
                 <input
@@ -105,18 +105,17 @@ export function AssertionsTab({ request }: AssertionsTabProps) {
                 )}
               </div>
             )}
-            <select
+            <Select
               value={a.op}
               onChange={(e) => update(i, { op: e.target.value as Assertion['op'] })}
               aria-label={`Assertion ${i + 1} op`}
-              className="h-7 rounded-sm border border-border bg-card px-2 text-xs"
             >
               {OPS.map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.label}
                 </option>
               ))}
-            </select>
+            </Select>
             <input
               type="text"
               value={String(a.expected)}

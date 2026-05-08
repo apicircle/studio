@@ -13,6 +13,7 @@ import {
 } from '@apicircle/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
+import { Select } from '../../primitives/Select';
 import { ParamsTab } from './ParamsTab';
 import { HeadersTab } from './HeadersTab';
 import { BodyTab } from './BodyTab';
@@ -113,7 +114,7 @@ function EffectiveRequestPreview({
           <span className="shrink-0 text-[10px] uppercase tracking-wider text-text-dim">
             Effective URL
           </span>
-          <span className="truncate" title={effectiveUrl}>
+          <span className="truncate text-accent" title={effectiveUrl}>
             {effectiveUrl}
           </span>
         </div>
@@ -223,21 +224,19 @@ export function EditorPanel() {
       <header className="flex flex-col gap-2 border-b border-border-subtle p-3">
         <RequestNameInput requestId={request.id} initial={request.name} />
         <div className="flex items-center gap-2">
-          <select
+          <Select
+            size="lg"
             value={request.method}
             onChange={(e) => setRequestMethod(request.id, e.target.value as HttpMethod)}
             aria-label="HTTP method"
-            className={cn(
-              'h-9 rounded-sm border border-border bg-card px-2 text-xs font-medium',
-              METHOD_COLOR[request.method],
-            )}
+            className={cn('font-medium', METHOD_COLOR[request.method])}
           >
             {METHODS.map((m) => (
               <option key={m} value={m} style={{ color: METHOD_OPTION_COLOR[m] }}>
                 {m}
               </option>
             ))}
-          </select>
+          </Select>
           <div className="flex-1">
             <VariableAutocompleteField
               value={composeUrlWithQuery(request.url, request.query)}

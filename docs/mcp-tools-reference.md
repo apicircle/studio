@@ -1,6 +1,6 @@
 # MCP tool catalog reference
 
-The `@apicircle/mcp-server` host exposes 40 tools, namespaced by capability area. The full list is canonical in [`packages/shared/src/mcp.ts`](../packages/shared/src/mcp.ts) and registered in [`packages/mcp-server/src/tools/registry.ts`](../packages/mcp-server/src/tools/registry.ts).
+The `@apicircle/mcp-server` host exposes 50 tools, namespaced by capability area. The full list is canonical in [`packages/shared/src/mcp.ts`](../packages/shared/src/mcp.ts) and registered in [`packages/mcp-server/src/tools/registry.ts`](../packages/mcp-server/src/tools/registry.ts).
 
 ## Imports
 
@@ -81,13 +81,23 @@ Returns `{ count, candidates: [{ method, path, framework, line }] }`. Use it to 
 
 ## Prompt-driven authoring
 
-These tools accept LLM-shaped JSON envelopes and validate before persisting.
+These tools accept LLM-shaped JSON envelopes — flat, sensible defaults, ids auto-generated server-side — and validate before persisting. Mirrors every authoring workflow in the catalog so an AI client has a uniform NL → JSON entry point regardless of which surface area it's writing to.
 
-| Tool                        | Input                                                                         |
-| --------------------------- | ----------------------------------------------------------------------------- |
-| `prompt.create_environment` | `{ name, variables: [{ key, value, encrypted? }] }`                           |
-| `prompt.create_assertion`   | `{ requestId, assertion: { kind, op, target?, expected } }`                   |
-| `prompt.create_plan`        | `{ name, stepRequestIds, envPriorityOrder }` _(validates all step ids exist)_ |
+| Tool                                   | Input                                                                                                                                                                                                 |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prompt.create_environment`            | `{ name, variables: [{ key, value, encrypted? }] }`                                                                                                                                                   |
+| `prompt.create_assertion`              | `{ requestId, assertion: { kind, op, target?, expected } }`                                                                                                                                           |
+| `prompt.create_plan`                   | `{ name, stepRequestIds, envPriorityOrder }` _(validates all step ids exist)_                                                                                                                         |
+| `prompt.create_request`                | `{ name?, method, url, folderId?, headers?, queryParams?, pathParams?, body?: { type, content?, variables? }, auth?, assertions? }` — auth defaults to `inherit`; nested assertion ids auto-generated |
+| `prompt.update_request`                | `{ id, patch: { name?, method?, url?, folderId?, headers?, queryParams?, pathParams?, body?, auth?, assertions? } }` — replace-on-supplied; returns `{ ok: false, error }` when the id is unknown     |
+| `prompt.create_folder_tree`            | `{ parentId?, tree: { name, children?: [...] } }` — recursive; one call seeds the whole hierarchy in pre-order                                                                                        |
+| `prompt.add_plan_steps`                | `{ planId, requestIds: [...] }` — append-only; validates every request id before any step is added                                                                                                    |
+| `prompt.set_plan_variables`            | `{ planId, variables: [{ key, value }] }` — replaces the plan-scoped variables; empty array clears                                                                                                    |
+| `prompt.create_mock_server`            | `{ name, defaultPort?, endpoints?: [{ method, pathPattern, name?, response?, validationRules?, responseRules?, multipliers? }] }` — manual-mode mock with inline endpoints + rules in one shot        |
+| `prompt.add_mock_endpoint`             | `{ mockId, method, pathPattern, name?, description?, response?, validationRules?, responseRules?, multipliers? }` — appends to an existing mock; all nested ids auto-generated                        |
+| `prompt.set_endpoint_validation_rules` | `{ mockId, endpointId, rules: [{ kind, target, expected?, message?, enabled?, failResponse? }] }` — replaces the endpoint's validation rules; ids regenerated; empty array clears                     |
+| `prompt.set_endpoint_response_rules`   | `{ mockId, endpointId, rules: [{ name, enabled?, when: [...], response }] }` — replaces conditional response rules; ids regenerated; empty array falls back to defaultResponse                        |
+| `prompt.set_endpoint_multipliers`      | `{ mockId, endpointId, multipliers: [{ source, targetJsonPath, defaultCount, min?, max? }] }` — replaces defaultResponse multipliers; empty array clears                                              |
 
 ## Mock server lifecycle
 

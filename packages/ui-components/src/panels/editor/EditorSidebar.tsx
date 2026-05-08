@@ -9,9 +9,11 @@ import {
   FolderOpen,
   FolderPlus,
   Pencil,
+  Search,
   Shield,
   Trash2,
 } from 'lucide-react';
+import type { KebabMenuItem } from '../../primitives/KebabMenu';
 import type { Folder, Request as ApiRequest } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { isNameAvailableInFolder } from '../../store/editorActions';
@@ -50,7 +52,9 @@ export function EditorSidebar() {
   const duplicateRequest = useWorkspaceStore((s) => s.duplicateRequest);
   const duplicateFolder = useWorkspaceStore((s) => s.duplicateFolder);
   const setActiveRequestId = useWorkspaceStore((s) => s.setActiveRequestId);
-  const [importOpen, setImportOpen] = useState(false);
+  const importOpen = useWorkspaceStore((s) => s.importModalOpen);
+  const closeImport = useWorkspaceStore((s) => s.closeImportModal);
+  const [searchQuery, setSearchQuery] = useState('');
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
   const [authModalFolderId, setAuthModalFolderId] = useState<string | null>(null);
   // Tracks which node is currently being renamed inline. Keyed as
@@ -58,14 +62,12 @@ export function EditorSidebar() {
   // (impossible today, but cheap to be explicit) can't collide.
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
   /**
-   * Active name-first prompt for "New request" / "New folder". When set, an
-   * inline input row renders at the appropriate spot in the tree and the
-   * entity isn't created until the user confirms a name.
+   * Active name-first prompt for "New request" / "New folder". Lifted to the
+   * workspace store so the sidebar header kebab (rendered above this tree by
+   * Sidebar.tsx) can drive it without sharing local React state.
    */
-  const [pendingCreate, setPendingCreate] = useState<{
-    kind: 'folder' | 'request';
-    parentId: string | null;
-  } | null>(null);
+  const pendingCreate = useWorkspaceStore((s) => s.editorPendingCreate);
+  const setPendingCreate = useWorkspaceStore((s) => s.setEditorPendingCreate);
 
   const synced = useWorkspaceStore((s) => s.synced);
 
@@ -130,6 +132,36 @@ export function EditorSidebar() {
     return out;
   }, [folders, requests]);
 
+  // Search filter — when non-empty, build a set of node keys (`folder:<id>`
+  // or `request:<id>`) that should remain visible. A node passes the filter
+  // if its own name matches, or any descendant matches; ancestors of a
+  // match are always included so the tree path stays intact.
+  const searchVisibleKeys = useMemo<Set<string> | null>(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return null;
+    const result = new Set<string>();
+    const addAncestors = (folderId: string | null) => {
+      let p = folderId;
+      while (p) {
+        result.add(`folder:${p}`);
+        p = folders[p]?.parentId ?? null;
+      }
+    };
+    for (const f of Object.values(folders)) {
+      if (f.name.toLowerCase().includes(q)) {
+        result.add(`folder:${f.id}`);
+        addAncestors(f.parentId ?? null);
+      }
+    }
+    for (const r of Object.values(requests)) {
+      if (r.name.toLowerCase().includes(q) || r.method.toLowerCase().includes(q)) {
+        result.add(`request:${r.id}`);
+        addAncestors(r.folderId ?? null);
+      }
+    }
+    return result;
+  }, [searchQuery, folders, requests]);
+
   if (!tree) return null;
 
   // Top-level: derive from tree.children, but only keep entries whose backing
@@ -140,10 +172,15 @@ export function EditorSidebar() {
     .filter((c) => {
       if (c.kind === 'folder') {
         const f = folders[c.id];
-        return Boolean(f && f.parentId === null);
+        if (!f || f.parentId !== null) return false;
+      } else {
+        const r = requests[c.id];
+        if (!r || r.folderId !== null) return false;
       }
-      const r = requests[c.id];
-      return Boolean(r && r.folderId === null);
+      // Search filter: hide top-level nodes that don't match (directly or
+      // through a descendant). When the query is empty the set is null and
+      // every node passes through.
+      return searchVisibleKeys === null || searchVisibleKeys.has(`${c.kind}:${c.id}`);
     })
     .sort((a, b) => {
       const aName =
@@ -155,39 +192,26 @@ export function EditorSidebar() {
 
   return (
     <div className="flex h-full flex-col gap-2">
-      <div className="flex gap-1">
-        <button
-          type="button"
-          onClick={() => startCreate('request', null)}
-          className="inline-flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm border border-border bg-surface text-xs text-text-muted transition-colors hover:border-accent hover:text-text-primary"
-          aria-label="New request"
-        >
-          <FilePlus2 size={12} />
-          New request
-        </button>
-        <button
-          type="button"
-          onClick={() => setImportOpen(true)}
-          className="inline-flex h-7 items-center justify-center gap-1.5 rounded-sm border border-border bg-surface px-2 text-xs text-text-muted transition-colors hover:border-accent hover:text-text-primary"
-          aria-label="Import"
-          title="Import Postman / Insomnia / APICircle / cURL"
-        >
-          <Download size={12} />
-        </button>
-        <button
-          type="button"
-          onClick={() => startCreate('folder', null)}
-          className="inline-flex h-7 items-center justify-center gap-1.5 rounded-sm border border-border bg-surface px-2 text-xs text-text-muted transition-colors hover:border-accent hover:text-text-primary"
-          aria-label="New folder"
-        >
-          <FolderPlus size={12} />
-        </button>
+      <ImportModal open={importOpen} onClose={closeImport} />
+
+      <div className="relative">
+        <Search
+          size={11}
+          aria-hidden="true"
+          className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-text-dim"
+        />
+        <input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search requests…"
+          aria-label="Search requests"
+          className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-[11px] text-text-primary focus:border-accent focus:outline-none"
+        />
       </div>
-      <ImportModal open={importOpen} onClose={() => setImportOpen(false)} />
 
       {topLevel.length === 0 && !pendingCreate && (
         <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-[11px] text-text-dim">
-          No requests yet. Create one to start.
+          {searchQuery ? 'No matching requests.' : 'No requests yet. Create one to start.'}
         </p>
       )}
 
@@ -212,6 +236,7 @@ export function EditorSidebar() {
             requests={requests}
             childrenByFolder={childrenByFolder}
             expandedFolders={expandedFolders}
+            searchVisibleKeys={searchVisibleKeys}
             activeRequestId={activeRequestId}
             onToggleFolder={toggleFolder}
             onSelectRequest={setActiveRequestId}
@@ -253,6 +278,40 @@ export function EditorSidebar() {
   );
 }
 
+/**
+ * Renders the kebab menu shown next to the "EDITOR" label in the shared
+ * sidebar header. Replaces the previous row of CTA buttons (New request /
+ * Import / New folder) above the tree, freeing up vertical space.
+ */
+export function EditorSidebarActions() {
+  const setPendingCreate = useWorkspaceStore((s) => s.setEditorPendingCreate);
+  const openImport = useWorkspaceStore((s) => s.openImportModal);
+
+  const items: KebabMenuItem[] = [
+    {
+      id: 'new-request',
+      label: 'New Request',
+      icon: <FilePlus2 size={12} aria-hidden="true" />,
+      onSelect: () => setPendingCreate({ kind: 'request', parentId: null }),
+    },
+    {
+      id: 'new-folder',
+      label: 'New Folder',
+      icon: <FolderPlus size={12} aria-hidden="true" />,
+      onSelect: () => setPendingCreate({ kind: 'folder', parentId: null }),
+    },
+    {
+      id: 'import',
+      label: 'Import',
+      icon: <Download size={12} aria-hidden="true" />,
+      onSelect: openImport,
+      title: 'Import Postman / Insomnia / APICircle / cURL',
+    },
+  ];
+
+  return <KebabMenu items={items} ariaLabel="Editor actions" size="sm" alwaysVisible />;
+}
+
 interface TreeNodeProps {
   node: RenderNode;
   depth: number;
@@ -284,6 +343,8 @@ interface TreeNodeProps {
     kind: 'folder' | 'request',
     candidate: string,
   ) => boolean;
+  /** When non-null, only nodes with `${kind}:${id}` in the set render. */
+  searchVisibleKeys: Set<string> | null;
 }
 
 function TreeNode(props: TreeNodeProps) {
@@ -313,24 +374,27 @@ function TreeNode(props: TreeNodeProps) {
     onCommitCreate,
     onCancelCreate,
     validateNewName,
+    searchVisibleKeys,
   } = props;
-  const indentPx = depth * 12;
 
   if (node.kind === 'folder') {
     const folder = folders[node.id];
     if (!folder) return null;
-    const isOpen = expandedFolders.has(folder.id);
-    const children = childrenByFolder.get(folder.id) ?? [];
+    // Auto-expand folders while a search is active so matches inside
+    // collapsed folders surface immediately.
+    const isOpen = searchVisibleKeys !== null ? true : expandedFolders.has(folder.id);
+    const allChildren = childrenByFolder.get(folder.id) ?? [];
+    const children =
+      searchVisibleKeys === null
+        ? allChildren
+        : allChildren.filter((c) => searchVisibleKeys.has(`${c.kind}:${c.id}`));
     const renameKey = `folder:${folder.id}`;
     const isRenaming = renamingKey === renameKey;
     return (
       <li role="treeitem" aria-expanded={isOpen}>
-        <div
-          className="group flex items-center gap-1 rounded-sm border border-transparent px-1 py-1.5 text-xs text-text-muted transition-colors hover:border-border-subtle hover:bg-surface hover:text-text-primary"
-          style={{ paddingLeft: 4 + indentPx }}
-        >
+        <div className="group flex items-center rounded-sm border border-transparent text-xs text-text-muted transition-colors hover:border-border-subtle hover:bg-surface hover:text-text-primary">
           {isRenaming ? (
-            <div className="flex flex-1 items-center gap-1">
+            <div className="flex flex-1 items-center gap-1 px-1 py-1.5">
               {isOpen ? (
                 <FolderOpen size={12} className="shrink-0 text-text-faint" />
               ) : (
@@ -351,7 +415,7 @@ function TreeNode(props: TreeNodeProps) {
                 e.stopPropagation();
                 onStartRename(renameKey);
               }}
-              className="flex flex-1 items-center gap-1 truncate text-left"
+              className="flex flex-1 items-center gap-1 truncate px-1 py-1.5 text-left"
               aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${folder.name}`}
               title="Double-click to rename"
             >
@@ -369,10 +433,10 @@ function TreeNode(props: TreeNodeProps) {
               <span className="ml-1 text-[10px] text-text-dim">{children.length}</span>
             </button>
           )}
-          {/* Auth flag — small accent dot when the folder has its own
-              auth set (anything other than inherit/none). Click opens
-              the auth modal. The kebab menu also includes "Edit auth"
-              for keyboard discovery. */}
+          {/* Auth flag — Shield icon when the folder has its own auth set
+              (anything other than inherit/none). Click opens the auth
+              modal. The kebab menu also includes "Edit auth" for
+              keyboard discovery. */}
           {!isRenaming &&
             folder.auth &&
             folder.auth.type !== 'none' &&
@@ -384,7 +448,7 @@ function TreeNode(props: TreeNodeProps) {
                 title={`Auth: ${folder.auth.type} — click to edit`}
                 className="shrink-0 rounded-sm p-0.5 text-accent hover:bg-accent/10"
               >
-                <span aria-hidden="true" className="inline-block h-2 w-2 rounded-full bg-accent" />
+                <Shield size={12} aria-hidden="true" />
               </button>
             )}
           {!isRenaming && (
@@ -444,7 +508,10 @@ function TreeNode(props: TreeNodeProps) {
           )}
         </div>
         {isOpen && (
-          <ul className="flex flex-col gap-0.5" role="group">
+          <ul
+            className="ml-3 flex flex-col gap-0.5 border-l border-border-subtle pl-2"
+            role="group"
+          >
             {pendingCreate && pendingCreate.parentId === folder.id && (
               <li>
                 <CreateInput
@@ -474,18 +541,17 @@ function TreeNode(props: TreeNodeProps) {
     <li role="treeitem" aria-selected={isActive}>
       <div
         className={cn(
-          'group flex items-center gap-2 rounded-sm border px-2 py-1.5 text-xs transition-colors',
+          'group flex items-center rounded-sm border text-xs transition-colors',
           isActive
             ? 'border-accent/40 bg-accent/10 text-text-primary'
             : 'border-transparent text-text-muted hover:border-border-subtle hover:bg-surface hover:text-text-primary',
         )}
-        style={{ paddingLeft: 8 + indentPx }}
       >
         {isRenaming ? (
-          <div className="flex flex-1 items-center gap-2">
+          <div className="flex flex-1 items-center gap-2 px-2 py-1.5">
             <span
               className={cn(
-                'shrink-0 text-[10px] font-medium uppercase tracking-wider',
+                'inline-block w-10 shrink-0 text-left text-[10px] font-medium uppercase tracking-wider tabular-nums',
                 METHOD_COLOR[request.method] ?? 'text-text-muted',
               )}
             >
@@ -506,12 +572,12 @@ function TreeNode(props: TreeNodeProps) {
               e.stopPropagation();
               onStartRename(renameKey);
             }}
-            className="flex flex-1 items-center gap-2 truncate text-left"
+            className="flex flex-1 items-center gap-2 truncate px-2 py-1.5 text-left"
             title="Double-click to rename"
           >
             <span
               className={cn(
-                'shrink-0 text-[10px] font-medium uppercase tracking-wider',
+                'inline-block w-10 shrink-0 text-left text-[10px] font-medium uppercase tracking-wider tabular-nums',
                 METHOD_COLOR[request.method] ?? 'text-text-muted',
               )}
             >
@@ -614,7 +680,7 @@ function CreateInput({ kind, depth, isAvailable, onCommit, onCancel }: CreateInp
   const inputRef = useRef<HTMLInputElement | null>(null);
   const trimmed = value.trim();
   const duplicate = trimmed.length > 0 && !isAvailable(trimmed);
-  const indentPx = depth * 12;
+  void depth; // depth is supplied for potential future indent logic; tree-line guides handle visual nesting via the wrapping <ul>.
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -630,10 +696,7 @@ function CreateInput({ kind, depth, isAvailable, onCommit, onCancel }: CreateInp
   };
 
   return (
-    <div
-      className="flex items-center gap-1 rounded-sm border border-accent/30 bg-accent/5 px-1 py-1.5 text-xs"
-      style={{ paddingLeft: 4 + indentPx }}
-    >
+    <div className="flex items-center gap-1 rounded-sm border border-accent/30 bg-accent/5 px-1 py-1.5 text-xs">
       {kind === 'folder' ? (
         <FolderIcon size={12} className="shrink-0 text-text-faint" />
       ) : (

@@ -24,9 +24,9 @@
   --border-strong: 71 98 129;
   --border-subtle: 36 50 70;
   --text-primary: 237 244 255;
-  --text-muted: 143 165 192;
-  --text-dim: 110 130 156;
-  --text-faint: 75 92 116;
+  --text-muted: 167 188 215;
+  --text-dim: 136 156 184;
+  --text-faint: 95 116 144;
   --accent: 103 179 255;
   --accent-strong: 88 166 255;
   --success: 63 185 80;
@@ -55,11 +55,18 @@
   --border-strong: 88 94 104;
   --border-subtle: 42 45 51;
   --text-primary: 232 234 237;
-  --text-muted: 156 161 170;
-  --text-dim: 118 124 134;
-  --text-faint: 80 86 96;
+  --text-muted: 178 184 192;
+  --text-dim: 142 148 158;
+  --text-faint: 102 108 118;
   --accent: 168 178 197;
   --accent-strong: 199 210 226;
+  --http-get: 124 198 134;
+  --http-post: 124 168 232;
+  --http-put: 220 168 86;
+  --http-patch: 196 152 232;
+  --http-delete: 232 96 96;
+  --http-head: 156 161 170;
+  --http-options: 156 161 170;
   color-scheme: dark;
 }
 
@@ -70,11 +77,18 @@
   --border-strong: 64 86 142;
   --border-subtle: 28 38 70;
   --text-primary: 224 234 255;
-  --text-muted: 144 162 198;
-  --text-dim: 100 120 158;
-  --text-faint: 64 84 122;
+  --text-muted: 168 186 220;
+  --text-dim: 130 152 192;
+  --text-faint: 88 110 152;
   --accent: 124 156 255;
   --accent-strong: 158 184 255;
+  --http-get: 96 220 156;
+  --http-post: 124 156 255;
+  --http-put: 250 196 96;
+  --http-patch: 188 152 255;
+  --http-delete: 255 132 132;
+  --http-head: 144 162 198;
+  --http-options: 144 162 198;
   color-scheme: dark;
 }
 
@@ -85,11 +99,18 @@
   --border-strong: 188 195 206;
   --border-subtle: 232 236 242;
   --text-primary: 24 28 36;
-  --text-muted: 88 96 110;
-  --text-dim: 124 132 146;
-  --text-faint: 168 174 188;
+  --text-muted: 76 84 98;
+  --text-dim: 108 116 130;
+  --text-faint: 146 154 170;
   --accent: 24 119 242;
   --accent-strong: 13 95 200;
+  --http-get: 22 130 76;
+  --http-post: 24 119 242;
+  --http-put: 168 110 26;
+  --http-patch: 122 67 196;
+  --http-delete: 196 36 50;
+  --http-head: 88 96 110;
+  --http-options: 88 96 110;
   color-scheme: light;
 }
 
@@ -100,11 +121,18 @@
   --border-strong: 190 182 165;
   --border-subtle: 238 233 222;
   --text-primary: 38 32 22;
-  --text-muted: 102 92 76;
-  --text-dim: 138 128 110;
-  --text-faint: 184 174 156;
+  --text-muted: 90 80 64;
+  --text-dim: 120 110 92;
+  --text-faint: 162 152 134;
   --accent: 192 102 36;
   --accent-strong: 158 80 22;
+  --http-get: 88 124 60;
+  --http-post: 56 96 168;
+  --http-put: 192 102 36;
+  --http-patch: 128 68 156;
+  --http-delete: 178 56 56;
+  --http-head: 102 92 76;
+  --http-options: 102 92 76;
   color-scheme: light;
 }
 
@@ -120,7 +148,757 @@
   --text-faint: 140 140 140;
   --accent: 255 215 0;
   --accent-strong: 255 240 120;
+  --http-get: 80 240 120;
+  --http-post: 100 200 255;
+  --http-put: 255 215 0;
+  --http-patch: 220 130 255;
+  --http-delete: 255 100 100;
+  --http-head: 220 220 220;
+  --http-options: 220 220 220;
   color-scheme: dark;
+}
+
+[data-theme='high-contrast-light'] {
+  --surface: 255 255 255;
+  --card: 250 250 250;
+  --border: 0 0 0;
+  --border-strong: 0 0 0;
+  --border-subtle: 102 102 102;
+  --text-primary: 0 0 0;
+  --text-muted: 51 51 51;
+  --text-dim: 85 85 85;
+  --text-faint: 119 119 119;
+  --accent: 0 0 200;
+  --accent-strong: 0 0 160;
+  --success: 0 102 0;
+  --warning: 153 102 0;
+  --danger: 204 0 0;
+  --info: 0 0 200;
+  --http-get: 0 110 30;
+  --http-post: 0 60 200;
+  --http-put: 130 80 0;
+  --http-patch: 100 0 160;
+  --http-delete: 180 0 0;
+  --http-head: 51 51 51;
+  --http-options: 51 51 51;
+  color-scheme: light;
+}
+
+/* ===== Dark — community palettes ===== */
+
+[data-theme='dracula'] {
+  --surface: 40 42 54;
+  --card: 68 71 90;
+  --border: 68 71 90;
+  --border-strong: 98 114 164;
+  --border-subtle: 56 58 76;
+  --text-primary: 248 248 242;
+  --text-muted: 189 192 209;
+  --text-dim: 145 152 178;
+  --text-faint: 98 114 164;
+  --accent: 189 147 249;
+  --accent-strong: 209 175 255;
+  --success: 80 250 123;
+  --warning: 241 250 140;
+  --danger: 255 85 85;
+  --info: 139 233 253;
+  --purple: 189 147 249;
+  --blue: 139 233 253;
+  --green: 80 250 123;
+  --amber: 255 184 108;
+  --red: 255 85 85;
+  --http-get: 80 250 123;
+  --http-post: 139 233 253;
+  --http-put: 255 184 108;
+  --http-patch: 189 147 249;
+  --http-delete: 255 85 85;
+  --http-head: 248 248 242;
+  --http-options: 248 248 242;
+  color-scheme: dark;
+}
+
+[data-theme='nord'] {
+  --surface: 46 52 64;
+  --card: 59 66 82;
+  --border: 67 76 94;
+  --border-strong: 76 86 106;
+  --border-subtle: 53 60 73;
+  --text-primary: 236 239 244;
+  --text-muted: 216 222 233;
+  --text-dim: 166 173 191;
+  --text-faint: 119 128 148;
+  --accent: 136 192 208;
+  --accent-strong: 143 188 187;
+  --success: 163 190 140;
+  --warning: 235 203 139;
+  --danger: 191 97 106;
+  --info: 129 161 193;
+  --purple: 180 142 173;
+  --blue: 129 161 193;
+  --green: 163 190 140;
+  --amber: 235 203 139;
+  --red: 191 97 106;
+  --http-get: 163 190 140;
+  --http-post: 136 192 208;
+  --http-put: 235 203 139;
+  --http-patch: 180 142 173;
+  --http-delete: 191 97 106;
+  --http-head: 216 222 233;
+  --http-options: 216 222 233;
+  color-scheme: dark;
+}
+
+[data-theme='tokyo-night'] {
+  --surface: 26 27 38;
+  --card: 36 40 59;
+  --border: 65 72 104;
+  --border-strong: 86 95 137;
+  --border-subtle: 41 46 66;
+  --text-primary: 192 202 245;
+  --text-muted: 169 177 214;
+  --text-dim: 122 130 175;
+  --text-faint: 86 95 137;
+  --accent: 122 162 247;
+  --accent-strong: 158 188 250;
+  --success: 158 206 106;
+  --warning: 224 175 104;
+  --danger: 247 118 142;
+  --info: 125 207 255;
+  --purple: 187 154 247;
+  --blue: 122 162 247;
+  --green: 158 206 106;
+  --amber: 224 175 104;
+  --red: 247 118 142;
+  --http-get: 158 206 106;
+  --http-post: 122 162 247;
+  --http-put: 224 175 104;
+  --http-patch: 187 154 247;
+  --http-delete: 247 118 142;
+  --http-head: 169 177 214;
+  --http-options: 169 177 214;
+  color-scheme: dark;
+}
+
+[data-theme='one-dark-pro'] {
+  --surface: 40 44 52;
+  --card: 33 37 43;
+  --border: 60 64 72;
+  --border-strong: 92 99 112;
+  --border-subtle: 48 52 60;
+  --text-primary: 220 223 228;
+  --text-muted: 188 195 208;
+  --text-dim: 150 158 172;
+  --text-faint: 112 120 134;
+  --accent: 97 175 239;
+  --accent-strong: 130 195 245;
+  --success: 152 195 121;
+  --warning: 229 192 123;
+  --danger: 224 108 117;
+  --info: 86 182 194;
+  --purple: 198 120 221;
+  --blue: 97 175 239;
+  --green: 152 195 121;
+  --amber: 209 154 102;
+  --red: 224 108 117;
+  --http-get: 152 195 121;
+  --http-post: 97 175 239;
+  --http-put: 209 154 102;
+  --http-patch: 198 120 221;
+  --http-delete: 224 108 117;
+  --http-head: 171 178 191;
+  --http-options: 171 178 191;
+  color-scheme: dark;
+}
+
+[data-theme='monokai-pro'] {
+  --surface: 45 42 46;
+  --card: 34 31 34;
+  --border: 76 73 76;
+  --border-strong: 114 112 114;
+  --border-subtle: 56 53 56;
+  --text-primary: 252 252 250;
+  --text-muted: 210 208 214;
+  --text-dim: 166 164 170;
+  --text-faint: 130 128 134;
+  --accent: 255 97 136;
+  --accent-strong: 255 130 160;
+  --success: 169 220 118;
+  --warning: 255 216 102;
+  --danger: 255 97 136;
+  --info: 120 220 232;
+  --purple: 171 157 242;
+  --blue: 120 220 232;
+  --green: 169 220 118;
+  --amber: 252 152 103;
+  --red: 255 97 136;
+  --http-get: 169 220 118;
+  --http-post: 120 220 232;
+  --http-put: 255 216 102;
+  --http-patch: 171 157 242;
+  --http-delete: 255 97 136;
+  --http-head: 252 252 250;
+  --http-options: 252 252 250;
+  color-scheme: dark;
+}
+
+[data-theme='gruvbox-dark'] {
+  --surface: 40 40 40;
+  --card: 60 56 54;
+  --border: 80 73 69;
+  --border-strong: 124 111 100;
+  --border-subtle: 50 48 47;
+  --text-primary: 235 219 178;
+  --text-muted: 213 196 161;
+  --text-dim: 168 153 132;
+  --text-faint: 124 111 100;
+  --accent: 254 128 25;
+  --accent-strong: 250 189 47;
+  --success: 184 187 38;
+  --warning: 250 189 47;
+  --danger: 251 73 52;
+  --info: 131 165 152;
+  --purple: 211 134 155;
+  --blue: 131 165 152;
+  --green: 184 187 38;
+  --amber: 250 189 47;
+  --red: 251 73 52;
+  --http-get: 184 187 38;
+  --http-post: 131 165 152;
+  --http-put: 250 189 47;
+  --http-patch: 211 134 155;
+  --http-delete: 251 73 52;
+  --http-head: 235 219 178;
+  --http-options: 235 219 178;
+  color-scheme: dark;
+}
+
+[data-theme='solarized-dark'] {
+  --surface: 0 43 54;
+  --card: 7 54 66;
+  --border: 88 110 117;
+  --border-strong: 101 123 131;
+  --border-subtle: 14 60 72;
+  --text-primary: 238 232 213;
+  --text-muted: 175 188 188;
+  --text-dim: 142 162 165;
+  --text-faint: 102 124 130;
+  --accent: 38 139 210;
+  --accent-strong: 70 160 220;
+  --success: 133 153 0;
+  --warning: 181 137 0;
+  --danger: 220 50 47;
+  --info: 42 161 152;
+  --purple: 108 113 196;
+  --blue: 38 139 210;
+  --green: 133 153 0;
+  --amber: 203 75 22;
+  --red: 220 50 47;
+  --http-get: 133 153 0;
+  --http-post: 38 139 210;
+  --http-put: 181 137 0;
+  --http-patch: 108 113 196;
+  --http-delete: 220 50 47;
+  --http-head: 147 161 161;
+  --http-options: 147 161 161;
+  color-scheme: dark;
+}
+
+[data-theme='catppuccin-mocha'] {
+  --surface: 30 30 46;
+  --card: 49 50 68;
+  --border: 69 71 90;
+  --border-strong: 88 91 112;
+  --border-subtle: 24 24 37;
+  --text-primary: 205 214 244;
+  --text-muted: 186 194 222;
+  --text-dim: 166 173 200;
+  --text-faint: 108 112 134;
+  --accent: 203 166 247;
+  --accent-strong: 220 188 252;
+  --success: 166 227 161;
+  --warning: 249 226 175;
+  --danger: 243 139 168;
+  --info: 137 180 250;
+  --purple: 203 166 247;
+  --blue: 137 180 250;
+  --green: 166 227 161;
+  --amber: 249 226 175;
+  --red: 243 139 168;
+  --http-get: 166 227 161;
+  --http-post: 137 180 250;
+  --http-put: 249 226 175;
+  --http-patch: 203 166 247;
+  --http-delete: 243 139 168;
+  --http-head: 186 194 222;
+  --http-options: 186 194 222;
+  color-scheme: dark;
+}
+
+[data-theme='catppuccin-macchiato'] {
+  --surface: 36 39 58;
+  --card: 54 58 79;
+  --border: 73 77 100;
+  --border-strong: 91 96 120;
+  --border-subtle: 30 32 48;
+  --text-primary: 202 211 245;
+  --text-muted: 184 192 224;
+  --text-dim: 165 173 203;
+  --text-faint: 110 115 141;
+  --accent: 198 160 246;
+  --accent-strong: 218 184 252;
+  --success: 166 218 149;
+  --warning: 238 212 159;
+  --danger: 237 135 150;
+  --info: 138 173 244;
+  --purple: 198 160 246;
+  --blue: 138 173 244;
+  --green: 166 218 149;
+  --amber: 238 212 159;
+  --red: 237 135 150;
+  --http-get: 166 218 149;
+  --http-post: 138 173 244;
+  --http-put: 238 212 159;
+  --http-patch: 198 160 246;
+  --http-delete: 237 135 150;
+  --http-head: 184 192 224;
+  --http-options: 184 192 224;
+  color-scheme: dark;
+}
+
+[data-theme='synthwave-84'] {
+  --surface: 42 33 57;
+  --card: 36 27 47;
+  --border: 73 84 149;
+  --border-strong: 121 88 175;
+  --border-subtle: 50 40 70;
+  --text-primary: 248 248 242;
+  --text-muted: 209 200 230;
+  --text-dim: 158 145 200;
+  --text-faint: 110 100 145;
+  --accent: 255 126 219;
+  --accent-strong: 255 170 235;
+  --success: 114 241 184;
+  --warning: 254 222 93;
+  --danger: 249 126 114;
+  --info: 3 237 249;
+  --purple: 184 147 206;
+  --blue: 3 237 249;
+  --green: 114 241 184;
+  --amber: 254 222 93;
+  --red: 249 126 114;
+  --http-get: 114 241 184;
+  --http-post: 3 237 249;
+  --http-put: 254 222 93;
+  --http-patch: 255 126 219;
+  --http-delete: 249 126 114;
+  --http-head: 209 200 230;
+  --http-options: 209 200 230;
+  color-scheme: dark;
+}
+
+[data-theme='cobalt2'] {
+  --surface: 25 53 73;
+  --card: 18 39 56;
+  --border: 0 136 255;
+  --border-strong: 80 175 255;
+  --border-subtle: 28 60 82;
+  --text-primary: 255 255 255;
+  --text-muted: 200 220 240;
+  --text-dim: 140 170 200;
+  --text-faint: 100 130 160;
+  --accent: 255 198 0;
+  --accent-strong: 255 220 80;
+  --success: 58 217 0;
+  --warning: 255 157 0;
+  --danger: 255 98 140;
+  --info: 0 136 255;
+  --purple: 255 126 219;
+  --blue: 0 136 255;
+  --green: 128 255 187;
+  --amber: 255 157 0;
+  --red: 255 98 140;
+  --http-get: 128 255 187;
+  --http-post: 0 136 255;
+  --http-put: 255 198 0;
+  --http-patch: 255 126 219;
+  --http-delete: 255 98 140;
+  --http-head: 200 220 240;
+  --http-options: 200 220 240;
+  color-scheme: dark;
+}
+
+[data-theme='rose-pine'] {
+  --surface: 25 23 36;
+  --card: 31 29 46;
+  --border: 38 35 58;
+  --border-strong: 110 106 134;
+  --border-subtle: 31 29 46;
+  --text-primary: 230 226 244;
+  --text-muted: 178 172 200;
+  --text-dim: 138 132 165;
+  --text-faint: 96 92 122;
+  --accent: 196 167 231;
+  --accent-strong: 215 190 240;
+  --success: 49 116 143;
+  --warning: 246 193 119;
+  --danger: 235 111 146;
+  --info: 156 207 216;
+  --purple: 196 167 231;
+  --blue: 156 207 216;
+  --green: 49 116 143;
+  --amber: 246 193 119;
+  --red: 235 111 146;
+  --http-get: 49 116 143;
+  --http-post: 156 207 216;
+  --http-put: 246 193 119;
+  --http-patch: 196 167 231;
+  --http-delete: 235 111 146;
+  --http-head: 224 222 244;
+  --http-options: 224 222 244;
+  color-scheme: dark;
+}
+
+[data-theme='ayu-mirage'] {
+  --surface: 31 36 48;
+  --card: 26 31 41;
+  --border: 51 60 72;
+  --border-strong: 92 103 115;
+  --border-subtle: 38 44 56;
+  --text-primary: 220 218 210;
+  --text-muted: 188 184 174;
+  --text-dim: 146 144 140;
+  --text-faint: 110 116 124;
+  --accent: 255 174 87;
+  --accent-strong: 255 200 130;
+  --success: 186 230 126;
+  --warning: 255 213 128;
+  --danger: 242 135 121;
+  --info: 115 208 255;
+  --purple: 212 191 255;
+  --blue: 115 208 255;
+  --green: 186 230 126;
+  --amber: 255 213 128;
+  --red: 242 135 121;
+  --http-get: 186 230 126;
+  --http-post: 115 208 255;
+  --http-put: 255 213 128;
+  --http-patch: 212 191 255;
+  --http-delete: 242 135 121;
+  --http-head: 169 167 158;
+  --http-options: 169 167 158;
+  color-scheme: dark;
+}
+
+[data-theme='night-owl'] {
+  --surface: 1 22 39;
+  --card: 0 27 51;
+  --border: 14 41 63;
+  --border-strong: 99 119 119;
+  --border-subtle: 7 30 47;
+  --text-primary: 222 230 240;
+  --text-muted: 172 188 206;
+  --text-dim: 130 156 156;
+  --text-faint: 86 110 114;
+  --accent: 130 170 255;
+  --accent-strong: 165 195 255;
+  --success: 173 219 103;
+  --warning: 236 196 141;
+  --danger: 239 83 80;
+  --info: 127 219 202;
+  --purple: 199 146 234;
+  --blue: 130 170 255;
+  --green: 173 219 103;
+  --amber: 247 140 108;
+  --red: 239 83 80;
+  --http-get: 173 219 103;
+  --http-post: 130 170 255;
+  --http-put: 236 196 141;
+  --http-patch: 199 146 234;
+  --http-delete: 239 83 80;
+  --http-head: 152 168 188;
+  --http-options: 152 168 188;
+  color-scheme: dark;
+}
+
+[data-theme='github-dark'] {
+  --surface: 13 17 23;
+  --card: 22 27 34;
+  --border: 33 38 45;
+  --border-strong: 110 118 129;
+  --border-subtle: 18 22 28;
+  --text-primary: 230 237 243;
+  --text-muted: 159 168 178;
+  --text-dim: 132 142 154;
+  --text-faint: 96 104 114;
+  --accent: 88 166 255;
+  --accent-strong: 121 184 255;
+  --success: 63 185 80;
+  --warning: 210 153 34;
+  --danger: 248 81 73;
+  --info: 88 166 255;
+  --purple: 210 168 255;
+  --blue: 88 166 255;
+  --green: 63 185 80;
+  --amber: 255 166 87;
+  --red: 248 81 73;
+  --http-get: 63 185 80;
+  --http-post: 88 166 255;
+  --http-put: 255 166 87;
+  --http-patch: 210 168 255;
+  --http-delete: 248 81 73;
+  --http-head: 201 209 217;
+  --http-options: 201 209 217;
+  color-scheme: dark;
+}
+
+[data-theme='material-palenight'] {
+  --surface: 41 45 62;
+  --card: 31 34 48;
+  --border: 56 60 80;
+  --border-strong: 103 110 149;
+  --border-subtle: 38 42 58;
+  --text-primary: 200 206 232;
+  --text-muted: 168 174 205;
+  --text-dim: 136 142 178;
+  --text-faint: 102 110 142;
+  --accent: 199 146 234;
+  --accent-strong: 220 175 245;
+  --success: 195 232 141;
+  --warning: 255 203 107;
+  --danger: 240 113 120;
+  --info: 137 221 255;
+  --purple: 199 146 234;
+  --blue: 130 170 255;
+  --green: 195 232 141;
+  --amber: 255 203 107;
+  --red: 240 113 120;
+  --http-get: 195 232 141;
+  --http-post: 130 170 255;
+  --http-put: 255 203 107;
+  --http-patch: 199 146 234;
+  --http-delete: 240 113 120;
+  --http-head: 166 172 205;
+  --http-options: 166 172 205;
+  color-scheme: dark;
+}
+
+/* ===== Light — community palettes ===== */
+
+[data-theme='solarized-light'] {
+  --surface: 253 246 227;
+  --card: 238 232 213;
+  --border: 220 213 190;
+  --border-strong: 147 161 161;
+  --border-subtle: 232 226 207;
+  --text-primary: 56 78 86;
+  --text-muted: 80 100 108;
+  --text-dim: 108 128 132;
+  --text-faint: 142 158 158;
+  --accent: 38 139 210;
+  --accent-strong: 26 113 175;
+  --success: 133 153 0;
+  --warning: 181 137 0;
+  --danger: 220 50 47;
+  --info: 42 161 152;
+  --purple: 108 113 196;
+  --blue: 38 139 210;
+  --green: 133 153 0;
+  --amber: 203 75 22;
+  --red: 220 50 47;
+  --http-get: 133 153 0;
+  --http-post: 38 139 210;
+  --http-put: 181 137 0;
+  --http-patch: 108 113 196;
+  --http-delete: 220 50 47;
+  --http-head: 101 123 131;
+  --http-options: 101 123 131;
+  color-scheme: light;
+}
+
+[data-theme='github-light'] {
+  --surface: 255 255 255;
+  --card: 246 248 250;
+  --border: 208 215 222;
+  --border-strong: 110 119 129;
+  --border-subtle: 234 238 242;
+  --text-primary: 36 41 47;
+  --text-muted: 76 86 96;
+  --text-dim: 100 109 119;
+  --text-faint: 142 152 162;
+  --accent: 9 105 218;
+  --accent-strong: 4 84 178;
+  --success: 26 127 55;
+  --warning: 154 103 0;
+  --danger: 207 34 46;
+  --info: 9 105 218;
+  --purple: 130 80 223;
+  --blue: 9 105 218;
+  --green: 26 127 55;
+  --amber: 154 103 0;
+  --red: 207 34 46;
+  --http-get: 26 127 55;
+  --http-post: 9 105 218;
+  --http-put: 154 103 0;
+  --http-patch: 130 80 223;
+  --http-delete: 207 34 46;
+  --http-head: 87 96 106;
+  --http-options: 87 96 106;
+  color-scheme: light;
+}
+
+[data-theme='catppuccin-latte'] {
+  --surface: 239 241 245;
+  --card: 230 233 239;
+  --border: 204 208 218;
+  --border-strong: 108 111 133;
+  --border-subtle: 220 224 232;
+  --text-primary: 60 64 92;
+  --text-muted: 82 86 112;
+  --text-dim: 104 108 130;
+  --text-faint: 138 142 162;
+  --accent: 136 57 239;
+  --accent-strong: 110 30 220;
+  --success: 64 160 43;
+  --warning: 223 142 29;
+  --danger: 210 15 57;
+  --info: 30 102 245;
+  --purple: 136 57 239;
+  --blue: 30 102 245;
+  --green: 64 160 43;
+  --amber: 223 142 29;
+  --red: 210 15 57;
+  --http-get: 64 160 43;
+  --http-post: 30 102 245;
+  --http-put: 223 142 29;
+  --http-patch: 136 57 239;
+  --http-delete: 210 15 57;
+  --http-head: 92 95 119;
+  --http-options: 92 95 119;
+  color-scheme: light;
+}
+
+[data-theme='ayu-light'] {
+  --surface: 250 250 250;
+  --card: 243 244 245;
+  --border: 215 218 222;
+  --border-strong: 130 140 153;
+  --border-subtle: 232 234 237;
+  --text-primary: 56 65 78;
+  --text-muted: 99 110 124;
+  --text-dim: 124 134 148;
+  --text-faint: 158 168 180;
+  --accent: 250 141 62;
+  --accent-strong: 224 110 30;
+  --success: 134 179 0;
+  --warning: 242 174 73;
+  --danger: 240 113 113;
+  --info: 57 158 230;
+  --purple: 163 122 204;
+  --blue: 57 158 230;
+  --green: 134 179 0;
+  --amber: 242 174 73;
+  --red: 240 113 113;
+  --http-get: 134 179 0;
+  --http-post: 57 158 230;
+  --http-put: 242 174 73;
+  --http-patch: 163 122 204;
+  --http-delete: 240 113 113;
+  --http-head: 130 140 153;
+  --http-options: 130 140 153;
+  color-scheme: light;
+}
+
+[data-theme='atom-one-light'] {
+  --surface: 250 250 250;
+  --card: 240 240 241;
+  --border: 217 217 219;
+  --border-strong: 105 108 119;
+  --border-subtle: 232 232 233;
+  --text-primary: 40 42 50;
+  --text-muted: 86 89 100;
+  --text-dim: 118 121 130;
+  --text-faint: 158 160 168;
+  --accent: 64 120 242;
+  --accent-strong: 30 90 220;
+  --success: 80 161 79;
+  --warning: 193 132 1;
+  --danger: 228 86 73;
+  --info: 1 132 188;
+  --purple: 166 38 164;
+  --blue: 64 120 242;
+  --green: 80 161 79;
+  --amber: 193 132 1;
+  --red: 228 86 73;
+  --http-get: 80 161 79;
+  --http-post: 64 120 242;
+  --http-put: 193 132 1;
+  --http-patch: 166 38 164;
+  --http-delete: 228 86 73;
+  --http-head: 105 108 119;
+  --http-options: 105 108 119;
+  color-scheme: light;
+}
+
+[data-theme='rose-pine-dawn'] {
+  --surface: 250 244 237;
+  --card: 255 250 243;
+  --border: 242 233 225;
+  --border-strong: 121 117 147;
+  --border-subtle: 244 238 230;
+  --text-primary: 64 60 96;
+  --text-muted: 100 96 130;
+  --text-dim: 124 119 148;
+  --text-faint: 160 155 178;
+  --accent: 144 122 169;
+  --accent-strong: 118 95 145;
+  --success: 40 105 131;
+  --warning: 234 157 52;
+  --danger: 180 99 122;
+  --info: 86 148 159;
+  --purple: 144 122 169;
+  --blue: 86 148 159;
+  --green: 40 105 131;
+  --amber: 234 157 52;
+  --red: 180 99 122;
+  --http-get: 40 105 131;
+  --http-post: 86 148 159;
+  --http-put: 234 157 52;
+  --http-patch: 144 122 169;
+  --http-delete: 180 99 122;
+  --http-head: 121 117 147;
+  --http-options: 121 117 147;
+  color-scheme: light;
+}
+
+[data-theme='tokyo-night-day'] {
+  --surface: 225 226 231;
+  --card: 208 213 227;
+  --border: 196 200 218;
+  --border-strong: 132 140 181;
+  --border-subtle: 218 220 230;
+  --text-primary: 36 56 110;
+  --text-muted: 86 100 150;
+  --text-dim: 110 122 165;
+  --text-faint: 150 158 188;
+  --accent: 46 125 233;
+  --accent-strong: 30 102 210;
+  --success: 88 117 57;
+  --warning: 177 92 0;
+  --danger: 245 42 101;
+  --info: 0 113 151;
+  --purple: 120 71 189;
+  --blue: 46 125 233;
+  --green: 88 117 57;
+  --amber: 177 92 0;
+  --red: 245 42 101;
+  --http-get: 88 117 57;
+  --http-post: 46 125 233;
+  --http-put: 177 92 0;
+  --http-patch: 120 71 189;
+  --http-delete: 245 42 101;
+  --http-head: 132 140 181;
+  --http-options: 132 140 181;
+  color-scheme: light;
 }
 
 @layer base {
@@ -129,6 +907,11 @@
   #root {
     height: 100%;
     margin: 0;
+  }
+
+  html,
+  body {
+    overflow: hidden;
   }
 
   body {
@@ -140,21 +923,48 @@
     outline-offset: 2px;
   }
 
-  ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+  /*
+   * Hide native scrollbars across the app while keeping content scrollable.
+   * Scrolling still works via wheel / touch / keyboard.
+   */
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
   }
 
-  ::-webkit-scrollbar-track {
-    background: rgb(var(--surface));
+  *::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    background: transparent;
   }
 
-  ::-webkit-scrollbar-thumb {
-    background: rgb(var(--border));
-    border-radius: 8px;
+  *::-webkit-scrollbar-thumb,
+  *::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-corner {
+    background: transparent;
   }
 
-  ::-webkit-scrollbar-thumb:hover {
-    background: rgb(var(--border-strong));
+  /*
+   * Native <select> chevron polish. Browser-rendered chevrons sit flush
+   * against the right border and give asymmetric visual padding. We
+   * override with a custom inline-SVG chevron at right-2 and reserve
+   * pr-7 of breathing room so the text padding matches the left-2.
+   * Excludes the <Select> primitive (which sets `appearance-none` itself
+   * and overlays its own ChevronDown icon).
+   *
+   * The chevron uses `currentColor` so it inherits the select's text
+   * color — works in evergreen Chromium/Firefox/WebKit. For tighter
+   * theme matching, prefer the <Select> primitive which overlays a
+   * lucide ChevronDown icon styled with `text-text-dim`.
+   */
+  select:not(.appearance-none) {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    background-size: 12px 12px;
+    padding-right: 1.75rem;
   }
 }

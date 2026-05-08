@@ -152,11 +152,21 @@ export function KebabMenu({
 
   const sizeClass =
     size === 'sm'
-      ? 'inline-flex h-5 w-5 items-center justify-center'
-      : 'inline-flex h-6 w-6 items-center justify-center';
+      ? 'inline-flex h-6 w-6 items-center justify-center'
+      : 'inline-flex h-7 w-7 items-center justify-center';
+  // Visibility model:
+  //   • `alwaysVisible` → trigger is rendered at full opacity at all times
+  //     (header-level kebabs that aren't tied to a hovered row).
+  //   • default → trigger is hidden until the surrounding `group` row is
+  //     hovered, focused, or its menu is open. We use opacity (no
+  //     transition) so the icon snaps in at full brightness — a faded
+  //     kebab reads as disabled.
   const visibilityClass = alwaysVisible
     ? ''
-    : 'opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100';
+    : cn(
+        'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100',
+        open && 'opacity-100',
+      );
 
   return (
     <div className="relative inline-block">
@@ -171,12 +181,12 @@ export function KebabMenu({
         title={ariaLabel}
         className={cn(
           sizeClass,
-          'shrink-0 rounded-sm text-text-faint hover:text-text-primary',
+          'shrink-0 rounded-sm text-text-primary',
           visibilityClass,
           triggerClassName,
         )}
       >
-        <MoreVertical size={size === 'sm' ? 11 : 13} aria-hidden="true" />
+        <MoreVertical size={size === 'sm' ? 13 : 15} aria-hidden="true" />
       </button>
       {open && (
         <div

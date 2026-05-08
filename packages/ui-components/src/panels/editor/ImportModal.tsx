@@ -28,6 +28,7 @@ import {
 } from '@apicircle/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { Modal } from '../../primitives/Modal';
+import { Select } from '../../primitives/Select';
 import { cn } from '../../primitives/cn';
 
 type SourceFormat = 'auto' | 'postman' | 'postman-env' | 'insomnia' | 'curl' | 'apicircle';
@@ -109,13 +110,7 @@ export function ImportModal({
 
   return (
     <Modal open onClose={onClose} title="Import">
-      <div className="flex w-[min(720px,95vw)] flex-col gap-3 text-xs">
-        <p className="text-text-muted">
-          Paste a Postman v2.1 collection, Postman environment, Insomnia v4 export, an APICircle
-          exchange document, or a <code>curl</code> command. Auto-detect will pick the right parser;
-          force a format if a file looks ambiguous.
-        </p>
-
+      <div className="flex w-[min(720px,95vw)] flex-col gap-4 text-xs">
         <div className="flex items-center gap-2">
           <label
             htmlFor="import-source-format"
@@ -123,18 +118,17 @@ export function ImportModal({
           >
             Source
           </label>
-          <select
+          <Select
             id="import-source-format"
             value={format}
             onChange={(e) => setFormat(e.target.value as SourceFormat)}
-            className="h-7 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
           >
             {(Object.keys(FORMAT_LABELS) as SourceFormat[]).map((k) => (
               <option key={k} value={k}>
                 {FORMAT_LABELS[k]}
               </option>
             ))}
-          </select>
+          </Select>
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
@@ -156,26 +150,31 @@ export function ImportModal({
           />
         </div>
 
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder='Paste Postman / Insomnia / APICircle JSON, or a "curl …" command'
-          spellCheck={false}
-          aria-label="Import source"
-          className="min-h-[180px] w-full rounded-sm border border-border bg-card p-2 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
-        />
+        <div className="flex flex-col gap-1.5">
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder='Paste Postman / Insomnia / APICircle JSON, or a "curl …" command'
+            spellCheck={false}
+            aria-label="Import source"
+            className="min-h-[200px] w-full rounded-sm border border-border bg-card p-2.5 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+          />
+          <p className="text-[10px] text-text-dim">
+            Auto-detect picks the right parser; force a format above if a file looks ambiguous.
+          </p>
+        </div>
 
         {result.error && (
           <p
             role="alert"
-            className="rounded-sm border border-danger/30 bg-danger/5 px-2 py-1.5 text-[11px] text-danger"
+            className="rounded-sm border border-danger/30 bg-danger/5 px-2.5 py-1.5 text-[11px] text-danger"
           >
             {result.error}
           </p>
         )}
 
         {result.detected && (
-          <div className="flex flex-col gap-2 rounded-sm border border-border-subtle bg-card p-3">
+          <div className="flex flex-col gap-1.5 rounded-sm border border-border-subtle bg-card p-3">
             <header className="flex items-center gap-2 text-[11px]">
               {result.detected.kind === 'curl' ? (
                 <Sparkles size={12} className="text-accent" />
@@ -192,11 +191,11 @@ export function ImportModal({
           </div>
         )}
 
-        <footer className="flex items-center justify-end gap-2">
+        <footer className="flex items-center justify-end gap-2 border-t border-border-subtle pt-3">
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-[11px] text-text-muted hover:border-accent hover:text-text-primary"
+            className="inline-flex h-8 items-center rounded-sm border border-border bg-surface px-3 text-[11px] text-text-muted hover:border-accent hover:text-text-primary"
           >
             Cancel
           </button>
@@ -205,7 +204,7 @@ export function ImportModal({
             onClick={onImport}
             disabled={!result.detected || isApicirclePlaceholder}
             className={cn(
-              'inline-flex h-7 items-center rounded-sm border px-3 text-[11px]',
+              'inline-flex h-8 items-center rounded-sm border px-3 text-[11px]',
               result.detected && !isApicirclePlaceholder
                 ? 'border-accent/40 bg-accent/15 text-accent hover:bg-accent/25'
                 : 'border-border bg-surface text-text-faint',

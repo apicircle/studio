@@ -18,6 +18,7 @@ import { applyContentTypeForBodyType } from '@apicircle/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { MonacoBodyEditor } from '../../editors/MonacoBodyEditor';
 import { HeaderKeyAutocomplete, HeaderValueRecommendations } from '../editor/HeaderAutocomplete';
+import { cn } from '../../primitives/cn';
 
 // Reusable editor for a `MockResponseConfig`. Used by:
 //   • Default Response tab (full editor)
@@ -367,8 +368,12 @@ function BodyContentEditor({
     );
   }
   // json / text / xml / urlencoded all share the Monaco-backed editor.
+  // `min-w-0` on the wrapper prevents Monaco's intrinsic width from blowing
+  // out the surrounding flex/grid column when the parent (rule card)
+  // already has a fixed inner width — without it, Monaco's auto-layout can
+  // push the editor past the rule card's right border.
   return (
-    <div className={compact ? 'h-40' : 'h-72'}>
+    <div className={cn('w-full min-w-0 overflow-hidden', compact ? 'h-40' : 'h-72')}>
       <MonacoBodyEditor
         value={body.content}
         bodyType={

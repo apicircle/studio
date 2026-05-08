@@ -77,11 +77,11 @@ export function SettingsPicker() {
             ariaLabel="Validate before sending"
           />
           <ToggleRow
-            label="Monaco consumes mouse wheel"
-            description="When on, the code editor scrolls first and only releases the wheel at its top/bottom. When off (default), wheel events fall through so the page keeps scrolling past the editor."
+            label="Code editor captures mouse wheel"
+            description="When on, scrolling inside a code editor stays inside the editor until you reach its top or bottom. When off (default), the page keeps scrolling so long content doesn't get trapped inside the editor."
             checked={monacoConsumesWheel}
             onChange={setMonacoConsumesWheel}
-            ariaLabel="Monaco consumes mouse wheel"
+            ariaLabel="Code editor captures mouse wheel"
           />
           <SnapshotCapRow current={snapshotMaxBytes} onChange={setSnapshotMaxBytes} />
         </div>

@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  Copy,
   Eye,
   Layers,
   Play,
@@ -64,8 +63,6 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
   const linkedWorkspaces = useWorkspaceStore((s) => s.synced?.linkedWorkspaces ?? {});
   const linkedCollections = useWorkspaceStore((s) => s.local?.linkedCollections ?? {});
   const renamePlan = useWorkspaceStore((s) => s.renamePlan);
-  const removePlan = useWorkspaceStore((s) => s.removePlan);
-  const duplicatePlan = useWorkspaceStore((s) => s.duplicatePlan);
   const addPlanStep = useWorkspaceStore((s) => s.addPlanStep);
   const removePlanStep = useWorkspaceStore((s) => s.removePlanStep);
   const reorderPlanSteps = useWorkspaceStore((s) => s.reorderPlanSteps);
@@ -156,30 +153,13 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
 
   return (
     <div className="space-y-6">
-      <header className="flex items-center justify-between gap-3">
+      <header className="flex items-center gap-3">
         <input
           value={plan.name}
           onChange={(e) => renamePlan(plan.id, e.target.value)}
           aria-label="Plan name"
           className="h-9 max-w-md flex-1 rounded-sm border border-transparent bg-card px-3 text-base font-medium text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
         />
-        <button
-          type="button"
-          onClick={() => duplicatePlan(plan.id)}
-          aria-label={`Duplicate ${plan.name}`}
-          title={`Duplicate ${plan.name}`}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-sm border border-border bg-surface text-text-muted hover:border-accent hover:text-text-primary"
-        >
-          <Copy size={13} />
-        </button>
-        <button
-          type="button"
-          onClick={() => removePlan(plan.id)}
-          aria-label="Delete plan"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-sm border border-danger/30 bg-danger/5 text-danger hover:bg-danger/10"
-        >
-          <Trash2 size={13} />
-        </button>
       </header>
 
       <section>

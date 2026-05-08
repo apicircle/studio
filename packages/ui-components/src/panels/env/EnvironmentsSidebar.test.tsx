@@ -5,7 +5,14 @@ import { EnvironmentsSidebar } from './EnvironmentsSidebar';
 import { renderWithStore } from '../../../test/renderWithStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 
-const toolbarNew = () => screen.getByLabelText('New environment');
+// "New environment" lives in the kebab menu rendered by Sidebar.tsx (next
+// to the panel label), not inside <EnvironmentsSidebar />. Drive the inline
+// add input through the lifted store flag so tests stay decoupled from
+// where the kebab is rendered.
+const triggerNewEnv = () =>
+  act(() => {
+    useWorkspaceStore.getState().setEnvAdding(true);
+  });
 
 describe('EnvironmentsSidebar', () => {
   it('shows the empty-state when no environments exist', async () => {
@@ -15,7 +22,7 @@ describe('EnvironmentsSidebar', () => {
 
   it('typing a name + Enter creates the env', async () => {
     await renderWithStore(<EnvironmentsSidebar />);
-    await userEvent.click(toolbarNew());
+    triggerNewEnv();
     const input = screen.getByLabelText('Environment name');
     await userEvent.type(input, 'dev');
     await userEvent.keyboard('{Enter}');
@@ -100,7 +107,7 @@ describe('EnvironmentsSidebar', () => {
 
   it('Escape on the new-name input cancels without creating', async () => {
     await renderWithStore(<EnvironmentsSidebar />);
-    await userEvent.click(toolbarNew());
+    triggerNewEnv();
     const input = screen.getByLabelText('Environment name');
     await userEvent.type(input, 'wip');
     await userEvent.keyboard('{Escape}');

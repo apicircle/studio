@@ -12,10 +12,11 @@ describe('Sidebar', () => {
     expect(screen.getByText('Editor')).toBeInTheDocument();
   });
 
-  it('renders nothing for the help panel', async () => {
+  it('renders the help panel sidebar after the minor-fixes pass', async () => {
     await renderWithStore(<Sidebar />);
     act(() => useWorkspaceStore.getState().setActivePanel('help'));
-    expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
+    expect(screen.getByRole('complementary')).toBeInTheDocument();
+    expect(screen.getByText('Help Center')).toBeInTheDocument();
   });
 
   it('switches header label when panel changes', async () => {

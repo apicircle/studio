@@ -72,6 +72,16 @@ export type McpToolName =
   | 'prompt.create_environment'
   | 'prompt.create_assertion'
   | 'prompt.create_plan'
+  | 'prompt.create_request'
+  | 'prompt.update_request'
+  | 'prompt.create_folder_tree'
+  | 'prompt.add_plan_steps'
+  | 'prompt.set_plan_variables'
+  | 'prompt.create_mock_server'
+  | 'prompt.add_mock_endpoint'
+  | 'prompt.set_endpoint_validation_rules'
+  | 'prompt.set_endpoint_response_rules'
+  | 'prompt.set_endpoint_multipliers'
 
   // Mock server lifecycle
   | 'mock.create_from_openapi'
@@ -144,6 +154,16 @@ export const MCP_TOOL_NAMES: ReadonlyArray<McpToolName> = [
   'prompt.create_environment',
   'prompt.create_assertion',
   'prompt.create_plan',
+  'prompt.create_request',
+  'prompt.update_request',
+  'prompt.create_folder_tree',
+  'prompt.add_plan_steps',
+  'prompt.set_plan_variables',
+  'prompt.create_mock_server',
+  'prompt.add_mock_endpoint',
+  'prompt.set_endpoint_validation_rules',
+  'prompt.set_endpoint_response_rules',
+  'prompt.set_endpoint_multipliers',
   'mock.create_from_openapi',
   'mock.create_from_postman',
   'mock.create_from_insomnia',

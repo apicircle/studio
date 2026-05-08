@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ExecutionPanel } from './ExecutionPanel';
-import { ExecutionSidebar } from './ExecutionSidebar';
+import { ExecutionSidebar, ExecutionSidebarActions } from './ExecutionSidebar';
 
 async function hydrate(): Promise<void> {
   await act(async () => {
@@ -150,10 +150,20 @@ describe('ExecutionPanel — plan editor', () => {
   });
 
   it('deleting the active plan falls back to the empty state', async () => {
+    // Plan-level delete moved into the ExecutionSidebar kebab in the
+    // minor-fixes pass. Render both panels so we can drive the kebab and
+    // verify the main pane reacts.
     const user = userEvent.setup();
     useWorkspaceStore.getState().addPlan('only');
-    render(<ExecutionPanel />);
-    await user.click(screen.getByLabelText('Delete plan'));
+    render(
+      <>
+        <ExecutionSidebar />
+        <ExecutionPanel />
+      </>,
+    );
+    await user.click(screen.getByLabelText('only actions'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete' }));
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
     expect(screen.getByText('No execution plans yet')).toBeInTheDocument();
   });
 });
@@ -230,10 +240,19 @@ describe('ExecutionPanel — per-step run details', () => {
 describe('ExecutionSidebar', () => {
   beforeEach(hydrate);
 
-  it('renders an empty hint and a + button that creates a plan', async () => {
-    render(<ExecutionSidebar />);
+  it('renders an empty hint and a kebab "Add plan" entry that creates a plan', async () => {
+    const user = userEvent.setup();
+    // The "Add plan" kebab now lives in the shared sidebar header
+    // (rendered by Sidebar.tsx) — exercise it via ExecutionSidebarActions.
+    render(
+      <>
+        <ExecutionSidebarActions />
+        <ExecutionSidebar />
+      </>,
+    );
     expect(screen.getByText('No plans yet.')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Create plan' }));
+    await user.click(screen.getByRole('button', { name: 'Execution actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Add plan' }));
     expect(Object.keys(useWorkspaceStore.getState().local!.executionPlans)).toHaveLength(1);
   });
 
@@ -250,7 +269,9 @@ describe('ExecutionSidebar', () => {
     expect(within(items[0]).getByText('plan-b')).toBeInTheDocument();
     expect(within(items[1]).getByText('plan-a')).toBeInTheDocument();
 
-    await user.click(within(items[1]).getByRole('button'));
+    // Each row now has two buttons (plan + kebab). The first one is the
+    // plan-select button; the kebab carries `aria-haspopup="menu"`.
+    await user.click(within(items[1]).getAllByRole('button')[0]);
     expect(useWorkspaceStore.getState().activePlanId).toBe(a);
     void b;
   });
@@ -259,9 +280,11 @@ describe('ExecutionSidebar', () => {
     useWorkspaceStore.getState().addPlan('survives');
     useWorkspaceStore.setState({ activePlanId: 'phantom' });
     render(<ExecutionSidebar />);
-    // The sidebar marks the surviving plan as active because the explicit
-    // selection didn't resolve.
-    const surviving = screen.getByRole('button', { name: /survives/ });
+    // The sidebar marks the surviving plan-button as active because the
+    // explicit selection didn't resolve. The plan row has two buttons (plan
+    // + kebab); the plan button is the one carrying aria-current.
+    const surviving = screen.getByText('survives').closest('button');
+    expect(surviving).not.toBeNull();
     expect(surviving).toHaveAttribute('aria-current', 'true');
   });
 });

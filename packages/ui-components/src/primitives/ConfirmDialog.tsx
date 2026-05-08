@@ -75,7 +75,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   };
 
   return (
-    <Modal open={open} onClose={onCancel} title={title}>
+    <Modal open={open} onClose={onCancel} title={title} className="max-w-md">
       <div className="space-y-3 text-xs text-text-muted">
         {description && <div>{description}</div>}
         {typed !== undefined && (

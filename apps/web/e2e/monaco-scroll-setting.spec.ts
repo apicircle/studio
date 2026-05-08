@@ -42,7 +42,7 @@ test.describe('Monaco scroll setting', () => {
 
     // Open Settings and flip the toggle.
     await app.getByLabel('Open workspace settings').click();
-    await app.getByLabel('Monaco consumes mouse wheel').click();
+    await app.getByLabel('Code editor captures mouse wheel').click();
     await app.keyboard.press('Escape');
 
     // Allow Monaco to apply the new options.

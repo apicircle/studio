@@ -8,9 +8,16 @@ interface ModalProps {
   title?: string;
   children: ReactNode;
   className?: string;
+  /**
+   * Class applied to the inner content wrapper. Defaults to `overflow-hidden`
+   * so the modal shell does not render a scrollbar groove. Pass
+   * `overflow-y-auto` for content whose height is unknown and should scroll
+   * inside the modal.
+   */
+  bodyClassName?: string;
 }
 
-export function Modal({ open, onClose, title, children, className }: ModalProps) {
+export function Modal({ open, onClose, title, children, className, bodyClassName }: ModalProps) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -30,7 +37,7 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
     >
       <div
         className={cn(
-          'flex max-h-[90vh] w-full max-w-lg flex-col rounded-md border border-border-strong bg-card shadow-elevated',
+          'flex max-h-[92vh] w-full max-w-3xl flex-col rounded-md border border-border-strong bg-card shadow-elevated',
           className,
         )}
         onClick={(e) => e.stopPropagation()}
@@ -43,7 +50,9 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
             {title}
           </div>
         )}
-        <div className="overflow-y-auto p-4">{children}</div>
+        <div className={cn('flex min-h-0 flex-1 flex-col overflow-y-auto p-4', bodyClassName)}>
+          {children}
+        </div>
       </div>
     </div>
   );

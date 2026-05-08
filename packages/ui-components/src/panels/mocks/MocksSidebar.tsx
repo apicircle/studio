@@ -1,16 +1,27 @@
-import { useState } from 'react';
-import { ChevronDown, ChevronRight, Copy, FileCode, Plus, Server, Trash2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import {
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  FileCode,
+  Plus,
+  Search,
+  Server,
+  Trash2,
+} from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
+import { KebabMenu, type KebabMenuItem } from '../../primitives/KebabMenu';
+import { cn } from '../../primitives/cn';
 
 // Sidebar surface for the Mocks panel — mirrors the Editor sidebar
 // shape: each mock server is a collapsible group, endpoints render as
 // rows beneath. Clicking an endpoint switches the main pane to the
 // MockEndpointEditor for that endpoint.
 //
-// The "Create mock server" CTA + per-server Delete + per-endpoint Add /
-// Delete all live here so the editor pane can stay focused on the
-// active endpoint.
+// The header kebab (rendered by Sidebar.tsx via MocksSidebarActions)
+// hosts "New mock server". Per-server and per-endpoint actions live in
+// row-level kebab menus to keep dense rows tidy.
 
 export function MocksSidebar() {
   const mockServers = useWorkspaceStore((s) => s.synced?.mockServers ?? {});
@@ -22,14 +33,40 @@ export function MocksSidebar() {
   const removeMock = useWorkspaceStore((s) => s.removeMockServer);
   const duplicateMockServer = useWorkspaceStore((s) => s.duplicateMockServer);
   const duplicateMockEndpoint = useWorkspaceStore((s) => s.duplicateMockEndpoint);
-  const openCreateMockServer = useWorkspaceStore((s) => s.openMocksCreateModal);
 
-  const servers = Object.values(mockServers);
+  const allServers = Object.values(mockServers);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [searchQuery, setSearchQuery] = useState('');
   const [pendingServerDelete, setPendingServerDelete] = useState<{
     id: string;
     name: string;
   } | null>(null);
+
+  // Filter servers by name; for each server, also keep only endpoints whose
+  // path or method matches. A server stays visible if its own name matches
+  // or any of its endpoints match (so the path to a hit is preserved).
+  const { servers, matchingEndpointIds } = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) {
+      return {
+        servers: allServers,
+        matchingEndpointIds: null as Set<string> | null,
+      };
+    }
+    const matchedEndpoints = new Set<string>();
+    const matched = allServers.filter((s) => {
+      const serverHit = s.name.toLowerCase().includes(q);
+      const endpointHits = s.endpoints.filter(
+        (e) =>
+          e.pathPattern.toLowerCase().includes(q) ||
+          e.method.toLowerCase().includes(q) ||
+          (e.name?.toLowerCase().includes(q) ?? false),
+      );
+      endpointHits.forEach((e) => matchedEndpoints.add(e.id));
+      return serverHit || endpointHits.length > 0;
+    });
+    return { servers: matched, matchingEndpointIds: matchedEndpoints };
+  }, [allServers, searchQuery]);
 
   const toggleExpand = (id: string) => setExpanded((e) => ({ ...e, [id]: !e[id] }));
   const isExpanded = (id: string) => expanded[id] !== false; // default-expanded
@@ -44,36 +81,81 @@ export function MocksSidebar() {
 
   return (
     <div className="flex h-full flex-col gap-2">
-      <div className="flex flex-col gap-1.5">
-        <button
-          type="button"
-          onClick={openCreateMockServer}
-          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-2 text-xs text-accent hover:bg-accent/20"
-          aria-label="New mock server"
-        >
-          <Plus size={12} aria-hidden="true" />
-          New mock server
-        </button>
+      <div className="relative">
+        <Search
+          size={11}
+          aria-hidden="true"
+          className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-text-dim"
+        />
+        <input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search mocks…"
+          aria-label="Search mocks"
+          className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-[11px] text-text-primary focus:border-accent focus:outline-none"
+        />
       </div>
-
       {servers.length === 0 ? (
         <p className="rounded-sm border border-dashed border-border-subtle px-2 py-3 text-center text-[11px] text-text-dim">
-          No mock servers yet. Create one to add endpoints.
+          {searchQuery
+            ? 'No matching mock servers or endpoints.'
+            : 'No mock servers yet. Use the menu above to create one.'}
         </p>
       ) : (
         <ul className="flex flex-col gap-1">
           {servers.map((server) => {
-            const open = isExpanded(server.id);
+            // Auto-expand servers while a search is active so matching
+            // endpoints show without an extra click.
+            const open = searchQuery ? true : isExpanded(server.id);
+            const visibleEndpoints =
+              matchingEndpointIds === null
+                ? server.endpoints
+                : // Server matched by name → show all its endpoints; otherwise
+                  // only the endpoints that themselves matched.
+                  server.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
+                  ? server.endpoints
+                  : server.endpoints.filter((e) => matchingEndpointIds.has(e.id));
             const isServerActive = activeServerId === server.id && activeEndpointId === null;
+            const serverItems: KebabMenuItem[] = [
+              {
+                id: 'add-endpoint',
+                label: 'Add endpoint',
+                icon: <Plus size={12} aria-hidden="true" />,
+                onSelect: () => {
+                  addMockEndpoint(server.id);
+                  setExpanded((e) => ({ ...e, [server.id]: true }));
+                },
+              },
+              {
+                id: 'duplicate',
+                label: 'Duplicate',
+                icon: <Copy size={12} aria-hidden="true" />,
+                onSelect: () => duplicateMockServer(server.id),
+              },
+              {
+                id: 'delete',
+                label: 'Delete',
+                icon: <Trash2 size={12} aria-hidden="true" />,
+                tone: 'danger',
+                onSelect: () => setPendingServerDelete({ id: server.id, name: server.name }),
+              },
+            ];
             return (
               <li key={server.id}>
-                <div className="flex items-center gap-1">
+                <div
+                  className={cn(
+                    'group flex items-center gap-1 rounded-sm border px-0.5',
+                    isServerActive
+                      ? 'border-accent/40 bg-accent/10'
+                      : 'border-transparent hover:bg-surface',
+                  )}
+                >
                   <button
                     type="button"
                     onClick={() => toggleExpand(server.id)}
                     aria-label={`${open ? 'Collapse' : 'Expand'} ${server.name}`}
                     aria-expanded={open}
-                    className="inline-flex h-6 w-5 shrink-0 items-center justify-center rounded-sm text-text-dim hover:bg-surface"
+                    className="inline-flex h-6 w-5 shrink-0 items-center justify-center rounded-sm text-text-dim"
                   >
                     {open ? (
                       <ChevronDown size={11} aria-hidden="true" />
@@ -86,11 +168,10 @@ export function MocksSidebar() {
                     onClick={() => activateServer(server.id)}
                     aria-label={`Open ${server.name}`}
                     aria-current={isServerActive ? 'true' : undefined}
-                    className={
-                      isServerActive
-                        ? 'flex flex-1 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-1 text-left text-[11px] text-accent'
-                        : 'flex flex-1 items-center gap-1 rounded-sm px-1.5 py-1 text-left text-[11px] text-text-primary hover:bg-surface'
-                    }
+                    className={cn(
+                      'flex flex-1 items-center gap-1 rounded-sm px-1.5 py-1 text-left text-[11px]',
+                      isServerActive ? 'text-accent' : 'text-text-primary',
+                    )}
                   >
                     <Server size={11} className="text-accent" aria-hidden="true" />
                     <span className="flex-1 truncate font-medium">{server.name}</span>
@@ -102,46 +183,45 @@ export function MocksSidebar() {
                       />
                     )}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => addMockEndpoint(server.id)}
-                    aria-label={`Add endpoint to ${server.name}`}
-                    title={`Add endpoint to ${server.name}`}
-                    className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-faint hover:bg-surface hover:text-accent"
-                  >
-                    <Plus size={10} aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => duplicateMockServer(server.id)}
-                    aria-label={`Duplicate ${server.name}`}
-                    title={`Duplicate ${server.name}`}
-                    className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-faint hover:bg-surface hover:text-text-primary"
-                  >
-                    <Copy size={10} aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPendingServerDelete({ id: server.id, name: server.name })}
-                    aria-label={`Delete ${server.name}`}
-                    className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-faint hover:bg-danger/5 hover:text-danger"
-                  >
-                    <Trash2 size={10} aria-hidden="true" />
-                  </button>
+                  <KebabMenu items={serverItems} ariaLabel={`${server.name} actions`} size="sm" />
                 </div>
                 {open && (
                   <ul className="ml-4 flex flex-col gap-0.5 border-l border-border-subtle pl-2">
-                    {server.endpoints.length === 0 ? (
+                    {visibleEndpoints.length === 0 ? (
                       <li className="py-1 text-[10px] italic text-text-dim">
-                        No endpoints. Click + to add one.
+                        {server.endpoints.length === 0
+                          ? 'No endpoints. Use the server menu to add one.'
+                          : 'No matching endpoints in this server.'}
                       </li>
                     ) : (
-                      server.endpoints.map((endpoint) => {
+                      visibleEndpoints.map((endpoint) => {
                         const isActive =
                           activeServerId === server.id && activeEndpointId === endpoint.id;
+                        const endpointItems: KebabMenuItem[] = [
+                          {
+                            id: 'duplicate',
+                            label: 'Duplicate',
+                            icon: <Copy size={12} aria-hidden="true" />,
+                            onSelect: () => duplicateMockEndpoint(server.id, endpoint.id),
+                          },
+                          {
+                            id: 'delete',
+                            label: 'Delete',
+                            icon: <Trash2 size={12} aria-hidden="true" />,
+                            tone: 'danger',
+                            onSelect: () => removeMockEndpoint(server.id, endpoint.id),
+                          },
+                        ];
                         return (
                           <li key={endpoint.id}>
-                            <div className="flex items-center gap-1">
+                            <div
+                              className={cn(
+                                'group flex items-center gap-1 rounded-sm border px-0.5',
+                                isActive
+                                  ? 'border-accent/40 bg-accent/10'
+                                  : 'border-transparent hover:bg-surface',
+                              )}
+                            >
                               <button
                                 type="button"
                                 onClick={() =>
@@ -152,34 +232,23 @@ export function MocksSidebar() {
                                 }
                                 aria-label={`Open ${endpoint.method} ${endpoint.pathPattern}`}
                                 aria-current={isActive ? 'true' : undefined}
-                                className={
+                                className={cn(
+                                  'flex flex-1 items-center gap-1.5 rounded-sm px-1.5 py-1.5 text-[11px]',
                                   isActive
-                                    ? 'flex flex-1 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[11px] text-accent'
-                                    : 'flex flex-1 items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-[11px] text-text-muted hover:bg-surface hover:text-text-primary'
-                                }
+                                    ? 'text-accent'
+                                    : 'text-text-muted group-hover:text-text-primary',
+                                )}
                               >
                                 <MethodChip method={endpoint.method} />
                                 <span className="flex-1 truncate font-mono">
                                   {endpoint.pathPattern}
                                 </span>
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => duplicateMockEndpoint(server.id, endpoint.id)}
-                                aria-label={`Duplicate endpoint ${endpoint.method} ${endpoint.pathPattern}`}
-                                title="Duplicate endpoint"
-                                className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-text-faint hover:bg-surface hover:text-text-primary"
-                              >
-                                <Copy size={9} aria-hidden="true" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => removeMockEndpoint(server.id, endpoint.id)}
-                                aria-label={`Delete endpoint ${endpoint.method} ${endpoint.pathPattern}`}
-                                className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-text-faint hover:bg-danger/5 hover:text-danger"
-                              >
-                                <Trash2 size={9} aria-hidden="true" />
-                              </button>
+                              <KebabMenu
+                                items={endpointItems}
+                                ariaLabel={`${endpoint.method} ${endpoint.pathPattern} actions`}
+                                size="sm"
+                              />
                             </div>
                           </li>
                         );
@@ -211,6 +280,25 @@ export function MocksSidebar() {
   );
 }
 
+/**
+ * Kebab menu rendered next to the "MOCKS" label in the shared sidebar header.
+ * Replaces the previous "New mock server" CTA above the server list.
+ */
+export function MocksSidebarActions() {
+  const openCreateMockServer = useWorkspaceStore((s) => s.openMocksCreateModal);
+
+  const items: KebabMenuItem[] = [
+    {
+      id: 'new-mock-server',
+      label: 'New Mock Server',
+      icon: <Plus size={12} aria-hidden="true" />,
+      onSelect: openCreateMockServer,
+    },
+  ];
+
+  return <KebabMenu items={items} ariaLabel="Mocks actions" size="sm" alwaysVisible />;
+}
+
 function MethodChip({ method }: { method: string }) {
   const tone =
     method === 'GET'
@@ -224,7 +312,7 @@ function MethodChip({ method }: { method: string }) {
             : 'border-border text-text-muted';
   return (
     <span
-      className={`inline-flex shrink-0 items-center rounded-sm border bg-card px-1 py-0 font-mono text-[9px] uppercase ${tone}`}
+      className={`inline-flex w-12 shrink-0 items-center justify-center rounded-sm border bg-card px-1 py-0 font-mono text-[9px] uppercase ${tone}`}
     >
       {method}
     </span>
