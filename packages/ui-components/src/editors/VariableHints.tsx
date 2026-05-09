@@ -1,29 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Copy, Variable, X } from 'lucide-react';
+import { useMemo } from 'react';
+import { AlertTriangle, Variable } from 'lucide-react';
 import type { Request as ApiRequest, RequestBody } from '@apicircle/shared';
-import {
-  collectVariableSuggestions,
-  type ResolutionScope,
-  type VariableSuggestion,
-} from '@apicircle/core';
+import { collectVariableSuggestions, type ResolutionScope } from '@apicircle/core';
 import { cn } from '../primitives/cn';
 import { useWorkspaceStore } from '../store/workspaceStore';
 
 const PLACEHOLDER = /\{\{\s*([A-Za-z_][\w.-]*)\s*\}\}/g;
-
-const SOURCE_LABEL: Record<VariableSuggestion['source'], string> = {
-  context: 'Context vars',
-  'active-env': 'Active env',
-  'priority-env': 'Global layer',
-  secret: 'Vault secrets',
-};
-
-const SOURCE_HINT: Record<VariableSuggestion['source'], string> = {
-  context: 'Per-request, pushed to Git via the Context tab.',
-  'active-env': 'From the legacy active environment (deprecated).',
-  'priority-env': 'From the prioritized environment layer (sidebar order wins).',
-  secret: 'Names from your local Secret Vault — values stay local.',
-};
 
 function bodyText(body: RequestBody): string {
   if (
@@ -59,8 +41,8 @@ interface VariableHintsProps {
   /**
    * Optional. When present, the trigger surfaces an "unresolved references"
    * warning chip for any `{{name}}` used by this request that the scope
-   * doesn't define. Omit when the trigger is global (top bar) — the drawer
-   * then shows the variable list without per-request context.
+   * doesn't define. Omit for global / non-request triggers — only the
+   * count + dock-open trigger renders.
    */
   request?: ApiRequest;
   scope: ResolutionScope;
@@ -68,8 +50,14 @@ interface VariableHintsProps {
   triggerLabel?: string;
 }
 
+/**
+ * Inline trigger that opens the right-side dock on the Variables tab. The
+ * trigger itself is context-aware: it shows the available variable count
+ * for the supplied scope, and (when a `request` is present) flags any
+ * `{{name}}` references the scope doesn't resolve.
+ */
 export function VariableHints({ request, scope, triggerLabel }: VariableHintsProps) {
-  const [open, setOpen] = useState(false);
+  const openDockTab = useWorkspaceStore((s) => s.openRightDockTab);
   const setActivePanel = useWorkspaceStore((s) => s.setActivePanel);
 
   const suggestions = useMemo(() => collectVariableSuggestions(scope), [scope]);
@@ -82,12 +70,12 @@ export function VariableHints({ request, scope, triggerLabel }: VariableHintsPro
       <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={() => setOpen(true)}
+          onClick={() => openDockTab('variables')}
           className={cn(
             'inline-flex h-7 items-center gap-1 rounded-sm border px-2 text-[11px] transition-colors',
             'border-border bg-surface text-text-muted hover:border-accent hover:text-text-primary',
           )}
-          aria-label="Show available variables"
+          aria-label="Show available variables in the right dock"
           aria-haspopup="dialog"
         >
           <Variable size={12} />
@@ -108,230 +96,6 @@ export function VariableHints({ request, scope, triggerLabel }: VariableHintsPro
           </button>
         )}
       </div>
-
-      {open && (
-        <VariablesDrawer
-          suggestions={suggestions}
-          unresolved={unresolved}
-          onClose={() => setOpen(false)}
-          onOpenEnvironments={() => {
-            setOpen(false);
-            setActivePanel('env');
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-interface VariablesDrawerProps {
-  suggestions: VariableSuggestion[];
-  unresolved: string[];
-  onClose: () => void;
-  onOpenEnvironments: () => void;
-}
-
-function VariablesDrawer({
-  suggestions,
-  unresolved,
-  onClose,
-  onOpenEnvironments,
-}: VariablesDrawerProps) {
-  const drawerRef = useRef<HTMLDivElement | null>(null);
-  const [filter, setFilter] = useState('');
-  const [copied, setCopied] = useState<string | null>(null);
-
-  // Esc + click-outside dismiss + focus trap.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    drawerRef.current?.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  const grouped = useMemo(() => {
-    const map = new Map<VariableSuggestion['source'], VariableSuggestion[]>();
-    for (const s of suggestions) {
-      const list = map.get(s.source) ?? [];
-      list.push(s);
-      map.set(s.source, list);
-    }
-    return map;
-  }, [suggestions]);
-
-  const filtered = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    if (!q) return grouped;
-    const out = new Map<VariableSuggestion['source'], VariableSuggestion[]>();
-    for (const [src, list] of grouped) {
-      const matched = list.filter(
-        (s) => s.key.toLowerCase().includes(q) || (s.preview ?? '').toLowerCase().includes(q),
-      );
-      if (matched.length > 0) out.set(src, matched);
-    }
-    return out;
-  }, [grouped, filter]);
-
-  const totalFiltered = [...filtered.values()].reduce((acc, l) => acc + l.length, 0);
-
-  const copy = async (key: string) => {
-    const token = `{{${key}}}`;
-    try {
-      await navigator.clipboard.writeText(token);
-      setCopied(key);
-      window.setTimeout(() => setCopied((c) => (c === key ? null : c)), 1200);
-    } catch {
-      // Clipboard may be unavailable (insecure context); silently ignore.
-    }
-  };
-
-  return (
-    <>
-      <div
-        aria-hidden
-        onClick={onClose}
-        className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px]"
-      />
-      <div
-        ref={drawerRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Available variables"
-        className="fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col border-l border-border bg-surface shadow-2xl"
-      >
-        <header className="flex items-center justify-between border-b border-border-subtle px-4 py-3">
-          <div className="flex items-center gap-2">
-            <Variable size={14} className="text-accent" />
-            <h2 className="text-sm font-medium text-text-primary">Available variables</h2>
-            <span className="rounded-sm border border-border bg-card px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-text-muted">
-              {suggestions.length}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            title="Close (Esc)"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-text-muted hover:bg-card hover:text-text-primary"
-          >
-            <X size={14} />
-          </button>
-        </header>
-
-        <div className="border-b border-border-subtle px-4 py-2">
-          <input
-            type="search"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter by name or value…"
-            aria-label="Filter variables"
-            className="h-8 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary placeholder:text-text-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
-          />
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-          {suggestions.length === 0 ? (
-            <EmptyState onOpenEnvironments={onOpenEnvironments} />
-          ) : totalFiltered === 0 ? (
-            <p className="px-1 py-4 text-center text-xs text-text-dim">
-              No variables match &ldquo;{filter}&rdquo;.
-            </p>
-          ) : (
-            <div className="flex flex-col gap-4">
-              {(['context', 'priority-env', 'active-env', 'secret'] as const).map((src) => {
-                const list = filtered.get(src) ?? [];
-                if (list.length === 0) return null;
-                return (
-                  <section key={src} className="flex flex-col gap-1.5">
-                    <header className="flex items-baseline justify-between gap-2">
-                      <h3 className="text-[10px] font-medium uppercase tracking-wider text-text-dim">
-                        {SOURCE_LABEL[src]}
-                      </h3>
-                      <span className="text-[10px] text-text-faint">{list.length}</span>
-                    </header>
-                    <p className="text-[10px] text-text-faint">{SOURCE_HINT[src]}</p>
-                    <ul className="flex flex-col gap-0.5">
-                      {list.map((s) => (
-                        <li key={s.key}>
-                          <button
-                            type="button"
-                            onClick={() => void copy(s.key)}
-                            aria-label={`Copy {{${s.key}}}`}
-                            className="group flex w-full items-center justify-between gap-2 rounded-sm border border-transparent px-2 py-1 text-left hover:border-border-subtle hover:bg-card"
-                          >
-                            <code className="truncate text-[11px] text-text-primary">{`{{${s.key}}}`}</code>
-                            <span
-                              className="ml-2 flex-1 truncate text-right text-[10px] text-text-dim"
-                              title={s.preview}
-                            >
-                              {s.preview || '(empty)'}
-                            </span>
-                            {copied === s.key ? (
-                              <span className="text-[10px] text-accent">Copied</span>
-                            ) : (
-                              <Copy
-                                size={11}
-                                className="text-text-faint opacity-0 transition-opacity group-hover:opacity-100"
-                              />
-                            )}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {unresolved.length > 0 && (
-          <footer className="border-t border-border-subtle bg-card px-4 py-3">
-            <div className="flex items-start gap-2">
-              <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber" />
-              <div className="flex-1">
-                <p className="text-[11px] font-medium text-text-primary">
-                  {unresolved.length} unresolved reference{unresolved.length === 1 ? '' : 's'}
-                </p>
-                <p className="mt-0.5 text-[10px] text-text-muted">
-                  {unresolved.slice(0, 6).join(', ')}
-                  {unresolved.length > 6 ? `, +${unresolved.length - 6} more` : ''}
-                </p>
-                <button
-                  type="button"
-                  onClick={onOpenEnvironments}
-                  className="mt-2 inline-flex h-6 items-center gap-1 rounded-sm border border-amber/40 bg-amber/10 px-2 text-[10px] text-amber hover:bg-amber/20"
-                >
-                  Define in Environments
-                </button>
-              </div>
-            </div>
-          </footer>
-        )}
-      </div>
-    </>
-  );
-}
-
-function EmptyState({ onOpenEnvironments }: { onOpenEnvironments: () => void }) {
-  return (
-    <div className="flex flex-col items-center gap-3 px-2 py-6 text-center">
-      <Variable size={20} className="text-text-faint" />
-      <p className="text-xs text-text-muted">
-        No variables defined yet. Add them in the Context tab, an environment, or the Secret Vault.
-      </p>
-      <button
-        type="button"
-        onClick={onOpenEnvironments}
-        className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[11px] text-accent hover:bg-accent/20"
-      >
-        Open Environments
-      </button>
     </div>
   );
 }

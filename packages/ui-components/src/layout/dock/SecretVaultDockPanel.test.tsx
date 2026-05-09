@@ -1,28 +1,20 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SecretVaultModal } from './SecretVaultModal';
-import { renderWithStore } from '../../test/renderWithStore';
-import { useWorkspaceStore } from '../store/workspaceStore';
+import { SecretVaultDockPanel } from './SecretVaultDockPanel';
+import { renderWithStore } from '../../../test/renderWithStore';
+import { useWorkspaceStore } from '../../store/workspaceStore';
 
-describe('SecretVaultModal', () => {
-  it('does not render when secretVaultOpen is false', async () => {
-    await renderWithStore(<SecretVaultModal />);
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  });
-
-  it('renders Vault tab content by default when opened', async () => {
-    await renderWithStore(<SecretVaultModal />);
-    act(() => useWorkspaceStore.getState().openSecretVault());
-    expect(screen.getByRole('dialog', { name: /Secret Vault/ })).toBeInTheDocument();
+describe('SecretVaultDockPanel', () => {
+  it('renders Vault tab content by default', async () => {
+    await renderWithStore(<SecretVaultDockPanel />);
     expect(screen.getByRole('button', { name: /Vault/ })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByText(/Cross-workspace named secrets/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /New secret/ })).toBeInTheDocument();
   });
 
   it('switches to Sessions tab and shows required scope guidance', async () => {
-    await renderWithStore(<SecretVaultModal />);
-    act(() => useWorkspaceStore.getState().openSecretVault());
+    await renderWithStore(<SecretVaultDockPanel />);
     await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
     expect(screen.getByRole('button', { name: /Sessions/ })).toHaveAttribute(
       'aria-current',
@@ -34,17 +26,9 @@ describe('SecretVaultModal', () => {
     expect(screen.getByLabelText('GitHub PAT')).toBeInTheDocument();
   });
 
-  it('Escape closes the modal', async () => {
-    await renderWithStore(<SecretVaultModal />);
-    act(() => useWorkspaceStore.getState().openSecretVault());
-    await userEvent.keyboard('{Escape}');
-    expect(useWorkspaceStore.getState().secretVaultOpen).toBe(false);
-  });
-
   describe('Vault tab — secret CRUD', () => {
     it('add → list → reveal → delete cycle persists through the store', async () => {
-      await renderWithStore(<SecretVaultModal />);
-      act(() => useWorkspaceStore.getState().openSecretVault());
+      await renderWithStore(<SecretVaultDockPanel />);
 
       await userEvent.click(screen.getByRole('button', { name: /New secret/ }));
       await userEvent.type(screen.getByLabelText('New secret label'), 'API_KEY');
@@ -67,8 +51,7 @@ describe('SecretVaultModal', () => {
     });
 
     it('rejects duplicate labels with a visible error', async () => {
-      await renderWithStore(<SecretVaultModal />);
-      act(() => useWorkspaceStore.getState().openSecretVault());
+      await renderWithStore(<SecretVaultDockPanel />);
       await act(async () => {
         await useWorkspaceStore.getState().addSecret({ label: 'TOKEN', value: 'first' });
       });
@@ -82,8 +65,7 @@ describe('SecretVaultModal', () => {
     });
 
     it('blocks delete on first click when secret has usedIn references, then deletes on confirm', async () => {
-      await renderWithStore(<SecretVaultModal />);
-      act(() => useWorkspaceStore.getState().openSecretVault());
+      await renderWithStore(<SecretVaultDockPanel />);
 
       let secretId = '';
       await act(async () => {
@@ -110,8 +92,7 @@ describe('SecretVaultModal', () => {
     });
 
     it('shows the where-used expander once the secret has references', async () => {
-      await renderWithStore(<SecretVaultModal />);
-      act(() => useWorkspaceStore.getState().openSecretVault());
+      await renderWithStore(<SecretVaultDockPanel />);
 
       await act(async () => {
         await useWorkspaceStore.getState().addSecret({ label: 'BASE_URL', value: 'http://x' });
@@ -154,8 +135,7 @@ describe('SecretVaultModal', () => {
       );
       vi.stubGlobal('fetch', fetchMock);
 
-      await renderWithStore(<SecretVaultModal />);
-      act(() => useWorkspaceStore.getState().openSecretVault());
+      await renderWithStore(<SecretVaultDockPanel />);
       await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
 
       await userEvent.type(screen.getByLabelText('GitHub PAT'), 'ghp_test');
@@ -175,8 +155,7 @@ describe('SecretVaultModal', () => {
       );
       vi.stubGlobal('fetch', fetchMock);
 
-      await renderWithStore(<SecretVaultModal />);
-      act(() => useWorkspaceStore.getState().openSecretVault());
+      await renderWithStore(<SecretVaultDockPanel />);
       await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
 
       await userEvent.type(screen.getByLabelText('GitHub PAT'), 'ghp_test');
@@ -200,8 +179,7 @@ describe('SecretVaultModal', () => {
       );
       vi.stubGlobal('fetch', fetchMock);
 
-      await renderWithStore(<SecretVaultModal />);
-      act(() => useWorkspaceStore.getState().openSecretVault());
+      await renderWithStore(<SecretVaultDockPanel />);
       await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
 
       await userEvent.type(screen.getByLabelText('GitHub PAT'), 'ghp_bad');
@@ -227,8 +205,7 @@ describe('SecretVaultModal', () => {
       );
       vi.stubGlobal('fetch', fetchMock);
 
-      await renderWithStore(<SecretVaultModal />);
-      act(() => useWorkspaceStore.getState().openSecretVault());
+      await renderWithStore(<SecretVaultDockPanel />);
       await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
       await userEvent.type(screen.getByLabelText('GitHub PAT'), 'tok');
       await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
@@ -265,8 +242,7 @@ describe('SecretVaultModal', () => {
       });
       vi.stubGlobal('fetch', fetchMock);
 
-      await renderWithStore(<SecretVaultModal />);
-      act(() => useWorkspaceStore.getState().openSecretVault());
+      await renderWithStore(<SecretVaultDockPanel />);
       await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
       await userEvent.type(screen.getByLabelText('GitHub PAT'), 'tok');
       await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
@@ -290,8 +266,7 @@ describe('SecretVaultModal', () => {
       );
       vi.stubGlobal('fetch', fetchMock);
 
-      await renderWithStore(<SecretVaultModal />);
-      act(() => useWorkspaceStore.getState().openSecretVault());
+      await renderWithStore(<SecretVaultDockPanel />);
       await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
       await userEvent.type(screen.getByLabelText('GitHub PAT'), 'tok');
       await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
@@ -316,8 +291,7 @@ describe('SecretVaultModal', () => {
       );
       vi.stubGlobal('fetch', fetchMock);
 
-      await renderWithStore(<SecretVaultModal />);
-      act(() => useWorkspaceStore.getState().openSecretVault());
+      await renderWithStore(<SecretVaultDockPanel />);
       await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
       await userEvent.type(screen.getByLabelText('GitHub PAT'), 'tok');
       await userEvent.click(screen.getByRole('button', { name: 'Connect' }));

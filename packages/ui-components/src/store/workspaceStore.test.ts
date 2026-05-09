@@ -73,11 +73,47 @@ describe('workspaceStore', () => {
     expect(useWorkspaceStore.getState().local!.ui.activeRequestId).toBe('req-123');
   });
 
-  it('openSecretVault / closeSecretVault toggles modal state', () => {
-    useWorkspaceStore.getState().openSecretVault();
-    expect(useWorkspaceStore.getState().secretVaultOpen).toBe(true);
-    useWorkspaceStore.getState().closeSecretVault();
-    expect(useWorkspaceStore.getState().secretVaultOpen).toBe(false);
+  it('rightDock actions toggle and switch the active inspector tab', () => {
+    expect(useWorkspaceStore.getState().rightDock.tab).toBe(null);
+
+    // Open vault.
+    useWorkspaceStore.getState().openRightDockTab('vault');
+    expect(useWorkspaceStore.getState().rightDock.tab).toBe('vault');
+
+    // Switch tab while open.
+    useWorkspaceStore.getState().setRightDockTab('assets');
+    expect(useWorkspaceStore.getState().rightDock.tab).toBe('assets');
+
+    // setRightDockTab is a no-op when the dock is closed (only switches an open tab).
+    useWorkspaceStore.getState().closeRightDock();
+    useWorkspaceStore.getState().setRightDockTab('variables');
+    expect(useWorkspaceStore.getState().rightDock.tab).toBe(null);
+
+    // Toggle: opens when closed, closes when same tab is requested.
+    useWorkspaceStore.getState().toggleRightDockTab('variables');
+    expect(useWorkspaceStore.getState().rightDock.tab).toBe('variables');
+    useWorkspaceStore.getState().toggleRightDockTab('vault');
+    expect(useWorkspaceStore.getState().rightDock.tab).toBe('vault');
+    useWorkspaceStore.getState().toggleRightDockTab('vault');
+    expect(useWorkspaceStore.getState().rightDock.tab).toBe(null);
+  });
+
+  it('rightDock mode defaults to overlay and is sticky across tab switches', () => {
+    expect(useWorkspaceStore.getState().rightDock.mode).toBe('overlay');
+
+    // Open and switch tabs — mode is preserved.
+    useWorkspaceStore.getState().openRightDockTab('vault');
+    useWorkspaceStore.getState().setRightDockMode('docked');
+    expect(useWorkspaceStore.getState().rightDock.mode).toBe('docked');
+
+    useWorkspaceStore.getState().setRightDockTab('assets');
+    expect(useWorkspaceStore.getState().rightDock.mode).toBe('docked');
+
+    // Closing the dock doesn't reset the mode — re-opening preserves it.
+    useWorkspaceStore.getState().closeRightDock();
+    expect(useWorkspaceStore.getState().rightDock.mode).toBe('docked');
+    useWorkspaceStore.getState().openRightDockTab('variables');
+    expect(useWorkspaceStore.getState().rightDock.mode).toBe('docked');
   });
 
   describe('post-run context extraction', () => {

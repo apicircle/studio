@@ -11,7 +11,7 @@ import { PANELS } from './panels';
  * Bindings:
  *   Ctrl/Cmd + Enter      → Send the active request
  *   Ctrl/Cmd + 1..7       → Switch panels (Workspace … Help)
- *   Ctrl/Cmd + K          → Open Secret Vault
+ *   Ctrl/Cmd + K          → Open the Vault tab in the workspace inspector dock
  *   Ctrl/Cmd + Shift + R  → Refresh the working branch (plain Ctrl+R is the browser's reload)
  *   Ctrl/Cmd + N          → New request (only when the Editor panel is active)
  *
@@ -19,7 +19,7 @@ import { PANELS } from './panels';
  */
 export function KeyboardShortcuts() {
   const setActivePanel = useWorkspaceStore((s) => s.setActivePanel);
-  const openSecretVault = useWorkspaceStore((s) => s.openSecretVault);
+  const openRightDockTab = useWorkspaceStore((s) => s.openRightDockTab);
   const executeActiveRequest = useWorkspaceStore((s) => s.executeActiveRequest);
   const refreshWorkspace = useWorkspaceStore((s) => s.refreshWorkspace);
   const addRequest = useWorkspaceStore((s) => s.addRequest);
@@ -44,10 +44,10 @@ export function KeyboardShortcuts() {
 
       if (isEditing) return;
 
-      // Open Secret Vault.
+      // Open the Vault tab in the workspace inspector dock.
       if (e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        openSecretVault();
+        openRightDockTab('vault');
         return;
       }
 
@@ -84,7 +84,7 @@ export function KeyboardShortcuts() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [setActivePanel, openSecretVault, executeActiveRequest, refreshWorkspace, addRequest]);
+  }, [setActivePanel, openRightDockTab, executeActiveRequest, refreshWorkspace, addRequest]);
 
   return null;
 }

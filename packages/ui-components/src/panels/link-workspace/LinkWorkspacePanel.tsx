@@ -69,7 +69,7 @@ export function LinkWorkspacePanel() {
 }
 
 function NoSessionCard() {
-  const openSecretVault = useWorkspaceStore((s) => s.openSecretVault);
+  const openRightDockTab = useWorkspaceStore((s) => s.openRightDockTab);
   return (
     <div className="max-w-2xl rounded-sm border border-border bg-card p-4">
       <div className="mb-2 flex items-center gap-2 text-sm text-text-primary">
@@ -83,7 +83,7 @@ function NoSessionCard() {
       </p>
       <button
         type="button"
-        onClick={openSecretVault}
+        onClick={() => openRightDockTab('vault')}
         className="inline-flex h-8 items-center gap-2 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20"
       >
         Open Secret Vault → Sessions
@@ -132,7 +132,7 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
   const searchMarketplace = useWorkspaceStore((s) => s.searchMarketplace);
   const linkPublicWorkspace = useWorkspaceStore((s) => s.linkPublicWorkspace);
   const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
-  const openSecretVault = useWorkspaceStore((s) => s.openSecretVault);
+  const openRightDockTab = useWorkspaceStore((s) => s.openRightDockTab);
   const hasSession = useWorkspaceStore((s) => s.local?.sessions.github != null);
 
   const [query, setQuery] = useState('');
@@ -212,7 +212,7 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
               Browsing is anonymous. To link a result, connect GitHub in the{' '}
               <button
                 type="button"
-                onClick={openSecretVault}
+                onClick={() => openRightDockTab('vault')}
                 className="text-accent underline-offset-2 hover:underline"
               >
                 Secret Vault

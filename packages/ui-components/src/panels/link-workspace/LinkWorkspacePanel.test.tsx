@@ -72,11 +72,11 @@ describe('LinkWorkspacePanel — no session state', () => {
     expect(screen.getByRole('button', { name: /Link a private workspace/ })).toBeDisabled();
   });
 
-  it('the connect button opens the Secret Vault', async () => {
+  it('the connect button opens the Vault tab in the workspace inspector dock', async () => {
     render(<LinkWorkspacePanel />);
-    expect(useWorkspaceStore.getState().secretVaultOpen).toBe(false);
+    expect(useWorkspaceStore.getState().rightDock.tab).toBe(null);
     await userEvent.click(screen.getByRole('button', { name: /Open Secret Vault/ }));
-    expect(useWorkspaceStore.getState().secretVaultOpen).toBe(true);
+    expect(useWorkspaceStore.getState().rightDock.tab).toBe('vault');
   });
 
   it('marketplace search remains usable anonymously; results render but the Link button is disabled', async () => {

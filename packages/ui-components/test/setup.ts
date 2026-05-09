@@ -5,6 +5,19 @@ import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import React from 'react';
+
+// jsdom doesn't ship a ResizeObserver. Components that adapt to their
+// container width (the right-side dock's GlobalAssetsDockPanel, future
+// container-query consumers) need a no-op stub so the constructor call
+// doesn't throw on mount. Tests that exercise the responsive layout can
+// still spy/replace this stub if they want to assert on observe calls.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}
 import { __resetAttachmentsForTests } from '../src/persistence/attachments';
 import { __resetDbForTests } from '../src/persistence/db';
 import { __resetSecretKeyForTests } from '../src/persistence/secretKey';

@@ -32,6 +32,7 @@ export function MockServersPanel() {
   const mockServers = useWorkspaceStore((s) => s.synced?.mockServers ?? {});
   const activeServerId = useWorkspaceStore((s) => s.activeMockServerId);
   const activeEndpointId = useWorkspaceStore((s) => s.activeMockEndpointId);
+  const setActiveMockEndpoint = useWorkspaceStore((s) => s.setActiveMockEndpoint);
   const openCreateModal = useWorkspaceStore((s) => s.openMocksCreateModal);
 
   const activeServer = activeServerId ? mockServers[activeServerId] : null;
@@ -39,6 +40,17 @@ export function MockServersPanel() {
     activeServer && activeEndpointId
       ? (activeServer.endpoints.find((e) => e.id === activeEndpointId) ?? null)
       : null;
+
+  // Auto-select the first mock server on entry. `activeMockServerId` is a
+  // session field (not persisted), so it starts null after every reload —
+  // without this the user lands on an empty NoSelection screen even when
+  // servers exist. Re-runs if the active id points at a deleted server
+  // (covers the Delete-current → fall-through case as well).
+  useEffect(() => {
+    if (activeServer) return;
+    const first = Object.values(mockServers)[0];
+    if (first) setActiveMockEndpoint({ serverId: first.id, endpointId: null });
+  }, [activeServer, mockServers, setActiveMockEndpoint]);
 
   const bridge = getMockBridge();
   const [running, setRunning] = useState<Record<string, MockRuntimeEntry>>({});

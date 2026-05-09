@@ -1,9 +1,7 @@
 import { screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { TopBar } from './TopBar';
 import { renderWithStore } from '../../test/renderWithStore';
-import { useWorkspaceStore } from '../store/workspaceStore';
 
 describe('TopBar', () => {
   it('renders app brand', async () => {
@@ -20,25 +18,22 @@ describe('TopBar', () => {
     );
   });
 
-  it('opens the secret vault when its button is clicked', async () => {
+  it('exposes Settings; dock entry points have moved to the right-edge rail', async () => {
     await renderWithStore(<TopBar />);
-    await userEvent.click(screen.getByRole('button', { name: /Open Secret Vault/ }));
-    expect(useWorkspaceStore.getState().secretVaultOpen).toBe(true);
-  });
-
-  it('renders the theme picker', async () => {
-    await renderWithStore(<TopBar />);
-    expect(screen.getByRole('button', { name: /Choose theme/ })).toBeInTheDocument();
-  });
-
-  it('renders the font picker next to the theme picker', async () => {
-    await renderWithStore(<TopBar />);
-    expect(screen.getByRole('button', { name: /Choose font family/ })).toBeInTheDocument();
-  });
-
-  it('opens the Global Assets library from the top bar', async () => {
-    await renderWithStore(<TopBar />);
-    await userEvent.click(screen.getByRole('button', { name: /Open Global Assets library/ }));
-    expect(useWorkspaceStore.getState().globalAssetsOpen).toBe(true);
+    expect(screen.getByRole('button', { name: /Open workspace settings/ })).toBeInTheDocument();
+    // The Vault / Assets / Variables chips are gone from the top bar.
+    expect(
+      screen.queryByRole('button', { name: /Toggle Secret Vault in workspace inspector/ }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /Toggle Global Assets in workspace inspector/ }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /Toggle Variables in workspace inspector/ }),
+    ).toBeNull();
+    // Standalone Theme / Font chips are also gone — they're appearance
+    // rows inside Settings now.
+    expect(screen.queryByRole('button', { name: /Choose theme/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Choose font family/ })).toBeNull();
   });
 });

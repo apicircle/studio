@@ -20,20 +20,25 @@ import {
   RateLimitedError,
   UnauthorizedError,
 } from '@apicircle/git';
-import { useWorkspaceStore } from '../store/workspaceStore';
-import { Modal } from '../primitives/Modal';
-import { cn } from '../primitives/cn';
+import { useWorkspaceStore } from '../../store/workspaceStore';
+import { cn } from '../../primitives/cn';
 
 type Tab = 'vault' | 'sessions';
 
-export function SecretVaultModal() {
-  const open = useWorkspaceStore((s) => s.secretVaultOpen);
-  const close = useWorkspaceStore((s) => s.closeSecretVault);
+/**
+ * Secret Vault tab content for the right-side dock. Two sub-tabs:
+ *   - Vault    — encrypted named secrets, referenced via `{{LABEL}}`
+ *   - Sessions — GitHub PAT/OAuth session for this workspace
+ *
+ * The dock shell provides width/height; this component fills it and owns
+ * the sub-tab strip + scrollable body.
+ */
+export function SecretVaultDockPanel() {
   const [tab, setTab] = useState<Tab>('vault');
 
   return (
-    <Modal open={open} onClose={close} title="Secret Vault" className="max-w-3xl">
-      <div className="-mx-4 -mt-4 mb-4 flex border-b border-border-subtle">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 border-b border-border-subtle">
         <TabButton
           active={tab === 'vault'}
           onClick={() => setTab('vault')}
@@ -47,9 +52,10 @@ export function SecretVaultModal() {
           label="Sessions"
         />
       </div>
-
-      {tab === 'vault' ? <VaultTab /> : <SessionsTab />}
-    </Modal>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        {tab === 'vault' ? <VaultTab /> : <SessionsTab />}
+      </div>
+    </div>
   );
 }
 

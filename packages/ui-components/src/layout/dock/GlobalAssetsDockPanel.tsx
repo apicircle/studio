@@ -3,38 +3,32 @@
 // team. Requests opt in via the Body tab (P18/P19) by selecting a schema
 // from the dropdown.
 //
-// Two tabs: Schemas (JSON Schema docs) and GraphQL (SDL or introspection
-// JSON). Each entry has name, description, and a Monaco-backed source
-// editor. Delete is gated through ConfirmDialog because it cascades —
-// any request referencing the deleted id has its mapping cleared.
+// Hosted as the "Assets" tab of the right-side dock. Two sub-tabs:
+// Schemas (JSON Schema docs) and GraphQL (SDL or introspection JSON).
+// The list/editor split is width-responsive — at narrow dock widths the
+// list takes the full panel and the editor opens with a Back affordance.
+// Delete is gated through ConfirmDialog because it cascades — any
+// request referencing the deleted id has its mapping cleared.
 
-import { useMemo, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import type { GlobalGraphQL, GlobalSchema } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
-import { Modal } from '../../primitives/Modal';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { MonacoEditorBase } from '../../editors/MonacoEditorBase';
 import { cn } from '../../primitives/cn';
 
 type Tab = 'schemas' | 'graphql';
 
+// Threshold below which the list+editor stack vertically with a Back
+// affordance. ~520 keeps the side-by-side layout usable on default dock
+// widths while collapsing once the user shrinks the dock.
+const NARROW_WIDTH_PX = 520;
+
 const inputClass =
   'h-8 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30';
 
-export function GlobalAssetsPanel() {
-  const open = useWorkspaceStore((s) => s.globalAssetsOpen);
-  const close = useWorkspaceStore((s) => s.closeGlobalAssets);
-
-  if (!open) return null;
-  return (
-    <Modal open onClose={close} title="Global Assets library" bodyClassName="overflow-hidden">
-      <GlobalAssetsBody />
-    </Modal>
-  );
-}
-
-function GlobalAssetsBody() {
+export function GlobalAssetsDockPanel() {
   const [tab, setTab] = useState<Tab>('schemas');
   const schemas = useWorkspaceStore((s) =>
     s.synced ? Object.values(s.synced.globalAssets.schemas) : [],
@@ -44,9 +38,25 @@ function GlobalAssetsBody() {
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    if (!wrapperRef.current) return;
+    const el = wrapperRef.current;
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) setWidth(entry.contentRect.width);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Width 0 happens on first paint; default to side-by-side until we know.
+  const narrow = width > 0 && width < NARROW_WIDTH_PX;
+
   return (
-    <div className="flex h-[60vh] min-h-[420px] w-[min(900px,95vw)] flex-col gap-3">
-      <div className="flex border-b border-border-subtle">
+    <div ref={wrapperRef} className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 border-b border-border-subtle">
         <TabButton
           active={tab === 'schemas'}
           onClick={() => {
@@ -67,15 +77,77 @@ function GlobalAssetsBody() {
         </TabButton>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[260px_1fr] gap-3">
-        {tab === 'schemas' ? (
-          <SchemaList items={schemas} selectedId={selectedId} onSelect={setSelectedId} />
+      <div className="min-h-0 flex-1 p-3">
+        {narrow ? (
+          <NarrowLayout
+            tab={tab}
+            schemas={schemas}
+            graphql={graphql}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+          />
         ) : (
-          <GraphQLList items={graphql} selectedId={selectedId} onSelect={setSelectedId} />
+          <SideBySideLayout
+            tab={tab}
+            schemas={schemas}
+            graphql={graphql}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+          />
         )}
-        <div className="min-h-0">
-          {tab === 'schemas' ? <SchemaEditor id={selectedId} /> : <GraphQLEditor id={selectedId} />}
-        </div>
+      </div>
+    </div>
+  );
+}
+
+interface LayoutProps {
+  tab: Tab;
+  schemas: GlobalSchema[];
+  graphql: GlobalGraphQL[];
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
+}
+
+function SideBySideLayout({ tab, schemas, graphql, selectedId, onSelect }: LayoutProps) {
+  return (
+    <div className="grid h-full min-h-0 grid-cols-[200px_1fr] gap-3">
+      {tab === 'schemas' ? (
+        <SchemaList items={schemas} selectedId={selectedId} onSelect={onSelect} />
+      ) : (
+        <GraphQLList items={graphql} selectedId={selectedId} onSelect={onSelect} />
+      )}
+      <div className="min-h-0">
+        {tab === 'schemas' ? <SchemaEditor id={selectedId} /> : <GraphQLEditor id={selectedId} />}
+      </div>
+    </div>
+  );
+}
+
+function NarrowLayout({ tab, schemas, graphql, selectedId, onSelect }: LayoutProps) {
+  if (selectedId === null) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        {tab === 'schemas' ? (
+          <SchemaList items={schemas} selectedId={selectedId} onSelect={onSelect} />
+        ) : (
+          <GraphQLList items={graphql} selectedId={selectedId} onSelect={onSelect} />
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      <button
+        type="button"
+        onClick={() => onSelect(null)}
+        aria-label="Back to list"
+        className="inline-flex h-7 shrink-0 items-center gap-1.5 self-start rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary"
+      >
+        <ArrowLeft size={12} aria-hidden="true" />
+        Back to list
+      </button>
+      <div className="min-h-0 flex-1">
+        {tab === 'schemas' ? <SchemaEditor id={selectedId} /> : <GraphQLEditor id={selectedId} />}
       </div>
     </div>
   );

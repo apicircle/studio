@@ -3,6 +3,7 @@ import { Copy, Layers, Plus, Search, Trash2 } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { KebabMenu, type KebabMenuItem } from '../../primitives/KebabMenu';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
+import { cn } from '../../primitives/cn';
 
 /**
  * Header-level kebab rendered next to the "Execution" label in the shared
@@ -65,7 +66,7 @@ export function ExecutionSidebar() {
           {searchQuery ? 'No matching plans.' : 'No plans yet.'}
         </p>
       ) : (
-        <ul className="flex-1 overflow-y-auto py-1">
+        <ul className="flex flex-1 flex-col gap-1 overflow-y-auto py-1">
           {planArray.map((plan) => {
             const isActive = plan.id === effectiveActiveId;
             const items: KebabMenuItem[] = [
@@ -84,27 +85,30 @@ export function ExecutionSidebar() {
               },
             ];
             return (
-              <li
-                key={plan.id}
-                className={
-                  'group flex items-center gap-1 px-1 ' +
-                  (isActive ? 'bg-accent/10' : 'hover:bg-surface')
-                }
-              >
-                <button
-                  type="button"
-                  onClick={() => setActivePlanId(plan.id)}
-                  aria-current={isActive ? 'true' : undefined}
-                  className={
-                    'flex flex-1 items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors ' +
-                    (isActive ? 'text-accent' : 'text-text-muted hover:text-text-primary')
-                  }
+              <li key={plan.id}>
+                <div
+                  className={cn(
+                    'group flex items-center gap-1 rounded-sm border px-0.5',
+                    isActive
+                      ? 'border-accent/40 bg-accent/10'
+                      : 'border-transparent hover:bg-surface',
+                  )}
                 >
-                  <Layers size={11} aria-hidden="true" />
-                  <span className="truncate">{plan.name}</span>
-                  <span className="ml-auto text-[10px] text-text-dim">{plan.steps.length}</span>
-                </button>
-                <KebabMenu items={items} ariaLabel={`${plan.name} actions`} size="sm" />
+                  <button
+                    type="button"
+                    onClick={() => setActivePlanId(plan.id)}
+                    aria-current={isActive ? 'true' : undefined}
+                    className={cn(
+                      'flex flex-1 items-center gap-2 rounded-sm px-1.5 py-1 text-left text-xs transition-colors',
+                      isActive ? 'text-accent' : 'text-text-muted hover:text-text-primary',
+                    )}
+                  >
+                    <Layers size={11} aria-hidden="true" />
+                    <span className="truncate">{plan.name}</span>
+                    <span className="ml-auto text-[10px] text-text-dim">{plan.steps.length}</span>
+                  </button>
+                  <KebabMenu items={items} ariaLabel={`${plan.name} actions`} size="sm" />
+                </div>
               </li>
             );
           })}

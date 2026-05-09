@@ -13,7 +13,7 @@ import { Modal } from '../primitives/Modal';
 export function MissingScopeGate() {
   const scopes = useWorkspaceStore((s) => s.missingScopePrompt);
   const dismiss = useWorkspaceStore((s) => s.dismissMissingScope);
-  const openSecretVault = useWorkspaceStore((s) => s.openSecretVault);
+  const openRightDockTab = useWorkspaceStore((s) => s.openRightDockTab);
 
   return (
     <Modal open={scopes !== null} onClose={dismiss} title="Token is missing required scope">
@@ -45,7 +45,7 @@ export function MissingScopeGate() {
             type="button"
             onClick={() => {
               dismiss();
-              openSecretVault();
+              openRightDockTab('vault');
             }}
             className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20"
           >

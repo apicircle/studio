@@ -304,6 +304,13 @@ export type RefreshOutcome =
   | { status: 'merged' }
   | { status: 'conflicts'; diff: ThreeWayDiff };
 
+/**
+ * Tabs hosted by the right-side dock. Variables is read-mostly (filter +
+ * copy `{{name}}`). Vault is the encrypted secrets + GitHub session
+ * surface. Assets is the workspace-wide JSON Schema + GraphQL library.
+ */
+export type RightDockTab = 'variables' | 'vault' | 'assets';
+
 interface PendingRefresh {
   diff: ThreeWayDiff;
   remote: WorkspaceSynced;
@@ -356,7 +363,22 @@ type WorkspaceStore = {
   local: WorkspaceLocal | null;
 
   activePanel: PanelId;
-  secretVaultOpen: boolean;
+  /**
+   * Right-side dock state. Hosts the workspace inspector tabs:
+   * Variables (read-mostly reference list), Vault (secret + GitHub
+   * sessions CRUD), and Assets (Global JSON Schemas + GraphQL).
+   *
+   * - `tab === null` collapses the dock entirely.
+   * - `mode === 'overlay'` floats the dock above the main content (the
+   *   default when first opened from the rail). Clicking the dock's
+   *   pin/dock button switches to `mode === 'docked'`, which inserts the
+   *   dock into the main `PanelGroup` so it claims real layout space and
+   *   the user can drag-resize via the splitter.
+   *
+   * Width while docked is persisted by `react-resizable-panels` via
+   * `autoSaveId`; the overlay uses a fixed default width.
+   */
+  rightDock: { tab: RightDockTab | null; mode: 'overlay' | 'docked' };
   /** Stashed during refreshWorkspace when conflicts surface; consumed by commitRefresh. */
   pendingRefresh: PendingRefresh | null;
   /**
@@ -528,8 +550,23 @@ type WorkspaceStore = {
   /** Drop the attachment for a mock endpoint's response body. */
   detachMockResponseFile: (serverId: string, endpointId: string) => Promise<void>;
 
-  openSecretVault: () => void;
-  closeSecretVault: () => void;
+  /** Open a tab in the right-side dock. If the dock was closed, opens it. */
+  openRightDockTab: (tab: RightDockTab) => void;
+  /** Close the dock entirely. */
+  closeRightDock: () => void;
+  /** Switch the active tab without changing dock visibility. No-op if the dock is closed. */
+  setRightDockTab: (tab: RightDockTab) => void;
+  /**
+   * Toggle helper for the right-edge rail icons: clicking the same tab
+   * twice closes the dock; clicking a different tab while open just
+   * switches.
+   */
+  toggleRightDockTab: (tab: RightDockTab) => void;
+  /**
+   * Switch between the floating overlay and the docked layout. The
+   * choice is sticky — re-opening the dock preserves the last mode.
+   */
+  setRightDockMode: (mode: 'overlay' | 'docked') => void;
 
   /** Open the missing-scope prompt with the supplied list of scopes. */
   surfaceMissingScope: (scopes: string[]) => void;
@@ -622,10 +659,6 @@ type WorkspaceStore = {
     patch: Partial<Omit<GlobalGraphQL, 'id' | 'createdAt'>>,
   ) => void;
   removeGlobalGraphQL: (id: string) => void;
-  /** Open/close the Global Assets library modal. */
-  globalAssetsOpen: boolean;
-  openGlobalAssets: () => void;
-  closeGlobalAssets: () => void;
 
   /**
    * Open/close the Import modal. Driven from sidebar kebab menus (Editor and
@@ -1194,8 +1227,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   historyUi: EMPTY_HISTORY_UI,
   setHistoryUi: (next) => set((s) => ({ historyUi: { ...s.historyUi, ...next } })),
   activePanel: readStoredPanel(),
-  secretVaultOpen: false,
-  globalAssetsOpen: false,
+  rightDock: { tab: null, mode: 'overlay' },
   importModalOpen: false,
   editorPendingCreate: null,
   envAdding: false,
@@ -1785,8 +1817,15 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (previousSlot) await deleteAttachment(previousSlot);
   },
 
-  openSecretVault: () => set({ secretVaultOpen: true }),
-  closeSecretVault: () => set({ secretVaultOpen: false }),
+  openRightDockTab: (tab) => set((s) => ({ rightDock: { ...s.rightDock, tab } })),
+  closeRightDock: () => set((s) => ({ rightDock: { ...s.rightDock, tab: null } })),
+  setRightDockTab: (tab) =>
+    set((s) => (s.rightDock.tab === null ? s : { rightDock: { ...s.rightDock, tab } })),
+  toggleRightDockTab: (tab) =>
+    set((s) => ({
+      rightDock: { ...s.rightDock, tab: s.rightDock.tab === tab ? null : tab },
+    })),
+  setRightDockMode: (mode) => set((s) => ({ rightDock: { ...s.rightDock, mode } })),
 
   surfaceMissingScope: (scopes) => set({ missingScopePrompt: scopes }),
   dismissMissingScope: () => set({ missingScopePrompt: null }),
@@ -2034,8 +2073,6 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   updateGlobalGraphQL: (id, patch) =>
     commitSynced(set, get, (s) => updateGlobalGraphQLAction(s, id, patch)),
   removeGlobalGraphQL: (id) => commitSynced(set, get, (s) => removeGlobalGraphQLAction(s, id)),
-  openGlobalAssets: () => set({ globalAssetsOpen: true }),
-  closeGlobalAssets: () => set({ globalAssetsOpen: false }),
   openImportModal: () => set({ importModalOpen: true }),
   closeImportModal: () => set({ importModalOpen: false }),
   setEditorPendingCreate: (value) => set({ editorPendingCreate: value }),

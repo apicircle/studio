@@ -46,9 +46,9 @@ describe('KeyboardShortcuts', () => {
     expect(useWorkspaceStore.getState().activePanel).toBe('help');
   });
 
-  it('Ctrl+K opens the Secret Vault', () => {
+  it('Ctrl+K opens the Vault tab in the workspace inspector dock', () => {
     pressKey({ key: 'k', ctrl: true });
-    expect(useWorkspaceStore.getState().secretVaultOpen).toBe(true);
+    expect(useWorkspaceStore.getState().rightDock.tab).toBe('vault');
   });
 
   it('Ctrl+N adds a request only when the Editor panel is active', () => {

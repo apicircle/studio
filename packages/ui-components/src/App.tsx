@@ -7,10 +7,10 @@ import { TopBar } from './layout/TopBar';
 import { PanelTabs } from './layout/PanelTabs';
 import { Sidebar } from './layout/Sidebar';
 import { PanelContent } from './layout/PanelContent';
-import { SecretVaultModal } from './layout/SecretVaultModal';
+import { RightDock } from './layout/RightDock';
+import { RightDockRail } from './layout/RightDockRail';
 import { MissingScopeGate } from './layout/MissingScopeGate';
 import { KeyboardShortcuts } from './layout/KeyboardShortcuts';
-import { GlobalAssetsPanel } from './panels/globalAssets/GlobalAssetsPanel';
 import { LinkedRequestEditor } from './panels/link-workspace/LinkedRequestEditor';
 import { UpdatePreviewModal } from './panels/link-workspace/UpdatePreviewModal';
 import { OnboardingTips } from './onboarding/OnboardingTips';
@@ -42,10 +42,9 @@ export function App() {
       <TopBar />
       <PanelTabs />
       <div className="flex flex-1 overflow-hidden">
-        <BodyLayout />
+        <BodyArea />
+        <RightDockRail />
       </div>
-      <SecretVaultModal />
-      <GlobalAssetsPanel />
       <LinkedRequestEditor />
       <UpdatePreviewModal />
       <MissingScopeGate />
@@ -56,38 +55,108 @@ export function App() {
 }
 
 /**
- * Sidebar + main split. Wraps both in a horizontal `PanelGroup` so the
- * sidebar is user-resizable via a draggable handle (same pattern as the
- * GraphQL Query/Variables splitter). Auto-saves the chosen width per
- * sidebar-class panel — Editor's tree gets remembered separately from
- * Environments etc., so users who like a wide tree don't have to redrag
- * every time they switch panels.
+ * Body area = sidebar + main content (+ docked dock when applicable),
+ * sitting to the left of the always-visible RightDockRail. Two render
+ * modes for the dock:
  *
- * When the active panel has no sidebar (`hasSidebar === false`), we skip
- * the splitter entirely — no empty Panel left behind.
+ * - `mode === 'docked'` — the dock joins a horizontal `PanelGroup` with
+ *   sidebar and main content. The user drags a splitter to size it, and
+ *   the layout is persisted per (active-panel, sidebar-vis, dock-vis)
+ *   via `react-resizable-panels` so the Editor's tree width and the
+ *   chosen dock width survive panel switches.
+ *
+ * - `mode === 'overlay'` — the dock floats absolutely above main content
+ *   on the right side of the body area. Main content keeps its full
+ *   width; the user can scroll/click behind the floating panel.
+ *
+ * In both cases the rail (rendered by App.tsx) sits to the right of
+ * this whole area, providing the entry point.
  */
-function BodyLayout() {
+function BodyArea() {
   const activePanel = useWorkspaceStore((s) => s.activePanel);
   const hasSidebar = getPanel(activePanel).hasSidebar;
+  const dockTab = useWorkspaceStore((s) => s.rightDock.tab);
+  const dockMode = useWorkspaceStore((s) => s.rightDock.mode);
+  const dockOpen = dockTab !== null;
+  const dockedInline = dockOpen && dockMode === 'docked';
+  const dockOverlay = dockOpen && dockMode === 'overlay';
 
-  if (!hasSidebar) {
+  return (
+    <div className="relative flex flex-1 overflow-hidden">
+      <InlineLayout hasSidebar={hasSidebar} dockedInline={dockedInline} activePanel={activePanel} />
+      {dockOverlay && (
+        <div
+          // Floats over the main content from the top-right corner of
+          // the body area. The rail (40px) is rendered as a sibling at
+          // the App level — by the time we hit BodyArea's right edge
+          // the rail is already accounted for, so right-0 is correct.
+          className="absolute right-0 top-0 z-30 flex h-full w-[400px] max-w-[80vw]"
+        >
+          <RightDock />
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface InlineLayoutProps {
+  hasSidebar: boolean;
+  dockedInline: boolean;
+  activePanel: string;
+}
+
+function InlineLayout({ hasSidebar, dockedInline, activePanel }: InlineLayoutProps) {
+  if (!hasSidebar && !dockedInline) {
     return <PanelContent />;
   }
 
+  // Layout key changes when sidebar/dock visibility changes so
+  // `react-resizable-panels` doesn't try to apply a saved layout that
+  // referenced a different number of panels.
+  const layoutKey = `apicircle:layout:body:${activePanel}:${hasSidebar ? 'sb' : 'no-sb'}:${
+    dockedInline ? 'dock' : 'no-dock'
+  }`;
+
+  // `react-resizable-panels` requires stable `id` and `order` props on
+  // each Panel when siblings are conditionally rendered, otherwise it
+  // can't track which saved size belongs to which panel after the tree
+  // shape changes.
   return (
-    <PanelGroup direction="horizontal" autoSaveId={`apicircle:layout:sidebar:${activePanel}`}>
-      <Panel defaultSize={20} minSize={12} maxSize={50}>
-        <Sidebar />
-      </Panel>
-      <PanelResizeHandle
-        aria-label="Resize sidebar"
-        className="group flex w-1.5 cursor-col-resize items-center justify-center border-x border-border-subtle bg-surface hover:bg-accent/20"
+    <PanelGroup direction="horizontal" autoSaveId={layoutKey}>
+      {hasSidebar && (
+        <>
+          <Panel id="sidebar" order={1} defaultSize={20} minSize={12} maxSize={50}>
+            <Sidebar />
+          </Panel>
+          <PanelResizeHandle
+            aria-label="Resize sidebar"
+            className="group flex w-1.5 cursor-col-resize items-center justify-center border-x border-border-subtle bg-surface hover:bg-accent/20"
+          >
+            <span className="h-8 w-0.5 rounded-full bg-border group-hover:bg-accent" />
+          </PanelResizeHandle>
+        </>
+      )}
+      <Panel
+        id="main"
+        order={2}
+        defaultSize={dockedInline ? (hasSidebar ? 52 : 72) : hasSidebar ? 80 : 100}
+        minSize={30}
       >
-        <span className="h-8 w-0.5 rounded-full bg-border group-hover:bg-accent" />
-      </PanelResizeHandle>
-      <Panel defaultSize={80} minSize={30}>
         <PanelContent />
       </Panel>
+      {dockedInline && (
+        <>
+          <PanelResizeHandle
+            aria-label="Resize workspace inspector"
+            className="group flex w-1.5 cursor-col-resize items-center justify-center border-x border-border-subtle bg-surface hover:bg-accent/20"
+          >
+            <span className="h-8 w-0.5 rounded-full bg-border group-hover:bg-accent" />
+          </PanelResizeHandle>
+          <Panel id="dock" order={3} defaultSize={28} minSize={16} maxSize={60}>
+            <RightDock />
+          </Panel>
+        </>
+      )}
     </PanelGroup>
   );
 }

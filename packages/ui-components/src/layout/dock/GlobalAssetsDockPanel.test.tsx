@@ -2,7 +2,7 @@ import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useWorkspaceStore } from '../../store/workspaceStore';
-import { GlobalAssetsPanel } from './GlobalAssetsPanel';
+import { GlobalAssetsDockPanel } from './GlobalAssetsDockPanel';
 
 async function hydrate(): Promise<void> {
   await act(async () => {
@@ -10,25 +10,17 @@ async function hydrate(): Promise<void> {
   });
 }
 
-describe('GlobalAssetsPanel', () => {
+describe('GlobalAssetsDockPanel', () => {
   beforeEach(hydrate);
 
-  it('renders nothing when closed', () => {
-    render(<GlobalAssetsPanel />);
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  });
-
-  it('renders the dialog with two tabs when opened', () => {
-    useWorkspaceStore.getState().openGlobalAssets();
-    render(<GlobalAssetsPanel />);
-    expect(screen.getByRole('dialog', { name: 'Global Assets library' })).toBeInTheDocument();
+  it('renders the two sub-tabs', () => {
+    render(<GlobalAssetsDockPanel />);
     expect(screen.getByRole('button', { name: /JSON Schemas/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^GraphQL/ })).toBeInTheDocument();
   });
 
   it('Add JSON Schema appends an entry and selects it', async () => {
-    useWorkspaceStore.getState().openGlobalAssets();
-    render(<GlobalAssetsPanel />);
+    render(<GlobalAssetsDockPanel />);
     await userEvent.click(screen.getByRole('button', { name: 'Add JSON Schema' }));
     const stored = Object.values(useWorkspaceStore.getState().synced!.globalAssets.schemas);
     expect(stored).toHaveLength(1);
@@ -36,8 +28,7 @@ describe('GlobalAssetsPanel', () => {
   });
 
   it('switches to GraphQL tab and adds a definition', async () => {
-    useWorkspaceStore.getState().openGlobalAssets();
-    render(<GlobalAssetsPanel />);
+    render(<GlobalAssetsDockPanel />);
     await userEvent.click(screen.getByRole('button', { name: /^GraphQL/ }));
     await userEvent.click(screen.getByRole('button', { name: 'Add GraphQL schema' }));
     expect(useWorkspaceStore.getState().synced!.globalAssets.graphql).not.toEqual({});
@@ -47,8 +38,7 @@ describe('GlobalAssetsPanel', () => {
 
   it('renaming a schema persists the change', async () => {
     const id = useWorkspaceStore.getState().addGlobalSchema({ name: 'Original' });
-    useWorkspaceStore.getState().openGlobalAssets();
-    render(<GlobalAssetsPanel />);
+    render(<GlobalAssetsDockPanel />);
     await userEvent.click(screen.getByRole('button', { name: /Original/ }));
     const nameInput = screen.getByLabelText('Schema name');
     await userEvent.clear(nameInput);
@@ -58,8 +48,7 @@ describe('GlobalAssetsPanel', () => {
 
   it('Delete schema is gated by confirmation', async () => {
     const id = useWorkspaceStore.getState().addGlobalSchema({ name: 'Doomed' });
-    useWorkspaceStore.getState().openGlobalAssets();
-    render(<GlobalAssetsPanel />);
+    render(<GlobalAssetsDockPanel />);
     await userEvent.click(screen.getByRole('button', { name: /Doomed/ }));
     await userEvent.click(screen.getByRole('button', { name: 'Delete schema Doomed' }));
     const dialogs = screen.getAllByRole('dialog');

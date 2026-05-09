@@ -64,7 +64,7 @@ export function WorkspaceSwitcher() {
         aria-label="Switch workspace"
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="hidden items-center gap-1.5 rounded-sm border border-border bg-surface px-2 py-1 text-xs text-text-muted hover:border-border-strong hover:text-text-primary sm:inline-flex"
+        className="hidden h-8 items-center gap-1.5 rounded-sm border border-border bg-surface px-2 text-xs text-text-muted hover:border-border-strong hover:text-text-primary sm:inline-flex"
       >
         <span className="text-text-dim">/</span>
         <span className="font-medium text-text-primary">{activeWorkspaceName}</span>

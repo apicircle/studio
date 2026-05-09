@@ -97,13 +97,13 @@ describe('BodyTab', () => {
     );
   });
 
-  it('Manage… button opens the Global Assets panel', async () => {
+  it('Manage… button opens the Assets tab in the workspace inspector dock', async () => {
     const id = makeRequestId();
     render(<LiveBodyTab requestId={id} />);
     await userEvent.click(screen.getByRole('radio', { name: 'JSON' }));
-    expect(useWorkspaceStore.getState().globalAssetsOpen).toBe(false);
+    expect(useWorkspaceStore.getState().rightDock.tab).toBe(null);
     const manageButtons = screen.getAllByRole('button', { name: 'Manage…' });
     await userEvent.click(manageButtons[0]);
-    expect(useWorkspaceStore.getState().globalAssetsOpen).toBe(true);
+    expect(useWorkspaceStore.getState().rightDock.tab).toBe('assets');
   });
 });

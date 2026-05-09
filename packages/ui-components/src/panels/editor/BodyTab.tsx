@@ -195,7 +195,7 @@ function JsonSchemaPicker({ request }: { request: ApiRequest }) {
     s.synced ? Object.values(s.synced.globalAssets.schemas) : [],
   );
   const setRequestBodySchemaId = useWorkspaceStore((s) => s.setRequestBodySchemaId);
-  const openGlobalAssets = useWorkspaceStore((s) => s.openGlobalAssets);
+  const openRightDockTab = useWorkspaceStore((s) => s.openRightDockTab);
 
   return (
     <div className="flex items-center gap-2">
@@ -221,7 +221,7 @@ function JsonSchemaPicker({ request }: { request: ApiRequest }) {
       </select>
       <button
         type="button"
-        onClick={openGlobalAssets}
+        onClick={() => openRightDockTab('assets')}
         className="text-[11px] text-text-muted hover:text-accent"
       >
         Manage…
@@ -235,7 +235,7 @@ function GraphqlSchemaPicker({ request }: { request: ApiRequest }) {
     s.synced ? Object.values(s.synced.globalAssets.graphql) : [],
   );
   const setRequestGraphqlSchemaId = useWorkspaceStore((s) => s.setRequestGraphqlSchemaId);
-  const openGlobalAssets = useWorkspaceStore((s) => s.openGlobalAssets);
+  const openRightDockTab = useWorkspaceStore((s) => s.openRightDockTab);
 
   return (
     <div className="flex items-center gap-2">
@@ -261,7 +261,7 @@ function GraphqlSchemaPicker({ request }: { request: ApiRequest }) {
       </select>
       <button
         type="button"
-        onClick={openGlobalAssets}
+        onClick={() => openRightDockTab('assets')}
         className="text-[11px] text-text-muted hover:text-accent"
       >
         Manage…

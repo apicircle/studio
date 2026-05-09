@@ -38,10 +38,10 @@ describe('WorkspacePanel', () => {
     expect(screen.getByText('pull_request')).toBeInTheDocument();
   });
 
-  it('clicking the connect CTA opens the Secret Vault', async () => {
+  it('clicking the connect CTA opens the Vault tab in the workspace inspector dock', async () => {
     await renderWithStore(<WorkspacePanel />);
     await userEvent.click(screen.getByRole('button', { name: /Connect via Secret Vault/ }));
-    expect(useWorkspaceStore.getState().secretVaultOpen).toBe(true);
+    expect(useWorkspaceStore.getState().rightDock.tab).toBe('vault');
   });
 
   it('shows "GitHub Connected" and account details when a session is present', async () => {

@@ -650,7 +650,7 @@ function StateBadge({
 }
 
 function NoSessionCard() {
-  const openSecretVault = useWorkspaceStore((s) => s.openSecretVault);
+  const openRightDockTab = useWorkspaceStore((s) => s.openRightDockTab);
   return (
     <div className="rounded-sm border border-border bg-card p-4">
       <div className="mb-3 flex items-center gap-2 text-sm text-text-primary">
@@ -674,7 +674,7 @@ function NoSessionCard() {
       </ul>
       <button
         type="button"
-        onClick={openSecretVault}
+        onClick={() => openRightDockTab('vault')}
         className="inline-flex h-8 items-center gap-2 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent transition-colors hover:bg-accent/20"
       >
         <KeyRound size={14} />
@@ -686,7 +686,7 @@ function NoSessionCard() {
 
 function SessionCard() {
   const session = useWorkspaceStore((s) => s.local!.sessions.github!);
-  const openSecretVault = useWorkspaceStore((s) => s.openSecretVault);
+  const openRightDockTab = useWorkspaceStore((s) => s.openRightDockTab);
   return (
     <div className="rounded-sm border border-border bg-card p-4">
       <div className="mb-3 flex items-center gap-2 text-sm text-text-primary">
@@ -715,7 +715,7 @@ function SessionCard() {
       )}
       <button
         type="button"
-        onClick={openSecretVault}
+        onClick={() => openRightDockTab('vault')}
         className="mt-4 inline-flex h-8 items-center gap-2 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted transition-colors hover:border-border-strong hover:text-text-primary"
       >
         <KeyRound size={14} />

@@ -15,7 +15,7 @@ describe('App', () => {
     expect(useWorkspaceStore.getState().ready).toBe(true);
   });
 
-  it('end-to-end chrome flow: hydrate → switch panel → open vault → switch theme', async () => {
+  it('end-to-end chrome flow: hydrate → switch panel → open vault from rail → switch theme', async () => {
     render(<App />);
     await waitFor(() => screen.getByText('API Circle Studio'));
 
@@ -23,14 +23,20 @@ describe('App', () => {
     await userEvent.click(screen.getByRole('button', { name: /^Workspace$/ }));
     expect(useWorkspaceStore.getState().activePanel).toBe('workspace');
 
-    // Open Secret Vault from top bar
+    // Open the Vault tab from the right-edge rail.
     await userEvent.click(screen.getByRole('button', { name: /Open Secret Vault/ }));
-    expect(useWorkspaceStore.getState().secretVaultOpen).toBe(true);
-    expect(screen.getByRole('dialog', { name: /Secret Vault/ })).toBeInTheDocument();
+    expect(useWorkspaceStore.getState().rightDock.tab).toBe('vault');
+    // Default mode is overlay.
+    expect(useWorkspaceStore.getState().rightDock.mode).toBe('overlay');
+    expect(screen.getByRole('complementary', { name: /Workspace inspector/ })).toBeInTheDocument();
 
-    // Close and switch theme
-    await userEvent.keyboard('{Escape}');
-    await userEvent.click(screen.getByRole('button', { name: /Choose theme/ }));
+    // Click the same rail icon to dismiss the dock.
+    await userEvent.click(screen.getByRole('button', { name: /Close Secret Vault/ }));
+    expect(useWorkspaceStore.getState().rightDock.tab).toBe(null);
+
+    // Switch theme via the Settings popover → Theme row → list.
+    await userEvent.click(screen.getByRole('button', { name: /Open workspace settings/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Theme:/ }));
     await userEvent.click(screen.getByRole('option', { name: /Midnight Blue/ }));
     expect(useWorkspaceStore.getState().local!.ui.themeId).toBe('midnight-blue');
     expect(document.documentElement.getAttribute('data-theme')).toBe('midnight-blue');
