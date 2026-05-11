@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LinkedWorkspace, ReleaseHistory, WorkspaceLocal } from '@apicircle/shared';
@@ -17,11 +17,15 @@ function seedSession(): void {
     ...local,
     sessions: {
       github: {
-        accountLogin: 'me',
-        tokenSecretId: 'tok-id',
-        grantedScopes: ['repo', 'pull_request'],
-        addedAt: 't',
-        lastVerifiedAt: 't',
+        workspace: {
+          accountLogin: 'me',
+          tokenSecretId: 'tok-id',
+          grantedScopes: ['repo', 'pull_request'],
+          addedAt: 't',
+          lastVerifiedAt: 't',
+          canCreatePullRequests: true,
+        },
+        links: {},
       },
     },
   };
@@ -39,7 +43,12 @@ function seedLink(opts: {
     id: opts.id,
     kind: 'private',
     name: opts.name,
-    source: { provider: 'github', repoFullName: `me/${opts.name}`, branch: 'main' },
+    source: {
+      provider: 'github',
+      repoFullName: `me/${opts.name}`,
+      branch: 'main',
+      sessionMode: 'workspace' as const,
+    },
     scope: ['collections', 'environments'],
     pinnedVersion: opts.pinnedVersion ?? null,
     updatePolicy: 'manual',
@@ -180,6 +189,7 @@ describe('LinkWorkspacePanel — connected, no links yet', () => {
         workspaceName: 'API workspace',
         versions: ['1.0.0', '1.2.0'],
         currentVersion: '1.2.0',
+        requiredSecretKeys: [],
       })),
     });
 
@@ -272,9 +282,13 @@ describe('LinkWorkspacePanel — link card surface', () => {
     render(<LinkWorkspacePanel />);
     expect(screen.getByText('Payments')).toBeInTheDocument();
     expect(screen.getByText('me/Payments@main')).toBeInTheDocument();
-    const pinSelect = screen.getByLabelText('Pin Payments version');
-    expect(pinSelect).toHaveValue('1.0.0');
-    expect(within(pinSelect).getByText(/0\.9\.0 · deprecated/)).toBeInTheDocument();
+    // The pinned version is now a read-only display (the dropdown was
+    // removed — pinning is set at link time + via Refresh/Apply, not
+    // changeable from the link card directly).
+    const pinDisplay = screen.getByLabelText('Pinned to v1.0.0');
+    expect(pinDisplay).toHaveTextContent('v1.0.0');
+    // Old-flow pin <select> shouldn't exist anymore.
+    expect(screen.queryByRole('combobox', { name: /Pin .* version/ })).toBeNull();
   });
 
   it('shows "update available" when the cached current version diverges from the pin', () => {
@@ -308,11 +322,37 @@ describe('LinkWorkspacePanel — link card surface', () => {
     expect(screen.getByText(/update available · v0\.2\.0/)).toBeInTheDocument();
   });
 
-  it('switching the pin opens a confirm dialog and applies the new version', async () => {
+  it('surfaces the deprecated badge next to the pinned version when source flags it', () => {
     seedLink({
-      id: 'lw-3',
+      id: 'lw-deprecated',
       name: 'API',
-      pinnedVersion: '0.2.0',
+      pinnedVersion: '0.1.0',
+      ledger: {
+        versions: [
+          {
+            version: '0.1.0',
+            publishedAt: 't',
+            notes: '',
+            workspaceSnapshot: 'a'.repeat(64),
+            deprecated: true,
+            yanked: false,
+          },
+        ],
+        currentVersion: '0.1.0',
+      },
+    });
+    render(<LinkWorkspacePanel />);
+    // The pinned-version chip has a "deprecated" badge alongside it so
+    // consumers stuck on a deprecated release have a visible signal.
+    expect(screen.getByText('deprecated')).toBeInTheDocument();
+    expect(screen.queryByText('withdrawn')).toBeNull();
+  });
+
+  it('surfaces the withdrawn badge next to the pinned version when source yanks it', () => {
+    seedLink({
+      id: 'lw-yanked',
+      name: 'API',
+      pinnedVersion: '0.1.0',
       ledger: {
         versions: [
           {
@@ -321,28 +361,15 @@ describe('LinkWorkspacePanel — link card surface', () => {
             notes: '',
             workspaceSnapshot: 'a'.repeat(64),
             deprecated: false,
-            yanked: false,
-          },
-          {
-            version: '0.2.0',
-            publishedAt: 't',
-            notes: '',
-            workspaceSnapshot: 'b'.repeat(64),
-            deprecated: false,
-            yanked: false,
+            yanked: true,
           },
         ],
-        currentVersion: '0.2.0',
+        currentVersion: '0.1.0',
       },
     });
-    const user = userEvent.setup();
     render(<LinkWorkspacePanel />);
-    const pin = screen.getByLabelText('Pin API version');
-    await user.selectOptions(pin, '0.1.0');
-    await user.click(screen.getByRole('button', { name: 'Pin' }));
-    expect(useWorkspaceStore.getState().synced!.linkedWorkspaces['lw-3'].pinnedVersion).toBe(
-      '0.1.0',
-    );
+    expect(screen.getByText('withdrawn')).toBeInTheDocument();
+    expect(screen.queryByText('deprecated')).toBeNull();
   });
 
   it('Changelog button surfaces version notes; Unlink button removes the card', async () => {
@@ -379,17 +406,15 @@ describe('LinkWorkspacePanel — link card surface', () => {
     expect(useWorkspaceStore.getState().synced!.linkedWorkspaces['lw-4']).toBeUndefined();
   });
 
-  it('required-key flow: declare → provision → status flips → remove', async () => {
-    seedLink({ id: 'lw-5', name: 'API', requiredKeys: [] });
+  it('required-key flow: auto-populated → provision → status flips → remove', async () => {
+    // Required keys are auto-populated from the source's secretKeys
+    // registry at link time (or on Refresh ledger). Manual-add was
+    // removed since linking auto-discovers slots.
+    seedLink({ id: 'lw-5', name: 'API', requiredKeys: ['API_KEY'] });
     const user = userEvent.setup();
     render(<LinkWorkspacePanel />);
 
-    // Empty state.
-    expect(screen.getByText(/No required keys declared/)).toBeInTheDocument();
-
-    // Declare a key.
-    await user.type(screen.getByLabelText('Add required key'), 'API_KEY');
-    await user.click(screen.getByRole('button', { name: /Add key/ }));
+    // The auto-populated row is visible with a "missing" status.
     expect(screen.getByText('API_KEY')).toBeInTheDocument();
     expect(screen.getByText('missing')).toBeInTheDocument();
 
@@ -406,6 +431,17 @@ describe('LinkWorkspacePanel — link card surface', () => {
     expect(
       useWorkspaceStore.getState().synced!.linkedWorkspaces['lw-5'].requiredSecretKeyIds,
     ).toEqual([]);
+  });
+
+  it('shows guidance when the source declares no vault slots', () => {
+    seedLink({ id: 'lw-5b', name: 'NoSlots', requiredKeys: [] });
+    render(<LinkWorkspacePanel />);
+    expect(
+      screen.getByText(/source workspace doesn't declare any vault slots/i),
+    ).toBeInTheDocument();
+    // No manual-add button — the affordance was removed since linking
+    // auto-discovers slots from the source registry.
+    expect(screen.queryByRole('button', { name: /Add a key manually/ })).toBeNull();
   });
 });
 
@@ -457,5 +493,163 @@ describe('LinkWorkspacePanel — marketplace search', () => {
     await user.type(screen.getByLabelText('Marketplace query'), 'nothing');
     await user.click(screen.getByRole('button', { name: /^Search$/ }));
     expect(await screen.findByText('No results.')).toBeInTheDocument();
+  });
+});
+
+describe('LinkWorkspacePanel — per-link session UX', () => {
+  beforeEach(async () => {
+    await hydrate();
+    seedSession();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('the link card shows the workspace-session badge for sessionMode=workspace links', () => {
+    seedLink({ id: 'lw-1', name: 'Payments' });
+    render(<LinkWorkspacePanel />);
+    // Badge text ends with '@me' (the seeded workspace session login).
+    expect(screen.getByText(/workspace · @me/)).toBeInTheDocument();
+  });
+
+  it('orphaned dedicated link auto-recovers to workspace mode when a workspace session is available', async () => {
+    // A dedicated-mode link whose dedicated session is gone — but a
+    // healthy workspace session exists. The card auto-recovers
+    // silently (flips the link's mode back to 'workspace') instead of
+    // showing the alarming "Dedicated session removed" banner.
+    const synced = useWorkspaceStore.getState().synced!;
+    const link: LinkedWorkspace = {
+      id: 'lw-orphan',
+      kind: 'private',
+      name: 'Acme',
+      source: {
+        provider: 'github',
+        repoFullName: 'acme/tools',
+        branch: 'main',
+        sessionMode: 'dedicated',
+      },
+      scope: ['collections', 'environments'],
+      pinnedVersion: null,
+      updatePolicy: 'manual',
+      linkedAt: '2026-04-27T00:00:00.000Z',
+      requiredSecretKeyIds: [],
+    };
+    useWorkspaceStore.setState({
+      synced: {
+        ...synced,
+        linkedWorkspaces: { ...synced.linkedWorkspaces, [link.id]: link },
+      },
+    });
+    render(<LinkWorkspacePanel />);
+    // The auto-recover effect runs after mount → mode flips to 'workspace'.
+    await waitFor(() => {
+      const after = useWorkspaceStore.getState().synced!.linkedWorkspaces['lw-orphan'];
+      expect(after.source.sessionMode).toBe('workspace');
+    });
+    // No alarming banner.
+    expect(screen.queryByText(/Dedicated session removed/i)).toBeNull();
+  });
+
+  it('orphaned dedicated link DOES surface the banner when no workspace session exists', () => {
+    // Same setup as above but drop the workspace session — now there's
+    // nothing to fall back to, so the banner stays visible and the
+    // user must explicitly reconnect a dedicated session.
+    const local = useWorkspaceStore.getState().local!;
+    useWorkspaceStore.setState({
+      local: {
+        ...local,
+        sessions: { github: { workspace: null, links: {} } },
+      },
+    });
+    const synced = useWorkspaceStore.getState().synced!;
+    const link: LinkedWorkspace = {
+      id: 'lw-orphan-no-ws',
+      kind: 'private',
+      name: 'Acme',
+      source: {
+        provider: 'github',
+        repoFullName: 'acme/tools',
+        branch: 'main',
+        sessionMode: 'dedicated',
+      },
+      scope: ['collections', 'environments'],
+      pinnedVersion: null,
+      updatePolicy: 'manual',
+      linkedAt: '2026-04-27T00:00:00.000Z',
+      requiredSecretKeyIds: [],
+    };
+    useWorkspaceStore.setState({
+      synced: {
+        ...synced,
+        linkedWorkspaces: { ...synced.linkedWorkspaces, [link.id]: link },
+      },
+    });
+    render(<LinkWorkspacePanel />);
+    expect(screen.getByRole('alert')).toHaveTextContent(/Dedicated session removed/i);
+    expect(screen.getByRole('button', { name: /Reconnect dedicated session/ })).toBeInTheDocument();
+  });
+
+  it('orphaned workspace-mode link (no workspace session) shows a workspace-disconnected banner', () => {
+    // Drop the workspace session, then add a link in workspace mode.
+    const local = useWorkspaceStore.getState().local!;
+    useWorkspaceStore.setState({
+      local: {
+        ...local,
+        sessions: { github: { workspace: null, links: {} } },
+      },
+    });
+    seedLink({ id: 'lw-2', name: 'Payments' });
+    render(<LinkWorkspacePanel />);
+    expect(screen.getByRole('alert')).toHaveTextContent(/Workspace session disconnected/i);
+    // Adding a dedicated session is a valid remap path — the user can
+    // bind a separate PAT to this link without restoring the workspace
+    // session.
+    expect(screen.getByRole('button', { name: /Add dedicated session/ })).toBeInTheDocument();
+  });
+
+  it('the link wizard renders a session picker with workspace + dedicated radios', async () => {
+    const user = userEvent.setup();
+    render(<LinkWorkspacePanel />);
+    await user.click(screen.getByRole('button', { name: /Link a private workspace/ }));
+    // Workspace radio is the default.
+    const workspaceRadio = screen.getByLabelText(/Use workspace session/);
+    const dedicatedRadio = screen.getByLabelText(/Add a dedicated session/);
+    expect(workspaceRadio).toBeChecked();
+    expect(dedicatedRadio).not.toBeChecked();
+    // Switching to dedicated reveals the PAT input.
+    await user.click(dedicatedRadio);
+    expect(screen.getByLabelText('Dedicated linking session PAT')).toBeInTheDocument();
+  });
+
+  it('once the dedicated PAT is pasted, repo browser refetches via tokenOverride', async () => {
+    const user = userEvent.setup();
+    const listAccessibleRepos = vi.fn(async () => [
+      {
+        fullName: 'acme/secret-repo',
+        owner: 'acme',
+        name: 'secret-repo',
+        defaultBranch: 'main',
+        visibility: 'private' as const,
+        isPrivate: true,
+        pushable: true,
+      },
+    ]);
+    useWorkspaceStore.setState({ listAccessibleRepos });
+    render(<LinkWorkspacePanel />);
+    await user.click(screen.getByRole('button', { name: /Link a private workspace/ }));
+    // Initial open: workspace mode, no tokenOverride.
+    expect(listAccessibleRepos).toHaveBeenCalledWith(undefined);
+    // Switch to dedicated → existing repo list clears (no token yet).
+    await user.click(screen.getByLabelText(/Add a dedicated session/));
+    // Paste a PAT. The combobox should refetch with tokenOverride. Type
+    // the token in one shot via .paste() so the effect only debounces
+    // through the final value, not every keystroke.
+    const patInput = screen.getByLabelText('Dedicated linking session PAT');
+    await user.click(patInput);
+    await user.paste('ghp_dedicated_secret');
+    await waitFor(() => {
+      const lastCall = listAccessibleRepos.mock.calls.at(-1) as
+        | [{ tokenOverride?: string } | undefined]
+        | undefined;
+      expect(lastCall?.[0]).toEqual({ tokenOverride: 'ghp_dedicated_secret' });
+    });
   });
 });

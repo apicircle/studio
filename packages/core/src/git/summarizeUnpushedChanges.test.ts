@@ -117,6 +117,83 @@ describe('summarizeUnpushedChanges — base != null', () => {
     expect(summary.removed).toBeGreaterThanOrEqual(1);
   });
 
+  it('classifies a FIRST-TIME publish (releases.self transitioning from null → ledger) as a change', () => {
+    // The reported bug: first publish doesn't surface in Push to save,
+    // but a subsequent (upgrade) publish does. This nails the boundary
+    // case `null → defined`. If the diff drops it, the strip stays empty.
+    const base = emptyDoc({ releases: { self: null, perLink: {} } });
+    const current = emptyDoc({
+      releases: {
+        self: {
+          versions: [
+            {
+              version: '0.1.0',
+              publishedAt: '2026-05-01T00:00:00.000Z',
+              notes: 'Initial release',
+              workspaceSnapshot: 'a'.repeat(64),
+              deprecated: false,
+              yanked: false,
+            },
+          ],
+          currentVersion: '0.1.0',
+        },
+        perLink: {},
+      },
+    });
+    const summary = summarizeUnpushedChanges(base, current, { now: NOW });
+    const releaseChange = summary.changes.find((c) => c.bucket === 'releaseSelf');
+    expect(releaseChange).toBeDefined();
+    // null → ledger reads as "added" — going from no ledger to having one
+    // is conceptually an add, not a modification.
+    expect(releaseChange?.kind).toBe('added');
+    expect(summary.added).toBeGreaterThanOrEqual(1);
+  });
+
+  it('classifies a publishRelease change to releases.self as "modified"', () => {
+    // Repro for "publish release isn't surfaced by Push to save". After
+    // a successful push, lastPulledSnapshot equals the just-pushed doc.
+    // publishRelease then mutates `releases.self`. The strip should pick
+    // it up as a `releaseSelf` modification.
+    const baseLedger = {
+      versions: [
+        {
+          version: '0.1.0',
+          publishedAt: T0,
+          notes: '',
+          workspaceSnapshot: 'a'.repeat(64),
+          deprecated: false,
+          yanked: false,
+        },
+      ],
+      currentVersion: '0.1.0',
+    };
+    const base = emptyDoc({ releases: { self: baseLedger, perLink: {} } });
+    const current = emptyDoc({
+      releases: {
+        self: {
+          versions: [
+            ...baseLedger.versions,
+            {
+              version: '0.2.0',
+              publishedAt: '2026-05-01T00:00:00.000Z',
+              notes: 'Bug fixes',
+              workspaceSnapshot: 'b'.repeat(64),
+              deprecated: false,
+              yanked: false,
+            },
+          ],
+          currentVersion: '0.2.0',
+        },
+        perLink: {},
+      },
+    });
+    const summary = summarizeUnpushedChanges(base, current, { now: NOW });
+    const releaseChange = summary.changes.find((c) => c.bucket === 'releaseSelf');
+    expect(releaseChange).toBeDefined();
+    expect(releaseChange?.kind).toBe('modified');
+    expect(summary.modified).toBe(1);
+  });
+
   it('classifies an edited request as "modified"', () => {
     const r1Old = req('r1', { url: 'https://example.test/old' });
     const r1New = req('r1', { url: 'https://example.test/new' });
@@ -155,14 +232,19 @@ describe('summarizeUnpushedChanges — base != null', () => {
       environments: {
         items: { dev: { name: 'dev', variables: [] } },
         activeName: 'dev',
-        priorityOrder: ['dev'],
+        priorityOrder: [{ kind: 'local', name: 'dev' }],
       },
       linkedWorkspaces: {
         'lw-1': {
           id: 'lw-1',
           kind: 'public',
           name: 'Linked',
-          source: { provider: 'github', repoFullName: 'a/b', branch: 'main' },
+          source: {
+            provider: 'github',
+            repoFullName: 'a/b',
+            branch: 'main',
+            sessionMode: 'workspace',
+          },
           scope: ['collections'],
           pinnedVersion: null,
           updatePolicy: 'manual',

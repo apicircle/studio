@@ -74,12 +74,13 @@ function seedHistory(args: {
   if (args.planNames) {
     for (const [id, name] of Object.entries(args.planNames)) {
       const newId = useWorkspaceStore.getState().addPlan(name);
-      const next = useWorkspaceStore.getState().local!;
-      const plans = { ...next.executionPlans };
+      // Plans now live on synced (not local) so they round-trip through Git.
+      const next = useWorkspaceStore.getState().synced!;
+      const plans = { ...(next.executionPlans ?? {}) };
       const plan = plans[newId];
       delete plans[newId];
       plans[id] = { ...plan, id };
-      useWorkspaceStore.setState({ local: { ...next, executionPlans: plans } });
+      useWorkspaceStore.setState({ synced: { ...next, executionPlans: plans } });
     }
   }
   const next: WorkspaceLocal = {
@@ -121,7 +122,9 @@ describe('HistoryPanel — request rows', () => {
           status: 200,
           ok: true,
           durationMs: 42,
-          assertions: [{ assertionId: 'a-1', passed: true }],
+          assertions: [
+            { assertionId: 'a-1', kind: 'status', op: 'equals', expected: 200, passed: true },
+          ],
         }),
         makeRun({
           id: 'run-2',
@@ -132,8 +135,8 @@ describe('HistoryPanel — request rows', () => {
           durationMs: 99,
           statusText: 'Server Error',
           assertions: [
-            { assertionId: 'a-1', passed: false },
-            { assertionId: 'a-2', passed: true },
+            { assertionId: 'a-1', kind: 'status', op: 'equals', expected: 200, passed: false },
+            { assertionId: 'a-2', kind: 'duration', op: 'lt', expected: 1000, passed: true },
           ],
         }),
       ],

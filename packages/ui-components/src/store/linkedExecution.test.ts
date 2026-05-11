@@ -48,7 +48,7 @@ function makeSnapshot(args: {
             },
           },
           activeName: 'dev',
-          priorityOrder: ['dev'],
+          priorityOrder: [{ kind: 'local', name: 'dev' }],
         }
       : { items: {}, activeName: null, priorityOrder: [] },
   };
@@ -71,7 +71,12 @@ function seedLink(snapshot: LinkedSnapshot): void {
           id: 'lw-1',
           kind: 'private',
           name: 'Source',
-          source: { provider: 'github', repoFullName: 'a/b', branch: 'main' },
+          source: {
+            provider: 'github',
+            repoFullName: 'a/b',
+            branch: 'main',
+            sessionMode: 'workspace' as const,
+          },
           scope: ['collections', 'environments'],
           pinnedVersion: '1.0.0',
           updatePolicy: 'manual',

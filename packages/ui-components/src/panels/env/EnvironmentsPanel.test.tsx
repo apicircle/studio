@@ -71,10 +71,17 @@ describe('EnvironmentsPanel', () => {
       const v = useWorkspaceStore.getState().synced!.environments.items.dev.variables[0];
       expect(v.encrypted).toBe(true);
       expect(v.secretKeyId).toBe(secretId);
-      expect(v.value).toBe('');
+      // Value carries the AES-GCM ciphertext encrypted under the slot's
+      // derived key, not an empty string. That's what allows teammates with
+      // the same slot value to decrypt the same row.
+      expect(v.value.startsWith('enc:v1:')).toBe(true);
     });
-    // Synced labels map should include the bound key for collaborator visibility.
-    expect(useWorkspaceStore.getState().synced!.secretKeys?.[secretId]?.label).toBe('PROD_TOKEN');
+    // Synced labels map should include the bound key + per-slot salt so
+    // collaborators can recompute the same derived key.
+    const meta = useWorkspaceStore.getState().synced!.secretKeys?.[secretId];
+    expect(meta?.label).toBe('PROD_TOKEN');
+    expect(typeof meta?.salt).toBe('string');
+    expect(meta?.salt.length).toBeGreaterThan(0);
   });
 });
 

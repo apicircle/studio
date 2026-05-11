@@ -48,7 +48,12 @@ async function setup(): Promise<void> {
           id: 'link-1',
           kind: 'private',
           name: 'Source workspace',
-          source: { provider: 'github', repoFullName: 'a/b', branch: 'main' },
+          source: {
+            provider: 'github',
+            repoFullName: 'a/b',
+            branch: 'main',
+            sessionMode: 'workspace' as const,
+          },
           scope: ['collections'],
           pinnedVersion: null,
           updatePolicy: 'manual',

@@ -1,10 +1,14 @@
 import type {
+  EnvPriorityRef,
+  ExecutionPlan,
   FontFamilyId,
   Request as ApiRequest,
+  SecretKeyMeta,
   WorkspaceLocal,
   WorkspaceSynced,
 } from '@apicircle/shared';
 import { generateId, normalizeAuth } from '@apicircle/shared';
+import { generateSlotSalt } from '@apicircle/core';
 import {
   LOCAL_STORE,
   readRecord,
@@ -16,6 +20,159 @@ import {
   deleteWorkspaceRecords,
 } from './db';
 import type { WorkspaceRegistry, WorkspaceRegistryEntry } from './db';
+import { deleteSecretPayload } from './secrets';
+import type { GitHubSession } from '@apicircle/shared';
+
+/**
+ * Normalize the persisted `sessions.github` shape into the per-purpose
+ * model `{ workspace, links }`. Tolerates three input shapes during the
+ * transition:
+ *
+ *   - missing entirely  → `{ workspace: null, links: {} }`
+ *   - legacy single value `GitHubSession | null` (pre-per-link)
+ *                       → `{ workspace: hydrated, links: {} }`
+ *   - already-new shape → pass-through, hydrating each session.
+ *
+ * Each hydrated session backfills `canCreatePullRequests` from granted
+ * scopes when missing — covers pre-feature sessions without forcing a
+ * verify call.
+ */
+function hydrateGithubSessions(
+  sessions: WorkspaceLocal['sessions'] | undefined,
+): WorkspaceLocal['sessions']['github'] {
+  const hydrate = (s: GitHubSession | null | undefined): GitHubSession | null => {
+    if (!s) return null;
+    return {
+      ...s,
+      canCreatePullRequests:
+        s.canCreatePullRequests === undefined
+          ? s.grantedScopes.includes('repo') || s.grantedScopes.includes('pull_request')
+            ? true
+            : null
+          : s.canCreatePullRequests,
+    };
+  };
+
+  const raw = sessions?.github;
+  // Already-new shape carries `workspace` (or `links`) — distinguish from the
+  // legacy single-session shape by the presence of those keys.
+  if (raw && typeof raw === 'object' && ('workspace' in raw || 'links' in raw)) {
+    const newShape = raw as {
+      workspace?: GitHubSession | null;
+      links?: Record<string, GitHubSession>;
+    };
+    const links: Record<string, GitHubSession> = {};
+    for (const [id, s] of Object.entries(newShape.links ?? {})) {
+      const h = hydrate(s);
+      if (h) links[id] = h;
+    }
+    return { workspace: hydrate(newShape.workspace ?? null), links };
+  }
+  // Legacy or null: treat the value as the workspace session.
+  return { workspace: hydrate(raw), links: {} };
+}
+
+/**
+ * Enumerate every secret payload owned by a workspace and remove it from
+ * the shared `apicircle-secret-vault` IDB store. Covers every slot in
+ * `local.secretIndex.entries` (env-var slots, linked-workspace inputs)
+ * plus the GitHub PAT held under `local.sessions.github.tokenSecretId`.
+ * Best-effort: any individual delete failure is swallowed so a single
+ * missing payload doesn't block the rest of the workspace teardown.
+ */
+/**
+ * Convert any legacy `envPriorityOrder: string[]` entries on persisted
+ * execution plans to the new `EnvPriorityRef[]` shape. Plans created on a
+ * different (newer) device may already be in shape — those pass through.
+ */
+function normalizeExecutionPlans(
+  plans: Record<string, ExecutionPlan>,
+): Record<string, ExecutionPlan> {
+  let touched = false;
+  const out: Record<string, ExecutionPlan> = {};
+  for (const [id, plan] of Object.entries(plans)) {
+    const order = plan.envPriorityOrder as unknown[];
+    const next: EnvPriorityRef[] = [];
+    let entryTouched = false;
+    for (const entry of order) {
+      if (typeof entry === 'string') {
+        entryTouched = true;
+        next.push({ kind: 'local', name: entry });
+      } else if (
+        entry &&
+        typeof entry === 'object' &&
+        'kind' in (entry as Record<string, unknown>) &&
+        ((entry as { kind?: string }).kind === 'local' ||
+          (entry as { kind?: string }).kind === 'linked')
+      ) {
+        next.push(entry as EnvPriorityRef);
+      } else {
+        entryTouched = true;
+      }
+    }
+    if (entryTouched) {
+      touched = true;
+      out[id] = { ...plan, envPriorityOrder: next };
+    } else {
+      out[id] = plan;
+    }
+  }
+  return touched ? out : plans;
+}
+
+/**
+ * Migrate legacy `WorkspaceLocal.executionPlans` (per-device) to
+ * `WorkspaceSynced.executionPlans` (Git-backed). Plans now travel
+ * through Git so a collaborator cloning the repo sees the same plans.
+ *
+ * Idempotent + non-destructive in the synced direction:
+ *   - If `synced.executionPlans` already has entries, nothing is
+ *     overwritten (the synced doc is the source of truth post-migration).
+ *   - If `synced.executionPlans` is missing/empty AND `local.executionPlans`
+ *     has plans, those plans are lifted up. envPriorityOrder is also
+ *     normalized in transit so older `string[]` entries become
+ *     `EnvPriorityRef[]` shapes.
+ *   - Otherwise the synced doc is returned untouched.
+ *
+ * Caller is responsible for clearing `local.executionPlans` after the
+ * lift to avoid re-lifting on subsequent hydrates.
+ */
+function liftLegacyExecutionPlansToSynced(
+  synced: WorkspaceSynced,
+  legacyLocalPlans: Record<string, ExecutionPlan> | undefined,
+): WorkspaceSynced {
+  const syncedPlans = synced.executionPlans ?? {};
+  if (Object.keys(syncedPlans).length > 0) return synced;
+  if (!legacyLocalPlans || Object.keys(legacyLocalPlans).length === 0) {
+    // Synced has no plans, local has none either: ensure the field
+    // exists as an empty object so consumers can rely on it.
+    return synced.executionPlans ? synced : { ...synced, executionPlans: {} };
+  }
+  return {
+    ...synced,
+    executionPlans: normalizeExecutionPlans(legacyLocalPlans),
+  };
+}
+
+async function purgeWorkspaceSecrets(local: WorkspaceLocal | null): Promise<void> {
+  if (!local) return;
+  const ids = new Set<string>(Object.keys(local.secretIndex.entries));
+  // Workspace session token + every per-link linking-session token. All
+  // payloads live in the shared `apicircle-secret-vault` IDB; missing them
+  // when the workspace is destroyed leaves stale ciphertext lying around.
+  const wsToken = local.sessions.github.workspace?.tokenSecretId;
+  if (wsToken) ids.add(wsToken);
+  for (const linkSession of Object.values(local.sessions.github.links)) {
+    if (linkSession.tokenSecretId) ids.add(linkSession.tokenSecretId);
+  }
+  for (const id of ids) {
+    try {
+      await deleteSecretPayload(id);
+    } catch {
+      /* swallow — a missing payload is fine */
+    }
+  }
+}
 
 export type { WorkspaceRegistry, WorkspaceRegistryEntry } from './db';
 
@@ -75,8 +232,72 @@ function normalizeSyncedShape(synced: WorkspaceSynced): WorkspaceSynced {
   if (!result.secretKeys) {
     result = { ...result, secretKeys: {} };
   }
+  // Salt was added with the per-slot derivation flow. Backfill any pre-salt
+  // slot record with a fresh salt so subsequent encrypt/decrypt calls have
+  // something to feed PBKDF2. Pre-launch: there's no real ciphertext yet
+  // tied to a missing-salt slot, so a fresh salt won't break anything.
+  {
+    const slots = result.secretKeys ?? {};
+    let saltTouched = false;
+    const fixedSlots: Record<string, SecretKeyMeta> = {};
+    for (const [id, meta] of Object.entries(slots)) {
+      if (typeof (meta as { salt?: string }).salt === 'string' && meta.salt.length > 0) {
+        fixedSlots[id] = meta;
+      } else {
+        saltTouched = true;
+        fixedSlots[id] = { ...meta, salt: generateSlotSalt() };
+      }
+    }
+    if (saltTouched) result = { ...result, secretKeys: fixedSlots };
+  }
   if (!result.linkedOverrides) {
     result = { ...result, linkedOverrides: { requests: {}, environmentVars: {} } };
+  }
+  // priorityOrder: linked envs as first-class members. Pre-this-change the
+  // field was `string[]` (local env names only). Convert legacy entries to
+  // `{ kind: 'local', name }`. Already-new entries (objects with `.kind`)
+  // pass through. Defensive against rogue shapes:
+  //   - missing field entirely (older blob) → seed []
+  //   - non-array (corrupt) → seed []
+  //   - unrecognized entries → drop (better than crashing)
+  {
+    const rawOrder = result.environments.priorityOrder;
+    if (!Array.isArray(rawOrder)) {
+      // Field missing or corrupt — older blobs shipped without
+      // priorityOrder altogether. Seed an empty array so the UI's
+      // selectors and the resolver have something to iterate.
+      result = {
+        ...result,
+        environments: { ...result.environments, priorityOrder: [] },
+      };
+    } else {
+      let priorityTouched = false;
+      const next: EnvPriorityRef[] = [];
+      for (const entry of rawOrder as unknown[]) {
+        if (typeof entry === 'string') {
+          priorityTouched = true;
+          next.push({ kind: 'local', name: entry });
+        } else if (
+          entry &&
+          typeof entry === 'object' &&
+          'kind' in (entry as Record<string, unknown>) &&
+          ((entry as { kind?: string }).kind === 'local' ||
+            (entry as { kind?: string }).kind === 'linked')
+        ) {
+          next.push(entry as EnvPriorityRef);
+        } else {
+          priorityTouched = true;
+          // Drop garbage rather than crash. Pre-launch — no real user data
+          // to preserve.
+        }
+      }
+      if (priorityTouched) {
+        result = {
+          ...result,
+          environments: { ...result.environments, priorityOrder: next },
+        };
+      }
+    }
   }
   // Mock-server reshape (Mocks-redesign): legacy MockEndpoint had a flat
   // `{ status, headers, body, delayMs }` shape; the new shape is
@@ -96,6 +317,16 @@ function normalizeSyncedShape(synced: WorkspaceSynced): WorkspaceSynced {
       migratedServers[id] = { ...server, source: sourceUpgraded, endpoints };
     }
     if (mockTouched) result = { ...result, mockServers: migratedServers };
+  }
+  // Plans-on-synced normalization: post-migration, executionPlans is on
+  // synced. Run the same envPriorityOrder shape fix here so plans
+  // pulled from older Git docs are normalized just like local plans
+  // were prior to the move.
+  if (result.executionPlans && Object.keys(result.executionPlans).length > 0) {
+    const normalized = normalizeExecutionPlans(result.executionPlans);
+    if (normalized !== result.executionPlans) {
+      result = { ...result, executionPlans: normalized };
+    }
   }
   return result;
 }
@@ -209,9 +440,44 @@ export async function loadWorkspaceById(
   ]);
 
   if (synced && local && synced.workspaceId === local.workspaceId) {
-    const upgradedSynced = normalizeSyncedShape(synced);
+    let upgradedSynced = normalizeSyncedShape(synced);
+    // Migration: lift legacy `local.executionPlans` into
+    // `synced.executionPlans`. Plans now travel through Git so a
+    // collaborator cloning the repo sees them. Only runs when the
+    // synced doc has no plans yet AND the local doc has some — the
+    // common upgrade path. Once migrated, the local field is cleared
+    // below so subsequent hydrates skip the lift.
+    upgradedSynced = liftLegacyExecutionPlansToSynced(upgradedSynced, local.executionPlans);
+    // Backfill `canCreatePullRequests` onto a hydrated github session.
+    // Pre-feature sessions don't have the field; we conservatively assume
+    // `true` if the session has `repo` granted (covers PR ops on classic
+    // PATs — the dominant case) so existing users don't see a spurious
+    // warning until their next verify/probe runs. Sessions that genuinely
+    // can't create PRs will be re-classified on the next session/repo
+    // verify.
+    // Two backfills happen here:
+    //
+    //  1. canCreatePullRequests on each GitHub session — pre-feature
+    //     sessions don't have it; assume true if `repo` is granted so
+    //     users don't see a spurious warning until the next verify/probe.
+    //  2. The session shape itself changed from a single
+    //     `sessions.github: GitHubSession | null` to per-purpose
+    //     `sessions.github: { workspace, links }`. Old fixtures and any
+    //     IDB blobs from before the per-link split are normalized here so
+    //     the rest of the app can assume the new shape.
+    const hydratedGithub = hydrateGithubSessions(local.sessions);
     const upgradedLocal: WorkspaceLocal = {
       ...local,
+      sessions: { ...local.sessions, github: hydratedGithub },
+      // Backfill the seeded-scaffold sha (added with the empty-repo seed
+      // flow). Older workspaces hydrate with `null` — they predate the
+      // feature and have nothing to suppress.
+      seededWorkspaceSha: local.seededWorkspaceSha ?? null,
+      // Backfill retiredBranch (added with the post-merge / branch-deleted
+      // detection). Older workspaces hydrate with `null` — there's no
+      // historic retirement to surface, and the next refresh will populate
+      // it if the working branch turns out to be over.
+      retiredBranch: local.retiredBranch ?? null,
       linkedCollections: local.linkedCollections ?? {},
       globalContext: local.globalContext ?? {},
       mockRuntime: local.mockRuntime ?? { active: {} },
@@ -224,6 +490,13 @@ export async function loadWorkspaceById(
       // Snapshot ledger added in Phase 6. Older workspaces hydrate with
       // an empty ledger and the default 50 MB cap.
       snapshots: local.snapshots ?? { entries: [], maxBytes: 50 * 1024 * 1024 },
+      // Plans were moved from `WorkspaceLocal` to `WorkspaceSynced` in
+      // this version. The lift above (`liftLegacyExecutionPlansToSynced`)
+      // moved any legacy local plans into `synced.executionPlans`; we
+      // clear the local field here so subsequent hydrates don't keep
+      // re-lifting and the field stays empty going forward (kept in
+      // the type for one schema version for backwards compatibility).
+      executionPlans: {},
       // Backfill the workspace-bound font id (added in the
       // font-binding fix). Pre-fix the choice lived in localStorage;
       // first hydrate after the fix migrates that legacy value into
@@ -317,6 +590,12 @@ export async function deleteWorkspace(
   registry: WorkspaceRegistry;
 }> {
   const remaining = registry.workspaces.filter((w) => w.id !== workspaceId);
+  // Read the local doc BEFORE deleting it so we can enumerate the workspace's
+  // secret payload ids (`secretIndex.entries` keys + GitHub PAT tokenSecretId)
+  // and remove each from the shared secret vault. Otherwise stale ciphertext
+  // would linger in IDB after the workspace itself is gone.
+  const localToPurge = await readRecord<WorkspaceLocal>(LOCAL_STORE, workspaceId);
+  await purgeWorkspaceSecrets(localToPurge);
   await deleteWorkspaceRecords(workspaceId);
   if (remaining.length === 0) {
     // Last workspace deleted — seed a fresh empty one so the app keeps
@@ -375,6 +654,16 @@ export async function resetWorkspace(): Promise<{
   local: WorkspaceLocal;
   registry: WorkspaceRegistry;
 }> {
+  // Wipe every active workspace's secrets before re-seeding — `resetWorkspace`
+  // is the "blow it all away" path, so leaving stale vault payloads around
+  // would leak across the boundary.
+  const existingRegistry = await readRegistry();
+  if (existingRegistry) {
+    for (const w of existingRegistry.workspaces) {
+      const oldLocal = await readRecord<WorkspaceLocal>(LOCAL_STORE, w.id);
+      await purgeWorkspaceSecrets(oldLocal);
+    }
+  }
   const fresh = createEmptyWorkspace();
   const now = new Date().toISOString();
   const entry: WorkspaceRegistryEntry = {
@@ -500,9 +789,11 @@ export function createEmptyWorkspace(): { synced: WorkspaceSynced; local: Worksp
     executionPlans: {},
     history: { requestRuns: [], planRuns: [] },
     secretIndex: { entries: {} },
-    sessions: { github: null },
+    sessions: { github: { workspace: null, links: {} } },
     connectedRepo: null,
     workingBranch: null,
+    seededWorkspaceSha: null,
+    retiredBranch: null,
     sync: {
       lastPulledSnapshot: null,
       lastPulledSha: null,

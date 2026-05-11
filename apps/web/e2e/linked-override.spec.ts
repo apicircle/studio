@@ -102,6 +102,7 @@ async function seedLink(
               grantedScopes: ['repo'],
               addedAt: t0,
               lastVerifiedAt: t0,
+              canCreatePullRequests: true,
             },
           },
         },

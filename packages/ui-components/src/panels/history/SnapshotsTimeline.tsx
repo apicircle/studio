@@ -32,7 +32,9 @@ const TRIGGER_TONE: Record<WorkspaceSnapshotTrigger, string> = {
 export function SnapshotsTimeline() {
   const ledger = useWorkspaceStore((s) => s.local?.snapshots);
   const captureSnapshot = useWorkspaceStore((s) => s.captureSnapshot);
+  const deleteSnapshot = useWorkspaceStore((s) => s.deleteSnapshot);
   const [restoreTarget, setRestoreTarget] = useState<WorkspaceSnapshot | null>(null);
+  const [clearAllOpen, setClearAllOpen] = useState(false);
 
   if (!ledger) return null;
 
@@ -51,14 +53,27 @@ export function SnapshotsTimeline() {
             {formatBytes(totalBytes)} of {capLabel}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={() => captureSnapshot({ trigger: 'manual' })}
-          className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[11px] text-accent hover:bg-accent/20"
-        >
-          <Camera size={11} aria-hidden="true" />
-          Take snapshot now
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => captureSnapshot({ trigger: 'manual' })}
+            className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[11px] text-accent hover:bg-accent/20"
+          >
+            <Camera size={11} aria-hidden="true" />
+            Take snapshot now
+          </button>
+          {ledger.entries.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setClearAllOpen(true)}
+              aria-label="Clear all snapshots"
+              className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[11px] text-text-muted hover:text-text-primary"
+            >
+              <Trash2 size={11} aria-hidden="true" />
+              Clear all
+            </button>
+          )}
+        </div>
       </div>
       <p className="text-[11px] text-text-dim">
         Auto-captured before destructive ops (push, merge, linked-update, yank, deprecate). Restore
@@ -77,6 +92,23 @@ export function SnapshotsTimeline() {
           ))}
         </ul>
       )}
+      <ConfirmDialog
+        open={clearAllOpen}
+        title="Delete every snapshot?"
+        tone="danger"
+        confirmLabel="Delete all"
+        description={
+          <p>
+            Removes all {ledger.entries.length} snapshot{ledger.entries.length === 1 ? '' : 's'}.
+            This can&apos;t be undone. The workspace itself isn&apos;t affected.
+          </p>
+        }
+        onCancel={() => setClearAllOpen(false)}
+        onConfirm={() => {
+          for (const entry of ledger.entries) deleteSnapshot(entry.id);
+          setClearAllOpen(false);
+        }}
+      />
       <ConfirmDialog
         open={restoreTarget !== null}
         title="Restore workspace snapshot"

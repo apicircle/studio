@@ -8,7 +8,7 @@
 
 import { useMemo } from 'react';
 import type { ResolutionScope } from '@apicircle/core';
-import type { Request as ApiRequest } from '@apicircle/shared';
+import type { EnvPriorityRef, Request as ApiRequest } from '@apicircle/shared';
 import { useWorkspaceStore } from '../store/workspaceStore';
 
 const SECRET_MASK = '••••';
@@ -18,7 +18,7 @@ interface ScopeOptions {
    * Override the workspace's `priorityOrder` (e.g. an execution plan's
    * `envPriorityOrder`). Empty/undefined means "use the workspace order".
    */
-  envPriorityOrderOverride?: readonly string[];
+  envPriorityOrderOverride?: readonly EnvPriorityRef[];
 }
 
 export function useVariableScope(
@@ -29,6 +29,7 @@ export function useVariableScope(
   const workspacePriorityOrder = useWorkspaceStore(
     (s) => s.synced?.environments.priorityOrder ?? [],
   );
+  const linkedCollections = useWorkspaceStore((s) => s.local?.linkedCollections ?? {});
   const globalContext = useWorkspaceStore((s) => s.local?.globalContext ?? {});
   const secretEntries = useWorkspaceStore((s) => s.local?.secretIndex.entries ?? {});
 
@@ -54,8 +55,16 @@ export function useVariableScope(
       return out;
     };
 
-    const priorityOrder = override && override.length > 0 ? [...override] : workspacePriorityOrder;
-    const priorityEnvs = priorityOrder.map((name) => envToMap(environments[name]));
+    const refs = override && override.length > 0 ? override : workspacePriorityOrder;
+    // Resolve each ref to its source env. Linked refs pull from the cached
+    // snapshot in `local.linkedCollections`; missing snapshots (link not
+    // refreshed yet) yield an empty layer rather than throwing — autocomplete
+    // is best-effort.
+    const priorityEnvs = refs.map((ref) => {
+      if (ref.kind === 'local') return envToMap(environments[ref.name]);
+      const snapshot = linkedCollections[ref.linkedWorkspaceId];
+      return envToMap(snapshot?.environments.items[ref.envName]);
+    });
 
     const secrets: Record<string, string> = {};
     for (const entry of Object.values(secretEntries)) {
@@ -63,7 +72,15 @@ export function useVariableScope(
     }
 
     return { contextVars: ctx, activeEnv: {}, priorityEnvs, secrets };
-  }, [environments, workspacePriorityOrder, override, request, globalContext, secretEntries]);
+  }, [
+    environments,
+    workspacePriorityOrder,
+    linkedCollections,
+    override,
+    request,
+    globalContext,
+    secretEntries,
+  ]);
 }
 
 /**
@@ -81,7 +98,7 @@ export function useActiveVariableScope(): ResolutionScope {
   );
   const activePlanId = useWorkspaceStore((s) => s.activePlanId);
   const planEnvOrder = useWorkspaceStore((s) =>
-    activePlanId ? (s.local?.executionPlans[activePlanId]?.envPriorityOrder ?? []) : [],
+    activePlanId ? (s.synced?.executionPlans?.[activePlanId]?.envPriorityOrder ?? []) : [],
   );
 
   const requestForScope = activePanel === 'editor' ? editorRequest : null;

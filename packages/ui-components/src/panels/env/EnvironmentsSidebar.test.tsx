@@ -43,7 +43,9 @@ describe('EnvironmentsSidebar', () => {
     await userEvent.click(
       within(list).getByRole('checkbox', { name: /Add dev from global environment layer/i }),
     );
-    expect(useWorkspaceStore.getState().synced!.environments.priorityOrder).toEqual(['dev']);
+    expect(useWorkspaceStore.getState().synced!.environments.priorityOrder).toEqual([
+      { kind: 'local', name: 'dev' },
+    ]);
     await userEvent.click(
       within(list).getByRole('checkbox', { name: /Remove dev from global environment layer/i }),
     );
@@ -86,14 +88,17 @@ describe('EnvironmentsSidebar', () => {
     });
     const list = screen.getByRole('list', { name: 'Environments' });
     const items = within(list).getAllByRole('listitem');
-    const devRow = items.find((el) => el.getAttribute('data-env-name') === 'dev')!;
-    const prodRow = items.find((el) => el.getAttribute('data-env-name') === 'prod')!;
+    // Composite key now identifies each row — `local:<name>` for local
+    // envs. The sidebar mixes linked envs into the same list, so the
+    // selector needs the kind prefix to disambiguate.
+    const devRow = items.find((el) => el.getAttribute('data-env-key') === 'local:dev')!;
+    const prodRow = items.find((el) => el.getAttribute('data-env-key') === 'local:prod')!;
     fireEvent.dragStart(prodRow);
     fireEvent.dragOver(devRow);
     fireEvent.drop(devRow);
     expect(useWorkspaceStore.getState().synced!.environments.priorityOrder).toEqual([
-      'prod',
-      'dev',
+      { kind: 'local', name: 'prod' },
+      { kind: 'local', name: 'dev' },
     ]);
   });
 

@@ -19,11 +19,15 @@ describe('WorkspaceSidebar', () => {
           ...local,
           sessions: {
             github: {
-              accountLogin: 'devaprakash',
-              tokenSecretId: 'sec_1',
-              grantedScopes: ['repo'],
-              addedAt: new Date().toISOString(),
-              lastVerifiedAt: null,
+              workspace: {
+                accountLogin: 'devaprakash',
+                tokenSecretId: 'sec_1',
+                grantedScopes: ['repo'],
+                addedAt: new Date().toISOString(),
+                lastVerifiedAt: null,
+                canCreatePullRequests: true,
+              },
+              links: {},
             },
           },
           workingBranch: {

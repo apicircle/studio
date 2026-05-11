@@ -12,7 +12,12 @@ function makeLink(): LinkedWorkspace {
     id: 'lw-1',
     kind: 'public',
     name: 'Payments',
-    source: { provider: 'github', repoFullName: 'org/payments', branch: 'main' },
+    source: {
+      provider: 'github',
+      repoFullName: 'org/payments',
+      branch: 'main',
+      sessionMode: 'workspace' as const,
+    },
     scope: ['environments'],
     pinnedVersion: '1.0.0',
     updatePolicy: 'manual',
@@ -38,7 +43,7 @@ function makeSnapshotWithEnv(): LinkedSnapshot {
         },
       },
       activeName: 'dev',
-      priorityOrder: ['dev'],
+      priorityOrder: [{ kind: 'local', name: 'dev' }],
     },
   };
 }

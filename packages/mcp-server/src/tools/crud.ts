@@ -264,12 +264,38 @@ export const environmentSetActiveTool: AnyToolDef = {
 export const environmentSetPriorityTool: AnyToolDef = {
   name: 'environment.set_priority',
   description:
-    'Replace the global environment priority order (highest priority first). Names not in the list keep their current relative order at the end of the priority list.',
-  inputSchema: z.object({ order: z.array(z.string()) }),
+    'Replace the global environment priority order (highest priority first). Strings are interpreted as local env names. To target a linked env, pass `{ kind: "linked", linkedWorkspaceId, envName }` instead.',
+  inputSchema: z.object({
+    order: z.array(
+      z.union([
+        z.string(),
+        z.object({
+          kind: z.literal('local'),
+          name: z.string(),
+        }),
+        z.object({
+          kind: z.literal('linked'),
+          linkedWorkspaceId: z.string(),
+          envName: z.string(),
+        }),
+      ]),
+    ),
+  }),
   async handler(input, ctx) {
+    // Normalize the heterogeneous tool-input array to EnvPriorityRef[].
+    // Bare strings are convenience syntax for local envs — the dominant
+    // case for MCP callers — so we keep accepting them rather than
+    // forcing every caller to spell out `{kind:'local', ...}`.
+    const order = (
+      input.order as Array<
+        | string
+        | { kind: 'local'; name: string }
+        | { kind: 'linked'; linkedWorkspaceId: string; envName: string }
+      >
+    ).map((entry) => (typeof entry === 'string' ? { kind: 'local' as const, name: entry } : entry));
     const out = await ctx.workspace.apply({
       kind: 'environment.setPriority',
-      order: input.order,
+      order,
     });
     return { changedIds: out.changedIds };
   },

@@ -1,5 +1,11 @@
 export { generateId } from './ids';
 export { formatBytes, utf8ByteLength } from './format';
+export {
+  envPriorityKey,
+  parseEnvPriorityKey,
+  envPriorityRefEqual,
+  envPriorityDisplayName,
+} from './envPriority';
 export { RUN_BODY_PREVIEW_LIMIT } from './types';
 export { REQUEST_AUTH_TYPES, defaultAuthFor, normalizeAuth } from './authDefaults';
 export type { RequestAuthType } from './authDefaults';
@@ -51,12 +57,14 @@ export type {
   FolderNode,
   Environment,
   EnvironmentVariable,
+  EnvPriorityRef,
   SecretKeyMeta,
   ExecutionPlan,
   RequestRun,
   PlanRun,
   ConnectedRepo,
   WorkingBranch,
+  RetiredBranch,
   RequestOverride,
   RequestOverridePatch,
   EnvironmentVariableOverride,

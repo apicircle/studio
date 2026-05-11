@@ -24,7 +24,7 @@ export function ExecutionSidebarActions() {
 }
 
 export function ExecutionSidebar() {
-  const plans = useWorkspaceStore((s) => s.local?.executionPlans ?? {});
+  const plans = useWorkspaceStore((s) => s.synced?.executionPlans ?? {});
   const activePlanId = useWorkspaceStore((s) => s.activePlanId);
   const setActivePlanId = useWorkspaceStore((s) => s.setActivePlanId);
   const duplicatePlan = useWorkspaceStore((s) => s.duplicatePlan);

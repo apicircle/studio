@@ -49,7 +49,12 @@ function makeLink(id: string, overrides: Partial<LinkedWorkspace> = {}): LinkedW
     id,
     kind: 'public',
     name: `Link ${id}`,
-    source: { provider: 'github', repoFullName: `org/${id}`, branch: 'main' },
+    source: {
+      provider: 'github',
+      repoFullName: `org/${id}`,
+      branch: 'main',
+      sessionMode: 'workspace' as const,
+    },
     scope: ['collections'],
     pinnedVersion: '1.0.0',
     updatePolicy: 'manual',
@@ -124,6 +129,43 @@ describe('LinkedWorkspaceTreeSection', () => {
       linkedWorkspaceId: 'lw-1',
       itemId: 'src-r1',
     });
+  });
+
+  it('renders the source-side folder auth shield when a linked folder has its own auth', async () => {
+    const synced = useWorkspaceStore.getState().synced!;
+    const local = useWorkspaceStore.getState().local!;
+    const folder = {
+      id: 'src-f1',
+      name: 'Authenticated APIs',
+      parentId: null,
+      auth: { type: 'bearer' as const, token: '{{TOKEN}}' },
+    };
+    const req = makeRequest('src-r1', 'Inside auth folder');
+    req.folderId = folder.id;
+    const snapshot: LinkedSnapshot = {
+      workspaceName: 'Source',
+      pulledAt: T0,
+      ref: 'v1.0.0',
+      collections: {
+        tree: { id: 'r', type: 'root', children: [{ kind: 'folder', id: folder.id }] },
+        requests: { [req.id]: req },
+        folders: { [folder.id]: folder },
+      },
+      environments: { items: {}, activeName: null, priorityOrder: [] },
+    };
+    useWorkspaceStore.setState({
+      synced: {
+        ...synced,
+        linkedWorkspaces: { 'lw-1': makeLink('lw-1', { name: 'Payments' }) },
+      },
+      local: { ...local, linkedCollections: { 'lw-1': snapshot } },
+    });
+    render(<LinkedWorkspaceTreeSection />);
+    await userEvent.click(screen.getByRole('button', { name: /Expand linked workspace Payments/ }));
+    // Shield carries an aria-label that names the folder's auth type so
+    // screen-reader users see the cascade context, matching how the
+    // local tree's shield works.
+    expect(screen.getByLabelText(/Source-side folder auth: bearer/)).toBeInTheDocument();
   });
 
   it('shows a "modified" dot on linked requests with an override', async () => {

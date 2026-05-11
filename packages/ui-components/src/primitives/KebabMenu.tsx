@@ -209,8 +209,25 @@ export function KebabMenu({
               disabled={item.disabled}
               onClick={() => {
                 if (item.disabled) return;
+                // Run the action first so it can synchronously commit state
+                // that mounts a follow-up element (inline rename/create
+                // input, modal, etc). Then close the menu. Focus return is
+                // conditional — see below.
                 item.onSelect();
-                closeAndReturnFocus();
+                setOpen(false);
+                // Only return focus to the trigger if the action didn't
+                // park focus somewhere meaningful. If onSelect mounted a
+                // dialog or auto-focused input, document.activeElement is
+                // already that target; reclaiming focus to the kebab would
+                // blur and dismiss it (this exact bug surfaced in the
+                // editor sidebar's New request / New folder flow). After
+                // setOpen(false) the menuitem unmounts, so a no-op action
+                // shows up here as activeElement === document.body.
+                requestAnimationFrame(() => {
+                  if (document.activeElement === document.body) {
+                    triggerRef.current?.focus();
+                  }
+                });
               }}
               title={item.title}
               className={cn(

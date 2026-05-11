@@ -219,6 +219,7 @@ async function seedLink(
                   grantedScopes: ['repo'],
                   addedAt: t0,
                   lastVerifiedAt: t0,
+                  canCreatePullRequests: true,
                 },
               },
         },
@@ -737,9 +738,15 @@ test.describe('A.4 — Update preview flow', () => {
     expect(after.url).toBe('https://my-fork.test/r1');
   });
 
-  test('byte-equal source produces an empty preview with the "nothing to apply" empty state', async ({
+  test('byte-equal source with stale pin offers a one-click "Update pin" (no merge needed)', async ({
     app,
   }) => {
+    // Common post-refresh state: pin lags ledger.currentVersion AND the
+    // source's bytes are identical to what the consumer already has —
+    // because we Apply'd v2 once before the source published a v2 that
+    // happens to match v1, OR (in this test) because the ledger was
+    // bumped without content changing. Either way the modal lets the
+    // user advance the pin in one click.
     await setupRealSession(app);
     const r = makeRequest('r1', { name: 'r1' });
     await seedLink(app, {
@@ -762,8 +769,12 @@ test.describe('A.4 — Update preview flow', () => {
     await app.getByRole('button', { name: /^Link Workspace$/ }).click();
     await app.getByRole('button', { name: /Review update.*v2\.0\.0/ }).click();
     const dialog = app.getByRole('dialog', { name: /Update Source workspace.*v2\.0\.0/ });
-    await expect(dialog.getByText(/Nothing to apply/)).toBeVisible();
-    await expect(dialog.getByRole('button', { name: 'Apply update' })).toBeDisabled();
+    // The pin-only empty state: explanatory message + enabled "Update
+    // pin to v2.0.0" button. The user shouldn't be stuck.
+    await expect(dialog.getByText(/No content changes between/)).toBeVisible();
+    const updatePin = dialog.getByRole('button', { name: /Update pin/ });
+    await expect(updatePin).toBeEnabled();
+    await expect(updatePin).toHaveText(/Update pin to v2\.0\.0/);
   });
 });
 
@@ -912,5 +923,202 @@ test.describe('A.5 — Overrides live on synced (precondition for push round-tri
     expect(shape.reqOverrideCount).toBe(1);
     expect(shape.envOverrideCount).toBe(1);
     expect(shape.localHasLegacyOverrides).toBe(false);
+  });
+});
+
+// ===========================================================================
+// Lifecycle audit — Refresh / Preview / Apply invariants
+// ===========================================================================
+//
+// Locks down the contract:
+//   - Refresh updates ledger only (snapshot stays at last Apply / link).
+//   - Preview re-fetches and diffs against the cached snapshot — so
+//     post-refresh there's a real diff visible (not byte-equal).
+//   - Apply replaces snapshot, advances pin, refreshes ledger atomically.
+//   - After Apply, refreshing again is a no-op — no fake "Update available"
+//     badge resurrects.
+
+test.describe('Lifecycle audit — Refresh / Preview / Apply', () => {
+  async function mockSource(
+    app: Page,
+    snapshot: {
+      workspaceName: string;
+      releases: { self: { currentVersion: string } | null };
+    } & Record<string, unknown>,
+  ): Promise<void> {
+    const remoteJson = JSON.stringify(snapshot);
+    const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
+    await app.unroute('https://api.github.com/repos/a/b/contents/workspace.json**').catch(() => {
+      /* may not be routed yet — fine */
+    });
+    await app.route('https://api.github.com/repos/a/b/contents/workspace.json**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'application/json', ...corsHeaders },
+        body: JSON.stringify({
+          type: 'file',
+          path: 'workspace.json',
+          sha: 'remote-sha',
+          size: remoteJson.length,
+          content: base64,
+          encoding: 'base64',
+        }),
+      });
+    });
+  }
+
+  test('Refresh updates ledger only — snapshot + pin frozen until Apply', async ({ app }) => {
+    await setupRealSession(app);
+
+    // Link at v1.0.0 with a single request whose URL is "/v1".
+    const v1Request = makeRequest('r1', { name: 'r1', url: 'https://api.source.test/v1' });
+    await seedLink(app, {
+      snapshot: makeSnapshot({ requests: [v1Request], ref: 'v1.0.0' }),
+      pinnedVersion: '1.0.0',
+      perLinkLedger: { versions: [{ version: '1.0.0' }], currentVersion: '1.0.0' },
+    });
+
+    // Source publishes v2.0.0 with a different URL.
+    await mockSource(app, {
+      workspaceName: 'Source workspace',
+      collections: {
+        tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
+        requests: {
+          r1: makeRequest('r1', { name: 'r1', url: 'https://api.source.test/v2' }),
+        },
+        folders: {},
+      },
+      environments: { items: {}, activeName: null, priorityOrder: [] },
+      releases: {
+        self: {
+          versions: [{ version: '1.0.0' }, { version: '2.0.0' }],
+          currentVersion: '2.0.0',
+        },
+      },
+    });
+
+    // Click "Refresh ledger".
+    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+    await app.getByRole('button', { name: /Refresh ledger/ }).click();
+
+    // Update Available badge fires — pin lags currentVersion now.
+    await expect(app.getByText(/update available · v2\.0\.0/)).toBeVisible();
+
+    // Snapshot still at v1 (refresh doesn't touch it). Read directly.
+    const snapshotUrl = await readSyncedSlice<string>(app, ((s) => {
+      const local = (s as unknown as { local: { linkedCollections: Record<string, unknown> } })
+        .local;
+      const snap = local.linkedCollections['link-1'] as {
+        collections: { requests: Record<string, { url: string }> };
+      };
+      return snap.collections.requests.r1.url;
+    }) as never);
+    expect(snapshotUrl).toBe('https://api.source.test/v1');
+
+    // Pin still at 1.0.0.
+    const pinAfterRefresh = await readSyncedSlice<string | null>(app, (s) => {
+      const link = (
+        s as unknown as { synced: { linkedWorkspaces: Record<string, { pinnedVersion: string }> } }
+      ).synced.linkedWorkspaces['link-1'];
+      return link.pinnedVersion ?? null;
+    });
+    expect(pinAfterRefresh).toBe('1.0.0');
+  });
+
+  test('Apply advances pin + replaces snapshot + refreshes ledger; refresh-after is a no-op', async ({
+    app,
+  }) => {
+    await setupRealSession(app);
+    await seedLink(app, {
+      snapshot: makeSnapshot({
+        requests: [makeRequest('r1', { name: 'r1', url: 'https://api.source.test/v1' })],
+        ref: 'v1.0.0',
+      }),
+      pinnedVersion: '1.0.0',
+      perLinkLedger: { versions: [{ version: '1.0.0' }], currentVersion: '1.0.0' },
+    });
+
+    const v2Snapshot = {
+      workspaceName: 'Source workspace',
+      collections: {
+        tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
+        requests: {
+          r1: makeRequest('r1', { name: 'r1', url: 'https://api.source.test/v2' }),
+        },
+        folders: {},
+      },
+      environments: { items: {}, activeName: null, priorityOrder: [] },
+      releases: {
+        self: {
+          versions: [{ version: '1.0.0' }, { version: '2.0.0' }],
+          currentVersion: '2.0.0',
+        },
+      },
+    };
+
+    await mockSource(app, v2Snapshot);
+    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+    await app.getByRole('button', { name: /Refresh ledger/ }).click();
+    await app.getByRole('button', { name: /Review update.*v2\.0\.0/ }).click();
+    const dialog = app.getByRole('dialog', { name: /Update Source workspace.*v2\.0\.0/ });
+    // The diff is real (snapshot at v1, target at v2) — entries appear.
+    await expect(dialog.getByText(/Source updated.*adopt|Both changed/)).toBeVisible();
+    await dialog.getByRole('button', { name: 'Apply update' }).click();
+    await expect(dialog).not.toBeVisible();
+
+    // Post-apply: pin at 2.0.0, snapshot updated to v2 URL, ledger at 2.0.0.
+    const postApply = await readSyncedSlice<{ pin: string; url: string; ledger: string | null }>(
+      app,
+      ((s) => {
+        const synced = (
+          s as unknown as {
+            synced: {
+              linkedWorkspaces: Record<string, { pinnedVersion: string }>;
+              releases: { perLink: Record<string, { currentVersion: string | null }> };
+            };
+            local: { linkedCollections: Record<string, unknown> };
+          }
+        ).synced;
+        const local = (s as unknown as { local: { linkedCollections: Record<string, unknown> } })
+          .local;
+        return {
+          pin: synced.linkedWorkspaces['link-1'].pinnedVersion,
+          url: (
+            local.linkedCollections['link-1'] as {
+              collections: { requests: Record<string, { url: string }> };
+            }
+          ).collections.requests.r1.url,
+          ledger: synced.releases.perLink['link-1'].currentVersion,
+        };
+      }) as never,
+    );
+    expect(postApply.pin).toBe('2.0.0');
+    expect(postApply.url).toBe('https://api.source.test/v2');
+    expect(postApply.ledger).toBe('2.0.0');
+
+    // Update-available chip is gone.
+    await expect(app.getByText(/update available · v/)).toHaveCount(0);
+
+    // Refresh again — source still at 2.0.0 — should be a no-op.
+    await app.getByRole('button', { name: /Refresh ledger/ }).click();
+    const afterSecondRefresh = await readSyncedSlice<{ pin: string; ledger: string | null }>(app, ((
+      s,
+    ) => {
+      const synced = (
+        s as unknown as {
+          synced: {
+            linkedWorkspaces: Record<string, { pinnedVersion: string }>;
+            releases: { perLink: Record<string, { currentVersion: string | null }> };
+          };
+        }
+      ).synced;
+      return {
+        pin: synced.linkedWorkspaces['link-1'].pinnedVersion,
+        ledger: synced.releases.perLink['link-1'].currentVersion,
+      };
+    }) as never);
+    expect(afterSecondRefresh.pin).toBe('2.0.0');
+    expect(afterSecondRefresh.ledger).toBe('2.0.0');
+    await expect(app.getByText(/update available · v/)).toHaveCount(0);
   });
 });

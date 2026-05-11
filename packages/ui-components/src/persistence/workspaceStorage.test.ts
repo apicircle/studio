@@ -54,7 +54,8 @@ describe('workspaceStorage — createEmptyWorkspace', () => {
 
   it('initializes the local doc with the sample request selected and clean sync snapshot', () => {
     const { synced, local } = createEmptyWorkspace();
-    expect(local.sessions.github).toBeNull();
+    expect(local.sessions.github.workspace).toBeNull();
+    expect(local.sessions.github.links).toEqual({});
     expect(local.workingBranch).toBeNull();
     expect(local.sync).toEqual({
       lastPulledSnapshot: null,
@@ -282,5 +283,166 @@ describe('workspaceStorage — saveSynced / saveLocal / saveBoth (multi-workspac
     const reloaded = await loadWorkspace();
     expect(reloaded.synced.workspaceName).toBe('Both');
     expect(reloaded.local.ui.themeId).toBe('paper-light');
+  });
+});
+
+describe('workspaceStorage — executionPlans local→synced migration', () => {
+  it('lifts legacy local.executionPlans into synced.executionPlans on hydrate', async () => {
+    // Pre-migration shape: plan lives on local, synced has none.
+    await freshState();
+    const seed = createEmptyWorkspace();
+    const legacyLocal = {
+      ...seed.local,
+      executionPlans: {
+        'plan-legacy': {
+          id: 'plan-legacy',
+          name: 'Legacy plan',
+          steps: [{ requestId: 'r-1' }],
+          envPriorityOrder: [],
+          createdAt: 't',
+          updatedAt: 't',
+        },
+      },
+    };
+    const syncedNoPlans = { ...seed.synced };
+    delete (syncedNoPlans as Partial<typeof seed.synced>).executionPlans;
+    await writeBoth(syncedNoPlans, legacyLocal);
+    await writeRegistry({
+      schemaVersion: 1,
+      activeWorkspaceId: seed.synced.workspaceId,
+      workspaces: [
+        {
+          id: seed.synced.workspaceId,
+          name: 'W',
+          createdAt: 't',
+          lastOpenedAt: 't',
+        },
+      ],
+    });
+
+    const reloaded = await loadWorkspace();
+    // The plan migrated up to synced.
+    expect(reloaded.synced.executionPlans?.['plan-legacy']).toBeDefined();
+    expect(reloaded.synced.executionPlans?.['plan-legacy'].name).toBe('Legacy plan');
+    // Local field is cleared so subsequent hydrates don't re-lift.
+    expect(reloaded.local.executionPlans).toEqual({});
+  });
+
+  it('preserves synced.executionPlans when both sides have plans (synced wins, no overwrite)', async () => {
+    await freshState();
+    const seed = createEmptyWorkspace();
+    const syncedWithPlan = {
+      ...seed.synced,
+      executionPlans: {
+        'plan-from-git': {
+          id: 'plan-from-git',
+          name: 'Pulled from main',
+          steps: [],
+          envPriorityOrder: [],
+          createdAt: 't',
+          updatedAt: 't',
+        },
+      },
+    };
+    const localWithStalePlan = {
+      ...seed.local,
+      executionPlans: {
+        'plan-stale': {
+          id: 'plan-stale',
+          name: 'Stale device-local plan',
+          steps: [],
+          envPriorityOrder: [],
+          createdAt: 't',
+          updatedAt: 't',
+        },
+      },
+    };
+    await writeBoth(syncedWithPlan, localWithStalePlan);
+    await writeRegistry({
+      schemaVersion: 1,
+      activeWorkspaceId: seed.synced.workspaceId,
+      workspaces: [
+        {
+          id: seed.synced.workspaceId,
+          name: 'W',
+          createdAt: 't',
+          lastOpenedAt: 't',
+        },
+      ],
+    });
+
+    const reloaded = await loadWorkspace();
+    // The synced doc wins — its plan is preserved verbatim, the
+    // stale local plan is discarded so it can't ghost-revive.
+    expect(reloaded.synced.executionPlans).toEqual({
+      'plan-from-git': syncedWithPlan.executionPlans['plan-from-git'],
+    });
+    expect(reloaded.synced.executionPlans?.['plan-stale']).toBeUndefined();
+    expect(reloaded.local.executionPlans).toEqual({});
+  });
+
+  it('seeds synced.executionPlans = {} when neither side has plans', async () => {
+    await freshState();
+    const seed = createEmptyWorkspace();
+    // Strip executionPlans from synced to simulate an older Git doc.
+    const syncedNoPlans = { ...seed.synced };
+    delete (syncedNoPlans as Partial<typeof seed.synced>).executionPlans;
+    await writeBoth(syncedNoPlans, { ...seed.local, executionPlans: {} });
+    await writeRegistry({
+      schemaVersion: 1,
+      activeWorkspaceId: seed.synced.workspaceId,
+      workspaces: [
+        {
+          id: seed.synced.workspaceId,
+          name: 'W',
+          createdAt: 't',
+          lastOpenedAt: 't',
+        },
+      ],
+    });
+    const reloaded = await loadWorkspace();
+    // Field is now present + empty, so consumers can rely on it.
+    expect(reloaded.synced.executionPlans).toEqual({});
+  });
+
+  it('normalizes legacy `string[]` envPriorityOrder entries during the lift', async () => {
+    await freshState();
+    const seed = createEmptyWorkspace();
+    const syncedNoPlans = { ...seed.synced };
+    delete (syncedNoPlans as Partial<typeof seed.synced>).executionPlans;
+    // Legacy plan with a `string[]` envPriorityOrder — pre-EnvPriorityRef
+    // shape. The migration should normalize it to `EnvPriorityRef[]`
+    // alongside lifting it onto synced.
+    const legacyLocal = {
+      ...seed.local,
+      executionPlans: {
+        'plan-old': {
+          id: 'plan-old',
+          name: 'Old shape',
+          steps: [],
+          envPriorityOrder: ['dev', 'prod'] as unknown as never,
+          createdAt: 't',
+          updatedAt: 't',
+        },
+      },
+    };
+    await writeBoth(syncedNoPlans, legacyLocal);
+    await writeRegistry({
+      schemaVersion: 1,
+      activeWorkspaceId: seed.synced.workspaceId,
+      workspaces: [
+        {
+          id: seed.synced.workspaceId,
+          name: 'W',
+          createdAt: 't',
+          lastOpenedAt: 't',
+        },
+      ],
+    });
+    const reloaded = await loadWorkspace();
+    expect(reloaded.synced.executionPlans?.['plan-old'].envPriorityOrder).toEqual([
+      { kind: 'local', name: 'dev' },
+      { kind: 'local', name: 'prod' },
+    ]);
   });
 });

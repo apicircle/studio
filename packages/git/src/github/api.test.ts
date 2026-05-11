@@ -743,6 +743,79 @@ describe('GitHubClient.createRelease', () => {
   });
 });
 
+describe('GitHubClient.getTagSha', () => {
+  it('returns the resolved SHA when the tag exists', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({ ref: 'refs/tags/v1.0.0', object: { sha: 'deadbeef' } }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const sha = await client.getTagSha('tok', 'me', 'api', 'v1.0.0');
+    expect(sha).toBe('deadbeef');
+    const [url] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe('https://api.github.com/repos/me/api/git/refs/tags/v1.0.0');
+  });
+
+  it('returns null on 404 (tag missing) so callers can branch on existence', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({ message: 'Not Found' }, { status: 404 }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const sha = await client.getTagSha('tok', 'me', 'api', 'v9.9.9');
+    expect(sha).toBeNull();
+  });
+});
+
+describe('GitHubClient.deleteRef', () => {
+  it('issues a DELETE against the bare ref suffix', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () => new Response(null, { status: 204 }));
+    const client = new GitHubClient({ fetchImpl });
+    await client.deleteRef('tok', 'me', 'api', 'tags/v1.0.0');
+    const [url, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe('https://api.github.com/repos/me/api/git/refs/tags/v1.0.0');
+    expect((init as RequestInit).method).toBe('DELETE');
+  });
+});
+
+describe('GitHubClient.listRepoTopics', () => {
+  it('returns the topic names array', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({ names: ['apicircle', 'payments'] }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const topics = await client.listRepoTopics('tok', 'me', 'api');
+    expect(topics).toEqual(['apicircle', 'payments']);
+    const [url] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe('https://api.github.com/repos/me/api/topics');
+  });
+
+  it('returns [] when the response shape is unexpected', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () => jsonResponse({ names: null }));
+    const client = new GitHubClient({ fetchImpl });
+    const topics = await client.listRepoTopics('tok', 'me', 'api');
+    expect(topics).toEqual([]);
+  });
+});
+
+describe('GitHubClient.setRepoTopics', () => {
+  it('PUTs the full topic list and returns the persisted result', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({ names: ['apicircle', 'payments', 'graphql'] }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const persisted = await client.setRepoTopics('tok', 'me', 'api', [
+      'apicircle',
+      'payments',
+      'graphql',
+    ]);
+    expect(persisted).toEqual(['apicircle', 'payments', 'graphql']);
+    const [url, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe('https://api.github.com/repos/me/api/topics');
+    expect((init as RequestInit).method).toBe('PUT');
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body).toEqual({ names: ['apicircle', 'payments', 'graphql'] });
+  });
+});
+
 describe('GitHubClient.getContents', () => {
   it('decodes base64 content as UTF-8 and returns the path/sha/size', async () => {
     const fetchImpl: typeof fetch = vi.fn(async () =>

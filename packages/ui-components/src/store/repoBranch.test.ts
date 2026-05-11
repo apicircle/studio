@@ -107,6 +107,9 @@ describe('workspaceStore — repo + working branch (P4.2)', () => {
               object: { sha: 'sha-first' },
             },
           },
+          // first-pull-prompt probe in createWorkingBranch — 404 = no remote
+          // workspace.json on this fresh branch.
+          { status: 404, body: { message: 'Not Found' } },
           repoResponse({ owner: 'me', name: 'second' }),
         ]),
       );
@@ -128,6 +131,8 @@ describe('workspaceStore — repo + working branch (P4.2)', () => {
           repoResponse({ owner: 'me', name: 'api' }),
           { body: { name: 'main', commit: { sha: 'sha1' } } },
           { body: { ref: 'refs/heads/apicircle/wb-abc', object: { sha: 'sha1' } } },
+          // first-pull-prompt probe — empty branch
+          { status: 404, body: { message: 'Not Found' } },
           repoResponse({ owner: 'me', name: 'api' }),
         ]),
       );
@@ -259,7 +264,7 @@ describe('workspaceStore — repo + working branch (P4.2)', () => {
       await useWorkspaceStore.getState().connectRepo('me', 'api');
       await useWorkspaceStore.getState().disconnectGitHubSession();
       const local = useWorkspaceStore.getState().local!;
-      expect(local.sessions.github).toBeNull();
+      expect(local.sessions.github.workspace).toBeNull();
       expect(local.connectedRepo).toBeNull();
       expect(local.workingBranch).toBeNull();
     });

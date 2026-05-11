@@ -11,6 +11,10 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/coverage/**',
       '**/.turbo/**',
+      // Git worktrees created by Claude Code agents mirror the entire repo
+      // under .claude/worktrees/. Linting them duplicates every error and
+      // confuses scope (worktree paths don't match our scripts/** override).
+      '.claude/worktrees/**',
       // Build / test runner configs live outside any tsconfig — type-aware
       // linting can't resolve them. They're small and well-known patterns.
       '**/*.config.{ts,js}',

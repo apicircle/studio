@@ -41,13 +41,13 @@ describe('ExecutionPanel — plan editor', () => {
     const planId = useWorkspaceStore.getState().addPlan('orig');
 
     render(<ExecutionPanel />);
-    expect(useWorkspaceStore.getState().local!.executionPlans[planId].name).toBe('orig');
+    expect(useWorkspaceStore.getState().synced!.executionPlans![planId].name).toBe('orig');
 
     // Rename via the input.
     const nameInput = screen.getByLabelText('Plan name');
     await user.tripleClick(nameInput);
     await user.keyboard('Smoke');
-    expect(useWorkspaceStore.getState().local!.executionPlans[planId].name).toBe('Smoke');
+    expect(useWorkspaceStore.getState().synced!.executionPlans![planId].name).toBe('Smoke');
 
     // Open the multi-select picker and add both requests in one shot. Verifies
     // bulk-add: a single Add steps click commits all selections.
@@ -55,7 +55,7 @@ describe('ExecutionPanel — plan editor', () => {
     await user.click(screen.getByRole('checkbox', { name: 'Select first' }));
     await user.click(screen.getByRole('checkbox', { name: 'Select second' }));
     await user.click(screen.getByRole('button', { name: /Add 2 steps/ }));
-    expect(useWorkspaceStore.getState().local!.executionPlans[planId].steps).toHaveLength(2);
+    expect(useWorkspaceStore.getState().synced!.executionPlans![planId].steps).toHaveLength(2);
 
     // Move-up disabled on first row, move-down disabled on last.
     const moveUpButtons = screen.getAllByRole('button', { name: 'Move step up' });
@@ -64,16 +64,16 @@ describe('ExecutionPanel — plan editor', () => {
     const moveDownButtons = screen.getAllByRole('button', { name: 'Move step down' });
     const beforeOrder = useWorkspaceStore
       .getState()
-      .local!.executionPlans[planId].steps.map((s) => s.requestId);
+      .synced!.executionPlans![planId].steps.map((s) => s.requestId);
     await user.click(moveDownButtons[0]);
     const afterOrder = useWorkspaceStore
       .getState()
-      .local!.executionPlans[planId].steps.map((s) => s.requestId);
+      .synced!.executionPlans![planId].steps.map((s) => s.requestId);
     expect(afterOrder).toEqual([beforeOrder[1], beforeOrder[0]]);
 
     // Remove step 1.
     await user.click(screen.getAllByRole('button', { name: 'Remove step' })[0]);
-    expect(useWorkspaceStore.getState().local!.executionPlans[planId].steps).toHaveLength(1);
+    expect(useWorkspaceStore.getState().synced!.executionPlans![planId].steps).toHaveLength(1);
   });
 
   it('runs a plan and surfaces the pass/fail summary', async () => {
@@ -124,22 +124,22 @@ describe('ExecutionPanel — plan editor', () => {
     // name is just the env name. Match by exact text content.
     await user.click(screen.getByRole('button', { name: 'dev' }));
     await user.click(screen.getByRole('button', { name: 'prod' }));
-    expect(useWorkspaceStore.getState().local!.executionPlans[planId].envPriorityOrder).toEqual([
-      'dev',
-      'prod',
+    expect(useWorkspaceStore.getState().synced!.executionPlans![planId].envPriorityOrder).toEqual([
+      { kind: 'local', name: 'dev' },
+      { kind: 'local', name: 'prod' },
     ]);
 
     // Move dev down via the per-row "Move dev down" button.
     await user.click(screen.getByRole('button', { name: /Move dev down/ }));
-    expect(useWorkspaceStore.getState().local!.executionPlans[planId].envPriorityOrder).toEqual([
-      'prod',
-      'dev',
+    expect(useWorkspaceStore.getState().synced!.executionPlans![planId].envPriorityOrder).toEqual([
+      { kind: 'local', name: 'prod' },
+      { kind: 'local', name: 'dev' },
     ]);
 
     // Remove prod via its trash button.
     await user.click(screen.getByRole('button', { name: /Remove prod/ }));
-    expect(useWorkspaceStore.getState().local!.executionPlans[planId].envPriorityOrder).toEqual([
-      'dev',
+    expect(useWorkspaceStore.getState().synced!.executionPlans![planId].envPriorityOrder).toEqual([
+      { kind: 'local', name: 'dev' },
     ]);
   });
 
@@ -180,7 +180,16 @@ describe('ExecutionPanel — per-step run details', () => {
             requestName: 'Get user',
             requestMethod: 'GET',
             passed: true,
-            assertionResults: [{ assertionId: 'a-1', passed: true, detail: 'ok' }],
+            assertionResults: [
+              {
+                assertionId: 'a-1',
+                kind: 'status',
+                op: 'equals',
+                expected: 200,
+                passed: true,
+                detail: 'ok',
+              },
+            ],
             result: {
               startedAt: 't',
               durationMs: 42,
@@ -200,7 +209,14 @@ describe('ExecutionPanel — per-step run details', () => {
             requestMethod: 'PUT',
             passed: false,
             assertionResults: [
-              { assertionId: 'a-1', passed: false, detail: 'expected 200, got 500' },
+              {
+                assertionId: 'a-1',
+                kind: 'status',
+                op: 'equals',
+                expected: 200,
+                passed: false,
+                detail: 'expected 200, got 500',
+              },
             ],
             result: {
               startedAt: 't',
@@ -253,7 +269,7 @@ describe('ExecutionSidebar', () => {
     expect(screen.getByText('No plans yet.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Execution actions' }));
     await user.click(await screen.findByRole('menuitem', { name: 'Add plan' }));
-    expect(Object.keys(useWorkspaceStore.getState().local!.executionPlans)).toHaveLength(1);
+    expect(Object.keys(useWorkspaceStore.getState().synced!.executionPlans!)).toHaveLength(1);
   });
 
   it('lists plans newest-first and lets the user select one', async () => {

@@ -1,6 +1,7 @@
 import type {
   Assertion,
   Environment,
+  EnvPriorityRef,
   ExecutionPlan,
   Folder,
   MockServer,
@@ -36,7 +37,7 @@ export type WorkspacePatch =
   | { kind: 'environment.upsert'; environment: Environment }
   | { kind: 'environment.delete'; name: string }
   | { kind: 'environment.setActive'; name: string | null }
-  | { kind: 'environment.setPriority'; order: string[] }
+  | { kind: 'environment.setPriority'; order: EnvPriorityRef[] }
   // ----- Assertions (slot of a Request) -------------------------------------
   | { kind: 'assertion.upsert'; requestId: string; assertion: Assertion }
   | { kind: 'assertion.delete'; requestId: string; assertionId: string }

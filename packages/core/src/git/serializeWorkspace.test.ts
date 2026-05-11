@@ -57,15 +57,24 @@ describe('serializeWorkspaceForGit', () => {
           prod: { name: 'prod', variables: [] },
         },
         activeName: 'dev',
-        priorityOrder: ['prod', 'dev'],
+        priorityOrder: [
+          { kind: 'local', name: 'prod' },
+          { kind: 'local', name: 'dev' },
+        ],
       },
     };
     const out = serializeWorkspaceForGit(withOrder);
     // Priority list is an array — order is user-visible and must round-
-    // trip verbatim. Pull the actual JSON-encoded array out of the text.
-    const priorityMatch = /"priorityOrder": \[\s*([^\]]+)\s*\]/m.exec(out);
-    expect(priorityMatch).not.toBeNull();
-    expect(priorityMatch![1].trim()).toMatch(/"prod"[\s,]+"dev"/);
+    // trip verbatim. Each entry is now a refs object `{kind, name}`, so
+    // the order check looks at the sequence of `name` strings.
+    const priorityIdx = out.indexOf('"priorityOrder"');
+    expect(priorityIdx).toBeGreaterThan(-1);
+    const slice = out.slice(priorityIdx);
+    const prodIdx = slice.indexOf('"prod"');
+    const devIdx = slice.indexOf('"dev"');
+    expect(prodIdx).toBeGreaterThan(-1);
+    expect(devIdx).toBeGreaterThan(-1);
+    expect(prodIdx).toBeLessThan(devIdx);
     // ...but the keys of `environments` and its sub-objects ARE sorted.
     expect(out.indexOf('"activeName"')).toBeLessThan(out.indexOf('"items"'));
   });
@@ -79,7 +88,12 @@ describe('serializeWorkspaceForGit', () => {
           id: 'lw-1',
           kind: 'private',
           name: 'Payments',
-          source: { provider: 'github', repoFullName: 'org/payments', branch: 'main' },
+          source: {
+            provider: 'github',
+            repoFullName: 'org/payments',
+            branch: 'main',
+            sessionMode: 'workspace',
+          },
           scope: ['collections', 'environments'],
           pinnedVersion: '1.0.0',
           updatePolicy: 'manual',

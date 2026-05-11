@@ -2,7 +2,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { SidebarStub } from '../PanelStub';
 
 export function WorkspaceSidebar() {
-  const session = useWorkspaceStore((s) => s.local?.sessions.github ?? null);
+  const session = useWorkspaceStore((s) => s.local?.sessions.github.workspace ?? null);
   const workingBranch = useWorkspaceStore((s) => s.local?.workingBranch ?? null);
 
   if (!session) {
@@ -21,8 +21,8 @@ export function WorkspaceSidebar() {
         <div className="text-[10px] uppercase tracking-wider text-text-dim">Working branch</div>
         <div className="mt-0.5 text-text-primary">{workingBranch?.name ?? '—'}</div>
       </div>
-      <div className="rounded-sm border border-dashed border-border-subtle px-2.5 py-2 text-text-dim">
-        Push, PR, and Refresh actions land here in Phase 4.
+      <div className="rounded-sm border border-dashed border-border-subtle px-2.5 py-2 text-[11px] leading-snug text-text-dim">
+        Push, refresh, and PR creation live on the working-branch card to the right.
       </div>
     </div>
   );

@@ -55,7 +55,7 @@ function snap(args: {
             },
           },
           activeName: 'dev',
-          priorityOrder: ['dev'],
+          priorityOrder: [{ kind: 'local', name: 'dev' }],
         }
       : { items: {}, activeName: null, priorityOrder: [] },
   };

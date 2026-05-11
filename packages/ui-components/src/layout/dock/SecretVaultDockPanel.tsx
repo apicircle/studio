@@ -13,7 +13,7 @@ import {
   Trash2,
   XCircle,
 } from 'lucide-react';
-import type { SecretEntry } from '@apicircle/shared';
+import type { SecretEntry, SecretKeyMeta } from '@apicircle/shared';
 import {
   GitHubError,
   MissingScopeError,
@@ -92,6 +92,49 @@ function VaultTab() {
   const entries = useWorkspaceStore((s) => Object.values(s.local?.secretIndex.entries ?? {}));
   const addSecret = useWorkspaceStore((s) => s.addSecret);
   const recompute = useWorkspaceStore((s) => s.recomputeSecretUsage);
+  // Slots declared in synced.secretKeys (in Git) without a local payload
+  // yet — typical post-clone state. Surfacing these is the onboarding
+  // gate: the user can't decrypt encrypted env vars referencing these
+  // slots until they supply each value here.
+  //
+  // Also includes linked-workspace required keys whose values haven't
+  // been provisioned yet. Without this, users would only see those
+  // slots on the link card and not in the Vault — making it look like
+  // the Vault is missing entries that depend on the link.
+  const missingSlots = useWorkspaceStore((s) => {
+    const out: MissingSlot[] = [];
+    const indexed = s.local?.secretIndex.entries ?? {};
+    // Workspace-origin slots (the device hasn't provided a value yet).
+    for (const meta of Object.values(s.synced?.secretKeys ?? {})) {
+      if (!indexed[meta.id]) {
+        out.push({ kind: 'workspace', meta });
+      }
+    }
+    // Linked-workspace required slots. The slot is "missing" when no
+    // entry in secretIndex has `origin === 'linked'` matching this
+    // link/key pair. Pull the human label from the cached snapshot
+    // so the row reads "Database token" instead of a raw id.
+    const links = s.synced?.linkedWorkspaces ?? {};
+    const cached = s.local?.linkedCollections ?? {};
+    for (const link of Object.values(links)) {
+      for (const keyId of link.requiredSecretKeyIds) {
+        const provisioned = Object.values(indexed).some(
+          (e) =>
+            e.origin === 'linked' && e.linkedWorkspaceId === link.id && e.linkedKeyId === keyId,
+        );
+        if (provisioned) continue;
+        const label = cached[link.id]?.secretKeys?.[keyId]?.label ?? keyId;
+        out.push({
+          kind: 'linked',
+          linkId: link.id,
+          linkName: link.name,
+          keyId,
+          label,
+        });
+      }
+    }
+    return out;
+  });
 
   const [adding, setAdding] = useState(false);
   const [draftLabel, setDraftLabel] = useState('');
@@ -132,6 +175,8 @@ function VaultTab() {
         content, or environment variables. Resolution order at send time: context vars → active env
         → priority list → vault.
       </p>
+
+      {missingSlots.length > 0 && <ProvideMissingSlotsGate slots={missingSlots} />}
 
       <div className="flex items-center justify-between">
         <h3 className="text-xs font-medium uppercase tracking-wider text-text-dim">
@@ -227,6 +272,173 @@ function VaultTab() {
   );
 }
 
+/**
+ * A slot whose value isn't on this device yet. Two flavors:
+ *   - `workspace`: declared by `synced.secretKeys` (this workspace's
+ *     own vault registry, e.g. needed to decrypt encrypted env vars).
+ *   - `linked`: declared by a linked workspace's `requiredSecretKeyIds`
+ *     (a slot the source expects the consumer to provide).
+ */
+type MissingSlot =
+  | { kind: 'workspace'; meta: SecretKeyMeta }
+  | { kind: 'linked'; linkId: string; linkName: string; keyId: string; label: string };
+
+interface ProvideMissingSlotsGateProps {
+  slots: MissingSlot[];
+}
+
+/**
+ * Onboarding gate. The workspace declares N secret-vault slots in Git
+ * (each with an id, label, and per-slot salt) but this device has no
+ * payload for them yet — typical "I just cloned this workspace" state.
+ * Encrypted env vars referencing these slots can't be decrypted until
+ * the user supplies the matching slot value here.
+ *
+ * Linked-workspace required keys appear here too — every slot a linked
+ * source declares but this consumer hasn't provisioned yet. Saving a
+ * linked slot routes through `provisionLinkedSecret` so the entry
+ * gets `origin: 'linked'` + the linkedWorkspaceId binding.
+ */
+function ProvideMissingSlotsGate({ slots }: ProvideMissingSlotsGateProps) {
+  return (
+    <div
+      role="group"
+      aria-label="Provide missing secret values"
+      className="space-y-2 rounded-sm border border-warning/40 bg-warning/5 p-3"
+    >
+      <div className="flex items-center gap-2">
+        <KeyRound size={14} className="text-warning" aria-hidden="true" />
+        <p className="text-sm text-text-primary">
+          {slots.length === 1 ? '1 secret value needed' : `${slots.length} secret values needed`}
+        </p>
+      </div>
+      <p className="text-[11px] text-text-muted">
+        This workspace references secret keys whose values aren&apos;t on this device yet. Provide
+        each one to unlock encrypted environment variables that depend on it.
+      </p>
+      <ul className="flex flex-col gap-2">
+        {slots.map((slot) =>
+          slot.kind === 'workspace' ? (
+            <ProvideSlotRow key={`w:${slot.meta.id}`} slot={slot.meta} />
+          ) : (
+            <ProvideLinkedSlotRow
+              key={`l:${slot.linkId}:${slot.keyId}`}
+              linkId={slot.linkId}
+              linkName={slot.linkName}
+              keyId={slot.keyId}
+              label={slot.label}
+            />
+          ),
+        )}
+      </ul>
+    </div>
+  );
+}
+
+function ProvideSlotRow({ slot }: { slot: SecretKeyMeta }) {
+  const provide = useWorkspaceStore((s) => s.provideSlotValue);
+  const [value, setValue] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
+    if (!value) return;
+    setSubmitting(true);
+    try {
+      await provide(slot.id, value);
+      setValue('');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <li className="flex items-center gap-2">
+      <span className="min-w-0 flex-1 truncate font-mono text-xs text-text-primary">
+        {slot.label}
+      </span>
+      <input
+        type="password"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="value"
+        aria-label={`Value for ${slot.label}`}
+        className="h-7 w-44 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !submitting && value) void submit();
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => void submit()}
+        disabled={submitting || !value}
+        className="inline-flex h-7 items-center rounded-sm border border-warning/40 bg-warning/10 px-2.5 text-[11px] text-warning hover:bg-warning/20 disabled:opacity-50"
+      >
+        {submitting ? 'Saving…' : 'Save'}
+      </button>
+    </li>
+  );
+}
+
+function ProvideLinkedSlotRow({
+  linkId,
+  linkName,
+  keyId,
+  label,
+}: {
+  linkId: string;
+  linkName: string;
+  keyId: string;
+  label: string;
+}) {
+  const provision = useWorkspaceStore((s) => s.provisionLinkedSecret);
+  const [value, setValue] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
+    if (!value) return;
+    setSubmitting(true);
+    try {
+      await provision(linkId, keyId, value);
+      setValue('');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <li className="flex items-center gap-2">
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-mono text-xs text-text-primary">{label}</div>
+        <div
+          className="truncate text-[10px] text-text-dim"
+          title={`Required by linked: ${linkName}`}
+        >
+          required by linked · {linkName}
+        </div>
+      </div>
+      <input
+        type="password"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="value"
+        aria-label={`Value for ${label} (linked)`}
+        className="h-7 w-44 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !submitting && value) void submit();
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => void submit()}
+        disabled={submitting || !value}
+        className="inline-flex h-7 items-center rounded-sm border border-warning/40 bg-warning/10 px-2.5 text-[11px] text-warning hover:bg-warning/20 disabled:opacity-50"
+      >
+        {submitting ? 'Saving…' : 'Save'}
+      </button>
+    </li>
+  );
+}
+
 interface SecretRowProps {
   entry: SecretEntry;
 }
@@ -234,6 +446,24 @@ interface SecretRowProps {
 function SecretRow({ entry }: SecretRowProps) {
   const decryptSecret = useWorkspaceStore((s) => s.decryptSecret);
   const removeSecret = useWorkspaceStore((s) => s.removeSecret);
+  // For linked-origin entries, prefer the source workspace's slot label
+  // (cached on the link snapshot). The persisted entry.label is
+  // `link:<workspaceName>:<keyId>` which leaks the raw slot id; reading
+  // the live label from the snapshot gives a clean human-readable
+  // display and stays in sync if the source renames the slot.
+  const linkedDisplay = useWorkspaceStore((s) => {
+    if (entry.origin !== 'linked' || !entry.linkedWorkspaceId || !entry.linkedKeyId) {
+      return null;
+    }
+    const link = s.synced?.linkedWorkspaces[entry.linkedWorkspaceId];
+    const snapshot = s.local?.linkedCollections[entry.linkedWorkspaceId];
+    const sourceLabel = snapshot?.secretKeys?.[entry.linkedKeyId]?.label;
+    if (!link) return null;
+    return {
+      label: sourceLabel && sourceLabel.trim() ? sourceLabel : entry.linkedKeyId,
+      linkName: link.name,
+    };
+  });
 
   const [revealed, setRevealed] = useState<string | null>(null);
   const [showUsage, setShowUsage] = useState(false);
@@ -250,56 +480,75 @@ function SecretRow({ entry }: SecretRowProps) {
 
   const usedInCount = entry.usedIn.length;
   const blockedDelete = usedInCount > 0 && !confirmDelete;
+  // Display label is the live source-side label for linked entries,
+  // otherwise the raw entry label (workspace-origin secrets).
+  const displayLabel = linkedDisplay ? linkedDisplay.label : entry.label;
 
   return (
     <li className="rounded-sm border border-border bg-card p-2.5 text-xs">
-      <div className="flex items-center gap-2">
-        <KeyRound size={12} className="shrink-0 text-text-dim" aria-hidden="true" />
-        <span className="font-medium text-text-primary">{entry.label}</span>
-        <span
-          className={cn(
-            'rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider',
-            entry.origin === 'workspace'
-              ? 'border-border-subtle bg-surface text-text-muted'
-              : 'border-blue/40 bg-blue/10 text-blue',
-          )}
-          title={
-            entry.origin === 'linked'
-              ? `Required by linked workspace ${entry.linkedWorkspaceId ?? ''}`
-              : 'Defined in this workspace'
-          }
-        >
-          {entry.origin}
-        </span>
-        <button
-          type="button"
-          onClick={() => void onReveal()}
-          className="ml-auto inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[10px] text-text-muted hover:text-text-primary"
-          aria-label={revealed !== null ? `Hide ${entry.label}` : `Reveal ${entry.label}`}
-        >
-          {revealed !== null ? <EyeOff size={10} /> : <Eye size={10} />}
-          {revealed !== null ? 'Hide' : 'Reveal'}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (blockedDelete) {
-              setConfirmDelete(true);
-              return;
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <KeyRound size={12} className="shrink-0 text-text-dim" aria-hidden="true" />
+          <div className="min-w-0 flex-1">
+            <div className="truncate font-medium text-text-primary">{displayLabel}</div>
+            {linkedDisplay && (
+              <div
+                className="truncate text-[10px] text-text-dim"
+                title={`Required by linked: ${linkedDisplay.linkName}`}
+              >
+                required by linked · {linkedDisplay.linkName}
+              </div>
+            )}
+          </div>
+          <span
+            className={cn(
+              'shrink-0 rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider',
+              entry.origin === 'workspace'
+                ? 'border-border-subtle bg-surface text-text-muted'
+                : 'border-blue/40 bg-blue/10 text-blue',
+            )}
+            title={
+              entry.origin === 'linked'
+                ? linkedDisplay
+                  ? `Required by linked workspace ${linkedDisplay.linkName}`
+                  : 'Required by a linked workspace'
+                : 'Defined in this workspace'
             }
-            void removeSecret(entry.id);
-          }}
-          className={cn(
-            'inline-flex h-6 items-center gap-1 rounded-sm border px-2 text-[10px]',
-            blockedDelete
-              ? 'border-warning/40 bg-warning/10 text-warning'
-              : 'border-danger/40 bg-danger/10 text-danger hover:bg-danger/20',
-          )}
-          aria-label={`Delete ${entry.label}`}
-        >
-          <Trash2 size={10} />
-          {blockedDelete ? `In use (${usedInCount})` : confirmDelete ? 'Confirm' : 'Delete'}
-        </button>
+          >
+            {entry.origin}
+          </span>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void onReveal()}
+            className="inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[10px] text-text-muted hover:text-text-primary"
+            aria-label={revealed !== null ? `Hide ${displayLabel}` : `Reveal ${displayLabel}`}
+          >
+            {revealed !== null ? <EyeOff size={10} /> : <Eye size={10} />}
+            {revealed !== null ? 'Hide' : 'Reveal'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (blockedDelete) {
+                setConfirmDelete(true);
+                return;
+              }
+              void removeSecret(entry.id);
+            }}
+            className={cn(
+              'inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border px-2 text-[10px]',
+              blockedDelete
+                ? 'border-warning/40 bg-warning/10 text-warning'
+                : 'border-danger/40 bg-danger/10 text-danger hover:bg-danger/20',
+            )}
+            aria-label={`Delete ${displayLabel}`}
+          >
+            <Trash2 size={10} />
+            {blockedDelete ? `In use (${usedInCount})` : confirmDelete ? 'Confirm' : 'Delete'}
+          </button>
+        </div>
       </div>
 
       {revealed !== null && (
@@ -314,7 +563,7 @@ function SecretRow({ entry }: SecretRowProps) {
           onClick={() => setShowUsage((v) => !v)}
           className="mt-1 inline-flex items-center gap-1 text-[11px] text-text-dim hover:text-text-muted"
           aria-expanded={showUsage}
-          aria-label={`Toggle where ${entry.label} is used`}
+          aria-label={`Toggle where ${displayLabel} is used`}
         >
           {showUsage ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
           Used in {usedInCount} place{usedInCount === 1 ? '' : 's'}
@@ -341,16 +590,61 @@ function SecretRow({ entry }: SecretRowProps) {
 }
 
 function SessionsTab() {
-  const session = useWorkspaceStore((s) => s.local?.sessions.github ?? null);
+  const workspaceSession = useWorkspaceStore((s) => s.local?.sessions.github.workspace ?? null);
+  const linkSessions = useWorkspaceStore((s) => s.local?.sessions.github.links ?? {});
+  const linkedWorkspaces = useWorkspaceStore((s) => s.synced?.linkedWorkspaces ?? {});
+  const linkSessionEntries = Object.entries(linkSessions);
   return (
     <div className="space-y-4">
-      <p className="text-sm text-text-muted">
-        GitHub PAT sessions. Manage the active token without losing your working branch or PR state
-        — use <span className="text-text-primary">Update token</span> to rotate without
-        disconnecting.
-      </p>
-      <ScopeGuidance />
-      {session ? <ActiveSessionCard /> : <ConnectForm />}
+      <div>
+        <h3 className="mb-1 text-xs font-medium uppercase tracking-wider text-text-dim">
+          Workspace session
+        </h3>
+        <p className="mb-2 text-[11px] text-text-muted">
+          Drives push, pull, and PR creation for this workspace&apos;s own repo. Disconnecting
+          doesn&apos;t touch linking sessions below.
+        </p>
+        <ScopeGuidance />
+        {workspaceSession ? <ActiveSessionCard /> : <ConnectForm />}
+      </div>
+      <div>
+        <h3 className="mb-1 text-xs font-medium uppercase tracking-wider text-text-dim">
+          Linking sessions
+        </h3>
+        <p className="mb-2 text-[11px] text-text-muted">
+          Per-link credentials used to fetch source repos that aren&apos;t reachable from the
+          workspace session. Manage each one from its link card under{' '}
+          <span className="text-text-primary">Link Workspace</span>.
+        </p>
+        {linkSessionEntries.length === 0 ? (
+          <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-[11px] text-text-dim">
+            No linking sessions yet.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-1.5">
+            {linkSessionEntries.map(([linkId, s]) => {
+              const link = linkedWorkspaces[linkId];
+              return (
+                <li
+                  key={linkId}
+                  className="rounded-sm border border-border bg-card p-2.5 text-[11px]"
+                >
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck size={12} className="text-success" aria-hidden="true" />
+                    <span className="font-medium text-text-primary">{s.accountLogin}</span>
+                    <span className="ml-auto text-text-dim">
+                      {link ? link.source.repoFullName : `(orphaned link ${linkId.slice(0, 6)}…)`}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-text-muted">
+                    Scopes: {s.grantedScopes.length > 0 ? s.grantedScopes.join(', ') : '—'}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
@@ -643,7 +937,7 @@ type ConnectionTestResult =
     };
 
 function ActiveSessionCard() {
-  const session = useWorkspaceStore((s) => s.local!.sessions.github!);
+  const session = useWorkspaceStore((s) => s.local!.sessions.github.workspace!);
   const verify = useWorkspaceStore((s) => s.verifyGitHubScopes);
   const updateToken = useWorkspaceStore((s) => s.updateGitHubToken);
   const disconnect = useWorkspaceStore((s) => s.disconnectGitHubSession);
@@ -741,9 +1035,14 @@ function ActiveSessionCard() {
   };
 
   const missingRequired = REQUIRED_SESSION_SCOPES.filter((s) => !session.grantedScopes.includes(s));
-  const missingRecommended = RECOMMENDED_SESSION_SCOPES.filter(
-    (s) => !session.grantedScopes.includes(s),
-  );
+  // The recommended `pull_request` permission is satisfied either by the
+  // scope appearing in the granted list (fine-grained PATs that surface
+  // it) or by `canCreatePullRequests` being true (classic PATs where
+  // `repo` covers PR ops, or fine-grained PATs that passed the probe).
+  // The warning + chip use the same source of truth so they never
+  // contradict each other.
+  const prCapability = session.canCreatePullRequests;
+  const prScopeSatisfied = prCapability !== false && prCapability !== null;
 
   return (
     <div className="space-y-3 rounded-sm border border-success/30 bg-success/5 p-3">
@@ -760,7 +1059,11 @@ function ActiveSessionCard() {
             <ScopeChip key={s} name={s} ok={session.grantedScopes.includes(s)} required />
           ))}
           {RECOMMENDED_SESSION_SCOPES.map((s) => (
-            <ScopeChip key={s} name={s} ok={session.grantedScopes.includes(s)} />
+            <ScopeChip
+              key={s}
+              name={s}
+              ok={s === 'pull_request' ? prScopeSatisfied : session.grantedScopes.includes(s)}
+            />
           ))}
         </dd>
         <dt className="text-text-dim">Granted scopes</dt>
@@ -778,10 +1081,10 @@ function ActiveSessionCard() {
           save will fail until you update the token.
         </p>
       )}
-      {missingRequired.length === 0 && missingRecommended.length > 0 && (
+      {missingRequired.length === 0 && prCapability === false && (
         <p className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-[11px] text-warning">
-          Recommended scope(s) missing: <code>{missingRecommended.join(', ')}</code>. Push to save
-          works, but creating PRs from the app will fail until you update the token.
+          This token can&apos;t create pull requests. Push to save works, but creating PRs from the
+          app will fail until you update the token.
         </p>
       )}
       {testResult && (

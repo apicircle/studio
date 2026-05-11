@@ -7,6 +7,8 @@
 // the host's responsibility (see ui-components/persistence/secretKey.ts).
 
 const IV_BYTES = 12; // 96-bit IV is the recommended size for AES-GCM
+const SALT_BYTES = 16;
+const PBKDF2_ITERATIONS = 210_000; // OWASP 2024 recommendation for SHA-256
 const ALG = 'AES-GCM';
 
 export interface EncryptedPayload {
@@ -53,6 +55,50 @@ export async function decryptString(payload: EncryptedPayload, key: CryptoKey): 
  */
 export function generateAesKey(): Promise<CryptoKey> {
   return crypto.subtle.generateKey({ name: ALG, length: 256 }, true, ['encrypt', 'decrypt']);
+}
+
+/**
+ * Generate a fresh per-slot salt (16 random bytes, base64-encoded). Salts are
+ * stored in `synced.secretKeys[id].salt` — they're not secret, but they do
+ * need to be stable for the slot's lifetime so ciphertext encrypted on one
+ * device is decryptable on another.
+ */
+export function generateSlotSalt(): string {
+  const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
+  return bytesToBase64(salt);
+}
+
+/**
+ * Derive an AES-GCM key from a slot's plaintext value via PBKDF2-SHA-256.
+ * The salt is base64 and travels through Git in `synced.secretKeys[id].salt`;
+ * the value is user-supplied and never leaves the device. Same `(value,
+ * salt)` pair always derives the same key, so a teammate cloning the repo
+ * gets matching keys once they enter the slot value on their machine.
+ */
+export async function deriveKeyFromSlotValue(
+  value: string,
+  saltBase64: string,
+): Promise<CryptoKey> {
+  const baseKey = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(value) as unknown as BufferSource,
+    'PBKDF2',
+    false,
+    ['deriveKey'],
+  );
+  const salt = base64ToBytes(saltBase64);
+  return crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt: salt as unknown as BufferSource,
+      iterations: PBKDF2_ITERATIONS,
+      hash: 'SHA-256',
+    },
+    baseKey,
+    { name: ALG, length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  );
 }
 
 /** Export an AES-GCM key as a JSON Web Key (for IDB storage). */

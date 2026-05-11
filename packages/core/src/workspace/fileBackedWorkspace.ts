@@ -162,9 +162,11 @@ function createEmptyLocalForSynced(synced: WorkspaceSynced): WorkspaceLocal {
     executionPlans: {},
     history: { requestRuns: [], planRuns: [] },
     secretIndex: { entries: {} },
-    sessions: { github: null },
+    sessions: { github: { workspace: null, links: {} } },
     connectedRepo: null,
     workingBranch: null,
+    seededWorkspaceSha: null,
+    retiredBranch: null,
     sync: {
       lastPulledSnapshot: null,
       lastPulledSha: null,
@@ -178,6 +180,9 @@ function createEmptyLocalForSynced(synced: WorkspaceSynced): WorkspaceLocal {
       activeRequestId: null,
       sidebarExpandedSections: [],
       themeId: 'studio-dark',
+      fontId: 'system-mono',
     },
+    settings: { validateOnSend: true, monacoConsumesWheel: false },
+    snapshots: { entries: [], maxBytes: 50 * 1024 * 1024 },
   };
 }

@@ -23,7 +23,10 @@ import type {
   RequestAuth,
   RequestBody,
   RequestOverridePatch,
+  EnvPriorityRef,
   RequestRun,
+  RetiredBranch,
+  SecretKeyMeta,
   ThemeId,
   WorkingBranch,
   WorkspaceLocal,
@@ -36,8 +39,14 @@ import {
   GitHubClient,
   MissingScopeError,
 } from '@apicircle/git';
+import {
+  checkPrCapabilityFromScopes,
+  probePrCapability,
+  resolvePrCapability,
+} from './githubPrCapability';
+import { decideRetirement, probeBranchRetirement } from './branchRetirement';
 import { applyFont } from '../theme/applyFont';
-import { RUN_BODY_PREVIEW_LIMIT, generateId } from '@apicircle/shared';
+import { RUN_BODY_PREVIEW_LIMIT, envPriorityKey, generateId } from '@apicircle/shared';
 import {
   type AttachmentResolver,
   type ExecutionResult,
@@ -56,9 +65,11 @@ import {
   computeThreeWayDiff,
   decryptString,
   deprecateRelease as deprecateReleaseAction,
+  deriveKeyFromSlotValue,
   encryptString,
   executeRequest as coreExecuteRequest,
   extractContext,
+  generateSlotSalt,
   generateWorkingBranchName,
   parseCurl,
   parseSemver,
@@ -67,7 +78,9 @@ import {
   resolveInheritedAuth,
   resolveString,
   runAssertions,
+  serializePayload,
   serializeWorkspaceForGit,
+  sortVersionsDesc,
   tryParsePayload,
   validateBranchName,
   yankRelease as yankReleaseAction,
@@ -302,7 +315,11 @@ export type RefreshOutcome =
   | { status: 'no-remote' }
   | { status: 'up-to-date' }
   | { status: 'merged' }
-  | { status: 'conflicts'; diff: ThreeWayDiff };
+  | { status: 'conflicts'; diff: ThreeWayDiff }
+  // Refresh discovered the working branch is retired (PR merged, or branch
+  // deleted on GitHub). The store has cleared `workingBranch` and set
+  // `local.retiredBranch` so the UI can surface a banner; nothing else to do.
+  | { status: 'retired'; retired: RetiredBranch };
 
 /**
  * Tabs hosted by the right-side dock. Variables is read-mostly (filter +
@@ -715,6 +732,16 @@ type WorkspaceStore = {
   ) => void;
   /** Drop the override for a linked workspace's request, restoring source content. */
   clearLinkedRequestOverride: (linkedWorkspaceId: string, itemId: string) => void;
+  /**
+   * Drop a single field from the override patch (e.g. just `url`), restoring
+   * that one field to source while keeping other locally-modified fields. If
+   * removing the last field, the whole override row is collapsed.
+   */
+  clearLinkedRequestOverrideField: (
+    linkedWorkspaceId: string,
+    itemId: string,
+    field: keyof RequestOverridePatch,
+  ) => void;
 
   /**
    * Set or update a per-variable override on a linked workspace's
@@ -812,22 +839,35 @@ type WorkspaceStore = {
    */
   exportEnvironment: (name: string) => string | null;
   setActiveEnvironment: (name: string | null) => void;
-  setPriorityOrder: (order: string[]) => void;
+  setPriorityOrder: (order: EnvPriorityRef[]) => void;
   setVariables: (envName: string, variables: Environment['variables']) => void;
   addVariableRow: (envName: string) => void;
   /**
-   * Set a variable's value, encrypting it on the way in if `encrypted` is
-   * true. Existing encrypted ciphertext is rotated under the same key.
+   * Set a variable's plaintext value. If the row is already bound to a
+   * secret-key slot, the value is re-encrypted under that slot's derived
+   * key and stored as `enc:v1:` ciphertext. Plain rows just store the value
+   * verbatim. Async because encryption is.
    */
-  setVariableValue: (envName: string, index: number, value: string, encrypted: boolean) => void;
+  setVariableValue: (envName: string, index: number, value: string) => Promise<void>;
   /**
-   * Bind an environment variable to a vault secret-key id. Sets
-   * encrypted=true, clears any stale plaintext value, and backfills the
-   * synced `secretKeys` map so collaborators see the label.
+   * Bind an environment variable to a vault secret-key slot. Encrypts the
+   * row's current plaintext under the slot's derived key (PBKDF2 over the
+   * slot's salt + the user-supplied value) and stores the resulting
+   * ciphertext in `value`. Resolves to `false` when binding is impossible
+   * (slot value missing on this device — caller should prompt the user).
    */
-  bindVariableToSecretKey: (envName: string, index: number, secretKeyId: string) => void;
-  /** Reverse of bindVariableToSecretKey: clear secretKeyId + return to plain. */
-  unbindVariableSecretKey: (envName: string, index: number) => void;
+  bindVariableToSecretKey: (
+    envName: string,
+    index: number,
+    secretKeyId: string,
+  ) => Promise<boolean>;
+  /**
+   * Reverse of bindVariableToSecretKey: decrypt the ciphertext back to
+   * plaintext under the slot's derived key, drop secretKeyId, set
+   * encrypted=false. Resolves to `false` when the slot value is missing
+   * locally and the row can't be safely unbound (we'd be wiping the value).
+   */
+  unbindVariableSecretKey: (envName: string, index: number) => Promise<boolean>;
   /** Transient panel focus — which env's variables the panel is editing. */
   envFocus: string | null;
   setEnvFocus: (name: string | null) => void;
@@ -851,6 +891,19 @@ type WorkspaceStore = {
    * success, false when the id is unknown.
    */
   setSecretValue: (id: string, value: string) => Promise<boolean>;
+  /**
+   * First-time slot value entry on a fresh device — assumes the value
+   * matches what existing env-var ciphertext was originally encrypted
+   * under, so it does NOT attempt re-encryption. Use `setSecretValue`
+   * to rotate a value that was previously set.
+   */
+  provideSlotValue: (id: string, value: string) => Promise<boolean>;
+  /**
+   * Slot ids referenced by `synced.secretKeys` whose plaintext value is
+   * missing in the local IDB vault on this device. Drives the onboarding
+   * "Provide values" gate in the Secret Vault dock.
+   */
+  listMissingSlots: () => Promise<SecretKeyMeta[]>;
   /** Decrypt and return the plaintext value of a vault secret. */
   decryptSecret: (id: string) => Promise<string | null>;
   renameSecret: (id: string, label: string) => void;
@@ -917,6 +970,22 @@ type WorkspaceStore = {
     branchName?: string;
     baseBranch?: string;
   }) => Promise<WorkingBranch>;
+  /**
+   * Seed the very first commit on a freshly-created empty repo. Writes a
+   * minimal scaffold `workspace.json` (current workspaceId + workspaceName,
+   * empty content arrays) onto `connectedRepo.defaultBranch` via the
+   * Contents API (the only endpoint that bootstraps an empty git database).
+   * Idempotent: if a workspace.json already exists on the default branch,
+   * skips the write and reuses that blob sha — handles cases where a prior
+   * attempt partially landed or `listBranches` lagged behind a recent write.
+   *
+   * The returned `scaffoldSha` is also persisted to `local.seededWorkspaceSha`
+   * so the next `createWorkingBranch` can recognise its own scaffold on the
+   * new branch and suppress the "remote already has content" first-pull
+   * prompt — that prompt only makes sense for genuinely pre-populated remote
+   * content, not the empty seed we just wrote ourselves.
+   */
+  seedInitialCommit: () => Promise<{ branchName: string; scaffoldSha: string }>;
   /**
    * Drop the working branch slot without touching the remote ref. The
    * user typically rotates after a PR merges.
@@ -988,6 +1057,12 @@ type WorkspaceStore = {
   commitRefresh: (resolutions: ResolutionMap) => Promise<void>;
   /** Drop the pending refresh without applying anything. */
   cancelRefresh: () => void;
+  /**
+   * Clear `local.retiredBranch` after the user has acknowledged the
+   * retirement banner (typically by clicking "Create new branch" or the
+   * dismiss X). Idempotent — safe to call when nothing is set.
+   */
+  dismissRetiredBranch: () => void;
 
   // --- Releases (workspace-self) ---------------------------------------
   /**
@@ -996,23 +1071,57 @@ type WorkspaceStore = {
    * pre-publish workspace.json (plan §5.1). Throws on invalid semver or
    * duplicate version.
    */
-  publishRelease: (
-    args: PublishReleaseArgs & {
-      /**
-       * Create a Git tag (`refs/tags/v<version>`) on the working branch's
-       * head after publishing. Requires an active session + connected
-       * repo + working branch + at least one prior push (we tag the SHA
-       * we get from pushing the new ledger).
-       */
-      createGitTag?: boolean;
-      /** Also create a GitHub Release pointing at the tag. Implies createGitTag. */
-      createGitHubRelease?: boolean;
-    },
-  ) => Promise<{ commitSha?: string; tagRef?: string; releaseUrl?: string }>;
+  publishRelease: (args: PublishReleaseArgs) => Promise<{ commitSha?: string }>;
   /** Flip `deprecated: true` on a published version. */
   deprecateRelease: (version: string) => void;
   /** Flip `yanked: true` on a published version. Soft destructive. */
   yankRelease: (version: string) => void;
+
+  /**
+   * Create a Git tag on the connected repo's base branch (`main` or the
+   * configured default), pointing at the base branch's current HEAD.
+   *
+   * Decoupled from `publishRelease` — release publishing only writes the
+   * workspace ledger and pushes to the working branch. Tagging happens
+   * later, against `main`, once the ledger entry has been merged. This
+   * keeps tags from ever pointing at unmerged working-branch commits.
+   *
+   * Honors `override: true` to delete + recreate an existing tag.
+   * Without `override` and an existing same-named tag, throws so the UI
+   * can surface a confirmation toggle. Optionally creates a matching
+   * GitHub Release.
+   */
+  tagReleaseVersion: (args: {
+    version: string;
+    notes?: string;
+    createGitHubRelease?: boolean;
+    override?: boolean;
+  }) => Promise<{ tagRef: string; sha: string; releaseUrl?: string }>;
+
+  /**
+   * Read the current set of GitHub topics on the connected repo. Topics
+   * power marketplace discoverability — public APICircle workspaces
+   * include `apicircle` plus user-chosen category topics.
+   */
+  listRepoTopics: () => Promise<string[]>;
+  /**
+   * Replace the connected repo's topic list. GitHub's PUT /topics is a
+   * full replace, so callers pass the complete desired list. Returns
+   * the persisted list.
+   */
+  setRepoTopics: (topics: string[]) => Promise<string[]>;
+  /**
+   * Fetch the latest published release version from `main`'s
+   * `workspace.json` that doesn't yet have a matching Git tag. Used by
+   * the Release & topics modal to populate the version field. Returns
+   * `null` when every published version is already tagged or no
+   * versions exist.
+   */
+  loadLatestUntaggedRelease: () => Promise<{
+    version: string;
+    notes: string;
+    existingTagSha: string | null;
+  } | null>;
 
   // --- Linked workspaces (P5.2) ---------------------------------------
   /**
@@ -1029,6 +1138,23 @@ type WorkspaceStore = {
     repoFullName: string;
     branch: string;
     pinnedVersion?: string | null;
+    /**
+     * Which session credentials this link uses for source fetches.
+     * Defaults to `'workspace'` (reuses the workspace session). Pass
+     * `'dedicated'` together with `linkSessionToken` to bind a separate
+     * PAT to this specific link — required when the source repo isn't
+     * reachable from the workspace session's account.
+     */
+    sessionMode?: 'workspace' | 'dedicated';
+    linkSessionToken?: string;
+    /**
+     * Optional plaintext values for the source's required secret-key
+     * slots, keyed by `secretKeyId`. The link wizard collects these so
+     * users can supply values at link-time instead of having to scroll
+     * down on the link card after the link lands. Empty values are
+     * skipped — the slot stays "missing" until provisioned later.
+     */
+    secretValues?: Record<string, string>;
   }) => Promise<LinkedWorkspace>;
 
   /**
@@ -1040,38 +1166,81 @@ type WorkspaceStore = {
     repoFullName: string;
     branch: string;
     pinnedVersion?: string | null;
+    sessionMode?: 'workspace' | 'dedicated';
+    linkSessionToken?: string;
     marketplace?: { listedAs: string; tags: string[]; summary: string };
+    secretValues?: Record<string, string>;
   }) => Promise<LinkedWorkspace>;
 
   /**
-   * List repositories the active GitHub session can access. Powers the
-   * Link Workspace repo browser. Throws when no session is active.
+   * Add or rotate the dedicated linking session bound to a given link.
+   * Verifies the token, encrypts it under the local master key, and
+   * stores it under `local.sessions.github.links[linkedWorkspaceId]`.
+   * Also flips `link.source.sessionMode` to `'dedicated'`. Returns the
+   * resolved session metadata (login, scopes, etc).
    */
-  listAccessibleRepos: () => Promise<GitHubRepo[]>;
+  addLinkSession: (linkedWorkspaceId: string, token: string) => Promise<GitHubSession>;
 
   /**
-   * List branches on a repo via the active GitHub session. Powers the
-   * branch dropdown in the repo browser; the user picks one before
-   * confirming the link.
+   * Drop the dedicated session for a link. The link's `sessionMode` is
+   * NOT auto-flipped to `'workspace'` — that's a user choice. Instead,
+   * the link card reports "session removed — remap" so the user can
+   * either pick `'workspace'` mode or re-add a dedicated session.
+   * Idempotent: no-op when the link has no dedicated session.
    */
-  listRepoBranches: (owner: string, name: string) => Promise<GitHubBranch[]>;
+  removeLinkSession: (linkedWorkspaceId: string) => Promise<void>;
+
+  /**
+   * Switch a link between sessionMode `'workspace'` and `'dedicated'`.
+   * Switching to `'dedicated'` requires a session to already exist
+   * under that link id (use `addLinkSession` first). Switching to
+   * `'workspace'` does not delete any existing dedicated session —
+   * it stays under the link id, available for re-binding later.
+   */
+  setLinkSessionMode: (linkedWorkspaceId: string, mode: 'workspace' | 'dedicated') => Promise<void>;
+
+  /**
+   * List repositories accessible to a GitHub session. Defaults to the
+   * workspace session. Pass `tokenOverride` to use a dedicated linking
+   * PAT mid-link-wizard before the per-link session has been persisted —
+   * lets the repo browser surface repos that only the dedicated session
+   * can reach.
+   */
+  listAccessibleRepos: (opts?: { tokenOverride?: string }) => Promise<GitHubRepo[]>;
+
+  /**
+   * List branches on a repo. Defaults to the workspace session;
+   * `tokenOverride` lets the link wizard reuse the in-progress dedicated
+   * PAT for the same reason as `listAccessibleRepos`.
+   */
+  listRepoBranches: (
+    owner: string,
+    name: string,
+    opts?: { tokenOverride?: string },
+  ) => Promise<GitHubBranch[]>;
 
   /**
    * Probe a candidate source repo's `workspace.json` for its display
-   * name and published-version list. Used by the repo browser to
-   * pre-populate the pin-version dropdown after the user picks a repo
-   * + branch but before confirming the link. Returns `null` when the
-   * branch has no workspace.json (so the modal can disable Link with a
-   * useful message).
+   * name and published-version list. Defaults to the workspace session;
+   * the link wizard supplies `tokenOverride` when binding a dedicated
+   * session so the probe runs through the right credentials.
    */
   probeLinkedRepoVersions: (
     owner: string,
     name: string,
     branch: string,
+    opts?: { tokenOverride?: string },
   ) => Promise<{
     workspaceName: string;
     versions: string[];
     currentVersion: string | null;
+    /**
+     * Slot metadata the source declares AND is actually referenced by at
+     * least one encrypted env variable. Surfaced by the link wizard so
+     * users can pre-fill values at link-time. Slots declared but unused
+     * are filtered out — no point asking for values nothing depends on.
+     */
+    requiredSecretKeys: SecretKeyMeta[];
   } | null>;
 
   /**
@@ -1127,7 +1296,7 @@ type WorkspaceStore = {
    * Plan-level env priority overrides the workspace's global order
    * during runs of this plan. Empty array = no override.
    */
-  setPlanEnvPriority: (planId: string, priorityOrder: readonly string[]) => void;
+  setPlanEnvPriority: (planId: string, priorityOrder: readonly EnvPriorityRef[]) => void;
   /**
    * Set the plan's `stopOnAssertionFailure` flag. Only honored by
    * runPlan when launched `withAssertions`.
@@ -1388,6 +1557,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const next: WorkspaceLocal = { ...local, ui: { ...local.ui, activeRequestId: id } };
     set({ local: next });
     void saveLocal(next);
+    // Workspace + linked active are mutually exclusive in the editor —
+    // setting one clears the other so the merged-view selector doesn't
+    // get a confused "both set" state. (Setting id to null intentionally
+    // doesn't touch the linked-active so back-button paths from a linked
+    // request keep the linked context intact.)
+    if (id !== null && get().activeLinkedRequest !== null) {
+      set({ activeLinkedRequest: null });
+    }
   },
 
   toggleSidebarSection: (section) => {
@@ -1948,23 +2125,47 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (get().local?.ui.activeRequestId === id) get().setActiveRequestId(null);
   },
 
-  renameRequest: (id, name) => commitSynced(set, get, (s) => renameRequestAction(s, id, name)),
+  renameRequest: (id, name) => {
+    if (routeLinkedField(get, set, id, 'name', name)) return;
+    commitSynced(set, get, (s) => renameRequestAction(s, id, name));
+  },
   renameFolder: (id, name) => commitSynced(set, get, (s) => renameFolderAction(s, id, name)),
-  setRequestMethod: (id, method) =>
-    commitSynced(set, get, (s) => setRequestMethodAction(s, id, method)),
-  setRequestUrl: (id, url) => commitSynced(set, get, (s) => setRequestUrlAction(s, id, url)),
-  setRequestBody: (id, body) => commitSynced(set, get, (s) => setRequestBodyAction(s, id, body)),
-  setRequestHeaders: (id, headers) =>
-    commitSynced(set, get, (s) => setRequestHeadersAction(s, id, headers)),
-  setRequestQuery: (id, query) =>
-    commitSynced(set, get, (s) => setRequestQueryAction(s, id, query)),
-  setRequestPathParams: (id, pathParams) =>
-    commitSynced(set, get, (s) => setRequestPathParamsAction(s, id, pathParams)),
-  setRequestCookies: (id, cookies) =>
-    commitSynced(set, get, (s) => setRequestCookiesAction(s, id, cookies)),
-  setRequestAssertions: (id, assertions) =>
-    commitSynced(set, get, (s) => setRequestAssertionsAction(s, id, assertions)),
-  setRequestAuth: (id, auth) => commitSynced(set, get, (s) => setRequestAuthAction(s, id, auth)),
+  setRequestMethod: (id, method) => {
+    if (routeLinkedField(get, set, id, 'method', method)) return;
+    commitSynced(set, get, (s) => setRequestMethodAction(s, id, method));
+  },
+  setRequestUrl: (id, url) => {
+    if (routeLinkedField(get, set, id, 'url', url)) return;
+    commitSynced(set, get, (s) => setRequestUrlAction(s, id, url));
+  },
+  setRequestBody: (id, body) => {
+    if (routeLinkedField(get, set, id, 'body', body)) return;
+    commitSynced(set, get, (s) => setRequestBodyAction(s, id, body));
+  },
+  setRequestHeaders: (id, headers) => {
+    if (routeLinkedField(get, set, id, 'headers', headers)) return;
+    commitSynced(set, get, (s) => setRequestHeadersAction(s, id, headers));
+  },
+  setRequestQuery: (id, query) => {
+    if (routeLinkedField(get, set, id, 'query', query)) return;
+    commitSynced(set, get, (s) => setRequestQueryAction(s, id, query));
+  },
+  setRequestPathParams: (id, pathParams) => {
+    if (routeLinkedField(get, set, id, 'pathParams', pathParams)) return;
+    commitSynced(set, get, (s) => setRequestPathParamsAction(s, id, pathParams));
+  },
+  setRequestCookies: (id, cookies) => {
+    if (routeLinkedField(get, set, id, 'cookies', cookies)) return;
+    commitSynced(set, get, (s) => setRequestCookiesAction(s, id, cookies));
+  },
+  setRequestAssertions: (id, assertions) => {
+    if (routeLinkedField(get, set, id, 'assertions', assertions)) return;
+    commitSynced(set, get, (s) => setRequestAssertionsAction(s, id, assertions));
+  },
+  setRequestAuth: (id, auth) => {
+    if (routeLinkedField(get, set, id, 'auth', auth)) return;
+    commitSynced(set, get, (s) => setRequestAuthAction(s, id, auth));
+  },
   setFolderAuth: (folderId, auth) =>
     commitSynced(set, get, (s) => setFolderAuthAction(s, folderId, auth)),
 
@@ -2022,8 +2223,17 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       };
     }
 
-    set({ synced: cur });
-    void saveSynced(cur);
+    // Final meta bump — the inline `cur = { ...cur, collections: ... }`
+    // patches above don't touch meta, so without this the import would
+    // leave the workspace-level timestamp at whatever the last
+    // `addRequestAction` set (close, but not necessarily the final
+    // moment of the import).
+    const stamped: WorkspaceSynced = {
+      ...cur,
+      meta: { ...cur.meta, updatedAt: new Date().toISOString() },
+    };
+    set({ synced: stamped });
+    void saveSynced(stamped);
     return { folders: parsed.folders.length + 1, requests: parsed.requests.length };
   },
 
@@ -2044,14 +2254,26 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     state.setVariables(finalName, variables);
     return finalName;
   },
-  setRequestExtractions: (id, extractions) =>
-    commitSynced(set, get, (s) => setRequestExtractionsAction(s, id, extractions)),
-  setRequestContextVars: (id, contextVars) =>
-    commitSynced(set, get, (s) => setRequestContextVarsAction(s, id, contextVars)),
-  setRequestBodySchemaId: (id, schemaId) =>
-    commitSynced(set, get, (s) => setRequestBodySchemaIdAction(s, id, schemaId)),
-  setRequestGraphqlSchemaId: (id, schemaId) =>
-    commitSynced(set, get, (s) => setRequestGraphqlSchemaIdAction(s, id, schemaId)),
+  setRequestExtractions: (id, extractions) => {
+    if (routeLinkedField(get, set, id, 'extractions', extractions)) return;
+    commitSynced(set, get, (s) => setRequestExtractionsAction(s, id, extractions));
+  },
+  setRequestContextVars: (id, contextVars) => {
+    if (routeLinkedField(get, set, id, 'contextVars', contextVars)) return;
+    commitSynced(set, get, (s) => setRequestContextVarsAction(s, id, contextVars));
+  },
+  // bodySchemaId / graphqlSchemaId are NOT in RequestOverridePatch — by design
+  // (linked requests share the source's globalAssets schema refs, so flipping
+  // them on the consumer side would dangle). Editor disables these inputs on
+  // linked requests; if a programmatic call slips through, we just drop it.
+  setRequestBodySchemaId: (id, schemaId) => {
+    if (isLinkedActive(get, id)) return;
+    commitSynced(set, get, (s) => setRequestBodySchemaIdAction(s, id, schemaId));
+  },
+  setRequestGraphqlSchemaId: (id, schemaId) => {
+    if (isLinkedActive(get, id)) return;
+    commitSynced(set, get, (s) => setRequestGraphqlSchemaIdAction(s, id, schemaId));
+  },
 
   addGlobalSchema: (init) => {
     const synced = get().synced;
@@ -2117,6 +2339,39 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       };
     });
   },
+  clearLinkedRequestOverrideField: (linkedWorkspaceId, itemId, field) => {
+    const key = `${linkedWorkspaceId}:${itemId}`;
+    commitSynced(set, get, (synced) => {
+      const row = synced.linkedOverrides.requests[key];
+      if (!row || !(field in row.patch)) return synced;
+      const { [field]: _drop, ...remainingPatch } = row.patch;
+      void _drop;
+      // No fields left — collapse the entire override row so the source is
+      // re-inherited verbatim.
+      if (Object.keys(remainingPatch).length === 0) {
+        const { [key]: _row, ...rest } = synced.linkedOverrides.requests;
+        void _row;
+        return {
+          ...synced,
+          linkedOverrides: { ...synced.linkedOverrides, requests: rest },
+        };
+      }
+      return {
+        ...synced,
+        linkedOverrides: {
+          ...synced.linkedOverrides,
+          requests: {
+            ...synced.linkedOverrides.requests,
+            [key]: {
+              ...row,
+              patch: remainingPatch,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        },
+      };
+    });
+  },
   setLinkedEnvVarOverride: (linkedWorkspaceId, envName, varKey, patch) => {
     const key = `${linkedWorkspaceId}:${envName}:${varKey}`;
     commitSynced(set, get, (synced) => ({
@@ -2174,7 +2429,24 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       };
     });
   },
-  setActiveLinkedRequest: (id) => set({ activeLinkedRequest: id }),
+  setActiveLinkedRequest: (id) => {
+    set({ activeLinkedRequest: id });
+    // Mirror of setActiveRequestId: opening a linked request clears the
+    // workspace-active id, so the editor's unified selector doesn't see
+    // both at once. Closing (id === null) leaves the workspace-active
+    // alone — the user may want to fall back to whatever they had open.
+    if (id !== null) {
+      const local = get().local;
+      if (local && local.ui.activeRequestId !== null) {
+        const next: WorkspaceLocal = {
+          ...local,
+          ui: { ...local.ui, activeRequestId: null },
+        };
+        set({ local: next });
+        void saveLocal(next);
+      }
+    }
+  },
   removeGlobalContextKey: (key) => {
     const local = get().local;
     if (!local) return;
@@ -2322,7 +2594,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     commitSynced(set, get, (s) => setVariablesAction(s, envName, variables)),
   addVariableRow: (envName) => commitSynced(set, get, (s) => addVariableRowAction(s, envName)),
 
-  setVariableValue: (envName, index, value, encrypted) => {
+  setVariableValue: async (envName, index, value) => {
     const synced = get().synced;
     if (!synced) return;
     const env = synced.environments.items[envName];
@@ -2330,56 +2602,101 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const existing = env.variables[index];
     if (!existing) return;
 
-    // Encryption now flows exclusively through bindVariableToSecretKey:
-    // the only legitimate way for a row to be `encrypted: true` is to be
-    // bound to a vault secretKeyId. A direct setVariableValue call always
-    // updates plaintext (and clears any stale secretKeyId).
+    // If the row is bound to a slot, re-encrypt the new plaintext under the
+    // slot's derived key. Falls through to plaintext storage when the slot
+    // value is missing locally — caller is expected to surface a "provide
+    // slot value" prompt; we don't silently drop the user's input.
+    if (existing.encrypted && existing.secretKeyId) {
+      const cipherValue = await tryEncryptForSlot(get, existing.secretKeyId, value);
+      if (cipherValue !== null) {
+        const nextVars: Environment['variables'] = env.variables.map((v, i) =>
+          i === index ? { ...v, value: cipherValue, encrypted: true } : v,
+        );
+        commitSynced(set, get, (s) => setVariablesAction(s, envName, nextVars));
+        return;
+      }
+      // Fall through — slot value missing, store plaintext + clear binding.
+    }
     const nextVars: Environment['variables'] = env.variables.map((v, i) =>
       i === index ? { ...v, value, encrypted: false, secretKeyId: undefined } : v,
     );
-    void encrypted; // legacy callers may still pass true; ignored intentionally.
     commitSynced(set, get, (s) => setVariablesAction(s, envName, nextVars));
   },
 
-  bindVariableToSecretKey: (envName, index, secretKeyId) => {
+  bindVariableToSecretKey: async (envName, index, secretKeyId) => {
     const synced = get().synced;
-    if (!synced) return;
-    const env = synced.environments.items[envName];
-    if (!env) return;
     const local = get().local;
-    if (!local || !local.secretIndex.entries[secretKeyId]) return;
+    if (!synced || !local) return false;
+    const env = synced.environments.items[envName];
+    if (!env) return false;
+    const existing = env.variables[index];
+    if (!existing) return false;
+    if (!local.secretIndex.entries[secretKeyId]) return false;
     const entry = local.secretIndex.entries[secretKeyId];
 
-    // Backfill the synced label map so collaborators see what this id is for.
-    const existingMeta = synced.secretKeys?.[secretKeyId];
-    const nextSecretKeys = {
-      ...(synced.secretKeys ?? {}),
-      [secretKeyId]: existingMeta ?? {
+    // Ensure the slot exists in synced.secretKeys with a salt. addSecret
+    // registers it eagerly; lazy-register here as a defensive backfill
+    // (e.g. for slots created before this code landed).
+    let meta = synced.secretKeys?.[secretKeyId];
+    let metaCreated = false;
+    if (!meta) {
+      meta = {
         id: secretKeyId,
         label: entry.label,
+        salt: generateSlotSalt(),
         createdAt: entry.createdAt,
-      },
-    };
+      };
+      metaCreated = true;
+    }
+
+    // Encrypt the row's current plaintext under the slot's derived key. If
+    // the slot value isn't available locally we can't encrypt — refuse the
+    // bind and let the caller prompt the user to provide the slot value.
+    const cipherValue = await tryEncryptForSlot(get, secretKeyId, existing.value, meta);
+    if (cipherValue === null) return false;
+
+    const nextSecretKeys = metaCreated
+      ? { ...(synced.secretKeys ?? {}), [secretKeyId]: meta }
+      : (synced.secretKeys ?? {});
 
     const nextVars: Environment['variables'] = env.variables.map((v, i) =>
-      i === index ? { ...v, encrypted: true, secretKeyId, value: '' } : v,
+      i === index ? { ...v, encrypted: true, secretKeyId, value: cipherValue } : v,
     );
 
     commitSynced(set, get, (s) => ({
       ...setVariablesAction(s, envName, nextVars),
       secretKeys: nextSecretKeys,
     }));
+    return true;
   },
 
-  unbindVariableSecretKey: (envName, index) => {
+  unbindVariableSecretKey: async (envName, index) => {
     const synced = get().synced;
-    if (!synced) return;
+    if (!synced) return false;
     const env = synced.environments.items[envName];
-    if (!env) return;
+    if (!env) return false;
+    const existing = env.variables[index];
+    if (!existing) return false;
+    if (!existing.encrypted || !existing.secretKeyId) {
+      // Already plain — just normalize the row.
+      const nextVars: Environment['variables'] = env.variables.map((v, i) =>
+        i === index ? { ...v, encrypted: false, secretKeyId: undefined } : v,
+      );
+      commitSynced(set, get, (s) => setVariablesAction(s, envName, nextVars));
+      return true;
+    }
+
+    // Decrypt ciphertext back to plaintext under the slot's derived key. If
+    // the slot value isn't available we can't recover the plaintext — refuse
+    // and let the caller prompt the user.
+    const plaintext = await tryDecryptForSlot(get, existing.secretKeyId, existing.value);
+    if (plaintext === null) return false;
+
     const nextVars: Environment['variables'] = env.variables.map((v, i) =>
-      i === index ? { ...v, encrypted: false, secretKeyId: undefined, value: '' } : v,
+      i === index ? { ...v, encrypted: false, secretKeyId: undefined, value: plaintext } : v,
     );
     commitSynced(set, get, (s) => setVariablesAction(s, envName, nextVars));
+    return true;
   },
 
   setEnvFocus: (name) => {
@@ -2392,7 +2709,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   addSecret: async ({ label, value, origin, linkedWorkspaceId, linkedKeyId }) => {
     const local = get().local;
-    if (!local) return '';
+    const synced = get().synced;
+    if (!local || !synced) return '';
     const id = generateId();
     const key = await getMasterKey();
     const payload = await encryptString(value, key);
@@ -2411,16 +2729,122 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
     set({ local: next });
     void saveLocal(next);
+    // Workspace-origin slots become first-class entries in synced.secretKeys
+    // with a per-slot salt so encrypted env vars travel through Git: any
+    // teammate who supplies the same slot value derives the same AES-GCM
+    // key (PBKDF2 with this salt) and can decrypt. Linked-origin slots and
+    // raw secrets (e.g. GitHub PATs added via addSecretEntry directly) stay
+    // out of synced.secretKeys — they're per-device.
+    if ((origin ?? 'workspace') === 'workspace') {
+      const salt = generateSlotSalt();
+      const meta: SecretKeyMeta = {
+        id,
+        label: label.trim(),
+        salt,
+        createdAt: next.secretIndex.entries[id].createdAt,
+      };
+      const nextSynced: WorkspaceSynced = {
+        ...synced,
+        secretKeys: { ...(synced.secretKeys ?? {}), [id]: meta },
+        meta: { ...synced.meta, updatedAt: new Date().toISOString() },
+      };
+      set({ synced: nextSynced });
+      void saveSynced(nextSynced);
+    }
     get().recomputeSecretUsage();
     return id;
   },
 
   setSecretValue: async (id, value) => {
     const local = get().local;
-    if (!local || !local.secretIndex.entries[id]) return false;
-    const key = await getMasterKey();
-    const payload = await encryptString(value, key);
+    const synced = get().synced;
+    if (!local || !synced || !local.secretIndex.entries[id]) return false;
+
+    // When a slot value changes, every env var encrypted under it has
+    // ciphertext that only the OLD value can decrypt. Decrypt everything
+    // with the old value first (using the existing salt + slot value), then
+    // re-encrypt with the new value (same salt, new derived key) so the
+    // synced doc stays valid.
+    const meta = synced.secretKeys?.[id];
+    const oldSlotValue = await loadSlotPlaintext(id);
+    let nextSynced: WorkspaceSynced | null = null;
+    if (meta && oldSlotValue !== null && oldSlotValue !== value) {
+      const oldKey = await deriveKeyFromSlotValue(oldSlotValue, meta.salt);
+      const newKey = await deriveKeyFromSlotValue(value, meta.salt);
+      const nextItems: Record<string, Environment> = {};
+      let touched = false;
+      for (const [envName, env] of Object.entries(synced.environments.items)) {
+        const nextVars = await Promise.all(
+          env.variables.map(async (v) => {
+            if (!(v.encrypted && v.secretKeyId === id)) return v;
+            const payload = tryParsePayload(v.value);
+            if (!payload) return v; // unrecoverable — leave intact
+            try {
+              const plaintext = await decryptString(payload, oldKey);
+              const next = await encryptString(plaintext, newKey);
+              touched = true;
+              return { ...v, value: serializePayload(next) };
+            } catch {
+              return v;
+            }
+          }),
+        );
+        nextItems[envName] = { ...env, variables: nextVars };
+      }
+      if (touched) {
+        nextSynced = {
+          ...synced,
+          environments: { ...synced.environments, items: nextItems },
+          meta: { ...synced.meta, updatedAt: new Date().toISOString() },
+        };
+      }
+    }
+
+    // Re-wrap the slot value at rest under the local master key.
+    const masterKey = await getMasterKey();
+    const payload = await encryptString(value, masterKey);
     await putSecretPayload(id, payload);
+
+    if (nextSynced) {
+      set({ synced: nextSynced });
+      void saveSynced(nextSynced);
+    }
+    return true;
+  },
+
+  /**
+   * Onboarding: supply a slot's value when the local vault has no payload
+   * for it yet (typical "I just cloned this workspace" flow). The slot
+   * identity is read from `synced.secretKeys[id]` — we mirror it into the
+   * local secret index so the rest of the app sees the slot the same way
+   * it does for slots created on this device. Unlike `setSecretValue`, no
+   * re-encryption pass runs — we trust the supplied value matches what
+   * existing ciphertext was encrypted under (else env vars surface as
+   * `<MISSING:LABEL>` at send time, prompting the user to fix it).
+   */
+  provideSlotValue: async (id, value) => {
+    const local = get().local;
+    const synced = get().synced;
+    if (!local || !synced) return false;
+    const meta = synced.secretKeys?.[id];
+    if (!meta) return false;
+    const masterKey = await getMasterKey();
+    const payload = await encryptString(value, masterKey);
+    await putSecretPayload(id, payload);
+    // Mirror the slot into the local index if it isn't already there
+    // (cloning a workspace lands synced.secretKeys but no local entry).
+    if (!local.secretIndex.entries[id]) {
+      const nextLocal = addSecretEntryAction(local, {
+        id,
+        label: meta.label,
+        origin: 'workspace',
+      });
+      if (nextLocal !== local) {
+        set({ local: nextLocal });
+        void saveLocal(nextLocal);
+        get().recomputeSecretUsage();
+      }
+    }
     return true;
   },
 
@@ -2439,20 +2863,89 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   renameSecret: (id, label) => {
     const local = get().local;
+    const synced = get().synced;
     if (!local) return;
-    const next = renameSecretEntryAction(local, id, label);
-    if (next === local) return;
-    set({ local: next });
-    void saveLocal(next);
+    const nextLocal = renameSecretEntryAction(local, id, label);
+    if (nextLocal === local) return;
+    set({ local: nextLocal });
+    void saveLocal(nextLocal);
+    // Labels for workspace-origin slots also live on `synced.secretKeys`
+    // so collaborators pulling from Git see the same human-readable
+    // name. Without mirroring here, the rename takes effect locally
+    // but a teammate pulling sees the stale label. Linked-origin slots
+    // don't have a corresponding `synced.secretKeys[id]` entry (their
+    // metadata is owned by the source workspace), so the conditional
+    // skip is safe.
+    if (synced?.secretKeys?.[id]) {
+      const trimmed = label.trim();
+      if (trimmed && synced.secretKeys[id].label !== trimmed) {
+        const nextSynced: WorkspaceSynced = {
+          ...synced,
+          secretKeys: {
+            ...synced.secretKeys,
+            [id]: { ...synced.secretKeys[id], label: trimmed },
+          },
+          meta: { ...synced.meta, updatedAt: new Date().toISOString() },
+        };
+        set({ synced: nextSynced });
+        void saveSynced(nextSynced);
+      }
+    }
+  },
+
+  listMissingSlots: async () => {
+    const synced = get().synced;
+    if (!synced?.secretKeys) return [];
+    const missing: SecretKeyMeta[] = [];
+    for (const meta of Object.values(synced.secretKeys)) {
+      const payload = await getSecretPayload(meta.id);
+      if (!payload) missing.push(meta);
+    }
+    return missing;
   },
 
   removeSecret: async (id) => {
     const local = get().local;
-    if (!local || !local.secretIndex.entries[id]) return;
+    const synced = get().synced;
+    if (!local || !synced || !local.secretIndex.entries[id]) return;
+
+    // Drop the IDB payload + the per-device index entry first.
     await deleteSecretPayload(id);
-    const next = removeSecretEntryAction(local, id);
-    set({ local: next });
-    void saveLocal(next);
+    const nextLocal = removeSecretEntryAction(local, id);
+
+    // Cascade through the synced doc: drop the slot record, and unbind
+    // every env var that referenced it. We can't recover those env vars'
+    // plaintext (slot key is gone), so they become empty plain rows — the
+    // user keeps the variable name and can re-type a value if needed.
+    let touched = false;
+    const nextItems: Record<string, Environment> = {};
+    for (const [envName, env] of Object.entries(synced.environments.items)) {
+      const nextVars = env.variables.map((v) => {
+        if (v.encrypted && v.secretKeyId === id) {
+          touched = true;
+          return { key: v.key, value: '', encrypted: false };
+        }
+        return v;
+      });
+      nextItems[envName] = { ...env, variables: nextVars };
+    }
+    const nextSecretKeys = { ...(synced.secretKeys ?? {}) };
+    const hadSlotMeta = id in nextSecretKeys;
+    delete nextSecretKeys[id];
+
+    if (touched || hadSlotMeta) {
+      const nextSynced: WorkspaceSynced = {
+        ...synced,
+        environments: { ...synced.environments, items: nextItems },
+        secretKeys: nextSecretKeys,
+        meta: { ...synced.meta, updatedAt: new Date().toISOString() },
+      };
+      set({ local: nextLocal, synced: nextSynced });
+      void saveSynced(nextSynced);
+    } else {
+      set({ local: nextLocal });
+    }
+    void saveLocal(nextLocal);
   },
 
   recomputeSecretUsage: () => {
@@ -2509,8 +3002,18 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       grantedScopes: scopes.granted,
       addedAt: new Date().toISOString(),
       lastVerifiedAt: new Date().toISOString(),
+      // Scope-only check at connect time. Since REQUIRED_BASE_SCOPES already
+      // mandates `repo`, this typically resolves to `true` immediately for
+      // both classic PATs (where `repo` covers PR ops) and fine-grained
+      // PATs that surface `pull_request` directly. A `null` here means the
+      // token uses a permission model the scope check can't read; the
+      // probe runs once a repo is connected (see `connectRepo`).
+      canCreatePullRequests: checkPrCapabilityFromScopes(scopes.granted),
     };
-    const next: WorkspaceLocal = { ...indexed, sessions: { github: session } };
+    const next: WorkspaceLocal = {
+      ...indexed,
+      sessions: { github: { ...indexed.sessions.github, workspace: session } },
+    };
     set({ local: next });
     void saveLocal(next);
     return session;
@@ -2518,7 +3021,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   verifyGitHubScopes: async () => {
     const local = get().local;
-    const session = local?.sessions.github ?? null;
+    const session = local?.sessions.github.workspace ?? null;
     if (!local || !session) return null;
     const payload = await getSecretPayload(session.tokenSecretId);
     if (!payload) return null;
@@ -2526,12 +3029,24 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const token = await decryptString(payload, masterKey);
     const client = new GitHubClient();
     const { scopes } = await client.getViewer(token);
+    // Re-resolve PR capability: scope check first; if inconclusive AND a
+    // repo is already connected, fall back to the network probe so the
+    // session card flips out of the unknown state on its own.
+    const repo = local.connectedRepo;
+    const capability = await resolvePrCapability({
+      grantedScopes: scopes.granted,
+      probe: repo ? () => probePrCapability(client, token, repo.owner, repo.name) : undefined,
+    });
     const updated: GitHubSession = {
       ...session,
       grantedScopes: scopes.granted,
       lastVerifiedAt: new Date().toISOString(),
+      canCreatePullRequests: capability,
     };
-    const next: WorkspaceLocal = { ...local, sessions: { github: updated } };
+    const next: WorkspaceLocal = {
+      ...local,
+      sessions: { github: { ...local.sessions.github, workspace: updated } },
+    };
     set({ local: next });
     void saveLocal(next);
     return scopes.granted;
@@ -2539,7 +3054,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   updateGitHubToken: async (token) => {
     const local = get().local;
-    const session = local?.sessions.github ?? null;
+    const session = local?.sessions.github.workspace ?? null;
     if (!local || !session) throw new Error('No active session to update');
     const trimmed = token.trim();
     if (!trimmed) throw new Error('Token is required');
@@ -2556,12 +3071,23 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const masterKey = await getMasterKey();
     const payload = await encryptString(trimmed, masterKey);
     await putSecretPayload(session.tokenSecretId, payload);
+    // Re-resolve capability with the new token. Mirrors verifyGitHubScopes:
+    // probe falls back to the connected repo when scope check is inconclusive.
+    const repo = local.connectedRepo;
+    const capability = await resolvePrCapability({
+      grantedScopes: scopes.granted,
+      probe: repo ? () => probePrCapability(client, trimmed, repo.owner, repo.name) : undefined,
+    });
     const updated: GitHubSession = {
       ...session,
       grantedScopes: scopes.granted,
       lastVerifiedAt: new Date().toISOString(),
+      canCreatePullRequests: capability,
     };
-    const next: WorkspaceLocal = { ...local, sessions: { github: updated } };
+    const next: WorkspaceLocal = {
+      ...local,
+      sessions: { github: { ...local.sessions.github, workspace: updated } },
+    };
     set({ local: next });
     void saveLocal(next);
     return updated;
@@ -2611,13 +3137,19 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   disconnectGitHubSession: async () => {
     const local = get().local;
-    const session = local?.sessions.github ?? null;
+    const session = local?.sessions.github.workspace ?? null;
     if (!local || !session) return;
     await deleteSecretPayload(session.tokenSecretId);
     const indexCleared = removeSecretEntryAction(local, session.tokenSecretId);
     const next: WorkspaceLocal = {
       ...indexCleared,
-      sessions: { github: null },
+      // Only the workspace session is cleared. Per-link linking sessions
+      // stay put — disconnecting the workspace PAT shouldn't silently nuke
+      // unrelated link credentials. Links bound with sessionMode='workspace'
+      // become orphaned; the link card surfaces a "session missing" warning
+      // and the user can remap to a dedicated session or re-add the
+      // workspace session.
+      sessions: { github: { ...indexCleared.sessions.github, workspace: null } },
       // Disconnecting the session also drops the repo + branch — they're
       // unusable without an authenticated client.
       connectedRepo: null,
@@ -2647,8 +3179,26 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       pushable: repo.pushable,
       connectedAt: new Date().toISOString(),
     };
+
+    // If session connect couldn't determine PR capability from scopes
+    // alone (canCreatePullRequests === null — typically a fine-grained
+    // PAT whose permissions aren't surfaced via x-oauth-scopes), now that
+    // we have a repo to probe against, run it. Scope-confirmed sessions
+    // (the common case — every classic PAT with `repo`) skip this step.
+    let updatedSession = local.sessions.github.workspace;
+    if (updatedSession && updatedSession.canCreatePullRequests === null) {
+      try {
+        const probed = await probePrCapability(client, token, repo.owner, repo.name);
+        updatedSession = { ...updatedSession, canCreatePullRequests: probed };
+      } catch {
+        // Probe failed transiently — leave capability as null so a later
+        // verify can retry. Don't block repo connection on this.
+      }
+    }
+
     const next: WorkspaceLocal = {
       ...local,
+      sessions: { github: { ...local.sessions.github, workspace: updatedSession } },
       connectedRepo: connected,
       // If the user re-connects to a different repo, drop any branch tied
       // to the old one — pushing to the wrong repo would be a disaster.
@@ -2713,7 +3263,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       diffSummary: null,
       openPrUrl: null,
     };
-    const next: WorkspaceLocal = { ...local, workingBranch: branch };
+    // Creating a fresh working branch implicitly acknowledges any retired
+    // branch — the banner pointed the user here, and they followed through.
+    const next: WorkspaceLocal = { ...local, workingBranch: branch, retiredBranch: null };
     set({ local: next });
     void saveLocal(next);
 
@@ -2722,6 +3274,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // local seed without first reviewing remote content. Surface the
     // first-pull prompt; the WorkspacePanel banner offers "Pull first"
     // (refreshWorkspace) vs. "Skip" (acknowledgeFirstPull).
+    //
+    // Exception: if the file's blob sha matches the scaffold we just
+    // wrote via `seedInitialCommit`, suppress the prompt — that "remote
+    // content" is our own empty placeholder, not anything the user needs
+    // to review. Clear the stash either way so a later legitimate
+    // pre-populated branch surfaces normally.
     try {
       const file = await client.getContents(
         token,
@@ -2730,13 +3288,100 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         'workspace.json',
         branchName,
       );
-      if (file !== null) {
+      const seededSha = next.seededWorkspaceSha;
+      if (file !== null && file.sha !== seededSha) {
         set({ firstPullPrompt: { branchName, remoteSha: file.sha } });
+      }
+      if (seededSha) {
+        const cleared: WorkspaceLocal = { ...get().local!, seededWorkspaceSha: null };
+        set({ local: cleared });
+        void saveLocal(cleared);
       }
     } catch {
       // Probe is best-effort — auth/network blips don't block branch creation.
     }
     return branch;
+  },
+
+  seedInitialCommit: async () => {
+    const local = get().local;
+    const synced = get().synced;
+    if (!local || !synced) throw new Error('Workspace not ready');
+    const repo = local.connectedRepo;
+    if (!repo) throw new Error('Connect a repo before seeding the initial commit');
+
+    const token = await decryptSessionToken(local);
+    const client = new GitHubClient();
+    const branchName = repo.defaultBranch;
+    let scaffoldSha: string | null = null;
+
+    // Idempotent probe: if workspace.json is already on the default branch,
+    // the seed's job is done — listBranches probably just paginated past
+    // existing branches, or a previous attempt partially landed. Skip the
+    // PUT (which would fail with 422 "sha wasn't supplied" anyway) and reuse
+    // the existing blob sha as the "scaffold sha" so createWorkingBranch
+    // can suppress its first-pull prompt for that exact content.
+    try {
+      const existing = await client.getContents(
+        token,
+        repo.owner,
+        repo.name,
+        'workspace.json',
+        branchName,
+      );
+      if (existing) {
+        scaffoldSha = existing.sha;
+      }
+    } catch {
+      // Probe is best-effort — if it errors (e.g. branch genuinely doesn't
+      // exist yet on a truly empty repo), fall through to the PUT.
+    }
+
+    if (scaffoldSha === null) {
+      // Build a minimal scaffold: keep the user's workspaceId + name (so this
+      // repo's identity stays tied to their workspace) but clear all content
+      // arrays. The user's actual content lands via the working-branch push.
+      const scaffold: WorkspaceSynced = {
+        schemaVersion: synced.schemaVersion,
+        workspaceId: synced.workspaceId,
+        workspaceName: synced.workspaceName,
+        collections: {
+          tree: { id: synced.collections.tree.id, type: 'root', children: [] },
+          requests: {},
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
+        linkedWorkspaces: {},
+        linkedOverrides: { requests: {}, environmentVars: {} },
+        releases: { self: null, perLink: {} },
+        globalAssets: { schemas: {}, graphql: {} },
+        mockServers: {},
+        secretKeys: {},
+        meta: synced.meta,
+      };
+      const content = serializeWorkspaceForGit(scaffold);
+
+      // Use the Contents API rather than the git-data flow: a truly empty
+      // repo has no git database yet, so /git/blobs, /git/trees, /git/commits
+      // all reject with 409 "Git Repository is empty.". PUT /contents/{path}
+      // atomically initializes the repo with a one-file commit on the
+      // supplied branch (defaulting to repo.defaultBranch).
+      const contentBase64 = bytesToBase64(new TextEncoder().encode(content));
+      const result = await client.putContents(token, repo.owner, repo.name, 'workspace.json', {
+        message: 'chore: initialize workspace.json',
+        contentBase64,
+        branch: branchName,
+      });
+      scaffoldSha = result.contentSha;
+    }
+
+    // Persist the scaffold blob sha so the next createWorkingBranch can
+    // recognise its own seed and skip the false-positive first-pull prompt.
+    const next: WorkspaceLocal = { ...get().local!, seededWorkspaceSha: scaffoldSha };
+    set({ local: next });
+    void saveLocal(next);
+
+    return { branchName, scaffoldSha };
   },
 
   discardWorkingBranch: () => {
@@ -2806,13 +3451,30 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       sha: newCommit.sha,
     });
 
-    // 7. Persist the new local branch state.
+    // 7. Persist the new local branch state + refresh the sync snapshot.
+    //    After a successful push, the just-pushed `synced` doc IS the
+    //    canonical remote state on this branch, so we re-base the 3-way
+    //    diff machinery against it. Without this, the UnpushedChangesStrip
+    //    keeps diffing against the stale `lastPulledSnapshot` (often null
+    //    on the first push) and reports the same N changes as still
+    //    unpushed even though the remote now matches local.
     const updatedBranch: WorkingBranch = {
       ...branch,
       headSha: newCommit.sha,
       lastPushedSha: newCommit.sha,
     };
-    const next: WorkspaceLocal = { ...get().local!, workingBranch: updatedBranch };
+    const currentLocal = get().local!;
+    const next: WorkspaceLocal = {
+      ...currentLocal,
+      workingBranch: updatedBranch,
+      sync: {
+        ...currentLocal.sync,
+        lastPulledSnapshot: synced,
+        lastPulledSha: newCommit.sha,
+        lastPulledAt: new Date().toISOString(),
+        dirtyKeys: [],
+      },
+    };
     set({ local: next });
     void saveLocal(next);
     return { commitSha: newCommit.sha };
@@ -2821,59 +3483,160 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   publishRelease: async (args) => {
     const synced = get().synced;
     if (!synced) return {};
-    const wantTag = args.createGitTag === true || args.createGitHubRelease === true;
-    const wantRelease = args.createGitHubRelease === true;
-
-    if (wantTag) {
-      const local = get().local;
-      if (!local?.connectedRepo || !local.workingBranch) {
-        throw new Error(
-          'Connect a repo + create a working branch before tagging or releasing on GitHub.',
-        );
-      }
-    }
-
-    // 1. Update the workspace ledger first. The synced doc is the
-    //    source of truth — even if the GitHub side fails, the ledger
-    //    entry persists and can be re-pushed / tagged later.
+    // Publishing now ONLY writes the ledger entry + workspace fingerprint.
+    // Git tag / GitHub Release creation moved to the dedicated
+    // `tagReleaseVersion` action so tags can target main HEAD after the
+    // PR merges, instead of an unmerged working-branch commit (the bug
+    // this rework closes).
     const next = await publishReleaseAction(synced, args);
     set({ synced: next });
     await saveSynced(next);
+    return {};
+  },
 
-    if (!wantTag) return {};
+  tagReleaseVersion: async (args) => {
+    const local = get().local;
+    if (!local?.connectedRepo) {
+      throw new Error('Connect a repo before tagging a release.');
+    }
+    const repo = local.connectedRepo;
+    const baseBranch = local.workingBranch?.baseBranch ?? repo.defaultBranch ?? 'main';
+    const trimmedVersion = args.version.trim().replace(/^v/, '');
+    if (!trimmedVersion) {
+      throw new Error('A version is required to create a tag.');
+    }
+    const tagName = `v${trimmedVersion}`;
 
-    // 2. Push the updated synced doc so the tag points at a commit
-    //    that includes the new ledger entry. pushWorkspace handles
-    //    bundling the synced + attachments into one tree commit.
-    const pushResult = await get().pushWorkspace(`Publish release v${args.version}`);
-    const local = get().local!;
-    const repo = local.connectedRepo!;
     const token = await decryptSessionToken(local);
     const client = new GitHubClient();
 
-    const tagName = `v${args.version}`;
+    // Resolve the base branch HEAD — that's the commit we tag against.
+    // (Always main, never the working branch — see fix scope #6.)
+    const baseRef = await client.getRef(token, repo.owner, repo.name, baseBranch);
+    const targetSha = baseRef.sha;
+
+    // Detect existing tag of the same name. Without `override` we throw
+    // so the UI can surface a typed-confirm toggle instead of silently
+    // hitting GitHub's 422 "Reference already exists".
+    const existingSha = await client.getTagSha(token, repo.owner, repo.name, tagName);
+    if (existingSha !== null) {
+      if (!args.override) {
+        throw new Error(
+          `Tag ${tagName} already exists at ${existingSha.slice(0, 7)}. ` +
+            `Toggle "Override existing tag" to replace it, or pick a different version.`,
+        );
+      }
+      // Override path: delete the old ref, then recreate against main HEAD.
+      await client.deleteRef(token, repo.owner, repo.name, `tags/${tagName}`);
+    }
+
     const tag = await client.createTag(token, repo.owner, repo.name, {
       tagName,
-      sha: pushResult.commitSha,
+      sha: targetSha,
     });
 
-    const result: { commitSha: string; tagRef: string; releaseUrl?: string } = {
-      commitSha: pushResult.commitSha,
+    const result: { tagRef: string; sha: string; releaseUrl?: string } = {
       tagRef: tag.ref,
+      sha: targetSha,
     };
 
-    if (wantRelease) {
-      const parsed = parseSemver(args.version);
+    if (args.createGitHubRelease) {
+      const parsed = parseSemver(trimmedVersion);
       const release = await client.createRelease(token, repo.owner, repo.name, {
         tagName,
-        releaseName: `v${args.version}`,
-        body: args.notes,
+        releaseName: tagName,
+        body: args.notes ?? '',
         prerelease: parsed?.prerelease !== null && parsed?.prerelease !== undefined,
       });
       result.releaseUrl = release.htmlUrl;
     }
 
     return result;
+  },
+
+  listRepoTopics: async () => {
+    const local = get().local;
+    if (!local?.connectedRepo) {
+      throw new Error('Connect a repo before reading its topics.');
+    }
+    const token = await decryptSessionToken(local);
+    const client = new GitHubClient();
+    return client.listRepoTopics(token, local.connectedRepo.owner, local.connectedRepo.name);
+  },
+
+  setRepoTopics: async (topics) => {
+    const local = get().local;
+    if (!local?.connectedRepo) {
+      throw new Error('Connect a repo before editing its topics.');
+    }
+    // Normalize: lowercase, trim, dedupe, drop empties. GitHub rejects
+    // anything not matching ^[a-z0-9][a-z0-9-]*$ — we let GitHub be the
+    // strict validator and only do the trivial normalizations here.
+    const normalized = Array.from(
+      new Set(topics.map((t) => t.trim().toLowerCase()).filter((t) => t.length > 0)),
+    );
+    const token = await decryptSessionToken(local);
+    const client = new GitHubClient();
+    return client.setRepoTopics(
+      token,
+      local.connectedRepo.owner,
+      local.connectedRepo.name,
+      normalized,
+    );
+  },
+
+  loadLatestUntaggedRelease: async () => {
+    const local = get().local;
+    if (!local?.connectedRepo) return null;
+    const repo = local.connectedRepo;
+    const baseBranch = local.workingBranch?.baseBranch ?? repo.defaultBranch ?? 'main';
+    const token = await decryptSessionToken(local);
+    const client = new GitHubClient();
+
+    // Pull main's workspace.json — that's the authoritative ledger from
+    // a consumer's perspective (anything in synced.releases.self that
+    // hasn't been pushed-and-merged yet shouldn't be tag-able).
+    const file = await client.getContents(
+      token,
+      repo.owner,
+      repo.name,
+      'workspace.json',
+      baseBranch,
+    );
+    if (!file) return null;
+    let parsed: { releases?: { self?: { versions?: Array<{ version: string; notes?: string }> } } };
+    try {
+      parsed = JSON.parse(file.content) as typeof parsed;
+    } catch {
+      return null;
+    }
+    const versions = parsed.releases?.self?.versions ?? [];
+    if (versions.length === 0) return null;
+
+    const sorted = [...versions]
+      .map((v) => v.version)
+      .filter((v): v is string => typeof v === 'string' && v.length > 0);
+    const sortedDesc = sortVersionsDesc(sorted);
+
+    // Walk from latest to oldest, return the first one whose tag isn't
+    // already on the repo. When every version is already tagged we
+    // return null — the modal renders an empty state. Surfacing the
+    // override path proactively confuses users (they see "Override
+    // v2.3.0" when v2.3.0 was just released and there's nothing new to
+    // do). Retagging is a rare advanced case; if it becomes a real ask
+    // we can add a separate "retag…" affordance.
+    for (const version of sortedDesc) {
+      const existingSha = await client.getTagSha(token, repo.owner, repo.name, `v${version}`);
+      if (existingSha === null) {
+        const meta = versions.find((v) => v.version === version);
+        return {
+          version,
+          notes: meta?.notes ?? '',
+          existingTagSha: null,
+        };
+      }
+    }
+    return null;
   },
 
   deprecateRelease: (version) => {
@@ -2905,26 +3668,26 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     return client.searchMarketplaceRepos(token, query);
   },
 
-  listAccessibleRepos: async () => {
+  listAccessibleRepos: async (opts) => {
     const local = get().local;
     if (!local) throw new Error('Workspace not ready');
-    const token = await decryptSessionToken(local);
+    const token = opts?.tokenOverride?.trim() || (await decryptSessionToken(local));
     const client = new GitHubClient();
     return client.listAccessibleRepos(token);
   },
 
-  listRepoBranches: async (owner, name) => {
+  listRepoBranches: async (owner, name, opts) => {
     const local = get().local;
     if (!local) throw new Error('Workspace not ready');
-    const token = await decryptSessionToken(local);
+    const token = opts?.tokenOverride?.trim() || (await decryptSessionToken(local));
     const client = new GitHubClient();
     return client.listBranches(token, owner.trim(), name.trim());
   },
 
-  probeLinkedRepoVersions: async (owner, name, branch) => {
+  probeLinkedRepoVersions: async (owner, name, branch, opts) => {
     const local = get().local;
     if (!local) throw new Error('Workspace not ready');
-    const token = await decryptSessionToken(local);
+    const token = opts?.tokenOverride?.trim() || (await decryptSessionToken(local));
     const client = new GitHubClient();
     const file = await client.getContents(
       token,
@@ -2939,10 +3702,22 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // render a useful message.
     const parsed = parseLinkedWorkspaceJson(file.content);
     const ledger = parsed.releases?.self ?? null;
+
+    // Surface every slot the source declared in `secretKeys`. We used to
+    // filter this down to slots referenced by an `encrypted: true`
+    // variable, but that walk is fragile — a binding gap (variable
+    // missing `secretKeyId`, an older push that pre-dates the field,
+    // etc.) made declared slots silently invisible to consumers. Now we
+    // show all declared slots; users can leave irrelevant ones blank.
+    const requiredSecretKeys: SecretKeyMeta[] = parsed.secretKeys
+      ? Object.values(parsed.secretKeys)
+      : [];
+
     return {
       workspaceName: parsed.workspaceName,
       versions: (ledger?.versions ?? []).map((v) => v.version),
       currentVersion: ledger?.currentVersion ?? null,
+      requiredSecretKeys,
     };
   },
 
@@ -2955,7 +3730,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const link = synced.linkedWorkspaces[id];
     if (!link) throw new Error(`Linked workspace ${id} not found`);
 
-    const token = await decryptSessionToken(local);
+    const token = await decryptLinkSessionToken(local, link);
     const client = new GitHubClient();
     const [owner, name] = link.source.repoFullName.split('/', 2);
     // Always fetch HEAD of the source branch — that's the source's
@@ -3019,8 +3794,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
     const baseSnapshot = local.linkedCollections[active.linkedWorkspaceId] ?? null;
     // Re-fetch the target — between preview and apply, the source could
-    // have moved. Refetching here keeps the apply honest.
-    const token = await decryptSessionToken(local);
+    // have moved. Refetching here keeps the apply honest. Routes through
+    // the link's bound session (workspace or dedicated) per sessionMode.
+    const token = await decryptLinkSessionToken(local, link);
     const client = new GitHubClient();
     const [owner, name] = link.source.repoFullName.split('/', 2);
     const file = await client.getContents(token, owner, name, 'workspace.json', link.source.branch);
@@ -3112,7 +3888,21 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const link = synced.linkedWorkspaces[id];
     if (!link) throw new Error(`Linked workspace ${id} not found`);
 
-    const token = await decryptSessionToken(local);
+    // Refresh = LEDGER ONLY (steady state). The user's mental model:
+    //   - "Refresh" pulls metadata so the user can see what's been
+    //     published upstream.
+    //   - "Update Available" badge = pin lags ledger.currentVersion.
+    //   - "Apply update" is the only path that touches the cached
+    //     content snapshot (and bumps the pin).
+    //
+    // EXCEPTION: bootstrap. When this consumer has no cached snapshot
+    // yet (fresh clone — `local.linkedCollections[id]` is missing),
+    // there's nothing to "preserve against an upcoming diff" — the
+    // user can't review or apply an update against an empty baseline.
+    // In that case Refresh ALSO populates the snapshot from the same
+    // workspace.json fetch. Steady-state refreshes (snapshot exists)
+    // remain ledger-only.
+    const token = await decryptLinkSessionToken(local, link);
     const client = new GitHubClient();
     const [owner, name] = link.source.repoFullName.split('/', 2);
     const file = await client.getContents(token, owner, name, 'workspace.json', link.source.branch);
@@ -3134,18 +3924,25 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       },
       meta: { ...synced.meta, updatedAt: new Date().toISOString() },
     };
-    // Refresh the cached collections + environments alongside the
-    // ledger. When the source's workspace.json doesn't ship those
-    // fields we leave any existing snapshot untouched rather than
-    // wiping it (it might still be useful from an earlier successful
-    // pull).
-    const snapshot = buildLinkedSnapshot(parsed, link);
-    const nextLocal = snapshot
-      ? { ...local, linkedCollections: { ...local.linkedCollections, [id]: snapshot } }
-      : local;
-    set({ synced: next, ...(snapshot ? { local: nextLocal } : {}) });
+    set({ synced: next });
     void saveSynced(next);
-    if (snapshot) void saveLocal(nextLocal);
+
+    // Bootstrap path: snapshot is missing → populate it now from the
+    // same parsed payload. Doesn't touch the pin (that's still
+    // metadata-only); just gives the consumer a non-empty baseline so
+    // requests/envs render and future Apply Updates have something to
+    // diff against.
+    if (!local.linkedCollections[id]) {
+      const snapshot = buildLinkedSnapshot(parsed, link);
+      if (snapshot) {
+        const nextLocal: WorkspaceLocal = {
+          ...local,
+          linkedCollections: { ...local.linkedCollections, [id]: snapshot },
+        };
+        set({ local: nextLocal });
+        void saveLocal(nextLocal);
+      }
+    }
   },
 
   pinLinkedVersion: (id, version) => {
@@ -3257,14 +4054,29 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       releases: { ...synced.releases, perLink },
       meta: { ...synced.meta, updatedAt: new Date().toISOString() },
     };
-    // Drop the cached collections snapshot too — orphan state in
-    // local.linkedCollections would just confuse the cross-workspace
-    // step picker.
+    // Drop the cached collections snapshot AND any dedicated linking
+    // session for this link — the session is no longer reachable from
+    // the UI once the link is gone.
     let nextLocal = local;
-    if (local && local.linkedCollections[id]) {
-      const linkedCollections = { ...local.linkedCollections };
-      delete linkedCollections[id];
-      nextLocal = { ...local, linkedCollections };
+    if (local) {
+      const linkSession = local.sessions.github.links[id];
+      const hasSnapshot = !!local.linkedCollections[id];
+      if (linkSession || hasSnapshot) {
+        const linkedCollections = { ...local.linkedCollections };
+        delete linkedCollections[id];
+        const links = { ...local.sessions.github.links };
+        delete links[id];
+        nextLocal = {
+          ...local,
+          linkedCollections,
+          sessions: { github: { ...local.sessions.github, links } },
+        };
+      }
+      // The dedicated session's IDB payload also needs to be purged so
+      // it doesn't outlive the link.
+      if (linkSession?.tokenSecretId) {
+        void deleteSecretPayload(linkSession.tokenSecretId);
+      }
     }
     if (nextLocal !== local && nextLocal) {
       set({ synced: next, local: nextLocal });
@@ -3276,59 +4088,198 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
   },
 
+  addLinkSession: async (linkedWorkspaceId, token) => {
+    const local = get().local;
+    const synced = get().synced;
+    if (!local || !synced) throw new Error('Workspace not ready');
+    const link = synced.linkedWorkspaces[linkedWorkspaceId];
+    if (!link) throw new Error(`Linked workspace ${linkedWorkspaceId} not found`);
+    const trimmed = token.trim();
+    if (!trimmed) throw new Error('Token is required');
+
+    // Verify the PAT before storing — surfaces the same MissingScopeError
+    // / UnauthorizedError signals the workspace-session connect uses, so
+    // the link card can show a precise reason on failure.
+    const client = new GitHubClient();
+    const { viewer, scopes } = await client.getViewer(trimmed);
+
+    // Rotate over any existing dedicated session: replace the ciphertext
+    // under the existing tokenSecretId when the link already had one
+    // (keeps the secret-vault index stable), otherwise mint a fresh id.
+    const existing = local.sessions.github.links[linkedWorkspaceId];
+    const tokenSecretId = existing?.tokenSecretId ?? generateId();
+    const masterKey = await getMasterKey();
+    const payload = await encryptString(trimmed, masterKey);
+    await putSecretPayload(tokenSecretId, payload);
+
+    const session: GitHubSession = {
+      accountLogin: viewer.login,
+      tokenSecretId,
+      grantedScopes: scopes.granted,
+      addedAt: existing?.addedAt ?? new Date().toISOString(),
+      lastVerifiedAt: new Date().toISOString(),
+      canCreatePullRequests: null,
+    };
+
+    // Stamp the dedicated session and flip the link's mode in one pass.
+    const nextLocal: WorkspaceLocal = {
+      ...local,
+      sessions: {
+        github: {
+          ...local.sessions.github,
+          links: { ...local.sessions.github.links, [linkedWorkspaceId]: session },
+        },
+      },
+    };
+    const currentMode = link.source.sessionMode ?? 'workspace';
+    const nextSynced: WorkspaceSynced =
+      currentMode === 'dedicated'
+        ? synced
+        : {
+            ...synced,
+            linkedWorkspaces: {
+              ...synced.linkedWorkspaces,
+              [linkedWorkspaceId]: {
+                ...link,
+                source: { ...link.source, sessionMode: 'dedicated' },
+              },
+            },
+            meta: { ...synced.meta, updatedAt: new Date().toISOString() },
+          };
+
+    set({ local: nextLocal, synced: nextSynced });
+    void saveLocal(nextLocal);
+    if (nextSynced !== synced) void saveSynced(nextSynced);
+    return session;
+  },
+
+  removeLinkSession: async (linkedWorkspaceId) => {
+    const local = get().local;
+    if (!local) return;
+    const session = local.sessions.github.links[linkedWorkspaceId];
+    if (!session) return;
+    await deleteSecretPayload(session.tokenSecretId);
+    const links = { ...local.sessions.github.links };
+    delete links[linkedWorkspaceId];
+    const next: WorkspaceLocal = {
+      ...local,
+      sessions: { github: { ...local.sessions.github, links } },
+    };
+    set({ local: next });
+    void saveLocal(next);
+  },
+
+  setLinkSessionMode: async (linkedWorkspaceId, mode) => {
+    const synced = get().synced;
+    const local = get().local;
+    if (!synced || !local) return;
+    const link = synced.linkedWorkspaces[linkedWorkspaceId];
+    if (!link) return;
+    if (mode === 'dedicated' && !local.sessions.github.links[linkedWorkspaceId]) {
+      throw new Error(
+        'Add a linking session for this link first, then switch its mode to dedicated.',
+      );
+    }
+    const currentMode = link.source.sessionMode ?? 'workspace';
+    if (currentMode === mode) return;
+    const next: WorkspaceSynced = {
+      ...synced,
+      linkedWorkspaces: {
+        ...synced.linkedWorkspaces,
+        [linkedWorkspaceId]: {
+          ...link,
+          source: { ...link.source, sessionMode: mode },
+        },
+      },
+      meta: { ...synced.meta, updatedAt: new Date().toISOString() },
+    };
+    set({ synced: next });
+    await saveSynced(next);
+  },
+
   // --- Execution plans (P6) ----------------------------------------------
 
   setActivePlanId: (id) => set({ activePlanId: id }),
 
   addPlan: (name) => {
-    const local = get().local;
-    if (!local) return '';
-    const { local: next, plan } = addPlanAction(local, name);
-    set({ local: next, activePlanId: plan.id });
-    void saveLocal(next);
+    const synced = get().synced;
+    if (!synced) return '';
+    const { synced: nextRaw, plan } = addPlanAction(synced, name);
+    // Bump workspace-level meta.updatedAt — see commitSynced for the
+    // rationale. Manual paths like this can't reuse commitSynced
+    // because they also need to return the new plan id.
+    const next: WorkspaceSynced = {
+      ...nextRaw,
+      meta: { ...nextRaw.meta, updatedAt: new Date().toISOString() },
+    };
+    set({ synced: next, activePlanId: plan.id });
+    void saveSynced(next);
     return plan.id;
   },
 
   removePlan: (id) => {
+    const synced = get().synced;
     const local = get().local;
-    if (!local) return;
-    const next = removePlanAction(local, id);
-    if (next === local) return;
+    if (!synced) return;
+    const nextRaw = removePlanAction(synced, id);
+    if (nextRaw === synced) return;
+    // Deleting a plan also drops any plan-run history rows for it —
+    // those reference an id that no longer resolves. History stays
+    // local; do this in a separate setLocal pass.
+    const next: WorkspaceSynced = {
+      ...nextRaw,
+      meta: { ...nextRaw.meta, updatedAt: new Date().toISOString() },
+    };
     const wasActive = get().activePlanId === id;
-    set({ local: next, ...(wasActive ? { activePlanId: null } : {}) });
-    void saveLocal(next);
+    set({ synced: next, ...(wasActive ? { activePlanId: null } : {}) });
+    void saveSynced(next);
+    if (local) {
+      const planRuns = local.history.planRuns.filter((r) => r.planId !== id);
+      if (planRuns.length !== local.history.planRuns.length) {
+        const nextLocal: WorkspaceLocal = {
+          ...local,
+          history: { ...local.history, planRuns },
+        };
+        set({ local: nextLocal });
+        void saveLocal(nextLocal);
+      }
+    }
   },
 
-  renamePlan: (id, name) => commitLocal(set, get, (l) => renamePlanAction(l, id, name)),
+  renamePlan: (id, name) => commitSynced(set, get, (s) => renamePlanAction(s, id, name)),
   duplicatePlan: (planId) => {
-    const local = get().local;
-    if (!local) return null;
-    const { local: next, plan } = duplicatePlanAction(local, planId);
-    if (!plan || next === local) return null;
-    set({ local: next, activePlanId: plan.id });
-    void saveLocal(next);
+    const synced = get().synced;
+    if (!synced) return null;
+    const { synced: nextRaw, plan } = duplicatePlanAction(synced, planId);
+    if (!plan || nextRaw === synced) return null;
+    const next: WorkspaceSynced = {
+      ...nextRaw,
+      meta: { ...nextRaw.meta, updatedAt: new Date().toISOString() },
+    };
+    set({ synced: next, activePlanId: plan.id });
+    void saveSynced(next);
     return plan.id;
   },
   addPlanStep: (planId, requestId, linkedWorkspaceId) =>
-    commitLocal(set, get, (l) => addPlanStepAction(l, planId, requestId, linkedWorkspaceId)),
+    commitSynced(set, get, (s) => addPlanStepAction(s, planId, requestId, linkedWorkspaceId)),
   removePlanStep: (planId, stepIndex) =>
-    commitLocal(set, get, (l) => removePlanStepAction(l, planId, stepIndex)),
+    commitSynced(set, get, (s) => removePlanStepAction(s, planId, stepIndex)),
   reorderPlanSteps: (planId, fromIndex, toIndex) =>
-    commitLocal(set, get, (l) => reorderPlanStepsAction(l, planId, fromIndex, toIndex)),
+    commitSynced(set, get, (s) => reorderPlanStepsAction(s, planId, fromIndex, toIndex)),
   setPlanStepEnabled: (planId, stepIndex, enabled) =>
-    commitLocal(set, get, (l) => setPlanStepEnabledAction(l, planId, stepIndex, enabled)),
+    commitSynced(set, get, (s) => setPlanStepEnabledAction(s, planId, stepIndex, enabled)),
   setPlanEnvPriority: (planId, priorityOrder) =>
-    commitLocal(set, get, (l) => setPlanEnvPriorityAction(l, planId, priorityOrder)),
+    commitSynced(set, get, (s) => setPlanEnvPriorityAction(s, planId, priorityOrder)),
   setPlanStopOnFailure: (planId, stopOnAssertionFailure) =>
-    commitLocal(set, get, (l) => setPlanStopOnFailureAction(l, planId, stopOnAssertionFailure)),
+    commitSynced(set, get, (s) => setPlanStopOnFailureAction(s, planId, stopOnAssertionFailure)),
   setPlanVariables: (planId, variables) =>
-    commitLocal(set, get, (l) => setPlanVariablesAction(l, planId, variables)),
+    commitSynced(set, get, (s) => setPlanVariablesAction(s, planId, variables)),
 
   runPlan: async (planId, opts) => {
     const local = get().local;
     const synced = get().synced;
     if (!local || !synced) throw new Error('Workspace not ready');
-    const plan = local.executionPlans[planId];
+    const plan = synced.executionPlans?.[planId];
     if (!plan) throw new Error(`Plan ${planId} not found`);
 
     // Concurrent-run guard: refuse to start a second run of the same
@@ -3407,7 +4358,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         }
         const request = lookup.request;
         const planScope: {
-          envPriorityOrder?: readonly string[];
+          envPriorityOrder?: readonly EnvPriorityRef[];
           planVariables?: ReadonlyArray<{ key: string; value: string }>;
         } = {
           envPriorityOrder: plan.envPriorityOrder.length > 0 ? plan.envPriorityOrder : undefined,
@@ -3575,6 +4526,30 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
     const token = await decryptSessionToken(local);
     const client = new GitHubClient();
+
+    // Pre-flight: check whether the branch is functionally over before
+    // running the diff. Two paths trigger retirement here:
+    //   - The PR opened from this branch was merged on GitHub
+    //   - The branch ref was deleted out from under us (typical GitHub
+    //     "delete branch on merge" behavior, or a manual cleanup)
+    // Either way, there's nothing left to refresh against — drop the
+    // working branch and surface a banner so the user creates a new one.
+    const probe = await probeBranchRetirement(client, token, branch);
+    const retired = decideRetirement(branch, probe);
+    if (retired) {
+      const next: WorkspaceLocal = {
+        ...local,
+        workingBranch: null,
+        retiredBranch: retired,
+        // Drop any stale first-pull prompt — it points at a branch we just
+        // declared dead. firstPullPrompt is for new working branches.
+        // (No-op if it was already null.)
+      };
+      set({ local: next, firstPullPrompt: null });
+      void saveLocal(next);
+      return { status: 'retired', retired };
+    }
+
     const file = await client.getContents(
       token,
       branch.repoOwner,
@@ -3642,6 +4617,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   cancelRefresh: () => set({ pendingRefresh: null }),
+
+  dismissRetiredBranch: () => {
+    const local = get().local;
+    if (!local || !local.retiredBranch) return;
+    const next: WorkspaceLocal = { ...local, retiredBranch: null };
+    set({ local: next });
+    void saveLocal(next);
+  },
 
   createPullRequest: async (args) => {
     const local = get().local;
@@ -3934,6 +4917,28 @@ async function persistMerged(
   };
   set({ synced: merged, local: nextLocal });
   await Promise.all([saveSynced(merged), saveLocal(nextLocal)]);
+
+  // Bootstrap snapshots for any linkedWorkspaces that just arrived via
+  // pull but have no local cached snapshot yet. Fixes the fresh-clone
+  // scenario: a new workspace connecting to an existing repo would
+  // otherwise see the link metadata but no requests/envs from the
+  // source until the user manually clicks Refresh ledger on each card
+  // — and even then the old behavior didn't populate the snapshot
+  // (only the ledger), so the user was stuck.
+  //
+  // Best-effort: any individual link's bootstrap can fail (auth /
+  // network / source 404); we don't block the pull on it. The link
+  // card's "Refresh ledger" remains as a manual retry path.
+  const refreshLinkedWorkspace = get().refreshLinkedWorkspace;
+  for (const linkId of Object.keys(merged.linkedWorkspaces)) {
+    if (!nextLocal.linkedCollections[linkId]) {
+      try {
+        await refreshLinkedWorkspace(linkId);
+      } catch (err) {
+        console.warn(`[refreshWorkspace] failed to bootstrap linked snapshot for ${linkId}:`, err);
+      }
+    }
+  }
 }
 
 /**
@@ -3953,6 +4958,23 @@ async function doLinkWorkspace(
     pinnedVersion?: string | null;
     kind: 'private' | 'public';
     marketplace?: { listedAs: string; tags: string[]; summary: string };
+    /**
+     * Which session credentials this link should use at fetch / refresh
+     * time. Defaults to `'workspace'` so callers that don't specify keep
+     * the pre-per-link behavior. When `'dedicated'`, `linkSessionToken`
+     * MUST be supplied — it's verified against `GET /user`, encrypted,
+     * and stored at `local.sessions.github.links[<linkId>]`.
+     */
+    sessionMode?: 'workspace' | 'dedicated';
+    linkSessionToken?: string;
+    /**
+     * Optional map of `secretKeyId → plaintext value` to provision after
+     * the link is created. The link wizard collects these alongside repo
+     * + branch so users don't have to scroll down on the link card after
+     * the fact. Each entry calls `provisionLinkedSecret` post-link;
+     * empty values are skipped (the slot stays "missing" until later).
+     */
+    secretValues?: Record<string, string>;
   },
 ): Promise<LinkedWorkspace> {
   const local = get().local;
@@ -3964,26 +4986,97 @@ async function doLinkWorkspace(
     throw new Error('Repo must be `owner/name`');
   }
   const [owner, name] = trimmedRepo.split('/', 2);
+  const sessionMode = args.sessionMode ?? 'workspace';
 
-  const token = await decryptSessionToken(local);
+  // Allocate the link id up front — we need it both for keying the
+  // dedicated session into `local.sessions.github.links` and for stamping
+  // it onto the LinkedWorkspace entry below.
+  const id = generateId();
+
+  // Resolve the token to use for the source-fetch. For 'dedicated' we
+  // also verify the token via /user and persist it under the link id, so
+  // the link card's session badge can render scopes + account info on
+  // first load without a separate verify roundtrip.
+  let token: string;
+  let dedicatedSession: GitHubSession | null = null;
+  let dedicatedTokenSecretId: string | null = null;
+  if (sessionMode === 'dedicated') {
+    const provided = args.linkSessionToken?.trim();
+    if (!provided) {
+      throw new Error('Dedicated session requires a PAT for the linking-session step.');
+    }
+    const verifier = new GitHubClient();
+    const { viewer, scopes } = await verifier.getViewer(provided);
+    dedicatedTokenSecretId = generateId();
+    const masterKey = await getMasterKey();
+    const payload = await encryptString(provided, masterKey);
+    await putSecretPayload(dedicatedTokenSecretId, payload);
+    dedicatedSession = {
+      accountLogin: viewer.login,
+      tokenSecretId: dedicatedTokenSecretId,
+      grantedScopes: scopes.granted,
+      addedAt: new Date().toISOString(),
+      lastVerifiedAt: new Date().toISOString(),
+      // Linking sessions are read-only by intent — PR creation isn't part
+      // of their job. Leave this as null so the UI doesn't claim a
+      // capability we never probed for.
+      canCreatePullRequests: null,
+    };
+    token = provided;
+  } else {
+    token = await decryptSessionToken(local);
+  }
+
   const client = new GitHubClient();
-  const file = await client.getContents(token, owner, name, 'workspace.json', trimmedBranch);
+  let file: { content: string } | null;
+  try {
+    file = await client.getContents(token, owner, name, 'workspace.json', trimmedBranch);
+  } catch (err) {
+    // If the dedicated path failed, the orphan payload we just stored
+    // must be cleaned up so it doesn't leak into the vault on a retry.
+    if (dedicatedTokenSecretId) {
+      try {
+        await deleteSecretPayload(dedicatedTokenSecretId);
+      } catch {
+        /* swallow cleanup error */
+      }
+    }
+    throw err;
+  }
   if (file === null) {
+    if (dedicatedTokenSecretId) {
+      try {
+        await deleteSecretPayload(dedicatedTokenSecretId);
+      } catch {
+        /* swallow cleanup error */
+      }
+    }
     throw new Error(`workspace.json not found on ${trimmedRepo}@${trimmedBranch}`);
   }
   const parsed = parseLinkedWorkspaceJson(file.content);
 
-  const id = generateId();
+  // Seed `requiredSecretKeyIds` with every slot the source declared.
+  // Mirroring the registry directly is more robust than walking env
+  // vars: a missing or stale `secretKeyId` on a variable would
+  // otherwise silently drop slots from the consumer's required list.
+  // Consumers can still remove unused slots from the link card later.
+  const seededRequiredKeys: string[] = parsed.secretKeys ? Object.keys(parsed.secretKeys) : [];
+
   const link: LinkedWorkspace = {
     id,
     kind: args.kind,
     name: parsed.workspaceName,
-    source: { provider: 'github', repoFullName: trimmedRepo, branch: trimmedBranch },
+    source: {
+      provider: 'github',
+      repoFullName: trimmedRepo,
+      branch: trimmedBranch,
+      sessionMode,
+    },
     scope: ['collections', 'environments'],
     pinnedVersion: args.pinnedVersion ?? parsed.releases?.self?.currentVersion ?? null,
     updatePolicy: 'manual',
     linkedAt: new Date().toISOString(),
-    requiredSecretKeyIds: [],
+    requiredSecretKeyIds: seededRequiredKeys,
     ...(args.marketplace ? { marketplace: args.marketplace } : {}),
   };
   const cachedLedger: ReleaseHistory = parsed.releases?.self ?? {
@@ -4004,12 +5097,44 @@ async function doLinkWorkspace(
   // have the data without a network roundtrip. Only persist when the
   // source actually shipped these fields.
   const snapshot = buildLinkedSnapshot(parsed, link);
-  const nextLocal = snapshot
+  const baseLocal: WorkspaceLocal = snapshot
     ? { ...local, linkedCollections: { ...local.linkedCollections, [id]: snapshot } }
     : local;
-  set({ synced: next, ...(snapshot ? { local: nextLocal } : {}) });
+  // Stamp the dedicated session under the link id, if any.
+  const nextLocal: WorkspaceLocal = dedicatedSession
+    ? {
+        ...baseLocal,
+        sessions: {
+          github: {
+            ...baseLocal.sessions.github,
+            links: { ...baseLocal.sessions.github.links, [id]: dedicatedSession },
+          },
+        },
+      }
+    : baseLocal;
+  const localChanged = nextLocal !== local;
+  set({ synced: next, ...(localChanged ? { local: nextLocal } : {}) });
   void saveSynced(next);
-  if (snapshot) void saveLocal(nextLocal);
+  if (localChanged) void saveLocal(nextLocal);
+
+  // If the wizard collected slot values upfront, provision each one. We
+  // run these AFTER the link is committed so the secretIndex entries
+  // can correlate `linkedWorkspaceId === id`. A failed provision doesn't
+  // unwind the link itself — the user can retry from the link card; the
+  // slot just stays "missing" until they do.
+  if (args.secretValues) {
+    const provision = get().provisionLinkedSecret;
+    for (const [keyId, value] of Object.entries(args.secretValues)) {
+      const trimmed = value.trim();
+      if (!trimmed) continue;
+      try {
+        await provision(id, keyId, trimmed);
+      } catch (err) {
+        console.warn(`[link] failed to provision secret ${keyId}:`, err);
+      }
+    }
+  }
+
   return link;
 }
 
@@ -4180,6 +5305,10 @@ function buildLinkedSnapshot(
       activeName: null,
       priorityOrder: [],
     },
+    // Cache the source's secretKeys registry so the link card can
+    // render slot labels instead of raw ids. Falls through to undefined
+    // when the source doesn't declare any.
+    ...(parsed.secretKeys ? { secretKeys: parsed.secretKeys } : {}),
   };
 }
 
@@ -4195,6 +5324,14 @@ interface LinkedWorkspaceProbe {
   releases?: { self?: ReleaseHistory | null };
   collections?: WorkspaceSynced['collections'];
   environments?: WorkspaceSynced['environments'];
+  /**
+   * The slot metadata the source workspace declares. Consumers need to
+   * provide values for every slot that's referenced by an encrypted env
+   * variable they care about. The link wizard surfaces these as input
+   * rows so values can be supplied at link-time instead of forcing the
+   * user to scroll down on the link card after the fact.
+   */
+  secretKeys?: Record<string, SecretKeyMeta>;
 }
 function parseLinkedWorkspaceJson(text: string): LinkedWorkspaceProbe {
   let raw: unknown;
@@ -4226,7 +5363,12 @@ function parseLinkedWorkspaceJson(text: string): LinkedWorkspaceProbe {
     typeof environmentsValue === 'object' && environmentsValue !== null
       ? (environmentsValue as WorkspaceSynced['environments'])
       : undefined;
-  return { workspaceName: name, releases, collections, environments };
+  const secretKeysValue = obj.secretKeys;
+  const secretKeys =
+    typeof secretKeysValue === 'object' && secretKeysValue !== null
+      ? (secretKeysValue as Record<string, SecretKeyMeta>)
+      : undefined;
+  return { workspaceName: name, releases, collections, environments, secretKeys };
 }
 
 /**
@@ -4290,10 +5432,51 @@ function findProvisionedSecretId(
 }
 
 async function decryptSessionToken(local: WorkspaceLocal): Promise<string> {
-  const session = local.sessions.github;
+  const session = local.sessions.github.workspace;
   if (!session) throw new Error('No GitHub session — connect a PAT first');
   const payload = await getSecretPayload(session.tokenSecretId);
   if (!payload) throw new Error('Stored token is missing — reconnect to refresh');
+  const masterKey = await getMasterKey();
+  return decryptString(payload, masterKey);
+}
+
+/**
+ * Resolve and decrypt the token a given LinkedWorkspace should use at link /
+ * refresh time. Honors `link.source.sessionMode`:
+ *
+ *   - `'workspace'` → use `sessions.github.workspace` (the same PAT that
+ *     pushes/pulls THIS workspace's repo).
+ *   - `'dedicated'` → use the per-link session at
+ *     `sessions.github.links[link.id]`.
+ *
+ * Throws a typed-message Error so callers can surface "Session missing —
+ * reconnect or remap" without having to introspect the failure mode.
+ */
+async function decryptLinkSessionToken(
+  local: WorkspaceLocal,
+  link: LinkedWorkspace,
+): Promise<string> {
+  const mode = link.source.sessionMode ?? 'workspace';
+  if (mode === 'workspace') {
+    if (!local.sessions.github.workspace) {
+      throw new Error(
+        `Link "${link.name}" uses the workspace session — connect a PAT in Sessions to fetch it.`,
+      );
+    }
+    return decryptSessionToken(local);
+  }
+  const linkSession = local.sessions.github.links[link.id];
+  if (!linkSession) {
+    throw new Error(
+      `Link "${link.name}" needs its dedicated session re-added — open the link card to reconnect.`,
+    );
+  }
+  const payload = await getSecretPayload(linkSession.tokenSecretId);
+  if (!payload) {
+    throw new Error(
+      `Stored token for "${link.name}" is missing locally — reconnect the link's session.`,
+    );
+  }
   const masterKey = await getMasterKey();
   return decryptString(payload, masterKey);
 }
@@ -4348,8 +5531,52 @@ async function wait(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 async function tryDecryptSessionToken(local: WorkspaceLocal): Promise<string | null> {
-  if (!local.sessions.github) return null;
+  if (!local.sessions.github.workspace) return null;
   return decryptSessionToken(local);
+}
+
+/**
+ * `true` when the editor's currently-active edit target is a linked request
+ * AND the supplied `id` matches its itemId. Setters call this to decide
+ * whether to route writes into `synced.linkedOverrides.requests` instead
+ * of mutating `synced.collections.requests`.
+ *
+ * Returning false leaves the workspace path intact — same id can refer to
+ * a workspace request when no linked-request edit session is active.
+ */
+function isLinkedActive(get: GetState, id: string): boolean {
+  const active = get().activeLinkedRequest;
+  return active !== null && active.itemId === id;
+}
+
+/**
+ * Generic field-level router for linked-request edits. When the editor is
+ * editing a linked request and the caller's id matches, build a single-field
+ * patch on top of any existing override and persist via
+ * `setLinkedRequestOverride` (which round-trips through Git). Returns true
+ * if the call was handled — caller should skip its workspace fallback.
+ *
+ * Field is typed as a key of `RequestOverridePatch` so unsupported fields
+ * (`bodySchemaId`, `graphqlSchemaId`) can't accidentally be routed here.
+ */
+function routeLinkedField<K extends keyof RequestOverridePatch>(
+  get: GetState,
+  _set: SetState,
+  id: string,
+  field: K,
+  value: RequestOverridePatch[K],
+): boolean {
+  const active = get().activeLinkedRequest;
+  if (!active || active.itemId !== id) return false;
+  const synced = get().synced;
+  if (!synced) return true; // suppress: state isn't ready, nothing to write
+  const key = `${active.linkedWorkspaceId}:${active.itemId}`;
+  const existing = synced.linkedOverrides.requests[key]?.patch ?? {};
+  // Merge the single field into the existing patch. Empty patches are
+  // no-ops; setLinkedRequestOverride clears the entry in that case.
+  const nextPatch: RequestOverridePatch = { ...existing, [field]: value };
+  get().setLinkedRequestOverride(active.linkedWorkspaceId, active.itemId, nextPatch);
+  return true;
 }
 
 function commitSynced(
@@ -4359,8 +5586,20 @@ function commitSynced(
 ): void {
   const synced = get().synced;
   if (!synced) return;
-  const next = reducer(synced);
-  if (next === synced) return;
+  const reduced = reducer(synced);
+  if (reduced === synced) return;
+  // Centralize `meta.updatedAt` bumping here so every commit advances
+  // the workspace-level stale-time, regardless of whether the reducer
+  // remembered to do it. Idempotent for reducers that ALSO bump it
+  // (editor + env reducers via core/applyMutation, envActions, etc.)
+  // — the wrapper's timestamp wins, which is fine since it's later in
+  // the same tick. Critical for plan reducers in planActions.ts which
+  // only bump per-plan `updatedAt`; without this they'd leave the
+  // workspace-level timestamp stale.
+  const next: WorkspaceSynced = {
+    ...reduced,
+    meta: { ...reduced.meta, updatedAt: new Date().toISOString() },
+  };
   set({ synced: next });
   void saveSynced(next);
   // Refresh the secret usedIn map whenever synced state moves; aggregator
@@ -4376,24 +5615,10 @@ function commitSynced(
   }
 }
 
-/**
- * Mirror of commitSynced for reducers that touch only `local`. Used by
- * plan / overrides / history actions that don't bleed into the synced
- * doc. Returns nothing — the reducer is expected to return the same
- * reference when the change was a no-op.
- */
-function commitLocal(
-  set: SetState,
-  get: GetState,
-  reducer: (l: WorkspaceLocal) => WorkspaceLocal,
-): void {
-  const local = get().local;
-  if (!local) return;
-  const next = reducer(local);
-  if (next === local) return;
-  set({ local: next });
-  void saveLocal(next);
-}
+// `commitLocal` was removed when plan reducers moved to `commitSynced`
+// (plans now travel through Git). Other local-only mutations use raw
+// `set` + `saveLocal` paths — keep this comment as a breadcrumb in
+// case a future feature wants the symmetry helper back.
 
 /**
  * Apply variable substitution + secret decryption to a request before it
@@ -4410,7 +5635,7 @@ async function resolveRequest(
   synced: WorkspaceSynced,
   local: WorkspaceLocal | null,
   overrides?: {
-    envPriorityOrder?: readonly string[];
+    envPriorityOrder?: readonly EnvPriorityRef[];
     /**
      * Plan-level variables. Sit between request.contextVars and the env
      * priority list — they override an env value without mutating the
@@ -4420,8 +5645,47 @@ async function resolveRequest(
   },
 ): Promise<ApiRequest> {
   const vault = local ? await decryptVault(local) : { byLabel: {}, byId: {} };
-  const envs = decryptEnvironments(synced.environments.items, vault.byId);
   const secrets = vault.byLabel;
+
+  // Plan-level priority overrides the workspace's global order when the
+  // plan supplied a non-empty list (plan §6 P6 + §11.1 inline guidance).
+  const refs: readonly EnvPriorityRef[] =
+    overrides?.envPriorityOrder && overrides.envPriorityOrder.length > 0
+      ? overrides.envPriorityOrder
+      : synced.environments.priorityOrder;
+
+  // Build a flat `Record<compositeKey, Record<varKey, plaintext>>` map
+  // that mixes local and linked envs. Linked entries route through the
+  // consumer's per-row overrides (linkedOverrides.environmentVars) before
+  // decryption — so the priority layer sees the consumer's effective view
+  // of the source's env.
+  const localEnvs = await decryptEnvironments(
+    synced.environments.items,
+    vault.byId,
+    synced.secretKeys ?? {},
+  );
+  const flatEnvs: Record<string, Record<string, string>> = {};
+  for (const [name, vars] of Object.entries(localEnvs)) {
+    flatEnvs[envPriorityKey({ kind: 'local', name })] = vars;
+  }
+  // Eagerly fold in EVERY linked workspace's envs so the resolver's
+  // autocomplete / suggestion paths see them too. Priority list controls
+  // ordering; this just makes the names resolvable. Skips links whose
+  // snapshot hasn't been pulled yet — they show up as missing on first
+  // resolve, prompting a refresh.
+  if (local) {
+    for (const [linkId, snapshot] of Object.entries(local.linkedCollections)) {
+      const overridden = applyEnvironmentOverrides(snapshot.environments, linkId, synced);
+      const decrypted = await decryptEnvironments(
+        overridden.items,
+        vault.byId,
+        synced.secretKeys ?? {},
+      );
+      for (const [envName, vars] of Object.entries(decrypted)) {
+        flatEnvs[envPriorityKey({ kind: 'linked', linkedWorkspaceId: linkId, envName })] = vars;
+      }
+    }
+  }
 
   // contextVars layer ordering (lowest → highest priority):
   //   1. workspace globalContext (rolling extracted state across runs)
@@ -4436,19 +5700,14 @@ async function resolveRequest(
     if (v.key) ctxMap[v.key] = v.value;
   }
   const contextVars = Object.entries(ctxMap).map(([key, value]) => ({ key, value }));
-  // Plan-level priority overrides the workspace's global order when the
-  // plan supplied a non-empty list (plan §6 P6 + §11.1 inline guidance).
-  const priorityOrder =
-    overrides?.envPriorityOrder && overrides.envPriorityOrder.length > 0
-      ? [...overrides.envPriorityOrder]
-      : synced.environments.priorityOrder;
+  const priorityKeys = refs.map(envPriorityKey);
   const scope = buildScope({
     contextVars,
-    environments: envs,
+    environments: flatEnvs,
     // The "active env" concept is gone in favor of an ordered global layer —
     // priorityOrder is the sole list the resolver consults.
     activeEnvName: null,
-    priorityOrder,
+    priorityOrder: priorityKeys,
     secrets,
   });
 
@@ -4515,10 +5774,79 @@ async function resolveRequest(
  * problem to the user rather than silently sending an empty value.
  */
 /**
+ * Read a slot's plaintext value out of the local IDB vault. Returns `null`
+ * when the slot id is missing on this device (typical post-clone state) or
+ * when the master-key decrypt fails. The slot value is the user-supplied
+ * input that PBKDF2 turns into the per-slot AES-GCM key.
+ */
+async function loadSlotPlaintext(id: string): Promise<string | null> {
+  const payload = await getSecretPayload(id);
+  if (!payload) return null;
+  try {
+    const masterKey = await getMasterKey();
+    return await decryptString(payload, masterKey);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Encrypt a plaintext under a secret-key slot's derived key. Resolves to
+ * `null` when the slot value or salt is unavailable — caller should treat
+ * that as "can't bind, tell the user to provide the slot value first."
+ *
+ * `metaOverride` lets the caller pass a pending SecretKeyMeta that hasn't
+ * been committed to `synced.secretKeys` yet (used by `bindVariableToSecretKey`
+ * when it lazily creates the slot record on first bind).
+ */
+async function tryEncryptForSlot(
+  get: GetState,
+  secretKeyId: string,
+  plaintext: string,
+  metaOverride?: SecretKeyMeta,
+): Promise<string | null> {
+  const synced = get().synced;
+  if (!synced) return null;
+  const meta = metaOverride ?? synced.secretKeys?.[secretKeyId];
+  if (!meta) return null;
+  const slotValue = await loadSlotPlaintext(secretKeyId);
+  if (slotValue === null) return null;
+  const key = await deriveKeyFromSlotValue(slotValue, meta.salt);
+  const payload = await encryptString(plaintext, key);
+  return serializePayload(payload);
+}
+
+/**
+ * Decrypt an `enc:v1:` ciphertext using a slot's derived key. Resolves to
+ * `null` for any failure (slot missing, slot value missing, salt missing,
+ * malformed payload, AES-GCM auth tag mismatch).
+ */
+async function tryDecryptForSlot(
+  get: GetState,
+  secretKeyId: string,
+  serialized: string,
+): Promise<string | null> {
+  const synced = get().synced;
+  if (!synced) return null;
+  const meta = synced.secretKeys?.[secretKeyId];
+  if (!meta) return null;
+  const payload = tryParsePayload(serialized);
+  if (!payload) return null;
+  const slotValue = await loadSlotPlaintext(secretKeyId);
+  if (slotValue === null) return null;
+  try {
+    const key = await deriveKeyFromSlotValue(slotValue, meta.salt);
+    return await decryptString(payload, key);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Decrypt every vault entry available in this browser. Returns parallel
- * label→plaintext and id→plaintext maps so callers can resolve either
- * `{{LABEL}}` template references or `secretKeyId`-linked env variables in
- * the same pass.
+ * label→plaintext and id→plaintext maps. `byId` is keyed by slot id and
+ * holds the slot's *plaintext value* — both the substrate for `{{LABEL}}`
+ * substitution and the input for deriving the slot's encryption key.
  */
 async function decryptVault(
   local: WorkspaceLocal,
@@ -4609,26 +5937,58 @@ async function migrateLegacyEncryptedEnvVars(synced: WorkspaceSynced): Promise<W
   };
 }
 
-function decryptEnvironments(
+/**
+ * Flatten encrypted env vars to plaintext for the resolver. Each row's
+ * `value` carries `enc:v1:<iv>:<ciphertext>` produced by `tryEncryptForSlot`;
+ * decryption requires the slot's plaintext value (from `vaultById`) and the
+ * slot's salt (from `synced.secretKeys[id].salt`). When either is missing,
+ * substitute `<MISSING:LABEL>` so the user sees what didn't resolve in the
+ * sent request rather than an empty/literal placeholder.
+ */
+async function decryptEnvironments(
   items: Record<string, Environment>,
   vaultById: Record<string, string>,
-): Record<string, Record<string, string>> {
-  // Legacy master-key blobs are migrated to plaintext during hydrate, so the
-  // only encrypted rows we still have to translate are the new model:
-  // `encrypted: true` + `secretKeyId` → look up the decrypted vault value by id.
+  secretKeys: Record<string, SecretKeyMeta>,
+): Promise<Record<string, Record<string, string>>> {
   const out: Record<string, Record<string, string>> = {};
+  // Cache derived keys per slot — same slot used N times in N env vars
+  // shouldn't pay PBKDF2 N times.
+  const derivedKeyCache = new Map<string, CryptoKey>();
+  const deriveOnce = async (id: string, value: string, salt: string): Promise<CryptoKey> => {
+    const cached = derivedKeyCache.get(id);
+    if (cached) return cached;
+    const key = await deriveKeyFromSlotValue(value, salt);
+    derivedKeyCache.set(id, key);
+    return key;
+  };
+
   for (const [name, env] of Object.entries(items)) {
     const flat: Record<string, string> = {};
     for (const v of env.variables) {
       if (!v.key) continue;
       if (v.encrypted && v.secretKeyId) {
-        const fromVault = vaultById[v.secretKeyId];
-        if (typeof fromVault === 'string') {
-          flat[v.key] = fromVault;
+        const meta = secretKeys[v.secretKeyId];
+        const slotValue = vaultById[v.secretKeyId];
+        const labelForMissing = meta?.label ?? v.secretKeyId;
+        if (!meta || typeof slotValue !== 'string') {
+          flat[v.key] = `<MISSING:${labelForMissing}>`;
           continue;
         }
-        // Vault entry missing locally — leave the var unresolved so the
-        // resolver flags it (and the editor can surface a warning).
+        const payload = tryParsePayload(v.value);
+        if (!payload) {
+          // Bound row with a non-cipher value — treat as missing rather
+          // than silently passing a bad string to the wire.
+          flat[v.key] = `<MISSING:${labelForMissing}>`;
+          continue;
+        }
+        try {
+          const key = await deriveOnce(v.secretKeyId, slotValue, meta.salt);
+          flat[v.key] = await decryptString(payload, key);
+        } catch {
+          // Wrong slot value, tampered ciphertext, or salt mismatch —
+          // surface as missing so the user can fix it.
+          flat[v.key] = `<MISSING:${labelForMissing}>`;
+        }
         continue;
       }
       flat[v.key] = v.value;

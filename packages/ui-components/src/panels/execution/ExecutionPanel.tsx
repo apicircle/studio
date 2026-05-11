@@ -7,19 +7,21 @@ import {
   ChevronRight,
   Eye,
   Layers,
+  Link2,
   Play,
   Plus,
   Trash2,
   XCircle,
 } from 'lucide-react';
-import type { ExecutionPlan, Request as ApiRequest } from '@apicircle/shared';
+import type { EnvPriorityRef, ExecutionPlan, Request as ApiRequest } from '@apicircle/shared';
+import { envPriorityKey } from '@apicircle/shared';
 import { cn } from '../../primitives/cn';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ResponseViewer } from '../editor/ResponseViewer';
 import { RequestQuickView } from './RequestQuickView';
 
 export function ExecutionPanel() {
-  const plans = useWorkspaceStore((s) => s.local?.executionPlans ?? {});
+  const plans = useWorkspaceStore((s) => s.synced?.executionPlans ?? {});
   const activePlanId = useWorkspaceStore((s) => s.activePlanId);
   const planArray = useMemo(
     () => Object.values(plans).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
@@ -105,7 +107,29 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
   } | null>(null);
 
   const requestArray = useMemo(() => Object.values(requests), [requests]);
-  const envNames = useMemo(() => Object.keys(envItems), [envItems]);
+  // Plan-level priority can interleave local envs and linked envs in any
+  // order, mirroring the workspace's global list. Build a flat catalog of
+  // every pickable env once — the editor uses it for both the "in order"
+  // labels and the "add row" buttons. Linked envs missing a snapshot
+  // (link not refreshed yet) are skipped — there's nothing to layer.
+  const availableEnvRefs = useMemo<AvailableEnvRef[]>(() => {
+    const out: AvailableEnvRef[] = [];
+    for (const env of Object.values(envItems)) {
+      out.push({ ref: { kind: 'local', name: env.name }, label: env.name });
+    }
+    for (const link of Object.values(linkedWorkspaces)) {
+      const snap = linkedCollections[link.id];
+      if (!snap) continue;
+      for (const env of Object.values(snap.environments.items)) {
+        out.push({
+          ref: { kind: 'linked', linkedWorkspaceId: link.id, envName: env.name },
+          label: env.name,
+          sublabel: link.name,
+        });
+      }
+    }
+    return out;
+  }, [envItems, linkedWorkspaces, linkedCollections]);
   // Linked workspace request groups for the picker. Skips links whose
   // collections snapshot hasn't been pulled yet (refresh first to
   // populate). Plan §6 §11.1: cross-workspace plan steps.
@@ -254,7 +278,7 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
         </p>
         <PlanEnvPriorityEditor
           plan={plan}
-          envNames={envNames}
+          availableRefs={availableEnvRefs}
           onChange={(order) => setPlanEnvPriority(plan.id, order)}
         />
       </section>
@@ -939,74 +963,108 @@ function PlanVariablesEditor({
   );
 }
 
+interface AvailableEnvRef {
+  ref: EnvPriorityRef;
+  label: string;
+  sublabel?: string;
+}
+
 function PlanEnvPriorityEditor({
   plan,
-  envNames,
+  availableRefs,
   onChange,
 }: {
   plan: ExecutionPlan;
-  envNames: string[];
-  onChange: (order: string[]) => void;
+  availableRefs: AvailableEnvRef[];
+  onChange: (order: EnvPriorityRef[]) => void;
 }) {
   const inOrder = plan.envPriorityOrder;
-  const remaining = envNames.filter((n) => !inOrder.includes(n));
+  const inOrderKeys = new Set(inOrder.map(envPriorityKey));
+  const labelByKey = new Map<string, AvailableEnvRef>();
+  for (const a of availableRefs) labelByKey.set(envPriorityKey(a.ref), a);
+  const remaining = availableRefs.filter((a) => !inOrderKeys.has(envPriorityKey(a.ref)));
 
   return (
     <div className="space-y-2 rounded-sm border border-border bg-card p-2">
       {inOrder.length === 0 ? (
         <p className="text-[11px] text-text-dim">
-          No plan-level priority — inherits workspace order.
+          No plan-level priority — inherits workspace order. Add envs below to override.
         </p>
       ) : (
         <ol className="space-y-1">
-          {inOrder.map((name, i) => (
-            <li
-              key={name}
-              className="flex items-center gap-2 rounded-sm border border-border-subtle bg-surface px-2 py-1"
-            >
-              <span className="w-5 text-center text-[10px] text-text-dim">{i + 1}.</span>
-              <span className="flex-1 text-xs text-text-primary">{name}</span>
-              <button
-                type="button"
-                onClick={() => onChange(swap(inOrder, i, i - 1))}
-                disabled={i === 0}
-                aria-label={`Move ${name} up`}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:text-text-primary disabled:opacity-30"
+          {inOrder.map((ref, i) => {
+            const key = envPriorityKey(ref);
+            const meta: AvailableEnvRef = labelByKey.get(key) ?? {
+              ref,
+              label: ref.kind === 'local' ? ref.name : ref.envName,
+              sublabel: ref.kind === 'linked' ? ref.linkedWorkspaceId.slice(0, 6) : undefined,
+            };
+            return (
+              <li
+                key={key}
+                className="flex items-center gap-2 rounded-sm border border-border-subtle bg-surface px-2 py-1"
               >
-                <ArrowUp size={10} />
-              </button>
-              <button
-                type="button"
-                onClick={() => onChange(swap(inOrder, i, i + 1))}
-                disabled={i === inOrder.length - 1}
-                aria-label={`Move ${name} down`}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:text-text-primary disabled:opacity-30"
-              >
-                <ArrowDown size={10} />
-              </button>
-              <button
-                type="button"
-                onClick={() => onChange(inOrder.filter((n) => n !== name))}
-                aria-label={`Remove ${name}`}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-sm border border-danger/30 bg-danger/5 text-danger hover:bg-danger/10"
-              >
-                <Trash2 size={10} />
-              </button>
-            </li>
-          ))}
+                <span className="w-5 text-center text-[10px] text-text-dim">{i + 1}.</span>
+                <span className="flex flex-1 items-center gap-1.5 truncate text-xs text-text-primary">
+                  {ref.kind === 'linked' && (
+                    <Link2 size={10} aria-hidden="true" className="shrink-0 text-text-faint" />
+                  )}
+                  <span className="truncate">{meta.label}</span>
+                  {meta.sublabel && (
+                    <span className="shrink-0 rounded-sm border border-border bg-card px-1 py-0.5 text-[9px] text-text-dim">
+                      {meta.sublabel}
+                    </span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onChange(swap(inOrder, i, i - 1))}
+                  disabled={i === 0}
+                  aria-label={`Move ${meta.label} up`}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:text-text-primary disabled:opacity-30"
+                >
+                  <ArrowUp size={10} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onChange(swap(inOrder, i, i + 1))}
+                  disabled={i === inOrder.length - 1}
+                  aria-label={`Move ${meta.label} down`}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:text-text-primary disabled:opacity-30"
+                >
+                  <ArrowDown size={10} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onChange(inOrder.filter((r) => envPriorityKey(r) !== key))}
+                  aria-label={`Remove ${meta.label}`}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-sm border border-danger/30 bg-danger/5 text-danger hover:bg-danger/10"
+                >
+                  <Trash2 size={10} />
+                </button>
+              </li>
+            );
+          })}
         </ol>
       )}
       {remaining.length > 0 && (
         <div className="flex flex-wrap gap-1 pt-1">
-          {remaining.map((name) => (
+          {remaining.map(({ ref, label, sublabel }) => (
             <button
-              key={name}
+              key={envPriorityKey(ref)}
               type="button"
-              onClick={() => onChange([...inOrder, name])}
+              onClick={() => onChange([...inOrder, ref])}
               className="inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary"
+              title={ref.kind === 'linked' ? `Linked env from ${sublabel ?? ''}` : 'Local env'}
             >
               <Plus size={9} />
-              {name}
+              {ref.kind === 'linked' && (
+                <Link2 size={9} aria-hidden="true" className="text-text-faint" />
+              )}
+              {label}
+              {ref.kind === 'linked' && sublabel && (
+                <span className="text-text-dim">· {sublabel}</span>
+              )}
             </button>
           ))}
         </div>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ArrowDown, Check } from 'lucide-react';
 import type {
   LinkedUpdateBucket,
@@ -60,6 +60,32 @@ export function UpdatePreviewModal() {
       .map((e) => `${e.bucket}:${e.key}`);
   }, [active]);
 
+  // Default every `both-changed` row to `'mine'` when the modal opens.
+  // Rationale: the consumer explicitly edited the linked content — their
+  // local override is the higher-confidence intent. The user can still
+  // flip individual rows to `'theirs'` (or use the bulk "Accept all source"
+  // button) before Apply. Without this default, Apply was blocked until
+  // the user clicked through every conflict, which contradicts the
+  // "edits will be merged with the upgraded version" promise.
+  useEffect(() => {
+    if (!active) return;
+    setResolutions((prev) => {
+      // Build a default map; only fill keys not already touched by the user
+      // so re-opening the modal preserves prior choices in the same session.
+      let touched = false;
+      const next: LinkedUpdateResolutionMap = { ...prev };
+      for (const e of active.preview.entries) {
+        if (e.status !== 'both-changed') continue;
+        const key = `${e.bucket}:${e.key}`;
+        if (next[key] === undefined) {
+          next[key] = 'mine';
+          touched = true;
+        }
+      }
+      return touched ? next : prev;
+    });
+  }, [active]);
+
   const allResolved = requiredKeys.every((k) => resolutions[k]);
 
   if (!active || !link) return null;
@@ -115,17 +141,61 @@ export function UpdatePreviewModal() {
         />
 
         {active.preview.entries.length === 0 ? (
-          <div className="flex items-center gap-2 rounded-sm border border-border bg-surface p-3 text-xs text-text-muted">
-            <Check size={14} className="text-success" aria-hidden="true" />
-            Source is byte-equal to your pinned snapshot. Nothing to apply.
-          </div>
+          // Two distinct empty states. The pin can be ahead of (or in
+          // sync with) the cached snapshot — refresh updates the
+          // snapshot but not the pin, so it's common to land here with
+          // a stale pin and a current snapshot. Offer a one-click pin
+          // bump in that case; otherwise it's a true no-op.
+          link.pinnedVersion !== active.preview.toVersion ? (
+            <div className="flex items-start gap-2 rounded-sm border border-accent/30 bg-accent/5 p-3 text-xs text-accent">
+              <Check size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <div>
+                <p className="text-text-primary">
+                  No content changes between{' '}
+                  {link.pinnedVersion ? <code>v{link.pinnedVersion}</code> : <em>unpinned</em>} and{' '}
+                  <code>v{active.preview.toVersion}</code>.
+                </p>
+                <p className="mt-1 text-[11px] text-text-muted">
+                  Your cached snapshot already matches the source — likely because you refreshed the
+                  link after the version bump. Apply moves the pin to{' '}
+                  <code>v{active.preview.toVersion}</code> with no merge needed.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 rounded-sm border border-border bg-surface p-3 text-xs text-text-muted">
+              <Check size={14} className="text-success" aria-hidden="true" />
+              Source is byte-equal to your pinned snapshot. Nothing to apply.
+            </div>
+          )
         ) : (
           <>
+            {/* Up-front explanation of how overrides interact with the
+                update. Shown whenever there's anything to apply — addresses
+                the common worry: "will my local edits be wiped?". They
+                won't — `local-only` rows keep your override; `both-changed`
+                rows default to keeping your override and let you flip to
+                the source's value per row if you want. */}
+            <p className="text-[11px] leading-snug text-text-muted">
+              Your local edits are kept by default. Rows tagged
+              <span className="mx-1 rounded-sm border border-accent/40 bg-accent/10 px-1 py-0.5 text-[10px] text-accent">
+                Your local mods · keep
+              </span>
+              stay as-is on top of the upgraded source. Rows tagged
+              <span className="mx-1 rounded-sm border border-warning/40 bg-warning/10 px-1 py-0.5 text-[10px] text-warning">
+                Both changed · pick one
+              </span>
+              moved both upstream and locally — they default to{' '}
+              <span className="text-text-primary">Keep mine</span>; click{' '}
+              <span className="text-text-primary">Accept source</span> on any row to take the
+              source&apos;s value instead. Apply commits the chosen state to your workspace; push to
+              save sends it to your repo.
+            </p>
             {requiredKeys.length > 0 && (
               <div className="flex items-center gap-2 rounded-sm border border-warning/30 bg-warning/5 p-2 text-xs text-warning">
                 <AlertTriangle size={12} aria-hidden="true" />
-                {requiredKeys.length} entr{requiredKeys.length === 1 ? 'y needs' : 'ies need'} a
-                decision before apply.
+                {requiredKeys.length} row{requiredKeys.length === 1 ? '' : 's'} changed both
+                upstream and locally — defaulting to <span className="font-medium">Keep mine</span>.
                 <button
                   type="button"
                   onClick={bulkAcceptAll}
@@ -172,16 +242,38 @@ export function UpdatePreviewModal() {
           >
             Cancel
           </button>
-          <button
-            type="button"
-            onClick={() => void onApply()}
-            disabled={applying || !allResolved || active.preview.entries.length === 0}
-            aria-label="Apply update"
-            className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-accent bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
-          >
-            <ArrowDown size={12} />
-            {applying ? 'Applying…' : 'Apply update'}
-          </button>
+          {(() => {
+            // Three apply modes:
+            //   1. Real merge — entries to apply, conflicts (if any) resolved.
+            //   2. Pin-only — zero entries, but pinned version drifted from
+            //      the source's currentVersion (typical post-refresh state).
+            //      Apply just advances the pin; no content moves.
+            //   3. Truly nothing — zero entries AND pin matches. Apply stays
+            //      disabled.
+            const noEntries = active.preview.entries.length === 0;
+            const pinOnly = noEntries && link.pinnedVersion !== active.preview.toVersion;
+            const trulyNothing = noEntries && !pinOnly;
+            const applyDisabled = applying || !allResolved || trulyNothing;
+            const label = applying
+              ? pinOnly
+                ? 'Updating pin…'
+                : 'Applying…'
+              : pinOnly
+                ? `Update pin to v${active.preview.toVersion}`
+                : 'Apply update';
+            return (
+              <button
+                type="button"
+                onClick={() => void onApply()}
+                disabled={applyDisabled}
+                aria-label={pinOnly ? 'Update pin' : 'Apply update'}
+                className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-accent bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+              >
+                <ArrowDown size={12} />
+                {label}
+              </button>
+            );
+          })()}
         </div>
       </div>
     </Modal>

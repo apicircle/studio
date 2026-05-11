@@ -4,12 +4,12 @@ import {
   ChevronDown,
   GitBranch,
   Globe,
+  Info,
   Key,
   Link2,
   Notebook,
   Package,
   Pencil,
-  Plus,
   RefreshCw,
   RotateCcw,
   Search,
@@ -19,13 +19,13 @@ import {
 } from 'lucide-react';
 import { type GitHubBranch, type GitHubRepo, GitHubError, MissingScopeError } from '@apicircle/git';
 import { sortVersionsDesc } from '@apicircle/core';
-import type { LinkedWorkspace } from '@apicircle/shared';
+import type { LinkedWorkspace, SecretKeyMeta } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';
 
 export function LinkWorkspacePanel() {
-  const session = useWorkspaceStore((s) => s.local?.sessions.github ?? null);
+  const session = useWorkspaceStore((s) => s.local?.sessions.github.workspace ?? null);
   const links = useWorkspaceStore((s) => s.synced?.linkedWorkspaces ?? {});
 
   const linkArray = Object.values(links);
@@ -40,7 +40,7 @@ export function LinkWorkspacePanel() {
         </span>
       </header>
 
-      <p className="max-w-2xl text-xs text-text-muted">
+      <p className="max-w-3xl text-xs text-text-muted">
         Pull collections, environments, and releases from another workspace. Each linked workspace
         is pinned to a specific version — pin changes always require explicit confirmation. Public
         marketplace search runs anonymously; linking a workspace (public or private) needs a GitHub
@@ -59,6 +59,14 @@ export function LinkWorkspacePanel() {
           <h2 className="text-xs font-medium uppercase tracking-wider text-text-dim">
             Linked workspaces
           </h2>
+          <p className="-mt-1 flex items-start gap-1 text-[11px] leading-snug text-text-dim">
+            <Info size={11} aria-hidden="true" className="mt-0.5 shrink-0 text-text-faint" />
+            <span>
+              Linking is <strong>one level deep</strong>. If a workspace you link has its own links,
+              their content does not carry forward — only the directly-linked workspace&apos;s
+              collections, environments, and releases are pulled.
+            </span>
+          </p>
           {linkArray.map((link) => (
             <LinkCard key={link.id} link={link} />
           ))}
@@ -71,7 +79,7 @@ export function LinkWorkspacePanel() {
 function NoSessionCard() {
   const openRightDockTab = useWorkspaceStore((s) => s.openRightDockTab);
   return (
-    <div className="max-w-2xl rounded-sm border border-border bg-card p-4">
+    <div className="rounded-sm border border-border bg-card p-4">
       <div className="mb-2 flex items-center gap-2 text-sm text-text-primary">
         <ShieldAlert size={14} className="text-amber" aria-hidden="true" />
         Connect GitHub to link a workspace
@@ -133,7 +141,7 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
   const linkPublicWorkspace = useWorkspaceStore((s) => s.linkPublicWorkspace);
   const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
   const openRightDockTab = useWorkspaceStore((s) => s.openRightDockTab);
-  const hasSession = useWorkspaceStore((s) => s.local?.sessions.github != null);
+  const hasSession = useWorkspaceStore((s) => s.local?.sessions.github.workspace != null);
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<
@@ -201,7 +209,7 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
 
   return (
     <>
-      <Modal open={open} onClose={onClose} title="Search marketplace" className="max-w-2xl">
+      <Modal open={open} onClose={onClose} title="Search marketplace" className="max-w-5xl">
         <div className="space-y-3">
           <p className="text-[11px] text-text-dim">
             Searches public GitHub repos tagged <code>topic:apicircle-marketplace</code>. Linking
@@ -348,11 +356,18 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
     workspaceName: string;
     versions: string[];
     currentVersion: string | null;
+    requiredSecretKeys: SecretKeyMeta[];
   } | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
   const [loadingProbe, setLoadingProbe] = useState(false);
   const [pinChoice, setPinChoice] = useState<'currentVersion' | 'specific'>('currentVersion');
   const [specificPin, setSpecificPin] = useState<string>('');
+
+  // Plaintext values the user supplies for the source's required secret
+  // slots. Keyed by secretKeyId → plaintext. Cleared on modal reset.
+  // Empty values (or untouched slots) are skipped at link-time; the
+  // slot stays "missing" until provisioned later from the link card.
+  const [secretValues, setSecretValues] = useState<Record<string, string>>({});
 
   // Manual-entry escape hatch for repos that don't show up in /user/repos
   // (e.g. private repos in orgs the user has explicit grants on but isn't
@@ -363,20 +378,42 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
   const [manualBranch, setManualBranch] = useState('main');
   const [manualPin, setManualPin] = useState('');
 
+  // Session mode picker. 'workspace' reuses the workspace PAT; 'dedicated'
+  // adds a per-link PAT under local.sessions.github.links[<linkId>] so the
+  // source repo can be reached even when the workspace session can't see it.
+  const [sessionMode, setSessionMode] = useState<'workspace' | 'dedicated'>('workspace');
+  const [linkSessionToken, setLinkSessionToken] = useState('');
+
   const [submitting, setSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch the user's accessible repos when the modal opens. Cached for
-  // the lifetime of the modal — closing + reopening re-fetches so a
-  // newly-created repo shows up without a hard reload.
+  // Compute the token override the wizard uses for source-fetches. When
+  // the user picked the dedicated session path AND has typed a PAT, every
+  // probe / list call routes through THAT token instead of the workspace
+  // session. Trimmed because pasted tokens often carry trailing newlines.
+  const tokenOverride =
+    sessionMode === 'dedicated' && linkSessionToken.trim() ? linkSessionToken.trim() : undefined;
+
+  // Fetch the user's accessible repos when the modal opens, AND whenever
+  // the dedicated token changes — switching session mode or pasting a
+  // different PAT must surface a different repo set.
   useEffect(() => {
     if (!open || manualMode) return;
+    // Switching to dedicated mode with no token yet → clear the workspace's
+    // repos from the dropdown so the user doesn't pick a repo their
+    // dedicated PAT can't access. Re-fetches once the token lands.
+    if (sessionMode === 'dedicated' && !tokenOverride) {
+      setRepos(null);
+      setReposError(null);
+      setSelectedRepo(null);
+      return;
+    }
     let cancelled = false;
     setLoadingRepos(true);
     setReposError(null);
     setRepos(null);
-    listAccessibleRepos()
+    listAccessibleRepos(tokenOverride ? { tokenOverride } : undefined)
       .then((list) => {
         if (cancelled) return;
         setRepos(list);
@@ -398,7 +435,7 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
     return () => {
       cancelled = true;
     };
-  }, [open, manualMode, listAccessibleRepos, surfaceMissingScope]);
+  }, [open, manualMode, sessionMode, tokenOverride, listAccessibleRepos, surfaceMissingScope]);
 
   // Fetch branches whenever the user picks a repo.
   useEffect(() => {
@@ -411,7 +448,11 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
     setLoadingBranches(true);
     setBranchesError(null);
     setBranches(null);
-    listRepoBranches(selectedRepo.owner, selectedRepo.name)
+    listRepoBranches(
+      selectedRepo.owner,
+      selectedRepo.name,
+      tokenOverride ? { tokenOverride } : undefined,
+    )
       .then((list) => {
         if (cancelled) return;
         setBranches(list);
@@ -431,7 +472,7 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
     return () => {
       cancelled = true;
     };
-  }, [selectedRepo, listRepoBranches]);
+  }, [selectedRepo, tokenOverride, listRepoBranches]);
 
   // Probe workspace.json on the selected branch — populates the pin
   // dropdown. Returning null means the branch has no workspace.json,
@@ -447,7 +488,12 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
     setProbe(null);
     setPinChoice('currentVersion');
     setSpecificPin('');
-    probeLinkedRepoVersions(selectedRepo.owner, selectedRepo.name, selectedBranch)
+    probeLinkedRepoVersions(
+      selectedRepo.owner,
+      selectedRepo.name,
+      selectedBranch,
+      tokenOverride ? { tokenOverride } : undefined,
+    )
       .then((result) => {
         if (cancelled) return;
         setProbe(result);
@@ -468,7 +514,7 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
     return () => {
       cancelled = true;
     };
-  }, [selectedRepo, selectedBranch, probeLinkedRepoVersions]);
+  }, [selectedRepo, selectedBranch, tokenOverride, probeLinkedRepoVersions]);
 
   const filteredRepos = useMemo(() => {
     if (!repos) return [];
@@ -497,6 +543,9 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
     setManualRepo('');
     setManualBranch('main');
     setManualPin('');
+    setSessionMode('workspace');
+    setLinkSessionToken('');
+    setSecretValues({});
     setError(null);
   };
 
@@ -509,24 +558,53 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
 
   const manualReady = manualMode && manualRepo.trim().includes('/') && manualBranch.trim();
 
-  const submitDisabled = (manualMode ? !manualReady : !guidedReady) || submitting;
+  // Dedicated session mode requires a token before we can submit — without
+  // it the store action would throw, and a disabled-button UX is clearer
+  // than letting the user click and bounce off an error.
+  const sessionReady = sessionMode === 'workspace' || linkSessionToken.trim().length > 0;
+
+  const submitDisabled = (manualMode ? !manualReady : !guidedReady) || !sessionReady || submitting;
 
   const linkArgs = (): {
     repoFullName: string;
     branch: string;
     pinnedVersion?: string;
+    sessionMode: 'workspace' | 'dedicated';
+    linkSessionToken?: string;
+    secretValues?: Record<string, string>;
   } => {
+    const sessionFields =
+      sessionMode === 'dedicated'
+        ? { sessionMode: 'dedicated' as const, linkSessionToken: linkSessionToken.trim() }
+        : { sessionMode: 'workspace' as const };
+    // Filter to only the values the user actually filled in. Empty
+    // strings are skipped server-side too, but pruning here keeps the
+    // confirm dialog summary honest.
+    const trimmedSecrets: Record<string, string> = {};
+    for (const [k, v] of Object.entries(secretValues)) {
+      if (v.trim()) trimmedSecrets[k] = v;
+    }
+    const secretField =
+      Object.keys(trimmedSecrets).length > 0 ? { secretValues: trimmedSecrets } : {};
     if (manualMode) {
       return {
         repoFullName: manualRepo.trim(),
         branch: manualBranch.trim(),
         pinnedVersion: manualPin.trim() || undefined,
+        ...sessionFields,
+        ...secretField,
       };
     }
     const fullName = `${selectedRepo!.owner}/${selectedRepo!.name}`;
     const pinnedVersion =
       pinChoice === 'specific' && specificPin ? specificPin : (probe?.currentVersion ?? undefined);
-    return { repoFullName: fullName, branch: selectedBranch, pinnedVersion };
+    return {
+      repoFullName: fullName,
+      branch: selectedBranch,
+      pinnedVersion,
+      ...sessionFields,
+      ...secretField,
+    };
   };
 
   const onSubmit = () => {
@@ -636,8 +714,22 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
                   onSpecificPinChange={setSpecificPin}
                 />
               )}
+              {probe && (
+                <RequiredSecretKeysPicker
+                  keys={probe.requiredSecretKeys}
+                  values={secretValues}
+                  onChange={setSecretValues}
+                />
+              )}
             </>
           )}
+
+          <LinkSessionPicker
+            mode={sessionMode}
+            onModeChange={setSessionMode}
+            token={linkSessionToken}
+            onTokenChange={setLinkSessionToken}
+          />
 
           {error && (
             <p className="text-xs text-danger" role="alert">
@@ -697,7 +789,6 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
   const ledger = useWorkspaceStore((s) => s.synced?.releases.perLink[link.id] ?? null);
   const refreshLinkedWorkspace = useWorkspaceStore((s) => s.refreshLinkedWorkspace);
   const unlinkWorkspace = useWorkspaceStore((s) => s.unlinkWorkspace);
-  const pinLinkedVersion = useWorkspaceStore((s) => s.pinLinkedVersion);
   const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
   const previewLinkedUpdateForLink = useWorkspaceStore((s) => s.previewLinkedUpdateForLink);
   const clearLinkedOverridesFor = useWorkspaceStore((s) => s.clearLinkedOverridesFor);
@@ -717,7 +808,6 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [unlinkOpen, setUnlinkOpen] = useState(false);
   const [discardAllOpen, setDiscardAllOpen] = useState(false);
-  const [pendingPin, setPendingPin] = useState<string | null | undefined>(undefined);
   const [changelogOpen, setChangelogOpen] = useState(false);
 
   const sortedVersions = useMemo(
@@ -767,7 +857,7 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
     ledger.currentVersion !== link.pinnedVersion;
 
   return (
-    <div className="max-w-2xl rounded-sm border border-border bg-card p-4">
+    <div className="rounded-sm border border-border bg-card p-4">
       <div className="mb-2 flex items-center gap-2 text-sm text-text-primary">
         <Package size={14} className="text-accent" aria-hidden="true" />
         <span className="font-medium">{link.name}</span>
@@ -787,33 +877,52 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
           {link.source.repoFullName}@{link.source.branch}
         </dd>
         <dt className="text-text-dim">Pinned version</dt>
-        <dd className="flex items-center gap-2 text-text-primary">
-          <select
-            aria-label={`Pin ${link.name} version`}
-            value={link.pinnedVersion ?? '__unpinned__'}
-            onChange={(e) => {
-              const v = e.target.value;
-              setPendingPin(v === '__unpinned__' ? null : v);
-            }}
-            disabled={sortedVersions.length === 0}
-            title="Switching versions opens a confirm dialog. Updates require explicit confirmation."
-            className="h-7 rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none disabled:opacity-50"
-          >
-            <option value="__unpinned__">Unpinned (track latest)</option>
-            {sortedVersions.map((v) => {
-              const entry = ledger?.versions.find((x) => x.version === v);
-              return (
-                <option key={v} value={v}>
-                  v{v}
-                  {entry?.deprecated ? ' · deprecated' : ''}
-                  {entry?.yanked ? ' · yanked' : ''}
-                </option>
-              );
-            })}
-          </select>
-          {sortedVersions.length === 0 && (
-            <span className="text-[11px] text-text-dim">no cached versions yet</span>
+        <dd className="flex flex-wrap items-center gap-2 text-text-primary">
+          {link.pinnedVersion ? (
+            <>
+              <code
+                aria-label={`Pinned to v${link.pinnedVersion}`}
+                className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 font-mono text-[11px] text-accent"
+              >
+                v{link.pinnedVersion}
+              </code>
+              {(() => {
+                // Surface the source-side flags for the pinned version.
+                // Replaces the per-option `· deprecated` / `· withdrawn`
+                // markers we used to render inside the (now-removed) pin
+                // dropdown — without these badges, a consumer pinned to
+                // a deprecated or yanked version had no signal to act on.
+                const entry = ledger?.versions.find((v) => v.version === link.pinnedVersion);
+                if (!entry) return null;
+                return (
+                  <>
+                    {entry.deprecated && (
+                      <span
+                        className="rounded-sm border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-warning"
+                        title="The source workspace marked this version deprecated. Plan a move to a newer release."
+                      >
+                        deprecated
+                      </span>
+                    )}
+                    {entry.yanked && (
+                      <span
+                        className="rounded-sm border border-danger/40 bg-danger/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-danger"
+                        title="The source workspace withdrew this version (typically due to a defect). Move to a newer release."
+                      >
+                        withdrawn
+                      </span>
+                    )}
+                  </>
+                );
+              })()}
+            </>
+          ) : (
+            <span className="text-[11px] text-text-dim">Unpinned (tracks source HEAD)</span>
           )}
+          <span className="text-[10px] text-text-dim">
+            (set at link time — use Refresh ledger &rarr; Review update &rarr; Apply to pull a newer
+            release)
+          </span>
         </dd>
         <dt className="text-text-dim">Cached versions</dt>
         <dd className="text-text-primary">{ledger?.versions.length ?? 0}</dd>
@@ -825,6 +934,8 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
           {refreshError}
         </p>
       )}
+
+      <LinkCardSessionStatus link={link} />
 
       <RequiredKeysSection link={link} />
 
@@ -902,40 +1013,6 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
         open={changelogOpen}
         onClose={() => setChangelogOpen(false)}
         link={link}
-      />
-
-      <ConfirmDialog
-        open={pendingPin !== undefined}
-        title={
-          pendingPin === null ? `Unpin ${link.name}?` : `Pin ${link.name} to v${pendingPin ?? ''}?`
-        }
-        confirmLabel={pendingPin === null ? 'Unpin' : 'Pin'}
-        description={
-          <p>
-            {pendingPin === null ? (
-              <>
-                Will track the source workspace's latest published version. Future updates need a
-                new pin to lock in.
-              </>
-            ) : (
-              <>
-                Switch from{' '}
-                {link.pinnedVersion ? <code>v{link.pinnedVersion}</code> : <em>unpinned</em>} to{' '}
-                <code>v{pendingPin}</code>. Local context vars referencing the previous version will
-                resolve against the new one.
-              </>
-            )}
-          </p>
-        }
-        onCancel={() => setPendingPin(undefined)}
-        onConfirm={() => {
-          if (pendingPin === undefined) return;
-          try {
-            pinLinkedVersion(link.id, pendingPin);
-          } finally {
-            setPendingPin(undefined);
-          }
-        }}
       />
 
       <ConfirmDialog
@@ -1032,7 +1109,7 @@ function LinkedChangelogModal({
   if (!open) return null;
 
   return (
-    <Modal open={open} onClose={onClose} title={`${link.name} — changelog`} className="max-w-2xl">
+    <Modal open={open} onClose={onClose} title={`${link.name} — changelog`} className="max-w-5xl">
       <div className="space-y-2">
         <p className="text-[11px] text-text-dim">
           Cached from{' '}
@@ -1062,8 +1139,11 @@ function LinkedChangelogModal({
                       </span>
                     )}
                     {entry.yanked && (
-                      <span className="rounded-sm border border-danger/40 bg-danger/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-danger">
-                        yanked
+                      <span
+                        className="rounded-sm border border-danger/40 bg-danger/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-danger"
+                        title="This version was withdrawn by the source workspace."
+                      >
+                        withdrawn
                       </span>
                     )}
                     <span className="ml-auto text-[10px] text-text-dim">
@@ -1151,7 +1231,17 @@ function RepoCombobox({
           </button>
         </div>
       ) : (
-        <div className="relative mt-1">
+        // Wrap input + listbox so onBlur of the input can detect whether
+        // focus moved to one of the listbox <button>s — that's the only
+        // case where we keep the list open. Anywhere else and we close.
+        <div
+          className="relative mt-1"
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget)) {
+              setShowList(false);
+            }
+          }}
+        >
           <input
             id="link-repo-combobox"
             value={filter}
@@ -1274,7 +1364,12 @@ function PinPicker({
 }: {
   loading: boolean;
   error: string | null;
-  probe: { workspaceName: string; versions: string[]; currentVersion: string | null } | null;
+  probe: {
+    workspaceName: string;
+    versions: string[];
+    currentVersion: string | null;
+    requiredSecretKeys: SecretKeyMeta[];
+  } | null;
   pinChoice: 'currentVersion' | 'specific';
   onPinChoiceChange: (c: 'currentVersion' | 'specific') => void;
   specificPin: string;
@@ -1355,6 +1450,96 @@ function PinPicker({
   );
 }
 
+/**
+ * Surfaces the source workspace's referenced secret-key slots so the
+ * user can supply values at link-time. Discovered automatically by the
+ * probe — only slots that are actually referenced by an encrypted env
+ * variable show up here. Empty values are fine: the slot just stays
+ * "missing" until provisioned later from the link card.
+ */
+function RequiredSecretKeysPicker({
+  keys,
+  values,
+  onChange,
+}: {
+  keys: SecretKeyMeta[];
+  values: Record<string, string>;
+  onChange: (next: Record<string, string>) => void;
+}) {
+  const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+  // Discoverable empty state — when the source has no `secretKeys`
+  // registry, users were left guessing whether the section was
+  // intentional or broken. Tell them what to check upstream.
+  if (keys.length === 0) {
+    return (
+      <div className="rounded-sm border border-border-subtle bg-surface p-2">
+        <div className="mb-1 flex items-center gap-2">
+          <Key size={12} className="text-text-dim" aria-hidden="true" />
+          <h4 className="text-[11px] font-medium text-text-primary">Required secret keys</h4>
+          <span className="text-[10px] text-text-dim">none declared by source</span>
+        </div>
+        <p className="text-[11px] leading-snug text-text-dim">
+          The source workspace.json doesn&apos;t declare any vault slots. If you expected to see one
+          here, the source may need to push first (slots aren&apos;t synced until pushed) or the
+          slot may have been removed from the source&apos;s vault. You can still add required keys
+          manually from the link card after linking.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-sm border border-warning/30 bg-warning/5 p-2">
+      <div className="mb-1 flex items-center gap-2">
+        <Key size={12} className="text-warning" aria-hidden="true" />
+        <h4 className="text-[11px] font-medium text-text-primary">Required secret keys</h4>
+        <span className="text-[10px] text-text-dim">
+          {keys.length} slot{keys.length === 1 ? '' : 's'} declared by source
+        </span>
+      </div>
+      <p className="mb-2 text-[11px] text-text-dim">
+        The source workspace declares these vault slots. Provide values now, or skip and fill in
+        later from the link card. Empty values are fine — leave a slot blank if your usage
+        doesn&apos;t need it.
+      </p>
+      <ul className="space-y-1.5">
+        {keys.map((meta) => {
+          const reveal = revealed[meta.id] === true;
+          return (
+            <li key={meta.id} className="flex items-center gap-2">
+              <code
+                className="w-32 shrink-0 truncate text-[11px] text-text-primary"
+                title={meta.id}
+              >
+                {meta.label || meta.id}
+              </code>
+              <input
+                type={reveal ? 'text' : 'password'}
+                value={values[meta.id] ?? ''}
+                onChange={(e) => onChange({ ...values, [meta.id]: e.target.value })}
+                placeholder="Skip to fill later"
+                aria-label={`Value for ${meta.label || meta.id}`}
+                className="h-7 flex-1 rounded-sm border border-border bg-card px-2 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setRevealed((prev) => ({ ...prev, [meta.id]: !reveal }))}
+                aria-label={
+                  reveal
+                    ? `Hide value for ${meta.label || meta.id}`
+                    : `Reveal value for ${meta.label || meta.id}`
+                }
+                className="inline-flex h-6 items-center rounded-sm border border-border bg-card px-2 text-[10px] text-text-muted hover:border-border-strong hover:text-text-primary"
+              >
+                {reveal ? 'Hide' : 'Show'}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 function ManualLinkInputs({
   repo,
   setRepo,
@@ -1417,19 +1602,12 @@ function ManualLinkInputs({
 }
 
 function RequiredKeysSection({ link }: { link: LinkedWorkspace }) {
-  const addLinkedRequiredKey = useWorkspaceStore((s) => s.addLinkedRequiredKey);
-  const [newKey, setNewKey] = useState('');
-
-  const onAdd = () => {
-    const trimmed = newKey.trim();
-    if (!trimmed) return;
-    try {
-      addLinkedRequiredKey(link.id, trimmed);
-      setNewKey('');
-    } catch {
-      // Empty/invalid — leave the input as-is for user to fix.
-    }
-  };
+  // Pull the source's secretKeys registry from the cached snapshot so
+  // rows can render slot labels instead of raw ids. May be undefined
+  // for older snapshots — rows fall back to the id in that case.
+  const sourceSecretKeys = useWorkspaceStore(
+    (s) => s.local?.linkedCollections[link.id]?.secretKeys,
+  );
 
   return (
     <section className="mt-3 rounded-sm border border-border-subtle bg-surface p-2">
@@ -1438,44 +1616,40 @@ function RequiredKeysSection({ link }: { link: LinkedWorkspace }) {
         <h3 className="text-[11px] font-medium uppercase tracking-wider text-text-dim">
           Required secret keys
         </h3>
+        <span className="text-[10px] text-text-dim">
+          auto-discovered from source on link / refresh
+        </span>
       </div>
       {link.requiredSecretKeyIds.length === 0 ? (
         <p className="text-[11px] text-text-dim">
-          No required keys declared. Add the names this linked workspace expects you to provide.
+          The source workspace doesn&apos;t declare any vault slots. If you expected to see one
+          here, push the source workspace and click <em>Refresh ledger</em> on this card.
         </p>
       ) : (
         <ul className="space-y-1.5">
           {link.requiredSecretKeyIds.map((keyId) => (
-            <RequiredKeyRow key={keyId} link={link} keyId={keyId} />
+            <RequiredKeyRow
+              key={keyId}
+              link={link}
+              keyId={keyId}
+              sourceMeta={sourceSecretKeys?.[keyId]}
+            />
           ))}
         </ul>
       )}
-      <div className="mt-2 flex gap-1">
-        <input
-          value={newKey}
-          onChange={(e) => setNewKey(e.target.value)}
-          placeholder="API_KEY"
-          aria-label="Add required key"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') onAdd();
-          }}
-          className="h-7 flex-1 rounded-sm border border-border bg-card px-2 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none"
-        />
-        <button
-          type="button"
-          onClick={onAdd}
-          disabled={!newKey.trim()}
-          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
-        >
-          <Plus size={10} />
-          Add key
-        </button>
-      </div>
     </section>
   );
 }
 
-function RequiredKeyRow({ link, keyId }: { link: LinkedWorkspace; keyId: string }) {
+function RequiredKeyRow({
+  link,
+  keyId,
+  sourceMeta,
+}: {
+  link: LinkedWorkspace;
+  keyId: string;
+  sourceMeta?: SecretKeyMeta;
+}) {
   const provisionLinkedSecret = useWorkspaceStore((s) => s.provisionLinkedSecret);
   const removeLinkedRequiredKey = useWorkspaceStore((s) => s.removeLinkedRequiredKey);
   const provisionedId = useWorkspaceStore((s) => {
@@ -1514,9 +1688,20 @@ function RequiredKeyRow({ link, keyId }: { link: LinkedWorkspace; keyId: string 
     }
   };
 
+  // Render the human label from the source registry. The raw slot id
+  // is exposed only via the row's `title` attribute (hover) — the card
+  // surface stays clean. Falls back to the id when the snapshot
+  // doesn't carry the source's secretKeys (older link / older source).
+  const primary = sourceMeta?.label && sourceMeta.label.trim() ? sourceMeta.label : keyId;
+
   return (
-    <li className="flex items-center gap-2 rounded-sm border border-border bg-card px-2 py-1.5">
-      <code className="flex-1 text-[11px] text-text-primary">{keyId}</code>
+    <li
+      className="flex items-center gap-2 rounded-sm border border-border bg-card px-2 py-1.5"
+      title={primary !== keyId ? `Slot id: ${keyId}` : undefined}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[11px] text-text-primary">{primary}</div>
+      </div>
       <span
         className={
           provisionedId
@@ -1604,5 +1789,310 @@ function RequiredKeyRow({ link, keyId }: { link: LinkedWorkspace; keyId: string 
         }}
       />
     </li>
+  );
+}
+
+/**
+ * Session picker shown inside the Link wizard. Two radio choices:
+ *
+ *   - **Use workspace session** (default) — fetches with the same PAT
+ *     that pushes/pulls THIS workspace. Free, no extra step.
+ *   - **Add a dedicated session** — collects a per-link PAT (verified at
+ *     submit time). Use when the source repo lives under a different
+ *     account that the workspace session can't reach.
+ *
+ * The PAT input only appears when 'dedicated' is selected. The component
+ * is purely controlled — the modal owns the state and threads both fields
+ * into `linkPrivateWorkspace({ sessionMode, linkSessionToken })`.
+ */
+function LinkSessionPicker({
+  mode,
+  onModeChange,
+  token,
+  onTokenChange,
+}: {
+  mode: 'workspace' | 'dedicated';
+  onModeChange: (mode: 'workspace' | 'dedicated') => void;
+  token: string;
+  onTokenChange: (token: string) => void;
+}) {
+  return (
+    <fieldset className="rounded-sm border border-border bg-surface px-3 py-2">
+      <legend className="px-1 text-[10px] font-medium uppercase tracking-wider text-text-dim">
+        Session for this link
+      </legend>
+      <div className="flex flex-col gap-1.5 text-xs">
+        <label className="flex cursor-pointer items-start gap-2">
+          <input
+            type="radio"
+            name="link-session-mode"
+            checked={mode === 'workspace'}
+            onChange={() => onModeChange('workspace')}
+            className="mt-0.5 accent-accent"
+          />
+          <div>
+            <div className="text-text-primary">Use workspace session</div>
+            <div className="text-[11px] text-text-dim">
+              Reuses the PAT that pushes / pulls this workspace. Pick this when both repos are on
+              the same account.
+            </div>
+          </div>
+        </label>
+        <label className="flex cursor-pointer items-start gap-2">
+          <input
+            type="radio"
+            name="link-session-mode"
+            checked={mode === 'dedicated'}
+            onChange={() => onModeChange('dedicated')}
+            className="mt-0.5 accent-accent"
+          />
+          <div className="min-w-0 flex-1">
+            <div className="text-text-primary">Add a dedicated session</div>
+            <div className="text-[11px] text-text-dim">
+              Bind a separate PAT to this link only — required when the source repo lives under a
+              different account.
+            </div>
+            {mode === 'dedicated' && (
+              <input
+                type="password"
+                value={token}
+                onChange={(e) => onTokenChange(e.target.value)}
+                placeholder="ghp_… or github_pat_…"
+                aria-label="Dedicated linking session PAT"
+                className="mt-1.5 h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none"
+              />
+            )}
+          </div>
+        </label>
+      </div>
+    </fieldset>
+  );
+}
+
+/**
+ * Per-link session status badge + remap UI.
+ *
+ * Surfaces three states:
+ *   1. **OK · workspace** — the link uses the workspace session and one
+ *      exists. Shows a small badge; no actions.
+ *   2. **OK · dedicated** — the link has its own session; shows the bound
+ *      account login + "Update token" / "Use workspace session" actions.
+ *   3. **Orphaned** — the link expects a session that's missing locally
+ *      (workspace session disconnected for a `mode='workspace'` link, or
+ *      dedicated session removed for a `mode='dedicated'` link). Shows a
+ *      red banner with "Reconnect" / "Use workspace session" actions —
+ *      clicking through fixes the link without unlinking.
+ */
+function LinkCardSessionStatus({ link }: { link: LinkedWorkspace }) {
+  const workspaceSession = useWorkspaceStore((s) => s.local?.sessions.github.workspace ?? null);
+  const linkSession = useWorkspaceStore((s) => s.local?.sessions.github.links[link.id] ?? null);
+  const addLinkSession = useWorkspaceStore((s) => s.addLinkSession);
+  const removeLinkSession = useWorkspaceStore((s) => s.removeLinkSession);
+  const setLinkSessionMode = useWorkspaceStore((s) => s.setLinkSessionMode);
+
+  const mode = link.source.sessionMode ?? 'workspace';
+
+  // Auto-recover the common false-alarm: a link is metadata-marked
+  // `dedicated` but its dedicated session is gone, AND a healthy
+  // workspace session exists. We silently flip the link back to
+  // 'workspace' mode so the banner doesn't fire on every render.
+  // (The user can still re-add a dedicated session from this card if
+  // their source repo really lives under a different account.)
+  useEffect(() => {
+    if (mode === 'dedicated' && !linkSession && workspaceSession) {
+      void setLinkSessionMode(link.id, 'workspace');
+    }
+  }, [mode, linkSession, workspaceSession, link.id, setLinkSessionMode]);
+
+  const orphaned =
+    (mode === 'workspace' && !workspaceSession) || (mode === 'dedicated' && !linkSession);
+
+  const [editing, setEditing] = useState(false);
+  const [token, setToken] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const onSave = async () => {
+    setError(null);
+    setSubmitting(true);
+    try {
+      await addLinkSession(link.id, token);
+      setToken('');
+      setEditing(false);
+    } catch (err) {
+      if (err instanceof MissingScopeError) {
+        setError(`Token is missing required scope(s): ${err.missingScopes.join(', ')}`);
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Failed to save token');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const switchToWorkspace = async () => {
+    if (!workspaceSession) return;
+    if (linkSession) await removeLinkSession(link.id);
+    await setLinkSessionMode(link.id, 'workspace');
+  };
+
+  return (
+    <section className="mt-3 space-y-2">
+      {orphaned ? (
+        <div
+          role="alert"
+          className="flex flex-col gap-2 rounded-sm border border-danger/40 bg-danger/10 p-3 text-[11px] text-danger"
+        >
+          <div className="flex items-center gap-2 font-medium">
+            <ShieldAlert size={12} aria-hidden="true" />
+            {mode === 'workspace'
+              ? 'Workspace session disconnected — this link cannot fetch updates until you reconnect it or remap to a dedicated session.'
+              : 'Dedicated session removed — this link cannot fetch updates until you reconnect it or switch to the workspace session.'}
+          </div>
+          {!editing ? (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-danger/40 bg-danger/20 px-2.5 text-[11px] text-danger hover:bg-danger/30"
+              >
+                <Key size={11} />
+                {mode === 'dedicated' ? 'Reconnect dedicated session' : 'Add dedicated session'}
+              </button>
+              {mode === 'dedicated' && workspaceSession && (
+                <button
+                  type="button"
+                  onClick={() => void switchToWorkspace()}
+                  className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-2.5 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary"
+                >
+                  Use workspace session instead
+                </button>
+              )}
+            </div>
+          ) : (
+            <DedicatedTokenForm
+              token={token}
+              onTokenChange={setToken}
+              submitting={submitting}
+              error={error}
+              onCancel={() => {
+                setEditing(false);
+                setError(null);
+                setToken('');
+              }}
+              onSave={onSave}
+            />
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
+          <span
+            className="inline-flex items-center gap-1 rounded-sm border border-success/30 bg-success/10 px-1.5 py-0.5 text-success"
+            title={
+              mode === 'dedicated'
+                ? `Bound to dedicated session @${linkSession?.accountLogin}`
+                : `Uses workspace session @${workspaceSession?.accountLogin}`
+            }
+          >
+            <Key size={10} aria-hidden="true" />
+            {mode === 'dedicated'
+              ? `dedicated · @${linkSession?.accountLogin ?? 'unknown'}`
+              : `workspace · @${workspaceSession?.accountLogin ?? 'unknown'}`}
+          </span>
+          {!editing ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="inline-flex h-6 items-center rounded-sm border border-border bg-surface px-2 text-[10px] text-text-muted hover:border-border-strong hover:text-text-primary"
+              >
+                {mode === 'dedicated' ? 'Update token' : 'Switch to dedicated session'}
+              </button>
+              {mode === 'dedicated' && (
+                <button
+                  type="button"
+                  onClick={() => void switchToWorkspace()}
+                  disabled={!workspaceSession}
+                  title={
+                    !workspaceSession
+                      ? 'Connect a workspace session first.'
+                      : 'Drop the dedicated PAT and route this link through the workspace session.'
+                  }
+                  className="inline-flex h-6 items-center rounded-sm border border-border bg-surface px-2 text-[10px] text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
+                >
+                  Use workspace session
+                </button>
+              )}
+            </>
+          ) : (
+            <DedicatedTokenForm
+              token={token}
+              onTokenChange={setToken}
+              submitting={submitting}
+              error={error}
+              onCancel={() => {
+                setEditing(false);
+                setError(null);
+                setToken('');
+              }}
+              onSave={onSave}
+            />
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function DedicatedTokenForm({
+  token,
+  onTokenChange,
+  submitting,
+  error,
+  onCancel,
+  onSave,
+}: {
+  token: string;
+  onTokenChange: (v: string) => void;
+  submitting: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onSave: () => Promise<void>;
+}) {
+  return (
+    <div className="flex w-full flex-col gap-1.5">
+      <input
+        type="password"
+        value={token}
+        onChange={(e) => onTokenChange(e.target.value)}
+        placeholder="ghp_… or github_pat_…"
+        aria-label="Dedicated linking session PAT"
+        className="h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none"
+      />
+      {error && (
+        <p className="text-[10px] text-danger" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => void onSave()}
+          disabled={submitting || !token.trim()}
+          className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-[11px] text-accent hover:bg-accent/20 disabled:opacity-50"
+        >
+          {submitting ? 'Verifying…' : 'Save token'}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }

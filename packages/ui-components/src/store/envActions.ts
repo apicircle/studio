@@ -1,4 +1,5 @@
-import type { Environment, WorkspaceSynced } from '@apicircle/shared';
+import type { Environment, EnvPriorityRef, WorkspaceSynced } from '@apicircle/shared';
+import { envPriorityKey } from '@apicircle/shared';
 
 // Pure reducers for environment CRUD + active selection + priority order.
 // All mirror the editorActions pattern: take a synced doc, return a new
@@ -19,9 +20,11 @@ export function addEnvironment(synced: WorkspaceSynced, name: string): Workspace
       items: { ...synced.environments.items, [trimmed]: env },
       // Newly-created envs land at the end of the priority list so they're
       // always reachable. The user can reorder freely after the fact.
-      priorityOrder: synced.environments.priorityOrder.includes(trimmed)
+      priorityOrder: synced.environments.priorityOrder.some(
+        (r) => r.kind === 'local' && r.name === trimmed,
+      )
         ? synced.environments.priorityOrder
-        : [...synced.environments.priorityOrder, trimmed],
+        : [...synced.environments.priorityOrder, { kind: 'local', name: trimmed }],
     },
   });
 }
@@ -36,7 +39,9 @@ export function removeEnvironment(synced: WorkspaceSynced, name: string): Worksp
       ...synced.environments,
       items,
       activeName: synced.environments.activeName === name ? null : synced.environments.activeName,
-      priorityOrder: synced.environments.priorityOrder.filter((n) => n !== name),
+      priorityOrder: synced.environments.priorityOrder.filter(
+        (r) => !(r.kind === 'local' && r.name === name),
+      ),
     },
   });
 }
@@ -63,7 +68,9 @@ export function renameEnvironment(
       items,
       activeName:
         synced.environments.activeName === oldName ? trimmed : synced.environments.activeName,
-      priorityOrder: synced.environments.priorityOrder.map((n) => (n === oldName ? trimmed : n)),
+      priorityOrder: synced.environments.priorityOrder.map((r) =>
+        r.kind === 'local' && r.name === oldName ? { kind: 'local' as const, name: trimmed } : r,
+      ),
     },
   });
 }
@@ -92,9 +99,11 @@ export function duplicateEnvironment(synced: WorkspaceSynced, name: string): Wor
       ...synced.environments,
       items: { ...synced.environments.items, [candidate]: dup },
       // Land at the end of the priority list, mirroring addEnvironment.
-      priorityOrder: synced.environments.priorityOrder.includes(candidate)
+      priorityOrder: synced.environments.priorityOrder.some(
+        (r) => r.kind === 'local' && r.name === candidate,
+      )
         ? synced.environments.priorityOrder
-        : [...synced.environments.priorityOrder, candidate],
+        : [...synced.environments.priorityOrder, { kind: 'local', name: candidate }],
     },
   });
 }
@@ -132,14 +141,22 @@ export function setActiveEnvironment(
   });
 }
 
-export function setPriorityOrder(synced: WorkspaceSynced, order: string[]): WorkspaceSynced {
-  // Filter to known env names and dedupe so the persisted list always
-  // reflects reality.
-  const known = new Set(Object.keys(synced.environments.items));
+export function setPriorityOrder(
+  synced: WorkspaceSynced,
+  order: EnvPriorityRef[],
+): WorkspaceSynced {
+  // Filter local refs to known env names; pass linked refs through (the
+  // snapshot lives in WorkspaceLocal so this reducer can't validate them
+  // — stale linked refs surface as empty layers at resolve time and the
+  // sidebar drops them with a warning). Dedupe across kinds via composite
+  // key so flipping a checkbox twice doesn't append twice.
+  const knownLocal = new Set(Object.keys(synced.environments.items));
   const seen = new Set<string>();
-  const filtered = order.filter((n) => {
-    if (!known.has(n) || seen.has(n)) return false;
-    seen.add(n);
+  const filtered = order.filter((ref) => {
+    const key = envPriorityKey(ref);
+    if (seen.has(key)) return false;
+    if (ref.kind === 'local' && !knownLocal.has(ref.name)) return false;
+    seen.add(key);
     return true;
   });
   return bumpUpdatedAt({

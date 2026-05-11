@@ -41,6 +41,10 @@ async function setupConnectedBranchPushed(): Promise<void> {
       },
       { body: { name: 'main', commit: { sha: 'sha-main' } } },
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
+      // createWorkingBranch's first-pull-prompt probe: GET workspace.json on
+      // the new branch. 404 = no remote content yet (expected for a freshly
+      // created branch), so the probe is a no-op.
+      { status: 404, body: { message: 'Not Found' } },
       // push flow: getRef, getCommit, createTree, createCommit, updateRef
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
       { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
@@ -89,6 +93,8 @@ describe('workspaceStore.createPullRequest', () => {
         },
         { body: { name: 'main', commit: { sha: 'sha-main' } } },
         { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
+        // first-pull-prompt probe: 404 = empty branch
+        { status: 404, body: { message: 'Not Found' } },
       ]),
     );
     await useWorkspaceStore.getState().connectGitHubSession('tok');

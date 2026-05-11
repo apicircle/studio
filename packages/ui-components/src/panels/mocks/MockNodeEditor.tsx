@@ -26,6 +26,7 @@ import {
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { MockResponseEditor } from './MockResponseEditor';
 import { MockRulePicker } from './MockRulePicker';
+import { Select } from '../../primitives/Select';
 
 // Node-editor surface for whichever flow node the user has selected.
 // Imports each inner editor below so the selection switch is a single
@@ -435,18 +436,20 @@ function ValidationRuleEditor({
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-[11px] text-text-dim">Rule kind</label>
-          <select
+          <Select
+            size="md"
             value={rule.kind}
             onChange={(e) => update({ kind: e.target.value as MockValidationKind })}
             aria-label="Rule kind"
-            className="mt-1 h-8 w-full rounded-sm border border-border bg-card px-2 text-[11px] text-text-primary focus:border-accent focus:outline-none"
+            wrapperClassName="mt-1 w-full"
+            className="text-[11px] text-text-primary"
           >
             {(Object.keys(VALIDATION_KIND_LABEL) as MockValidationKind[]).map((k) => (
               <option key={k} value={k}>
                 {VALIDATION_KIND_LABEL[k]}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <div>
           <label className="block text-[11px] text-text-dim">Target</label>
@@ -769,20 +772,22 @@ function ResponseRuleEditor({
                 key={clause.id}
                 className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-1"
               >
-                <select
+                <Select
+                  size="sm"
                   value={clause.scope}
                   onChange={(e) =>
                     updateClause(cIdx, { scope: e.target.value as MockConditionScope })
                   }
                   aria-label={`Clause ${cIdx + 1} scope`}
-                  className="h-7 rounded-sm border border-border bg-card px-1 text-[10px] text-text-primary focus:border-accent focus:outline-none"
+                  wrapperClassName="w-full"
+                  className="text-[10px] text-text-primary"
                 >
                   {(Object.keys(SCOPE_LABEL) as MockConditionScope[]).map((s) => (
                     <option key={s} value={s}>
                       {SCOPE_LABEL[s]}
                     </option>
                   ))}
-                </select>
+                </Select>
                 <input
                   value={clause.target}
                   onChange={(e) => updateClause(cIdx, { target: e.target.value })}
@@ -790,18 +795,20 @@ function ResponseRuleEditor({
                   aria-label={`Clause ${cIdx + 1} target`}
                   className="h-7 rounded-sm border border-border bg-card px-1.5 font-mono text-[10px] text-text-primary focus:border-accent focus:outline-none"
                 />
-                <select
+                <Select
+                  size="sm"
                   value={clause.op}
                   onChange={(e) => updateClause(cIdx, { op: e.target.value as MockConditionOp })}
                   aria-label={`Clause ${cIdx + 1} operator`}
-                  className="h-7 rounded-sm border border-border bg-card px-1 text-[10px] text-text-primary focus:border-accent focus:outline-none"
+                  wrapperClassName="w-full"
+                  className="text-[10px] text-text-primary"
                 >
                   {(Object.keys(OP_LABEL) as MockConditionOp[]).map((o) => (
                     <option key={o} value={o}>
                       {OP_LABEL[o]}
                     </option>
                   ))}
-                </select>
+                </Select>
                 {needsValue ? (
                   <input
                     value={clause.value ?? ''}

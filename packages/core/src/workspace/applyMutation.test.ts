@@ -34,14 +34,23 @@ function makeLocal(overrides: Partial<WorkspaceLocal> = {}): WorkspaceLocal {
     executionPlans: {},
     history: { requestRuns: [], planRuns: [] },
     secretIndex: { entries: {} },
-    sessions: { github: null },
+    sessions: { github: { workspace: null, links: {} } },
     connectedRepo: null,
     workingBranch: null,
+    seededWorkspaceSha: null,
+    retiredBranch: null,
     sync: { lastPulledSnapshot: null, lastPulledSha: null, lastPulledAt: null, dirtyKeys: [] },
     linkedCollections: {},
     globalContext: {},
     mockRuntime: { active: {} },
-    ui: { activeRequestId: null, sidebarExpandedSections: [], themeId: 'studio-dark' },
+    ui: {
+      activeRequestId: null,
+      sidebarExpandedSections: [],
+      themeId: 'studio-dark',
+      fontId: 'system-mono',
+    },
+    settings: { validateOnSend: true, monacoConsumesWheel: false },
+    snapshots: { entries: [], maxBytes: 50 * 1024 * 1024 },
     ...overrides,
   };
 }
@@ -355,7 +364,7 @@ describe('applyMutation — environments', () => {
       { now: T1 },
     );
     expect(out.next.synced.environments.items['dev']).toEqual({ name: 'dev', variables: [] });
-    expect(out.next.synced.environments.priorityOrder).toEqual(['dev']);
+    expect(out.next.synced.environments.priorityOrder).toEqual([{ kind: 'local', name: 'dev' }]);
   });
 
   it('updates an existing env without re-appending to priority list', () => {
@@ -364,7 +373,7 @@ describe('applyMutation — environments', () => {
         environments: {
           items: { dev: { name: 'dev', variables: [] } },
           activeName: 'dev',
-          priorityOrder: ['dev'],
+          priorityOrder: [{ kind: 'local', name: 'dev' }],
         },
       }),
       local: makeLocal(),
@@ -374,7 +383,7 @@ describe('applyMutation — environments', () => {
       environment: { name: 'dev', variables: [{ key: 'API_URL', value: 'x', encrypted: false }] },
     });
     expect(out.next.synced.environments.items['dev'].variables).toHaveLength(1);
-    expect(out.next.synced.environments.priorityOrder).toEqual(['dev']);
+    expect(out.next.synced.environments.priorityOrder).toEqual([{ kind: 'local', name: 'dev' }]);
   });
 
   it('upsert with a blank name is a no-op', () => {
@@ -392,7 +401,10 @@ describe('applyMutation — environments', () => {
         environments: {
           items: { dev: { name: 'dev', variables: [] }, prod: { name: 'prod', variables: [] } },
           activeName: 'dev',
-          priorityOrder: ['dev', 'prod'],
+          priorityOrder: [
+            { kind: 'local', name: 'dev' },
+            { kind: 'local', name: 'prod' },
+          ],
         },
       }),
       local: makeLocal(),
@@ -400,7 +412,7 @@ describe('applyMutation — environments', () => {
     const out = applyMutation(state, { kind: 'environment.delete', name: 'dev' });
     expect(out.next.synced.environments.items['dev']).toBeUndefined();
     expect(out.next.synced.environments.activeName).toBeNull();
-    expect(out.next.synced.environments.priorityOrder).toEqual(['prod']);
+    expect(out.next.synced.environments.priorityOrder).toEqual([{ kind: 'local', name: 'prod' }]);
   });
 
   it('environment.delete is a no-op for unknown names', () => {
@@ -415,7 +427,7 @@ describe('applyMutation — environments', () => {
         environments: {
           items: { dev: { name: 'dev', variables: [] } },
           activeName: null,
-          priorityOrder: ['dev'],
+          priorityOrder: [{ kind: 'local', name: 'dev' }],
         },
       }),
       local: makeLocal(),
@@ -436,7 +448,7 @@ describe('applyMutation — environments', () => {
         environments: {
           items: { dev: { name: 'dev', variables: [] } },
           activeName: 'dev',
-          priorityOrder: ['dev'],
+          priorityOrder: [{ kind: 'local', name: 'dev' }],
         },
       }),
       local: makeLocal(),
@@ -451,7 +463,7 @@ describe('applyMutation — environments', () => {
         environments: {
           items: { dev: { name: 'dev', variables: [] } },
           activeName: 'dev',
-          priorityOrder: ['dev'],
+          priorityOrder: [{ kind: 'local', name: 'dev' }],
         },
       }),
       local: makeLocal(),
@@ -466,16 +478,27 @@ describe('applyMutation — environments', () => {
         environments: {
           items: { dev: { name: 'dev', variables: [] }, prod: { name: 'prod', variables: [] } },
           activeName: null,
-          priorityOrder: ['dev', 'prod'],
+          priorityOrder: [
+            { kind: 'local', name: 'dev' },
+            { kind: 'local', name: 'prod' },
+          ],
         },
       }),
       local: makeLocal(),
     };
     const out = applyMutation(state, {
       kind: 'environment.setPriority',
-      order: ['prod', 'dev', 'dev', 'unknown'],
+      order: [
+        { kind: 'local', name: 'prod' },
+        { kind: 'local', name: 'dev' },
+        { kind: 'local', name: 'dev' },
+        { kind: 'local', name: 'unknown' },
+      ],
     });
-    expect(out.next.synced.environments.priorityOrder).toEqual(['prod', 'dev']);
+    expect(out.next.synced.environments.priorityOrder).toEqual([
+      { kind: 'local', name: 'prod' },
+      { kind: 'local', name: 'dev' },
+    ]);
   });
 });
 

@@ -39,11 +39,71 @@ function bucketForStatus(run: RequestRun): StatusBucket {
   return 'ok';
 }
 
+/**
+ * Bucket label for a run based on its `startedAt` relative to "now":
+ *   - Today
+ *   - Yesterday
+ *   - "Mon, Apr 21" — within the last 7 days
+ *   - "April 21" — older but within the same calendar year
+ *   - "April 2025" — older / different year
+ *
+ * Stable: same date always produces the same label, so adjacent runs in
+ * the same bucket render under one header.
+ */
+function dateBucketLabel(iso: string, now: Date = new Date()): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'Unknown';
+  const startOfDay = (x: Date): Date => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+  const today = startOfDay(now).getTime();
+  const that = startOfDay(d).getTime();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const diffDays = Math.round((today - that) / dayMs);
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays >= 2 && diffDays <= 7) {
+    return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+  if (d.getFullYear() === now.getFullYear()) {
+    return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+  }
+  return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+}
+
+/**
+ * Walk a sorted (newest-first) list of runs and group adjacent entries
+ * sharing the same `dateBucketLabel`. Returns a flat array suitable for
+ * rendering — header rows interleaved with run rows. Pure: deterministic
+ * given the same input + `now`.
+ */
+interface RunGroupHeader {
+  kind: 'header';
+  label: string;
+  key: string;
+}
+type RunGroupItem<R> = RunGroupHeader | { kind: 'run'; run: R; key: string };
+
+function groupRunsByDate<R extends { id: string; startedAt: string }>(
+  runs: readonly R[],
+  now: Date = new Date(),
+): RunGroupItem<R>[] {
+  const out: RunGroupItem<R>[] = [];
+  let lastLabel: string | null = null;
+  for (const run of runs) {
+    const label = dateBucketLabel(run.startedAt, now);
+    if (label !== lastLabel) {
+      out.push({ kind: 'header', label, key: `header:${label}` });
+      lastLabel = label;
+    }
+    out.push({ kind: 'run', run, key: run.id });
+  }
+  return out;
+}
+
 export function HistoryPanel() {
   const requestRuns = useWorkspaceStore((s) => s.local?.history.requestRuns ?? []);
   const planRuns = useWorkspaceStore((s) => s.local?.history.planRuns ?? []);
   const requests = useWorkspaceStore((s) => s.synced?.collections.requests ?? {});
-  const plans = useWorkspaceStore((s) => s.local?.executionPlans ?? {});
+  const plans = useWorkspaceStore((s) => s.synced?.executionPlans ?? {});
   const ui = useWorkspaceStore((s) => s.historyUi);
   const setUi = useWorkspaceStore((s) => s.setHistoryUi);
   const tab = ui.tab;
@@ -289,9 +349,23 @@ function RequestRunList({
       </p>
     );
   }
+  const grouped = groupRunsByDate(runs);
   return (
     <ul className="space-y-1.5">
-      {runs.map((run) => {
+      {grouped.map((item) => {
+        if (item.kind === 'header') {
+          return (
+            <li
+              key={item.key}
+              role="presentation"
+              className="sticky top-0 z-10 -mx-1 flex items-center gap-2 bg-surface px-1 py-1 text-[10px] font-medium uppercase tracking-wider text-text-dim"
+            >
+              <span>{item.label}</span>
+              <span className="h-px flex-1 bg-border-subtle" aria-hidden="true" />
+            </li>
+          );
+        }
+        const run = item.run;
         const r = requests[run.requestId];
         const passedAssertions = run.assertions.filter((a) => a.passed).length;
         const isSelected = run.id === selectedRunId;
@@ -583,7 +657,7 @@ function PlanRunList({
   totalCount: number;
   filterActive: boolean;
 }) {
-  const plans = useWorkspaceStore((s) => s.local?.executionPlans ?? {});
+  const plans = useWorkspaceStore((s) => s.synced?.executionPlans ?? {});
   const requestRuns = useWorkspaceStore((s) => s.local?.history.requestRuns ?? []);
   const requests = useWorkspaceStore((s) => s.synced?.collections.requests ?? {});
   const removePlanRun = useWorkspaceStore((s) => s.removePlanRun);
@@ -608,9 +682,23 @@ function PlanRunList({
   // Index request runs by id once for the per-step lookups.
   const runsById = new Map(requestRuns.map((r) => [r.id, r]));
 
+  const grouped = groupRunsByDate(runs);
   return (
     <ul className="space-y-1.5">
-      {runs.map((run) => {
+      {grouped.map((item) => {
+        if (item.kind === 'header') {
+          return (
+            <li
+              key={item.key}
+              role="presentation"
+              className="sticky top-0 z-10 -mx-1 flex items-center gap-2 bg-surface px-1 py-1 text-[10px] font-medium uppercase tracking-wider text-text-dim"
+            >
+              <span>{item.label}</span>
+              <span className="h-px flex-1 bg-border-subtle" aria-hidden="true" />
+            </li>
+          );
+        }
+        const run = item.run;
         const isOpen = run.id === openId;
         return (
           <PlanRunRow

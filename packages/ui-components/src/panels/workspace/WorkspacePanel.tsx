@@ -1,16 +1,19 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
   Download,
   ExternalLink,
   FileDiff,
   GitBranch,
   GitMerge,
   GitPullRequest,
+  Hash,
   KeyRound,
   Lock,
   Package,
+  Pencil,
   Plus,
   RefreshCw,
   ShieldAlert,
@@ -18,13 +21,14 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { GitHubError, MissingScopeError } from '@apicircle/git';
+import { type GitHubBranch, type GitHubRepo, GitHubError, MissingScopeError } from '@apicircle/git';
 import {
   type DiffEntry,
   type ResolutionMap,
   type UnpushedChange,
   generateWorkingBranchName,
   isValidSemver,
+  parseSemver,
   sortVersionsDesc,
   summarizeUnpushedChanges,
   validateBranchName,
@@ -32,13 +36,14 @@ import {
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';
+import { ReleaseAndTopicsModal } from './ReleaseAndTopicsModal';
 import { cn } from '../../primitives/cn';
 import { formatRelativeTime } from '../../primitives/relativeTime';
 
 export function WorkspacePanel() {
   const workspaceName = useWorkspaceStore((s) => s.synced?.workspaceName ?? '');
   const setWorkspaceName = useWorkspaceStore((s) => s.setWorkspaceName);
-  const session = useWorkspaceStore((s) => s.local?.sessions.github ?? null);
+  const session = useWorkspaceStore((s) => s.local?.sessions.github.workspace ?? null);
   const connectedRepo = useWorkspaceStore((s) => s.local?.connectedRepo ?? null);
   const workingBranch = useWorkspaceStore((s) => s.local?.workingBranch ?? null);
 
@@ -55,7 +60,7 @@ export function WorkspacePanel() {
         />
       </header>
 
-      <section className="max-w-2xl">
+      <section>
         <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
           Identity
         </h2>
@@ -66,14 +71,14 @@ export function WorkspacePanel() {
           id="workspace-name-input"
           value={workspaceName}
           onChange={(e) => setWorkspaceName(e.target.value)}
-          className="mt-1 h-9 w-full rounded-sm border border-border bg-card px-3 text-sm text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
+          className="mt-1 h-9 w-full max-w-md rounded-sm border border-border bg-card px-3 text-sm text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
         />
         <p className="mt-2 text-xs text-text-dim">
           Persisted to the synced document. Pushed to Git when a working branch is created.
         </p>
       </section>
 
-      <section className="max-w-2xl">
+      <section>
         <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
           GitHub Connection
         </h2>
@@ -81,7 +86,7 @@ export function WorkspacePanel() {
       </section>
 
       {!isLocalOnly && (
-        <section className="max-w-2xl">
+        <section>
           <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
             Repo &amp; Working Branch
           </h2>
@@ -90,17 +95,12 @@ export function WorkspacePanel() {
         </section>
       )}
 
-      <section className="max-w-2xl">
+      <section>
         <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
           Releases
         </h2>
         <ReleasesCard />
       </section>
-
-      <p className="max-w-2xl text-[11px] text-text-dim">
-        Push, refresh, and PR creation are wired up on the working-branch card. Refresh runs a 3-way
-        diff against the last pulled snapshot; conflicts open the resolver below.
-      </p>
 
       <ConflictResolverModal />
     </div>
@@ -124,7 +124,7 @@ function ReleasesCard() {
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm text-text-primary">
           <Package size={14} className="text-accent" aria-hidden="true" />
-          <span>Workspace ledger</span>
+          <span>Release history</span>
           {releases?.currentVersion && (
             <span className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-accent">
               v{releases.currentVersion}
@@ -141,9 +141,9 @@ function ReleasesCard() {
         </button>
       </div>
       <p className="mb-3 text-[11px] text-text-dim">
-        Releases live in <code>workspace.json</code> under <code>releases.self.versions[]</code>.
-        Each entry stamps a SHA-256 of the canonical pre-publish workspace so consumers can verify
-        integrity.
+        Each release is a published version of this workspace that linked consumers can pin to.
+        Every entry is fingerprinted with a SHA-256 of the workspace contents at publish time so
+        consumers can verify what they&apos;re pulling matches what you released.
       </p>
 
       {sortedVersions.length === 0 ? (
@@ -188,8 +188,11 @@ function ReleaseRow({
           </span>
         )}
         {entry.yanked && (
-          <span className="rounded-sm border border-danger/40 bg-danger/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-danger">
-            yanked
+          <span
+            className="rounded-sm border border-danger/40 bg-danger/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-danger"
+            title="This version was withdrawn — consumers are warned away from it."
+          >
+            withdrawn
           </span>
         )}
         <span className="ml-auto text-[10px] text-text-dim">
@@ -216,10 +219,11 @@ function ReleaseRow({
           <button
             type="button"
             onClick={() => setYankOpen(true)}
+            title="Withdraw this version — consumers will be warned to upgrade or downgrade away from it."
             className="inline-flex h-6 items-center gap-1 rounded-sm border border-danger/30 bg-danger/5 px-2 text-[10px] text-danger hover:bg-danger/10"
           >
             <AlertTriangle size={10} />
-            Yank
+            Withdraw
           </button>
         )}
       </div>
@@ -242,14 +246,14 @@ function ReleaseRow({
       />
       <ConfirmDialog
         open={yankOpen}
-        title={`Yank v${entry.version}?`}
+        title={`Withdraw v${entry.version}?`}
         tone="danger"
-        confirmLabel="Yank"
-        typedConfirm={`YANK v${entry.version}`}
+        confirmLabel="Withdraw"
+        typedConfirm={`WITHDRAW v${entry.version}`}
         description={
           <p>
-            Yanking signals the version is broken or unsafe. Consumers will be warned to upgrade or
-            downgrade away from it. Type the exact phrase below to confirm.
+            Withdrawing signals the version is broken or unsafe. Consumers will be warned to upgrade
+            or downgrade away from it. Type the exact phrase below to confirm.
           </p>
         }
         onCancel={() => setYankOpen(false)}
@@ -265,20 +269,11 @@ function ReleaseRow({
 function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const releases = useWorkspaceStore((s) => s.synced?.releases.self ?? null);
   const publishRelease = useWorkspaceStore((s) => s.publishRelease);
-  // B.4: Tag/release toggles require a working branch + repo. We disable
-  // the checkboxes (and surface a hint) when the prereqs are missing.
-  const hasGitContext = useWorkspaceStore(
-    (s) => Boolean(s.local?.connectedRepo) && Boolean(s.local?.workingBranch),
-  );
-
   const [version, setVersion] = useState('');
   const [notes, setNotes] = useState('');
-  const [createGitTag, setCreateGitTag] = useState(false);
-  const [createGitHubRelease, setCreateGitHubRelease] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [releasedUrl, setReleasedUrl] = useState<string | null>(null);
 
   const trimmedVersion = version.trim();
   const versionTaken = !!releases?.versions.find((v) => v.version === trimmedVersion);
@@ -293,10 +288,7 @@ function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => 
   const reset = () => {
     setVersion('');
     setNotes('');
-    setCreateGitTag(false);
-    setCreateGitHubRelease(false);
     setError(null);
-    setReleasedUrl(null);
   };
 
   const onSubmit = () => {
@@ -308,20 +300,17 @@ function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => 
   const onConfirm = async () => {
     setSubmitting(true);
     try {
-      const result = await publishRelease({
+      // Publish only writes the ledger entry — Git tag + GitHub Release
+      // creation moved to the Repo card's "Release & topics" modal so
+      // tags can target main HEAD post-merge instead of an unmerged
+      // working-branch commit. (See #6.)
+      await publishRelease({
         version: trimmedVersion,
         notes,
-        createGitTag,
-        createGitHubRelease,
       });
       setConfirmOpen(false);
-      if (result.releaseUrl) {
-        // Keep the modal open so the user can copy the release URL.
-        setReleasedUrl(result.releaseUrl);
-      } else {
-        reset();
-        onClose();
-      }
+      reset();
+      onClose();
     } catch (err) {
       setConfirmOpen(false);
       setError(err instanceof Error ? err.message : 'Publish failed — unknown error');
@@ -334,6 +323,44 @@ function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => 
     <>
       <Modal open={open} onClose={onClose} title="Publish release">
         <div className="space-y-3">
+          {releases?.currentVersion && (
+            <div className="flex flex-wrap items-center gap-2 rounded-sm border border-border bg-surface px-2.5 py-1.5 text-[11px] text-text-muted">
+              <span className="text-text-dim">Latest published</span>
+              <code className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 font-mono text-text-primary">
+                v{releases.currentVersion}
+              </code>
+              {(() => {
+                // Suggest the next semver bump in three flavors so the
+                // user can click instead of typing. Defaults populate the
+                // input — the user can still type something custom.
+                const parts = parseSemver(releases.currentVersion);
+                if (!parts) return null;
+                const nextPatch = `${parts.major}.${parts.minor}.${parts.patch + 1}`;
+                const nextMinor = `${parts.major}.${parts.minor + 1}.0`;
+                const nextMajor = `${parts.major + 1}.0.0`;
+                return (
+                  <span className="ml-auto flex items-center gap-1 text-text-dim">
+                    <span>Next:</span>
+                    {[
+                      { label: 'patch', val: nextPatch },
+                      { label: 'minor', val: nextMinor },
+                      { label: 'major', val: nextMajor },
+                    ].map(({ label, val }) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => setVersion(val)}
+                        title={`Set version to v${val} (${label} bump)`}
+                        className="rounded-sm border border-border bg-card px-1.5 py-0.5 text-[10px] font-mono text-text-muted hover:border-accent hover:text-text-primary"
+                      >
+                        {val}
+                      </button>
+                    ))}
+                  </span>
+                );
+              })()}
+            </div>
+          )}
           <div>
             <label htmlFor="release-version-input" className="block text-[11px] text-text-dim">
               Version (semver)
@@ -360,70 +387,16 @@ function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => 
               className="mt-1 w-full resize-y rounded-sm border border-border bg-surface px-2 py-1.5 text-xs text-text-primary focus:border-accent focus:outline-none"
             />
           </div>
-          <fieldset className="rounded-sm border border-border-subtle bg-surface p-2">
-            <legend className="px-1 text-[10px] font-medium uppercase tracking-wider text-text-dim">
-              GitHub
-            </legend>
-            <label className="flex items-start gap-2 text-[11px] text-text-muted">
-              <input
-                type="checkbox"
-                checked={createGitTag || createGitHubRelease}
-                onChange={(e) => {
-                  setCreateGitTag(e.target.checked);
-                  if (!e.target.checked) setCreateGitHubRelease(false);
-                }}
-                disabled={!hasGitContext}
-                aria-label="Create Git tag"
-                style={{ accentColor: 'rgb(var(--accent))' }}
-                className="mt-0.5"
-              />
-              <span>
-                Create Git tag <code>v{trimmedVersion || '<version>'}</code> on the working branch
-                after publishing.
-              </span>
-            </label>
-            <label className="mt-1 flex items-start gap-2 text-[11px] text-text-muted">
-              <input
-                type="checkbox"
-                checked={createGitHubRelease}
-                onChange={(e) => {
-                  setCreateGitHubRelease(e.target.checked);
-                  if (e.target.checked) setCreateGitTag(true);
-                }}
-                disabled={!hasGitContext}
-                aria-label="Create GitHub Release"
-                style={{ accentColor: 'rgb(var(--accent))' }}
-                className="mt-0.5"
-              />
-              <span>
-                Also create a GitHub Release pointing at the tag (uses your release notes as the
-                body).
-              </span>
-            </label>
-            {!hasGitContext && (
-              <p className="mt-1 text-[10px] text-text-dim">
-                Connect a repo and create a working branch from the Workspace panel to enable these.
-              </p>
-            )}
-          </fieldset>
+          <p className="rounded-sm border border-border-subtle bg-surface p-2 text-[11px] leading-snug text-text-dim">
+            Publish writes the version + notes to <code>workspace.json</code> and pushes to your
+            working branch. To create a Git tag (or a GitHub Release) for this version, merge the PR
+            first, then use <strong>Release &amp; topics</strong> on the Repo card — that path tags{' '}
+            <code>main</code>&apos;s commit, not the unmerged working branch.
+          </p>
           {validation && <p className="text-[11px] text-warning">{validation}</p>}
           {error && (
             <p className="text-xs text-danger" role="alert">
               {error}
-            </p>
-          )}
-          {releasedUrl && (
-            <p className="rounded-sm border border-success/40 bg-success/10 p-2 text-[11px] text-success">
-              Released ·{' '}
-              <a
-                href={releasedUrl}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="inline-flex items-center gap-1 underline hover:text-success/80"
-              >
-                {releasedUrl.replace(/^https:\/\/github\.com\//, '')}
-                <ExternalLink size={10} aria-hidden="true" />
-              </a>
             </p>
           )}
           <div className="flex justify-end gap-2 pt-1">
@@ -435,12 +408,12 @@ function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => 
               }}
               className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary"
             >
-              {releasedUrl ? 'Done' : 'Cancel'}
+              Cancel
             </button>
             <button
               type="button"
               onClick={onSubmit}
-              disabled={!!validation || submitting || Boolean(releasedUrl)}
+              disabled={!!validation || submitting}
               className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
             >
               <Tag size={11} />
@@ -685,7 +658,7 @@ function NoSessionCard() {
 }
 
 function SessionCard() {
-  const session = useWorkspaceStore((s) => s.local!.sessions.github!);
+  const session = useWorkspaceStore((s) => s.local!.sessions.github.workspace!);
   const openRightDockTab = useWorkspaceStore((s) => s.openRightDockTab);
   return (
     <div className="rounded-sm border border-border bg-card p-4">
@@ -707,10 +680,11 @@ function SessionCard() {
           )}
         </dd>
       </dl>
-      {!session.grantedScopes.includes('pull_request') && (
+      {session.canCreatePullRequests === false && (
         <p className="mt-3 rounded-sm border border-warning/40 bg-warning/10 p-2 text-[11px] text-warning">
-          Token does not include the <code>pull_request</code> scope. Push will work; PR creation
-          from the app will fail until the token is updated.
+          This token can&apos;t create pull requests. Push will work; PR creation from the app will
+          fail until the token is updated with the <code>pull_request</code> permission
+          (fine-grained PATs) or the full <code>repo</code> scope (classic PATs).
         </p>
       )}
       <button
@@ -727,31 +701,77 @@ function SessionCard() {
 
 function ConnectRepoForm() {
   const connectRepo = useWorkspaceStore((s) => s.connectRepo);
+  const listAccessibleRepos = useWorkspaceStore((s) => s.listAccessibleRepos);
+  const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
+
+  const [manualMode, setManualMode] = useState(false);
   const [value, setValue] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const submit = async () => {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      setError('Enter `owner/name`');
-      return;
-    }
-    const [owner, name, ...rest] = trimmed.split('/');
-    if (!owner || !name || rest.length > 0) {
-      setError('Format must be `owner/name`');
-      return;
-    }
+  const [repos, setRepos] = useState<GitHubRepo[] | null>(null);
+  const [reposError, setReposError] = useState<string | null>(null);
+  const [loadingRepos, setLoadingRepos] = useState(false);
+  const [filter, setFilter] = useState('');
+  const [showRepoList, setShowRepoList] = useState(false);
+
+  useEffect(() => {
+    if (manualMode) return;
+    let cancelled = false;
+    setLoadingRepos(true);
+    setReposError(null);
+    setRepos(null);
+    listAccessibleRepos()
+      .then((list) => {
+        if (cancelled) return;
+        setRepos(list);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        if (err instanceof MissingScopeError) {
+          surfaceMissingScope(err.missingScopes);
+          setReposError(`Missing required scopes: ${err.missingScopes.join(', ')}`);
+        } else if (err instanceof Error) {
+          setReposError(err.message);
+        } else {
+          setReposError('Failed to load repos');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingRepos(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [manualMode, listAccessibleRepos, surfaceMissingScope]);
+
+  const filteredRepos = useMemo(() => {
+    if (!repos) return [];
+    const trimmed = filter.trim().toLowerCase();
+    if (trimmed.length === 0) return repos.slice(0, 50);
+    return repos
+      .filter(
+        (r) =>
+          r.fullName.toLowerCase().includes(trimmed) ||
+          r.name.toLowerCase().includes(trimmed) ||
+          r.owner.toLowerCase().includes(trimmed),
+      )
+      .slice(0, 50);
+  }, [repos, filter]);
+
+  const connectByOwnerName = async (owner: string, name: string, label: string) => {
     setSubmitting(true);
     setError(null);
     try {
       await connectRepo(owner, name);
       setValue('');
+      setFilter('');
+      setShowRepoList(false);
     } catch (err) {
       if (err instanceof MissingScopeError) {
         setError(`Token is missing scope(s): ${err.missingScopes.join(', ')}`);
       } else if (err instanceof GitHubError && err.status === 404) {
-        setError(`Repo \`${trimmed}\` not found, or your token can't see it.`);
+        setError(`Repo \`${label}\` not found, or your token can't see it.`);
       } else if (err instanceof Error) {
         setError(err.message);
       } else {
@@ -762,39 +782,134 @@ function ConnectRepoForm() {
     }
   };
 
+  const submitManual = async () => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setError('Enter `owner/name`');
+      return;
+    }
+    const [owner, name, ...rest] = trimmed.split('/');
+    if (!owner || !name || rest.length > 0) {
+      setError('Format must be `owner/name`');
+      return;
+    }
+    await connectByOwnerName(owner, name, trimmed);
+  };
+
   return (
     <div className="space-y-2 rounded-sm border border-accent/30 bg-accent/5 p-4">
-      <label htmlFor="repo-fullname-input" className="block text-xs text-text-muted">
-        Connect a repo on GitHub
-      </label>
-      <div className="flex gap-2">
-        <input
-          id="repo-fullname-input"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder="owner/name"
-          aria-label="Repo full name"
-          className="h-8 flex-1 rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !submitting) void submit();
-          }}
-        />
+      <div className="flex items-start justify-between gap-3">
+        <label className="block text-xs text-text-muted">Connect a repo on GitHub</label>
         <button
           type="button"
-          onClick={() => void submit()}
-          disabled={submitting || !value.trim()}
-          className="inline-flex h-8 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+          onClick={() => {
+            setManualMode((v) => !v);
+            setError(null);
+          }}
+          className="inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[10px] text-text-muted hover:border-border-strong hover:text-text-primary"
+          aria-label={manualMode ? 'Switch to repo browser' : 'Switch to manual entry'}
         >
-          {submitting ? 'Verifying…' : 'Connect repo'}
+          <Pencil size={10} />
+          {manualMode ? 'Browse repos' : 'Manual entry'}
         </button>
       </div>
+
+      {manualMode ? (
+        <div className="flex gap-2">
+          <input
+            id="repo-fullname-input"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="owner/name"
+            aria-label="Repo full name"
+            className="h-8 flex-1 rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !submitting) void submitManual();
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => void submitManual()}
+            disabled={submitting || !value.trim()}
+            className="inline-flex h-8 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+          >
+            {submitting ? 'Verifying…' : 'Connect repo'}
+          </button>
+        </div>
+      ) : (
+        <div className="relative">
+          <input
+            id="repo-fullname-combobox"
+            value={filter}
+            onChange={(e) => {
+              setFilter(e.target.value);
+              if (!showRepoList) setShowRepoList(true);
+            }}
+            onFocus={() => setShowRepoList(true)}
+            onBlur={() => {
+              window.setTimeout(() => setShowRepoList(false), 150);
+            }}
+            placeholder={
+              loadingRepos
+                ? 'Loading your repositories…'
+                : 'Filter accessible repos by name or owner…'
+            }
+            aria-label="Filter accessible repos"
+            aria-controls="connect-repo-options"
+            aria-expanded={showRepoList}
+            role="combobox"
+            disabled={loadingRepos || submitting}
+            className="h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none disabled:opacity-50"
+          />
+          {showRepoList && filteredRepos.length > 0 && (
+            <ul
+              id="connect-repo-options"
+              role="listbox"
+              className="absolute left-0 right-0 top-full z-10 mt-1 max-h-64 overflow-y-auto rounded-sm border border-border bg-card shadow-elevated"
+            >
+              {filteredRepos.map((r) => (
+                <li key={r.fullName}>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => void connectByOwnerName(r.owner, r.name, r.fullName)}
+                    role="option"
+                    aria-label={`Connect ${r.fullName}`}
+                    disabled={submitting}
+                    className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs text-text-muted hover:bg-surface hover:text-text-primary disabled:opacity-50"
+                  >
+                    <code className="flex-1 truncate font-mono">{r.fullName}</code>
+                    <span className="shrink-0 rounded-sm border border-border bg-surface px-1 py-0.5 text-[10px] text-text-dim">
+                      {r.visibility}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {showRepoList &&
+            !loadingRepos &&
+            filteredRepos.length === 0 &&
+            filter.trim().length > 0 && (
+              <p className="mt-1 text-[11px] text-text-dim">No repos match.</p>
+            )}
+          {reposError && (
+            <p className="mt-1 text-[11px] text-danger" role="alert">
+              {reposError}
+            </p>
+          )}
+          {submitting && <p className="mt-1 text-[11px] text-text-dim">Verifying…</p>}
+        </div>
+      )}
+
       {error && (
         <p className="text-xs text-danger" role="alert">
           {error}
         </p>
       )}
       <p className="text-[11px] text-text-dim">
-        We call <code>GET /repos/&lt;owner&gt;/&lt;name&gt;</code> with your stored PAT to validate
+        Pick from your accessible repos, or use Manual entry for repos that don&apos;t show up. We
+        call <code>GET /repos/&lt;owner&gt;/&lt;name&gt;</code> with your stored PAT to validate
         access and read the default branch. Nothing is written.
       </p>
     </div>
@@ -805,6 +920,7 @@ function RepoCard() {
   const repo = useWorkspaceStore((s) => s.local!.connectedRepo!);
   const branch = useWorkspaceStore((s) => s.local?.workingBranch ?? null);
   const disconnectRepo = useWorkspaceStore((s) => s.disconnectRepo);
+  const [releaseAndTopicsOpen, setReleaseAndTopicsOpen] = useState(false);
 
   return (
     <div className="space-y-3 rounded-sm border border-success/30 bg-success/5 p-4">
@@ -834,7 +950,25 @@ function RepoCard() {
 
       <BranchSection />
 
-      <div className="flex gap-2 pt-1">
+      <div className="flex flex-wrap gap-2 pt-1">
+        <button
+          type="button"
+          onClick={() => setReleaseAndTopicsOpen(true)}
+          title={`Create a Git tag for the latest published version, pointing at ${repo.defaultBranch}'s HEAD. Optionally creates a matching GitHub Release.`}
+          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20"
+        >
+          <Tag size={11} aria-hidden="true" />
+          Tag release
+        </button>
+        <button
+          type="button"
+          onClick={() => setReleaseAndTopicsOpen(true)}
+          title="Add or remove GitHub topics on this repo. Topics drive marketplace discoverability for public workspaces."
+          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-accent hover:text-accent"
+        >
+          <Hash size={11} aria-hidden="true" />
+          Edit topics
+        </button>
         <button
           type="button"
           onClick={disconnectRepo}
@@ -850,6 +984,10 @@ function RepoCard() {
           token owned by a collaborator).
         </p>
       )}
+      <ReleaseAndTopicsModal
+        open={releaseAndTopicsOpen}
+        onClose={() => setReleaseAndTopicsOpen(false)}
+      />
     </div>
   );
 }
@@ -857,11 +995,17 @@ function RepoCard() {
 function BranchSection() {
   const branch = useWorkspaceStore((s) => s.local?.workingBranch ?? null);
   if (branch) return <BranchCard />;
-  return <CreateBranchForm />;
+  return (
+    <>
+      <RetiredBranchBanner />
+      <CreateBranchForm />
+    </>
+  );
 }
 
 function BranchCard() {
   const branch = useWorkspaceStore((s) => s.local!.workingBranch!);
+  const session = useWorkspaceStore((s) => s.local?.sessions.github.workspace ?? null);
   const lastPulledAt = useWorkspaceStore((s) => s.local?.sync.lastPulledAt ?? null);
   const discardWorkingBranch = useWorkspaceStore((s) => s.discardWorkingBranch);
   const pushWorkspace = useWorkspaceStore((s) => s.pushWorkspace);
@@ -943,6 +1087,13 @@ function BranchCard() {
         case 'conflicts':
           // The Conflict Resolver modal renders in response to pendingRefresh.
           break;
+        case 'retired':
+          // Refresh discovered the working branch is over (PR merged or
+          // branch deleted on GitHub). The store has already cleared
+          // workingBranch + populated retiredBranch — the panel re-renders
+          // to show CreateBranchForm with the retirement banner above it,
+          // so we don't need a transient toast notice here.
+          break;
       }
     } catch (err) {
       if (err instanceof MissingScopeError) {
@@ -984,7 +1135,15 @@ function BranchCard() {
   };
 
   const isClean = branch.headSha === branch.lastPushedSha;
-  const canCreatePr = branch.lastPushedSha !== null && branch.openPrUrl === null;
+  // Block Create PR only when capability has been positively disproven
+  // (probe returned 403). `null` means the probe hasn't run yet — leave
+  // the button enabled and let the API call surface MissingScopeError if
+  // it fails. The common case (classic PATs with `repo`) resolves to
+  // `true` at session connect, so the button enables as soon as a push
+  // has landed.
+  const prCapability = session?.canCreatePullRequests ?? null;
+  const canCreatePr =
+    branch.lastPushedSha !== null && branch.openPrUrl === null && prCapability !== false;
 
   return (
     <div className="rounded-sm border border-border bg-card p-3">
@@ -1389,26 +1548,101 @@ function CreateBranchForm() {
   const repo = useWorkspaceStore((s) => s.local!.connectedRepo!);
   const workspaceName = useWorkspaceStore((s) => s.synced?.workspaceName ?? 'workspace');
   const createWorkingBranch = useWorkspaceStore((s) => s.createWorkingBranch);
+  const listRepoBranches = useWorkspaceStore((s) => s.listRepoBranches);
+  const seedInitialCommit = useWorkspaceStore((s) => s.seedInitialCommit);
   const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
 
   const [name, setName] = useState(() => generateWorkingBranchName({ workspaceName }));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [branches, setBranches] = useState<GitHubBranch[] | null>(null);
+  const [branchesError, setBranchesError] = useState<string | null>(null);
+  const [loadingBranches, setLoadingBranches] = useState(false);
+  const [baseBranch, setBaseBranch] = useState<string>(repo.defaultBranch);
+  const [seeding, setSeeding] = useState(false);
+  const [seedError, setSeedError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingBranches(true);
+    setBranchesError(null);
+    setBranches(null);
+    listRepoBranches(repo.owner, repo.name)
+      .then((list) => {
+        if (cancelled) return;
+        setBranches(list);
+        const preferred =
+          list.find((b) => b.name === repo.defaultBranch)?.name ?? list[0]?.name ?? '';
+        if (preferred) setBaseBranch(preferred);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        if (err instanceof MissingScopeError) {
+          surfaceMissingScope(err.missingScopes);
+          setBranchesError(`Missing required scopes: ${err.missingScopes.join(', ')}`);
+        } else if (err instanceof Error) {
+          setBranchesError(err.message);
+        } else {
+          setBranchesError('Failed to load branches');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingBranches(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [repo.owner, repo.name, repo.defaultBranch, listRepoBranches, surfaceMissingScope]);
+
+  const onSeed = async () => {
+    setSeeding(true);
+    setSeedError(null);
+    try {
+      const result = await seedInitialCommit();
+      // Optimistically populate the branch list with the just-seeded branch.
+      // GitHub's `/branches` endpoint has eventual consistency relative to a
+      // fresh content write — re-fetching here would often still return [],
+      // leaving the empty-repo warning visible. We trust the seed result
+      // (the branch demonstrably exists) and skip the round-trip.
+      setBranches([{ name: result.branchName, commitSha: result.scaffoldSha }]);
+      setBaseBranch(result.branchName);
+    } catch (err) {
+      if (err instanceof MissingScopeError) {
+        surfaceMissingScope(err.missingScopes);
+      } else if (err instanceof Error) {
+        setSeedError(err.message);
+      } else {
+        setSeedError('Failed to seed initial commit');
+      }
+    } finally {
+      setSeeding(false);
+    }
+  };
+
   const validation = validateBranchName(name);
+  const noBranches = branches !== null && branches.length === 0;
 
   const submit = async () => {
     if (validation) {
       setError(validation);
       return;
     }
+    if (!baseBranch) {
+      setError('Pick a base branch to create from.');
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
-      await createWorkingBranch({ branchName: name });
+      await createWorkingBranch({ branchName: name, baseBranch });
     } catch (err) {
       if (err instanceof GitHubError && err.status === 422) {
         setError(`Branch \`${name}\` already exists on GitHub. Pick a different name.`);
+      } else if (err instanceof GitHubError && err.status === 404) {
+        setError(
+          `Base branch \`${baseBranch}\` no longer exists on ${repo.fullName}. Pick a different base branch.`,
+        );
       } else if (err instanceof MissingScopeError) {
         surfaceMissingScope(err.missingScopes);
       } else if (err instanceof Error) {
@@ -1424,11 +1658,71 @@ function CreateBranchForm() {
   return (
     <div className="space-y-2 rounded-sm border border-border bg-card p-3">
       <p className="text-xs text-text-muted">
-        Create a working branch off <code>{repo.defaultBranch}</code>. Auto-named for you; editable.
-        The first push to save will commit <code>workspace.json</code> here.
+        Create a working branch from an existing branch. Auto-named for you; editable. The first
+        push to save will commit <code>workspace.json</code> here.
       </p>
+
+      <label htmlFor="base-branch-select" className="block text-[11px] text-text-dim">
+        Base branch
+      </label>
+      {loadingBranches ? (
+        <p className="text-[11px] text-text-dim">Loading branches…</p>
+      ) : branchesError ? (
+        <p className="text-[11px] text-danger" role="alert">
+          {branchesError}
+        </p>
+      ) : noBranches ? (
+        <div className="space-y-2 rounded-sm border border-warning/30 bg-warning/5 p-2.5">
+          <p className="text-[11px] text-warning">
+            This repo is empty. Seed an initial commit with a scaffold{' '}
+            <code className="font-mono">workspace.json</code> on{' '}
+            <code className="font-mono">{repo.defaultBranch}</code> — your local content is
+            unchanged and lands on the working branch when you push.
+          </p>
+          {seedError && (
+            <p className="text-[11px] text-danger" role="alert">
+              {seedError}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => void onSeed()}
+            disabled={seeding}
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-warning/40 bg-warning/10 px-3 text-[11px] text-warning hover:bg-warning/20 disabled:opacity-50"
+          >
+            <Plus size={11} />
+            {seeding ? 'Seeding…' : `Seed ${repo.defaultBranch}`}
+          </button>
+        </div>
+      ) : (
+        <div className="relative">
+          <select
+            id="base-branch-select"
+            value={baseBranch}
+            onChange={(e) => {
+              setBaseBranch(e.target.value);
+              setError(null);
+            }}
+            aria-label="Base branch"
+            className="h-7 w-full appearance-none rounded-sm border border-border bg-surface px-2 pr-7 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+          >
+            {branches?.map((b) => (
+              <option key={b.name} value={b.name}>
+                {b.name}
+                {b.name === repo.defaultBranch ? ' · default' : ''}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            size={12}
+            aria-hidden="true"
+            className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-text-faint"
+          />
+        </div>
+      )}
+
       <label htmlFor="branch-name-input" className="block text-[11px] text-text-dim">
-        Branch name
+        New branch name
       </label>
       <input
         id="branch-name-input"
@@ -1450,7 +1744,7 @@ function CreateBranchForm() {
         <button
           type="button"
           onClick={() => void submit()}
-          disabled={submitting || !!validation}
+          disabled={submitting || !!validation || loadingBranches || noBranches || !baseBranch}
           className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
         >
           <Plus size={12} />
@@ -1465,6 +1759,62 @@ function CreateBranchForm() {
           Regenerate
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Surfaced above CreateBranchForm when `refreshWorkspace` discovered the
+ * previous working branch is over — the PR was merged, or the branch ref
+ * was deleted on GitHub. The banner tells the user *why* their branch is
+ * gone (so the disappearance isn't surprising) and points them at the
+ * still-visible CreateBranchForm below to start fresh. Auto-dismissed
+ * when the user successfully creates a new working branch.
+ */
+function RetiredBranchBanner() {
+  const retired = useWorkspaceStore((s) => s.local?.retiredBranch ?? null);
+  const dismiss = useWorkspaceStore((s) => s.dismissRetiredBranch);
+  if (!retired) return null;
+
+  const isMerged = retired.reason === 'pr-merged';
+  const headline = isMerged
+    ? `PR #${retired.prNumber ?? '—'} was merged`
+    : `Branch ${retired.branchName} was deleted on GitHub`;
+  const detail = isMerged
+    ? `The branch ${retired.branchName} has been retired. Create a new working branch below to continue.`
+    : 'Create a new working branch below to continue.';
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="mb-3 flex items-start gap-2 rounded-sm border border-success/40 bg-success/5 p-3 text-xs"
+    >
+      <GitMerge size={14} className="mt-0.5 shrink-0 text-success" aria-hidden="true" />
+      <div className="flex-1">
+        <p className="font-medium text-text-primary">{headline}</p>
+        <p className="mt-0.5 text-text-muted">{detail}</p>
+        {retired.prUrl && (
+          <a
+            href={retired.prUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-1 inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
+          >
+            <GitPullRequest size={11} aria-hidden="true" />
+            View PR
+            <ExternalLink size={10} aria-hidden="true" />
+          </a>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={dismiss}
+        aria-label="Dismiss retired branch notice"
+        className="shrink-0 rounded-sm p-1 text-text-faint hover:bg-surface hover:text-text-muted"
+      >
+        <X size={12} aria-hidden="true" />
+      </button>
     </div>
   );
 }

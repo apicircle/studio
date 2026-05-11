@@ -18,7 +18,7 @@ describe('envActions', () => {
       const { synced } = createEmptyWorkspace();
       const next = addEnvironment(synced, 'dev');
       expect(next.environments.items).toHaveProperty('dev');
-      expect(next.environments.priorityOrder).toEqual(['dev']);
+      expect(next.environments.priorityOrder).toEqual([{ kind: 'local', name: 'dev' }]);
     });
 
     it('trims whitespace and rejects empty / duplicate names', () => {
@@ -35,7 +35,10 @@ describe('envActions', () => {
       const { synced } = createEmptyWorkspace();
       const a = addEnvironment(synced, 'dev');
       const b = addEnvironment(a, 'prod');
-      expect(b.environments.priorityOrder).toEqual(['dev', 'prod']);
+      expect(b.environments.priorityOrder).toEqual([
+        { kind: 'local', name: 'dev' },
+        { kind: 'local', name: 'prod' },
+      ]);
     });
   });
 
@@ -73,7 +76,7 @@ describe('envActions', () => {
       expect(c.environments.items).toHaveProperty('staging');
       expect(c.environments.items).not.toHaveProperty('dev');
       expect(c.environments.activeName).toBe('staging');
-      expect(c.environments.priorityOrder).toEqual(['staging']);
+      expect(c.environments.priorityOrder).toEqual([{ kind: 'local', name: 'staging' }]);
     });
 
     it('rejects renames to existing names (collision)', () => {
@@ -121,8 +124,16 @@ describe('envActions', () => {
     it('filters out unknown names and dedupes', () => {
       const { synced } = createEmptyWorkspace();
       const a = addEnvironment(addEnvironment(synced, 'dev'), 'prod');
-      const b = setPriorityOrder(a, ['prod', 'unknown', 'dev', 'prod']);
-      expect(b.environments.priorityOrder).toEqual(['prod', 'dev']);
+      const b = setPriorityOrder(a, [
+        { kind: 'local', name: 'prod' },
+        { kind: 'local', name: 'unknown' },
+        { kind: 'local', name: 'dev' },
+        { kind: 'local', name: 'prod' },
+      ]);
+      expect(b.environments.priorityOrder).toEqual([
+        { kind: 'local', name: 'prod' },
+        { kind: 'local', name: 'dev' },
+      ]);
     });
   });
 
@@ -169,7 +180,10 @@ describe('envActions', () => {
       expect(c.environments.items['dev (copy)']?.variables).not.toBe(
         b.environments.items.dev?.variables,
       );
-      expect(c.environments.priorityOrder).toEqual(['dev', 'dev (copy)']);
+      expect(c.environments.priorityOrder).toEqual([
+        { kind: 'local', name: 'dev' },
+        { kind: 'local', name: 'dev (copy)' },
+      ]);
     });
 
     it('avoids name collisions with "<name> (copy 2)", … on repeated dupes', () => {

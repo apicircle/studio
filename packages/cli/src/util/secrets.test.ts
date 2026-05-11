@@ -39,7 +39,7 @@ function makeWorkspace(): WorkspaceState {
           },
         },
         activeName: null,
-        priorityOrder: ['dev'],
+        priorityOrder: [{ kind: 'local', name: 'dev' }],
       },
       linkedWorkspaces: {},
       linkedOverrides: { requests: {}, environmentVars: {} },
@@ -47,7 +47,12 @@ function makeWorkspace(): WorkspaceState {
       globalAssets: { schemas: {}, graphql: {} },
       mockServers: {},
       secretKeys: {
-        'sec-token': { id: 'sec-token', label: 'API_TOKEN', createdAt: '2026-04-01T00:00:00Z' },
+        'sec-token': {
+          id: 'sec-token',
+          label: 'API_TOKEN',
+          createdAt: '2026-04-01T00:00:00Z',
+          salt: 'AAAAAAAAAAAAAAAAAAAAAA==',
+        },
       },
       meta: {
         createdAt: '2026-04-01T00:00:00Z',
@@ -61,14 +66,23 @@ function makeWorkspace(): WorkspaceState {
       executionPlans: {},
       history: { requestRuns: [], planRuns: [] },
       secretIndex: { entries: {} },
-      sessions: { github: null },
+      sessions: { github: { workspace: null, links: {} } },
       connectedRepo: null,
       workingBranch: null,
+      seededWorkspaceSha: null,
+      retiredBranch: null,
       sync: { lastPulledSnapshot: null, lastPulledSha: null, lastPulledAt: null, dirtyKeys: [] },
       linkedCollections: {},
       globalContext: {},
       mockRuntime: { active: {} },
-      ui: { activeRequestId: null, sidebarExpandedSections: [], themeId: 'studio-dark' },
+      ui: {
+        activeRequestId: null,
+        sidebarExpandedSections: [],
+        themeId: 'studio-dark',
+        fontId: 'system-mono',
+      },
+      settings: { validateOnSend: true, monacoConsumesWheel: false },
+      snapshots: { entries: [], maxBytes: 50 * 1024 * 1024 },
     },
   };
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Cookie, Send } from 'lucide-react';
+import { Cookie, GitBranch, Link2, RotateCcw, Send, X } from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import type { HttpMethod, Request as ApiRequest } from '@apicircle/shared';
+import type { HttpMethod, Request as ApiRequest, RequestOverridePatch } from '@apicircle/shared';
 import {
   applyPathParams,
   composeCookieHeader,
@@ -23,6 +23,7 @@ import { ContextTab } from './ContextTab';
 import { ResponseViewer } from './ResponseViewer';
 import { VariableAutocompleteField } from '../../editors/VariableAutocompleteField';
 import { useVariableScope } from '../../editors/useVariableScope';
+import { useActiveRequestView, type ActiveRequestView } from '../../editors/useActiveRequestView';
 import { PreSendPanel, usePreSendValidation } from './PreSendPanel';
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
@@ -161,14 +162,19 @@ function authBadge(type: string): string {
 }
 
 export function EditorPanel() {
-  const activeRequestId = useWorkspaceStore((s) => s.local?.ui.activeRequestId ?? null);
-  const request = useWorkspaceStore((s) =>
-    activeRequestId ? (s.synced?.collections.requests[activeRequestId] ?? null) : null,
-  );
+  // Unified view: returns the workspace request, OR the linked source's
+  // request merged with the consumer's override patch. Editor renders the
+  // same UI in both cases — the setRequest* actions internally route to
+  // setLinkedRequestOverride when a linked request is active.
+  const view = useActiveRequestView();
+  const request = view?.request ?? null;
+  const activeRequestId = request?.id ?? null;
+  const isLinked = view?.source === 'linked';
   const setRequestMethod = useWorkspaceStore((s) => s.setRequestMethod);
   const setRequestUrl = useWorkspaceStore((s) => s.setRequestUrl);
   const setRequestQuery = useWorkspaceStore((s) => s.setRequestQuery);
   const executeActiveRequest = useWorkspaceStore((s) => s.executeActiveRequest);
+  const executeLinkedActiveRequest = useWorkspaceStore((s) => s.executeLinkedActiveRequest);
   const isExecuting = useWorkspaceStore((s) =>
     activeRequestId ? (s.isExecuting[activeRequestId] ?? false) : false,
   );
@@ -275,7 +281,7 @@ export function EditorPanel() {
           </div>
           <button
             type="button"
-            onClick={() => void executeActiveRequest()}
+            onClick={() => void (isLinked ? executeLinkedActiveRequest() : executeActiveRequest())}
             disabled={isExecuting || sendBlocked}
             title={
               sendBlocked
@@ -288,6 +294,7 @@ export function EditorPanel() {
             {isExecuting ? 'Sending…' : 'Send'}
           </button>
         </div>
+        {view?.source === 'linked' && <LinkedSourceBanner view={view} />}
         <EffectiveRequestPreview request={request} scope={scope} />
         <PreSendPanel request={request} scope={scope} enabled={validateOnSend} />
         {pendingCurlPaste && (
@@ -433,6 +440,95 @@ function CurlPasteConfirm({
       >
         Dismiss
       </button>
+    </div>
+  );
+}
+
+/**
+ * Linked-source banner shown above the request fields when the user is
+ * editing a request from a linked workspace. Surfaces:
+ *   - Source repo + branch + pinned version (so the user knows where the
+ *     base came from)
+ *   - "N field(s) locally modified" badge derived from the override patch
+ *   - "Reset overrides" — clears the entire override entry, returning the
+ *     request to its source-pinned state
+ *
+ * Unlike the modal that this replaces, it doesn't gate field editing —
+ * every tab below is fully editable; edits route to
+ * `setLinkedRequestOverride` via `routeLinkedField` in the store.
+ */
+function LinkedSourceBanner({ view }: { view: Extract<ActiveRequestView, { source: 'linked' }> }) {
+  const clearLinkedRequestOverride = useWorkspaceStore((s) => s.clearLinkedRequestOverride);
+  const clearLinkedRequestOverrideField = useWorkspaceStore(
+    (s) => s.clearLinkedRequestOverrideField,
+  );
+  const overriddenFields = view.patch
+    ? (Object.keys(view.patch) as Array<keyof RequestOverridePatch>)
+    : [];
+  const overriddenFieldCount = overriddenFields.length;
+  return (
+    <div
+      role="status"
+      aria-label="Linked request source"
+      className="flex flex-col gap-1.5 rounded-sm border border-accent/30 bg-accent/5 px-2.5 py-1.5 text-[11px] text-text-muted"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <Link2 size={11} aria-hidden="true" className="shrink-0 text-accent" />
+        <span className="text-text-primary">Linked from</span>
+        <code className="font-mono text-text-primary">
+          <GitBranch size={10} className="mr-1 inline align-text-bottom" aria-hidden="true" />
+          {view.link.source.repoFullName}@{view.link.source.branch}
+        </code>
+        {view.link.pinnedVersion && (
+          <span
+            className="rounded-sm border border-border bg-surface px-1 py-0.5 font-mono text-[10px] text-text-dim"
+            title={`Pinned to v${view.link.pinnedVersion}`}
+          >
+            v{view.link.pinnedVersion}
+          </span>
+        )}
+        <span className="ml-auto flex items-center gap-2">
+          {overriddenFieldCount > 0 ? (
+            <>
+              <span
+                className="rounded-sm border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] text-warning"
+                title="Number of request fields you've edited on top of the source"
+              >
+                {overriddenFieldCount} field{overriddenFieldCount === 1 ? '' : 's'} locally modified
+              </span>
+              <button
+                type="button"
+                onClick={() => clearLinkedRequestOverride(view.link.id, view.request.id)}
+                aria-label="Reset all local modifications for this linked request"
+                className="inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[10px] text-text-muted hover:border-danger/40 hover:text-danger"
+              >
+                <RotateCcw size={10} aria-hidden="true" />
+                Reset all to source
+              </button>
+            </>
+          ) : (
+            <span className="text-[10px] text-text-dim">Source-clean</span>
+          )}
+        </span>
+      </div>
+      {overriddenFieldCount > 0 && (
+        <div className="flex flex-wrap items-center gap-1" aria-label="Per-field overrides">
+          <span className="text-[10px] uppercase tracking-wider text-text-dim">Overridden:</span>
+          {overriddenFields.map((field) => (
+            <button
+              key={field}
+              type="button"
+              onClick={() => clearLinkedRequestOverrideField(view.link.id, view.request.id, field)}
+              aria-label={`Reset ${field} to source value`}
+              title={`Reset ${field} to source — drops just this field's override`}
+              className="group inline-flex h-5 items-center gap-1 rounded-sm border border-warning/40 bg-warning/10 pl-1.5 pr-1 font-mono text-[10px] text-warning hover:border-danger/40 hover:bg-danger/10 hover:text-danger"
+            >
+              <span>{field}</span>
+              <X size={9} aria-hidden="true" className="text-warning/60 group-hover:text-danger" />
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

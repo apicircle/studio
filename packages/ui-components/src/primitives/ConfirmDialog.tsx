@@ -23,7 +23,9 @@ interface SimpleProps extends BaseProps {
 interface TypedProps extends BaseProps {
   /**
    * The user must type this string verbatim before the confirm button
-   * enables. Plan §5.2 calls for this on yank: "Type YANK v1.3.0…".
+   * enables. Used for destructive actions like withdrawing a release
+   * version (e.g. "Type WITHDRAW v1.3.0…" — internal name `yank` survives
+   * in the data model, but the user-facing label is "Withdraw").
    */
   typedConfirm: string;
 }

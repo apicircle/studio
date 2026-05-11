@@ -31,14 +31,23 @@ function freshState(): { synced: WorkspaceSynced; local: WorkspaceLocal } {
       executionPlans: {},
       history: { requestRuns: [], planRuns: [] },
       secretIndex: { entries: {} },
-      sessions: { github: null },
+      sessions: { github: { workspace: null, links: {} } },
       connectedRepo: null,
       workingBranch: null,
+      seededWorkspaceSha: null,
+      retiredBranch: null,
       sync: { lastPulledSnapshot: null, lastPulledSha: null, lastPulledAt: null, dirtyKeys: [] },
       linkedCollections: {},
       globalContext: {},
       mockRuntime: { active: {} },
-      ui: { activeRequestId: null, sidebarExpandedSections: [], themeId: 'studio-dark' },
+      ui: {
+        activeRequestId: null,
+        sidebarExpandedSections: [],
+        themeId: 'studio-dark',
+        fontId: 'system-mono',
+      },
+      settings: { validateOnSend: true, monacoConsumesWheel: false },
+      snapshots: { entries: [], maxBytes: 50 * 1024 * 1024 },
     },
   };
 }
@@ -77,6 +86,9 @@ describe('environment priority MCP tools', () => {
     // The applyMutation env.setPriority accepts only the supplied order; the
     // applyMutation internals decide whether to keep unlisted envs at the
     // tail. The test verifies prod and dev are at the front in that order.
-    expect(state.synced.environments.priorityOrder.slice(0, 2)).toEqual(['prod', 'dev']);
+    expect(state.synced.environments.priorityOrder.slice(0, 2)).toEqual([
+      { kind: 'local', name: 'prod' },
+      { kind: 'local', name: 'dev' },
+    ]);
   });
 });

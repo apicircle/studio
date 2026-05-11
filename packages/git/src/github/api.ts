@@ -620,6 +620,114 @@ export class GitHubClient {
   }
 
   /**
+   * Read a tag ref's current commit SHA. Used by the Release & topics
+   * modal to detect whether a tag with the chosen name already exists
+   * (so the UI can surface an "Override existing tag" toggle instead of
+   * silently 422'ing through createTag).
+   *
+   * Returns `null` when the tag doesn't exist (404). Other failures
+   * surface as typed errors.
+   */
+  async getTagSha(
+    token: string,
+    owner: string,
+    name: string,
+    tagName: string,
+    opts: CallOptions = {},
+  ): Promise<string | null> {
+    try {
+      const { json } = await this.call<RawRefResponse>(
+        token,
+        `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/git/refs/tags/${encodeURIComponent(tagName)}`,
+        opts,
+      );
+      return json.object.sha;
+    } catch (err) {
+      if (err instanceof GitHubError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  /**
+   * Delete a ref. Used to support the "Override existing tag" path on
+   * the Release & topics modal — we delete the existing tag ref, then
+   * createTag against the new SHA. (GitHub doesn't have a single
+   * "force-update tag" endpoint via the simple refs API.)
+   *
+   * `ref` is the bare suffix, e.g. `tags/v1.0.0` or `heads/feature-x`.
+   */
+  async deleteRef(
+    token: string,
+    owner: string,
+    name: string,
+    ref: string,
+    opts: CallOptions = {},
+  ): Promise<void> {
+    await this.call<unknown>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/git/refs/${ref
+        .split('/')
+        .map(encodeURIComponent)
+        .join('/')}`,
+      {
+        ...opts,
+        method: 'DELETE',
+        requiredScopes: ['repo'],
+      },
+    );
+  }
+
+  /**
+   * Read the repo's current topic list. Topics drive marketplace
+   * discoverability — public APICircle workspaces include `apicircle`
+   * plus user-chosen category topics.
+   *
+   * Note: GitHub's topics API uses a custom Accept header, but we treat
+   * that as transport detail; the `application/vnd.github.mercy-preview+json`
+   * preview is now stable so the default Accept works.
+   */
+  async listRepoTopics(
+    token: string,
+    owner: string,
+    name: string,
+    opts: CallOptions = {},
+  ): Promise<string[]> {
+    const { json } = await this.call<{ names: string[] }>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/topics`,
+      opts,
+    );
+    return Array.isArray(json.names) ? json.names : [];
+  }
+
+  /**
+   * Replace the repo's full topic list. GitHub's `PUT /topics` endpoint
+   * is a full replace (not a merge), so the caller must pass the
+   * complete desired list. Caps at 20 topics; each must match
+   * `^[a-z0-9][a-z0-9-]*$` and be ≤ 50 chars (GitHub enforces this with
+   * a 422). Returns the persisted list.
+   */
+  async setRepoTopics(
+    token: string,
+    owner: string,
+    name: string,
+    topics: string[],
+    opts: CallOptions = {},
+  ): Promise<string[]> {
+    const { json } = await this.call<{ names: string[] }>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/topics`,
+      {
+        ...opts,
+        method: 'PUT',
+        body: { names: topics },
+        requiredScopes: ['repo'],
+      },
+    );
+    return Array.isArray(json.names) ? json.names : [];
+  }
+
+  /**
    * Fetch a single file's contents from a branch / commit. Returns
    * `null` when GitHub answers 404 (file simply doesn't exist on that
    * ref — the common case for the very first pull). Other failures
@@ -658,6 +766,55 @@ export class GitHubClient {
       if (err instanceof GitHubError && err.status === 404) return null;
       throw err;
     }
+  }
+
+  /**
+   * Create or update a file via the Contents API. The killer feature here
+   * vs. the git-data flow (createBlob → createTree → createCommit →
+   * updateRef) is that this works on **truly empty repos**: GitHub's git
+   * database isn't initialized until the first commit lands, so all the
+   * `/git/*` endpoints reject with 409 "Git Repository is empty" — but
+   * `PUT /contents/{path}` atomically initializes the database with a
+   * single-file commit on the supplied branch (defaulting to the repo's
+   * default branch).
+   *
+   * Used by the seed-initial-commit flow to bootstrap a freshly-created
+   * empty repo with a scaffold `workspace.json`.
+   *
+   * `contentBase64` must already be base64-encoded — caller chooses the
+   * encoder (TextEncoder for UTF-8 strings, raw bytes for binaries).
+   */
+  async putContents(
+    token: string,
+    owner: string,
+    name: string,
+    path: string,
+    args: { message: string; contentBase64: string; branch?: string; sha?: string },
+    opts: CallOptions = {},
+  ): Promise<{ commitSha: string; contentSha: string }> {
+    const body: Record<string, unknown> = {
+      message: args.message,
+      content: args.contentBase64,
+    };
+    if (args.branch) body.branch = args.branch;
+    if (args.sha) body.sha = args.sha;
+    const { json } = await this.call<{
+      commit: { sha: string };
+      content: { sha: string };
+    }>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/contents/${path
+        .split('/')
+        .map(encodeURIComponent)
+        .join('/')}`,
+      {
+        ...opts,
+        method: 'PUT',
+        body,
+        requiredScopes: ['repo'],
+      },
+    );
+    return { commitSha: json.commit.sha, contentSha: json.content.sha };
   }
 
   /**
@@ -710,6 +867,79 @@ export class GitHubClient {
    * All three surface as a plain GitHubError(422); the UI message is
    * picked up from response.body.message.
    */
+  /**
+   * Fetch a single pull request by number. Used by the refresh flow to
+   * detect whether a previously-opened PR has been merged on GitHub —
+   * `merged: true` is what triggers the working-branch retirement path.
+   *
+   * Returns `null` on 404 (PR was deleted or never existed at this number);
+   * other failures surface as the usual typed errors.
+   */
+  async getPullRequest(
+    token: string,
+    owner: string,
+    name: string,
+    number: number,
+    opts: CallOptions = {},
+  ): Promise<{
+    number: number;
+    htmlUrl: string;
+    state: 'open' | 'closed';
+    merged: boolean;
+  } | null> {
+    try {
+      const { json } = await this.call<RawPullRequest & { merged?: boolean }>(
+        token,
+        `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/pulls/${number}`,
+        opts,
+      );
+      return {
+        number: json.number,
+        htmlUrl: json.html_url,
+        state: json.state,
+        merged: json.merged === true,
+      };
+    } catch (err) {
+      if (err instanceof GitHubError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  /**
+   * List pull requests on a repo. The capability-probe path uses this with
+   * `perPage: 1` to determine whether the token can read PRs (and, by
+   * extension on classic PATs, whether it can also create them).
+   *
+   * Caller declares `requiredScopes` to surface a `MissingScopeError` on
+   * 403, so the capability probe can recognise the missing-scope case
+   * cleanly vs. transient 5xx/network failures.
+   */
+  async listPullRequests(
+    token: string,
+    owner: string,
+    name: string,
+    args: { perPage?: number; state?: 'open' | 'closed' | 'all' } = {},
+    opts: CallOptions = {},
+  ): Promise<PullRequestSummary[]> {
+    const params = new URLSearchParams();
+    params.set('per_page', String(args.perPage ?? 30));
+    if (args.state) params.set('state', args.state);
+    const { json } = await this.call<RawPullRequest[]>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/pulls?${params.toString()}`,
+      {
+        ...opts,
+        requiredScopes: ['repo', 'pull_request'],
+      },
+    );
+    return json.map((pr) => ({
+      number: pr.number,
+      htmlUrl: pr.html_url,
+      state: pr.state,
+      title: pr.title,
+    }));
+  }
+
   async createPullRequest(
     token: string,
     owner: string,
@@ -779,6 +1009,14 @@ export class GitHubClient {
     }
 
     if (response.ok) {
+      // 204 No Content (and 205 Reset Content) carry an empty body —
+      // calling .json() on those throws "Unexpected end of JSON input".
+      // The caller types the response as `T` so an empty object is the
+      // safe sentinel; DELETE-style endpoints either ignore the value
+      // or care only about `response.status`.
+      if (response.status === 204 || response.status === 205) {
+        return { json: {} as T, response };
+      }
       const json = (await response.json()) as T;
       return { json, response };
     }

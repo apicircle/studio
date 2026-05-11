@@ -19,6 +19,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { MonacoBodyEditor } from '../../editors/MonacoBodyEditor';
 import { HeaderKeyAutocomplete, HeaderValueRecommendations } from '../editor/HeaderAutocomplete';
 import { cn } from '../../primitives/cn';
+import { Select } from '../../primitives/Select';
 
 // Reusable editor for a `MockResponseConfig`. Used by:
 //   • Default Response tab (full editor)
@@ -637,7 +638,8 @@ function MultipliersEditor({
             {multipliers.map((m, idx) => (
               <li key={m.id} className="rounded-sm border border-border bg-surface p-2">
                 <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto_auto] gap-1.5">
-                  <select
+                  <Select
+                    size="sm"
                     value={m.source.kind}
                     onChange={(e) =>
                       updateSource(idx, {
@@ -645,7 +647,8 @@ function MultipliersEditor({
                       })
                     }
                     aria-label={`${label} multiplier ${idx + 1} source kind`}
-                    className="h-7 rounded-sm border border-border bg-card px-1 text-[11px] text-text-primary focus:border-accent focus:outline-none"
+                    wrapperClassName="w-full"
+                    className="text-[11px] text-text-primary"
                   >
                     {(Object.keys(MULTIPLIER_SOURCE_LABEL) as MockMultiplierSourceKind[]).map(
                       (k) => (
@@ -654,7 +657,7 @@ function MultipliersEditor({
                         </option>
                       ),
                     )}
-                  </select>
+                  </Select>
                   <input
                     value={m.source.key}
                     onChange={(e) => updateSource(idx, { key: e.target.value })}

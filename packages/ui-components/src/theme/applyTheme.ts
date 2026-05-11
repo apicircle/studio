@@ -51,11 +51,61 @@ export const ALL_THEMES: ReadonlyArray<ThemeDef> = [
 export function applyTheme(themeId: ThemeId): void {
   if (typeof document === 'undefined') return;
   document.documentElement.setAttribute('data-theme', themeId);
+  updateFavicon();
   try {
     localStorage.setItem(THEME_STORAGE_KEY, themeId);
   } catch {
     // localStorage unavailable — non-fatal
   }
+}
+
+/**
+ * Repaints the browser-tab favicon in the active theme's accent color so it
+ * tracks the lucide `Orbit` mark rendered by the TopBar. Reads `--accent`
+ * (RGB triplet, e.g. "103 179 255") off `<html>` after `data-theme` has been
+ * set, then swaps the `<link rel="icon">` href to an inline SVG data URL.
+ */
+function updateFavicon(): void {
+  const accent = readAccentColor();
+  if (!accent) return;
+  const link = ensureFaviconLink();
+  link.setAttribute('type', 'image/svg+xml');
+  link.setAttribute('href', buildOrbitFaviconDataUrl(accent));
+}
+
+function readAccentColor(): string | null {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+  if (!raw) return null;
+  // Tailwind tokens store the accent as space-separated RGB channels
+  // (`103 179 255`) so they can compose with `/ <alpha-value>`. Convert to a
+  // CSS-legal `rgb(...)` for the SVG `stroke` attribute.
+  const channels = raw.split(/\s+/).filter(Boolean);
+  if (channels.length !== 3) return null;
+  return `rgb(${channels.join(',')})`;
+}
+
+function ensureFaviconLink(): HTMLLinkElement {
+  const existing = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  if (existing) return existing;
+  const link = document.createElement('link');
+  link.rel = 'icon';
+  document.head.appendChild(link);
+  return link;
+}
+
+function buildOrbitFaviconDataUrl(stroke: string): string {
+  // Lucide `Orbit` icon (matches the TopBar mark). Inlined so the favicon and
+  // the in-app logo stay visually identical without an extra round-trip.
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" ` +
+    `stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">` +
+    `<path d="M20.341 6.484A10 10 0 0 1 10.266 21.85"/>` +
+    `<path d="M3.659 17.516A10 10 0 0 1 13.74 2.152"/>` +
+    `<circle cx="12" cy="12" r="3"/>` +
+    `<circle cx="19" cy="5" r="2"/>` +
+    `<circle cx="5" cy="19" r="2"/>` +
+    `</svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
 export function getStoredThemeId(): ThemeId {

@@ -13,7 +13,13 @@ export function EnvironmentsPanel() {
   const setEnvFocus = useWorkspaceStore((s) => s.setEnvFocus);
 
   const allNames = Object.keys(items);
-  const defaultFocus = priorityOrder.find((n) => items[n]) ?? allNames[0] ?? null;
+  // Pick the first LOCAL env in the priority list as the default focus —
+  // linked envs aren't editable from this surface, so focusing one would
+  // leave the right pane empty.
+  const firstLocalInPriority = priorityOrder.find(
+    (r): r is { kind: 'local'; name: string } => r.kind === 'local' && Boolean(items[r.name]),
+  );
+  const defaultFocus = firstLocalInPriority?.name ?? allNames[0] ?? null;
   useEffect(() => {
     if (!envFocus && defaultFocus) setEnvFocus(defaultFocus);
     if (envFocus && !items[envFocus] && defaultFocus !== envFocus) setEnvFocus(defaultFocus);
@@ -32,8 +38,12 @@ export function EnvironmentsPanel() {
   const env = focusName ? items[focusName] : null;
   if (!env) return null;
 
-  const layered = priorityOrder.filter((n) => items[n]);
-  const layerPos = layered.indexOf(env.name);
+  // Position in the layered priority list. We only count entries that
+  // resolve — local envs that exist + linked envs whose snapshot is
+  // available — so the "n of N" badge matches what the resolver actually
+  // sees at send time.
+  const layered = priorityOrder.filter((r) => (r.kind === 'local' ? Boolean(items[r.name]) : true));
+  const layerPos = layered.findIndex((r) => r.kind === 'local' && r.name === env.name);
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-6">
@@ -114,10 +124,14 @@ function VariableTable({ env }: VariableTableProps) {
               setVariables(env.name, next);
             }}
             onCommitValue={(value) => {
-              void setVariableValue(env.name, i, value, false);
+              void setVariableValue(env.name, i, value);
             }}
-            onBindKey={(secretKeyId) => bindVariableToSecretKey(env.name, i, secretKeyId)}
-            onUnbind={() => unbindVariableSecretKey(env.name, i)}
+            onBindKey={(secretKeyId) => {
+              void bindVariableToSecretKey(env.name, i, secretKeyId);
+            }}
+            onUnbind={() => {
+              void unbindVariableSecretKey(env.name, i);
+            }}
             onRemove={() => {
               const next = env.variables.filter((_, idx) => idx !== i);
               setVariables(env.name, next);

@@ -20,9 +20,14 @@ describe('SecretVaultDockPanel', () => {
       'aria-current',
       'page',
     );
-    expect(screen.getByText(/repo/)).toBeInTheDocument();
-    expect(screen.getByText(/pull_request/)).toBeInTheDocument();
-    // Connect form is visible when no session is active.
+    // Required-scope guidance lives in the Workspace session subsection.
+    // The matchers below disambiguate the multiple "repo" mentions added
+    // by the per-link Linking sessions copy.
+    const guidance = screen.getByText('Required PAT scopes').closest('div');
+    expect(guidance).not.toBeNull();
+    expect(guidance!.textContent).toMatch(/repo/);
+    expect(guidance!.textContent).toMatch(/pull_request/);
+    // Connect form is visible when no workspace session is active.
     expect(screen.getByLabelText('GitHub PAT')).toBeInTheDocument();
   });
 
@@ -145,7 +150,14 @@ describe('SecretVaultDockPanel', () => {
       expect(screen.getByText('repo, pull_request')).toBeInTheDocument();
     });
 
-    it('warns inline when the connected token lacks pull_request scope', async () => {
+    it('does NOT warn when token has only `repo` — classic PATs cover PR creation via `repo`', async () => {
+      // Pre-fix this test asserted the opposite: that a `repo`-only token
+      // surfaced the "missing pull_request" recommendation. That was wrong
+      // — classic PATs don't have a separate `pull_request` scope; `repo`
+      // already grants full PR powers (create/list/merge/comment), and
+      // GitHub itself accepts `repo` for PR ops at runtime. The session
+      // card now reads `canCreatePullRequests` (set to `true` by the scope
+      // check on connect) and shows no warning in this state.
       const fetchMock = vi.fn(
         async () =>
           new Response(JSON.stringify({ login: 'me', id: 1 }), {
@@ -160,10 +172,47 @@ describe('SecretVaultDockPanel', () => {
 
       await userEvent.type(screen.getByLabelText('GitHub PAT'), 'ghp_test');
       await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+      await screen.findByText(/Connected as me/);
 
-      // B.2 reworded the warning copy from "does not include" to
-      // "Recommended scope(s) missing" — same intent, clearer phrasing.
-      expect(await screen.findByText(/Recommended scope\(s\) missing/i)).toBeInTheDocument();
+      // No warning surfaces — capability resolved positively from scope.
+      expect(screen.queryByText(/can't create pull requests/i)).not.toBeInTheDocument();
+      // The pull_request chip is in the present (green) state because
+      // capability is satisfied, even though the literal scope string isn't
+      // in the granted list.
+      expect(screen.getByLabelText('pull_request scope present')).toBeInTheDocument();
+    });
+
+    it('warns when canCreatePullRequests is explicitly false (probe disproved capability)', async () => {
+      // Force the false state via setState to model a fine-grained PAT
+      // whose probe returned 403. The connect path can't reach this state
+      // on its own (REQUIRED_BASE_SCOPES mandates `repo` which auto-passes
+      // the scope check), so we set up the post-connect state directly.
+      await renderWithStore(<SecretVaultDockPanel />);
+      await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+      await act(async () => {
+        const local = useWorkspaceStore.getState().local!;
+        useWorkspaceStore.setState({
+          local: {
+            ...local,
+            sessions: {
+              github: {
+                workspace: {
+                  accountLogin: 'me',
+                  tokenSecretId: 'sec',
+                  grantedScopes: ['repo'],
+                  addedAt: 't',
+                  lastVerifiedAt: 't',
+                  canCreatePullRequests: false,
+                },
+                links: {},
+              },
+            },
+          },
+        });
+      });
+      expect(await screen.findByText(/can't create pull requests/i)).toBeInTheDocument();
+      // Chip flips back to the missing/recommended state when capability is false.
+      expect(screen.getByLabelText('pull_request scope missing (recommended)')).toBeInTheDocument();
     });
 
     it('shows the missing-scope error inline when connect fails on insufficient base scopes', async () => {
@@ -252,14 +301,18 @@ describe('SecretVaultDockPanel', () => {
       expect(await screen.findByText(/Token rejected by GitHub \(401\)/)).toBeVisible();
     });
 
-    it('B.2 missing required-scope warning surfaces when token only has narrower scopes', async () => {
+    it('B.2 partial-scope path: `repo`-only tokens are accepted with no recommended-missing warning', async () => {
+      // Pre-fix: this asserted the chip rendered as "missing (recommended)"
+      // for `repo`-only tokens. That was based on a literal scope-string
+      // check that didn't reflect GitHub's actual auth model — classic
+      // PATs with `repo` can create PRs without any separate scope, and
+      // the session card now mirrors that reality via `canCreatePullRequests`.
       const fetchMock = vi.fn(
         async () =>
           new Response(JSON.stringify({ login: 'me', id: 1 }), {
             status: 200,
             headers: {
               'content-type': 'application/json',
-              // Tease apart the partial-scope path: token has repo but no pull_request.
               'x-oauth-scopes': 'repo',
             },
           }),
@@ -272,10 +325,10 @@ describe('SecretVaultDockPanel', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
       await screen.findByText(/Connected as me/);
 
-      // The pull_request chip is in the missing/recommended state.
-      expect(screen.getByLabelText('pull_request scope missing (recommended)')).toBeInTheDocument();
-      // The yellow "Recommended scope(s) missing" banner surfaces.
-      expect(screen.getByText(/Recommended scope\(s\) missing/)).toBeInTheDocument();
+      // Chip is in the present state because capability resolved to true.
+      expect(screen.getByLabelText('pull_request scope present')).toBeInTheDocument();
+      // No yellow banner.
+      expect(screen.queryByText(/can't create pull requests/i)).not.toBeInTheDocument();
     });
 
     it('disconnect requires confirmation then clears the session', async () => {
@@ -300,7 +353,101 @@ describe('SecretVaultDockPanel', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
       // Now the button reads "Confirm disconnect"; second click clears it.
       await userEvent.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
-      await waitFor(() => expect(useWorkspaceStore.getState().local!.sessions.github).toBeNull());
+      await waitFor(() =>
+        expect(useWorkspaceStore.getState().local!.sessions.github.workspace).toBeNull(),
+      );
+    });
+  });
+
+  describe('Vault tab — linked-workspace required keys', () => {
+    it('surfaces unprovisioned linked secrets in the missing-slots gate with the source label', async () => {
+      await renderWithStore(<SecretVaultDockPanel />);
+      // Seed a linked workspace whose source declares a slot, plus the
+      // matching cached snapshot so the slot's label is available.
+      const synced = useWorkspaceStore.getState().synced!;
+      const local = useWorkspaceStore.getState().local!;
+      act(() => {
+        useWorkspaceStore.setState({
+          synced: {
+            ...synced,
+            linkedWorkspaces: {
+              ...synced.linkedWorkspaces,
+              'lw-vault-test': {
+                id: 'lw-vault-test',
+                kind: 'private' as const,
+                name: 'Payments',
+                source: {
+                  provider: 'github' as const,
+                  repoFullName: 'org/payments',
+                  branch: 'main',
+                  sessionMode: 'workspace' as const,
+                },
+                scope: ['collections' as const, 'environments' as const],
+                pinnedVersion: '1.0.0',
+                updatePolicy: 'manual' as const,
+                linkedAt: '2026-04-27T00:00:00.000Z',
+                requiredSecretKeyIds: ['DB_TOKEN'],
+              },
+            },
+          },
+          local: {
+            ...local,
+            linkedCollections: {
+              ...local.linkedCollections,
+              'lw-vault-test': {
+                workspaceName: 'Payments',
+                pulledAt: '2026-04-27T00:00:00.000Z',
+                ref: 'v1.0.0',
+                collections: {
+                  tree: { id: 'r', type: 'root', children: [] },
+                  requests: {},
+                  folders: {},
+                },
+                environments: { items: {}, activeName: null, priorityOrder: [] },
+                secretKeys: {
+                  DB_TOKEN: {
+                    id: 'DB_TOKEN',
+                    label: 'Database token',
+                    createdAt: 't',
+                    salt: 'AAAAAAAAAAAAAAAAAAAAAA==',
+                  },
+                },
+              },
+            },
+          },
+        });
+      });
+
+      // The Vault gate now surfaces the linked slot with its label.
+      expect(await screen.findByText('Database token')).toBeInTheDocument();
+      expect(screen.getByText(/required by linked · Payments/i)).toBeInTheDocument();
+      // Provide a value via the password input bound to the linked slot.
+      await userEvent.type(
+        screen.getByLabelText('Value for Database token (linked)'),
+        'super-secret',
+      );
+      await userEvent.click(screen.getByRole('button', { name: /^Save$/ }));
+      // After save, the linked slot has an entry in secretIndex with
+      // origin: 'linked' bound to this link, and the missing-gate row
+      // disappears.
+      await waitFor(() => {
+        const entries = Object.values(useWorkspaceStore.getState().local!.secretIndex.entries);
+        expect(
+          entries.some(
+            (e) =>
+              e.origin === 'linked' &&
+              e.linkedWorkspaceId === 'lw-vault-test' &&
+              e.linkedKeyId === 'DB_TOKEN',
+          ),
+        ).toBe(true);
+      });
+      // The provisioned row in the regular vault list shows the source's
+      // human label — NOT the persisted `link:Payments:DB_TOKEN` form
+      // that leaks the slot id. The "linked" badge is still present.
+      const list = await screen.findByRole('list', { name: 'Secret entries' });
+      expect(within(list).getByText('Database token')).toBeInTheDocument();
+      expect(within(list).queryByText(/link:Payments:DB_TOKEN|DB_TOKEN/)).toBeNull();
+      expect(within(list).getByText('linked')).toBeInTheDocument();
     });
   });
 });

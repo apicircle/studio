@@ -48,7 +48,7 @@ describe('workspaceStore — GitHub session', () => {
       expect(session.tokenSecretId).toBeTruthy();
 
       const local = useWorkspaceStore.getState().local!;
-      expect(local.sessions.github?.accountLogin).toBe('devaprakash');
+      expect(local.sessions.github.workspace?.accountLogin).toBe('devaprakash');
       // Vault entry was created.
       expect(local.secretIndex.entries[session.tokenSecretId]?.label).toBe(
         'github-token:devaprakash',
@@ -74,7 +74,7 @@ describe('workspaceStore — GitHub session', () => {
         /repo/,
       );
       // Session was NOT written.
-      expect(useWorkspaceStore.getState().local!.sessions.github).toBeNull();
+      expect(useWorkspaceStore.getState().local!.sessions.github.workspace).toBeNull();
     });
 
     it('propagates UnauthorizedError on 401 from GitHub', async () => {
@@ -104,7 +104,7 @@ describe('workspaceStore — GitHub session', () => {
         }),
       );
       await useWorkspaceStore.getState().connectGitHubSession('t1');
-      const before = useWorkspaceStore.getState().local!.sessions.github!;
+      const before = useWorkspaceStore.getState().local!.sessions.github.workspace!;
 
       // Now the user adds pull_request scope on github.com; verify should
       // pick it up.
@@ -119,7 +119,7 @@ describe('workspaceStore — GitHub session', () => {
       await new Promise((r) => setTimeout(r, 5));
       const updated = await useWorkspaceStore.getState().verifyGitHubScopes();
       expect(updated).toEqual(['repo', 'pull_request']);
-      const after = useWorkspaceStore.getState().local!.sessions.github!;
+      const after = useWorkspaceStore.getState().local!.sessions.github.workspace!;
       expect(after.grantedScopes).toEqual(['repo', 'pull_request']);
       expect(new Date(after.lastVerifiedAt!).getTime()).toBeGreaterThanOrEqual(
         new Date(before.lastVerifiedAt!).getTime(),
@@ -195,7 +195,7 @@ describe('workspaceStore — GitHub session', () => {
 
       await useWorkspaceStore.getState().disconnectGitHubSession();
       const local = useWorkspaceStore.getState().local!;
-      expect(local.sessions.github).toBeNull();
+      expect(local.sessions.github.workspace).toBeNull();
       expect(local.secretIndex.entries[session.tokenSecretId]).toBeUndefined();
     });
 
@@ -276,13 +276,15 @@ describe('workspaceStore — GitHub session', () => {
       // surfaced on local.sessions.github).
       expect(session.accountLogin).toBe('me');
       expect(session.grantedScopes).toContain('repo');
-      expect(useWorkspaceStore.getState().local?.sessions.github?.accountLogin).toBe('me');
+      expect(useWorkspaceStore.getState().local?.sessions.github.workspace?.accountLogin).toBe(
+        'me',
+      );
 
       vi.unstubAllEnvs();
     });
 
     it('surfaces a clear error when GitHub returns access_denied', async () => {
-      const meta = import.meta as { env: Record<string, string | undefined> };
+      const meta = import.meta as unknown as { env: Record<string, string | undefined> };
       const originalEnv = meta.env.VITE_GITHUB_OAUTH_CLIENT_ID;
       meta.env.VITE_GITHUB_OAUTH_CLIENT_ID = 'test-client-id';
 
@@ -318,6 +320,260 @@ describe('workspaceStore — GitHub session', () => {
         meta.env.VITE_GITHUB_OAUTH_CLIENT_ID = originalEnv;
         vi.unstubAllEnvs();
       }
+    });
+  });
+
+  // PR-creation capability is computed at session connect from the granted
+  // scopes, then re-evaluated (with a network probe fallback) on
+  // connectRepo / verifyGitHubScopes / updateGitHubToken. The flag drives
+  // both the SessionCard warning and the Create PR button enable state, so
+  // the wiring needs end-to-end coverage.
+  describe('canCreatePullRequests capability', () => {
+    /**
+     * Helper: build a fetch stub that walks `responses` in order. Lets a
+     * single test exercise multiple back-to-back GitHub calls (connect →
+     * connectRepo → probe …) without re-stubbing between them.
+     */
+    function queuedFetch(responses: MockResponseSpec[]) {
+      let i = 0;
+      return vi.fn(async () => {
+        const spec = responses[i++];
+        if (!spec) throw new Error(`No more mocked responses (call #${i})`);
+        return new Response(JSON.stringify(spec.body), {
+          status: spec.status ?? 200,
+          headers: { 'content-type': 'application/json', ...(spec.headers ?? {}) },
+        });
+      });
+    }
+
+    it('connect with `repo` scope sets capability=true (classic PAT — no probe needed)', async () => {
+      vi.stubGlobal(
+        'fetch',
+        mockFetchOnce({
+          body: { login: 'me', id: 1 },
+          headers: { 'x-oauth-scopes': 'repo' },
+        }),
+      );
+      const session = await useWorkspaceStore.getState().connectGitHubSession('tok');
+      expect(session.canCreatePullRequests).toBe(true);
+    });
+
+    it('connect with both `repo` and `pull_request` sets capability=true', async () => {
+      vi.stubGlobal(
+        'fetch',
+        mockFetchOnce({
+          body: { login: 'me', id: 1 },
+          headers: { 'x-oauth-scopes': 'repo, pull_request' },
+        }),
+      );
+      const session = await useWorkspaceStore.getState().connectGitHubSession('tok');
+      expect(session.canCreatePullRequests).toBe(true);
+    });
+
+    it('connectRepo probes `/pulls` when scope was inconclusive — flips to true on 200', async () => {
+      // We need a fixture where connect succeeds but capability is null.
+      // The connect flow mandates `repo` so `null` is impossible via the
+      // normal entry path; setState() the session directly to model the
+      // post-hydrate state of a fine-grained PAT whose scopes don't surface
+      // via x-oauth-scopes.
+      vi.stubGlobal(
+        'fetch',
+        mockFetchOnce({
+          body: { login: 'me', id: 1 },
+          headers: { 'x-oauth-scopes': 'repo' },
+        }),
+      );
+      await useWorkspaceStore.getState().connectGitHubSession('tok');
+      // Force capability to null so connectRepo's probe path runs.
+      const local0 = useWorkspaceStore.getState().local!;
+      useWorkspaceStore.setState({
+        local: {
+          ...local0,
+          sessions: {
+            github: {
+              ...local0.sessions.github,
+              workspace: { ...local0.sessions.github.workspace!, canCreatePullRequests: null },
+            },
+          },
+        },
+      });
+
+      // connectRepo: 1) GET /repos/me/api → repo, 2) GET /repos/me/api/pulls → 200 list
+      vi.unstubAllGlobals();
+      vi.stubGlobal(
+        'fetch',
+        queuedFetch([
+          {
+            body: {
+              full_name: 'me/api',
+              name: 'api',
+              owner: { login: 'me' },
+              default_branch: 'main',
+              visibility: 'public',
+              permissions: { push: true, admin: false },
+            },
+          },
+          { body: [] }, // empty PR list — probe sees a 200 and flips capability=true
+        ]),
+      );
+      await useWorkspaceStore.getState().connectRepo('me', 'api');
+      const after = useWorkspaceStore.getState().local!.sessions.github.workspace!;
+      expect(after.canCreatePullRequests).toBe(true);
+    });
+
+    it('connectRepo probe returning 403 missing-scope flips capability to false', async () => {
+      vi.stubGlobal(
+        'fetch',
+        mockFetchOnce({
+          body: { login: 'me', id: 1 },
+          headers: { 'x-oauth-scopes': 'repo' },
+        }),
+      );
+      await useWorkspaceStore.getState().connectGitHubSession('tok');
+      const local0 = useWorkspaceStore.getState().local!;
+      useWorkspaceStore.setState({
+        local: {
+          ...local0,
+          sessions: {
+            github: {
+              ...local0.sessions.github,
+              workspace: { ...local0.sessions.github.workspace!, canCreatePullRequests: null },
+            },
+          },
+        },
+      });
+
+      vi.unstubAllGlobals();
+      vi.stubGlobal(
+        'fetch',
+        queuedFetch([
+          {
+            body: {
+              full_name: 'me/api',
+              name: 'api',
+              owner: { login: 'me' },
+              default_branch: 'main',
+              visibility: 'public',
+              permissions: { push: true, admin: false },
+            },
+          },
+          {
+            // 403 with accepted-oauth-scopes hint → MissingScopeError → false
+            status: 403,
+            body: { message: 'Resource not accessible' },
+            headers: { 'x-accepted-oauth-scopes': 'repo, pull_request' },
+          },
+        ]),
+      );
+      await useWorkspaceStore.getState().connectRepo('me', 'api');
+      const after = useWorkspaceStore.getState().local!.sessions.github.workspace!;
+      expect(after.canCreatePullRequests).toBe(false);
+    });
+
+    it('connectRepo with already-true capability skips the probe entirely', async () => {
+      // Connect → capability already true via scope check. Then connectRepo
+      // should issue exactly ONE GitHub call (getRepo), not two.
+      vi.stubGlobal(
+        'fetch',
+        mockFetchOnce({
+          body: { login: 'me', id: 1 },
+          headers: { 'x-oauth-scopes': 'repo' },
+        }),
+      );
+      await useWorkspaceStore.getState().connectGitHubSession('tok');
+
+      vi.unstubAllGlobals();
+      const fetchMock = queuedFetch([
+        {
+          body: {
+            full_name: 'me/api',
+            name: 'api',
+            owner: { login: 'me' },
+            default_branch: 'main',
+            visibility: 'public',
+            permissions: { push: true, admin: false },
+          },
+        },
+        // No second entry — if the probe ran the queue would throw "no more
+        // mocked responses" and the test would fail loudly.
+      ]);
+      vi.stubGlobal('fetch', fetchMock);
+      await useWorkspaceStore.getState().connectRepo('me', 'api');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('verifyGitHubScopes re-runs the probe against the connected repo', async () => {
+      // Connect → capability=true via scope.
+      vi.stubGlobal(
+        'fetch',
+        mockFetchOnce({
+          body: { login: 'me', id: 1 },
+          headers: { 'x-oauth-scopes': 'repo' },
+        }),
+      );
+      await useWorkspaceStore.getState().connectGitHubSession('tok');
+
+      // connectRepo (no probe needed since capability already true).
+      vi.unstubAllGlobals();
+      vi.stubGlobal(
+        'fetch',
+        mockFetchOnce({
+          body: {
+            full_name: 'me/api',
+            name: 'api',
+            owner: { login: 'me' },
+            default_branch: 'main',
+            visibility: 'public',
+            permissions: { push: true, admin: false },
+          },
+        }),
+      );
+      await useWorkspaceStore.getState().connectRepo('me', 'api');
+
+      // Now: user revoked their `repo` scope on github.com. verifyGitHubScopes
+      // re-fetches scopes, finds them empty, falls back to the probe (which
+      // 403s), and flips capability=false.
+      vi.unstubAllGlobals();
+      vi.stubGlobal(
+        'fetch',
+        queuedFetch([
+          {
+            body: { login: 'me', id: 1 },
+            headers: { 'x-oauth-scopes': 'gist' }, // neither repo nor pull_request
+          },
+          {
+            status: 403,
+            body: { message: 'Resource not accessible' },
+            headers: { 'x-accepted-oauth-scopes': 'repo, pull_request' },
+          },
+        ]),
+      );
+      await useWorkspaceStore.getState().verifyGitHubScopes();
+      const after = useWorkspaceStore.getState().local!.sessions.github.workspace!;
+      expect(after.canCreatePullRequests).toBe(false);
+    });
+
+    it('updateGitHubToken re-resolves capability with the new token', async () => {
+      vi.stubGlobal(
+        'fetch',
+        mockFetchOnce({
+          body: { login: 'me', id: 1 },
+          headers: { 'x-oauth-scopes': 'repo' },
+        }),
+      );
+      await useWorkspaceStore.getState().connectGitHubSession('tok-old');
+
+      // Rotate to a token that grants pull_request directly (fine-grained-style).
+      vi.unstubAllGlobals();
+      vi.stubGlobal(
+        'fetch',
+        mockFetchOnce({
+          body: { login: 'me', id: 1 },
+          headers: { 'x-oauth-scopes': 'repo, pull_request' },
+        }),
+      );
+      const updated = await useWorkspaceStore.getState().updateGitHubToken('tok-new');
+      expect(updated.canCreatePullRequests).toBe(true);
     });
   });
 });

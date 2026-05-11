@@ -1,12 +1,35 @@
 import { useMemo, useState } from 'react';
-import { Copy, Download, FileDown, GripVertical, Plus, Search, Trash2 } from 'lucide-react';
+import { Copy, Download, FileDown, GripVertical, Link2, Plus, Search, Trash2 } from 'lucide-react';
+import type { EnvPriorityRef } from '@apicircle/shared';
+import { envPriorityKey, envPriorityRefEqual } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 import { KebabMenu, type KebabMenuItem } from '../../primitives/KebabMenu';
 import { ImportModal } from '../editor/ImportModal';
 
+/**
+ * One row in the sidebar's flat env list. Mixes local + linked envs under
+ * a single concept so the user can interleave them in the priority order.
+ * Linked rows can be toggled into / reordered within the priority list,
+ * but they can't be renamed / deleted / duplicated from here — those
+ * operations target the linked workspace's source. The kebab menu is
+ * suppressed for linked rows accordingly.
+ */
+type EnvRow =
+  | { ref: EnvPriorityRef; kind: 'local'; name: string; varCount: number }
+  | {
+      ref: EnvPriorityRef;
+      kind: 'linked';
+      linkedWorkspaceId: string;
+      envName: string;
+      linkName: string;
+      varCount: number;
+    };
+
 export function EnvironmentsSidebar() {
   const items = useWorkspaceStore((s) => s.synced?.environments.items ?? {});
+  const linkedWorkspaces = useWorkspaceStore((s) => s.synced?.linkedWorkspaces ?? {});
+  const linkedCollections = useWorkspaceStore((s) => s.local?.linkedCollections ?? {});
   const priorityOrder = useWorkspaceStore((s) => s.synced?.environments.priorityOrder ?? []);
   const setPriorityOrder = useWorkspaceStore((s) => s.setPriorityOrder);
   const addEnvironment = useWorkspaceStore((s) => s.addEnvironment);
@@ -21,8 +44,8 @@ export function EnvironmentsSidebar() {
   const importOpen = useWorkspaceStore((s) => s.importModalOpen);
   const closeImport = useWorkspaceStore((s) => s.closeImportModal);
   const [draftName, setDraftName] = useState('');
-  const [dragName, setDragName] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [dragKey, setDragKey] = useState<string | null>(null);
+  const [dropTargetKey, setDropTargetKey] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   const submitAdd = () => {
@@ -37,22 +60,78 @@ export function EnvironmentsSidebar() {
     setAdding(false);
   };
 
-  const allNames = Object.keys(items);
-  const prioritized = priorityOrder.filter((n) => items[n]);
-  const selectedSet = new Set(prioritized);
-  const unprioritized = allNames.filter((n) => !selectedSet.has(n)).sort();
-  const fullOrderedNames = [...prioritized, ...unprioritized];
-  const orderedNames = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return fullOrderedNames;
-    return fullOrderedNames.filter((n) => n.toLowerCase().includes(q));
-  }, [fullOrderedNames, searchQuery]);
+  // Build a flat list of every env (local + linked) the user can pick from.
+  // Priorityized rows come first in their stored order; the rest follow,
+  // sorted by name within each origin.
+  const allRows = useMemo<EnvRow[]>(() => {
+    const rows: EnvRow[] = [];
+    for (const env of Object.values(items)) {
+      rows.push({
+        ref: { kind: 'local', name: env.name },
+        kind: 'local',
+        name: env.name,
+        varCount: env.variables.length,
+      });
+    }
+    for (const link of Object.values(linkedWorkspaces)) {
+      const snapshot = linkedCollections[link.id];
+      if (!snapshot) continue;
+      for (const env of Object.values(snapshot.environments.items)) {
+        rows.push({
+          ref: { kind: 'linked', linkedWorkspaceId: link.id, envName: env.name },
+          kind: 'linked',
+          linkedWorkspaceId: link.id,
+          envName: env.name,
+          linkName: link.name,
+          varCount: env.variables.length,
+        });
+      }
+    }
+    return rows;
+  }, [items, linkedWorkspaces, linkedCollections]);
 
-  const toggleSelected = (name: string) => {
-    if (selectedSet.has(name)) {
-      setPriorityOrder(priorityOrder.filter((n) => n !== name));
+  const rowsByKey = useMemo(() => {
+    const m = new Map<string, EnvRow>();
+    for (const r of allRows) m.set(envPriorityKey(r.ref), r);
+    return m;
+  }, [allRows]);
+
+  // Resolve the priorityOrder against actual rows. Stale linked refs
+  // (snapshot dropped, link unlinked) are filtered out — the source of
+  // truth stays in `priorityOrder` until the user reorders, but they
+  // don't render here.
+  const prioritized: EnvRow[] = priorityOrder
+    .map((ref) => rowsByKey.get(envPriorityKey(ref)))
+    .filter((r): r is EnvRow => r !== undefined);
+  const selectedKeys = new Set(prioritized.map((r) => envPriorityKey(r.ref)));
+
+  // Unprioritized: everything not yet in the priority list, sorted with
+  // local before linked, then by name within each.
+  const unprioritized: EnvRow[] = allRows
+    .filter((r) => !selectedKeys.has(envPriorityKey(r.ref)))
+    .sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === 'local' ? -1 : 1;
+      const aName = a.kind === 'local' ? a.name : a.envName;
+      const bName = b.kind === 'local' ? b.name : b.envName;
+      return aName.localeCompare(bName, undefined, { sensitivity: 'base' });
+    });
+  const fullOrderedRows = [...prioritized, ...unprioritized];
+  const orderedRows = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return fullOrderedRows;
+    return fullOrderedRows.filter((r) => {
+      const name = r.kind === 'local' ? r.name : r.envName;
+      const link = r.kind === 'linked' ? r.linkName : '';
+      return name.toLowerCase().includes(q) || link.toLowerCase().includes(q);
+    });
+  }, [fullOrderedRows, searchQuery]);
+
+  const toggleSelected = (ref: EnvPriorityRef) => {
+    const key = envPriorityKey(ref);
+    if (selectedKeys.has(key)) {
+      setPriorityOrder(priorityOrder.filter((r) => envPriorityKey(r) !== key));
     } else {
-      setPriorityOrder([...priorityOrder.filter((n) => n !== name), name]);
+      setPriorityOrder([...priorityOrder.filter((r) => envPriorityKey(r) !== key), ref]);
     }
   };
 
@@ -63,14 +142,10 @@ export function EnvironmentsSidebar() {
   const onExport = (name: string) => {
     const json = exportEnvironment(name);
     if (!json) return;
-    // Browser-only: spawn a download via a transient anchor + Blob URL.
-    // Desktop builds also have `window.URL.createObjectURL`, so the
-    // same code path works without a desktop bridge dependency.
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    // Use a filesystem-safe slug — the env name can contain spaces.
     a.download = `${name.replace(/[^a-z0-9-_]+/gi, '_')}.apicircle-env.json`;
     document.body.appendChild(a);
     a.click();
@@ -78,45 +153,47 @@ export function EnvironmentsSidebar() {
     URL.revokeObjectURL(url);
   };
 
-  const onDragStart = (name: string) => (e: React.DragEvent<HTMLLIElement>) => {
-    setDragName(name);
+  const onDragStart = (key: string) => (e: React.DragEvent<HTMLLIElement>) => {
+    setDragKey(key);
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = 'move';
       try {
-        e.dataTransfer.setData('text/plain', name);
+        e.dataTransfer.setData('text/plain', key);
       } catch {
         // jsdom (and a few browsers) don't implement DataTransfer fully
       }
     }
   };
 
-  const onDragOver = (name: string) => (e: React.DragEvent<HTMLLIElement>) => {
-    if (!dragName || !selectedSet.has(name) || name === dragName) return;
+  const onDragOver = (key: string) => (e: React.DragEvent<HTMLLIElement>) => {
+    if (!dragKey || !selectedKeys.has(key) || key === dragKey) return;
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-    if (dropTarget !== name) setDropTarget(name);
+    if (dropTargetKey !== key) setDropTargetKey(key);
   };
 
-  const onDragLeave = (name: string) => () => {
-    if (dropTarget === name) setDropTarget(null);
+  const onDragLeave = (key: string) => () => {
+    if (dropTargetKey === key) setDropTargetKey(null);
   };
 
-  const onDrop = (name: string) => (e: React.DragEvent<HTMLLIElement>) => {
+  const onDrop = (key: string) => (e: React.DragEvent<HTMLLIElement>) => {
     e.preventDefault();
-    const source = dragName;
-    setDragName(null);
-    setDropTarget(null);
-    if (!source || source === name || !selectedSet.has(name)) return;
-    const next = prioritized.filter((n) => n !== source);
-    const targetIdx = next.indexOf(name);
+    const source = dragKey;
+    setDragKey(null);
+    setDropTargetKey(null);
+    if (!source || source === key || !selectedKeys.has(key)) return;
+    const nextRefs = priorityOrder.filter((r) => envPriorityKey(r) !== source);
+    const targetIdx = nextRefs.findIndex((r) => envPriorityKey(r) === key);
     if (targetIdx < 0) return;
-    next.splice(targetIdx, 0, source);
-    setPriorityOrder(next);
+    const sourceRef = priorityOrder.find((r) => envPriorityKey(r) === source);
+    if (!sourceRef) return;
+    nextRefs.splice(targetIdx, 0, sourceRef);
+    setPriorityOrder(nextRefs);
   };
 
   const onDragEnd = () => {
-    setDragName(null);
-    setDropTarget(null);
+    setDragKey(null);
+    setDropTargetKey(null);
   };
 
   return (
@@ -158,32 +235,28 @@ export function EnvironmentsSidebar() {
       )}
 
       <ul role="list" aria-label="Environments" className="flex flex-col gap-0.5">
-        {orderedNames.length === 0 && (
+        {orderedRows.length === 0 && (
           <li className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-[11px] text-text-dim">
-            {searchQuery
-              ? 'No matching environments.'
-              : allNames.length === 0
-                ? 'No environments yet.'
-                : 'No environments yet.'}
+            {searchQuery ? 'No matching environments.' : 'No environments yet.'}
           </li>
         )}
-        {orderedNames.map((name) => {
-          const env = items[name];
-          if (!env) return null;
-          const isSelected = selectedSet.has(name);
-          const isFocused = envFocus === name;
-          const isDragging = dragName === name;
-          const isDropTarget = dropTarget === name;
+        {orderedRows.map((row) => {
+          const key = envPriorityKey(row.ref);
+          const isSelected = selectedKeys.has(key);
+          const isFocused = row.kind === 'local' && envFocus !== null && envFocus === row.name;
+          const isDragging = dragKey === key;
+          const isDropTarget = dropTargetKey === key;
+          const displayName = row.kind === 'local' ? row.name : row.envName;
           return (
             <li
-              key={name}
+              key={key}
               draggable={isSelected}
-              onDragStart={isSelected ? onDragStart(name) : undefined}
-              onDragOver={isSelected ? onDragOver(name) : undefined}
-              onDragLeave={isSelected ? onDragLeave(name) : undefined}
-              onDrop={isSelected ? onDrop(name) : undefined}
+              onDragStart={isSelected ? onDragStart(key) : undefined}
+              onDragOver={isSelected ? onDragOver(key) : undefined}
+              onDragLeave={isSelected ? onDragLeave(key) : undefined}
+              onDrop={isSelected ? onDrop(key) : undefined}
               onDragEnd={onDragEnd}
-              data-env-name={name}
+              data-env-key={key}
             >
               <div
                 className={cn(
@@ -200,7 +273,7 @@ export function EnvironmentsSidebar() {
                 {isSelected ? (
                   <span
                     className="flex h-4 w-4 cursor-grab items-center justify-center text-text-faint hover:text-text-primary active:cursor-grabbing"
-                    aria-label={`Drag ${name} to reorder priority`}
+                    aria-label={`Drag ${displayName} to reorder priority`}
                     title="Drag to reorder priority"
                   >
                     <GripVertical size={12} />
@@ -211,49 +284,71 @@ export function EnvironmentsSidebar() {
                 <input
                   type="checkbox"
                   checked={isSelected}
-                  onChange={() => toggleSelected(name)}
-                  aria-label={`${isSelected ? 'Remove' : 'Add'} ${name} from global environment layer`}
+                  onChange={() => toggleSelected(row.ref)}
+                  aria-label={`${isSelected ? 'Remove' : 'Add'} ${displayName} ${
+                    row.kind === 'linked' ? `(linked from ${row.linkName}) ` : ''
+                  }from global environment layer`}
                   className="h-3 w-3 cursor-pointer"
                   style={{ accentColor: 'rgb(var(--accent))' }}
                 />
-                <button
-                  type="button"
-                  onClick={() => setEnvFocus(name)}
-                  className="flex flex-1 items-center gap-2 truncate text-left"
-                  aria-label={`Edit variables in ${name}`}
-                  aria-pressed={isFocused}
-                >
-                  <span className="truncate">{name}</span>
-                </button>
-                <span className="text-[10px] text-text-dim">{env.variables.length}</span>
-                <KebabMenu
-                  ariaLabel={`Environment actions for ${name}`}
-                  size="sm"
-                  items={[
-                    {
-                      id: 'duplicate',
-                      label: 'Duplicate',
-                      icon: <Copy size={12} aria-hidden="true" />,
-                      onSelect: () => duplicateEnvironment(name),
-                    },
-                    {
-                      id: 'export',
-                      label: 'Export as JSON',
-                      icon: <FileDown size={12} aria-hidden="true" />,
-                      onSelect: () => onExport(name),
-                    },
-                    {
-                      id: 'delete',
-                      label: 'Delete',
-                      icon: <Trash2 size={12} aria-hidden="true" />,
-                      tone: 'danger',
-                      onSelect: () => onDelete(name),
-                    },
-                  ]}
-                />
-                {/* Suppress lint on no-longer-imported icons. The lucide
-                    imports stay because they're used inside the KebabMenu
-                    items above as icon nodes. */}
+                {row.kind === 'local' ? (
+                  <button
+                    type="button"
+                    onClick={() => setEnvFocus(row.name)}
+                    className="flex flex-1 items-center gap-2 truncate text-left"
+                    aria-label={`Edit variables in ${row.name}`}
+                    aria-pressed={isFocused}
+                  >
+                    <span className="truncate">{row.name}</span>
+                  </button>
+                ) : (
+                  // Linked envs are read-only from this surface — clicking
+                  // a row no-ops. The user edits override values from the
+                  // LinkedEnvironmentsSection in the env editor pane.
+                  <div
+                    className="flex flex-1 items-center gap-1.5 truncate"
+                    title={`From linked workspace ${row.linkName}`}
+                    aria-label={`Linked env ${row.envName} from ${row.linkName}`}
+                  >
+                    <Link2 size={10} aria-hidden="true" className="shrink-0 text-text-faint" />
+                    <span className="truncate">{row.envName}</span>
+                    <span className="shrink-0 rounded-sm border border-border bg-card px-1 py-0.5 text-[9px] text-text-dim">
+                      {row.linkName}
+                    </span>
+                  </div>
+                )}
+                <span className="text-[10px] text-text-dim">{row.varCount}</span>
+                {row.kind === 'local' ? (
+                  <KebabMenu
+                    ariaLabel={`Environment actions for ${row.name}`}
+                    size="sm"
+                    items={[
+                      {
+                        id: 'duplicate',
+                        label: 'Duplicate',
+                        icon: <Copy size={12} aria-hidden="true" />,
+                        onSelect: () => duplicateEnvironment(row.name),
+                      },
+                      {
+                        id: 'export',
+                        label: 'Export as JSON',
+                        icon: <FileDown size={12} aria-hidden="true" />,
+                        onSelect: () => onExport(row.name),
+                      },
+                      {
+                        id: 'delete',
+                        label: 'Delete',
+                        icon: <Trash2 size={12} aria-hidden="true" />,
+                        tone: 'danger',
+                        onSelect: () => onDelete(row.name),
+                      },
+                    ]}
+                  />
+                ) : (
+                  // Symmetry padding for the kebab slot so linked rows
+                  // line up with local rows visually.
+                  <span aria-hidden className="h-5 w-5" />
+                )}
               </div>
             </li>
           );
@@ -261,12 +356,18 @@ export function EnvironmentsSidebar() {
       </ul>
 
       <p className="mt-auto rounded-sm border border-dashed border-border-subtle p-2 text-[11px] leading-snug text-text-dim">
-        Tick to include in the global layer. Drag the handle to reorder priority. Click a name to
-        edit its variables.
+        Tick to include in the global priority layer (resolves <code>{'{{NAME}}'}</code> at send
+        time). Drag the handle to reorder. Click a local env to edit its variables; linked envs edit
+        through their <em>Linked environments</em> section.
       </p>
     </div>
   );
 }
+
+// Suppress lint on `envPriorityRefEqual` import — we reach for it elsewhere
+// (planner, tests). Keeping the import local to this file would scatter the
+// helpers; module re-exports are kept lean intentionally.
+void envPriorityRefEqual;
 
 /**
  * Kebab menu rendered next to the "ENVIRONMENTS" label in the shared sidebar

@@ -157,7 +157,7 @@ describe('workspaceStore.runPlan', () => {
                         },
                       },
                       activeName: 'prod',
-                      priorityOrder: ['prod'],
+                      priorityOrder: [{ kind: 'local', name: 'prod' }],
                     },
                     releases: { self: null },
                   }),
@@ -179,20 +179,22 @@ describe('workspaceStore.runPlan', () => {
     const planId = useWorkspaceStore.getState().addPlan('cross');
     useWorkspaceStore.getState().addPlanStep(planId, 'linked-req');
     // The store action doesn't currently take linkedWorkspaceId, so wire
-    // it directly through commitLocal — the executor reads it from the
-    // step record either way.
-    const local = useWorkspaceStore.getState().local!;
-    const updated = {
-      ...local,
-      executionPlans: {
-        ...local.executionPlans,
-        [planId]: {
-          ...local.executionPlans[planId],
-          steps: [{ requestId: 'linked-req', linkedWorkspaceId: link.id }],
+    // it directly through synced — the executor reads it from the step
+    // record either way. Plans now live on synced (not local) so they
+    // round-trip through Git.
+    const synced = useWorkspaceStore.getState().synced!;
+    useWorkspaceStore.setState({
+      synced: {
+        ...synced,
+        executionPlans: {
+          ...(synced.executionPlans ?? {}),
+          [planId]: {
+            ...synced.executionPlans![planId],
+            steps: [{ requestId: 'linked-req', linkedWorkspaceId: link.id }],
+          },
         },
       },
-    };
-    useWorkspaceStore.setState({ local: updated });
+    });
 
     const fetchMock = queuedFetch([{ body: { ok: 1 } }]);
     vi.stubGlobal('fetch', fetchMock);
@@ -210,14 +212,14 @@ describe('workspaceStore.runPlan', () => {
     // simulates the case where the user pulled a workspace whose plans
     // reference a link they haven't materialized yet.
     const planId = useWorkspaceStore.getState().addPlan('p');
-    const local = useWorkspaceStore.getState().local!;
+    const synced = useWorkspaceStore.getState().synced!;
     useWorkspaceStore.setState({
-      local: {
-        ...local,
+      synced: {
+        ...synced,
         executionPlans: {
-          ...local.executionPlans,
+          ...(synced.executionPlans ?? {}),
           [planId]: {
-            ...local.executionPlans[planId],
+            ...synced.executionPlans![planId],
             steps: [{ requestId: 'whatever', linkedWorkspaceId: 'phantom-link' }],
           },
         },
@@ -242,13 +244,13 @@ describe('workspaceStore.runPlan', () => {
     useWorkspaceStore
       .getState()
       .setVariables('prod', [{ key: 'BASE_URL', value: 'https://prod', encrypted: false }]);
-    useWorkspaceStore.getState().setPriorityOrder(['dev']);
+    useWorkspaceStore.getState().setPriorityOrder([{ kind: 'local', name: 'dev' }]);
 
     const r1 = useWorkspaceStore.getState().addRequest(null);
     useWorkspaceStore.getState().setRequestUrl(r1, '{{BASE_URL}}/users');
     const planId = useWorkspaceStore.getState().addPlan('p');
     useWorkspaceStore.getState().addPlanStep(planId, r1);
-    useWorkspaceStore.getState().setPlanEnvPriority(planId, ['prod']);
+    useWorkspaceStore.getState().setPlanEnvPriority(planId, [{ kind: 'local', name: 'prod' }]);
 
     const fetchMock = queuedFetch([{ body: { ok: 1 } }]);
     vi.stubGlobal('fetch', fetchMock);

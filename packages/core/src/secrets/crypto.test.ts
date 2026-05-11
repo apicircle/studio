@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   decryptString,
+  deriveKeyFromSlotValue,
   encryptString,
   exportKey,
   generateAesKey,
+  generateSlotSalt,
   importKey,
   serializePayload,
   tryParsePayload,
@@ -55,6 +57,43 @@ describe('AES-GCM crypto helpers', () => {
       expect(tryParsePayload('enc:v2:AAAA:BBBB')).toBeNull();
       expect(tryParsePayload('enc:v1:AAAA')).toBeNull();
       expect(tryParsePayload('')).toBeNull();
+    });
+  });
+
+  describe('per-slot key derivation', () => {
+    it('generateSlotSalt returns a fresh base64 salt each call', () => {
+      const a = generateSlotSalt();
+      const b = generateSlotSalt();
+      expect(a).not.toBe(b);
+      // 16 raw bytes → base64 length 24 (with `=` padding).
+      expect(a.length).toBe(24);
+      expect(b.length).toBe(24);
+    });
+
+    it('deriveKeyFromSlotValue produces stable keys for the same (value, salt)', async () => {
+      const salt = generateSlotSalt();
+      const k1 = await deriveKeyFromSlotValue('s3cret', salt);
+      const k2 = await deriveKeyFromSlotValue('s3cret', salt);
+      const payload = await encryptString('payload', k1);
+      // Same value + same salt on a second call decrypts ciphertext from the first.
+      expect(await decryptString(payload, k2)).toBe('payload');
+    });
+
+    it('different slot values yield non-interoperable keys', async () => {
+      const salt = generateSlotSalt();
+      const correct = await deriveKeyFromSlotValue('right', salt);
+      const wrong = await deriveKeyFromSlotValue('wrong', salt);
+      const payload = await encryptString('payload', correct);
+      await expect(decryptString(payload, wrong)).rejects.toBeDefined();
+    });
+
+    it('different salts yield non-interoperable keys for the same value', async () => {
+      const saltA = generateSlotSalt();
+      const saltB = generateSlotSalt();
+      const keyA = await deriveKeyFromSlotValue('same-value', saltA);
+      const keyB = await deriveKeyFromSlotValue('same-value', saltB);
+      const payload = await encryptString('payload', keyA);
+      await expect(decryptString(payload, keyB)).rejects.toBeDefined();
     });
   });
 });

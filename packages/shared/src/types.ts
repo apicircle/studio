@@ -114,7 +114,12 @@ export interface WorkspaceSynced {
   environments: {
     items: Record<string, Environment>;
     activeName: string | null;
-    priorityOrder: string[];
+    /**
+     * Ordered list of envs the resolver layers into request scope. Mixes
+     * local and linked-workspace envs — the consumer picks order. See
+     * `EnvPriorityRef`.
+     */
+    priorityOrder: EnvPriorityRef[];
   };
   // Renamed from `apiConnections`. Each entry represents a workspace this one
   // links to (private session-bound or public marketplace).
@@ -153,6 +158,20 @@ export interface WorkspaceSynced {
   // CLI. Runtime status (port, pid, request count) lives in
   // `WorkspaceLocal.mockRuntime` and is host-specific.
   mockServers: Record<string, MockServer>;
+  /**
+   * Workspace-wide execution plans. Plan **definitions** travel through
+   * Git so collaborators on the same workspace see the same plans;
+   * plan **runs** (history) stay in `WorkspaceLocal.history.planRuns`
+   * because they're per-device and per-execution.
+   *
+   * Optional in the type: pre-migration workspaces persisted plans on
+   * `WorkspaceLocal.executionPlans` only; the hydration normalizer
+   * lifts those into `synced.executionPlans` on first load. The store
+   * always writes a populated value (defaulting to `{}`) after
+   * migration, so consumers can rely on `synced.executionPlans` being
+   * defined post-hydrate.
+   */
+  executionPlans?: Record<string, ExecutionPlan>;
   // Synced labels for secret keys referenced by environment variables.
   // The actual secret values live in WorkspaceLocal vault (and are
   // supplied at runtime for the CLI). This map exists so collaborators
@@ -509,9 +528,32 @@ export interface Environment {
   variables: EnvironmentVariable[];
 }
 
+/**
+ * Entry in the global / plan-level environment priority order. Both local
+ * environments and linked-workspace environments are first-class citizens
+ * — the consumer can interleave them in any order and the resolver layers
+ * them top-down at request-time. The two `kind`s exist because linked envs
+ * need a `linkedWorkspaceId` to resolve against the right snapshot in
+ * `WorkspaceLocal.linkedCollections` (and to apply the consumer's per-row
+ * overrides from `synced.linkedOverrides.environmentVars`).
+ *
+ * Stored in `WorkspaceSynced.environments.priorityOrder` and
+ * `ExecutionPlan.envPriorityOrder`.
+ */
+export type EnvPriorityRef =
+  | { kind: 'local'; name: string }
+  | {
+      kind: 'linked';
+      linkedWorkspaceId: string;
+      envName: string;
+    };
+
 // Encrypted variables MUST set `secretKeyId`, which references
-// WorkspaceSynced.secretKeys[id]. The actual secret value is never synced
-// to Git — it lives in the local vault. CLI runs receive values via
+// `WorkspaceSynced.secretKeys[id]`. When `encrypted: true`, `value` carries
+// the AES-GCM ciphertext (`enc:v1:<iv>:<ciphertext>`) produced with a key
+// derived from the slot's plaintext value via PBKDF2 + the slot's salt.
+// Ciphertext travels through Git; the slot value never does — each user
+// supplies it on their own device. CLI runs receive values via
 // APICIRCLE_SECRET_<id>=… or `--secrets <file>.json`.
 export interface EnvironmentVariable {
   key: string;
@@ -520,11 +562,18 @@ export interface EnvironmentVariable {
   secretKeyId?: string;
 }
 
-// Synced metadata for secret keys. Holds id + label so collaborators see
-// what each `{{NAME}}` ref points to. Values stay in WorkspaceLocal vault.
+// Synced metadata for secret-vault slots. Holds id + label so collaborators
+// see consistent names for `{{LABEL}}` refs, plus the per-slot salt used
+// when deriving an AES-GCM key from the slot's plaintext value. Salts are
+// not secret — keeping them in Git is what makes ciphertext from one
+// device decryptable on another (given the same plaintext value).
 export interface SecretKeyMeta {
   id: string;
   label: string;
+  // Base64-encoded random salt (16 bytes). Mixed into PBKDF2 alongside the
+  // user-supplied slot value to derive the slot's encryption key. Per slot
+  // so two slots with the same plaintext value still produce distinct keys.
+  salt: string;
   createdAt: string;
 }
 
@@ -540,6 +589,23 @@ export interface LinkedWorkspace {
     provider: 'github';
     repoFullName: string;
     branch: string;
+    /**
+     * Which GitHub session credentials this link uses for `workspace.json`
+     * fetches at link / refresh time.
+     *
+     *   - `'workspace'` — reuse `local.sessions.github.workspace` (the same
+     *     PAT that pushes/pulls THIS workspace). Convenient when both repos
+     *     are reachable from a single token.
+     *   - `'dedicated'` — use a per-link PAT stored at
+     *     `local.sessions.github.links[linkedWorkspaceId]`. Used when the
+     *     source repo lives under a different account (different org, a
+     *     bot user, a teammate's fork) that the workspace session can't
+     *     read.
+     *
+     * Public links still pick a mode — even public-repo fetches today route
+     * through `GitHubClient.getContents`, which uses an auth header.
+     */
+    sessionMode: 'workspace' | 'dedicated';
   };
   // 'commands' scope removed per revision #2.
   scope: Array<'collections' | 'environments'>;
@@ -584,6 +650,14 @@ export interface ReleaseVersion {
 export interface WorkspaceLocal {
   schemaVersion: 1;
   workspaceId: string;
+  /**
+   * @deprecated Plans now live on `WorkspaceSynced.executionPlans` so
+   * they round-trip through Git (team-shared). This field is kept for
+   * one schema version to support hydration migration only — code
+   * should NOT write here. The hydration normalizer
+   * `liftLegacyExecutionPlansToSynced` lifts any value found here into
+   * `synced.executionPlans` on first load and clears it.
+   */
   executionPlans: Record<string, ExecutionPlan>;
   history: {
     requestRuns: RequestRun[];
@@ -593,16 +667,52 @@ export interface WorkspaceLocal {
   // required-by-linked-workspace, and tracks usage so the user can see where
   // each key is consumed before deleting it.
   secretIndex: SecretIndex;
-  // GitHub session(s) — managed in the Sessions tab of the Secret Vault modal.
-  // Allows token rotation without losing branch/PR state.
+  // GitHub credentials for this workspace, split by purpose.
+  //
+  //   - `workspace` — the PAT that drives push/pull/PR for THIS workspace's
+  //     own repo. Single-valued. Disconnecting clears it but doesn't touch
+  //     `links` — orphaned links surface a "session missing" warning so the
+  //     user can re-auth or remap.
+  //   - `links` — per-link dedicated PATs, keyed by `LinkedWorkspace.id`.
+  //     Populated when a link is added with `sessionMode: 'dedicated'`. Used
+  //     to fetch the source's `workspace.json` from a repo the workspace
+  //     session can't read (different org, bot user, etc.).
+  //
+  // Both sides are encrypted at rest under the local master key. The
+  // `tokenSecretId` on each session points into the `apicircle-secret-vault`
+  // IDB store (per-device, never pushed to git).
   sessions: {
-    github: GitHubSession | null;
+    github: {
+      workspace: GitHubSession | null;
+      links: Record<string, GitHubSession>;
+    };
   };
   // The GitHub repo the user has bound this workspace to. Holds metadata
   // copied from `GET /repos/:owner/:repo` at connect time so the UI can
   // render without re-fetching. Cleared on disconnect.
   connectedRepo: ConnectedRepo | null;
   workingBranch: WorkingBranch | null;
+  /**
+   * Blob sha of the scaffold `workspace.json` written by
+   * `seedInitialCommit`. Persisted so the next `createWorkingBranch` can
+   * recognise its own scaffold on the new branch and suppress the
+   * "remote already has content" first-pull prompt — that prompt only
+   * makes sense for genuinely pre-populated remote content, not the
+   * empty seed we just wrote ourselves. `null` once any other content
+   * has overwritten the scaffold.
+   */
+  seededWorkspaceSha: string | null;
+  /**
+   * Set by `refreshWorkspace` when it detects that the working branch is
+   * functionally over: the PR was merged on GitHub, OR the branch ref was
+   * deleted out from under us (typically by GitHub's "delete branch on
+   * merge" setting). `workingBranch` is cleared at the same time so the
+   * UI flips back to the create-branch form, and this slot drives a
+   * one-time banner pointing the user toward starting a new branch.
+   * Cleared by `dismissRetiredBranch` once the user acknowledges or
+   * creates a new branch.
+   */
+  retiredBranch: RetiredBranch | null;
   // 3-way diff snapshot for conflict-safe sync. See Sync section in the plan.
   sync: SyncSnapshot;
   // Cached collections + environments pulled from each linked workspace at
@@ -728,6 +838,13 @@ export interface LinkedSnapshot {
   ref: string;
   collections: WorkspaceSynced['collections'];
   environments: WorkspaceSynced['environments'];
+  /**
+   * The source workspace's secret-key registry, cached so the link card
+   * can render slot labels (not just raw ids). Optional — older
+   * snapshots from before this field was tracked load with `undefined`,
+   * and the card falls back to showing ids until the next refresh.
+   */
+  secretKeys?: Record<string, SecretKeyMeta>;
 }
 
 export interface SecretIndex {
@@ -763,6 +880,23 @@ export interface GitHubSession {
   grantedScopes: string[];
   addedAt: string;
   lastVerifiedAt: string | null;
+  /**
+   * Whether this token can create pull requests, derived from a two-step
+   * check: (1) scope inspection (`repo` on classic PATs OR `pull_request`
+   * on fine-grained PATs covers PR creation), and (2) if the scope check
+   * is inconclusive, a real `GET /repos/:owner/:repo/pulls` probe against
+   * the connected repo. The PR-creation warning + Create PR button enable
+   * state both read this flag instead of doing string-includes checks
+   * against `grantedScopes` — which would false-fire for any classic PAT
+   * (classic PATs don't have a separate `pull_request` scope; `repo`
+   * already grants full PR powers, and that's what GitHub actually
+   * accepts at runtime).
+   *
+   *   - `true`  — scope check confirmed OR probe returned 200
+   *   - `false` — probe returned 403 with missing-scope hint
+   *   - `null`  — not yet probed (no repo connected, or probe pending)
+   */
+  canCreatePullRequests: boolean | null;
 }
 
 /**
@@ -837,7 +971,13 @@ export interface ExecutionPlan {
    * since the field landed).
    */
   steps: Array<{ requestId: string; linkedWorkspaceId?: string; enabled?: boolean }>;
-  envPriorityOrder: string[];
+  /**
+   * Plan-scoped overlay for the workspace's env priority order. Empty
+   * means "inherit the workspace order"; non-empty replaces it for runs
+   * of this plan. Mixes local + linked envs the same way the workspace
+   * order does — see `EnvPriorityRef`.
+   */
+  envPriorityOrder: EnvPriorityRef[];
   /**
    * Plan-level variables sit between context vars and the env priority
    * list in the resolver chain — they let a plan override an env value
@@ -945,6 +1085,33 @@ export interface WorkingBranch {
   lastPushedSha: string | null;
   diffSummary: { ahead: number; behind: number; staleAt: string } | null;
   openPrUrl: string | null;
+}
+
+/**
+ * A working branch that's been retired — either the PR was merged or the
+ * branch was deleted on GitHub (or both). Persisted on `local.retiredBranch`
+ * so the create-branch form can surface a "this branch is done — create a
+ * new one" banner pointing back at the closed PR.
+ *
+ * Reasons:
+ *   - `pr-merged`     — PR was merged. Branch may still exist on GitHub
+ *                       (no auto-delete) or may be gone; either way it's
+ *                       functionally retired.
+ *   - `branch-deleted` — Branch ref returns 404. PR (if any) was not
+ *                        merged — most likely a deliberate delete or a
+ *                        closed-without-merge cleanup.
+ */
+export interface RetiredBranch {
+  /** Branch name that was retired. */
+  branchName: string;
+  /** Why the branch is retired. */
+  reason: 'pr-merged' | 'branch-deleted';
+  /** ISO timestamp when retirement was detected. */
+  retiredAt: string;
+  /** PR HTML URL if one was opened (kept across retirement so the banner can link it). */
+  prUrl: string | null;
+  /** PR number if known — useful for the banner copy ("PR #42 was merged"). */
+  prNumber: number | null;
 }
 
 // 3-way diff snapshot. localDiff = currentSynced - lastPulledSnapshot;

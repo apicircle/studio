@@ -101,4 +101,24 @@ describe('deprecateRelease + yankRelease', () => {
   it('throws when no releases ledger exists yet', () => {
     expect(() => deprecateRelease(empty, '0.1.0')).toThrow(/No releases/);
   });
+
+  it('preserves an earlier deprecate flag when a different version is yanked later', async () => {
+    // Repro: user deprecates v2.3.0, then yanks v1.0.0. The
+    // deprecated flag on v2.3.0 must survive — a regression where
+    // yankRelease cloned a stale ledger entry would silently flip
+    // it back to false.
+    let state = await publishRelease(empty, { version: '1.0.0', notes: 'first' });
+    state = await publishRelease(state, { version: '2.3.0', notes: 'feature drop' });
+    state = deprecateRelease(state, '2.3.0');
+    state = yankRelease(state, '1.0.0');
+
+    const versions = state.releases.self!.versions;
+    const v100 = versions.find((v) => v.version === '1.0.0')!;
+    const v230 = versions.find((v) => v.version === '2.3.0')!;
+    expect(v100.yanked).toBe(true);
+    expect(v100.deprecated).toBe(false);
+    // Critical: v2.3.0's deprecated flag must persist across the yank.
+    expect(v230.deprecated).toBe(true);
+    expect(v230.yanked).toBe(false);
+  });
 });

@@ -110,7 +110,7 @@ describe('workspaceStore.linkPrivateWorkspace', () => {
           },
         },
         activeName: 'dev',
-        priorityOrder: ['dev'],
+        priorityOrder: [{ kind: 'local', name: 'dev' }],
       },
       releases: { self: { versions: [], currentVersion: null } },
     });
@@ -161,6 +161,7 @@ describe('workspaceStore.linkPrivateWorkspace', () => {
       provider: 'github',
       repoFullName: 'org/payments-api',
       branch: 'main',
+      sessionMode: 'workspace',
     });
     expect(link.pinnedVersion).toBe('1.0.0');
 
@@ -205,6 +206,95 @@ describe('workspaceStore.linkPrivateWorkspace', () => {
         .getState()
         .linkPrivateWorkspace({ repoFullName: 'me/bad2', branch: 'main' }),
     ).rejects.toThrow(/missing workspaceName/);
+  });
+
+  it('auto-populates requiredSecretKeyIds from every slot in the source secretKeys registry', async () => {
+    await setupSession();
+    const remoteJson = JSON.stringify({
+      workspaceName: 'Source',
+      // The previous filter that only included slots referenced by an
+      // encrypted env var made declared slots silently invisible when
+      // the binding was stale or never written. The new behavior: every
+      // slot the source declares is seeded onto the link.
+      secretKeys: {
+        DB_TOKEN: {
+          id: 'DB_TOKEN',
+          label: 'Database token',
+          createdAt: 't',
+          salt: 'AAAAAAAAAAAAAAAAAAAAAA==',
+        },
+        ANOTHER_SLOT: {
+          id: 'ANOTHER_SLOT',
+          label: 'Another slot',
+          createdAt: 't',
+          salt: 'BBBBBBBBBBBBBBBBBBBBBB==',
+        },
+      },
+      environments: {
+        items: {
+          dev: {
+            name: 'dev',
+            variables: [
+              { key: 'DB_PASSWORD', value: 'enc:v1:...', encrypted: true, secretKeyId: 'DB_TOKEN' },
+              { key: 'BASE_URL', value: 'https://dev', encrypted: false },
+            ],
+          },
+        },
+        activeName: 'dev',
+        priorityOrder: [{ kind: 'local', name: 'dev' }],
+      },
+    });
+    vi.stubGlobal('fetch', queuedFetch([fileContents(remoteJson)]));
+    const link = await useWorkspaceStore
+      .getState()
+      .linkPrivateWorkspace({ repoFullName: 'me/src', branch: 'main' });
+    expect(link.requiredSecretKeyIds.sort()).toEqual(['ANOTHER_SLOT', 'DB_TOKEN']);
+  });
+
+  it('provisions any secretValues supplied by the wizard after the link lands', async () => {
+    await setupSession();
+    const remoteJson = JSON.stringify({
+      workspaceName: 'Source',
+      secretKeys: {
+        DB_TOKEN: {
+          id: 'DB_TOKEN',
+          label: 'Database token',
+          createdAt: 't',
+          salt: 'AAAAAAAAAAAAAAAAAAAAAA==',
+        },
+      },
+      environments: {
+        items: {
+          dev: {
+            name: 'dev',
+            variables: [
+              { key: 'DB_PASSWORD', value: 'enc:v1:...', encrypted: true, secretKeyId: 'DB_TOKEN' },
+            ],
+          },
+        },
+        activeName: 'dev',
+        priorityOrder: [{ kind: 'local', name: 'dev' }],
+      },
+    });
+    vi.stubGlobal('fetch', queuedFetch([fileContents(remoteJson)]));
+    const link = await useWorkspaceStore.getState().linkPrivateWorkspace({
+      repoFullName: 'me/src',
+      branch: 'main',
+      secretValues: { DB_TOKEN: 's3cret!', UNUSED: '   ' /* trimmed empty → skipped */ },
+    });
+    // The DB_TOKEN slot should now have a provisioned entry in
+    // secretIndex bound to this link, marking it `set` on the link card.
+    const local = useWorkspaceStore.getState().local!;
+    const provisioned = Object.values(local.secretIndex.entries).find(
+      (e) =>
+        e.origin === 'linked' && e.linkedWorkspaceId === link.id && e.linkedKeyId === 'DB_TOKEN',
+    );
+    expect(provisioned).toBeDefined();
+    // The UNUSED entry was empty/whitespace so nothing was provisioned for it.
+    const unused = Object.values(local.secretIndex.entries).find(
+      (e) => e.origin === 'linked' && e.linkedWorkspaceId === link.id && e.linkedKeyId === 'UNUSED',
+    );
+    expect(unused).toBeUndefined();
   });
 });
 

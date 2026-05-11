@@ -145,9 +145,11 @@ export type { ContextExtractionResult } from './environment/extractContext';
 
 export {
   decryptString,
+  deriveKeyFromSlotValue,
   encryptString,
   exportKey,
   generateAesKey,
+  generateSlotSalt,
   importKey,
   serializePayload,
   tryParsePayload,

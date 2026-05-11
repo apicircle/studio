@@ -53,11 +53,15 @@ describe('WorkspacePanel', () => {
           ...local,
           sessions: {
             github: {
-              accountLogin: 'devaprakash',
-              tokenSecretId: 'sec_123',
-              grantedScopes: ['repo', 'pull_request'],
-              addedAt: new Date().toISOString(),
-              lastVerifiedAt: '2026-04-27T09:00:00.000Z',
+              workspace: {
+                accountLogin: 'devaprakash',
+                tokenSecretId: 'sec_123',
+                grantedScopes: ['repo', 'pull_request'],
+                addedAt: new Date().toISOString(),
+                lastVerifiedAt: '2026-04-27T09:00:00.000Z',
+                canCreatePullRequests: true,
+              },
+              links: {},
             },
           },
         },
@@ -86,6 +90,9 @@ describe('WorkspacePanel', () => {
         'fetch',
         queuedFetch([
           { body: { login: 'me', id: 1 }, headers: { 'x-oauth-scopes': 'repo, pull_request' } },
+          // ConnectRepoForm mounts in browser mode and lists accessible repos.
+          // An empty list is fine — the test flips to manual entry below.
+          { body: [] },
           {
             body: {
               full_name: 'me/payments',
@@ -105,6 +112,8 @@ describe('WorkspacePanel', () => {
         await useWorkspaceStore.getState().connectGitHubSession('tok');
       });
 
+      // Repo browser is the default — flip into manual mode for the form input.
+      await userEvent.click(screen.getByRole('button', { name: /Switch to manual entry/ }));
       await userEvent.type(screen.getByLabelText('Repo full name'), 'me/payments');
       await userEvent.click(screen.getByRole('button', { name: /Connect repo/ }));
 
@@ -116,7 +125,10 @@ describe('WorkspacePanel', () => {
     });
 
     it('owner/name format is enforced before any fetch', async () => {
-      const fetchMock = vi.fn();
+      // Repo browser mounts and asks GitHub for /user/repos — return empty.
+      // After we flip into manual mode and clear the mock, the format check
+      // must reject `just-a-name` without issuing any further fetch.
+      const fetchMock = vi.fn(async () => fakeResponse({ body: [] }));
       vi.stubGlobal('fetch', fetchMock);
       await renderWithStore(<WorkspacePanel />);
       await act(async () => {
@@ -125,16 +137,22 @@ describe('WorkspacePanel', () => {
             ...useWorkspaceStore.getState().local!,
             sessions: {
               github: {
-                accountLogin: 'me',
-                tokenSecretId: 'sec',
-                grantedScopes: ['repo'],
-                addedAt: '2026-04-27T00:00:00.000Z',
-                lastVerifiedAt: null,
+                workspace: {
+                  accountLogin: 'me',
+                  tokenSecretId: 'sec',
+                  grantedScopes: ['repo'],
+                  addedAt: '2026-04-27T00:00:00.000Z',
+                  lastVerifiedAt: null,
+                  canCreatePullRequests: true,
+                },
+                links: {},
               },
             },
           },
         });
       });
+      await userEvent.click(screen.getByRole('button', { name: /Switch to manual entry/ }));
+      fetchMock.mockClear();
       await userEvent.type(screen.getByLabelText('Repo full name'), 'just-a-name');
       await userEvent.click(screen.getByRole('button', { name: /Connect repo/ }));
       expect(screen.getByText(/owner\/name/)).toBeInTheDocument();
@@ -156,8 +174,13 @@ describe('WorkspacePanel', () => {
               permissions: { push: true, admin: false },
             },
           },
-          { body: { name: 'main', commit: { sha: 'abc123' } } },
-          { body: { ref: 'refs/heads/apicircle/test-zz1199', object: { sha: 'abc123' } } },
+          // CreateBranchForm mounts after connectRepo and lists the repo's
+          // existing branches to populate the base-branch dropdown.
+          { body: [{ name: 'main', commit: { sha: 'abc123' } }] },
+          { body: { name: 'main', commit: { sha: 'abc123' } } }, // getBranchHead
+          { body: { ref: 'refs/heads/apicircle/test-zz1199', object: { sha: 'abc123' } } }, // createBranch
+          // first-pull-prompt probe — empty branch
+          { status: 404, body: { message: 'Not Found' } },
         ]),
       );
       await renderWithStore(<WorkspacePanel />);
@@ -216,11 +239,15 @@ describe('WorkspacePanel', () => {
             ...useWorkspaceStore.getState().local!,
             sessions: {
               github: {
-                accountLogin: 'me',
-                tokenSecretId: 's',
-                grantedScopes: ['repo'],
-                addedAt: 't',
-                lastVerifiedAt: 't',
+                workspace: {
+                  accountLogin: 'me',
+                  tokenSecretId: 's',
+                  grantedScopes: ['repo'],
+                  addedAt: 't',
+                  lastVerifiedAt: 't',
+                  canCreatePullRequests: true,
+                },
+                links: {},
               },
             },
             connectedRepo: {
@@ -248,11 +275,15 @@ describe('WorkspacePanel', () => {
             ...useWorkspaceStore.getState().local!,
             sessions: {
               github: {
-                accountLogin: 'me',
-                tokenSecretId: 's',
-                grantedScopes: ['repo'],
-                addedAt: 't',
-                lastVerifiedAt: 't',
+                workspace: {
+                  accountLogin: 'me',
+                  tokenSecretId: 's',
+                  grantedScopes: ['repo'],
+                  addedAt: 't',
+                  lastVerifiedAt: 't',
+                  canCreatePullRequests: true,
+                },
+                links: {},
               },
             },
             connectedRepo: {
@@ -334,19 +365,283 @@ describe('WorkspacePanel', () => {
       expect(useWorkspaceStore.getState().synced!.releases.self!.versions[0].deprecated).toBe(true);
     });
 
-    it('yank requires typed confirmation and flips the yanked flag', async () => {
+    it('withdraw requires typed confirmation and flips the yanked flag', async () => {
       await renderWithStore(<WorkspacePanel />);
       await act(async () => {
         await useWorkspaceStore.getState().publishRelease({ version: '0.1.0', notes: '' });
       });
       const user = userEvent.setup();
-      await user.click(screen.getByRole('button', { name: /Yank/ }));
-      const yankButton = screen.getAllByRole('button', { name: 'Yank' });
-      const modalYank = yankButton[yankButton.length - 1];
-      expect(modalYank).toBeDisabled();
-      await user.type(screen.getByLabelText('Type to confirm'), 'YANK v0.1.0');
-      await user.click(modalYank);
+      // The user-facing button reads "Withdraw" now. The store action /
+      // data field stays `yankRelease` / `yanked` — that's the on-disk
+      // shape and renaming it would force a migration with no benefit.
+      await user.click(screen.getByRole('button', { name: /Withdraw/ }));
+      const withdrawButtons = screen.getAllByRole('button', { name: 'Withdraw' });
+      const modalWithdraw = withdrawButtons[withdrawButtons.length - 1];
+      expect(modalWithdraw).toBeDisabled();
+      await user.type(screen.getByLabelText('Type to confirm'), 'WITHDRAW v0.1.0');
+      await user.click(modalWithdraw);
       expect(useWorkspaceStore.getState().synced!.releases.self!.versions[0].yanked).toBe(true);
+    });
+  });
+
+  describe('PR-creation capability gating', () => {
+    /**
+     * Build the (session + connectedRepo + workingBranch + push state)
+     * fixture the BranchCard needs to render its action row. `capability`
+     * is the value of `session.canCreatePullRequests` — the field the test
+     * is exercising.
+     */
+    function setupBranchCardState(opts: { capability: boolean | null }) {
+      const local = useWorkspaceStore.getState().local!;
+      useWorkspaceStore.setState({
+        local: {
+          ...local,
+          sessions: {
+            github: {
+              workspace: {
+                accountLogin: 'me',
+                tokenSecretId: 'sec',
+                grantedScopes: ['repo'],
+                addedAt: 't',
+                lastVerifiedAt: 't',
+                canCreatePullRequests: opts.capability,
+              },
+              links: {},
+            },
+          },
+          connectedRepo: {
+            fullName: 'me/api',
+            owner: 'me',
+            name: 'api',
+            defaultBranch: 'main',
+            visibility: 'public',
+            isPrivate: false,
+            pushable: true,
+            connectedAt: 't',
+          },
+          workingBranch: {
+            name: 'apicircle/test',
+            baseBranch: 'main',
+            repoFullName: 'me/api',
+            repoOwner: 'me',
+            repoName: 'api',
+            // `lastPushedSha` non-null + `openPrUrl` null is the state where
+            // Create PR would otherwise be enabled — so any disabling we see
+            // is attributable to the capability flag, not push state.
+            headSha: 'abc1234',
+            createdAt: 't',
+            lastPushedSha: 'abc1234',
+            diffSummary: null,
+            openPrUrl: null,
+          },
+        },
+      });
+    }
+
+    it('hides the SessionCard PR-scope warning when capability=true (classic PAT with `repo`)', async () => {
+      await renderWithStore(<WorkspacePanel />);
+      await act(async () => {
+        setupBranchCardState({ capability: true });
+      });
+      // The warning's distinctive text — absent under capability=true.
+      expect(screen.queryByText(/can't create pull requests/i)).not.toBeInTheDocument();
+    });
+
+    it('shows the SessionCard PR-scope warning when capability=false (probe disproved)', async () => {
+      await renderWithStore(<WorkspacePanel />);
+      await act(async () => {
+        setupBranchCardState({ capability: false });
+      });
+      expect(screen.getByText(/can't create pull requests/i)).toBeInTheDocument();
+    });
+
+    it('hides the SessionCard PR-scope warning when capability=null (not yet probed)', async () => {
+      // `null` means the probe hasn't run / was inconclusive. We don't
+      // alarm the user pre-emptively — only after a definitive 403 do we
+      // surface the warning.
+      await renderWithStore(<WorkspacePanel />);
+      await act(async () => {
+        setupBranchCardState({ capability: null });
+      });
+      expect(screen.queryByText(/can't create pull requests/i)).not.toBeInTheDocument();
+    });
+
+    it('Create PR button is enabled when capability=true and a push has landed', async () => {
+      await renderWithStore(<WorkspacePanel />);
+      await act(async () => {
+        setupBranchCardState({ capability: true });
+      });
+      const button = screen.getByRole('button', { name: /Create PR/ });
+      expect(button).not.toBeDisabled();
+    });
+
+    it('Create PR button is disabled when capability=false', async () => {
+      await renderWithStore(<WorkspacePanel />);
+      await act(async () => {
+        setupBranchCardState({ capability: false });
+      });
+      const button = screen.getByRole('button', { name: /Create PR/ });
+      expect(button).toBeDisabled();
+    });
+
+    it('Create PR button is enabled when capability=null (lets API call surface MissingScopeError if it actually fails)', async () => {
+      await renderWithStore(<WorkspacePanel />);
+      await act(async () => {
+        setupBranchCardState({ capability: null });
+      });
+      const button = screen.getByRole('button', { name: /Create PR/ });
+      expect(button).not.toBeDisabled();
+    });
+  });
+
+  // The retirement banner appears above CreateBranchForm when refreshWorkspace
+  // discovers the working branch is over (PR merged or branch deleted).
+  // workingBranch is null in this state, so BranchSection renders the form
+  // path with the banner stacked above.
+  describe('retired branch banner', () => {
+    /**
+     * Stage the post-retirement state: session + repo connected, no working
+     * branch, retiredBranch populated as if refreshWorkspace had just
+     * discovered the merge.
+     */
+    function setupRetiredState(opts: {
+      reason: 'pr-merged' | 'branch-deleted';
+      prNumber?: number | null;
+      prUrl?: string | null;
+      branchName?: string;
+    }) {
+      const local = useWorkspaceStore.getState().local!;
+      useWorkspaceStore.setState({
+        local: {
+          ...local,
+          sessions: {
+            github: {
+              workspace: {
+                accountLogin: 'me',
+                tokenSecretId: 'sec',
+                grantedScopes: ['repo'],
+                addedAt: 't',
+                lastVerifiedAt: 't',
+                canCreatePullRequests: true,
+              },
+              links: {},
+            },
+          },
+          connectedRepo: {
+            fullName: 'me/api',
+            owner: 'me',
+            name: 'api',
+            defaultBranch: 'main',
+            visibility: 'public',
+            isPrivate: false,
+            pushable: true,
+            connectedAt: 't',
+          },
+          workingBranch: null,
+          retiredBranch: {
+            branchName: opts.branchName ?? 'apicircle/feat-auth',
+            reason: opts.reason,
+            retiredAt: '2026-05-09T12:00:00.000Z',
+            prUrl: opts.prUrl ?? null,
+            prNumber: opts.prNumber ?? null,
+          },
+        },
+      });
+    }
+
+    it('renders the merged-PR headline when reason=pr-merged', async () => {
+      await renderWithStore(<WorkspacePanel />);
+      await act(async () => {
+        setupRetiredState({
+          reason: 'pr-merged',
+          prNumber: 42,
+          prUrl: 'https://github.com/me/api/pull/42',
+        });
+      });
+      expect(screen.getByText(/PR #42 was merged/)).toBeInTheDocument();
+      // The banner explicitly names the retired branch so the disappearance
+      // doesn't feel like the app lost their work.
+      expect(screen.getByText(/apicircle\/feat-auth/)).toBeInTheDocument();
+    });
+
+    it('links to the PR when a PR URL is recorded', async () => {
+      await renderWithStore(<WorkspacePanel />);
+      await act(async () => {
+        setupRetiredState({
+          reason: 'pr-merged',
+          prNumber: 42,
+          prUrl: 'https://github.com/me/api/pull/42',
+        });
+      });
+      const link = screen.getByRole('link', { name: /View PR/ });
+      expect(link).toHaveAttribute('href', 'https://github.com/me/api/pull/42');
+      expect(link).toHaveAttribute('target', '_blank');
+    });
+
+    it('renders the branch-deleted headline when reason=branch-deleted', async () => {
+      await renderWithStore(<WorkspacePanel />);
+      await act(async () => {
+        setupRetiredState({ reason: 'branch-deleted', branchName: 'apicircle/abandoned' });
+      });
+      expect(
+        screen.getByText(/Branch apicircle\/abandoned was deleted on GitHub/),
+      ).toBeInTheDocument();
+    });
+
+    it('renders CreateBranchForm below the banner so the user can immediately start a new branch', async () => {
+      await renderWithStore(<WorkspacePanel />);
+      await act(async () => {
+        setupRetiredState({ reason: 'pr-merged', prNumber: 1 });
+      });
+      // CreateBranchForm exposes the branch-name input.
+      expect(screen.getByLabelText('Branch name')).toBeInTheDocument();
+    });
+
+    it('dismiss button clears local.retiredBranch and removes the banner', async () => {
+      await renderWithStore(<WorkspacePanel />);
+      await act(async () => {
+        setupRetiredState({ reason: 'pr-merged', prNumber: 1 });
+      });
+      expect(screen.getByText(/PR #1 was merged/)).toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: /Dismiss retired branch notice/ }));
+      expect(useWorkspaceStore.getState().local!.retiredBranch).toBeNull();
+      expect(screen.queryByText(/PR #1 was merged/)).not.toBeInTheDocument();
+      // The CreateBranchForm stays — the user is still in the create flow.
+      expect(screen.getByLabelText('Branch name')).toBeInTheDocument();
+    });
+
+    it('hides the banner once the user creates a new working branch', async () => {
+      await renderWithStore(<WorkspacePanel />);
+      await act(async () => {
+        setupRetiredState({ reason: 'pr-merged', prNumber: 1 });
+      });
+      // Auto-clear path: the store wipes retiredBranch when createWorkingBranch
+      // succeeds. We exercise it via direct setState (the e2e wiring of the
+      // mutation is covered in refreshWorkspace.test.ts).
+      await act(async () => {
+        const local = useWorkspaceStore.getState().local!;
+        useWorkspaceStore.setState({
+          local: {
+            ...local,
+            workingBranch: {
+              name: 'apicircle/fresh',
+              baseBranch: 'main',
+              repoFullName: 'me/api',
+              repoOwner: 'me',
+              repoName: 'api',
+              headSha: 'sha-1',
+              createdAt: 't',
+              lastPushedSha: null,
+              diffSummary: null,
+              openPrUrl: null,
+            },
+            retiredBranch: null,
+          },
+        });
+      });
+      expect(screen.queryByText(/PR #1 was merged/)).not.toBeInTheDocument();
+      // BranchCard's "Created from" line is now visible instead.
+      expect(screen.getByText(/Created from/)).toBeInTheDocument();
     });
   });
 });

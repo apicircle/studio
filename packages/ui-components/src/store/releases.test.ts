@@ -41,4 +41,29 @@ describe('workspaceStore release actions', () => {
     useWorkspaceStore.getState().yankRelease('0.1.0');
     expect(useWorkspaceStore.getState().synced!.releases.self!.versions[0].yanked).toBe(true);
   });
+
+  it('deprecating one version then yanking another preserves the first deprecate flag (store)', async () => {
+    // Repro: user deprecates v2.3.0, then yanks v1.0.0. The store-level
+    // path goes through captureSnapshot (which mutates local) before
+    // commitSynced (which mutates synced). We need to verify
+    // captureSnapshot doesn't accidentally clobber the just-deprecated
+    // release entry on the synced side.
+    await useWorkspaceStore.getState().publishRelease({ version: '1.0.0', notes: 'first' });
+    await useWorkspaceStore.getState().publishRelease({ version: '2.3.0', notes: 'feature' });
+
+    useWorkspaceStore.getState().deprecateRelease('2.3.0');
+    let versions = useWorkspaceStore.getState().synced!.releases.self!.versions;
+    expect(versions.find((v) => v.version === '2.3.0')!.deprecated).toBe(true);
+
+    useWorkspaceStore.getState().yankRelease('1.0.0');
+    versions = useWorkspaceStore.getState().synced!.releases.self!.versions;
+    const v100 = versions.find((v) => v.version === '1.0.0')!;
+    const v230 = versions.find((v) => v.version === '2.3.0')!;
+    expect(v100.yanked).toBe(true);
+    // The critical assertion: v2.3.0's deprecated flag must survive the
+    // subsequent yank-on-different-version.
+    expect(v230.deprecated).toBe(true);
+    expect(v230.yanked).toBe(false);
+    expect(v100.deprecated).toBe(false);
+  });
 });

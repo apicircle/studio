@@ -1,8 +1,68 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, LifeBuoy } from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { probeWorkspaceRecords } from './persistence/workspaceStorage';
 import { useWorkspaceStore } from './store/workspaceStore';
+
+/**
+ * Re-run `refreshWorkspace` when the user comes back to the app from
+ * another tab / window. Catches the common workflow:
+ *   1. User clicks "Create PR" in the app, opens GitHub in a new tab.
+ *   2. User merges the PR on GitHub.
+ *   3. User switches back to the app — should now see "PR merged" /
+ *      branch retired without having to click Refresh.
+ *
+ * Listens to both `visibilitychange` (covers tab switches inside the
+ * same window) and `focus` (covers window switches across applications).
+ * Also fires once on hydrate-with-branch — covers the cold-launch case
+ * where the user merged a PR while the app was closed and the app comes
+ * up already-focused (no focus *transition* happens, so the listener
+ * wouldn't otherwise run).
+ *
+ * Debounced to one refresh per ~10s so a user rapidly cycling Alt-Tab
+ * doesn't spam the GitHub API. Skips when there's no working branch
+ * (refreshWorkspace would throw) or when a refresh is already in flight.
+ */
+function useFocusRefresh(): void {
+  const refreshWorkspace = useWorkspaceStore((s) => s.refreshWorkspace);
+  const hasBranch = useWorkspaceStore((s) => Boolean(s.local?.workingBranch));
+  const inFlightRef = useRef(false);
+  const lastRefreshAtRef = useRef(0);
+
+  useEffect(() => {
+    if (!hasBranch) return;
+    const MIN_INTERVAL_MS = 10_000;
+    const fire = () => {
+      if (document.hidden) return;
+      if (inFlightRef.current) return;
+      const now = Date.now();
+      if (now - lastRefreshAtRef.current < MIN_INTERVAL_MS) return;
+      inFlightRef.current = true;
+      lastRefreshAtRef.current = now;
+      refreshWorkspace()
+        .catch(() => {
+          // Silent — focus-refresh is opportunistic. The user can still
+          // hit Refresh manually if they want a typed error surface.
+        })
+        .finally(() => {
+          inFlightRef.current = false;
+        });
+    };
+    const onVisibilityChange = () => {
+      if (!document.hidden) fire();
+    };
+    // Cold-launch probe: if hydrate left us with a working branch, kick a
+    // refresh once so a PR merged-while-closed gets detected without the
+    // user having to defocus + refocus the window.
+    fire();
+    window.addEventListener('focus', fire);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', fire);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [hasBranch, refreshWorkspace]);
+}
 import { TopBar } from './layout/TopBar';
 import { PanelTabs } from './layout/PanelTabs';
 import { Sidebar } from './layout/Sidebar';
@@ -11,7 +71,9 @@ import { RightDock } from './layout/RightDock';
 import { RightDockRail } from './layout/RightDockRail';
 import { MissingScopeGate } from './layout/MissingScopeGate';
 import { KeyboardShortcuts } from './layout/KeyboardShortcuts';
-import { LinkedRequestEditor } from './panels/link-workspace/LinkedRequestEditor';
+// Linked request editing now happens in the main EditorPanel — the old
+// modal (LinkedRequestEditor) is no longer mounted. The activeLinkedRequest
+// store state still drives the editor's selector, but no modal opens.
 import { UpdatePreviewModal } from './panels/link-workspace/UpdatePreviewModal';
 import { OnboardingTips } from './onboarding/OnboardingTips';
 import { getPanel } from './layout/panels';
@@ -24,6 +86,8 @@ export function App() {
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
+
+  useFocusRefresh();
 
   if (hydrationError) {
     return <HydrationErrorScreen />;
@@ -45,7 +109,6 @@ export function App() {
         <BodyArea />
         <RightDockRail />
       </div>
-      <LinkedRequestEditor />
       <UpdatePreviewModal />
       <MissingScopeGate />
       <KeyboardShortcuts />

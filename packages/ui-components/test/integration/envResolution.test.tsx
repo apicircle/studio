@@ -6,8 +6,9 @@ import { useWorkspaceStore } from '../../src/store/workspaceStore';
 
 // Integration test: editor sends a request whose URL references {{BASE_URL}}
 // and headers reference an encrypted {{TOKEN}}. The store must:
-//   1. Build the resolution scope from the active env + priority order.
-//   2. Decrypt the encrypted variable using the local master key.
+//   1. Build the resolution scope from the priority order.
+//   2. Encrypt TOKEN's plaintext under the bound slot's derived key when
+//      binding, then decrypt at send time.
 //   3. Call fetch() with fully-resolved URL + headers.
 
 describe('integration: env resolution at send time', () => {
@@ -30,28 +31,32 @@ describe('integration: env resolution at send time', () => {
     render(<App />);
     await screen.findByText('API Circle Studio');
 
-    // Seed a vault secret key, then bind an env variable to it. Encryption
-    // now flows exclusively through the vault — master-key blobs in env
-    // values are gone.
+    // Seed a slot ("the wrapping passphrase") and an env var with its own
+    // plaintext. Binding encrypts the env var's plaintext under the slot's
+    // derived key — the resulting ciphertext is what travels through Git;
+    // teammates with the same slot value can decrypt it.
     let secretId = '';
     await act(async () => {
       useWorkspaceStore.getState().addEnvironment('dev');
-      useWorkspaceStore.getState().setPriorityOrder(['dev']);
+      useWorkspaceStore.getState().setPriorityOrder([{ kind: 'local', name: 'dev' }]);
       useWorkspaceStore.getState().setVariables('dev', [
         { key: 'BASE_URL', value: 'https://api.example.com', encrypted: false },
-        { key: 'TOKEN', value: '', encrypted: false },
+        { key: 'TOKEN', value: 'super-secret', encrypted: false },
       ]);
       secretId = await useWorkspaceStore.getState().addSecret({
-        label: 'API_TOKEN',
-        value: 'super-secret',
+        label: 'WORKSPACE_KEY',
+        value: 'team-passphrase',
         origin: 'workspace',
       });
-      useWorkspaceStore.getState().bindVariableToSecretKey('dev', 1, secretId);
+      const ok = await useWorkspaceStore.getState().bindVariableToSecretKey('dev', 1, secretId);
+      expect(ok).toBe(true);
     });
     const tokenVar = useWorkspaceStore.getState().synced!.environments.items.dev.variables[1];
     expect(tokenVar.encrypted).toBe(true);
     expect(tokenVar.secretKeyId).toBe(secretId);
-    expect(tokenVar.value).toBe('');
+    // Value is now the AES-GCM ciphertext, not empty — that's what allows
+    // teammates to decrypt the same row on their device.
+    expect(tokenVar.value.startsWith('enc:v1:')).toBe(true);
 
     // Create a request that uses both placeholders.
     act(() => {

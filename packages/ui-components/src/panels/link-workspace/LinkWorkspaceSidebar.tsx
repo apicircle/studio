@@ -2,6 +2,6 @@ import { SidebarStub } from '../PanelStub';
 
 export function LinkWorkspaceSidebar() {
   return (
-    <SidebarStub message="Linked workspaces (private + public) and marketplace search land here in Phase 5." />
+    <SidebarStub message="Manage links from the main panel — add private repos, browse the public marketplace, refresh ledgers, and apply updates." />
   );
 }

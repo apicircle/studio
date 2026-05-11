@@ -108,7 +108,12 @@ describe('aggregateUsedIn', () => {
           id: 'lw-1',
           kind: 'public',
           name: 'Pets API',
-          source: { provider: 'github', repoFullName: 'me/pets', branch: 'main' },
+          source: {
+            provider: 'github',
+            repoFullName: 'me/pets',
+            branch: 'main',
+            sessionMode: 'workspace' as const,
+          },
           scope: ['collections'],
           pinnedVersion: 'v1.0.0',
           updatePolicy: 'manual',

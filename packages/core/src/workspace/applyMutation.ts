@@ -1,4 +1,5 @@
 import type {
+  EnvPriorityRef,
   Folder,
   FolderNode,
   Request as ApiRequest,
@@ -7,7 +8,7 @@ import type {
   WorkspaceSnapshotTrigger,
   WorkspaceSynced,
 } from '@apicircle/shared';
-import { generateId } from '@apicircle/shared';
+import { envPriorityKey, generateId } from '@apicircle/shared';
 import type { WorkspacePatch, WorkspaceState } from './patches';
 
 // =============================================================================
@@ -288,8 +289,11 @@ function applyEnvUpsert(
       // Newly-created envs land at the end of the priority list so they're
       // always reachable. Existing envs keep their position.
       priorityOrder:
-        isNew && !state.synced.environments.priorityOrder.includes(trimmed)
-          ? [...state.synced.environments.priorityOrder, trimmed]
+        isNew &&
+        !state.synced.environments.priorityOrder.some(
+          (r) => r.kind === 'local' && r.name === trimmed,
+        )
+          ? [...state.synced.environments.priorityOrder, { kind: 'local', name: trimmed }]
           : state.synced.environments.priorityOrder,
     },
     meta: { ...state.synced.meta, updatedAt: now },
@@ -310,7 +314,9 @@ function applyEnvDelete(state: WorkspaceState, name: string, now: string): Apply
       items,
       activeName:
         state.synced.environments.activeName === name ? null : state.synced.environments.activeName,
-      priorityOrder: state.synced.environments.priorityOrder.filter((n) => n !== name),
+      priorityOrder: state.synced.environments.priorityOrder.filter(
+        (r) => !(r.kind === 'local' && r.name === name),
+      ),
     },
     meta: { ...state.synced.meta, updatedAt: now },
   };
@@ -338,14 +344,23 @@ function applyEnvSetActive(
 
 function applyEnvSetPriority(
   state: WorkspaceState,
-  order: string[],
+  order: EnvPriorityRef[],
   now: string,
 ): ApplyMutationResult {
-  const known = new Set(Object.keys(state.synced.environments.items));
+  // Filter against:
+  //   - local envs: must be in `state.synced.environments.items`
+  //   - linked envs: pass through unconditionally — the snapshot lives in
+  //     `WorkspaceLocal.linkedCollections` which this reducer can't see.
+  //     Stale linked refs are dropped at resolve time (handled by
+  //     parseEnvPriorityKey returning null for unknown shapes).
+  // Dedupe across both kinds via composite key.
+  const knownLocal = new Set(Object.keys(state.synced.environments.items));
   const seen = new Set<string>();
-  const filtered = order.filter((n) => {
-    if (!known.has(n) || seen.has(n)) return false;
-    seen.add(n);
+  const filtered = order.filter((ref) => {
+    const key = envPriorityKey(ref);
+    if (seen.has(key)) return false;
+    if (ref.kind === 'local' && !knownLocal.has(ref.name)) return false;
+    seen.add(key);
     return true;
   });
   const synced: WorkspaceSynced = {
@@ -353,7 +368,7 @@ function applyEnvSetPriority(
     environments: { ...state.synced.environments, priorityOrder: filtered },
     meta: { ...state.synced.meta, updatedAt: now },
   };
-  return { next: { ...state, synced }, changedIds: filtered };
+  return { next: { ...state, synced }, changedIds: filtered.map(envPriorityKey) };
 }
 
 // ---------------------------------------------------------------------------

@@ -72,6 +72,52 @@ describe('linked request overrides', () => {
     ).toBeUndefined();
   });
 
+  it('clearLinkedRequestOverrideField drops one field but keeps the rest', async () => {
+    await hydrate();
+    useWorkspaceStore.getState().setLinkedRequestOverride('link-1', 'req-1', {
+      url: 'https://staging.example.com/u/1',
+      method: 'PATCH',
+      headers: [{ key: 'X', value: '1', enabled: true }],
+    });
+    useWorkspaceStore.getState().clearLinkedRequestOverrideField('link-1', 'req-1', 'method');
+    const stored = useWorkspaceStore.getState().synced!.linkedOverrides.requests['link-1:req-1'];
+    expect(stored).toBeDefined();
+    expect(stored.patch.method).toBeUndefined();
+    expect(stored.patch.url).toBe('https://staging.example.com/u/1');
+    expect(stored.patch.headers).toEqual([{ key: 'X', value: '1', enabled: true }]);
+  });
+
+  it('clearLinkedRequestOverrideField on the last remaining field collapses the row', async () => {
+    await hydrate();
+    useWorkspaceStore.getState().setLinkedRequestOverride('link-1', 'req-1', {
+      url: 'https://staging.example.com/u/1',
+    });
+    useWorkspaceStore.getState().clearLinkedRequestOverrideField('link-1', 'req-1', 'url');
+    expect(
+      useWorkspaceStore.getState().synced!.linkedOverrides.requests['link-1:req-1'],
+    ).toBeUndefined();
+  });
+
+  it('clearLinkedRequestOverrideField is a no-op for a missing override or missing field', async () => {
+    await hydrate();
+    // No override row at all.
+    expect(() =>
+      useWorkspaceStore.getState().clearLinkedRequestOverrideField('link-x', 'req-x', 'url'),
+    ).not.toThrow();
+    expect(
+      useWorkspaceStore.getState().synced!.linkedOverrides.requests['link-x:req-x'],
+    ).toBeUndefined();
+
+    // Row exists but the targeted field isn't in the patch.
+    useWorkspaceStore.getState().setLinkedRequestOverride('link-1', 'req-1', {
+      url: 'https://staging.example.com/u/1',
+    });
+    const before = useWorkspaceStore.getState().synced!.linkedOverrides.requests['link-1:req-1'];
+    useWorkspaceStore.getState().clearLinkedRequestOverrideField('link-1', 'req-1', 'method');
+    const after = useWorkspaceStore.getState().synced!.linkedOverrides.requests['link-1:req-1'];
+    expect(after.patch).toEqual(before.patch);
+  });
+
   it('full-field patches: URL / method / body / auth all round-trip', async () => {
     await hydrate();
     useWorkspaceStore.getState().setLinkedRequestOverride('link-1', 'req-1', {
@@ -169,7 +215,12 @@ describe('linked request overrides', () => {
             id: 'link-1',
             kind: 'private',
             name: 'Source',
-            source: { provider: 'github', repoFullName: 'a/b', branch: 'main' },
+            source: {
+              provider: 'github',
+              repoFullName: 'a/b',
+              branch: 'main',
+              sessionMode: 'workspace' as const,
+            },
             scope: ['collections'],
             pinnedVersion: null,
             updatePolicy: 'manual',
@@ -194,7 +245,7 @@ describe('linked request overrides', () => {
     const planId = useWorkspaceStore.getState().addPlan('p');
     useWorkspaceStore.getState().addPlanStep(planId, 'src-r1', 'link-1');
 
-    const plan = useWorkspaceStore.getState().local!.executionPlans[planId];
+    const plan = useWorkspaceStore.getState().synced!.executionPlans![planId];
     expect(plan.steps[0]).toEqual({ requestId: 'src-r1', linkedWorkspaceId: 'link-1' });
 
     // Read the same internals exposed by the lookup helper indirectly by

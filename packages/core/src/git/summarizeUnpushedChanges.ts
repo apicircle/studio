@@ -72,9 +72,16 @@ export function summarizeUnpushedChanges(
   const changes: UnpushedChange[] = [];
   for (const entry of diff.entries) {
     if (entry.status !== 'local-only') continue;
+    // Treat null and undefined alike as "absent" for kind classification.
+    // The `releaseSelf` singleton extracts to `null` when no ledger
+    // exists — without nullish-aware logic, the first publish (null →
+    // ledger) gets labeled "modified" instead of "added", which the
+    // strip then under-counts in its "+N added" badge.
+    const baseAbsent = entry.base === undefined || entry.base === null;
+    const localAbsent = entry.local === undefined || entry.local === null;
     let kind: UnpushedChange['kind'];
-    if (entry.base === undefined && entry.local !== undefined) kind = 'added';
-    else if (entry.base !== undefined && entry.local === undefined) kind = 'removed';
+    if (baseAbsent && !localAbsent) kind = 'added';
+    else if (!baseAbsent && localAbsent) kind = 'removed';
     else kind = 'modified';
     changes.push({
       bucket: entry.bucket,

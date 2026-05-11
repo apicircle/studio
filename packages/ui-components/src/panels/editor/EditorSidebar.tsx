@@ -266,7 +266,7 @@ export function EditorSidebar() {
           />
         ))}
       </ul>
-      <LinkedWorkspaceTreeSection />
+      <LinkedWorkspaceTreeSection searchQuery={searchQuery} />
 
       {authModalFolderId && folders[authModalFolderId] && (
         <FolderAuthModal
