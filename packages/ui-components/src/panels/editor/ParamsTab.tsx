@@ -39,6 +39,30 @@ export function ParamsTab({ request }: ParamsTabProps) {
   const scope = useVariableScope(request);
 
   const [section, setSection] = useState<ParamsSection>('query');
+  const TAB_IDS = ['query', 'path', 'cookie'] as const;
+  const selectedIndex = TAB_IDS.indexOf(section);
+
+  /**
+   * WAI-ARIA tablist arrow-key nav. Left/Right (and Up/Down for vertical
+   * orientation parity) cycle the selection; Home/End jump to ends. Roving
+   * tabindex on the buttons keeps Tab from bouncing through inactive tabs.
+   */
+  const onTablistKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    let next = selectedIndex;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown')
+      next = (selectedIndex + 1) % TAB_IDS.length;
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
+      next = (selectedIndex - 1 + TAB_IDS.length) % TAB_IDS.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = TAB_IDS.length - 1;
+    else return;
+    e.preventDefault();
+    setSection(TAB_IDS[next]);
+    requestAnimationFrame(() => {
+      const target = e.currentTarget.querySelector<HTMLElement>(`[data-tab-index="${next}"]`);
+      target?.focus();
+    });
+  };
 
   const placeholders = useMemo(() => findPathPlaceholders(request.url), [request.url]);
   const pathParams = request.pathParams ?? {};
@@ -52,13 +76,22 @@ export function ParamsTab({ request }: ParamsTabProps) {
 
   return (
     <div className="flex flex-col gap-3">
-      <div role="tablist" aria-label="Param sections" className="flex gap-1">
-        {(['query', 'path', 'cookie'] as const).map((id) => (
+      <div
+        role="tablist"
+        aria-label="Param sections"
+        className="flex gap-1"
+        onKeyDown={onTablistKeyDown}
+      >
+        {TAB_IDS.map((id, idx) => (
           <button
             key={id}
             type="button"
             role="tab"
             aria-selected={section === id}
+            // Roving tabindex — only the selected tab is in the page tab
+            // sequence; arrow keys move within the group.
+            tabIndex={section === id ? 0 : -1}
+            data-tab-index={idx}
             onClick={() => setSection(id)}
             className={cn(
               'inline-flex h-7 items-center gap-1.5 rounded-sm border px-2 text-[0.6875rem] transition-colors',

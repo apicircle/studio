@@ -5,6 +5,7 @@ import { envPriorityKey, envPriorityRefEqual } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 import { KebabMenu, type KebabMenuItem } from '../../primitives/KebabMenu';
+import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { ImportModal } from '../editor/ImportModal';
 
 /**
@@ -47,6 +48,9 @@ export function EnvironmentsSidebar() {
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [dropTargetKey, setDropTargetKey] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  // Pending env delete — captured at click time so the confirm copy can
+  // name the env even after the kebab menu closes.
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   const submitAdd = () => {
     const name = draftName.trim();
@@ -135,8 +139,24 @@ export function EnvironmentsSidebar() {
     }
   };
 
-  const onDelete = (name: string) => {
-    if (window.confirm(`Delete environment "${name}"?`)) removeEnvironment(name);
+  const onDelete = (name: string) => setPendingDelete(name);
+
+  /**
+   * Keyboard-accessible alternative to drag-to-reorder. Walks the current
+   * priority list, finds `key`, and swaps it with the neighbour at
+   * `direction` (`-1` up, `+1` down). No-op when at the edge or when the
+   * row isn't priorityized — checkbox selection puts it at the tail
+   * first; Move Up then walks it back through the list.
+   */
+  const moveByPosition = (key: string, direction: -1 | 1): void => {
+    const current = priorityOrder.findIndex((r) => envPriorityKey(r) === key);
+    if (current < 0) return;
+    const target = current + direction;
+    if (target < 0 || target >= priorityOrder.length) return;
+    const next = [...priorityOrder];
+    const [moved] = next.splice(current, 1);
+    next.splice(target, 0, moved);
+    setPriorityOrder(next);
   };
 
   const onExport = (name: string) => {
@@ -271,10 +291,17 @@ export function EnvironmentsSidebar() {
                 )}
               >
                 {isSelected ? (
+                  // The drag handle is a visual affordance, not an
+                  // interactive control with its own accessible name —
+                  // dragging itself is not keyboard-accessible (axe a11y
+                  // wouldn't report it either way), and the row's
+                  // checkbox + name button already announce the row.
+                  // Adding aria-label without role triggers axe
+                  // `aria-prohibited-attr`; keep the tooltip via title only.
                   <span
                     className="flex h-4 w-4 cursor-grab items-center justify-center text-text-faint hover:text-text-primary active:cursor-grabbing"
-                    aria-label={`Drag ${displayName} to reorder priority`}
-                    title="Drag to reorder priority"
+                    title={`Drag ${displayName} to reorder priority`}
+                    aria-hidden="true"
                   >
                     <GripVertical size={12} />
                   </span>
@@ -323,6 +350,24 @@ export function EnvironmentsSidebar() {
                     ariaLabel={`Environment actions for ${row.name}`}
                     size="sm"
                     items={[
+                      // Move-up / Move-down — keyboard-accessible reorder.
+                      // Drag is mouse-only; without these, screen-reader and
+                      // keyboard users had no way to change priority order
+                      // (audit gap A13).
+                      ...(isSelected
+                        ? [
+                            {
+                              id: 'move-up',
+                              label: 'Move up in priority',
+                              onSelect: () => moveByPosition(key, -1),
+                            },
+                            {
+                              id: 'move-down',
+                              label: 'Move down in priority',
+                              onSelect: () => moveByPosition(key, 1),
+                            },
+                          ]
+                        : []),
                       {
                         id: 'duplicate',
                         label: 'Duplicate',
@@ -360,6 +405,24 @@ export function EnvironmentsSidebar() {
         time). Drag the handle to reorder. Click a local env to edit its variables; linked envs edit
         through their <em>Linked environments</em> section.
       </p>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={`Delete environment "${pendingDelete ?? ''}"?`}
+        description={
+          <p>
+            Removes the environment and any variables defined inside it. Linked environments and
+            other workspaces are not affected. This cannot be undone.
+          </p>
+        }
+        confirmLabel="Delete environment"
+        tone="danger"
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          if (pendingDelete) removeEnvironment(pendingDelete);
+          setPendingDelete(null);
+        }}
+      />
     </div>
   );
 }

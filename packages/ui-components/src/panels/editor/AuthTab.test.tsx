@@ -60,17 +60,19 @@ describe('AuthTab', () => {
     expect(screen.getByLabelText('Password')).toBeInTheDocument();
   });
 
-  it('API key shows Add-to selector', async () => {
+  it('API key shows location selector', async () => {
     const id = makeRequestId();
     render(<LiveAuthTab requestId={id} />);
     await userEvent.selectOptions(screen.getByLabelText('Auth type'), 'api-key');
-    const addTo = screen.getByLabelText('API key add-to');
+    // Renamed from "API key add-to" to clearer "API key location" (Phase 4.4
+    // a11y cleanup — was awkward for screen readers).
+    const addTo = screen.getByLabelText('API key location');
     await userEvent.selectOptions(addTo, 'query');
     const auth = useWorkspaceStore.getState().synced!.collections.requests[id].auth;
     expect(auth.type === 'api-key' && auth.addTo).toBe('query');
   });
 
-  it('OAuth2 client credentials renders all standard fields + token panel', async () => {
+  it('OAuth2 client credentials renders all standard fields', async () => {
     const id = makeRequestId();
     render(<LiveAuthTab requestId={id} />);
     await userEvent.selectOptions(screen.getByLabelText('Auth type'), 'oauth2-client-credentials');
@@ -79,17 +81,20 @@ describe('AuthTab', () => {
     expect(screen.getByLabelText('Client secret')).toBeInTheDocument();
     expect(screen.getByLabelText('Scope')).toBeInTheDocument();
     expect(screen.getByLabelText('Client auth method')).toBeInTheDocument();
-    expect(screen.getByLabelText('Access token')).toBeInTheDocument();
+    // Stale TokenStatePanel removed — OAuth2FlowActions owns token state now.
+    // Verify the manual paste field is gone.
+    expect(screen.queryByLabelText('Access token')).toBeNull();
   });
 
-  it('AWS SigV4 renders region + service + add-to', async () => {
+  it('AWS SigV4 renders region + service + signature location', async () => {
     const id = makeRequestId();
     render(<LiveAuthTab requestId={id} />);
     await userEvent.selectOptions(screen.getByLabelText('Auth type'), 'aws-sigv4');
     expect(screen.getByLabelText('AWS access key ID')).toBeInTheDocument();
     expect(screen.getByLabelText('AWS region')).toBeInTheDocument();
     expect(screen.getByLabelText('AWS service')).toBeInTheDocument();
-    expect(screen.getByLabelText('SigV4 add-to')).toBeInTheDocument();
+    // Renamed from "SigV4 add-to" to clearer "SigV4 location".
+    expect(screen.getByLabelText('SigV4 location')).toBeInTheDocument();
   });
 
   it('JWT Bearer renders algorithm + payload + signing key + token override', async () => {

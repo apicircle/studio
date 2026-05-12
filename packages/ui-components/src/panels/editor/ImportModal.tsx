@@ -67,6 +67,8 @@ export function ImportModal({
 }: ImportModalProps) {
   const [text, setText] = useState(initialText);
   const [format, setFormat] = useState<SourceFormat>(initialFormat);
+  const [reading, setReading] = useState(false);
+  const [readError, setReadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const importPostmanCollection = useWorkspaceStore((s) => s.importPostmanCollection);
@@ -99,10 +101,18 @@ export function ImportModal({
   };
 
   const onUpload = (file: File) => {
-    void file.text().then((c) => {
-      setText(c);
-      setFormat('auto');
-    });
+    setReading(true);
+    setReadError(null);
+    file
+      .text()
+      .then((c) => {
+        setText(c);
+        setFormat('auto');
+      })
+      .catch((err) => {
+        setReadError(err instanceof Error ? err.message : 'Could not read file.');
+      })
+      .finally(() => setReading(false));
   };
 
   const detectedLabel = result.detected ? labelForDetection(result.detected) : null;
@@ -132,10 +142,11 @@ export function ImportModal({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="ml-auto inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"
+            disabled={reading}
+            className="ml-auto inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary disabled:opacity-50"
           >
             <FileJson size={11} />
-            Upload .json
+            {reading ? 'Reading…' : 'Upload .json'}
           </button>
           <input
             ref={fileInputRef}
@@ -162,6 +173,11 @@ export function ImportModal({
           <p className="text-[0.625rem] text-text-dim">
             Auto-detect picks the right parser; force a format above if a file looks ambiguous.
           </p>
+          {readError && (
+            <p role="alert" className="text-[0.6875rem] text-danger">
+              {readError}
+            </p>
+          )}
         </div>
 
         {result.error && (

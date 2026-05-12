@@ -263,7 +263,12 @@ describe('WorkspacePanel', () => {
           },
         });
       });
+      // Click "Disconnect repo" — opens the ConfirmDialog (audit fix:
+      // disconnect was previously unconfirmed). Click "Disconnect" inside
+      // the dialog to actually clear the connection.
       await userEvent.click(screen.getByRole('button', { name: /Disconnect repo/ }));
+      expect(useWorkspaceStore.getState().local!.connectedRepo).toBeTruthy();
+      await userEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
       expect(useWorkspaceStore.getState().local!.connectedRepo).toBeNull();
     });
 
@@ -311,7 +316,14 @@ describe('WorkspacePanel', () => {
           },
         });
       });
+      // Click "Discard working branch" — opens the typed-confirm dialog
+      // (audit fix: discard was previously unconfirmed). The user must
+      // type DISCARD before the confirm button enables.
       await userEvent.click(screen.getByLabelText('Discard working branch'));
+      expect(useWorkspaceStore.getState().local!.workingBranch).toBeTruthy();
+      const typedInput = await screen.findByLabelText('Type to confirm');
+      await userEvent.type(typedInput, 'DISCARD');
+      await userEvent.click(screen.getByRole('button', { name: 'Discard branch' }));
       expect(useWorkspaceStore.getState().local!.workingBranch).toBeNull();
     });
   });

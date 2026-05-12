@@ -13,10 +13,11 @@
 import { useState } from 'react';
 import { Crosshair, Plus, Trash2 } from 'lucide-react';
 import type { ContextExtraction, Request as ApiRequest } from '@apicircle/shared';
-import { generateId } from '@apicircle/shared';
+import { generateId, validateEnvVarName } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 import { JsonPathPicker } from './JsonPathPicker';
+import { useRowKeyboardNav } from './useRowKeyboardNav';
 
 interface ContextTabProps {
   request: ApiRequest;
@@ -54,6 +55,17 @@ export function ContextTab({ request }: ContextTabProps) {
       request.contextVars.filter((_, i) => i !== index),
     );
 
+  // Row keyboard nav for the Manual variables section. Field labels match
+  // the aria-labels on each cell so focusCell() can find them.
+  const ctxKeyboard = useRowKeyboardNav({
+    ariaPrefix: 'Context var',
+    fields: ['name', 'value'],
+    rowCount: request.contextVars.length,
+    isRowEmpty: (i) => request.contextVars[i]?.key === '' && request.contextVars[i]?.value === '',
+    onAdd: addCtxRow,
+    onRemove: removeCtxRow,
+  });
+
   const updateExtraction = (id: string, patch: Partial<ContextExtraction>) =>
     setExtractions(
       request.id,
@@ -85,32 +97,50 @@ export function ContextTab({ request }: ContextTabProps) {
               No manual variables. Add one below or extract from the response.
             </p>
           )}
-          {request.contextVars.map((row, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <input
-                value={row.key}
-                onChange={(e) => updateRow(i, { key: e.target.value })}
-                aria-label={`Context var ${i + 1} name`}
-                placeholder="NAME"
-                className={inputClass}
-              />
-              <input
-                value={row.value}
-                onChange={(e) => updateRow(i, { value: e.target.value })}
-                aria-label={`Context var ${i + 1} value`}
-                placeholder="value"
-                className={inputClass}
-              />
-              <button
-                type="button"
-                onClick={() => removeCtxRow(i)}
-                aria-label={`Remove context var ${i + 1}`}
-                className="text-text-faint hover:text-danger"
-              >
-                <Trash2 size={12} />
-              </button>
-            </div>
-          ))}
+          {request.contextVars.map((row, i) => {
+            const nameValidation =
+              row.key.trim().length > 0 ? validateEnvVarName(row.key) : { ok: true as const };
+            const nameInvalid = !nameValidation.ok;
+            return (
+              <div key={i} className="flex flex-col gap-0.5">
+                <div className="flex items-center gap-2">
+                  <input
+                    value={row.key}
+                    onChange={(e) => updateRow(i, { key: e.target.value })}
+                    onKeyDown={(e) => ctxKeyboard.onKeyDown(e, i, 'name')}
+                    aria-label={`Context var ${i + 1} name`}
+                    aria-invalid={nameInvalid || undefined}
+                    placeholder="NAME"
+                    className={cn(
+                      inputClass,
+                      nameInvalid && 'border-danger focus:border-danger focus:ring-danger/40',
+                    )}
+                  />
+                  <input
+                    value={row.value}
+                    onChange={(e) => updateRow(i, { value: e.target.value })}
+                    onKeyDown={(e) => ctxKeyboard.onKeyDown(e, i, 'value')}
+                    aria-label={`Context var ${i + 1} value`}
+                    placeholder="value"
+                    className={inputClass}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeCtxRow(i)}
+                    aria-label={`Remove context var ${i + 1}`}
+                    className="text-text-faint hover:text-danger"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+                {nameInvalid && !nameValidation.ok && (
+                  <p role="alert" className="ml-1 text-[0.625rem] text-danger">
+                    {nameValidation.reason}
+                  </p>
+                )}
+              </div>
+            );
+          })}
           <button
             type="button"
             onClick={addCtxRow}
@@ -145,12 +175,10 @@ export function ContextTab({ request }: ContextTabProps) {
                 aria-label={`Enable extraction ${idx + 1}`}
                 style={{ accentColor: 'rgb(var(--accent))' }}
               />
-              <input
+              <ExtractionVariableInput
                 value={ex.variable}
-                onChange={(e) => updateExtraction(ex.id, { variable: e.target.value })}
-                aria-label={`Extraction ${idx + 1} variable`}
-                placeholder="VAR_NAME"
-                className={cn(inputClass, 'font-mono')}
+                onChange={(v) => updateExtraction(ex.id, { variable: v })}
+                index={idx}
               />
               <select
                 value={ex.source}
@@ -224,6 +252,40 @@ export function ContextTab({ request }: ContextTabProps) {
             updateExtraction(pickerForExtractionId, { path });
           }}
         />
+      )}
+    </div>
+  );
+}
+
+function ExtractionVariableInput({
+  value,
+  onChange,
+  index,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  index: number;
+}) {
+  const validation = value.trim().length > 0 ? validateEnvVarName(value) : { ok: true as const };
+  const invalid = !validation.ok;
+  return (
+    <div className="flex flex-col">
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={`Extraction ${index + 1} variable`}
+        aria-invalid={invalid || undefined}
+        placeholder="VAR_NAME"
+        className={cn(
+          inputClass,
+          'font-mono',
+          invalid && 'border-danger focus:border-danger focus:ring-danger/40',
+        )}
+      />
+      {invalid && !validation.ok && (
+        <p role="alert" className="mt-0.5 text-[0.625rem] text-danger">
+          {validation.reason}
+        </p>
       )}
     </div>
   );

@@ -111,6 +111,7 @@ import {
   saveSynced,
 } from '../persistence/workspaceStorage';
 import { applyTheme } from '../theme/applyTheme';
+import type { ToastRecord } from '../primitives/Toast';
 import { bytesToBase64 } from './attachmentBlobs';
 import type { TreeEntryInput } from '@apicircle/git';
 import {
@@ -214,6 +215,15 @@ const MAX_PLAN_RUNS = 200;
  * tallies + globalContext extractions would step on each other).
  */
 const inflightPlanRuns = new Set<string>();
+
+/**
+ * Map of in-flight AbortControllers, keyed by request id (for single-request
+ * sends) or `plan:<planId>` (for plan runs). The store's `cancelExecuteRequest`
+ * and `cancelExecutePlan` actions look the controller up here and call
+ * `.abort()`. Lives outside the store state because AbortController is not
+ * serialisable and should not be persisted/diffed.
+ */
+const inflightAbortControllers = new Map<string, AbortController>();
 
 /** Truncate `value` to `RUN_BODY_PREVIEW_LIMIT` UTF-16 code units. */
 function clampPreview(value: string): { preview: string; truncated: boolean } {
@@ -428,6 +438,16 @@ type WorkspaceStore = {
    */
   historyUi: HistoryUiState;
   setHistoryUi: (next: Partial<HistoryUiState>) => void;
+  /**
+   * Active toasts (transient notifications). Ephemeral; not persisted. The
+   * ToastViewport at App root renders these and dismisses each on its TTL
+   * (or when the user clicks the close affordance). `pushToast` is the
+   * surface for any code path that previously discarded an error via
+   * `void asyncFn()`.
+   */
+  toasts: ReadonlyArray<ToastRecord>;
+  pushToast: (toast: Omit<ToastRecord, 'id'>) => string;
+  dismissToast: (id: string) => void;
   // Per-request last-run cache. Not persisted — request runs land in
   // local.history once they complete; this is the live working result for
   // the editor panel.
@@ -1385,6 +1405,27 @@ type WorkspaceStore = {
   provisionLinkedSecret: (linkId: string, keyId: string, value: string) => Promise<string>;
 
   executeActiveRequest: () => Promise<void>;
+  /**
+   * Abort the in-flight execution for `requestId`. No-op when nothing is
+   * running for that request. The aborted execution settles with an
+   * `error` of "Request aborted." in `lastRun`, so the response viewer
+   * shows the cancellation state instead of looking frozen.
+   */
+  cancelExecuteRequest: (requestId: string) => void;
+  /**
+   * Abort the in-flight plan run for `planId`. The plan finalizes with the
+   * steps that already completed and an "aborted" marker on the partial
+   * results. Subsequent steps are not started.
+   */
+  cancelExecutePlan: (planId: string) => void;
+  /**
+   * Re-run a single step of a plan in isolation. Used by the per-step
+   * "Retry" affordance in PlanRunDetails so the user doesn't have to
+   * re-execute the entire plan when a single step failed transiently.
+   * Returns the new ExecutionResult for the step. No-op when the plan
+   * or step can't be resolved (returns null).
+   */
+  retryPlanStep: (planId: string, stepIndex: number) => Promise<void>;
 };
 
 /**
@@ -1403,6 +1444,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   local: null,
   historyUi: EMPTY_HISTORY_UI,
   setHistoryUi: (next) => set((s) => ({ historyUi: { ...s.historyUi, ...next } })),
+  toasts: [],
+  pushToast: (toast) => {
+    const id = generateId();
+    set((s) => ({ toasts: [...s.toasts, { ...toast, id }] }));
+    return id;
+  },
+  dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
   activePanel: readStoredPanel(),
   rightDock: { tab: null, mode: 'overlay' },
   importModalOpen: false,
@@ -4315,6 +4363,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // a toast ("Plan already running"); we don't queue.
     if (inflightPlanRuns.has(planId)) throw new Error('plan already running');
     inflightPlanRuns.add(planId);
+    // Register an AbortController so cancelExecutePlan can stop the loop
+    // between steps (and abort the currently-fetching step's HTTP call).
+    const controller = new AbortController();
+    inflightAbortControllers.set(`plan:${planId}`, controller);
     try {
       const withAssertions = opts?.withAssertions ?? false;
       const stopOnFailure = withAssertions && (plan.stopOnAssertionFailure ?? false);
@@ -4411,9 +4463,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
                 },
               }
             : synced;
+        // Bail out cleanly between steps if the plan was cancelled. The
+        // currently-running step's fetch is also aborted via the signal
+        // we pass into coreExecuteRequest below.
+        if (controller.signal.aborted) break;
         const resolved = await resolveRequest(request, resolveSynced, get().local, planScope);
         const result = await coreExecuteRequest(resolved, {
           resolveAttachment: attachmentResolver,
+          signal: controller.signal,
         });
         const assertionResults = withAssertions ? runAssertions(request.assertions, result) : [];
         const allPassed = result.ok && (!withAssertions || assertionResults.every((a) => a.passed));
@@ -4488,6 +4545,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return planRun;
     } finally {
       inflightPlanRuns.delete(planId);
+      inflightAbortControllers.delete(`plan:${planId}`);
     }
   },
 
@@ -4787,11 +4845,18 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           }
         : synced;
 
+    // Register an AbortController under both the linked itemId AND the
+    // source request.id so the EditorPanel's Cancel button (which keys by
+    // request.id) and the legacy linked surface both work.
+    const linkedController = new AbortController();
+    inflightAbortControllers.set(active.itemId, linkedController);
+    inflightAbortControllers.set(request.id, linkedController);
     set((s) => ({ isExecuting: { ...s.isExecuting, [active.itemId]: true } }));
     try {
       const resolved = await resolveRequest(request, resolveSynced, local);
       const result = await coreExecuteRequest(resolved, {
         resolveAttachment: attachmentResolver,
+        signal: linkedController.signal,
       });
       const assertionResults = runAssertions(request.assertions, result);
       const run = buildRequestRun(resolved, result, assertionResults);
@@ -4812,7 +4877,35 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         void saveLocal(next);
       }
       set((s) => ({ lastRun: { ...s.lastRun, [active.itemId]: result } }));
+    } catch (err) {
+      const aborted = linkedController.signal.aborted;
+      const message = aborted
+        ? 'Request aborted.'
+        : err instanceof Error
+          ? err.message
+          : String(err);
+      set((s) => ({
+        lastRun: {
+          ...s.lastRun,
+          [active.itemId]: {
+            startedAt: new Date().toISOString(),
+            durationMs: 0,
+            status: null,
+            ok: false,
+            statusText: '',
+            headers: {},
+            body: '',
+            bodyKind: 'empty',
+            error: message,
+            url: '',
+            method: request.method,
+            authWarnings: [],
+          },
+        },
+      }));
     } finally {
+      inflightAbortControllers.delete(active.itemId);
+      inflightAbortControllers.delete(request.id);
       set((s) => ({ isExecuting: { ...s.isExecuting, [active.itemId]: false } }));
     }
   },
@@ -4825,11 +4918,20 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const request = synced.collections.requests[id];
     if (!request) return;
 
+    // Allocate an AbortController and register it before kicking off
+    // resolveRequest. cancelExecuteRequest looks the controller up by
+    // request id and calls .abort(); the core executor honours the
+    // signal and surfaces the abort as a thrown error, which we catch
+    // and convert into a `lastRun` entry so the UI can show the
+    // cancellation state instead of looking frozen.
+    const controller = new AbortController();
+    inflightAbortControllers.set(id, controller);
     set((s) => ({ isExecuting: { ...s.isExecuting, [id]: true } }));
     try {
       const resolved = await resolveRequest(request, synced, get().local);
       const result = await coreExecuteRequest(resolved, {
         resolveAttachment: attachmentResolver,
+        signal: controller.signal,
       });
       const assertionResults = runAssertions(request.assertions, result);
       const run = buildRequestRun(resolved, result, assertionResults);
@@ -4852,8 +4954,108 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         void saveLocal(next);
       }
       set((s) => ({ lastRun: { ...s.lastRun, [id]: result } }));
+    } catch (err) {
+      // Cancellation: synthesize a lastRun entry so the response panel
+      // shows "Request aborted." instead of an indefinite spinner.
+      const aborted = controller.signal.aborted;
+      const message = aborted
+        ? 'Request aborted.'
+        : err instanceof Error
+          ? err.message
+          : String(err);
+      set((s) => ({
+        lastRun: {
+          ...s.lastRun,
+          [id]: {
+            startedAt: new Date().toISOString(),
+            durationMs: 0,
+            status: null,
+            ok: false,
+            statusText: '',
+            headers: {},
+            body: '',
+            bodyKind: 'empty',
+            error: message,
+            url: '',
+            method: request.method,
+            authWarnings: [],
+          },
+        },
+      }));
     } finally {
+      inflightAbortControllers.delete(id);
       set((s) => ({ isExecuting: { ...s.isExecuting, [id]: false } }));
+    }
+  },
+
+  cancelExecuteRequest: (requestId) => {
+    const controller = inflightAbortControllers.get(requestId);
+    if (controller && !controller.signal.aborted) controller.abort();
+  },
+
+  cancelExecutePlan: (planId) => {
+    const controller = inflightAbortControllers.get(`plan:${planId}`);
+    if (controller && !controller.signal.aborted) controller.abort();
+  },
+
+  retryPlanStep: async (planId, stepIndex) => {
+    const synced = get().synced;
+    const local = get().local;
+    if (!synced || !local) return;
+    const plan = synced.executionPlans?.[planId];
+    if (!plan) return;
+    const step = plan.steps[stepIndex];
+    if (!step || step.enabled === false) return;
+    const lookup = lookupPlanStepRequest(step, synced, local);
+    if (!lookup.request) return;
+    const request = lookup.request;
+    const planScope: {
+      envPriorityOrder?: readonly EnvPriorityRef[];
+      planVariables?: ReadonlyArray<{ key: string; value: string }>;
+    } = {
+      envPriorityOrder: plan.envPriorityOrder.length > 0 ? plan.envPriorityOrder : undefined,
+      planVariables: plan.variables && plan.variables.length > 0 ? plan.variables : undefined,
+    };
+    const resolveSynced =
+      step.linkedWorkspaceId && lookup.linkedEnvironments
+        ? {
+            ...synced,
+            environments: lookup.linkedEnvironments,
+            collections: { ...synced.collections, folders: lookup.linkedFolders ?? {} },
+          }
+        : synced;
+    const resolved = await resolveRequest(request, resolveSynced, get().local, planScope);
+    const result = await coreExecuteRequest(resolved, { resolveAttachment: attachmentResolver });
+    const assertionResults = runAssertions(request.assertions, result);
+    const allPassed = result.ok && assertionResults.every((a) => a.passed);
+
+    // Splice the new result into lastPlanResults at the same index so the
+    // PlanRunDetails view updates in place. The underlying RequestRun is
+    // also appended to history so the user can find the retry alongside
+    // the original.
+    set((s) => {
+      const existing = s.lastPlanResults[planId] ?? [];
+      const updated = existing.slice();
+      updated[stepIndex] = {
+        result,
+        assertionResults,
+        passed: allPassed,
+        requestName: request.name,
+        requestMethod: request.method,
+      };
+      return { lastPlanResults: { ...s.lastPlanResults, [planId]: updated } };
+    });
+
+    const requestRun = buildRequestRun(resolved, result, assertionResults);
+    const liveLocal = get().local;
+    if (liveLocal) {
+      const trimmed = [requestRun, ...liveLocal.history.requestRuns].slice(0, MAX_REQUEST_RUNS);
+      const next: WorkspaceLocal = {
+        ...liveLocal,
+        history: { ...liveLocal.history, requestRuns: trimmed },
+      };
+      set({ local: next });
+      void saveLocal(next);
     }
   },
 

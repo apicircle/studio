@@ -25,7 +25,9 @@ describe('KeyValueRows', () => {
   it('toggling the enabled checkbox writes through onChange', async () => {
     const onChange = vi.fn();
     render(<KeyValueRows rows={baseRows} onChange={onChange} ariaLabel="Test" />);
-    await userEvent.click(screen.getByLabelText('Enable row 1'));
+    // Row-context restored in the aria-label (Phase 5 a11y cleanup) so screen
+    // readers can tell which list the checkbox belongs to.
+    await userEvent.click(screen.getByLabelText('Enable Test row 1'));
     expect(onChange).toHaveBeenCalledWith([
       { key: 'X-Trace', value: 'abc', enabled: false },
       baseRows[1],

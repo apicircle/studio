@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import type { HttpMethod, MockEndpoint, MockServer } from '@apicircle/shared';
+import { validateMockPath } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 import { Select } from '../../primitives/Select';
@@ -92,12 +93,10 @@ export function MockEndpointEditor({
             </option>
           ))}
         </Select>
-        <input
-          value={endpoint.pathPattern}
-          onChange={(e) => setEndpoint({ pathPattern: e.target.value })}
-          placeholder="/pets/{id}"
-          aria-label="Mock endpoint path pattern"
-          className="h-8 flex-1 min-w-[16rem] rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+        <PathPatternInput
+          server={server}
+          endpoint={endpoint}
+          onChange={(next) => setEndpoint({ pathPattern: next })}
         />
         <input
           value={endpoint.name}
@@ -136,6 +135,62 @@ export function MockEndpointEditor({
           </div>
         </Panel>
       </PanelGroup>
+    </div>
+  );
+}
+
+/**
+ * Path-pattern input with two live checks:
+ *  - syntactic validity via `validateMockPath` (leading slash, no whitespace,
+ *    no query/fragment)
+ *  - duplicate-detection within the same server for `(method, path)` —
+ *    silent collisions made runtime resolution order-dependent (audit gap).
+ *
+ * Renders a `role="alert"` line below the input on failure and marks the
+ * input `aria-invalid` so screen readers announce the rejection.
+ */
+function PathPatternInput({
+  server,
+  endpoint,
+  onChange,
+}: {
+  server: MockServer;
+  endpoint: MockEndpoint;
+  onChange: (next: string) => void;
+}) {
+  const syntax = validateMockPath(endpoint.pathPattern);
+  const duplicate = server.endpoints.some(
+    (e) =>
+      e.id !== endpoint.id &&
+      e.method === endpoint.method &&
+      e.pathPattern === endpoint.pathPattern,
+  );
+  const reason = !syntax.ok
+    ? syntax.reason
+    : duplicate
+      ? `Another endpoint already serves ${endpoint.method} ${endpoint.pathPattern} on this server.`
+      : null;
+
+  return (
+    <div className="flex flex-1 min-w-[16rem] flex-col">
+      <input
+        value={endpoint.pathPattern}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="/pets/{id}"
+        aria-label="Mock endpoint path pattern"
+        aria-invalid={reason !== null}
+        className={cn(
+          'h-8 rounded-sm border bg-surface px-2 font-mono text-xs text-text-primary focus:outline-none',
+          reason !== null
+            ? 'border-danger focus:border-danger'
+            : 'border-border focus:border-accent',
+        )}
+      />
+      {reason && (
+        <p role="alert" className="mt-1 text-[0.625rem] text-danger">
+          {reason}
+        </p>
+      )}
     </div>
   );
 }

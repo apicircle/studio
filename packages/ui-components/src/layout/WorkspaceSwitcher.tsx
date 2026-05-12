@@ -61,13 +61,19 @@ export function WorkspaceSwitcher() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-label="Switch workspace"
+        aria-label={`Switch workspace (current: ${activeWorkspaceName})`}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="hidden h-8 items-center gap-1.5 rounded-sm border border-border bg-surface px-2 text-xs text-text-muted hover:border-border-strong hover:text-text-primary sm:inline-flex"
+        // Always visible — the workspace name hides on narrow viewports but
+        // the chevron stays so the switcher remains reachable. Previously
+        // the entire button was `hidden sm:inline-flex`, leaving mobile
+        // users with no way to switch workspaces (audit gap #12).
+        className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border bg-surface px-2 text-xs text-text-muted hover:border-border-strong hover:text-text-primary"
       >
-        <span className="text-text-dim">/</span>
-        <span className="font-medium text-text-primary">{activeWorkspaceName}</span>
+        <span className="hidden text-text-dim sm:inline">/</span>
+        <span className="hidden max-w-[10rem] truncate font-medium text-text-primary sm:inline">
+          {activeWorkspaceName}
+        </span>
         <ChevronDown size={11} aria-hidden="true" />
       </button>
       {open && (

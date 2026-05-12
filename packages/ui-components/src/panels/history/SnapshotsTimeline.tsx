@@ -1,9 +1,68 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Camera, RotateCcw, Trash2 } from 'lucide-react';
-import type { WorkspaceSnapshot, WorkspaceSnapshotTrigger } from '@apicircle/shared';
+import type {
+  WorkspaceSnapshot,
+  WorkspaceSnapshotTrigger,
+  WorkspaceSynced,
+} from '@apicircle/shared';
 import { formatBytes } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
+
+/**
+ * Lightweight diff summary used in the restore preview. Counts requests,
+ * folders, environments, mock servers, and execution plans on both sides
+ * so the user sees the magnitude of the change before they confirm.
+ *
+ * Not a full 3-way diff — that lives in `summarizeUnpushedChanges` and is
+ * heavier. This summary stays local + fast, suitable for an inline preview.
+ */
+interface SnapshotDiffSummary {
+  category: string;
+  before: number;
+  after: number;
+  delta: number;
+}
+
+function summarizeSnapshotDiff(
+  current: WorkspaceSynced | null,
+  snapshot: WorkspaceSynced,
+): SnapshotDiffSummary[] {
+  if (!current) return [];
+  const pairs: Array<[string, number, number]> = [
+    [
+      'Requests',
+      Object.keys(current.collections.requests).length,
+      Object.keys(snapshot.collections.requests).length,
+    ],
+    [
+      'Folders',
+      Object.keys(current.collections.folders).length,
+      Object.keys(snapshot.collections.folders).length,
+    ],
+    [
+      'Environments',
+      Object.keys(current.environments.items).length,
+      Object.keys(snapshot.environments.items).length,
+    ],
+    [
+      'Mock servers',
+      Object.keys(current.mockServers ?? {}).length,
+      Object.keys(snapshot.mockServers ?? {}).length,
+    ],
+    [
+      'Execution plans',
+      Object.keys(current.executionPlans ?? {}).length,
+      Object.keys(snapshot.executionPlans ?? {}).length,
+    ],
+  ];
+  return pairs.map(([category, before, after]) => ({
+    category,
+    before,
+    after,
+    delta: after - before,
+  }));
+}
 
 // History panel's "Snapshots" tab. Pre-destructive snapshots are auto-
 // captured before push / merge / linked-update / yank / deprecate, plus
@@ -31,10 +90,24 @@ const TRIGGER_TONE: Record<WorkspaceSnapshotTrigger, string> = {
 
 export function SnapshotsTimeline() {
   const ledger = useWorkspaceStore((s) => s.local?.snapshots);
+  const currentSynced = useWorkspaceStore((s) => s.synced);
   const captureSnapshot = useWorkspaceStore((s) => s.captureSnapshot);
   const deleteSnapshot = useWorkspaceStore((s) => s.deleteSnapshot);
   const [restoreTarget, setRestoreTarget] = useState<WorkspaceSnapshot | null>(null);
   const [clearAllOpen, setClearAllOpen] = useState(false);
+  // Per-row pending delete — caught at click time so the kebab can close
+  // before the dialog opens. Symmetric with bulk Clear All which also
+  // uses ConfirmDialog (above).
+  const [pendingDelete, setPendingDelete] = useState<WorkspaceSnapshot | null>(null);
+
+  // Precompute the diff summary when a restore target is selected.
+  const restoreDiff = useMemo(
+    () =>
+      restoreTarget
+        ? summarizeSnapshotDiff(currentSynced, restoreTarget.workspaceSyncedSnapshot)
+        : [],
+    [currentSynced, restoreTarget],
+  );
 
   if (!ledger) return null;
 
@@ -88,10 +161,41 @@ export function SnapshotsTimeline() {
       ) : (
         <ul className="space-y-1.5">
           {ledger.entries.map((entry) => (
-            <SnapshotRow key={entry.id} entry={entry} onRestore={() => setRestoreTarget(entry)} />
+            <SnapshotRow
+              key={entry.id}
+              entry={entry}
+              onRestore={() => setRestoreTarget(entry)}
+              onRequestDelete={() => setPendingDelete(entry)}
+            />
           ))}
         </ul>
       )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete this snapshot?"
+        tone="danger"
+        confirmLabel="Delete snapshot"
+        description={
+          pendingDelete && (
+            <div className="space-y-1">
+              <p>
+                Removes this snapshot from the local ledger. The workspace itself isn&apos;t
+                affected.
+              </p>
+              <p className="text-[0.6875rem] text-text-dim">
+                {TRIGGER_LABEL[pendingDelete.triggeredBy]} · captured{' '}
+                {formatTimestamp(pendingDelete.createdAt)} · {formatBytes(pendingDelete.sizeBytes)}
+              </p>
+            </div>
+          )
+        }
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          if (pendingDelete) deleteSnapshot(pendingDelete.id);
+          setPendingDelete(null);
+        }}
+      />
       <ConfirmDialog
         open={clearAllOpen}
         title="Delete every snapshot?"
@@ -114,11 +218,45 @@ export function SnapshotsTimeline() {
         title="Restore workspace snapshot"
         description={
           restoreTarget && (
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <p>
                 Restoring this snapshot replaces the entire <code>synced</code> doc with the
                 captured state. Anything you&apos;ve done since the snapshot will be discarded.
               </p>
+              {restoreDiff.length > 0 && (
+                <div className="rounded-sm border border-border-subtle bg-surface p-2">
+                  <p className="mb-1 text-[0.625rem] uppercase tracking-wider text-text-dim">
+                    Counts after restore
+                  </p>
+                  <ul className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 text-[0.6875rem] font-mono">
+                    <li className="contents text-text-dim">
+                      <span>Category</span>
+                      <span className="text-right">Now</span>
+                      <span className="text-right">After</span>
+                      <span className="text-right">Δ</span>
+                    </li>
+                    {restoreDiff.map((row) => (
+                      <li key={row.category} className="contents">
+                        <span className="text-text-muted">{row.category}</span>
+                        <span className="text-right text-text-primary">{row.before}</span>
+                        <span className="text-right text-text-primary">{row.after}</span>
+                        <span
+                          className={
+                            'text-right ' +
+                            (row.delta > 0
+                              ? 'text-success'
+                              : row.delta < 0
+                                ? 'text-danger'
+                                : 'text-text-dim')
+                          }
+                        >
+                          {row.delta > 0 ? `+${row.delta}` : row.delta}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <p className="text-[0.6875rem] text-text-dim">
                 {TRIGGER_LABEL[restoreTarget.triggeredBy]} · captured{' '}
                 {formatTimestamp(restoreTarget.createdAt)} · {formatBytes(restoreTarget.sizeBytes)}
@@ -145,8 +283,15 @@ export function SnapshotsTimeline() {
   );
 }
 
-function SnapshotRow({ entry, onRestore }: { entry: WorkspaceSnapshot; onRestore: () => void }) {
-  const deleteSnapshot = useWorkspaceStore((s) => s.deleteSnapshot);
+function SnapshotRow({
+  entry,
+  onRestore,
+  onRequestDelete,
+}: {
+  entry: WorkspaceSnapshot;
+  onRestore: () => void;
+  onRequestDelete: () => void;
+}) {
   return (
     <li className="flex items-center gap-2 rounded-sm border border-border bg-surface px-2 py-1.5 text-[0.6875rem]">
       <span
@@ -174,7 +319,7 @@ function SnapshotRow({ entry, onRestore }: { entry: WorkspaceSnapshot; onRestore
       </button>
       <button
         type="button"
-        onClick={() => deleteSnapshot(entry.id)}
+        onClick={onRequestDelete}
         aria-label={`Delete snapshot from ${formatTimestamp(entry.createdAt)}`}
         title="Delete snapshot"
         className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-faint hover:bg-danger/5 hover:text-danger"

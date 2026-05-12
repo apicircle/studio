@@ -12,14 +12,23 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 interface FontListProps {
   onCommit: () => void;
   onCancel: () => void;
+  /**
+   * Lets the parent shell hold onto a "revert + close" callback so it can
+   * fire it on click-outside. Without this, click-outside silently keeps
+   * whichever font the user was previewing.
+   */
+  registerCancel?: (fn: (() => void) | null) => void;
 }
 
-export function FontList({ onCommit, onCancel }: FontListProps) {
+export function FontList({ onCommit, onCancel, registerCancel }: FontListProps) {
   const fontId = useWorkspaceStore((s) => s.local?.ui.fontId ?? 'system-mono');
   const setFontId = useWorkspaceStore((s) => s.setFontId);
   const optionRefs = useRef<Map<FontFamilyId, HTMLButtonElement>>(new Map());
   const originalFontRef = useRef<FontFamilyId>(fontId);
   const currentFontRef = useRef(fontId);
+  // True only after an explicit commit (Enter / click). Drives the
+  // unmount-revert below.
+  const committedRef = useRef(false);
   useEffect(() => {
     currentFontRef.current = fontId;
   }, [fontId]);
@@ -72,8 +81,32 @@ export function FontList({ onCommit, onCancel }: FontListProps) {
 
   const commit = () => {
     originalFontRef.current = currentFontRef.current;
+    committedRef.current = true;
     onCommit();
   };
+
+  // Mirror of ThemeList's hand-off — gives the parent shell an explicit
+  // revert callback so click-outside / Esc on the parent can undo the
+  // live preview.
+  useEffect(() => {
+    if (!registerCancel) return;
+    const fn = () => {
+      const original = originalFontRef.current;
+      if (original !== currentFontRef.current) setFontId(original);
+      committedRef.current = true;
+    };
+    registerCancel(fn);
+    return () => registerCancel(null);
+  }, [registerCancel, setFontId]);
+
+  // Belt-and-braces revert on unmount when nothing committed.
+  useEffect(() => {
+    return () => {
+      if (committedRef.current) return;
+      const original = originalFontRef.current;
+      if (original !== currentFontRef.current) setFontId(original);
+    };
+  }, [setFontId]);
 
   const handleKey = (e: React.KeyboardEvent<HTMLUListElement>) => {
     if (e.key === 'ArrowDown') {
@@ -121,6 +154,7 @@ export function FontList({ onCommit, onCancel }: FontListProps) {
                 onSelect={() => {
                   setFontId(font.id);
                   originalFontRef.current = font.id;
+                  committedRef.current = true;
                   onCommit();
                 }}
                 registerRef={(el) => {

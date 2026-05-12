@@ -67,16 +67,15 @@ describe('EnvironmentsSidebar', () => {
     act(() => {
       useWorkspaceStore.getState().addEnvironment('dev');
     });
-    const originalConfirm = window.confirm;
-    window.confirm = () => true;
-    try {
-      // Walk through the kebab menu — the inline icon row was collapsed
-      // into a single ⋮ menu in Phase 3.
-      await userEvent.click(screen.getByLabelText('Environment actions for dev'));
-      await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }));
-    } finally {
-      window.confirm = originalConfirm;
-    }
+    // Walk through the kebab menu — the inline icon row was collapsed
+    // into a single ⋮ menu in Phase 3. Clicking "Delete" now opens the
+    // ConfirmDialog (audit fix: native window.confirm replaced with the
+    // styled in-app dialog).
+    await userEvent.click(screen.getByLabelText('Environment actions for dev'));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }));
+    // Env still present until the user confirms.
+    expect(useWorkspaceStore.getState().synced!.environments.items).toHaveProperty('dev');
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete environment' }));
     expect(useWorkspaceStore.getState().synced!.environments.items).not.toHaveProperty('dev');
   });
 

@@ -1,9 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
-import { KeyRound, Lock, Plus, Trash2, Unlock } from 'lucide-react';
+import { Eye, EyeOff, KeyRound, Lock, Plus, Trash2, Unlock } from 'lucide-react';
 import type { Environment, EnvironmentVariable, SecretEntry } from '@apicircle/shared';
 import { cn } from '../../primitives/cn';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { LinkedEnvironmentsSection } from './LinkedEnvironmentsSection';
+
+/**
+ * Imperative toast push — used for fire-and-forget sync writes that we
+ * don't want to block on (the UI is already optimistic; only the failure
+ * path needs surfacing). Subscribing via a hook here would cause every
+ * row to re-render on every toast push.
+ */
+function reportError(title: string, err: unknown): void {
+  const detail = err instanceof Error ? err.message : String(err);
+  useWorkspaceStore.getState().pushToast({ tone: 'error', title, detail });
+}
 
 export function EnvironmentsPanel() {
   const items = useWorkspaceStore((s) => s.synced?.environments.items ?? {});
@@ -55,8 +66,13 @@ export function EnvironmentsPanel() {
           onBlur={(e) => {
             const next = e.target.value.trim();
             if (next && next !== env.name) {
-              renameEnvironment(env.name, next);
-              setEnvFocus(next);
+              try {
+                renameEnvironment(env.name, next);
+                setEnvFocus(next);
+              } catch (err) {
+                reportError('Rename failed', err);
+                e.target.value = env.name; // revert visible value
+              }
             }
           }}
           aria-label="Environment name"
@@ -124,13 +140,19 @@ function VariableTable({ env }: VariableTableProps) {
               setVariables(env.name, next);
             }}
             onCommitValue={(value) => {
-              void setVariableValue(env.name, i, value);
+              void Promise.resolve(setVariableValue(env.name, i, value)).catch((err) =>
+                reportError('Could not save value', err),
+              );
             }}
             onBindKey={(secretKeyId) => {
-              void bindVariableToSecretKey(env.name, i, secretKeyId);
+              void Promise.resolve(bindVariableToSecretKey(env.name, i, secretKeyId)).catch((err) =>
+                reportError('Could not bind to secret key', err),
+              );
             }}
             onUnbind={() => {
-              void unbindVariableSecretKey(env.name, i);
+              void Promise.resolve(unbindVariableSecretKey(env.name, i)).catch((err) =>
+                reportError('Could not unbind secret key', err),
+              );
             }}
             onRemove={() => {
               const next = env.variables.filter((_, idx) => idx !== i);
@@ -187,12 +209,18 @@ function VariableRow({
   const secretEntries = useWorkspaceStore((s) => s.local?.secretIndex.entries ?? {});
   const [draftValue, setDraftValue] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Plain (non-vault) values render masked by default. Toggle reveals the
+  // value while the row is active so the user can verify it without
+  // shoulder-surfing risk during screen sharing. Auto-mask on blur to
+  // keep revealed-state ephemeral.
+  const [revealed, setRevealed] = useState(false);
 
   const liveValue = draftValue ?? row.value;
   const onValueBlur = () => {
     if (draftValue === null) return;
     onCommitValue(draftValue);
     setDraftValue(null);
+    setRevealed(false);
   };
 
   const boundLabel = row.secretKeyId ? secretEntries[row.secretKeyId]?.label : null;
@@ -228,15 +256,36 @@ function VariableRow({
             </span>
           </div>
         ) : (
-          <input
-            type="text"
-            value={liveValue}
-            onChange={(e) => setDraftValue(e.target.value)}
-            onBlur={onValueBlur}
-            placeholder="value"
-            aria-label="Variable value"
-            className="h-7 flex-[2] rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
-          />
+          <div className="relative flex h-7 flex-[2]">
+            <input
+              type={revealed ? 'text' : 'password'}
+              value={liveValue}
+              onChange={(e) => setDraftValue(e.target.value)}
+              onBlur={onValueBlur}
+              placeholder="value"
+              aria-label="Variable value"
+              // Right padding clears the inline reveal toggle; without it
+              // the typed value would slide under the icon.
+              className="h-7 flex-1 rounded-sm border border-border bg-card pl-2 pr-7 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+            />
+            <button
+              type="button"
+              onClick={() => setRevealed((v) => !v)}
+              // Mousedown handler runs before the input's blur, so toggling
+              // doesn't commit a half-typed value before re-rendering.
+              onMouseDown={(e) => e.preventDefault()}
+              aria-label={revealed ? 'Hide variable value' : 'Show variable value'}
+              aria-pressed={revealed}
+              title={revealed ? 'Hide value' : 'Show value (auto-hides on blur)'}
+              className="absolute right-1 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm text-text-faint hover:text-text-primary"
+            >
+              {revealed ? (
+                <EyeOff size={11} aria-hidden="true" />
+              ) : (
+                <Eye size={11} aria-hidden="true" />
+              )}
+            </button>
+          </div>
         )}
         {row.encrypted && row.secretKeyId ? (
           <>

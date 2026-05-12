@@ -68,25 +68,45 @@ export function SettingsPicker() {
   const [open, setOpen] = useState(false);
   const [sidePopover, setSidePopover] = useState<SidePopover>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  // Live "revert to original" callback for whichever side popover (theme
+  // or font) is currently mounted. ThemeList / FontList register their
+  // revertAndCancel here on mount, and clear it when the user explicitly
+  // commits. Any close path that should NOT commit (outside-click, Esc on
+  // settings while side popover is open) calls this first to undo the
+  // live preview.
+  const cancelSidePopoverRef = useRef<(() => void) | null>(null);
 
   // Always-on subscriptions for the appearance row labels — hooks must
   // run unconditionally regardless of whether the popover is rendered.
   const themeLabel = useThemeLabel();
   const fontLabel = useFontLabel();
 
-  // Click-outside / Escape closes the whole stack. Side popover Escape
-  // is handled inside ThemeList/FontList (revert + close), so this
-  // handler only fires when the side popover is closed.
+  // Click-outside / Escape closes the whole stack. When a side popover
+  // is mounted, fire its registered revert callback first so the live
+  // theme/font preview reverts to the value we snapshotted on mount —
+  // outside-click is treated as cancel, not commit (matches user
+  // expectation; the previous behavior silently committed previews).
   useEffect(() => {
     if (!open) return;
+    const cancelSidePopover = () => {
+      const fn = cancelSidePopoverRef.current;
+      if (fn) fn();
+      cancelSidePopoverRef.current = null;
+    };
     const onPointer = (e: PointerEvent) => {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        cancelSidePopover();
         setOpen(false);
         setSidePopover(null);
       }
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && sidePopover === null) {
+      if (e.key === 'Escape') {
+        if (sidePopover !== null) {
+          // Esc inside the side popover is handled by ThemeList/FontList
+          // (revert + close). Only swallow Esc that escapes them.
+          return;
+        }
         setOpen(false);
       }
     };
@@ -98,7 +118,19 @@ export function SettingsPicker() {
     };
   }, [open, sidePopover]);
 
-  const closeSidePopover = () => setSidePopover(null);
+  const closeSidePopover = () => {
+    cancelSidePopoverRef.current = null;
+    setSidePopover(null);
+  };
+  const cancelSidePopover = () => {
+    const fn = cancelSidePopoverRef.current;
+    if (fn) fn();
+    cancelSidePopoverRef.current = null;
+    setSidePopover(null);
+  };
+  const registerCancel = (fn: (() => void) | null) => {
+    cancelSidePopoverRef.current = fn;
+  };
 
   return (
     <div ref={wrapperRef} className="relative">
@@ -129,7 +161,9 @@ export function SettingsPicker() {
             valueLabel={themeLabel}
             open={sidePopover === 'theme'}
             onOpen={() => setSidePopover('theme')}
-            onClose={closeSidePopover}
+            onCommit={closeSidePopover}
+            onCancel={cancelSidePopover}
+            registerCancel={registerCancel}
           />
           <AppearanceRow
             row="font"
@@ -138,7 +172,9 @@ export function SettingsPicker() {
             valueLabel={fontLabel}
             open={sidePopover === 'font'}
             onOpen={() => setSidePopover('font')}
-            onClose={closeSidePopover}
+            onCommit={closeSidePopover}
+            onCancel={cancelSidePopover}
+            registerCancel={registerCancel}
           />
           <FontSizeRow current={fontSizePercent} onChange={setFontSizePercent} />
 
@@ -190,7 +226,16 @@ interface AppearanceRowProps {
   valueLabel: string;
   open: boolean;
   onOpen: () => void;
-  onClose: () => void;
+  /** Explicit commit (Enter / click on an option). Keeps the previewed value. */
+  onCommit: () => void;
+  /** Explicit cancel (Esc, outside-click). Reverts to the original value. */
+  onCancel: () => void;
+  /**
+   * Lets the mounted ThemeList / FontList expose its revertAndCancel so
+   * the SettingsPicker shell can fire it when the user clicks outside or
+   * presses Esc on the parent popover. Pass `null` to clear the registration.
+   */
+  registerCancel: (fn: (() => void) | null) => void;
 }
 
 /**
@@ -209,7 +254,9 @@ function AppearanceRow({
   valueLabel,
   open,
   onOpen,
-  onClose,
+  onCommit,
+  onCancel,
+  registerCancel,
 }: AppearanceRowProps) {
   const openTimerRef = useRef<number | null>(null);
 
@@ -244,7 +291,7 @@ function AppearanceRow({
     >
       <button
         type="button"
-        onClick={() => (open ? onClose() : onOpen())}
+        onClick={() => (open ? onCancel() : onOpen())}
         onFocus={onOpen}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -287,9 +334,9 @@ function AppearanceRow({
           className="absolute left-full top-0 z-40 ml-1.5 rounded-sm bg-card"
         >
           {row === 'theme' ? (
-            <ThemeList onCommit={onClose} onCancel={onClose} />
+            <ThemeList onCommit={onCommit} onCancel={onCancel} registerCancel={registerCancel} />
           ) : (
-            <FontList onCommit={onClose} onCancel={onClose} />
+            <FontList onCommit={onCommit} onCancel={onCancel} registerCancel={registerCancel} />
           )}
         </div>
       )}

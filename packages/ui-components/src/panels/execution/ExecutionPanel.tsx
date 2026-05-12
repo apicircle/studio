@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
@@ -10,11 +10,13 @@ import {
   Link2,
   Play,
   Plus,
+  RotateCw,
+  Square,
   Trash2,
   XCircle,
 } from 'lucide-react';
 import type { EnvPriorityRef, ExecutionPlan, Request as ApiRequest } from '@apicircle/shared';
-import { envPriorityKey } from '@apicircle/shared';
+import { envPriorityKey, validateEnvVarName, validatePlanName } from '@apicircle/shared';
 import { cn } from '../../primitives/cn';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ResponseViewer } from '../editor/ResponseViewer';
@@ -73,6 +75,7 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
   const setPlanStopOnFailure = useWorkspaceStore((s) => s.setPlanStopOnFailure);
   const setPlanVariables = useWorkspaceStore((s) => s.setPlanVariables);
   const runPlan = useWorkspaceStore((s) => s.runPlan);
+  const cancelExecutePlan = useWorkspaceStore((s) => s.cancelExecutePlan);
 
   const [running, setRunning] = useState(false);
   /**
@@ -177,14 +180,7 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
 
   return (
     <div className="space-y-6">
-      <header className="flex items-center gap-3">
-        <input
-          value={plan.name}
-          onChange={(e) => renamePlan(plan.id, e.target.value)}
-          aria-label="Plan name"
-          className="h-9 max-w-md flex-1 rounded-sm border border-transparent bg-card px-3 text-base font-medium text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
-        />
-      </header>
+      <PlanNameHeader plan={plan} onRename={(next) => renamePlan(plan.id, next)} />
 
       <section>
         <div className="mb-2 flex items-center justify-between">
@@ -192,7 +188,8 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
           <button
             type="button"
             onClick={() => setPickerOpen((v) => !v)}
-            disabled={requestArray.length === 0}
+            disabled={requestArray.length === 0 || running}
+            title={running ? 'Plan is running — wait for it to finish or cancel' : undefined}
             className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
           >
             <Plus size={11} />
@@ -247,6 +244,10 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
                   isFirst={i === 0}
                   isLast={i === plan.steps.length - 1}
                   enabled={step.enabled !== false}
+                  // Lock all step-mutation controls while a run is in flight
+                  // — without this, the user could remove/reorder steps mid-
+                  // execution and the running plan would race with mutations.
+                  locked={running}
                   onRemove={() => removePlanStep(plan.id, i)}
                   onMoveUp={() => reorderPlanSteps(plan.id, i, i - 1)}
                   onMoveDown={() => reorderPlanSteps(plan.id, i, i + 1)}
@@ -315,6 +316,17 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
             <Play size={11} />
             Run with assertions
           </button>
+          {running && (
+            <button
+              type="button"
+              onClick={() => cancelExecutePlan(plan.id)}
+              aria-label="Cancel running plan"
+              className="inline-flex h-8 items-center gap-2 rounded-sm border border-danger/40 bg-danger/10 px-3 text-xs text-danger hover:bg-danger/20"
+            >
+              <Square size={11} />
+              Cancel
+            </button>
+          )}
           <label className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted">
             <input
               type="checkbox"
@@ -401,10 +413,92 @@ function RunVerdict({ result }: { result: RunVerdictData }) {
   );
 }
 
+/**
+ * Plan-name header with inline validation. Empty + over-80-char names are
+ * rejected (the input shows red + a `role="alert"` reason). Name uniqueness
+ * is also checked across the plan registry — duplicate names confused the
+ * sidebar (audit gap #28).
+ */
+function PlanNameHeader({
+  plan,
+  onRename,
+}: {
+  plan: ExecutionPlan;
+  onRename: (next: string) => void;
+}) {
+  const allPlans = useWorkspaceStore((s) => s.synced?.executionPlans ?? {});
+  const [draft, setDraft] = useState(plan.name);
+  // Re-sync the draft when the canonical name changes (e.g. workspace
+  // switch loads a different plan into the same UI slot).
+  useEffect(() => {
+    setDraft(plan.name);
+  }, [plan.id, plan.name]);
+  const trimmed = draft.trim();
+  const syntax = validatePlanName(draft);
+  const duplicate =
+    syntax.ok &&
+    trimmed !== plan.name &&
+    Object.values(allPlans).some((p) => p.id !== plan.id && p.name.trim() === trimmed);
+  const reason = !syntax.ok
+    ? syntax.reason
+    : duplicate
+      ? `A plan named "${trimmed}" already exists.`
+      : null;
+
+  return (
+    <header className="flex flex-col gap-1">
+      <input
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          // Commit only when valid + actually changed; keep the live preview
+          // in `draft` so the user sees their typing without losing the
+          // current name on blur after a rejected change.
+          const next = e.target.value;
+          const okSyntax = validatePlanName(next);
+          if (
+            okSyntax.ok &&
+            next.trim() !== plan.name &&
+            !Object.values(allPlans).some((p) => p.id !== plan.id && p.name.trim() === next.trim())
+          ) {
+            onRename(next);
+          }
+        }}
+        aria-label="Plan name"
+        aria-invalid={reason !== null}
+        className={cn(
+          'h-9 max-w-md flex-1 rounded-sm border bg-card px-3 text-base font-medium text-text-primary focus:outline-none focus:ring-2',
+          reason !== null
+            ? 'border-danger focus:border-danger focus:ring-danger/30'
+            : 'border-transparent focus:border-accent focus:ring-accent/30',
+        )}
+      />
+      {reason && (
+        <p role="alert" className="text-[0.6875rem] text-danger">
+          {reason}
+        </p>
+      )}
+    </header>
+  );
+}
+
 function PlanRunDetails({ planId }: { planId: string }) {
   const results = useWorkspaceStore((s) => s.lastPlanResults[planId] ?? []);
+  const retryPlanStep = useWorkspaceStore((s) => s.retryPlanStep);
   const [openIndex, setOpenIndex] = useState<number | null>(0);
+  // Tracks which step index is currently being retried so the row can show
+  // the spinner state on the Retry button without locking other rows.
+  const [retryingIndex, setRetryingIndex] = useState<number | null>(null);
   if (results.length === 0) return null;
+
+  const onRetry = async (i: number) => {
+    setRetryingIndex(i);
+    try {
+      await retryPlanStep(planId, i);
+    } finally {
+      setRetryingIndex(null);
+    }
+  };
 
   return (
     <section aria-label="Per-step run details">
@@ -414,44 +508,66 @@ function PlanRunDetails({ planId }: { planId: string }) {
       <ul className="space-y-1">
         {results.map((step, i) => {
           const open = openIndex === i;
+          const retrying = retryingIndex === i;
           return (
             <li key={i} className="rounded-sm border border-border bg-card">
-              <button
-                type="button"
-                onClick={() => setOpenIndex(open ? null : i)}
-                aria-expanded={open}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left"
-              >
-                {open ? (
-                  <ChevronDown size={11} className="text-text-dim" aria-hidden="true" />
-                ) : (
-                  <ChevronRight size={11} className="text-text-dim" aria-hidden="true" />
-                )}
-                <span className="w-6 text-center text-[0.625rem] text-text-dim">{i + 1}.</span>
-                <StepStatusBadge passed={step.passed} status={step.result.status} />
-                <span className="text-[0.625rem] uppercase text-text-dim">
-                  {step.requestMethod}
-                </span>
-                <span className="flex-1 truncate text-xs text-text-primary">
-                  {step.requestName}
-                </span>
-                <span className="font-mono text-[0.625rem] text-text-dim">
-                  {step.result.durationMs} ms
-                </span>
-                {step.assertionResults.length > 0 && (
-                  <span
-                    className={
-                      'rounded-sm border px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider ' +
-                      (step.assertionResults.every((a) => a.passed)
-                        ? 'border-success/40 bg-success/10 text-success'
-                        : 'border-warning/40 bg-warning/10 text-warning')
-                    }
-                  >
-                    {step.assertionResults.filter((a) => a.passed).length}/
-                    {step.assertionResults.length}
+              {/*
+                Disclosure + Retry are SIBLING buttons (not nested) — same
+                accessibility shape as the request-run row in HistoryPanel.
+              */}
+              <div className="flex w-full items-center gap-2 px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => setOpenIndex(open ? null : i)}
+                  aria-expanded={open}
+                  aria-label={`Step ${i + 1} ${step.requestName} details`}
+                  className="flex flex-1 items-center gap-2 text-left"
+                >
+                  {open ? (
+                    <ChevronDown size={11} className="text-text-dim" aria-hidden="true" />
+                  ) : (
+                    <ChevronRight size={11} className="text-text-dim" aria-hidden="true" />
+                  )}
+                  <span className="w-6 text-center text-[0.625rem] text-text-dim">{i + 1}.</span>
+                  <StepStatusBadge passed={step.passed} status={step.result.status} />
+                  <span className="text-[0.625rem] uppercase text-text-dim">
+                    {step.requestMethod}
                   </span>
-                )}
-              </button>
+                  <span className="flex-1 truncate text-xs text-text-primary">
+                    {step.requestName}
+                  </span>
+                  <span className="font-mono text-[0.625rem] text-text-dim">
+                    {step.result.durationMs} ms
+                  </span>
+                  {step.assertionResults.length > 0 && (
+                    <span
+                      className={
+                        'rounded-sm border px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider ' +
+                        (step.assertionResults.every((a) => a.passed)
+                          ? 'border-success/40 bg-success/10 text-success'
+                          : 'border-warning/40 bg-warning/10 text-warning')
+                      }
+                    >
+                      {step.assertionResults.filter((a) => a.passed).length}/
+                      {step.assertionResults.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void onRetry(i)}
+                  disabled={retrying}
+                  aria-label={`Retry step ${i + 1}: ${step.requestName}`}
+                  title="Retry this step in isolation — does not re-run the rest of the plan"
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:bg-accent/10 hover:text-accent disabled:opacity-40"
+                >
+                  <RotateCw
+                    size={11}
+                    aria-hidden="true"
+                    className={retrying ? 'animate-spin' : undefined}
+                  />
+                </button>
+              </div>
               {open && (
                 <div className="border-t border-border-subtle">
                   <div className="grid grid-cols-[80px_1fr] gap-y-1 px-3 py-2 text-xs">
@@ -780,6 +896,7 @@ function PlanStepRow({
   isFirst,
   isLast,
   enabled,
+  locked = false,
   onRemove,
   onMoveUp,
   onMoveDown,
@@ -794,6 +911,12 @@ function PlanStepRow({
   isLast: boolean;
   /** Effective enabled state — `step.enabled !== false`. */
   enabled: boolean;
+  /**
+   * When true, all step-mutation controls (toggle, move up/down, remove)
+   * are disabled. Set while a plan run is in flight so the running plan
+   * doesn't race with edits to its own definition.
+   */
+  locked?: boolean;
   onRemove: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
@@ -811,9 +934,10 @@ function PlanStepRow({
         <input
           type="checkbox"
           checked={enabled}
+          disabled={locked}
           onChange={(e) => onToggleEnabled(e.target.checked)}
           aria-label={`Enable step ${index + 1}`}
-          className="h-3 w-3 cursor-pointer"
+          className="h-3 w-3 cursor-pointer disabled:cursor-not-allowed"
           style={{ accentColor: 'rgb(var(--accent))' }}
         />
         <span className="w-6 text-center text-[0.625rem] text-text-dim">{index + 1}.</span>
@@ -863,7 +987,7 @@ function PlanStepRow({
         <button
           type="button"
           onClick={onMoveUp}
-          disabled={isFirst}
+          disabled={isFirst || locked}
           aria-label="Move step up"
           className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:text-text-primary disabled:opacity-30"
         >
@@ -872,7 +996,7 @@ function PlanStepRow({
         <button
           type="button"
           onClick={onMoveDown}
-          disabled={isLast}
+          disabled={isLast || locked}
           aria-label="Move step down"
           className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:text-text-primary disabled:opacity-30"
         >
@@ -881,8 +1005,9 @@ function PlanStepRow({
         <button
           type="button"
           onClick={onRemove}
+          disabled={locked}
           aria-label="Remove step"
-          className="inline-flex h-6 w-6 items-center justify-center rounded-sm border border-danger/30 bg-danger/5 text-danger hover:bg-danger/10"
+          className="inline-flex h-6 w-6 items-center justify-center rounded-sm border border-danger/30 bg-danger/5 text-danger hover:bg-danger/10 disabled:opacity-30"
         >
           <Trash2 size={10} />
         </button>
@@ -919,40 +1044,66 @@ function PlanVariablesEditor({
           No plan variables yet — env values resolve as usual.
         </p>
       )}
-      {vars.map((v, i) => (
-        <div key={i} className="flex items-center gap-2">
-          <input
-            type="text"
-            value={v.key}
-            onChange={(e) =>
-              onChange(vars.map((row, idx) => (idx === i ? { ...row, key: e.target.value } : row)))
-            }
-            placeholder="VAR_NAME"
-            aria-label={`Plan variable key ${i + 1}`}
-            className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
-          />
-          <input
-            type="text"
-            value={v.value}
-            onChange={(e) =>
-              onChange(
-                vars.map((row, idx) => (idx === i ? { ...row, value: e.target.value } : row)),
-              )
-            }
-            placeholder="value"
-            aria-label={`Plan variable value ${i + 1}`}
-            className="h-7 flex-[2] rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
-          />
-          <button
-            type="button"
-            onClick={() => onChange(vars.filter((_, idx) => idx !== i))}
-            aria-label={`Remove plan variable ${i + 1}`}
-            className="inline-flex h-7 w-7 items-center justify-center text-text-faint hover:text-danger"
-          >
-            <Trash2 size={12} />
-          </button>
-        </div>
-      ))}
+      {vars.map((v, i) => {
+        const trimmed = v.key.trim();
+        const syntax = trimmed.length > 0 ? validateEnvVarName(v.key) : { ok: true as const };
+        const duplicate =
+          trimmed.length > 0 && vars.some((r, idx) => idx !== i && r.key.trim() === trimmed);
+        const reason = !syntax.ok
+          ? syntax.reason
+          : duplicate
+            ? 'Duplicate plan variable key.'
+            : null;
+        return (
+          <div key={i} className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={v.key}
+                onChange={(e) =>
+                  onChange(
+                    vars.map((row, idx) => (idx === i ? { ...row, key: e.target.value } : row)),
+                  )
+                }
+                placeholder="VAR_NAME"
+                aria-label={`Plan variable key ${i + 1}`}
+                aria-invalid={reason !== null || undefined}
+                className={cn(
+                  'h-7 flex-1 rounded-sm border bg-surface px-2 text-xs text-text-primary focus:outline-none focus:ring-1',
+                  reason !== null
+                    ? 'border-danger focus:border-danger focus:ring-danger/40'
+                    : 'border-border focus:border-accent focus:ring-accent/30',
+                )}
+              />
+              <input
+                type="text"
+                value={v.value}
+                onChange={(e) =>
+                  onChange(
+                    vars.map((row, idx) => (idx === i ? { ...row, value: e.target.value } : row)),
+                  )
+                }
+                placeholder="value"
+                aria-label={`Plan variable value ${i + 1}`}
+                className="h-7 flex-[2] rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+              />
+              <button
+                type="button"
+                onClick={() => onChange(vars.filter((_, idx) => idx !== i))}
+                aria-label={`Remove plan variable ${i + 1}`}
+                className="inline-flex h-7 w-7 items-center justify-center text-text-faint hover:text-danger"
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+            {reason && (
+              <p role="alert" className="ml-1 text-[0.625rem] text-danger">
+                {reason}
+              </p>
+            )}
+          </div>
+        );
+      })}
       <button
         type="button"
         onClick={() => onChange([...vars, { key: '', value: '' }])}

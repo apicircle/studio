@@ -33,6 +33,7 @@ import {
   summarizeUnpushedChanges,
   validateBranchName,
 } from '@apicircle/core';
+import { validatePRTitle } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';
@@ -923,6 +924,7 @@ function RepoCard() {
   const branch = useWorkspaceStore((s) => s.local?.workingBranch ?? null);
   const disconnectRepo = useWorkspaceStore((s) => s.disconnectRepo);
   const [releaseAndTopicsOpen, setReleaseAndTopicsOpen] = useState(false);
+  const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
 
   return (
     <div className="space-y-3 rounded-sm border border-success/30 bg-success/5 p-4">
@@ -973,7 +975,7 @@ function RepoCard() {
         </button>
         <button
           type="button"
-          onClick={disconnectRepo}
+          onClick={() => setConfirmDisconnectOpen(true)}
           className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary"
         >
           Disconnect repo
@@ -989,6 +991,33 @@ function RepoCard() {
       <ReleaseAndTopicsModal
         open={releaseAndTopicsOpen}
         onClose={() => setReleaseAndTopicsOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmDisconnectOpen}
+        title={`Disconnect ${repo.fullName}?`}
+        description={
+          <p>
+            Removes the repo connection from this workspace. The remote repo on GitHub is not
+            touched. Any working branch state for this repo is also discarded — re-connecting starts
+            from the default branch again.
+          </p>
+        }
+        confirmLabel="Disconnect"
+        tone="danger"
+        onCancel={() => setConfirmDisconnectOpen(false)}
+        onConfirm={() => {
+          setConfirmDisconnectOpen(false);
+          try {
+            disconnectRepo();
+          } catch (err) {
+            useWorkspaceStore.getState().pushToast({
+              tone: 'error',
+              title: 'Disconnect failed',
+              detail: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }}
       />
     </div>
   );
@@ -1031,6 +1060,12 @@ function BranchCard() {
   const [justPushedSha, setJustPushedSha] = useState<string | null>(null);
   const [prModalOpen, setPrModalOpen] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
+  const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
+  // Disable mutation-causing actions during any in-flight async op so the
+  // user can't fire conflicting requests (push during refresh, discard
+  // during push, etc.). Each individual handler still flips its own flag,
+  // but the disabled gate uses the union.
+  const anyInFlight = pushing || refreshing || syncing;
 
   const unpushed = useMemo(
     () =>
@@ -1241,7 +1276,7 @@ function BranchCard() {
         <button
           type="button"
           onClick={() => void onPush()}
-          disabled={pushing}
+          disabled={anyInFlight}
           className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
         >
           <Upload size={11} />
@@ -1250,7 +1285,7 @@ function BranchCard() {
         <button
           type="button"
           onClick={() => void onRefresh()}
-          disabled={refreshing}
+          disabled={anyInFlight}
           title="Pulls the working branch and reconciles changes. Conflicts open the resolver."
           className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
         >
@@ -1260,7 +1295,7 @@ function BranchCard() {
         <button
           type="button"
           onClick={() => void onSyncAttachments()}
-          disabled={syncing}
+          disabled={anyInFlight}
           title="Downloads any attachment blobs referenced by workspace.json that aren't yet in your local IDB."
           className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
         >
@@ -1270,7 +1305,7 @@ function BranchCard() {
         <button
           type="button"
           onClick={() => setPrModalOpen(true)}
-          disabled={!canCreatePr}
+          disabled={!canCreatePr || anyInFlight}
           title={
             !branch.lastPushedSha
               ? 'Push to save before opening a PR'
@@ -1292,8 +1327,9 @@ function BranchCard() {
         </button>
         <button
           type="button"
-          onClick={discardWorkingBranch}
-          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-border-strong hover:text-text-primary"
+          onClick={() => setConfirmDiscardOpen(true)}
+          disabled={anyInFlight}
+          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-40"
           aria-label="Discard working branch"
         >
           <X size={10} />
@@ -1302,6 +1338,26 @@ function BranchCard() {
       </div>
 
       <CreatePrModal open={prModalOpen} onClose={() => setPrModalOpen(false)} />
+
+      <ConfirmDialog
+        open={confirmDiscardOpen}
+        title={`Discard working branch "${branch.name}"?`}
+        description={
+          <p>
+            Removes the local working-branch state. Any unpushed changes are kept on the synced doc,
+            but the branch handle is forgotten — you can create a new working branch afterwards. The
+            remote branch on GitHub is not touched.
+          </p>
+        }
+        confirmLabel="Discard branch"
+        tone="danger"
+        typedConfirm="DISCARD"
+        onCancel={() => setConfirmDiscardOpen(false)}
+        onConfirm={() => {
+          setConfirmDiscardOpen(false);
+          discardWorkingBranch();
+        }}
+      />
     </div>
   );
 }
@@ -1452,6 +1508,46 @@ function UnpushedChangeRow({ change }: { change: UnpushedChange }) {
   );
 }
 
+/**
+ * PR title field with inline validation. Empty + over-256-char titles
+ * surface a `role="alert"` reason; the modal's submit button is also
+ * disabled when invalid.
+ */
+function PRTitleField({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+  const result = validatePRTitle(value);
+  // Don't surface "required" until the user has interacted — saves nag on
+  // first open where the default placeholder is fine.
+  const [touched, setTouched] = useState(false);
+  const showReason = !result.ok && touched;
+  return (
+    <div>
+      <label htmlFor="pr-title-input" className="block text-[0.6875rem] text-text-dim">
+        Title
+      </label>
+      <input
+        id="pr-title-input"
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setTouched(true);
+        }}
+        onBlur={() => setTouched(true)}
+        aria-label="PR title"
+        aria-invalid={showReason || undefined}
+        className={cn(
+          'mt-1 h-8 w-full rounded-sm border bg-surface px-2 text-xs text-text-primary focus:outline-none',
+          showReason ? 'border-danger focus:border-danger' : 'border-border focus:border-accent',
+        )}
+      />
+      {showReason && !result.ok && (
+        <p role="alert" className="mt-1 text-[0.625rem] text-danger">
+          {result.reason}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function CreatePrModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const branch = useWorkspaceStore((s) => s.local?.workingBranch ?? null);
   const createPullRequest = useWorkspaceStore((s) => s.createPullRequest);
@@ -1496,18 +1592,7 @@ function CreatePrModal({ open, onClose }: { open: boolean; onClose: () => void }
           <code className="text-text-muted">{branch.baseBranch}</code> on{' '}
           <code className="text-text-muted">{branch.repoFullName}</code>.
         </p>
-        <div>
-          <label htmlFor="pr-title-input" className="block text-[0.6875rem] text-text-dim">
-            Title
-          </label>
-          <input
-            id="pr-title-input"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            aria-label="PR title"
-            className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
-          />
-        </div>
+        <PRTitleField value={title} onChange={setTitle} />
         <div>
           <label htmlFor="pr-body-input" className="block text-[0.6875rem] text-text-dim">
             Description (markdown)
@@ -1537,7 +1622,7 @@ function CreatePrModal({ open, onClose }: { open: boolean; onClose: () => void }
           <button
             type="button"
             onClick={() => void submit()}
-            disabled={submitting || !title.trim()}
+            disabled={submitting || !validatePRTitle(title).ok}
             className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
           >
             <GitPullRequest size={11} />

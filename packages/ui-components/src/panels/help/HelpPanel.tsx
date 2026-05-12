@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
-import { HelpCircle } from 'lucide-react';
+import { ExternalLink, HelpCircle, Lightbulb } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { replayOnboarding } from '../../onboarding/OnboardingTips';
 import { searchHelp, type HelpSection } from './helpContent';
 
 // Right pane of the Help Center. The search input + section list lives in
@@ -43,6 +44,7 @@ export function HelpPanel() {
               </p>
             ))}
           </div>
+          <HelpFooter />
         </article>
       ) : (
         <div className="flex flex-1 items-center justify-center">
@@ -54,5 +56,34 @@ export function HelpPanel() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Footer rendered below every help article. Two affordances:
+ *  - Re-launch the onboarding tour (audit gap A16: it was dismiss-once-forever)
+ *  - Open an issue / docs link for missing-help feedback
+ */
+function HelpFooter() {
+  return (
+    <footer className="mt-8 flex flex-wrap items-center gap-3 border-t border-border-subtle pt-4 text-[0.6875rem] text-text-dim">
+      <button
+        type="button"
+        onClick={replayOnboarding}
+        className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"
+      >
+        <Lightbulb size={11} aria-hidden="true" />
+        Re-launch onboarding tour
+      </button>
+      <a
+        href="https://github.com/apicircle/studio/issues/new"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"
+      >
+        <ExternalLink size={11} aria-hidden="true" />
+        Was this helpful? Open an issue
+      </a>
+    </footer>
   );
 }

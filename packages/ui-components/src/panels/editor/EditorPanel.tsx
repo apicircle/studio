@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Cookie, GitBranch, Link2, RotateCcw, Send, X } from 'lucide-react';
+import { Cookie, GitBranch, Link2, RotateCcw, Send, Square, X } from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import type { HttpMethod, Request as ApiRequest, RequestOverridePatch } from '@apicircle/shared';
+import { validateUrl } from '@apicircle/shared';
 import {
   applyPathParams,
   composeCookieHeader,
@@ -175,12 +176,17 @@ export function EditorPanel() {
   const setRequestQuery = useWorkspaceStore((s) => s.setRequestQuery);
   const executeActiveRequest = useWorkspaceStore((s) => s.executeActiveRequest);
   const executeLinkedActiveRequest = useWorkspaceStore((s) => s.executeLinkedActiveRequest);
+  const cancelExecuteRequest = useWorkspaceStore((s) => s.cancelExecuteRequest);
   const isExecuting = useWorkspaceStore((s) =>
     activeRequestId ? (s.isExecuting[activeRequestId] ?? false) : false,
   );
   const lastRun = useWorkspaceStore((s) =>
     activeRequestId ? (s.lastRun[activeRequestId] ?? null) : null,
   );
+  // `local.history.requestRuns` is maintained newest-first by the store
+  // (see executeActiveRequest's `[run, ...trimmed]` prepend). The first
+  // match is therefore the most recent run for this request — which is
+  // what we want for the inline assertion verdict pills.
   const lastHistoryRun = useWorkspaceStore(
     (s) => s.local?.history.requestRuns.find((r) => r.requestId === activeRequestId) ?? null,
   );
@@ -243,7 +249,7 @@ export function EditorPanel() {
               </option>
             ))}
           </Select>
-          <div className="flex-1">
+          <div className="flex flex-1 flex-col">
             <VariableAutocompleteField
               value={composeUrlWithQuery(request.url, request.query)}
               onChange={(v) => {
@@ -278,21 +284,42 @@ export function EditorPanel() {
               placeholder="https://api.example.com/v1"
               className="h-9 px-3 text-sm focus:ring-2"
             />
+            <UrlInlineValidation url={composeUrlWithQuery(request.url, request.query)} />
           </div>
-          <button
-            type="button"
-            onClick={() => void (isLinked ? executeLinkedActiveRequest() : executeActiveRequest())}
-            disabled={isExecuting || sendBlocked}
-            title={
-              sendBlocked
-                ? 'Resolve the validation blockers above before sending.'
-                : 'Sends with the active environment + secrets resolved (Ctrl/Cmd+Enter).'
-            }
-            className="inline-flex h-9 items-center gap-2 rounded-sm border border-accent/40 bg-accent/15 px-4 text-xs font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
-          >
-            <Send size={14} />
-            {isExecuting ? 'Sending…' : 'Send'}
-          </button>
+          {isExecuting ? (
+            // Same slot as the Send button — swap to a Cancel control while
+            // the request is in flight so the user can abort hung requests
+            // without waiting for them to time out. Linked-source requests
+            // run through the same isExecuting flag keyed on `request.id`,
+            // so the same cancelExecuteRequest path stops both.
+            <button
+              type="button"
+              onClick={() => cancelExecuteRequest(request.id)}
+              title="Abort the in-flight request"
+              aria-label="Cancel request"
+              className="inline-flex h-9 items-center gap-2 rounded-sm border border-danger/40 bg-danger/15 px-4 text-xs font-medium text-danger transition-colors hover:bg-danger/25"
+            >
+              <Square size={14} />
+              Cancel
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() =>
+                void (isLinked ? executeLinkedActiveRequest() : executeActiveRequest())
+              }
+              disabled={sendBlocked}
+              title={
+                sendBlocked
+                  ? 'Resolve the validation blockers above before sending.'
+                  : 'Sends with the active environment + secrets resolved (Ctrl/Cmd+Enter).'
+              }
+              className="inline-flex h-9 items-center gap-2 rounded-sm border border-accent/40 bg-accent/15 px-4 text-xs font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
+            >
+              <Send size={14} />
+              Send
+            </button>
+          )}
         </div>
         {view?.source === 'linked' && <LinkedSourceBanner view={view} />}
         <EffectiveRequestPreview request={request} scope={scope} />
@@ -391,6 +418,9 @@ export function EditorPanel() {
                   result={lastRun}
                   assertions={lastHistoryRun?.assertions ?? []}
                   isExecuting={isExecuting}
+                  onRetry={() =>
+                    void (isLinked ? executeLinkedActiveRequest() : executeActiveRequest())
+                  }
                 />
               </div>
             </Panel>
@@ -406,6 +436,26 @@ export function EditorPanel() {
  * into the URL bar. They can convert it to a new request (the standard cURL
  * importer creates a sibling in the same folder) or dismiss to keep typing.
  */
+/**
+ * Inline validation cue below the URL field. Renders nothing when the URL
+ * is valid (the field already shows valid state). On invalid input,
+ * renders a `role="alert"` line with the reason. PreSendPanel keeps its
+ * Send-time blocker — this just gives the user the cue earlier, while typing.
+ */
+function UrlInlineValidation({ url }: { url: string }) {
+  // Empty URL is rejected at Send time by PreSendPanel — the inline cue
+  // would feel preachy ("URL is required" on the empty state). Only show
+  // for actual garbage input.
+  if (url.trim() === '') return null;
+  const result = validateUrl(url);
+  if (result.ok) return null;
+  return (
+    <p role="alert" className="mt-1 text-[0.6875rem] text-warning">
+      {result.reason}
+    </p>
+  );
+}
+
 function CurlPasteConfirm({
   curl,
   onConfirm,

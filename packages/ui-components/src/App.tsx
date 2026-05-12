@@ -76,6 +76,9 @@ import { KeyboardShortcuts } from './layout/KeyboardShortcuts';
 // store state still drives the editor's selector, but no modal opens.
 import { UpdatePreviewModal } from './panels/link-workspace/UpdatePreviewModal';
 import { OnboardingTips } from './onboarding/OnboardingTips';
+import { ConfirmDialog } from './primitives/ConfirmDialog';
+import { Modal } from './primitives/Modal';
+import { ToastViewport } from './primitives/Toast';
 import { getPanel } from './layout/panels';
 
 export function App() {
@@ -113,8 +116,15 @@ export function App() {
       <MissingScopeGate />
       <KeyboardShortcuts />
       <OnboardingTips />
+      <ToastSlot />
     </div>
   );
+}
+
+function ToastSlot() {
+  const toasts = useWorkspaceStore((s) => s.toasts);
+  const dismiss = useWorkspaceStore((s) => s.dismissToast);
+  return <ToastViewport toasts={toasts} onDismiss={dismiss} />;
 }
 
 /**
@@ -239,6 +249,11 @@ function HydrationErrorScreen() {
   const recoverPartialWorkspace = useWorkspaceStore((s) => s.recoverPartialWorkspace);
   const [busy, setBusy] = useState(false);
   const [recoverable, setRecoverable] = useState<RecoverableSummary | null>(null);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  // Surface the "no recoverable data" outcome from `recoverPartialWorkspace`
+  // as an in-app modal instead of a native alert. When null, the modal is
+  // closed; the message string is displayed verbatim when set.
+  const [recoverNotice, setRecoverNotice] = useState<string | null>(null);
 
   // Probe IDB on mount so the recovery UI can tell the user what data is
   // actually salvageable (vs a generic "your data is still in IndexedDB").
@@ -335,7 +350,7 @@ function HydrationErrorScreen() {
                   try {
                     const result = await recoverPartialWorkspace();
                     if (result === 'no-data') {
-                      window.alert('No recoverable data found. Use Reset to start fresh.');
+                      setRecoverNotice('No recoverable data found. Use Reset to start fresh.');
                     }
                   } finally {
                     setBusy(false);
@@ -351,26 +366,57 @@ function HydrationErrorScreen() {
           <button
             type="button"
             disabled={busy}
-            onClick={() => {
-              const ok = window.confirm(
-                'Reset workspace? This wipes the existing IndexedDB records and creates a fresh workspace. This cannot be undone.',
-              );
-              if (!ok) return;
-              void (async () => {
-                setBusy(true);
-                try {
-                  await resetWorkspace();
-                } finally {
-                  setBusy(false);
-                }
-              })();
-            }}
+            onClick={() => setResetConfirmOpen(true)}
             className="inline-flex h-7 items-center gap-1 rounded-sm border border-danger/40 bg-danger/5 px-3 text-[0.6875rem] text-danger hover:bg-danger/10 disabled:opacity-50"
           >
             Reset workspace
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={resetConfirmOpen}
+        title="Reset workspace?"
+        description={
+          <p>
+            Wipes the existing IndexedDB records and creates a fresh workspace. Every collection,
+            environment, secret, and run history entry is removed. This cannot be undone.
+          </p>
+        }
+        confirmLabel="Reset workspace"
+        tone="danger"
+        typedConfirm="RESET"
+        onCancel={() => setResetConfirmOpen(false)}
+        onConfirm={async () => {
+          setResetConfirmOpen(false);
+          setBusy(true);
+          try {
+            await resetWorkspace();
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
+
+      <Modal
+        open={recoverNotice !== null}
+        onClose={() => setRecoverNotice(null)}
+        title="Recovery result"
+        className="max-w-sm"
+      >
+        <div className="space-y-3 text-xs text-text-muted">
+          <p>{recoverNotice}</p>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => setRecoverNotice(null)}
+              className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

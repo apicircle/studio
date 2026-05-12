@@ -19,9 +19,11 @@
  */
 
 import { useRef, useState } from 'react';
-import { CheckCircle2, KeyRound, Loader2, RefreshCw, Trash2, XCircle } from 'lucide-react';
+import { CheckCircle2, Copy, KeyRound, Loader2, RefreshCw, Trash2, XCircle } from 'lucide-react';
+import { useWorkspaceStore } from '../../store/workspaceStore';
 import { refreshToken as runRefreshToken } from '@apicircle/core';
 import { cn } from '../../primitives/cn';
+import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import type { createOAuth2Bridge } from '../../auth/oauth2Bridge';
 import { acquireToken, type OAuth2Auth } from './acquireOAuth2Token';
 
@@ -57,6 +59,7 @@ interface FlowState {
 
 export function OAuth2FlowActions({ auth, onChange, bridgeOverride }: OAuth2FlowActionsProps) {
   const [state, setState] = useState<FlowState>({ status: 'idle' });
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   // Synchronous re-entry guard — `state.status` updates via setState are
   // only visible after React's next render, so two click events fired in
   // the same tick would both pass `state.status === 'idle'` and start
@@ -210,7 +213,7 @@ export function OAuth2FlowActions({ auth, onChange, bridgeOverride }: OAuth2Flow
         </button>
         <button
           type="button"
-          onClick={clear}
+          onClick={() => setConfirmClearOpen(true)}
           disabled={!hasToken || state.status === 'running'}
           className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-danger/40 hover:text-danger disabled:opacity-40"
         >
@@ -231,14 +234,50 @@ export function OAuth2FlowActions({ auth, onChange, bridgeOverride }: OAuth2Flow
         </p>
       )}
       {state.status === 'error' && state.message && (
-        <p className="inline-flex items-center gap-1.5 text-[0.6875rem] text-danger" role="alert">
+        <div
+          className="flex flex-wrap items-center gap-2 rounded-sm border border-danger/30 bg-danger/5 px-2 py-1.5 text-[0.6875rem] text-danger"
+          role="alert"
+        >
           <XCircle size={11} aria-hidden="true" />
-          {state.message}
-        </p>
+          <span className="flex-1 break-words">{state.message}</span>
+          {/*
+            Refresh failures are usually because the IdP rotated keys or
+            the refresh token expired. Re-authorize is the actionable next
+            step — surface it inline so the user doesn't have to find the
+            primary button again.
+          */}
+          <button
+            type="button"
+            onClick={() => void runFlow()}
+            className="inline-flex h-6 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.625rem] text-accent hover:bg-accent/20"
+          >
+            <KeyRound size={10} aria-hidden="true" />
+            Re-authorize
+          </button>
+        </div>
       )}
       {state.status === 'device-pending' && state.device && (
         <DeviceCodeHint device={state.device} pollInfo={state.pollInfo} />
       )}
+
+      <ConfirmDialog
+        open={confirmClearOpen}
+        title="Clear OAuth2 token?"
+        description={
+          <p>
+            Wipes the cached access token, refresh token, expiry, and obtained scope. The IdP
+            configuration (client id, scopes, URLs) is kept. You will need to re-run the flow to get
+            a new token.
+          </p>
+        }
+        confirmLabel="Clear token"
+        tone="danger"
+        onCancel={() => setConfirmClearOpen(false)}
+        onConfirm={() => {
+          clear();
+          setConfirmClearOpen(false);
+        }}
+      />
     </div>
   );
 }
@@ -307,7 +346,7 @@ function DeviceCodeHint({
       role="status"
       aria-live="polite"
     >
-      <p className="text-text-primary">
+      <p className="flex flex-wrap items-center gap-1 text-text-primary">
         Visit{' '}
         <a
           href={device.verificationUri}
@@ -318,6 +357,32 @@ function DeviceCodeHint({
           {device.verificationUri}
         </a>{' '}
         and enter code: <code className="font-mono text-accent">{device.userCode}</code>
+        <button
+          type="button"
+          onClick={() => {
+            navigator.clipboard
+              .writeText(device.userCode)
+              .then(() =>
+                useWorkspaceStore.getState().pushToast({
+                  tone: 'success',
+                  title: 'Code copied',
+                  ttlMs: 1500,
+                }),
+              )
+              .catch(() =>
+                useWorkspaceStore.getState().pushToast({
+                  tone: 'error',
+                  title: 'Copy failed',
+                  detail: 'Clipboard access denied — copy the code manually.',
+                }),
+              );
+          }}
+          aria-label={`Copy device code ${device.userCode}`}
+          title="Copy device code"
+          className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-text-faint hover:text-text-primary"
+        >
+          <Copy size={10} aria-hidden="true" />
+        </button>
       </p>
       {device.verificationUriComplete && (
         <p className="text-text-dim">

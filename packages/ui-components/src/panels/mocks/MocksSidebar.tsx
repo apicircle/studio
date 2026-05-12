@@ -41,6 +41,11 @@ export function MocksSidebar() {
     id: string;
     name: string;
   } | null>(null);
+  const [pendingEndpointDelete, setPendingEndpointDelete] = useState<{
+    serverId: string;
+    endpointId: string;
+    label: string;
+  } | null>(null);
 
   // Filter servers by name; for each server, also keep only endpoints whose
   // path or method matches. A server stays visible if its own name matches
@@ -209,7 +214,12 @@ export function MocksSidebar() {
                             label: 'Delete',
                             icon: <Trash2 size={12} aria-hidden="true" />,
                             tone: 'danger',
-                            onSelect: () => removeMockEndpoint(server.id, endpoint.id),
+                            onSelect: () =>
+                              setPendingEndpointDelete({
+                                serverId: server.id,
+                                endpointId: endpoint.id,
+                                label: `${endpoint.method} ${endpoint.pathPattern}`,
+                              }),
                           },
                         ];
                         return (
@@ -274,6 +284,25 @@ export function MocksSidebar() {
         onConfirm={() => {
           if (pendingServerDelete) removeMock(pendingServerDelete.id);
           setPendingServerDelete(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={pendingEndpointDelete !== null}
+        title={`Delete endpoint "${pendingEndpointDelete?.label ?? ''}"?`}
+        description={
+          <p>
+            Removes this endpoint, its response body, validation rules, and conditional response
+            rules from the mock server. The server itself stays.
+          </p>
+        }
+        confirmLabel="Delete endpoint"
+        tone="danger"
+        onCancel={() => setPendingEndpointDelete(null)}
+        onConfirm={() => {
+          if (pendingEndpointDelete)
+            removeMockEndpoint(pendingEndpointDelete.serverId, pendingEndpointDelete.endpointId);
+          setPendingEndpointDelete(null);
         }}
       />
     </div>

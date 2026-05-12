@@ -19,6 +19,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { isNameAvailableInFolder } from '../../store/editorActions';
 import { cn } from '../../primitives/cn';
 import { KebabMenu } from '../../primitives/KebabMenu';
+import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { FolderAuthModal } from './FolderAuthModal';
 import { ImportModal } from './ImportModal';
 import { LinkedWorkspaceTreeSection } from './LinkedWorkspaceTreeSection';
@@ -61,6 +62,20 @@ export function EditorSidebar() {
   // `folder:<id>` or `request:<id>` so a folder and request with the same id
   // (impossible today, but cheap to be explicit) can't collide.
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
+  // Pending destructive deletes — null when no dialog is open. Captures the
+  // id + name so the confirm copy can name the target after the menu closes.
+  const [pendingRequestDelete, setPendingRequestDelete] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [pendingFolderDelete, setPendingFolderDelete] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  // Surfaces silent rejections from rename/create that the store already
+  // refuses (duplicate name, empty name). Without this, the inline input
+  // closes with no signal that anything went wrong.
+  const [renameError, setRenameError] = useState<string | null>(null);
   /**
    * Active name-first prompt for "New request" / "New folder". Lifted to the
    * workspace store so the sidebar header kebab (rendered above this tree by
@@ -242,22 +257,32 @@ export function EditorSidebar() {
             onSelectRequest={setActiveRequestId}
             onAddRequestInside={(parentId) => startCreate('request', parentId)}
             onAddFolderInside={(parentId) => startCreate('folder', parentId)}
-            onRemoveRequest={removeRequest}
-            onRemoveFolder={removeFolder}
             onDuplicateRequest={duplicateRequest}
             onDuplicateFolder={duplicateFolder}
             onEditFolderAuth={setAuthModalFolderId}
             renamingKey={renamingKey}
             onStartRename={setRenamingKey}
             onRenameFolder={(id, name) => {
+              const folder = folders[id];
+              if (folder && !validateNewName(folder.parentId, 'folder', name)) {
+                setRenameError(`A folder named "${name}" already exists here.`);
+                return;
+              }
               renameFolder(id, name);
               setRenamingKey(null);
             }}
             onRenameRequest={(id, name) => {
+              const req = requests[id];
+              if (req && !validateNewName(req.folderId, 'request', name)) {
+                setRenameError(`A request named "${name}" already exists here.`);
+                return;
+              }
               renameRequest(id, name);
               setRenamingKey(null);
             }}
             onCancelRename={() => setRenamingKey(null)}
+            onRequestRequestDelete={(id, name) => setPendingRequestDelete({ id, name })}
+            onRequestFolderDelete={(id, name) => setPendingFolderDelete({ id, name })}
             pendingCreate={pendingCreate}
             onStartCreate={startCreate}
             onCommitCreate={commitCreate}
@@ -274,6 +299,52 @@ export function EditorSidebar() {
           onClose={() => setAuthModalFolderId(null)}
         />
       )}
+
+      <ConfirmDialog
+        open={pendingRequestDelete !== null}
+        title={`Delete request "${pendingRequestDelete?.name ?? ''}"?`}
+        description={
+          <p>
+            Removes the request and any saved overrides for it. Run history is kept locally so you
+            can still inspect past responses.
+          </p>
+        }
+        confirmLabel="Delete request"
+        tone="danger"
+        onCancel={() => setPendingRequestDelete(null)}
+        onConfirm={() => {
+          if (pendingRequestDelete) removeRequest(pendingRequestDelete.id);
+          setPendingRequestDelete(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={pendingFolderDelete !== null}
+        title={`Delete folder "${pendingFolderDelete?.name ?? ''}"?`}
+        description={
+          <p>
+            Removes the folder and every request and subfolder inside it. This cannot be undone.
+          </p>
+        }
+        confirmLabel="Delete folder"
+        tone="danger"
+        typedConfirm="DELETE"
+        onCancel={() => setPendingFolderDelete(null)}
+        onConfirm={() => {
+          if (pendingFolderDelete) removeFolder(pendingFolderDelete.id);
+          setPendingFolderDelete(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={renameError !== null}
+        title="Rename rejected"
+        description={<p>{renameError}</p>}
+        confirmLabel="OK"
+        cancelLabel="Dismiss"
+        onCancel={() => setRenameError(null)}
+        onConfirm={() => setRenameError(null)}
+      />
     </div>
   );
 }
@@ -324,8 +395,10 @@ interface TreeNodeProps {
   onSelectRequest: (id: string) => void;
   onAddRequestInside: (parentId: string) => void;
   onAddFolderInside: (parentId: string) => void;
-  onRemoveRequest: (id: string) => void;
-  onRemoveFolder: (id: string) => void;
+  /** Open the destructive-confirm dialog for a request. */
+  onRequestRequestDelete: (id: string, name: string) => void;
+  /** Open the destructive-confirm dialog for a folder. */
+  onRequestFolderDelete: (id: string, name: string) => void;
   onDuplicateRequest: (id: string) => string | null;
   onDuplicateFolder: (id: string) => string | null;
   onEditFolderAuth: (folderId: string) => void;
@@ -360,8 +433,8 @@ function TreeNode(props: TreeNodeProps) {
     onSelectRequest,
     onAddRequestInside,
     onAddFolderInside,
-    onRemoveRequest,
-    onRemoveFolder,
+    onRequestRequestDelete,
+    onRequestFolderDelete,
     onDuplicateRequest,
     onDuplicateFolder,
     onEditFolderAuth,
@@ -403,6 +476,7 @@ function TreeNode(props: TreeNodeProps) {
               <RenameInput
                 initial={folder.name}
                 ariaLabel={`Rename folder ${folder.name}`}
+                isAvailable={(name) => validateNewName(folder.parentId, 'folder', name)}
                 onCommit={(next) => onRenameFolder(folder.id, next)}
                 onCancel={onCancelRename}
               />
@@ -493,15 +567,7 @@ function TreeNode(props: TreeNodeProps) {
                   label: 'Delete folder',
                   icon: <Trash2 size={12} aria-hidden="true" />,
                   tone: 'danger',
-                  onSelect: () => {
-                    if (
-                      window.confirm(
-                        `Delete folder "${folder.name}" and everything inside? This cannot be undone.`,
-                      )
-                    ) {
-                      onRemoveFolder(folder.id);
-                    }
-                  },
+                  onSelect: () => onRequestFolderDelete(folder.id, folder.name),
                 },
               ]}
             />
@@ -560,6 +626,7 @@ function TreeNode(props: TreeNodeProps) {
             <RenameInput
               initial={request.name}
               ariaLabel={`Rename request ${request.name}`}
+              isAvailable={(name) => validateNewName(request.folderId, 'request', name)}
               onCommit={(next) => onRenameRequest(request.id, next)}
               onCancel={onCancelRename}
             />
@@ -607,7 +674,7 @@ function TreeNode(props: TreeNodeProps) {
                 label: 'Delete request',
                 icon: <Trash2 size={12} aria-hidden="true" />,
                 tone: 'danger',
-                onSelect: () => onRemoveRequest(request.id),
+                onSelect: () => onRequestRequestDelete(request.id, request.name),
               },
             ]}
           />
@@ -620,44 +687,71 @@ function TreeNode(props: TreeNodeProps) {
 interface RenameInputProps {
   initial: string;
   ariaLabel: string;
+  /**
+   * Live duplicate-check used to mark the input invalid before commit.
+   * Returns true when `candidate` is available (no sibling collision).
+   */
+  isAvailable: (candidate: string) => boolean;
   onCommit: (next: string) => void;
   onCancel: () => void;
 }
 
-function RenameInput({ initial, ariaLabel, onCommit, onCancel }: RenameInputProps) {
+function RenameInput({ initial, ariaLabel, isAvailable, onCommit, onCancel }: RenameInputProps) {
   const [value, setValue] = useState(initial);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const trimmed = value.trim();
+  const duplicate = trimmed.length > 0 && trimmed !== initial && !isAvailable(trimmed);
 
   useEffect(() => {
     inputRef.current?.focus();
     inputRef.current?.select();
   }, []);
 
+  const tryCommit = () => {
+    if (!trimmed || trimmed === initial) {
+      onCancel();
+      return;
+    }
+    if (duplicate) return; // keep input open with the warning
+    onCommit(trimmed);
+  };
+
   return (
-    <input
-      ref={inputRef}
-      type="text"
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={() => {
-        const trimmed = value.trim();
-        if (trimmed && trimmed !== initial) onCommit(trimmed);
-        else onCancel();
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          const trimmed = value.trim();
-          if (trimmed && trimmed !== initial) onCommit(trimmed);
-          else onCancel();
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          onCancel();
-        }
-      }}
-      aria-label={ariaLabel}
-      className="h-6 flex-1 rounded-sm border border-accent bg-card px-1.5 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent/40"
-    />
+    <>
+      <input
+        ref={inputRef}
+        type="text"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => {
+          // Don't auto-commit when invalid — keeping the input open lets the
+          // user fix the duplicate without an error toast firing on blur.
+          if (!duplicate) tryCommit();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            tryCommit();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+        aria-label={ariaLabel}
+        aria-invalid={duplicate}
+        className={cn(
+          'h-6 flex-1 rounded-sm border bg-card px-1.5 text-xs text-text-primary focus:outline-none focus:ring-1',
+          duplicate
+            ? 'border-danger focus:border-danger focus:ring-danger/40'
+            : 'border-accent focus:border-accent focus:ring-accent/40',
+        )}
+      />
+      {duplicate && (
+        <span className="ml-1 text-[0.625rem] text-danger" role="alert">
+          Name already used
+        </span>
+      )}
+    </>
   );
 }
 
@@ -722,7 +816,7 @@ function CreateInput({ kind, depth, isAvailable, onCommit, onCancel }: CreateInp
             onCancel();
           }
         }}
-        aria-label={`Inline rename ${kind}`}
+        aria-label={`New ${kind} name`}
         aria-invalid={duplicate}
         placeholder={kind === 'folder' ? 'Folder name' : 'Request name'}
         className={cn(

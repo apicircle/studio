@@ -29,6 +29,13 @@ interface ThemeListProps {
   onCommit: () => void;
   /** Called when the user dismisses with Escape — reverts to the original theme. */
   onCancel: () => void;
+  /**
+   * Hands the parent shell a "revert + close" callback so it can fire it
+   * when the user clicks outside the parent popover or otherwise dismisses
+   * implicitly. Without this, outside-click would silently commit the live
+   * preview because the parent shell has no way to ask us to revert.
+   */
+  registerCancel?: (fn: (() => void) | null) => void;
 }
 
 /**
@@ -36,7 +43,7 @@ interface ThemeListProps {
  * preview. Snapshots the original theme on mount and reverts on cancel
  * so the user can browse without committing.
  */
-export function ThemeList({ onCommit, onCancel }: ThemeListProps) {
+export function ThemeList({ onCommit, onCancel, registerCancel }: ThemeListProps) {
   const themeId = useWorkspaceStore((s) => s.local?.ui.themeId ?? 'studio-dark');
   const setThemeId = useWorkspaceStore((s) => s.setThemeId);
   const optionRefs = useRef<Map<ThemeId, HTMLButtonElement>>(new Map());
@@ -45,6 +52,11 @@ export function ThemeList({ onCommit, onCancel }: ThemeListProps) {
   useEffect(() => {
     currentThemeRef.current = themeId;
   }, [themeId]);
+
+  // Tracks whether the user has explicitly committed the current selection.
+  // Used by the unmount-revert below — if the component unmounts without a
+  // commit (parent click-outside, parent unmount), we revert the live preview.
+  const committedRef = useRef(false);
 
   const groups = useMemo(() => groupThemes(ALL_THEMES), []);
   const flatOrder = useMemo(() => groups.flatMap((g) => g.themes.map((t) => t.id)), [groups]);
@@ -85,8 +97,33 @@ export function ThemeList({ onCommit, onCancel }: ThemeListProps) {
 
   const commit = () => {
     originalThemeRef.current = currentThemeRef.current;
+    committedRef.current = true;
     onCommit();
   };
+
+  // Hand the parent shell our revert-on-cancel function so click-outside
+  // and other implicit-dismiss paths can fire it before unmounting us.
+  // Without this, the parent has no way to undo the live preview.
+  useEffect(() => {
+    if (!registerCancel) return;
+    const fn = () => {
+      const original = originalThemeRef.current;
+      if (original !== currentThemeRef.current) setThemeId(original);
+      committedRef.current = true; // suppresses unmount-revert below
+    };
+    registerCancel(fn);
+    return () => registerCancel(null);
+  }, [registerCancel, setThemeId]);
+
+  // Belt-and-braces revert: if we unmount without an explicit commit (e.g.
+  // a parent that doesn't use registerCancel), restore the original.
+  useEffect(() => {
+    return () => {
+      if (committedRef.current) return;
+      const original = originalThemeRef.current;
+      if (original !== currentThemeRef.current) setThemeId(original);
+    };
+  }, [setThemeId]);
 
   const handleKey = (e: React.KeyboardEvent<HTMLUListElement>) => {
     if (e.key === 'ArrowDown') {
@@ -142,6 +179,7 @@ export function ThemeList({ onCommit, onCancel }: ThemeListProps) {
                     onClick={() => {
                       setThemeId(theme.id);
                       originalThemeRef.current = theme.id;
+                      committedRef.current = true;
                       onCommit();
                     }}
                     className={cn(

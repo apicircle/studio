@@ -212,10 +212,21 @@ function LinkedRequestEditorBody({
           )}
         </header>
         {overrideBody.type === 'none' ? (
-          <p className="rounded-sm border border-dashed border-border-subtle p-2 text-center text-[0.6875rem] text-text-dim">
-            Source body is &quot;none&quot;. Set a different body type from source to override
-            content.
-          </p>
+          <div className="space-y-2 rounded-sm border border-dashed border-border-subtle p-2 text-center text-[0.6875rem] text-text-dim">
+            <p>Source body is &quot;none&quot;. Pick an override body type to add content.</p>
+            <div className="flex flex-wrap justify-center gap-1">
+              {(['json', 'text', 'xml', 'urlencoded'] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => updatePatch({ body: { type: t, content: '' } })}
+                  className="inline-flex h-6 items-center rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.625rem] text-accent hover:bg-accent/20"
+                >
+                  Set to {t}
+                </button>
+              ))}
+            </div>
+          </div>
         ) : overrideBody.type === 'json' ||
           overrideBody.type === 'text' ||
           overrideBody.type === 'xml' ||

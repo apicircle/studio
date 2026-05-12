@@ -44,6 +44,59 @@ export function KeyValueRows({
   const addRow = () => onChange([...rows, { key: '', value: '', enabled: true }]);
   const removeRow = (index: number) => onChange(rows.filter((_, i) => i !== index));
 
+  /**
+   * Keyboard helpers for power users:
+   *  - Enter on the last row's value field adds a new row + focuses it
+   *  - Backspace on an empty row removes it + focuses the previous row
+   *  - ArrowUp / ArrowDown move focus between rows on the same column
+   *
+   * Without these, the editor was strictly mouse-driven.
+   */
+  const focusRow = (index: number, field: 'key' | 'value'): void => {
+    requestAnimationFrame(() => {
+      const next = document.querySelector<HTMLInputElement>(
+        `input[aria-label="${ariaLabel} ${field} ${index + 1}"]`,
+      );
+      next?.focus();
+      // For the value column under VariableAutocompleteField, the input
+      // selector still matches because the autocomplete renders an
+      // <input aria-label="…"> internally.
+    });
+  };
+
+  const onKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    index: number,
+    field: 'key' | 'value',
+  ): void => {
+    if (e.key === 'Enter' && field === 'value' && index === rows.length - 1) {
+      e.preventDefault();
+      addRow();
+      focusRow(index + 1, 'key');
+      return;
+    }
+    if (
+      e.key === 'Backspace' &&
+      rows[index].key === '' &&
+      rows[index].value === '' &&
+      rows.length > 1
+    ) {
+      e.preventDefault();
+      removeRow(index);
+      focusRow(Math.max(0, index - 1), field);
+      return;
+    }
+    if (e.key === 'ArrowDown' && index < rows.length - 1) {
+      e.preventDefault();
+      focusRow(index + 1, field);
+      return;
+    }
+    if (e.key === 'ArrowUp' && index > 0) {
+      e.preventDefault();
+      focusRow(index - 1, field);
+    }
+  };
+
   return (
     <div role="group" aria-label={ariaLabel} className="flex flex-col gap-1">
       {rows.length === 0 && (
@@ -57,7 +110,8 @@ export function KeyValueRows({
             type="checkbox"
             checked={row.enabled}
             onChange={(e) => update(index, { enabled: e.target.checked })}
-            aria-label={`Enable row ${index + 1}`}
+            // Row context restored — was a generic "Enable row N" before.
+            aria-label={`Enable ${ariaLabel} row ${index + 1}`}
             style={{ accentColor: 'rgb(var(--accent))' }}
           />
           <input
@@ -66,6 +120,7 @@ export function KeyValueRows({
             value={row.key}
             placeholder={keyPlaceholder}
             onChange={(e) => update(index, { key: e.target.value })}
+            onKeyDown={(e) => onKeyDown(e, index, 'key')}
             aria-label={`${ariaLabel} key ${index + 1}`}
             className="h-7 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
           />
@@ -86,6 +141,7 @@ export function KeyValueRows({
               value={row.value}
               placeholder={valuePlaceholder}
               onChange={(e) => update(index, { value: e.target.value })}
+              onKeyDown={(e) => onKeyDown(e, index, 'value')}
               aria-label={`${ariaLabel} value ${index + 1}`}
               className="h-7 flex-[2] rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
             />

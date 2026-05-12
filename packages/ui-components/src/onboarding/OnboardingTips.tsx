@@ -2,6 +2,23 @@ import { useEffect, useState } from 'react';
 import { Lightbulb, X } from 'lucide-react';
 
 const STORAGE_KEY = 'apicircle:onboarding-dismissed-v1';
+// Custom event the rest of the app can dispatch to replay the tour from
+// e.g. a "Re-launch onboarding" button in the Help Center.
+const REPLAY_EVENT = 'apicircle:onboarding-replay';
+
+/**
+ * Public re-launch handle — clears the dismissed marker and tells any
+ * mounted OnboardingTips instance to re-show. Used by HelpPanel's footer
+ * (audit gap A16: tour was dismiss-once-forever with no recovery).
+ */
+export function replayOnboarding(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Storage disabled — the dispatch below still re-shows the live tour.
+  }
+  window.dispatchEvent(new Event(REPLAY_EVENT));
+}
 
 const TIPS = [
   {
@@ -38,6 +55,12 @@ export function OnboardingTips() {
   // happy and so the panel doesn't flash on top of an already-dismissed state.
   useEffect(() => {
     setDismissed(readDismissed());
+    const onReplay = () => {
+      setDismissed(false);
+      setStep(0);
+    };
+    window.addEventListener(REPLAY_EVENT, onReplay);
+    return () => window.removeEventListener(REPLAY_EVENT, onReplay);
   }, []);
 
   const dismiss = () => {

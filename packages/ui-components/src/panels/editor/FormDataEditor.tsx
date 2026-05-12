@@ -3,6 +3,7 @@ import { FileUp, Plus, Trash2, X } from 'lucide-react';
 import type { FormDataRow, Request as ApiRequest } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
+import { useRowKeyboardNav } from './useRowKeyboardNav';
 
 interface FormDataEditorProps {
   request: ApiRequest;
@@ -48,6 +49,23 @@ export function FormDataEditor({ request }: FormDataEditorProps) {
     );
   };
 
+  // Enter on the last value field appends a text row; Arrow Up/Down move
+  // focus between rows on the same column. Adds default to text rows
+  // since they're the more common case.
+  const { onKeyDown } = useRowKeyboardNav({
+    ariaPrefix: 'Form-data row',
+    fields: ['key', 'value'],
+    rowCount: rows.length,
+    isRowEmpty: (i) => {
+      const r = rows[i];
+      if (!r) return false;
+      if (r.kind === 'text') return r.key === '' && r.value === '';
+      return r.key === '' && !r.slotId;
+    },
+    onAdd: () => addRow('text'),
+    onRemove: removeRow,
+  });
+
   return (
     <div role="group" aria-label="Form data" className="flex flex-col gap-1">
       {rows.length === 0 && (
@@ -66,6 +84,7 @@ export function FormDataEditor({ request }: FormDataEditorProps) {
           onRemove={removeRow}
           onPickFile={(file) => void attachFormFile(request.id, index, file)}
           onClearFile={() => void detachFormFile(request.id, index)}
+          onCellKeyDown={onKeyDown}
         />
       ))}
 
@@ -105,6 +124,8 @@ interface RowViewProps {
   onRemove: (index: number) => void;
   onPickFile: (file: File) => void;
   onClearFile: () => void;
+  /** Keyboard nav handler from useRowKeyboardNav. */
+  onCellKeyDown: (e: React.KeyboardEvent<HTMLElement>, rowIndex: number, field: string) => void;
 }
 
 function FormDataRowView({
@@ -115,6 +136,7 @@ function FormDataRowView({
   onRemove,
   onPickFile,
   onClearFile,
+  onCellKeyDown,
 }: RowViewProps) {
   const fileInput = useRef<HTMLInputElement | null>(null);
 
@@ -175,6 +197,7 @@ function FormDataRowView({
             row.kind === 'text' ? { ...row, key: e.target.value } : { ...row, key: e.target.value },
           )
         }
+        onKeyDown={(e) => onCellKeyDown(e, index, 'key')}
         placeholder="Field name"
         aria-label={`Form-data row ${index + 1} key`}
         className="h-7 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
@@ -185,6 +208,7 @@ function FormDataRowView({
           type="text"
           value={row.value}
           onChange={(e) => onUpdate(index, { ...row, value: e.target.value })}
+          onKeyDown={(e) => onCellKeyDown(e, index, 'value')}
           placeholder="Field value"
           aria-label={`Form-data row ${index + 1} value`}
           className="h-7 flex-[2] rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"

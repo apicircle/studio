@@ -17,7 +17,7 @@ import type {
   RequestAuth,
   RequestAuthType,
 } from '@apicircle/shared';
-import { defaultAuthFor } from '@apicircle/shared';
+import { defaultAuthFor, validateAwsRegion, validateJsonString } from '@apicircle/shared';
 import { SecretInput } from '../../primitives/SecretInput';
 import { cn } from '../../primitives/cn';
 import { OAuth2FlowActions } from './OAuth2FlowActions';
@@ -119,7 +119,8 @@ export function AuthEditor({
           id={`auth-type-${idPrefix}`}
           value={auth.type}
           onChange={(e) => onChangeType(e.target.value as RequestAuthType)}
-          aria-label="Auth type"
+          // The visible <label htmlFor=...> already names this select; an
+          // explicit aria-label here doubled the screen-reader readout.
           className={cn(inputClass, 'max-w-sm')}
         >
           {AUTH_GROUPS.map((group) => (
@@ -201,9 +202,9 @@ export function AuthEditor({
               />
             </Field>
           </div>
-          <Field label="Add to">
+          <Field label="Location">
             <select
-              aria-label="API key add-to"
+              aria-label="API key location"
               value={auth.addTo}
               onChange={(e) => update({ addTo: e.target.value as 'header' | 'query' | 'cookie' })}
               className={cn(inputClass, 'max-w-xs')}
@@ -441,52 +442,12 @@ function OAuth2Form<T extends OAuth2Like>({
         })}
         {extra}
       </div>
-      <TokenStatePanel auth={auth} onChange={onChange} />
-    </div>
-  );
-}
-
-function TokenStatePanel<T extends OAuth2Like>({
-  auth,
-  onChange,
-}: {
-  auth: T;
-  onChange: (patch: Partial<T>) => void;
-}) {
-  const tokenType = (auth as unknown as { tokenType?: string }).tokenType ?? 'Bearer';
-  const accessToken = (auth as unknown as { accessToken?: string }).accessToken ?? '';
-  const expiresAt = (auth as unknown as { expiresAt?: string | null }).expiresAt ?? null;
-  return (
-    <div className="rounded-sm border border-border-subtle bg-surface p-3">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-[0.6875rem] font-medium uppercase tracking-wide text-text-muted">
-          Token
-        </span>
-        <span className="text-[0.6875rem] text-text-dim">
-          {accessToken ? (expiresAt ? `Expires ${expiresAt}` : 'Stored') : 'Not yet fetched'}
-        </span>
-      </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field label="Token type">
-          <input
-            aria-label="Token type"
-            value={tokenType}
-            onChange={(e) => onChange({ tokenType: e.target.value } as unknown as Partial<T>)}
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Access token (paste manually for now)">
-          <SecretInput
-            ariaLabel="Access token"
-            value={accessToken}
-            onChange={(v) => onChange({ accessToken: v } as unknown as Partial<T>)}
-          />
-        </Field>
-      </div>
-      <p className="mt-2 text-[0.6875rem] text-text-dim">
-        Automatic token fetch is queued for a follow-up phase. Paste a token from your provider —
-        the request will send it as <code>{tokenType} &lt;token&gt;</code>.
-      </p>
+      {/*
+        Token acquisition + cached token state are owned by OAuth2FlowActions
+        (rendered alongside the OAuth2 form by the AuthTab consumer). The
+        previous TokenStatePanel here was stale code from before the flow
+        runner shipped — paste-a-token-manually was a temporary workaround.
+      */}
     </div>
   );
 }
@@ -518,13 +479,7 @@ function AwsSigV4Form({
         />
       </Field>
       <Field label="Region">
-        <input
-          aria-label="AWS region"
-          value={auth.region}
-          onChange={(e) => update({ region: e.target.value })}
-          className={inputClass}
-          placeholder="us-east-1"
-        />
+        <RegionInput value={auth.region} onChange={(v) => update({ region: v })} />
       </Field>
       <Field label="Service">
         <input
@@ -542,9 +497,9 @@ function AwsSigV4Form({
           onChange={(v) => update({ sessionToken: v })}
         />
       </Field>
-      <Field label="Add to">
+      <Field label="Signature location">
         <select
-          aria-label="SigV4 add-to"
+          aria-label="SigV4 location"
           value={auth.addTo}
           onChange={(e) => update({ addTo: e.target.value as 'header' | 'query' })}
           className={inputClass}
@@ -641,21 +596,21 @@ function JwtBearerForm({
       </div>
       <div className={gridClass}>
         <Field label="Header overrides (JSON)">
-          <textarea
-            aria-label="JWT header"
+          <JsonTextarea
+            ariaLabel="JWT header"
             value={auth.jwtHeaders}
-            onChange={(e) => update({ jwtHeaders: e.target.value })}
-            spellCheck={false}
-            className="min-h-[80px] w-full rounded-sm border border-border bg-card p-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+            onChange={(v) => update({ jwtHeaders: v })}
+            allowEmpty
+            allowRoots="object"
           />
         </Field>
         <Field label="Payload (JSON)">
-          <textarea
-            aria-label="JWT payload"
+          <JsonTextarea
+            ariaLabel="JWT payload"
             value={auth.payload}
-            onChange={(e) => update({ payload: e.target.value })}
-            spellCheck={false}
-            className="min-h-[80px] w-full rounded-sm border border-border bg-card p-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+            onChange={(v) => update({ payload: v })}
+            allowEmpty
+            allowRoots="object"
           />
         </Field>
       </div>
@@ -729,6 +684,108 @@ function DigestNtlmForm({
           ? 'Digest is challenge-based. Credentials are sent only after the server returns a 401 with a Digest challenge. Automatic challenge handling is planned for a future phase.'
           : 'NTLM is a multi-round handshake. Credentials are stored and will be applied once handshake support lands in a follow-up phase.'}
       </p>
+    </div>
+  );
+}
+
+/**
+ * JSON-validating textarea — surfaces parse errors inline as the user
+ * types so they don't only learn at Send time. Used by the JWT header /
+ * payload fields (audit gap #26: invalid JSON was silently accepted).
+ */
+function JsonTextarea({
+  ariaLabel,
+  value,
+  onChange,
+  allowEmpty,
+  allowRoots,
+}: {
+  ariaLabel: string;
+  value: string;
+  onChange: (next: string) => void;
+  allowEmpty?: boolean;
+  allowRoots?: 'object' | 'array' | 'any';
+}) {
+  const result = validateJsonString(value, { allowEmpty, allowRoots });
+  const invalid = !result.ok;
+  return (
+    <div className="flex flex-col">
+      <textarea
+        aria-label={ariaLabel}
+        aria-invalid={invalid}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        spellCheck={false}
+        className={cn(
+          'min-h-[80px] w-full rounded-sm border bg-card p-2 font-mono text-[0.6875rem] text-text-primary focus:outline-none focus:ring-1',
+          invalid
+            ? 'border-danger focus:border-danger focus:ring-danger/40'
+            : 'border-border focus:border-accent focus:ring-accent/30',
+        )}
+      />
+      {invalid && (
+        <p role="alert" className="mt-1 text-[0.625rem] text-danger">
+          {result.reason}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * AWS region input with inline validation. Catches typos like
+ * `us-eastt-1` before send (audit gap #27 — region was free text and
+ * silently accepted any value). Datalist suggests common regions
+ * without locking the user out of new ones.
+ */
+const COMMON_AWS_REGIONS = [
+  'us-east-1',
+  'us-east-2',
+  'us-west-1',
+  'us-west-2',
+  'eu-west-1',
+  'eu-west-2',
+  'eu-west-3',
+  'eu-central-1',
+  'eu-north-1',
+  'ap-south-1',
+  'ap-southeast-1',
+  'ap-southeast-2',
+  'ap-northeast-1',
+  'ap-northeast-2',
+  'sa-east-1',
+  'ca-central-1',
+];
+
+function RegionInput({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+  const result = validateAwsRegion(value);
+  const invalid = !result.ok && value.trim().length > 0;
+  return (
+    <div className="flex flex-col">
+      <input
+        aria-label="AWS region"
+        list="aws-region-suggestions"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn(
+          'h-8 w-full rounded-sm border bg-card px-2 text-xs text-text-primary focus:outline-none focus:ring-1',
+          invalid
+            ? 'border-danger focus:border-danger focus:ring-danger/40'
+            : 'border-border focus:border-accent focus:ring-accent/30',
+        )}
+        placeholder="us-east-1"
+        aria-invalid={invalid || undefined}
+      />
+      <datalist id="aws-region-suggestions">
+        {COMMON_AWS_REGIONS.map((r) => (
+          <option key={r} value={r} />
+        ))}
+      </datalist>
+      {invalid && (
+        <p role="alert" className="mt-1 text-[0.625rem] text-danger">
+          {result.reason}
+        </p>
+      )}
     </div>
   );
 }

@@ -25,7 +25,21 @@ export const HELP_SECTIONS: HelpSection[] = [
     id: 'workspace-and-git',
     title: 'Workspace & Git',
     body: 'The Workspace panel is where you connect a GitHub repo, create a working branch, push, and refresh. Local-only mode (no GitHub session) keeps the experience usable for scratch work. With a session, the working branch model lets you safely sync changes: every push targets your branch, and a PR closes the loop. Refresh runs a 3-way diff against the last pulled snapshot and opens the resolver when local and remote both touched the same entity.',
-    keywords: ['github', 'pat', 'token', 'push', 'pull', 'branch', 'sync', 'pr', 'pull request'],
+    keywords: [
+      'github',
+      'pat',
+      'personal',
+      'access',
+      'token',
+      'push',
+      'pull',
+      'branch',
+      'sync',
+      'pr',
+      'pull request',
+      'authentication',
+      'oauth',
+    ],
   },
   {
     id: 'editor',
@@ -142,13 +156,13 @@ export const HELP_SECTIONS: HelpSection[] = [
   {
     id: 'keyboard-shortcuts',
     title: 'Keyboard Shortcuts',
-    body: 'Send: Ctrl+Enter (Cmd+Enter on macOS). Switch panels: Ctrl+1 through Ctrl+7 for Workspace, Link Workspace, Editor, Environments, Execution, History, Help. Open Secret Vault: Ctrl+K. Refresh the working branch: Ctrl+Shift+R. New request: Ctrl+N. Shortcuts that would conflict with browser defaults (like plain Ctrl+R) take Shift to disambiguate.',
-    keywords: ['shortcut', 'hotkey', 'keyboard', 'ctrl', 'cmd'],
+    body: 'Send the active request: Ctrl+Enter (Cmd+Enter on macOS) — works inside the body editor too.\n\nSwitch panels with Ctrl+1 through Ctrl+9: 1=Workspace, 2=Link Workspace, 3=Editor, 4=Environments, 5=Execution, 6=History, 7=Mocks, 8=MCP, 9=Help Center.\n\nOpen the Secret Vault tab in the inspector dock: Ctrl+K.\n\nRefresh the working branch: Ctrl+Shift+R (plain Ctrl+R is the browser reload).\n\nNew request (only when the Editor panel is active): Ctrl+N.\n\nText-size scaling: Ctrl+Shift+= to grow, Ctrl+Shift+- to shrink, Ctrl+Shift+0 to reset to 100%. Works even while typing.',
+    keywords: ['shortcut', 'hotkey', 'keyboard', 'ctrl', 'cmd', 'send', 'switch panel'],
   },
   {
     id: 'troubleshooting',
     title: 'Troubleshooting',
-    body: '"Token missing scope": PAT lacks repo or pull_request scope — open Sessions, update the token, retry. "Workspace conflicted": refresh found divergent edits — pick a side per entity in the resolver. "Attachment too large": files over 100 MB are refused (GitHub blob limit); 10–100 MB warns and recommends LFS. "This branch already has content": first-pull banner — pull before pushing. Mock startup errors: port in use, spec parse failed, or OAuth2 callback never fires (Desktop bridge needed for browser-redirect grants).',
+    body: '"Token missing scope": your PAT lacks the repo or pull_request scope. Open the Secret Vault → Sessions, update the token, retry the action.\n\n"Workspace conflicted": Refresh found divergent edits between your synced doc and the remote branch. The resolver opens — pick a side per entity, then merge.\n\n"Attachment too large": files over 100 MB are refused (GitHub blob limit). Files between 10 and 100 MB warn and recommend LFS.\n\n"This branch already has content": first-pull banner. Pull before pushing — your local working branch hasn\'t seen the remote workspace.json yet.\n\nMock server startup errors: port already in use (stop the conflicting server first), spec parse failed (check the OpenAPI/Postman JSON is valid), or OAuth2 callback never fires (browser-redirect grants need the Desktop App).',
     keywords: [
       'error',
       'fix',
@@ -160,6 +174,7 @@ export const HELP_SECTIONS: HelpSection[] = [
       'port',
       'oauth',
       'first pull',
+      'troubleshoot',
     ],
   },
 ];
@@ -169,13 +184,28 @@ export const HELP_SECTIONS: HelpSection[] = [
  * the matching sections in the original order so the user gets a stable
  * results layout rather than relevance-ranked.
  */
+/**
+ * Multi-token AND search across title + body + keywords. Splits the query
+ * on whitespace; each token must match somewhere in the section. This
+ * fixes the previous behavior where "personal access token" returned no
+ * matches even though sections contained "Personal Access Token (PAT)" —
+ * the old single-substring filter required the entire phrase to appear
+ * verbatim.
+ *
+ * Tokens that look like CSS classes / leading punctuation (e.g. `:`, `,`)
+ * are stripped to avoid noise from accidental copy-paste. Trailing
+ * punctuation (`?`, `.`, `,`) is also stripped from each token.
+ */
 export function searchHelp(query: string): HelpSection[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return HELP_SECTIONS;
+  const tokens = query
+    .toLowerCase()
+    .split(/\s+/)
+    .map((t) => t.replace(/^[^\p{L}\p{N}_-]+|[^\p{L}\p{N}_-]+$/gu, ''))
+    .filter((t) => t.length > 0);
+  if (tokens.length === 0) return HELP_SECTIONS;
   return HELP_SECTIONS.filter((section) => {
-    if (section.title.toLowerCase().includes(q)) return true;
-    if (section.body.toLowerCase().includes(q)) return true;
-    if (section.keywords?.some((kw) => kw.toLowerCase().includes(q))) return true;
-    return false;
+    const haystack =
+      `${section.title}\n${section.body}\n${(section.keywords ?? []).join(' ')}`.toLowerCase();
+    return tokens.every((tok) => haystack.includes(tok));
   });
 }

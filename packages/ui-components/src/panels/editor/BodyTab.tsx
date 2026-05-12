@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Maximize2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Maximize2, Sparkles } from 'lucide-react';
+import { useWorkspaceStore as useWorkspaceStoreForToast } from '../../store/workspaceStore';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import type { BodyType, Request as ApiRequest, RequestBody } from '@apicircle/shared';
 import { applyContentTypeForBodyType } from '@apicircle/core';
@@ -10,6 +11,7 @@ import { MonacoBodyEditor } from '../../editors/MonacoBodyEditor';
 import { MonacoEditorBase } from '../../editors/MonacoEditorBase';
 import { FormDataEditor } from './FormDataEditor';
 import { BinaryEditor } from './BinaryEditor';
+import { UrlencodedEditor } from './UrlencodedEditor';
 
 interface BodyTabProps {
   request: ApiRequest;
@@ -61,10 +63,14 @@ export function BodyTab({ request }: BodyTabProps) {
     setRequestBody(request.id, { ...request.body, content });
   };
 
+  // urlencoded now has a dedicated key/value editor (audit gap A6 — raw
+  // text Monaco was surprising for a key/value format). Keep it out of
+  // the Monaco branch so the new editor renders below.
   const showMonaco =
     request.body.type !== 'none' &&
     request.body.type !== 'form-data' &&
-    request.body.type !== 'binary';
+    request.body.type !== 'binary' &&
+    request.body.type !== 'urlencoded';
 
   const contentType = findContentType(request.headers);
   const editorAriaLabel = 'Request body';
@@ -129,13 +135,40 @@ export function BodyTab({ request }: BodyTabProps) {
   return (
     <div className="flex h-full flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
-        <div role="radiogroup" aria-label="Body type" className="flex flex-wrap gap-1">
-          {BODY_TYPES.map((bt) => (
+        <div
+          role="radiogroup"
+          aria-label="Body type"
+          className="flex flex-wrap gap-1"
+          onKeyDown={(e) => {
+            // Arrow-key cycle through body types (WAI-ARIA radiogroup pattern).
+            // Without this, keyboard users had to Tab through every option.
+            const currentIdx = BODY_TYPES.findIndex((b) => b.id === request.body.type);
+            let next = currentIdx;
+            if (e.key === 'ArrowRight' || e.key === 'ArrowDown')
+              next = (currentIdx + 1) % BODY_TYPES.length;
+            else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
+              next = (currentIdx - 1 + BODY_TYPES.length) % BODY_TYPES.length;
+            else if (e.key === 'Home') next = 0;
+            else if (e.key === 'End') next = BODY_TYPES.length - 1;
+            else return;
+            e.preventDefault();
+            onChangeType(BODY_TYPES[next].id);
+            requestAnimationFrame(() => {
+              const target = e.currentTarget.querySelector<HTMLElement>(
+                `[data-radio-index="${next}"]`,
+              );
+              target?.focus();
+            });
+          }}
+        >
+          {BODY_TYPES.map((bt, idx) => (
             <button
               key={bt.id}
               type="button"
               role="radio"
               aria-checked={request.body.type === bt.id}
+              tabIndex={request.body.type === bt.id ? 0 : -1}
+              data-radio-index={idx}
               onClick={() => onChangeType(bt.id)}
               className={cn(
                 'inline-flex h-6 items-center rounded-sm border px-2 text-[0.6875rem] transition-colors',
@@ -149,17 +182,45 @@ export function BodyTab({ request }: BodyTabProps) {
           ))}
         </div>
 
-        {showMonaco && (
-          <button
-            type="button"
-            onClick={() => setFullscreen(true)}
-            aria-label="Fullscreen request body"
-            title="Fullscreen (Esc to exit)"
-            className="inline-flex h-6 w-6 items-center justify-center rounded-sm border border-border bg-surface text-text-muted hover:text-text-primary"
-          >
-            <Maximize2 size={12} />
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {request.body.type === 'json' && (
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  const reformatted = JSON.stringify(JSON.parse(request.body.content), null, 2);
+                  onChangeContent(reformatted);
+                } catch (err) {
+                  useWorkspaceStoreForToast.getState().pushToast({
+                    tone: 'error',
+                    title: 'Cannot prettify',
+                    detail:
+                      err instanceof Error
+                        ? `Body is not valid JSON: ${err.message}`
+                        : 'Body is not valid JSON.',
+                  });
+                }
+              }}
+              aria-label="Prettify JSON body"
+              title="Prettify JSON (Ctrl+Shift+F equivalent)"
+              className="inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-accent hover:text-text-primary"
+            >
+              <Sparkles size={11} />
+              Prettify
+            </button>
+          )}
+          {showMonaco && (
+            <button
+              type="button"
+              onClick={() => setFullscreen(true)}
+              aria-label="Fullscreen request body"
+              title="Fullscreen (Esc to exit)"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-sm border border-border bg-surface text-text-muted hover:text-text-primary"
+            >
+              <Maximize2 size={12} />
+            </button>
+          )}
+        </div>
       </div>
 
       {request.body.type === 'none' && (
@@ -171,6 +232,8 @@ export function BodyTab({ request }: BodyTabProps) {
       {request.body.type === 'form-data' && <FormDataEditor request={request} />}
 
       {request.body.type === 'binary' && <BinaryEditor request={request} />}
+
+      {request.body.type === 'urlencoded' && <UrlencodedEditor request={request} />}
 
       {showMonaco && !fullscreen && (
         <div className="flex min-h-0 flex-1 overflow-hidden rounded-sm border border-border">
@@ -199,8 +262,23 @@ function JsonSchemaPicker({ request }: { request: ApiRequest }) {
   const setRequestBodySchemaId = useWorkspaceStore((s) => s.setRequestBodySchemaId);
   const openRightDockTab = useWorkspaceStore((s) => s.openRightDockTab);
 
+  // Quick parse-validity cue. Monaco's JSON language service surfaces full
+  // schema errors as inline markers; this pill is the at-a-glance status
+  // so the user knows whether the body is even parseable before reading
+  // squiggles. Empty body is silent (no opinion).
+  const parseStatus = useMemo(() => {
+    const trimmed = request.body.content.trim();
+    if (trimmed === '') return 'empty' as const;
+    try {
+      JSON.parse(trimmed);
+      return 'ok' as const;
+    } catch (e) {
+      return { kind: 'error' as const, message: e instanceof Error ? e.message : 'parse failed' };
+    }
+  }, [request.body.content]);
+
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <label
         className="text-[0.6875rem] uppercase tracking-wide text-text-dim"
         htmlFor={`schema-${request.id}`}
@@ -228,6 +306,28 @@ function JsonSchemaPicker({ request }: { request: ApiRequest }) {
       >
         Manage…
       </button>
+      {parseStatus === 'ok' && (
+        <span
+          className="inline-flex h-6 items-center gap-1 rounded-sm border border-success/40 bg-success/10 px-2 text-[0.625rem] uppercase tracking-wider text-success"
+          aria-label="Body parses as valid JSON"
+        >
+          ✓ Valid JSON
+        </span>
+      )}
+      {typeof parseStatus === 'object' && parseStatus.kind === 'error' && (
+        <span
+          role="alert"
+          className="inline-flex h-6 max-w-md items-center gap-1 truncate rounded-sm border border-danger/40 bg-danger/10 px-2 text-[0.625rem] text-danger"
+          title={parseStatus.message}
+        >
+          ✗ {parseStatus.message}
+        </span>
+      )}
+      {request.bodySchemaId && parseStatus === 'ok' && (
+        <span className="text-[0.625rem] text-text-dim">
+          Schema errors (if any) appear inline in the editor.
+        </span>
+      )}
     </div>
   );
 }

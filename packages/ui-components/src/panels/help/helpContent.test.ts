@@ -2,14 +2,23 @@ import { describe, expect, it } from 'vitest';
 import { HELP_SECTIONS, searchHelp } from './helpContent';
 
 describe('Help Center content', () => {
-  it('every section is under the 80-word body cap', () => {
+  it('every section is under the body cap', () => {
+    // Soft cap with editorial wiggle. The plan §11.3 says "If we need
+    // more than 80 words for a section, the section is doing too much" —
+    // 100 keeps the spirit while not failing CI on a one-word edit.
+    //
+    // Exceptions: the keyboard-shortcuts + troubleshooting sections are
+    // reference material organized into per-scenario paragraphs (audit gap
+    // A4 — they replaced unreadable run-on prose). The list-of-cases form
+    // is intentionally longer; capped separately at 200 to keep them
+    // bounded without forcing the runs-on-prose regression.
+    const SHORT_CAP = 100;
+    const REFERENCE_CAP = 200;
+    const REFERENCE_SECTIONS = new Set(['keyboard-shortcuts', 'troubleshooting']);
     for (const section of HELP_SECTIONS) {
       const wordCount = section.body.split(/\s+/).filter(Boolean).length;
-      // Soft cap with a small margin for editorial wiggle. The plan §11.3
-      // says "If we need more than 80 words for a section, the section is
-      // doing too much" — 100 keeps the spirit while not failing CI on
-      // a one-word edit.
-      expect(wordCount, `${section.id} body word count`).toBeLessThanOrEqual(100);
+      const cap = REFERENCE_SECTIONS.has(section.id) ? REFERENCE_CAP : SHORT_CAP;
+      expect(wordCount, `${section.id} body word count`).toBeLessThanOrEqual(cap);
     }
   });
 

@@ -256,12 +256,16 @@ describe('HistoryPanel — clear history', () => {
     });
   }
 
-  it('per-row delete removes only that run', async () => {
+  it('per-row delete removes only that run after confirmation', async () => {
     seedTwoRuns();
     renderHistory();
     const dropRow = screen.getByText('Drop me').closest('li');
     if (!dropRow) throw new Error('row not found');
+    // Trash icon now opens a ConfirmDialog (audit fix: per-row delete
+    // wasn't confirmed even though Clear All was — inconsistent).
     await userEvent.click(within(dropRow).getByRole('button', { name: /Delete request run/i }));
+    expect(screen.getByText('Drop me')).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete run' }));
     expect(screen.queryByText('Drop me')).not.toBeInTheDocument();
     expect(screen.getByText('Keep me')).toBeInTheDocument();
     const remaining = useWorkspaceStore.getState().local!.history.requestRuns;

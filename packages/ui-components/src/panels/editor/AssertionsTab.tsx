@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import type { Assertion, Request as ApiRequest } from '@apicircle/shared';
 import { generateId } from '@apicircle/shared';
-import { Crosshair, Plus, Trash2 } from 'lucide-react';
+import { CheckCircle2, Crosshair, Plus, Trash2, XCircle } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { JsonPathPicker } from './JsonPathPicker';
 import { Select } from '../../primitives/Select';
+import { cn } from '../../primitives/cn';
+import { useRowKeyboardNav } from './useRowKeyboardNav';
 
 interface AssertionsTabProps {
   request: ApiRequest;
@@ -32,9 +34,21 @@ function newAssertion(): Assertion {
 
 export function AssertionsTab({ request }: AssertionsTabProps) {
   const setRequestAssertions = useWorkspaceStore((s) => s.setRequestAssertions);
-  const lastRun = useWorkspaceStore((s) => s.lastRun[request.id] ?? null);
   const lastRunBody = useWorkspaceStore((s) => s.lastRun[request.id]?.body ?? '');
   const lastRunBodyKind = useWorkspaceStore((s) => s.lastRun[request.id]?.bodyKind ?? null);
+  // Most-recent run for this request from history. Source of truth for the
+  // per-row assertion verdict — `lastRun` (ExecutionResult) doesn't carry
+  // assertion verdicts, but `RequestRun.assertions` does and is authoritative.
+  const lastRunAssertions = useWorkspaceStore((s) => {
+    const run = s.local?.history.requestRuns.find((r) => r.requestId === request.id);
+    return run?.assertions ?? null;
+  });
+  const verdictById = new Map<string, { passed: boolean; detail?: string }>();
+  if (lastRunAssertions) {
+    for (const a of lastRunAssertions) {
+      verdictById.set(a.assertionId, { passed: a.passed, detail: a.detail });
+    }
+  }
   const [pickerForAssertionId, setPickerForAssertionId] = useState<string | null>(null);
 
   const update = (index: number, patch: Partial<Assertion>) => {
@@ -50,6 +64,24 @@ export function AssertionsTab({ request }: AssertionsTabProps) {
       request.assertions.filter((_, i) => i !== index),
     );
 
+  // Enter on the last row's "expected" field appends a new assertion;
+  // Backspace on an empty assertion removes it; Arrow Up/Down move focus
+  // between rows on the same column.
+  const { onKeyDown } = useRowKeyboardNav({
+    ariaPrefix: 'Assertion',
+    fields: ['kind', 'target', 'op', 'expected'],
+    rowCount: request.assertions.length,
+    isRowEmpty: (index) => {
+      const a = request.assertions[index];
+      return (
+        !a ||
+        ((a.target === undefined || a.target === '') && (a.expected === '' || a.expected === 0))
+      );
+    },
+    onAdd: add,
+    onRemove: remove,
+  });
+
   return (
     <div role="group" aria-label="Assertions" className="flex flex-col gap-2">
       {request.assertions.length === 0 && (
@@ -59,14 +91,13 @@ export function AssertionsTab({ request }: AssertionsTabProps) {
       )}
       {request.assertions.map((a, i) => {
         const def = KINDS.find((k) => k.id === a.kind)!;
-        const runResult = lastRun
-          ? null // wired below — assertions land on RequestRun history, not lastRun
-          : null;
+        const verdict = verdictById.get(a.id);
         return (
           <div key={a.id} className="flex flex-wrap items-center gap-2">
             <Select
               value={a.kind}
               onChange={(e) => update(i, { kind: e.target.value as Assertion['kind'] })}
+              onKeyDown={(e) => onKeyDown(e, i, 'kind')}
               aria-label={`Assertion ${i + 1} kind`}
             >
               {KINDS.map((k) => (
@@ -81,6 +112,7 @@ export function AssertionsTab({ request }: AssertionsTabProps) {
                   type="text"
                   value={a.target ?? ''}
                   onChange={(e) => update(i, { target: e.target.value })}
+                  onKeyDown={(e) => onKeyDown(e, i, 'target')}
                   placeholder={a.kind === 'header' ? 'Header name' : 'JSON path'}
                   aria-label={`Assertion ${i + 1} target`}
                   className="h-7 flex-1 rounded-sm border border-border bg-card px-2 text-xs"
@@ -108,6 +140,7 @@ export function AssertionsTab({ request }: AssertionsTabProps) {
             <Select
               value={a.op}
               onChange={(e) => update(i, { op: e.target.value as Assertion['op'] })}
+              onKeyDown={(e) => onKeyDown(e, i, 'op')}
               aria-label={`Assertion ${i + 1} op`}
             >
               {OPS.map((o) => (
@@ -124,6 +157,7 @@ export function AssertionsTab({ request }: AssertionsTabProps) {
                 const asNumber = Number(v);
                 update(i, { expected: v !== '' && Number.isFinite(asNumber) ? asNumber : v });
               }}
+              onKeyDown={(e) => onKeyDown(e, i, 'expected')}
               placeholder="Expected"
               aria-label={`Assertion ${i + 1} expected`}
               className="h-7 flex-1 rounded-sm border border-border bg-card px-2 text-xs"
@@ -136,7 +170,27 @@ export function AssertionsTab({ request }: AssertionsTabProps) {
             >
               <Trash2 size={12} />
             </button>
-            {runResult /* placeholder slot for verdict pill */}
+            {verdict && (
+              <span
+                role="status"
+                aria-live="polite"
+                aria-label={`Last run: assertion ${verdict.passed ? 'passed' : 'failed'}`}
+                title={verdict.detail ?? (verdict.passed ? 'passed' : 'failed')}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider',
+                  verdict.passed
+                    ? 'border-success/40 bg-success/10 text-success'
+                    : 'border-danger/40 bg-danger/10 text-danger',
+                )}
+              >
+                {verdict.passed ? (
+                  <CheckCircle2 size={10} aria-hidden="true" />
+                ) : (
+                  <XCircle size={10} aria-hidden="true" />
+                )}
+                {verdict.passed ? 'Pass' : 'Fail'}
+              </span>
+            )}
           </div>
         );
       })}

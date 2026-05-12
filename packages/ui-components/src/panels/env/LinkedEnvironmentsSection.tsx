@@ -1,11 +1,32 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Link2, Lock, Package, RotateCcw, Trash2 } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Link2,
+  Lock,
+  Package,
+  RotateCcw,
+  Trash2,
+} from 'lucide-react';
 import type {
   EnvironmentVariable,
   EnvironmentVariableOverride,
   LinkedWorkspace,
 } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+
+function reportError(title: string, err: unknown): void {
+  const detail = err instanceof Error ? err.message : String(err);
+  useWorkspaceStore.getState().pushToast({ tone: 'error', title, detail });
+}
+
+const safe = <T,>(value: T | Promise<T>, title: string): Promise<T | undefined> =>
+  Promise.resolve(value).catch((err) => {
+    reportError(title, err);
+    return undefined;
+  });
 
 /**
  * Renders every linked workspace's environments below the consumer's
@@ -164,7 +185,9 @@ function LinkedEnvVarTable({
       </ul>
       <AddLinkedVarButton
         existingKeys={[...sourceVariables.map((v) => v.key), ...consumerOnlyKeys]}
-        onAdd={(varKey) => setOverride(link.id, envName, varKey, { value: '' })}
+        onAdd={(varKey) =>
+          void safe(setOverride(link.id, envName, varKey, { value: '' }), 'Could not add override')
+        }
       />
       <p className="mt-2 text-[0.625rem] text-text-dim">
         Reset returns this row to the source workspace&apos;s value. Soft-delete hides a source
@@ -188,6 +211,7 @@ function LinkedEnvVarRow({
   const setOverride = useWorkspaceStore((s) => s.setLinkedEnvVarOverride);
   const clearOverride = useWorkspaceStore((s) => s.clearLinkedEnvVarOverride);
   const varKey = sourceVariable?.key ?? override!.varKey;
+  const [revealed, setRevealed] = useState(false);
 
   // Compute the effective row: source merged with the override.
   const removed = override?.removed === true;
@@ -197,7 +221,10 @@ function LinkedEnvVarRow({
   const isConsumerOnly = sourceVariable === null;
 
   const onValueChange = (next: string) => {
-    setOverride(link.id, envName, varKey, { value: next, encrypted });
+    void safe(
+      setOverride(link.id, envName, varKey, { value: next, encrypted }),
+      'Could not save override',
+    );
   };
 
   if (removed) {
@@ -209,7 +236,9 @@ function LinkedEnvVarRow({
         </span>
         <button
           type="button"
-          onClick={() => clearOverride(link.id, envName, varKey)}
+          onClick={() =>
+            void safe(clearOverride(link.id, envName, varKey), 'Could not reset override')
+          }
           className="inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.625rem] text-text-muted hover:border-accent hover:text-text-primary"
           aria-label={`Restore ${varKey} from source`}
         >
@@ -235,16 +264,36 @@ function LinkedEnvVarRow({
           </span>
         </div>
       ) : (
-        <input
-          type="text"
-          value={value}
-          onChange={(e) => onValueChange(e.target.value)}
-          aria-label={`Override value for ${varKey}`}
-          placeholder={
-            sourceVariable ? `source: ${sourceVariable.value || '(empty)'}` : 'consumer-only value'
-          }
-          className="h-7 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
-        />
+        <div className="relative flex h-7 flex-1">
+          <input
+            type={revealed ? 'text' : 'password'}
+            value={value}
+            onChange={(e) => onValueChange(e.target.value)}
+            onBlur={() => setRevealed(false)}
+            aria-label={`Override value for ${varKey}`}
+            placeholder={
+              sourceVariable
+                ? `source: ${sourceVariable.value || '(empty)'}`
+                : 'consumer-only value'
+            }
+            className="h-7 flex-1 rounded-sm border border-border bg-card pl-2 pr-7 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+          />
+          <button
+            type="button"
+            onClick={() => setRevealed((v) => !v)}
+            onMouseDown={(e) => e.preventDefault()}
+            aria-label={revealed ? 'Hide override value' : 'Show override value'}
+            aria-pressed={revealed}
+            title={revealed ? 'Hide value' : 'Show value (auto-hides on blur)'}
+            className="absolute right-1 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm text-text-faint hover:text-text-primary"
+          >
+            {revealed ? (
+              <EyeOff size={11} aria-hidden="true" />
+            ) : (
+              <Eye size={11} aria-hidden="true" />
+            )}
+          </button>
+        </div>
       )}
       {hasOverride && !isConsumerOnly && (
         <span
@@ -261,7 +310,9 @@ function LinkedEnvVarRow({
       {hasOverride && (
         <button
           type="button"
-          onClick={() => clearOverride(link.id, envName, varKey)}
+          onClick={() =>
+            void safe(clearOverride(link.id, envName, varKey), 'Could not reset override')
+          }
           className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-accent hover:text-text-primary"
           aria-label={`Reset ${varKey} to source`}
           title={
@@ -277,7 +328,12 @@ function LinkedEnvVarRow({
       {!isConsumerOnly && (
         <button
           type="button"
-          onClick={() => setOverride(link.id, envName, varKey, { removed: true })}
+          onClick={() =>
+            void safe(
+              setOverride(link.id, envName, varKey, { removed: true }),
+              'Could not hide variable',
+            )
+          }
           className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-danger hover:text-danger"
           aria-label={`Hide ${varKey} from this workspace`}
           title="Hide this source variable from your workspace (soft-delete)"

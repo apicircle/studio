@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ArrowDown, Check } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowDown,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  History as HistoryIcon,
+  RotateCw,
+} from 'lucide-react';
 import type {
   LinkedUpdateBucket,
   LinkedUpdateEntry,
@@ -45,6 +53,8 @@ export function UpdatePreviewModal() {
   const active = useWorkspaceStore((s) => s.activeLinkedUpdate);
   const close = useWorkspaceStore((s) => s.clearLinkedUpdatePreview);
   const apply = useWorkspaceStore((s) => s.applyLinkedUpdateForLink);
+  const setActivePanel = useWorkspaceStore((s) => s.setActivePanel);
+  const setHistoryUi = useWorkspaceStore((s) => s.setHistoryUi);
   const link = useWorkspaceStore((s) =>
     active ? (s.synced?.linkedWorkspaces[active.linkedWorkspaceId] ?? null) : null,
   );
@@ -226,12 +236,41 @@ export function UpdatePreviewModal() {
         )}
 
         {error && (
-          <p
-            className="rounded-sm border border-danger/30 bg-danger/5 p-2 text-xs text-danger"
+          <div
+            className="space-y-2 rounded-sm border border-danger/30 bg-danger/5 p-2 text-xs text-danger"
             role="alert"
           >
-            {error}
-          </p>
+            <p>{error}</p>
+            <p className="text-[0.6875rem] text-text-muted">
+              The store auto-captured a <code>pre-linked-update</code> snapshot before the apply
+              started — your workspace can be restored to its prior state from there.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void onApply()}
+                disabled={applying}
+                className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20 disabled:opacity-50"
+              >
+                <RotateCw size={11} aria-hidden="true" />
+                Retry apply
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  // Drop the user into History → Snapshots so they can
+                  // restore from the auto-captured pre-update entry.
+                  setActivePanel('history');
+                  setHistoryUi({ tab: 'snapshots' });
+                  close();
+                }}
+                className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-accent"
+              >
+                <HistoryIcon size={11} aria-hidden="true" />
+                Open snapshots
+              </button>
+            </div>
+          </div>
         )}
 
         <div className="flex items-center justify-end gap-2 border-t border-border-subtle pt-3">
@@ -339,6 +378,12 @@ function PreviewRow({
   onChoose: (c: 'mine' | 'theirs') => void;
 }) {
   const needsDecision = entry.status === 'both-changed';
+  // Diff is collapsed by default — most rows don't need it open.
+  // both-changed rows benefit most: the user is making a binary choice
+  // and was previously asked to do so blind.
+  const [showDiff, setShowDiff] = useState(false);
+  const hasDiffData = entry.target !== null || entry.override !== null || entry.base !== null;
+
   return (
     <li className="rounded-sm border border-border bg-surface p-2">
       <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -351,6 +396,22 @@ function PreviewRow({
           {BUCKET_LABEL[entry.bucket]}
         </span>
         <code className="truncate text-text-primary">{entry.label}</code>
+        {hasDiffData && (
+          <button
+            type="button"
+            onClick={() => setShowDiff((v) => !v)}
+            aria-expanded={showDiff}
+            aria-label={showDiff ? `Hide diff for ${entry.label}` : `Show diff for ${entry.label}`}
+            className="inline-flex h-5 items-center gap-0.5 rounded-sm border border-border bg-card px-1 text-[0.5625rem] text-text-muted hover:border-accent hover:text-accent"
+          >
+            {showDiff ? (
+              <ChevronDown size={9} aria-hidden="true" />
+            ) : (
+              <ChevronRight size={9} aria-hidden="true" />
+            )}
+            Diff
+          </button>
+        )}
         {needsDecision && (
           <div className="ml-auto flex gap-1">
             <button
@@ -380,6 +441,61 @@ function PreviewRow({
           </div>
         )}
       </div>
+      {showDiff && (
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <DiffSide
+            label="Mine (your local override)"
+            tone="accent"
+            value={entry.override ?? entry.base}
+          />
+          <DiffSide
+            label="Theirs (source's new version)"
+            tone="success"
+            value={entry.target ?? entry.base}
+          />
+        </div>
+      )}
     </li>
+  );
+}
+
+/**
+ * Side-by-side diff cell for `PreviewRow`. Renders the value as
+ * stable JSON so the user can compare structurally. Empty side =>
+ * "(removed)" or "(no value)".
+ */
+function DiffSide({
+  label,
+  tone,
+  value,
+}: {
+  label: string;
+  tone: 'accent' | 'success';
+  value: unknown;
+}) {
+  const colorClass = tone === 'accent' ? 'border-accent/40' : 'border-success/40';
+  const labelColor = tone === 'accent' ? 'text-accent' : 'text-success';
+  const formatted = useMemo(() => {
+    if (value === null || value === undefined) return '(no value)';
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      // JSON.stringify throws on circular refs; fall back to a typed
+      // string representation rather than `[object Object]`.
+      if (typeof value === 'object') return '[unserializable object]';
+      // String-like primitives are safe to coerce.
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string
+      return String(value);
+    }
+  }, [value]);
+  return (
+    <div className={`rounded-sm border bg-card p-1.5 ${colorClass}`}>
+      <div className={`mb-1 text-[0.5625rem] font-medium uppercase tracking-wider ${labelColor}`}>
+        {label}
+      </div>
+      <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all text-[0.625rem] text-text-primary">
+        {formatted}
+      </pre>
+    </div>
   );
 }

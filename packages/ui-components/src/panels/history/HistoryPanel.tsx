@@ -332,6 +332,7 @@ function RequestRunList({
   const replayRequestRun = useWorkspaceStore((s) => s.replayRequestRun);
   const setActiveRequestId = useWorkspaceStore((s) => s.setActiveRequestId);
   const setActivePanel = useWorkspaceStore((s) => s.setActivePanel);
+  const [pendingDelete, setPendingDelete] = useState<RequestRun | null>(null);
 
   if (totalCount === 0) {
     return (
@@ -357,10 +358,24 @@ function RequestRunList({
           return (
             <li
               key={item.key}
-              role="presentation"
-              className="sticky top-0 z-10 -mx-1 flex items-center gap-2 bg-surface px-1 py-1 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim"
+              aria-label={`History group: ${item.label}`}
+              // Date band — a chip-style marker between groups rather than
+              // a sticky full-width band. The previous sticky band shared
+              // bg-surface with both the scroll container AND the expanded
+              // run detail card (`RequestRunDetail`), so when an expanded
+              // row scrolled past, the band visually attached itself to
+              // the body of the row beneath (audit feedback: "day line
+              // separator overflows inside expanded list item").
+              //
+              // Non-sticky chip avoids the overlap entirely: the band
+              // scrolls with the list and clearly belongs to the group
+              // header. Generous py-2 keeps adjacent rows from touching
+              // the chip's bounding box.
+              className="flex items-center gap-2 py-2"
             >
-              <span>{item.label}</span>
+              <span className="inline-flex items-center rounded-sm border border-border bg-card px-2 py-0.5 text-[0.5625rem] font-medium uppercase tracking-wider text-text-muted">
+                {item.label}
+              </span>
               <span className="h-px flex-1 bg-border-subtle" aria-hidden="true" />
             </li>
           );
@@ -459,7 +474,7 @@ function RequestRunList({
               </button>
               <button
                 type="button"
-                onClick={() => removeRequestRun(run.id)}
+                onClick={() => setPendingDelete(run)}
                 aria-label={`Delete request run from ${new Date(run.startedAt).toLocaleString()}`}
                 title="Delete this run"
                 className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:bg-danger/10 hover:text-danger"
@@ -471,6 +486,32 @@ function RequestRunList({
           </li>
         );
       })}
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete this request run?"
+        description={
+          pendingDelete && (
+            <p>
+              Removes this run from local history. The source request and any other runs are kept.
+              {pendingDelete.url && (
+                <>
+                  {' '}
+                  <span className="font-mono text-text-muted">
+                    {pendingDelete.method} {pendingDelete.url}
+                  </span>
+                </>
+              )}
+            </p>
+          )
+        }
+        confirmLabel="Delete run"
+        tone="danger"
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          if (pendingDelete) removeRequestRun(pendingDelete.id);
+          setPendingDelete(null);
+        }}
+      />
     </ul>
   );
 }
@@ -664,6 +705,7 @@ function PlanRunList({
   const requests = useWorkspaceStore((s) => s.synced?.collections.requests ?? {});
   const removePlanRun = useWorkspaceStore((s) => s.removePlanRun);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [pendingPlanDelete, setPendingPlanDelete] = useState<PlanRun | null>(null);
 
   if (totalCount === 0) {
     return (
@@ -692,10 +734,24 @@ function PlanRunList({
           return (
             <li
               key={item.key}
-              role="presentation"
-              className="sticky top-0 z-10 -mx-1 flex items-center gap-2 bg-surface px-1 py-1 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim"
+              aria-label={`History group: ${item.label}`}
+              // Date band — a chip-style marker between groups rather than
+              // a sticky full-width band. The previous sticky band shared
+              // bg-surface with both the scroll container AND the expanded
+              // run detail card (`RequestRunDetail`), so when an expanded
+              // row scrolled past, the band visually attached itself to
+              // the body of the row beneath (audit feedback: "day line
+              // separator overflows inside expanded list item").
+              //
+              // Non-sticky chip avoids the overlap entirely: the band
+              // scrolls with the list and clearly belongs to the group
+              // header. Generous py-2 keeps adjacent rows from touching
+              // the chip's bounding box.
+              className="flex items-center gap-2 py-2"
             >
-              <span>{item.label}</span>
+              <span className="inline-flex items-center rounded-sm border border-border bg-card px-2 py-0.5 text-[0.5625rem] font-medium uppercase tracking-wider text-text-muted">
+                {item.label}
+              </span>
               <span className="h-px flex-1 bg-border-subtle" aria-hidden="true" />
             </li>
           );
@@ -709,12 +765,31 @@ function PlanRunList({
             isOpen={isOpen}
             planName={plans[run.planId]?.name}
             onToggle={() => setOpenId(isOpen ? null : run.id)}
-            onDelete={() => removePlanRun(run.id)}
+            onDelete={() => setPendingPlanDelete(run)}
             requests={requests}
             runsById={runsById}
           />
         );
       })}
+      <ConfirmDialog
+        open={pendingPlanDelete !== null}
+        title="Delete this plan run?"
+        description={
+          pendingPlanDelete && (
+            <p>
+              Removes this plan-run summary and per-step verdicts from local history. The plan
+              definition and the underlying request runs are kept.
+            </p>
+          )
+        }
+        confirmLabel="Delete plan run"
+        tone="danger"
+        onCancel={() => setPendingPlanDelete(null)}
+        onConfirm={() => {
+          if (pendingPlanDelete) removePlanRun(pendingPlanDelete.id);
+          setPendingPlanDelete(null);
+        }}
+      />
     </ul>
   );
 }
@@ -756,73 +831,71 @@ function PlanRunRow({
   const assertionsAllPassed = assertionsPassed === assertionsTotal;
   return (
     <li className="overflow-hidden rounded-sm border border-border bg-card">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={isOpen}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-surface"
-      >
-        {isOpen ? (
-          <ChevronDown size={11} className="shrink-0 text-text-faint" />
-        ) : (
-          <ChevronRight size={11} className="shrink-0 text-text-faint" />
-        )}
-        <StatusIcon ok={allPassed} />
-        <Layers size={12} className="text-accent" aria-hidden="true" />
-        <span className="flex-1 truncate text-xs text-text-primary">
-          {planName ?? <em className="text-text-dim">deleted plan</em>}
-        </span>
-        <span
-          aria-label={`${okCount} of ${total} requests succeeded`}
-          title={`${okCount}/${total} requests succeeded`}
-          className={cn(
-            'rounded-sm border px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider',
-            allPassed
-              ? 'border-success/40 bg-success/10 text-success'
-              : 'border-warning/40 bg-warning/10 text-warning',
-          )}
+      {/*
+        Sibling layout (matches the request-run row): the disclosure is a
+        button; Delete is a sibling button. Avoids the nested
+        <button>-inside-<button> a11y violation that the previous version
+        had via a `<span role="button" tabindex="0">` workaround.
+      */}
+      <div className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={isOpen}
+          aria-label={`Plan run "${planName ?? 'deleted plan'}" details`}
+          className="flex flex-1 items-center gap-2 text-left"
         >
-          {okCount}/{total} req
-        </span>
-        {run.withAssertions && (
+          {isOpen ? (
+            <ChevronDown size={11} className="shrink-0 text-text-faint" />
+          ) : (
+            <ChevronRight size={11} className="shrink-0 text-text-faint" />
+          )}
+          <StatusIcon ok={allPassed} />
+          <Layers size={12} className="text-accent" aria-hidden="true" />
+          <span className="flex-1 truncate text-xs text-text-primary">
+            {planName ?? <em className="text-text-dim">deleted plan</em>}
+          </span>
           <span
-            aria-label={`${assertionsPassed} of ${assertionsTotal} assertions passed`}
-            title={`${assertionsPassed}/${assertionsTotal} assertions passed`}
+            aria-label={`${okCount} of ${total} requests succeeded`}
+            title={`${okCount}/${total} requests succeeded`}
             className={cn(
               'rounded-sm border px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider',
-              assertionsAllPassed
+              allPassed
                 ? 'border-success/40 bg-success/10 text-success'
                 : 'border-warning/40 bg-warning/10 text-warning',
             )}
           >
-            {assertionsPassed}/{assertionsTotal} ✓
+            {okCount}/{total} req
           </span>
-        )}
-        <span className="font-mono text-[0.625rem] text-text-dim">{run.durationMs} ms</span>
-        <span className="text-[0.625rem] text-text-dim">
-          {new Date(run.startedAt).toLocaleString()}
-        </span>
-        <span
-          role="button"
-          tabIndex={0}
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              e.stopPropagation();
-              onDelete();
-            }
-          }}
+          {run.withAssertions && (
+            <span
+              aria-label={`${assertionsPassed} of ${assertionsTotal} assertions passed`}
+              title={`${assertionsPassed}/${assertionsTotal} assertions passed`}
+              className={cn(
+                'rounded-sm border px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider',
+                assertionsAllPassed
+                  ? 'border-success/40 bg-success/10 text-success'
+                  : 'border-warning/40 bg-warning/10 text-warning',
+              )}
+            >
+              {assertionsPassed}/{assertionsTotal} ✓
+            </span>
+          )}
+          <span className="font-mono text-[0.625rem] text-text-dim">{run.durationMs} ms</span>
+          <span className="text-[0.625rem] text-text-dim">
+            {new Date(run.startedAt).toLocaleString()}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
           aria-label={`Delete plan run from ${new Date(run.startedAt).toLocaleString()}`}
           title="Delete this run"
           className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-dim hover:bg-danger/10 hover:text-danger"
         >
           <Trash2 size={11} aria-hidden="true" />
-        </span>
-      </button>
+        </button>
+      </div>
       {isOpen && (
         <div className="border-t border-border-subtle bg-surface p-3 text-xs">
           <h4 className="mb-1.5 text-[0.625rem] uppercase tracking-wider text-text-dim">

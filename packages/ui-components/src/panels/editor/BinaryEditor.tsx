@@ -7,12 +7,36 @@ interface BinaryEditorProps {
   request: ApiRequest;
 }
 
+// Match the FormDataEditor cap so users get consistent guidance across
+// body types. GitHub blob limit is 100 MB; we warn above that.
+const BINARY_SIZE_WARN_BYTES = 100 * 1024 * 1024;
+
 export function BinaryEditor({ request }: BinaryEditorProps) {
   const attachBinaryFile = useWorkspaceStore((s) => s.attachBinaryFile);
   const detachBinaryFile = useWorkspaceStore((s) => s.detachBinaryFile);
+  const pushToast = useWorkspaceStore((s) => s.pushToast);
   const fileInput = useRef<HTMLInputElement | null>(null);
 
   const attachment = request.body.type === 'binary' ? request.body.attachment : null;
+  const oversize = attachment?.size !== undefined && attachment.size > BINARY_SIZE_WARN_BYTES;
+
+  const onPick = (f: File) => {
+    if (f.size > BINARY_SIZE_WARN_BYTES) {
+      pushToast({
+        tone: 'error',
+        title: 'File is over 100 MB',
+        detail:
+          'Sending will likely exhaust IDB quota and may exceed GitHub’s blob limit when synced. Consider hosting the file externally and sending a URL.',
+      });
+    }
+    void attachBinaryFile(request.id, f).catch((err) => {
+      pushToast({
+        tone: 'error',
+        title: 'Could not attach file',
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    });
+  };
 
   return (
     <div className="flex flex-col gap-2" aria-label="Binary body">
@@ -23,7 +47,7 @@ export function BinaryEditor({ request }: BinaryEditorProps) {
         aria-label="Binary body file"
         onChange={(e) => {
           const f = e.target.files?.[0];
-          if (f) void attachBinaryFile(request.id, f);
+          if (f) onPick(f);
           e.target.value = '';
         }}
       />
@@ -69,8 +93,18 @@ export function BinaryEditor({ request }: BinaryEditorProps) {
 
       <p className="text-[0.6875rem] text-text-dim">
         The Content-Type header is set automatically from the file&apos;s MIME type when the request
-        is sent. Any user-set Content-Type is stripped to avoid corrupting the body.
+        is sent. Any user-set Content-Type is stripped to avoid corrupting the body. Files over
+        100&nbsp;MB warn — they may exceed GitHub&apos;s blob limit when synced.
       </p>
+      {oversize && (
+        <p
+          role="alert"
+          className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-[0.6875rem] text-warning"
+        >
+          This file is over 100&nbsp;MB. The send may succeed but syncing the workspace to Git will
+          likely be refused.
+        </p>
+      )}
     </div>
   );
 }

@@ -1029,7 +1029,15 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
         }
         onCancel={() => setUnlinkOpen(false)}
         onConfirm={() => {
-          unlinkWorkspace(link.id);
+          try {
+            unlinkWorkspace(link.id);
+          } catch (err) {
+            useWorkspaceStore.getState().pushToast({
+              tone: 'error',
+              title: 'Unlink failed',
+              detail: err instanceof Error ? err.message : String(err),
+            });
+          }
           setUnlinkOpen(false);
         }}
       />

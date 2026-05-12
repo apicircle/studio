@@ -53,18 +53,28 @@ export function MockServersPanel() {
   }, [activeServer, mockServers, setActiveMockEndpoint]);
 
   const bridge = getMockBridge();
+  const pushToast = useWorkspaceStore((s) => s.pushToast);
   const [running, setRunning] = useState<Record<string, MockRuntimeEntry>>({});
   const [error, setError] = useState<string | null>(null);
+  // Per-server "Start in flight" so the user sees a spinner and can't
+  // double-click to fire two starts. Same for Stop.
+  const [pendingStart, setPendingStart] = useState<Set<string>>(() => new Set());
+  const [pendingStop, setPendingStop] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     if (!bridge) return;
     let cancelled = false;
     const refresh = async () => {
-      const entries = await bridge.list();
-      if (cancelled) return;
-      const byId: Record<string, MockRuntimeEntry> = {};
-      for (const e of entries) byId[e.serverId] = e.runtime;
-      setRunning(byId);
+      try {
+        const entries = await bridge.list();
+        if (cancelled) return;
+        const byId: Record<string, MockRuntimeEntry> = {};
+        for (const e of entries) byId[e.serverId] = e.runtime;
+        setRunning(byId);
+      } catch {
+        // Polling failures are expected during desktop-bridge churn —
+        // we'll see the next tick. Don't toast every 2s on bridge restart.
+      }
     };
     void refresh();
     const id = setInterval(() => void refresh(), 2000);
@@ -76,23 +86,78 @@ export function MockServersPanel() {
 
   const handleStart = async (server: MockServer) => {
     if (!bridge) return;
+    if (pendingStart.has(server.id)) return; // double-click guard
     setError(null);
+    // Pre-flight port collision check. The runtime would also catch this,
+    // but surfacing it before the bridge call gives a clearer message and
+    // saves a round trip.
+    const desired = server.defaultPort;
+    if (desired !== undefined) {
+      const collision = Object.entries(running).find(
+        ([id, rt]) => id !== server.id && rt.port === desired,
+      );
+      if (collision) {
+        const otherName = mockServers[collision[0]]?.name ?? collision[0];
+        const msg = `Port ${desired} is already in use by "${otherName}". Stop it first or change this server's defaultPort.`;
+        setError(msg);
+        pushToast({ tone: 'error', title: 'Mock server start blocked', detail: msg });
+        return;
+      }
+    }
+    setPendingStart((prev) => new Set(prev).add(server.id));
     try {
       const runtime = await bridge.start(server);
       setRunning((prev) => ({ ...prev, [server.id]: runtime }));
+      pushToast({
+        tone: 'success',
+        title: `Started ${server.name}`,
+        detail: `Listening on port ${runtime.port}`,
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+      pushToast({ tone: 'error', title: `Failed to start ${server.name}`, detail: msg });
+    } finally {
+      setPendingStart((prev) => {
+        const next = new Set(prev);
+        next.delete(server.id);
+        return next;
+      });
     }
   };
 
   const handleStop = async (serverId: string) => {
     if (!bridge) return;
-    await bridge.stop(serverId);
-    setRunning((prev) => {
-      const { [serverId]: _drop, ...rest } = prev;
-      void _drop;
-      return rest;
-    });
+    if (pendingStop.has(serverId)) return; // double-click guard
+    setPendingStop((prev) => new Set(prev).add(serverId));
+    try {
+      const result = await bridge.stop(serverId);
+      if (!result.ok) {
+        // Daemon refused to stop. Don't optimistically clear the local
+        // state — the runtime is presumably still up. Toast surfaces the
+        // mismatch so the user can investigate.
+        const name = mockServers[serverId]?.name ?? serverId;
+        const msg = `The desktop bridge reported it could not stop ${name}. Try again or check the desktop logs.`;
+        setError(msg);
+        pushToast({ tone: 'error', title: 'Stop failed', detail: msg });
+        return;
+      }
+      setRunning((prev) => {
+        const { [serverId]: _drop, ...rest } = prev;
+        void _drop;
+        return rest;
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+      pushToast({ tone: 'error', title: 'Stop failed', detail: msg });
+    } finally {
+      setPendingStop((prev) => {
+        const next = new Set(prev);
+        next.delete(serverId);
+        return next;
+      });
+    }
   };
 
   const serverList = Object.values(mockServers);
@@ -114,7 +179,10 @@ export function MockServersPanel() {
         </div>
       )}
       {error && (
-        <div className="border-b border-border-subtle bg-danger/10 px-6 py-2 text-xs text-danger">
+        <div
+          role="alert"
+          className="border-b border-border-subtle bg-danger/10 px-6 py-2 text-xs text-danger"
+        >
           {error}
         </div>
       )}
@@ -126,6 +194,8 @@ export function MockServersPanel() {
           server={activeServer}
           runtime={running[activeServer.id]}
           bridge={bridge}
+          starting={pendingStart.has(activeServer.id)}
+          stopping={pendingStop.has(activeServer.id)}
           onStart={() => void handleStart(activeServer)}
           onStop={() => void handleStop(activeServer.id)}
         />
@@ -174,12 +244,16 @@ function ServerSummary({
   server,
   runtime,
   bridge,
+  starting,
+  stopping,
   onStart,
   onStop,
 }: {
   server: MockServer;
   runtime: MockRuntimeEntry | undefined;
   bridge: DesktopMockBridge | null;
+  starting: boolean;
+  stopping: boolean;
   onStart: () => void;
   onStop: () => void;
 }) {
@@ -216,17 +290,18 @@ function ServerSummary({
             <button
               type="button"
               onClick={onStop}
-              className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-muted hover:bg-card-hover"
+              disabled={stopping}
+              className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-muted hover:bg-card-hover disabled:opacity-50"
             >
               <Square size={10} aria-hidden="true" />
-              Stop
+              {stopping ? 'Stopping…' : 'Stop'}
             </button>
           </>
         ) : (
           <button
             type="button"
             onClick={onStart}
-            disabled={!bridge}
+            disabled={!bridge || starting}
             title={
               bridge
                 ? `Start ${server.name}`
@@ -235,7 +310,7 @@ function ServerSummary({
             className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary hover:bg-card-hover disabled:opacity-40"
           >
             <Play size={10} aria-hidden="true" />
-            Start
+            {starting ? 'Starting…' : 'Start'}
           </button>
         )}
       </div>

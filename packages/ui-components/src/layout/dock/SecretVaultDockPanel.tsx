@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  AlertCircle,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Copy,
   ExternalLink,
   Eye,
   EyeOff,
@@ -162,6 +164,17 @@ function VaultTab() {
       // Refresh usedIn — adding a new secret may light up references that
       // were typed before the vault entry existed.
       recompute();
+    } catch (err) {
+      // Encrypt-side failures (master key missing, IDB write failure) used
+      // to surface as unhandled rejections. Keep the inline error and
+      // also push a toast so it's not buried inside the form.
+      const detail = err instanceof Error ? err.message : String(err);
+      setError(detail);
+      useWorkspaceStore.getState().pushToast({
+        tone: 'error',
+        title: 'Could not add secret',
+        detail,
+      });
     } finally {
       setSubmitting(false);
     }
@@ -443,9 +456,15 @@ interface SecretRowProps {
   entry: SecretEntry;
 }
 
+// How long a revealed secret stays on screen before auto-masking. Tuned for
+// "long enough to copy + look once, short enough that walking away from the
+// laptop doesn't leak it". Reset by user interaction (re-reveal restarts).
+const SECRET_AUTO_MASK_MS = 15_000;
+
 function SecretRow({ entry }: SecretRowProps) {
   const decryptSecret = useWorkspaceStore((s) => s.decryptSecret);
   const removeSecret = useWorkspaceStore((s) => s.removeSecret);
+  const pushToast = useWorkspaceStore((s) => s.pushToast);
   // For linked-origin entries, prefer the source workspace's slot label
   // (cached on the link snapshot). The persisted entry.label is
   // `link:<workspaceName>:<keyId>` which leaks the raw slot id; reading
@@ -465,17 +484,79 @@ function SecretRow({ entry }: SecretRowProps) {
     };
   });
 
+  // Reveal state — either the decrypted plaintext or an error marker.
+  // Separating these lets us style the failure as a `role="alert"` instead
+  // of pretending the literal string '(decrypt failed)' is the secret value.
   const [revealed, setRevealed] = useState<string | null>(null);
+  const [revealError, setRevealError] = useState<string | null>(null);
   const [showUsage, setShowUsage] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const rowRef = useRef<HTMLLIElement>(null);
+
+  // Auto-mask after SECRET_AUTO_MASK_MS so a revealed value doesn't sit on
+  // screen forever (the old behaviour). Resets when the user clicks Hide.
+  useEffect(() => {
+    if (revealed === null && revealError === null) return;
+    const id = window.setTimeout(() => {
+      setRevealed(null);
+      setRevealError(null);
+    }, SECRET_AUTO_MASK_MS);
+    return () => window.clearTimeout(id);
+  }, [revealed, revealError]);
+
+  // Click-outside resets the inline Delete→Confirm two-state so the row
+  // doesn't stay primed indefinitely (audit gap: the help text claimed
+  // "click anywhere else to cancel" but there was no handler implementing
+  // it). Also reverts on Esc.
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const onPointer = (e: PointerEvent) => {
+      if (!rowRef.current) return;
+      if (!rowRef.current.contains(e.target as Node)) setConfirmDelete(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setConfirmDelete(false);
+    };
+    window.addEventListener('pointerdown', onPointer);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('pointerdown', onPointer);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [confirmDelete]);
 
   const onReveal = async () => {
-    if (revealed !== null) {
+    if (revealed !== null || revealError !== null) {
       setRevealed(null);
+      setRevealError(null);
       return;
     }
-    const plain = await decryptSecret(entry.id);
-    setRevealed(plain ?? '(decrypt failed)');
+    try {
+      const plain = await decryptSecret(entry.id);
+      if (plain === null) {
+        setRevealError('Decrypt failed. The master key may be missing or rotated.');
+      } else {
+        setRevealed(plain);
+      }
+    } catch (err) {
+      setRevealError(err instanceof Error ? err.message : 'Decrypt failed.');
+    }
+  };
+
+  const onCopy = async () => {
+    if (revealed === null) return;
+    try {
+      await navigator.clipboard.writeText(revealed);
+      pushToast({ tone: 'success', title: 'Copied to clipboard', ttlMs: 2000 });
+    } catch {
+      // Insecure-context or permission-denied — surface so the user knows
+      // it didn't actually copy.
+      pushToast({
+        tone: 'error',
+        title: 'Copy failed',
+        detail: 'Clipboard access denied. Try selecting the text manually.',
+      });
+    }
   };
 
   const usedInCount = entry.usedIn.length;
@@ -484,8 +565,11 @@ function SecretRow({ entry }: SecretRowProps) {
   // otherwise the raw entry label (workspace-origin secrets).
   const displayLabel = linkedDisplay ? linkedDisplay.label : entry.label;
 
+  const isRevealed = revealed !== null;
+  const hasReveal = isRevealed || revealError !== null;
+
   return (
-    <li className="rounded-sm border border-border bg-card p-2.5 text-xs">
+    <li ref={rowRef} className="rounded-sm border border-border bg-card p-2.5 text-xs">
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <KeyRound size={12} className="shrink-0 text-text-dim" aria-hidden="true" />
@@ -523,11 +607,23 @@ function SecretRow({ entry }: SecretRowProps) {
             type="button"
             onClick={() => void onReveal()}
             className="inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:text-text-primary"
-            aria-label={revealed !== null ? `Hide ${displayLabel}` : `Reveal ${displayLabel}`}
+            aria-label={hasReveal ? `Hide ${displayLabel}` : `Reveal ${displayLabel}`}
           >
-            {revealed !== null ? <EyeOff size={10} /> : <Eye size={10} />}
-            {revealed !== null ? 'Hide' : 'Reveal'}
+            {hasReveal ? <EyeOff size={10} /> : <Eye size={10} />}
+            {hasReveal ? 'Hide' : 'Reveal'}
           </button>
+          {isRevealed && (
+            <button
+              type="button"
+              onClick={() => void onCopy()}
+              aria-label={`Copy ${displayLabel} value`}
+              title="Copy value to clipboard"
+              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:text-text-primary"
+            >
+              <Copy size={10} />
+              Copy
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -551,10 +647,24 @@ function SecretRow({ entry }: SecretRowProps) {
         </div>
       </div>
 
-      {revealed !== null && (
+      {isRevealed && (
         <pre className="mt-2 break-all rounded-sm border border-border-subtle bg-surface p-2 font-mono text-[0.6875rem] text-text-primary">
           {revealed}
         </pre>
+      )}
+      {revealError !== null && (
+        <p
+          role="alert"
+          className="mt-2 inline-flex items-center gap-1.5 rounded-sm border border-danger/40 bg-danger/10 px-2 py-1 text-[0.6875rem] text-danger"
+        >
+          <AlertCircle size={11} aria-hidden="true" />
+          {revealError}
+        </p>
+      )}
+      {hasReveal && (
+        <p className="mt-1 text-[0.625rem] text-text-dim">
+          Auto-hides in {Math.round(SECRET_AUTO_MASK_MS / 1000)}s.
+        </p>
       )}
 
       {usedInCount > 0 && (
@@ -581,8 +691,8 @@ function SecretRow({ entry }: SecretRowProps) {
       {confirmDelete && (
         <p className="mt-2 text-[0.6875rem] text-warning">
           This secret is referenced in {usedInCount} place{usedInCount === 1 ? '' : 's'}. Click{' '}
-          <span className="text-text-primary">Confirm</span> to delete anyway, or click anywhere
-          else to cancel.
+          <span className="text-text-primary">Confirm</span> to delete anyway, or click outside this
+          row (or press Esc) to cancel.
         </p>
       )}
     </li>

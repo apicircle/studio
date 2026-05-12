@@ -25,9 +25,9 @@ const STATUS_BUCKETS: Array<{ id: StatusBucket; label: string }> = [
 const METHOD_OPTIONS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const;
 
 const PRESET_DAYS: Array<{ days: number; label: string }> = [
-  { days: 7, label: '> 7 days' },
-  { days: 30, label: '> 30 days' },
-  { days: 90, label: '> 90 days' },
+  { days: 7, label: 'older than 7 days' },
+  { days: 30, label: 'older than 30 days' },
+  { days: 90, label: 'older than 90 days' },
 ];
 
 export function HistorySidebar() {
@@ -70,81 +70,57 @@ export function HistorySidebar() {
   // state explicitly tells the user the action ran and there was nothing
   // to clear.
   const [emptyClearHint, setEmptyClearHint] = useState<string | null>(null);
+  // The Quick Clear scope was previously bug-prone: clicking "> 7 days"
+  // on the Plans tab also wiped request runs older than 7 days (and vice
+  // versa), surprising the user. Scoping to the active tab matches the
+  // user's mental model — they see the runs in front of them and expect
+  // the cutoff to operate on those. Snapshots have their own clear flow
+  // in the SnapshotsTimeline so we hide Quick Clear there entirely.
+  const activeRunScope: 'request' | 'plan' | null =
+    ui.tab === 'requests' ? 'request' : ui.tab === 'plans' ? 'plan' : null;
+  const scopeLabel = activeRunScope === 'plan' ? 'plan run' : 'request run';
+
   const clearOlderThan = (days: number) => {
+    if (!activeRunScope) return;
     const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-    const matchingRequests = requestRuns.filter(
+    const total = (activeRunScope === 'request' ? requestRuns : planRuns).filter(
       (r) => new Date(r.startedAt).getTime() < cutoff,
     ).length;
-    const matchingPlans = planRuns.filter((r) => new Date(r.startedAt).getTime() < cutoff).length;
-    const total = matchingRequests + matchingPlans;
     if (total === 0) {
-      setEmptyClearHint(`No runs older than ${days} day${days === 1 ? '' : 's'}.`);
+      setEmptyClearHint(`No ${scopeLabel}s older than ${days} day${days === 1 ? '' : 's'}.`);
       return;
     }
     setEmptyClearHint(null);
     setConfirm({
-      kind: 'request',
-      label: `older than ${days} day${days === 1 ? '' : 's'}`,
+      kind: activeRunScope,
+      label: `${scopeLabel}${total === 1 ? '' : 's'} older than ${days} day${days === 1 ? '' : 's'}`,
       count: total,
       predicate: undefined,
     });
-    // The confirm dialog calls back; we encode the action via the cutoff.
     setPendingCutoff(cutoff);
   };
 
   const [pendingCutoff, setPendingCutoff] = useState<number | null>(null);
   const onConfirmCutoff = () => {
-    if (pendingCutoff === null) return;
-    clearRequestRuns((r) => new Date(r.startedAt).getTime() >= pendingCutoff);
-    clearPlanRuns((r) => new Date(r.startedAt).getTime() >= pendingCutoff);
+    if (pendingCutoff === null || !activeRunScope) return;
+    // Tab-scoped: only the active run kind is touched. The other kind
+    // stays put — earlier behaviour deleted both, which was the audit
+    // bug.
+    if (activeRunScope === 'request') {
+      clearRequestRuns((r) => new Date(r.startedAt).getTime() >= pendingCutoff);
+    } else {
+      clearPlanRuns((r) => new Date(r.startedAt).getTime() >= pendingCutoff);
+    }
     setPendingCutoff(null);
     setConfirm(null);
   };
 
-  const onClearDateRange = () => {
-    if (!ui.fromDate && !ui.toDate) return;
-    const fromT = ui.fromDate ? new Date(`${ui.fromDate}T00:00:00`).getTime() : -Infinity;
-    const toT = ui.toDate ? new Date(`${ui.toDate}T23:59:59.999`).getTime() : Infinity;
-    const matchingRequests = requestRuns.filter((r) => {
-      const t = new Date(r.startedAt).getTime();
-      return t >= fromT && t <= toT;
-    }).length;
-    const matchingPlans = planRuns.filter((r) => {
-      const t = new Date(r.startedAt).getTime();
-      return t >= fromT && t <= toT;
-    }).length;
-    const total = matchingRequests + matchingPlans;
-    if (total === 0) return;
-    const range =
-      ui.fromDate && ui.toDate
-        ? `${ui.fromDate} → ${ui.toDate}`
-        : ui.fromDate
-          ? `from ${ui.fromDate}`
-          : `up to ${ui.toDate}`;
-    setConfirm({
-      kind: 'request',
-      label: `in range (${range})`,
-      count: total,
-      predicate: undefined,
-    });
-    setPendingRangeBounds([fromT, toT]);
-  };
-
-  const [pendingRangeBounds, setPendingRangeBounds] = useState<[number, number] | null>(null);
-  const onConfirmRange = () => {
-    if (!pendingRangeBounds) return;
-    const [fromT, toT] = pendingRangeBounds;
-    clearRequestRuns((r) => {
-      const t = new Date(r.startedAt).getTime();
-      return t < fromT || t > toT;
-    });
-    clearPlanRuns((r) => {
-      const t = new Date(r.startedAt).getTime();
-      return t < fromT || t > toT;
-    });
-    setPendingRangeBounds(null);
-    setConfirm(null);
-  };
+  // The previous "Clear runs in this range" button in the sidebar was
+  // removed — the panel body already shows a "Clear matching" CTA that
+  // respects every active filter (search, status, method, date range)
+  // and surfaces the visible count. Removing the sidebar duplicate
+  // avoided the confusing "which one wins?" question and the per-filter
+  // confirm flow that was scoped only to date range.
 
   return (
     <div className="flex h-full flex-col gap-3 px-1 py-1 text-text-primary">
@@ -243,65 +219,73 @@ export function HistorySidebar() {
         </>
       )}
 
-      <FilterSection title="Date range" icon={<CalendarRange size={11} aria-hidden />}>
-        <div className="flex flex-col gap-1">
-          <label className="flex items-center gap-2 text-[0.6875rem] text-text-muted">
-            <span className="w-8 text-right">From</span>
-            <input
-              type="date"
-              value={ui.fromDate ?? ''}
-              onChange={(e) => setUi({ fromDate: e.target.value || null })}
-              aria-label="Filter from date"
-              className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
-            />
-          </label>
-          <label className="flex items-center gap-2 text-[0.6875rem] text-text-muted">
-            <span className="w-8 text-right">To</span>
-            <input
-              type="date"
-              value={ui.toDate ?? ''}
-              onChange={(e) => setUi({ toDate: e.target.value || null })}
-              aria-label="Filter to date"
-              className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
-            />
-          </label>
-          {(ui.fromDate || ui.toDate) && (
-            <button
-              type="button"
-              onClick={onClearDateRange}
-              className="inline-flex h-6 items-center justify-center gap-1 rounded-sm border border-danger/30 bg-danger/5 px-2 text-[0.625rem] text-danger hover:bg-danger/10"
-            >
-              <Trash2 size={10} />
-              Clear runs in this range
-            </button>
-          )}
-        </div>
-      </FilterSection>
+      {activeRunScope && (
+        <>
+          <FilterSection title="Date range" icon={<CalendarRange size={11} aria-hidden />}>
+            <div className="flex flex-col gap-1">
+              <label className="flex items-center gap-2 text-[0.6875rem] text-text-muted">
+                <span className="w-8 text-right">From</span>
+                <input
+                  type="date"
+                  value={ui.fromDate ?? ''}
+                  onChange={(e) => setUi({ fromDate: e.target.value || null })}
+                  aria-label="Filter from date"
+                  className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+                />
+              </label>
+              <label className="flex items-center gap-2 text-[0.6875rem] text-text-muted">
+                <span className="w-8 text-right">To</span>
+                <input
+                  type="date"
+                  value={ui.toDate ?? ''}
+                  onChange={(e) => setUi({ toDate: e.target.value || null })}
+                  aria-label="Filter to date"
+                  className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+                />
+              </label>
+              {(ui.fromDate || ui.toDate) && (
+                // Date filters are active — give the user a one-click way to
+                // drop them. The destructive "Clear matching" lives in the
+                // panel body (it already knows the filtered count + targets
+                // the correct tab), so the sidebar only exposes the
+                // non-destructive "remove these filters" affordance.
+                <button
+                  type="button"
+                  onClick={() => setUi({ fromDate: null, toDate: null })}
+                  className="inline-flex h-6 items-center justify-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-accent hover:text-text-primary"
+                >
+                  Clear date filters
+                </button>
+              )}
+            </div>
+          </FilterSection>
 
-      <FilterSection title="Quick clear">
-        <div className="flex flex-col gap-1">
-          {PRESET_DAYS.map((p) => (
-            <button
-              key={p.days}
-              type="button"
-              onClick={() => clearOlderThan(p.days)}
-              className="inline-flex h-6 items-center justify-between gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-danger/40 hover:text-danger"
-            >
-              <span>{p.label}</span>
-              <Trash2 size={10} />
-            </button>
-          ))}
-          {emptyClearHint && (
-            <p
-              className="rounded-sm bg-card/60 px-2 py-1 text-[0.625rem] text-text-dim"
-              role="status"
-              aria-live="polite"
-            >
-              {emptyClearHint}
-            </p>
-          )}
-        </div>
-      </FilterSection>
+          <FilterSection title="Quick clear">
+            <div className="flex flex-col gap-1">
+              {PRESET_DAYS.map((p) => (
+                <button
+                  key={p.days}
+                  type="button"
+                  onClick={() => clearOlderThan(p.days)}
+                  className="inline-flex h-6 items-center justify-between gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-danger/40 hover:text-danger"
+                >
+                  <span>{p.label}</span>
+                  <Trash2 size={10} />
+                </button>
+              ))}
+              {emptyClearHint && (
+                <p
+                  className="rounded-sm bg-card/60 px-2 py-1 text-[0.625rem] text-text-dim"
+                  role="status"
+                  aria-live="polite"
+                >
+                  {emptyClearHint}
+                </p>
+              )}
+            </div>
+          </FilterSection>
+        </>
+      )}
 
       <FilterSection title="Storage" icon={<HardDrive size={11} aria-hidden />}>
         <div className="rounded-sm border border-border-subtle bg-surface px-2 py-1.5 text-[0.6875rem] text-text-muted">
@@ -319,18 +303,16 @@ export function HistorySidebar() {
       {confirm && (
         <ConfirmDialog
           open
-          title="Clear matching runs"
-          description={`Delete ${confirm.count} run${confirm.count === 1 ? '' : 's'} ${confirm.label}? This can't be undone.`}
+          title={`Clear ${confirm.kind === 'plan' ? 'plan runs' : 'request runs'}`}
+          description={`Delete ${confirm.count} ${confirm.label}? This can't be undone. Other history kinds (${confirm.kind === 'plan' ? 'request runs' : 'plan runs'} and snapshots) are not touched.`}
           confirmLabel="Clear"
           tone="danger"
           onConfirm={() => {
             if (pendingCutoff !== null) onConfirmCutoff();
-            else if (pendingRangeBounds) onConfirmRange();
             else setConfirm(null);
           }}
           onCancel={() => {
             setPendingCutoff(null);
-            setPendingRangeBounds(null);
             setConfirm(null);
           }}
         />
@@ -367,7 +349,14 @@ function SidebarTab({
     >
       {icon}
       {label}
-      <span className="text-text-dim">({count})</span>
+      {/*
+        On the active tab the row background is the accent-tinted bg-accent/15,
+        which made the text-text-dim count fail WCAG AA contrast (4.39:1 on
+        Studio Dark). Use text-text-muted in active state for sufficient
+        contrast (>4.5:1); inactive rows keep the dimmer treatment since
+        their bg-surface offers more contrast headroom.
+      */}
+      <span className={active ? 'text-text-muted' : 'text-text-dim'}>({count})</span>
     </button>
   );
 }

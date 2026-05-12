@@ -20,14 +20,14 @@ const triggerNewFolder = () =>
 
 async function createRequestNamed(name: string): Promise<void> {
   triggerNewRequest();
-  const input = screen.getByLabelText('Inline rename request');
+  const input = screen.getByLabelText('New request name');
   await userEvent.type(input, name);
   await userEvent.keyboard('{Enter}');
 }
 
 async function createFolderNamed(name: string): Promise<void> {
   triggerNewFolder();
-  const input = screen.getByLabelText('Inline rename folder');
+  const input = screen.getByLabelText('New folder name');
   await userEvent.type(input, name);
   await userEvent.keyboard('{Enter}');
 }
@@ -41,14 +41,14 @@ describe('EditorSidebar', () => {
   it('triggering "New request" opens the name-first input', async () => {
     await renderWithStore(<EditorSidebar />);
     triggerNewRequest();
-    expect(screen.getByLabelText('Inline rename request')).toBeInTheDocument();
+    expect(screen.getByLabelText('New request name')).toBeInTheDocument();
   });
 
   it('Esc cancels the name-first prompt without creating', async () => {
     await renderWithStore(<EditorSidebar />);
     triggerNewRequest();
     await userEvent.keyboard('{Escape}');
-    expect(screen.queryByLabelText('Inline rename request')).toBeNull();
+    expect(screen.queryByLabelText('New request name')).toBeNull();
     expect(Object.keys(useWorkspaceStore.getState().synced!.collections.requests)).toHaveLength(0);
   });
 
@@ -67,7 +67,7 @@ describe('EditorSidebar', () => {
     await renderWithStore(<EditorSidebar />);
     await createRequestNamed('login');
     triggerNewRequest();
-    const input = screen.getByLabelText('Inline rename request');
+    const input = screen.getByLabelText('New request name');
     await userEvent.type(input, 'login');
     expect(screen.getByText(/Name already used/i)).toBeInTheDocument();
     await userEvent.keyboard('{Enter}');
@@ -75,13 +75,18 @@ describe('EditorSidebar', () => {
     expect(Object.keys(useWorkspaceStore.getState().synced!.collections.requests)).toHaveLength(1);
   });
 
-  it('clicking the row delete button removes the request', async () => {
+  it('clicking the row delete button removes the request after confirmation', async () => {
     await renderWithStore(<EditorSidebar />);
     await createRequestNamed('My request');
     const id = useWorkspaceStore.getState().local!.ui.activeRequestId!;
-    // Open the kebab, then activate the Delete entry.
+    // Open the kebab, then activate the Delete entry — opens the
+    // ConfirmDialog instead of deleting outright (audit fix: destructive
+    // ops require explicit confirmation).
     await userEvent.click(screen.getByLabelText('Request actions for My request'));
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete request' }));
+    // Request still exists until the user confirms in the dialog.
+    expect(useWorkspaceStore.getState().synced!.collections.requests[id]).toBeDefined();
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete request' }));
     expect(useWorkspaceStore.getState().synced!.collections.requests[id]).toBeUndefined();
     expect(screen.getByText(/No requests yet/i)).toBeInTheDocument();
   });
