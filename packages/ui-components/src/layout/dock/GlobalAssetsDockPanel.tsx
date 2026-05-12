@@ -141,7 +141,7 @@ function NarrowLayout({ tab, schemas, graphql, selectedId, onSelect }: LayoutPro
         type="button"
         onClick={() => onSelect(null)}
         aria-label="Back to list"
-        className="inline-flex h-7 shrink-0 items-center gap-1.5 self-start rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary"
+        className="inline-flex h-7 shrink-0 items-center gap-1.5 self-start rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-border-strong hover:text-text-primary"
       >
         <ArrowLeft size={12} aria-hidden="true" />
         Back to list
@@ -223,7 +223,9 @@ function SchemaList({
             >
               <span className="block truncate font-medium">{s.name}</span>
               {s.description && (
-                <span className="block truncate text-[11px] text-text-dim">{s.description}</span>
+                <span className="block truncate text-[0.6875rem] text-text-dim">
+                  {s.description}
+                </span>
               )}
             </button>
           </li>
@@ -275,7 +277,7 @@ function GraphQLList({
               )}
             >
               <span className="block truncate font-medium">{g.name}</span>
-              <span className="block truncate text-[11px] text-text-dim">
+              <span className="block truncate text-[0.6875rem] text-text-dim">
                 {g.kind === 'sdl' ? 'SDL' : 'Introspection JSON'}
               </span>
             </button>

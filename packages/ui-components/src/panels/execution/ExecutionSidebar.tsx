@@ -58,11 +58,11 @@ export function ExecutionSidebar() {
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search plans…"
           aria-label="Search plans"
-          className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-[11px] text-text-primary focus:border-accent focus:outline-none"
+          className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
         />
       </div>
       {planArray.length === 0 ? (
-        <p className="p-3 text-[11px] text-text-dim">
+        <p className="p-3 text-[0.6875rem] text-text-dim">
           {searchQuery ? 'No matching plans.' : 'No plans yet.'}
         </p>
       ) : (
@@ -105,7 +105,9 @@ export function ExecutionSidebar() {
                   >
                     <Layers size={11} aria-hidden="true" />
                     <span className="truncate">{plan.name}</span>
-                    <span className="ml-auto text-[10px] text-text-dim">{plan.steps.length}</span>
+                    <span className="ml-auto text-[0.625rem] text-text-dim">
+                      {plan.steps.length}
+                    </span>
                   </button>
                   <KebabMenu items={items} ariaLabel={`${plan.name} actions`} size="sm" />
                 </div>

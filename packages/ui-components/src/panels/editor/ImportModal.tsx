@@ -114,7 +114,7 @@ export function ImportModal({
         <div className="flex items-center gap-2">
           <label
             htmlFor="import-source-format"
-            className="text-[11px] uppercase tracking-wide text-text-dim"
+            className="text-[0.6875rem] uppercase tracking-wide text-text-dim"
           >
             Source
           </label>
@@ -132,7 +132,7 @@ export function ImportModal({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="ml-auto inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-accent hover:text-text-primary"
+            className="ml-auto inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"
           >
             <FileJson size={11} />
             Upload .json
@@ -157,9 +157,9 @@ export function ImportModal({
             placeholder='Paste Postman / Insomnia / APICircle JSON, or a "curl …" command'
             spellCheck={false}
             aria-label="Import source"
-            className="min-h-[200px] w-full rounded-sm border border-border bg-card p-2.5 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+            className="min-h-[200px] w-full rounded-sm border border-border bg-card p-2.5 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
           />
-          <p className="text-[10px] text-text-dim">
+          <p className="text-[0.625rem] text-text-dim">
             Auto-detect picks the right parser; force a format above if a file looks ambiguous.
           </p>
         </div>
@@ -167,7 +167,7 @@ export function ImportModal({
         {result.error && (
           <p
             role="alert"
-            className="rounded-sm border border-danger/30 bg-danger/5 px-2.5 py-1.5 text-[11px] text-danger"
+            className="rounded-sm border border-danger/30 bg-danger/5 px-2.5 py-1.5 text-[0.6875rem] text-danger"
           >
             {result.error}
           </p>
@@ -175,7 +175,7 @@ export function ImportModal({
 
         {result.detected && (
           <div className="flex flex-col gap-1.5 rounded-sm border border-border-subtle bg-card p-3">
-            <header className="flex items-center gap-2 text-[11px]">
+            <header className="flex items-center gap-2 text-[0.6875rem]">
               {result.detected.kind === 'curl' ? (
                 <Sparkles size={12} className="text-accent" />
               ) : result.detected.kind === 'postman-environment' ? (
@@ -195,7 +195,7 @@ export function ImportModal({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-8 items-center rounded-sm border border-border bg-surface px-3 text-[11px] text-text-muted hover:border-accent hover:text-text-primary"
+            className="inline-flex h-8 items-center rounded-sm border border-border bg-surface px-3 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"
           >
             Cancel
           </button>
@@ -204,7 +204,7 @@ export function ImportModal({
             onClick={onImport}
             disabled={!result.detected || isApicirclePlaceholder}
             className={cn(
-              'inline-flex h-8 items-center rounded-sm border px-3 text-[11px]',
+              'inline-flex h-8 items-center rounded-sm border px-3 text-[0.6875rem]',
               result.detected && !isApicirclePlaceholder
                 ? 'border-accent/40 bg-accent/15 text-accent hover:bg-accent/25'
                 : 'border-border bg-surface text-text-faint',
@@ -302,7 +302,7 @@ function DetectionPreview({ detection }: { detection: DetectedKind }) {
   if (detection.kind === 'curl') {
     return <CurlPreview parsed={detection.parsed} />;
   }
-  return <p className="text-[11px] text-amber">{detection.message}</p>;
+  return <p className="text-[0.6875rem] text-amber">{detection.message}</p>;
 }
 
 function CollectionPreview({ parsed }: { parsed: ParsedPostmanCollection }) {
@@ -333,26 +333,26 @@ function CollectionPreview({ parsed }: { parsed: ParsedPostmanCollection }) {
       depth: (parent?.depth ?? 0) + 1,
       el: (
         <span className="flex items-center gap-1.5 text-text-muted">
-          <span className="text-[10px] uppercase text-text-dim">{r.method}</span>
+          <span className="text-[0.625rem] uppercase text-text-dim">{r.method}</span>
           <span className="truncate">{r.name}</span>
         </span>
       ),
     });
   }
   return (
-    <ul className="max-h-48 overflow-y-auto text-[11px]">
+    <ul className="max-h-48 overflow-y-auto text-[0.6875rem]">
       {rows.slice(0, 200).map((row) => (
         <li key={row.id} style={{ paddingLeft: row.depth * 12 }} className="truncate py-0.5">
           {row.el}
         </li>
       ))}
       {rows.length > 200 && (
-        <li className="px-2 py-1 text-[10px] text-text-dim">
+        <li className="px-2 py-1 text-[0.625rem] text-text-dim">
           + {rows.length - 200} more (preview truncated)
         </li>
       )}
       {parsed.warnings.length > 0 && (
-        <li className="mt-1 flex flex-col gap-0.5 text-[10px] text-amber">
+        <li className="mt-1 flex flex-col gap-0.5 text-[0.625rem] text-amber">
           {parsed.warnings.slice(0, 5).map((w, i) => (
             <span key={i}>· {w}</span>
           ))}
@@ -364,7 +364,7 @@ function CollectionPreview({ parsed }: { parsed: ParsedPostmanCollection }) {
 
 function EnvironmentPreview({ parsed }: { parsed: ParsedPostmanEnvironment }) {
   return (
-    <ul className="max-h-40 overflow-y-auto font-mono text-[10px]">
+    <ul className="max-h-40 overflow-y-auto font-mono text-[0.625rem]">
       {parsed.variables.slice(0, 30).map((v, i) => (
         <li key={i} className="grid grid-cols-[140px_1fr] gap-2 py-0.5">
           <span className="truncate text-text-muted">{v.key}</span>
@@ -377,7 +377,7 @@ function EnvironmentPreview({ parsed }: { parsed: ParsedPostmanEnvironment }) {
         <li className="px-1 py-1 text-text-dim">+ {parsed.variables.length - 30} more</li>
       )}
       {parsed.warnings.length > 0 && (
-        <li className="mt-1 flex flex-col gap-0.5 text-[10px] text-amber">
+        <li className="mt-1 flex flex-col gap-0.5 text-[0.625rem] text-amber">
           {parsed.warnings.slice(0, 5).map((w, i) => (
             <span key={i}>· {w}</span>
           ))}
@@ -389,7 +389,7 @@ function EnvironmentPreview({ parsed }: { parsed: ParsedPostmanEnvironment }) {
 
 function CurlPreview({ parsed }: { parsed: ParsedCurl }) {
   return (
-    <div className="grid grid-cols-[80px_1fr] gap-y-1 text-[11px]">
+    <div className="grid grid-cols-[80px_1fr] gap-y-1 text-[0.6875rem]">
       <span className="text-text-dim">Method</span>
       <code className="text-text-primary">{parsed.method}</code>
       <span className="text-text-dim">URL</span>
@@ -403,7 +403,7 @@ function CurlPreview({ parsed }: { parsed: ParsedCurl }) {
       <span className="text-text-dim">Auth</span>
       <code className="text-text-primary">{parsed.auth.type}</code>
       {parsed.warnings.length > 0 && (
-        <ul className="col-span-2 mt-1 flex flex-col gap-0.5 text-[10px] text-amber">
+        <ul className="col-span-2 mt-1 flex flex-col gap-0.5 text-[0.625rem] text-amber">
           {parsed.warnings.map((w, i) => (
             <li key={i}>⚠ {w}</li>
           ))}

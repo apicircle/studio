@@ -92,11 +92,11 @@ export function MocksSidebar() {
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search mocks…"
           aria-label="Search mocks"
-          className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-[11px] text-text-primary focus:border-accent focus:outline-none"
+          className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
         />
       </div>
       {servers.length === 0 ? (
-        <p className="rounded-sm border border-dashed border-border-subtle px-2 py-3 text-center text-[11px] text-text-dim">
+        <p className="rounded-sm border border-dashed border-border-subtle px-2 py-3 text-center text-[0.6875rem] text-text-dim">
           {searchQuery
             ? 'No matching mock servers or endpoints.'
             : 'No mock servers yet. Use the menu above to create one.'}
@@ -169,7 +169,7 @@ export function MocksSidebar() {
                     aria-label={`Open ${server.name}`}
                     aria-current={isServerActive ? 'true' : undefined}
                     className={cn(
-                      'flex flex-1 items-center gap-1 rounded-sm px-1.5 py-1 text-left text-[11px]',
+                      'flex flex-1 items-center gap-1 rounded-sm px-1.5 py-1 text-left text-[0.6875rem]',
                       isServerActive ? 'text-accent' : 'text-text-primary',
                     )}
                   >
@@ -188,7 +188,7 @@ export function MocksSidebar() {
                 {open && (
                   <ul className="ml-4 flex flex-col gap-0.5 border-l border-border-subtle pl-2">
                     {visibleEndpoints.length === 0 ? (
-                      <li className="py-1 text-[10px] italic text-text-dim">
+                      <li className="py-1 text-[0.625rem] italic text-text-dim">
                         {server.endpoints.length === 0
                           ? 'No endpoints. Use the server menu to add one.'
                           : 'No matching endpoints in this server.'}
@@ -233,7 +233,7 @@ export function MocksSidebar() {
                                 aria-label={`Open ${endpoint.method} ${endpoint.pathPattern}`}
                                 aria-current={isActive ? 'true' : undefined}
                                 className={cn(
-                                  'flex flex-1 items-center gap-1.5 rounded-sm px-1.5 py-1.5 text-[11px]',
+                                  'flex flex-1 items-center gap-1.5 rounded-sm px-1.5 py-1.5 text-[0.6875rem]',
                                   isActive
                                     ? 'text-accent'
                                     : 'text-text-muted group-hover:text-text-primary',
@@ -312,7 +312,7 @@ function MethodChip({ method }: { method: string }) {
             : 'border-border text-text-muted';
   return (
     <span
-      className={`inline-flex w-12 shrink-0 items-center justify-center rounded-sm border bg-card px-1 py-0 font-mono text-[9px] uppercase ${tone}`}
+      className={`inline-flex w-12 shrink-0 items-center justify-center rounded-sm border bg-card px-1 py-0 font-mono text-[0.5625rem] uppercase ${tone}`}
     >
       {method}
     </span>

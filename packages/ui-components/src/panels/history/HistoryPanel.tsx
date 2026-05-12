@@ -123,7 +123,7 @@ export function HistoryPanel() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-3 border-b border-border-subtle px-6 py-3">
           <h1 className="text-lg font-medium text-text-primary">History</h1>
-          <p className="text-[11px] text-text-dim">Local-only — never pushed to Git.</p>
+          <p className="text-[0.6875rem] text-text-dim">Local-only — never pushed to Git.</p>
           <div className="ml-auto">
             {
               tab === 'requests' ? (
@@ -187,7 +187,7 @@ function ClearRequestsButton({
         type="button"
         disabled={disabled}
         onClick={() => setConfirmOpen(true)}
-        className="inline-flex items-center gap-1.5 rounded-sm border border-border bg-card px-2 py-1 text-[11px] text-text-muted hover:text-text-primary disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 rounded-sm border border-border bg-card px-2 py-1 text-[0.6875rem] text-text-muted hover:text-text-primary disabled:opacity-50"
       >
         <Trash2 size={11} aria-hidden="true" />
         {label}
@@ -238,7 +238,7 @@ function ClearPlansButton({
         type="button"
         disabled={disabled}
         onClick={() => setConfirmOpen(true)}
-        className="inline-flex items-center gap-1.5 rounded-sm border border-border bg-card px-2 py-1 text-[11px] text-text-muted hover:text-text-primary disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 rounded-sm border border-border bg-card px-2 py-1 text-[0.6875rem] text-text-muted hover:text-text-primary disabled:opacity-50"
       >
         <Trash2 size={11} aria-hidden="true" />
         {label}
@@ -358,7 +358,7 @@ function RequestRunList({
             <li
               key={item.key}
               role="presentation"
-              className="sticky top-0 z-10 -mx-1 flex items-center gap-2 bg-surface px-1 py-1 text-[10px] font-medium uppercase tracking-wider text-text-dim"
+              className="sticky top-0 z-10 -mx-1 flex items-center gap-2 bg-surface px-1 py-1 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim"
             >
               <span>{item.label}</span>
               <span className="h-px flex-1 bg-border-subtle" aria-hidden="true" />
@@ -401,18 +401,18 @@ function RequestRunList({
                   <ChevronRight size={11} className="shrink-0 text-text-faint" />
                 )}
                 <StatusIcon ok={run.ok} />
-                <span className="text-[10px] uppercase text-text-dim">{run.method}</span>
+                <span className="text-[0.625rem] uppercase text-text-dim">{run.method}</span>
                 <span className="flex-1 truncate text-xs text-text-primary">
                   {r?.name ?? <em className="text-text-dim">deleted request</em>}
                 </span>
                 {run.status !== null && (
-                  <span className="font-mono text-[11px] text-text-muted">{run.status}</span>
+                  <span className="font-mono text-[0.6875rem] text-text-muted">{run.status}</span>
                 )}
-                <span className="font-mono text-[10px] text-text-dim">{run.durationMs} ms</span>
+                <span className="font-mono text-[0.625rem] text-text-dim">{run.durationMs} ms</span>
                 {run.assertions.length > 0 && (
                   <span
                     className={cn(
-                      'rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider',
+                      'rounded-sm border px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider',
                       passedAssertions === run.assertions.length
                         ? 'border-success/40 bg-success/10 text-success'
                         : 'border-warning/40 bg-warning/10 text-warning',
@@ -421,7 +421,7 @@ function RequestRunList({
                     {passedAssertions}/{run.assertions.length}
                   </span>
                 )}
-                <span className="text-[10px] text-text-dim">
+                <span className="text-[0.625rem] text-text-dim">
                   {new Date(run.startedAt).toLocaleTimeString()}
                 </span>
               </button>
@@ -528,7 +528,7 @@ function DetailGrid({ children }: { children: React.ReactNode }) {
 function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <>
-      <dt className="text-[10px] uppercase tracking-wider text-text-dim">{label}</dt>
+      <dt className="text-[0.625rem] uppercase tracking-wider text-text-dim">{label}</dt>
       <dd className="min-w-0 text-text-muted">{children}</dd>
     </>
   );
@@ -537,7 +537,9 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 function DetailColumn({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-2 rounded-sm border border-border-subtle bg-card p-3">
-      <h3 className="text-[10px] font-medium uppercase tracking-wider text-text-dim">{title}</h3>
+      <h3 className="text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
+        {title}
+      </h3>
       {children}
     </section>
   );
@@ -557,11 +559,11 @@ function DetailColumnBody({
   return (
     <div>
       <div className="mb-1 flex items-center justify-between">
-        <p className="text-[10px] uppercase tracking-wider text-text-dim">{label}</p>
+        <p className="text-[0.625rem] uppercase tracking-wider text-text-dim">{label}</p>
         {actions}
       </div>
       {empty ? (
-        <p className="rounded-sm border border-dashed border-border-subtle p-2 text-[11px] text-text-dim">
+        <p className="rounded-sm border border-dashed border-border-subtle p-2 text-[0.6875rem] text-text-dim">
           (empty)
         </p>
       ) : (
@@ -600,7 +602,7 @@ function DownloadResponseButton({ run }: { run: RequestRun }) {
           : 'Download the response body to a file'
       }
       aria-label="Download response body"
-      className="inline-flex h-5 items-center gap-1 rounded-sm border border-border bg-surface px-1.5 text-[10px] text-text-muted hover:border-accent hover:text-text-primary"
+      className="inline-flex h-5 items-center gap-1 rounded-sm border border-border bg-surface px-1.5 text-[0.625rem] text-text-muted hover:border-accent hover:text-text-primary"
     >
       <Download size={10} />
       Download
@@ -629,7 +631,7 @@ function HeaderTable({ headers }: { headers: Record<string, string> }) {
   return (
     <ul className="flex flex-col gap-0.5">
       {entries.map(([k, v]) => (
-        <li key={k} className="grid grid-cols-[140px_1fr] gap-1 font-mono text-[10px]">
+        <li key={k} className="grid grid-cols-[140px_1fr] gap-1 font-mono text-[0.625rem]">
           <span className="truncate text-text-muted">{k}</span>
           <span className="break-all text-text-primary" title={v}>
             {v}
@@ -642,7 +644,7 @@ function HeaderTable({ headers }: { headers: Record<string, string> }) {
 
 function BodyPreview({ text }: { text: string }) {
   return (
-    <pre className="max-h-64 overflow-auto rounded-sm border border-border bg-surface p-2 font-mono text-[10px] text-text-primary">
+    <pre className="max-h-64 overflow-auto rounded-sm border border-border bg-surface p-2 font-mono text-[0.625rem] text-text-primary">
       {text}
     </pre>
   );
@@ -691,7 +693,7 @@ function PlanRunList({
             <li
               key={item.key}
               role="presentation"
-              className="sticky top-0 z-10 -mx-1 flex items-center gap-2 bg-surface px-1 py-1 text-[10px] font-medium uppercase tracking-wider text-text-dim"
+              className="sticky top-0 z-10 -mx-1 flex items-center gap-2 bg-surface px-1 py-1 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim"
             >
               <span>{item.label}</span>
               <span className="h-px flex-1 bg-border-subtle" aria-hidden="true" />
@@ -774,7 +776,7 @@ function PlanRunRow({
           aria-label={`${okCount} of ${total} requests succeeded`}
           title={`${okCount}/${total} requests succeeded`}
           className={cn(
-            'rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider',
+            'rounded-sm border px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider',
             allPassed
               ? 'border-success/40 bg-success/10 text-success'
               : 'border-warning/40 bg-warning/10 text-warning',
@@ -787,7 +789,7 @@ function PlanRunRow({
             aria-label={`${assertionsPassed} of ${assertionsTotal} assertions passed`}
             title={`${assertionsPassed}/${assertionsTotal} assertions passed`}
             className={cn(
-              'rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider',
+              'rounded-sm border px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider',
               assertionsAllPassed
                 ? 'border-success/40 bg-success/10 text-success'
                 : 'border-warning/40 bg-warning/10 text-warning',
@@ -796,8 +798,8 @@ function PlanRunRow({
             {assertionsPassed}/{assertionsTotal} ✓
           </span>
         )}
-        <span className="font-mono text-[10px] text-text-dim">{run.durationMs} ms</span>
-        <span className="text-[10px] text-text-dim">
+        <span className="font-mono text-[0.625rem] text-text-dim">{run.durationMs} ms</span>
+        <span className="text-[0.625rem] text-text-dim">
           {new Date(run.startedAt).toLocaleString()}
         </span>
         <span
@@ -823,7 +825,7 @@ function PlanRunRow({
       </button>
       {isOpen && (
         <div className="border-t border-border-subtle bg-surface p-3 text-xs">
-          <h4 className="mb-1.5 text-[10px] uppercase tracking-wider text-text-dim">
+          <h4 className="mb-1.5 text-[0.625rem] uppercase tracking-wider text-text-dim">
             Per-step results ({total})
           </h4>
           <ul className="flex flex-col gap-1.5">
@@ -874,7 +876,7 @@ function PlanRunStep({
   const [open, setOpen] = useState(false);
   if (!childRun) {
     return (
-      <li className="flex items-center gap-2 rounded-sm border border-border-subtle bg-card px-2 py-1 text-[11px]">
+      <li className="flex items-center gap-2 rounded-sm border border-border-subtle bg-card px-2 py-1 text-[0.6875rem]">
         <span className="w-5 text-center text-text-dim">{index + 1}.</span>
         <StatusIcon ok={passed} />
         <span className="flex-1 italic text-text-dim">
@@ -889,7 +891,7 @@ function PlanRunStep({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 px-2 py-1 text-left text-[11px] hover:bg-surface"
+        className="flex w-full items-center gap-2 px-2 py-1 text-left text-[0.6875rem] hover:bg-surface"
       >
         {open ? (
           <ChevronDown size={11} className="shrink-0 text-text-faint" />
@@ -898,7 +900,7 @@ function PlanRunStep({
         )}
         <span className="w-5 text-center text-text-dim">{index + 1}.</span>
         <StatusIcon ok={passed} />
-        <span className="text-[10px] uppercase text-text-dim">{childRun.method}</span>
+        <span className="text-[0.625rem] uppercase text-text-dim">{childRun.method}</span>
         <span className="flex-1 truncate text-text-primary">
           {requestName ?? <em className="text-text-dim">deleted request</em>}
         </span>

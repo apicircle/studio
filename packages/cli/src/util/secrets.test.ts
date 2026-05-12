@@ -80,6 +80,7 @@ function makeWorkspace(): WorkspaceState {
         sidebarExpandedSections: [],
         themeId: 'studio-dark',
         fontId: 'system-mono',
+        fontSizePercent: 100,
       },
       settings: { validateOnSend: true, monacoConsumesWheel: false },
       snapshots: { entries: [], maxBytes: 50 * 1024 * 1024 },

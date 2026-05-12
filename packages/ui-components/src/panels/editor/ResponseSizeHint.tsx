@@ -51,7 +51,7 @@ export function ResponseSizeHint({ body, contentType }: ResponseSizeHintProps) {
           onClick={() => setOpenCandidate(best)}
           className={cn(
             'inline-flex items-center gap-1 rounded-sm border border-accent/30 bg-accent/5 px-1.5 py-0.5',
-            'text-[11px] text-accent hover:bg-accent/15 focus:outline-none focus:ring-2 focus:ring-accent/50',
+            'text-[0.6875rem] text-accent hover:bg-accent/15 focus:outline-none focus:ring-2 focus:ring-accent/50',
           )}
           aria-label={`Preview as ${TRANSFORM_FORMAT_LABELS[best.format]} — ${best.percentSaved}% smaller than minified JSON`}
           title={describeAllCandidates(savings.candidates)}
@@ -68,7 +68,7 @@ export function ResponseSizeHint({ body, contentType }: ResponseSizeHintProps) {
           title={`Response as ${TRANSFORM_FORMAT_LABELS[openCandidate.format]} — ${formatBytes(openCandidate.bytes)} (${openCandidate.percentSaved}% smaller than minified JSON)`}
         >
           <div className="flex h-full flex-col">
-            <div className="flex flex-wrap items-center gap-3 border-b border-border-subtle px-3 py-2 text-[11px] text-text-muted">
+            <div className="flex flex-wrap items-center gap-3 border-b border-border-subtle px-3 py-2 text-[0.6875rem] text-text-muted">
               <span title="Body as the API actually sent it">Wire body: {sizeLabel}</span>
               {isPrettyPrinted && (
                 <span title="The same body with JSON whitespace stripped — fair baseline for measuring transformation savings">
@@ -155,7 +155,7 @@ function CandidateSwitcher({
           type="button"
           onClick={() => onSelect(c)}
           className={cn(
-            'rounded-sm border px-2 py-0.5 text-[10px]',
+            'rounded-sm border px-2 py-0.5 text-[0.625rem]',
             c.format === active
               ? 'border-accent bg-accent/15 text-accent'
               : 'border-border bg-surface text-text-muted hover:text-text-primary',

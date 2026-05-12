@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
+import { FONT_SIZE_PERCENT_DEFAULT } from '@apicircle/shared';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
 import lockfile from 'proper-lockfile';
 import type { WorkspaceState } from './patches';
@@ -181,6 +182,7 @@ function createEmptyLocalForSynced(synced: WorkspaceSynced): WorkspaceLocal {
       sidebarExpandedSections: [],
       themeId: 'studio-dark',
       fontId: 'system-mono',
+      fontSizePercent: FONT_SIZE_PERCENT_DEFAULT,
     },
     settings: { validateOnSend: true, monacoConsumesWheel: false },
     snapshots: { entries: [], maxBytes: 50 * 1024 * 1024 },

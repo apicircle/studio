@@ -127,7 +127,7 @@ export function MockRulePicker(props: ValidationProps | ResponseProps) {
   return (
     <Modal open={props.open} onClose={props.onClose} title={title} className="max-w-2xl">
       <div className="space-y-3">
-        <p className="text-[11px] text-text-dim">
+        <p className="text-[0.6875rem] text-text-dim">
           Pick one or more rules to copy into this endpoint. Imported rules get fresh ids — future
           edits don&rsquo;t sync back to the originals.
         </p>
@@ -138,16 +138,16 @@ export function MockRulePicker(props: ValidationProps | ResponseProps) {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by rule name, endpoint, server…"
             aria-label="Filter rules"
-            className="h-8 w-full rounded-sm border border-border bg-surface px-2 text-[11px] text-text-primary placeholder:text-text-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+            className="h-8 w-full rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-primary placeholder:text-text-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
           />
         )}
         {allEntries.length === 0 ? (
-          <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-[11px] text-text-dim">
+          <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-[0.6875rem] text-text-dim">
             No {props.kind === 'validation' ? 'validation' : 'response'} rules in the workspace yet.
             Create one with <strong>Add rule</strong> first.
           </p>
         ) : entries.length === 0 ? (
-          <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-[11px] text-text-dim">
+          <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-[0.6875rem] text-text-dim">
             No rules match &ldquo;{search}&rdquo;. Clear the search to see all.
           </p>
         ) : (
@@ -157,7 +157,7 @@ export function MockRulePicker(props: ValidationProps | ResponseProps) {
               return (
                 <li key={entry.key}>
                   <label
-                    className={`flex cursor-pointer items-start gap-2 rounded-sm border p-2 text-[11px] transition-colors ${
+                    className={`flex cursor-pointer items-start gap-2 rounded-sm border p-2 text-[0.6875rem] transition-colors ${
                       checked
                         ? 'border-accent/40 bg-accent/10 text-text-primary'
                         : 'border-transparent text-text-muted hover:border-border-subtle hover:bg-card'
@@ -180,14 +180,14 @@ export function MockRulePicker(props: ValidationProps | ResponseProps) {
                         )}
                         {entry.isSelf && (
                           <span
-                            className="rounded-sm bg-card px-1 py-0 text-[9px] uppercase tracking-wider text-text-dim"
+                            className="rounded-sm bg-card px-1 py-0 text-[0.5625rem] uppercase tracking-wider text-text-dim"
                             title="This rule lives on the endpoint you're importing into — useful for clone-with-tweaks"
                           >
                             this endpoint
                           </span>
                         )}
                       </div>
-                      <p className="truncate text-[10px] text-text-dim">
+                      <p className="truncate text-[0.625rem] text-text-dim">
                         {entry.serverName} · {entry.endpointLabel}
                       </p>
                     </div>
@@ -222,7 +222,7 @@ export function MockRulePicker(props: ValidationProps | ResponseProps) {
 function ValidationRuleSummary({ rule }: { rule: MockValidationRule }) {
   return (
     <span className="flex items-center gap-1.5">
-      <span className="rounded-sm border border-danger/40 bg-danger/5 px-1.5 py-0.5 font-mono text-[10px] text-danger">
+      <span className="rounded-sm border border-danger/40 bg-danger/5 px-1.5 py-0.5 font-mono text-[0.625rem] text-danger">
         {rule.failResponse.status}
       </span>
       <span className="font-medium text-text-primary">
@@ -230,7 +230,7 @@ function ValidationRuleSummary({ rule }: { rule: MockValidationRule }) {
         {rule.target ? ` · ${rule.target}` : ''}
       </span>
       {!rule.enabled && (
-        <span className="rounded-sm border border-border-subtle px-1 py-0 text-[9px] uppercase tracking-wider text-text-dim">
+        <span className="rounded-sm border border-border-subtle px-1 py-0 text-[0.5625rem] uppercase tracking-wider text-text-dim">
           disabled
         </span>
       )}
@@ -242,12 +242,12 @@ function ResponseRuleSummary({ rule }: { rule: MockResponseRule }) {
   return (
     <span className="flex items-center gap-1.5">
       <span
-        className={`rounded-sm border px-1.5 py-0.5 font-mono text-[10px] ${rule.enabled ? 'border-success/40 bg-success/5 text-success' : 'border-border bg-surface text-text-muted'}`}
+        className={`rounded-sm border px-1.5 py-0.5 font-mono text-[0.625rem] ${rule.enabled ? 'border-success/40 bg-success/5 text-success' : 'border-border bg-surface text-text-muted'}`}
       >
         {rule.response.status}
       </span>
       <span className="font-medium text-text-primary">{rule.name || 'Unnamed'}</span>
-      <span className="text-[10px] text-text-dim">
+      <span className="text-[0.625rem] text-text-dim">
         {rule.when.length} clause{rule.when.length === 1 ? '' : 's'}
       </span>
     </span>

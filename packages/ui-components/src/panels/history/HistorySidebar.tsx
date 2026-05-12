@@ -204,7 +204,7 @@ export function HistorySidebar() {
                     onClick={() => toggleStatus(b.id)}
                     aria-pressed={checked}
                     className={cn(
-                      'inline-flex h-6 items-center rounded-sm border px-2 text-[11px] transition-colors',
+                      'inline-flex h-6 items-center rounded-sm border px-2 text-[0.6875rem] transition-colors',
                       checked
                         ? 'border-accent/60 bg-accent/15 text-accent'
                         : 'border-border bg-surface text-text-muted hover:border-accent/40 hover:text-text-primary',
@@ -228,7 +228,7 @@ export function HistorySidebar() {
                     onClick={() => toggleMethod(m)}
                     aria-pressed={checked}
                     className={cn(
-                      'inline-flex h-6 items-center rounded-sm border px-1.5 text-[10px] font-medium transition-colors',
+                      'inline-flex h-6 items-center rounded-sm border px-1.5 text-[0.625rem] font-medium transition-colors',
                       checked
                         ? 'border-accent/60 bg-accent/15 text-accent'
                         : 'border-border bg-surface text-text-muted hover:border-accent/40 hover:text-text-primary',
@@ -245,31 +245,31 @@ export function HistorySidebar() {
 
       <FilterSection title="Date range" icon={<CalendarRange size={11} aria-hidden />}>
         <div className="flex flex-col gap-1">
-          <label className="flex items-center gap-2 text-[11px] text-text-muted">
+          <label className="flex items-center gap-2 text-[0.6875rem] text-text-muted">
             <span className="w-8 text-right">From</span>
             <input
               type="date"
               value={ui.fromDate ?? ''}
               onChange={(e) => setUi({ fromDate: e.target.value || null })}
               aria-label="Filter from date"
-              className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 text-[11px] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+              className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
             />
           </label>
-          <label className="flex items-center gap-2 text-[11px] text-text-muted">
+          <label className="flex items-center gap-2 text-[0.6875rem] text-text-muted">
             <span className="w-8 text-right">To</span>
             <input
               type="date"
               value={ui.toDate ?? ''}
               onChange={(e) => setUi({ toDate: e.target.value || null })}
               aria-label="Filter to date"
-              className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 text-[11px] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+              className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
             />
           </label>
           {(ui.fromDate || ui.toDate) && (
             <button
               type="button"
               onClick={onClearDateRange}
-              className="inline-flex h-6 items-center justify-center gap-1 rounded-sm border border-danger/30 bg-danger/5 px-2 text-[10px] text-danger hover:bg-danger/10"
+              className="inline-flex h-6 items-center justify-center gap-1 rounded-sm border border-danger/30 bg-danger/5 px-2 text-[0.625rem] text-danger hover:bg-danger/10"
             >
               <Trash2 size={10} />
               Clear runs in this range
@@ -285,7 +285,7 @@ export function HistorySidebar() {
               key={p.days}
               type="button"
               onClick={() => clearOlderThan(p.days)}
-              className="inline-flex h-6 items-center justify-between gap-1 rounded-sm border border-border bg-surface px-2 text-[10px] text-text-muted hover:border-danger/40 hover:text-danger"
+              className="inline-flex h-6 items-center justify-between gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-danger/40 hover:text-danger"
             >
               <span>{p.label}</span>
               <Trash2 size={10} />
@@ -293,7 +293,7 @@ export function HistorySidebar() {
           ))}
           {emptyClearHint && (
             <p
-              className="rounded-sm bg-card/60 px-2 py-1 text-[10px] text-text-dim"
+              className="rounded-sm bg-card/60 px-2 py-1 text-[0.625rem] text-text-dim"
               role="status"
               aria-live="polite"
             >
@@ -304,12 +304,12 @@ export function HistorySidebar() {
       </FilterSection>
 
       <FilterSection title="Storage" icon={<HardDrive size={11} aria-hidden />}>
-        <div className="rounded-sm border border-border-subtle bg-surface px-2 py-1.5 text-[11px] text-text-muted">
+        <div className="rounded-sm border border-border-subtle bg-surface px-2 py-1.5 text-[0.6875rem] text-text-muted">
           <p>
             <span className="font-medium text-text-primary">{formatBytes(storageBytes)}</span> in
             local history
           </p>
-          <p className="mt-0.5 text-[10px] text-text-dim">
+          <p className="mt-0.5 text-[0.625rem] text-text-dim">
             {requestRuns.length} request run{requestRuns.length === 1 ? '' : 's'} ·{' '}
             {planRuns.length} plan run{planRuns.length === 1 ? '' : 's'}
           </p>
@@ -359,7 +359,7 @@ function SidebarTab({
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        'inline-flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm border px-2 text-[11px] transition-colors',
+        'inline-flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm border px-2 text-[0.6875rem] transition-colors',
         active
           ? 'border-accent/60 bg-accent/15 text-text-primary'
           : 'border-border bg-surface text-text-muted hover:border-accent/40 hover:text-text-primary',
@@ -383,7 +383,7 @@ function FilterSection({
 }) {
   return (
     <section className="flex flex-col gap-1.5">
-      <header className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-text-dim">
+      <header className="flex items-center gap-1 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
         {icon}
         {title}
       </header>

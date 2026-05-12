@@ -742,6 +742,17 @@ export interface WorkspaceLocal {
      * `'system-mono'` matches the seed in `createEmptyWorkspace`.
      */
     fontId: FontFamilyId;
+    /**
+     * Whole-UI text-size scaling, expressed as a percentage of the
+     * browser's default root font-size. The HTML root's `font-size` is
+     * set to this percentage at hydrate / switch time, scaling every
+     * Tailwind `rem`-based utility plus the Monaco editor's option in
+     * `MonacoEditorBase`. Range: `FONT_SIZE_PERCENT_MIN`..`MAX`, snapped
+     * to `FONT_SIZE_PERCENT_STEP`. Default `FONT_SIZE_PERCENT_DEFAULT`
+     * (100) — matches the browser baseline so first-paint before
+     * hydrate doesn't flash a different size.
+     */
+    fontSizePercent: number;
   };
   /**
    * User-tunable client-side settings. Local-only; never round-trips
@@ -1047,6 +1058,17 @@ export interface RequestRun {
 
 /** Soft cap for body previews stored on a RequestRun (each side). */
 export const RUN_BODY_PREVIEW_LIMIT = 64 * 1024;
+
+/**
+ * UI text-size scaling bounds. `fontSizePercent` on `WorkspaceLocal.ui`
+ * is clamped to `[MIN, MAX]` and snapped to `STEP`. Below 80% the
+ * smallest chrome (10–11px bracketed Tailwind sizes) becomes unreadable;
+ * above 150% layout pressure mounts in narrow panels.
+ */
+export const FONT_SIZE_PERCENT_MIN = 80;
+export const FONT_SIZE_PERCENT_MAX = 150;
+export const FONT_SIZE_PERCENT_STEP = 10;
+export const FONT_SIZE_PERCENT_DEFAULT = 100;
 
 export interface PlanRun {
   id: string;

@@ -67,7 +67,7 @@ export function BinaryEditor({ request }: BinaryEditorProps) {
         </button>
       )}
 
-      <p className="text-[11px] text-text-dim">
+      <p className="text-[0.6875rem] text-text-dim">
         The Content-Type header is set automatically from the file&apos;s MIME type when the request
         is sent. Any user-set Content-Type is stripped to avoid corrupting the body.
       </p>

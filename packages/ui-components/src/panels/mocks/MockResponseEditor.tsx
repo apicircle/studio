@@ -88,7 +88,7 @@ export function MockResponseEditor({
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <label className="text-[11px] text-text-dim">Status</label>
+        <label className="text-[0.6875rem] text-text-dim">Status</label>
         <input
           type="number"
           min={100}
@@ -96,9 +96,9 @@ export function MockResponseEditor({
           value={value.status}
           onChange={(e) => setStatus(Number(e.target.value) || 200)}
           aria-label={`${label} status`}
-          className="h-7 w-16 rounded-sm border border-border bg-card px-1 text-center font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none"
+          className="h-7 w-16 rounded-sm border border-border bg-card px-1 text-center font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
         />
-        <label className="ml-2 text-[11px] text-text-dim">Delay (ms)</label>
+        <label className="ml-2 text-[0.6875rem] text-text-dim">Delay (ms)</label>
         <input
           type="number"
           min={0}
@@ -108,7 +108,7 @@ export function MockResponseEditor({
             setDelay(n > 0 ? n : undefined);
           }}
           aria-label={`${label} delay`}
-          className="h-7 w-20 rounded-sm border border-border bg-card px-1 text-center font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none"
+          className="h-7 w-20 rounded-sm border border-border bg-card px-1 text-center font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
         />
       </div>
 
@@ -192,7 +192,7 @@ function HeadersEditor({
 
   return (
     <details open className="rounded-sm border border-border-subtle bg-card p-2">
-      <summary className="cursor-pointer text-[10px] font-medium uppercase tracking-wider text-text-dim">
+      <summary className="cursor-pointer text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
         Response headers ({headers.length})
       </summary>
       <ul className="mt-2 space-y-1">
@@ -211,7 +211,7 @@ function HeadersEditor({
         type="button"
         onClick={add}
         aria-label={`Add ${label} header`}
-        className="mt-1.5 inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[10px] text-text-muted hover:border-border-strong hover:text-text-primary"
+        className="mt-1.5 inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary"
       >
         + Header
       </button>
@@ -259,7 +259,7 @@ function ResponseHeaderRow({
           onBlur={() => setTimeout(() => setValueFocused(false), 150)}
           placeholder="value"
           aria-label={`${label} header ${index + 1} value`}
-          className="h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+          className="h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
         />
         <HeaderValueRecommendations
           headerKey={header.key}
@@ -297,7 +297,7 @@ function BodyTypePicker({
   const allowed = new Set(allowedTypes);
   return (
     <div className="flex flex-wrap items-center gap-1">
-      <span className="text-[10px] text-text-dim">Body</span>
+      <span className="text-[0.625rem] text-text-dim">Body</span>
       <div role="tablist" aria-label={`${label} body type`} className="flex flex-wrap gap-1">
         {BODY_TYPES.map((bt) => {
           const active = body.type === bt.id;
@@ -323,10 +323,10 @@ function BodyTypePicker({
               onClick={() => enabled && onTypeChange(bt.id)}
               className={
                 !enabled
-                  ? 'rounded-sm border border-border-subtle bg-card px-2 py-0.5 text-[10px] text-text-faint opacity-50 cursor-not-allowed'
+                  ? 'rounded-sm border border-border-subtle bg-card px-2 py-0.5 text-[0.625rem] text-text-faint opacity-50 cursor-not-allowed'
                   : active
-                    ? 'rounded-sm border border-accent/40 bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent'
-                    : 'rounded-sm border border-border bg-card px-2 py-0.5 text-[10px] text-text-muted hover:border-border-strong hover:text-text-primary'
+                    ? 'rounded-sm border border-accent/40 bg-accent/10 px-2 py-0.5 text-[0.625rem] font-medium text-accent'
+                    : 'rounded-sm border border-border bg-card px-2 py-0.5 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary'
               }
             >
               {bt.label}
@@ -355,7 +355,7 @@ function BodyContentEditor({
 }) {
   if (body.type === 'none') {
     return (
-      <p className="rounded-sm border border-dashed border-border-subtle px-2 py-3 text-center text-[11px] text-text-dim">
+      <p className="rounded-sm border border-dashed border-border-subtle px-2 py-3 text-center text-[0.6875rem] text-text-dim">
         No body — runtime returns Content-Length: 0.
       </p>
     );
@@ -407,7 +407,7 @@ function BinaryBodyEditor({
 
   if (!attachmentSlot) {
     return (
-      <p className="rounded-sm border border-dashed border-warning/40 px-2 py-3 text-center text-[10px] text-warning">
+      <p className="rounded-sm border border-dashed border-warning/40 px-2 py-3 text-center text-[0.625rem] text-warning">
         File uploads aren&rsquo;t supported in this response context yet — only on the
         endpoint&rsquo;s Default Response.
       </p>
@@ -432,11 +432,11 @@ function BinaryBodyEditor({
   if (body.attachment?.slotId) {
     const a = body.attachment;
     return (
-      <div className="flex items-center gap-2 rounded-sm border border-success/30 bg-success/5 px-3 py-2 text-[11px]">
+      <div className="flex items-center gap-2 rounded-sm border border-success/30 bg-success/5 px-3 py-2 text-[0.6875rem]">
         <Paperclip size={12} className="shrink-0 text-success" aria-hidden="true" />
         <div className="flex-1">
           <div className="font-mono text-text-primary">{a.filename ?? 'unnamed-file'}</div>
-          <div className="text-[10px] text-text-dim">
+          <div className="text-[0.625rem] text-text-dim">
             {a.mimeType ?? 'application/octet-stream'}
             {a.size !== undefined && (
               <>
@@ -458,7 +458,7 @@ function BinaryBodyEditor({
             void detachMockResponseFile(attachmentSlot.serverId, attachmentSlot.endpointId)
           }
           aria-label="Remove uploaded file"
-          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[10px] text-text-muted hover:border-danger/40 hover:text-danger"
+          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.625rem] text-text-muted hover:border-danger/40 hover:text-danger"
         >
           <Trash2 size={10} aria-hidden="true" />
           Remove
@@ -478,11 +478,11 @@ function BinaryBodyEditor({
         if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click();
       }}
       aria-label="Upload response file"
-      className="flex cursor-pointer flex-col items-center gap-1 rounded-sm border-2 border-dashed border-border bg-card px-3 py-6 text-center text-[11px] text-text-muted hover:border-accent/40 hover:text-accent"
+      className="flex cursor-pointer flex-col items-center gap-1 rounded-sm border-2 border-dashed border-border bg-card px-3 py-6 text-center text-[0.6875rem] text-text-muted hover:border-accent/40 hover:text-accent"
     >
       <Paperclip size={16} aria-hidden="true" />
       <span>Click or drop a file to attach</span>
-      <span className="text-[10px] text-text-dim">
+      <span className="text-[0.625rem] text-text-dim">
         Stored as a workspace attachment — survives push to Git.
       </span>
       <input
@@ -536,14 +536,14 @@ function FormDataBodyEditor({
               onChange={(e) => update(idx, { key: e.target.value })}
               placeholder="field"
               aria-label={`${label} form row ${idx + 1} key`}
-              className="h-6 rounded-sm border border-border bg-surface px-1.5 font-mono text-[10px] text-text-primary focus:border-accent focus:outline-none"
+              className="h-6 rounded-sm border border-border bg-surface px-1.5 font-mono text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
             />
             <input
               value={row.value}
               onChange={(e) => update(idx, { value: e.target.value })}
               placeholder="value"
               aria-label={`${label} form row ${idx + 1} value`}
-              className="h-6 rounded-sm border border-border bg-surface px-1.5 font-mono text-[10px] text-text-primary focus:border-accent focus:outline-none"
+              className="h-6 rounded-sm border border-border bg-surface px-1.5 font-mono text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
             />
             <button
               type="button"
@@ -560,7 +560,7 @@ function FormDataBodyEditor({
         type="button"
         onClick={add}
         aria-label={`Add ${label} form row`}
-        className="inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[10px] text-text-muted hover:border-border-strong hover:text-text-primary"
+        className="inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary"
       >
         + Field
       </button>
@@ -624,12 +624,12 @@ function MultipliersEditor({
       open={multipliers.length > 0}
       className="rounded-sm border border-border-subtle bg-card p-2"
     >
-      <summary className="cursor-pointer text-[10px] font-medium uppercase tracking-wider text-text-dim">
+      <summary className="cursor-pointer text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
         Response multipliers ({multipliers.length})
       </summary>
       <div className="mt-2 space-y-2">
         {multipliers.length === 0 ? (
-          <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-[11px] text-text-dim">
+          <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-[0.6875rem] text-text-dim">
             No multipliers — server returns the body as-authored. Add one to repeat an array inside
             the response body based on a request value.
           </p>
@@ -648,7 +648,7 @@ function MultipliersEditor({
                     }
                     aria-label={`${label} multiplier ${idx + 1} source kind`}
                     wrapperClassName="w-full"
-                    className="text-[11px] text-text-primary"
+                    className="text-[0.6875rem] text-text-primary"
                   >
                     {(Object.keys(MULTIPLIER_SOURCE_LABEL) as MockMultiplierSourceKind[]).map(
                       (k) => (
@@ -663,14 +663,14 @@ function MultipliersEditor({
                     onChange={(e) => updateSource(idx, { key: e.target.value })}
                     placeholder={MULTIPLIER_SOURCE_PLACEHOLDER[m.source.kind]}
                     aria-label={`${label} multiplier ${idx + 1} source key`}
-                    className="h-7 rounded-sm border border-border bg-card px-2 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none"
+                    className="h-7 rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
                   />
                   <input
                     value={m.targetJsonPath}
                     onChange={(e) => update(idx, { targetJsonPath: e.target.value })}
                     placeholder="$.items"
                     aria-label={`${label} multiplier ${idx + 1} target JSON path`}
-                    className="h-7 rounded-sm border border-border bg-card px-2 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none"
+                    className="h-7 rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
                   />
                   <input
                     type="number"
@@ -683,7 +683,7 @@ function MultipliersEditor({
                     }
                     aria-label={`${label} multiplier ${idx + 1} default count`}
                     title="Default count when source is missing or non-numeric"
-                    className="h-7 w-16 rounded-sm border border-border bg-card px-1 text-center font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none"
+                    className="h-7 w-16 rounded-sm border border-border bg-card px-1 text-center font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
                   />
                   <button
                     type="button"
@@ -694,7 +694,7 @@ function MultipliersEditor({
                     <Trash2 size={11} aria-hidden="true" />
                   </button>
                 </div>
-                <div className="mt-1 grid grid-cols-[auto_minmax(0,4rem)_auto_minmax(0,4rem)_minmax(0,1fr)] items-center gap-1.5 text-[10px] text-text-dim">
+                <div className="mt-1 grid grid-cols-[auto_minmax(0,4rem)_auto_minmax(0,4rem)_minmax(0,1fr)] items-center gap-1.5 text-[0.625rem] text-text-dim">
                   <label htmlFor={`mul-${m.id}-min`}>Min</label>
                   <input
                     id={`mul-${m.id}-min`}
@@ -709,7 +709,7 @@ function MultipliersEditor({
                       });
                     }}
                     aria-label={`${label} multiplier ${idx + 1} min`}
-                    className="h-6 rounded-sm border border-border bg-card px-1 text-center font-mono text-[10px] text-text-primary focus:border-accent focus:outline-none"
+                    className="h-6 rounded-sm border border-border bg-card px-1 text-center font-mono text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
                   />
                   <label htmlFor={`mul-${m.id}-max`}>Max</label>
                   <input
@@ -725,7 +725,7 @@ function MultipliersEditor({
                       });
                     }}
                     aria-label={`${label} multiplier ${idx + 1} max`}
-                    className="h-6 rounded-sm border border-border bg-card px-1 text-center font-mono text-[10px] text-text-primary focus:border-accent focus:outline-none"
+                    className="h-6 rounded-sm border border-border bg-card px-1 text-center font-mono text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
                   />
                   <input
                     value={m.name ?? ''}
@@ -734,11 +734,11 @@ function MultipliersEditor({
                     }
                     placeholder="Optional label"
                     aria-label={`${label} multiplier ${idx + 1} label`}
-                    className="h-6 rounded-sm border border-border bg-card px-2 text-[10px] text-text-primary focus:border-accent focus:outline-none"
+                    className="h-6 rounded-sm border border-border bg-card px-2 text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
                   />
                 </div>
                 {m.min !== undefined && m.max !== undefined && m.min > m.max && (
-                  <p className="mt-1 rounded-sm border border-warning/30 bg-warning/5 px-2 py-1 text-[10px] text-warning">
+                  <p className="mt-1 rounded-sm border border-warning/30 bg-warning/5 px-2 py-1 text-[0.625rem] text-warning">
                     Min ({m.min}) is greater than Max ({m.max}). At runtime, max wins after the min
                     clamp — adjust to avoid surprise.
                   </p>
@@ -751,7 +751,7 @@ function MultipliersEditor({
           type="button"
           onClick={add}
           aria-label={`Add ${label} multiplier`}
-          className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[11px] text-accent hover:bg-accent/20"
+          className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20"
         >
           <Plus size={10} aria-hidden="true" />
           Add multiplier

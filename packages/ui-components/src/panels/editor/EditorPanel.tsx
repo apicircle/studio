@@ -109,10 +109,10 @@ function EffectiveRequestPreview({
   if (!urlChanged && !cookieValue) return null;
 
   return (
-    <div className="flex flex-col gap-0.5 rounded-sm border border-border-subtle bg-card px-2 py-1.5 font-mono text-[11px] text-text-muted">
+    <div className="flex flex-col gap-0.5 rounded-sm border border-border-subtle bg-card px-2 py-1.5 font-mono text-[0.6875rem] text-text-muted">
       {urlChanged && (
         <div className="flex items-center gap-2">
-          <span className="shrink-0 text-[10px] uppercase tracking-wider text-text-dim">
+          <span className="shrink-0 text-[0.625rem] uppercase tracking-wider text-text-dim">
             Effective URL
           </span>
           <span className="truncate text-accent" title={effectiveUrl}>
@@ -123,7 +123,7 @@ function EffectiveRequestPreview({
       {cookieValue && (
         <div className="flex items-center gap-2">
           <Cookie size={11} className="shrink-0 text-text-dim" />
-          <span className="shrink-0 text-[10px] uppercase tracking-wider text-text-dim">
+          <span className="shrink-0 text-[0.625rem] uppercase tracking-wider text-text-dim">
             Cookie
           </span>
           <span className="truncate" title={cookieValue}>
@@ -420,7 +420,7 @@ function CurlPasteConfirm({
     <div
       role="status"
       aria-label="cURL paste detected"
-      className="flex items-center gap-2 rounded-sm border border-accent/40 bg-accent/5 px-2 py-1.5 text-[11px]"
+      className="flex items-center gap-2 rounded-sm border border-accent/40 bg-accent/5 px-2 py-1.5 text-[0.6875rem]"
     >
       <span className="text-text-primary">Looks like a cURL command</span>
       <code className="ml-1 flex-1 truncate font-mono text-text-muted" title={curl}>
@@ -429,14 +429,14 @@ function CurlPasteConfirm({
       <button
         type="button"
         onClick={onConfirm}
-        className="inline-flex h-6 items-center rounded-sm border border-accent/40 bg-accent/15 px-2 text-[11px] text-accent hover:bg-accent/25"
+        className="inline-flex h-6 items-center rounded-sm border border-accent/40 bg-accent/15 px-2 text-[0.6875rem] text-accent hover:bg-accent/25"
       >
         Import as new request
       </button>
       <button
         type="button"
         onClick={onDismiss}
-        className="inline-flex h-6 items-center rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-accent hover:text-text-primary"
+        className="inline-flex h-6 items-center rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"
       >
         Dismiss
       </button>
@@ -470,7 +470,7 @@ function LinkedSourceBanner({ view }: { view: Extract<ActiveRequestView, { sourc
     <div
       role="status"
       aria-label="Linked request source"
-      className="flex flex-col gap-1.5 rounded-sm border border-accent/30 bg-accent/5 px-2.5 py-1.5 text-[11px] text-text-muted"
+      className="flex flex-col gap-1.5 rounded-sm border border-accent/30 bg-accent/5 px-2.5 py-1.5 text-[0.6875rem] text-text-muted"
     >
       <div className="flex flex-wrap items-center gap-2">
         <Link2 size={11} aria-hidden="true" className="shrink-0 text-accent" />
@@ -481,7 +481,7 @@ function LinkedSourceBanner({ view }: { view: Extract<ActiveRequestView, { sourc
         </code>
         {view.link.pinnedVersion && (
           <span
-            className="rounded-sm border border-border bg-surface px-1 py-0.5 font-mono text-[10px] text-text-dim"
+            className="rounded-sm border border-border bg-surface px-1 py-0.5 font-mono text-[0.625rem] text-text-dim"
             title={`Pinned to v${view.link.pinnedVersion}`}
           >
             v{view.link.pinnedVersion}
@@ -491,7 +491,7 @@ function LinkedSourceBanner({ view }: { view: Extract<ActiveRequestView, { sourc
           {overriddenFieldCount > 0 ? (
             <>
               <span
-                className="rounded-sm border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] text-warning"
+                className="rounded-sm border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[0.625rem] text-warning"
                 title="Number of request fields you've edited on top of the source"
               >
                 {overriddenFieldCount} field{overriddenFieldCount === 1 ? '' : 's'} locally modified
@@ -500,20 +500,22 @@ function LinkedSourceBanner({ view }: { view: Extract<ActiveRequestView, { sourc
                 type="button"
                 onClick={() => clearLinkedRequestOverride(view.link.id, view.request.id)}
                 aria-label="Reset all local modifications for this linked request"
-                className="inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[10px] text-text-muted hover:border-danger/40 hover:text-danger"
+                className="inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-danger/40 hover:text-danger"
               >
                 <RotateCcw size={10} aria-hidden="true" />
                 Reset all to source
               </button>
             </>
           ) : (
-            <span className="text-[10px] text-text-dim">Source-clean</span>
+            <span className="text-[0.625rem] text-text-dim">Source-clean</span>
           )}
         </span>
       </div>
       {overriddenFieldCount > 0 && (
         <div className="flex flex-wrap items-center gap-1" aria-label="Per-field overrides">
-          <span className="text-[10px] uppercase tracking-wider text-text-dim">Overridden:</span>
+          <span className="text-[0.625rem] uppercase tracking-wider text-text-dim">
+            Overridden:
+          </span>
           {overriddenFields.map((field) => (
             <button
               key={field}
@@ -521,7 +523,7 @@ function LinkedSourceBanner({ view }: { view: Extract<ActiveRequestView, { sourc
               onClick={() => clearLinkedRequestOverrideField(view.link.id, view.request.id, field)}
               aria-label={`Reset ${field} to source value`}
               title={`Reset ${field} to source — drops just this field's override`}
-              className="group inline-flex h-5 items-center gap-1 rounded-sm border border-warning/40 bg-warning/10 pl-1.5 pr-1 font-mono text-[10px] text-warning hover:border-danger/40 hover:bg-danger/10 hover:text-danger"
+              className="group inline-flex h-5 items-center gap-1 rounded-sm border border-warning/40 bg-warning/10 pl-1.5 pr-1 font-mono text-[0.625rem] text-warning hover:border-danger/40 hover:bg-danger/10 hover:text-danger"
             >
               <span>{field}</span>
               <X size={9} aria-hidden="true" className="text-warning/60 group-hover:text-danger" />

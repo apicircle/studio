@@ -40,7 +40,7 @@ export function LinkedReleaseNotes({ linkedWorkspaceId, fromVersion, toVersion }
         )}
         <ScrollText size={12} aria-hidden="true" className="text-accent" />
         <span className="font-medium">Release notes</span>
-        <span className="text-[10px] text-text-dim">
+        <span className="text-[0.625rem] text-text-dim">
           {versions.length} version{versions.length === 1 ? '' : 's'} since
           {fromVersion ? ` v${fromVersion}` : ' first link'}
         </span>
@@ -59,26 +59,26 @@ export function LinkedReleaseNotes({ linkedWorkspaceId, fromVersion, toVersion }
 function ReleaseNoteEntry({ version }: { version: ReleaseVersion }) {
   return (
     <article className="space-y-1.5">
-      <header className="flex flex-wrap items-center gap-2 text-[11px]">
+      <header className="flex flex-wrap items-center gap-2 text-[0.6875rem]">
         <span className="font-mono text-sm font-medium text-text-primary">v{version.version}</span>
         <span className="text-text-dim">{formatTimestamp(version.publishedAt)}</span>
         {version.yanked && (
-          <span className="rounded-sm border border-danger/40 bg-danger/5 px-1.5 py-0 text-[9px] uppercase tracking-wider text-danger">
+          <span className="rounded-sm border border-danger/40 bg-danger/5 px-1.5 py-0 text-[0.5625rem] uppercase tracking-wider text-danger">
             yanked
           </span>
         )}
         {version.deprecated && !version.yanked && (
-          <span className="rounded-sm border border-warning/40 bg-warning/5 px-1.5 py-0 text-[9px] uppercase tracking-wider text-warning">
+          <span className="rounded-sm border border-warning/40 bg-warning/5 px-1.5 py-0 text-[0.5625rem] uppercase tracking-wider text-warning">
             deprecated
           </span>
         )}
       </header>
       {version.notes.trim() ? (
-        <p className="whitespace-pre-wrap rounded-sm border border-border-subtle bg-surface px-2 py-1.5 text-[11px] leading-relaxed text-text-muted">
+        <p className="whitespace-pre-wrap rounded-sm border border-border-subtle bg-surface px-2 py-1.5 text-[0.6875rem] leading-relaxed text-text-muted">
           {version.notes}
         </p>
       ) : (
-        <p className="text-[11px] italic text-text-dim">No release notes provided.</p>
+        <p className="text-[0.6875rem] italic text-text-dim">No release notes provided.</p>
       )}
     </article>
   );

@@ -220,8 +220,8 @@ export function VariableAutocompleteField({
                   isActive ? 'bg-accent/10' : 'hover:bg-accent/5',
                 )}
               >
-                <span className="font-mono text-[11px]">{s.key}</span>
-                <span className="text-[10px] uppercase tracking-wide text-text-dim">
+                <span className="font-mono text-[0.6875rem]">{s.key}</span>
+                <span className="text-[0.625rem] uppercase tracking-wide text-text-dim">
                   {s.source}
                 </span>
               </li>

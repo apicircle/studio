@@ -37,12 +37,14 @@ export function HelpSidebar() {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search help…"
           aria-label="Search help"
-          className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-[11px] text-text-primary focus:border-accent focus:outline-none"
+          className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
         />
       </div>
       <nav className="flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
-          <p className="px-2 py-4 text-center text-[11px] text-text-dim">No matching sections.</p>
+          <p className="px-2 py-4 text-center text-[0.6875rem] text-text-dim">
+            No matching sections.
+          </p>
         ) : (
           <ul className="flex flex-col gap-0.5">
             {filtered.map((section) => {
@@ -54,7 +56,7 @@ export function HelpSidebar() {
                     onClick={() => setSelectedId(section.id)}
                     aria-current={active ? 'true' : undefined}
                     className={cn(
-                      'w-full rounded-sm px-2 py-1.5 text-left text-[11px] transition-colors',
+                      'w-full rounded-sm px-2 py-1.5 text-left text-[0.6875rem] transition-colors',
                       active
                         ? 'border border-accent/40 bg-accent/10 text-accent'
                         : 'border border-transparent text-text-muted hover:border-border-subtle hover:bg-surface hover:text-text-primary',

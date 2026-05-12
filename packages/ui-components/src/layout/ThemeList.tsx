@@ -121,7 +121,7 @@ export function ThemeList({ onCommit, onCancel }: ThemeListProps) {
         <li key={group.key}>
           <div
             role="presentation"
-            className="sticky top-0 z-10 border-b border-border-subtle bg-card px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-text-dim"
+            className="sticky top-0 z-10 border-b border-border-subtle bg-card px-3 pb-1 pt-2 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim"
           >
             {group.label}
           </div>

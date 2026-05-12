@@ -46,6 +46,7 @@ import {
 } from './githubPrCapability';
 import { decideRetirement, probeBranchRetirement } from './branchRetirement';
 import { applyFont } from '../theme/applyFont';
+import { applyFontSize, clampFontSizePercent } from '../theme/applyFontSize';
 import { RUN_BODY_PREVIEW_LIMIT, envPriorityKey, generateId } from '@apicircle/shared';
 import {
   type AttachmentResolver,
@@ -479,6 +480,13 @@ type WorkspaceStore = {
    * had selected (parity with theme).
    */
   setFontId: (fontId: FontFamilyId) => void;
+  /**
+   * Set the workspace-bound UI text-size percentage. The store clamps
+   * to `[FONT_SIZE_PERCENT_MIN, FONT_SIZE_PERCENT_MAX]` and snaps to
+   * `FONT_SIZE_PERCENT_STEP`, then applies via `applyFontSize` and
+   * persists on `local.ui.fontSizePercent`.
+   */
+  setFontSizePercent: (percent: number) => void;
   setWorkspaceName: (name: string) => void;
   /** Toggle the pre-send validation panel (local.settings.validateOnSend). */
   setValidateOnSend: (value: boolean) => void;
@@ -1421,6 +1429,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const { synced, local, registry } = await loadWorkspace();
       applyTheme(local.ui.themeId);
       applyFont(local.ui.fontId);
+      applyFontSize(local.ui.fontSizePercent);
       const migrated = await migrateLegacyEncryptedEnvVars(synced);
       if (migrated !== synced) {
         try {
@@ -1459,6 +1468,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const result = await loadWorkspaceById(workspaceId, updatedRegistry);
     applyTheme(result.local.ui.themeId);
     applyFont(result.local.ui.fontId);
+    applyFontSize(result.local.ui.fontSizePercent);
     set({
       ready: true,
       hydrationError: null,
@@ -1481,6 +1491,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const result = await createWorkspacePersisted(registry, name);
     applyTheme(result.local.ui.themeId);
     applyFont(result.local.ui.fontId);
+    applyFontSize(result.local.ui.fontSizePercent);
     set({
       ready: true,
       hydrationError: null,
@@ -1503,6 +1514,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const result = await deleteWorkspacePersisted(registry, workspaceId);
     applyTheme(result.local.ui.themeId);
     applyFont(result.local.ui.fontId);
+    applyFontSize(result.local.ui.fontSizePercent);
     set({
       ready: true,
       hydrationError: null,
@@ -1522,6 +1534,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const result = await resetWorkspaceStorage();
     applyTheme(result.local.ui.themeId);
     applyFont(result.local.ui.fontId);
+    applyFontSize(result.local.ui.fontSizePercent);
     set({
       ready: true,
       hydrationError: null,
@@ -1536,6 +1549,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!result) return 'no-data';
     applyTheme(result.local.ui.themeId);
     applyFont(result.local.ui.fontId);
+    applyFontSize(result.local.ui.fontSizePercent);
     set({
       ready: true,
       hydrationError: null,
@@ -1595,6 +1609,20 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!local) return;
     const next: WorkspaceLocal = { ...local, ui: { ...local.ui, fontId } };
     applyFont(fontId);
+    set({ local: next });
+    void saveLocal(next);
+  },
+
+  setFontSizePercent: (percent) => {
+    const local = get().local;
+    if (!local) return;
+    const clamped = clampFontSizePercent(percent);
+    if (clamped === local.ui.fontSizePercent) return;
+    const next: WorkspaceLocal = {
+      ...local,
+      ui: { ...local.ui, fontSizePercent: clamped },
+    };
+    applyFontSize(clamped);
     set({ local: next });
     void saveLocal(next);
   },

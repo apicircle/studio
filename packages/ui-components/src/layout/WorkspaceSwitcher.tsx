@@ -95,7 +95,7 @@ export function WorkspaceSwitcher() {
                   >
                     <span className="flex-1 truncate">{w.name}</span>
                     {isActive && (
-                      <span className="text-[10px] uppercase tracking-wider">active</span>
+                      <span className="text-[0.625rem] uppercase tracking-wider">active</span>
                     )}
                   </button>
                   {sorted.length > 1 && (
@@ -130,7 +130,7 @@ export function WorkspaceSwitcher() {
       )}
       {error && (
         <p
-          className="absolute left-0 top-full z-20 mt-1 max-w-[18rem] rounded-sm border border-danger/40 bg-danger/10 px-2 py-1 text-[10px] text-danger"
+          className="absolute left-0 top-full z-20 mt-1 max-w-[18rem] rounded-sm border border-danger/40 bg-danger/10 px-2 py-1 text-[0.625rem] text-danger"
           role="alert"
         >
           {error}
@@ -207,12 +207,12 @@ function NewWorkspaceModal({
   return (
     <Modal open onClose={onClose} title="New workspace">
       <div className="space-y-3">
-        <p className="text-[11px] text-text-dim">
+        <p className="text-[0.6875rem] text-text-dim">
           Each workspace has its own collections, environments, links, releases, and GitHub
           connection. Switching workspaces reloads the editor.
         </p>
         <div>
-          <label htmlFor="new-workspace-name" className="block text-[11px] text-text-dim">
+          <label htmlFor="new-workspace-name" className="block text-[0.6875rem] text-text-dim">
             Workspace name
           </label>
           <input

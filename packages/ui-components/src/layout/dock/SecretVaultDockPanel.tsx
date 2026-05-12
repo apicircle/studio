@@ -312,7 +312,7 @@ function ProvideMissingSlotsGate({ slots }: ProvideMissingSlotsGateProps) {
           {slots.length === 1 ? '1 secret value needed' : `${slots.length} secret values needed`}
         </p>
       </div>
-      <p className="text-[11px] text-text-muted">
+      <p className="text-[0.6875rem] text-text-muted">
         This workspace references secret keys whose values aren&apos;t on this device yet. Provide
         each one to unlock encrypted environment variables that depend on it.
       </p>
@@ -371,7 +371,7 @@ function ProvideSlotRow({ slot }: { slot: SecretKeyMeta }) {
         type="button"
         onClick={() => void submit()}
         disabled={submitting || !value}
-        className="inline-flex h-7 items-center rounded-sm border border-warning/40 bg-warning/10 px-2.5 text-[11px] text-warning hover:bg-warning/20 disabled:opacity-50"
+        className="inline-flex h-7 items-center rounded-sm border border-warning/40 bg-warning/10 px-2.5 text-[0.6875rem] text-warning hover:bg-warning/20 disabled:opacity-50"
       >
         {submitting ? 'Saving…' : 'Save'}
       </button>
@@ -410,7 +410,7 @@ function ProvideLinkedSlotRow({
       <div className="min-w-0 flex-1">
         <div className="truncate font-mono text-xs text-text-primary">{label}</div>
         <div
-          className="truncate text-[10px] text-text-dim"
+          className="truncate text-[0.625rem] text-text-dim"
           title={`Required by linked: ${linkName}`}
         >
           required by linked · {linkName}
@@ -431,7 +431,7 @@ function ProvideLinkedSlotRow({
         type="button"
         onClick={() => void submit()}
         disabled={submitting || !value}
-        className="inline-flex h-7 items-center rounded-sm border border-warning/40 bg-warning/10 px-2.5 text-[11px] text-warning hover:bg-warning/20 disabled:opacity-50"
+        className="inline-flex h-7 items-center rounded-sm border border-warning/40 bg-warning/10 px-2.5 text-[0.6875rem] text-warning hover:bg-warning/20 disabled:opacity-50"
       >
         {submitting ? 'Saving…' : 'Save'}
       </button>
@@ -493,7 +493,7 @@ function SecretRow({ entry }: SecretRowProps) {
             <div className="truncate font-medium text-text-primary">{displayLabel}</div>
             {linkedDisplay && (
               <div
-                className="truncate text-[10px] text-text-dim"
+                className="truncate text-[0.625rem] text-text-dim"
                 title={`Required by linked: ${linkedDisplay.linkName}`}
               >
                 required by linked · {linkedDisplay.linkName}
@@ -502,7 +502,7 @@ function SecretRow({ entry }: SecretRowProps) {
           </div>
           <span
             className={cn(
-              'shrink-0 rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider',
+              'shrink-0 rounded-sm border px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider',
               entry.origin === 'workspace'
                 ? 'border-border-subtle bg-surface text-text-muted'
                 : 'border-blue/40 bg-blue/10 text-blue',
@@ -522,7 +522,7 @@ function SecretRow({ entry }: SecretRowProps) {
           <button
             type="button"
             onClick={() => void onReveal()}
-            className="inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[10px] text-text-muted hover:text-text-primary"
+            className="inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:text-text-primary"
             aria-label={revealed !== null ? `Hide ${displayLabel}` : `Reveal ${displayLabel}`}
           >
             {revealed !== null ? <EyeOff size={10} /> : <Eye size={10} />}
@@ -538,7 +538,7 @@ function SecretRow({ entry }: SecretRowProps) {
               void removeSecret(entry.id);
             }}
             className={cn(
-              'inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border px-2 text-[10px]',
+              'inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border px-2 text-[0.625rem]',
               blockedDelete
                 ? 'border-warning/40 bg-warning/10 text-warning'
                 : 'border-danger/40 bg-danger/10 text-danger hover:bg-danger/20',
@@ -552,7 +552,7 @@ function SecretRow({ entry }: SecretRowProps) {
       </div>
 
       {revealed !== null && (
-        <pre className="mt-2 break-all rounded-sm border border-border-subtle bg-surface p-2 font-mono text-[11px] text-text-primary">
+        <pre className="mt-2 break-all rounded-sm border border-border-subtle bg-surface p-2 font-mono text-[0.6875rem] text-text-primary">
           {revealed}
         </pre>
       )}
@@ -561,7 +561,7 @@ function SecretRow({ entry }: SecretRowProps) {
         <button
           type="button"
           onClick={() => setShowUsage((v) => !v)}
-          className="mt-1 inline-flex items-center gap-1 text-[11px] text-text-dim hover:text-text-muted"
+          className="mt-1 inline-flex items-center gap-1 text-[0.6875rem] text-text-dim hover:text-text-muted"
           aria-expanded={showUsage}
           aria-label={`Toggle where ${displayLabel} is used`}
         >
@@ -570,7 +570,7 @@ function SecretRow({ entry }: SecretRowProps) {
         </button>
       )}
       {showUsage && usedInCount > 0 && (
-        <ul className="mt-1 ml-4 list-disc space-y-0.5 text-[11px] text-text-muted">
+        <ul className="mt-1 ml-4 list-disc space-y-0.5 text-[0.6875rem] text-text-muted">
           {entry.usedIn.map((u) => (
             <li key={`${u.kind}:${u.id}`}>
               <span className="text-text-dim">{u.kind}</span> · {u.label}
@@ -579,7 +579,7 @@ function SecretRow({ entry }: SecretRowProps) {
         </ul>
       )}
       {confirmDelete && (
-        <p className="mt-2 text-[11px] text-warning">
+        <p className="mt-2 text-[0.6875rem] text-warning">
           This secret is referenced in {usedInCount} place{usedInCount === 1 ? '' : 's'}. Click{' '}
           <span className="text-text-primary">Confirm</span> to delete anyway, or click anywhere
           else to cancel.
@@ -600,7 +600,7 @@ function SessionsTab() {
         <h3 className="mb-1 text-xs font-medium uppercase tracking-wider text-text-dim">
           Workspace session
         </h3>
-        <p className="mb-2 text-[11px] text-text-muted">
+        <p className="mb-2 text-[0.6875rem] text-text-muted">
           Drives push, pull, and PR creation for this workspace&apos;s own repo. Disconnecting
           doesn&apos;t touch linking sessions below.
         </p>
@@ -611,13 +611,13 @@ function SessionsTab() {
         <h3 className="mb-1 text-xs font-medium uppercase tracking-wider text-text-dim">
           Linking sessions
         </h3>
-        <p className="mb-2 text-[11px] text-text-muted">
+        <p className="mb-2 text-[0.6875rem] text-text-muted">
           Per-link credentials used to fetch source repos that aren&apos;t reachable from the
           workspace session. Manage each one from its link card under{' '}
           <span className="text-text-primary">Link Workspace</span>.
         </p>
         {linkSessionEntries.length === 0 ? (
-          <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-[11px] text-text-dim">
+          <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-[0.6875rem] text-text-dim">
             No linking sessions yet.
           </p>
         ) : (
@@ -627,7 +627,7 @@ function SessionsTab() {
               return (
                 <li
                   key={linkId}
-                  className="rounded-sm border border-border bg-card p-2.5 text-[11px]"
+                  className="rounded-sm border border-border bg-card p-2.5 text-[0.6875rem]"
                 >
                   <div className="flex items-center gap-2">
                     <ShieldCheck size={12} className="text-success" aria-hidden="true" />
@@ -766,18 +766,18 @@ function ConnectForm() {
           </button>
         )}
         {oauthError && !code && (
-          <p className="text-[11px] text-danger" role="alert">
+          <p className="text-[0.6875rem] text-danger" role="alert">
             {oauthError}
           </p>
         )}
-        <p className="text-[10px] text-text-dim">
+        <p className="text-[0.625rem] text-text-dim">
           OAuth uses GitHub's device flow — no client secret stays in the browser. Configure{' '}
           <code>VITE_GITHUB_OAUTH_CLIENT_ID</code> at build time to enable this.
         </p>
       </div>
 
       <div className="space-y-2 rounded-sm border border-border bg-surface p-3">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-text-dim">
+        <p className="text-[0.6875rem] font-medium uppercase tracking-wider text-text-dim">
           Or — paste a personal access token
         </p>
         <label htmlFor="pat-input" className="block text-xs text-text-muted">
@@ -810,7 +810,7 @@ function ConnectForm() {
             {submitting ? 'Verifying…' : 'Connect'}
           </button>
         </div>
-        <p className="text-[11px] text-text-dim">
+        <p className="text-[0.6875rem] text-text-dim">
           We verify the token via <code>GET /user</code> before storing it. The token is encrypted
           with your local master key — only this browser can decrypt it.
         </p>
@@ -867,12 +867,12 @@ function DeviceFlowCard({
             void navigator.clipboard?.writeText(code.userCode);
           }}
           aria-label="Copy device flow code"
-          className="inline-flex h-9 items-center rounded-sm border border-border bg-surface px-3 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary"
+          className="inline-flex h-9 items-center rounded-sm border border-border bg-surface px-3 text-[0.6875rem] text-text-muted hover:border-border-strong hover:text-text-primary"
         >
           Copy
         </button>
       </div>
-      <p className="text-[10px] text-text-dim">
+      <p className="text-[0.625rem] text-text-dim">
         Expires in{' '}
         <strong className="text-text-primary">
           {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
@@ -880,7 +880,7 @@ function DeviceFlowCard({
         {busy ? ' · waiting for GitHub authorization…' : ''}
       </p>
       {error && (
-        <p className="text-[11px] text-danger" role="alert">
+        <p className="text-[0.6875rem] text-danger" role="alert">
           {error}
         </p>
       )}
@@ -911,7 +911,7 @@ function ScopeChip({ name, ok, required }: { name: string; ok: boolean; required
       : 'border-warning/40 bg-warning/10 text-warning';
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 font-mono text-[10px] ${tone}`}
+      className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 font-mono text-[0.625rem] ${tone}`}
       aria-label={`${name} scope ${ok ? 'present' : required ? 'missing (required)' : 'missing (recommended)'}`}
       title={
         ok
@@ -1076,13 +1076,13 @@ function ActiveSessionCard() {
         </dd>
       </dl>
       {missingRequired.length > 0 && (
-        <p className="rounded-sm border border-danger/40 bg-danger/10 p-2 text-[11px] text-danger">
+        <p className="rounded-sm border border-danger/40 bg-danger/10 p-2 text-[0.6875rem] text-danger">
           Required scope(s) missing: <code>{missingRequired.join(', ')}</code>. Linking and push to
           save will fail until you update the token.
         </p>
       )}
       {missingRequired.length === 0 && prCapability === false && (
-        <p className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-[11px] text-warning">
+        <p className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-[0.6875rem] text-warning">
           This token can&apos;t create pull requests. Push to save works, but creating PRs from the
           app will fail until you update the token.
         </p>
@@ -1092,8 +1092,8 @@ function ActiveSessionCard() {
           role="status"
           className={
             testResult.kind === 'pass'
-              ? 'flex items-start gap-1.5 rounded-sm border border-success/40 bg-success/10 p-2 text-[11px] text-success'
-              : 'flex items-start gap-1.5 rounded-sm border border-danger/40 bg-danger/10 p-2 text-[11px] text-danger'
+              ? 'flex items-start gap-1.5 rounded-sm border border-success/40 bg-success/10 p-2 text-[0.6875rem] text-success'
+              : 'flex items-start gap-1.5 rounded-sm border border-danger/40 bg-danger/10 p-2 text-[0.6875rem] text-danger'
           }
         >
           {testResult.kind === 'pass' ? (

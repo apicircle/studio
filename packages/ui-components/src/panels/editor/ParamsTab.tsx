@@ -61,7 +61,7 @@ export function ParamsTab({ request }: ParamsTabProps) {
             aria-selected={section === id}
             onClick={() => setSection(id)}
             className={cn(
-              'inline-flex h-7 items-center gap-1.5 rounded-sm border px-2 text-[11px] transition-colors',
+              'inline-flex h-7 items-center gap-1.5 rounded-sm border px-2 text-[0.6875rem] transition-colors',
               section === id
                 ? 'border-accent/60 bg-accent/10 text-text-primary'
                 : 'border-border bg-surface text-text-muted hover:border-accent/40 hover:text-text-primary',
@@ -69,7 +69,7 @@ export function ParamsTab({ request }: ParamsTabProps) {
           >
             <span className="capitalize">{id}</span>
             {counts[id] > 0 && (
-              <span className="inline-flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-card px-1 text-[10px] leading-none tabular-nums text-text-dim">
+              <span className="inline-flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-card px-1 text-[0.625rem] leading-none tabular-nums text-text-dim">
                 {counts[id]}
               </span>
             )}
@@ -102,7 +102,7 @@ export function ParamsTab({ request }: ParamsTabProps) {
             <aside
               role="status"
               aria-label="Cookie browser limitation"
-              className="flex items-start gap-2 rounded-sm border border-amber/40 bg-amber/5 px-2.5 py-2 text-[11px] text-text-muted"
+              className="flex items-start gap-2 rounded-sm border border-amber/40 bg-amber/5 px-2.5 py-2 text-[0.6875rem] text-text-muted"
             >
               <Info size={12} className="mt-0.5 shrink-0 text-amber" />
               <div>
@@ -174,7 +174,7 @@ function PathParams({ placeholders, values, onChange }: PathParamsProps) {
         </div>
       ))}
       {orphans.length > 0 && (
-        <aside className="mt-2 rounded-sm border border-amber/30 bg-amber/5 px-3 py-2 text-[11px]">
+        <aside className="mt-2 rounded-sm border border-amber/30 bg-amber/5 px-3 py-2 text-[0.6875rem]">
           <p className="text-amber">Stored values without a matching placeholder:</p>
           <div className="mt-1 flex flex-wrap gap-1">
             {orphans.map((k) => (
@@ -197,7 +197,7 @@ function PathParams({ placeholders, values, onChange }: PathParamsProps) {
           </div>
         </aside>
       )}
-      <p className="mt-2 text-[11px] text-text-dim">
+      <p className="mt-2 text-[0.6875rem] text-text-dim">
         Values are URL-encoded at send time. Variables (<code>{'{{NAME}}'}</code>) are not yet
         expanded inside path placeholders — paste literal values for now.
       </p>

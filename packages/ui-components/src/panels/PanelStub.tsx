@@ -12,7 +12,7 @@ export function PanelStub({ title, phase, description, children }: PanelStubProp
     <div className="flex h-full flex-col p-6">
       <div className="mb-6 flex items-baseline gap-3">
         <h1 className="text-lg font-medium text-text-primary">{title}</h1>
-        <span className="rounded-sm border border-border bg-card px-2 py-0.5 text-[10px] uppercase tracking-wider text-text-muted">
+        <span className="rounded-sm border border-border bg-card px-2 py-0.5 text-[0.625rem] uppercase tracking-wider text-text-muted">
           {phase}
         </span>
       </div>

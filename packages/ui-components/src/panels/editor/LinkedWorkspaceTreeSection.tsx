@@ -51,7 +51,7 @@ export function LinkedWorkspaceTreeSection({ searchQuery }: { searchQuery?: stri
   const trimmedQuery = searchQuery?.trim().toLowerCase() ?? '';
   return (
     <section aria-label="Linked workspaces" className="mt-3 border-t border-border-subtle pt-3">
-      <h2 className="mb-1.5 px-1 text-[10px] font-medium uppercase tracking-wider text-text-dim">
+      <h2 className="mb-1.5 px-1 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
         Linked workspaces
       </h2>
       <ul className="flex flex-col gap-0.5" role="tree" aria-label="Linked workspaces">
@@ -99,7 +99,7 @@ function LinkedRoot({ link, searchQuery }: { link: LinkedWorkspace; searchQuery:
         <span className="truncate">{link.name}</span>
         {link.pinnedVersion && (
           <span
-            className="shrink-0 rounded-sm border border-border bg-card px-1 py-0.5 font-mono text-[9px] text-text-dim"
+            className="shrink-0 rounded-sm border border-border bg-card px-1 py-0.5 font-mono text-[0.5625rem] text-text-dim"
             title={`Pinned version v${link.pinnedVersion}`}
           >
             v{link.pinnedVersion}
@@ -107,7 +107,7 @@ function LinkedRoot({ link, searchQuery }: { link: LinkedWorkspace; searchQuery:
         )}
         {overrideCount > 0 && (
           <span
-            className="shrink-0 rounded-sm border border-accent/40 bg-accent/10 px-1 py-0.5 text-[9px] text-accent"
+            className="shrink-0 rounded-sm border border-accent/40 bg-accent/10 px-1 py-0.5 text-[0.5625rem] text-accent"
             title={`${overrideCount} local modification${overrideCount === 1 ? '' : 's'}`}
           >
             {overrideCount} mod{overrideCount === 1 ? '' : 's'}
@@ -119,7 +119,7 @@ function LinkedRoot({ link, searchQuery }: { link: LinkedWorkspace; searchQuery:
           {snapshot ? (
             <LinkedTree link={link} snapshot={snapshot} searchQuery={searchQuery} />
           ) : (
-            <p className="rounded-sm border border-dashed border-border-subtle px-2 py-1.5 text-[11px] text-text-dim">
+            <p className="rounded-sm border border-dashed border-border-subtle px-2 py-1.5 text-[0.6875rem] text-text-dim">
               Refresh this link from the Link Workspace panel to load its content.
             </p>
           )}
@@ -190,7 +190,7 @@ function LinkedTree({
 
   if (topLevel.length === 0) {
     return (
-      <p className="rounded-sm border border-dashed border-border-subtle px-2 py-1.5 text-[11px] text-text-dim">
+      <p className="rounded-sm border border-dashed border-border-subtle px-2 py-1.5 text-[0.6875rem] text-text-dim">
         {searchQuery
           ? 'No matching requests in this linked workspace.'
           : 'Source has no requests or folders yet.'}
@@ -268,7 +268,7 @@ function LinkedNode(props: LinkedNodeProps) {
             <FolderIcon size={12} className="shrink-0 text-text-faint" />
           )}
           <span className="truncate">{folder.name}</span>
-          <span className="ml-1 text-[10px] text-text-dim">{children.length}</span>
+          <span className="ml-1 text-[0.625rem] text-text-dim">{children.length}</span>
           {/* Read-only mirror of the local tree's Shield indicator: shows
               when the source folder has its OWN auth set (not 'inherit' /
               'none'). The user can't edit linked-folder auth from this

@@ -155,7 +155,7 @@ export function UpdatePreviewModal() {
                   {link.pinnedVersion ? <code>v{link.pinnedVersion}</code> : <em>unpinned</em>} and{' '}
                   <code>v{active.preview.toVersion}</code>.
                 </p>
-                <p className="mt-1 text-[11px] text-text-muted">
+                <p className="mt-1 text-[0.6875rem] text-text-muted">
                   Your cached snapshot already matches the source — likely because you refreshed the
                   link after the version bump. Apply moves the pin to{' '}
                   <code>v{active.preview.toVersion}</code> with no merge needed.
@@ -176,13 +176,13 @@ export function UpdatePreviewModal() {
                 won't — `local-only` rows keep your override; `both-changed`
                 rows default to keeping your override and let you flip to
                 the source's value per row if you want. */}
-            <p className="text-[11px] leading-snug text-text-muted">
+            <p className="text-[0.6875rem] leading-snug text-text-muted">
               Your local edits are kept by default. Rows tagged
-              <span className="mx-1 rounded-sm border border-accent/40 bg-accent/10 px-1 py-0.5 text-[10px] text-accent">
+              <span className="mx-1 rounded-sm border border-accent/40 bg-accent/10 px-1 py-0.5 text-[0.625rem] text-accent">
                 Your local mods · keep
               </span>
               stay as-is on top of the upgraded source. Rows tagged
-              <span className="mx-1 rounded-sm border border-warning/40 bg-warning/10 px-1 py-0.5 text-[10px] text-warning">
+              <span className="mx-1 rounded-sm border border-warning/40 bg-warning/10 px-1 py-0.5 text-[0.625rem] text-warning">
                 Both changed · pick one
               </span>
               moved both upstream and locally — they default to{' '}
@@ -199,14 +199,14 @@ export function UpdatePreviewModal() {
                 <button
                   type="button"
                   onClick={bulkAcceptAll}
-                  className="ml-auto rounded-sm border border-warning/40 bg-warning/10 px-2 py-0.5 text-[10px] hover:bg-warning/20"
+                  className="ml-auto rounded-sm border border-warning/40 bg-warning/10 px-2 py-0.5 text-[0.625rem] hover:bg-warning/20"
                 >
                   Accept all source
                 </button>
                 <button
                   type="button"
                   onClick={bulkKeepAll}
-                  className="rounded-sm border border-accent/40 bg-accent/10 px-2 py-0.5 text-[10px] text-accent hover:bg-accent/20"
+                  className="rounded-sm border border-accent/40 bg-accent/10 px-2 py-0.5 text-[0.625rem] text-accent hover:bg-accent/20"
                 >
                   Keep all mine
                 </button>
@@ -320,7 +320,7 @@ function SummaryStrip({
       {items.map((i) => (
         <span
           key={i.label}
-          className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${i.tone}`}
+          className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider ${i.tone}`}
         >
           {i.label} · {i.count}
         </span>
@@ -343,11 +343,11 @@ function PreviewRow({
     <li className="rounded-sm border border-border bg-surface p-2">
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <span
-          className={`shrink-0 rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${STATUS_TONE[entry.status]}`}
+          className={`shrink-0 rounded-sm border px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider ${STATUS_TONE[entry.status]}`}
         >
           {STATUS_LABEL[entry.status]}
         </span>
-        <span className="rounded-sm border border-border bg-card px-1.5 py-0.5 text-[10px] text-text-dim">
+        <span className="rounded-sm border border-border bg-card px-1.5 py-0.5 text-[0.625rem] text-text-dim">
           {BUCKET_LABEL[entry.bucket]}
         </span>
         <code className="truncate text-text-primary">{entry.label}</code>
@@ -356,7 +356,7 @@ function PreviewRow({
             <button
               type="button"
               onClick={() => onChoose('theirs')}
-              className={`rounded-sm border px-2 py-0.5 text-[10px] ${
+              className={`rounded-sm border px-2 py-0.5 text-[0.625rem] ${
                 choice === 'theirs'
                   ? 'border-success bg-success/15 text-success'
                   : 'border-border bg-card text-text-muted hover:border-success/40 hover:text-success'
@@ -368,7 +368,7 @@ function PreviewRow({
             <button
               type="button"
               onClick={() => onChoose('mine')}
-              className={`rounded-sm border px-2 py-0.5 text-[10px] ${
+              className={`rounded-sm border px-2 py-0.5 text-[0.625rem] ${
                 choice === 'mine'
                   ? 'border-accent bg-accent/15 text-accent'
                   : 'border-border bg-card text-text-muted hover:border-accent/40 hover:text-accent'

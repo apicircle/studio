@@ -76,7 +76,7 @@ export function CreateMockServerModal() {
     <Modal open onClose={close} title="Create mock server" className="max-w-2xl">
       <div className="space-y-3">
         <div>
-          <label htmlFor="mock-name" className="block text-[11px] text-text-dim">
+          <label htmlFor="mock-name" className="block text-[0.6875rem] text-text-dim">
             Mock server name
           </label>
           <input
@@ -94,7 +94,7 @@ export function CreateMockServerModal() {
           <button
             type="button"
             onClick={() => setTab('manual')}
-            className={`px-3 py-1.5 text-[11px] ${tab === 'manual' ? 'border-b-2 border-accent text-text-primary' : 'text-text-muted hover:text-text-primary'}`}
+            className={`px-3 py-1.5 text-[0.6875rem] ${tab === 'manual' ? 'border-b-2 border-accent text-text-primary' : 'text-text-muted hover:text-text-primary'}`}
           >
             <Plus size={10} className="mr-1 inline align-text-bottom" aria-hidden="true" />
             Empty (add endpoints later)
@@ -102,7 +102,7 @@ export function CreateMockServerModal() {
           <button
             type="button"
             onClick={() => setTab('spec')}
-            className={`px-3 py-1.5 text-[11px] ${tab === 'spec' ? 'border-b-2 border-accent text-text-primary' : 'text-text-muted hover:text-text-primary'}`}
+            className={`px-3 py-1.5 text-[0.6875rem] ${tab === 'spec' ? 'border-b-2 border-accent text-text-primary' : 'text-text-muted hover:text-text-primary'}`}
           >
             <FileCode size={10} className="mr-1 inline align-text-bottom" aria-hidden="true" />
             Paste spec
@@ -110,7 +110,7 @@ export function CreateMockServerModal() {
         </div>
 
         {tab === 'manual' ? (
-          <p className="text-[11px] text-text-dim">
+          <p className="text-[0.6875rem] text-text-dim">
             Creates an empty mock server. After it&rsquo;s created, click the{' '}
             <strong className="text-text-primary">+</strong> next to the server in the sidebar to
             add endpoints — you can edit method, path, response body, headers, and rules per
@@ -118,7 +118,7 @@ export function CreateMockServerModal() {
           </p>
         ) : (
           <div className="space-y-2">
-            <p className="text-[11px] text-text-dim">
+            <p className="text-[0.6875rem] text-text-dim">
               Paste the spec verbatim. We store it as-is; the runtime (Desktop / CLI) parses it on
               Start — the web app never invokes a Node-only parser.
             </p>
@@ -129,7 +129,7 @@ export function CreateMockServerModal() {
                   setSpecKind(ev.target.value as 'openapi' | 'postman' | 'insomnia')
                 }
                 aria-label="Spec source kind"
-                className="h-7 rounded-sm border border-border bg-card px-2 text-[11px] text-text-primary focus:border-accent focus:outline-none"
+                className="h-7 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
               >
                 <option value="openapi">OpenAPI</option>
                 <option value="postman">Postman</option>
@@ -140,7 +140,7 @@ export function CreateMockServerModal() {
                   value={specFormat}
                   onChange={(ev) => setSpecFormat(ev.target.value as 'json' | 'yaml')}
                   aria-label="OpenAPI spec format"
-                  className="h-7 rounded-sm border border-border bg-card px-2 text-[11px] text-text-primary focus:border-accent focus:outline-none"
+                  className="h-7 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
                 >
                   <option value="json">JSON</option>
                   <option value="yaml">YAML</option>
@@ -153,7 +153,7 @@ export function CreateMockServerModal() {
               placeholder="Paste the spec content here…"
               aria-label="Spec text"
               rows={10}
-              className="w-full resize-y rounded-sm border border-border bg-card px-2 py-1 font-mono text-[10px] text-text-primary focus:border-accent focus:outline-none"
+              className="w-full resize-y rounded-sm border border-border bg-card px-2 py-1 font-mono text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
             />
           </div>
         )}

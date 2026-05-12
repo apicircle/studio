@@ -2,6 +2,7 @@ export { App } from './App';
 export { applyTheme, getStoredThemeId, ALL_THEMES } from './theme/applyTheme';
 export { applyFont, ALL_FONTS } from './theme/applyFont';
 export type { FontFamilyId, FontFamilyDef } from './theme/applyFont';
+export { applyFontSize, clampFontSizePercent } from './theme/applyFontSize';
 export { useWorkspaceStore } from './store/workspaceStore';
 export { Button, Input, Modal, cn } from './primitives';
 export { PANELS, getPanel } from './layout/panels';

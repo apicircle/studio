@@ -94,6 +94,7 @@ describe('WorkspaceLocal shape (regression)', () => {
         sidebarExpandedSections: [],
         themeId: 'studio-dark',
         fontId: 'system-mono',
+        fontSizePercent: 100,
       },
       settings: { validateOnSend: true, monacoConsumesWheel: false },
       snapshots: { entries: [], maxBytes: 50 * 1024 * 1024 },
@@ -125,7 +126,7 @@ describe('WorkspaceLocal shape (regression)', () => {
       ['dirtyKeys', 'lastPulledAt', 'lastPulledSha', 'lastPulledSnapshot'].sort(),
     );
     expect(Object.keys(empty.ui).sort()).toEqual(
-      ['activeRequestId', 'fontId', 'sidebarExpandedSections', 'themeId'].sort(),
+      ['activeRequestId', 'fontId', 'fontSizePercent', 'sidebarExpandedSections', 'themeId'].sort(),
     );
   });
 });

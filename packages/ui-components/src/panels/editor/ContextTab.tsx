@@ -24,7 +24,7 @@ interface ContextTabProps {
 
 const inputClass =
   'h-7 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30';
-const sectionTitle = 'text-[11px] uppercase tracking-wide text-text-dim';
+const sectionTitle = 'text-[0.6875rem] uppercase tracking-wide text-text-dim';
 
 const SOURCES: Array<{ id: ContextExtraction['source']; label: string; placeholder: string }> = [
   { id: 'body', label: 'Body (JSON path)', placeholder: 'data.token' },
@@ -75,7 +75,9 @@ export function ContextTab({ request }: ContextTabProps) {
       <section aria-label="Manual context variables" className="flex flex-col gap-2">
         <header className="flex items-center justify-between">
           <h3 className={sectionTitle}>Manual variables</h3>
-          <span className="text-[11px] text-text-dim">Stored on the request — pushed to Git.</span>
+          <span className="text-[0.6875rem] text-text-dim">
+            Stored on the request — pushed to Git.
+          </span>
         </header>
         <div className="flex flex-col gap-1">
           {request.contextVars.length === 0 && (
@@ -123,7 +125,7 @@ export function ContextTab({ request }: ContextTabProps) {
       <section aria-label="Response extractions" className="flex flex-col gap-2">
         <header className="flex items-center justify-between">
           <h3 className={sectionTitle}>Auto-extract from response</h3>
-          <span className="text-[11px] text-text-dim">
+          <span className="text-[0.6875rem] text-text-dim">
             Names + paths pushed to Git · captured values stay local · feed <code>{'{{var}}'}</code>{' '}
             in next requests.
           </span>

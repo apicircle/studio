@@ -23,9 +23,12 @@ import {
 import type { EditorProps, Monaco } from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
 import type { MonacoLanguage } from '@apicircle/core';
+import { FONT_SIZE_PERCENT_DEFAULT } from '@apicircle/shared';
 import { useApplyMonacoLanguage } from './useMonacoLanguage';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { getMonacoThemeId, registerMonacoThemes } from '../theme/monacoThemes';
+
+const MONACO_BASE_FONT_SIZE_PX = 12;
 
 const DEFAULT_MIN_HEIGHT = 200;
 const DEFAULT_LARGE_PAYLOAD_THRESHOLD_BYTES = 5 * 1024 * 1024;
@@ -93,6 +96,17 @@ function MonacoEditorBaseComponent({
   const monacoConsumesWheel = useWorkspaceStore(
     (state) => state.local?.settings?.monacoConsumesWheel ?? false,
   );
+  // Monaco's `fontSize` option is numeric (px), not CSS — it doesn't
+  // participate in the html-root font-size scaling that the rest of the
+  // UI rides on. Derive a scaled px size from the workspace setting so
+  // the editor keeps visual parity with the chrome around it.
+  const fontSizePercent = useWorkspaceStore(
+    (state) => state.local?.ui.fontSizePercent ?? FONT_SIZE_PERCENT_DEFAULT,
+  );
+  const scaledFontSize = Math.max(
+    1,
+    Math.round((MONACO_BASE_FONT_SIZE_PX * fontSizePercent) / 100),
+  );
   const [editorComponent, setEditorComponent] = useState<ComponentType<EditorProps> | null>(null);
   const [editorInstance, setEditorInstance] = useState<editor.IStandaloneCodeEditor | null>(null);
   const [monacoInstance, setMonacoInstance] = useState<Monaco | null>(null);
@@ -151,7 +165,7 @@ function MonacoEditorBaseComponent({
     const baseOptions: editor.IStandaloneEditorConstructionOptions = {
       readOnly,
       minimap: { enabled: false },
-      fontSize: 12,
+      fontSize: scaledFontSize,
       automaticLayout: true,
       scrollBeyondLastLine: false,
       wordWrap: isLargePayload ? 'off' : 'on',
@@ -194,7 +208,7 @@ function MonacoEditorBaseComponent({
         ...(options?.scrollbar ?? {}),
       },
     };
-  }, [isLargePayload, lineCount, monacoConsumesWheel, options, readOnly]);
+  }, [isLargePayload, lineCount, monacoConsumesWheel, options, readOnly, scaledFontSize]);
 
   const containerStyle = useMemo<CSSProperties>(
     () => ({
@@ -214,7 +228,7 @@ function MonacoEditorBaseComponent({
       minHeight,
       border: 'none',
       padding: 8,
-      fontSize: 12,
+      fontSize: scaledFontSize,
       lineHeight: 1.5,
       fontFamily: 'JetBrains Mono, Menlo, Monaco, "Courier New", monospace',
       background: 'transparent',
@@ -223,7 +237,7 @@ function MonacoEditorBaseComponent({
       outline: 'none',
       boxSizing: 'border-box',
     }),
-    [minHeight],
+    [minHeight, scaledFontSize],
   );
 
   const handleBeforeMount = useCallback(

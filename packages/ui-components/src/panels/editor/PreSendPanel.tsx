@@ -71,7 +71,7 @@ function BlockerRow({ blocker }: { blocker: PreSendBlocker }) {
     <div
       role="alert"
       className={cn(
-        'flex items-start gap-2 rounded-sm border border-danger/40 bg-danger/5 px-2 py-1.5 text-[11px] text-text-primary',
+        'flex items-start gap-2 rounded-sm border border-danger/40 bg-danger/5 px-2 py-1.5 text-[0.6875rem] text-text-primary',
       )}
     >
       <ShieldAlert size={12} className="mt-0.5 shrink-0 text-danger" />
@@ -85,7 +85,7 @@ function WarningRow({ warning }: { warning: PreSendWarning }) {
     <div
       role="status"
       className={cn(
-        'flex items-start gap-2 rounded-sm border border-warning/40 bg-warning/5 px-2 py-1.5 text-[11px] text-text-primary',
+        'flex items-start gap-2 rounded-sm border border-warning/40 bg-warning/5 px-2 py-1.5 text-[0.6875rem] text-text-primary',
       )}
     >
       <AlertTriangle size={12} className="mt-0.5 shrink-0 text-warning" />

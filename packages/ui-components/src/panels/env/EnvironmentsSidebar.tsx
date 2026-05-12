@@ -211,7 +211,7 @@ export function EnvironmentsSidebar() {
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search environments…"
           aria-label="Search environments"
-          className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-[11px] text-text-primary focus:border-accent focus:outline-none"
+          className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
         />
       </div>
 
@@ -236,7 +236,7 @@ export function EnvironmentsSidebar() {
 
       <ul role="list" aria-label="Environments" className="flex flex-col gap-0.5">
         {orderedRows.length === 0 && (
-          <li className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-[11px] text-text-dim">
+          <li className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-[0.6875rem] text-text-dim">
             {searchQuery ? 'No matching environments.' : 'No environments yet.'}
           </li>
         )}
@@ -312,12 +312,12 @@ export function EnvironmentsSidebar() {
                   >
                     <Link2 size={10} aria-hidden="true" className="shrink-0 text-text-faint" />
                     <span className="truncate">{row.envName}</span>
-                    <span className="shrink-0 rounded-sm border border-border bg-card px-1 py-0.5 text-[9px] text-text-dim">
+                    <span className="shrink-0 rounded-sm border border-border bg-card px-1 py-0.5 text-[0.5625rem] text-text-dim">
                       {row.linkName}
                     </span>
                   </div>
                 )}
-                <span className="text-[10px] text-text-dim">{row.varCount}</span>
+                <span className="text-[0.625rem] text-text-dim">{row.varCount}</span>
                 {row.kind === 'local' ? (
                   <KebabMenu
                     ariaLabel={`Environment actions for ${row.name}`}
@@ -355,7 +355,7 @@ export function EnvironmentsSidebar() {
         })}
       </ul>
 
-      <p className="mt-auto rounded-sm border border-dashed border-border-subtle p-2 text-[11px] leading-snug text-text-dim">
+      <p className="mt-auto rounded-sm border border-dashed border-border-subtle p-2 text-[0.6875rem] leading-snug text-text-dim">
         Tick to include in the global priority layer (resolves <code>{'{{NAME}}'}</code> at send
         time). Drag the handle to reorder. Click a local env to edit its variables; linked envs edit
         through their <em>Linked environments</em> section.

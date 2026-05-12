@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { FONT_SIZE_PERCENT_DEFAULT, FONT_SIZE_PERCENT_STEP } from '@apicircle/shared';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { PANELS } from './panels';
 
@@ -9,11 +10,18 @@ import { PANELS } from './panels';
  * the user is typing.
  *
  * Bindings:
- *   Ctrl/Cmd + Enter      → Send the active request
- *   Ctrl/Cmd + 1..7       → Switch panels (Workspace … Help)
- *   Ctrl/Cmd + K          → Open the Vault tab in the workspace inspector dock
- *   Ctrl/Cmd + Shift + R  → Refresh the working branch (plain Ctrl+R is the browser's reload)
- *   Ctrl/Cmd + N          → New request (only when the Editor panel is active)
+ *   Ctrl/Cmd + Enter            → Send the active request
+ *   Ctrl/Cmd + 1..7             → Switch panels (Workspace … Help)
+ *   Ctrl/Cmd + K                → Open the Vault tab in the workspace inspector dock
+ *   Ctrl/Cmd + Shift + R        → Refresh the working branch (plain Ctrl+R is the browser's reload)
+ *   Ctrl/Cmd + N                → New request (only when the Editor panel is active)
+ *   Ctrl/Cmd + Shift + = / +    → Increase UI text size by one step
+ *   Ctrl/Cmd + Shift + -        → Decrease UI text size by one step
+ *   Ctrl/Cmd + Shift + 0        → Reset UI text size to 100%
+ *
+ * Font-size bindings fire even when the user is editing (Monaco / inputs),
+ * since wanting to bump text size mid-typing is the common case. The other
+ * shortcuts still defer to the editing surface.
  *
  * Returns null — purely behavioral.
  */
@@ -23,6 +31,7 @@ export function KeyboardShortcuts() {
   const executeActiveRequest = useWorkspaceStore((s) => s.executeActiveRequest);
   const refreshWorkspace = useWorkspaceStore((s) => s.refreshWorkspace);
   const addRequest = useWorkspaceStore((s) => s.addRequest);
+  const setFontSizePercent = useWorkspaceStore((s) => s.setFontSizePercent);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -40,6 +49,33 @@ export function KeyboardShortcuts() {
         e.preventDefault();
         void executeActiveRequest();
         return;
+      }
+
+      // Font-size shortcuts: fire even when editing. `Shift` is required
+      // to disambiguate from the browser's built-in `Ctrl/Cmd + =/-` page
+      // zoom. We accept both `=` and `+` for the increase key because on
+      // US layouts `Shift+=` types `+`, but key reporting varies by
+      // browser/keyboard.
+      if (e.shiftKey) {
+        if (e.key === '=' || e.key === '+') {
+          e.preventDefault();
+          const current =
+            useWorkspaceStore.getState().local?.ui.fontSizePercent ?? FONT_SIZE_PERCENT_DEFAULT;
+          setFontSizePercent(current + FONT_SIZE_PERCENT_STEP);
+          return;
+        }
+        if (e.key === '-' || e.key === '_') {
+          e.preventDefault();
+          const current =
+            useWorkspaceStore.getState().local?.ui.fontSizePercent ?? FONT_SIZE_PERCENT_DEFAULT;
+          setFontSizePercent(current - FONT_SIZE_PERCENT_STEP);
+          return;
+        }
+        if (e.key === '0' || e.key === ')') {
+          e.preventDefault();
+          setFontSizePercent(FONT_SIZE_PERCENT_DEFAULT);
+          return;
+        }
       }
 
       if (isEditing) return;
@@ -84,7 +120,14 @@ export function KeyboardShortcuts() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [setActivePanel, openRightDockTab, executeActiveRequest, refreshWorkspace, addRequest]);
+  }, [
+    setActivePanel,
+    openRightDockTab,
+    executeActiveRequest,
+    refreshWorkspace,
+    addRequest,
+    setFontSizePercent,
+  ]);
 
   return null;
 }

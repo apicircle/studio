@@ -33,7 +33,7 @@ export function LinkedEnvironmentsSection() {
         <Link2 size={12} aria-hidden="true" />
         Linked environments
       </h2>
-      <p className="mb-3 max-w-2xl text-[11px] text-text-dim">
+      <p className="mb-3 max-w-2xl text-[0.6875rem] text-text-dim">
         Environments inherited from linked workspaces. Edit values inline — overrides persist on the
         synced doc and apply on top of the source&apos;s env on next refresh.
       </p>
@@ -69,22 +69,22 @@ function LinkedEnvGroup({ link }: { link: LinkedWorkspace }) {
         <Package size={12} className="shrink-0 text-accent" aria-hidden="true" />
         <span className="font-medium text-text-primary">{link.name}</span>
         {link.pinnedVersion && (
-          <span className="rounded-sm border border-border bg-surface px-1 py-0.5 font-mono text-[9px] text-text-dim">
+          <span className="rounded-sm border border-border bg-surface px-1 py-0.5 font-mono text-[0.5625rem] text-text-dim">
             v{link.pinnedVersion}
           </span>
         )}
-        <span className="ml-auto text-[10px] text-text-dim">
+        <span className="ml-auto text-[0.625rem] text-text-dim">
           {envs.length} env{envs.length === 1 ? '' : 's'}
         </span>
       </button>
       {open && (
         <div className="border-t border-border-subtle px-3 py-3">
           {!snapshot ? (
-            <p className="text-[11px] text-text-dim">
+            <p className="text-[0.6875rem] text-text-dim">
               Refresh this link from the Link Workspace panel to load its environments.
             </p>
           ) : envs.length === 0 ? (
-            <p className="text-[11px] text-text-dim">Source has no environments yet.</p>
+            <p className="text-[0.6875rem] text-text-dim">Source has no environments yet.</p>
           ) : (
             <div className="flex flex-col gap-3">
               {envs.map((env) => (
@@ -131,10 +131,10 @@ function LinkedEnvVarTable({
   return (
     <div>
       <header className="mb-1.5 flex items-baseline gap-2">
-        <span className="text-[11px] font-medium uppercase tracking-wider text-text-dim">
+        <span className="text-[0.6875rem] font-medium uppercase tracking-wider text-text-dim">
           {envName}
         </span>
-        <span className="text-[10px] text-text-dim">
+        <span className="text-[0.625rem] text-text-dim">
           {sourceVariables.length} from source
           {consumerOnlyKeys.length > 0 ? `, +${consumerOnlyKeys.length} added by you` : ''}
         </span>
@@ -166,7 +166,7 @@ function LinkedEnvVarTable({
         existingKeys={[...sourceVariables.map((v) => v.key), ...consumerOnlyKeys]}
         onAdd={(varKey) => setOverride(link.id, envName, varKey, { value: '' })}
       />
-      <p className="mt-2 text-[10px] text-text-dim">
+      <p className="mt-2 text-[0.625rem] text-text-dim">
         Reset returns this row to the source workspace&apos;s value. Soft-delete hides a source
         variable from this consumer only.
       </p>
@@ -204,13 +204,13 @@ function LinkedEnvVarRow({
     return (
       <li className="flex items-center gap-2 rounded-sm border border-dashed border-border-subtle bg-surface px-2 py-1.5 text-xs">
         <code className="flex-1 truncate text-text-dim line-through">{varKey}</code>
-        <span className="rounded-sm border border-border bg-card px-1.5 py-0.5 text-[10px] text-text-dim">
+        <span className="rounded-sm border border-border bg-card px-1.5 py-0.5 text-[0.625rem] text-text-dim">
           hidden by you
         </span>
         <button
           type="button"
           onClick={() => clearOverride(link.id, envName, varKey)}
-          className="inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[10px] text-text-muted hover:border-accent hover:text-text-primary"
+          className="inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.625rem] text-text-muted hover:border-accent hover:text-text-primary"
           aria-label={`Restore ${varKey} from source`}
         >
           <RotateCcw size={10} />
@@ -254,7 +254,7 @@ function LinkedEnvVarRow({
         />
       )}
       {isConsumerOnly && (
-        <span className="rounded-sm border border-accent/40 bg-accent/10 px-1 py-0.5 text-[9px] text-accent">
+        <span className="rounded-sm border border-accent/40 bg-accent/10 px-1 py-0.5 text-[0.5625rem] text-accent">
           added
         </span>
       )}
@@ -262,7 +262,7 @@ function LinkedEnvVarRow({
         <button
           type="button"
           onClick={() => clearOverride(link.id, envName, varKey)}
-          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[10px] text-text-muted hover:border-accent hover:text-text-primary"
+          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-accent hover:text-text-primary"
           aria-label={`Reset ${varKey} to source`}
           title={
             isConsumerOnly
@@ -278,7 +278,7 @@ function LinkedEnvVarRow({
         <button
           type="button"
           onClick={() => setOverride(link.id, envName, varKey, { removed: true })}
-          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[10px] text-text-muted hover:border-danger hover:text-danger"
+          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-danger hover:text-danger"
           aria-label={`Hide ${varKey} from this workspace`}
           title="Hide this source variable from your workspace (soft-delete)"
         >
@@ -307,7 +307,7 @@ function AddLinkedVarButton({
       <button
         type="button"
         onClick={() => setAdding(true)}
-        className="mt-1.5 inline-flex h-7 items-center gap-1 rounded-sm border border-dashed border-border bg-card px-2 text-[11px] text-text-muted hover:border-accent hover:text-text-primary"
+        className="mt-1.5 inline-flex h-7 items-center gap-1 rounded-sm border border-dashed border-border bg-card px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"
       >
         + Add variable for this workspace
       </button>
@@ -344,7 +344,7 @@ function AddLinkedVarButton({
           }
         }}
         disabled={!trimmed || duplicate}
-        className="h-7 rounded-sm border border-accent bg-accent/10 px-2 text-[11px] text-accent hover:bg-accent/20 disabled:opacity-50"
+        className="h-7 rounded-sm border border-accent bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20 disabled:opacity-50"
       >
         Add
       </button>
@@ -354,12 +354,12 @@ function AddLinkedVarButton({
           setAdding(false);
           setDraft('');
         }}
-        className="h-7 rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:text-text-primary"
+        className="h-7 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:text-text-primary"
       >
         Cancel
       </button>
       {duplicate && (
-        <span role="alert" className="text-[10px] text-danger">
+        <span role="alert" className="text-[0.625rem] text-danger">
           Already exists
         </span>
       )}

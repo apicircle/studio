@@ -38,7 +38,7 @@ export function HelpPanel() {
           </header>
           <div className="space-y-3">
             {selected.body.split(/\n\n+/).map((para, i) => (
-              <p key={i} className="text-[13px] leading-relaxed text-text-muted">
+              <p key={i} className="text-[0.8125rem] leading-relaxed text-text-muted">
                 {para}
               </p>
             ))}

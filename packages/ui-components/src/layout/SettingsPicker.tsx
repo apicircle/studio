@@ -8,7 +8,24 @@
 // FontList components.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Palette, SlidersHorizontal, Type } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Minus,
+  Palette,
+  Plus,
+  RotateCcw,
+  SlidersHorizontal,
+  TextCursorInput,
+  Type,
+} from 'lucide-react';
+import {
+  FONT_SIZE_PERCENT_DEFAULT,
+  FONT_SIZE_PERCENT_MAX,
+  FONT_SIZE_PERCENT_MIN,
+  FONT_SIZE_PERCENT_STEP,
+} from '@apicircle/shared';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { cn } from '../primitives/cn';
 import { ALL_THEMES } from '../theme/applyTheme';
@@ -43,6 +60,10 @@ export function SettingsPicker() {
     (s) => s.local?.snapshots?.maxBytes ?? 50 * 1024 * 1024,
   );
   const setSnapshotMaxBytes = useWorkspaceStore((s) => s.setSnapshotMaxBytes);
+  const fontSizePercent = useWorkspaceStore(
+    (s) => s.local?.ui.fontSizePercent ?? FONT_SIZE_PERCENT_DEFAULT,
+  );
+  const setFontSizePercent = useWorkspaceStore((s) => s.setFontSizePercent);
 
   const [open, setOpen] = useState(false);
   const [sidePopover, setSidePopover] = useState<SidePopover>(null);
@@ -119,6 +140,7 @@ export function SettingsPicker() {
             onOpen={() => setSidePopover('font')}
             onClose={closeSidePopover}
           />
+          <FontSizeRow current={fontSizePercent} onChange={setFontSizePercent} />
 
           <div className="my-1 h-px bg-border-subtle" aria-hidden="true" />
           <SectionLabel>Behavior</SectionLabel>
@@ -145,7 +167,7 @@ export function SettingsPicker() {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-1.5 text-[10px] font-medium uppercase tracking-wider text-text-dim">
+    <div className="px-1.5 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
       {children}
     </div>
   );
@@ -246,7 +268,7 @@ function AppearanceRow({
         </span>
         <span
           className={cn(
-            'flex items-center gap-1 text-[11px]',
+            'flex items-center gap-1 text-[0.6875rem]',
             open ? 'text-accent' : 'text-text-muted',
           )}
         >
@@ -285,7 +307,7 @@ function SnapshotCapRow({
   return (
     <div className="rounded-sm border border-transparent p-1.5 hover:border-border-subtle">
       <div className="text-xs text-text-primary">Workspace snapshot cap</div>
-      <p className="mb-1.5 text-[11px] leading-snug text-text-dim">
+      <p className="mb-1.5 text-[0.6875rem] leading-snug text-text-dim">
         Total size budget for the local snapshot ledger. Auto-captures (push, merge, yank, etc.)
         keep the latest entries that fit; older snapshots evict when over cap.
       </p>
@@ -303,14 +325,98 @@ function SnapshotCapRow({
               onClick={() => onChange(opt.bytes)}
               className={
                 active
-                  ? 'rounded-sm border border-accent/40 bg-accent/10 px-2 py-0.5 text-[11px] text-accent'
-                  : 'rounded-sm border border-border bg-surface px-2 py-0.5 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary'
+                  ? 'rounded-sm border border-accent/40 bg-accent/10 px-2 py-0.5 text-[0.6875rem] text-accent'
+                  : 'rounded-sm border border-border bg-surface px-2 py-0.5 text-[0.6875rem] text-text-muted hover:border-border-strong hover:text-text-primary'
               }
             >
               {opt.label}
             </button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Workspace text-size scaling. Three buttons: decrease / current / increase,
+ * with a Reset affordance that only appears when the current value differs
+ * from 100%. The current-value chip uses the accent style when scaled so
+ * the user has a glance-cue that the workspace is non-default. The buttons
+ * snap by `FONT_SIZE_PERCENT_STEP` and are disabled at the min/max edges
+ * so keyboard users can tab past gracefully.
+ */
+function FontSizeRow({
+  current,
+  onChange,
+}: {
+  current: number;
+  onChange: (percent: number) => void;
+}) {
+  const atMin = current <= FONT_SIZE_PERCENT_MIN;
+  const atMax = current >= FONT_SIZE_PERCENT_MAX;
+  const atDefault = current === FONT_SIZE_PERCENT_DEFAULT;
+  return (
+    <div className="rounded-sm border border-transparent p-1.5 hover:border-border-subtle">
+      <div className="flex items-center gap-2 text-xs text-text-primary">
+        <TextCursorInput size={13} className="text-text-dim" aria-hidden="true" />
+        Text size
+      </div>
+      <p className="mb-1.5 ml-[21px] text-[0.6875rem] leading-snug text-text-dim">
+        Scales all UI text, including code editors. Snaps in {FONT_SIZE_PERCENT_STEP}% steps.
+      </p>
+      <div className="ml-[21px] flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => onChange(current - FONT_SIZE_PERCENT_STEP)}
+          disabled={atMin}
+          aria-label="Decrease text size"
+          className={cn(
+            'inline-flex h-6 w-6 items-center justify-center rounded-sm border transition-colors',
+            atMin
+              ? 'cursor-not-allowed border-border-subtle bg-surface/40 text-text-faint'
+              : 'border-border bg-surface text-text-muted hover:border-border-strong hover:text-text-primary',
+          )}
+        >
+          <Minus size={12} aria-hidden="true" />
+        </button>
+        <span
+          aria-live="polite"
+          aria-label={`Current text size ${current} percent`}
+          className={cn(
+            'inline-flex h-6 min-w-[3.25rem] items-center justify-center rounded-sm border px-2 text-[0.6875rem] tabular-nums',
+            atDefault
+              ? 'border-border bg-surface text-text-muted'
+              : 'border-accent/40 bg-accent/10 text-accent',
+          )}
+        >
+          {current}%
+        </span>
+        <button
+          type="button"
+          onClick={() => onChange(current + FONT_SIZE_PERCENT_STEP)}
+          disabled={atMax}
+          aria-label="Increase text size"
+          className={cn(
+            'inline-flex h-6 w-6 items-center justify-center rounded-sm border transition-colors',
+            atMax
+              ? 'cursor-not-allowed border-border-subtle bg-surface/40 text-text-faint'
+              : 'border-border bg-surface text-text-muted hover:border-border-strong hover:text-text-primary',
+          )}
+        >
+          <Plus size={12} aria-hidden="true" />
+        </button>
+        {!atDefault && (
+          <button
+            type="button"
+            onClick={() => onChange(FONT_SIZE_PERCENT_DEFAULT)}
+            aria-label="Reset text size to 100%"
+            className="ml-auto inline-flex h-6 items-center gap-1 rounded-sm border border-transparent px-1.5 text-[0.6875rem] text-text-muted transition-colors hover:border-border-subtle hover:text-text-primary"
+          >
+            <RotateCcw size={11} aria-hidden="true" />
+            Reset
+          </button>
+        )}
       </div>
     </div>
   );
@@ -343,7 +449,7 @@ function ToggleRow({
           {label}
           {checked && <Check size={12} className="text-accent" aria-hidden="true" />}
         </div>
-        <p className="text-[11px] leading-snug text-text-dim">{description}</p>
+        <p className="text-[0.6875rem] leading-snug text-text-dim">{description}</p>
       </div>
     </label>
   );

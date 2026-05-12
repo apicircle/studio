@@ -64,13 +64,13 @@ export function EnvironmentsPanel() {
         />
         {layerPos >= 0 ? (
           <span
-            className="rounded-sm border border-accent/40 bg-accent/5 px-2 py-0.5 text-[10px] uppercase tracking-wider text-accent"
+            className="rounded-sm border border-accent/40 bg-accent/5 px-2 py-0.5 text-[0.625rem] uppercase tracking-wider text-accent"
             title="Position in the global resolver layer"
           >
             Layer position {layerPos + 1} of {layered.length}
           </span>
         ) : (
-          <span className="rounded-sm border border-border bg-card px-2 py-0.5 text-[10px] uppercase tracking-wider text-text-dim">
+          <span className="rounded-sm border border-border bg-card px-2 py-0.5 text-[0.625rem] uppercase tracking-wider text-text-dim">
             Not in global layer
           </span>
         )}
@@ -147,7 +147,7 @@ function VariableTable({ env }: VariableTableProps) {
         <Plus size={12} />
         Add variable
       </button>
-      <p className="mt-2 text-[11px] text-text-dim">
+      <p className="mt-2 text-[0.6875rem] text-text-dim">
         Encrypted values must be bound to a Secret Vault key. The synced workspace stores only the
         key id + label — the actual value lives in your local vault and (for CLI runs) is supplied
         via <code>APICIRCLE_SECRET_&lt;id&gt;</code> env vars or{' '}
@@ -223,7 +223,7 @@ function VariableRow({
             <span className="truncate text-text-primary">
               {boundLabel ?? '(secret key missing locally)'}
             </span>
-            <span className="ml-auto rounded-sm border border-border bg-surface px-1 text-[10px] text-text-dim">
+            <span className="ml-auto rounded-sm border border-border bg-surface px-1 text-[0.625rem] text-text-dim">
               id: {row.secretKeyId.slice(0, 6)}…
             </span>
           </div>
@@ -243,7 +243,7 @@ function VariableRow({
             <button
               type="button"
               onClick={() => setPickerOpen((o) => !o)}
-              className="inline-flex h-7 items-center gap-1 rounded-sm border border-amber/40 bg-amber/10 px-2 text-[10px] text-amber hover:border-amber/70"
+              className="inline-flex h-7 items-center gap-1 rounded-sm border border-amber/40 bg-amber/10 px-2 text-[0.625rem] text-amber hover:border-amber/70"
               aria-label="Change secret key"
               aria-expanded={pickerOpen}
             >
@@ -253,7 +253,7 @@ function VariableRow({
             <button
               type="button"
               onClick={onUnbind}
-              className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[10px] text-text-muted hover:border-accent hover:text-text-primary"
+              className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-accent hover:text-text-primary"
               aria-label="Unbind secret key"
               title="Unbind — return to plain value"
             >
@@ -265,7 +265,7 @@ function VariableRow({
           <button
             type="button"
             onClick={() => setPickerOpen((o) => !o)}
-            className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[10px] text-text-muted hover:border-accent hover:text-text-primary"
+            className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-accent hover:text-text-primary"
             aria-label="Encrypt"
             aria-expanded={pickerOpen}
             title="Bind this value to a Secret Vault key"
@@ -294,7 +294,7 @@ function VariableRow({
         )}
       </div>
       {duplicate && (
-        <span role="alert" className="pl-1 text-[10px] text-danger">
+        <span role="alert" className="pl-1 text-[0.625rem] text-danger">
           Name already used
         </span>
       )}
@@ -342,7 +342,7 @@ function SecretKeyPicker({ onClose, onPick }: SecretKeyPickerProps) {
       onMouseDown={(e) => e.stopPropagation()}
     >
       <div className="flex items-center justify-between">
-        <span className="text-[10px] uppercase tracking-wider text-text-dim">Secret keys</span>
+        <span className="text-[0.625rem] uppercase tracking-wider text-text-dim">Secret keys</span>
         <button
           type="button"
           onClick={onClose}
@@ -364,7 +364,7 @@ function SecretKeyPicker({ onClose, onPick }: SecretKeyPickerProps) {
             className="h-7 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
           />
           {filtered.length === 0 ? (
-            <p className="px-1 py-2 text-[11px] text-text-dim">
+            <p className="px-1 py-2 text-[0.6875rem] text-text-dim">
               {list.length === 0 ? 'No secret keys yet — create one below.' : 'No matches.'}
             </p>
           ) : (
@@ -377,7 +377,9 @@ function SecretKeyPicker({ onClose, onPick }: SecretKeyPickerProps) {
                     className="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1 text-left text-xs text-text-muted hover:bg-surface hover:text-text-primary"
                   >
                     <span className="truncate">{entry.label}</span>
-                    <span className="text-[10px] text-text-dim">id {entry.id.slice(0, 6)}…</span>
+                    <span className="text-[0.625rem] text-text-dim">
+                      id {entry.id.slice(0, 6)}…
+                    </span>
                   </button>
                 </li>
               ))}
@@ -390,7 +392,7 @@ function SecretKeyPicker({ onClose, onPick }: SecretKeyPickerProps) {
               setNewLabel(filter);
               setFilter('');
             }}
-            className="inline-flex h-7 items-center justify-center gap-1 rounded-sm border border-dashed border-accent bg-accent/5 text-[11px] text-accent hover:bg-accent/10"
+            className="inline-flex h-7 items-center justify-center gap-1 rounded-sm border border-dashed border-accent bg-accent/5 text-[0.6875rem] text-accent hover:bg-accent/10"
           >
             <Plus size={12} />
             New secret key
@@ -424,7 +426,7 @@ function SecretKeyPicker({ onClose, onPick }: SecretKeyPickerProps) {
                 setNewLabel('');
                 setNewValue('');
               }}
-              className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-accent hover:text-text-primary"
+              className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"
             >
               Cancel
             </button>
@@ -432,7 +434,7 @@ function SecretKeyPicker({ onClose, onPick }: SecretKeyPickerProps) {
               type="button"
               onClick={() => void submitCreate()}
               disabled={!newLabel.trim() || busy}
-              className="h-7 flex-1 rounded-sm border border-accent bg-accent/10 px-2 text-[11px] text-text-primary hover:bg-accent/20 disabled:opacity-50"
+              className="h-7 flex-1 rounded-sm border border-accent bg-accent/10 px-2 text-[0.6875rem] text-text-primary hover:bg-accent/20 disabled:opacity-50"
             >
               {busy ? 'Creating…' : 'Create & bind'}
             </button>

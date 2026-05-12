@@ -27,7 +27,7 @@ import { KeyValueRows } from '../editor/KeyValueRows';
 
 const HTTP_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 
-const labelClass = 'text-[11px] uppercase tracking-wide text-text-dim';
+const labelClass = 'text-[0.6875rem] uppercase tracking-wide text-text-dim';
 const inputClass =
   'h-7 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30';
 
@@ -112,7 +112,7 @@ function LinkedRequestEditorBody({
           <p className="text-text-muted">
             From <strong className="text-text-primary">{link.name}</strong>
             {link.pinnedVersion && (
-              <span className="ml-2 rounded-sm border border-border bg-card px-1 py-0.5 font-mono text-[10px] text-text-dim">
+              <span className="ml-2 rounded-sm border border-border bg-card px-1 py-0.5 font-mono text-[0.625rem] text-text-dim">
                 v{link.pinnedVersion}
               </span>
             )}
@@ -123,7 +123,7 @@ function LinkedRequestEditorBody({
           </p>
           {lastRun && (
             <p
-              className={`mt-1 font-mono text-[11px] ${
+              className={`mt-1 font-mono text-[0.6875rem] ${
                 lastRun.ok ? 'text-success' : 'text-danger'
               }`}
               role="status"
@@ -212,7 +212,7 @@ function LinkedRequestEditorBody({
           )}
         </header>
         {overrideBody.type === 'none' ? (
-          <p className="rounded-sm border border-dashed border-border-subtle p-2 text-center text-[11px] text-text-dim">
+          <p className="rounded-sm border border-dashed border-border-subtle p-2 text-center text-[0.6875rem] text-text-dim">
             Source body is &quot;none&quot;. Set a different body type from source to override
             content.
           </p>
@@ -233,7 +233,7 @@ function LinkedRequestEditorBody({
             className="block w-full rounded-sm border border-border bg-card px-2 py-1.5 font-mono text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
           />
         ) : (
-          <p className="rounded-sm border border-dashed border-border-subtle p-2 text-center text-[11px] text-text-dim">
+          <p className="rounded-sm border border-dashed border-border-subtle p-2 text-center text-[0.6875rem] text-text-dim">
             Body type &quot;{overrideBody.type}&quot; — full editor lands in a later slice. For now,
             edit body via the dedicated editor on owned requests, or reset to source.
           </p>
@@ -307,7 +307,7 @@ function ContextVarRows({
   return (
     <div className="flex flex-col gap-1">
       {rows.length === 0 && (
-        <p className="rounded-sm border border-dashed border-border-subtle p-2 text-center text-[11px] text-text-dim">
+        <p className="rounded-sm border border-dashed border-border-subtle p-2 text-center text-[0.6875rem] text-text-dim">
           No context vars.
         </p>
       )}
@@ -366,7 +366,7 @@ function ExtractionRows({
   return (
     <div className="flex flex-col gap-1">
       {rows.length === 0 && (
-        <p className="rounded-sm border border-dashed border-border-subtle p-2 text-center text-[11px] text-text-dim">
+        <p className="rounded-sm border border-dashed border-border-subtle p-2 text-center text-[0.6875rem] text-text-dim">
           No extractors.
         </p>
       )}
@@ -443,7 +443,7 @@ function AssertionRows({
   return (
     <div className="flex flex-col gap-1">
       {rows.length === 0 && (
-        <p className="rounded-sm border border-dashed border-border-subtle p-2 text-center text-[11px] text-text-dim">
+        <p className="rounded-sm border border-dashed border-border-subtle p-2 text-center text-[0.6875rem] text-text-dim">
           No assertions.
         </p>
       )}
@@ -519,7 +519,7 @@ function ResetFieldButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="text-[10px] text-text-dim hover:text-danger"
+      className="text-[0.625rem] text-text-dim hover:text-danger"
       aria-label="Reset this field to source"
     >
       Reset to source
@@ -536,7 +536,7 @@ function ResetOverrideButton({
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="flex items-center justify-between rounded-sm border border-border-subtle bg-surface px-3 py-2 text-[11px] text-text-muted">
+    <div className="flex items-center justify-between rounded-sm border border-border-subtle bg-surface px-3 py-2 text-[0.6875rem] text-text-muted">
       <span>Override saved {new Date(updatedAt).toLocaleString()}</span>
       <button
         type="button"

@@ -95,4 +95,41 @@ describe('KeyboardShortcuts', () => {
     const propagated = pressKey({ key: 'Enter', meta: true });
     expect(propagated).toBe(false);
   });
+
+  describe('font-size shortcuts', () => {
+    beforeEach(() => {
+      // Establish a known baseline so we have headroom in both directions
+      // and so prior-test leftovers don't shift the expected values.
+      useWorkspaceStore.getState().setFontSizePercent(100);
+    });
+
+    it('Ctrl+Shift+= increases the UI text size by one step', () => {
+      pressKey({ key: '=', ctrl: true, shift: true });
+      expect(useWorkspaceStore.getState().local!.ui.fontSizePercent).toBe(110);
+    });
+
+    it('Ctrl+Shift+- decreases the UI text size by one step', () => {
+      pressKey({ key: '-', ctrl: true, shift: true });
+      expect(useWorkspaceStore.getState().local!.ui.fontSizePercent).toBe(90);
+    });
+
+    it('Ctrl+Shift+0 resets the UI text size to 100%', () => {
+      useWorkspaceStore.getState().setFontSizePercent(130);
+      pressKey({ key: '0', ctrl: true, shift: true });
+      expect(useWorkspaceStore.getState().local!.ui.fontSizePercent).toBe(100);
+    });
+
+    it('font-size shortcuts fire even when focus is in an editing surface', () => {
+      const input = document.createElement('input');
+      document.body.appendChild(input);
+      pressKey({ key: '=', ctrl: true, shift: true, target: input });
+      expect(useWorkspaceStore.getState().local!.ui.fontSizePercent).toBe(110);
+      document.body.removeChild(input);
+    });
+
+    it('accepts `+` as an alternate increase key (Shift+= on US layouts)', () => {
+      pressKey({ key: '+', ctrl: true, shift: true });
+      expect(useWorkspaceStore.getState().local!.ui.fontSizePercent).toBe(110);
+    });
+  });
 });

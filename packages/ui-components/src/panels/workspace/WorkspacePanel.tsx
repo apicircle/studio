@@ -126,7 +126,7 @@ function ReleasesCard() {
           <Package size={14} className="text-accent" aria-hidden="true" />
           <span>Release history</span>
           {releases?.currentVersion && (
-            <span className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-accent">
+            <span className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-accent">
               v{releases.currentVersion}
             </span>
           )}
@@ -140,14 +140,16 @@ function ReleasesCard() {
           Publish release
         </button>
       </div>
-      <p className="mb-3 text-[11px] text-text-dim">
+      <p className="mb-3 text-[0.6875rem] text-text-dim">
         Each release is a published version of this workspace that linked consumers can pin to.
         Every entry is fingerprinted with a SHA-256 of the workspace contents at publish time so
         consumers can verify what they&apos;re pulling matches what you released.
       </p>
 
       {sortedVersions.length === 0 ? (
-        <p className="text-[11px] text-text-dim">No releases yet. Publish v0.1.0 to get started.</p>
+        <p className="text-[0.6875rem] text-text-dim">
+          No releases yet. Publish v0.1.0 to get started.
+        </p>
       ) : (
         <ul className="space-y-1.5">
           {sortedVersions.map((v) => (
@@ -183,26 +185,26 @@ function ReleaseRow({
       <div className="flex items-center gap-2">
         <code className="text-xs text-text-primary">v{entry.version}</code>
         {entry.deprecated && (
-          <span className="rounded-sm border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-warning">
+          <span className="rounded-sm border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-warning">
             deprecated
           </span>
         )}
         {entry.yanked && (
           <span
-            className="rounded-sm border border-danger/40 bg-danger/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-danger"
+            className="rounded-sm border border-danger/40 bg-danger/10 px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-danger"
             title="This version was withdrawn — consumers are warned away from it."
           >
             withdrawn
           </span>
         )}
-        <span className="ml-auto text-[10px] text-text-dim">
+        <span className="ml-auto text-[0.625rem] text-text-dim">
           {new Date(entry.publishedAt).toLocaleString()}
         </span>
       </div>
       {entry.notes && (
-        <p className="mt-1 whitespace-pre-wrap text-[11px] text-text-muted">{entry.notes}</p>
+        <p className="mt-1 whitespace-pre-wrap text-[0.6875rem] text-text-muted">{entry.notes}</p>
       )}
-      <p className="mt-1 font-mono text-[10px] text-text-dim" title={entry.workspaceSnapshot}>
+      <p className="mt-1 font-mono text-[0.625rem] text-text-dim" title={entry.workspaceSnapshot}>
         snapshot {entry.workspaceSnapshot.slice(0, 12)}…
       </p>
       <div className="mt-1.5 flex gap-2">
@@ -210,7 +212,7 @@ function ReleaseRow({
           <button
             type="button"
             onClick={() => setDeprecateOpen(true)}
-            className="inline-flex h-6 items-center rounded-sm border border-border bg-card px-2 text-[10px] text-text-muted hover:border-border-strong hover:text-text-primary"
+            className="inline-flex h-6 items-center rounded-sm border border-border bg-card px-2 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary"
           >
             Deprecate
           </button>
@@ -220,7 +222,7 @@ function ReleaseRow({
             type="button"
             onClick={() => setYankOpen(true)}
             title="Withdraw this version — consumers will be warned to upgrade or downgrade away from it."
-            className="inline-flex h-6 items-center gap-1 rounded-sm border border-danger/30 bg-danger/5 px-2 text-[10px] text-danger hover:bg-danger/10"
+            className="inline-flex h-6 items-center gap-1 rounded-sm border border-danger/30 bg-danger/5 px-2 text-[0.625rem] text-danger hover:bg-danger/10"
           >
             <AlertTriangle size={10} />
             Withdraw
@@ -324,7 +326,7 @@ function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => 
       <Modal open={open} onClose={onClose} title="Publish release">
         <div className="space-y-3">
           {releases?.currentVersion && (
-            <div className="flex flex-wrap items-center gap-2 rounded-sm border border-border bg-surface px-2.5 py-1.5 text-[11px] text-text-muted">
+            <div className="flex flex-wrap items-center gap-2 rounded-sm border border-border bg-surface px-2.5 py-1.5 text-[0.6875rem] text-text-muted">
               <span className="text-text-dim">Latest published</span>
               <code className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 font-mono text-text-primary">
                 v{releases.currentVersion}
@@ -351,7 +353,7 @@ function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => 
                         type="button"
                         onClick={() => setVersion(val)}
                         title={`Set version to v${val} (${label} bump)`}
-                        className="rounded-sm border border-border bg-card px-1.5 py-0.5 text-[10px] font-mono text-text-muted hover:border-accent hover:text-text-primary"
+                        className="rounded-sm border border-border bg-card px-1.5 py-0.5 text-[0.625rem] font-mono text-text-muted hover:border-accent hover:text-text-primary"
                       >
                         {val}
                       </button>
@@ -362,7 +364,7 @@ function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => 
             </div>
           )}
           <div>
-            <label htmlFor="release-version-input" className="block text-[11px] text-text-dim">
+            <label htmlFor="release-version-input" className="block text-[0.6875rem] text-text-dim">
               Version (semver)
             </label>
             <input
@@ -375,7 +377,7 @@ function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => 
             />
           </div>
           <div>
-            <label htmlFor="release-notes-input" className="block text-[11px] text-text-dim">
+            <label htmlFor="release-notes-input" className="block text-[0.6875rem] text-text-dim">
               Notes (markdown)
             </label>
             <textarea
@@ -387,13 +389,13 @@ function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => 
               className="mt-1 w-full resize-y rounded-sm border border-border bg-surface px-2 py-1.5 text-xs text-text-primary focus:border-accent focus:outline-none"
             />
           </div>
-          <p className="rounded-sm border border-border-subtle bg-surface p-2 text-[11px] leading-snug text-text-dim">
+          <p className="rounded-sm border border-border-subtle bg-surface p-2 text-[0.6875rem] leading-snug text-text-dim">
             Publish writes the version + notes to <code>workspace.json</code> and pushes to your
             working branch. To create a Git tag (or a GitHub Release) for this version, merge the PR
             first, then use <strong>Release &amp; topics</strong> on the Repo card — that path tags{' '}
             <code>main</code>&apos;s commit, not the unmerged working branch.
           </p>
-          {validation && <p className="text-[11px] text-warning">{validation}</p>}
+          {validation && <p className="text-[0.6875rem] text-warning">{validation}</p>}
           {error && (
             <p className="text-xs text-danger" role="alert">
               {error}
@@ -478,7 +480,7 @@ function ConflictResolverModal() {
   return (
     <Modal open={true} onClose={onClose} title="Resolve conflicts" className="max-w-3xl">
       <div className="space-y-3">
-        <p className="text-[11px] text-text-dim">
+        <p className="text-[0.6875rem] text-text-dim">
           Local and remote both edited the entries below. Pick a side for each one before merging.
           Cancel keeps the local doc untouched.
         </p>
@@ -538,7 +540,7 @@ function ConflictRow({
           <span className="ml-2">{entry.label}</span>
         </span>
       </div>
-      <div className="grid grid-cols-2 gap-2 text-[11px]">
+      <div className="grid grid-cols-2 gap-2 text-[0.6875rem]">
         <ConflictSide
           title="Mine (local)"
           selected={resolution === 'mine'}
@@ -580,8 +582,8 @@ function ConflictSide({
           : 'border-border bg-card text-text-muted hover:border-border-strong',
       )}
     >
-      <span className="text-[10px] uppercase tracking-wider text-text-dim">{title}</span>
-      <pre className="whitespace-pre-wrap break-words font-mono text-[10px]">{preview}</pre>
+      <span className="text-[0.625rem] uppercase tracking-wider text-text-dim">{title}</span>
+      <pre className="whitespace-pre-wrap break-words font-mono text-[0.625rem]">{preview}</pre>
     </button>
   );
 }
@@ -613,7 +615,7 @@ function StateBadge({
   return (
     <span
       className={cn(
-        'rounded-sm border px-2 py-0.5 text-[10px] uppercase tracking-wider',
+        'rounded-sm border px-2 py-0.5 text-[0.625rem] uppercase tracking-wider',
         className,
       )}
     >
@@ -681,7 +683,7 @@ function SessionCard() {
         </dd>
       </dl>
       {session.canCreatePullRequests === false && (
-        <p className="mt-3 rounded-sm border border-warning/40 bg-warning/10 p-2 text-[11px] text-warning">
+        <p className="mt-3 rounded-sm border border-warning/40 bg-warning/10 p-2 text-[0.6875rem] text-warning">
           This token can&apos;t create pull requests. Push will work; PR creation from the app will
           fail until the token is updated with the <code>pull_request</code> permission
           (fine-grained PATs) or the full <code>repo</code> scope (classic PATs).
@@ -806,7 +808,7 @@ function ConnectRepoForm() {
             setManualMode((v) => !v);
             setError(null);
           }}
-          className="inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[10px] text-text-muted hover:border-border-strong hover:text-text-primary"
+          className="inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary"
           aria-label={manualMode ? 'Switch to repo browser' : 'Switch to manual entry'}
         >
           <Pencil size={10} />
@@ -879,7 +881,7 @@ function ConnectRepoForm() {
                     className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs text-text-muted hover:bg-surface hover:text-text-primary disabled:opacity-50"
                   >
                     <code className="flex-1 truncate font-mono">{r.fullName}</code>
-                    <span className="shrink-0 rounded-sm border border-border bg-surface px-1 py-0.5 text-[10px] text-text-dim">
+                    <span className="shrink-0 rounded-sm border border-border bg-surface px-1 py-0.5 text-[0.625rem] text-text-dim">
                       {r.visibility}
                     </span>
                   </button>
@@ -891,14 +893,14 @@ function ConnectRepoForm() {
             !loadingRepos &&
             filteredRepos.length === 0 &&
             filter.trim().length > 0 && (
-              <p className="mt-1 text-[11px] text-text-dim">No repos match.</p>
+              <p className="mt-1 text-[0.6875rem] text-text-dim">No repos match.</p>
             )}
           {reposError && (
-            <p className="mt-1 text-[11px] text-danger" role="alert">
+            <p className="mt-1 text-[0.6875rem] text-danger" role="alert">
               {reposError}
             </p>
           )}
-          {submitting && <p className="mt-1 text-[11px] text-text-dim">Verifying…</p>}
+          {submitting && <p className="mt-1 text-[0.6875rem] text-text-dim">Verifying…</p>}
         </div>
       )}
 
@@ -907,7 +909,7 @@ function ConnectRepoForm() {
           {error}
         </p>
       )}
-      <p className="text-[11px] text-text-dim">
+      <p className="text-[0.6875rem] text-text-dim">
         Pick from your accessible repos, or use Manual entry for repos that don&apos;t show up. We
         call <code>GET /repos/&lt;owner&gt;/&lt;name&gt;</code> with your stored PAT to validate
         access and read the default branch. Nothing is written.
@@ -930,7 +932,7 @@ function RepoCard() {
         {repo.isPrivate && (
           <span
             title="Private repo"
-            className="inline-flex items-center gap-1 rounded-sm border border-border bg-surface px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-text-muted"
+            className="inline-flex items-center gap-1 rounded-sm border border-border bg-surface px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-text-muted"
           >
             <Lock size={9} aria-hidden="true" />
             {repo.visibility}
@@ -978,7 +980,7 @@ function RepoCard() {
         </button>
       </div>
       {!branch && !repo.pushable && (
-        <p className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-[11px] text-warning">
+        <p className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-[0.6875rem] text-warning">
           You don&apos;t have push access to this repo. Working branches can&apos;t be created.
           Reconnect with a token that grants push access (typically the <code>repo</code> scope on a
           token owned by a collaborator).
@@ -1151,11 +1153,11 @@ function BranchCard() {
         <GitBranch size={12} className="text-accent" aria-hidden="true" />
         <span className="font-mono text-text-primary">{branch.name}</span>
       </div>
-      <p className="text-[11px] text-text-dim">
+      <p className="text-[0.6875rem] text-text-dim">
         Created from <code>{branch.baseBranch}</code> at <code>{branch.headSha.slice(0, 7)}</code>{' '}
         on {new Date(branch.createdAt).toLocaleString()}.
       </p>
-      <p className="mt-1 text-[11px] text-text-dim">
+      <p className="mt-1 text-[0.6875rem] text-text-dim">
         Last pushed:{' '}
         {branch.lastPushedSha ? (
           <code className="text-text-primary">{branch.lastPushedSha.slice(0, 7)}</code>
@@ -1165,7 +1167,10 @@ function BranchCard() {
         {isClean && branch.lastPushedSha && <span className="ml-1 text-success">· up to date</span>}
       </p>
       {lastPulledAt && (
-        <p className="text-[11px] text-text-dim" title={new Date(lastPulledAt).toLocaleString()}>
+        <p
+          className="text-[0.6875rem] text-text-dim"
+          title={new Date(lastPulledAt).toLocaleString()}
+        >
           Last pulled: <span className="text-text-primary">{formatRelativeTime(lastPulledAt)}</span>
           . Refresh to pull remote changes.
         </p>
@@ -1184,7 +1189,7 @@ function BranchCard() {
 
       {showMessageField && (
         <div className="mt-2">
-          <label htmlFor="commit-message-input" className="block text-[11px] text-text-dim">
+          <label htmlFor="commit-message-input" className="block text-[0.6875rem] text-text-dim">
             Commit message (optional)
           </label>
           <input
@@ -1204,20 +1209,20 @@ function BranchCard() {
         </p>
       )}
       {justPushedSha && !error && (
-        <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-success">
+        <p className="mt-2 inline-flex items-center gap-1 text-[0.6875rem] text-success">
           <CheckCircle2 size={11} aria-hidden="true" />
           Pushed <code>{justPushedSha.slice(0, 7)}</code>
         </p>
       )}
       {refreshNotice && !error && (
-        <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-text-muted">
+        <p className="mt-2 inline-flex items-center gap-1 text-[0.6875rem] text-text-muted">
           <RefreshCw size={11} aria-hidden="true" />
           {refreshNotice}
         </p>
       )}
 
       {branch.openPrUrl && (
-        <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-accent">
+        <p className="mt-2 inline-flex items-center gap-1 text-[0.6875rem] text-accent">
           <GitPullRequest size={11} aria-hidden="true" />
           PR open:{' '}
           <a
@@ -1281,14 +1286,14 @@ function BranchCard() {
         <button
           type="button"
           onClick={() => setShowMessageField((v) => !v)}
-          className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary"
+          className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-border-strong hover:text-text-primary"
         >
           {showMessageField ? 'Hide message' : 'Custom commit message'}
         </button>
         <button
           type="button"
           onClick={discardWorkingBranch}
-          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary"
+          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-border-strong hover:text-text-primary"
           aria-label="Discard working branch"
         >
           <X size={10} />
@@ -1310,7 +1315,7 @@ function UnpushedChangesStrip({
 }) {
   if (summary.total === 0) {
     return (
-      <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-success">
+      <p className="mt-1 inline-flex items-center gap-1 text-[0.6875rem] text-success">
         <CheckCircle2 size={11} aria-hidden="true" />
         No unpushed changes — workspace matches the last pull.
       </p>
@@ -1321,7 +1326,7 @@ function UnpushedChangesStrip({
       type="button"
       onClick={onOpen}
       aria-label="Show unpushed changes preview"
-      className="mt-1 inline-flex items-center gap-2 rounded-sm border border-warning/40 bg-warning/5 px-2 py-1 text-[11px] text-warning hover:bg-warning/10"
+      className="mt-1 inline-flex items-center gap-2 rounded-sm border border-warning/40 bg-warning/5 px-2 py-1 text-[0.6875rem] text-warning hover:bg-warning/10"
     >
       <FileDiff size={11} aria-hidden="true" />
       <span>
@@ -1358,10 +1363,10 @@ function UnpushedChangesModal({
   return (
     <Modal open onClose={onClose} title="Unpushed changes preview" className="max-w-3xl">
       <div className="flex flex-col gap-3">
-        <p className="text-[11px] text-text-dim">
+        <p className="text-[0.6875rem] text-text-dim">
           Diff against {baseLabel}. Push to save commits these changes to the working branch.
         </p>
-        <div className="flex gap-2 text-[11px]">
+        <div className="flex gap-2 text-[0.6875rem]">
           <span className="rounded-sm border border-success/40 bg-success/10 px-2 py-0.5 text-success">
             +{summary.added} added
           </span>
@@ -1415,18 +1420,18 @@ function UnpushedChangeRow({ change }: { change: UnpushedChange }) {
         aria-label={`Toggle ${change.kind} ${change.label}`}
       >
         <span
-          className={`shrink-0 rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${tone}`}
+          className={`shrink-0 rounded-sm border px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider ${tone}`}
         >
           {change.kind}
         </span>
-        <span className="rounded-sm border border-border bg-card px-1.5 py-0.5 text-[10px] text-text-dim">
+        <span className="rounded-sm border border-border bg-card px-1.5 py-0.5 text-[0.625rem] text-text-dim">
           {change.bucket}
         </span>
         <code className="flex-1 truncate text-text-primary">{change.label}</code>
-        <span className="text-[10px] text-text-dim">{open ? '−' : '+'}</span>
+        <span className="text-[0.625rem] text-text-dim">{open ? '−' : '+'}</span>
       </button>
       {open && (
-        <div className="grid grid-cols-2 gap-2 border-t border-border-subtle p-2 text-[10px]">
+        <div className="grid grid-cols-2 gap-2 border-t border-border-subtle p-2 text-[0.625rem]">
           <div>
             <p className="mb-1 text-text-dim">Before (last pull)</p>
             <pre className="max-h-40 overflow-y-auto rounded-sm border border-border bg-card p-1.5 font-mono text-text-muted">
@@ -1486,13 +1491,13 @@ function CreatePrModal({ open, onClose }: { open: boolean; onClose: () => void }
   return (
     <Modal open={open} onClose={onClose} title="Open pull request">
       <div className="space-y-3">
-        <p className="text-[11px] text-text-dim">
+        <p className="text-[0.6875rem] text-text-dim">
           From <code className="text-text-muted">{branch.name}</code> →{' '}
           <code className="text-text-muted">{branch.baseBranch}</code> on{' '}
           <code className="text-text-muted">{branch.repoFullName}</code>.
         </p>
         <div>
-          <label htmlFor="pr-title-input" className="block text-[11px] text-text-dim">
+          <label htmlFor="pr-title-input" className="block text-[0.6875rem] text-text-dim">
             Title
           </label>
           <input
@@ -1504,7 +1509,7 @@ function CreatePrModal({ open, onClose }: { open: boolean; onClose: () => void }
           />
         </div>
         <div>
-          <label htmlFor="pr-body-input" className="block text-[11px] text-text-dim">
+          <label htmlFor="pr-body-input" className="block text-[0.6875rem] text-text-dim">
             Description (markdown)
           </label>
           <textarea
@@ -1662,25 +1667,25 @@ function CreateBranchForm() {
         push to save will commit <code>workspace.json</code> here.
       </p>
 
-      <label htmlFor="base-branch-select" className="block text-[11px] text-text-dim">
+      <label htmlFor="base-branch-select" className="block text-[0.6875rem] text-text-dim">
         Base branch
       </label>
       {loadingBranches ? (
-        <p className="text-[11px] text-text-dim">Loading branches…</p>
+        <p className="text-[0.6875rem] text-text-dim">Loading branches…</p>
       ) : branchesError ? (
-        <p className="text-[11px] text-danger" role="alert">
+        <p className="text-[0.6875rem] text-danger" role="alert">
           {branchesError}
         </p>
       ) : noBranches ? (
         <div className="space-y-2 rounded-sm border border-warning/30 bg-warning/5 p-2.5">
-          <p className="text-[11px] text-warning">
+          <p className="text-[0.6875rem] text-warning">
             This repo is empty. Seed an initial commit with a scaffold{' '}
             <code className="font-mono">workspace.json</code> on{' '}
             <code className="font-mono">{repo.defaultBranch}</code> — your local content is
             unchanged and lands on the working branch when you push.
           </p>
           {seedError && (
-            <p className="text-[11px] text-danger" role="alert">
+            <p className="text-[0.6875rem] text-danger" role="alert">
               {seedError}
             </p>
           )}
@@ -1688,7 +1693,7 @@ function CreateBranchForm() {
             type="button"
             onClick={() => void onSeed()}
             disabled={seeding}
-            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-warning/40 bg-warning/10 px-3 text-[11px] text-warning hover:bg-warning/20 disabled:opacity-50"
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-warning/40 bg-warning/10 px-3 text-[0.6875rem] text-warning hover:bg-warning/20 disabled:opacity-50"
           >
             <Plus size={11} />
             {seeding ? 'Seeding…' : `Seed ${repo.defaultBranch}`}
@@ -1721,7 +1726,7 @@ function CreateBranchForm() {
         </div>
       )}
 
-      <label htmlFor="branch-name-input" className="block text-[11px] text-text-dim">
+      <label htmlFor="branch-name-input" className="block text-[0.6875rem] text-text-dim">
         New branch name
       </label>
       <input
@@ -1734,7 +1739,7 @@ function CreateBranchForm() {
         aria-label="Branch name"
         className="h-7 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
       />
-      {validation && <p className="text-[11px] text-warning">{validation}</p>}
+      {validation && <p className="text-[0.6875rem] text-warning">{validation}</p>}
       {error && (
         <p className="text-xs text-danger" role="alert">
           {error}
@@ -1753,7 +1758,7 @@ function CreateBranchForm() {
         <button
           type="button"
           onClick={() => setName(generateWorkingBranchName({ workspaceName }))}
-          className="text-[11px] text-text-dim hover:text-text-muted"
+          className="text-[0.6875rem] text-text-dim hover:text-text-muted"
           aria-label="Regenerate branch name"
         >
           Regenerate
@@ -1799,7 +1804,7 @@ function RetiredBranchBanner() {
             href={retired.prUrl}
             target="_blank"
             rel="noreferrer"
-            className="mt-1 inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
+            className="mt-1 inline-flex items-center gap-1 text-[0.6875rem] text-accent hover:underline"
           >
             <GitPullRequest size={11} aria-hidden="true" />
             View PR
@@ -1879,7 +1884,7 @@ function FirstPullPromptBanner() {
         <button
           type="button"
           onClick={acknowledge}
-          className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary"
+          className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-[0.6875rem] text-text-muted hover:border-border-strong hover:text-text-primary"
         >
           Skip — I&apos;ll push my local first
         </button>
@@ -1887,7 +1892,7 @@ function FirstPullPromptBanner() {
           type="button"
           onClick={() => void onPull()}
           disabled={pulling}
-          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-warning/40 bg-warning/10 px-3 text-[11px] text-warning hover:bg-warning/20 disabled:opacity-50"
+          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-warning/40 bg-warning/10 px-3 text-[0.6875rem] text-warning hover:bg-warning/20 disabled:opacity-50"
         >
           <Download size={11} />
           {pulling ? 'Pulling…' : 'Pull first'}

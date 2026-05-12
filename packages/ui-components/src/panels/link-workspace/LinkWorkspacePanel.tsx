@@ -35,7 +35,7 @@ export function LinkWorkspacePanel() {
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
       <header className="flex items-baseline gap-3">
         <h1 className="text-lg font-medium text-text-primary">Link Workspace</h1>
-        <span className="rounded-sm border border-border bg-card px-2 py-0.5 text-[10px] uppercase tracking-wider text-text-muted">
+        <span className="rounded-sm border border-border bg-card px-2 py-0.5 text-[0.625rem] uppercase tracking-wider text-text-muted">
           {linkArray.length} linked
         </span>
       </header>
@@ -59,7 +59,7 @@ export function LinkWorkspacePanel() {
           <h2 className="text-xs font-medium uppercase tracking-wider text-text-dim">
             Linked workspaces
           </h2>
-          <p className="-mt-1 flex items-start gap-1 text-[11px] leading-snug text-text-dim">
+          <p className="-mt-1 flex items-start gap-1 text-[0.6875rem] leading-snug text-text-dim">
             <Info size={11} aria-hidden="true" className="mt-0.5 shrink-0 text-text-faint" />
             <span>
               Linking is <strong>one level deep</strong>. If a workspace you link has its own links,
@@ -211,12 +211,12 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
     <>
       <Modal open={open} onClose={onClose} title="Search marketplace" className="max-w-5xl">
         <div className="space-y-3">
-          <p className="text-[11px] text-text-dim">
+          <p className="text-[0.6875rem] text-text-dim">
             Searches public GitHub repos tagged <code>topic:apicircle-marketplace</code>. Linking
             uses the repo&apos;s default branch.
           </p>
           {!hasSession && (
-            <p className="text-[11px] text-text-dim">
+            <p className="text-[0.6875rem] text-text-dim">
               Browsing is anonymous. To link a result, connect GitHub in the{' '}
               <button
                 type="button"
@@ -260,7 +260,7 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
                 <li key={repo.fullName} className="rounded-sm border border-border bg-surface p-2">
                   <div className="flex items-center gap-2">
                     <code className="text-xs text-text-primary">{repo.fullName}</code>
-                    <span className="inline-flex items-center gap-1 text-[10px] text-text-dim">
+                    <span className="inline-flex items-center gap-1 text-[0.625rem] text-text-dim">
                       <Star size={9} aria-hidden="true" />
                       {repo.stargazers}
                     </span>
@@ -273,17 +273,17 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
                           ? undefined
                           : 'Connect GitHub in Secret Vault to link this workspace'
                       }
-                      className="ml-auto inline-flex h-6 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[10px] text-accent hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="ml-auto inline-flex h-6 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.625rem] text-accent hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <Link2 size={10} />
                       Link
                     </button>
                   </div>
                   {repo.description && (
-                    <p className="mt-1 text-[11px] text-text-muted">{repo.description}</p>
+                    <p className="mt-1 text-[0.6875rem] text-text-muted">{repo.description}</p>
                   )}
                   {repo.topics.length > 0 && (
-                    <p className="mt-1 flex flex-wrap gap-1 text-[10px] text-text-dim">
+                    <p className="mt-1 flex flex-wrap gap-1 text-[0.625rem] text-text-dim">
                       {repo.topics.map((t) => (
                         <span
                           key={t}
@@ -299,7 +299,7 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
             </ul>
           )}
           {!searching && results.length === 0 && query && !error && (
-            <p className="text-[11px] text-text-dim">No results.</p>
+            <p className="text-[0.6875rem] text-text-dim">No results.</p>
           )}
           <div className="flex justify-end pt-1">
             <button
@@ -644,7 +644,7 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
       <Modal open={open} onClose={onClose} title="Link a private workspace">
         <div className="space-y-3">
           <div className="flex items-start justify-between gap-3">
-            <p className="text-[11px] text-text-dim">
+            <p className="text-[0.6875rem] text-text-dim">
               Reads <code>workspace.json</code> from the source branch using your active GitHub
               session. The cached release ledger is stored under <code>releases.perLink[id]</code>.
             </p>
@@ -654,7 +654,7 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
                 setManualMode((v) => !v);
                 setError(null);
               }}
-              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[10px] text-text-muted hover:border-border-strong hover:text-text-primary"
+              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary"
               aria-label={manualMode ? 'Switch to repo browser' : 'Switch to manual entry'}
             >
               <Pencil size={10} />
@@ -861,11 +861,11 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
       <div className="mb-2 flex items-center gap-2 text-sm text-text-primary">
         <Package size={14} className="text-accent" aria-hidden="true" />
         <span className="font-medium">{link.name}</span>
-        <span className="rounded-sm border border-border bg-surface px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-text-muted">
+        <span className="rounded-sm border border-border bg-surface px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-text-muted">
           {link.kind}
         </span>
         {updatesAvailable && (
-          <span className="rounded-sm border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-warning">
+          <span className="rounded-sm border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-warning">
             update available · v{ledger?.currentVersion}
           </span>
         )}
@@ -882,7 +882,7 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
             <>
               <code
                 aria-label={`Pinned to v${link.pinnedVersion}`}
-                className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 font-mono text-[11px] text-accent"
+                className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 font-mono text-[0.6875rem] text-accent"
               >
                 v{link.pinnedVersion}
               </code>
@@ -898,7 +898,7 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
                   <>
                     {entry.deprecated && (
                       <span
-                        className="rounded-sm border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-warning"
+                        className="rounded-sm border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-warning"
                         title="The source workspace marked this version deprecated. Plan a move to a newer release."
                       >
                         deprecated
@@ -906,7 +906,7 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
                     )}
                     {entry.yanked && (
                       <span
-                        className="rounded-sm border border-danger/40 bg-danger/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-danger"
+                        className="rounded-sm border border-danger/40 bg-danger/10 px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-danger"
                         title="The source workspace withdrew this version (typically due to a defect). Move to a newer release."
                       >
                         withdrawn
@@ -917,9 +917,9 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
               })()}
             </>
           ) : (
-            <span className="text-[11px] text-text-dim">Unpinned (tracks source HEAD)</span>
+            <span className="text-[0.6875rem] text-text-dim">Unpinned (tracks source HEAD)</span>
           )}
-          <span className="text-[10px] text-text-dim">
+          <span className="text-[0.625rem] text-text-dim">
             (set at link time — use Refresh ledger &rarr; Review update &rarr; Apply to pull a newer
             release)
           </span>
@@ -1068,10 +1068,10 @@ function LinkedRequestsList({ linkId }: { linkId: string }) {
                   }
                   className="flex w-full items-center gap-2 rounded-sm border border-border bg-surface px-2 py-1 text-left text-text-primary hover:border-border-strong"
                 >
-                  <span className="text-[10px] uppercase text-text-dim">{req.method}</span>
+                  <span className="text-[0.625rem] uppercase text-text-dim">{req.method}</span>
                   <span className="flex-1 truncate font-mono">{req.name}</span>
                   {overridden && (
-                    <span className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-accent">
+                    <span className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-accent">
                       override
                     </span>
                   )}
@@ -1111,7 +1111,7 @@ function LinkedChangelogModal({
   return (
     <Modal open={open} onClose={onClose} title={`${link.name} — changelog`} className="max-w-5xl">
       <div className="space-y-2">
-        <p className="text-[11px] text-text-dim">
+        <p className="text-[0.6875rem] text-text-dim">
           Cached from{' '}
           <code>
             {link.source.repoFullName}@{link.source.branch}
@@ -1119,7 +1119,9 @@ function LinkedChangelogModal({
           at the last refresh. Refresh the ledger to pull newly-published versions.
         </p>
         {sortedEntries.length === 0 ? (
-          <p className="text-[11px] text-text-dim">No published versions in the cached ledger.</p>
+          <p className="text-[0.6875rem] text-text-dim">
+            No published versions in the cached ledger.
+          </p>
         ) : (
           <ul className="max-h-96 space-y-2 overflow-y-auto">
             {sortedEntries.map((entry) => {
@@ -1129,37 +1131,37 @@ function LinkedChangelogModal({
                   <div className="flex flex-wrap items-center gap-2">
                     <code className="text-xs text-text-primary">v{entry.version}</code>
                     {isPinned && (
-                      <span className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-accent">
+                      <span className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-accent">
                         pinned
                       </span>
                     )}
                     {entry.deprecated && (
-                      <span className="rounded-sm border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-warning">
+                      <span className="rounded-sm border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-warning">
                         deprecated
                       </span>
                     )}
                     {entry.yanked && (
                       <span
-                        className="rounded-sm border border-danger/40 bg-danger/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-danger"
+                        className="rounded-sm border border-danger/40 bg-danger/10 px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-danger"
                         title="This version was withdrawn by the source workspace."
                       >
                         withdrawn
                       </span>
                     )}
-                    <span className="ml-auto text-[10px] text-text-dim">
+                    <span className="ml-auto text-[0.625rem] text-text-dim">
                       {new Date(entry.publishedAt).toLocaleString()}
                     </span>
                   </div>
                   {entry.notes ? (
-                    <p className="mt-1 whitespace-pre-wrap text-[11px] text-text-muted">
+                    <p className="mt-1 whitespace-pre-wrap text-[0.6875rem] text-text-muted">
                       {entry.notes}
                     </p>
                   ) : (
-                    <p className="mt-1 text-[11px] text-text-dim italic">no release notes</p>
+                    <p className="mt-1 text-[0.6875rem] text-text-dim italic">no release notes</p>
                   )}
                   {entry.workspaceSnapshot && (
                     <p
-                      className="mt-1 font-mono text-[10px] text-text-dim"
+                      className="mt-1 font-mono text-[0.625rem] text-text-dim"
                       title={entry.workspaceSnapshot}
                     >
                       snapshot {entry.workspaceSnapshot.slice(0, 12)}…
@@ -1209,7 +1211,7 @@ function RepoCombobox({
 }) {
   return (
     <div>
-      <label htmlFor="link-repo-combobox" className="block text-[11px] text-text-dim">
+      <label htmlFor="link-repo-combobox" className="block text-[0.6875rem] text-text-dim">
         Repository
       </label>
       {selectedRepo ? (
@@ -1218,14 +1220,14 @@ function RepoCombobox({
           <code className="flex-1 truncate font-mono text-text-primary">
             {selectedRepo.fullName}
           </code>
-          <span className="rounded-sm border border-border bg-card px-1.5 py-0.5 text-[10px] text-text-dim">
+          <span className="rounded-sm border border-border bg-card px-1.5 py-0.5 text-[0.625rem] text-text-dim">
             {selectedRepo.visibility}
           </span>
           <button
             type="button"
             onClick={onClear}
             aria-label="Change repository"
-            className="text-[10px] text-text-dim hover:text-text-primary"
+            className="text-[0.625rem] text-text-dim hover:text-text-primary"
           >
             Change
           </button>
@@ -1276,7 +1278,7 @@ function RepoCombobox({
                     className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs text-text-muted hover:bg-surface hover:text-text-primary"
                   >
                     <code className="flex-1 truncate font-mono">{r.fullName}</code>
-                    <span className="shrink-0 rounded-sm border border-border bg-surface px-1 py-0.5 text-[10px] text-text-dim">
+                    <span className="shrink-0 rounded-sm border border-border bg-surface px-1 py-0.5 text-[0.625rem] text-text-dim">
                       {r.visibility}
                     </span>
                   </button>
@@ -1285,12 +1287,12 @@ function RepoCombobox({
             </ul>
           )}
           {showList && !loading && repos.length === 0 && filter.trim().length > 0 && (
-            <p className="mt-1 text-[11px] text-text-dim">No repos match.</p>
+            <p className="mt-1 text-[0.6875rem] text-text-dim">No repos match.</p>
           )}
         </div>
       )}
       {error && (
-        <p className="mt-1 text-[11px] text-danger" role="alert">
+        <p className="mt-1 text-[0.6875rem] text-danger" role="alert">
           {error}
         </p>
       )}
@@ -1315,13 +1317,13 @@ function BranchPicker({
 }) {
   return (
     <div>
-      <label htmlFor="link-branch-select" className="block text-[11px] text-text-dim">
+      <label htmlFor="link-branch-select" className="block text-[0.6875rem] text-text-dim">
         Branch
       </label>
       {loading ? (
-        <p className="mt-1 text-[11px] text-text-dim">Loading branches…</p>
+        <p className="mt-1 text-[0.6875rem] text-text-dim">Loading branches…</p>
       ) : error ? (
-        <p className="mt-1 text-[11px] text-danger" role="alert">
+        <p className="mt-1 text-[0.6875rem] text-danger" role="alert">
           {error}
         </p>
       ) : branches && branches.length > 0 ? (
@@ -1347,7 +1349,7 @@ function BranchPicker({
           />
         </div>
       ) : (
-        <p className="mt-1 text-[11px] text-text-dim">No branches found.</p>
+        <p className="mt-1 text-[0.6875rem] text-text-dim">No branches found.</p>
       )}
     </div>
   );
@@ -1378,11 +1380,11 @@ function PinPicker({
   const sortedVersions = useMemo(() => (probe ? sortVersionsDesc(probe.versions) : []), [probe]);
 
   if (loading) {
-    return <p className="text-[11px] text-text-dim">Probing workspace.json on this branch…</p>;
+    return <p className="text-[0.6875rem] text-text-dim">Probing workspace.json on this branch…</p>;
   }
   if (error) {
     return (
-      <p className="text-[11px] text-danger" role="alert">
+      <p className="text-[0.6875rem] text-danger" role="alert">
         {error}
       </p>
     );
@@ -1391,17 +1393,17 @@ function PinPicker({
 
   return (
     <div className="rounded-sm border border-border-subtle bg-surface p-2">
-      <p className="mb-1.5 text-[11px] text-text-dim">
+      <p className="mb-1.5 text-[0.6875rem] text-text-dim">
         Source workspace: <strong className="text-text-primary">{probe.workspaceName}</strong>
         {probe.currentVersion && (
-          <span className="ml-2 rounded-sm border border-border bg-card px-1 py-0.5 font-mono text-[10px]">
+          <span className="ml-2 rounded-sm border border-border bg-card px-1 py-0.5 font-mono text-[0.625rem]">
             currentVersion v{probe.currentVersion}
           </span>
         )}
       </p>
       <fieldset className="flex flex-col gap-1">
         <legend className="sr-only">Pin version</legend>
-        <label className="flex items-center gap-1.5 text-[11px] text-text-muted">
+        <label className="flex items-center gap-1.5 text-[0.6875rem] text-text-muted">
           <input
             type="radio"
             name="pin-choice"
@@ -1415,7 +1417,7 @@ function PinPicker({
             ? `Pin to currentVersion (v${probe.currentVersion})`
             : 'Track latest (source has no published versions yet)'}
         </label>
-        <label className="flex items-center gap-1.5 text-[11px] text-text-muted">
+        <label className="flex items-center gap-1.5 text-[0.6875rem] text-text-muted">
           <input
             type="radio"
             name="pin-choice"
@@ -1428,7 +1430,7 @@ function PinPicker({
           />
           Pin to a specific version
           {sortedVersions.length === 0 && (
-            <span className="text-[10px] text-text-dim">(no published versions)</span>
+            <span className="text-[0.625rem] text-text-dim">(no published versions)</span>
           )}
         </label>
         {pinChoice === 'specific' && sortedVersions.length > 0 && (
@@ -1436,7 +1438,7 @@ function PinPicker({
             value={specificPin || sortedVersions[0]}
             onChange={(e) => onSpecificPinChange(e.target.value)}
             aria-label="Specific version to pin"
-            className="ml-5 h-7 rounded-sm border border-border bg-card px-2 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none"
+            className="ml-5 h-7 rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
           >
             {sortedVersions.map((v) => (
               <option key={v} value={v}>
@@ -1475,10 +1477,10 @@ function RequiredSecretKeysPicker({
       <div className="rounded-sm border border-border-subtle bg-surface p-2">
         <div className="mb-1 flex items-center gap-2">
           <Key size={12} className="text-text-dim" aria-hidden="true" />
-          <h4 className="text-[11px] font-medium text-text-primary">Required secret keys</h4>
-          <span className="text-[10px] text-text-dim">none declared by source</span>
+          <h4 className="text-[0.6875rem] font-medium text-text-primary">Required secret keys</h4>
+          <span className="text-[0.625rem] text-text-dim">none declared by source</span>
         </div>
-        <p className="text-[11px] leading-snug text-text-dim">
+        <p className="text-[0.6875rem] leading-snug text-text-dim">
           The source workspace.json doesn&apos;t declare any vault slots. If you expected to see one
           here, the source may need to push first (slots aren&apos;t synced until pushed) or the
           slot may have been removed from the source&apos;s vault. You can still add required keys
@@ -1491,12 +1493,12 @@ function RequiredSecretKeysPicker({
     <div className="rounded-sm border border-warning/30 bg-warning/5 p-2">
       <div className="mb-1 flex items-center gap-2">
         <Key size={12} className="text-warning" aria-hidden="true" />
-        <h4 className="text-[11px] font-medium text-text-primary">Required secret keys</h4>
-        <span className="text-[10px] text-text-dim">
+        <h4 className="text-[0.6875rem] font-medium text-text-primary">Required secret keys</h4>
+        <span className="text-[0.625rem] text-text-dim">
           {keys.length} slot{keys.length === 1 ? '' : 's'} declared by source
         </span>
       </div>
-      <p className="mb-2 text-[11px] text-text-dim">
+      <p className="mb-2 text-[0.6875rem] text-text-dim">
         The source workspace declares these vault slots. Provide values now, or skip and fill in
         later from the link card. Empty values are fine — leave a slot blank if your usage
         doesn&apos;t need it.
@@ -1507,7 +1509,7 @@ function RequiredSecretKeysPicker({
           return (
             <li key={meta.id} className="flex items-center gap-2">
               <code
-                className="w-32 shrink-0 truncate text-[11px] text-text-primary"
+                className="w-32 shrink-0 truncate text-[0.6875rem] text-text-primary"
                 title={meta.id}
               >
                 {meta.label || meta.id}
@@ -1518,7 +1520,7 @@ function RequiredSecretKeysPicker({
                 onChange={(e) => onChange({ ...values, [meta.id]: e.target.value })}
                 placeholder="Skip to fill later"
                 aria-label={`Value for ${meta.label || meta.id}`}
-                className="h-7 flex-1 rounded-sm border border-border bg-card px-2 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none"
+                className="h-7 flex-1 rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
               />
               <button
                 type="button"
@@ -1528,7 +1530,7 @@ function RequiredSecretKeysPicker({
                     ? `Hide value for ${meta.label || meta.id}`
                     : `Reveal value for ${meta.label || meta.id}`
                 }
-                className="inline-flex h-6 items-center rounded-sm border border-border bg-card px-2 text-[10px] text-text-muted hover:border-border-strong hover:text-text-primary"
+                className="inline-flex h-6 items-center rounded-sm border border-border bg-card px-2 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary"
               >
                 {reveal ? 'Hide' : 'Show'}
               </button>
@@ -1558,7 +1560,7 @@ function ManualLinkInputs({
   return (
     <>
       <div>
-        <label htmlFor="link-repo-input" className="block text-[11px] text-text-dim">
+        <label htmlFor="link-repo-input" className="block text-[0.6875rem] text-text-dim">
           Repo full name
         </label>
         <input
@@ -1572,7 +1574,7 @@ function ManualLinkInputs({
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label htmlFor="link-branch-input" className="block text-[11px] text-text-dim">
+          <label htmlFor="link-branch-input" className="block text-[0.6875rem] text-text-dim">
             Branch
           </label>
           <input
@@ -1584,7 +1586,7 @@ function ManualLinkInputs({
           />
         </div>
         <div>
-          <label htmlFor="link-pin-input" className="block text-[11px] text-text-dim">
+          <label htmlFor="link-pin-input" className="block text-[0.6875rem] text-text-dim">
             Pin version (optional)
           </label>
           <input
@@ -1613,15 +1615,15 @@ function RequiredKeysSection({ link }: { link: LinkedWorkspace }) {
     <section className="mt-3 rounded-sm border border-border-subtle bg-surface p-2">
       <div className="mb-1.5 flex items-center gap-2">
         <Key size={12} className="text-text-dim" aria-hidden="true" />
-        <h3 className="text-[11px] font-medium uppercase tracking-wider text-text-dim">
+        <h3 className="text-[0.6875rem] font-medium uppercase tracking-wider text-text-dim">
           Required secret keys
         </h3>
-        <span className="text-[10px] text-text-dim">
+        <span className="text-[0.625rem] text-text-dim">
           auto-discovered from source on link / refresh
         </span>
       </div>
       {link.requiredSecretKeyIds.length === 0 ? (
-        <p className="text-[11px] text-text-dim">
+        <p className="text-[0.6875rem] text-text-dim">
           The source workspace doesn&apos;t declare any vault slots. If you expected to see one
           here, push the source workspace and click <em>Refresh ledger</em> on this card.
         </p>
@@ -1700,13 +1702,13 @@ function RequiredKeyRow({
       title={primary !== keyId ? `Slot id: ${keyId}` : undefined}
     >
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[11px] text-text-primary">{primary}</div>
+        <div className="truncate text-[0.6875rem] text-text-primary">{primary}</div>
       </div>
       <span
         className={
           provisionedId
-            ? 'rounded-sm border border-success/40 bg-success/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-success'
-            : 'rounded-sm border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-warning'
+            ? 'rounded-sm border border-success/40 bg-success/10 px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-success'
+            : 'rounded-sm border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-warning'
         }
       >
         {provisionedId ? 'set' : 'missing'}
@@ -1719,7 +1721,7 @@ function RequiredKeyRow({
             onChange={(e) => setValue(e.target.value)}
             placeholder="value"
             aria-label={`Value for ${keyId}`}
-            className="h-6 w-32 rounded-sm border border-border bg-surface px-1.5 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none"
+            className="h-6 w-32 rounded-sm border border-border bg-surface px-1.5 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
             onKeyDown={(e) => {
               if (e.key === 'Enter') void onSave();
               if (e.key === 'Escape') setEditing(false);
@@ -1730,7 +1732,7 @@ function RequiredKeyRow({
             type="button"
             onClick={() => void onSave()}
             disabled={saving || !value}
-            className="inline-flex h-6 items-center rounded-sm border border-accent/40 bg-accent/10 px-2 text-[10px] text-accent hover:bg-accent/20 disabled:opacity-50"
+            className="inline-flex h-6 items-center rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.625rem] text-accent hover:bg-accent/20 disabled:opacity-50"
           >
             {saving ? 'Saving…' : 'Save'}
           </button>
@@ -1740,7 +1742,7 @@ function RequiredKeyRow({
               setEditing(false);
               setValue('');
             }}
-            className="text-[10px] text-text-dim hover:text-text-muted"
+            className="text-[0.625rem] text-text-dim hover:text-text-muted"
           >
             cancel
           </button>
@@ -1750,7 +1752,7 @@ function RequiredKeyRow({
           <button
             type="button"
             onClick={() => setEditing(true)}
-            className="inline-flex h-6 items-center rounded-sm border border-border bg-surface px-2 text-[10px] text-text-muted hover:border-border-strong hover:text-text-primary"
+            className="inline-flex h-6 items-center rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary"
           >
             {provisionedId ? 'Update' : 'Set value'}
           </button>
@@ -1765,7 +1767,7 @@ function RequiredKeyRow({
         </>
       )}
       {error && (
-        <span className="text-[10px] text-danger" role="alert">
+        <span className="text-[0.625rem] text-danger" role="alert">
           {error}
         </span>
       )}
@@ -1818,7 +1820,7 @@ function LinkSessionPicker({
 }) {
   return (
     <fieldset className="rounded-sm border border-border bg-surface px-3 py-2">
-      <legend className="px-1 text-[10px] font-medium uppercase tracking-wider text-text-dim">
+      <legend className="px-1 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
         Session for this link
       </legend>
       <div className="flex flex-col gap-1.5 text-xs">
@@ -1832,7 +1834,7 @@ function LinkSessionPicker({
           />
           <div>
             <div className="text-text-primary">Use workspace session</div>
-            <div className="text-[11px] text-text-dim">
+            <div className="text-[0.6875rem] text-text-dim">
               Reuses the PAT that pushes / pulls this workspace. Pick this when both repos are on
               the same account.
             </div>
@@ -1848,7 +1850,7 @@ function LinkSessionPicker({
           />
           <div className="min-w-0 flex-1">
             <div className="text-text-primary">Add a dedicated session</div>
-            <div className="text-[11px] text-text-dim">
+            <div className="text-[0.6875rem] text-text-dim">
               Bind a separate PAT to this link only — required when the source repo lives under a
               different account.
             </div>
@@ -1859,7 +1861,7 @@ function LinkSessionPicker({
                 onChange={(e) => onTokenChange(e.target.value)}
                 placeholder="ghp_… or github_pat_…"
                 aria-label="Dedicated linking session PAT"
-                className="mt-1.5 h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none"
+                className="mt-1.5 h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
               />
             )}
           </div>
@@ -1943,7 +1945,7 @@ function LinkCardSessionStatus({ link }: { link: LinkedWorkspace }) {
       {orphaned ? (
         <div
           role="alert"
-          className="flex flex-col gap-2 rounded-sm border border-danger/40 bg-danger/10 p-3 text-[11px] text-danger"
+          className="flex flex-col gap-2 rounded-sm border border-danger/40 bg-danger/10 p-3 text-[0.6875rem] text-danger"
         >
           <div className="flex items-center gap-2 font-medium">
             <ShieldAlert size={12} aria-hidden="true" />
@@ -1956,7 +1958,7 @@ function LinkCardSessionStatus({ link }: { link: LinkedWorkspace }) {
               <button
                 type="button"
                 onClick={() => setEditing(true)}
-                className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-danger/40 bg-danger/20 px-2.5 text-[11px] text-danger hover:bg-danger/30"
+                className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-danger/40 bg-danger/20 px-2.5 text-[0.6875rem] text-danger hover:bg-danger/30"
               >
                 <Key size={11} />
                 {mode === 'dedicated' ? 'Reconnect dedicated session' : 'Add dedicated session'}
@@ -1965,7 +1967,7 @@ function LinkCardSessionStatus({ link }: { link: LinkedWorkspace }) {
                 <button
                   type="button"
                   onClick={() => void switchToWorkspace()}
-                  className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-2.5 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary"
+                  className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-2.5 text-[0.6875rem] text-text-muted hover:border-border-strong hover:text-text-primary"
                 >
                   Use workspace session instead
                 </button>
@@ -1987,7 +1989,7 @@ function LinkCardSessionStatus({ link }: { link: LinkedWorkspace }) {
           )}
         </div>
       ) : (
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
+        <div className="flex flex-wrap items-center gap-2 text-[0.6875rem] text-text-muted">
           <span
             className="inline-flex items-center gap-1 rounded-sm border border-success/30 bg-success/10 px-1.5 py-0.5 text-success"
             title={
@@ -2006,7 +2008,7 @@ function LinkCardSessionStatus({ link }: { link: LinkedWorkspace }) {
               <button
                 type="button"
                 onClick={() => setEditing(true)}
-                className="inline-flex h-6 items-center rounded-sm border border-border bg-surface px-2 text-[10px] text-text-muted hover:border-border-strong hover:text-text-primary"
+                className="inline-flex h-6 items-center rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary"
               >
                 {mode === 'dedicated' ? 'Update token' : 'Switch to dedicated session'}
               </button>
@@ -2020,7 +2022,7 @@ function LinkCardSessionStatus({ link }: { link: LinkedWorkspace }) {
                       ? 'Connect a workspace session first.'
                       : 'Drop the dedicated PAT and route this link through the workspace session.'
                   }
-                  className="inline-flex h-6 items-center rounded-sm border border-border bg-surface px-2 text-[10px] text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
+                  className="inline-flex h-6 items-center rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
                 >
                   Use workspace session
                 </button>
@@ -2069,10 +2071,10 @@ function DedicatedTokenForm({
         onChange={(e) => onTokenChange(e.target.value)}
         placeholder="ghp_… or github_pat_…"
         aria-label="Dedicated linking session PAT"
-        className="h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none"
+        className="h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
       />
       {error && (
-        <p className="text-[10px] text-danger" role="alert">
+        <p className="text-[0.625rem] text-danger" role="alert">
           {error}
         </p>
       )}
@@ -2081,14 +2083,14 @@ function DedicatedTokenForm({
           type="button"
           onClick={() => void onSave()}
           disabled={submitting || !token.trim()}
-          className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-[11px] text-accent hover:bg-accent/20 disabled:opacity-50"
+          className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-[0.6875rem] text-accent hover:bg-accent/20 disabled:opacity-50"
         >
           {submitting ? 'Verifying…' : 'Save token'}
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary"
+          className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-[0.6875rem] text-text-muted hover:border-border-strong hover:text-text-primary"
         >
           Cancel
         </button>

@@ -82,7 +82,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
         {description && <div>{description}</div>}
         {typed !== undefined && (
           <div>
-            <label htmlFor="confirm-typed-input" className="block text-[11px] text-text-dim">
+            <label htmlFor="confirm-typed-input" className="block text-[0.6875rem] text-text-dim">
               Type <code className="text-text-primary">{typed}</code> to continue
             </label>
             <input

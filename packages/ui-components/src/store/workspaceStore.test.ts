@@ -32,6 +32,47 @@ describe('workspaceStore', () => {
     expect(document.documentElement.getAttribute('data-theme')).toBe('paper-light');
   });
 
+  describe('setFontSizePercent', () => {
+    it('hydrates with the 100% default and applies it to <html>', async () => {
+      await act(async () => {
+        await useWorkspaceStore.getState().hydrate();
+      });
+      expect(useWorkspaceStore.getState().local!.ui.fontSizePercent).toBe(100);
+      expect(document.documentElement.style.fontSize).toBe('100%');
+    });
+
+    it('writes through to local.ui.fontSizePercent and the DOM', async () => {
+      await act(async () => {
+        await useWorkspaceStore.getState().hydrate();
+        useWorkspaceStore.getState().setFontSizePercent(120);
+      });
+      expect(useWorkspaceStore.getState().local!.ui.fontSizePercent).toBe(120);
+      expect(document.documentElement.style.fontSize).toBe('120%');
+      expect(document.documentElement.getAttribute('data-font-size-percent')).toBe('120');
+    });
+
+    it('clamps out-of-range values', async () => {
+      await act(async () => {
+        await useWorkspaceStore.getState().hydrate();
+        useWorkspaceStore.getState().setFontSizePercent(9999);
+      });
+      expect(useWorkspaceStore.getState().local!.ui.fontSizePercent).toBe(150);
+
+      act(() => {
+        useWorkspaceStore.getState().setFontSizePercent(0);
+      });
+      expect(useWorkspaceStore.getState().local!.ui.fontSizePercent).toBe(80);
+    });
+
+    it('snaps off-step inputs to the nearest 10% step', async () => {
+      await act(async () => {
+        await useWorkspaceStore.getState().hydrate();
+        useWorkspaceStore.getState().setFontSizePercent(123);
+      });
+      expect(useWorkspaceStore.getState().local!.ui.fontSizePercent).toBe(120);
+    });
+  });
+
   it('setWorkspaceName updates synced doc and bumps updatedAt', async () => {
     await act(async () => {
       await useWorkspaceStore.getState().hydrate();

@@ -24,8 +24,8 @@ interface RequestQuickViewProps {
   onClose: () => void;
 }
 
-const SECTION_TITLE = 'mb-1 text-[10px] font-medium uppercase tracking-wider text-text-dim';
-const ROW = 'grid grid-cols-[120px_1fr] gap-2 py-0.5 text-[11px]';
+const SECTION_TITLE = 'mb-1 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim';
+const ROW = 'grid grid-cols-[120px_1fr] gap-2 py-0.5 text-[0.6875rem]';
 const KEY = 'truncate text-text-muted';
 const VALUE = 'truncate font-mono text-text-primary';
 
@@ -81,12 +81,12 @@ export function RequestQuickView({
       >
         <header className="flex items-center justify-between border-b border-border-subtle px-4 py-3">
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <span className="shrink-0 rounded-sm border border-border bg-card px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-text-muted">
+            <span className="shrink-0 rounded-sm border border-border bg-card px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-text-muted">
               Quick view
             </span>
             <h2 className="truncate text-sm font-medium text-text-primary">{request.name}</h2>
             {linkedWorkspaceName && (
-              <span className="shrink-0 rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-accent">
+              <span className="shrink-0 rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-accent">
                 from {linkedWorkspaceName}
               </span>
             )}
@@ -96,7 +96,7 @@ export function RequestQuickView({
               <button
                 type="button"
                 onClick={goToEditor}
-                className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-accent hover:text-text-primary"
+                className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"
                 title="Open this request in the Editor"
               >
                 <ExternalLink size={11} />
@@ -164,7 +164,7 @@ export function RequestQuickView({
           <Section title="Auth">
             <div className={ROW}>
               <span className={KEY}>Type</span>
-              <span className="flex items-center gap-1 text-[11px]">
+              <span className="flex items-center gap-1 text-[0.6875rem]">
                 {request.auth.type === 'inherit' && <Shield size={11} className="text-accent" />}
                 <span className="font-mono text-text-primary">{request.auth.type}</span>
                 {request.auth.type === 'inherit' && (
@@ -187,16 +187,16 @@ export function RequestQuickView({
                 request.body.type === 'graphql' ||
                 request.body.type === 'urlencoded') &&
                 request.body.content && (
-                  <pre className="mt-1 max-h-48 overflow-auto rounded-sm border border-border bg-card p-2 font-mono text-[10px] text-text-primary">
+                  <pre className="mt-1 max-h-48 overflow-auto rounded-sm border border-border bg-card p-2 font-mono text-[0.625rem] text-text-primary">
                     {request.body.content}
                   </pre>
                 )}
               {request.body.type === 'graphql' && request.body.variables && (
                 <>
-                  <p className="mt-2 text-[10px] uppercase tracking-wider text-text-dim">
+                  <p className="mt-2 text-[0.625rem] uppercase tracking-wider text-text-dim">
                     Variables
                   </p>
-                  <pre className="max-h-32 overflow-auto rounded-sm border border-border bg-card p-2 font-mono text-[10px] text-text-primary">
+                  <pre className="max-h-32 overflow-auto rounded-sm border border-border bg-card p-2 font-mono text-[0.625rem] text-text-primary">
                     {request.body.variables}
                   </pre>
                 </>
@@ -211,7 +211,7 @@ export function RequestQuickView({
                 />
               )}
               {request.body.type === 'binary' && (
-                <p className="text-[11px] text-text-muted">
+                <p className="text-[0.6875rem] text-text-muted">
                   Binary attachment ({request.body.attachment?.slotId ?? 'none'})
                 </p>
               )}
@@ -228,7 +228,7 @@ export function RequestQuickView({
             <Section title="Extractions">
               <ul className="flex flex-col gap-0.5">
                 {request.extractions.map((ex) => (
-                  <li key={ex.id} className="text-[11px]">
+                  <li key={ex.id} className="text-[0.6875rem]">
                     <code className="text-text-primary">{`{{${ex.variable || '—'}}}`}</code>
                     <span className="ml-1 text-text-dim">←</span>
                     <span className="ml-1 font-mono text-text-muted">
@@ -236,7 +236,7 @@ export function RequestQuickView({
                       {ex.path && `: ${ex.path}`}
                     </span>
                     {!ex.enabled && (
-                      <span className="ml-1 text-[10px] text-text-faint">(disabled)</span>
+                      <span className="ml-1 text-[0.625rem] text-text-faint">(disabled)</span>
                     )}
                   </li>
                 ))}
@@ -248,7 +248,7 @@ export function RequestQuickView({
             <Section title="Assertions">
               <ul className="flex flex-col gap-0.5">
                 {request.assertions.map((a) => (
-                  <li key={a.id} className="text-[11px] font-mono text-text-primary">
+                  <li key={a.id} className="text-[0.6875rem] font-mono text-text-primary">
                     <span className="text-text-muted">{a.kind}</span>
                     {a.target && <span className="text-text-dim"> · {a.target}</span>}
                     <span className="text-text-dim"> {a.op} </span>
@@ -277,7 +277,9 @@ function KvList({ rows, label }: { rows: Array<[string, string]>; label?: string
   if (rows.length === 0) return null;
   return (
     <div className="flex flex-col">
-      {label && <p className="mt-1 text-[10px] uppercase tracking-wider text-text-dim">{label}</p>}
+      {label && (
+        <p className="mt-1 text-[0.625rem] uppercase tracking-wider text-text-dim">{label}</p>
+      )}
       {rows.map(([k, v], i) => (
         <div key={`${k}-${i}`} className={ROW}>
           <span className={KEY}>{k || '(empty)'}</span>

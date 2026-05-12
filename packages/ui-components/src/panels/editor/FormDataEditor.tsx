@@ -88,7 +88,7 @@ export function FormDataEditor({ request }: FormDataEditorProps) {
         </button>
       </div>
       {rows.some((r) => r.kind === 'file') && (
-        <p className="mt-1 text-[11px] text-text-dim">
+        <p className="mt-1 text-[0.6875rem] text-text-dim">
           Files are stored locally and pushed to <code>.apicircle/attachments/</code> on save.
           Refused above 100 MB.
         </p>
@@ -142,7 +142,7 @@ function FormDataRowView({
           aria-checked={row.kind === 'text'}
           onClick={() => onKindChange(index, 'text')}
           className={cn(
-            'h-7 rounded-l-sm border border-r-0 border-border px-2 text-[11px]',
+            'h-7 rounded-l-sm border border-r-0 border-border px-2 text-[0.6875rem]',
             row.kind === 'text'
               ? 'bg-accent/15 text-accent border-accent/40'
               : 'bg-surface text-text-muted',
@@ -156,7 +156,7 @@ function FormDataRowView({
           aria-checked={row.kind === 'file'}
           onClick={() => onKindChange(index, 'file')}
           className={cn(
-            'h-7 rounded-r-sm border border-border px-2 text-[11px]',
+            'h-7 rounded-r-sm border border-border px-2 text-[0.6875rem]',
             row.kind === 'file'
               ? 'bg-accent/15 text-accent border-accent/40'
               : 'bg-surface text-text-muted',

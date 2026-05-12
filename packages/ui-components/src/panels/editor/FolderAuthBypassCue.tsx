@@ -95,7 +95,7 @@ export function FolderAuthBypassCue({
         <button
           type="button"
           onClick={onUseFolderAuth}
-          className="inline-flex h-6 w-fit items-center gap-1 rounded-sm border border-warning/40 bg-warning/10 px-2 text-[11px] text-warning hover:bg-warning/20"
+          className="inline-flex h-6 w-fit items-center gap-1 rounded-sm border border-warning/40 bg-warning/10 px-2 text-[0.6875rem] text-warning hover:bg-warning/20"
         >
           Use folder auth
         </button>

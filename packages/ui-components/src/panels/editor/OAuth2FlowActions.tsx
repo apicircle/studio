@@ -190,7 +190,7 @@ export function OAuth2FlowActions({ auth, onChange, bridgeOverride }: OAuth2Flow
           type="button"
           onClick={() => void runFlow()}
           disabled={state.status === 'running' || state.status === 'device-pending'}
-          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[11px] text-accent hover:bg-accent/20 disabled:opacity-50"
+          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20 disabled:opacity-50"
         >
           {state.status === 'running' ? (
             <Loader2 size={11} className="animate-spin" aria-hidden="true" />
@@ -203,7 +203,7 @@ export function OAuth2FlowActions({ auth, onChange, bridgeOverride }: OAuth2Flow
           type="button"
           onClick={() => void refresh()}
           disabled={!canRefresh || state.status === 'running'}
-          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-2 text-[11px] text-text-primary hover:bg-card disabled:opacity-40"
+          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-primary hover:bg-card disabled:opacity-40"
         >
           <RefreshCw size={11} aria-hidden="true" />
           Refresh
@@ -212,7 +212,7 @@ export function OAuth2FlowActions({ auth, onChange, bridgeOverride }: OAuth2Flow
           type="button"
           onClick={clear}
           disabled={!hasToken || state.status === 'running'}
-          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-danger/40 hover:text-danger disabled:opacity-40"
+          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-danger/40 hover:text-danger disabled:opacity-40"
         >
           <Trash2 size={11} aria-hidden="true" />
           Clear
@@ -225,13 +225,13 @@ export function OAuth2FlowActions({ auth, onChange, bridgeOverride }: OAuth2Flow
       </div>
 
       {state.status === 'success' && state.message && (
-        <p className="inline-flex items-center gap-1.5 text-[11px] text-success">
+        <p className="inline-flex items-center gap-1.5 text-[0.6875rem] text-success">
           <CheckCircle2 size={11} aria-hidden="true" />
           {state.message}
         </p>
       )}
       {state.status === 'error' && state.message && (
-        <p className="inline-flex items-center gap-1.5 text-[11px] text-danger" role="alert">
+        <p className="inline-flex items-center gap-1.5 text-[0.6875rem] text-danger" role="alert">
           <XCircle size={11} aria-hidden="true" />
           {state.message}
         </p>
@@ -268,11 +268,11 @@ function TokenStateSummary({
   expiresInSeconds: number | null;
 }) {
   if (!hasToken) {
-    return <span className="ml-auto text-[11px] text-text-dim">No token yet.</span>;
+    return <span className="ml-auto text-[0.6875rem] text-text-dim">No token yet.</span>;
   }
   if (isExpired) {
     return (
-      <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-warning">
+      <span className="ml-auto inline-flex items-center gap-1 text-[0.6875rem] text-warning">
         <XCircle size={11} aria-hidden="true" />
         Token expired — refresh or re-run flow.
       </span>
@@ -285,7 +285,7 @@ function TokenStateSummary({
         ? `expires in ${Math.floor(expiresInSeconds / 60)} min`
         : `expires in ${expiresInSeconds}s`;
   return (
-    <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-text-muted">
+    <span className="ml-auto inline-flex items-center gap-1 text-[0.6875rem] text-text-muted">
       <CheckCircle2 size={11} className="text-success" aria-hidden="true" />
       Token cached · {expiry}
     </span>
@@ -302,7 +302,7 @@ function DeviceCodeHint({
   return (
     <div
       className={cn(
-        'flex flex-col gap-1 rounded-sm border border-accent/30 bg-accent/5 px-3 py-2 text-[11px]',
+        'flex flex-col gap-1 rounded-sm border border-accent/30 bg-accent/5 px-3 py-2 text-[0.6875rem]',
       )}
       role="status"
       aria-live="polite"

@@ -288,7 +288,7 @@ function HydrationErrorScreen() {
         <p className="text-xs text-text-muted">{error.message}</p>
 
         {recoverable && (recoverable.syncedHasData || recoverable.localHasData) && (
-          <div className="rounded-sm border border-border-subtle bg-card p-2 text-[11px] text-text-muted">
+          <div className="rounded-sm border border-border-subtle bg-card p-2 text-[0.6875rem] text-text-muted">
             <p className="mb-1 font-medium text-text-primary">Data still in IndexedDB</p>
             <ul className="flex flex-col gap-0.5 font-mono">
               <li>
@@ -321,7 +321,7 @@ function HydrationErrorScreen() {
                 }
               })();
             }}
-            className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-3 text-[11px] text-accent hover:bg-accent/20 disabled:opacity-50"
+            className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-3 text-[0.6875rem] text-accent hover:bg-accent/20 disabled:opacity-50"
           >
             {busy ? 'Retrying…' : 'Retry'}
           </button>
@@ -342,7 +342,7 @@ function HydrationErrorScreen() {
                   }
                 })();
               }}
-              className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/15 px-3 text-[11px] text-accent hover:bg-accent/25 disabled:opacity-50"
+              className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/15 px-3 text-[0.6875rem] text-accent hover:bg-accent/25 disabled:opacity-50"
             >
               <LifeBuoy size={11} />
               Recover existing data
@@ -365,7 +365,7 @@ function HydrationErrorScreen() {
                 }
               })();
             }}
-            className="inline-flex h-7 items-center gap-1 rounded-sm border border-danger/40 bg-danger/5 px-3 text-[11px] text-danger hover:bg-danger/10 disabled:opacity-50"
+            className="inline-flex h-7 items-center gap-1 rounded-sm border border-danger/40 bg-danger/5 px-3 text-[0.6875rem] text-danger hover:bg-danger/10 disabled:opacity-50"
           >
             Reset workspace
           </button>

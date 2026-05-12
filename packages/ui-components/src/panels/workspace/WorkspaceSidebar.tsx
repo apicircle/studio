@@ -14,14 +14,14 @@ export function WorkspaceSidebar() {
   return (
     <div className="flex flex-col gap-2 text-xs">
       <div className="rounded-sm border border-border-subtle bg-surface px-2.5 py-2">
-        <div className="text-[10px] uppercase tracking-wider text-text-dim">Account</div>
+        <div className="text-[0.625rem] uppercase tracking-wider text-text-dim">Account</div>
         <div className="mt-0.5 text-text-primary">{session.accountLogin}</div>
       </div>
       <div className="rounded-sm border border-border-subtle bg-surface px-2.5 py-2">
-        <div className="text-[10px] uppercase tracking-wider text-text-dim">Working branch</div>
+        <div className="text-[0.625rem] uppercase tracking-wider text-text-dim">Working branch</div>
         <div className="mt-0.5 text-text-primary">{workingBranch?.name ?? '—'}</div>
       </div>
-      <div className="rounded-sm border border-dashed border-border-subtle px-2.5 py-2 text-[11px] leading-snug text-text-dim">
+      <div className="rounded-sm border border-dashed border-border-subtle px-2.5 py-2 text-[0.6875rem] leading-snug text-text-dim">
         Push, refresh, and PR creation live on the working-branch card to the right.
       </div>
     </div>

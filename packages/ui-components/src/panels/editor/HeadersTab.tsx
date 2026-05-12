@@ -109,7 +109,7 @@ export function HeadersTab({ request }: HeadersTabProps) {
 
       <aside
         aria-label="Auto-fed headers"
-        className="mt-2 rounded-sm border border-accent/30 bg-accent/5 px-3 py-2 text-[11px]"
+        className="mt-2 rounded-sm border border-accent/30 bg-accent/5 px-3 py-2 text-[0.6875rem]"
       >
         <div className="mb-1 flex items-center gap-1.5 text-accent">
           <Sparkles size={11} />

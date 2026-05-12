@@ -108,7 +108,7 @@ export function FontList({ onCommit, onCancel }: FontListProps) {
         <li key={group.key}>
           <div
             role="presentation"
-            className="sticky top-0 z-10 border-b border-border-subtle bg-card px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-text-dim"
+            className="sticky top-0 z-10 border-b border-border-subtle bg-card px-3 pb-1 pt-2 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim"
           >
             {group.label}
           </div>
@@ -163,7 +163,7 @@ function FontOption({ font, active, onSelect, registerRef }: FontOptionProps) {
         <span className="flex flex-col">
           <span style={{ fontFamily: font.stack }}>{font.label}</span>
           {!active && (
-            <span style={{ fontFamily: font.stack }} className="text-[10px] text-text-dim">
+            <span style={{ fontFamily: font.stack }} className="text-[0.625rem] text-text-dim">
               AaBbCc 0123 {'{'} {'}'}
             </span>
           )}

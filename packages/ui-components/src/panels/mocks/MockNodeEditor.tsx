@@ -104,7 +104,7 @@ export function MockNodeEditor({
 
 function FallbackMissing({ label }: { label: string }) {
   return (
-    <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-[11px] text-text-dim">
+    <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-[0.6875rem] text-text-dim">
       The selected {label} no longer exists. Pick another node from the flow above.
     </p>
   );
@@ -125,11 +125,11 @@ function EndpointDetailsEditor({
   return (
     <div className="space-y-3">
       <SectionHeader>Endpoint</SectionHeader>
-      <p className="text-[11px] text-text-dim">
+      <p className="text-[0.6875rem] text-text-dim">
         Method + path live in the editor toolbar. Edit the friendly name and documentation here.
       </p>
       <div>
-        <label htmlFor="endpoint-name" className="block text-[11px] text-text-dim">
+        <label htmlFor="endpoint-name" className="block text-[0.6875rem] text-text-dim">
           Name
         </label>
         <input
@@ -141,7 +141,7 @@ function EndpointDetailsEditor({
         />
       </div>
       <div>
-        <label htmlFor="endpoint-description" className="block text-[11px] text-text-dim">
+        <label htmlFor="endpoint-description" className="block text-[0.6875rem] text-text-dim">
           Description
         </label>
         <textarea
@@ -271,13 +271,13 @@ function ValidationOverview({
       <SectionHeader icon={<ShieldAlert size={12} aria-hidden="true" />}>
         Validation rules
       </SectionHeader>
-      <p className="text-[11px] text-text-dim">
+      <p className="text-[0.6875rem] text-text-dim">
         Run before any response logic. The first failing rule&rsquo;s response is returned
         immediately. Click a rule to edit it; uncheck the box to disable a rule without deleting it;
         use the up/down buttons to reorder — order is significant.
       </p>
       {endpoint.requestValidation.length === 0 ? (
-        <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-[11px] text-text-dim">
+        <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-[0.6875rem] text-text-dim">
           No validation rules. Click <strong>Add rule</strong> below to create one.
         </p>
       ) : (
@@ -285,7 +285,7 @@ function ValidationOverview({
           {endpoint.requestValidation.map((rule, idx) => (
             <li
               key={rule.id}
-              className={`flex items-center gap-1.5 rounded-sm border bg-card pr-1 text-[11px] hover:border-border-strong ${rule.enabled ? 'border-border' : 'border-border-subtle opacity-60'}`}
+              className={`flex items-center gap-1.5 rounded-sm border bg-card pr-1 text-[0.6875rem] hover:border-border-strong ${rule.enabled ? 'border-border' : 'border-border-subtle opacity-60'}`}
             >
               {/* Disable toggle stays a separate hit-target — mirrors
                   the response-rules row affordance. Flexbox-centered both
@@ -310,7 +310,7 @@ function ValidationOverview({
                 className="flex flex-1 items-center gap-1.5 px-1 py-1.5 text-left text-text-primary hover:text-accent"
               >
                 <span
-                  className={`rounded-sm border px-1.5 py-0.5 font-mono text-[10px] ${rule.enabled ? 'border-danger/40 bg-danger/5 text-danger' : 'border-border bg-surface text-text-muted'}`}
+                  className={`rounded-sm border px-1.5 py-0.5 font-mono text-[0.625rem] ${rule.enabled ? 'border-danger/40 bg-danger/5 text-danger' : 'border-border bg-surface text-text-muted'}`}
                 >
                   {rule.failResponse.status}
                 </span>
@@ -353,7 +353,7 @@ function ValidationOverview({
         <button
           type="button"
           onClick={add}
-          className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[11px] text-accent hover:bg-accent/20"
+          className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20"
         >
           <Plus size={10} aria-hidden="true" />
           Add rule
@@ -361,7 +361,7 @@ function ValidationOverview({
         <button
           type="button"
           onClick={() => setImporterOpen(true)}
-          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-accent hover:text-text-primary"
+          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"
           title="Import a rule from another endpoint"
         >
           <Download size={10} aria-hidden="true" />
@@ -426,7 +426,7 @@ function ValidationRuleEditor({
           type="button"
           onClick={remove}
           aria-label="Delete this validation rule"
-          className="inline-flex h-7 items-center gap-1 rounded-sm border border-danger/30 bg-danger/5 px-2 text-[11px] text-danger hover:bg-danger/10"
+          className="inline-flex h-7 items-center gap-1 rounded-sm border border-danger/30 bg-danger/5 px-2 text-[0.6875rem] text-danger hover:bg-danger/10"
         >
           <Trash2 size={10} aria-hidden="true" />
           Delete rule
@@ -435,14 +435,14 @@ function ValidationRuleEditor({
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-[11px] text-text-dim">Rule kind</label>
+          <label className="block text-[0.6875rem] text-text-dim">Rule kind</label>
           <Select
             size="md"
             value={rule.kind}
             onChange={(e) => update({ kind: e.target.value as MockValidationKind })}
             aria-label="Rule kind"
             wrapperClassName="mt-1 w-full"
-            className="text-[11px] text-text-primary"
+            className="text-[0.6875rem] text-text-primary"
           >
             {(Object.keys(VALIDATION_KIND_LABEL) as MockValidationKind[]).map((k) => (
               <option key={k} value={k}>
@@ -452,7 +452,7 @@ function ValidationRuleEditor({
           </Select>
         </div>
         <div>
-          <label className="block text-[11px] text-text-dim">Target</label>
+          <label className="block text-[0.6875rem] text-text-dim">Target</label>
           <input
             value={rule.target}
             onChange={(e) => update({ target: e.target.value })}
@@ -468,37 +468,37 @@ function ValidationRuleEditor({
                       : ''
             }
             aria-label="Rule target"
-            className="mt-1 h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none"
+            className="mt-1 h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
           />
         </div>
       </div>
 
       {needsExpected && (
         <div>
-          <label className="block text-[11px] text-text-dim">Expected</label>
+          <label className="block text-[0.6875rem] text-text-dim">Expected</label>
           <input
             value={rule.expected ?? ''}
             onChange={(e) => update({ expected: e.target.value })}
             placeholder={rule.kind.endsWith('-matches') ? '/^bearer .+/i' : 'expected value'}
             aria-label="Rule expected value"
-            className="mt-1 h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none"
+            className="mt-1 h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
           />
         </div>
       )}
 
       <div>
-        <label className="block text-[11px] text-text-dim">Friendly message (optional)</label>
+        <label className="block text-[0.6875rem] text-text-dim">Friendly message (optional)</label>
         <input
           value={rule.message ?? ''}
           onChange={(e) => update({ message: e.target.value })}
           placeholder="e.g. Authorization header is required"
           aria-label="Rule friendly message"
-          className="mt-1 h-8 w-full rounded-sm border border-border bg-card px-2 text-[11px] text-text-primary focus:border-accent focus:outline-none"
+          className="mt-1 h-8 w-full rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
         />
       </div>
 
       <div className="rounded-sm border border-border-subtle bg-card/40 p-3">
-        <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-text-dim">
+        <p className="mb-2 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
           Fail response (returned when this rule fails)
         </p>
         <MockResponseEditor
@@ -582,12 +582,12 @@ function ResponseRulesOverview({
   return (
     <div className="space-y-3">
       <SectionHeader icon={<Sparkles size={12} aria-hidden="true" />}>Response rules</SectionHeader>
-      <p className="text-[11px] text-text-dim">
+      <p className="text-[0.6875rem] text-text-dim">
         Evaluated top-down; the first rule whose <strong>all</strong> clauses match wins. Click a
         rule to edit it. If none match, the Default Response is returned.
       </p>
       {endpoint.responseRules.length === 0 ? (
-        <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-[11px] text-text-dim">
+        <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-[0.6875rem] text-text-dim">
           No response rules. Click <strong>Add rule</strong> below to create one.
         </p>
       ) : (
@@ -595,7 +595,7 @@ function ResponseRulesOverview({
           {endpoint.responseRules.map((rule, idx) => (
             <li
               key={rule.id}
-              className="flex items-center gap-1.5 rounded-sm border border-border bg-card pr-1 text-[11px] hover:border-border-strong"
+              className="flex items-center gap-1.5 rounded-sm border border-border bg-card pr-1 text-[0.6875rem] hover:border-border-strong"
             >
               {/* The checkbox stays a separate hit-target; everything
                   else (status + name + clause-count) is the open-rule
@@ -616,12 +616,12 @@ function ResponseRulesOverview({
                 className="flex flex-1 items-center gap-1.5 px-1 py-1.5 text-left text-text-primary hover:text-accent"
               >
                 <span
-                  className={`rounded-sm border px-1.5 py-0.5 font-mono text-[10px] ${rule.enabled ? 'border-success/40 bg-success/5 text-success' : 'border-border bg-surface text-text-muted'}`}
+                  className={`rounded-sm border px-1.5 py-0.5 font-mono text-[0.625rem] ${rule.enabled ? 'border-success/40 bg-success/5 text-success' : 'border-border bg-surface text-text-muted'}`}
                 >
                   {rule.response.status}
                 </span>
                 <span className="flex-1 truncate">{rule.name || 'Unnamed'}</span>
-                <span className="text-[10px] text-text-dim">
+                <span className="text-[0.625rem] text-text-dim">
                   {rule.when.length} clause{rule.when.length === 1 ? '' : 's'}
                 </span>
               </button>
@@ -659,7 +659,7 @@ function ResponseRulesOverview({
         <button
           type="button"
           onClick={add}
-          className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[11px] text-accent hover:bg-accent/20"
+          className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20"
         >
           <Plus size={10} aria-hidden="true" />
           Add rule
@@ -667,7 +667,7 @@ function ResponseRulesOverview({
         <button
           type="button"
           onClick={() => setImporterOpen(true)}
-          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-accent hover:text-text-primary"
+          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"
           title="Import a rule from another endpoint"
         >
           <Download size={10} aria-hidden="true" />
@@ -737,7 +737,7 @@ function ResponseRuleEditor({
           type="button"
           onClick={removeRule}
           aria-label="Delete this response rule"
-          className="inline-flex h-7 items-center gap-1 rounded-sm border border-danger/30 bg-danger/5 px-2 text-[11px] text-danger hover:bg-danger/10"
+          className="inline-flex h-7 items-center gap-1 rounded-sm border border-danger/30 bg-danger/5 px-2 text-[0.6875rem] text-danger hover:bg-danger/10"
         >
           <Trash2 size={10} aria-hidden="true" />
           Delete rule
@@ -756,12 +756,12 @@ function ResponseRuleEditor({
           onChange={(e) => update({ name: e.target.value })}
           placeholder="Rule name"
           aria-label="Rule name"
-          className="h-8 w-full rounded-sm border border-border bg-card px-2 text-[11px] text-text-primary focus:border-accent focus:outline-none"
+          className="h-8 w-full rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
         />
       </div>
 
       <div className="rounded-sm border border-border-subtle bg-card/40 p-3">
-        <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-text-dim">
+        <p className="mb-2 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
           When (all of)
         </p>
         <ul className="space-y-1">
@@ -780,7 +780,7 @@ function ResponseRuleEditor({
                   }
                   aria-label={`Clause ${cIdx + 1} scope`}
                   wrapperClassName="w-full"
-                  className="text-[10px] text-text-primary"
+                  className="text-[0.625rem] text-text-primary"
                 >
                   {(Object.keys(SCOPE_LABEL) as MockConditionScope[]).map((s) => (
                     <option key={s} value={s}>
@@ -793,7 +793,7 @@ function ResponseRuleEditor({
                   onChange={(e) => updateClause(cIdx, { target: e.target.value })}
                   placeholder="name"
                   aria-label={`Clause ${cIdx + 1} target`}
-                  className="h-7 rounded-sm border border-border bg-card px-1.5 font-mono text-[10px] text-text-primary focus:border-accent focus:outline-none"
+                  className="h-7 rounded-sm border border-border bg-card px-1.5 font-mono text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
                 />
                 <Select
                   size="sm"
@@ -801,7 +801,7 @@ function ResponseRuleEditor({
                   onChange={(e) => updateClause(cIdx, { op: e.target.value as MockConditionOp })}
                   aria-label={`Clause ${cIdx + 1} operator`}
                   wrapperClassName="w-full"
-                  className="text-[10px] text-text-primary"
+                  className="text-[0.625rem] text-text-primary"
                 >
                   {(Object.keys(OP_LABEL) as MockConditionOp[]).map((o) => (
                     <option key={o} value={o}>
@@ -815,7 +815,7 @@ function ResponseRuleEditor({
                     onChange={(e) => updateClause(cIdx, { value: e.target.value })}
                     placeholder="value"
                     aria-label={`Clause ${cIdx + 1} value`}
-                    className="h-7 rounded-sm border border-border bg-card px-1.5 font-mono text-[10px] text-text-primary focus:border-accent focus:outline-none"
+                    className="h-7 rounded-sm border border-border bg-card px-1.5 font-mono text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
                   />
                 ) : (
                   <span aria-hidden="true" />
@@ -836,7 +836,7 @@ function ResponseRuleEditor({
         <button
           type="button"
           onClick={addClause}
-          className="mt-1.5 inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[10px] text-text-muted hover:border-border-strong hover:text-text-primary"
+          className="mt-1.5 inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary"
         >
           <Plus size={9} aria-hidden="true" />
           Add clause
@@ -844,7 +844,7 @@ function ResponseRuleEditor({
       </div>
 
       <div className="rounded-sm border border-border-subtle bg-card/40 p-3">
-        <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-text-dim">
+        <p className="mb-2 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
           Then (response)
         </p>
         <MockResponseEditor
@@ -865,7 +865,7 @@ function ResponseRuleEditor({
 
 function SectionHeader({ icon, children }: { icon?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <h2 className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-text-dim">
+    <h2 className="flex items-center gap-1.5 text-[0.6875rem] font-medium uppercase tracking-wider text-text-dim">
       {icon}
       {children}
     </h2>

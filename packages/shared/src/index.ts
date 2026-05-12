@@ -6,7 +6,13 @@ export {
   envPriorityRefEqual,
   envPriorityDisplayName,
 } from './envPriority';
-export { RUN_BODY_PREVIEW_LIMIT } from './types';
+export {
+  RUN_BODY_PREVIEW_LIMIT,
+  FONT_SIZE_PERCENT_MIN,
+  FONT_SIZE_PERCENT_MAX,
+  FONT_SIZE_PERCENT_STEP,
+  FONT_SIZE_PERCENT_DEFAULT,
+} from './types';
 export { REQUEST_AUTH_TYPES, defaultAuthFor, normalizeAuth } from './authDefaults';
 export type { RequestAuthType } from './authDefaults';
 export { MCP_TOOL_NAMES } from './mcp';

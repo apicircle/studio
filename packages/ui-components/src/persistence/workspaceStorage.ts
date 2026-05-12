@@ -7,7 +7,7 @@ import type {
   WorkspaceLocal,
   WorkspaceSynced,
 } from '@apicircle/shared';
-import { generateId, normalizeAuth } from '@apicircle/shared';
+import { FONT_SIZE_PERCENT_DEFAULT, generateId, normalizeAuth } from '@apicircle/shared';
 import { generateSlotSalt } from '@apicircle/core';
 import {
   LOCAL_STORE,
@@ -501,9 +501,13 @@ export async function loadWorkspaceById(
       // font-binding fix). Pre-fix the choice lived in localStorage;
       // first hydrate after the fix migrates that legacy value into
       // local.ui.fontId, falling back to the safe default.
-      ui: local.ui.fontId
-        ? local.ui
-        : { ...local.ui, fontId: readLegacyFontFromLocalStorage() ?? 'system-mono' },
+      // `fontSizePercent` was added later and is null-coalesced to the
+      // 100% default for any pre-existing on-disk workspace.
+      ui: {
+        ...local.ui,
+        fontId: local.ui.fontId ?? readLegacyFontFromLocalStorage() ?? 'system-mono',
+        fontSizePercent: local.ui.fontSizePercent ?? FONT_SIZE_PERCENT_DEFAULT,
+      },
     };
     return { synced: upgradedSynced, local: upgradedLocal, registry };
   }
@@ -808,6 +812,7 @@ export function createEmptyWorkspace(): { synced: WorkspaceSynced; local: Worksp
       sidebarExpandedSections: [],
       themeId: 'studio-dark',
       fontId: 'system-mono',
+      fontSizePercent: FONT_SIZE_PERCENT_DEFAULT,
     },
     settings: { validateOnSend: true, monacoConsumesWheel: false },
     snapshots: { entries: [], maxBytes: 50 * 1024 * 1024 },

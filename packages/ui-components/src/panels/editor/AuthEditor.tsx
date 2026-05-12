@@ -73,13 +73,13 @@ const AUTH_GROUPS: Array<{
   },
 ];
 
-const labelClass = 'text-[11px] uppercase tracking-wide text-text-dim';
+const labelClass = 'text-[0.6875rem] uppercase tracking-wide text-text-dim';
 const inputClass =
   'h-8 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30';
 const fieldsetClass = 'flex flex-col gap-1';
 const gridClass = 'grid grid-cols-1 gap-3 sm:grid-cols-2';
 const noteClass =
-  'rounded-sm border border-border-subtle bg-surface px-2 py-1.5 text-[11px] text-text-muted';
+  'rounded-sm border border-border-subtle bg-surface px-2 py-1.5 text-[0.6875rem] text-text-muted';
 
 function Field({ id, label, children }: { id?: string; label: string; children: React.ReactNode }) {
   return (
@@ -459,10 +459,10 @@ function TokenStatePanel<T extends OAuth2Like>({
   return (
     <div className="rounded-sm border border-border-subtle bg-surface p-3">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-text-muted">
+        <span className="text-[0.6875rem] font-medium uppercase tracking-wide text-text-muted">
           Token
         </span>
-        <span className="text-[11px] text-text-dim">
+        <span className="text-[0.6875rem] text-text-dim">
           {accessToken ? (expiresAt ? `Expires ${expiresAt}` : 'Stored') : 'Not yet fetched'}
         </span>
       </div>
@@ -483,7 +483,7 @@ function TokenStatePanel<T extends OAuth2Like>({
           />
         </Field>
       </div>
-      <p className="mt-2 text-[11px] text-text-dim">
+      <p className="mt-2 text-[0.6875rem] text-text-dim">
         Automatic token fetch is queued for a follow-up phase. Paste a token from your provider —
         the request will send it as <code>{tokenType} &lt;token&gt;</code>.
       </p>
@@ -646,7 +646,7 @@ function JwtBearerForm({
             value={auth.jwtHeaders}
             onChange={(e) => update({ jwtHeaders: e.target.value })}
             spellCheck={false}
-            className="min-h-[80px] w-full rounded-sm border border-border bg-card p-2 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+            className="min-h-[80px] w-full rounded-sm border border-border bg-card p-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
           />
         </Field>
         <Field label="Payload (JSON)">
@@ -655,7 +655,7 @@ function JwtBearerForm({
             value={auth.payload}
             onChange={(e) => update({ payload: e.target.value })}
             spellCheck={false}
-            className="min-h-[80px] w-full rounded-sm border border-border bg-card p-2 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+            className="min-h-[80px] w-full rounded-sm border border-border bg-card p-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
           />
         </Field>
       </div>

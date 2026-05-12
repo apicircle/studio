@@ -112,7 +112,7 @@ export function RightDock() {
               id={`right-dock-tab-${t.id}`}
               onClick={() => setTab(t.id)}
               className={cn(
-                'inline-flex h-full items-center gap-1.5 border-b-2 px-3 text-[11px] transition-colors',
+                'inline-flex h-full items-center gap-1.5 border-b-2 px-3 text-[0.6875rem] transition-colors',
                 tab === t.id
                   ? 'border-accent bg-surface text-text-primary'
                   : 'border-transparent text-text-muted hover:bg-surface hover:text-text-primary',

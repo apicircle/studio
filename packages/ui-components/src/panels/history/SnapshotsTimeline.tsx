@@ -47,7 +47,7 @@ export function SnapshotsTimeline() {
         <div className="flex items-center gap-2 text-xs text-text-muted">
           <Camera size={13} aria-hidden="true" className="text-accent" />
           <span className="font-medium text-text-primary">Workspace snapshots</span>
-          <span className="text-[11px] text-text-dim">
+          <span className="text-[0.6875rem] text-text-dim">
             {ledger.entries.length} entr{ledger.entries.length === 1 ? 'y' : 'ies'}
             {' · '}
             {formatBytes(totalBytes)} of {capLabel}
@@ -57,7 +57,7 @@ export function SnapshotsTimeline() {
           <button
             type="button"
             onClick={() => captureSnapshot({ trigger: 'manual' })}
-            className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[11px] text-accent hover:bg-accent/20"
+            className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20"
           >
             <Camera size={11} aria-hidden="true" />
             Take snapshot now
@@ -67,7 +67,7 @@ export function SnapshotsTimeline() {
               type="button"
               onClick={() => setClearAllOpen(true)}
               aria-label="Clear all snapshots"
-              className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[11px] text-text-muted hover:text-text-primary"
+              className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-muted hover:text-text-primary"
             >
               <Trash2 size={11} aria-hidden="true" />
               Clear all
@@ -75,13 +75,13 @@ export function SnapshotsTimeline() {
           )}
         </div>
       </div>
-      <p className="text-[11px] text-text-dim">
+      <p className="text-[0.6875rem] text-text-dim">
         Auto-captured before destructive ops (push, merge, linked-update, yank, deprecate). Restore
         swaps the synced doc back to the captured state and clears the diff base so the next push
         re-forks against remote. Cap: <code>Settings → Workspace snapshot cap</code>.
       </p>
       {ledger.entries.length === 0 ? (
-        <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-[11px] text-text-dim">
+        <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-[0.6875rem] text-text-dim">
           No snapshots yet. The next push, merge, or release op will capture one — or use the button
           above to save the current state manually.
         </p>
@@ -119,12 +119,12 @@ export function SnapshotsTimeline() {
                 Restoring this snapshot replaces the entire <code>synced</code> doc with the
                 captured state. Anything you&apos;ve done since the snapshot will be discarded.
               </p>
-              <p className="text-[11px] text-text-dim">
+              <p className="text-[0.6875rem] text-text-dim">
                 {TRIGGER_LABEL[restoreTarget.triggeredBy]} · captured{' '}
                 {formatTimestamp(restoreTarget.createdAt)} · {formatBytes(restoreTarget.sizeBytes)}
               </p>
               {restoreTarget.note && (
-                <p className="rounded-sm border border-border-subtle bg-surface px-2 py-1 text-[11px] text-text-muted">
+                <p className="rounded-sm border border-border-subtle bg-surface px-2 py-1 text-[0.6875rem] text-text-muted">
                   Note: {restoreTarget.note}
                 </p>
               )}
@@ -148,9 +148,9 @@ export function SnapshotsTimeline() {
 function SnapshotRow({ entry, onRestore }: { entry: WorkspaceSnapshot; onRestore: () => void }) {
   const deleteSnapshot = useWorkspaceStore((s) => s.deleteSnapshot);
   return (
-    <li className="flex items-center gap-2 rounded-sm border border-border bg-surface px-2 py-1.5 text-[11px]">
+    <li className="flex items-center gap-2 rounded-sm border border-border bg-surface px-2 py-1.5 text-[0.6875rem]">
       <span
-        className={`shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-[10px] ${TRIGGER_TONE[entry.triggeredBy]}`}
+        className={`shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-[0.625rem] ${TRIGGER_TONE[entry.triggeredBy]}`}
       >
         {TRIGGER_LABEL[entry.triggeredBy]}
       </span>
@@ -158,7 +158,7 @@ function SnapshotRow({ entry, onRestore }: { entry: WorkspaceSnapshot; onRestore
         <div className="truncate text-text-primary">
           {entry.note ?? <em className="text-text-dim">No note</em>}
         </div>
-        <div className="text-[10px] text-text-dim">
+        <div className="text-[0.625rem] text-text-dim">
           {formatTimestamp(entry.createdAt)} · {formatBytes(entry.sizeBytes)}
         </div>
       </div>
@@ -167,7 +167,7 @@ function SnapshotRow({ entry, onRestore }: { entry: WorkspaceSnapshot; onRestore
         onClick={onRestore}
         aria-label={`Restore snapshot from ${formatTimestamp(entry.createdAt)}`}
         title="Restore"
-        className="inline-flex h-6 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[10px] text-accent hover:bg-accent/20"
+        className="inline-flex h-6 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.625rem] text-accent hover:bg-accent/20"
       >
         <RotateCcw size={10} aria-hidden="true" />
         Restore

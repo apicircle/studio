@@ -72,7 +72,7 @@ export function VariableHints({ request, scope, triggerLabel }: VariableHintsPro
           type="button"
           onClick={() => openDockTab('variables')}
           className={cn(
-            'inline-flex h-7 items-center gap-1 rounded-sm border px-2 text-[11px] transition-colors',
+            'inline-flex h-7 items-center gap-1 rounded-sm border px-2 text-[0.6875rem] transition-colors',
             'border-border bg-surface text-text-muted hover:border-accent hover:text-text-primary',
           )}
           aria-label="Show available variables in the right dock"
@@ -86,7 +86,7 @@ export function VariableHints({ request, scope, triggerLabel }: VariableHintsPro
           <button
             type="button"
             onClick={() => setActivePanel('env')}
-            className="inline-flex h-7 items-center gap-1 rounded-sm border border-amber/40 bg-amber/10 px-2 text-[11px] text-amber hover:bg-amber/20"
+            className="inline-flex h-7 items-center gap-1 rounded-sm border border-amber/40 bg-amber/10 px-2 text-[0.6875rem] text-amber hover:bg-amber/20"
             aria-label="Open Environments to fix unresolved variables"
             title="Click to open Environments and define these variables"
           >

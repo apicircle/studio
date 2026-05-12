@@ -66,7 +66,7 @@ export function McpServerPanel() {
     <div className="flex h-full flex-col overflow-hidden bg-surface">
       <header className="flex items-baseline gap-3 border-b border-border-subtle px-6 py-3">
         <h1 className="text-lg font-medium text-text-primary">MCP Server</h1>
-        <p className="text-[11px] text-text-dim">
+        <p className="text-[0.6875rem] text-text-dim">
           Connect any MCP-compatible AI client to this workspace via stdio.
         </p>
       </header>
@@ -78,7 +78,7 @@ export function McpServerPanel() {
             <span>
               MCP integration is available in the <strong>Desktop App</strong>. The web build cannot
               expose a stdio server. Install the desktop build, or run
-              <code className="mx-1 rounded-sm border border-border px-1 text-[10px]">
+              <code className="mx-1 rounded-sm border border-border px-1 text-[0.625rem]">
                 npx @apicircle/cli mcp
               </code>
               from any terminal to point your AI client at a workspace folder.
@@ -157,18 +157,18 @@ function ClientSnippetCard({
           type="button"
           onClick={() => void handleCopy()}
           disabled={!bridgeAvailable || !snippet}
-          className="inline-flex items-center gap-1 rounded-sm border border-border px-2 py-1 text-[11px] text-text-primary hover:border-accent hover:text-accent disabled:opacity-40"
+          className="inline-flex items-center gap-1 rounded-sm border border-border px-2 py-1 text-[0.6875rem] text-text-primary hover:border-accent hover:text-accent disabled:opacity-40"
         >
           <Copy size={10} aria-hidden="true" />
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
       {configPath && (
-        <p className="mb-2 text-[10px] text-text-dim">
+        <p className="mb-2 text-[0.625rem] text-text-dim">
           Default config path: <code>{configPath}</code>
         </p>
       )}
-      <pre className="overflow-x-auto rounded-sm border border-border bg-surface px-3 py-2 text-[11px] text-text-primary">
+      <pre className="overflow-x-auto rounded-sm border border-border bg-surface px-3 py-2 text-[0.6875rem] text-text-primary">
         {snippet ||
           (bridgeAvailable
             ? '(snippet shown after the desktop bridge loads)'

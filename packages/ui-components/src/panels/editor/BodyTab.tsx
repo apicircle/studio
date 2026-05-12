@@ -92,7 +92,9 @@ export function BodyTab({ request }: BodyTabProps) {
     <PanelGroup direction="horizontal" autoSaveId={`apicircle:graphql:${request.id}`}>
       <Panel defaultSize={60} minSize={20}>
         <div className="flex h-full w-full flex-col">
-          <span className="px-2 py-1 text-[11px] uppercase tracking-wide text-text-dim">Query</span>
+          <span className="px-2 py-1 text-[0.6875rem] uppercase tracking-wide text-text-dim">
+            Query
+          </span>
           <div className="min-h-0 flex-1 overflow-hidden">{queryEditor}</div>
         </div>
       </Panel>
@@ -104,7 +106,7 @@ export function BodyTab({ request }: BodyTabProps) {
       </PanelResizeHandle>
       <Panel defaultSize={40} minSize={20}>
         <div className="flex h-full w-full flex-col">
-          <span className="px-2 py-1 text-[11px] uppercase tracking-wide text-text-dim">
+          <span className="px-2 py-1 text-[0.6875rem] uppercase tracking-wide text-text-dim">
             Variables (JSON)
           </span>
           <div className="min-h-0 flex-1 overflow-hidden">
@@ -136,7 +138,7 @@ export function BodyTab({ request }: BodyTabProps) {
               aria-checked={request.body.type === bt.id}
               onClick={() => onChangeType(bt.id)}
               className={cn(
-                'inline-flex h-6 items-center rounded-sm border px-2 text-[11px] transition-colors',
+                'inline-flex h-6 items-center rounded-sm border px-2 text-[0.6875rem] transition-colors',
                 request.body.type === bt.id
                   ? 'border-accent/40 bg-accent/10 text-accent'
                   : 'border-border bg-surface text-text-muted hover:text-text-primary',
@@ -200,7 +202,7 @@ function JsonSchemaPicker({ request }: { request: ApiRequest }) {
   return (
     <div className="flex items-center gap-2">
       <label
-        className="text-[11px] uppercase tracking-wide text-text-dim"
+        className="text-[0.6875rem] uppercase tracking-wide text-text-dim"
         htmlFor={`schema-${request.id}`}
       >
         Validate against
@@ -222,7 +224,7 @@ function JsonSchemaPicker({ request }: { request: ApiRequest }) {
       <button
         type="button"
         onClick={() => openRightDockTab('assets')}
-        className="text-[11px] text-text-muted hover:text-accent"
+        className="text-[0.6875rem] text-text-muted hover:text-accent"
       >
         Manage…
       </button>
@@ -240,7 +242,7 @@ function GraphqlSchemaPicker({ request }: { request: ApiRequest }) {
   return (
     <div className="flex items-center gap-2">
       <label
-        className="text-[11px] uppercase tracking-wide text-text-dim"
+        className="text-[0.6875rem] uppercase tracking-wide text-text-dim"
         htmlFor={`gql-${request.id}`}
       >
         GraphQL schema
@@ -262,7 +264,7 @@ function GraphqlSchemaPicker({ request }: { request: ApiRequest }) {
       <button
         type="button"
         onClick={() => openRightDockTab('assets')}
-        className="text-[11px] text-text-muted hover:text-accent"
+        className="text-[0.6875rem] text-text-muted hover:text-accent"
       >
         Manage…
       </button>

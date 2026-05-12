@@ -188,32 +188,32 @@ export function ReleaseAndTopicsModal({ open, onClose }: ReleaseAndTopicsModalPr
             <Tag size={12} aria-hidden="true" className="text-accent" />
             Tag a release on <code className="font-mono">main</code>
           </h3>
-          <p className="mb-2 text-[11px] text-text-dim">
+          <p className="mb-2 text-[0.6875rem] text-text-dim">
             Tags target <code>main</code>&apos;s current HEAD — never an unmerged working-branch
             commit. Publish first via the Workspace card, merge the PR, then tag here.
           </p>
 
           {loadingTag ? (
-            <p className="text-[11px] text-text-muted">Loading releases on main…</p>
+            <p className="text-[0.6875rem] text-text-muted">Loading releases on main…</p>
           ) : tagLoadError ? (
-            <p className="text-[11px] text-danger" role="alert">
+            <p className="text-[0.6875rem] text-danger" role="alert">
               {tagLoadError}
             </p>
           ) : !latest ? (
-            <p className="rounded-sm border border-dashed border-border bg-card p-3 text-center text-[11px] text-text-dim">
+            <p className="rounded-sm border border-dashed border-border bg-card p-3 text-center text-[0.6875rem] text-text-dim">
               Nothing to tag. Every published version on <code>main</code> already has a Git tag.
               Publish a new version from the Workspace card and merge the PR to surface it here.
             </p>
           ) : (
             <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
+              <div className="flex flex-wrap items-center gap-2 text-[0.6875rem] text-text-muted">
                 <span>Version:</span>
                 <code className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 font-mono text-text-primary">
                   v{latest.version}
                 </code>
               </div>
 
-              <label className="flex items-start gap-2 text-[11px] text-text-muted">
+              <label className="flex items-start gap-2 text-[0.6875rem] text-text-muted">
                 <input
                   type="checkbox"
                   checked={createGitHubRelease}
@@ -230,7 +230,10 @@ export function ReleaseAndTopicsModal({ open, onClose }: ReleaseAndTopicsModalPr
 
               {createGitHubRelease && (
                 <div>
-                  <label htmlFor="release-tag-notes" className="block text-[11px] text-text-dim">
+                  <label
+                    htmlFor="release-tag-notes"
+                    className="block text-[0.6875rem] text-text-dim"
+                  >
                     Release notes
                   </label>
                   <textarea
@@ -245,13 +248,13 @@ export function ReleaseAndTopicsModal({ open, onClose }: ReleaseAndTopicsModalPr
               )}
 
               {tagError && (
-                <p className="text-[11px] text-danger" role="alert">
+                <p className="text-[0.6875rem] text-danger" role="alert">
                   {tagError}
                 </p>
               )}
 
               {tagSuccess && (
-                <p className="rounded-sm border border-success/40 bg-success/10 p-2 text-[11px] text-success">
+                <p className="rounded-sm border border-success/40 bg-success/10 p-2 text-[0.6875rem] text-success">
                   Tagged · <code className="font-mono">{tagSuccess.tagRef}</code> @{' '}
                   <code className="font-mono">{tagSuccess.sha.slice(0, 7)}</code>
                   {tagSuccess.releaseUrl && (
@@ -292,16 +295,16 @@ export function ReleaseAndTopicsModal({ open, onClose }: ReleaseAndTopicsModalPr
             <Hash size={12} aria-hidden="true" className="text-accent" />
             Repo topics
           </h3>
-          <p className="mb-2 text-[11px] text-text-dim">
+          <p className="mb-2 text-[0.6875rem] text-text-dim">
             Topics drive marketplace discoverability for public APICircle workspaces. The{' '}
             <code>apicircle</code> topic is locked since the marketplace search depends on it.
             GitHub caps topics at 20.
           </p>
 
           {loadingTopics ? (
-            <p className="text-[11px] text-text-muted">Loading topics…</p>
+            <p className="text-[0.6875rem] text-text-muted">Loading topics…</p>
           ) : topicsLoadError ? (
-            <p className="text-[11px] text-danger" role="alert">
+            <p className="text-[0.6875rem] text-danger" role="alert">
               {topicsLoadError}
             </p>
           ) : (
@@ -311,7 +314,7 @@ export function ReleaseAndTopicsModal({ open, onClose }: ReleaseAndTopicsModalPr
                 className="flex flex-wrap gap-1.5 rounded-sm border border-border bg-card p-2 min-h-[40px]"
               >
                 {topics.length === 0 && (
-                  <span className="text-[11px] text-text-dim">No topics set yet.</span>
+                  <span className="text-[0.6875rem] text-text-dim">No topics set yet.</span>
                 )}
                 {topics.map((topic) => {
                   const locked = topic === 'apicircle';
@@ -320,8 +323,8 @@ export function ReleaseAndTopicsModal({ open, onClose }: ReleaseAndTopicsModalPr
                       key={topic}
                       className={
                         locked
-                          ? 'inline-flex items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] text-accent'
-                          : 'inline-flex items-center gap-1 rounded-sm border border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] text-text-muted'
+                          ? 'inline-flex items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 font-mono text-[0.625rem] text-accent'
+                          : 'inline-flex items-center gap-1 rounded-sm border border-border bg-surface px-1.5 py-0.5 font-mono text-[0.625rem] text-text-muted'
                       }
                     >
                       {topic}
@@ -360,19 +363,19 @@ export function ReleaseAndTopicsModal({ open, onClose }: ReleaseAndTopicsModalPr
                   type="button"
                   onClick={onAddTopic}
                   disabled={!topicDraft.trim() || topics.length >= 20}
-                  className="inline-flex h-7 items-center rounded-sm border border-border bg-card px-2 text-[11px] text-text-muted hover:border-accent hover:text-text-primary disabled:opacity-50"
+                  className="inline-flex h-7 items-center rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary disabled:opacity-50"
                 >
                   Add
                 </button>
               </div>
 
               {topicsError && (
-                <p className="text-[11px] text-danger" role="alert">
+                <p className="text-[0.6875rem] text-danger" role="alert">
                   {topicsError}
                 </p>
               )}
               {topicsSavedAt !== null && !topicsDirty && !topicsError && (
-                <p className="text-[11px] text-success">Topics saved.</p>
+                <p className="text-[0.6875rem] text-success">Topics saved.</p>
               )}
 
               <div className="flex justify-end">

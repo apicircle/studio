@@ -100,7 +100,7 @@ export function MockServersPanel() {
   return (
     <div className="flex h-full flex-col overflow-hidden bg-surface">
       {!bridge && serverList.length > 0 && (
-        <div className="border-b border-border-subtle bg-card/50 px-6 py-2 text-[11px] text-text-muted">
+        <div className="border-b border-border-subtle bg-card/50 px-6 py-2 text-[0.6875rem] text-text-muted">
           <div className="mx-auto flex max-w-3xl items-start gap-2">
             <AlertTriangle size={12} className="mt-0.5 shrink-0 text-warning" aria-hidden="true" />
             <span>
@@ -187,7 +187,7 @@ function ServerSummary({
   return (
     <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-6">
       <div>
-        <label htmlFor="mock-server-name" className="block text-[11px] text-text-dim">
+        <label htmlFor="mock-server-name" className="block text-[0.6875rem] text-text-dim">
           Mock server name
         </label>
         <input
@@ -210,13 +210,13 @@ function ServerSummary({
       <div className="flex items-center gap-2">
         {runtime ? (
           <>
-            <span className="rounded-sm border border-success/50 bg-success/10 px-2 py-0.5 text-[11px] text-success">
+            <span className="rounded-sm border border-success/50 bg-success/10 px-2 py-0.5 text-[0.6875rem] text-success">
               running · port {runtime.port}
             </span>
             <button
               type="button"
               onClick={onStop}
-              className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[11px] text-text-muted hover:bg-card-hover"
+              className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-muted hover:bg-card-hover"
             >
               <Square size={10} aria-hidden="true" />
               Stop
@@ -232,7 +232,7 @@ function ServerSummary({
                 ? `Start ${server.name}`
                 : 'Running mocks needs the Desktop App or `apicircle mock run`'
             }
-            className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[11px] text-text-primary hover:bg-card-hover disabled:opacity-40"
+            className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary hover:bg-card-hover disabled:opacity-40"
           >
             <Play size={10} aria-hidden="true" />
             Start
@@ -280,12 +280,12 @@ function CorsSection({ server }: { server: MockServer }) {
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="text-xs font-medium text-text-primary">CORS</p>
-          <p className="text-[11px] text-text-dim">
+          <p className="text-[0.6875rem] text-text-dim">
             Off by default — same-origin only. Enable + list origins to let browser apps on other
             ports call the running mock.
           </p>
         </div>
-        <label className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 text-[11px] text-text-muted">
+        <label className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 text-[0.6875rem] text-text-muted">
           <input
             type="checkbox"
             checked={server.cors.enabled}
@@ -310,21 +310,21 @@ function CorsSection({ server }: { server: MockServer }) {
               }}
               placeholder="https://app.example.com or *"
               aria-label="Add allowed origin"
-              className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 font-mono text-[11px] text-text-primary focus:border-accent focus:outline-none"
+              className="h-7 flex-1 rounded-sm border border-border bg-surface px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
             />
             <button
               type="button"
               onClick={addOrigin}
               disabled={!draft.trim()}
               aria-label="Add origin"
-              className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[11px] text-accent hover:bg-accent/20 disabled:opacity-40"
+              className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20 disabled:opacity-40"
             >
               <Plus size={10} aria-hidden="true" />
               Add
             </button>
           </div>
           {server.cors.origins.length === 0 ? (
-            <p className="text-[10px] italic text-text-dim">
+            <p className="text-[0.625rem] italic text-text-dim">
               No origins yet — add at least one (or <code className="font-mono">*</code> to allow
               any) for the runtime to send CORS headers.
             </p>
@@ -333,7 +333,7 @@ function CorsSection({ server }: { server: MockServer }) {
               {server.cors.origins.map((o) => (
                 <li
                   key={o}
-                  className="inline-flex items-center gap-1 rounded-sm border border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] text-text-primary"
+                  className="inline-flex items-center gap-1 rounded-sm border border-border bg-surface px-1.5 py-0.5 font-mono text-[0.625rem] text-text-primary"
                 >
                   {o}
                   <button

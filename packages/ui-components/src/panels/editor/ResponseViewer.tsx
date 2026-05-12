@@ -127,7 +127,7 @@ export function ResponseViewer({ result, assertions, isExecuting }: ResponseView
         {tab === 'body' && <div className="h-full w-full">{bodyEditor}</div>}
         {tab === 'headers' && (
           <div className="h-full overflow-auto p-3">
-            <table className="w-full font-mono text-[11px]">
+            <table className="w-full font-mono text-[0.6875rem]">
               <tbody>
                 {Object.entries(result.headers).map(([key, value]) => (
                   <tr key={key} className="border-b border-border-subtle/60">

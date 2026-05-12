@@ -76,7 +76,7 @@ export function OnboardingTips() {
         </button>
       </div>
       <div className="flex items-center justify-between">
-        <span className="text-[10px] text-text-dim">
+        <span className="text-[0.625rem] text-text-dim">
           {step + 1} / {TIPS.length}
         </span>
         <div className="flex gap-1">
@@ -84,7 +84,7 @@ export function OnboardingTips() {
             <button
               type="button"
               onClick={() => setStep((s) => Math.max(0, s - 1))}
-              className="rounded-sm border border-border bg-surface px-2 py-0.5 text-[11px] text-text-muted hover:border-accent hover:text-text-primary"
+              className="rounded-sm border border-border bg-surface px-2 py-0.5 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"
             >
               Back
             </button>
@@ -93,7 +93,7 @@ export function OnboardingTips() {
             <button
               type="button"
               onClick={() => setStep((s) => Math.min(TIPS.length - 1, s + 1))}
-              className="rounded-sm border border-accent bg-accent/10 px-2 py-0.5 text-[11px] text-text-primary hover:bg-accent/20"
+              className="rounded-sm border border-accent bg-accent/10 px-2 py-0.5 text-[0.6875rem] text-text-primary hover:bg-accent/20"
             >
               Next
             </button>
@@ -102,7 +102,7 @@ export function OnboardingTips() {
             <button
               type="button"
               onClick={dismiss}
-              className="rounded-sm border border-accent bg-accent/10 px-2 py-0.5 text-[11px] text-text-primary hover:bg-accent/20"
+              className="rounded-sm border border-accent bg-accent/10 px-2 py-0.5 text-[0.6875rem] text-text-primary hover:bg-accent/20"
             >
               Got it
             </button>

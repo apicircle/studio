@@ -214,7 +214,7 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
           />
         )}
         {plan.steps.length === 0 ? (
-          <p className="rounded-sm border border-dashed border-border bg-card p-3 text-[11px] text-text-dim">
+          <p className="rounded-sm border border-dashed border-border bg-card p-3 text-[0.6875rem] text-text-dim">
             No steps yet. Add at least one request before running the plan.
           </p>
         ) : (
@@ -272,7 +272,7 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
         <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
           Plan-level env priority
         </h2>
-        <p className="mb-2 text-[11px] text-text-dim">
+        <p className="mb-2 text-[0.6875rem] text-text-dim">
           Overrides the workspace&apos;s global priority order during runs of this plan. Empty =
           inherit the workspace order.
         </p>
@@ -287,7 +287,7 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
         <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
           Plan variables
         </h2>
-        <p className="mb-2 text-[11px] text-text-dim">
+        <p className="mb-2 text-[0.6875rem] text-text-dim">
           Bind <code>{'{{NAME}}'}</code> values for this plan only. Plan variables sit between
           extracted globals and the env priority list — per-request context vars still win.
         </p>
@@ -315,7 +315,7 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
             <Play size={11} />
             Run with assertions
           </button>
-          <label className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted">
+          <label className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted">
             <input
               type="checkbox"
               checked={plan.stopOnAssertionFailure ?? false}
@@ -376,7 +376,7 @@ function RunVerdict({ result }: { result: RunVerdictData }) {
   return (
     <span
       className={
-        'inline-flex items-center gap-2 text-[11px] ' +
+        'inline-flex items-center gap-2 text-[0.6875rem] ' +
         (overallPassed ? 'text-success' : 'text-danger')
       }
     >
@@ -427,19 +427,21 @@ function PlanRunDetails({ planId }: { planId: string }) {
                 ) : (
                   <ChevronRight size={11} className="text-text-dim" aria-hidden="true" />
                 )}
-                <span className="w-6 text-center text-[10px] text-text-dim">{i + 1}.</span>
+                <span className="w-6 text-center text-[0.625rem] text-text-dim">{i + 1}.</span>
                 <StepStatusBadge passed={step.passed} status={step.result.status} />
-                <span className="text-[10px] uppercase text-text-dim">{step.requestMethod}</span>
+                <span className="text-[0.625rem] uppercase text-text-dim">
+                  {step.requestMethod}
+                </span>
                 <span className="flex-1 truncate text-xs text-text-primary">
                   {step.requestName}
                 </span>
-                <span className="font-mono text-[10px] text-text-dim">
+                <span className="font-mono text-[0.625rem] text-text-dim">
                   {step.result.durationMs} ms
                 </span>
                 {step.assertionResults.length > 0 && (
                   <span
                     className={
-                      'rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ' +
+                      'rounded-sm border px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider ' +
                       (step.assertionResults.every((a) => a.passed)
                         ? 'border-success/40 bg-success/10 text-success'
                         : 'border-warning/40 bg-warning/10 text-warning')
@@ -476,7 +478,7 @@ function PlanRunDetails({ planId }: { planId: string }) {
 function StepStatusBadge({ passed, status }: { passed: boolean; status: number | null }) {
   if (status === null) {
     return (
-      <span className="inline-flex items-center rounded-sm border border-danger/40 bg-danger/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-danger">
+      <span className="inline-flex items-center rounded-sm border border-danger/40 bg-danger/10 px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-danger">
         ERR
       </span>
     );
@@ -484,7 +486,7 @@ function StepStatusBadge({ passed, status }: { passed: boolean; status: number |
   return (
     <span
       className={
-        'inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ' +
+        'inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider ' +
         (passed
           ? 'border-success/40 bg-success/10 text-success'
           : 'border-warning/40 bg-warning/10 text-warning')
@@ -504,7 +506,7 @@ function BreadcrumbTrail({ trail }: { trail: readonly string[] }) {
   return (
     <nav
       aria-label="Folder path"
-      className="flex items-center gap-0.5 truncate text-[10px] text-text-dim"
+      className="flex items-center gap-0.5 truncate text-[0.625rem] text-text-dim"
     >
       {display.map((name, i) => (
         <span key={`${name}-${i}`} className="flex items-center gap-0.5">
@@ -650,7 +652,7 @@ function PlanStepPicker({
               return next;
             });
           }}
-          className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-accent hover:text-text-primary disabled:opacity-30"
+          className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary disabled:opacity-30"
         >
           {allVisibleSelected ? 'Clear visible' : 'Select visible'}
         </button>
@@ -658,14 +660,14 @@ function PlanStepPicker({
 
       <div className="max-h-72 overflow-y-auto">
         {totalVisible === 0 ? (
-          <p className="px-3 py-4 text-center text-[11px] text-text-dim">
+          <p className="px-3 py-4 text-center text-[0.6875rem] text-text-dim">
             {q ? `No requests match “${filter}”.` : 'No requests yet.'}
           </p>
         ) : (
           <>
             {localFiltered.length > 0 && (
               <>
-                <p className="border-b border-border-subtle px-3 py-1 text-[10px] uppercase tracking-wider text-text-dim">
+                <p className="border-b border-border-subtle px-3 py-1 text-[0.625rem] uppercase tracking-wider text-text-dim">
                   This workspace
                 </p>
                 <ul>
@@ -686,7 +688,7 @@ function PlanStepPicker({
                           />
                           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                             <div className="flex items-center gap-2">
-                              <span className="text-[10px] uppercase text-text-dim">
+                              <span className="text-[0.625rem] uppercase text-text-dim">
                                 {r.method}
                               </span>
                               <span className="truncate">{r.name}</span>
@@ -702,7 +704,7 @@ function PlanStepPicker({
             )}
             {linkedFiltered.map((group) => (
               <div key={group.link.id}>
-                <p className="border-b border-t border-border-subtle px-3 py-1 text-[10px] uppercase tracking-wider text-text-dim">
+                <p className="border-b border-t border-border-subtle px-3 py-1 text-[0.625rem] uppercase tracking-wider text-text-dim">
                   {group.link.name}
                   <span className="ml-1 text-text-dim normal-case">
                     · {group.link.source.repoFullName}@{group.link.source.branch}
@@ -726,7 +728,7 @@ function PlanStepPicker({
                           />
                           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                             <div className="flex items-center gap-2">
-                              <span className="text-[10px] uppercase text-text-dim">
+                              <span className="text-[0.625rem] uppercase text-text-dim">
                                 {r.method}
                               </span>
                               <span className="truncate">{r.name}</span>
@@ -745,14 +747,14 @@ function PlanStepPicker({
       </div>
 
       <footer className="flex items-center justify-between border-t border-border-subtle px-3 py-2">
-        <span className="text-[11px] text-text-dim">
+        <span className="text-[0.6875rem] text-text-dim">
           {selected.size === 0 ? 'Pick one or more' : `${selected.size} selected`}
         </span>
         <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-accent hover:text-text-primary"
+            className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"
           >
             Cancel
           </button>
@@ -760,7 +762,7 @@ function PlanStepPicker({
             type="button"
             onClick={commit}
             disabled={selected.size === 0}
-            className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/15 px-3 text-[11px] text-accent hover:bg-accent/25 disabled:opacity-40"
+            className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/15 px-3 text-[0.6875rem] text-accent hover:bg-accent/25 disabled:opacity-40"
           >
             {selected.size <= 1 ? 'Add step' : `Add ${selected.size} steps`}
           </button>
@@ -814,10 +816,10 @@ function PlanStepRow({
           className="h-3 w-3 cursor-pointer"
           style={{ accentColor: 'rgb(var(--accent))' }}
         />
-        <span className="w-6 text-center text-[10px] text-text-dim">{index + 1}.</span>
+        <span className="w-6 text-center text-[0.625rem] text-text-dim">{index + 1}.</span>
         {request ? (
           <>
-            <span className="text-[10px] uppercase text-text-dim">{request.method}</span>
+            <span className="text-[0.625rem] uppercase text-text-dim">{request.method}</span>
             <span
               className={cn(
                 'flex-1 truncate text-xs text-text-primary',
@@ -827,13 +829,13 @@ function PlanStepRow({
               {request.name}
             </span>
             {linkedName && (
-              <span className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-accent">
+              <span className="rounded-sm border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-accent">
                 from {linkedName}
               </span>
             )}
             {!enabled && (
               <span
-                className="rounded-sm border border-text-dim/40 bg-surface px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-text-dim"
+                className="rounded-sm border border-text-dim/40 bg-surface px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-text-dim"
                 aria-label={`Step ${index + 1} is disabled`}
               >
                 disabled
@@ -888,7 +890,7 @@ function PlanStepRow({
       {breadcrumb.length > 0 && (
         <nav
           aria-label={`Folder path for step ${index + 1}`}
-          className="ml-6 flex items-center gap-1 text-[10px] text-text-dim"
+          className="ml-6 flex items-center gap-1 text-[0.625rem] text-text-dim"
         >
           {breadcrumb.map((name, i) => (
             <span key={`${name}-${i}`} className="flex items-center gap-1">
@@ -913,7 +915,7 @@ function PlanVariablesEditor({
   return (
     <div className="space-y-1.5 rounded-sm border border-border bg-card p-2">
       {vars.length === 0 && (
-        <p className="text-[11px] text-text-dim">
+        <p className="text-[0.6875rem] text-text-dim">
           No plan variables yet — env values resolve as usual.
         </p>
       )}
@@ -954,7 +956,7 @@ function PlanVariablesEditor({
       <button
         type="button"
         onClick={() => onChange([...vars, { key: '', value: '' }])}
-        className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-dashed border-border px-2 text-[11px] text-text-muted hover:border-accent hover:text-text-primary"
+        className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-dashed border-border px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"
       >
         <Plus size={11} />
         Add plan variable
@@ -987,7 +989,7 @@ function PlanEnvPriorityEditor({
   return (
     <div className="space-y-2 rounded-sm border border-border bg-card p-2">
       {inOrder.length === 0 ? (
-        <p className="text-[11px] text-text-dim">
+        <p className="text-[0.6875rem] text-text-dim">
           No plan-level priority — inherits workspace order. Add envs below to override.
         </p>
       ) : (
@@ -1004,14 +1006,14 @@ function PlanEnvPriorityEditor({
                 key={key}
                 className="flex items-center gap-2 rounded-sm border border-border-subtle bg-surface px-2 py-1"
               >
-                <span className="w-5 text-center text-[10px] text-text-dim">{i + 1}.</span>
+                <span className="w-5 text-center text-[0.625rem] text-text-dim">{i + 1}.</span>
                 <span className="flex flex-1 items-center gap-1.5 truncate text-xs text-text-primary">
                   {ref.kind === 'linked' && (
                     <Link2 size={10} aria-hidden="true" className="shrink-0 text-text-faint" />
                   )}
                   <span className="truncate">{meta.label}</span>
                   {meta.sublabel && (
-                    <span className="shrink-0 rounded-sm border border-border bg-card px-1 py-0.5 text-[9px] text-text-dim">
+                    <span className="shrink-0 rounded-sm border border-border bg-card px-1 py-0.5 text-[0.5625rem] text-text-dim">
                       {meta.sublabel}
                     </span>
                   )}
@@ -1054,7 +1056,7 @@ function PlanEnvPriorityEditor({
               key={envPriorityKey(ref)}
               type="button"
               onClick={() => onChange([...inOrder, ref])}
-              className="inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-border-strong hover:text-text-primary"
+              className="inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-border-strong hover:text-text-primary"
               title={ref.kind === 'linked' ? `Linked env from ${sublabel ?? ''}` : 'Local env'}
             >
               <Plus size={9} />

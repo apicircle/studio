@@ -153,12 +153,12 @@ export function VariablesDockPanel() {
               return (
                 <section key={src} className="flex flex-col gap-1.5">
                   <header className="flex items-baseline justify-between gap-2">
-                    <h3 className="text-[10px] font-medium uppercase tracking-wider text-text-dim">
+                    <h3 className="text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
                       {SOURCE_LABEL[src]}
                     </h3>
-                    <span className="text-[10px] text-text-faint">{list.length}</span>
+                    <span className="text-[0.625rem] text-text-faint">{list.length}</span>
                   </header>
-                  <p className="text-[10px] text-text-faint">{SOURCE_HINT[src]}</p>
+                  <p className="text-[0.625rem] text-text-faint">{SOURCE_HINT[src]}</p>
                   <ul className="flex flex-col gap-0.5">
                     {list.map((s) => (
                       <li key={s.key}>
@@ -168,15 +168,15 @@ export function VariablesDockPanel() {
                           aria-label={`Copy {{${s.key}}}`}
                           className="group flex w-full items-center justify-between gap-2 rounded-sm border border-transparent px-2 py-1 text-left hover:border-border-subtle hover:bg-card"
                         >
-                          <code className="truncate text-[11px] text-text-primary">{`{{${s.key}}}`}</code>
+                          <code className="truncate text-[0.6875rem] text-text-primary">{`{{${s.key}}}`}</code>
                           <span
-                            className="ml-2 flex-1 truncate text-right text-[10px] text-text-dim"
+                            className="ml-2 flex-1 truncate text-right text-[0.625rem] text-text-dim"
                             title={s.preview}
                           >
                             {s.preview || '(empty)'}
                           </span>
                           {copied === s.key ? (
-                            <span className="text-[10px] text-accent">Copied</span>
+                            <span className="text-[0.625rem] text-accent">Copied</span>
                           ) : (
                             <Copy
                               size={11}
@@ -199,17 +199,17 @@ export function VariablesDockPanel() {
           <div className="flex items-start gap-2">
             <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber" />
             <div className="flex-1">
-              <p className="text-[11px] font-medium text-text-primary">
+              <p className="text-[0.6875rem] font-medium text-text-primary">
                 {unresolved.length} unresolved reference{unresolved.length === 1 ? '' : 's'}
               </p>
-              <p className="mt-0.5 break-words text-[10px] text-text-muted">
+              <p className="mt-0.5 break-words text-[0.625rem] text-text-muted">
                 {unresolved.slice(0, 6).join(', ')}
                 {unresolved.length > 6 ? `, +${unresolved.length - 6} more` : ''}
               </p>
               <button
                 type="button"
                 onClick={() => setActivePanel('env')}
-                className="mt-2 inline-flex h-6 items-center gap-1 rounded-sm border border-amber/40 bg-amber/10 px-2 text-[10px] text-amber hover:bg-amber/20"
+                className="mt-2 inline-flex h-6 items-center gap-1 rounded-sm border border-amber/40 bg-amber/10 px-2 text-[0.625rem] text-amber hover:bg-amber/20"
               >
                 Define in Environments
               </button>
@@ -231,7 +231,7 @@ function EmptyState({ onOpenEnvironments }: { onOpenEnvironments: () => void }) 
       <button
         type="button"
         onClick={onOpenEnvironments}
-        className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[11px] text-accent hover:bg-accent/20"
+        className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20"
       >
         Open Environments
       </button>

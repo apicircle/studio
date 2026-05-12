@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { loadFromFile, saveToFile } from '@apicircle/core/workspace/file-backed';
 import type { WorkspaceState } from '@apicircle/core';
-import { generateId } from '@apicircle/shared';
+import { FONT_SIZE_PERCENT_DEFAULT, generateId } from '@apicircle/shared';
 
 // =============================================================================
 // loadWorkspace — small wrapper around `@apicircle/core`'s file-backed
@@ -56,6 +56,7 @@ export async function ensureWorkspace(dir: string): Promise<WorkspaceState> {
         sidebarExpandedSections: [],
         themeId: 'studio-dark',
         fontId: 'system-mono',
+        fontSizePercent: FONT_SIZE_PERCENT_DEFAULT,
       },
       settings: { validateOnSend: true, monacoConsumesWheel: false },
       snapshots: { entries: [], maxBytes: 50 * 1024 * 1024 },

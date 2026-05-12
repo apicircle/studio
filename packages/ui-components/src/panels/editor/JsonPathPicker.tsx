@@ -111,7 +111,7 @@ export function JsonPathPicker({ jsonText, title, onPick, onClose }: JsonPathPic
           )}
         </div>
 
-        <footer className="flex items-center justify-between border-t border-border-subtle bg-card px-4 py-2 text-[10px] text-text-dim">
+        <footer className="flex items-center justify-between border-t border-border-subtle bg-card px-4 py-2 text-[0.625rem] text-text-dim">
           <span>
             Click a row to copy its path. Use <code className="text-text-muted">$</code> for the
             whole body.
@@ -216,7 +216,7 @@ function Node({ value, path, name, filter, onPick, depth }: NodeProps) {
           <span className="text-text-muted">{displayName(name)}</span>
           <span className="text-text-dim">:</span>
           <span className={valueClass(value)}>{preview}</span>
-          <span className="ml-auto truncate text-[10px] text-text-faint opacity-0 group-hover:opacity-100">
+          <span className="ml-auto truncate text-[0.625rem] text-text-faint opacity-0 group-hover:opacity-100">
             {fullPath || '$'}
           </span>
         </button>
@@ -253,7 +253,7 @@ function Node({ value, path, name, filter, onPick, depth }: NodeProps) {
         >
           <span className="text-text-primary">{displayName(name)}</span>
           <span className="text-text-dim">{summary}</span>
-          <span className="ml-auto truncate text-[10px] text-text-faint opacity-0 group-hover:opacity-100">
+          <span className="ml-auto truncate text-[0.625rem] text-text-faint opacity-0 group-hover:opacity-100">
             {fullPath || '$'}
           </span>
         </button>

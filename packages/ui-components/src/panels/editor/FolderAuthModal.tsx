@@ -60,7 +60,7 @@ export function FolderAuthModal({ folder, onClose }: FolderAuthModalProps) {
           </button>
         </header>
 
-        <p className="border-b border-border-subtle bg-card px-4 py-2 text-[11px] text-text-muted">
+        <p className="border-b border-border-subtle bg-card px-4 py-2 text-[0.6875rem] text-text-muted">
           This auth applies to any descendant request whose own auth is set to{' '}
           <code className="text-text-primary">Inherit</code>. The resolver walks up the folder chain
           and uses the first folder with an explicit auth.
@@ -80,7 +80,7 @@ export function FolderAuthModal({ folder, onClose }: FolderAuthModalProps) {
           <button
             type="button"
             onClick={() => setFolderAuth(folder.id, undefined)}
-            className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[11px] text-text-muted hover:border-danger hover:text-danger"
+            className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-danger hover:text-danger"
             title="Clear folder auth — descendants will continue walking up to find one"
           >
             Clear folder auth
@@ -88,7 +88,7 @@ export function FolderAuthModal({ folder, onClose }: FolderAuthModalProps) {
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-3 text-[11px] text-accent hover:bg-accent/20"
+            className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-3 text-[0.6875rem] text-accent hover:bg-accent/20"
           >
             Done
           </button>

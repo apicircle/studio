@@ -205,12 +205,12 @@ export function EditorSidebar() {
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search requests…"
           aria-label="Search requests"
-          className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-[11px] text-text-primary focus:border-accent focus:outline-none"
+          className="h-7 w-full rounded-sm border border-border bg-surface pl-7 pr-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
         />
       </div>
 
       {topLevel.length === 0 && !pendingCreate && (
-        <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-[11px] text-text-dim">
+        <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-[0.6875rem] text-text-dim">
           {searchQuery ? 'No matching requests.' : 'No requests yet. Create one to start.'}
         </p>
       )}
@@ -430,7 +430,7 @@ function TreeNode(props: TreeNodeProps) {
                 <FolderIcon size={12} className="shrink-0 text-text-faint" />
               )}
               <span className="truncate">{folder.name}</span>
-              <span className="ml-1 text-[10px] text-text-dim">{children.length}</span>
+              <span className="ml-1 text-[0.625rem] text-text-dim">{children.length}</span>
             </button>
           )}
           {/* Auth flag — Shield icon when the folder has its own auth set
@@ -551,7 +551,7 @@ function TreeNode(props: TreeNodeProps) {
           <div className="flex flex-1 items-center gap-2 px-2 py-1.5">
             <span
               className={cn(
-                'inline-block w-10 shrink-0 text-left text-[10px] font-medium uppercase tracking-wider tabular-nums',
+                'inline-block w-10 shrink-0 text-left text-[0.625rem] font-medium uppercase tracking-wider tabular-nums',
                 METHOD_COLOR[request.method] ?? 'text-text-muted',
               )}
             >
@@ -577,7 +577,7 @@ function TreeNode(props: TreeNodeProps) {
           >
             <span
               className={cn(
-                'inline-block w-10 shrink-0 text-left text-[10px] font-medium uppercase tracking-wider tabular-nums',
+                'inline-block w-10 shrink-0 text-left text-[0.625rem] font-medium uppercase tracking-wider tabular-nums',
                 METHOD_COLOR[request.method] ?? 'text-text-muted',
               )}
             >
@@ -733,7 +733,7 @@ function CreateInput({ kind, depth, isAvailable, onCommit, onCancel }: CreateInp
         )}
       />
       {duplicate && (
-        <span className="text-[10px] text-danger" role="alert">
+        <span className="text-[0.625rem] text-danger" role="alert">
           Name already used
         </span>
       )}
