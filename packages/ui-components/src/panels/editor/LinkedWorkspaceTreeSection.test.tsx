@@ -106,7 +106,11 @@ describe('LinkedWorkspaceTreeSection', () => {
     });
     render(<LinkedWorkspaceTreeSection />);
     await userEvent.click(screen.getByRole('button', { name: /Expand linked workspace Payments/ }));
-    expect(screen.getByText(/Refresh this link/)).toBeInTheDocument();
+    // Inline empty-state copy + the "Refresh link" CTA — replaces the
+    // earlier text-only hint that pointed users at the Link Workspace
+    // panel.
+    expect(screen.getByText(/Snapshot not loaded yet/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Refresh link/ })).toBeInTheDocument();
   });
 
   it('expanding a link with a snapshot lists its requests; clicking opens the linked-request editor', async () => {

@@ -15,19 +15,25 @@ import type { AnyToolDef } from './types';
 // environment (Electron main, CLI, hosted) controls the actual lifecycle.
 // =============================================================================
 
-async function ingestSource(source: MockServerSource, name: string): Promise<MockServer> {
-  const { endpoints } = await parseSourceToEndpoints(source);
+async function ingestSource(
+  source: MockServerSource,
+  name: string,
+): Promise<{ mock: MockServer; warnings: string[] }> {
+  const { endpoints, warnings } = await parseSourceToEndpoints(source);
   const now = new Date().toISOString();
-  return {
+  const mock: MockServer = {
     id: generateId(),
     name,
     source,
     endpoints,
     defaultPort: null,
-    cors: { enabled: true, origins: ['*'] },
+    // Off by default — match UI-created mocks. User opts in via cors.enabled=true
+    // after explicitly listing origins (see CorsSection in MockServersPanel).
+    cors: { enabled: false, origins: [] },
     createdAt: now,
     updatedAt: now,
   };
+  return { mock, warnings };
 }
 
 export const mockCreateFromOpenApiTool: AnyToolDef = {
@@ -39,12 +45,17 @@ export const mockCreateFromOpenApiTool: AnyToolDef = {
     format: z.enum(['json', 'yaml']).default('json'),
   }),
   async handler(input, ctx) {
-    const mock = await ingestSource(
+    const { mock, warnings } = await ingestSource(
       { kind: 'openapi', spec: input.spec, format: input.format },
       input.name,
     );
     const out = await ctx.workspace.apply({ kind: 'mock.upsert', mock });
-    return { id: mock.id, endpointCount: mock.endpoints.length, changedIds: out.changedIds };
+    return {
+      id: mock.id,
+      endpointCount: mock.endpoints.length,
+      changedIds: out.changedIds,
+      warnings,
+    };
   },
 };
 
@@ -53,9 +64,17 @@ export const mockCreateFromPostmanTool: AnyToolDef = {
   description: 'Create a mock server from a Postman v2/v2.1 collection.',
   inputSchema: z.object({ name: z.string(), collection: z.string().min(1) }),
   async handler(input, ctx) {
-    const mock = await ingestSource({ kind: 'postman', collection: input.collection }, input.name);
+    const { mock, warnings } = await ingestSource(
+      { kind: 'postman', collection: input.collection },
+      input.name,
+    );
     const out = await ctx.workspace.apply({ kind: 'mock.upsert', mock });
-    return { id: mock.id, endpointCount: mock.endpoints.length, changedIds: out.changedIds };
+    return {
+      id: mock.id,
+      endpointCount: mock.endpoints.length,
+      changedIds: out.changedIds,
+      warnings,
+    };
   },
 };
 
@@ -64,9 +83,17 @@ export const mockCreateFromInsomniaTool: AnyToolDef = {
   description: 'Create a mock server from an Insomnia v4 export.',
   inputSchema: z.object({ name: z.string(), export: z.string().min(1) }),
   async handler(input, ctx) {
-    const mock = await ingestSource({ kind: 'insomnia', export: input.export }, input.name);
+    const { mock, warnings } = await ingestSource(
+      { kind: 'insomnia', export: input.export },
+      input.name,
+    );
     const out = await ctx.workspace.apply({ kind: 'mock.upsert', mock });
-    return { id: mock.id, endpointCount: mock.endpoints.length, changedIds: out.changedIds };
+    return {
+      id: mock.id,
+      endpointCount: mock.endpoints.length,
+      changedIds: out.changedIds,
+      warnings,
+    };
   },
 };
 
@@ -78,9 +105,17 @@ export const mockImportPostmanMockCollectionTool: AnyToolDef = {
     "Import a Postman Mock Collection (collections previously hosted on Postman's mock service). Same parser as a regular Postman collection but marked as a mock import.",
   inputSchema: z.object({ name: z.string(), collection: z.string().min(1) }),
   async handler(input, ctx) {
-    const mock = await ingestSource({ kind: 'postman', collection: input.collection }, input.name);
+    const { mock, warnings } = await ingestSource(
+      { kind: 'postman', collection: input.collection },
+      input.name,
+    );
     const out = await ctx.workspace.apply({ kind: 'mock.upsert', mock });
-    return { id: mock.id, endpointCount: mock.endpoints.length, changedIds: out.changedIds };
+    return {
+      id: mock.id,
+      endpointCount: mock.endpoints.length,
+      changedIds: out.changedIds,
+      warnings,
+    };
   },
 };
 
@@ -120,8 +155,12 @@ export const mockStartTool: AnyToolDef = {
     const state = await ctx.workspace.read();
     const mock = state.synced.mockServers[input.id];
     if (!mock) return { ok: false, error: 'mock not found' };
-    const result = await ctx.mock.start(mock, { port: input.port });
-    return { ok: true, port: result.port, pid: result.pid, startedAt: result.startedAt };
+    try {
+      const result = await ctx.mock.start(mock, { port: input.port });
+      return { ok: true, port: result.port, pid: result.pid, startedAt: result.startedAt };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'mock.start failed' };
+    }
   },
 };
 
@@ -130,8 +169,12 @@ export const mockStopTool: AnyToolDef = {
   description: 'Stop a running mock server by id (no-op if not running).',
   inputSchema: z.object({ id: z.string() }),
   async handler(input, ctx) {
-    await ctx.mock.stop(input.id);
-    return { ok: true };
+    try {
+      await ctx.mock.stop(input.id);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'mock.stop failed' };
+    }
   },
 };
 
@@ -140,7 +183,11 @@ export const mockDeleteTool: AnyToolDef = {
   description: "Delete a mock server definition. Stops it first if it's running.",
   inputSchema: z.object({ id: z.string() }),
   async handler(input, ctx) {
-    await ctx.mock.stop(input.id);
+    try {
+      await ctx.mock.stop(input.id);
+    } catch {
+      // best-effort stop; deletion proceeds either way
+    }
     const out = await ctx.workspace.apply({ kind: 'mock.delete', id: input.id });
     return { ok: true, changedIds: out.changedIds };
   },
@@ -160,7 +207,7 @@ const HTTP_METHOD = z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OP
 export const mockCreateManualTool: AnyToolDef = {
   name: 'mock.create_manual',
   description:
-    "Create an empty manual-mode mock server. Use `mock.add_endpoint` afterward to populate it. CORS defaults to enabled with origin '*' so MCP clients can hit the running mock from any host.",
+    'Create an empty manual-mode mock server. Use `mock.add_endpoint` afterward to populate it. CORS defaults to off (same-origin only); enable + list explicit origins via `mock.update_cors` if cross-origin access is needed.',
   inputSchema: z.object({
     name: z.string().min(1),
     defaultPort: z.number().int().positive().nullable().optional(),
@@ -173,7 +220,9 @@ export const mockCreateManualTool: AnyToolDef = {
       source: { kind: 'manual', endpoints: [] },
       endpoints: [],
       defaultPort: input.defaultPort ?? null,
-      cors: { enabled: true, origins: ['*'] },
+      // Off by default — match UI-created mocks. Caller opts in via
+      // explicit origins; we never silently wildcard.
+      cors: { enabled: false, origins: [] },
       createdAt: now,
       updatedAt: now,
     };

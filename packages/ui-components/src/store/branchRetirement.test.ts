@@ -60,7 +60,7 @@ describe('decideRetirement', () => {
   it('retires with reason `pr-merged` when the PR is merged', () => {
     const result = decideRetirement(
       branch,
-      { branchExists: true, prState: { merged: true, state: 'closed' } },
+      { branchExists: true, branchHeadSha: null, prState: { merged: true, state: 'closed' } },
       now,
     );
     expect(result).toEqual({
@@ -77,7 +77,7 @@ describe('decideRetirement', () => {
     // semantically richer reason so the banner can say "PR was merged".
     const result = decideRetirement(
       branch,
-      { branchExists: false, prState: { merged: true, state: 'closed' } },
+      { branchExists: false, branchHeadSha: null, prState: { merged: true, state: 'closed' } },
       now,
     );
     expect(result?.reason).toBe('pr-merged');
@@ -86,7 +86,7 @@ describe('decideRetirement', () => {
   it('retires with reason `branch-deleted` when branch is gone but PR was not merged', () => {
     const result = decideRetirement(
       branch,
-      { branchExists: false, prState: { merged: false, state: 'closed' } },
+      { branchExists: false, branchHeadSha: null, prState: { merged: false, state: 'closed' } },
       now,
     );
     expect(result?.reason).toBe('branch-deleted');
@@ -95,7 +95,11 @@ describe('decideRetirement', () => {
 
   it('retires with reason `branch-deleted` when branch gone and no PR exists', () => {
     const noPrBranch = workingBranchFixture({ openPrUrl: null });
-    const result = decideRetirement(noPrBranch, { branchExists: false, prState: null }, now);
+    const result = decideRetirement(
+      noPrBranch,
+      { branchExists: false, branchHeadSha: null, prState: null },
+      now,
+    );
     expect(result?.reason).toBe('branch-deleted');
     expect(result?.prNumber).toBeNull();
     expect(result?.prUrl).toBeNull();
@@ -107,21 +111,23 @@ describe('decideRetirement', () => {
     expect(
       decideRetirement(
         branch,
-        { branchExists: true, prState: { merged: false, state: 'closed' } },
+        { branchExists: true, branchHeadSha: 'abc', prState: { merged: false, state: 'closed' } },
         now,
       ),
     ).toBeNull();
   });
 
   it('does NOT retire when both probes are inconclusive (transient failure)', () => {
-    expect(decideRetirement(branch, { branchExists: null, prState: null }, now)).toBeNull();
+    expect(
+      decideRetirement(branch, { branchExists: null, branchHeadSha: null, prState: null }, now),
+    ).toBeNull();
   });
 
   it('does NOT retire when everything is healthy (branch alive + PR open)', () => {
     expect(
       decideRetirement(
         branch,
-        { branchExists: true, prState: { merged: false, state: 'open' } },
+        { branchExists: true, branchHeadSha: 'abc', prState: { merged: false, state: 'open' } },
         now,
       ),
     ).toBeNull();
@@ -155,6 +161,7 @@ describe('probeBranchRetirement', () => {
     const probe = await probeBranchRetirement(client, 'tok', branch);
     expect(probe).toEqual({
       branchExists: true,
+      branchHeadSha: 'abc',
       prState: { merged: true, state: 'closed' },
     });
   });

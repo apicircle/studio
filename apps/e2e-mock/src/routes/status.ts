@@ -3,6 +3,7 @@
 // (status equals/not-equals/lt/gt) without negotiating real semantics.
 
 import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 export function buildStatusRoutes(): Hono {
   const app = new Hono();
@@ -11,13 +12,12 @@ export function buildStatusRoutes(): Hono {
     const codeStr = c.req.param('code');
     const code = Number.parseInt(codeStr, 10);
     if (!Number.isFinite(code) || code < 100 || code > 599) {
-      return c.json({ error: 'invalid_status', got: codeStr }, { status: 400 });
+      return c.json({ error: 'invalid_status', got: codeStr }, 400);
     }
-    // Bodies are not allowed for 1xx/204/304 — return empty in that case.
     if (code === 204 || code === 304 || (code >= 100 && code < 200)) {
       return new Response(null, { status: code });
     }
-    return c.json({ status: code }, { status: code });
+    return c.json({ status: code }, code as ContentfulStatusCode);
   });
 
   return app;

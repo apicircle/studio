@@ -163,7 +163,7 @@ A checklist organised by panel. Anything that doesn't behave as you'd expect is 
 | B-20 | Apply to SignPath.io for free Windows OSS signing    | 0.25 day | Submit; approval is async (1-3 weeks)                                                          |
 | B-21 | Publish `0.1.0-rc.1` to npm via release workflow     | 0.5 day  | Includes verification on a clean Node install                                                  |
 | B-22 | GitHub Pages landing site                            | 1 day    | Hero, install, demo gif, docs links                                                            |
-| B-23 | README polish + license reconciliation               | 0.5 day  | Apache-2.0 root vs MIT packages — pick one or document                                         |
+| B-23 | README polish + license reconciliation               | 0.5 day  | Unified to custom source-available license across root + publishable packages                  |
 | B-24 | Repo flip private → public                           | 0.25 day | After everything else lands                                                                    |
 | B-25 | Internal beta on a clean Windows + macOS machine     | 1 day    | You + me, parallel                                                                             |
 | B-26 | Tag `v0.1.0` + GitHub Release + npm publish          | 0.25 day | Triggered by changeset PR merge                                                                |

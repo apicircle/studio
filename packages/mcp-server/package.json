@@ -4,7 +4,7 @@
   "private": false,
   "type": "module",
   "description": "Model Context Protocol server exposing API Circle Studio's workspace as a tool catalog. Used by Claude Desktop, ChatGPT, Cursor, GitHub Copilot, and any other MCP-compatible AI client.",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "bin": {

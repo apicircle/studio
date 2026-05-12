@@ -79,6 +79,8 @@ import { OnboardingTips } from './onboarding/OnboardingTips';
 import { ConfirmDialog } from './primitives/ConfirmDialog';
 import { Modal } from './primitives/Modal';
 import { ToastViewport } from './primitives/Toast';
+import { UpdateAvailableBanner } from './primitives/UpdateAvailableBanner';
+import { PassphrasePromptModalGate } from './onboarding/PassphrasePromptModalGate';
 import { getPanel } from './layout/panels';
 
 export function App() {
@@ -117,6 +119,8 @@ export function App() {
       <KeyboardShortcuts />
       <OnboardingTips />
       <ToastSlot />
+      <UpdateAvailableBanner />
+      <PassphrasePromptModalGate />
     </div>
   );
 }

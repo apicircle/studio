@@ -7,6 +7,10 @@ export {
   validatePlanName,
   validatePRTitle,
   validateJsonString,
+  validateHttpHeaderName,
+  validateRegex,
+  validateJsonPath,
+  validatePositiveDuration,
 } from './validators';
 export type { ValidationResult } from './validators';
 export { formatBytes, utf8ByteLength } from './format';

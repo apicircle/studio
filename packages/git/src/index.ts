@@ -17,8 +17,10 @@ export type {
   TreeEntryInput,
 } from './github/api';
 export {
+  BranchDivergedError,
   GitHubError,
   MissingScopeError,
   RateLimitedError,
+  TimeoutError,
   UnauthorizedError,
 } from './github/errors';

@@ -162,5 +162,65 @@ export function validateJsonString(
   return OK;
 }
 
+/**
+ * HTTP header field-name (RFC 7230 §3.2.6 "token"). One or more characters
+ * from the unreserved set: ALPHA / DIGIT / `!#$%&'*+-.^_` `` ` `` `|~`.
+ * Spaces, colons, and CTLs are rejected — those would corrupt the wire
+ * format the moment the request actually sends.
+ */
+const HEADER_TOKEN_RE = /^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$/;
+export function validateHttpHeaderName(value: string): ValidationResult {
+  const v = value.trim();
+  if (!v) return fail('Header name is required.');
+  if (!HEADER_TOKEN_RE.test(v)) {
+    return fail("Header name must be a valid HTTP token (letters, digits, and -_.!#$%&'*+^`|~).");
+  }
+  return OK;
+}
+
+/**
+ * JavaScript-compatible regular-expression body. Lets the user spot
+ * unclosed groups / bad character classes at edit time rather than at
+ * runtime where the rule silently never matches.
+ */
+export function validateRegex(value: string, flags?: string): ValidationResult {
+  if (value === '') return fail('Regex cannot be empty.');
+  try {
+    new RegExp(value, flags);
+    return OK;
+  } catch (e) {
+    return fail(`Invalid regex: ${e instanceof Error ? e.message : 'parse failed'}.`);
+  }
+}
+
+/**
+ * Permissive JSONPath validator — checks the body parses as one of the
+ * recognised forms (`$`, `$.key`, `$.a.b[0]`, `$.a[*].b`, `$..key`). Not
+ * a full RFC 9535 parser; intent is to catch typos like `$.users[bad`
+ * before the user thinks their assertion logic is wrong.
+ */
+const JSON_PATH_RE = /^\$(\.\.?[A-Za-z_$][\w$]*|\[(?:\*|\d+|'[^']*')\])*$/;
+export function validateJsonPath(value: string): ValidationResult {
+  const v = value.trim();
+  if (!v) return fail('JSONPath cannot be empty.');
+  if (!v.startsWith('$')) return fail('JSONPath must start with "$".');
+  if (!JSON_PATH_RE.test(v)) {
+    return fail('JSONPath syntax looks malformed — expected $.foo.bar or $.items[0].name.');
+  }
+  return OK;
+}
+
+/**
+ * Non-negative integer duration in milliseconds (or whatever unit the
+ * caller documents). 0 is allowed for "no wait"; negative values reject.
+ */
+export function validatePositiveDuration(value: number | string): ValidationResult {
+  const n = typeof value === 'string' ? Number(value) : value;
+  if (!Number.isFinite(n)) return fail('Duration must be a number.');
+  if (n < 0) return fail('Duration cannot be negative.');
+  if (!Number.isInteger(n)) return fail('Duration must be a whole number.');
+  return OK;
+}
+
 // Note: `validateBranchName` lives in @apicircle/core (returns `string | null`).
 // Keep the existing one — we don't need a second flavour.

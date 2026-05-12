@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorkspaceStore } from '../../store/workspaceStore';
@@ -43,10 +43,11 @@ describe('ExecutionPanel — plan editor', () => {
     render(<ExecutionPanel />);
     expect(useWorkspaceStore.getState().synced!.executionPlans![planId].name).toBe('orig');
 
-    // Rename via the input.
+    // Rename via the input. fireEvent.change replaces the value in one
+    // shot, avoiding the per-keystroke cost of tripleClick + keyboard —
+    // keeps the test inside the default 5s timeout under parallel load.
     const nameInput = screen.getByLabelText('Plan name');
-    await user.tripleClick(nameInput);
-    await user.keyboard('Smoke');
+    fireEvent.change(nameInput, { target: { value: 'Smoke' } });
     expect(useWorkspaceStore.getState().synced!.executionPlans![planId].name).toBe('Smoke');
 
     // Open the multi-select picker and add both requests in one shot. Verifies

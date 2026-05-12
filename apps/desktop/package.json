@@ -19,7 +19,8 @@
     "@apicircle/mock-server-core": "workspace:*",
     "@apicircle/shared": "workspace:*",
     "@apicircle/ui-components": "workspace:*",
-    "@apicircle/web": "workspace:*"
+    "@apicircle/web": "workspace:*",
+    "electron-updater": "^6.3.9"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

@@ -13,7 +13,7 @@
 import { useState } from 'react';
 import { Crosshair, Plus, Trash2 } from 'lucide-react';
 import type { ContextExtraction, Request as ApiRequest } from '@apicircle/shared';
-import { generateId, validateEnvVarName } from '@apicircle/shared';
+import { generateId, validateEnvVarName, validateJsonPath } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 import { JsonPathPicker } from './JsonPathPicker';
@@ -194,32 +194,53 @@ export function ContextTab({ request }: ContextTabProps) {
                   </option>
                 ))}
               </select>
-              <div className="flex items-center gap-1">
-                <input
-                  value={ex.path}
-                  onChange={(e) => updateExtraction(ex.id, { path: e.target.value })}
-                  aria-label={`Extraction ${idx + 1} path`}
-                  placeholder={SOURCES.find((s) => s.id === ex.source)?.placeholder}
-                  disabled={ex.source === 'status'}
-                  className={cn(inputClass, 'font-mono', ex.source === 'status' && 'opacity-50')}
-                />
-                {ex.source === 'body' && (
-                  <button
-                    type="button"
-                    onClick={() => setPickerForExtractionId(ex.id)}
-                    disabled={!lastRunBody || lastRunBodyKind !== 'json'}
-                    aria-label={`Pick JSON path for extraction ${idx + 1}`}
-                    title={
-                      !lastRunBody
-                        ? 'Send the request first to capture a response'
-                        : lastRunBodyKind !== 'json'
-                          ? 'Last response is not JSON'
-                          : 'Pick a JSON path from the last response'
-                    }
-                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-border bg-surface text-text-muted hover:border-accent hover:text-text-primary disabled:opacity-30"
-                  >
-                    <Crosshair size={12} />
-                  </button>
+              <div className="flex flex-col gap-0.5">
+                <div className="flex items-center gap-1">
+                  <input
+                    value={ex.path}
+                    onChange={(e) => updateExtraction(ex.id, { path: e.target.value })}
+                    aria-label={`Extraction ${idx + 1} path`}
+                    placeholder={SOURCES.find((s) => s.id === ex.source)?.placeholder}
+                    disabled={ex.source === 'status'}
+                    aria-invalid={(() => {
+                      if (ex.source !== 'body' || !ex.path) return undefined;
+                      return validateJsonPath(ex.path).ok ? undefined : true;
+                    })()}
+                    className={cn(
+                      inputClass,
+                      'font-mono',
+                      ex.source === 'status' && 'opacity-50',
+                      ex.source === 'body' &&
+                        ex.path &&
+                        !validateJsonPath(ex.path).ok &&
+                        'border-danger',
+                    )}
+                  />
+                  {ex.source === 'body' && (
+                    <button
+                      type="button"
+                      onClick={() => setPickerForExtractionId(ex.id)}
+                      disabled={!lastRunBody || lastRunBodyKind !== 'json'}
+                      aria-label={`Pick JSON path for extraction ${idx + 1}`}
+                      title={
+                        !lastRunBody
+                          ? 'Send the request first to capture a response'
+                          : lastRunBodyKind !== 'json'
+                            ? 'Last response is not JSON'
+                            : 'Pick a JSON path from the last response'
+                      }
+                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-border bg-surface text-text-muted hover:border-accent hover:text-text-primary disabled:opacity-30"
+                    >
+                      <Crosshair size={12} />
+                    </button>
+                  )}
+                </div>
+                {ex.source === 'body' && ex.path && !validateJsonPath(ex.path).ok && (
+                  <p role="alert" className="text-[0.625rem] text-danger">
+                    {validateJsonPath(ex.path).ok
+                      ? ''
+                      : (validateJsonPath(ex.path) as { ok: false; reason: string }).reason}
+                  </p>
                 )}
               </div>
               <button

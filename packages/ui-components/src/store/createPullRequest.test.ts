@@ -164,17 +164,20 @@ describe('workspaceStore.createPullRequest', () => {
     expect(body.title).toBe('APICircle workspace updates');
   });
 
-  it('throws when a PR is already open for this branch', async () => {
+  it('throws when a PR is already open for this branch and includes the PR URL', async () => {
     await setupConnectedBranchPushed();
     // First open populates openPrUrl.
+    const prUrl = 'https://github.com/o/r/pull/42';
     vi.stubGlobal(
       'fetch',
-      queuedFetch([{ body: { number: 1, html_url: 'u', state: 'open', title: 't' } }]),
+      queuedFetch([{ body: { number: 42, html_url: prUrl, state: 'open', title: 't' } }]),
     );
     await useWorkspaceStore.getState().createPullRequest();
     vi.unstubAllGlobals();
 
-    await expect(useWorkspaceStore.getState().createPullRequest()).rejects.toThrow(/already open/);
+    await expect(useWorkspaceStore.getState().createPullRequest()).rejects.toThrow(
+      new RegExp(`already open.*${prUrl.replace(/[/.]/g, '\\$&')}`),
+    );
   });
 
   it('surfaces MissingScopeError from a 403 with `pull_request` missing', async () => {

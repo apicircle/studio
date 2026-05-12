@@ -61,9 +61,17 @@ export function MockServersPanel() {
   const [pendingStart, setPendingStart] = useState<Set<string>>(() => new Set());
   const [pendingStop, setPendingStop] = useState<Set<string>>(() => new Set());
 
+  // After this many consecutive `bridge.list()` failures we treat the
+  // desktop bridge as gone and surface a banner. A single failure can be
+  // a hot-reload / app-update; sustained failure means our cached
+  // "running" state is stale and the user shouldn't trust the Stop button.
+  const BRIDGE_FAIL_THRESHOLD = 3;
+  const [bridgeDisconnected, setBridgeDisconnected] = useState(false);
+
   useEffect(() => {
     if (!bridge) return;
     let cancelled = false;
+    let consecutiveFailures = 0;
     const refresh = async () => {
       try {
         const entries = await bridge.list();
@@ -71,9 +79,13 @@ export function MockServersPanel() {
         const byId: Record<string, MockRuntimeEntry> = {};
         for (const e of entries) byId[e.serverId] = e.runtime;
         setRunning(byId);
+        consecutiveFailures = 0;
+        setBridgeDisconnected(false);
       } catch {
-        // Polling failures are expected during desktop-bridge churn —
-        // we'll see the next tick. Don't toast every 2s on bridge restart.
+        consecutiveFailures += 1;
+        if (consecutiveFailures >= BRIDGE_FAIL_THRESHOLD && !cancelled) {
+          setBridgeDisconnected(true);
+        }
       }
     };
     void refresh();
@@ -88,22 +100,13 @@ export function MockServersPanel() {
     if (!bridge) return;
     if (pendingStart.has(server.id)) return; // double-click guard
     setError(null);
-    // Pre-flight port collision check. The runtime would also catch this,
-    // but surfacing it before the bridge call gives a clearer message and
-    // saves a round trip.
-    const desired = server.defaultPort;
-    if (desired !== undefined) {
-      const collision = Object.entries(running).find(
-        ([id, rt]) => id !== server.id && rt.port === desired,
-      );
-      if (collision) {
-        const otherName = mockServers[collision[0]]?.name ?? collision[0];
-        const msg = `Port ${desired} is already in use by "${otherName}". Stop it first or change this server's defaultPort.`;
-        setError(msg);
-        pushToast({ tone: 'error', title: 'Mock server start blocked', detail: msg });
-        return;
-      }
-    }
+    // Note: a previous version of this code did a client-side port-
+    // collision pre-flight against the cached `running` map. That was a
+    // TOCTOU race — another mock could grab the port between the check
+    // and the bridge.start() call, leaving the user with a misleading
+    // success message. The runtime (MockManager.start) is authoritative
+    // on collisions and returns a clear error if the bind fails; we
+    // surface that below in the catch block.
     setPendingStart((prev) => new Set(prev).add(server.id));
     try {
       const runtime = await bridge.start(server);
@@ -176,6 +179,15 @@ export function MockServersPanel() {
               .
             </span>
           </div>
+        </div>
+      )}
+      {bridgeDisconnected && (
+        <div
+          role="alert"
+          className="border-b border-border-subtle bg-warning/10 px-6 py-2 text-xs text-warning"
+        >
+          <span className="font-medium">Desktop bridge disconnected.</span> The running-state shown
+          below may be stale — restart the desktop app to reconnect.
         </div>
       )}
       {error && (

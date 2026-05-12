@@ -4,7 +4,7 @@
   "private": false,
   "type": "module",
   "description": "Hono-based mock server engine for APICircle. Parses OpenAPI/Postman/Insomnia into mock endpoints, serves them on Node/Bun/edge runtimes.",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {

@@ -189,6 +189,16 @@ function VaultTab() {
         → priority list → vault.
       </p>
 
+      <p
+        className="rounded-sm border border-warning/30 bg-warning/5 px-2.5 py-1.5 text-[0.6875rem] text-text-muted"
+        role="note"
+      >
+        <strong className="text-warning">Encrypted with your workspace passphrase.</strong>{' '}
+        Encrypted secret values may sync across devices and team members through git, but only users
+        who know the passphrase can decrypt them. Lose the passphrase, lose the secrets — there is
+        no recovery.
+      </p>
+
       {missingSlots.length > 0 && <ProvideMissingSlotsGate slots={missingSlots} />}
 
       <div className="flex items-center justify-between">

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { Server } from 'node:http';
+import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import { findFreePort, startCallbackServer } from './oauth2Server';
+
+type HttpServer = Server<typeof IncomingMessage, typeof ServerResponse>;
 
 /**
  * Integration tests for the OAuth callback bridge: bind a real port,
@@ -245,7 +247,7 @@ describe('startCallbackServer — security', () => {
     // Inject a custom serverFactory so we can grab the underlying
     // node:http Server and query its bound address. The default
     // factory hides this behind the resolved CallbackResult.
-    let captured: Server | null = null;
+    let captured: HttpServer | null = null;
     const callbackPromise = startCallbackServer({
       port,
       mode: 'code',

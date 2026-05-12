@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { LinkedSnapshot, LinkedWorkspace } from '@apicircle/shared';
@@ -80,8 +80,10 @@ describe('LinkedEnvironmentsSection', () => {
       screen.getByRole('button', { name: /Expand linked environments for Payments/ }),
     );
     const input = screen.getByLabelText('Override value for BASE_URL');
-    await userEvent.clear(input);
-    await userEvent.type(input, 'https://my-fork.example.test');
+    // fireEvent.change sets the value in one shot, avoiding the
+    // per-keystroke cost of userEvent.type — keeps the test inside the
+    // default 5s timeout under parallel-suite contention.
+    fireEvent.change(input, { target: { value: 'https://my-fork.example.test' } });
     const stored =
       useWorkspaceStore.getState().synced!.linkedOverrides.environmentVars['lw-1:dev:BASE_URL'];
     expect(stored.value).toBe('https://my-fork.example.test');

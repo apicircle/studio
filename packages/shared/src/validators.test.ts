@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   validateAwsRegion,
   validateEnvVarName,
+  validateHttpHeaderName,
+  validateJsonPath,
   validateJsonString,
   validateMockPath,
   validatePRTitle,
   validatePlanName,
+  validatePositiveDuration,
+  validateRegex,
   validateUrl,
 } from './validators';
 
@@ -128,5 +132,59 @@ describe('validateJsonString', () => {
   });
   it('rejects non-array root when allowRoots="array"', () => {
     expect(validateJsonString('{"a":1}', { allowRoots: 'array' }).ok).toBe(false);
+  });
+});
+
+describe('validateHttpHeaderName', () => {
+  it.each(['Authorization', 'X-Trace-Id', 'Content-Type', "X-Custom!#$%&'*+-.^_`|~", 'a1'])(
+    'accepts %s',
+    (v) => {
+      expect(validateHttpHeaderName(v).ok).toBe(true);
+    },
+  );
+  it.each(['', '   ', 'has space', 'has:colon', 'has(paren)', 'with\ttab'])('rejects %j', (v) => {
+    expect(validateHttpHeaderName(v).ok).toBe(false);
+  });
+});
+
+describe('validateRegex', () => {
+  it('accepts a valid pattern', () => {
+    expect(validateRegex('^[a-z]+$').ok).toBe(true);
+    expect(validateRegex('foo', 'i').ok).toBe(true);
+  });
+  it('rejects an unclosed group', () => {
+    expect(validateRegex('(unclosed').ok).toBe(false);
+  });
+  it('rejects an empty regex', () => {
+    expect(validateRegex('').ok).toBe(false);
+  });
+});
+
+describe('validateJsonPath', () => {
+  it.each(['$', '$.foo', '$.foo.bar', '$.items[0]', '$.items[*].name', "$.a['x'].b"])(
+    'accepts %s',
+    (v) => {
+      expect(validateJsonPath(v).ok).toBe(true);
+    },
+  );
+  it.each(['', 'foo', '$.items[bad', '$[', '$.items[0'])('rejects %j', (v) => {
+    expect(validateJsonPath(v).ok).toBe(false);
+  });
+});
+
+describe('validatePositiveDuration', () => {
+  it('accepts 0 and positive integers', () => {
+    expect(validatePositiveDuration(0).ok).toBe(true);
+    expect(validatePositiveDuration(1).ok).toBe(true);
+    expect(validatePositiveDuration(15000).ok).toBe(true);
+  });
+  it('accepts numeric strings', () => {
+    expect(validatePositiveDuration('500').ok).toBe(true);
+  });
+  it('rejects negatives, fractions, and non-numbers', () => {
+    expect(validatePositiveDuration(-1).ok).toBe(false);
+    expect(validatePositiveDuration(1.5).ok).toBe(false);
+    expect(validatePositiveDuration('abc').ok).toBe(false);
+    expect(validatePositiveDuration(Number.NaN).ok).toBe(false);
   });
 });

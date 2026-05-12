@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Assertion, Request as ApiRequest } from '@apicircle/shared';
-import { generateId } from '@apicircle/shared';
+import { generateId, validateRegex, validateJsonPath } from '@apicircle/shared';
 import { CheckCircle2, Crosshair, Plus, Trash2, XCircle } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { JsonPathPicker } from './JsonPathPicker';
@@ -149,18 +149,11 @@ export function AssertionsTab({ request }: AssertionsTabProps) {
                 </option>
               ))}
             </Select>
-            <input
-              type="text"
-              value={String(a.expected)}
-              onChange={(e) => {
-                const v = e.target.value;
-                const asNumber = Number(v);
-                update(i, { expected: v !== '' && Number.isFinite(asNumber) ? asNumber : v });
-              }}
+            <ExpectedInput
+              assertion={a}
+              index={i}
+              onChange={(patch) => update(i, patch)}
               onKeyDown={(e) => onKeyDown(e, i, 'expected')}
-              placeholder="Expected"
-              aria-label={`Assertion ${i + 1} expected`}
-              className="h-7 flex-1 rounded-sm border border-border bg-card px-2 text-xs"
             />
             <button
               type="button"
@@ -212,6 +205,75 @@ export function AssertionsTab({ request }: AssertionsTabProps) {
             if (idx >= 0) update(idx, { target: path });
           }}
         />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Expected-value input with op-aware inline validation. Three modes:
+ *   - `matches` op: validate as a JS regex; surface compile errors at edit time.
+ *   - `lt` / `gt`: require a finite number so the comparison isn't nonsense.
+ *   - everything else: free-form string/number (legacy behaviour).
+ *
+ * The valid string is always written through to the assertion; we coerce
+ * to number only when the parse succeeds. Errors render below the row.
+ */
+function ExpectedInput({
+  assertion,
+  index,
+  onChange,
+  onKeyDown,
+}: {
+  assertion: Assertion;
+  index: number;
+  onChange: (patch: Partial<Assertion>) => void;
+  onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+}) {
+  const raw = String(assertion.expected);
+  let error: string | null = null;
+  if (raw !== '') {
+    if (assertion.op === 'matches') {
+      const r = validateRegex(raw);
+      if (!r.ok) error = r.reason;
+    } else if (assertion.op === 'lt' || assertion.op === 'gt') {
+      if (!Number.isFinite(Number(raw))) {
+        error = '< and > require a number.';
+      }
+    }
+  }
+  // Also surface JSON-path target syntax errors when the assertion targets
+  // a JSON path; the picker happy-paths this, but a typed target can break.
+  let targetError: string | null = null;
+  if (assertion.kind === 'json-path' && typeof assertion.target === 'string' && assertion.target) {
+    const r = validateJsonPath(assertion.target);
+    if (!r.ok) targetError = r.reason;
+  }
+  return (
+    <div className="flex flex-1 flex-col">
+      <input
+        type="text"
+        value={raw}
+        onChange={(e) => {
+          const v = e.target.value;
+          const asNumber = Number(v);
+          onChange({ expected: v !== '' && Number.isFinite(asNumber) ? asNumber : v });
+        }}
+        onKeyDown={onKeyDown}
+        placeholder="Expected"
+        aria-label={`Assertion ${index + 1} expected`}
+        aria-invalid={error !== null || undefined}
+        className={cn(
+          'h-7 w-full rounded-sm border bg-card px-2 text-xs',
+          error
+            ? 'border-danger focus:border-danger focus:outline-none focus:ring-1 focus:ring-danger/40'
+            : 'border-border',
+        )}
+      />
+      {(error || targetError) && (
+        <p role="alert" className="mt-0.5 text-[0.625rem] text-danger">
+          {error ?? targetError}
+        </p>
       )}
     </div>
   );

@@ -40,6 +40,7 @@ import { Modal } from '../../primitives/Modal';
 import { ReleaseAndTopicsModal } from './ReleaseAndTopicsModal';
 import { cn } from '../../primitives/cn';
 import { formatRelativeTime } from '../../primitives/relativeTime';
+import { formatGitError, type GitErrorView } from './gitErrorMessage';
 
 export function WorkspacePanel() {
   const workspaceName = useWorkspaceStore((s) => s.synced?.workspaceName ?? '');
@@ -405,11 +406,9 @@ function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => 
           <div className="flex justify-end gap-2 pt-1">
             <button
               type="button"
-              onClick={() => {
-                reset();
-                onClose();
-              }}
+              onClick={onClose}
               className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary"
+              title="Close — keeps draft version + notes for next time"
             >
               Cancel
             </button>
@@ -451,7 +450,28 @@ function ConflictResolverModal() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const conflicts = useMemo(() => pending?.diff.conflicts ?? [], [pending]);
+  // Sort conflicts by bucket so related entries land next to each other —
+  // a flat 50-conflict list intermixing requests / envs / mocks is hard to
+  // reason about. Within a bucket, preserve diff order (typically label-asc).
+  const BUCKET_ORDER: Record<string, number> = {
+    workspaceName: 0,
+    folders: 1,
+    requests: 2,
+    environments: 3,
+    'environment-vars': 4,
+    mockServers: 5,
+    linkedWorkspaces: 6,
+    'releases.self': 7,
+  };
+  const conflicts = useMemo(() => {
+    const list = pending?.diff.conflicts ?? [];
+    return [...list].sort((a, b) => {
+      const orderA = BUCKET_ORDER[a.bucket] ?? 99;
+      const orderB = BUCKET_ORDER[b.bucket] ?? 99;
+      if (orderA !== orderB) return orderA - orderB;
+      return 0;
+    });
+  }, [pending]);
   const allResolved = useMemo(
     () => conflicts.every((c) => resolutions[`${c.bucket}:${c.key}`]),
     [conflicts, resolutions],
@@ -478,13 +498,31 @@ function ConflictResolverModal() {
 
   if (!pending) return null;
 
+  const historyRewritten = pending.historyRewritten === true;
+  const title = historyRewritten ? 'Remote history was rewritten' : 'Resolve conflicts';
+
   return (
-    <Modal open={true} onClose={onClose} title="Resolve conflicts" className="max-w-3xl">
+    <Modal open={true} onClose={onClose} title={title} className="max-w-3xl">
       <div className="space-y-3">
-        <p className="text-[0.6875rem] text-text-dim">
-          Local and remote both edited the entries below. Pick a side for each one before merging.
-          Cancel keeps the local doc untouched.
-        </p>
+        {historyRewritten ? (
+          <div
+            role="alert"
+            className="rounded-sm border border-warning/40 bg-warning/10 px-3 py-2 text-[0.6875rem] text-text-primary"
+          >
+            <p className="font-medium text-warning">Force-push detected.</p>
+            <p className="mt-1 text-text-dim">
+              The remote branch no longer contains your last pushed commit — somebody (or a CI bot)
+              rewrote history. Auto-merge has been disabled; review the diff and choose a side
+              explicitly. <strong>Cancel</strong> keeps your local doc untouched so you can
+              investigate before deciding.
+            </p>
+          </div>
+        ) : (
+          <p className="text-[0.6875rem] text-text-dim">
+            Local and remote both edited the entries below. Pick a side for each one before merging.
+            Cancel keeps the local doc untouched.
+          </p>
+        )}
         <ul className="space-y-2">
           {conflicts.map((c) => (
             <ConflictRow
@@ -511,7 +549,7 @@ function ConflictResolverModal() {
           <button
             type="button"
             onClick={() => void onCommit()}
-            disabled={submitting || !allResolved}
+            disabled={submitting || (conflicts.length > 0 && !allResolved)}
             className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
           >
             <GitMerge size={11} />
@@ -1050,6 +1088,7 @@ function BranchCard() {
 
   const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
   const syncAttachments = useWorkspaceStore((s) => s.syncAttachments);
+  const pushToast = useWorkspaceStore((s) => s.pushToast);
   const [message, setMessage] = useState('');
   const [showMessageField, setShowMessageField] = useState(false);
   const [pushing, setPushing] = useState(false);
@@ -1057,6 +1096,7 @@ function BranchCard() {
   const [refreshNotice, setRefreshNotice] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorView, setErrorView] = useState<GitErrorView | null>(null);
   const [justPushedSha, setJustPushedSha] = useState<string | null>(null);
   const [prModalOpen, setPrModalOpen] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
@@ -1078,6 +1118,7 @@ function BranchCard() {
   const onSyncAttachments = async () => {
     setSyncing(true);
     setError(null);
+    setErrorView(null);
     setRefreshNotice(null);
     try {
       const result = await syncAttachments();
@@ -1091,14 +1132,12 @@ function BranchCard() {
         );
       }
     } catch (err) {
-      if (err instanceof MissingScopeError) {
-        surfaceMissingScope(err.missingScopes);
-      } else if (err instanceof GitHubError) {
-        setError(`GitHub ${err.status}: ${err.message}`);
-      } else if (err instanceof Error) {
-        setError(err.message);
+      const view = formatGitError(err, 'Sync');
+      if (view.action.kind === 'request-scopes') {
+        surfaceMissingScope(view.action.missingScopes);
       } else {
-        setError('Sync failed');
+        setError(view.message);
+        setErrorView(view);
       }
     } finally {
       setSyncing(false);
@@ -1108,6 +1147,7 @@ function BranchCard() {
   const onRefresh = async () => {
     setRefreshing(true);
     setError(null);
+    setErrorView(null);
     setRefreshNotice(null);
     try {
       const result = await refreshWorkspace();
@@ -1116,13 +1156,25 @@ function BranchCard() {
           setRefreshNotice('No workspace.json on the working branch yet — push first.');
           break;
         case 'up-to-date':
-          setRefreshNotice('Up to date with the remote.');
+          setRefreshNotice(
+            unpushed.total > 0
+              ? `Remote has no new changes. ${unpushed.total} unpushed local change${unpushed.total === 1 ? '' : 's'} still pending.`
+              : 'Up to date with the remote.',
+          );
           break;
         case 'merged':
           setRefreshNotice('Pulled remote changes — fast-forward merge applied.');
           break;
         case 'conflicts':
           // The Conflict Resolver modal renders in response to pendingRefresh.
+          break;
+        case 'history-rewritten':
+          // Same modal renders, but in "history rewritten" mode — see
+          // ConflictResolverModal. No transient banner here; the modal
+          // itself is the user signal.
+          setRefreshNotice(
+            'Remote history was rewritten since your last push — review changes before merging.',
+          );
           break;
         case 'retired':
           // Refresh discovered the working branch is over (PR merged or
@@ -1133,14 +1185,12 @@ function BranchCard() {
           break;
       }
     } catch (err) {
-      if (err instanceof MissingScopeError) {
-        surfaceMissingScope(err.missingScopes);
-      } else if (err instanceof GitHubError) {
-        setError(`GitHub ${err.status}: ${err.message}`);
-      } else if (err instanceof Error) {
-        setError(err.message);
+      const view = formatGitError(err, 'Refresh');
+      if (view.action.kind === 'request-scopes') {
+        surfaceMissingScope(view.action.missingScopes);
       } else {
-        setError('Refresh failed — unknown error');
+        setError(view.message);
+        setErrorView(view);
       }
     } finally {
       setRefreshing(false);
@@ -1150,21 +1200,25 @@ function BranchCard() {
   const onPush = async () => {
     setPushing(true);
     setError(null);
+    setErrorView(null);
     setJustPushedSha(null);
     try {
       const { commitSha } = await pushWorkspace(message || undefined);
       setJustPushedSha(commitSha);
       setMessage('');
       setShowMessageField(false);
+      pushToast({
+        tone: 'success',
+        title: 'Workspace pushed',
+        detail: `Commit ${commitSha.slice(0, 7)} is now on the remote.`,
+      });
     } catch (err) {
-      if (err instanceof MissingScopeError) {
-        surfaceMissingScope(err.missingScopes);
-      } else if (err instanceof GitHubError) {
-        setError(`GitHub ${err.status}: ${err.message}`);
-      } else if (err instanceof Error) {
-        setError(err.message);
+      const view = formatGitError(err, 'Push');
+      if (view.action.kind === 'request-scopes') {
+        surfaceMissingScope(view.action.missingScopes);
       } else {
-        setError('Push failed — unknown error');
+        setError(view.message);
+        setErrorView(view);
       }
     } finally {
       setPushing(false);
@@ -1239,9 +1293,32 @@ function BranchCard() {
       )}
 
       {error && (
-        <p className="mt-2 text-xs text-danger" role="alert">
-          {error}
-        </p>
+        <div className="mt-2 space-y-1.5">
+          <p className="text-xs text-danger" role="alert">
+            {error}
+          </p>
+          {errorView?.action.kind === 'refresh-first' && (
+            <button
+              type="button"
+              onClick={() => void onRefresh()}
+              className="inline-flex h-6 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20"
+            >
+              <RefreshCw size={10} aria-hidden="true" />
+              Refresh first
+            </button>
+          )}
+          {errorView?.action.kind === 'reconnect-token' && (
+            <p className="text-[0.6875rem] text-text-dim">
+              Open the GitHub session card above to reconnect.
+            </p>
+          )}
+          {errorView?.partialWrite && (
+            <p className="text-[0.6875rem] text-warning">
+              The write may have partially landed on the remote. Refresh before retrying so a retry
+              doesn&apos;t double-commit.
+            </p>
+          )}
+        </div>
       )}
       {justPushedSha && !error && (
         <p className="mt-2 inline-flex items-center gap-1 text-[0.6875rem] text-success">
@@ -1822,7 +1899,8 @@ function CreateBranchForm() {
           setError(null);
         }}
         aria-label="Branch name"
-        className="h-7 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+        placeholder="apicircle/wb-feature"
+        className="h-7 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary placeholder:text-text-dim focus:border-accent focus:outline-none"
       />
       {validation && <p className="text-[0.6875rem] text-warning">{validation}</p>}
       {error && (
@@ -1864,6 +1942,9 @@ function CreateBranchForm() {
 function RetiredBranchBanner() {
   const retired = useWorkspaceStore((s) => s.local?.retiredBranch ?? null);
   const dismiss = useWorkspaceStore((s) => s.dismissRetiredBranch);
+  const recheck = useWorkspaceStore((s) => s.recheckRetiredBranch);
+  const pushToast = useWorkspaceStore((s) => s.pushToast);
+  const [rechecking, setRechecking] = useState(false);
   if (!retired) return null;
 
   const isMerged = retired.reason === 'pr-merged';
@@ -1871,8 +1952,34 @@ function RetiredBranchBanner() {
     ? `PR #${retired.prNumber ?? '—'} was merged`
     : `Branch ${retired.branchName} was deleted on GitHub`;
   const detail = isMerged
-    ? `The branch ${retired.branchName} has been retired. Create a new working branch below to continue.`
-    : 'Create a new working branch below to continue.';
+    ? `The branch ${retired.branchName} has been retired. Create a new working branch below to continue, or re-check if the PR was reopened upstream.`
+    : 'Create a new working branch below to continue, or re-check if the branch has been restored upstream.';
+
+  const onRecheck = async () => {
+    setRechecking(true);
+    try {
+      const result = await recheck();
+      if (result.status === 'restored') {
+        pushToast({
+          tone: 'success',
+          title: 'Working branch restored',
+          detail: `${result.branchName} is alive again — synced to ${result.headSha.slice(0, 7)}. Refresh to pull the latest content.`,
+        });
+      } else if (result.status === 'still-retired') {
+        const why =
+          result.reason === 'merged'
+            ? 'The PR is still marked merged on GitHub.'
+            : result.reason === 'deleted'
+              ? 'The branch is still missing from GitHub.'
+              : 'No definitive signal from GitHub yet — try again shortly.';
+        pushToast({ tone: 'info', title: 'Still retired', detail: why });
+      } else {
+        pushToast({ tone: 'error', title: 'Re-check failed', detail: result.message });
+      }
+    } finally {
+      setRechecking(false);
+    }
+  };
 
   return (
     <div
@@ -1884,18 +1991,29 @@ function RetiredBranchBanner() {
       <div className="flex-1">
         <p className="font-medium text-text-primary">{headline}</p>
         <p className="mt-0.5 text-text-muted">{detail}</p>
-        {retired.prUrl && (
-          <a
-            href={retired.prUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-1 inline-flex items-center gap-1 text-[0.6875rem] text-accent hover:underline"
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          {retired.prUrl && (
+            <a
+              href={retired.prUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-[0.6875rem] text-accent hover:underline"
+            >
+              <GitPullRequest size={11} aria-hidden="true" />
+              View PR
+              <ExternalLink size={10} aria-hidden="true" />
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={() => void onRecheck()}
+            disabled={rechecking}
+            className="inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
           >
-            <GitPullRequest size={11} aria-hidden="true" />
-            View PR
-            <ExternalLink size={10} aria-hidden="true" />
-          </a>
-        )}
+            <RefreshCw size={10} aria-hidden="true" />
+            {rechecking ? 'Re-checking…' : 'Re-check branch state'}
+          </button>
+        </div>
       </div>
       <button
         type="button"

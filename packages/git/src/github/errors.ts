@@ -44,3 +44,36 @@ export class UnauthorizedError extends GitHubError {
     this.name = 'UnauthorizedError';
   }
 }
+
+/**
+ * The fetch was aborted by our own timeout (default 15 s). Surfaced with
+ * status 0 because there was no HTTP response. Distinct from a generic
+ * `GitHubError(0)` so the UI can render retry-able copy and warn the user
+ * that a write may have partially landed on the server.
+ */
+export class TimeoutError extends GitHubError {
+  /** Timeout that fired, in ms. Useful for the UI message. */
+  readonly timeoutMs: number;
+  constructor(message: string, timeoutMs: number) {
+    super(message, 0);
+    this.name = 'TimeoutError';
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+/**
+ * Remote ref moved since we last synced — e.g. someone force-pushed the
+ * branch. Thrown by `pushWorkspace` *before* uploading blobs, so the user
+ * is steered to refresh first rather than discovering the divergence
+ * inside a failed `updateRef`.
+ */
+export class BranchDivergedError extends GitHubError {
+  readonly expectedSha: string;
+  readonly actualSha: string;
+  constructor(message: string, expectedSha: string, actualSha: string) {
+    super(message, 0);
+    this.name = 'BranchDivergedError';
+    this.expectedSha = expectedSha;
+    this.actualSha = actualSha;
+  }
+}

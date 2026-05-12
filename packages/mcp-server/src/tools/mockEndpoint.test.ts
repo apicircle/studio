@@ -76,7 +76,9 @@ describe('mock manual + endpoint MCP tools', () => {
     expect(mock.name).toBe('My API');
     expect(mock.endpoints).toEqual([]);
     expect(mock.defaultPort).toBe(4040);
-    expect(mock.cors.enabled).toBe(true);
+    // CORS off by default — same-origin only. Caller opts in via update.
+    expect(mock.cors.enabled).toBe(false);
+    expect(mock.cors.origins).toEqual([]);
     expect(mock.source.kind).toBe('manual');
   });
 

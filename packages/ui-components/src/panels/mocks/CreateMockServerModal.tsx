@@ -50,6 +50,20 @@ export function CreateMockServerModal() {
           setError('Paste the spec content.');
           return;
         }
+        // Lightweight pre-parse so completely malformed input is caught at
+        // create-time rather than at start-time on the desktop runtime. We
+        // don't run the full parser here (it lives in mock-server-core,
+        // which is Node-only); this just confirms the text is a parseable
+        // JSON document. YAML pre-parse stays for the runtime since the
+        // browser has no YAML parser bundled.
+        if (specKind !== 'openapi' || specFormat === 'json') {
+          try {
+            JSON.parse(specText);
+          } catch (e) {
+            setError(`Spec is not valid JSON: ${e instanceof Error ? e.message : 'parse failed'}.`);
+            return;
+          }
+        }
         source =
           specKind === 'openapi'
             ? { kind: 'openapi', spec: specText, format: specFormat }

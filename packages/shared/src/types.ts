@@ -180,6 +180,22 @@ export interface WorkspaceSynced {
   // workspaceStorage backfills `{}` on read and the store always writes
   // a populated value.
   secretKeys?: Record<string, SecretKeyMeta>;
+  /**
+   * Workspace-passphrase crypto state. `null` when no passphrase has been
+   * set yet (the workspace either has no secrets, or hasn't been migrated
+   * to the passphrase model). Populated by `setupPassphrase` the first
+   * time a user creates a passphrase; from then on, decryption requires
+   * the same passphrase to be re-entered (in memory only).
+   *
+   * The actual encrypted secret-value payloads still live in device-local
+   * IndexedDB today; migrating those into the synced doc is its own
+   * follow-up (see docs/passphrase-secret-model-handoff.md).
+   *
+   * `kdf` / `salt` / `iterations` parameterise the PBKDF2 derivation;
+   * `verifier` lets us reject a wrong passphrase up front without trying
+   * to decrypt every payload. See `passphraseKey.ts` for the algorithm.
+   */
+  secretCrypto?: SecretCryptoMeta | null;
   meta: {
     createdAt: string;
     updatedAt: string;
@@ -575,6 +591,24 @@ export interface SecretKeyMeta {
   // so two slots with the same plaintext value still produce distinct keys.
   salt: string;
   createdAt: string;
+}
+
+/**
+ * Workspace-passphrase crypto parameters. Persisted in `WorkspaceSynced.
+ * secretCrypto`, written by `setupPassphrase` and read by `unlockSecretCrypto`.
+ * Single-version contract for now (`pbkdf2-sha256-v1`); future versions
+ * will be additional discriminants on `kdf`.
+ *
+ * `salt` is base64-encoded 16 random bytes; `verifier` is base64-encoded
+ * AES-GCM ciphertext of a fixed sentinel string under the derived key with
+ * a zero IV — comparing it constant-time tells a right passphrase from a
+ * wrong one before any real decrypt is attempted.
+ */
+export interface SecretCryptoMeta {
+  kdf: 'pbkdf2-sha256-v1';
+  salt: string;
+  iterations: number;
+  verifier: string;
 }
 
 // LinkedWorkspace — replaces v1's Repo + apiConnectionSessions. Every

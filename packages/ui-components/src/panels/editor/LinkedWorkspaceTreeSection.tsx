@@ -6,6 +6,7 @@ import {
   FolderOpen,
   Link2,
   Package,
+  RefreshCw,
   Shield,
 } from 'lucide-react';
 import type {
@@ -119,9 +120,7 @@ function LinkedRoot({ link, searchQuery }: { link: LinkedWorkspace; searchQuery:
           {snapshot ? (
             <LinkedTree link={link} snapshot={snapshot} searchQuery={searchQuery} />
           ) : (
-            <p className="rounded-sm border border-dashed border-border-subtle px-2 py-1.5 text-[0.6875rem] text-text-dim">
-              Refresh this link from the Link Workspace panel to load its content.
-            </p>
+            <RefreshLinkInline linkId={link.id} />
           )}
         </div>
       )}
@@ -400,4 +399,44 @@ function byName(folders: Record<string, Folder>, requests: Record<string, ApiReq
     const bName = b.kind === 'folder' ? (folders[b.id]?.name ?? '') : (requests[b.id]?.name ?? '');
     return aName.localeCompare(bName, undefined, { sensitivity: 'base' });
   };
+}
+
+/**
+ * Inline "Refresh link" affordance shown when a linked workspace has been
+ * declared in `synced.linkedWorkspaces` but its snapshot hasn't been
+ * fetched yet (common on first clone, or after a remote pull that adds
+ * a new link). Saves the user a trip to the Link Workspace panel.
+ */
+function RefreshLinkInline({ linkId }: { linkId: string }) {
+  const refreshLinkedWorkspace = useWorkspaceStore((s) => s.refreshLinkedWorkspace);
+  const pushToast = useWorkspaceStore((s) => s.pushToast);
+  const [refreshing, setRefreshing] = useState(false);
+  const onClick = async () => {
+    setRefreshing(true);
+    try {
+      await refreshLinkedWorkspace(linkId);
+    } catch (err) {
+      pushToast({
+        tone: 'error',
+        title: 'Refresh link failed',
+        detail: err instanceof Error ? err.message : 'Unknown error',
+      });
+    } finally {
+      setRefreshing(false);
+    }
+  };
+  return (
+    <div className="space-y-1.5 rounded-sm border border-dashed border-border-subtle px-2 py-1.5 text-[0.6875rem] text-text-dim">
+      <p>Snapshot not loaded yet.</p>
+      <button
+        type="button"
+        onClick={() => void onClick()}
+        disabled={refreshing}
+        className="inline-flex h-6 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-1.5 text-[0.625rem] text-accent hover:bg-accent/20 disabled:opacity-50"
+      >
+        <RefreshCw size={9} aria-hidden="true" />
+        {refreshing ? 'Refreshing…' : 'Refresh link'}
+      </button>
+    </div>
+  );
 }

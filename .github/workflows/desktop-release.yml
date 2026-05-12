@@ -1,0 +1,139 @@
+name: Desktop Release
+
+# =============================================================================
+# Manual / tag-driven desktop release. Sits alongside the changesets-driven
+# `release.yml` (which handles npm publishing of workspace packages) and
+# produces ONLY the Electron installers + `latest*.yml` index files that
+# `electron-updater` consults for auto-update.
+#
+# Trigger:
+#   - Push a tag matching `v*` (e.g. `v0.1.0`, `v0.1.1-rc.1`) — runs the full
+#     pipeline and creates a GitHub Release.
+#   - Manual dispatch with an explicit `tag` input — useful for re-runs or
+#     hot-fix builds without re-tagging.
+#
+# Concurrency: one tag at a time. A second push to the same tag cancels the
+# in-flight run so the latest commit always wins.
+# =============================================================================
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g. v0.1.0). Must already exist on the repo.'
+        required: true
+        type: string
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-installers:
+    name: Build installers (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Workflow-dispatch may target a non-default tag; resolve it
+          # explicitly so the build sees the right source.
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm --filter "./packages/*" build
+
+      - name: Build desktop renderer + main
+        run: pnpm --filter @apicircle/desktop build
+
+      - name: Build platform installers
+        run: node scripts/release/buildDesktopInstallers.mjs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.os }}
+          # latest*.yml are the index files electron-updater consults;
+          # blockmaps allow delta updates (smaller diffs for repeat
+          # downloaders); installers cover all three OS targets.
+          path: |
+            apps/desktop/release/**/*.dmg
+            apps/desktop/release/**/*.exe
+            apps/desktop/release/**/*.AppImage
+            apps/desktop/release/**/*.deb
+            apps/desktop/release/**/*.zip
+            apps/desktop/release/**/*.blockmap
+            apps/desktop/release/**/latest*.yml
+          retention-days: 7
+
+  create-release:
+    name: Create GitHub Release
+    needs: build-installers
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p flat
+          find artifacts -type f -exec cp {} flat/ \;
+          ls -la flat/
+
+      - name: Determine tag
+        id: tag
+        env:
+          DISPATCH_TAG: ${{ github.event.inputs.tag }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ -n "$DISPATCH_TAG" ]; then
+            echo "tag=$DISPATCH_TAG" >> "$GITHUB_OUTPUT"
+          else
+            # github.ref is like refs/tags/v0.1.0 — strip the prefix.
+            echo "tag=${REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create or update release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          # --clobber on a fresh release is a no-op; on a re-run it
+          # overwrites the existing asset (idempotent re-builds).
+          gh release create "$TAG" \
+            --title "APICircle Studio $TAG" \
+            --generate-notes \
+            flat/* || echo "Release exists; uploading with --clobber"
+          gh release upload "$TAG" flat/* --clobber
+
+      - name: Append Early Access install notice
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          NOTICE=$'\n\n---\n\n> **Early Access — unsigned binaries**\n> Desktop installers are not yet code-signed. macOS Gatekeeper and Windows SmartScreen will warn the first time you launch the app and on each update.\n> See [docs/installing.md](https://github.com/apicircle/studio/blob/main/docs/installing.md) for the right-click → Open / More info → Run anyway step.'
+          CURRENT=$(gh release view "$TAG" --json body --jq .body)
+          gh release edit "$TAG" --notes "${CURRENT}${NOTICE}" || true

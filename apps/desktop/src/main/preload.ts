@@ -6,8 +6,15 @@
 // Surface kept tight — every method here adds attack surface, so we
 // only ship the calls renderer features actually need.
 
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type { MockServer, MockRuntimeEntry, McpToolName } from '@apicircle/shared';
+
+/** Payload emitted on the `apicircle:update:available` IPC channel. */
+export interface UpdateAvailablePayload {
+  version: string;
+  releaseNotesUrl: string | null;
+  releaseDate: string | null;
+}
 
 const bridge = {
   encryptString: (plaintext: string): Promise<string> =>
@@ -70,6 +77,26 @@ const bridge = {
       port: number;
       redirectUri: string;
     }> => ipcRenderer.invoke('apicircle:oauth2:startFlow', args),
+  },
+
+  // Auto-update bridge. The renderer subscribes once at mount; the main
+  // process emits exactly one `apicircle:update:available` per downloaded
+  // update (electron-updater's `update-downloaded` event), then the user
+  // can request a restart-to-install via `applyUpdate()`.
+  update: {
+    onAvailable: (cb: (payload: UpdateAvailablePayload) => void): (() => void) => {
+      const handler = (_e: IpcRendererEvent, payload: UpdateAvailablePayload) => cb(payload);
+      ipcRenderer.on('apicircle:update:available', handler);
+      return () => {
+        ipcRenderer.removeListener('apicircle:update:available', handler);
+      };
+    },
+    applyUpdate: (): Promise<void> => ipcRenderer.invoke('apicircle:update:apply') as Promise<void>,
+    checkNow: (): Promise<{ checked: boolean; reason?: string }> =>
+      ipcRenderer.invoke('apicircle:update:checkNow') as Promise<{
+        checked: boolean;
+        reason?: string;
+      }>,
   },
 };
 

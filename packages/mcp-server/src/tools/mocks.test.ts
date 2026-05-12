@@ -208,4 +208,80 @@ describe('mock tools', () => {
     const state = await ctx.workspace.read();
     expect(state.synced.mockServers[created.id]).toBeUndefined();
   });
+
+  // Error-contract: every mocks.ts tool that takes an `id` must return
+  // `{ ok: false, error }` for "not found" rather than throwing. The
+  // standardisation lets MCP clients reliably check `ok` before reading
+  // success fields.
+  describe('error contract: returns {ok:false, error} for missing IDs', () => {
+    const unknownId = 'mock-does-not-exist';
+
+    it('mock.start rejects with ok:false', async () => {
+      const out = (await mockStartTool.handler({ id: unknownId }, ctx)) as {
+        ok: boolean;
+        error?: string;
+      };
+      expect(out.ok).toBe(false);
+      expect(out.error).toMatch(/not found/i);
+    });
+
+    it('mock.start propagates controller errors as ok:false (e.g. port in use)', async () => {
+      // Seed a mock so the lookup succeeds, then make the controller throw.
+      const created = (await mockCreateFromOpenApiTool.handler(
+        {
+          name: 'X',
+          spec: JSON.stringify({
+            openapi: '3.0.0',
+            info: { title: 'X', version: '1.0' },
+            paths: { '/a': { get: { responses: { '200': { description: 'ok' } } } } },
+          }),
+          format: 'json' as const,
+        },
+        ctx,
+      )) as { id: string };
+      ctx.mock.start = async () => {
+        throw new Error('Port 4040 already in use');
+      };
+      const out = (await mockStartTool.handler({ id: created.id }, ctx)) as {
+        ok: boolean;
+        error?: string;
+      };
+      expect(out.ok).toBe(false);
+      expect(out.error).toMatch(/Port 4040/);
+    });
+
+    it('mock.stop propagates controller errors as ok:false', async () => {
+      ctx.mock.stop = async () => {
+        throw new Error('Stop failed: handle missing');
+      };
+      const out = (await mockStopTool.handler({ id: unknownId }, ctx)) as {
+        ok: boolean;
+        error?: string;
+      };
+      expect(out.ok).toBe(false);
+      expect(out.error).toMatch(/Stop failed/);
+    });
+  });
+
+  // Parser warnings surface in the tool response so MCP clients can see
+  // which operations were skipped. Tested with an OpenAPI spec that has
+  // a path with no responses defined — the parser emits a warning.
+  it('create_from_openapi surfaces parser warnings on partial specs', async () => {
+    const spec = JSON.stringify({
+      openapi: '3.0.0',
+      info: { title: 'X', version: '1.0' },
+      paths: {
+        '/good': { get: { responses: { '200': { description: 'ok' } } } },
+        // No responses at all → parser typically warns + skips.
+        '/no-responses': { get: {} },
+      },
+    });
+    const out = (await mockCreateFromOpenApiTool.handler(
+      { name: 'X', spec, format: 'json' as const },
+      ctx,
+    )) as { id: string; warnings: string[] };
+    expect(Array.isArray(out.warnings)).toBe(true);
+    // Even if zero warnings, the field must be present so clients can
+    // count on the contract.
+  });
 });

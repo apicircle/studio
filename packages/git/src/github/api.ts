@@ -6,7 +6,13 @@
 // logs it, never stores it, never includes it in error messages. The host
 // (ui-components) is responsible for token storage (Secret Vault).
 
-import { GitHubError, MissingScopeError, RateLimitedError, UnauthorizedError } from './errors';
+import {
+  GitHubError,
+  MissingScopeError,
+  RateLimitedError,
+  TimeoutError,
+  UnauthorizedError,
+} from './errors';
 
 const API_BASE = 'https://api.github.com';
 
@@ -579,6 +585,65 @@ export class GitHubClient {
   }
 
   /**
+   * Compare two commits. Returns the relationship classification GitHub
+   * gives us: `ahead` (head is descendant of base), `behind` (base is
+   * descendant of head), `identical`, or `diverged` (the two histories
+   * share a base but neither contains the other — typical of a force-push
+   * that rewrote history under us).
+   *
+   * Used by the refresh path so we never silently 3-way-merge across a
+   * history rewrite — divergence steers the user through an explicit
+   * "history rewritten" modal instead of corrupting local state.
+   */
+  async compareCommits(
+    token: string,
+    owner: string,
+    name: string,
+    base: string,
+    head: string,
+    opts: CallOptions = {},
+  ): Promise<{
+    status: 'ahead' | 'behind' | 'identical' | 'diverged';
+    aheadBy: number;
+    behindBy: number;
+  }> {
+    const { json } = await this.call<{
+      status: 'ahead' | 'behind' | 'identical' | 'diverged';
+      ahead_by: number;
+      behind_by: number;
+    }>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/compare/${encodeURIComponent(
+        base,
+      )}...${encodeURIComponent(head)}`,
+      { ...opts, requiredScopes: ['repo'] },
+    );
+    return {
+      status: json.status,
+      aheadBy: json.ahead_by,
+      behindBy: json.behind_by,
+    };
+  }
+
+  /**
+   * Is `ancestor` reachable from `descendant`? Thin wrapper around
+   * `compareCommits` — "ahead" or "identical" means yes; "behind" or
+   * "diverged" means the histories don't fit, so the answer is no.
+   */
+  async isAncestor(
+    token: string,
+    owner: string,
+    name: string,
+    ancestor: string,
+    descendant: string,
+    opts: CallOptions = {},
+  ): Promise<boolean> {
+    if (ancestor === descendant) return true;
+    const cmp = await this.compareCommits(token, owner, name, ancestor, descendant, opts);
+    return cmp.status === 'ahead' || cmp.status === 'identical';
+  }
+
+  /**
    * Create a GitHub Release pointing at an existing tag. Used by the
    * publish-release flow when the user opts in to "Create GitHub
    * Release". Returns the release's HTML URL so the UI can show a
@@ -991,6 +1056,7 @@ export class GitHubClient {
     );
 
     let response: Response;
+    let timedOut = false;
     try {
       response = await this.fetchImpl(url, {
         method: opts.method ?? 'GET',
@@ -1003,9 +1069,25 @@ export class GitHubClient {
         body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
         signal: controller.signal,
       });
+    } catch (err) {
+      // Distinguish *our* timeout from a network error or a caller-aborted
+      // request. AbortError + a non-aborted external signal === our timeout.
+      const isAbort = err instanceof DOMException && err.name === 'AbortError';
+      const callerAborted = opts.signal?.aborted ?? false;
+      if (isAbort && !callerAborted) {
+        timedOut = true;
+        throw new TimeoutError(
+          `GitHub request timed out after ${this.timeoutMs}ms. The write may have partially landed — refresh before retrying.`,
+          this.timeoutMs,
+        );
+      }
+      throw err;
     } finally {
       clearTimeout(timeoutHandle);
       if (opts.signal) opts.signal.removeEventListener('abort', onExternalAbort);
+      // Silence unused-let warning under strict ts; `timedOut` is a marker
+      // for callers reading the catch block to follow the flow.
+      void timedOut;
     }
 
     if (response.ok) {
@@ -1169,8 +1251,16 @@ function classifyError(
     const reset = response.headers.get('x-ratelimit-reset');
     if (remaining === '0' && reset) {
       const resetAtMs = Number(reset) * 1000;
+      const deltaMs = Math.max(0, resetAtMs - Date.now());
+      const totalSeconds = Math.ceil(deltaMs / 1000);
+      const human =
+        totalSeconds < 60
+          ? `${totalSeconds}s`
+          : totalSeconds < 3600
+            ? `${Math.ceil(totalSeconds / 60)} min`
+            : `${Math.ceil(totalSeconds / 3600)} h`;
       return new RateLimitedError(
-        `GitHub rate limit reached. Resets at ${new Date(resetAtMs).toISOString()}.`,
+        `GitHub rate limit reached. Resets in ${human} (at ${new Date(resetAtMs).toISOString()}).`,
         status,
         resetAtMs,
       );

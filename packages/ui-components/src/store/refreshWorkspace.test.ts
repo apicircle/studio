@@ -189,6 +189,39 @@ describe('workspaceStore.refreshWorkspace', () => {
     expect(useWorkspaceStore.getState().local!.sync.lastPulledSha).toBeNull();
   });
 
+  it('returns history-rewritten when the remote HEAD is not a descendant of lastPushedSha (force-push)', async () => {
+    await setupConnectedBranch();
+    const localSynced = useWorkspaceStore.getState().synced!;
+    // Stamp a baseline `lastPushedSha` so the ancestry pre-flight kicks in.
+    const localBefore = useWorkspaceStore.getState().local!;
+    useWorkspaceStore.setState({
+      local: {
+        ...localBefore,
+        workingBranch: { ...localBefore.workingBranch!, lastPushedSha: 'sha-mine-pushed' },
+      },
+    });
+    const remote: WorkspaceSynced = { ...localSynced, workspaceName: 'Rewritten' };
+
+    vi.stubGlobal(
+      'fetch',
+      queuedFetch([
+        // probeBranchRetirement now returns the head SHA — must differ
+        // from lastPushedSha to trigger the ancestry check below.
+        { body: { name: 'apicircle/wb-aaa', commit: { sha: 'sha-remote-rewrite' } } },
+        fileContents(remote, 'sha-blob'),
+        // compareCommits → diverged (force-push case)
+        { body: { status: 'diverged', ahead_by: 1, behind_by: 1 } },
+      ]),
+    );
+
+    const result = await useWorkspaceStore.getState().refreshWorkspace();
+    expect(result.status).toBe('history-rewritten');
+    const pending = useWorkspaceStore.getState().pendingRefresh!;
+    expect(pending.historyRewritten).toBe(true);
+    // synced doc untouched until user picks a side via the modal.
+    expect(useWorkspaceStore.getState().synced!.workspaceName).toBe(localSynced.workspaceName);
+  });
+
   // Retirement detection: refresh runs `getBranchHead` (and `getPullRequest`
   // if a PR was opened) before the diff. If those say the branch is over,
   // we clear `workingBranch`, set `local.retiredBranch`, and return

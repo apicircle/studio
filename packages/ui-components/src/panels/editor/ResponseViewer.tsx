@@ -106,14 +106,25 @@ export function ResponseViewer({ result, assertions, isExecuting, onRetry }: Res
 
   const responseContentType = findResponseContentType(result.headers);
 
-  const bodyEditor = (
-    <MonacoResponseViewer
-      value={result.body.length === 0 ? '(empty body)' : result.body}
-      contentType={responseContentType}
-      ariaLabel="Response body"
-      height="100%"
-    />
-  );
+  // Empty-body responses render as a dedicated card instead of stuffing
+  // the placeholder string into Monaco — the editor styling makes the
+  // sentinel look like a real (string) body, which has confused users.
+  const bodyEditor =
+    result.body.length === 0 ? (
+      <div className="flex h-full flex-col items-center justify-center gap-1 p-6 text-center text-xs text-text-dim">
+        <p className="font-medium text-text-muted">Empty response body</p>
+        <p className="text-[0.6875rem]">
+          The server returned no body bytes. Status, headers, and timing are still available above.
+        </p>
+      </div>
+    ) : (
+      <MonacoResponseViewer
+        value={result.body}
+        contentType={responseContentType}
+        ariaLabel="Response body"
+        height="100%"
+      />
+    );
 
   const panelContent = (
     <div className="flex h-full flex-col">

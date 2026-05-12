@@ -17,16 +17,22 @@ import {
   startCallbackServer,
   type CallbackResult,
 } from './oauth2Server';
+import { readWindowBounds, writeWindowBounds } from './windowState';
+import { registerAutoUpdater } from './autoUpdater';
 
 const WEB_DIST_INDEX = path.resolve(__dirname, '../../../web/dist/index.html');
 
 const mockManager = new MockManager();
 let mcpManager: McpManager | null = null;
+let mainWindow: BrowserWindow | null = null;
 
 function createWindow(): BrowserWindow {
+  // Restore the user's last frame if it's still on-screen; fall back to a
+  // sensible default otherwise. `readWindowBounds` clamps to a real
+  // display so a disconnected monitor doesn't strand the window.
+  const restored = readWindowBounds();
   const win = new BrowserWindow({
-    width: 1280,
-    height: 820,
+    ...(restored ?? { width: 1280, height: 820 }),
     minWidth: 960,
     minHeight: 600,
     autoHideMenuBar: true,
@@ -37,6 +43,16 @@ function createWindow(): BrowserWindow {
       sandbox: true,
     },
   });
+  // Save bounds on resize / move (debounced via the OS event coalescing —
+  // these fire at end-of-drag on Windows / macOS) and on graceful close.
+  const persist = () => {
+    if (!win.isDestroyed() && !win.isMinimized() && !win.isMaximized()) {
+      writeWindowBounds(win.getBounds());
+    }
+  };
+  win.on('resize', persist);
+  win.on('move', persist);
+  win.on('close', persist);
   void win.loadFile(WEB_DIST_INDEX);
   return win;
 }
@@ -79,6 +95,13 @@ ipcMain.handle(
       timeoutMs?: number;
     },
   ): Promise<CallbackResult> => {
+    // Sanity-check the timeout. Sub-5-second timeouts are guaranteed to
+    // fire before the user even sees the IdP consent screen — there's no
+    // realistic flow that completes that fast. Reject up-front so a bad
+    // caller can't burn ports on doomed flows.
+    if (args.timeoutMs !== undefined && args.timeoutMs < 5000) {
+      throw new Error('timeoutMs must be at least 5000ms');
+    }
     // Race the callback promise with the browser-open call. If the
     // browser fails to open, the user can still complete the flow by
     // pasting the URL — but we surface the failure for diagnostics.
@@ -105,9 +128,14 @@ void app.whenReady().then(() => {
   mcpManager = new McpManager();
   registerMockBridge(mockManager);
   registerMcpBridge(mcpManager);
-  createWindow();
+  mainWindow = createWindow();
+  // Auto-update bridge — emits `apicircle:update:available` to the
+  // renderer once an update has been downloaded. No-ops cleanly when
+  // electron-updater isn't installed (e.g. fresh clone) so the rest of
+  // the app keeps working.
+  void registerAutoUpdater(() => mainWindow);
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
   });
 });
 
@@ -122,4 +150,16 @@ app.on('before-quit', () => {
   // Belt-and-braces: if the user quits via the app menu / Cmd-Q, ensure
   // every spawned mock server is torn down before the process exits.
   void mockManager.stopAll();
+});
+
+// Last-resort guards so a stray error in an IPC handler or mock callback
+// doesn't crash the main process silently. We log + tear down spawned
+// children + quit cleanly — better than zombie processes hanging around.
+process.on('uncaughtException', (err) => {
+  console.error('[main] uncaught exception:', err);
+  void mockManager.stopAll();
+  app.quit();
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[main] unhandled rejection:', reason);
 });

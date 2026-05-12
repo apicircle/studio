@@ -107,6 +107,15 @@ function LinkedRequestEditorBody({
 
   return (
     <div className="flex flex-col gap-4">
+      <p
+        className="rounded-sm border border-accent/30 bg-accent/5 px-2.5 py-1.5 text-[0.6875rem] text-text-muted"
+        role="note"
+      >
+        <strong className="text-text-primary">Local overrides only.</strong> Edits made here are
+        stored on your working branch and never propagate back to{' '}
+        <span className="font-mono text-text-primary">{link.name}</span> — the source workspace
+        stays read-only.
+      </p>
       <div className="flex items-start justify-between gap-3 rounded-sm border border-border-subtle bg-surface p-3 text-xs">
         <div className="flex-1">
           <p className="text-text-muted">

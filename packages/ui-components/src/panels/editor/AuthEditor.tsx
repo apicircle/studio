@@ -17,7 +17,12 @@ import type {
   RequestAuth,
   RequestAuthType,
 } from '@apicircle/shared';
-import { defaultAuthFor, validateAwsRegion, validateJsonString } from '@apicircle/shared';
+import {
+  defaultAuthFor,
+  validateAwsRegion,
+  validateHttpHeaderName,
+  validateJsonString,
+} from '@apicircle/shared';
 import { SecretInput } from '../../primitives/SecretInput';
 import { cn } from '../../primitives/cn';
 import { OAuth2FlowActions } from './OAuth2FlowActions';
@@ -220,13 +225,10 @@ export function AuthEditor({
       {auth.type === 'custom-header' && (
         <div className={gridClass}>
           <Field id={`hdr-key-${idPrefix}`} label="Header name">
-            <input
+            <CustomHeaderNameInput
               id={`hdr-key-${idPrefix}`}
-              aria-label="Header name"
               value={auth.key}
-              onChange={(e) => update({ key: e.target.value })}
-              className={inputClass}
-              placeholder="X-Auth"
+              onChange={(v) => update({ key: v })}
             />
           </Field>
           <Field label="Header value">
@@ -781,6 +783,47 @@ function RegionInput({ value, onChange }: { value: string; onChange: (next: stri
           <option key={r} value={r} />
         ))}
       </datalist>
+      {invalid && (
+        <p role="alert" className="mt-1 text-[0.625rem] text-danger">
+          {result.reason}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Custom-header `auth.key` field. Validates the name as an HTTP token
+ * (RFC 7230) at edit time so an invalid header name surfaces *here*
+ * instead of corrupting the wire-format at send time.
+ */
+function CustomHeaderNameInput({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const result = validateHttpHeaderName(value);
+  const invalid = !result.ok && value.trim().length > 0;
+  return (
+    <div className="flex flex-col">
+      <input
+        id={id}
+        aria-label="Header name"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="X-Auth"
+        className={cn(
+          'h-8 w-full rounded-sm border bg-card px-2 text-xs text-text-primary focus:outline-none focus:ring-1',
+          invalid
+            ? 'border-danger focus:border-danger focus:ring-danger/40'
+            : 'border-border focus:border-accent focus:ring-accent/30',
+        )}
+        aria-invalid={invalid || undefined}
+      />
       {invalid && (
         <p role="alert" className="mt-1 text-[0.625rem] text-danger">
           {result.reason}

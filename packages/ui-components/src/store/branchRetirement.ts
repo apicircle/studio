@@ -28,6 +28,12 @@ export function parsePrNumberFromUrl(url: string | null | undefined): number | n
 export interface BranchProbeResult {
   /** Whether the branch ref still exists on GitHub. `null` = couldn't tell (transient). */
   branchExists: boolean | null;
+  /**
+   * Head commit SHA on the remote branch when `branchExists === true`,
+   * else `null`. Surfaced so callers (`refreshWorkspace`) can compare it
+   * against `branch.lastPushedSha` for ancestry without a second `getRef`.
+   */
+  branchHeadSha: string | null;
   /** PR state if a PR was opened and we could fetch it. `null` = no PR or fetch failed. */
   prState: { merged: boolean; state: 'open' | 'closed' } | null;
 }
@@ -47,23 +53,34 @@ export async function probeBranchRetirement(
   token: string,
   branch: WorkingBranch,
 ): Promise<BranchProbeResult> {
-  const branchExists = await probeBranchExists(client, token, branch);
+  const head = await probeBranchHead(client, token, branch);
   const prState = await probePrState(client, token, branch);
-  return { branchExists, prState };
+  return {
+    branchExists: head.exists,
+    branchHeadSha: head.sha,
+    prState,
+  };
 }
 
-async function probeBranchExists(
+async function probeBranchHead(
   client: GitHubClient,
   token: string,
   branch: WorkingBranch,
-): Promise<boolean | null> {
+): Promise<{ exists: boolean | null; sha: string | null }> {
   try {
-    await client.getBranchHead(token, branch.repoOwner, branch.repoName, branch.name);
-    return true;
+    const result = await client.getBranchHead(
+      token,
+      branch.repoOwner,
+      branch.repoName,
+      branch.name,
+    );
+    return { exists: true, sha: result.commitSha };
   } catch (err) {
-    if (err instanceof GitHubError && err.status === 404) return false;
+    if (err instanceof GitHubError && err.status === 404) {
+      return { exists: false, sha: null };
+    }
     // Auth/rate/network — don't pretend we know.
-    return null;
+    return { exists: null, sha: null };
   }
 }
 

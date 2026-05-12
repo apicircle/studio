@@ -26,7 +26,7 @@ export interface PreSendWarning {
 }
 
 export interface PreSendBlocker {
-  kind: 'auth-fields-missing' | 'unparseable-url';
+  kind: 'auth-fields-missing' | 'unparseable-url' | 'empty-url';
   message: string;
 }
 
@@ -58,6 +58,32 @@ export function preSendValidation({
 }: PreSendValidationInput): PreSendValidationResult {
   const warnings: PreSendWarning[] = [];
   const blockers: PreSendBlocker[] = [];
+
+  // Rule 0: URL is required. Empty URL is always a blocker — without it
+  // there is nothing to send. Unparseable URLs (after variable resolution)
+  // are also blockers, since the fetch layer would throw on send.
+  const urlTrimmed = request.url.trim();
+  if (urlTrimmed === '') {
+    blockers.push({ kind: 'empty-url', message: 'URL is required.' });
+  } else {
+    const { value: resolvedUrl, missing: urlMissing } = resolveString(request.url, scope);
+    // Only attempt to parse if the URL has no unresolved {{var}} references —
+    // otherwise the warning from Rule 1 is the right signal, not a blocker.
+    if (urlMissing.length === 0) {
+      try {
+        // URL constructor throws on malformed input. Accept relative paths
+        // (starting with /) since the runtime may be configured with a base.
+        if (!resolvedUrl.startsWith('/')) {
+          new URL(resolvedUrl);
+        }
+      } catch {
+        blockers.push({
+          kind: 'unparseable-url',
+          message: `URL "${resolvedUrl}" is not a valid URL.`,
+        });
+      }
+    }
+  }
 
   // Rule 1: unresolved variables in URL / headers / query / cookies / body.
   const unresolved = new Set<string>();

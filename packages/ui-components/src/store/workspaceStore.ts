@@ -36,6 +36,7 @@ import type {
 import {
   type GitHubBranch,
   type GitHubRepo,
+  BranchDivergedError,
   GitHubClient,
   MissingScopeError,
 } from '@apicircle/git';
@@ -96,6 +97,7 @@ import {
   putAttachment,
 } from '../persistence/attachments';
 import { getMasterKey } from '../persistence/secretKey';
+import { initSecretCrypto, unlockSecretCrypto } from '../persistence/passphraseKey';
 import {
   WorkspaceMismatchError,
   type WorkspaceRegistry,
@@ -327,6 +329,11 @@ export type RefreshOutcome =
   | { status: 'up-to-date' }
   | { status: 'merged' }
   | { status: 'conflicts'; diff: ThreeWayDiff }
+  // Remote branch HEAD was *not* a descendant of our last pushed commit —
+  // typical of a force-push that rewrote history. We never silently merge
+  // across this; the user must explicitly choose to adopt the remote or
+  // keep local via the resolver modal.
+  | { status: 'history-rewritten'; diff: ThreeWayDiff }
   // Refresh discovered the working branch is retired (PR merged, or branch
   // deleted on GitHub). The store has cleared `workingBranch` and set
   // `local.retiredBranch` so the UI can surface a banner; nothing else to do.
@@ -339,10 +346,24 @@ export type RefreshOutcome =
  */
 export type RightDockTab = 'variables' | 'vault' | 'assets';
 
+/**
+ * Pending refresh state staged after `refreshWorkspace` finishes the
+ * remote read but before the merge lands. Discriminated so the
+ * ConflictResolverModal renders the right view: classic conflicts vs.
+ * a "remote history was rewritten" path that *requires* explicit user
+ * intent — never silently merging across a force-push.
+ */
 interface PendingRefresh {
   diff: ThreeWayDiff;
   remote: WorkspaceSynced;
   remoteSha: string;
+  /**
+   * When true, the remote branch HEAD was *not* a descendant of our last
+   * pushed commit — i.e. someone force-pushed and the histories diverged.
+   * The modal must require explicit "Adopt remote" / "Keep local" / "Cancel"
+   * rather than auto-merging.
+   */
+  historyRewritten?: boolean;
 }
 
 /**
@@ -448,6 +469,57 @@ type WorkspaceStore = {
   toasts: ReadonlyArray<ToastRecord>;
   pushToast: (toast: Omit<ToastRecord, 'id'>) => string;
   dismissToast: (id: string) => void;
+
+  // --- Workspace passphrase (in-memory only — never persisted) -----------
+  /**
+   * The decrypted master key, if the workspace passphrase has been
+   * unlocked this session. `null` means secrets are locked (or no
+   * passphrase has been set yet). NEVER serialised to IDB / git.
+   */
+  secretKey: CryptoKey | null;
+  /**
+   * Discriminated lock state for the UI:
+   *   - 'unset'   — workspace has no secretCrypto yet (no passphrase
+   *                 ever set). Lazy: don't prompt unless the user
+   *                 explicitly starts adding a secret.
+   *   - 'locked'  — secretCrypto is set, key is in memory cleared
+   *                 (post-restart or post-idle-lock). Prompt to unlock
+   *                 before any secret operation.
+   *   - 'unlocked' — key is held in `secretKey`; secret reads/writes
+   *                 work transparently.
+   */
+  secretLockState: 'unset' | 'locked' | 'unlocked';
+  /**
+   * Timestamp (ms since epoch) of the last action that touched the
+   * passphrase-derived key. Used by the 15-minute idle-lock timer.
+   * `null` means "never used this session" — no idle pressure yet.
+   */
+  lastSecretActivityAt: number | null;
+  /**
+   * Initialise the secret-crypto blob from a fresh passphrase. Writes
+   * `synced.secretCrypto` and stashes the derived key in memory.
+   * Returns the verifier so the modal can confirm success.
+   */
+  setupPassphrase: (passphrase: string) => Promise<{ ok: true } | { ok: false; reason: string }>;
+  /**
+   * Verify a passphrase against `synced.secretCrypto.verifier`. On match,
+   * stash the derived key in memory (state goes to 'unlocked'). On
+   * mismatch, return the reason so the modal can render it.
+   */
+  unlockWithPassphrase: (
+    passphrase: string,
+  ) => Promise<{ ok: true } | { ok: false; reason: string }>;
+  /**
+   * Drop the in-memory key. Called by the 15-min idle lock and by an
+   * explicit user "Lock now" affordance.
+   */
+  lockSecrets: () => void;
+  /**
+   * Note that the user just did something that touched secret-aware
+   * state. Resets the idle-lock countdown. Called from any flow that
+   * reads or writes encrypted values.
+   */
+  noteSecretActivity: () => void;
   // Per-request last-run cache. Not persisted — request runs land in
   // local.history once they complete; this is the live working result for
   // the editor panel.
@@ -1091,6 +1163,21 @@ type WorkspaceStore = {
    * dismiss X). Idempotent — safe to call when nothing is set.
    */
   dismissRetiredBranch: () => void;
+  /**
+   * Re-probe a retired branch's GitHub state. If the branch is alive
+   * again (someone reopened the PR or restored the deleted branch),
+   * reconstruct `workingBranch` from the probe and clear `retiredBranch`.
+   *
+   * Returns a discriminated result so the UI can show the right toast:
+   *   - `restored` — banner clears + the user is back on the working branch
+   *   - `still-retired` — nothing changed; banner stays
+   *   - `error` — transient probe failure; banner stays
+   */
+  recheckRetiredBranch: () => Promise<
+    | { status: 'restored'; branchName: string; headSha: string }
+    | { status: 'still-retired'; reason: 'merged' | 'deleted' | 'inconclusive' }
+    | { status: 'error'; message: string }
+  >;
 
   // --- Releases (workspace-self) ---------------------------------------
   /**
@@ -1451,6 +1538,62 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     return id;
   },
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+
+  secretKey: null,
+  secretLockState: 'unset',
+  lastSecretActivityAt: null,
+
+  setupPassphrase: async (passphrase) => {
+    const synced = get().synced;
+    if (!synced) return { ok: false, reason: 'Workspace not ready' };
+    if (synced.secretCrypto) {
+      // Already set up — caller should be using unlockWithPassphrase.
+      return { ok: false, reason: 'Workspace already has a passphrase set.' };
+    }
+    try {
+      const { crypto: blob, key } = await initSecretCrypto(passphrase);
+      const next: WorkspaceSynced = { ...synced, secretCrypto: blob };
+      set({
+        synced: next,
+        secretKey: key,
+        secretLockState: 'unlocked',
+        lastSecretActivityAt: Date.now(),
+      });
+      await saveSynced(next);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, reason: err instanceof Error ? err.message : 'Setup failed' };
+    }
+  },
+
+  unlockWithPassphrase: async (passphrase) => {
+    const synced = get().synced;
+    if (!synced?.secretCrypto) {
+      return { ok: false, reason: 'No passphrase has been set on this workspace yet.' };
+    }
+    const result = await unlockSecretCrypto(passphrase, synced.secretCrypto);
+    if (!result.ok) return result;
+    set({
+      secretKey: result.key,
+      secretLockState: 'unlocked',
+      lastSecretActivityAt: Date.now(),
+    });
+    return { ok: true };
+  },
+
+  lockSecrets: () => {
+    const synced = get().synced;
+    set({
+      secretKey: null,
+      secretLockState: synced?.secretCrypto ? 'locked' : 'unset',
+      lastSecretActivityAt: null,
+    });
+  },
+
+  noteSecretActivity: () => {
+    if (get().secretLockState !== 'unlocked') return;
+    set({ lastSecretActivityAt: Date.now() });
+  },
   activePanel: readStoredPanel(),
   rightDock: { tab: null, mode: 'overlay' },
   importModalOpen: false,
@@ -3473,7 +3616,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const synced = get().synced;
     if (!local || !synced) throw new Error('Workspace not ready');
     const branch = local.workingBranch;
-    if (!branch) throw new Error('Create a working branch before pushing');
+    if (!branch) throw new Error('Create a working branch in the Workspace panel before pushing');
     const repo = local.connectedRepo;
     if (!repo) throw new Error('No repo connected');
 
@@ -3487,11 +3630,28 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const owner = branch.repoOwner;
     const name = branch.repoName;
 
-    // 1. Read the branch's current head SHA.
+    // 0. Pre-flight: confirm the remote branch head still matches what we
+    //    last observed. If it doesn't, somebody (force-push, another client,
+    //    a CI bot) moved the branch and we'd otherwise upload blobs + a
+    //    tree + a commit before discovering the divergence at updateRef.
+    //    Throw BranchDivergedError up-front so the UI can route the user
+    //    through Refresh first — no orphan objects on the remote.
     const head = await client.getRef(token, owner, name, branch.name);
-    // 2. Read its tree SHA.
+    if (branch.headSha && head.sha !== branch.headSha) {
+      throw new BranchDivergedError(
+        `Remote branch "${branch.name}" has moved since your last sync. ` +
+          `Refresh first to reconcile, then push again.`,
+        branch.headSha,
+        head.sha,
+      );
+    }
+
+    // If steps 1-5 throw, the local store stays untouched (mutation only
+    // happens in step 6 below). A retry is safe: orphan blobs/trees from a
+    // partial run are harmless, and updateRef is idempotent on the same SHA.
+    // 1. Read the head tree SHA so createTree can layer on top of it.
     const headCommit = await client.getCommit(token, owner, name, head.sha);
-    // 3. Upload every locally-cached attachment as a blob. Slots whose
+    // 2. Upload every locally-cached attachment as a blob. Slots whose
     //    bytes aren't in local IDB are skipped — base_tree keeps the
     //    remote entry intact (or absent, on first push).
     const slots = collectAttachmentSlots(synced);
@@ -3508,26 +3668,27 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         sha: blob.sha,
       });
     }
-    // 4. Build the new tree, layering workspace.json + attachments over base_tree.
+    // 3. Build the new tree, layering workspace.json + attachments over base_tree.
     const content = serializeWorkspaceForGit(synced);
     const newTree = await client.createTree(token, owner, name, {
       baseTreeSha: headCommit.treeSha,
       entries: [{ path: 'workspace.json', content }, ...attachmentEntries],
     });
-    // 5. Create the commit.
+    // 4. Create the commit.
     const message = (commitMessage ?? '').trim() || 'chore: sync workspace via API Circle Studio';
     const newCommit = await client.createCommit(token, owner, name, {
       message,
       treeSha: newTree.sha,
       parents: [head.sha],
     });
-    // 6. Fast-forward the branch ref.
+    const newCommitSha = newCommit.sha;
+    // 5. Fast-forward the branch ref.
     await client.updateRef(token, owner, name, {
       branch: branch.name,
       sha: newCommit.sha,
     });
 
-    // 7. Persist the new local branch state + refresh the sync snapshot.
+    // 6. Persist the new local branch state + refresh the sync snapshot.
     //    After a successful push, the just-pushed `synced` doc IS the
     //    canonical remote state on this branch, so we re-base the 3-way
     //    diff machinery against it. Without this, the UnpushedChangesStrip
@@ -3536,8 +3697,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     //    unpushed even though the remote now matches local.
     const updatedBranch: WorkingBranch = {
       ...branch,
-      headSha: newCommit.sha,
-      lastPushedSha: newCommit.sha,
+      headSha: newCommitSha,
+      lastPushedSha: newCommitSha,
     };
     const currentLocal = get().local!;
     const next: WorkspaceLocal = {
@@ -3546,14 +3707,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       sync: {
         ...currentLocal.sync,
         lastPulledSnapshot: synced,
-        lastPulledSha: newCommit.sha,
+        lastPulledSha: newCommitSha,
         lastPulledAt: new Date().toISOString(),
         dirtyKeys: [],
       },
     };
     set({ local: next });
     void saveLocal(next);
-    return { commitSha: newCommit.sha };
+    return { commitSha: newCommitSha };
   },
 
   publishRelease: async (args) => {
@@ -4652,6 +4813,44 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const base = local.sync.lastPulledSnapshot;
     const diff = computeThreeWayDiff(base, synced, remote);
 
+    // Ancestry pre-flight: if we have a `lastPushedSha` baseline AND the
+    // probe gave us the current remote HEAD, confirm the remote is a
+    // descendant of our last pushed commit. Otherwise we'd be about to
+    // merge across a history rewrite (force-push), which can silently
+    // re-apply local edits on top of an upstream that intentionally
+    // deleted them. The user must explicitly opt in via the resolver modal.
+    //
+    // We reuse `probe.branchHeadSha` to avoid a redundant `getRef` —
+    // the probe already fetched the branch head for retirement detection.
+    let historyRewritten = false;
+    if (
+      branch.lastPushedSha &&
+      probe.branchHeadSha &&
+      probe.branchHeadSha !== branch.lastPushedSha
+    ) {
+      try {
+        const isAncestor = await client.isAncestor(
+          token,
+          branch.repoOwner,
+          branch.repoName,
+          branch.lastPushedSha,
+          probe.branchHeadSha,
+        );
+        historyRewritten = !isAncestor;
+      } catch {
+        // Best-effort: a transient API failure here should not block the
+        // user's refresh. Fall through to the standard 3-way path; the
+        // baseline diff is still safer than nothing.
+      }
+    }
+
+    if (historyRewritten) {
+      // Never auto-merge across a rewrite. Surface a dedicated path so the
+      // user can review the diff explicitly before adopting either side.
+      set({ pendingRefresh: { diff, remote, remoteSha: file.sha, historyRewritten: true } });
+      return { status: 'history-rewritten', diff };
+    }
+
     if (diff.entries.length === 0) {
       // Local + remote agree — nothing to merge, just refresh the snapshot.
       const next: WorkspaceLocal = {
@@ -4712,6 +4911,89 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     void saveLocal(next);
   },
 
+  recheckRetiredBranch: async () => {
+    const local = get().local;
+    if (!local?.retiredBranch || !local.connectedRepo) {
+      return { status: 'still-retired', reason: 'inconclusive' } as const;
+    }
+    const retired = local.retiredBranch;
+    const repo = local.connectedRepo;
+    let token: string;
+    try {
+      token = await decryptSessionToken(local);
+    } catch (err) {
+      return {
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Could not decrypt session token',
+      } as const;
+    }
+    const client = new GitHubClient();
+    // Reconstruct the minimal WorkingBranch fields probeBranchRetirement needs.
+    // PR url is preserved on the retirement record so the probe can re-check
+    // PR state too — if the PR was reopened externally, we want to see it.
+    const probeTarget: WorkingBranch = {
+      name: retired.branchName,
+      baseBranch: repo.defaultBranch,
+      repoFullName: repo.fullName,
+      repoOwner: repo.owner,
+      repoName: repo.name,
+      headSha: '',
+      createdAt: retired.retiredAt,
+      lastPushedSha: null,
+      diffSummary: null,
+      openPrUrl: retired.prUrl,
+    };
+    try {
+      const probe = await probeBranchRetirement(client, token, probeTarget);
+      // The branch is "revived" when it now exists AND any PR is no longer
+      // in the merged state. We don't gate on prState because a deleted-
+      // branch retirement can resurrect via a manual branch push.
+      const branchAlive = probe.branchExists === true && probe.branchHeadSha !== null;
+      const prStillMerged = probe.prState?.merged === true;
+      if (branchAlive && !prStillMerged) {
+        // Restore. lastPushedSha is null — we don't know what's changed on
+        // the remote since retirement, so the first action should be a
+        // refresh; the FirstPullPrompt would handle the actual review.
+        const restored: WorkingBranch = {
+          name: retired.branchName,
+          baseBranch: repo.defaultBranch,
+          repoFullName: repo.fullName,
+          repoOwner: repo.owner,
+          repoName: repo.name,
+          headSha: probe.branchHeadSha!,
+          createdAt: retired.retiredAt,
+          lastPushedSha: null,
+          diffSummary: null,
+          openPrUrl: probe.prState?.state === 'open' ? retired.prUrl : null,
+        };
+        const next: WorkspaceLocal = {
+          ...local,
+          workingBranch: restored,
+          retiredBranch: null,
+        };
+        set({ local: next });
+        void saveLocal(next);
+        return {
+          status: 'restored',
+          branchName: retired.branchName,
+          headSha: probe.branchHeadSha!,
+        } as const;
+      }
+      if (prStillMerged) {
+        return { status: 'still-retired', reason: 'merged' } as const;
+      }
+      if (probe.branchExists === false) {
+        return { status: 'still-retired', reason: 'deleted' } as const;
+      }
+      return { status: 'still-retired', reason: 'inconclusive' } as const;
+    } catch (err) {
+      return {
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Probe failed',
+      } as const;
+    }
+  },
+
   createPullRequest: async (args) => {
     const local = get().local;
     if (!local) throw new Error('Workspace not ready');
@@ -4721,7 +5003,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       throw new Error('Push to save before opening a PR');
     }
     if (branch.openPrUrl) {
-      throw new Error('A pull request is already open for this branch');
+      throw new Error(`A pull request is already open for this branch: ${branch.openPrUrl}`);
     }
 
     const token = await decryptSessionToken(local);

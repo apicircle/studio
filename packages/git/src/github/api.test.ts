@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GitHubClient } from './api';
-import { GitHubError, MissingScopeError, RateLimitedError, UnauthorizedError } from './errors';
+import {
+  GitHubError,
+  MissingScopeError,
+  RateLimitedError,
+  TimeoutError,
+  UnauthorizedError,
+} from './errors';
 
 function jsonResponse(
   body: unknown,
@@ -101,8 +107,8 @@ describe('GitHubClient.getViewer', () => {
     }
   });
 
-  it('throws RateLimitedError when remaining=0 on 403', async () => {
-    const reset = Math.floor(Date.now() / 1000) + 60;
+  it('throws RateLimitedError when remaining=0 on 403, with humanised wait', async () => {
+    const reset = Math.floor(Date.now() / 1000) + 90; // ~2 min away
     const fetchImpl: typeof fetch = vi.fn(async () =>
       jsonResponse(
         { message: 'rate limited' },
@@ -122,7 +128,28 @@ describe('GitHubClient.getViewer', () => {
     } catch (err) {
       expect(err).toBeInstanceOf(RateLimitedError);
       expect((err as RateLimitedError).resetAtMs).toBe(reset * 1000);
+      // Humanised wait should appear, not a raw ISO string alone.
+      expect((err as Error).message).toMatch(/Resets in \d+\s*(s|min|h)/);
     }
+  });
+
+  it('throws TimeoutError when the request exceeds the configured timeout', async () => {
+    // fetchImpl that respects abort and rejects with an AbortError.
+    const fetchImpl: typeof fetch = vi.fn(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = (init as RequestInit | undefined)?.signal;
+          if (signal?.aborted) {
+            reject(new DOMException('Aborted', 'AbortError'));
+            return;
+          }
+          signal?.addEventListener('abort', () => {
+            reject(new DOMException('Aborted', 'AbortError'));
+          });
+        }),
+    );
+    const client = new GitHubClient({ fetchImpl, timeoutMs: 10 });
+    await expect(client.getViewer('tok')).rejects.toBeInstanceOf(TimeoutError);
   });
 
   it('throws plain GitHubError on other non-2xx (e.g. 500)', async () => {

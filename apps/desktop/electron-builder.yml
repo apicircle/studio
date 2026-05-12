@@ -6,6 +6,10 @@ directories:
   output: release
   buildResources: build
 
+# Stable filename pattern so electron-updater's latest.yml index can resolve
+# the right artifact across releases.
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
 files:
   - dist/**/*
   - package.json
@@ -18,6 +22,22 @@ extraResources:
   # the app bundle.
   - from: ../web/dist
     to: web/dist
+
+# Auto-update channel. The desktop process queries
+# https://github.com/apicircle/studio/releases/latest at launch + on demand;
+# electron-updater downloads the matching artifact in the background and
+# surfaces an "Update ready — restart" banner via the
+# `apicircle:update:available` IPC channel.
+#
+# Early Access caveat: binaries are NOT code-signed yet. macOS Gatekeeper
+# and Windows SmartScreen will warn the first time a user launches the
+# app or installs an update. Release notes + the in-app First-Launch
+# notice document the right-click → Open / "More info → Run anyway" path.
+publish:
+  - provider: github
+    owner: apicircle
+    repo: studio
+    releaseType: release
 
 mac:
   category: public.app-category.developer-tools

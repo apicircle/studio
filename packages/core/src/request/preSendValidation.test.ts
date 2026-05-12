@@ -37,6 +37,33 @@ describe('preSendValidation', () => {
     expect(result.blockers).toHaveLength(0);
   });
 
+  it('empty URL is a blocker', () => {
+    const result = preSendValidation({ request: baseReq({ url: '' }), scope: emptyScope });
+    expect(result.blockers.some((b) => b.kind === 'empty-url')).toBe(true);
+  });
+
+  it('whitespace-only URL is a blocker', () => {
+    const result = preSendValidation({ request: baseReq({ url: '   ' }), scope: emptyScope });
+    expect(result.blockers.some((b) => b.kind === 'empty-url')).toBe(true);
+  });
+
+  it('malformed URL after resolution is a blocker', () => {
+    const result = preSendValidation({
+      request: baseReq({ url: 'htp://bad url with space' }),
+      scope: emptyScope,
+    });
+    expect(result.blockers.some((b) => b.kind === 'unparseable-url')).toBe(true);
+  });
+
+  it('URL with unresolved {{var}} is a warning, NOT a blocker (Rule 1 owns that signal)', () => {
+    const result = preSendValidation({
+      request: baseReq({ url: '{{BASE}}/users' }),
+      scope: emptyScope,
+    });
+    expect(result.blockers.some((b) => b.kind === 'unparseable-url')).toBe(false);
+    expect(result.warnings.some((w) => w.kind === 'unresolved-variable')).toBe(true);
+  });
+
   it('flags unresolved {{var}} in the URL', () => {
     const result = preSendValidation({
       request: baseReq({ url: 'https://api.example.test/{{MISSING}}' }),

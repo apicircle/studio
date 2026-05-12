@@ -1,0 +1,110 @@
+APICircle Studio License
+Custom Source-Available License, v1.0
+
+Copyright (c) 2026 Deva Prakash ("Licensor")
+
+The source code in this repository ("the Software") is made available for
+the purposes of transparency, security review, contribution, and personal
+evaluation. This is NOT an open-source license as defined by the Open
+Source Initiative.
+
+0. Definitions
+
+   "Commercial Use" means any use of the Software that is intended for
+   or directed toward commercial advantage or monetary compensation,
+   whether direct or indirect, including without limitation:
+
+   (a) using the Software to build, test, develop, deploy, or operate
+       any product, service, application, or system that is sold,
+       licensed, hosted, distributed, or otherwise made available to
+       any third party for a fee or other consideration;
+   (b) using the Software in the course of paid employment, paid
+       consulting, paid contracting, freelance work, or any other
+       revenue-generating activity, regardless of whether the Software
+       itself is sold or transferred;
+   (c) using the Software internally within a for-profit organization
+       beyond the Evaluation Period defined below;
+   (d) integrating the Software, or any portion of it, into any tool,
+       pipeline, automation, or workflow that supports the commercial
+       operations of any business;
+   (e) using the Software to provide a hosted, managed, or embedded
+       service of any kind to a third party, whether free or paid.
+
+   "Non-Commercial Use" means any use that is not Commercial Use,
+   including personal hobby projects, individual learning, academic
+   research, classroom instruction, and good-faith contribution to
+   this repository.
+
+   "Evaluation Period" means a single, continuous period of up to
+   thirty (30) days during which a for-profit organization may
+   internally evaluate the Software at no charge. After the Evaluation
+   Period expires, any further use of the Software by that organization
+   constitutes Commercial Use and requires a separate commercial
+   license from the Licensor.
+
+1. Permitted Use
+
+   You may, without charge:
+
+   (a) view, read, and study the source code of the Software;
+   (b) run the Software, in source or compiled form, for your own
+       Non-Commercial Use, or for Commercial Use solely within the
+       Evaluation Period;
+   (c) submit improvements to the Software back to this repository via
+       pull request, subject to Section 3 (Contributions).
+
+2. Prohibited Use
+
+   Without prior written permission from the Licensor, you may NOT:
+
+   (a) make any Commercial Use of the Software, in whole or in part,
+       except during the Evaluation Period as defined in Section 0;
+   (b) redistribute the Software, in source or compiled form, whether
+       modified or unmodified, to any third party;
+   (c) sublicense, sell, rent, lease, or otherwise transfer the
+       Software or any rights granted herein;
+   (d) remove, obscure, or alter any copyright, trademark, attribution,
+       or license notice contained in the Software;
+   (e) use the names "APICircle", "API Circle Studio", or any related
+       logos or trademarks, except as required for accurate attribution.
+
+3. Contributions
+
+   By submitting any contribution (including but not limited to code,
+   documentation, or assets) to this repository, you grant the Licensor
+   a perpetual, worldwide, irrevocable, royalty-free, sublicensable
+   license to use, modify, distribute, and relicense your contribution
+   under any terms, including the terms of this license or any future
+   version thereof.
+
+4. No Trademark License
+
+   This license does not grant permission to use the trade names,
+   trademarks, service marks, or product names of the Licensor, except
+   as required for reasonable and customary use in describing the
+   origin of the Software.
+
+5. Termination
+
+   The rights granted in Section 1 terminate automatically if you
+   breach any term of this license. Upon termination, you must cease
+   all use of the Software and destroy all copies in your possession.
+
+6. Disclaimer of Warranty
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND
+   NON-INFRINGEMENT.
+
+7. Limitation of Liability
+
+   IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR
+   OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR
+   OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE
+   OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+8. Commercial Licensing
+
+   For commercial licensing, redistribution, or any use not permitted
+   under Section 1, contact: apicircle365@gmail.com

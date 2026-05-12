@@ -124,11 +124,18 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.os }}
+          # Includes the latest*.yml index files electron-updater consults
+          # via the GitHub Releases endpoint to discover new versions.
+          # Without them the auto-update bridge (apps/desktop/src/main/
+          # autoUpdater.ts) can't tell when an update is available.
           path: |
             apps/desktop/release/**/*.dmg
             apps/desktop/release/**/*.exe
             apps/desktop/release/**/*.AppImage
             apps/desktop/release/**/*.deb
+            apps/desktop/release/**/*.zip
+            apps/desktop/release/**/*.blockmap
+            apps/desktop/release/**/latest*.yml
 
   github-release:
     name: GitHub Release
@@ -149,12 +156,20 @@ jobs:
         run: |
           # Use the first published package's version as the release tag.
           TAG=$(echo "$PUBLISHED" | jq -r '.[0].name + "@" + .[0].version')
+          # Flatten desktop artifacts (uploaded as desktop-<os>/) into one
+          # directory so the latest*.yml index files end up next to the
+          # installers — electron-updater fetches both from the release.
+          mkdir -p flat
+          find artifacts/desktop-* -type f -exec cp {} flat/ \;
+          find artifacts/cli-* -type f -exec cp {} flat/ \;
           gh release create "$TAG" \
             --title "$TAG" \
             --generate-notes \
-            artifacts/cli-*/cli-* \
-            artifacts/desktop-*/* || echo "Release may already exist; trying upload --clobber"
-          gh release upload "$TAG" \
-            artifacts/cli-*/cli-* \
-            artifacts/desktop-*/* \
-            --clobber
+            flat/* || echo "Release may already exist; trying upload --clobber"
+          gh release upload "$TAG" flat/* --clobber
+
+      # Note: the Early Access install notice is appended by the
+      # `desktop-release.yml` workflow (v* tags), since that's the
+      # release electron-updater consults. The changesets-driven flow
+      # here produces npm-style tagged releases (@pkg@x.y.z) which are
+      # not surfaced to end users.

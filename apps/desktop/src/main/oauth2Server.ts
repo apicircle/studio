@@ -31,7 +31,20 @@
  *    `state` value); we just hand the parsed params back.
  */
 
-import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
+import {
+  createServer,
+  type Server,
+  type IncomingMessage,
+  type RequestListener,
+  type ServerResponse,
+} from 'node:http';
+
+/** Narrowed server shape we actually rely on — keeps `typeof createServer`'s
+ *  generic overloads from leaking into the public option signature. */
+type HttpServer = Server<typeof IncomingMessage, typeof ServerResponse>;
+
+/** Narrowed factory: takes our handler, returns the concrete Server we use. */
+type ServerFactory = (handler: RequestListener) => HttpServer;
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 
@@ -64,7 +77,7 @@ export interface StartCallbackArgs {
   /** Hard timeout — defaults to 120s. The IdP redirect must arrive within this. */
   timeoutMs?: number;
   /** Test seam — provides a custom server factory (defaults to node:http.createServer). */
-  serverFactory?: typeof createServer;
+  serverFactory?: ServerFactory;
 }
 
 /**

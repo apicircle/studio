@@ -280,4 +280,61 @@ describe('workspaceStore.pushWorkspace', () => {
     const branch = useWorkspaceStore.getState().local!.workingBranch!;
     expect(branch.lastPushedSha).toBeNull();
   });
+
+  it('partial write: updateRef fails after createCommit lands — local state untouched, no double-push on retry', async () => {
+    await setupConnectedBranch();
+
+    // Sequence: getRef → getCommit → createTree → createCommit → updateRef
+    // (fails 500). The commit object DID land on the remote, but the ref
+    // never advanced. The store must NOT mark lastPushedSha (rollback
+    // semantics), and a subsequent retry must reuse the same flow rather
+    // than double-commit.
+    const fetchMock = queuedFetch([
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
+      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
+      { body: { sha: 'tree-new' } },
+      { body: { sha: 'commit-orphan', message: 'm', tree: { sha: 'tree-new' } } },
+      // updateRef returns 500 — server-side glitch
+      { body: { message: 'Server Error' }, status: 500 },
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(useWorkspaceStore.getState().pushWorkspace()).rejects.toThrow();
+    const branch = useWorkspaceStore.getState().local!.workingBranch!;
+    // Store state must NOT carry the orphaned commit forward. lastPushedSha
+    // stays null so the next push starts fresh from getRef.
+    expect(branch.lastPushedSha).toBeNull();
+    // headSha also unchanged (was never written to).
+    expect(branch.headSha).toBe('sha-main');
+    // lastPulledSnapshot stays at whatever it was pre-push (null here, fresh setup).
+    expect(useWorkspaceStore.getState().local!.sync.lastPulledSha).toBeNull();
+  });
+
+  it('throws BranchDivergedError when the remote ref has moved since last sync — no blobs uploaded', async () => {
+    await setupConnectedBranch();
+    // Mutate the local branch headSha to simulate a state where remote has
+    // moved on (e.g. someone force-pushed).
+    const localBefore = useWorkspaceStore.getState().local!;
+    useWorkspaceStore.setState({
+      local: {
+        ...localBefore,
+        workingBranch: { ...localBefore.workingBranch!, headSha: 'sha-old-local' },
+      },
+    });
+
+    // The only fetch the push should make is getRef — once it sees the
+    // mismatch it throws and never moves on to createBlob/createTree.
+    const fetchMock = queuedFetch([
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-remote-moved' } } },
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(useWorkspaceStore.getState().pushWorkspace()).rejects.toThrow(/has moved/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const branch = useWorkspaceStore.getState().local!.workingBranch!;
+    expect(branch.lastPushedSha).toBeNull();
+    // Local headSha untouched.
+    expect(branch.headSha).toBe('sha-old-local');
+  });
 });
