@@ -49,6 +49,11 @@ function makeMockUpdater(): MockAutoUpdater {
 
 let mockUpdater: MockAutoUpdater;
 
+// Stand-in for an IpcMainInvokeEvent from the bundled file:// renderer. The
+// assertTrustedSender helper checks `event.senderFrame.url`; any file:// URL
+// is accepted as trusted.
+const trustedEvent = { senderFrame: { url: 'file:///dist/index.html' } };
+
 // `electron-updater` is dynamically imported inside autoUpdater.ts so a
 // vi.mock returns the stub before the import is awaited.
 vi.mock('electron-updater', () => ({
@@ -123,7 +128,7 @@ describe('registerAutoUpdater', () => {
     const { registerAutoUpdater } = await import('./autoUpdater');
     await registerAutoUpdater(() => null);
     const apply = ipcHandlers.get('apicircle:update:apply')!;
-    expect(() => apply()).toThrow(/No update has been downloaded/);
+    expect(() => apply(trustedEvent)).toThrow(/No update has been downloaded/);
   });
 
   it('apply IPC calls quitAndInstall after an update was downloaded', async () => {
@@ -131,7 +136,7 @@ describe('registerAutoUpdater', () => {
     await registerAutoUpdater(() => null);
     mockUpdater.__emit('update-downloaded', { version: '0.1.1' });
     const apply = ipcHandlers.get('apicircle:update:apply')!;
-    apply();
+    apply(trustedEvent);
     expect(mockUpdater.quitAndInstall).toHaveBeenCalledOnce();
   });
 
@@ -139,7 +144,7 @@ describe('registerAutoUpdater', () => {
     const { registerAutoUpdater } = await import('./autoUpdater');
     await registerAutoUpdater(() => null);
     const checkNow = ipcHandlers.get('apicircle:update:checkNow')!;
-    const result = await checkNow();
+    const result = await checkNow(trustedEvent);
     expect(result).toEqual({ checked: true });
   });
 
@@ -148,7 +153,16 @@ describe('registerAutoUpdater', () => {
     const { registerAutoUpdater } = await import('./autoUpdater');
     await registerAutoUpdater(() => null);
     const checkNow = ipcHandlers.get('apicircle:update:checkNow')!;
-    const result = await checkNow();
+    const result = await checkNow(trustedEvent);
     expect(result).toEqual({ checked: false, reason: 'network down' });
+  });
+
+  it('apply IPC rejects an untrusted sender frame', async () => {
+    const { registerAutoUpdater } = await import('./autoUpdater');
+    await registerAutoUpdater(() => null);
+    const apply = ipcHandlers.get('apicircle:update:apply')!;
+    expect(() => apply({ senderFrame: { url: 'https://attacker.example/' } })).toThrow(
+      /Untrusted IPC sender/,
+    );
   });
 });

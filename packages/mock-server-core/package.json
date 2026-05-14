@@ -31,7 +31,7 @@
   "dependencies": {
     "@apicircle/shared": "workspace:*",
     "@hono/node-server": "^1.13.0",
-    "hono": "^4.6.0",
+    "hono": "^4.12.18",
     "@apidevtools/swagger-parser": "^10.1.0",
     "js-yaml": "^4.1.0"
   },

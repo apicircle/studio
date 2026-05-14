@@ -108,167 +108,173 @@ export function MocksSidebar() {
         </p>
       ) : (
         <ul className="flex flex-col gap-1">
-          {servers.map((server) => {
-            // Auto-expand servers while a search is active so matching
-            // endpoints show without an extra click.
-            const open = searchQuery ? true : isExpanded(server.id);
-            const visibleEndpoints =
-              matchingEndpointIds === null
-                ? server.endpoints
-                : // Server matched by name → show all its endpoints; otherwise
-                  // only the endpoints that themselves matched.
-                  server.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
+          {(() => {
+            // Hoist the search-query normalization out of the per-server loop —
+            // with 50 servers and a 20-char query this saved 50 redundant
+            // trim+lowercase calls per render of the sidebar.
+            const normalizedSearch = searchQuery.trim().toLowerCase();
+            return servers.map((server) => {
+              // Auto-expand servers while a search is active so matching
+              // endpoints show without an extra click.
+              const open = searchQuery ? true : isExpanded(server.id);
+              const visibleEndpoints =
+                matchingEndpointIds === null
                   ? server.endpoints
-                  : server.endpoints.filter((e) => matchingEndpointIds.has(e.id));
-            const isServerActive = activeServerId === server.id && activeEndpointId === null;
-            const serverItems: KebabMenuItem[] = [
-              {
-                id: 'add-endpoint',
-                label: 'Add endpoint',
-                icon: <Plus size={12} aria-hidden="true" />,
-                onSelect: () => {
-                  addMockEndpoint(server.id);
-                  setExpanded((e) => ({ ...e, [server.id]: true }));
+                  : // Server matched by name → show all its endpoints; otherwise
+                    // only the endpoints that themselves matched.
+                    server.name.toLowerCase().includes(normalizedSearch)
+                    ? server.endpoints
+                    : server.endpoints.filter((e) => matchingEndpointIds.has(e.id));
+              const isServerActive = activeServerId === server.id && activeEndpointId === null;
+              const serverItems: KebabMenuItem[] = [
+                {
+                  id: 'add-endpoint',
+                  label: 'Add endpoint',
+                  icon: <Plus size={12} aria-hidden="true" />,
+                  onSelect: () => {
+                    addMockEndpoint(server.id);
+                    setExpanded((e) => ({ ...e, [server.id]: true }));
+                  },
                 },
-              },
-              {
-                id: 'duplicate',
-                label: 'Duplicate',
-                icon: <Copy size={12} aria-hidden="true" />,
-                onSelect: () => duplicateMockServer(server.id),
-              },
-              {
-                id: 'delete',
-                label: 'Delete',
-                icon: <Trash2 size={12} aria-hidden="true" />,
-                tone: 'danger',
-                onSelect: () => setPendingServerDelete({ id: server.id, name: server.name }),
-              },
-            ];
-            return (
-              <li key={server.id}>
-                <div
-                  className={cn(
-                    'group flex items-center gap-1 rounded-sm border px-0.5',
-                    isServerActive
-                      ? 'border-accent/40 bg-accent/10'
-                      : 'border-transparent hover:bg-surface',
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleExpand(server.id)}
-                    aria-label={`${open ? 'Collapse' : 'Expand'} ${server.name}`}
-                    aria-expanded={open}
-                    className="inline-flex h-6 w-5 shrink-0 items-center justify-center rounded-sm text-text-dim"
-                  >
-                    {open ? (
-                      <ChevronDown size={11} aria-hidden="true" />
-                    ) : (
-                      <ChevronRight size={11} aria-hidden="true" />
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => activateServer(server.id)}
-                    aria-label={`Open ${server.name}`}
-                    aria-current={isServerActive ? 'true' : undefined}
+                {
+                  id: 'duplicate',
+                  label: 'Duplicate',
+                  icon: <Copy size={12} aria-hidden="true" />,
+                  onSelect: () => duplicateMockServer(server.id),
+                },
+                {
+                  id: 'delete',
+                  label: 'Delete',
+                  icon: <Trash2 size={12} aria-hidden="true" />,
+                  tone: 'danger',
+                  onSelect: () => setPendingServerDelete({ id: server.id, name: server.name }),
+                },
+              ];
+              return (
+                <li key={server.id}>
+                  <div
                     className={cn(
-                      'flex flex-1 items-center gap-1 rounded-sm px-1.5 py-1 text-left text-[0.6875rem]',
-                      isServerActive ? 'text-accent' : 'text-text-primary',
+                      'group flex h-7 items-center gap-1 rounded-sm border px-0.5',
+                      isServerActive
+                        ? 'border-accent/40 bg-accent/10'
+                        : 'border-transparent hover:bg-surface',
                     )}
                   >
-                    <Server size={11} className="text-accent" aria-hidden="true" />
-                    <span className="flex-1 truncate font-medium">{server.name}</span>
-                    {server.source.kind !== 'manual' && (
-                      <FileCode
-                        size={10}
-                        className="text-text-faint"
-                        aria-label={`${server.source.kind} spec`}
-                      />
-                    )}
-                  </button>
-                  <KebabMenu items={serverItems} ariaLabel={`${server.name} actions`} size="sm" />
-                </div>
-                {open && (
-                  <ul className="ml-4 flex flex-col gap-0.5 border-l border-border-subtle pl-2">
-                    {visibleEndpoints.length === 0 ? (
-                      <li className="py-1 text-[0.625rem] italic text-text-dim">
-                        {server.endpoints.length === 0
-                          ? 'No endpoints. Use the server menu to add one.'
-                          : 'No matching endpoints in this server.'}
-                      </li>
-                    ) : (
-                      visibleEndpoints.map((endpoint) => {
-                        const isActive =
-                          activeServerId === server.id && activeEndpointId === endpoint.id;
-                        const endpointItems: KebabMenuItem[] = [
-                          {
-                            id: 'duplicate',
-                            label: 'Duplicate',
-                            icon: <Copy size={12} aria-hidden="true" />,
-                            onSelect: () => duplicateMockEndpoint(server.id, endpoint.id),
-                          },
-                          {
-                            id: 'delete',
-                            label: 'Delete',
-                            icon: <Trash2 size={12} aria-hidden="true" />,
-                            tone: 'danger',
-                            onSelect: () =>
-                              setPendingEndpointDelete({
-                                serverId: server.id,
-                                endpointId: endpoint.id,
-                                label: `${endpoint.method} ${endpoint.pathPattern}`,
-                              }),
-                          },
-                        ];
-                        return (
-                          <li key={endpoint.id}>
-                            <div
-                              className={cn(
-                                'group flex items-center gap-1 rounded-sm border px-0.5',
-                                isActive
-                                  ? 'border-accent/40 bg-accent/10'
-                                  : 'border-transparent hover:bg-surface',
-                              )}
-                            >
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setActiveMockEndpoint({
-                                    serverId: server.id,
-                                    endpointId: endpoint.id,
-                                  })
-                                }
-                                aria-label={`Open ${endpoint.method} ${endpoint.pathPattern}`}
-                                aria-current={isActive ? 'true' : undefined}
+                    <button
+                      type="button"
+                      onClick={() => toggleExpand(server.id)}
+                      aria-label={`${open ? 'Collapse' : 'Expand'} ${server.name}`}
+                      aria-expanded={open}
+                      className="inline-flex h-6 w-5 shrink-0 items-center justify-center rounded-sm text-text-dim"
+                    >
+                      {open ? (
+                        <ChevronDown size={11} aria-hidden="true" />
+                      ) : (
+                        <ChevronRight size={11} aria-hidden="true" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => activateServer(server.id)}
+                      aria-label={`Open ${server.name}`}
+                      aria-current={isServerActive ? 'true' : undefined}
+                      className={cn(
+                        'flex h-full flex-1 items-center gap-1 rounded-sm px-1.5 text-left text-[0.6875rem]',
+                        isServerActive ? 'text-accent' : 'text-text-primary',
+                      )}
+                    >
+                      <Server size={11} className="text-accent" aria-hidden="true" />
+                      <span className="flex-1 truncate font-medium">{server.name}</span>
+                      {server.source.kind !== 'manual' && (
+                        <FileCode
+                          size={10}
+                          className="text-text-faint"
+                          aria-label={`${server.source.kind} spec`}
+                        />
+                      )}
+                    </button>
+                    <KebabMenu items={serverItems} ariaLabel={`${server.name} actions`} size="sm" />
+                  </div>
+                  {open && (
+                    <ul className="ml-4 flex flex-col gap-0.5 border-l border-border-subtle pl-2">
+                      {visibleEndpoints.length === 0 ? (
+                        <li className="py-1 text-[0.625rem] italic text-text-dim">
+                          {server.endpoints.length === 0
+                            ? 'No endpoints. Use the server menu to add one.'
+                            : 'No matching endpoints in this server.'}
+                        </li>
+                      ) : (
+                        visibleEndpoints.map((endpoint) => {
+                          const isActive =
+                            activeServerId === server.id && activeEndpointId === endpoint.id;
+                          const endpointItems: KebabMenuItem[] = [
+                            {
+                              id: 'duplicate',
+                              label: 'Duplicate',
+                              icon: <Copy size={12} aria-hidden="true" />,
+                              onSelect: () => duplicateMockEndpoint(server.id, endpoint.id),
+                            },
+                            {
+                              id: 'delete',
+                              label: 'Delete',
+                              icon: <Trash2 size={12} aria-hidden="true" />,
+                              tone: 'danger',
+                              onSelect: () =>
+                                setPendingEndpointDelete({
+                                  serverId: server.id,
+                                  endpointId: endpoint.id,
+                                  label: `${endpoint.method} ${endpoint.pathPattern}`,
+                                }),
+                            },
+                          ];
+                          return (
+                            <li key={endpoint.id}>
+                              <div
                                 className={cn(
-                                  'flex flex-1 items-center gap-1.5 rounded-sm px-1.5 py-1.5 text-[0.6875rem]',
+                                  'group flex h-7 items-center gap-1 rounded-sm border px-0.5',
                                   isActive
-                                    ? 'text-accent'
-                                    : 'text-text-muted group-hover:text-text-primary',
+                                    ? 'border-accent/40 bg-accent/10'
+                                    : 'border-transparent hover:bg-surface',
                                 )}
                               >
-                                <MethodChip method={endpoint.method} />
-                                <span className="flex-1 truncate font-mono">
-                                  {endpoint.pathPattern}
-                                </span>
-                              </button>
-                              <KebabMenu
-                                items={endpointItems}
-                                ariaLabel={`${endpoint.method} ${endpoint.pathPattern} actions`}
-                                size="sm"
-                              />
-                            </div>
-                          </li>
-                        );
-                      })
-                    )}
-                  </ul>
-                )}
-              </li>
-            );
-          })}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setActiveMockEndpoint({
+                                      serverId: server.id,
+                                      endpointId: endpoint.id,
+                                    })
+                                  }
+                                  aria-label={`Open ${endpoint.method} ${endpoint.pathPattern}`}
+                                  aria-current={isActive ? 'true' : undefined}
+                                  className={cn(
+                                    'flex h-full flex-1 items-center gap-1.5 rounded-sm px-1.5 text-[0.6875rem]',
+                                    isActive
+                                      ? 'text-accent'
+                                      : 'text-text-muted group-hover:text-text-primary',
+                                  )}
+                                >
+                                  <MethodChip method={endpoint.method} />
+                                  <span className="flex-1 truncate font-mono">
+                                    {endpoint.pathPattern}
+                                  </span>
+                                </button>
+                                <KebabMenu
+                                  items={endpointItems}
+                                  ariaLabel={`${endpoint.method} ${endpoint.pathPattern} actions`}
+                                  size="sm"
+                                />
+                              </div>
+                            </li>
+                          );
+                        })
+                      )}
+                    </ul>
+                  )}
+                </li>
+              );
+            });
+          })()}
         </ul>
       )}
 

@@ -22,6 +22,7 @@ import { useRef, useState } from 'react';
 import { CheckCircle2, Copy, KeyRound, Loader2, RefreshCw, Trash2, XCircle } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { refreshToken as runRefreshToken } from '@apicircle/core';
+import { safeExternalHref } from '@apicircle/shared';
 import { cn } from '../../primitives/cn';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import type { createOAuth2Bridge } from '../../auth/oauth2Bridge';
@@ -348,14 +349,30 @@ function DeviceCodeHint({
     >
       <p className="flex flex-wrap items-center gap-1 text-text-primary">
         Visit{' '}
-        <a
-          href={device.verificationUri}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-accent underline"
-        >
-          {device.verificationUri}
-        </a>{' '}
+        {/* IdP returns verification_uri verbatim — restrict scheme to http(s)
+            before rendering as a clickable link, otherwise a hostile IdP
+            could push javascript:/data:/file: at us. Unsafe values still
+            render as plain text so the user can copy them out manually. */}
+        {(() => {
+          const safe = safeExternalHref(device.verificationUri);
+          return safe ? (
+            <a
+              href={safe}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent underline"
+            >
+              {device.verificationUri}
+            </a>
+          ) : (
+            <span
+              className="font-mono text-text-muted"
+              title="Unsupported URL scheme — copy manually"
+            >
+              {device.verificationUri}
+            </span>
+          );
+        })()}{' '}
         and enter code: <code className="font-mono text-accent">{device.userCode}</code>
         <button
           type="button"
@@ -384,20 +401,25 @@ function DeviceCodeHint({
           <Copy size={10} aria-hidden="true" />
         </button>
       </p>
-      {device.verificationUriComplete && (
-        <p className="text-text-dim">
-          Or open{' '}
-          <a
-            href={device.verificationUriComplete}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-accent underline"
-          >
-            this pre-filled link
-          </a>{' '}
-          to skip typing.
-        </p>
-      )}
+      {device.verificationUriComplete &&
+        (() => {
+          const safeComplete = safeExternalHref(device.verificationUriComplete);
+          if (!safeComplete) return null;
+          return (
+            <p className="text-text-dim">
+              Or open{' '}
+              <a
+                href={safeComplete}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent underline"
+              >
+                this pre-filled link
+              </a>{' '}
+              to skip typing.
+            </p>
+          );
+        })()}
       {pollInfo && (
         <p className="text-text-dim">
           Waiting for authorization… (poll #{pollInfo.pollCount},{' '}

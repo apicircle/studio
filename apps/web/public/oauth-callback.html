@@ -33,9 +33,12 @@
            `location.hash`. Implicit-grant tokens live in the fragment,
            which would otherwise never reach a server-rendered page.
         2. POST them to the parent app via `BroadcastChannel` keyed by
-           the `state` value. State is unique per flow + serves as the
-           channel topic — without it the parent has no way to match
-           this redirect to the flow it started.
+           the `state` value (primary), AND `window.opener.postMessage`
+           with `targetOrigin = location.origin` (same-origin fallback
+           for browsers / privacy modes where BroadcastChannel is gone).
+           We deliberately do NOT use localStorage as a fallback — it
+           emits a `storage` event to every same-origin tab, which would
+           briefly expose the access_token to anything listening.
         3. Close the popup. If `window.close()` is blocked (browsers
            sometimes refuse to close non-popup tabs), the page stays up
            with the success message and the user can close it manually.
@@ -85,19 +88,37 @@
         // can listen for exactly THIS flow without picking up stale
         // callbacks from a previous tab.
         var channelName = 'apicircle-oauth-' + (state || 'no-state');
+        var deliveredAny = false;
         try {
           var channel = new BroadcastChannel(channelName);
           channel.postMessage(payload);
           channel.close();
-        } catch (e) {
-          // Older browsers / privacy modes — fall through to localStorage.
-          try {
-            window.localStorage.setItem(
-              channelName,
-              JSON.stringify({ payload: payload, ts: Date.now() }),
-            );
-            window.localStorage.removeItem(channelName);
-          } catch (_) { /* nothing more we can do */ }
+          deliveredAny = true;
+        } catch (_) {
+          // BroadcastChannel unavailable — fall through to postMessage.
+        }
+
+        // Same-origin postMessage fallback. We target the parent window
+        // explicitly with `targetOrigin = location.origin` so the payload
+        // is delivered ONLY to a same-origin opener (the Studio app
+        // running in the parent tab) and NEVER cross-origin. Previously
+        // we used localStorage here, which broadcasts a `storage` event
+        // to every other same-origin tab — a brief access_token leak we
+        // are not willing to accept.
+        try {
+          if (window.opener && !window.opener.closed) {
+            window.opener.postMessage(payload, window.location.origin);
+            deliveredAny = true;
+          }
+        } catch (_) { /* opener unreachable across origins / closed */ }
+
+        if (!deliveredAny) {
+          var card = document.getElementById('card');
+          card.className = 'err';
+          document.getElementById('title').textContent = 'Sign-in incomplete';
+          document.getElementById('message').textContent =
+            'Could not return tokens to APICircle Studio. Close this tab and retry from the auth panel.';
+          return;
         }
 
         // Give the parent a tick to receive, then close.

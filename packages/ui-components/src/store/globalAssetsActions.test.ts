@@ -12,7 +12,6 @@ import {
 const baseSynced = (): WorkspaceSynced => ({
   schemaVersion: 1,
   workspaceId: 'ws-1',
-  workspaceName: 'W',
   collections: { tree: { id: 'r', type: 'root', children: [] }, requests: {}, folders: {} },
   environments: { items: {}, activeName: null, priorityOrder: [] },
   linkedWorkspaces: {},

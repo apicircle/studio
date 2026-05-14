@@ -12,7 +12,7 @@ import { type EntityBucket, computeThreeWayDiff } from './threeWayDiff';
 
 export interface UnpushedChange {
   bucket: EntityBucket;
-  /** Entity id within the bucket; empty string for singletons (workspaceName, tree, etc.). */
+  /** Entity id within the bucket; empty string for singletons (tree, etc.). */
   key: string;
   label: string;
   kind: 'added' | 'modified' | 'removed';
@@ -31,7 +31,6 @@ export interface UnpushedSummary {
 }
 
 const BUCKET_ORDER: EntityBucket[] = [
-  'workspaceName',
   'tree',
   'request',
   'folder',
@@ -39,7 +38,16 @@ const BUCKET_ORDER: EntityBucket[] = [
   'environmentsActive',
   'environmentsPriority',
   'linkedWorkspace',
+  'linkedRequestOverride',
+  'linkedEnvOverride',
+  'mockServer',
+  'executionPlan',
+  'globalSchema',
+  'globalGraphql',
+  'secretKey',
+  'secretCrypto',
   'releaseSelf',
+  'releasePerLink',
 ];
 
 const EMPTY_SUMMARY: UnpushedSummary = {
@@ -151,20 +159,93 @@ function summarizeAllAsAdded(synced: WorkspaceSynced, computedAt: string): Unpus
       local: link,
     });
   }
-  // Singletons that only count when they're non-default. We only report
-  // workspaceName when it's been changed from the seed default and the
-  // tree when it's non-empty — otherwise every fresh workspace would
-  // claim two singleton "adds".
-  if (synced.workspaceName && synced.workspaceName !== 'My Workspace') {
+  for (const [id, server] of Object.entries(synced.mockServers)) {
     changes.push({
-      bucket: 'workspaceName',
-      key: '',
-      label: 'Workspace name',
+      bucket: 'mockServer',
+      key: id,
+      label: server.name || id,
       kind: 'added',
       base: undefined,
-      local: synced.workspaceName,
+      local: server,
     });
   }
+  // executionPlans is optional in the synced doc — pre-migration workspaces
+  // may not have hydrated it yet. Treat absent as the empty dict (no plans
+  // to report) rather than crashing on Object.entries(undefined).
+  for (const [id, plan] of Object.entries(synced.executionPlans ?? {})) {
+    changes.push({
+      bucket: 'executionPlan',
+      key: id,
+      label: plan.name || id,
+      kind: 'added',
+      base: undefined,
+      local: plan,
+    });
+  }
+  // secretKeys is also optional pre-migration; same treatment as plans.
+  for (const [id, meta] of Object.entries(synced.secretKeys ?? {})) {
+    changes.push({
+      bucket: 'secretKey',
+      key: id,
+      label: meta.label || id,
+      kind: 'added',
+      base: undefined,
+      local: meta,
+    });
+  }
+  for (const [id, schema] of Object.entries(synced.globalAssets.schemas)) {
+    changes.push({
+      bucket: 'globalSchema',
+      key: id,
+      label: schema.name || id,
+      kind: 'added',
+      base: undefined,
+      local: schema,
+    });
+  }
+  for (const [id, gql] of Object.entries(synced.globalAssets.graphql)) {
+    changes.push({
+      bucket: 'globalGraphql',
+      key: id,
+      label: gql.name || id,
+      kind: 'added',
+      base: undefined,
+      local: gql,
+    });
+  }
+  for (const [key, override] of Object.entries(synced.linkedOverrides.requests)) {
+    changes.push({
+      bucket: 'linkedRequestOverride',
+      key,
+      label: `linked request override (${key})`,
+      kind: 'added',
+      base: undefined,
+      local: override,
+    });
+  }
+  for (const [key, override] of Object.entries(synced.linkedOverrides.environmentVars)) {
+    changes.push({
+      bucket: 'linkedEnvOverride',
+      key,
+      label: `linked env var override (${key})`,
+      kind: 'added',
+      base: undefined,
+      local: override,
+    });
+  }
+  for (const [linkId, ledger] of Object.entries(synced.releases.perLink)) {
+    changes.push({
+      bucket: 'releasePerLink',
+      key: linkId,
+      label: `linked release ledger (${linkId})`,
+      kind: 'added',
+      base: undefined,
+      local: ledger,
+    });
+  }
+  // Singletons that only count when they're non-default. We only report
+  // the tree when it's non-empty — otherwise every fresh workspace would
+  // claim a singleton "add".
   if (synced.collections.tree.children.length > 0) {
     changes.push({
       bucket: 'tree',
@@ -183,6 +264,19 @@ function summarizeAllAsAdded(synced: WorkspaceSynced, computedAt: string): Unpus
       kind: 'added',
       base: undefined,
       local: synced.releases.self,
+    });
+  }
+  // Workspace passphrase: only counts when actually set. A null/absent
+  // value is the no-passphrase default — don't claim a singleton "add"
+  // for every fresh workspace.
+  if (synced.secretCrypto) {
+    changes.push({
+      bucket: 'secretCrypto',
+      key: '',
+      label: 'Workspace passphrase',
+      kind: 'added',
+      base: undefined,
+      local: synced.secretCrypto,
     });
   }
   return finalize(changes, computedAt);

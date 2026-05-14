@@ -1,7 +1,6 @@
 {
   "schemaVersion": 1,
   "workspaceId": "linked-pets-api-fixture",
-  "workspaceName": "Pets API",
   "collections": {
     "tree": { "id": "pets-root", "type": "root", "children": ["req-list-pets", "req-get-pet"] },
     "folders": {},

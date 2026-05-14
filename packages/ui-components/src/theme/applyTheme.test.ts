@@ -88,72 +88,18 @@ describe('applyTheme / getStoredThemeId', () => {
     }
   });
 
-  describe('favicon repaint', () => {
-    function decodeFaviconHref(): string {
-      const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-      expect(link).not.toBeNull();
-      const href = link!.getAttribute('href') ?? '';
-      const prefix = 'data:image/svg+xml,';
-      expect(href.startsWith(prefix)).toBe(true);
-      return decodeURIComponent(href.slice(prefix.length));
-    }
+  it('does not touch the favicon link (the static PNG icon stays fixed across themes)', () => {
+    const link = document.createElement('link');
+    link.rel = 'icon';
+    link.type = 'image/png';
+    link.href = '/favicon.png';
+    document.head.appendChild(link);
 
-    it('repaints the favicon in the active theme accent color', () => {
-      document.documentElement.style.setProperty('--accent', '103 179 255');
-      applyTheme('studio-dark');
-      expect(decodeFaviconHref()).toContain('stroke="rgb(103,179,255)"');
-    });
+    applyTheme('studio-dark');
+    applyTheme('paper-light');
 
-    it('switches the favicon color when the theme changes', () => {
-      document.documentElement.style.setProperty('--accent', '103 179 255');
-      applyTheme('studio-dark');
-      const first = decodeFaviconHref();
-
-      document.documentElement.style.setProperty('--accent', '203 166 247');
-      applyTheme('catppuccin-mocha');
-      const second = decodeFaviconHref();
-
-      expect(first).toContain('stroke="rgb(103,179,255)"');
-      expect(second).toContain('stroke="rgb(203,166,247)"');
-      expect(first).not.toEqual(second);
-    });
-
-    it('uses the lucide Orbit shape so the favicon mirrors the TopBar mark', () => {
-      document.documentElement.style.setProperty('--accent', '103 179 255');
-      applyTheme('studio-dark');
-      const svg = decodeFaviconHref();
-      // Distinctive Orbit path commands + the three orbiting circles.
-      expect(svg).toContain('M20.341 6.484A10 10 0 0 1 10.266 21.85');
-      expect(svg).toContain('M3.659 17.516A10 10 0 0 1 13.74 2.152');
-      expect(svg).toContain('<circle cx="12" cy="12" r="3"/>');
-      expect(svg).toContain('<circle cx="19" cy="5" r="2"/>');
-      expect(svg).toContain('<circle cx="5" cy="19" r="2"/>');
-    });
-
-    it('creates a favicon link element when none exists', () => {
-      expect(document.querySelector('link[rel="icon"]')).toBeNull();
-      document.documentElement.style.setProperty('--accent', '103 179 255');
-      applyTheme('studio-dark');
-      expect(document.querySelector('link[rel="icon"]')).not.toBeNull();
-    });
-
-    it('reuses an existing favicon link instead of duplicating it', () => {
-      const link = document.createElement('link');
-      link.rel = 'icon';
-      link.href = '/favicon.svg';
-      document.head.appendChild(link);
-
-      document.documentElement.style.setProperty('--accent', '103 179 255');
-      applyTheme('studio-dark');
-
-      const links = document.querySelectorAll('link[rel="icon"]');
-      expect(links.length).toBe(1);
-    });
-
-    it('skips the favicon swap gracefully when --accent is unset', () => {
-      // No setProperty call — getComputedStyle returns "" for the variable.
-      expect(() => applyTheme('studio-dark')).not.toThrow();
-      expect(document.querySelector('link[rel="icon"]')).toBeNull();
-    });
+    const links = document.querySelectorAll<HTMLLinkElement>('link[rel="icon"]');
+    expect(links.length).toBe(1);
+    expect(links[0].getAttribute('href')).toBe('/favicon.png');
   });
 });

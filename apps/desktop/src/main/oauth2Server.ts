@@ -47,6 +47,10 @@ type HttpServer = Server<typeof IncomingMessage, typeof ServerResponse>;
 type ServerFactory = (handler: RequestListener) => HttpServer;
 
 const DEFAULT_TIMEOUT_MS = 120_000;
+/** Maximum callback URL length we'll accept. IdPs return short query strings
+ *  (code, state, error, error_description). Anything beyond this is junk or a
+ *  local attacker trying to keep the loopback server busy. */
+const MAX_CALLBACK_URL_LENGTH = 8192;
 
 export interface CallbackResult {
   /** Auth-code grant: `?code=...&state=...`. */
@@ -83,10 +87,13 @@ export interface StartCallbackArgs {
 /**
  * Try to bind a TCP listener on `preferred` first; if it's in use, walk
  * up `preferred + 1`, `+2`, ... up to `range` slots. Returns the first
- * free port. Throws when the entire range is occupied.
+ * port we successfully held a bind on (and immediately released).
  *
- * Important: ports < 1024 are privileged on Linux/macOS; the IdP-side
- * callback URL almost always uses a high port (8080, 8081, ...) anyway.
+ * Important: there is still a small TOCTOU window between releasing this
+ * probe socket and the eventual `startCallbackServer` re-bind. Callers
+ * that need a hard guarantee should call `startCallbackServer` directly
+ * and recover from EADDRINUSE — see `startCallbackServer` for the
+ * retry-on-bind-failure path that closes the race.
  */
 export async function findFreePort(preferred: number, range: number = 10): Promise<number> {
   for (let i = 0; i < range; i++) {
@@ -170,6 +177,25 @@ function handleRequest(
   callbackPath: string,
   finish: (result: CallbackResult | Error) => void,
 ): void {
+  // Lock the surface to GET — IdPs only ever GET the redirect_uri. A local
+  // attacker streaming a giant POST body would otherwise tie up the loopback.
+  if (req.method !== 'GET') {
+    res.statusCode = 405;
+    res.setHeader('Allow', 'GET');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.end('Method Not Allowed');
+    return;
+  }
+
+  // Cap the URL length so a malicious local process can't keep the
+  // single-shot server hot with megabyte-long URLs.
+  if ((req.url ?? '').length > MAX_CALLBACK_URL_LENGTH) {
+    res.statusCode = 414;
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.end('URI Too Long');
+    return;
+  }
+
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${args.port}`);
 
   if (url.pathname !== callbackPath) {
@@ -280,13 +306,27 @@ const FRAGMENT_RELAY_HTML = `<!doctype html>
  * into the test runtime — tests inject a fake `openExternal`. The
  * default path lazy-imports `electron.shell`, which keeps this module
  * loadable from `vitest` (which has no electron runtime).
+ *
+ * Defense in depth: we re-validate the URL scheme here even though the
+ * IPC entry point in main.ts also checks. `shell.openExternal` on Windows
+ * invokes ShellExecute, which has been an RCE vector for Electron apps
+ * that accepted unvalidated URLs (Follina-class).
  */
 export async function openInBrowser(
   url: string,
   openExternal?: (url: string) => Promise<void>,
 ): Promise<void> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('openInBrowser: invalid URL');
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error(`openInBrowser: refusing scheme ${parsed.protocol}`);
+  }
   if (openExternal) {
-    await openExternal(url);
+    await openExternal(parsed.toString());
     return;
   }
   // Lazy import — Electron isn't loadable from a non-electron Node
@@ -294,5 +334,5 @@ export async function openInBrowser(
   const electron = (await import('electron')) as {
     shell: { openExternal: (url: string) => Promise<void> };
   };
-  await electron.shell.openExternal(url);
+  await electron.shell.openExternal(parsed.toString());
 }

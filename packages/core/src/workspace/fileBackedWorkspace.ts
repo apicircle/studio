@@ -137,18 +137,32 @@ export async function withWorkspace<T>(
 // internals
 // ---------------------------------------------------------------------------
 
+// File mode for workspace JSON: owner read/write only. Default `fs.writeFile`
+// uses 0o666 minus umask (typically 0o644 — world-readable). The workspace
+// docs carry the synced state (which after redaction is mostly safe to read
+// but still includes per-workspace metadata) and the local state (which
+// holds the encrypted Secret Vault payload table, session metadata, and the
+// vault entries themselves). On multi-user POSIX hosts (CI runners,
+// classroom VMs, shared dev servers) the default would leak both. 0o600
+// keeps the file owner-only. Windows ignores POSIX modes — the inherited
+// per-user ACL under %USERPROFILE% is what protects it there.
+const WORKSPACE_FILE_MODE = 0o600;
+
 async function ensureFile(filePath: string): Promise<void> {
   try {
     await fs.access(filePath);
   } catch (err) {
     if (!isENOENT(err)) throw err;
-    await fs.writeFile(filePath, '{}', 'utf-8');
+    await fs.writeFile(filePath, '{}', { encoding: 'utf-8', mode: WORKSPACE_FILE_MODE });
   }
 }
 
 async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> {
   const tmp = `${filePath}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(value, null, 2) + '\n', 'utf-8');
+  await fs.writeFile(tmp, JSON.stringify(value, null, 2) + '\n', {
+    encoding: 'utf-8',
+    mode: WORKSPACE_FILE_MODE,
+  });
   await fs.rename(tmp, filePath);
 }
 

@@ -145,16 +145,47 @@ export function applyPathParams(rawUrl: string, pathParams: Record<string, strin
   return substituted + rest;
 }
 
+// RFC 7230 §3.2.6 "token" — valid characters for an HTTP header field-name.
+// Rejecting names outside this set keeps a `{{var}}` resolution that ends up
+// containing `:` or a control char from corrupting the wire format / smuggling
+// a second header line on a future native HTTP layer.
+const HEADER_TOKEN_RE = /^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$/;
+
+/** Strip ASCII control characters (CR/LF/NUL/etc.) from a value that's about
+ *  to be put on an HTTP wire. RFC 7230 forbids CR/LF in header values; CR/LF
+ *  in a Cookie value also breaks the `; key=value; …` framing. Body content
+ *  goes through a different code path and is NOT sanitised here — line
+ *  breaks in a JSON / text body are legitimate. */
+function sanitizeWireValue(v: string): string {
+  // Strip everything ASCII < 0x20 except HT (0x09 — tab, occasionally legit
+  // inside header values per the spec). Strictly speaking even tab in a
+  // header value is questionable; we keep it to avoid surprising the user.
+  // 0x7F (DEL) is also stripped.
+  // eslint-disable-next-line no-control-regex -- intentional: stripping CTLs is the whole point
+  return v.replace(/[\x00-\x08\x0A-\x1F\x7F]/g, '');
+}
+
 /**
  * Build a `Cookie` header value from a list of name/value pairs. Skips
  * disabled or empty-key rows. Returns the empty string when nothing applies.
+ * Per RFC 6265, cookie values may not contain CTL chars or `;` (which is the
+ * row separator) — we strip CTLs and also strip `;` from values to keep the
+ * row framing intact when a {{var}} resolves to something containing one.
  */
 export function composeCookieHeader(
   rows: ReadonlyArray<{ key: string; value: string; enabled: boolean }>,
 ): string {
   return rows
     .filter((r) => r.enabled && r.key.trim().length > 0)
-    .map((r) => `${r.key.trim()}=${r.value}`)
+    .map((r) => {
+      // The key has already been trimmed; strip any CTLs and `;` / `=` /
+      // whitespace it might have picked up from a variable resolution.
+      // eslint-disable-next-line no-control-regex -- intentional: stripping CTLs is the whole point
+      const safeKey = r.key.trim().replace(/[\x00-\x20;=]/g, '');
+      const safeValue = sanitizeWireValue(r.value).replace(/;/g, '');
+      return `${safeKey}=${safeValue}`;
+    })
+    .filter((s) => s.length > 1) // `=` alone after sanitisation is meaningless
     .join('; ');
 }
 
@@ -191,7 +222,13 @@ export function composeHeaders(
     if (!row.enabled) continue;
     const k = row.key.trim();
     if (!k) continue;
-    out[k] = row.value;
+    // Reject header names that don't fit RFC 7230's token grammar. A
+    // resolved `{{var}}` could otherwise carry `:` / CR/LF / space and
+    // smuggle a second header on a future native HTTP layer. Browser
+    // fetch already throws on this — defending here gives us deterministic
+    // skip-the-row behaviour AND covers any future non-fetch executor.
+    if (!HEADER_TOKEN_RE.test(k)) continue;
+    out[k] = sanitizeWireValue(row.value);
   }
   return out;
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import type {
   EnvironmentVariableOverride,
   LinkedSnapshot,
@@ -34,7 +34,6 @@ function snap(args: {
 }): LinkedSnapshot {
   const requests = Object.fromEntries((args.requests ?? []).map((r) => [r.id, r]));
   return {
-    workspaceName: 'Source',
     pulledAt: T0,
     ref: 'v1.0.0',
     collections: {
@@ -70,7 +69,7 @@ function override(id: string, patch: RequestOverride['patch']): RequestOverride 
   };
 }
 
-describe('previewLinkedUpdate — request classification', () => {
+describe('previewLinkedUpdate â€” request classification', () => {
   it('unchanged: base equals target and no override', () => {
     const r = makeRequest({ id: 'r1' });
     const preview = previewLinkedUpdate({
@@ -85,7 +84,7 @@ describe('previewLinkedUpdate — request classification', () => {
     expect(preview.summary.unchanged).toBe(0); // unchanged entries are filtered out
   });
 
-  it('source-only: target diverges from base, no override → fast-forward', () => {
+  it('source-only: target diverges from base, no override â†’ fast-forward', () => {
     const r1 = makeRequest({ id: 'r1', url: 'https://old.example.test/r1' });
     const r2 = makeRequest({ id: 'r1', url: 'https://new.example.test/r1' });
     const preview = previewLinkedUpdate({
@@ -100,7 +99,7 @@ describe('previewLinkedUpdate — request classification', () => {
     expect(preview.entries[0].status).toBe('source-only');
   });
 
-  it('local-only: base equals target, override exists → keep mine', () => {
+  it('local-only: base equals target, override exists â†’ keep mine', () => {
     const r = makeRequest({ id: 'r1' });
     const preview = previewLinkedUpdate({
       fromVersion: '1.0.0',
@@ -114,7 +113,7 @@ describe('previewLinkedUpdate — request classification', () => {
     expect(preview.entries[0].status).toBe('local-only');
   });
 
-  it('both-changed: base ≠ target AND override → user must pick', () => {
+  it('both-changed: base â‰  target AND override â†’ user must pick', () => {
     const r1 = makeRequest({ id: 'r1', url: 'https://old.example.test/r1' });
     const r2 = makeRequest({ id: 'r1', url: 'https://new.example.test/r1' });
     const preview = previewLinkedUpdate({
@@ -182,7 +181,7 @@ describe('previewLinkedUpdate — request classification', () => {
   });
 });
 
-describe('previewLinkedUpdate — env-var classification', () => {
+describe('previewLinkedUpdate â€” env-var classification', () => {
   it('source-only when target adds a new env value', () => {
     const preview = previewLinkedUpdate({
       fromVersion: '1.0.0',
@@ -197,7 +196,7 @@ describe('previewLinkedUpdate — env-var classification', () => {
     expect(preview.entries[0].status).toBe('source-only');
   });
 
-  it('local-only when consumer added a variable that doesn’t exist in source', () => {
+  it('local-only when consumer added a variable that doesnâ€™t exist in source', () => {
     const ov: EnvironmentVariableOverride = {
       linkedWorkspaceId: 'lw-1',
       envName: 'dev',
@@ -338,7 +337,7 @@ describe('applyLinkedUpdate', () => {
       base,
       target,
       preview,
-      resolutions: {}, // no explicit resolution → orphans default to drop
+      resolutions: {}, // no explicit resolution â†’ orphans default to drop
       requestOverrides: [ov],
       envVarOverrides: [],
     });

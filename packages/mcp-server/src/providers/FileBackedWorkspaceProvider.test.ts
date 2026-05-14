@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+﻿import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -12,7 +12,6 @@ function emptySynced(): WorkspaceSynced {
   return {
     schemaVersion: 1,
     workspaceId: 'ws-1',
-    workspaceName: 'W',
     collections: { tree: { id: 'r', type: 'root', children: [] }, requests: {}, folders: {} },
     environments: { items: {}, activeName: null, priorityOrder: [] },
     linkedWorkspaces: {},
@@ -90,10 +89,13 @@ describe('FileBackedWorkspaceProvider', () => {
   it('write replaces both halves of the workspace on disk', async () => {
     await saveToFile(dir, { synced: emptySynced(), local: emptyLocal() });
     const p = new FileBackedWorkspaceProvider(dir);
-    const next: WorkspaceSynced = { ...emptySynced(), workspaceName: 'Renamed' };
+    const next: WorkspaceSynced = {
+      ...emptySynced(),
+      meta: { ...emptySynced().meta, appVersion: 'renamed-version' },
+    };
     const out = await p.write({ synced: next });
-    expect(out.synced.workspaceName).toBe('Renamed');
+    expect(out.synced.meta.appVersion).toBe('renamed-version');
     const reloaded = await p.read();
-    expect(reloaded.synced.workspaceName).toBe('Renamed');
+    expect(reloaded.synced.meta.appVersion).toBe('renamed-version');
   });
 });

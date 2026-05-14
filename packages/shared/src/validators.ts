@@ -224,3 +224,27 @@ export function validatePositiveDuration(value: number | string): ValidationResu
 
 // Note: `validateBranchName` lives in @apicircle/core (returns `string | null`).
 // Keep the existing one — we don't need a second flavour.
+
+/**
+ * Returns the URL string if `value` is a syntactically valid URL whose scheme
+ * is `http:` or `https:` — otherwise `null`. Use this at every site that
+ * renders a third-party-supplied URL as `<a href>` or hands one to
+ * `window.open` / `shell.openExternal`. The OAuth2 device-flow
+ * `verification_uri` comes straight from the IdP and could in principle be
+ * `javascript:`, `data:`, `file:`, or a custom OS protocol handler —
+ * rendering any of those is an XSS / RCE foot-gun.
+ *
+ * `null` returns should be rendered as plain text so the user can still see
+ * and copy the value, but cannot one-click execute it.
+ */
+export function safeExternalHref(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length === 0) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  return parsed.toString();
+}

@@ -31,7 +31,6 @@ function makeSnapshot(args: {
   envVars?: Array<{ key: string; value: string }>;
 }): LinkedSnapshot {
   return {
-    workspaceName: 'Source',
     pulledAt: T0,
     ref: 'v1.0.0',
     collections: {

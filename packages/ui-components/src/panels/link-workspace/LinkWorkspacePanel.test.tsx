@@ -186,7 +186,7 @@ describe('LinkWorkspacePanel — connected, no links yet', () => {
         { name: 'develop', commitSha: 'bbb' },
       ]),
       probeLinkedRepoVersions: vi.fn(async () => ({
-        workspaceName: 'API workspace',
+        repoFullName: 'me/api',
         versions: ['1.0.0', '1.2.0'],
         currentVersion: '1.2.0',
         requiredSecretKeys: [],
@@ -206,8 +206,13 @@ describe('LinkWorkspacePanel — connected, no links yet', () => {
     await user.click(screen.getByRole('option', { name: /Pick me\/api/ }));
     expect(await screen.findByLabelText('Pick a branch')).toHaveValue('main');
 
-    // Probe runs and surfaces the workspace name + currentVersion chip.
-    expect(await screen.findByText(/API workspace/)).toBeVisible();
+    // Probe runs and surfaces the repo path + currentVersion chip. The
+    // workspace name no longer lives in the git-tracked doc, so the
+    // wizard shows the unambiguous `owner/repo` identifier instead.
+    // The repo path appears in multiple places (the selected-repo chip
+    // in the picker and the Source workspace line under the probe);
+    // assert at least one match plus the version chip.
+    expect((await screen.findAllByText(/me\/api/)).length).toBeGreaterThan(0);
     expect(screen.getByText(/currentVersion v1\.2\.0/)).toBeVisible();
 
     // Switching to "Pin to a specific version" reveals the dropdown

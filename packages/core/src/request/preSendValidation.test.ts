@@ -64,6 +64,40 @@ describe('preSendValidation', () => {
     expect(result.warnings.some((w) => w.kind === 'unresolved-variable')).toBe(true);
   });
 
+  // Phase 6: warn when the URL contains `user:pass@host` credentials. They
+  // are sent on the wire as Basic auth (Chromium converts userinfo into an
+  // Authorization header) and persist into RequestRun.url history.
+  it('warns when the URL contains user:pass@host credentials', () => {
+    const result = preSendValidation({
+      request: baseReq({ url: 'https://leaked:secret@api.example.test/x' }),
+      scope: emptyScope,
+    });
+    expect(
+      result.warnings.some(
+        (w) =>
+          w.kind === 'url-embedded-credentials' && /move them to the Auth tab/i.test(w.message),
+      ),
+    ).toBe(true);
+  });
+
+  it('does not warn for a URL with only a username (no password) — still valid auth but still suspect', () => {
+    // We treat any embedded userinfo as suspect — username-only URLs are
+    // rare but still send the username as Basic auth in some flows.
+    const result = preSendValidation({
+      request: baseReq({ url: 'https://justusername@api.example.test/x' }),
+      scope: emptyScope,
+    });
+    expect(result.warnings.some((w) => w.kind === 'url-embedded-credentials')).toBe(true);
+  });
+
+  it('does not warn for a clean URL', () => {
+    const result = preSendValidation({
+      request: baseReq({ url: 'https://api.example.test/x' }),
+      scope: emptyScope,
+    });
+    expect(result.warnings.some((w) => w.kind === 'url-embedded-credentials')).toBe(false);
+  });
+
   it('flags unresolved {{var}} in the URL', () => {
     const result = preSendValidation({
       request: baseReq({ url: 'https://api.example.test/{{MISSING}}' }),

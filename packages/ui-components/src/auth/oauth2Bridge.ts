@@ -131,11 +131,30 @@ class WebBridge implements OAuth2Bridge {
       // eslint-disable-next-line prefer-const
       let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
 
+      // Same-origin `postMessage` fallback. The callback page posts to
+      // `window.opener` (with `targetOrigin = location.origin`) for
+      // environments where BroadcastChannel is unavailable, blocked by
+      // privacy settings, or stripped by a browser extension. We require
+      // `event.origin === location.origin` so a cross-origin attacker
+      // can't push a forged payload at us. Declared before `finish` so
+      // `finish` can tear down the listener in any exit path.
+      const messageHandler = (event: MessageEvent<unknown>): void => {
+        if (typeof window === 'undefined' || event.origin !== window.location.origin) return;
+        acceptPayload(event.data);
+      };
+
       const finish = (result: OAuth2CallbackResult | Error) => {
         if (settled) return;
         settled = true;
         try {
           channel.close();
+        } catch {
+          /* noop */
+        }
+        try {
+          if (typeof window !== 'undefined') {
+            window.removeEventListener('message', messageHandler);
+          }
         } catch {
           /* noop */
         }
@@ -150,27 +169,44 @@ class WebBridge implements OAuth2Bridge {
         else resolve(result);
       };
 
-      timeoutHandle = setTimeout(
-        () => finish(new Error(`OAuth2 callback timed out after ${timeoutMs}ms`)),
-        timeoutMs,
-      );
-
-      channel.onmessage = (event: MessageEvent<unknown>) => {
-        const payload = event.data as Partial<OAuth2CallbackResult> | null;
-        if (!payload || typeof payload !== 'object') return;
+      // Settle on the first payload that arrives AND carries our expected
+      // state value. Defense-in-depth: a same-origin attacker (browser
+      // extension, malicious tab) can post on the BroadcastChannel because
+      // the channel name is derived from the (non-secret) state. Filtering
+      // by `payload.state === args.state` here means a forged payload
+      // carrying a different state is ignored rather than racing the
+      // legitimate IdP redirect. The caller still re-validates with HMAC
+      // context downstream — this is the receiver-level gate.
+      const acceptPayload = (raw: unknown): void => {
+        if (!raw || typeof raw !== 'object') return;
+        const payload = raw as Partial<OAuth2CallbackResult>;
+        const incomingState = typeof payload.state === 'string' ? payload.state : '';
+        if (!incomingState || !constantTimeEqual(incomingState, args.state)) {
+          // Wrong (or missing) state — don't settle. Keep waiting; the
+          // real IdP redirect may still be in flight.
+          return;
+        }
         finish({
           code: payload.code,
           accessToken: payload.accessToken,
           tokenType: payload.tokenType,
           expiresIn: payload.expiresIn,
           scope: payload.scope,
-          state: payload.state,
+          state: incomingState,
           error: payload.error,
           errorDescription: payload.errorDescription,
           port: 0,
           redirectUri,
         });
       };
+
+      timeoutHandle = setTimeout(
+        () => finish(new Error(`OAuth2 callback timed out after ${timeoutMs}ms`)),
+        timeoutMs,
+      );
+
+      channel.onmessage = (event: MessageEvent<unknown>) => acceptPayload(event.data);
+      window.addEventListener('message', messageHandler);
 
       // Open the popup AFTER the channel is listening. Centered on the
       // current screen, fixed dimensions — most IdP login pages render

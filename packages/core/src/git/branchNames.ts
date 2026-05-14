@@ -1,8 +1,10 @@
 // Branch-name generator for the auto-create-from-main flow.
 //
 // Format: `apicircle/<slug>-<6char-id>`, where:
-//   - <slug> is the workspace name normalised to lowercase ASCII alphanumerics
-//     joined by hyphens. Empty slugs fall back to `workspace`.
+//   - <slug> is the workspace's local display name normalised to lowercase
+//     ASCII alphanumerics joined by hyphens. Empty slugs fall back to
+//     `workspace`. The display name comes from the local registry — git
+//     no longer carries a workspace name, since the name is per-machine.
 //   - <6char-id> is a short random suffix that keeps subsequent branches from
 //     colliding when a user creates more than one working branch from the
 //     same workspace.
@@ -46,13 +48,14 @@ export function slugify(input: string): string {
 }
 
 export interface BranchNameOptions {
-  workspaceName: string;
+  /** The workspace's local display name (from the registry entry). */
+  displayName: string;
   /** Inject a fixed id in tests; defaults to 6 random hex chars. */
   idGen?: () => string;
 }
 
 export function generateWorkingBranchName(opts: BranchNameOptions): string {
-  const slug = slugify(opts.workspaceName);
+  const slug = slugify(opts.displayName);
   const id = (opts.idGen ?? randomHex)();
   return `apicircle/${slug}-${id}`;
 }

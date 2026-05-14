@@ -131,8 +131,10 @@ test.describe('Link Workspace (P5.2)', () => {
     // Branch dropdown defaults to the repo's default_branch.
     await expect(app.getByLabel('Pick a branch')).toHaveValue('main');
 
-    // Probe surfaces the workspace name + currentVersion chip.
-    await expect(app.getByText('Payments API')).toBeVisible();
+    // Probe surfaces the repo path (the workspace's display name no
+    // longer travels through git, so the wizard shows the unambiguous
+    // `owner/repo` identifier) + currentVersion chip.
+    await expect(app.getByText(/me\/payments-api/).first()).toBeVisible();
     await expect(app.getByText(/currentVersion v1\.2\.0/)).toBeVisible();
 
     // Switch to specific-version pin and verify the dropdown is populated.
@@ -149,13 +151,11 @@ test.describe('Link Workspace (P5.2)', () => {
     await confirm.getByRole('button', { name: 'Link', exact: true }).click();
 
     // The private-link modal closes after a successful link. Wait for it
-    // to disappear before asserting on the new card text — both surfaces
-    // briefly contain "Payments API" (the probe banner inside the modal +
-    // the new LinkCard) and the strict-mode locator would otherwise hit
-    // both at once.
+    // to disappear before asserting on the new card text.
     await expect(app.getByRole('dialog', { name: /Link a private workspace/ })).not.toBeVisible();
-    // Card lands on the panel.
-    await expect(app.getByText('Payments API')).toBeVisible();
+    // Card lands on the panel. `link.name` defaults to the repo path
+    // since the source's display name no longer travels through git;
+    // consumers can rename their local entry later.
     await expect(app.getByText('me/payments-api@main')).toBeVisible();
   });
 
@@ -232,9 +232,9 @@ test.describe('Link Workspace (P5.2)', () => {
     await app.getByRole('button', { name: /Review .* link/ }).click();
     await app.getByRole('button', { name: 'Link', exact: true }).click();
 
-    await expect(app.getByText('Payments API')).toBeVisible();
     await expect(app.getByText('org/payments-api@main')).toBeVisible();
-    await expect(app.getByLabel('Pin Payments API version')).toHaveValue('1.0.0');
+    // The "Pin <name> version" label uses link.name (now the repo path).
+    await expect(app.getByLabel('Pin org/payments-api version')).toHaveValue('1.0.0');
   });
 
   test('switching the pin opens a confirm dialog and applies the new version', async ({ app }) => {
@@ -490,8 +490,8 @@ test.describe('Link Workspace (P5.2)', () => {
     await dialog.getByRole('button', { name: 'Link', exact: true }).click();
 
     // After link, the modal closes and the card shows in the list with the
-    // public-kind badge.
-    await expect(app.getByText('Payments API')).toBeVisible();
+    // public-kind badge. `link.name` defaults to the repo path now.
+    await expect(app.getByText('org/payments-api').first()).toBeVisible();
     await expect(app.getByText('public', { exact: true }).first()).toBeVisible();
   });
 

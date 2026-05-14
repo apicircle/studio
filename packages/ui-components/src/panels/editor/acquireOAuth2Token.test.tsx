@@ -300,3 +300,66 @@ describe('acquireToken — non-redirect grants do not invoke the bridge', () => 
     expect(bridge.startFlow).not.toHaveBeenCalled();
   });
 });
+
+describe('acquireToken — state is HMAC-bound to (clientId, redirectUri)', () => {
+  // Per Phase 3a: `generateOAuth2State` is now called with a context arg of
+  // `${clientId}:${redirectUri}` so a state observed in one flow cannot be
+  // replayed against a different client / redirect tuple. Verify the state
+  // emitted in the authorize URL carries the `<nonce>.<base64url-hmac>`
+  // shape — the previous bare-nonce form was a P1 audit finding.
+  function extractStateFromAuthorizeUrl(authorizeUrl: string): string {
+    return new URL(authorizeUrl).searchParams.get('state') ?? '';
+  }
+
+  it('auth-code state contains an HMAC suffix', async () => {
+    const bridge = makeBridge();
+    await acquireToken(baseAuthCode(), bridge);
+    const args = (bridge.startFlow as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    const state = extractStateFromAuthorizeUrl(args.authorizeUrl);
+    // HMAC-bound shape: nonce + "." + base64url(hmac).
+    expect(state.split('.').length).toBe(2);
+    const [nonce, mac] = state.split('.');
+    expect(nonce!.length).toBeGreaterThan(0);
+    expect(mac).toMatch(/^[A-Za-z0-9_-]+$/);
+  });
+
+  it('PKCE state contains an HMAC suffix', async () => {
+    const bridge = makeBridge();
+    await acquireToken(basePkce(), bridge);
+    const args = (bridge.startFlow as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    const state = extractStateFromAuthorizeUrl(args.authorizeUrl);
+    expect(state.split('.').length).toBe(2);
+  });
+
+  it('implicit state contains an HMAC suffix', async () => {
+    const bridge = makeBridge({
+      callback: { accessToken: 'tk-implicit', tokenType: 'Bearer' },
+    });
+    await acquireToken(baseImplicit(), bridge);
+    const args = (bridge.startFlow as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    const state = extractStateFromAuthorizeUrl(args.authorizeUrl);
+    expect(state.split('.').length).toBe(2);
+  });
+
+  it('rejects an HMAC-bound state whose nonce was swapped (replay attempt)', async () => {
+    // Hostile callback: keeps the legitimate HMAC but swaps in a fresh
+    // nonce. validateOAuth2State recomputes HMAC over (new-nonce:context)
+    // and rejects — proving the binding actually fires.
+    const bridge: OAuth2Bridge = {
+      findFreePort: vi.fn().mockResolvedValue(0),
+      startFlow: vi.fn(async (args) => {
+        const [, mac] = args.state.split('.');
+        return {
+          port: 0,
+          redirectUri: 'http://localhost/oauth-callback.html',
+          code: 'auth-code',
+          state: `attacker-nonce.${mac}`,
+        };
+      }),
+      getRedirectUri: () => 'http://localhost/oauth-callback.html',
+    };
+    await expect(acquireToken(baseAuthCode(), bridge)).rejects.toThrow(
+      /state missing or mismatched/i,
+    );
+  });
+});

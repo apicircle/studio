@@ -22,6 +22,20 @@ describe('generateCodeVerifier', () => {
     const b = generateCodeVerifier();
     expect(a).not.toBe(b);
   });
+
+  it('samples uniformly from a 64-char base64url alphabet (no modulo bias)', () => {
+    // Phase 3e: the previous implementation did `bytes[i] % 66`, which
+    // mapped 256 input values onto 66 alphabet positions non-uniformly
+    // (values 0..189 → two chars each; 190..255 → one). The fixed
+    // implementation masks with `& 0x3f` against a 64-char alphabet, so
+    // every output character is equally probable.
+    const sample = generateCodeVerifier(128) + generateCodeVerifier(128);
+    // Every character must be in the unreserved URL set [A-Za-z0-9_-].
+    expect(sample).toMatch(/^[A-Za-z0-9_-]+$/);
+    // `.` and `~` (allowed by RFC but removed for uniformity) should never
+    // appear in the new output.
+    expect(sample).not.toMatch(/[.~]/);
+  });
 });
 
 describe('computeCodeChallenge', () => {

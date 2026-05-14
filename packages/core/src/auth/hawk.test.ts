@@ -103,6 +103,43 @@ describe('buildHawkAuthHeader', () => {
     expect(header).toContain('dlg="parent-app"');
   });
 
+  // Phase 11: the `app` / `dlg` directives MUST be bound into the MAC
+  // input. Before the fix, a MITM could substitute different app/dlg
+  // values without invalidating the MAC, which broke server-side tenant
+  // routing decisions that rely on those directives.
+  it('binds app+dlg into the MAC — changing either yields a different MAC', async () => {
+    const baseArgs = {
+      method: 'GET' as const,
+      url: 'http://x/y',
+      hawkId: 'i',
+      hawkKey: 'k',
+      timestamp: 1,
+      nonce: 'n',
+    };
+    const noAppDlg = await buildHawkAuthHeader(baseArgs);
+    const withApp = await buildHawkAuthHeader({ ...baseArgs, app: 'my-app' });
+    const withAppAndDlg = await buildHawkAuthHeader({
+      ...baseArgs,
+      app: 'my-app',
+      delegation: 'parent',
+    });
+    const withDifferentApp = await buildHawkAuthHeader({ ...baseArgs, app: 'other-app' });
+
+    function extractMac(h: string): string {
+      const m = /mac="([^"]+)"/.exec(h);
+      return m?.[1] ?? '';
+    }
+    // All four MACs must be distinct — proves the values are part of
+    // the signed input, not just decorative.
+    const macs = new Set([
+      extractMac(noAppDlg),
+      extractMac(withApp),
+      extractMac(withAppAndDlg),
+      extractMac(withDifferentApp),
+    ]);
+    expect(macs.size).toBe(4);
+  });
+
   it('emits a hash="…" directive and folds payload into the MAC when payload is supplied', async () => {
     const noPayload = await buildHawkAuthHeader({
       method: 'POST',

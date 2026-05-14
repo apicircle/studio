@@ -467,10 +467,10 @@ function PlanNameHeader({
         aria-label="Plan name"
         aria-invalid={reason !== null}
         className={cn(
-          'h-9 max-w-md flex-1 rounded-sm border bg-card px-3 text-base font-medium text-text-primary focus:outline-none focus:ring-2',
+          'max-w-md flex-1 rounded-sm border bg-transparent px-2 py-1 text-base font-medium text-text-primary focus:outline-none focus:ring-1',
           reason !== null
             ? 'border-danger focus:border-danger focus:ring-danger/30'
-            : 'border-transparent focus:border-accent focus:ring-accent/30',
+            : 'border-transparent hover:border-border focus:border-accent focus:ring-accent/30',
         )}
       />
       {reason && (

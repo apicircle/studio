@@ -14,11 +14,19 @@ export type EntityBucket =
   | 'folder'
   | 'environment'
   | 'linkedWorkspace'
-  | 'workspaceName'
+  | 'mockServer'
+  | 'executionPlan'
+  | 'secretKey'
+  | 'globalSchema'
+  | 'globalGraphql'
+  | 'linkedRequestOverride'
+  | 'linkedEnvOverride'
+  | 'releasePerLink'
   | 'tree'
   | 'environmentsActive'
   | 'environmentsPriority'
-  | 'releaseSelf';
+  | 'releaseSelf'
+  | 'secretCrypto';
 
 export interface DiffEntry {
   bucket: EntityBucket;
@@ -109,15 +117,81 @@ const dictBuckets: DictBucketSpec[] = [
       return v?.name ?? key;
     },
   },
+  {
+    bucket: 'mockServer',
+    extract: (s) => s.mockServers,
+    label: (key, value) => {
+      const v = value as { name?: string } | undefined;
+      return v?.name ?? key;
+    },
+  },
+  {
+    // Plan definitions live in `synced.executionPlans` post-hydrate. The
+    // field is typed optional because pre-migration workspaces persisted
+    // plans on `WorkspaceLocal` only; coerce a missing dict to `{}` so the
+    // diff engine treats "absent" and "empty" identically.
+    bucket: 'executionPlan',
+    extract: (s) => s.executionPlans ?? {},
+    label: (key, value) => {
+      const v = value as { name?: string } | undefined;
+      return v?.name ?? key;
+    },
+  },
+  {
+    // Secret-key slot metadata (label + KDF salt). Values are device-local
+    // and never travel through git — only the slot identity does, so
+    // collaborators see consistent labels for the same id.
+    bucket: 'secretKey',
+    extract: (s) => s.secretKeys ?? {},
+    label: (key, value) => {
+      const v = value as { label?: string } | undefined;
+      return v?.label ?? key;
+    },
+  },
+  {
+    // Reusable JSON Schemas registered at workspace scope.
+    bucket: 'globalSchema',
+    extract: (s) => s.globalAssets.schemas,
+    label: (key, value) => {
+      const v = value as { name?: string } | undefined;
+      return v?.name ?? key;
+    },
+  },
+  {
+    // Reusable GraphQL schema docs registered at workspace scope.
+    bucket: 'globalGraphql',
+    extract: (s) => s.globalAssets.graphql,
+    label: (key, value) => {
+      const v = value as { name?: string } | undefined;
+      return v?.name ?? key;
+    },
+  },
+  {
+    // Consumer-side patches to a linked workspace's requests. Keyed
+    // `${linkedWorkspaceId}:${requestId}`; the label leans on the key
+    // since the override itself doesn't carry a name.
+    bucket: 'linkedRequestOverride',
+    extract: (s) => s.linkedOverrides.requests,
+    label: (key) => `linked request override (${key})`,
+  },
+  {
+    // Per-variable overrides for linked-workspace env vars. Keyed
+    // `${linkedWorkspaceId}:${envName}:${varKey}`.
+    bucket: 'linkedEnvOverride',
+    extract: (s) => s.linkedOverrides.environmentVars,
+    label: (key) => `linked env var override (${key})`,
+  },
+  {
+    // Cached release ledgers for each linked workspace. Keyed by
+    // linkedWorkspaceId. Refreshes via the link card's "Refresh ledger"
+    // surface change here too.
+    bucket: 'releasePerLink',
+    extract: (s) => s.releases.perLink,
+    label: (key) => `linked release ledger (${key})`,
+  },
 ];
 
 const singletons: SingletonSpec[] = [
-  {
-    bucket: 'workspaceName',
-    key: '',
-    label: 'Workspace name',
-    extract: (s) => s.workspaceName,
-  },
   { bucket: 'tree', key: '', label: 'Folder tree', extract: (s) => s.collections.tree },
   {
     bucket: 'environmentsActive',
@@ -136,6 +210,15 @@ const singletons: SingletonSpec[] = [
     key: '',
     label: 'Release ledger',
     extract: (s) => s.releases.self,
+  },
+  {
+    // Workspace passphrase metadata (KDF + verifier — never the secret
+    // itself). Travels through git so a collaborator who pulls knows the
+    // passphrase exists and can prompt for it on first decrypt.
+    bucket: 'secretCrypto',
+    key: '',
+    label: 'Workspace passphrase',
+    extract: (s) => s.secretCrypto ?? null,
   },
 ];
 
@@ -260,6 +343,51 @@ export function applyMerge(
   return merged;
 }
 
+/**
+ * Distinguishes the two outcomes a merge can have for a dict entry:
+ *   - `upsert` — the entry now exists in the dict (added or modified).
+ *               `parent` tells us if it belongs at root or inside a folder.
+ *   - `remove` — the entry was deleted from the dict.
+ * Without this discriminator, "value === undefined" can't be told apart from
+ * "value present with parent === null" — and root-level deletes would silently
+ * get re-added by the reconciler.
+ */
+type TreeOp = { kind: 'upsert'; parent: string | null } | { kind: 'remove' };
+
+/**
+ * Keep `tree.children` consistent with the requests/folders dict when a
+ * merge inserts, modifies, or removes an entry. The sidebar derives the
+ * visible list from two parallel sources — `tree.children` (root) and
+ * `folderId/parentId` chains (nested). Without this reconciliation, a
+ * pull that adds a top-level request leaves the dict updated but the
+ * tree untouched, so the request becomes an "orphan" — present in the
+ * unpushed-changes strip but invisible in the editor sidebar.
+ *
+ * Cases handled:
+ *   - upsert at root: add to tree.children if missing
+ *   - upsert nested: strip any stale root reference (entry can't be in two
+ *     places at once)
+ *   - remove: strip from tree.children if present
+ */
+function reconcileTreeForEntry(
+  tree: WorkspaceSynced['collections']['tree'],
+  kind: 'folder' | 'request',
+  id: string,
+  op: TreeOp,
+): WorkspaceSynced['collections']['tree'] {
+  const inTree = tree.children.some((c) => c.kind === kind && c.id === id);
+  if (op.kind === 'upsert' && op.parent === null) {
+    if (inTree) return tree;
+    return { ...tree, children: [...tree.children, { kind, id }] };
+  }
+  // Nested upsert OR remove: ensure no stale root reference.
+  if (!inTree) return tree;
+  return {
+    ...tree,
+    children: tree.children.filter((c) => !(c.kind === kind && c.id === id)),
+  };
+}
+
 function applyEntry(
   local: WorkspaceSynced,
   remote: WorkspaceSynced,
@@ -272,15 +400,25 @@ function applyEntry(
   switch (entry.bucket) {
     case 'request': {
       const requests = { ...local.collections.requests };
+      const treeOp: TreeOp =
+        value === undefined
+          ? { kind: 'remove' }
+          : { kind: 'upsert', parent: (value as { folderId: string | null }).folderId ?? null };
       if (value === undefined) delete requests[entry.key];
       else requests[entry.key] = value as (typeof requests)[string];
-      return { ...local, collections: { ...local.collections, requests } };
+      const tree = reconcileTreeForEntry(local.collections.tree, 'request', entry.key, treeOp);
+      return { ...local, collections: { ...local.collections, requests, tree } };
     }
     case 'folder': {
       const folders = { ...local.collections.folders };
+      const treeOp: TreeOp =
+        value === undefined
+          ? { kind: 'remove' }
+          : { kind: 'upsert', parent: (value as { parentId: string | null }).parentId ?? null };
       if (value === undefined) delete folders[entry.key];
       else folders[entry.key] = value as (typeof folders)[string];
-      return { ...local, collections: { ...local.collections, folders } };
+      const tree = reconcileTreeForEntry(local.collections.tree, 'folder', entry.key, treeOp);
+      return { ...local, collections: { ...local.collections, folders, tree } };
     }
     case 'environment': {
       const items = { ...local.environments.items };
@@ -294,8 +432,60 @@ function applyEntry(
       else linkedWorkspaces[entry.key] = value as (typeof linkedWorkspaces)[string];
       return { ...local, linkedWorkspaces };
     }
-    case 'workspaceName':
-      return { ...local, workspaceName: remote.workspaceName };
+    case 'mockServer': {
+      const mockServers = { ...local.mockServers };
+      if (value === undefined) delete mockServers[entry.key];
+      else mockServers[entry.key] = value as (typeof mockServers)[string];
+      return { ...local, mockServers };
+    }
+    case 'executionPlan': {
+      // executionPlans is optional in the type — start from `{}` rather
+      // than `undefined` so we never write a non-dict value back.
+      const executionPlans = { ...(local.executionPlans ?? {}) };
+      if (value === undefined) delete executionPlans[entry.key];
+      else
+        executionPlans[entry.key] = value as NonNullable<WorkspaceSynced['executionPlans']>[string];
+      return { ...local, executionPlans };
+    }
+    case 'secretKey': {
+      // secretKeys is optional in the type — coerce missing to {} so a
+      // remote that hasn't ever populated the field doesn't smuggle in
+      // an undefined.
+      const secretKeys = { ...(local.secretKeys ?? {}) };
+      if (value === undefined) delete secretKeys[entry.key];
+      else secretKeys[entry.key] = value as NonNullable<WorkspaceSynced['secretKeys']>[string];
+      return { ...local, secretKeys };
+    }
+    case 'globalSchema': {
+      const schemas = { ...local.globalAssets.schemas };
+      if (value === undefined) delete schemas[entry.key];
+      else schemas[entry.key] = value as (typeof schemas)[string];
+      return { ...local, globalAssets: { ...local.globalAssets, schemas } };
+    }
+    case 'globalGraphql': {
+      const graphql = { ...local.globalAssets.graphql };
+      if (value === undefined) delete graphql[entry.key];
+      else graphql[entry.key] = value as (typeof graphql)[string];
+      return { ...local, globalAssets: { ...local.globalAssets, graphql } };
+    }
+    case 'linkedRequestOverride': {
+      const requests = { ...local.linkedOverrides.requests };
+      if (value === undefined) delete requests[entry.key];
+      else requests[entry.key] = value as (typeof requests)[string];
+      return { ...local, linkedOverrides: { ...local.linkedOverrides, requests } };
+    }
+    case 'linkedEnvOverride': {
+      const environmentVars = { ...local.linkedOverrides.environmentVars };
+      if (value === undefined) delete environmentVars[entry.key];
+      else environmentVars[entry.key] = value as (typeof environmentVars)[string];
+      return { ...local, linkedOverrides: { ...local.linkedOverrides, environmentVars } };
+    }
+    case 'releasePerLink': {
+      const perLink = { ...local.releases.perLink };
+      if (value === undefined) delete perLink[entry.key];
+      else perLink[entry.key] = value as (typeof perLink)[string];
+      return { ...local, releases: { ...local.releases, perLink } };
+    }
     case 'tree':
       return { ...local, collections: { ...local.collections, tree: remote.collections.tree } };
     case 'environmentsActive':
@@ -313,5 +503,7 @@ function applyEntry(
       };
     case 'releaseSelf':
       return { ...local, releases: { ...local.releases, self: remote.releases.self } };
+    case 'secretCrypto':
+      return { ...local, secretCrypto: remote.secretCrypto ?? null };
   }
 }

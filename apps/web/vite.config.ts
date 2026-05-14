@@ -20,6 +20,16 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/_mock/, ''),
       },
+      // GitHub's `github.com/login/*` endpoints don't return CORS headers,
+      // so a browser can't talk to them directly. Forward through the dev
+      // server (which is server-side and exempt from CORS) for the device-
+      // flow start + token-poll endpoints.
+      '/_gh-oauth': {
+        target: 'https://github.com',
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/_gh-oauth/, ''),
+      },
     },
   },
 });

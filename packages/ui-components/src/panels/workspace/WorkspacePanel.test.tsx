@@ -38,10 +38,14 @@ describe('WorkspacePanel', () => {
     expect(screen.getByText('pull_request')).toBeInTheDocument();
   });
 
-  it('clicking the connect CTA opens the Vault tab in the workspace inspector dock', async () => {
+  it('clicking the connect CTA opens the Vault dock pre-selected on the Sessions sub-tab', async () => {
     await renderWithStore(<WorkspacePanel />);
     await userEvent.click(screen.getByRole('button', { name: /Connect via Secret Vault/ }));
+    // Regression: the button label promises "→ Sessions" — it has to
+    // actually deliver. Pre-fix the dock opened on the default 'vault'
+    // sub-tab and the user had to manually click "Sessions".
     expect(useWorkspaceStore.getState().rightDock.tab).toBe('vault');
+    expect(useWorkspaceStore.getState().rightDock.vaultSubtab).toBe('sessions');
   });
 
   it('shows "GitHub Connected" and account details when a session is present', async () => {
@@ -70,6 +74,11 @@ describe('WorkspacePanel', () => {
     expect(screen.getByText('GitHub Connected')).toBeInTheDocument();
     expect(screen.getByText('devaprakash')).toBeInTheDocument();
     expect(screen.getByText(/repo, pull_request/)).toBeInTheDocument();
+    // The "Manage session" CTA on the session card also lands the user
+    // on the Sessions sub-tab, not the Vault default.
+    await userEvent.click(screen.getByRole('button', { name: /Manage session/ }));
+    expect(useWorkspaceStore.getState().rightDock.tab).toBe('vault');
+    expect(useWorkspaceStore.getState().rightDock.vaultSubtab).toBe('sessions');
   });
 
   it('editing the workspace name persists', async () => {
@@ -77,7 +86,10 @@ describe('WorkspacePanel', () => {
     const input = screen.getByLabelText(/Workspace name/);
     await userEvent.clear(input);
     await userEvent.type(input, 'Payments API');
-    expect(useWorkspaceStore.getState().synced!.workspaceName).toBe('Payments API');
+    // The name lives in the local registry, not in the git-synced doc.
+    const reg = useWorkspaceStore.getState().workspaceRegistry!;
+    const active = reg.workspaces.find((w) => w.id === reg.activeWorkspaceId)!;
+    expect(active.name).toBe('Payments API');
   });
 
   describe('Repo + working branch (P4.2)', () => {

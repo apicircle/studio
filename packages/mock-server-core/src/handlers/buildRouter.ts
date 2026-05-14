@@ -112,18 +112,27 @@ function makeHandler(endpoint: MockEndpoint, opts: BuildRouterOptions) {
 async function buildRequestContext(c: Context): Promise<RequestContext> {
   const url = new URL(c.req.url);
   const queryEntries = Array.from(url.searchParams.entries());
-  const query: Record<string, string> = {};
+  // Use Object.create(null) so user-controlled keys like `__proto__` or
+  // `constructor` can't shadow prototype members. Downstream rule evaluators
+  // do property reads on these dicts; a polluted prototype would surprise them.
+  const query: Record<string, string> = Object.create(null);
   for (const [k, v] of queryEntries) {
     // First value wins on repeated keys — mirrors Hono's `c.req.query()`
     // behavior and matches what most APIs treat as canonical.
     if (!(k in query)) query[k] = v;
   }
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = Object.create(null);
   for (const [k, v] of c.req.raw.headers.entries()) {
     headers[k.toLowerCase()] = v;
   }
-  // c.req.param() returns all path params for this matched route.
-  const pathParams = c.req.param();
+  // c.req.param() returns all path params for this matched route. Hono returns
+  // a plain object; copy onto a null-prototype dict so consumers can't be
+  // tripped by an attacker setting `__proto__` as a path-param name.
+  const honoParams: Record<string, string> = c.req.param();
+  const pathParams: Record<string, string> = Object.create(null);
+  for (const k of Object.keys(honoParams)) {
+    pathParams[k] = honoParams[k];
+  }
   const cookies = parseCookieHeader(headers['cookie']);
 
   // Body parsing is best-effort: only attempt JSON parse when the
@@ -152,7 +161,7 @@ async function buildRequestContext(c: Context): Promise<RequestContext> {
 }
 
 function parseCookieHeader(cookieHeader: string | undefined): Record<string, string> {
-  const out: Record<string, string> = {};
+  const out: Record<string, string> = Object.create(null);
   if (!cookieHeader) return out;
   for (const part of cookieHeader.split(';')) {
     const eq = part.indexOf('=');
@@ -175,13 +184,28 @@ async function respond(
 
   const finalResponse = applyMultipliers(response, ctx);
 
+  // Track whether the user-configured headers already pin Content-Type — if
+  // they don't, we derive one from `body.type` so the browser can't MIME-sniff
+  // a JSON/text body into HTML (XSS risk for any consumer that loads the
+  // mock URL in an <iframe> or <script src>).
+  let userSetContentType = false;
   for (const h of finalResponse.headers) {
     if (!h.enabled) continue;
     if (!h.key.trim()) continue;
+    if (h.key.toLowerCase() === 'content-type') userSetContentType = true;
     c.header(h.key, h.value);
   }
 
   const body = finalResponse.body;
+  if (!userSetContentType) {
+    const defaultCt = defaultContentTypeFor(body.type);
+    if (defaultCt) c.header('Content-Type', defaultCt);
+  }
+  // Belt-and-braces: tell browsers not to override the declared type. Without
+  // this header, even a correct Content-Type can be sniffed away by old IE-
+  // compatible heuristics in some Chromium edge cases.
+  c.header('X-Content-Type-Options', 'nosniff');
+
   // No body / 204-style: respond with empty body and the configured status.
   if (body.type === 'none') {
     return c.body(null, finalResponse.status as 200);
@@ -192,6 +216,22 @@ async function respond(
     return c.body(null, finalResponse.status as 200);
   }
   return c.body(body.content, finalResponse.status as 200);
+}
+
+function defaultContentTypeFor(bodyType: MockResponseConfig['body']['type']): string | null {
+  switch (bodyType) {
+    case 'json':
+      return 'application/json; charset=utf-8';
+    case 'text':
+      return 'text/plain; charset=utf-8';
+    case 'binary':
+      return 'application/octet-stream';
+    case 'form-data':
+      return 'multipart/form-data';
+    case 'none':
+    default:
+      return null;
+  }
 }
 
 /**

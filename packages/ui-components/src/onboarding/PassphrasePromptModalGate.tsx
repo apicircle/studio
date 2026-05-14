@@ -32,7 +32,11 @@ interface GateProps {
 
 export function PassphrasePromptModalGate({ forceUnlock = false }: GateProps) {
   const secretCrypto = useWorkspaceStore((s) => s.synced?.secretCrypto ?? null);
-  const workspaceName = useWorkspaceStore((s) => s.synced?.workspaceName ?? null);
+  const workspaceName = useWorkspaceStore((s) => {
+    const reg = s.workspaceRegistry;
+    if (!reg) return null;
+    return reg.workspaces.find((w) => w.id === reg.activeWorkspaceId)?.name ?? null;
+  });
   const lockState = useWorkspaceStore((s) => s.secretLockState);
   const lastActivity = useWorkspaceStore((s) => s.lastSecretActivityAt);
   const setupPassphrase = useWorkspaceStore((s) => s.setupPassphrase);

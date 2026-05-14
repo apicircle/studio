@@ -3,7 +3,7 @@
 // needed); Path uses a custom row layout because the keys are derived from
 // URL placeholders and only the value column is editable.
 
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { Info } from 'lucide-react';
 import type { Request as ApiRequest } from '@apicircle/shared';
 import { findPathPlaceholders } from '@apicircle/core';
@@ -32,7 +32,12 @@ interface ParamsTabProps {
 
 type ParamsSection = 'query' | 'path' | 'cookie';
 
-export function ParamsTab({ request }: ParamsTabProps) {
+// memo()'d so an unrelated EditorPanel parent re-render (toast push, theme
+// change, etc.) doesn't recompute this tab's render tree when `request` is
+// the same reference. The internal useWorkspaceStore subscriptions still
+// trigger re-renders when THEIR specific slices change, which is what we
+// want.
+export const ParamsTab = memo(function ParamsTab({ request }: ParamsTabProps) {
   const setRequestQuery = useWorkspaceStore((s) => s.setRequestQuery);
   const setRequestPathParams = useWorkspaceStore((s) => s.setRequestPathParams);
   const setRequestCookies = useWorkspaceStore((s) => s.setRequestCookies);
@@ -165,7 +170,7 @@ export function ParamsTab({ request }: ParamsTabProps) {
       )}
     </div>
   );
-}
+});
 
 interface PathParamsProps {
   placeholders: string[];

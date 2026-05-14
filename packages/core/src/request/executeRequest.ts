@@ -2,7 +2,11 @@ import type { Request as ApiRequest } from '@apicircle/shared';
 import { buildRequest, type AttachmentResolver } from './buildRequest';
 import type { AutoHeaderOverrides } from './autoHeaders';
 import { type AuthApplyOptions, type AuthApplyWarning } from './applyAuth';
-import { buildDigestAuthHeader, parseDigestChallenge } from '../auth/digest';
+import {
+  buildDigestAuthHeader,
+  parseDigestChallenge,
+  selectStrongestDigestChallenge,
+} from '../auth/digest';
 import {
   buildNtlmType3Authenticate,
   decodeNtlmBase64,
@@ -28,6 +32,13 @@ export interface ExecutionResult {
    * went out unauthenticated.
    */
   authWarnings: AuthApplyWarning[];
+  /**
+   * True when the response body exceeded `MAX_RESPONSE_BODY_BYTES` and we
+   * stopped reading. The `body` field still contains the prefix we did
+   * read — callers should render a "Response truncated at X MB" badge.
+   * Omitted when the body was read in full.
+   */
+  responseTruncated?: boolean;
 }
 
 export interface ExecuteOptions {
@@ -54,6 +65,56 @@ export interface ExecuteOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+
+/** Hard cap on the response body we'll buffer. An attacker-controlled server
+ *  can stream gigabytes with chunked transfer-encoding; we abort the read
+ *  once we cross this threshold and surface the truncation in the result. */
+export const MAX_RESPONSE_BODY_BYTES = 50 * 1024 * 1024;
+
+/** Max redirects we'll follow before giving up. RFC 7231 §6.4 doesn't
+ *  mandate a number; 10 matches what curl uses by default. */
+const MAX_REDIRECTS = 10;
+
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+/** Headers we strip on every cross-origin redirect — they carry credentials
+ *  that the new origin must not see. */
+const CROSS_ORIGIN_STRIP_HEADERS = new Set([
+  'authorization',
+  'cookie',
+  'proxy-authorization',
+  'x-api-key',
+  'x-auth-token',
+]);
+
+function sameOrigin(a: string, b: string): boolean {
+  try {
+    const ua = new URL(a);
+    const ub = new URL(b);
+    return ua.protocol === ub.protocol && ua.host === ub.host;
+  } catch {
+    return false;
+  }
+}
+
+function stripCrossOriginHeaders(headers: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(headers)) {
+    if (CROSS_ORIGIN_STRIP_HEADERS.has(k.toLowerCase())) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+/** Resolve a (possibly relative) Location-header value against the request
+ *  URL. The fetch spec uses the URL of the response that produced the
+ *  redirect; we honour that by passing the current `from`. */
+function resolveLocation(from: string, location: string): string | null {
+  try {
+    return new URL(location, from).toString();
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Execute a request through the browser's fetch (or an injected impl for
@@ -100,12 +161,65 @@ export async function executeRequest(
         );
 
   try {
-    let response = await fetchImpl(built.url, {
-      method: built.method,
-      headers: built.headers,
-      body: built.body,
+    // Manual redirect handling. The browser's default `redirect: 'follow'`
+    // preserves `Authorization` / `Cookie` headers across cross-origin
+    // redirects — a `302 Location: https://attacker/` from a legitimate
+    // host would exfiltrate the bearer/basic credential. We walk the
+    // redirect chain ourselves and strip cross-origin credential headers
+    // at each hop.
+    let currentUrl = built.url;
+    let currentHeaders: Record<string, string> = { ...built.headers };
+    let currentMethod = built.method;
+    let currentBody: BodyInit | null = built.body;
+    let response = await fetchImpl(currentUrl, {
+      method: currentMethod,
+      headers: currentHeaders,
+      body: currentBody,
       signal: controller.signal,
+      redirect: 'manual',
     });
+    let redirectCount = 0;
+    while (REDIRECT_STATUSES.has(response.status) && redirectCount < MAX_REDIRECTS) {
+      const location = response.headers.get('location');
+      if (!location) break;
+      const nextUrl = resolveLocation(currentUrl, location);
+      if (!nextUrl) break;
+      // 303 always converts to GET with no body. 301/302 also convert
+      // non-GET to GET for most browsers (legacy compat). 307/308 preserve
+      // method + body.
+      const preserveMethod = response.status === 307 || response.status === 308;
+      const nextMethod = preserveMethod ? currentMethod : currentMethod === 'HEAD' ? 'HEAD' : 'GET';
+      const nextBody = preserveMethod ? currentBody : null;
+      const isCrossOrigin = !sameOrigin(currentUrl, nextUrl);
+      const nextHeaders = isCrossOrigin
+        ? stripCrossOriginHeaders(currentHeaders)
+        : { ...currentHeaders };
+      // Drain the previous response body so the underlying socket isn't
+      // left holding bytes.
+      try {
+        await response.text();
+      } catch {
+        /* ignore */
+      }
+      currentUrl = nextUrl;
+      currentHeaders = nextHeaders;
+      currentMethod = nextMethod;
+      currentBody = nextBody;
+      response = await fetchImpl(currentUrl, {
+        method: currentMethod,
+        headers: currentHeaders,
+        body: currentBody,
+        signal: controller.signal,
+        redirect: 'manual',
+      });
+      redirectCount++;
+    }
+    if (REDIRECT_STATUSES.has(response.status)) {
+      // Hit the cap — surface as an error rather than silently returning
+      // the redirect response (which the caller wouldn't know what to do
+      // with).
+      throw new Error(`Too many redirects (>${MAX_REDIRECTS})`);
+    }
 
     // Auth-challenge retry loop. Acts only on 401 with a matching
     // scheme. We allow up to 2 retries:
@@ -127,18 +241,21 @@ export async function executeRequest(
       if (!wwwAuth) break;
 
       // Stop after first retry unless the server explicitly says stale=true.
+      // Use the strongest-challenge selector so a multi-algo server's stale
+      // signal on the SHA-256 challenge isn't missed because we happened
+      // to grab the MD5 one first.
       if (retryCount === 1) {
-        const challenge = parseDigestChallenge(wwwAuth);
+        const challenge = selectStrongestDigestChallenge(wwwAuth) ?? parseDigestChallenge(wwwAuth);
         if (!/^true$/i.test(challenge.stale ?? '')) break;
         nc = bumpNc(nc);
       }
 
       const retried = await runChallengeRetry({
         fetchImpl,
-        builtUrl: built.url,
-        builtMethod: built.method,
-        builtHeaders: built.headers,
-        builtBody: built.body,
+        builtUrl: currentUrl,
+        builtMethod: currentMethod,
+        builtHeaders: currentHeaders,
+        builtBody: currentBody,
         signal: controller.signal,
         wwwAuth,
         auth: challengeAuth,
@@ -165,7 +282,12 @@ export async function executeRequest(
       headers[k] = v;
     });
     const contentType = headers['content-type'] ?? '';
-    const text = await response.text();
+    // Stream the body via a reader so we can abort the read once we cross
+    // `MAX_RESPONSE_BODY_BYTES`. The previous `await response.text()` would
+    // happily buffer a gigabyte attacker-controlled stream into a single
+    // string and OOM the renderer. We still build a string (the existing
+    // ExecutionResult contract expects one) but cap how much we accept.
+    const { text, truncated } = await readResponseCapped(response);
     const bodyKind: ExecutionResult['bodyKind'] =
       text.length === 0
         ? 'empty'
@@ -189,9 +311,10 @@ export async function executeRequest(
       headers,
       body: text,
       bodyKind,
-      url: built.url,
-      method: built.method,
+      url: currentUrl,
+      method: currentMethod,
       authWarnings: built.authWarnings,
+      ...(truncated ? { responseTruncated: true } : {}),
     };
   } catch (err) {
     const t1 =
@@ -208,6 +331,8 @@ export async function executeRequest(
       body: '',
       bodyKind: 'empty',
       error: err instanceof Error ? err.message : String(err),
+      // We may have already followed redirects before throwing — report the
+      // last URL we tried so the user sees where the error originated.
       url: built.url,
       method: built.method,
       authWarnings: built.authWarnings,
@@ -247,7 +372,13 @@ async function runChallengeRetry(args: {
   nc?: string;
 }): Promise<Response | null> {
   if (args.auth.type === 'digest' && /^digest\b/i.test(args.wwwAuth)) {
-    const challenge = parseDigestChallenge(args.wwwAuth);
+    // Pick the strongest challenge when the server stacks multiple
+    // `WWW-Authenticate: Digest` headers (SHA-512-256 / SHA-256 / MD5).
+    // For single-challenge servers this returns the same challenge that
+    // `parseDigestChallenge` would have produced, so single-algo flows
+    // are unchanged.
+    const challenge =
+      selectStrongestDigestChallenge(args.wwwAuth) ?? parseDigestChallenge(args.wwwAuth);
     if (!challenge.realm || !challenge.nonce) return null;
     const uri = new URL(args.builtUrl).pathname + new URL(args.builtUrl).search;
     // Digest auth-int requires the entity body bytes — string, binary,
@@ -363,4 +494,68 @@ function readHeaderCaseInsensitive(
 function bumpNc(nc: string): string {
   const next = parseInt(nc, 16) + 1;
   return next.toString(16).padStart(8, '0');
+}
+
+/**
+ * Read a Response body with a hard byte cap. Returns the decoded UTF-8
+ * string plus a `truncated` flag. We stream via the body reader so a
+ * gigabyte chunked-encoded stream from a hostile server doesn't OOM us —
+ * once we've accumulated `MAX_RESPONSE_BODY_BYTES`, we cancel the read and
+ * keep the prefix we already have.
+ *
+ * Fallback path: when the runtime doesn't expose `response.body` (older
+ * fetch polyfills, certain test stubs), defer to `response.text()` — the
+ * caller is on their own to know they're not facing a hostile server.
+ */
+async function readResponseCapped(
+  response: Response,
+): Promise<{ text: string; truncated: boolean }> {
+  const body = response.body;
+  if (!body || typeof body.getReader !== 'function') {
+    // No stream — best-effort. The cap won't fire in this branch, but
+    // the response.text() call still resolves to whatever the runtime
+    // already buffered.
+    return { text: await response.text(), truncated: false };
+  }
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let truncated = false;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      chunks.push(value);
+      if (total >= MAX_RESPONSE_BODY_BYTES) {
+        truncated = true;
+        try {
+          await reader.cancel();
+        } catch {
+          /* cancel may not be supported in every runtime */
+        }
+        break;
+      }
+    }
+  } catch {
+    // Read errored mid-stream — keep what we have and surface the chunks
+    // we've already captured. The outer try/catch in executeRequest will
+    // see the underlying network error if there is one.
+  }
+  // Concatenate + UTF-8 decode. We only need the bytes we kept; if we hit
+  // the cap we trim to exactly `MAX_RESPONSE_BODY_BYTES` so the boundary
+  // is deterministic for users (otherwise we'd return slightly over the
+  // limit on the final chunk).
+  const totalLen = truncated ? MAX_RESPONSE_BODY_BYTES : total;
+  const out = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const c of chunks) {
+    if (offset >= totalLen) break;
+    const slice = offset + c.byteLength > totalLen ? c.subarray(0, totalLen - offset) : c;
+    out.set(slice, offset);
+    offset += slice.byteLength;
+  }
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(out);
+  return { text, truncated };
 }

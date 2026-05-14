@@ -2,6 +2,38 @@
 <html lang="en" data-theme="studio-dark">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      Content-Security-Policy
+      -----------------------
+      script-src 'self'         — only bundled JS executes; no inline scripts.
+      style-src 'self' 'unsafe-inline'
+                                — Tailwind classes ship in a stylesheet, but
+                                React components also set inline `style={…}`
+                                attributes; 'unsafe-inline' is the standard
+                                allowance for that pattern (script-src is the
+                                one that matters most).
+      connect-src 'self' https: http: ws: wss: blob: data:
+                                — Studio is an API client; users hit arbitrary
+                                hosts. We have to allow http(s) broadly. Same
+                                rule covers WebSocket protocols + local blob
+                                response handling.
+      worker-src 'self' blob:   — Monaco loads its workers as blob: URLs.
+      img-src 'self' data: blob:
+      font-src 'self' data:
+      object-src 'none'         — no plugins.
+      frame-src 'none'          — no iframes (also enforced in code).
+      frame-ancestors 'none'    — we are never inside someone else's frame.
+      base-uri 'self'           — block <base> hijack.
+      form-action 'none'        — we never submit traditional HTML forms.
+
+      The desktop main process additionally injects this header via
+      session.webRequest.onHeadersReceived so the policy survives even if a
+      future build pipeline strips this meta tag.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https: http: ws: wss: blob: data:; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'"
+    />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>API Circle Studio</title>

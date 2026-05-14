@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import { ArrowRight, ShieldAlert, Sparkles, Zap } from 'lucide-react';
 import type { MockEndpoint } from '@apicircle/shared';
 import { cn } from '../../primitives/cn';
@@ -35,10 +36,13 @@ export function MockEndpointFlow(props: FlowProps) {
   const totalRuleCount = props.endpoint.responseRules.length;
 
   return (
-    // Outer flex centers the four-node block horizontally; the inner
-    // grid keeps the auto-sizing semantics (so each node sizes to its
-    // content rather than the full sidebar width).
-    <div className="flex w-full justify-center">
+    // `mx-auto shrink-0` centers the pipeline when it fits inside the
+    // parent (margin auto distributes the slack), and lets it overflow
+    // its natural width when the right dock crowds the panel — the
+    // parent's `overflow-x-auto` then scrolls. `shrink-0` is the part
+    // that matters: without it, the flex parent would compress the
+    // grid below its content width and clip nodes.
+    <div className="mx-auto shrink-0">
       <div
         role="group"
         aria-label="Mock endpoint flow"
@@ -107,7 +111,7 @@ function ArrowEdge({ label }: { label?: string }) {
   );
 }
 
-function EndpointNode({ endpoint, selection, onSelect }: FlowProps) {
+const EndpointNode = memo(function EndpointNode({ endpoint, selection, onSelect }: FlowProps) {
   const active = selection.kind === 'endpoint';
   return (
     <NodeBox
@@ -122,9 +126,9 @@ function EndpointNode({ endpoint, selection, onSelect }: FlowProps) {
       </div>
     </NodeBox>
   );
-}
+});
 
-function ValidationNode({
+const ValidationNode = memo(function ValidationNode({
   endpoint,
   selection,
   onSelect,
@@ -132,11 +136,17 @@ function ValidationNode({
   totalCount,
 }: FlowProps & { enabledCount: number; totalCount: number }) {
   // Each chip carries its own enabled flag so disabled rules render dimmed
-  // rather than vanishing — the user can still see they exist.
-  const chips = endpoint.requestValidation.map((r) => ({
-    status: r.failResponse.status,
-    enabled: r.enabled,
-  }));
+  // rather than vanishing — the user can still see they exist. Memoized
+  // so a parent re-render (e.g. from an unrelated store mutation) doesn't
+  // allocate a fresh array per pass.
+  const chips = useMemo(
+    () =>
+      endpoint.requestValidation.map((r) => ({
+        status: r.failResponse.status,
+        enabled: r.enabled,
+      })),
+    [endpoint.requestValidation],
+  );
   // Show "(enabled / total)" when some rules are off so the discrepancy is
   // visible in the flow view; collapse to "(N)" when everything is enabled.
   const label =
@@ -177,9 +187,9 @@ function ValidationNode({
       )}
     </NodeBox>
   );
-}
+});
 
-function RulesNode({
+const RulesNode = memo(function RulesNode({
   endpoint,
   selection,
   onSelect,
@@ -189,10 +199,14 @@ function RulesNode({
   // Mirror ValidationNode: render every chip, dim and strike-through the
   // disabled ones so users can see at a glance which rules exist but
   // won't fire at runtime.
-  const chips = endpoint.responseRules.map((r) => ({
-    status: r.response.status,
-    enabled: r.enabled,
-  }));
+  const chips = useMemo(
+    () =>
+      endpoint.responseRules.map((r) => ({
+        status: r.response.status,
+        enabled: r.enabled,
+      })),
+    [endpoint.responseRules],
+  );
   const label =
     totalCount === enabledCount ? `Rules (${totalCount})` : `Rules (${enabledCount}/${totalCount})`;
   return (
@@ -229,9 +243,9 @@ function RulesNode({
       )}
     </NodeBox>
   );
-}
+});
 
-function DefaultNode({ endpoint, selection, onSelect }: FlowProps) {
+const DefaultNode = memo(function DefaultNode({ endpoint, selection, onSelect }: FlowProps) {
   const active = selection.kind === 'default';
   return (
     <NodeBox
@@ -251,7 +265,7 @@ function DefaultNode({ endpoint, selection, onSelect }: FlowProps) {
       </div>
     </NodeBox>
   );
-}
+});
 
 function MethodChip({ method }: { method: string }) {
   const t =

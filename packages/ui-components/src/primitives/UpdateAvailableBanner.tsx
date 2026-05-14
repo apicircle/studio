@@ -85,7 +85,7 @@ export function UpdateAvailableBanner() {
             <a
               href={pending.releaseNotesUrl}
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               className="inline-flex h-6 items-center gap-1 text-[0.6875rem] text-text-muted hover:text-text-primary"
             >
               <ExternalLink size={10} aria-hidden="true" />

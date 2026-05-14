@@ -154,38 +154,131 @@ describe('workspaceStore.refreshWorkspace', () => {
     expect(useWorkspaceStore.getState().local!.sync.lastPulledSha).toBe('sha-r1');
   });
 
+  // Regression: after auto-merge the snapshot baseline MUST be the
+  // remote, not the merged doc. Storing `merged` made local-only edits
+  // disappear from the unpushed-changes strip ("No unpushed changes")
+  // until the user pushed — at which point those edits silently went
+  // through. The strip is the user's only signal of "what will this
+  // push do?", so it has to stay honest.
+  it('after auto-merge with a local-only edit, the strip still reports it as unpushed', async () => {
+    const { summarizeUnpushedChanges } = await import('@apicircle/core');
+    await setupConnectedBranch();
+    const localSynced = useWorkspaceStore.getState().synced!;
+    // Local seeds an execution plan; remote has no plans.
+    const localWithPlan: WorkspaceSynced = {
+      ...localSynced,
+      executionPlans: {
+        'plan-local': {
+          id: 'plan-local',
+          name: 'Local plan',
+          steps: [],
+          envPriorityOrder: [],
+          createdAt: 't',
+          updatedAt: 't',
+        },
+      },
+    };
+    useWorkspaceStore.setState({ synced: localWithPlan });
+    const remote: WorkspaceSynced = { ...localSynced, executionPlans: {} };
+    vi.stubGlobal('fetch', queuedFetch([branchHeadOk(), fileContents(remote, 'sha-merge-1')]));
+
+    const result = await useWorkspaceStore.getState().refreshWorkspace();
+    expect(result.status).toBe('merged');
+    const { local: localAfter, synced: syncedAfter } = useWorkspaceStore.getState();
+    // Synced retained the plan (auto-merge kept the local-only entry).
+    expect(syncedAfter!.executionPlans?.['plan-local']).toBeDefined();
+    // Snapshot is the REMOTE, not the merged doc — that's the fix.
+    expect(localAfter!.sync.lastPulledSnapshot?.executionPlans?.['plan-local']).toBeUndefined();
+    // The unpushed-changes strip therefore correctly surfaces the local edit.
+    const summary = summarizeUnpushedChanges(localAfter!.sync.lastPulledSnapshot, syncedAfter!);
+    expect(summary.changes.find((c) => c.bucket === 'executionPlan')?.kind).toBe('added');
+    expect(summary.total).toBeGreaterThan(0);
+  });
+
   it('stashes the diff for the resolver when conflicts exist; commitRefresh applies the picks', async () => {
     await setupConnectedBranch();
     const localSynced = useWorkspaceStore.getState().synced!;
-    // Local renames the workspace; remote renames it differently. With no
-    // base snapshot (first refresh), this is a conflict.
-    useWorkspaceStore.getState().setWorkspaceName('Mine');
-    const remote: WorkspaceSynced = { ...localSynced, workspaceName: 'Theirs' };
+    // Local picks one active env; remote picks a different one. With no
+    // base snapshot (first refresh), this is a conflict on the
+    // `environmentsActive` singleton.
+    useWorkspaceStore.setState({
+      synced: {
+        ...localSynced,
+        environments: { ...localSynced.environments, activeName: 'mine' },
+      },
+    });
+    const remote: WorkspaceSynced = {
+      ...localSynced,
+      environments: { ...localSynced.environments, activeName: 'theirs' },
+    };
     vi.stubGlobal('fetch', queuedFetch([branchHeadOk(), fileContents(remote, 'sha-r2')]));
 
     const result = await useWorkspaceStore.getState().refreshWorkspace();
     expect(result.status).toBe('conflicts');
     expect(useWorkspaceStore.getState().pendingRefresh).not.toBeNull();
     // Synced doc is NOT mutated until commitRefresh.
-    expect(useWorkspaceStore.getState().synced!.workspaceName).toBe('Mine');
+    expect(useWorkspaceStore.getState().synced!.environments.activeName).toBe('mine');
 
-    await useWorkspaceStore.getState().commitRefresh({ 'workspaceName:': 'theirs' });
-    expect(useWorkspaceStore.getState().synced!.workspaceName).toBe('Theirs');
+    await useWorkspaceStore.getState().commitRefresh({ 'environmentsActive:': 'theirs' });
+    expect(useWorkspaceStore.getState().synced!.environments.activeName).toBe('theirs');
     expect(useWorkspaceStore.getState().pendingRefresh).toBeNull();
     expect(useWorkspaceStore.getState().local!.sync.lastPulledSha).toBe('sha-r2');
+  });
+
+  // Regression: conflict resolved as "mine" must leave the snapshot
+  // baseline pointing at the remote, so the user's picked-as-mine
+  // values still register as unpushed. Pre-fix the snapshot was the
+  // merged doc — synced == snapshot, strip blank, user silently misses
+  // that their picks still need to be pushed.
+  it('after commitRefresh picks "mine", the strip still reports the picked value as unpushed', async () => {
+    const { summarizeUnpushedChanges } = await import('@apicircle/core');
+    await setupConnectedBranch();
+    const localSynced = useWorkspaceStore.getState().synced!;
+    useWorkspaceStore.setState({
+      synced: {
+        ...localSynced,
+        environments: { ...localSynced.environments, activeName: 'mine' },
+      },
+    });
+    const remote: WorkspaceSynced = {
+      ...localSynced,
+      environments: { ...localSynced.environments, activeName: 'theirs' },
+    };
+    vi.stubGlobal('fetch', queuedFetch([branchHeadOk(), fileContents(remote, 'sha-pick-mine')]));
+
+    await useWorkspaceStore.getState().refreshWorkspace();
+    await useWorkspaceStore.getState().commitRefresh({ 'environmentsActive:': 'mine' });
+
+    const { local: localAfter, synced: syncedAfter } = useWorkspaceStore.getState();
+    // Local picked "mine" → synced retains 'mine'.
+    expect(syncedAfter!.environments.activeName).toBe('mine');
+    // Snapshot baseline is the REMOTE ('theirs'), not the merged result ('mine').
+    expect(localAfter!.sync.lastPulledSnapshot?.environments.activeName).toBe('theirs');
+    // So the strip surfaces 'mine' as still-unpushed.
+    const summary = summarizeUnpushedChanges(localAfter!.sync.lastPulledSnapshot, syncedAfter!);
+    expect(summary.total).toBeGreaterThan(0);
+    expect(summary.changes.find((c) => c.bucket === 'environmentsActive')).toBeDefined();
   });
 
   it('cancelRefresh drops the pending diff without writing anything', async () => {
     await setupConnectedBranch();
     const localSynced = useWorkspaceStore.getState().synced!;
-    useWorkspaceStore.getState().setWorkspaceName('Mine');
-    const remote: WorkspaceSynced = { ...localSynced, workspaceName: 'Theirs' };
+    useWorkspaceStore.setState({
+      synced: {
+        ...localSynced,
+        environments: { ...localSynced.environments, activeName: 'mine' },
+      },
+    });
+    const remote: WorkspaceSynced = {
+      ...localSynced,
+      environments: { ...localSynced.environments, activeName: 'theirs' },
+    };
     vi.stubGlobal('fetch', queuedFetch([branchHeadOk(), fileContents(remote)]));
 
     await useWorkspaceStore.getState().refreshWorkspace();
     useWorkspaceStore.getState().cancelRefresh();
     expect(useWorkspaceStore.getState().pendingRefresh).toBeNull();
-    expect(useWorkspaceStore.getState().synced!.workspaceName).toBe('Mine');
+    expect(useWorkspaceStore.getState().synced!.environments.activeName).toBe('mine');
     expect(useWorkspaceStore.getState().local!.sync.lastPulledSha).toBeNull();
   });
 
@@ -200,7 +293,10 @@ describe('workspaceStore.refreshWorkspace', () => {
         workingBranch: { ...localBefore.workingBranch!, lastPushedSha: 'sha-mine-pushed' },
       },
     });
-    const remote: WorkspaceSynced = { ...localSynced, workspaceName: 'Rewritten' };
+    const remote: WorkspaceSynced = {
+      ...localSynced,
+      environments: { ...localSynced.environments, activeName: 'rewritten' },
+    };
 
     vi.stubGlobal(
       'fetch',
@@ -219,7 +315,9 @@ describe('workspaceStore.refreshWorkspace', () => {
     const pending = useWorkspaceStore.getState().pendingRefresh!;
     expect(pending.historyRewritten).toBe(true);
     // synced doc untouched until user picks a side via the modal.
-    expect(useWorkspaceStore.getState().synced!.workspaceName).toBe(localSynced.workspaceName);
+    expect(useWorkspaceStore.getState().synced!.environments.activeName).toBe(
+      localSynced.environments.activeName,
+    );
   });
 
   // Retirement detection: refresh runs `getBranchHead` (and `getPullRequest`

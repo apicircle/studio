@@ -21,7 +21,10 @@ import { cn } from '../../primitives/cn';
 import { KebabMenu } from '../../primitives/KebabMenu';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { FolderAuthModal } from './FolderAuthModal';
-import { ImportModal } from './ImportModal';
+// Phase 12: route through the lazy wrapper so the Postman/Insomnia/cURL
+// parser bundle isn't paid for on initial app load. The name stays the
+// same so JSX callsites below don't need to change.
+import { ImportModalLazy as ImportModal } from './ImportModalLazy';
 import { LinkedWorkspaceTreeSection } from './LinkedWorkspaceTreeSection';
 
 const METHOD_COLOR: Record<string, string> = {
@@ -465,7 +468,7 @@ function TreeNode(props: TreeNodeProps) {
     const isRenaming = renamingKey === renameKey;
     return (
       <li role="treeitem" aria-expanded={isOpen}>
-        <div className="group flex items-center rounded-sm border border-transparent text-xs text-text-muted transition-colors hover:border-border-subtle hover:bg-surface hover:text-text-primary">
+        <div className="group flex h-7 items-center rounded-sm border border-transparent text-xs text-text-muted transition-colors hover:border-border-subtle hover:bg-surface hover:text-text-primary">
           {isRenaming ? (
             <div className="flex flex-1 items-center gap-1 px-1 py-1.5">
               {isOpen ? (
@@ -607,7 +610,7 @@ function TreeNode(props: TreeNodeProps) {
     <li role="treeitem" aria-selected={isActive}>
       <div
         className={cn(
-          'group flex items-center rounded-sm border text-xs transition-colors',
+          'group flex h-7 items-center rounded-sm border text-xs transition-colors',
           isActive
             ? 'border-accent/40 bg-accent/10 text-text-primary'
             : 'border-transparent text-text-muted hover:border-border-subtle hover:bg-surface hover:text-text-primary',

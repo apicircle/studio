@@ -29,7 +29,6 @@ async function setup(): Promise<void> {
     updatedAt: 't',
   };
   const snapshot: LinkedSnapshot = {
-    workspaceName: 'Source',
     pulledAt: 't',
     ref: 'main',
     collections: {

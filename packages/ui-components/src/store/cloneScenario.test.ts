@@ -1,7 +1,7 @@
 import { act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorkspaceStore } from './workspaceStore';
-import { serializeWorkspaceForGit } from '@apicircle/core';
+import { serializeWorkspaceForGit, summarizeUnpushedChanges } from '@apicircle/core';
 import type { WorkspaceSynced } from '@apicircle/shared';
 
 // "Switch workspace" / "clone scenario" — the user's report:
@@ -460,7 +460,6 @@ describe('clone scenario — Second workspace pulling First workspace.json', () 
     // second workspace would see "Refresh ledger" do nothing.
     const cached = useWorkspaceStore.getState().local!.linkedCollections[linkId];
     expect(cached).toBeDefined();
-    expect(cached.workspaceName).toBe('Payments');
     expect(cached.collections.requests['pay-1']).toBeDefined();
     expect(cached.collections.requests['pay-1'].url).toBe('https://payments.test/charge');
   });
@@ -675,7 +674,99 @@ describe('clone scenario — Second workspace pulling First workspace.json', () 
 
     // Snapshot UNCHANGED — still the v0.9 frozen state.
     const snap = useWorkspaceStore.getState().local!.linkedCollections[linkId];
-    expect(snap.workspaceName).toBe('API (frozen at v0.9)');
     expect(snap.collections.requests['new-r']).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression: renaming a Mock server or Execution plan via the store actions
+// must surface as an unpushed change. Pre-fix the diff engine skipped both
+// buckets, so the store actions correctly mutated `synced` but the UI's
+// "+N modified" strip stayed at zero (= what the user reported).
+// ---------------------------------------------------------------------------
+
+describe('rename surfaces in summarizeUnpushedChanges (regression)', () => {
+  it('renaming a mock server via setMockServerName produces a "modified" diff entry', () => {
+    // Seed a base snapshot, rename via the public store action, then ask the
+    // summarizer the same way the BranchCard UI does.
+    const initial = useWorkspaceStore.getState().synced!;
+    const mockId = 'mock-rename-1';
+    useWorkspaceStore.setState({
+      synced: {
+        ...initial,
+        mockServers: {
+          ...initial.mockServers,
+          [mockId]: {
+            id: mockId,
+            name: 'Original Mock',
+            source: { kind: 'manual', endpoints: [] },
+            endpoints: [],
+            defaultPort: null,
+            cors: { enabled: false, origins: [] },
+            createdAt: 't',
+            updatedAt: 't',
+          },
+        },
+      },
+    });
+    const base = useWorkspaceStore.getState().synced!;
+
+    useWorkspaceStore.getState().setMockServerName(mockId, 'Renamed Mock');
+    const current = useWorkspaceStore.getState().synced!;
+
+    const summary = summarizeUnpushedChanges(base, current);
+    const change = summary.changes.find((c) => c.bucket === 'mockServer' && c.key === mockId);
+    expect(change, 'mock-server rename must surface in unpushed changes').toBeDefined();
+    expect(change?.kind).toBe('modified');
+    expect(change?.label).toBe('Renamed Mock');
+  });
+
+  it('renaming an execution plan via renamePlan produces a "modified" diff entry', () => {
+    const planId = useWorkspaceStore.getState().addPlan('Original Plan');
+    const base = useWorkspaceStore.getState().synced!;
+
+    useWorkspaceStore.getState().renamePlan(planId, 'Renamed Plan');
+    const current = useWorkspaceStore.getState().synced!;
+
+    const summary = summarizeUnpushedChanges(base, current);
+    const change = summary.changes.find((c) => c.bucket === 'executionPlan' && c.key === planId);
+    expect(change, 'execution-plan rename must surface in unpushed changes').toBeDefined();
+    expect(change?.kind).toBe('modified');
+    expect(change?.label).toBe('Renamed Plan');
+  });
+
+  it('rename diff is detectable end-to-end through Git serialization', () => {
+    // Confirm the renamed values land in workspace.json so a teammate
+    // pulling sees them. Belt-and-suspenders: the diff layer reports the
+    // rename AND the serializer carries it forward.
+    const initial = useWorkspaceStore.getState().synced!;
+    const mockId = 'mock-e2e-1';
+    useWorkspaceStore.setState({
+      synced: {
+        ...initial,
+        mockServers: {
+          ...initial.mockServers,
+          [mockId]: {
+            id: mockId,
+            name: 'Mock A',
+            source: { kind: 'manual', endpoints: [] },
+            endpoints: [],
+            defaultPort: null,
+            cors: { enabled: false, origins: [] },
+            createdAt: 't',
+            updatedAt: 't',
+          },
+        },
+      },
+    });
+    const planId = useWorkspaceStore.getState().addPlan('Plan A');
+
+    useWorkspaceStore.getState().setMockServerName(mockId, 'Mock B');
+    useWorkspaceStore.getState().renamePlan(planId, 'Plan B');
+
+    const serialized = serializeWorkspaceForGit(useWorkspaceStore.getState().synced!);
+    const parsed = JSON.parse(serialized) as WorkspaceSynced;
+    expect(parsed.mockServers[mockId].name).toBe('Mock B');
+    expect(parsed.executionPlans?.[planId].name).toBe('Plan B');
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
-import { findFreePort, startCallbackServer } from './oauth2Server';
+import { findFreePort, openInBrowser, startCallbackServer } from './oauth2Server';
 
 type HttpServer = Server<typeof IncomingMessage, typeof ServerResponse>;
 
@@ -323,6 +323,70 @@ describe('startCallbackServer — security', () => {
     }
 
     // Drain so the server tears down cleanly.
+    await fetchSelf(`http://127.0.0.1:${port}/callback?code=ok`);
+    await callbackPromise;
+  });
+});
+
+describe('openInBrowser — scheme allowlist', () => {
+  // shell.openExternal on Windows is ShellExecute, which has historically
+  // been an RCE vector for Electron apps that opened unvalidated URLs
+  // (file:, smb:, ms-msdt:, custom protocol handlers). Defense-in-depth:
+  // we validate the scheme inside openInBrowser itself in addition to the
+  // IPC entry point, so a future caller can't accidentally skip the guard.
+  const fakeOpen = async (_url: string): Promise<void> => {
+    /* no-op — we only care whether we get here */
+  };
+
+  it('accepts https URLs', async () => {
+    await expect(openInBrowser('https://example.com/authorize', fakeOpen)).resolves.toBeUndefined();
+  });
+
+  it('accepts http URLs (for localhost dev IdPs)', async () => {
+    await expect(openInBrowser('http://localhost:8080/x', fakeOpen)).resolves.toBeUndefined();
+  });
+
+  it('rejects file: URLs', async () => {
+    await expect(openInBrowser('file:///etc/passwd', fakeOpen)).rejects.toThrow(/refusing scheme/);
+  });
+
+  it('rejects javascript: URLs', async () => {
+    await expect(openInBrowser('javascript:alert(1)', fakeOpen)).rejects.toThrow(/refusing scheme/);
+  });
+
+  it('rejects custom protocol URLs (e.g. smb:, ms-msdt:)', async () => {
+    await expect(openInBrowser('smb://attacker/share', fakeOpen)).rejects.toThrow(
+      /refusing scheme/,
+    );
+    await expect(openInBrowser('ms-msdt:/id PCWDiagnostic', fakeOpen)).rejects.toThrow(
+      /refusing scheme/,
+    );
+  });
+
+  it('rejects malformed URLs', async () => {
+    await expect(openInBrowser('not a url', fakeOpen)).rejects.toThrow(/invalid URL/);
+  });
+});
+
+describe('startCallbackServer — request hardening', () => {
+  it('rejects non-GET methods with 405', async () => {
+    const port = await findFreePort(TEST_PORT_BASE + 200);
+    const callbackPromise = startCallbackServer({ port, mode: 'code', timeoutMs: 5000 });
+    const res = await fetch(`http://127.0.0.1:${port}/callback`, { method: 'POST', body: 'x' });
+    expect(res.status).toBe(405);
+    expect(res.headers.get('allow')).toBe('GET');
+    // Drain so the test exits cleanly.
+    await fetchSelf(`http://127.0.0.1:${port}/callback?code=ok`);
+    await callbackPromise;
+  });
+
+  it('rejects oversized URLs with 414', async () => {
+    const port = await findFreePort(TEST_PORT_BASE + 210);
+    const callbackPromise = startCallbackServer({ port, mode: 'code', timeoutMs: 5000 });
+    const giant = 'x'.repeat(9000);
+    const res = await fetch(`http://127.0.0.1:${port}/callback?code=${giant}`);
+    expect(res.status).toBe(414);
+    // Drain so the test exits cleanly.
     await fetchSelf(`http://127.0.0.1:${port}/callback?code=ok`);
     await callbackPromise;
   });

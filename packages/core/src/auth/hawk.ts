@@ -96,18 +96,40 @@ export async function buildHawkAuthHeader(args: HawkSignArgs): Promise<string> {
 
   // RFC-style normalized string. Every component is on its own line and
   // a trailing newline closes the buffer (required by the spec).
-  const normalized =
-    [
-      'hawk.1.header',
-      ts,
-      nonce,
-      args.method.toUpperCase(),
-      resource,
-      parsed.hostname.toLowerCase(),
-      port,
-      payloadHash,
-      ext,
-    ].join('\n') + '\n';
+  //
+  // Phase 11 fix: when `app` / `dlg` are present they MUST be appended to
+  // the normalized string AFTER `ext`, per Hawk v1 §3.2.1. Without this,
+  // a man-in-the-middle can forge or strip the `app=` / `dlg=` directives
+  // without invalidating the MAC — and servers that route by `app=` (most
+  // multi-tenant Hawk deployments) trust whatever the attacker substituted.
+  // We always emit the lines when the directives are present; servers
+  // that don't use them ignore the extra components anyway because they
+  // re-derive the normalized string from the same directives.
+  const normalizedLines: string[] = [
+    'hawk.1.header',
+    ts,
+    nonce,
+    args.method.toUpperCase(),
+    resource,
+    parsed.hostname.toLowerCase(),
+    port,
+    payloadHash,
+    ext,
+  ];
+  if (args.app !== undefined && args.app !== '') {
+    normalizedLines.push(args.app);
+    // The spec requires `dlg` only after `app` — we emit an empty line
+    // for `dlg` when absent so the field positions remain spec-compliant.
+    normalizedLines.push(args.delegation ?? '');
+  } else if (args.delegation) {
+    // `dlg` without `app` is non-standard — Hawk's spec doesn't define a
+    // canonical normalized form for that combination. Most servers reject
+    // it, but for interop with implementations that allow it we emit an
+    // empty `app` line followed by `dlg`. This is best-effort.
+    normalizedLines.push('');
+    normalizedLines.push(args.delegation);
+  }
+  const normalized = normalizedLines.join('\n') + '\n';
 
   const macBuf = await hmacSign(subtleAlgo, args.hawkKey, normalized);
   const mac = bufToBase64(macBuf);

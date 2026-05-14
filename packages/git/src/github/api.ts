@@ -15,6 +15,7 @@ import {
 } from './errors';
 
 const API_BASE = 'https://api.github.com';
+const LOGIN_BASE = 'https://github.com';
 
 export interface GitHubViewer {
   login: string;
@@ -47,6 +48,13 @@ export interface GitHubBranch {
 export interface GitHubClientOptions {
   /** Override the API base URL (e.g. GitHub Enterprise). */
   baseUrl?: string;
+  /**
+   * Override the base for `github.com/login/*` OAuth endpoints. Defaults to
+   * `https://github.com`. The browser path sets this to a same-origin
+   * proxy (e.g. `/_gh-oauth`) because GitHub doesn't send CORS headers on
+   * the device-flow endpoints.
+   */
+  loginBaseUrl?: string;
   /** Inject a custom fetch — used by tests to mock without msw. */
   fetchImpl?: typeof fetch;
   /** Hard timeout per call. Defaults to 15s. */
@@ -136,11 +144,13 @@ interface CallOptions {
 
 export class GitHubClient {
   private readonly baseUrl: string;
+  private readonly loginBaseUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
 
   constructor(opts: GitHubClientOptions = {}) {
     this.baseUrl = opts.baseUrl ?? API_BASE;
+    this.loginBaseUrl = (opts.loginBaseUrl ?? LOGIN_BASE).replace(/\/$/, '');
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
@@ -465,7 +475,7 @@ export class GitHubClient {
     expiresIn: number;
     interval: number;
   }> {
-    const url = 'https://github.com/login/device/code';
+    const url = `${this.loginBaseUrl}/login/device/code`;
     const response = await this.fetchImpl(url, {
       method: 'POST',
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
@@ -516,7 +526,7 @@ export class GitHubClient {
     | { kind: 'expired' }
     | { kind: 'granted'; accessToken: string; tokenType: string; scope: string }
   > {
-    const url = 'https://github.com/login/oauth/access_token';
+    const url = `${this.loginBaseUrl}/login/oauth/access_token`;
     const response = await this.fetchImpl(url, {
       method: 'POST',
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },

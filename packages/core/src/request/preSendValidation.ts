@@ -21,7 +21,11 @@ import { findPathPlaceholders } from './buildRequest';
 import { resolveString, type ResolutionScope } from '../environment/variableResolver';
 
 export interface PreSendWarning {
-  kind: 'unresolved-variable' | 'unbound-path-param' | 'content-type-mismatch';
+  kind:
+    | 'unresolved-variable'
+    | 'unbound-path-param'
+    | 'content-type-mismatch'
+    | 'url-embedded-credentials';
   message: string;
 }
 
@@ -74,7 +78,21 @@ export function preSendValidation({
         // URL constructor throws on malformed input. Accept relative paths
         // (starting with /) since the runtime may be configured with a base.
         if (!resolvedUrl.startsWith('/')) {
-          new URL(resolvedUrl);
+          const parsed = new URL(resolvedUrl);
+          // Embedded user:pass@host credentials persist into history and
+          // get sent on the wire as Basic auth (Chromium converts the
+          // userinfo into an `Authorization` header). Warn the user so
+          // they can move the credentials into the Auth tab instead,
+          // where they go through the Secret Vault and aren't echoed in
+          // history records.
+          if (parsed.username || parsed.password) {
+            warnings.push({
+              kind: 'url-embedded-credentials',
+              message:
+                'URL contains embedded user:pass credentials. These are sent as Basic auth ' +
+                'and persisted into request history. Move them to the Auth tab to keep them out of stored runs.',
+            });
+          }
         }
       } catch {
         blockers.push({

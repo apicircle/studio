@@ -25,6 +25,7 @@
     "release:publish": "changeset publish",
     "release:binaries": "node scripts/release/buildBinaries.mjs",
     "release:installers": "node scripts/release/buildDesktopInstallers.mjs",
+    "icons": "node scripts/render-icons.mjs",
     "prepare": "husky"
   },
   "devDependencies": {
@@ -44,6 +45,7 @@
     "husky": "^9.0.0",
     "jsdom": "^25.0.1",
     "lint-staged": "^15.2.0",
+    "png2icons": "^2.0.1",
     "prettier": "^3.2.0",
     "turbo": "^2.0.0",
     "typescript": "^5.4.0",
@@ -63,5 +65,11 @@
   "engines": {
     "node": ">=20.0.0",
     "pnpm": ">=9.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "ip-address": "^10.1.1",
+      "fast-uri": "^3.1.2"
+    }
   }
 }

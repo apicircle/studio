@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { InMemoryWorkspaceProvider } from '../providers/InMemoryWorkspaceProvider';
 import { InProcessMockController } from '../providers/InProcessMockController';
 import { codebaseExtractCollectionTool } from './codebase';
@@ -9,7 +9,6 @@ function freshState(): { synced: WorkspaceSynced; local: WorkspaceLocal } {
     synced: {
       schemaVersion: 1,
       workspaceId: 'ws-1',
-      workspaceName: 'W',
       collections: { tree: { id: 'r', type: 'root', children: [] }, requests: {}, folders: {} },
       environments: { items: {}, activeName: null, priorityOrder: [] },
       linkedWorkspaces: {},

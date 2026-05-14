@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Eye, EyeOff, KeyRound, Lock, Plus, Trash2, Unlock } from 'lucide-react';
+import { KeyRound, Lock, Plus, Trash2, Unlock } from 'lucide-react';
 import type { Environment, EnvironmentVariable, SecretEntry } from '@apicircle/shared';
 import { cn } from '../../primitives/cn';
 import { useWorkspaceStore } from '../../store/workspaceStore';
@@ -23,18 +23,47 @@ export function EnvironmentsPanel() {
   const envFocus = useWorkspaceStore((s) => s.envFocus);
   const setEnvFocus = useWorkspaceStore((s) => s.setEnvFocus);
 
-  const allNames = Object.keys(items);
+  // Memoize the trio of derivations so the panel only recomputes them when
+  // `items` / `priorityOrder` actually move. Without these wrappers, every
+  // unrelated store mutation that re-renders the panel would re-run the
+  // O(n) Object.keys / .find — Phase-5 audit follow-up.
+  const allNames = useMemo(() => Object.keys(items), [items]);
   // Pick the first LOCAL env in the priority list as the default focus —
   // linked envs aren't editable from this surface, so focusing one would
   // leave the right pane empty.
-  const firstLocalInPriority = priorityOrder.find(
-    (r): r is { kind: 'local'; name: string } => r.kind === 'local' && Boolean(items[r.name]),
+  const firstLocalInPriority = useMemo(
+    () =>
+      priorityOrder.find(
+        (r): r is { kind: 'local'; name: string } => r.kind === 'local' && Boolean(items[r.name]),
+      ),
+    [priorityOrder, items],
   );
   const defaultFocus = firstLocalInPriority?.name ?? allNames[0] ?? null;
+  // Hook-order rule: every useMemo / useEffect must run unconditionally on
+  // every render. Compute `focusName`, `env`, and the layered/layerPos
+  // memos here, BEFORE the early-return branches below. Otherwise React
+  // throws "Rendered more hooks than during the previous render" the
+  // first time the panel transitions from "no envs" → "an env exists".
+  const focusName = envFocus && items[envFocus] ? envFocus : defaultFocus;
+  const env = focusName ? items[focusName] : null;
+
   useEffect(() => {
     if (!envFocus && defaultFocus) setEnvFocus(defaultFocus);
     if (envFocus && !items[envFocus] && defaultFocus !== envFocus) setEnvFocus(defaultFocus);
   }, [envFocus, defaultFocus, items, setEnvFocus]);
+
+  // Position in the layered priority list. We only count entries that
+  // resolve — local envs that exist + linked envs whose snapshot is
+  // available — so the "n of N" badge matches what the resolver actually
+  // sees at send time. Memoized for the same reason as the trio above.
+  const layered = useMemo(
+    () => priorityOrder.filter((r) => (r.kind === 'local' ? Boolean(items[r.name]) : true)),
+    [priorityOrder, items],
+  );
+  const layerPos = useMemo(
+    () => (env ? layered.findIndex((r) => r.kind === 'local' && r.name === env.name) : -1),
+    [layered, env],
+  );
 
   if (allNames.length === 0) {
     return (
@@ -45,16 +74,7 @@ export function EnvironmentsPanel() {
     );
   }
 
-  const focusName = envFocus && items[envFocus] ? envFocus : defaultFocus;
-  const env = focusName ? items[focusName] : null;
   if (!env) return null;
-
-  // Position in the layered priority list. We only count entries that
-  // resolve — local envs that exist + linked envs whose snapshot is
-  // available — so the "n of N" badge matches what the resolver actually
-  // sees at send time.
-  const layered = priorityOrder.filter((r) => (r.kind === 'local' ? Boolean(items[r.name]) : true));
-  const layerPos = layered.findIndex((r) => r.kind === 'local' && r.name === env.name);
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-6">
@@ -76,7 +96,7 @@ export function EnvironmentsPanel() {
             }
           }}
           aria-label="Environment name"
-          className="rounded-sm border border-transparent bg-transparent px-1 text-base font-medium text-text-primary hover:border-border focus:border-accent focus:outline-none"
+          className="rounded-sm border border-transparent bg-transparent px-2 py-1 text-base font-medium text-text-primary hover:border-border focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
         />
         {layerPos >= 0 ? (
           <span
@@ -209,25 +229,26 @@ function VariableRow({
   const secretEntries = useWorkspaceStore((s) => s.local?.secretIndex.entries ?? {});
   const [draftValue, setDraftValue] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  // Plain (non-vault) values render masked by default. Toggle reveals the
-  // value while the row is active so the user can verify it without
-  // shoulder-surfing risk during screen sharing. Auto-mask on blur to
-  // keep revealed-state ephemeral.
-  const [revealed, setRevealed] = useState(false);
 
   const liveValue = draftValue ?? row.value;
   const onValueBlur = () => {
     if (draftValue === null) return;
     onCommitValue(draftValue);
     setDraftValue(null);
-    setRevealed(false);
   };
 
   const boundLabel = row.secretKeyId ? secretEntries[row.secretKeyId]?.label : null;
 
   return (
     <div className="flex flex-col gap-0.5">
-      <div className="relative flex items-center gap-2">
+      {/* Four-column grid: name | value | CTA (Encrypt OR Unbind) | delete.
+          When a row is bound to a secret, the value cell hosts both the
+          binding label AND the "Change key" trigger — they share the same
+          column so the secret-key context stays visually grouped with the
+          value it replaces. The CTA column has a fixed 96px width so the
+          Encrypt and Unbind buttons render at identical widths. Min-widths
+          keep the layout readable when the right-side dock crowds the panel. */}
+      <div className="relative grid grid-cols-[minmax(120px,1fr)_minmax(160px,2fr)_96px_28px] items-center gap-2">
         <input
           type="text"
           value={row.key}
@@ -236,7 +257,7 @@ function VariableRow({
           aria-label="Variable key"
           aria-invalid={duplicate || undefined}
           className={cn(
-            'h-7 flex-1 rounded-sm border bg-card px-2 text-xs text-text-primary focus:outline-none focus:ring-1',
+            'h-7 min-w-0 rounded-sm border bg-card px-2 text-xs text-text-primary focus:outline-none focus:ring-1',
             duplicate
               ? 'border-danger focus:border-danger focus:ring-danger/40'
               : 'border-border focus:border-accent focus:ring-accent/30',
@@ -244,82 +265,57 @@ function VariableRow({
         />
         {row.encrypted && row.secretKeyId ? (
           <div
-            className="flex h-7 flex-[2] items-center gap-2 rounded-sm border border-amber/30 bg-amber/5 px-2 text-xs"
+            className="flex h-7 min-w-0 items-center gap-2 rounded-sm border border-amber/30 bg-amber/5 pl-2 pr-1 text-xs"
             aria-label="Variable value (bound to secret key)"
           >
-            <Lock size={12} className="text-amber" />
-            <span className="truncate text-text-primary">
+            <Lock size={12} className="shrink-0 text-amber" />
+            <span className="flex-1 truncate text-text-primary">
               {boundLabel ?? '(secret key missing locally)'}
             </span>
-            <span className="ml-auto rounded-sm border border-border bg-surface px-1 text-[0.625rem] text-text-dim">
-              id: {row.secretKeyId.slice(0, 6)}…
-            </span>
-          </div>
-        ) : (
-          <div className="relative flex h-7 flex-[2]">
-            <input
-              type={revealed ? 'text' : 'password'}
-              value={liveValue}
-              onChange={(e) => setDraftValue(e.target.value)}
-              onBlur={onValueBlur}
-              placeholder="value"
-              aria-label="Variable value"
-              // Right padding clears the inline reveal toggle; without it
-              // the typed value would slide under the icon.
-              className="h-7 flex-1 rounded-sm border border-border bg-card pl-2 pr-7 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
-            />
-            <button
-              type="button"
-              onClick={() => setRevealed((v) => !v)}
-              // Mousedown handler runs before the input's blur, so toggling
-              // doesn't commit a half-typed value before re-rendering.
-              onMouseDown={(e) => e.preventDefault()}
-              aria-label={revealed ? 'Hide variable value' : 'Show variable value'}
-              aria-pressed={revealed}
-              title={revealed ? 'Hide value' : 'Show value (auto-hides on blur)'}
-              className="absolute right-1 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm text-text-faint hover:text-text-primary"
-            >
-              {revealed ? (
-                <EyeOff size={11} aria-hidden="true" />
-              ) : (
-                <Eye size={11} aria-hidden="true" />
-              )}
-            </button>
-          </div>
-        )}
-        {row.encrypted && row.secretKeyId ? (
-          <>
             <button
               type="button"
               onClick={() => setPickerOpen((o) => !o)}
-              className="inline-flex h-7 items-center gap-1 rounded-sm border border-amber/40 bg-amber/10 px-2 text-[0.625rem] text-amber hover:border-amber/70"
+              className="inline-flex h-5 shrink-0 items-center gap-1 rounded-sm border border-amber/40 bg-amber/10 px-1.5 text-[0.625rem] text-amber hover:border-amber/70"
               aria-label="Change secret key"
               aria-expanded={pickerOpen}
+              title="Pick a different Secret Vault key"
             >
-              <KeyRound size={12} />
+              <KeyRound size={11} aria-hidden="true" />
               Change key
             </button>
-            <button
-              type="button"
-              onClick={onUnbind}
-              className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-accent hover:text-text-primary"
-              aria-label="Unbind secret key"
-              title="Unbind — return to plain value"
-            >
-              <Unlock size={12} />
-              Unbind
-            </button>
-          </>
+          </div>
+        ) : (
+          <input
+            type="text"
+            value={liveValue}
+            onChange={(e) => setDraftValue(e.target.value)}
+            onBlur={onValueBlur}
+            placeholder="value"
+            aria-label="Variable value"
+            className="h-7 min-w-0 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+          />
+        )}
+        {row.encrypted && row.secretKeyId ? (
+          <button
+            type="button"
+            onClick={onUnbind}
+            className="inline-flex h-7 w-full items-center justify-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-accent hover:text-text-primary"
+            aria-label="Unbind secret key"
+            title="Unbind — return to plain value"
+          >
+            <Unlock size={12} aria-hidden="true" />
+            Unbind
+          </button>
         ) : (
           <button
             type="button"
             onClick={() => setPickerOpen((o) => !o)}
-            className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-accent hover:text-text-primary"
+            className="inline-flex h-7 w-full items-center justify-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-accent hover:text-text-primary"
             aria-label="Encrypt"
             aria-expanded={pickerOpen}
             title="Bind this value to a Secret Vault key"
           >
-            <Lock size={12} />
+            <Lock size={12} aria-hidden="true" />
             Encrypt
           </button>
         )}

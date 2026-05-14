@@ -6,11 +6,16 @@
  *
  * Strategy: read the HTML file, extract the inline `<script>` block,
  * set up a jsdom window with controlled `location` + a mock
- * `BroadcastChannel` + a mock `localStorage`, then `eval` the script
- * inside the window's context. Because the script is wrapped in an IIFE
- * and reads `window.location` / `BroadcastChannel` / `localStorage` /
- * `document` from globals, eval'ing it against the patched window is a
- * faithful replay of what runs in the real popup.
+ * `BroadcastChannel` + a mock `window.opener.postMessage`, then `eval`
+ * the script inside the window's context. Because the script is wrapped
+ * in an IIFE and reads `window.location` / `BroadcastChannel` /
+ * `window.opener` / `document` from globals, eval'ing it against the
+ * patched window is a faithful replay of what runs in the real popup.
+ *
+ * Note: Phase 3c (2026-05-13) removed the `localStorage` fallback — it
+ * emitted a `storage` event to every same-origin tab, briefly exposing
+ * the access token. The new fallback is `window.opener.postMessage` with
+ * `targetOrigin = window.location.origin`.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -33,16 +38,24 @@ interface BroadcastMessage {
   payload: unknown;
 }
 
+interface PostedMessage {
+  payload: unknown;
+  targetOrigin: string;
+}
+
 interface RelayContext {
   posted: BroadcastMessage[];
-  storage: Record<string, string>;
+  openerPosts: PostedMessage[];
   /** Mutable counter — incremented every time the relay calls window.close(). */
   closeCount: { value: number };
 }
 
-function setupWindow(searchAndHash: { search?: string; hash?: string }): RelayContext {
+function setupWindow(
+  searchAndHash: { search?: string; hash?: string },
+  options: { opener?: 'present' | 'closed' | 'absent' } = {},
+): RelayContext {
   const posted: BroadcastMessage[] = [];
-  const storage: Record<string, string> = {};
+  const openerPosts: PostedMessage[] = [];
   const closeCount = { value: 0 };
 
   // Patch location — jsdom forbids direct mutation, so define our own.
@@ -72,18 +85,24 @@ function setupWindow(searchAndHash: { search?: string; hash?: string }): RelayCo
 
   (window as any).BroadcastChannel = MockBroadcastChannel;
 
-  // Mock localStorage — used as the fallback path when BroadcastChannel
-  // throws. jsdom provides a real one but we want to assert against ours.
-
-  (window as any).localStorage = {
-    setItem: (k: string, v: string) => {
-      storage[k] = v;
-    },
-    removeItem: (k: string) => {
-      delete storage[k];
-    },
-    getItem: (k: string) => storage[k] ?? null,
-  };
+  // window.opener — the same-origin postMessage fallback target. Three
+  // shapes a test might want to exercise:
+  //   - 'present' (default): a normal opener with a `postMessage` method.
+  //   - 'closed':   opener exists but `.closed === true` (Studio tab was
+  //                 closed before sign-in completed).
+  //   - 'absent':   `window.opener === null` (user opened the auth page
+  //                 in a fresh tab from clipboard instead of via popup).
+  const openerMode = options.opener ?? 'present';
+  if (openerMode === 'absent') {
+    (window as any).opener = null;
+  } else {
+    (window as any).opener = {
+      closed: openerMode === 'closed',
+      postMessage: (payload: unknown, targetOrigin: string) => {
+        openerPosts.push({ payload, targetOrigin });
+      },
+    };
+  }
 
   // Stub window.close — script schedules it via setTimeout; tests use
   // fake timers so we can synchronously confirm it was called.
@@ -92,7 +111,7 @@ function setupWindow(searchAndHash: { search?: string; hash?: string }): RelayCo
     closeCount.value++;
   };
 
-  return { posted, storage, closeCount };
+  return { posted, openerPosts, closeCount };
 }
 
 function runRelayScript(): void {
@@ -181,34 +200,83 @@ describe('oauth-callback.html relay', () => {
     expect(document.getElementById('message')!.innerHTML).toContain('access_denied');
   });
 
-  it('falls back to localStorage when BroadcastChannel is unavailable', () => {
+  it('also posts to window.opener with targetOrigin = location.origin', () => {
+    // Phase 3c (2026-05-13): same-origin postMessage to window.opener is
+    // the canonical delivery channel for the popup flow. The relay does
+    // it ALONGSIDE BroadcastChannel so a parent that only listens on
+    // `message` events still receives the payload. The targetOrigin must
+    // be the popup's own origin so the payload cannot land anywhere else.
+    const ctx = setupWindow({ search: '?code=both&state=ok' });
+    runRelayScript();
+
+    expect(ctx.posted).toHaveLength(1);
+    expect(ctx.openerPosts).toHaveLength(1);
+    expect(ctx.openerPosts[0]!.targetOrigin).toBe('http://localhost:5174');
+    expect(ctx.openerPosts[0]!.payload).toMatchObject({
+      code: 'both',
+      state: 'ok',
+    });
+  });
+
+  it('falls back to window.opener.postMessage when BroadcastChannel is unavailable', () => {
     const ctx = setupWindow({ search: '?code=fallback&state=ls' });
-    // Force the BroadcastChannel constructor to throw — simulates
-    // privacy-mode browsers that disable cross-tab messaging.
 
     (window as any).BroadcastChannel = function () {
       throw new Error('disabled');
     };
     runRelayScript();
 
-    // Channel never receives the message…
+    // Channel path failed…
     expect(ctx.posted).toHaveLength(0);
-    // …but the localStorage path was exercised. The relay sets THEN
-    // immediately removes, so the storage map ends up empty. We assert
-    // that setItem ran by hooking it. Simpler to re-run with a setItem
-    // spy attached:
-    const seen: Array<[string, string]> = [];
+    // …but the same-origin postMessage path delivered the payload.
+    expect(ctx.openerPosts).toHaveLength(1);
+    expect(ctx.openerPosts[0]!.targetOrigin).toBe('http://localhost:5174');
+    expect(ctx.openerPosts[0]!.payload).toMatchObject({
+      code: 'fallback',
+      state: 'ls',
+    });
+  });
 
+  it('does NOT write the access_token to localStorage (regression: storage event leak)', () => {
+    // Phase 3c removed the localStorage fallback because `setItem` emits
+    // a `storage` event to every same-origin tab — a brief access_token
+    // exposure to any tab listening for storage events. Pin that the
+    // relay never touches localStorage, even when BroadcastChannel fails.
+    const setItem = vi.fn();
     (window as any).localStorage = {
-      setItem: (k: string, v: string) => seen.push([k, v]),
-      removeItem: () => {},
+      setItem,
+      removeItem: vi.fn(),
       getItem: () => null,
     };
+    setupWindow({ hash: '#access_token=tk&state=imp' });
+    (window as any).BroadcastChannel = function () {
+      throw new Error('disabled');
+    };
     runRelayScript();
-    expect(seen).toHaveLength(1);
-    expect(seen[0]![0]).toBe('apicircle-oauth-ls');
-    const stored = JSON.parse(seen[0]![1]) as { payload: Record<string, unknown> };
-    expect(stored.payload).toMatchObject({ code: 'fallback', state: 'ls' });
+    expect(setItem).not.toHaveBeenCalled();
+  });
+
+  it('renders an error UI when neither BroadcastChannel nor opener is available', () => {
+    const ctx = setupWindow({ search: '?code=lost&state=x' }, { opener: 'absent' });
+    (window as any).BroadcastChannel = function () {
+      throw new Error('disabled');
+    };
+    runRelayScript();
+
+    expect(ctx.posted).toHaveLength(0);
+    expect(ctx.openerPosts).toHaveLength(0);
+    // User-visible message: relay surfaces the failure rather than
+    // silently dropping the payload.
+    expect(document.getElementById('title')!.textContent).toBe('Sign-in incomplete');
+    expect(document.getElementById('message')!.textContent).toMatch(/Could not return tokens/i);
+  });
+
+  it('skips opener.postMessage when window.opener is closed', () => {
+    const ctx = setupWindow({ search: '?code=c&state=s' }, { opener: 'closed' });
+    runRelayScript();
+    // BroadcastChannel still posts; closed opener is not touched.
+    expect(ctx.posted).toHaveLength(1);
+    expect(ctx.openerPosts).toHaveLength(0);
   });
 
   it('schedules window.close after a 250ms tick', () => {

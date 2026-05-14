@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { Maximize2, Sparkles } from 'lucide-react';
 import { useWorkspaceStore as useWorkspaceStoreForToast } from '../../store/workspaceStore';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
@@ -33,7 +33,8 @@ function findContentType(headers: ApiRequest['headers']): string | undefined {
   return entry?.value || undefined;
 }
 
-export function BodyTab({ request }: BodyTabProps) {
+// memo'd — see ParamsTab for the rationale.
+export const BodyTab = memo(function BodyTab({ request }: BodyTabProps) {
   const setRequestBody = useWorkspaceStore((s) => s.setRequestBody);
   const setRequestHeaders = useWorkspaceStore((s) => s.setRequestHeaders);
   const detachBinaryFile = useWorkspaceStore((s) => s.detachBinaryFile);
@@ -253,7 +254,7 @@ export function BodyTab({ request }: BodyTabProps) {
       {request.body.type === 'graphql' && <GraphqlSchemaPicker request={request} />}
     </div>
   );
-}
+});
 
 function JsonSchemaPicker({ request }: { request: ApiRequest }) {
   const schemas = useWorkspaceStore((s) =>

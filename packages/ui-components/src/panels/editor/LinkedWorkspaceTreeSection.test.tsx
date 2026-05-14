@@ -28,7 +28,6 @@ function makeRequest(id: string, name: string): ApiRequest {
 
 function makeSnapshot(requests: ApiRequest[]): LinkedSnapshot {
   return {
-    workspaceName: 'Source',
     pulledAt: T0,
     ref: 'v1.0.0',
     collections: {
@@ -147,7 +146,6 @@ describe('LinkedWorkspaceTreeSection', () => {
     const req = makeRequest('src-r1', 'Inside auth folder');
     req.folderId = folder.id;
     const snapshot: LinkedSnapshot = {
-      workspaceName: 'Source',
       pulledAt: T0,
       ref: 'v1.0.0',
       collections: {

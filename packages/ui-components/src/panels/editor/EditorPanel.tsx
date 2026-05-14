@@ -26,6 +26,7 @@ import { VariableAutocompleteField } from '../../editors/VariableAutocompleteFie
 import { useVariableScope } from '../../editors/useVariableScope';
 import { useActiveRequestView, type ActiveRequestView } from '../../editors/useActiveRequestView';
 import { PreSendPanel, usePreSendValidation } from './PreSendPanel';
+import { useLatestRunForRequest } from '../../store/useLatestRunForRequest';
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 const METHOD_COLOR: Record<HttpMethod, string> = {
@@ -183,13 +184,10 @@ export function EditorPanel() {
   const lastRun = useWorkspaceStore((s) =>
     activeRequestId ? (s.lastRun[activeRequestId] ?? null) : null,
   );
-  // `local.history.requestRuns` is maintained newest-first by the store
-  // (see executeActiveRequest's `[run, ...trimmed]` prepend). The first
-  // match is therefore the most recent run for this request — which is
-  // what we want for the inline assertion verdict pills.
-  const lastHistoryRun = useWorkspaceStore(
-    (s) => s.local?.history.requestRuns.find((r) => r.requestId === activeRequestId) ?? null,
-  );
+  // O(1) lookup via the shared `useLatestRunForRequest` index — multiple
+  // subscribers (this panel, AssertionsTab, ResponseViewer) read the same
+  // RequestRun without each re-scanning the history array.
+  const lastHistoryRun = useLatestRunForRequest(activeRequestId);
 
   const [tab, setTab] = useState<Tab>('params');
   // Surfaced when the user pastes a `curl …` blob into the URL bar — they
@@ -200,10 +198,21 @@ export function EditorPanel() {
 
   // Pre-send validation — gated by user setting. Returns warnings (yellow,
   // non-blocking) and blockers (red, Send disabled until resolved). Hidden
-  // entirely when the toggle is off.
+  // entirely when the toggle is off. The same result is passed down to
+  // `PreSendPanel` so the validation runs ONCE per render instead of twice
+  // (the panel used to call usePreSendValidation again internally).
   const validateOnSend = useWorkspaceStore((s) => s.local?.settings?.validateOnSend ?? true);
   const validation = usePreSendValidation(request, scope, validateOnSend);
   const sendBlocked = validation.blockers.length > 0;
+
+  // The composed URL is read at three sites in this component (the URL
+  // input value, the cURL-paste detector's length-delta, and the inline
+  // validator). Recomputing it three times per render is wasteful — keep
+  // it in a memo keyed on the two source fields.
+  const composedUrl = useMemo(
+    () => composeUrlWithQuery(request?.url ?? '', request?.query ?? []),
+    [request?.url, request?.query],
+  );
 
   // One-shot reconciliation when a request opens whose URL still contains a
   // `?key=val` portion. The two-way URL↔Query sync stores the *base* in
@@ -251,7 +260,7 @@ export function EditorPanel() {
           </Select>
           <div className="flex flex-1 flex-col">
             <VariableAutocompleteField
-              value={composeUrlWithQuery(request.url, request.query)}
+              value={composedUrl}
               onChange={(v) => {
                 // Quick paste-cURL detection: if the user pastes a string
                 // starting with `curl `, route through the cURL importer
@@ -263,7 +272,7 @@ export function EditorPanel() {
                   /^curl\s/i.test(trimmed) &&
                   // Only when this is a paste, not a slow-typed `curl `: the
                   // length jumped past a threshold in one onChange.
-                  trimmed.length - composeUrlWithQuery(request.url, request.query).length > 10
+                  trimmed.length - composedUrl.length > 10
                 ) {
                   setPendingCurlPaste(trimmed);
                   return;
@@ -284,7 +293,7 @@ export function EditorPanel() {
               placeholder="https://api.example.com/v1"
               className="h-9 px-3 text-sm focus:ring-2"
             />
-            <UrlInlineValidation url={composeUrlWithQuery(request.url, request.query)} />
+            <UrlInlineValidation url={composedUrl} />
           </div>
           {isExecuting ? (
             // Same slot as the Send button — swap to a Cancel control while
@@ -323,7 +332,7 @@ export function EditorPanel() {
         </div>
         {view?.source === 'linked' && <LinkedSourceBanner view={view} />}
         <EffectiveRequestPreview request={request} scope={scope} />
-        <PreSendPanel request={request} scope={scope} enabled={validateOnSend} />
+        <PreSendPanel request={request} enabled={validateOnSend} validation={validation} />
         {pendingCurlPaste && (
           <CurlPasteConfirm
             curl={pendingCurlPaste}
@@ -634,7 +643,7 @@ function RequestNameInput({ requestId, initial }: { requestId: string; initial: 
         }
       }}
       aria-label="Request name"
-      className="w-full bg-transparent text-base font-medium text-text-primary focus:outline-none"
+      className="w-full rounded-sm border border-transparent bg-transparent px-2 py-1 text-base font-medium text-text-primary hover:border-border focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
     />
   );
 }

@@ -27,6 +27,11 @@ const handlers = (
 
 const T0 = '2026-04-27T00:00:00.000Z';
 
+// Stand-in for an IpcMainInvokeEvent originating from the bundled file://
+// renderer. assertTrustedSender prefix-matches `event.senderFrame.url`, so any
+// file:// URL is accepted.
+const trustedEvent = { senderFrame: { url: 'file:///dist/index.html' } };
+
 import { MockManager } from '../mock/mockManager';
 import { McpManager } from '../mcp/mcpManager';
 import { registerMockBridge, MOCK_CHANNELS } from './mockBridge';
@@ -79,7 +84,7 @@ describe('mock IPC bridge', () => {
     registerMockBridge(manager);
     const handler = handlers.get(MOCK_CHANNELS.start);
     expect(handler).toBeDefined();
-    const runtime = (await handler!({}, fixtureMock('m1'))) as { port: number };
+    const runtime = (await handler!(trustedEvent, fixtureMock('m1'))) as { port: number };
     expect(runtime.port).toBeGreaterThan(0);
     await manager.stopAll();
   });
@@ -93,15 +98,17 @@ describe('mock IPC bridge', () => {
     const stop = handlers.get(MOCK_CHANNELS.stop)!;
     const stopAll = handlers.get(MOCK_CHANNELS.stopAll)!;
 
-    await start({}, fixtureMock('m1'));
-    expect((list({}) as Array<{ serverId: string }>).map((e) => e.serverId)).toContain('m1');
-    expect(getRuntime({}, 'm1')).not.toBeNull();
-    expect(await stop({}, 'm1')).toEqual({ ok: true });
-    expect(getRuntime({}, 'm1')).toBeNull();
+    await start(trustedEvent, fixtureMock('m1'));
+    expect((list(trustedEvent) as Array<{ serverId: string }>).map((e) => e.serverId)).toContain(
+      'm1',
+    );
+    expect(getRuntime(trustedEvent, 'm1')).not.toBeNull();
+    expect(await stop(trustedEvent, 'm1')).toEqual({ ok: true });
+    expect(getRuntime(trustedEvent, 'm1')).toBeNull();
 
-    await start({}, fixtureMock('m2'));
-    expect(await stopAll({})).toEqual({ ok: true });
-    expect((list({}) as unknown[]).length).toBe(0);
+    await start(trustedEvent, fixtureMock('m2'));
+    expect(await stopAll(trustedEvent)).toEqual({ ok: true });
+    expect((list(trustedEvent) as unknown[]).length).toBe(0);
   });
 });
 
@@ -117,17 +124,31 @@ describe('mcp IPC bridge', () => {
   it('status returns the manager paths', () => {
     registerMcpBridge(new McpManager('/ws'));
     const handler = handlers.get(MCP_CHANNELS.status)!;
-    const out = handler({}) as { workspaceDir: string };
+    const out = handler(trustedEvent) as { workspaceDir: string };
     expect(out.workspaceDir).toBe('/ws');
   });
 
   it('snippet + path + catalog delegate to the manager', () => {
     registerMcpBridge(new McpManager('/ws'));
-    const snippet = handlers.get(MCP_CHANNELS.getConfigSnippet)!({}, 'claude-desktop');
+    const snippet = handlers.get(MCP_CHANNELS.getConfigSnippet)!(trustedEvent, 'claude-desktop');
     expect(JSON.parse(snippet as string).mcpServers).toBeDefined();
-    const cfgPath = handlers.get(MCP_CHANNELS.getConfigPath)!({}, 'cursor');
+    const cfgPath = handlers.get(MCP_CHANNELS.getConfigPath)!(trustedEvent, 'cursor');
     expect(typeof cfgPath).toBe('string');
-    const catalog = handlers.get(MCP_CHANNELS.toolCatalog)!({}) as readonly string[];
+    const catalog = handlers.get(MCP_CHANNELS.toolCatalog)!(trustedEvent) as readonly string[];
     expect(catalog.length).toBeGreaterThan(30);
+  });
+
+  it('rejects an IPC call whose sender frame is not file://', () => {
+    registerMcpBridge(new McpManager('/ws'));
+    const handler = handlers.get(MCP_CHANNELS.status)!;
+    expect(() => handler({ senderFrame: { url: 'https://attacker.example/' } })).toThrow(
+      /Untrusted IPC sender/,
+    );
+  });
+
+  it('rejects an IPC call with no senderFrame at all (e.g. detached frame)', () => {
+    registerMcpBridge(new McpManager('/ws'));
+    const handler = handlers.get(MCP_CHANNELS.status)!;
+    expect(() => handler({})).toThrow(/Untrusted IPC sender/);
   });
 });

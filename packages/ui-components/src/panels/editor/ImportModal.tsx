@@ -58,6 +58,15 @@ const FORMAT_LABELS: Record<SourceFormat, string> = {
   apicircle: 'APICircle exchange',
 };
 
+// Export both named and default so consumers can either:
+//   - `import { ImportModal }` (the eager path — kept for tests + back-compat)
+//   - `React.lazy(() => import('./ImportModal'))` (the production path used by
+//     EditorSidebar / EnvironmentsSidebar via `ImportModalLazy`)
+//
+// The lazy path defers the Postman / Insomnia / cURL parser bundle until
+// the user actually opens the modal — those parsers are several hundred
+// kilobytes of dead weight on initial app load otherwise.
+export default ImportModal;
 export function ImportModal({
   open,
   onClose,

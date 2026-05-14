@@ -102,10 +102,17 @@ export type PanelId =
 // Synced document
 // ---------------------------------------------------------------------------
 
+/**
+ * Display name used when seeding a fresh workspace's registry entry on
+ * first boot. The name itself is local-only — it never lives in the
+ * git-synced doc — so two machines pulling the same workspace.json can
+ * each call their local copy whatever they want.
+ */
+export const DEFAULT_WORKSPACE_NAME = 'My Workspace';
+
 export interface WorkspaceSynced {
   schemaVersion: 1;
   workspaceId: string;
-  workspaceName: string;
   collections: {
     tree: FolderNode;
     requests: Record<string, Request>;
@@ -878,7 +885,6 @@ export interface WorkspaceSnapshotLedger {
  * is tracking.
  */
 export interface LinkedSnapshot {
-  workspaceName: string;
   pulledAt: string;
   ref: string;
   collections: WorkspaceSynced['collections'];

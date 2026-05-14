@@ -59,7 +59,11 @@ export function MockEndpointEditor({
 
   // If the selected validation rule or response rule got deleted from
   // under us (e.g. the user deleted it in the editor below), fall back
-  // to the parent overview node.
+  // to the parent overview node. We deliberately omit `selection` from
+  // the dependency array — clicking around the flow updates `selection`
+  // but doesn't change whether the currently-selected rule still exists,
+  // so re-running the existence check on every selection click was dead
+  // work. The effect should fire ONLY when the rule lists change.
   useEffect(() => {
     if (
       selection.kind === 'validation-rule' &&
@@ -72,7 +76,9 @@ export function MockEndpointEditor({
     ) {
       setSelection({ kind: 'rules' });
     }
-  }, [endpoint.requestValidation, endpoint.responseRules, selection]);
+    // selection is intentionally not in deps — see comment above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endpoint.requestValidation, endpoint.responseRules]);
 
   const setEndpoint = (patch: Partial<MockEndpoint>) =>
     updateMockEndpoint(server.id, endpoint.id, patch);
@@ -109,9 +115,11 @@ export function MockEndpointEditor({
       <PanelGroup direction="vertical" className="flex-1">
         <Panel defaultSize={32} minSize={20}>
           {/* `flex items-center` vertically centers the flow row inside its
-              panel; `overflow-auto` still kicks in if the flow is too tall
-              for the panel (only true when the user shrinks the divider). */}
-          <div className="flex h-full items-center overflow-auto bg-surface px-4 py-3">
+              panel. `overflow-x-auto` lets the pipeline scroll horizontally
+              when the right dock crowds the available width; `overflow-y-hidden`
+              keeps vertical scroll out of this row (the bottom panel handles
+              its own scroll). */}
+          <div className="flex h-full items-center overflow-x-auto overflow-y-hidden bg-surface px-4 py-3">
             <MockEndpointFlow
               serverId={server.id}
               endpoint={endpoint}

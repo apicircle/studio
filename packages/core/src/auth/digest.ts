@@ -66,6 +66,67 @@ export function parseDigestChallenge(header: string): DigestChallenge {
   };
 }
 
+/**
+ * Algorithm preference order for multi-challenge servers (RFC 7616 §3.7
+ * + RFC 7235 §4.1). When a server offers more than one `WWW-Authenticate:
+ * Digest` header, the client SHOULD pick the strongest. We rank
+ * SHA-512-256 highest (256-bit truncated SHA-512), then SHA-256, then
+ * MD5 last — MD5 is GPU-crackable for weak passwords against a captured
+ * nonce so we only fall back to it when the server offers nothing else.
+ *
+ * The `-sess` variants are equivalent in strength to their base; we
+ * preserve the server's choice within an algorithm family.
+ */
+const ALGO_RANK: Record<string, number> = {
+  'sha-512-256': 3,
+  'sha-512-256-sess': 3,
+  'sha-256': 2,
+  'sha-256-sess': 2,
+  md5: 1,
+  'md5-sess': 1,
+};
+
+/**
+ * Pick the strongest Digest challenge from a stacked-header response.
+ *
+ * `wwwAuthHeaders` is the raw value of every `WWW-Authenticate` header the
+ * server sent. The `fetch` API folds multiple headers of the same name
+ * into a comma-joined string, but `Digest` challenges themselves contain
+ * commas (in `qop=auth,auth-int` etc.), so we can't naively split on
+ * comma. Instead we look for the literal token `Digest ` at the start of
+ * the trimmed string AND inside the string preceded by `, ` (no other
+ * authentication scheme uses that prefix). Each split candidate is
+ * parsed; we keep the one with the highest algorithm rank.
+ *
+ * Falls back to a single parse when only one Digest challenge is found,
+ * matching the existing single-challenge behaviour byte-for-byte.
+ */
+export function selectStrongestDigestChallenge(wwwAuthHeader: string): DigestChallenge | null {
+  const stripped = wwwAuthHeader.trim();
+  if (!stripped) return null;
+  // Split on `, Digest ` boundaries — preserves the first challenge as-is
+  // and slices subsequent ones. Adding `Digest ` back to each piece so
+  // `parseDigestChallenge` can strip the prefix uniformly.
+  const pieces = stripped
+    .split(/,\s*(?=Digest\s)/i)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (pieces.length === 0) return null;
+  let best: DigestChallenge | null = null;
+  let bestRank = -1;
+  for (const piece of pieces) {
+    const challenge = parseDigestChallenge(piece);
+    if (!challenge.realm || !challenge.nonce) continue;
+    const algoRaw = (challenge.algorithm ?? 'MD5').toLowerCase();
+    const rank = ALGO_RANK[algoRaw] ?? 0;
+    if (rank > bestRank) {
+      best = challenge;
+      bestRank = rank;
+    }
+  }
+  return best;
+}
+
 export interface BuildDigestArgs {
   method: string;
   /** Request URI as it appears on the wire (path + query, not the full URL). */
@@ -119,6 +180,22 @@ export async function buildDigestAuthHeader(args: BuildDigestArgs): Promise<stri
   const algorithmRaw = (challenge.algorithm ?? 'MD5').toLowerCase();
   if (!SUPPORTED_ALGOS.has(algorithmRaw)) {
     throw new Error(`Digest algorithm not supported: ${challenge.algorithm}`);
+  }
+  // Phase 11 hardening: surface a console warning whenever the server
+  // selects MD5 (or MD5-sess). MD5 is the spec default but is GPU-
+  // crackable for weak passwords — a MITM that swaps nonces effectively
+  // gets a free password-cracking oracle. We can't refuse the server's
+  // choice (that would break interop with the long tail of legacy
+  // appliances that only speak MD5), but we MUST make sure the operator
+  // knows what's happening. A future Auth follow-up wires this through
+  // the structured `authWarnings` channel and surfaces a UI banner; for
+  // now the dev-console message is the visibility floor.
+  if (algorithmRaw === 'md5' || algorithmRaw === 'md5-sess') {
+    console.warn(
+      '[apicircle] Digest auth: server selected MD5 — credentials are vulnerable to ' +
+        'GPU offline cracking against the captured nonce. Ask the server operator to ' +
+        'offer SHA-256 (RFC 7616) or SHA-512-256.',
+    );
   }
   const isSess = algorithmRaw.endsWith('-sess');
   const baseAlgo = algorithmRaw.replace(/-sess$/, '');

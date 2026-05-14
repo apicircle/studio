@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  safeExternalHref,
   validateAwsRegion,
   validateEnvVarName,
   validateHttpHeaderName,
@@ -186,5 +187,40 @@ describe('validatePositiveDuration', () => {
     expect(validatePositiveDuration(1.5).ok).toBe(false);
     expect(validatePositiveDuration('abc').ok).toBe(false);
     expect(validatePositiveDuration(Number.NaN).ok).toBe(false);
+  });
+});
+
+describe('safeExternalHref', () => {
+  it.each([
+    'https://example.com',
+    'http://localhost:3000/cb',
+    'https://idp.example/oauth/device?code=ABCD-EFGH',
+  ])('accepts http(s): URLs (%s)', (v) => {
+    expect(safeExternalHref(v)).not.toBeNull();
+  });
+
+  it.each([
+    'javascript:alert(1)',
+    'file:///etc/passwd',
+    'data:text/html,<script>alert(1)</script>',
+    'smb://attacker/share',
+    'ms-msdt:/id PCWDiagnostic',
+    'vbscript:x',
+  ])('rejects dangerous scheme %s', (v) => {
+    expect(safeExternalHref(v)).toBeNull();
+  });
+
+  it('rejects empty / non-string / malformed inputs', () => {
+    expect(safeExternalHref('')).toBeNull();
+    expect(safeExternalHref(null)).toBeNull();
+    expect(safeExternalHref(undefined)).toBeNull();
+    expect(safeExternalHref(42)).toBeNull();
+    expect(safeExternalHref('not a url')).toBeNull();
+  });
+
+  it('preserves the URL via URL.toString() normalization', () => {
+    // URL parsing canonicalises (e.g. lowercases the host); the returned
+    // value is the normalized form, which is fine for href rendering.
+    expect(safeExternalHref('HTTPS://Example.COM/Path')).toBe('https://example.com/Path');
   });
 });

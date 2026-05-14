@@ -228,4 +228,48 @@ describe('applyMultipliers', () => {
     const parsed = JSON.parse(result.body.content) as { items: unknown[] };
     expect(parsed.items).toEqual([]);
   });
+
+  // Path segments equal to `__proto__`, `constructor`, or `prototype` always
+  // resolve through the prototype chain on plain objects and have no place
+  // in a JSON multiplier. We treat any such path as a no-op rather than
+  // letting it walk into Object.prototype.
+  it('ignores multipliers whose path contains __proto__', () => {
+    const response = makeJsonResponse({ items: [{ id: 1 }] }, [
+      {
+        id: 'm1',
+        source: { kind: 'query', key: 'pageSize' },
+        targetJsonPath: '$.__proto__.items',
+        defaultCount: 5,
+      },
+    ]);
+    const result = applyMultipliers(response, baseCtx);
+    // Path is forbidden → no-op → response unchanged.
+    expect(result).toBe(response);
+  });
+
+  it('ignores multipliers whose path contains constructor or prototype', () => {
+    const response = makeJsonResponse({ items: [{ id: 1 }] }, [
+      {
+        id: 'm1',
+        source: { kind: 'query', key: 'pageSize' },
+        targetJsonPath: '$.constructor.prototype.items',
+        defaultCount: 5,
+      },
+    ]);
+    const result = applyMultipliers(response, baseCtx);
+    expect(result).toBe(response);
+  });
+
+  it('ignores forbidden keys when expressed in bracket notation', () => {
+    const response = makeJsonResponse({ items: [{ id: 1 }] }, [
+      {
+        id: 'm1',
+        source: { kind: 'query', key: 'pageSize' },
+        targetJsonPath: '$["__proto__"].items',
+        defaultCount: 5,
+      },
+    ]);
+    const result = applyMultipliers(response, baseCtx);
+    expect(result).toBe(response);
+  });
 });

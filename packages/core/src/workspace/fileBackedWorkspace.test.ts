@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+﻿import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -12,7 +12,6 @@ function makeSynced(): WorkspaceSynced {
   return {
     schemaVersion: 1,
     workspaceId: 'ws-1',
-    workspaceName: 'W',
     collections: { tree: { id: 'root', type: 'root', children: [] }, requests: {}, folders: {} },
     environments: { items: {}, activeName: null, priorityOrder: [] },
     linkedWorkspaces: {},
@@ -100,7 +99,7 @@ describe('fileBackedWorkspace', () => {
     expect(loaded!.local.executionPlans).toEqual({});
   });
 
-  it('withWorkspace runs a load → mutate → save under one lock', async () => {
+  it('withWorkspace runs a load â†’ mutate â†’ save under one lock', async () => {
     await saveToFile(tmpDir, { synced: makeSynced(), local: makeLocal() });
     const result = await withWorkspace(tmpDir, async (state) => {
       const out = applyMutation(state, {

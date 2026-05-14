@@ -353,7 +353,7 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
   const [selectedBranch, setSelectedBranch] = useState<string>('');
 
   const [probe, setProbe] = useState<{
-    workspaceName: string;
+    repoFullName: string;
     versions: string[];
     currentVersion: string | null;
     requiredSecretKeys: SecretKeyMeta[];
@@ -1375,7 +1375,7 @@ function PinPicker({
   loading: boolean;
   error: string | null;
   probe: {
-    workspaceName: string;
+    repoFullName: string;
     versions: string[];
     currentVersion: string | null;
     requiredSecretKeys: SecretKeyMeta[];
@@ -1402,7 +1402,7 @@ function PinPicker({
   return (
     <div className="rounded-sm border border-border-subtle bg-surface p-2">
       <p className="mb-1.5 text-[0.6875rem] text-text-dim">
-        Source workspace: <strong className="text-text-primary">{probe.workspaceName}</strong>
+        Source workspace: <strong className="text-text-primary">{probe.repoFullName}</strong>
         {probe.currentVersion && (
           <span className="ml-2 rounded-sm border border-border bg-card px-1 py-0.5 font-mono text-[0.625rem]">
             currentVersion v{probe.currentVersion}

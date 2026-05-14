@@ -22,7 +22,6 @@ const baseRequest = (overrides: Partial<ApiRequest> = {}): ApiRequest => ({
 });
 
 const snapshot = (req: ApiRequest): LinkedSnapshot => ({
-  workspaceName: 'Source',
   pulledAt: 't',
   ref: 'main',
   collections: {

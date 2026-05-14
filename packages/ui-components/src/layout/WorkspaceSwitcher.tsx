@@ -14,10 +14,15 @@ import { ConfirmDialog } from '../primitives/ConfirmDialog';
 
 export function WorkspaceSwitcher() {
   const registry = useWorkspaceStore((s) => s.workspaceRegistry);
-  const activeWorkspaceName = useWorkspaceStore((s) => s.synced?.workspaceName ?? '');
   const switchWorkspace = useWorkspaceStore((s) => s.switchWorkspace);
   const createNewWorkspace = useWorkspaceStore((s) => s.createNewWorkspace);
   const deleteWorkspaceById = useWorkspaceStore((s) => s.deleteWorkspaceById);
+
+  // The active workspace's display name comes from the registry — the
+  // git-synced doc no longer carries a name, so the dropdown and the
+  // active-name chip share the same source and can never disagree.
+  const activeWorkspaceName =
+    registry?.workspaces.find((w) => w.id === registry.activeWorkspaceId)?.name ?? '';
 
   const [open, setOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);

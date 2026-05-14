@@ -11,6 +11,7 @@ export {
   validateRegex,
   validateJsonPath,
   validatePositiveDuration,
+  safeExternalHref,
 } from './validators';
 export type { ValidationResult } from './validators';
 export { formatBytes, utf8ByteLength } from './format';
@@ -26,6 +27,7 @@ export {
   FONT_SIZE_PERCENT_MAX,
   FONT_SIZE_PERCENT_STEP,
   FONT_SIZE_PERCENT_DEFAULT,
+  DEFAULT_WORKSPACE_NAME,
 } from './types';
 export { REQUEST_AUTH_TYPES, defaultAuthFor, normalizeAuth } from './authDefaults';
 export type { RequestAuthType } from './authDefaults';
@@ -78,6 +80,7 @@ export type {
   Environment,
   EnvironmentVariable,
   EnvPriorityRef,
+  SecretCryptoMeta,
   SecretKeyMeta,
   ExecutionPlan,
   RequestRun,

@@ -48,7 +48,12 @@ import {
 import { decideRetirement, probeBranchRetirement } from './branchRetirement';
 import { applyFont } from '../theme/applyFont';
 import { applyFontSize, clampFontSizePercent } from '../theme/applyFontSize';
-import { RUN_BODY_PREVIEW_LIMIT, envPriorityKey, generateId } from '@apicircle/shared';
+import {
+  DEFAULT_WORKSPACE_NAME,
+  RUN_BODY_PREVIEW_LIMIT,
+  envPriorityKey,
+  generateId,
+} from '@apicircle/shared';
 import {
   type AttachmentResolver,
   type ExecutionResult,
@@ -57,6 +62,7 @@ import {
   type ParsedPostmanCollection,
   type ParsedPostmanEnvironment,
   type PublishReleaseArgs,
+  type AuthApplyOptions,
   type ResolutionMap,
   type ThreeWayDiff,
   applyLinkedUpdate as applyLinkedUpdateCore,
@@ -77,6 +83,10 @@ import {
   parseSemver,
   previewLinkedUpdate as previewLinkedUpdateCore,
   publishRelease as publishReleaseAction,
+  parseWorkspaceJson,
+  redactForGit,
+  assertNoPlaintextCredentials,
+  RemoteWorkspaceParseError,
   resolveInheritedAuth,
   resolveString,
   runAssertions,
@@ -112,6 +122,16 @@ import {
   saveLocal,
   saveSynced,
 } from '../persistence/workspaceStorage';
+// Hot-path persistence is coalesced through a 250ms debounce — `commitSynced`
+// and the per-keystroke editor actions queue here instead of writing the
+// whole workspace doc to IndexedDB on every keystroke. Sensitive transitions
+// (git push, hydrate, workspace switch) call `flushPendingPersist()` to await
+// the disk write before continuing.
+import {
+  flushPendingPersist,
+  queueSaveLocal,
+  queueSaveSynced,
+} from '../persistence/debouncedPersist';
 import { applyTheme } from '../theme/applyTheme';
 import type { ToastRecord } from '../primitives/Toast';
 import { bytesToBase64 } from './attachmentBlobs';
@@ -184,6 +204,7 @@ import {
 } from './planActions';
 import { recomputeUsedIn } from './usedInAggregator';
 import { deleteSecretPayload, getSecretPayload, putSecretPayload } from '../persistence/secrets';
+import { assertSecretsProtected } from '../persistence/platformSecretGate';
 
 const attachmentResolver: AttachmentResolver = async (slotId) => {
   const record = await getAttachment(slotId);
@@ -260,6 +281,31 @@ function previewRequestBody(req: ApiRequest): string | null {
 }
 
 /** Build a RequestRun record from a resolved request + the executor result. */
+/**
+ * Strip `user:pass@` userinfo from a URL before we persist it to a
+ * `RequestRun` record. URLs like `https://leaked:secret@api.example.com/x`
+ * are valid + sent as Basic auth on the wire, but they MUST NOT survive
+ * into history (the run record is rendered in the History panel, can be
+ * exported, and travels through git via plan-run records).
+ *
+ * Returns the URL unchanged when there's no userinfo, or when the URL
+ * fails to parse (we don't want to break legitimate weirdness — the URL
+ * field tolerates pre-resolution variables like `{{BASE}}/x`).
+ */
+function redactUrlCredentials(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.username || parsed.password) {
+      parsed.username = '';
+      parsed.password = '';
+      return parsed.toString();
+    }
+  } catch {
+    // Not a parseable URL — leave it alone.
+  }
+  return url;
+}
+
 function buildRequestRun(
   resolvedRequest: ApiRequest,
   result: ExecutionResult,
@@ -275,7 +321,11 @@ function buildRequestRun(
     statusText: result.statusText,
     ok: result.ok,
     error: result.error,
-    url: result.url,
+    // Redact embedded user:pass@ from URLs before they enter history.
+    // The live wire request still carries the credentials (Chromium
+    // converts userinfo into a Basic auth header); we only strip them
+    // from the persisted record. Audit P2.
+    url: redactUrlCredentials(result.url),
     method: result.method,
     requestHeaders: composeWireHeaders(resolvedRequest.headers),
     requestBodyPreview: previewRequestBody(resolvedRequest),
@@ -345,6 +395,15 @@ export type RefreshOutcome =
  * surface. Assets is the workspace-wide JSON Schema + GraphQL library.
  */
 export type RightDockTab = 'variables' | 'vault' | 'assets';
+
+/**
+ * Sub-tab inside the Secret Vault dock panel. Lifted to store state so
+ * callers outside the dock (e.g. "Manage session" / "Connect via Secret
+ * Vault → Sessions" buttons on the Workspace panel) can land the user
+ * directly on the right sub-tab — otherwise the dock always opened to
+ * "vault" regardless of what the button copy promised.
+ */
+export type VaultSubtab = 'vault' | 'sessions';
 
 /**
  * Pending refresh state staged after `refreshWorkspace` finishes the
@@ -427,7 +486,14 @@ type WorkspaceStore = {
    * Width while docked is persisted by `react-resizable-panels` via
    * `autoSaveId`; the overlay uses a fixed default width.
    */
-  rightDock: { tab: RightDockTab | null; mode: 'overlay' | 'docked' };
+  rightDock: {
+    tab: RightDockTab | null;
+    mode: 'overlay' | 'docked';
+    /** Sub-tab the Secret Vault panel renders. Owned by the store so
+     *  callers can deep-link to "sessions" without the dock falling
+     *  back to its default "vault" view. */
+    vaultSubtab: VaultSubtab;
+  };
   /** Stashed during refreshWorkspace when conflicts surface; consumed by commitRefresh. */
   pendingRefresh: PendingRefresh | null;
   /**
@@ -579,6 +645,11 @@ type WorkspaceStore = {
    * persists on `local.ui.fontSizePercent`.
    */
   setFontSizePercent: (percent: number) => void;
+  /**
+   * Rename the active workspace. The name is registry-only (never
+   * pushed to git) so two machines backed by the same repo can each
+   * label their local copy independently.
+   */
   setWorkspaceName: (name: string) => void;
   /** Toggle the pre-send validation panel (local.settings.validateOnSend). */
   setValidateOnSend: (value: boolean) => void;
@@ -667,12 +738,20 @@ type WorkspaceStore = {
   /** Drop the attachment for a mock endpoint's response body. */
   detachMockResponseFile: (serverId: string, endpointId: string) => Promise<void>;
 
-  /** Open a tab in the right-side dock. If the dock was closed, opens it. */
-  openRightDockTab: (tab: RightDockTab) => void;
+  /**
+   * Open a tab in the right-side dock. If the dock was closed, opens it.
+   * For the Vault tab specifically, callers can pre-select the
+   * Vault-vs-Sessions sub-tab via `opts.vaultSubtab` — used by the
+   * "Connect via Secret Vault → Sessions" / "Manage session" buttons
+   * on the Workspace panel.
+   */
+  openRightDockTab: (tab: RightDockTab, opts?: { vaultSubtab?: VaultSubtab }) => void;
   /** Close the dock entirely. */
   closeRightDock: () => void;
   /** Switch the active tab without changing dock visibility. No-op if the dock is closed. */
   setRightDockTab: (tab: RightDockTab) => void;
+  /** Switch the Secret Vault dock's sub-tab. */
+  setVaultSubtab: (subtab: VaultSubtab) => void;
   /**
    * Toggle helper for the right-edge rail icons: clicking the same tab
    * twice closes the dock; clicking a different tab while open just
@@ -1029,8 +1108,9 @@ type WorkspaceStore = {
    * UI can cancel mid-flow.
    *
    * Browser-only: GitHub's OAuth public-client path is device flow
-   * (no client_secret involved). Configure the OAuth App client id via
-   * `VITE_GITHUB_OAUTH_CLIENT_ID` and ensure "Enable Device Flow" is
+   * (no client_secret involved). The APICircle Studio OAuth App's client
+   * id is bundled at build time; override via `VITE_GITHUB_OAUTH_CLIENT_ID`
+   * to point a fork at its own OAuth App. "Enable Device Flow" must be
    * turned on in the App's GitHub settings.
    */
   connectGitHubSessionViaDeviceFlow: (args: {
@@ -1072,9 +1152,11 @@ type WorkspaceStore = {
   }) => Promise<WorkingBranch>;
   /**
    * Seed the very first commit on a freshly-created empty repo. Writes a
-   * minimal scaffold `workspace.json` (current workspaceId + workspaceName,
-   * empty content arrays) onto `connectedRepo.defaultBranch` via the
-   * Contents API (the only endpoint that bootstraps an empty git database).
+   * minimal scaffold `workspace.json` (current workspaceId + empty content
+   * arrays) onto `connectedRepo.defaultBranch` via the Contents API (the
+   * only endpoint that bootstraps an empty git database). The workspace
+   * name is intentionally absent — names are per-machine and live on the
+   * local registry, not in the git-tracked doc.
    * Idempotent: if a workspace.json already exists on the default branch,
    * skips the write and reuses that blob sha — handles cases where a prior
    * attempt partially landed or `listBranches` lagged behind a recent write.
@@ -1335,10 +1417,14 @@ type WorkspaceStore = {
   ) => Promise<GitHubBranch[]>;
 
   /**
-   * Probe a candidate source repo's `workspace.json` for its display
-   * name and published-version list. Defaults to the workspace session;
-   * the link wizard supplies `tokenOverride` when binding a dedicated
+   * Probe a candidate source repo's `workspace.json` for its
+   * published-version list. Defaults to the workspace session; the
+   * link wizard supplies `tokenOverride` when binding a dedicated
    * session so the probe runs through the right credentials.
+   *
+   * `repoFullName` (`owner/name`) is echoed back so the wizard can show
+   * the source identity; the workspace's display name itself is no
+   * longer carried in the synced doc.
    */
   probeLinkedRepoVersions: (
     owner: string,
@@ -1346,7 +1432,7 @@ type WorkspaceStore = {
     branch: string,
     opts?: { tokenOverride?: string },
   ) => Promise<{
-    workspaceName: string;
+    repoFullName: string;
     versions: string[];
     currentVersion: string | null;
     /**
@@ -1595,7 +1681,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set({ lastSecretActivityAt: Date.now() });
   },
   activePanel: readStoredPanel(),
-  rightDock: { tab: null, mode: 'overlay' },
+  rightDock: { tab: null, mode: 'overlay', vaultSubtab: 'vault' },
   importModalOpen: false,
   editorPendingCreate: null,
   envAdding: false,
@@ -1655,6 +1741,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const registry = get().workspaceRegistry;
     if (!registry) throw new Error('Registry not loaded');
     if (workspaceId === registry.activeWorkspaceId) return;
+    // Flush any pending writes for the OUTGOING workspace before switching,
+    // otherwise a late-firing debounce would write the previous workspace's
+    // in-memory state on top of the freshly-loaded incoming state.
+    await flushPendingPersist();
     const updatedRegistry = await setActiveWorkspacePersisted(registry, workspaceId);
     const result = await loadWorkspaceById(workspaceId, updatedRegistry);
     applyTheme(result.local.ui.themeId);
@@ -1702,6 +1792,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   deleteWorkspaceById: async (workspaceId) => {
     const registry = get().workspaceRegistry;
     if (!registry) throw new Error('Registry not loaded');
+    // Flush in case the workspace being deleted has pending writes — they'd
+    // otherwise race the delete and resurrect a partial record.
+    await flushPendingPersist();
     const result = await deleteWorkspacePersisted(registry, workspaceId);
     applyTheme(result.local.ui.themeId);
     applyFont(result.local.ui.fontId);
@@ -1761,7 +1854,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!local) return;
     const next: WorkspaceLocal = { ...local, ui: { ...local.ui, activeRequestId: id } };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
     // Workspace + linked active are mutually exclusive in the editor —
     // setting one clears the other so the merged-view selector doesn't
     // get a confused "both set" state. (Setting id to null intentionally
@@ -1783,7 +1876,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       ui: { ...local.ui, sidebarExpandedSections: nextExpanded },
     };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
   },
 
   setThemeId: (themeId) => {
@@ -1792,7 +1885,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const next: WorkspaceLocal = { ...local, ui: { ...local.ui, themeId } };
     applyTheme(themeId);
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
   },
 
   setFontId: (fontId) => {
@@ -1801,7 +1894,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const next: WorkspaceLocal = { ...local, ui: { ...local.ui, fontId } };
     applyFont(fontId);
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
   },
 
   setFontSizePercent: (percent) => {
@@ -1815,7 +1908,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     };
     applyFontSize(clamped);
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
   },
 
   setValidateOnSend: (value) => {
@@ -1826,7 +1919,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       settings: { ...local.settings, validateOnSend: value },
     };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
   },
 
   setMonacoConsumesWheel: (value) => {
@@ -1837,7 +1930,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       settings: { ...local.settings, monacoConsumesWheel: value },
     };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
   },
 
   captureSnapshot: (args) => {
@@ -1853,7 +1946,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       },
     );
     set({ local: result.next.local });
-    void saveLocal(result.next.local);
+    queueSaveLocal(result.next.local);
     // The first id in changedIds is the new snapshot's id; later entries
     // are evicted ids. Return the new snapshot id so callers can scroll
     // to it in the History panel.
@@ -1867,8 +1960,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const result = coreApplyMutation({ synced, local }, { kind: 'snapshot.restore', id });
     if (result.changedIds.length === 0) return false;
     set({ synced: result.next.synced, local: result.next.local });
-    void saveSynced(result.next.synced);
-    void saveLocal(result.next.local);
+    queueSaveSynced(result.next.synced);
+    queueSaveLocal(result.next.local);
     return true;
   },
 
@@ -1879,7 +1972,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const result = coreApplyMutation({ synced, local }, { kind: 'snapshot.delete', id });
     if (result.changedIds.length === 0) return;
     set({ local: result.next.local });
-    void saveLocal(result.next.local);
+    queueSaveLocal(result.next.local);
   },
 
   setSnapshotMaxBytes: (maxBytes) => {
@@ -1891,29 +1984,26 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       { kind: 'snapshot.set_max_bytes', maxBytes },
     );
     set({ local: result.next.local });
-    void saveLocal(result.next.local);
+    queueSaveLocal(result.next.local);
   },
 
   setWorkspaceName: (name) => {
-    const synced = get().synced;
-    if (!synced) return;
-    const nextSynced: WorkspaceSynced = {
-      ...synced,
-      workspaceName: name,
-      meta: { ...synced.meta, updatedAt: new Date().toISOString() },
-    };
-    set({ synced: nextSynced });
-    void saveSynced(nextSynced);
-    // Mirror the rename into the workspace registry so the switcher UI
-    // shows the new name without a reload. Fire-and-forget — the
-    // registry write is best-effort; the synced doc is the source of
-    // truth.
     const registry = get().workspaceRegistry;
-    if (registry) {
-      void updateRegistryEntryNamePersisted(registry, synced.workspaceId, name).then((next) => {
-        set({ workspaceRegistry: next });
-      });
-    }
+    const activeId = registry?.activeWorkspaceId ?? get().synced?.workspaceId ?? null;
+    if (!registry || !activeId) return;
+    // The registry is the single source of truth for the workspace's
+    // display name — git never sees it. Reflect the rename in-memory so
+    // the switcher / TopBar update synchronously; the IDB write below
+    // is fire-and-forget on the latest in-memory state. We deliberately
+    // do NOT round-trip the persisted result back into store state:
+    // typing fires this action on every keystroke, and async writes can
+    // resolve out of order, so the last in-memory state always wins.
+    const optimistic: WorkspaceRegistry = {
+      ...registry,
+      workspaces: registry.workspaces.map((w) => (w.id === activeId ? { ...w, name } : w)),
+    };
+    set({ workspaceRegistry: optimistic });
+    void updateRegistryEntryNamePersisted(optimistic, activeId, name);
   },
 
   // Delete a mock definition. Pure data op — the runtime is the Desktop
@@ -1934,7 +2024,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       meta: { ...synced.meta, updatedAt: new Date().toISOString() },
     };
     set({ synced: nextSynced });
-    void saveSynced(nextSynced);
+    queueSaveSynced(nextSynced);
   },
 
   createMockServer: ({ name, source }) => {
@@ -1968,7 +2058,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       meta: { ...synced.meta, updatedAt: now },
     };
     set({ synced: nextSynced });
-    void saveSynced(nextSynced);
+    queueSaveSynced(nextSynced);
     return id;
   },
 
@@ -1987,7 +2077,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       meta: { ...synced.meta, updatedAt: now },
     };
     set({ synced: nextSynced });
-    void saveSynced(nextSynced);
+    queueSaveSynced(nextSynced);
   },
 
   setMockServerCors: (id, cors) => {
@@ -2012,7 +2102,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       meta: { ...synced.meta, updatedAt: now },
     };
     set({ synced: nextSynced });
-    void saveSynced(nextSynced);
+    queueSaveSynced(nextSynced);
   },
 
   setMockServerEndpoints: (id, endpoints) => {
@@ -2033,7 +2123,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       meta: { ...synced.meta, updatedAt: now },
     };
     set({ synced: nextSynced });
-    void saveSynced(nextSynced);
+    queueSaveSynced(nextSynced);
   },
 
   addMockEndpoint: (serverId) => {
@@ -2071,7 +2161,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       meta: { ...synced.meta, updatedAt: now },
     };
     set({ synced: nextSynced, activeMockServerId: serverId, activeMockEndpointId: id });
-    void saveSynced(nextSynced);
+    queueSaveSynced(nextSynced);
     return id;
   },
 
@@ -2099,7 +2189,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       meta: { ...synced.meta, updatedAt: now },
     };
     set({ synced: nextSynced });
-    void saveSynced(nextSynced);
+    queueSaveSynced(nextSynced);
   },
 
   removeMockEndpoint: (serverId, endpointId) => {
@@ -2124,7 +2214,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const nextActive =
       get().activeMockEndpointId === endpointId ? { activeMockEndpointId: null } : {};
     set({ synced: nextSynced, ...nextActive });
-    void saveSynced(nextSynced);
+    queueSaveSynced(nextSynced);
   },
 
   duplicateMockServer: (id) => {
@@ -2133,7 +2223,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const { synced: nextSynced, server } = duplicateMockServerAction(synced, id);
     if (!server) return null;
     set({ synced: nextSynced, activeMockServerId: server.id, activeMockEndpointId: null });
-    void saveSynced(nextSynced);
+    queueSaveSynced(nextSynced);
     return server.id;
   },
 
@@ -2147,7 +2237,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     );
     if (!endpoint) return null;
     set({ synced: nextSynced, activeMockServerId: serverId, activeMockEndpointId: endpoint.id });
-    void saveSynced(nextSynced);
+    queueSaveSynced(nextSynced);
     return endpoint.id;
   },
 
@@ -2213,10 +2303,21 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (previousSlot) await deleteAttachment(previousSlot);
   },
 
-  openRightDockTab: (tab) => set((s) => ({ rightDock: { ...s.rightDock, tab } })),
+  openRightDockTab: (tab, opts) =>
+    set((s) => ({
+      rightDock: {
+        ...s.rightDock,
+        tab,
+        // Update the sub-tab when caller asks for one. Otherwise keep
+        // the existing value — the user's manual sub-tab pick during
+        // a session shouldn't get clobbered by re-opening the dock.
+        ...(opts?.vaultSubtab ? { vaultSubtab: opts.vaultSubtab } : {}),
+      },
+    })),
   closeRightDock: () => set((s) => ({ rightDock: { ...s.rightDock, tab: null } })),
   setRightDockTab: (tab) =>
     set((s) => (s.rightDock.tab === null ? s : { rightDock: { ...s.rightDock, tab } })),
+  setVaultSubtab: (subtab) => set((s) => ({ rightDock: { ...s.rightDock, vaultSubtab: subtab } })),
   toggleRightDockTab: (tab) =>
     set((s) => ({
       rightDock: { ...s.rightDock, tab: s.rightDock.tab === tab ? null : tab },
@@ -2231,7 +2332,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!synced) return '';
     const { synced: nextSynced, request } = addRequestAction(synced, parentFolderId, name);
     set({ synced: nextSynced });
-    void saveSynced(nextSynced);
+    queueSaveSynced(nextSynced);
     // Auto-select the new request.
     get().setActiveRequestId(request.id);
     return request.id;
@@ -2273,7 +2374,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       meta: { ...withRequest.meta, updatedAt: new Date().toISOString() },
     };
     set({ synced: seeded });
-    void saveSynced(seeded);
+    queueSaveSynced(seeded);
     get().setActiveRequestId(request.id);
     return { id: request.id, warnings: parsed.warnings };
   },
@@ -2283,7 +2384,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!synced) return '';
     const { synced: nextSynced, folder } = addFolderAction(synced, parentFolderId, name);
     set({ synced: nextSynced });
-    void saveSynced(nextSynced);
+    queueSaveSynced(nextSynced);
     return folder.id;
   },
 
@@ -2293,7 +2394,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const { synced: nextSynced, request } = duplicateRequestAction(synced, id);
     if (!request) return null;
     set({ synced: nextSynced });
-    void saveSynced(nextSynced);
+    queueSaveSynced(nextSynced);
     // Drop the user into the duplicate so they can immediately edit.
     get().setActiveRequestId(request.id);
     return request.id;
@@ -2305,7 +2406,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const { synced: nextSynced, folder } = duplicateFolderAction(synced, id);
     if (!folder) return null;
     set({ synced: nextSynced });
-    void saveSynced(nextSynced);
+    queueSaveSynced(nextSynced);
     return folder.id;
   },
 
@@ -2315,7 +2416,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const { synced: next, deletedRequestIds } = removeFolderAction(synced, id);
     if (next === synced) return;
     set({ synced: next });
-    void saveSynced(next);
+    queueSaveSynced(next);
     // Free attachments of every cascaded request, mirroring removeRequest.
     const slotIds: string[] = [];
     for (const rid of deletedRequestIds) {
@@ -2336,7 +2437,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const next = removeRequestAction(synced, id);
     if (next === synced) return;
     set({ synced: next });
-    void saveSynced(next);
+    queueSaveSynced(next);
     if (existing) {
       const slotIds = collectRequestSlotIds(existing);
       if (slotIds.length > 0) void deleteManyAttachments(slotIds);
@@ -2452,7 +2553,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       meta: { ...cur.meta, updatedAt: new Date().toISOString() },
     };
     set({ synced: stamped });
-    void saveSynced(stamped);
+    queueSaveSynced(stamped);
     return { folders: parsed.folders.length + 1, requests: parsed.requests.length };
   },
 
@@ -2662,7 +2763,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           ui: { ...local.ui, activeRequestId: null },
         };
         set({ local: next });
-        void saveLocal(next);
+        queueSaveLocal(next);
       }
     }
   },
@@ -2674,14 +2775,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     void _omit;
     const next: WorkspaceLocal = { ...local, globalContext: rest };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
   },
   clearGlobalContext: () => {
     const local = get().local;
     if (!local) return;
     const next: WorkspaceLocal = { ...local, globalContext: {} };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
   },
 
   setRequestFormRows: (id, rows) => {
@@ -2930,6 +3031,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const local = get().local;
     const synced = get().synced;
     if (!local || !synced) return '';
+    // Phase 9: on web without a workspace passphrase the master key would
+    // sit in plaintext IndexedDB. Refuse to add a secret on that runtime
+    // — the user can still add one after setting a passphrase, or on the
+    // Desktop App where the JWK is wrapped via OS keychain.
+    await assertSecretsProtected(synced.secretCrypto);
     const id = generateId();
     const key = await getMasterKey();
     const payload = await encryptString(value, key);
@@ -2947,7 +3053,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return '';
     }
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
     // Workspace-origin slots become first-class entries in synced.secretKeys
     // with a per-slot salt so encrypted env vars travel through Git: any
     // teammate who supplies the same slot value derives the same AES-GCM
@@ -2968,7 +3074,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         meta: { ...synced.meta, updatedAt: new Date().toISOString() },
       };
       set({ synced: nextSynced });
-      void saveSynced(nextSynced);
+      queueSaveSynced(nextSynced);
     }
     get().recomputeSecretUsage();
     return id;
@@ -3026,7 +3132,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
     if (nextSynced) {
       set({ synced: nextSynced });
-      void saveSynced(nextSynced);
+      queueSaveSynced(nextSynced);
     }
     return true;
   },
@@ -3060,7 +3166,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       });
       if (nextLocal !== local) {
         set({ local: nextLocal });
-        void saveLocal(nextLocal);
+        queueSaveLocal(nextLocal);
         get().recomputeSecretUsage();
       }
     }
@@ -3087,7 +3193,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const nextLocal = renameSecretEntryAction(local, id, label);
     if (nextLocal === local) return;
     set({ local: nextLocal });
-    void saveLocal(nextLocal);
+    queueSaveLocal(nextLocal);
     // Labels for workspace-origin slots also live on `synced.secretKeys`
     // so collaborators pulling from Git see the same human-readable
     // name. Without mirroring here, the rename takes effect locally
@@ -3107,7 +3213,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           meta: { ...synced.meta, updatedAt: new Date().toISOString() },
         };
         set({ synced: nextSynced });
-        void saveSynced(nextSynced);
+        queueSaveSynced(nextSynced);
       }
     }
   },
@@ -3160,11 +3266,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         meta: { ...synced.meta, updatedAt: new Date().toISOString() },
       };
       set({ local: nextLocal, synced: nextSynced });
-      void saveSynced(nextSynced);
+      queueSaveSynced(nextSynced);
     } else {
       set({ local: nextLocal });
     }
-    void saveLocal(nextLocal);
+    queueSaveLocal(nextLocal);
   },
 
   recomputeSecretUsage: () => {
@@ -3174,7 +3280,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const next = recomputeUsedIn(synced, local);
     if (next === local) return;
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
   },
 
   // --- GitHub session ----------------------------------------------------
@@ -3234,7 +3340,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       sessions: { github: { ...indexed.sessions.github, workspace: session } },
     };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
     return session;
   },
 
@@ -3267,7 +3373,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       sessions: { github: { ...local.sessions.github, workspace: updated } },
     };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
     return scopes.granted;
   },
 
@@ -3308,23 +3414,24 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       sessions: { github: { ...local.sessions.github, workspace: updated } },
     };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
     return updated;
   },
 
   connectGitHubSessionViaDeviceFlow: async ({ onCodeReady, signal }) => {
     const clientId = readOAuthClientId();
-    if (!clientId) {
-      throw new Error(
-        'GitHub OAuth client id missing. Set VITE_GITHUB_OAUTH_CLIENT_ID at build time to enable Sign in with GitHub.',
-      );
-    }
     const local = get().local;
     if (!local) throw new Error('Workspace not ready');
-    const client = new GitHubClient();
-    // Request the same scopes the PAT path requires so the resulting
-    // session can do everything (link, push, PR creation).
-    const scope = [...REQUIRED_BASE_SCOPES, 'pull_request'].join(',');
+    // GitHub doesn't send CORS headers on `github.com/login/*`, so a
+    // browser can't POST there directly. The renderer routes through a
+    // same-origin proxy (Vite dev server + Electron's main-process proxy
+    // in production). Non-browser callers keep the direct origin.
+    const client = new GitHubClient({ loginBaseUrl: resolveGitHubLoginBaseUrl() });
+    // Classic OAuth apps don't accept `pull_request` as a scope — `repo`
+    // already grants PR read/write. Requesting it surfaces as
+    // `invalid_scope` from `login/device/code`, so we only ask for the
+    // base scopes here.
+    const scope = REQUIRED_BASE_SCOPES.join(',');
     const flow = await client.startDeviceFlow(clientId, scope);
     const expiresAt = Date.now() + flow.expiresIn * 1000;
     onCodeReady({
@@ -3375,7 +3482,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       workingBranch: null,
     };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
   },
 
   // --- Repo + working-branch (P4.2) -------------------------------------
@@ -3425,7 +3532,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         local.workingBranch?.repoFullName === connected.fullName ? local.workingBranch : null,
     };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
     return connected;
   },
 
@@ -3439,7 +3546,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       workingBranch: null,
     };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
   },
 
   createWorkingBranch: async (opts) => {
@@ -3450,9 +3557,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!repo) throw new Error('Connect a repo before creating a working branch');
 
     const baseBranch = opts?.baseBranch?.trim() || repo.defaultBranch;
-    const branchName =
-      opts?.branchName?.trim() ||
-      generateWorkingBranchName({ workspaceName: synced.workspaceName });
+    const registry = get().workspaceRegistry;
+    const activeEntry = registry?.workspaces.find((w) => w.id === synced.workspaceId) ?? null;
+    const displayName = activeEntry?.name ?? DEFAULT_WORKSPACE_NAME;
+    const branchName = opts?.branchName?.trim() || generateWorkingBranchName({ displayName });
 
     const validationError = validateBranchName(branchName);
     if (validationError) throw new Error(validationError);
@@ -3486,7 +3594,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // branch — the banner pointed the user here, and they followed through.
     const next: WorkspaceLocal = { ...local, workingBranch: branch, retiredBranch: null };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
 
     // Probe the new branch for an existing `workspace.json`. If it's
     // there, the repo is pre-populated — the user shouldn't push their
@@ -3514,7 +3622,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       if (seededSha) {
         const cleared: WorkspaceLocal = { ...get().local!, seededWorkspaceSha: null };
         set({ local: cleared });
-        void saveLocal(cleared);
+        queueSaveLocal(cleared);
       }
     } catch {
       // Probe is best-effort — auth/network blips don't block branch creation.
@@ -3557,13 +3665,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
 
     if (scaffoldSha === null) {
-      // Build a minimal scaffold: keep the user's workspaceId + name (so this
+      // Build a minimal scaffold: keep the user's workspaceId (so this
       // repo's identity stays tied to their workspace) but clear all content
       // arrays. The user's actual content lands via the working-branch push.
+      // No workspace name is included — names live in each user's local
+      // registry, not in the git-tracked doc.
       const scaffold: WorkspaceSynced = {
         schemaVersion: synced.schemaVersion,
         workspaceId: synced.workspaceId,
-        workspaceName: synced.workspaceName,
         collections: {
           tree: { id: synced.collections.tree.id, type: 'root', children: [] },
           requests: {},
@@ -3598,7 +3707,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // recognise its own seed and skip the false-positive first-pull prompt.
     const next: WorkspaceLocal = { ...get().local!, seededWorkspaceSha: scaffoldSha };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
 
     return { branchName, scaffoldSha };
   },
@@ -3608,10 +3717,18 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!local || !local.workingBranch) return;
     const next: WorkspaceLocal = { ...local, workingBranch: null };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
   },
 
   pushWorkspace: async (commitMessage) => {
+    // Drain the debounced persistence queue before serialising for git.
+    // If a keystroke landed in the last 250ms, its in-memory state is
+    // ahead of what's on disk — and we serialize from in-memory `synced`,
+    // so the user wouldn't lose data, but a crash between this push and
+    // the next debounce flush would diverge IDB from what we just pushed.
+    // Flushing here keeps "what's on disk" === "what's in git".
+    await flushPendingPersist();
+
     const local = get().local;
     const synced = get().synced;
     if (!local || !synced) throw new Error('Workspace not ready');
@@ -3669,7 +3786,17 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       });
     }
     // 3. Build the new tree, layering workspace.json + attachments over base_tree.
-    const content = serializeWorkspaceForGit(synced);
+    //    Phase 8 security: redact every secret-bearing field BEFORE
+    //    serialising. The push payload is visible to every collaborator
+    //    on this repo (and to the world for public repos) — passwords,
+    //    bearer tokens, refresh tokens, AWS keys etc. CANNOT travel via
+    //    git. `assertNoPlaintextCredentials` is a fail-closed lint pass
+    //    over the already-serialised bytes — if any redactor case got
+    //    missed (or a future RequestAuth variant is added without
+    //    wiring), the push is refused before we ever call createTree.
+    const redacted = redactForGit(synced);
+    const content = serializeWorkspaceForGit(redacted);
+    assertNoPlaintextCredentials(content);
     const newTree = await client.createTree(token, owner, name, {
       baseTreeSha: headCommit.treeSha,
       entries: [{ path: 'workspace.json', content }, ...attachmentEntries],
@@ -3713,7 +3840,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       },
     };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
     return { commitSha: newCommitSha };
   },
 
@@ -3935,8 +4062,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     );
     if (file === null) return null;
     // parseLinkedWorkspaceJson surfaces typed errors for malformed JSON
-    // / missing workspaceName — let those propagate so the modal can
-    // render a useful message.
+    // — let those propagate so the modal can render a useful message.
     const parsed = parseLinkedWorkspaceJson(file.content);
     const ledger = parsed.releases?.self ?? null;
 
@@ -3951,7 +4077,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       : [];
 
     return {
-      workspaceName: parsed.workspaceName,
+      // The probe used to surface the source's workspaceName here; that
+      // field no longer lives in the synced doc, so the caller displays
+      // the repo path as the source's friendly identifier instead.
+      repoFullName: `${owner.trim()}/${name.trim()}`,
       versions: (ledger?.versions ?? []).map((v) => v.version),
       currentVersion: ledger?.currentVersion ?? null,
       requiredSecretKeys,
@@ -4114,8 +4243,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       },
     };
     set({ synced: nextSynced, local: nextLocal, activeLinkedUpdate: null });
-    void saveSynced(nextSynced);
-    void saveLocal(nextLocal);
+    queueSaveSynced(nextSynced);
+    queueSaveLocal(nextLocal);
   },
 
   refreshLinkedWorkspace: async (id) => {
@@ -4162,7 +4291,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       meta: { ...synced.meta, updatedAt: new Date().toISOString() },
     };
     set({ synced: next });
-    void saveSynced(next);
+    queueSaveSynced(next);
 
     // Bootstrap path: snapshot is missing → populate it now from the
     // same parsed payload. Doesn't touch the pin (that's still
@@ -4177,7 +4306,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           linkedCollections: { ...local.linkedCollections, [id]: snapshot },
         };
         set({ local: nextLocal });
-        void saveLocal(nextLocal);
+        queueSaveLocal(nextLocal);
       }
     }
   },
@@ -4203,7 +4332,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       meta: { ...synced.meta, updatedAt: new Date().toISOString() },
     };
     set({ synced: next });
-    void saveSynced(next);
+    queueSaveSynced(next);
   },
 
   addLinkedRequiredKey: (linkId, keyId) => {
@@ -4226,7 +4355,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       meta: { ...synced.meta, updatedAt: new Date().toISOString() },
     };
     set({ synced: next });
-    void saveSynced(next);
+    queueSaveSynced(next);
   },
 
   removeLinkedRequiredKey: async (linkId, keyId) => {
@@ -4248,7 +4377,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       meta: { ...synced.meta, updatedAt: new Date().toISOString() },
     };
     set({ synced: next });
-    void saveSynced(next);
+    queueSaveSynced(next);
     // …and the matching provisioned vault entry, if any.
     const provisioned = findProvisionedSecretId(local, linkId, keyId);
     if (provisioned) {
@@ -4317,11 +4446,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
     if (nextLocal !== local && nextLocal) {
       set({ synced: next, local: nextLocal });
-      void saveSynced(next);
-      void saveLocal(nextLocal);
+      queueSaveSynced(next);
+      queueSaveLocal(nextLocal);
     } else {
       set({ synced: next });
-      void saveSynced(next);
+      queueSaveSynced(next);
     }
   },
 
@@ -4385,8 +4514,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           };
 
     set({ local: nextLocal, synced: nextSynced });
-    void saveLocal(nextLocal);
-    if (nextSynced !== synced) void saveSynced(nextSynced);
+    queueSaveLocal(nextLocal);
+    if (nextSynced !== synced) queueSaveSynced(nextSynced);
     return session;
   },
 
@@ -4403,7 +4532,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       sessions: { github: { ...local.sessions.github, links } },
     };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
   },
 
   setLinkSessionMode: async (linkedWorkspaceId, mode) => {
@@ -4450,7 +4579,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       meta: { ...nextRaw.meta, updatedAt: new Date().toISOString() },
     };
     set({ synced: next, activePlanId: plan.id });
-    void saveSynced(next);
+    queueSaveSynced(next);
     return plan.id;
   },
 
@@ -4469,7 +4598,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     };
     const wasActive = get().activePlanId === id;
     set({ synced: next, ...(wasActive ? { activePlanId: null } : {}) });
-    void saveSynced(next);
+    queueSaveSynced(next);
     if (local) {
       const planRuns = local.history.planRuns.filter((r) => r.planId !== id);
       if (planRuns.length !== local.history.planRuns.length) {
@@ -4478,7 +4607,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           history: { ...local.history, planRuns },
         };
         set({ local: nextLocal });
-        void saveLocal(nextLocal);
+        queueSaveLocal(nextLocal);
       }
     }
   },
@@ -4494,7 +4623,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       meta: { ...nextRaw.meta, updatedAt: new Date().toISOString() },
     };
     set({ synced: next, activePlanId: plan.id });
-    void saveSynced(next);
+    queueSaveSynced(next);
     return plan.id;
   },
   addPlanStep: (planId, requestId, linkedWorkspaceId) =>
@@ -4632,6 +4761,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         const result = await coreExecuteRequest(resolved, {
           resolveAttachment: attachmentResolver,
           signal: controller.signal,
+          authOptions: { onTokenRefreshed: makeTokenRefreshPersister(set, get, request.id) },
         });
         const assertionResults = withAssertions ? runAssertions(request.assertions, result) : [];
         const allPassed = result.ok && (!withAssertions || assertionResults.every((a) => a.passed));
@@ -4701,7 +4831,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           },
         };
         set({ local: nextLocal });
-        void saveLocal(nextLocal);
+        queueSaveLocal(nextLocal);
       }
       return planRun;
     } finally {
@@ -4793,7 +4923,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         // (No-op if it was already null.)
       };
       set({ local: next, firstPullPrompt: null });
-      void saveLocal(next);
+      queueSaveLocal(next);
       return { status: 'retired', retired };
     }
 
@@ -4809,7 +4939,22 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return { status: 'no-remote' };
     }
 
-    const remote = JSON.parse(file.content) as WorkspaceSynced;
+    // Phase 7: validate the remote shape AND strip prototype-pollution
+    // keys before we merge it into anything. A malicious collaborator
+    // pushing a workspace.json with `"__proto__": {…}` would otherwise
+    // poison Object.prototype the next time we shallow-merge.
+    let remote: WorkspaceSynced;
+    try {
+      remote = parseWorkspaceJson(file.content);
+    } catch (err) {
+      if (err instanceof RemoteWorkspaceParseError) {
+        throw new Error(
+          `Remote workspace.json could not be loaded (${err.code}): ${err.message}. ` +
+            `The branch may have been written by an incompatible Studio version.`,
+        );
+      }
+      throw err;
+    }
     const base = local.sync.lastPulledSnapshot;
     const diff = computeThreeWayDiff(base, synced, remote);
 
@@ -4863,7 +5008,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         },
       };
       set({ local: next });
-      void saveLocal(next);
+      queueSaveLocal(next);
       return { status: 'up-to-date' };
     }
 
@@ -4876,7 +5021,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         note: `Before auto-merge from ${branch.name}`,
       });
       const merged = applyMerge(synced, remote, diff, {});
-      await persistMerged(set, get, merged, file.sha);
+      await persistMerged(set, get, merged, remote, file.sha);
       return { status: 'merged' };
     }
 
@@ -4897,7 +5042,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       note: 'Before conflict-resolved merge',
     });
     const merged = applyMerge(synced, pending.remote, pending.diff, resolutions);
-    await persistMerged(set, get, merged, pending.remoteSha);
+    await persistMerged(set, get, merged, pending.remote, pending.remoteSha);
     set({ pendingRefresh: null });
   },
 
@@ -4908,7 +5053,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!local || !local.retiredBranch) return;
     const next: WorkspaceLocal = { ...local, retiredBranch: null };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
   },
 
   recheckRetiredBranch: async () => {
@@ -4972,7 +5117,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           retiredBranch: null,
         };
         set({ local: next });
-        void saveLocal(next);
+        queueSaveLocal(next);
         return {
           status: 'restored',
           branchName: retired.branchName,
@@ -5019,7 +5164,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const updatedBranch: WorkingBranch = { ...branch, openPrUrl: pr.htmlUrl };
     const next: WorkspaceLocal = { ...get().local!, workingBranch: updatedBranch };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
     return { number: pr.number, htmlUrl: pr.htmlUrl };
   },
 
@@ -5034,7 +5179,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       },
     };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
   },
 
   removePlanRun: (runId) => {
@@ -5048,7 +5193,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       },
     };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
   },
 
   clearRequestRuns: (predicate) => {
@@ -5062,7 +5207,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       },
     };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
   },
 
   clearPlanRuns: (predicate) => {
@@ -5076,7 +5221,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       },
     };
     set({ local: next });
-    void saveLocal(next);
+    queueSaveLocal(next);
   },
 
   executeLinkedActiveRequest: async () => {
@@ -5139,6 +5284,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const result = await coreExecuteRequest(resolved, {
         resolveAttachment: attachmentResolver,
         signal: linkedController.signal,
+        authOptions: { onTokenRefreshed: makeTokenRefreshPersister(set, get, request.id) },
       });
       const assertionResults = runAssertions(request.assertions, result);
       const run = buildRequestRun(resolved, result, assertionResults);
@@ -5156,7 +5302,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           globalContext: { ...liveLocal.globalContext, ...extractionResult.extracted },
         };
         set({ local: next });
-        void saveLocal(next);
+        queueSaveLocal(next);
       }
       set((s) => ({ lastRun: { ...s.lastRun, [active.itemId]: result } }));
     } catch (err) {
@@ -5214,6 +5360,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const result = await coreExecuteRequest(resolved, {
         resolveAttachment: attachmentResolver,
         signal: controller.signal,
+        // Persist refreshed OAuth2 tokens so the next request doesn't
+        // re-refresh. Without this hook applyAuth mints fresh tokens
+        // per send — wasteful + a foot-gun for short-TTL refresh tokens.
+        authOptions: { onTokenRefreshed: makeTokenRefreshPersister(set, get, id) },
       });
       const assertionResults = runAssertions(request.assertions, result);
       const run = buildRequestRun(resolved, result, assertionResults);
@@ -5233,7 +5383,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           globalContext: { ...local.globalContext, ...extractionResult.extracted },
         };
         set({ local: next });
-        void saveLocal(next);
+        queueSaveLocal(next);
       }
       set((s) => ({ lastRun: { ...s.lastRun, [id]: result } }));
     } catch (err) {
@@ -5337,7 +5487,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         history: { ...liveLocal.history, requestRuns: trimmed },
       };
       set({ local: next });
-      void saveLocal(next);
+      queueSaveLocal(next);
     }
   },
 
@@ -5375,7 +5525,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           globalContext: { ...liveLocal.globalContext, ...extractionResult.extracted },
         };
         set({ local: next });
-        void saveLocal(next);
+        queueSaveLocal(next);
       }
       set((s) => ({ lastRun: { ...s.lastRun, [request.id]: result } }));
       return replayRun;
@@ -5414,15 +5564,23 @@ async function persistMerged(
   set: SetState,
   get: GetState,
   merged: WorkspaceSynced,
+  remote: WorkspaceSynced,
   remoteSha: string,
 ): Promise<void> {
   const local = get().local;
   if (!local) return;
+  // The snapshot baseline tracks WHAT'S ON THE REMOTE BRANCH, not what we
+  // merged locally. Storing `merged` here was the cause of "No unpushed
+  // changes" appearing right after a pull whose merge picked any local-only
+  // change — synced and the baseline would coincide so the diff returned
+  // empty, even though the remote didn't have those local picks yet.
+  // Using `remote` keeps the next `summarizeUnpushedChanges` honest: it
+  // surfaces every divergence the next push needs to send.
   const nextLocal: WorkspaceLocal = {
     ...local,
     sync: {
       ...local.sync,
-      lastPulledSnapshot: merged,
+      lastPulledSnapshot: remote,
       lastPulledSha: remoteSha,
       lastPulledAt: new Date().toISOString(),
     },
@@ -5577,7 +5735,10 @@ async function doLinkWorkspace(
   const link: LinkedWorkspace = {
     id,
     kind: args.kind,
-    name: parsed.workspaceName,
+    // The linked source no longer ships a workspace name in workspace.json
+    // — names are per-machine. Use the repo path as the link's default
+    // display label; the consumer can rename their local entry later.
+    name: trimmedRepo,
     source: {
       provider: 'github',
       repoFullName: trimmedRepo,
@@ -5626,8 +5787,8 @@ async function doLinkWorkspace(
     : baseLocal;
   const localChanged = nextLocal !== local;
   set({ synced: next, ...(localChanged ? { local: nextLocal } : {}) });
-  void saveSynced(next);
-  if (localChanged) void saveLocal(nextLocal);
+  queueSaveSynced(next);
+  if (localChanged) queueSaveLocal(nextLocal);
 
   // If the wizard collected slot values upfront, provision each one. We
   // run these AFTER the link is committed so the secretIndex entries
@@ -5804,7 +5965,6 @@ function buildLinkedSnapshot(
 ): LinkedSnapshot | null {
   if (!parsed.collections && !parsed.environments) return null;
   return {
-    workspaceName: parsed.workspaceName,
     pulledAt: link.linkedAt,
     ref: link.pinnedVersion ? `v${link.pinnedVersion}` : `HEAD@${link.source.branch}`,
     collections: parsed.collections ?? {
@@ -5825,14 +5985,16 @@ function buildLinkedSnapshot(
 }
 
 /**
- * Parse a linked workspace's `workspace.json`. Pulls workspaceName,
- * releases.self, and the collections + environments we want to cache
- * locally for cross-workspace plan steps (P5.8). Leniency on missing
- * keys: a partially-malformed remote can still be linked; the caller
- * checks each field before relying on it.
+ * Parse a linked workspace's `workspace.json`. Pulls releases.self and
+ * the collections + environments we want to cache locally for
+ * cross-workspace plan steps (P5.8). Leniency on missing keys: a
+ * partially-malformed remote can still be linked; the caller checks
+ * each field before relying on it.
+ *
+ * The workspace's display name is intentionally absent — names live in
+ * each consumer's local registry, not in the git-tracked source doc.
  */
 interface LinkedWorkspaceProbe {
-  workspaceName: string;
   releases?: { self?: ReleaseHistory | null };
   collections?: WorkspaceSynced['collections'];
   environments?: WorkspaceSynced['environments'];
@@ -5845,10 +6007,24 @@ interface LinkedWorkspaceProbe {
    */
   secretKeys?: Record<string, SecretKeyMeta>;
 }
+// Forbidden JSON keys we drop at parse time — see `parseWorkspaceJson` in
+// @apicircle/core for the full rationale. Mirrored here because the linked-
+// workspace shape diverges from `WorkspaceSynced` (no schemaVersion, only
+// a subset of fields) so we can't reuse the core parser directly.
+const LINKED_FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 function parseLinkedWorkspaceJson(text: string): LinkedWorkspaceProbe {
+  // Same 16 MiB cap as parseWorkspaceJson — a hostile linked source could
+  // otherwise stream gigabytes of nested junk.
+  if (text.length > 16 * 1024 * 1024) {
+    throw new Error('Remote workspace.json exceeds 16 MiB');
+  }
   let raw: unknown;
   try {
-    raw = JSON.parse(text);
+    raw = JSON.parse(text, (key: string, value: unknown) => {
+      if (LINKED_FORBIDDEN_KEYS.has(key)) return undefined;
+      return value;
+    });
   } catch {
     throw new Error('Remote workspace.json is not valid JSON');
   }
@@ -5856,10 +6032,6 @@ function parseLinkedWorkspaceJson(text: string): LinkedWorkspaceProbe {
     throw new Error('Remote workspace.json is not an object');
   }
   const obj = raw as Record<string, unknown>;
-  const name = obj.workspaceName;
-  if (typeof name !== 'string' || name.length === 0) {
-    throw new Error('Remote workspace.json missing workspaceName');
-  }
   const releasesValue = obj.releases;
   const releases =
     typeof releasesValue === 'object' && releasesValue !== null
@@ -5880,7 +6052,7 @@ function parseLinkedWorkspaceJson(text: string): LinkedWorkspaceProbe {
     typeof secretKeysValue === 'object' && secretKeysValue !== null
       ? (secretKeysValue as Record<string, SecretKeyMeta>)
       : undefined;
-  return { workspaceName: name, releases, collections, environments, secretKeys };
+  return { releases, collections, environments, secretKeys };
 }
 
 /**
@@ -5997,14 +6169,33 @@ async function decryptLinkSessionToken(
 // (e.g. anonymous marketplace search). Returns null instead of throwing
 // when the user has no session.
 /**
- * Read the OAuth client id from build-time env. We try both
- * `import.meta.env` (Vite production / Vitest with stubEnv) and
- * `process.env` (Node test fallback). Returning null lets the action
- * surface a friendly error instead of crashing.
- *
- * Exported for tests that need to override it via vi.spyOn.
+ * Public client id for the APICircle Studio GitHub OAuth App. Public-client
+ * device flow exchanges no client_secret, so embedding the id in the bundle
+ * is the documented setup — see GitHub's "OAuth Device Flow" docs. Override
+ * with `VITE_GITHUB_OAUTH_CLIENT_ID` at build time to point a fork at its
+ * own OAuth App.
  */
-function readOAuthClientId(): string | null {
+const DEFAULT_GITHUB_OAUTH_CLIENT_ID = 'Ov23lidibDgD8hoGFB67';
+
+/**
+ * Path that the dev server / Electron main proxies to `https://github.com`.
+ * Browsers can't POST to `github.com/login/*` directly because GitHub
+ * doesn't send CORS headers there; the proxy hop makes the request
+ * same-origin and bypasses the preflight.
+ */
+const BROWSER_GITHUB_LOGIN_PROXY = '/_gh-oauth';
+
+function resolveGitHubLoginBaseUrl(): string {
+  if (typeof window === 'undefined') return 'https://github.com';
+  return BROWSER_GITHUB_LOGIN_PROXY;
+}
+
+/**
+ * Resolve the OAuth client id. Prefers the build-time env override (Vite or
+ * Node test fallback); falls back to `DEFAULT_GITHUB_OAUTH_CLIENT_ID` so the
+ * shipped binary works out of the box.
+ */
+function readOAuthClientId(): string {
   try {
     const meta = import.meta as { env?: Record<string, string | undefined> };
     const fromMeta = meta.env?.VITE_GITHUB_OAUTH_CLIENT_ID;
@@ -6015,7 +6206,7 @@ function readOAuthClientId(): string | null {
   if (typeof process !== 'undefined' && process.env?.VITE_GITHUB_OAUTH_CLIENT_ID) {
     return process.env.VITE_GITHUB_OAUTH_CLIENT_ID;
   }
-  return null;
+  return DEFAULT_GITHUB_OAUTH_CLIENT_ID;
 }
 
 /** Promise-based delay that resolves early if the abort signal fires. */
@@ -6091,6 +6282,66 @@ function routeLinkedField<K extends keyof RequestOverridePatch>(
   return true;
 }
 
+/**
+ * Build an `onTokenRefreshed` callback bound to a specific requestId. The
+ * core auth path calls this when applyAuth refreshes an OAuth2 access
+ * token via the refresh_token grant. We patch the corresponding request's
+ * auth payload (only the token-state fields — clientId, tokenUrl, etc.
+ * are untouched) and persist via the debounced queue. Without this hook
+ * applyAuth would refresh once, the new token lands on the wire for the
+ * current send, and the next send sees the stale value in synced state
+ * and refreshes again — wasteful AND it burns through refresh-token
+ * rotation if the IdP issues a new refresh_token per use.
+ *
+ * Reads `get().synced` synchronously so the user's most-recent edits are
+ * respected — applyAuth awaits this callback so a sync return is fine.
+ */
+function makeTokenRefreshPersister(
+  set: SetState,
+  get: GetState,
+  requestId: string,
+): NonNullable<AuthApplyOptions['onTokenRefreshed']> {
+  return (_priorAuth, next) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const currentReq = synced.collections.requests[requestId];
+    if (!currentReq) return;
+    // Only the OAuth2 token-bearing variants carry these fields. The
+    // type predicate keeps us from accidentally writing tokens onto a
+    // non-OAuth2 auth that the user just switched to.
+    if (
+      currentReq.auth.type !== 'oauth2-client-credentials' &&
+      currentReq.auth.type !== 'oauth2-auth-code' &&
+      currentReq.auth.type !== 'oauth2-pkce' &&
+      currentReq.auth.type !== 'oauth2-password' &&
+      currentReq.auth.type !== 'oauth2-implicit' &&
+      currentReq.auth.type !== 'oauth2-device'
+    ) {
+      return;
+    }
+    const refreshedAuth = {
+      ...currentReq.auth,
+      accessToken: next.accessToken,
+      tokenType: next.tokenType,
+      expiresAt: next.expiresAt,
+      ...(next.refreshToken !== undefined ? { refreshToken: next.refreshToken } : {}),
+      ...(next.obtainedScope !== undefined ? { obtainedScope: next.obtainedScope } : {}),
+    };
+    const updated: WorkspaceSynced = {
+      ...synced,
+      collections: {
+        ...synced.collections,
+        requests: {
+          ...synced.collections.requests,
+          [requestId]: { ...currentReq, auth: refreshedAuth },
+        },
+      },
+    };
+    set({ synced: updated });
+    queueSaveSynced(updated);
+  };
+}
+
 function commitSynced(
   set: SetState,
   get: GetState,
@@ -6113,7 +6364,7 @@ function commitSynced(
     meta: { ...reduced.meta, updatedAt: new Date().toISOString() },
   };
   set({ synced: next });
-  void saveSynced(next);
+  queueSaveSynced(next);
   // Refresh the secret usedIn map whenever synced state moves; aggregator
   // is O(refs × secrets) and a no-op when nothing the secrets reference
   // changed, so this is cheap to do unconditionally.
@@ -6122,7 +6373,7 @@ function commitSynced(
     const updatedLocal = recomputeUsedIn(next, local);
     if (updatedLocal !== local) {
       set({ local: updatedLocal });
-      void saveLocal(updatedLocal);
+      queueSaveLocal(updatedLocal);
     }
   }
 }

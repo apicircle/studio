@@ -6,7 +6,9 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 import { KebabMenu, type KebabMenuItem } from '../../primitives/KebabMenu';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
-import { ImportModal } from '../editor/ImportModal';
+// Phase 12: lazy wrapper — see editor/ImportModalLazy.tsx for the
+// rationale (parser bundle defer).
+import { ImportModalLazy as ImportModal } from '../editor/ImportModalLazy';
 
 /**
  * One row in the sidebar's flat env list. Mixes local + linked envs under
@@ -103,23 +105,39 @@ export function EnvironmentsSidebar() {
   // Resolve the priorityOrder against actual rows. Stale linked refs
   // (snapshot dropped, link unlinked) are filtered out — the source of
   // truth stays in `priorityOrder` until the user reorders, but they
-  // don't render here.
-  const prioritized: EnvRow[] = priorityOrder
-    .map((ref) => rowsByKey.get(envPriorityKey(ref)))
-    .filter((r): r is EnvRow => r !== undefined);
-  const selectedKeys = new Set(prioritized.map((r) => envPriorityKey(r.ref)));
+  // don't render here. Memoized so unrelated store mutations don't
+  // reshape these arrays on every render (which would defeat
+  // `orderedRows`'s own useMemo via fresh `fullOrderedRows` references).
+  const prioritized = useMemo<EnvRow[]>(
+    () =>
+      priorityOrder
+        .map((ref) => rowsByKey.get(envPriorityKey(ref)))
+        .filter((r): r is EnvRow => r !== undefined),
+    [priorityOrder, rowsByKey],
+  );
+  const selectedKeys = useMemo(
+    () => new Set(prioritized.map((r) => envPriorityKey(r.ref))),
+    [prioritized],
+  );
 
   // Unprioritized: everything not yet in the priority list, sorted with
   // local before linked, then by name within each.
-  const unprioritized: EnvRow[] = allRows
-    .filter((r) => !selectedKeys.has(envPriorityKey(r.ref)))
-    .sort((a, b) => {
-      if (a.kind !== b.kind) return a.kind === 'local' ? -1 : 1;
-      const aName = a.kind === 'local' ? a.name : a.envName;
-      const bName = b.kind === 'local' ? b.name : b.envName;
-      return aName.localeCompare(bName, undefined, { sensitivity: 'base' });
-    });
-  const fullOrderedRows = [...prioritized, ...unprioritized];
+  const unprioritized = useMemo<EnvRow[]>(
+    () =>
+      allRows
+        .filter((r) => !selectedKeys.has(envPriorityKey(r.ref)))
+        .sort((a, b) => {
+          if (a.kind !== b.kind) return a.kind === 'local' ? -1 : 1;
+          const aName = a.kind === 'local' ? a.name : a.envName;
+          const bName = b.kind === 'local' ? b.name : b.envName;
+          return aName.localeCompare(bName, undefined, { sensitivity: 'base' });
+        }),
+    [allRows, selectedKeys],
+  );
+  const fullOrderedRows = useMemo(
+    () => [...prioritized, ...unprioritized],
+    [prioritized, unprioritized],
+  );
   const orderedRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return fullOrderedRows;
@@ -280,7 +298,7 @@ export function EnvironmentsSidebar() {
             >
               <div
                 className={cn(
-                  'group flex items-center gap-1.5 rounded-sm border px-1.5 py-1.5 text-xs transition-colors',
+                  'group flex h-7 items-center gap-1.5 rounded-sm border px-1.5 text-xs transition-colors',
                   isFocused
                     ? 'border-accent/60 bg-accent/15 text-text-primary'
                     : isSelected

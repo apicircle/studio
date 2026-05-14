@@ -10,7 +10,7 @@
 //     pushed to Git) and becomes visible to subsequent requests + plan steps
 //     as `{{name}}`. The local store survives reload via IDB.
 
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Crosshair, Plus, Trash2 } from 'lucide-react';
 import type { ContextExtraction, Request as ApiRequest } from '@apicircle/shared';
 import { generateId, validateEnvVarName, validateJsonPath } from '@apicircle/shared';
@@ -34,7 +34,8 @@ const SOURCES: Array<{ id: ContextExtraction['source']; label: string; placehold
   { id: 'status', label: 'Status code', placeholder: '(ignored)' },
 ];
 
-export function ContextTab({ request }: ContextTabProps) {
+// memo'd — see ParamsTab for the rationale.
+export const ContextTab = memo(function ContextTab({ request }: ContextTabProps) {
   const setContextVars = useWorkspaceStore((s) => s.setRequestContextVars);
   const setExtractions = useWorkspaceStore((s) => s.setRequestExtractions);
   const lastRunBody = useWorkspaceStore((s) => s.lastRun[request.id]?.body ?? '');
@@ -276,7 +277,7 @@ export function ContextTab({ request }: ContextTabProps) {
       )}
     </div>
   );
-}
+});
 
 function ExtractionVariableInput({
   value,

@@ -16,6 +16,8 @@ import {
   XCircle,
 } from 'lucide-react';
 import type { SecretEntry, SecretKeyMeta } from '@apicircle/shared';
+import { safeExternalHref } from '@apicircle/shared';
+import { useShallow } from 'zustand/react/shallow';
 import {
   GitHubError,
   MissingScopeError,
@@ -25,18 +27,22 @@ import {
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 
-type Tab = 'vault' | 'sessions';
-
 /**
  * Secret Vault tab content for the right-side dock. Two sub-tabs:
  *   - Vault    — encrypted named secrets, referenced via `{{LABEL}}`
  *   - Sessions — GitHub PAT/OAuth session for this workspace
  *
+ * Sub-tab selection lives in the workspace store (`rightDock.vaultSubtab`)
+ * so external callers — e.g. the "Manage session" button on the
+ * Workspace panel — can deep-link to "sessions" without the dock
+ * resetting to its "vault" default.
+ *
  * The dock shell provides width/height; this component fills it and owns
  * the sub-tab strip + scrollable body.
  */
 export function SecretVaultDockPanel() {
-  const [tab, setTab] = useState<Tab>('vault');
+  const tab = useWorkspaceStore((s) => s.rightDock.vaultSubtab);
+  const setTab = useWorkspaceStore((s) => s.setVaultSubtab);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -103,40 +109,46 @@ function VaultTab() {
   // been provisioned yet. Without this, users would only see those
   // slots on the link card and not in the Vault — making it look like
   // the Vault is missing entries that depend on the link.
-  const missingSlots = useWorkspaceStore((s) => {
-    const out: MissingSlot[] = [];
-    const indexed = s.local?.secretIndex.entries ?? {};
-    // Workspace-origin slots (the device hasn't provided a value yet).
-    for (const meta of Object.values(s.synced?.secretKeys ?? {})) {
-      if (!indexed[meta.id]) {
-        out.push({ kind: 'workspace', meta });
+  // Selector returns a fresh array literal — without useShallow it would
+  // trigger a re-render of the entire vault dock on every unrelated store
+  // mutation. Shallow compare on the array elements is the right
+  // granularity (each MissingSlot entry is itself a stable object).
+  const missingSlots = useWorkspaceStore(
+    useShallow((s) => {
+      const out: MissingSlot[] = [];
+      const indexed = s.local?.secretIndex.entries ?? {};
+      // Workspace-origin slots (the device hasn't provided a value yet).
+      for (const meta of Object.values(s.synced?.secretKeys ?? {})) {
+        if (!indexed[meta.id]) {
+          out.push({ kind: 'workspace', meta });
+        }
       }
-    }
-    // Linked-workspace required slots. The slot is "missing" when no
-    // entry in secretIndex has `origin === 'linked'` matching this
-    // link/key pair. Pull the human label from the cached snapshot
-    // so the row reads "Database token" instead of a raw id.
-    const links = s.synced?.linkedWorkspaces ?? {};
-    const cached = s.local?.linkedCollections ?? {};
-    for (const link of Object.values(links)) {
-      for (const keyId of link.requiredSecretKeyIds) {
-        const provisioned = Object.values(indexed).some(
-          (e) =>
-            e.origin === 'linked' && e.linkedWorkspaceId === link.id && e.linkedKeyId === keyId,
-        );
-        if (provisioned) continue;
-        const label = cached[link.id]?.secretKeys?.[keyId]?.label ?? keyId;
-        out.push({
-          kind: 'linked',
-          linkId: link.id,
-          linkName: link.name,
-          keyId,
-          label,
-        });
+      // Linked-workspace required slots. The slot is "missing" when no
+      // entry in secretIndex has `origin === 'linked'` matching this
+      // link/key pair. Pull the human label from the cached snapshot
+      // so the row reads "Database token" instead of a raw id.
+      const links = s.synced?.linkedWorkspaces ?? {};
+      const cached = s.local?.linkedCollections ?? {};
+      for (const link of Object.values(links)) {
+        for (const keyId of link.requiredSecretKeyIds) {
+          const provisioned = Object.values(indexed).some(
+            (e) =>
+              e.origin === 'linked' && e.linkedWorkspaceId === link.id && e.linkedKeyId === keyId,
+          );
+          if (provisioned) continue;
+          const label = cached[link.id]?.secretKeys?.[keyId]?.label ?? keyId;
+          out.push({
+            kind: 'linked',
+            linkId: link.id,
+            linkName: link.name,
+            keyId,
+            label,
+          });
+        }
       }
-    }
-    return out;
-  });
+      return out;
+    }),
+  );
 
   const [adding, setAdding] = useState(false);
   const [draftLabel, setDraftLabel] = useState('');
@@ -477,22 +489,27 @@ function SecretRow({ entry }: SecretRowProps) {
   const pushToast = useWorkspaceStore((s) => s.pushToast);
   // For linked-origin entries, prefer the source workspace's slot label
   // (cached on the link snapshot). The persisted entry.label is
-  // `link:<workspaceName>:<keyId>` which leaks the raw slot id; reading
+  // `link:<linkName>:<keyId>` which leaks the raw slot id; reading
   // the live label from the snapshot gives a clean human-readable
   // display and stays in sync if the source renames the slot.
-  const linkedDisplay = useWorkspaceStore((s) => {
-    if (entry.origin !== 'linked' || !entry.linkedWorkspaceId || !entry.linkedKeyId) {
-      return null;
-    }
-    const link = s.synced?.linkedWorkspaces[entry.linkedWorkspaceId];
-    const snapshot = s.local?.linkedCollections[entry.linkedWorkspaceId];
-    const sourceLabel = snapshot?.secretKeys?.[entry.linkedKeyId]?.label;
-    if (!link) return null;
-    return {
-      label: sourceLabel && sourceLabel.trim() ? sourceLabel : entry.linkedKeyId,
-      linkName: link.name,
-    };
-  });
+  // Returns a fresh `{ label, linkName }` literal — wrap in useShallow so
+  // the secret-entry row only re-renders when those two strings actually
+  // change, not on every store tick.
+  const linkedDisplay = useWorkspaceStore(
+    useShallow((s) => {
+      if (entry.origin !== 'linked' || !entry.linkedWorkspaceId || !entry.linkedKeyId) {
+        return null;
+      }
+      const link = s.synced?.linkedWorkspaces[entry.linkedWorkspaceId];
+      const snapshot = s.local?.linkedCollections[entry.linkedWorkspaceId];
+      const sourceLabel = snapshot?.secretKeys?.[entry.linkedKeyId]?.label;
+      if (!link) return null;
+      return {
+        label: sourceLabel && sourceLabel.trim() ? sourceLabel : entry.linkedKeyId,
+        linkName: link.name,
+      };
+    }),
+  );
 
   // Reveal state — either the decrypted plaintext or an error marker.
   // Separating these lets us style the failure as a `role="alert"` instead
@@ -891,8 +908,8 @@ function ConnectForm() {
           </p>
         )}
         <p className="text-[0.625rem] text-text-dim">
-          OAuth uses GitHub's device flow — no client secret stays in the browser. Configure{' '}
-          <code>VITE_GITHUB_OAUTH_CLIENT_ID</code> at build time to enable this.
+          OAuth uses GitHub's device flow — no client secret stays in the browser. You'll be
+          prompted on github.com/login/device to authorize APICircle Studio.
         </p>
       </div>
 
@@ -959,19 +976,32 @@ function DeviceFlowCard({
   const remaining = Math.max(0, Math.floor((code.expiresAt - now) / 1000));
   const minutes = Math.floor(remaining / 60);
   const seconds = remaining % 60;
+  // IdP-supplied URL — restrict to http(s) before rendering as a clickable
+  // link. Unsafe schemes (javascript:/data:/file:/custom protocol handlers)
+  // are shown as plain text so the user can still see the value.
+  const safeVerification = safeExternalHref(code.verificationUri);
   return (
     <div className="space-y-2">
       <p className="text-xs text-text-primary">
         Open{' '}
-        <a
-          href={code.verificationUri}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="inline-flex items-center gap-1 text-accent underline-offset-2 hover:underline"
-        >
-          {code.verificationUri.replace(/^https?:\/\//, '')}
-          <ExternalLink size={11} aria-hidden="true" />
-        </a>{' '}
+        {safeVerification ? (
+          <a
+            href={safeVerification}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-accent underline-offset-2 hover:underline"
+          >
+            {code.verificationUri.replace(/^https?:\/\//, '')}
+            <ExternalLink size={11} aria-hidden="true" />
+          </a>
+        ) : (
+          <span
+            className="font-mono text-text-muted"
+            title="Unsupported URL scheme — copy manually"
+          >
+            {code.verificationUri}
+          </span>
+        )}{' '}
         and enter this code:
       </p>
       <div className="flex items-center gap-2">

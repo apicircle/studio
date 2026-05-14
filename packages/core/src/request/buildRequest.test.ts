@@ -1,6 +1,12 @@
 import type { Request as ApiRequest } from '@apicircle/shared';
 import { describe, expect, it, vi } from 'vitest';
-import { buildRequest, composeBody, composeHeaders, composeUrl } from './buildRequest';
+import {
+  buildRequest,
+  composeBody,
+  composeCookieHeader,
+  composeHeaders,
+  composeUrl,
+} from './buildRequest';
 
 describe('composeUrl', () => {
   it('returns the URL unchanged when no params are enabled', () => {
@@ -69,6 +75,86 @@ describe('composeHeaders', () => {
         { key: 'X-Auth', value: 'second', enabled: true },
       ]),
     ).toEqual({ 'X-Auth': 'second' });
+  });
+
+  // RFC 7230 token-grammar enforcement (Phase 6). A {{var}} resolved to
+  // something with `:` / CR / LF / NUL / space in the NAME would smuggle
+  // a second header line on a future native HTTP layer. Drop the row.
+  it('drops header names that violate the RFC 7230 token grammar', () => {
+    expect(
+      composeHeaders([
+        { key: 'Bad: Name', value: 'v', enabled: true },
+        { key: 'Bad\r\nName', value: 'v', enabled: true },
+        { key: 'Bad Name', value: 'v', enabled: true },
+        { key: 'Bad\x00Name', value: 'v', enabled: true },
+        { key: 'X-Good', value: 'v', enabled: true },
+      ]),
+    ).toEqual({ 'X-Good': 'v' });
+  });
+
+  // CRLF / NUL / DEL in a header VALUE is rejected by browser fetch but
+  // would also become header injection on a future native stack. Strip
+  // those characters; keep everything else.
+  it('strips control characters from header values', () => {
+    expect(
+      composeHeaders([
+        { key: 'X-Sneaky', value: 'real\r\nEvil: smuggled', enabled: true },
+        { key: 'X-Nul', value: 'before\x00after', enabled: true },
+        { key: 'X-OK', value: 'normal value', enabled: true },
+      ]),
+    ).toEqual({
+      'X-Sneaky': 'realEvil: smuggled',
+      'X-Nul': 'beforeafter',
+      'X-OK': 'normal value',
+    });
+  });
+});
+
+describe('composeCookieHeader', () => {
+  it('joins enabled rows into a Cookie header value', () => {
+    expect(
+      composeCookieHeader([
+        { key: 'session', value: 'abc', enabled: true },
+        { key: 'csrf', value: 'tok', enabled: true },
+      ]),
+    ).toBe('session=abc; csrf=tok');
+  });
+
+  it('skips disabled and empty-key rows', () => {
+    expect(
+      composeCookieHeader([
+        { key: 'a', value: '1', enabled: false },
+        { key: '', value: '2', enabled: true },
+        { key: 'b', value: '3', enabled: true },
+      ]),
+    ).toBe('b=3');
+  });
+
+  // Phase 6: defend against header smuggling via cookie row injection.
+  // A {{var}} resolved with CRLF in either key or value would otherwise
+  // break the `; key=value; …` row framing.
+  it('strips CRLF / NUL from cookie values', () => {
+    expect(
+      composeCookieHeader([
+        { key: 'session', value: 'abc\r\nAuthorization: Bearer evil', enabled: true },
+      ]),
+    ).toBe('session=abcAuthorization: Bearer evil');
+  });
+
+  // A `;` inside a value would close the row early and let an attacker
+  // inject a forged cookie pair after the legitimate one. Strip semicolons.
+  it('strips semicolons from cookie values', () => {
+    expect(composeCookieHeader([{ key: 'session', value: 'abc; admin=1', enabled: true }])).toBe(
+      'session=abc admin=1',
+    );
+  });
+
+  // Cookie names cannot contain `;` `=` whitespace or CTLs per RFC 6265.
+  // Drop those characters from the key.
+  it('strips disallowed characters from cookie names', () => {
+    expect(composeCookieHeader([{ key: 'session; admin', value: 'v', enabled: true }])).toBe(
+      'sessionadmin=v',
+    );
   });
 });
 

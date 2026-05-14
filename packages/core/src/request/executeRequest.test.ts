@@ -149,6 +149,153 @@ describe('executeRequest', () => {
   });
 });
 
+describe('executeRequest — redirect handling (Phase 6)', () => {
+  function redirectResponse(location: string, status = 302): Response {
+    return fakeResponse({ status, statusText: 'Found', headers: { location } });
+  }
+
+  it('follows a single same-origin redirect transparently', async () => {
+    let call = 0;
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      call++;
+      if (call === 1) {
+        // Verify we requested redirect: 'manual' so we control the chain.
+        expect(init.redirect).toBe('manual');
+        return redirectResponse('https://api.example.com/users/1');
+      }
+      return fakeResponse({ status: 200, body: '{"id":1}' });
+    });
+    const result = await executeRequest(baseReq({ url: 'https://api.example.com/redirect-me' }), {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(result.status).toBe(200);
+    expect(result.url).toBe('https://api.example.com/users/1');
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('strips Authorization on a cross-origin redirect', async () => {
+    let callerHeaders: Record<string, unknown> = {};
+    let call = 0;
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      call++;
+      if (call === 1) {
+        return redirectResponse('https://attacker.example/grab', 302);
+      }
+      // Second hop — capture the headers and inspect.
+      callerHeaders = init.headers as Record<string, unknown>;
+      return fakeResponse({ status: 200, body: 'ok' });
+    });
+    const result = await executeRequest(
+      baseReq({
+        url: 'https://api.honest.example/login',
+        auth: { type: 'bearer', token: 'super-secret' },
+      }),
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    );
+    expect(result.status).toBe(200);
+    // The first hop sent Authorization; the cross-origin second hop must NOT.
+    expect(Object.keys(callerHeaders).map((k) => k.toLowerCase())).not.toContain('authorization');
+  });
+
+  it('preserves Authorization on a same-origin redirect', async () => {
+    let secondCallHeaders: Record<string, unknown> = {};
+    let call = 0;
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      call++;
+      if (call === 1) {
+        return redirectResponse('https://api.example.com/v2/users');
+      }
+      secondCallHeaders = init.headers as Record<string, unknown>;
+      return fakeResponse({ status: 200, body: 'ok' });
+    });
+    await executeRequest(
+      baseReq({
+        url: 'https://api.example.com/v1/users',
+        auth: { type: 'bearer', token: 'keep-me' },
+      }),
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    );
+    const lower = Object.fromEntries(
+      Object.entries(secondCallHeaders).map(([k, v]) => [k.toLowerCase(), v]),
+    );
+    expect(lower.authorization).toBe('Bearer keep-me');
+  });
+
+  it('converts non-GET to GET on 302 (but preserves on 307)', async () => {
+    const calls: Array<{ method: string; body: BodyInit | null | undefined }> = [];
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      calls.push({ method: init.method ?? 'GET', body: init.body ?? null });
+      if (calls.length === 1) return redirectResponse('https://api.example.com/x', 302);
+      return fakeResponse({ status: 200, body: 'ok' });
+    });
+    await executeRequest(
+      baseReq({
+        url: 'https://api.example.com/submit',
+        method: 'POST',
+        body: { type: 'text', content: 'payload' },
+        headers: [{ key: 'Content-Type', value: 'text/plain', enabled: true }],
+      }),
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    );
+    expect(calls[1].method).toBe('GET');
+    expect(calls[1].body).toBeNull();
+  });
+
+  it('rejects after MAX_REDIRECTS (loop detection)', async () => {
+    const fetchImpl = vi.fn(async () => redirectResponse('https://api.example.com/loop'));
+    const result = await executeRequest(baseReq(), {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(result.error).toMatch(/Too many redirects/i);
+  });
+});
+
+describe('executeRequest — response body cap (Phase 6)', () => {
+  /** Build a fake Response with a body stream that yields a single huge
+   *  chunk, simulating a hostile chunked-transfer-encoded server. */
+  function megaResponse(byteCount: number): Response {
+    const chunk = new Uint8Array(byteCount);
+    chunk.fill(0x41); // 'A'
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(chunk);
+        controller.close();
+      },
+    });
+    const headers = new Headers({ 'content-type': 'text/plain' });
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers,
+      body: stream,
+      text: () => Promise.resolve('a'.repeat(byteCount)),
+    } as unknown as Response;
+  }
+
+  it('reports responseTruncated when body exceeds the cap', async () => {
+    // 60 MB — above the 50 MB cap.
+    const fetchImpl = vi.fn().mockResolvedValue(megaResponse(60 * 1024 * 1024));
+    const result = await executeRequest(baseReq(), {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(result.status).toBe(200);
+    expect(result.responseTruncated).toBe(true);
+    // The retained body is exactly the cap size, decoded — 50 MiB of 'A'.
+    expect(result.body.length).toBe(50 * 1024 * 1024);
+  });
+
+  it('reads the full body when under the cap and does not set responseTruncated', async () => {
+    const small = megaResponse(1024);
+    const fetchImpl = vi.fn().mockResolvedValue(small);
+    const result = await executeRequest(baseReq(), {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(result.responseTruncated).toBeUndefined();
+    expect(result.body.length).toBe(1024);
+  });
+});
+
 describe('executeRequest — Digest 401-retry', () => {
   const digestReq = baseReq({
     auth: { type: 'digest', username: 'Mufasa', password: 'Circle Of Life' },

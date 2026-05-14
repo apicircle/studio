@@ -14,7 +14,6 @@ function makeSynced(): WorkspaceSynced {
   return {
     schemaVersion: 1,
     workspaceId: 'ws-1',
-    workspaceName: 'W',
     collections: { tree: { id: 'r', type: 'root', children: [] }, requests: {}, folders: {} },
     environments: { items: {}, activeName: null, priorityOrder: [] },
     linkedWorkspaces: {},
@@ -137,9 +136,12 @@ describe('snapshot.restore', () => {
     const id = captured.changedIds[0];
 
     // Mutate synced to simulate user work after the capture, then restore.
-    state.synced = { ...state.synced, workspaceName: 'mutated' };
+    state.synced = {
+      ...state.synced,
+      meta: { ...state.synced.meta, appVersion: 'mutated' },
+    };
     const restored = applyMutation(state, { kind: 'snapshot.restore', id }, { now: T2 });
-    expect(restored.next.synced.workspaceName).toBe('W');
+    expect(restored.next.synced.meta.appVersion).toBe('0.1.0');
     // Restore is a logical re-fork — diff base must be cleared.
     expect(restored.next.local.sync.lastPulledSnapshot).toBeNull();
     expect(restored.next.local.sync.lastPulledSha).toBeNull();

@@ -15,7 +15,6 @@ function makeWorkspace(): WorkspaceState {
     synced: {
       schemaVersion: 1,
       workspaceId: 'ws',
-      workspaceName: 'fixture',
       collections: {
         tree: { id: 'root', type: 'root', children: [] },
         requests: {},

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Plus, Sparkles, Trash2 } from 'lucide-react';
 import type { Request as ApiRequest } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
@@ -10,7 +10,8 @@ interface HeadersTabProps {
   request: ApiRequest;
 }
 
-export function HeadersTab({ request }: HeadersTabProps) {
+// memo'd — see ParamsTab for the rationale.
+export const HeadersTab = memo(function HeadersTab({ request }: HeadersTabProps) {
   const setRequestHeaders = useWorkspaceStore((s) => s.setRequestHeaders);
   const scope = useVariableScope(request);
   // Tracks which row's value input currently holds focus. Drives the
@@ -142,4 +143,4 @@ export function HeadersTab({ request }: HeadersTabProps) {
       </aside>
     </div>
   );
-}
+});

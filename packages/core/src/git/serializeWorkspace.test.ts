@@ -5,7 +5,6 @@ import { serializeWorkspaceForGit } from './serializeWorkspace';
 const empty: WorkspaceSynced = {
   schemaVersion: 1,
   workspaceId: 'ws-1',
-  workspaceName: 'My Workspace',
   collections: {
     tree: { id: 'root', type: 'root', children: [] },
     requests: {},
@@ -41,7 +40,6 @@ describe('serializeWorkspaceForGit', () => {
       linkedWorkspaces: empty.linkedWorkspaces,
       environments: empty.environments,
       collections: empty.collections,
-      workspaceName: empty.workspaceName,
       workspaceId: empty.workspaceId,
       schemaVersion: 1,
     };

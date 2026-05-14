@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
 import { InMemoryWorkspaceProvider } from './InMemoryWorkspaceProvider';
 
@@ -8,7 +8,6 @@ function emptySynced(): WorkspaceSynced {
   return {
     schemaVersion: 1,
     workspaceId: 'ws-1',
-    workspaceName: 'W',
     collections: { tree: { id: 'r', type: 'root', children: [] }, requests: {}, folders: {} },
     environments: { items: {}, activeName: null, priorityOrder: [] },
     linkedWorkspaces: {},
@@ -68,9 +67,12 @@ describe('InMemoryWorkspaceProvider', () => {
 
   it('write replaces synced + local independently', async () => {
     const p = new InMemoryWorkspaceProvider({ synced: emptySynced(), local: emptyLocal() });
-    const newSynced: WorkspaceSynced = { ...emptySynced(), workspaceName: 'Renamed' };
+    const newSynced: WorkspaceSynced = {
+      ...emptySynced(),
+      meta: { ...emptySynced().meta, appVersion: 'renamed-version' },
+    };
     const out = await p.write({ synced: newSynced });
-    expect(out.synced.workspaceName).toBe('Renamed');
+    expect(out.synced.meta.appVersion).toBe('renamed-version');
     expect(out.local.workspaceId).toBe('ws-1');
   });
 

@@ -52,7 +52,12 @@ export type { ExecuteOptions, ExecutionResult } from './request/executeRequest';
 export { requestRunToExecutionResult } from './request/requestRunAdapter';
 
 export { applyAuth } from './request/applyAuth';
-export type { AuthApplyResult, AuthApplyTarget, AuthApplyWarning } from './request/applyAuth';
+export type {
+  AuthApplyOptions,
+  AuthApplyResult,
+  AuthApplyTarget,
+  AuthApplyWarning,
+} from './request/applyAuth';
 
 export { buildDigestAuthHeader, parseDigestChallenge } from './auth/digest';
 export type { BuildDigestArgs, DigestChallenge } from './auth/digest';
@@ -160,6 +165,10 @@ export { generateWorkingBranchName, slugify, validateBranchName } from './git/br
 export type { BranchNameOptions } from './git/branchNames';
 
 export { serializeWorkspaceForGit } from './git/serializeWorkspace';
+
+export { parseWorkspaceJson, RemoteWorkspaceParseError } from './git/parseWorkspaceJson';
+
+export { redactForGit, assertNoPlaintextCredentials } from './git/redactWorkspace';
 
 export { collectAttachmentSlots } from './git/collectAttachments';
 export type { AttachmentSlotRef } from './git/collectAttachments';

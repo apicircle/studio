@@ -14,12 +14,22 @@
  * available.
  */
 
-const VERIFIER_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+// 64-character subset of the RFC 7636 unreserved set. The drop from 66
+// (the spec's max) to 64 lets us mask with `& 0x3f` instead of `% 66`,
+// which avoids modulo bias — `byte % 66` maps values 0..189 to two chars
+// each and 190..255 to one char each, so two characters appear ~1.34× more
+// often than the rest. Microscopic in 64-byte verifiers, but trivial to fix.
+const VERIFIER_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
 /**
  * Generate a fresh PKCE code verifier — 43..128 random characters from
  * the unreserved URL set (RFC 3986 §2.3). Default length is 64, well
  * inside the spec's allowed range.
+ *
+ * Sampling is uniform: we mask each random byte with `& 0x3f` to project
+ * onto exactly 64 alphabet positions, so every alphabet character is
+ * equally likely. The earlier `% 66` implementation introduced a small
+ * but measurable modulo bias.
  */
 export function generateCodeVerifier(length: number = 64): string {
   if (length < 43 || length > 128) {
@@ -29,7 +39,7 @@ export function generateCodeVerifier(length: number = 64): string {
   crypto.getRandomValues(bytes);
   let out = '';
   for (let i = 0; i < length; i++) {
-    out += VERIFIER_ALPHABET[bytes[i] % VERIFIER_ALPHABET.length];
+    out += VERIFIER_ALPHABET[bytes[i] & 0x3f];
   }
   return out;
 }

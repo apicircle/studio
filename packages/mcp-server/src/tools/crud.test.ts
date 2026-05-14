@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+﻿import { beforeEach, describe, expect, it } from 'vitest';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
 import { InMemoryWorkspaceProvider } from '../providers/InMemoryWorkspaceProvider';
 import { InProcessMockController } from '../providers/InProcessMockController';
@@ -35,7 +35,6 @@ function freshState(): { synced: WorkspaceSynced; local: WorkspaceLocal } {
     synced: {
       schemaVersion: 1,
       workspaceId: 'ws-1',
-      workspaceName: 'W',
       collections: { tree: { id: 'r', type: 'root', children: [] }, requests: {}, folders: {} },
       environments: { items: {}, activeName: null, priorityOrder: [] },
       linkedWorkspaces: {},
@@ -320,11 +319,16 @@ describe('workspace bulk read/write', () => {
   it('workspace.write replaces the pair', async () => {
     const fresh = freshState();
     const out = (await workspaceWriteTool.handler(
-      { synced: { ...fresh.synced, workspaceName: 'Renamed' } },
+      {
+        synced: {
+          ...fresh.synced,
+          meta: { ...fresh.synced.meta, appVersion: 'renamed-version' },
+        },
+      },
       ctx,
     )) as { ok: boolean };
     expect(out.ok).toBe(true);
     const state = await ctx.workspace.read();
-    expect(state.synced.workspaceName).toBe('Renamed');
+    expect(state.synced.meta.appVersion).toBe('renamed-version');
   });
 });

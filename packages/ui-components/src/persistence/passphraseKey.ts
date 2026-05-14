@@ -21,7 +21,14 @@
 // to re-enter it before any secret can be touched.
 
 const PBKDF2_HASH = 'SHA-256';
-const PBKDF2_ITERATIONS = 600_000;
+// PBKDF2 iteration count for newly-created workspaces. Bumped from 600k to
+// 1.2M as part of Phase 8: the passphrase verifier ships in the synced doc
+// (so any teammate can validate the passphrase without contacting the
+// owner), which means the verifier — and therefore an offline brute-force
+// oracle — is in every clone of the repo. Doubling the work-factor keeps
+// per-attempt cost above ~1s on commodity GPU hardware. Existing workspaces
+// keep their original iteration count (it's stamped into `SecretCrypto`).
+const PBKDF2_ITERATIONS = 1_200_000;
 const SALT_BYTES = 16;
 const VERIFIER_SENTINEL = 'apicircle/passphrase-verifier/v1';
 

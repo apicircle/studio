@@ -1,4 +1,4 @@
-// Integration tests for Phase 5b MCP tools — plan step ops, mock rule
+﻿// Integration tests for Phase 5b MCP tools â€” plan step ops, mock rule
 // editing, history, and env import/export. Each test exercises the tool
 // through the same in-memory provider the production handlers use.
 
@@ -37,7 +37,6 @@ function freshState(): { synced: WorkspaceSynced; local: WorkspaceLocal } {
     synced: {
       schemaVersion: 1,
       workspaceId: 'ws-1',
-      workspaceName: 'W',
       collections: { tree: { id: 'r', type: 'root', children: [] }, requests: {}, folders: {} },
       environments: { items: {}, activeName: null, priorityOrder: [] },
       linkedWorkspaces: {},

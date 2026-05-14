@@ -22,7 +22,6 @@ export async function ensureWorkspace(dir: string): Promise<WorkspaceState> {
     synced: {
       schemaVersion: 1,
       workspaceId,
-      workspaceName: 'Untitled workspace',
       collections: {
         tree: { id: generateId(), type: 'root', children: [] },
         requests: {},

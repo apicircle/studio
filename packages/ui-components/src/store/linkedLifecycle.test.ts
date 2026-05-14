@@ -72,7 +72,6 @@ async function setupSession(): Promise<void> {
 }
 
 function workspaceJson(args: {
-  workspaceName: string;
   versions: Array<{ version: string; bytes: string }>;
   currentVersion: string | null;
   /** Single request whose URL embeds the version's bytes — gives us a
@@ -80,7 +79,6 @@ function workspaceJson(args: {
   requestUrl: string;
 }): string {
   return JSON.stringify({
-    workspaceName: args.workspaceName,
     collections: {
       tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'req-1' }] },
       requests: {
@@ -137,7 +135,6 @@ describe('linked-workspace lifecycle audit', () => {
       queuedFetch([
         fileContents(
           workspaceJson({
-            workspaceName: 'API',
             versions: [{ version: '1.0.0', bytes: 'aaa' }],
             currentVersion: '1.0.0',
             requestUrl: 'https://api.example.test/v1',
@@ -161,7 +158,6 @@ describe('linked-workspace lifecycle audit', () => {
       queuedFetch([
         fileContents(
           workspaceJson({
-            workspaceName: 'API',
             versions: [
               { version: '1.0.0', bytes: 'aaa' },
               { version: '2.0.0', bytes: 'bbb' },
@@ -199,7 +195,6 @@ describe('linked-workspace lifecycle audit', () => {
       queuedFetch([
         fileContents(
           workspaceJson({
-            workspaceName: 'API',
             versions: [{ version: '1.0.0', bytes: 'aaa' }],
             currentVersion: '1.0.0',
             requestUrl: 'https://api.example.test/v1',
@@ -213,7 +208,6 @@ describe('linked-workspace lifecycle audit', () => {
 
     // Source published v2.0.0; user refreshes (ledger updates only).
     const v2Json = workspaceJson({
-      workspaceName: 'API',
       versions: [
         { version: '1.0.0', bytes: 'aaa' },
         { version: '2.0.0', bytes: 'bbb' },
@@ -243,7 +237,6 @@ describe('linked-workspace lifecycle audit', () => {
       queuedFetch([
         fileContents(
           workspaceJson({
-            workspaceName: 'API',
             versions: [{ version: '1.0.0', bytes: 'aaa' }],
             currentVersion: '1.0.0',
             requestUrl: 'https://api.example.test/v1',
@@ -256,7 +249,6 @@ describe('linked-workspace lifecycle audit', () => {
       .linkPrivateWorkspace({ repoFullName: 'me/api', branch: 'main' });
 
     const v2Json = workspaceJson({
-      workspaceName: 'API',
       versions: [
         { version: '1.0.0', bytes: 'aaa' },
         { version: '2.0.0', bytes: 'bbb' },
@@ -316,7 +308,6 @@ describe('linked-workspace lifecycle audit', () => {
       queuedFetch([
         fileContents(
           workspaceJson({
-            workspaceName: 'API',
             versions: [{ version: '1.0.0', bytes: 'aaa' }],
             currentVersion: '1.0.0',
             requestUrl: 'https://api.example.test/v1',
@@ -330,7 +321,6 @@ describe('linked-workspace lifecycle audit', () => {
 
     // Apply v2.
     const v2Json = workspaceJson({
-      workspaceName: 'API',
       versions: [
         { version: '1.0.0', bytes: 'aaa' },
         { version: '2.0.0', bytes: 'bbb' },
@@ -353,7 +343,6 @@ describe('linked-workspace lifecycle audit', () => {
     // Source publishes v3.0.0. Refresh again — pin stays at 2.0.0,
     // ledger.currentVersion advances to 3.0.0, badge fires correctly.
     const v3Json = workspaceJson({
-      workspaceName: 'API',
       versions: [
         { version: '1.0.0', bytes: 'aaa' },
         { version: '2.0.0', bytes: 'bbb' },

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import type { Assertion, Request as ApiRequest } from '@apicircle/shared';
 import { generateId, validateRegex, validateJsonPath } from '@apicircle/shared';
 import { CheckCircle2, Crosshair, Plus, Trash2, XCircle } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { useLatestRunForRequest } from '../../store/useLatestRunForRequest';
 import { JsonPathPicker } from './JsonPathPicker';
 import { Select } from '../../primitives/Select';
 import { cn } from '../../primitives/cn';
@@ -32,17 +33,17 @@ function newAssertion(): Assertion {
   return { id: generateId(), kind: 'status', op: 'equals', expected: 200 };
 }
 
-export function AssertionsTab({ request }: AssertionsTabProps) {
+// memo'd — see ParamsTab for the rationale.
+export const AssertionsTab = memo(function AssertionsTab({ request }: AssertionsTabProps) {
   const setRequestAssertions = useWorkspaceStore((s) => s.setRequestAssertions);
   const lastRunBody = useWorkspaceStore((s) => s.lastRun[request.id]?.body ?? '');
   const lastRunBodyKind = useWorkspaceStore((s) => s.lastRun[request.id]?.bodyKind ?? null);
   // Most-recent run for this request from history. Source of truth for the
   // per-row assertion verdict — `lastRun` (ExecutionResult) doesn't carry
   // assertion verdicts, but `RequestRun.assertions` does and is authoritative.
-  const lastRunAssertions = useWorkspaceStore((s) => {
-    const run = s.local?.history.requestRuns.find((r) => r.requestId === request.id);
-    return run?.assertions ?? null;
-  });
+  // O(1) lookup via the shared latest-run index.
+  const lastRun = useLatestRunForRequest(request.id);
+  const lastRunAssertions = lastRun?.assertions ?? null;
   const verdictById = new Map<string, { passed: boolean; detail?: string }>();
   if (lastRunAssertions) {
     for (const a of lastRunAssertions) {
@@ -208,7 +209,7 @@ export function AssertionsTab({ request }: AssertionsTabProps) {
       )}
     </div>
   );
-}
+});
 
 /**
  * Expected-value input with op-aware inline validation. Three modes:

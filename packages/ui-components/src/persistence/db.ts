@@ -99,8 +99,17 @@ function migrateLegacyToMultiWorkspace(tx: IDBTransaction): void {
       const local = localLegacy as { workspaceId?: string } | null;
       const id = synced?.workspaceId ?? local?.workspaceId;
       if (!id) return;
-      // Re-key under workspaceId, drop the legacy `'current'` entries.
-      if (synced) syncedStore.put(synced, id);
+      // Re-key under workspaceId, drop the legacy `'current'` entries. We
+      // strip `workspaceName` off the synced doc on the way through —
+      // newer schemas keep the workspace's display name on the local
+      // registry entry only (the migration uses the legacy name as a
+      // seed for that entry, then drops the field from the git-tracked
+      // doc).
+      if (synced) {
+        const { workspaceName: _legacyName, ...syncedClean } = synced;
+        void _legacyName;
+        syncedStore.put(syncedClean, id);
+      }
       if (local) localStore.put(local, id);
       syncedStore.delete(LEGACY_KEY);
       localStore.delete(LEGACY_KEY);

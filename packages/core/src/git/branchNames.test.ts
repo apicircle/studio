@@ -26,19 +26,19 @@ describe('slugify', () => {
 
 describe('generateWorkingBranchName', () => {
   it('produces apicircle/<slug>-<id>', () => {
-    expect(
-      generateWorkingBranchName({ workspaceName: 'Payments API', idGen: () => 'abc123' }),
-    ).toBe('apicircle/payments-api-abc123');
+    expect(generateWorkingBranchName({ displayName: 'Payments API', idGen: () => 'abc123' })).toBe(
+      'apicircle/payments-api-abc123',
+    );
   });
 
   it('uses the workspace fallback when the name is unhelpful', () => {
-    expect(generateWorkingBranchName({ workspaceName: '   ', idGen: () => 'x1y2z3' })).toBe(
+    expect(generateWorkingBranchName({ displayName: '   ', idGen: () => 'x1y2z3' })).toBe(
       'apicircle/workspace-x1y2z3',
     );
   });
 
   it('omitting idGen uses 6 random hex chars', () => {
-    const name = generateWorkingBranchName({ workspaceName: 'Demo' });
+    const name = generateWorkingBranchName({ displayName: 'Demo' });
     expect(name).toMatch(/^apicircle\/demo-[0-9a-f]{6}$/);
   });
 });

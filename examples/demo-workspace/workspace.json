@@ -1,7 +1,6 @@
 {
   "schemaVersion": 1,
   "workspaceId": "demo-workspace-fixture",
-  "workspaceName": "Demo Workspace",
   "collections": {
     "tree": {
       "id": "demo-root",

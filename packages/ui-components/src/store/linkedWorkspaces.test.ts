@@ -122,7 +122,6 @@ describe('workspaceStore.linkPrivateWorkspace', () => {
 
     const snapshot = useWorkspaceStore.getState().local!.linkedCollections[link.id];
     expect(snapshot).toBeDefined();
-    expect(snapshot.workspaceName).toBe('API');
     expect(snapshot.collections.requests['req-1'].name).toBe('Greet');
     expect(snapshot.environments.activeName).toBe('dev');
     expect(snapshot.ref).toMatch(/^HEAD@main$|^v/);
@@ -156,7 +155,9 @@ describe('workspaceStore.linkPrivateWorkspace', () => {
     });
 
     expect(link.kind).toBe('private');
-    expect(link.name).toBe('Payments API');
+    // Names live on each consumer's local registry — the link defaults to
+    // the repo path as its initial display label.
+    expect(link.name).toBe('org/payments-api');
     expect(link.source).toEqual({
       provider: 'github',
       repoFullName: 'org/payments-api',
@@ -193,19 +194,19 @@ describe('workspaceStore.linkPrivateWorkspace', () => {
     ).rejects.toThrow(/not found/);
   });
 
-  it('rejects remote files that are not valid JSON / lack workspaceName', async () => {
+  it('rejects remote files that are not valid JSON', async () => {
     await setupSession();
     vi.stubGlobal('fetch', queuedFetch([fileContents('not-json')]));
     await expect(
       useWorkspaceStore.getState().linkPrivateWorkspace({ repoFullName: 'me/bad', branch: 'main' }),
     ).rejects.toThrow(/not valid JSON/);
 
-    vi.stubGlobal('fetch', queuedFetch([fileContents(JSON.stringify({ foo: 1 }))]));
+    vi.stubGlobal('fetch', queuedFetch([fileContents('42')]));
     await expect(
       useWorkspaceStore
         .getState()
         .linkPrivateWorkspace({ repoFullName: 'me/bad2', branch: 'main' }),
-    ).rejects.toThrow(/missing workspaceName/);
+    ).rejects.toThrow(/not an object/);
   });
 
   it('auto-populates requiredSecretKeyIds from every slot in the source secretKeys registry', async () => {

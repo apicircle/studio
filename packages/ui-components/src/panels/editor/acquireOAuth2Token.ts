@@ -93,7 +93,14 @@ export async function acquireToken(
       const bridge = bridgeOverride ?? createOAuth2Bridge();
       const port = await bridge.findFreePort(8080);
       const redirectUri = bridge.getRedirectUri({ port });
-      const state = generateOAuth2State();
+      // Bind state to the (clientId, redirectUri) tuple via HMAC so a state
+      // observed in one flow cannot be replayed against a different client/
+      // redirect — OAuth 2.0 stateless CSRF defense (RFC 6749 §10.12 +
+      // OWASP cheat sheet). The matching `validateOAuth2State` re-derives
+      // and verifies the MAC; without `stateContext` the validator falls
+      // back to bare-nonce equality, which is materially weaker.
+      const stateContext = `${auth.clientId}:${redirectUri}`;
+      const state = generateOAuth2State(stateContext);
       const authorizeUrl = buildAuthorizeUrl({
         authorizeUrl: auth.authUrl,
         clientId: auth.clientId,
@@ -116,7 +123,7 @@ export async function acquireToken(
       // RFC 6749 §10.12: state MUST be present in the callback and MUST
       // match what we sent. Silently accepting a missing state is the
       // classic CSRF vector — fail closed instead.
-      if (!validateOAuth2State(callback.state, state)) {
+      if (!validateOAuth2State(callback.state, state, stateContext)) {
         throw new Error('OAuth2 state missing or mismatched — possible CSRF attempt');
       }
       if (!callback.code) throw new Error('No code received from authorization endpoint');
@@ -133,7 +140,8 @@ export async function acquireToken(
       const bridge = bridgeOverride ?? createOAuth2Bridge();
       const port = await bridge.findFreePort(8080);
       const redirectUri = bridge.getRedirectUri({ port });
-      const state = generateOAuth2State();
+      const stateContext = `${auth.clientId}:${redirectUri}`;
+      const state = generateOAuth2State(stateContext);
       const verifier = generateCodeVerifier();
       const challenge = await computeCodeChallenge(verifier, 'S256');
       const authorizeUrl = buildAuthorizeUrl({
@@ -156,7 +164,7 @@ export async function acquireToken(
           `${callback.error}${callback.errorDescription ? `: ${callback.errorDescription}` : ''}`,
         );
       }
-      if (!validateOAuth2State(callback.state, state)) {
+      if (!validateOAuth2State(callback.state, state, stateContext)) {
         throw new Error('OAuth2 state missing or mismatched — possible CSRF attempt');
       }
       if (!callback.code) throw new Error('No code received from authorization endpoint');
@@ -174,7 +182,8 @@ export async function acquireToken(
       const bridge = bridgeOverride ?? createOAuth2Bridge();
       const port = await bridge.findFreePort(8080);
       const redirectUri = bridge.getRedirectUri({ port });
-      const state = generateOAuth2State();
+      const stateContext = `${auth.clientId}:${redirectUri}`;
+      const state = generateOAuth2State(stateContext);
       const authorizeUrl = buildAuthorizeUrl({
         authorizeUrl: auth.authUrl,
         clientId: auth.clientId,
@@ -195,7 +204,7 @@ export async function acquireToken(
         );
       }
       // Implicit grant: state MUST round-trip too (RFC 6749 §10.12).
-      if (!validateOAuth2State(callback.state, state)) {
+      if (!validateOAuth2State(callback.state, state, stateContext)) {
         throw new Error('OAuth2 state missing or mismatched — possible CSRF attempt');
       }
       if (!callback.accessToken) {

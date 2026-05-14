@@ -329,14 +329,14 @@ describe('WebBridge.startFlow — popup choreography', () => {
     expect(flowBResult).toMatchObject({ code: 'code-for-B', state: 'state-B' });
   });
 
-  it('rejects a callback delivered to the wrong channel (state collision guard)', async () => {
-    // If somehow flow A's callback page posts to flow B's channel name
-    // (e.g. a rogue tab broadcasts on a guessed channel), the per-flow
-    // state validation in `acquireToken` rejects it. The bridge itself
-    // is intentionally permissive — it forwards whatever the channel
-    // delivers to the caller. This test pins that contract: the bridge
-    // doesn't filter by state, but the channel partition means a
-    // stranger can't reach this flow without knowing the state.
+  it('ignores a callback delivered with the wrong state (receiver-level CSRF guard)', async () => {
+    // Threat: a same-origin browser extension or malicious tab guesses the
+    // channel name (`apicircle-oauth-<state>`) and posts a forged payload
+    // with a DIFFERENT state field. The bridge must NOT settle the
+    // promise — the legitimate IdP redirect may still be in flight, and
+    // the caller's downstream `validateOAuth2State` would reject it
+    // anyway. This is defense-in-depth at the receiver level.
+    vi.useFakeTimers();
     const fakePopup = { closed: false, close: vi.fn() } as unknown as Window;
     window.open = vi.fn().mockReturnValue(fakePopup);
 
@@ -346,23 +346,103 @@ describe('WebBridge.startFlow — popup choreography', () => {
       state: 'correct-state',
       mode: 'code',
       port: 0,
+      timeoutMs: 1000,
     });
+
+    let settled: unknown = 'pending';
+    flowPromise.then((r) => (settled = r)).catch((e) => (settled = e));
 
     await Promise.resolve();
     expect(activeChannels).toHaveLength(1);
-    expect(activeChannels[0]!.name).toBe('apicircle-oauth-correct-state');
 
-    // The bridge forwards whatever arrives on its own channel; downstream
-    // (acquireToken) filters by state. Confirm forwarded payload is the
-    // raw delivery, including a wrong state value — proving it's the
-    // CALLER's job to verify state, not the bridge's.
+    // Hostile post on the right channel with a wrong state — must be ignored.
     activeChannels[0]!.onmessage?.({
-      data: { code: 'c', state: 'NOT-the-correct-state' },
+      data: { code: 'forged', state: 'NOT-the-correct-state' },
     });
+    await Promise.resolve();
+    expect(settled).toBe('pending');
+
+    // A payload with NO state at all is similarly ignored.
+    activeChannels[0]!.onmessage?.({ data: { code: 'still-forged' } });
+    await Promise.resolve();
+    expect(settled).toBe('pending');
+
+    // The real callback arrives — now we settle. Two microtask flushes:
+    // one to clear `finish` → `resolve`, one for the `.then` callback to
+    // run and set the captured `settled` variable. Matches the cadence
+    // used by adjacent multi-flow tests in this file.
+    activeChannels[0]!.onmessage?.({
+      data: { code: 'real-code', state: 'correct-state' },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect((settled as { code?: string }).code).toBe('real-code');
+  });
+
+  it('settles via window.postMessage when sent from same origin', async () => {
+    // postMessage is the fallback path when BroadcastChannel is unavailable
+    // (privacy modes, browser extensions stripping the API). The receiver
+    // gates on `event.origin === window.location.origin` so cross-origin
+    // attackers can't push payloads at us. Same-origin posts that carry
+    // the right state must settle the flow.
+    const fakePopup = { closed: false, close: vi.fn() } as unknown as Window;
+    window.open = vi.fn().mockReturnValue(fakePopup);
+
+    const bridge = createOAuth2Bridge();
+    const flowPromise = bridge.startFlow({
+      authorizeUrl: 'https://idp/authorize?state=pm-state',
+      state: 'pm-state',
+      mode: 'code',
+      port: 0,
+    });
+
+    await Promise.resolve();
+
+    // Synthesize a same-origin message event. jsdom's `MessageEvent`
+    // accepts `origin` via the init dict.
+    const messageEvent = new MessageEvent('message', {
+      data: { code: 'pm-code', state: 'pm-state' },
+      origin: window.location.origin,
+    });
+    window.dispatchEvent(messageEvent);
+
     const result = await flowPromise;
-    expect(result.state).toBe('NOT-the-correct-state');
-    // Caller (acquireToken / `validateOAuth2State`) is responsible for
-    // detecting this mismatch — covered in `acquireOAuth2Token.test.tsx`.
+    expect(result.code).toBe('pm-code');
+    expect(result.state).toBe('pm-state');
+  });
+
+  it('ignores postMessage from a cross-origin sender', async () => {
+    vi.useFakeTimers();
+    const fakePopup = { closed: false, close: vi.fn() } as unknown as Window;
+    window.open = vi.fn().mockReturnValue(fakePopup);
+
+    const bridge = createOAuth2Bridge();
+    const flowPromise = bridge.startFlow({
+      authorizeUrl: 'https://idp/authorize?state=xo-state',
+      state: 'xo-state',
+      mode: 'code',
+      port: 0,
+      timeoutMs: 1000,
+    });
+
+    let settled: unknown = 'pending';
+    flowPromise.then((r) => (settled = r)).catch((e) => (settled = e));
+
+    await Promise.resolve();
+
+    const xo = new MessageEvent('message', {
+      data: { code: 'xo-code', state: 'xo-state' },
+      origin: 'https://attacker.example',
+    });
+    window.dispatchEvent(xo);
+    await Promise.resolve();
+    expect(settled).toBe('pending');
+
+    // Advance past timeout — we expect a timeout rejection now, proving
+    // the cross-origin post never settled the flow.
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(settled).toBeInstanceOf(Error);
+    expect((settled as Error).message).toMatch(/timed out/i);
   });
 
   it('opens the channel BEFORE window.open so the popup can post immediately', async () => {

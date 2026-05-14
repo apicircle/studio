@@ -256,8 +256,16 @@ function parseBearerAuthError(
 }
 
 function base64(text: string): string {
-  if (typeof btoa === 'function') {
-    return btoa(unescape(encodeURIComponent(text)));
+  // UTF-8 → base64. `btoa` is byte-oriented (Latin-1), so we have to encode
+  // the string to bytes first. The previous `btoa(unescape(encodeURIComponent(text)))`
+  // hack relied on the deprecated `unescape` global; this path uses
+  // `TextEncoder` instead, which is the standard since ES2017 and is
+  // present in every runtime we ship into.
+  if (typeof btoa === 'function' && typeof TextEncoder !== 'undefined') {
+    const bytes = new TextEncoder().encode(text);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
   }
   // Same Node/Buffer fallback shape as applyAuth — kept defensive.
   const buf = (

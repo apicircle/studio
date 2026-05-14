@@ -3,6 +3,7 @@ import type {
   Request as ApiRequest,
   RequestOverridePatch,
 } from '@apicircle/shared';
+import { useShallow } from 'zustand/react/shallow';
 import { useWorkspaceStore } from '../store/workspaceStore';
 
 /**
@@ -42,31 +43,38 @@ export type ActiveRequestView =
     };
 
 export function useActiveRequestView(): ActiveRequestView | null {
-  return useWorkspaceStore((s) => {
-    const active = s.activeLinkedRequest;
-    if (active) {
-      const link = s.synced?.linkedWorkspaces[active.linkedWorkspaceId];
-      const snapshot = s.local?.linkedCollections[active.linkedWorkspaceId];
-      const base = snapshot?.collections.requests[active.itemId];
-      if (!link || !base) return null;
-      const overrideKey = `${active.linkedWorkspaceId}:${active.itemId}`;
-      const override = s.synced?.linkedOverrides.requests[overrideKey] ?? null;
-      const patch = override?.patch ?? null;
-      const request = patch ? mergeOverridePatch(base, patch) : base;
-      return {
-        source: 'linked' as const,
-        request,
-        link,
-        hasOverride: patch !== null && Object.keys(patch).length > 0,
-        patch,
-      };
-    }
-    const id = s.local?.ui.activeRequestId ?? null;
-    if (!id) return null;
-    const request = s.synced?.collections.requests[id];
-    if (!request) return null;
-    return { source: 'workspace' as const, request };
-  });
+  // Zustand's default equality is `Object.is` — this selector returns a
+  // fresh object literal every call, so without `useShallow` the editor
+  // pane re-renders on EVERY unrelated store mutation (toast push, focus
+  // tick, theme change, etc). `useShallow` does a shallow key-by-key
+  // compare so we only re-render when the relevant fields actually moved.
+  return useWorkspaceStore(
+    useShallow((s) => {
+      const active = s.activeLinkedRequest;
+      if (active) {
+        const link = s.synced?.linkedWorkspaces[active.linkedWorkspaceId];
+        const snapshot = s.local?.linkedCollections[active.linkedWorkspaceId];
+        const base = snapshot?.collections.requests[active.itemId];
+        if (!link || !base) return null;
+        const overrideKey = `${active.linkedWorkspaceId}:${active.itemId}`;
+        const override = s.synced?.linkedOverrides.requests[overrideKey] ?? null;
+        const patch = override?.patch ?? null;
+        const request = patch ? mergeOverridePatch(base, patch) : base;
+        return {
+          source: 'linked' as const,
+          request,
+          link,
+          hasOverride: patch !== null && Object.keys(patch).length > 0,
+          patch,
+        };
+      }
+      const id = s.local?.ui.activeRequestId ?? null;
+      if (!id) return null;
+      const request = s.synced?.collections.requests[id];
+      if (!request) return null;
+      return { source: 'workspace' as const, request };
+    }),
+  );
 }
 
 /**

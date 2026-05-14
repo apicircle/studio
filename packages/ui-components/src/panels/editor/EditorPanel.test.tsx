@@ -182,7 +182,6 @@ describe('EditorPanel', () => {
             ...local,
             linkedCollections: {
               [linkId]: {
-                workspaceName: 'Payments',
                 pulledAt: '2026-04-27T00:00:00.000Z',
                 ref: 'v1.0.0',
                 collections: {
@@ -297,7 +296,6 @@ describe('EditorPanel', () => {
             ...local,
             linkedCollections: {
               [linkId]: {
-                workspaceName: 'Payments',
                 pulledAt: '2026-04-27T00:00:00.000Z',
                 ref: 'v1.0.0',
                 collections: {

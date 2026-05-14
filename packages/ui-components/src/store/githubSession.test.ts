@@ -205,14 +205,53 @@ describe('workspaceStore — GitHub session', () => {
   });
 
   describe('connectGitHubSessionViaDeviceFlow (B.5)', () => {
-    it('throws when VITE_GITHUB_OAUTH_CLIENT_ID is not configured', async () => {
+    it('uses the bundled default client id when no env override is set', async () => {
       // import.meta.env.VITE_GITHUB_OAUTH_CLIENT_ID is undefined by
-      // default in the test bundle.
-      await expect(
-        useWorkspaceStore.getState().connectGitHubSessionViaDeviceFlow({
-          onCodeReady: () => {},
-        }),
-      ).rejects.toThrow(/VITE_GITHUB_OAUTH_CLIENT_ID/);
+      // default in the test bundle — the bundled default must drive the
+      // device-flow start call so unforked builds work out of the box.
+      const fetchSpy = vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: 'authorization_pending' }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+      );
+      vi.stubGlobal('fetch', fetchSpy);
+      // First call is startDeviceFlow — we abort before any poll, so
+      // we only need a single placeholder response above. Wire a real
+      // device_code response for the first call:
+      fetchSpy.mockImplementationOnce(
+        async () =>
+          new Response(
+            JSON.stringify({
+              device_code: 'dc-default',
+              user_code: 'AAAA-AAAA',
+              verification_uri: 'https://github.com/login/device',
+              expires_in: 1,
+              interval: 0,
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+      );
+
+      const controller = new AbortController();
+      let codeReady: { userCode: string } | null = null;
+      const promise = useWorkspaceStore.getState().connectGitHubSessionViaDeviceFlow({
+        onCodeReady: (info) => {
+          codeReady = info;
+          controller.abort();
+        },
+        signal: controller.signal,
+      });
+      await expect(promise).rejects.toThrow(/cancelled|expired/);
+      expect(codeReady).not.toBeNull();
+
+      const firstCallBody = JSON.parse(String(fetchSpy.mock.calls[0]![1]!.body)) as {
+        client_id: string;
+      };
+      expect(firstCallBody.client_id).toBe('Ov23lidibDgD8hoGFB67');
+
+      vi.unstubAllGlobals();
     });
 
     it('orchestrates device-code → poll-pending → granted → session vaulted', async () => {

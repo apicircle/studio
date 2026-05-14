@@ -19,7 +19,6 @@ describe('WorkspaceSynced shape (regression)', () => {
     const empty: WorkspaceSynced = {
       schemaVersion: 1,
       workspaceId: 'ws-fixture',
-      workspaceName: 'My Workspace',
       collections: {
         tree: { id: 'root-fixture', type: 'root', children: [] },
         requests: {},
@@ -39,6 +38,9 @@ describe('WorkspaceSynced shape (regression)', () => {
     };
 
     // Snapshot every top-level key so a schema rename fails immediately.
+    // Note: workspaceName is intentionally absent — the workspace's
+    // display name is a per-machine local label that lives only on
+    // the registry entry, never in the git-tracked synced doc.
     expect(Object.keys(empty).sort()).toEqual(
       [
         'collections',
@@ -51,7 +53,6 @@ describe('WorkspaceSynced shape (regression)', () => {
         'releases',
         'schemaVersion',
         'workspaceId',
-        'workspaceName',
       ].sort(),
     );
     expect(Object.keys(empty.globalAssets).sort()).toEqual(['graphql', 'schemas'].sort());

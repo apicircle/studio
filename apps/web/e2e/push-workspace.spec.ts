@@ -184,17 +184,31 @@ test.describe('Refresh + 3-way conflict resolver (P4.5)', () => {
 
   test('divergent edits open the resolver, picking remote applies the merge', async ({ app }) => {
     await setupConnectedBranch(app);
-    // Local renames the workspace; remote.json has a different name → conflict.
-    await app.getByLabel('Workspace name').fill('Mine');
-
+    // Local sets one active env; remote.json carries a different active
+    // env → conflict on the `environmentsActive` singleton. (We use
+    // `environments.activeName` instead of workspaceName because the
+    // workspace's display name no longer lives in the git-tracked doc.)
     const remoteSynced = await app.evaluate(() => {
       const w = window as unknown as {
         __apicircleStore?: {
           getState: () => { synced: Record<string, unknown> };
+          setState: (s: { synced: Record<string, unknown> }) => void;
         };
       };
-      const synced = w.__apicircleStore!.getState().synced;
-      return JSON.stringify({ ...synced, workspaceName: 'Theirs' });
+      const synced = w.__apicircleStore!.getState().synced as {
+        environments: { items: Record<string, unknown>; activeName: string | null };
+      };
+      // Stamp the local active env.
+      w.__apicircleStore!.setState({
+        synced: {
+          ...synced,
+          environments: { ...synced.environments, activeName: 'mine' },
+        },
+      });
+      return JSON.stringify({
+        ...synced,
+        environments: { ...synced.environments, activeName: 'theirs' },
+      });
     });
     const base64 = Buffer.from(remoteSynced, 'utf-8').toString('base64');
 
@@ -219,15 +233,23 @@ test.describe('Refresh + 3-way conflict resolver (P4.5)', () => {
     await app.getByRole('button', { name: /^Refresh$/ }).click();
     // Conflict resolver opens.
     await expect(app.getByRole('dialog', { name: /Resolve conflicts/ })).toBeVisible();
-    // Pick the remote side for the workspaceName conflict.
+    // Pick the remote side for the environmentsActive conflict.
     await app
       .getByRole('button', { name: /Theirs.*Theirs/s })
       .first()
       .click();
     await app.getByRole('button', { name: /Apply merge/ }).click();
 
-    // After merge the workspace name input shows 'Theirs'.
-    await expect(app.getByLabel('Workspace name')).toHaveValue('Theirs');
+    // After merge, the synced doc's active env is 'theirs'.
+    const merged = await app.evaluate(() => {
+      const w = window as unknown as {
+        __apicircleStore?: {
+          getState: () => { synced: { environments: { activeName: string | null } } };
+        };
+      };
+      return w.__apicircleStore!.getState().synced.environments.activeName;
+    });
+    expect(merged).toBe('theirs');
   });
 });
 

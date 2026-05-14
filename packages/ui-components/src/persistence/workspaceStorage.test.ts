@@ -93,14 +93,19 @@ describe('workspaceStorage — multi-workspace registry actions', () => {
   it('createWorkspace registers a new workspace and makes it active', async () => {
     const initial = await freshState();
     const { synced, registry } = await createWorkspace(initial.registry, 'Second');
-    expect(synced.workspaceName).toBe('Second');
+    // The display name lives on the registry entry, not the synced doc.
+    const entry = registry.workspaces.find((w) => w.id === synced.workspaceId)!;
+    expect(entry.name).toBe('Second');
     expect(synced.workspaceId).not.toBe(initial.workspaceId);
     expect(registry.activeWorkspaceId).toBe(synced.workspaceId);
     expect(registry.workspaces).toHaveLength(2);
     // Reload should pick up the new active.
     const reloaded = await loadWorkspace();
     expect(reloaded.synced.workspaceId).toBe(synced.workspaceId);
-    expect(reloaded.synced.workspaceName).toBe('Second');
+    const reloadedEntry = reloaded.registry.workspaces.find(
+      (w) => w.id === reloaded.synced.workspaceId,
+    )!;
+    expect(reloadedEntry.name).toBe('Second');
   });
 
   it('createWorkspace rejects duplicate names', async () => {
@@ -183,15 +188,14 @@ describe('workspaceStorage — recoverPartialWorkspace (multi-workspace)', () =>
   it('rebuilds local with the synced workspaceId when only synced is present', async () => {
     await clearAll();
     const seed = createEmptyWorkspace();
-    const syncedWithName = { ...seed.synced, workspaceName: 'Existing Workspace' };
     // Seed a registry that points at this workspace.
     const now = new Date().toISOString();
     const registry: WorkspaceRegistry = {
       schemaVersion: 1,
-      activeWorkspaceId: syncedWithName.workspaceId,
+      activeWorkspaceId: seed.synced.workspaceId,
       workspaces: [
         {
-          id: syncedWithName.workspaceId,
+          id: seed.synced.workspaceId,
           name: 'Existing Workspace',
           createdAt: now,
           lastOpenedAt: now,
@@ -199,11 +203,12 @@ describe('workspaceStorage — recoverPartialWorkspace (multi-workspace)', () =>
       ],
     };
     await writeRegistry(registry);
-    await writeRecord(SYNCED_STORE, syncedWithName);
+    await writeRecord(SYNCED_STORE, seed.synced);
     const result = await recoverPartialWorkspace();
     expect(result).not.toBeNull();
-    expect(result!.synced.workspaceName).toBe('Existing Workspace');
-    expect(result!.local.workspaceId).toBe(syncedWithName.workspaceId);
+    const entry = result!.registry.workspaces.find((w) => w.id === seed.synced.workspaceId)!;
+    expect(entry.name).toBe('Existing Workspace');
+    expect(result!.local.workspaceId).toBe(seed.synced.workspaceId);
   });
 
   it('rebuilds synced with the local workspaceId when only local is present', async () => {
@@ -246,10 +251,13 @@ describe('workspaceStorage — saveSynced / saveLocal / saveBoth (multi-workspac
   it('saveSynced persists only the synced doc and round-trips through loadWorkspace', async () => {
     const { workspaceId } = await freshState();
     const { synced } = await loadWorkspace();
-    const renamed = { ...synced, workspaceName: 'Renamed' };
+    const renamed = {
+      ...synced,
+      meta: { ...synced.meta, appVersion: 'renamed-version' },
+    };
     await saveSynced(renamed);
     const reloaded = await loadWorkspace();
-    expect(reloaded.synced.workspaceName).toBe('Renamed');
+    expect(reloaded.synced.meta.appVersion).toBe('renamed-version');
     expect(reloaded.synced.workspaceId).toBe(workspaceId);
   });
 
@@ -260,7 +268,9 @@ describe('workspaceStorage — saveSynced / saveLocal / saveBoth (multi-workspac
     await saveLocal(themed);
     const reloaded = await loadWorkspace();
     expect(reloaded.local.ui.themeId).toBe('paper-light');
-    expect(reloaded.synced.workspaceName).toBe('My Workspace');
+    // Display name lives on the registry entry.
+    const entry = reloaded.registry.workspaces.find((w) => w.id === reloaded.synced.workspaceId)!;
+    expect(entry.name).toBe('My Workspace');
   });
 
   it('saveBoth writes the synced+local pair atomically', async () => {
@@ -277,11 +287,11 @@ describe('workspaceStorage — saveSynced / saveLocal / saveBoth (multi-workspac
     await writeRegistry(registry);
     await writeBoth(seed.synced, seed.local);
     await saveBoth(
-      { ...seed.synced, workspaceName: 'Both' },
+      { ...seed.synced, meta: { ...seed.synced.meta, appVersion: 'both-version' } },
       { ...seed.local, ui: { ...seed.local.ui, themeId: 'paper-light' as const } },
     );
     const reloaded = await loadWorkspace();
-    expect(reloaded.synced.workspaceName).toBe('Both');
+    expect(reloaded.synced.meta.appVersion).toBe('both-version');
     expect(reloaded.local.ui.themeId).toBe('paper-light');
   });
 });
@@ -444,5 +454,159 @@ describe('workspaceStorage — executionPlans local→synced migration', () => {
       { kind: 'local', name: 'dev' },
       { kind: 'local', name: 'prod' },
     ]);
+  });
+});
+
+describe('workspaceStorage — collection-orphan self-heal', () => {
+  it('re-attaches a top-level request that is in the dict but missing from tree.children', async () => {
+    // Replicates the user-reported state: a request with folderId:null
+    // exists in `requests` but the tree never learned about it (caused
+    // by the pre-fix asymmetric applyMerge that mutated only the dict).
+    // The editor sidebar walks tree.children for top-level — without
+    // the self-heal, the request stays invisible.
+    await freshState();
+    const seed = createEmptyWorkspace();
+    const orphanedReq = {
+      id: 'orphan-1',
+      name: 'Sample: GET /anything',
+      folderId: null,
+      method: 'GET' as const,
+      url: 'https://example.test/anything',
+      headers: [],
+      query: [],
+      pathParams: {},
+      body: { type: 'none' as const, content: '' },
+      auth: { type: 'none' as const },
+      contextVars: [],
+      extractions: [],
+      assertions: [],
+      createdAt: 't',
+      updatedAt: 't',
+    };
+    const syncedWithOrphan = {
+      ...seed.synced,
+      collections: {
+        ...seed.synced.collections,
+        // Tree has the seed's sample request but NOT the orphan we just added.
+        requests: {
+          ...seed.synced.collections.requests,
+          'orphan-1': orphanedReq,
+        },
+      },
+    };
+    await writeBoth(syncedWithOrphan, seed.local);
+    await writeRegistry({
+      schemaVersion: 1,
+      activeWorkspaceId: seed.synced.workspaceId,
+      workspaces: [
+        {
+          id: seed.synced.workspaceId,
+          name: 'My Workspace',
+          createdAt: 't',
+          lastOpenedAt: 't',
+        },
+      ],
+    });
+    const reloaded = await loadWorkspace();
+    expect(reloaded.synced.collections.requests['orphan-1']).toBeDefined();
+    expect(
+      reloaded.synced.collections.tree.children.some(
+        (c) => c.kind === 'request' && c.id === 'orphan-1',
+      ),
+    ).toBe(true);
+  });
+
+  it('drops a request whose folderId points at a folder that no longer exists', async () => {
+    // User-confirmed Option B for the dangling-parent case: don't rescue
+    // to root — drop the entry. Pre-fix the request would still surface
+    // in the diff but the sidebar couldn't render it (no folder to nest
+    // under) — clean removal is the resolution.
+    await freshState();
+    const seed = createEmptyWorkspace();
+    const danglingReq = {
+      id: 'dangling-1',
+      name: 'Lost child',
+      folderId: 'folder-that-was-deleted',
+      method: 'GET' as const,
+      url: 'https://x',
+      headers: [],
+      query: [],
+      pathParams: {},
+      body: { type: 'none' as const, content: '' },
+      auth: { type: 'none' as const },
+      contextVars: [],
+      extractions: [],
+      assertions: [],
+      createdAt: 't',
+      updatedAt: 't',
+    };
+    const syncedWithDangling = {
+      ...seed.synced,
+      collections: {
+        ...seed.synced.collections,
+        requests: {
+          ...seed.synced.collections.requests,
+          'dangling-1': danglingReq,
+        },
+        // folders dict deliberately empty / does not contain the referenced id.
+      },
+    };
+    await writeBoth(syncedWithDangling, seed.local);
+    await writeRegistry({
+      schemaVersion: 1,
+      activeWorkspaceId: seed.synced.workspaceId,
+      workspaces: [
+        {
+          id: seed.synced.workspaceId,
+          name: 'My Workspace',
+          createdAt: 't',
+          lastOpenedAt: 't',
+        },
+      ],
+    });
+    const reloaded = await loadWorkspace();
+    expect(reloaded.synced.collections.requests['dangling-1']).toBeUndefined();
+  });
+
+  it('strips stale tree.children entries pointing at ids that no longer exist in the dict', async () => {
+    // Inverse drift: tree.children references an id but the dict was
+    // pruned. The sidebar render code already filters these out at view
+    // time, but the persisted state shouldn't keep the ghost reference
+    // because the diff engine would see it as a "removed" entry every
+    // time the snapshot was compared.
+    await freshState();
+    const seed = createEmptyWorkspace();
+    const syncedWithGhost = {
+      ...seed.synced,
+      collections: {
+        ...seed.synced.collections,
+        tree: {
+          ...seed.synced.collections.tree,
+          children: [
+            ...seed.synced.collections.tree.children,
+            { kind: 'request' as const, id: 'ghost-id-no-dict-entry' },
+          ],
+        },
+      },
+    };
+    await writeBoth(syncedWithGhost, seed.local);
+    await writeRegistry({
+      schemaVersion: 1,
+      activeWorkspaceId: seed.synced.workspaceId,
+      workspaces: [
+        {
+          id: seed.synced.workspaceId,
+          name: 'My Workspace',
+          createdAt: 't',
+          lastOpenedAt: 't',
+        },
+      ],
+    });
+    const reloaded = await loadWorkspace();
+    expect(
+      reloaded.synced.collections.tree.children.some(
+        (c) => c.kind === 'request' && c.id === 'ghost-id-no-dict-entry',
+      ),
+    ).toBe(false);
   });
 });

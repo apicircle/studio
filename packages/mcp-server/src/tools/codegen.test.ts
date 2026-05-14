@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
 import { InMemoryWorkspaceProvider } from '../providers/InMemoryWorkspaceProvider';
 import { InProcessMockController } from '../providers/InProcessMockController';
@@ -11,7 +11,6 @@ function stateWithRequest(): { synced: WorkspaceSynced; local: WorkspaceLocal } 
     synced: {
       schemaVersion: 1,
       workspaceId: 'ws-1',
-      workspaceName: 'W',
       collections: {
         tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
         requests: {

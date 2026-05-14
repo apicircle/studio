@@ -43,7 +43,11 @@ import { formatRelativeTime } from '../../primitives/relativeTime';
 import { formatGitError, type GitErrorView } from './gitErrorMessage';
 
 export function WorkspacePanel() {
-  const workspaceName = useWorkspaceStore((s) => s.synced?.workspaceName ?? '');
+  const workspaceName = useWorkspaceStore((s) => {
+    const reg = s.workspaceRegistry;
+    if (!reg) return '';
+    return reg.workspaces.find((w) => w.id === reg.activeWorkspaceId)?.name ?? '';
+  });
   const setWorkspaceName = useWorkspaceStore((s) => s.setWorkspaceName);
   const session = useWorkspaceStore((s) => s.local?.sessions.github.workspace ?? null);
   const connectedRepo = useWorkspaceStore((s) => s.local?.connectedRepo ?? null);
@@ -76,7 +80,8 @@ export function WorkspacePanel() {
           className="mt-1 h-9 w-full max-w-md rounded-sm border border-border bg-card px-3 text-sm text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
         />
         <p className="mt-2 text-xs text-text-dim">
-          Persisted to the synced document. Pushed to Git when a working branch is created.
+          Local label for this workspace on this machine. Never pushed to Git — each user can name
+          their own copy independently.
         </p>
       </section>
 
@@ -441,6 +446,32 @@ function PublishReleaseModal({ open, onClose }: { open: boolean; onClose: () => 
   );
 }
 
+// Sort conflicts by bucket so related entries land next to each other — a
+// flat 50-conflict list intermixing requests / envs / mocks is hard to reason
+// about. Keys MUST match `EntityBucket` from `threeWayDiff.ts` (singular,
+// camelCase). An earlier version of this map used plural/dotted names that
+// never matched, so every entry silently fell to the `?? 99` tier. Hoisted
+// to module scope so the useMemo doesn't reallocate on every render.
+const CONFLICT_BUCKET_ORDER: Record<string, number> = {
+  tree: 1,
+  folder: 2,
+  request: 3,
+  environment: 4,
+  environmentsActive: 5,
+  environmentsPriority: 6,
+  mockServer: 7,
+  executionPlan: 8,
+  linkedWorkspace: 9,
+  linkedRequestOverride: 10,
+  linkedEnvOverride: 11,
+  globalSchema: 12,
+  globalGraphql: 13,
+  secretKey: 14,
+  secretCrypto: 15,
+  releaseSelf: 16,
+  releasePerLink: 17,
+};
+
 function ConflictResolverModal() {
   const pending = useWorkspaceStore((s) => s.pendingRefresh);
   const commitRefresh = useWorkspaceStore((s) => s.commitRefresh);
@@ -450,24 +481,11 @@ function ConflictResolverModal() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Sort conflicts by bucket so related entries land next to each other —
-  // a flat 50-conflict list intermixing requests / envs / mocks is hard to
-  // reason about. Within a bucket, preserve diff order (typically label-asc).
-  const BUCKET_ORDER: Record<string, number> = {
-    workspaceName: 0,
-    folders: 1,
-    requests: 2,
-    environments: 3,
-    'environment-vars': 4,
-    mockServers: 5,
-    linkedWorkspaces: 6,
-    'releases.self': 7,
-  };
   const conflicts = useMemo(() => {
     const list = pending?.diff.conflicts ?? [];
     return [...list].sort((a, b) => {
-      const orderA = BUCKET_ORDER[a.bucket] ?? 99;
-      const orderB = BUCKET_ORDER[b.bucket] ?? 99;
+      const orderA = CONFLICT_BUCKET_ORDER[a.bucket] ?? 99;
+      const orderB = CONFLICT_BUCKET_ORDER[b.bucket] ?? 99;
       if (orderA !== orderB) return orderA - orderB;
       return 0;
     });
@@ -688,7 +706,7 @@ function NoSessionCard() {
       </ul>
       <button
         type="button"
-        onClick={() => openRightDockTab('vault')}
+        onClick={() => openRightDockTab('vault', { vaultSubtab: 'sessions' })}
         className="inline-flex h-8 items-center gap-2 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent transition-colors hover:bg-accent/20"
       >
         <KeyRound size={14} />
@@ -730,7 +748,7 @@ function SessionCard() {
       )}
       <button
         type="button"
-        onClick={() => openRightDockTab('vault')}
+        onClick={() => openRightDockTab('vault', { vaultSubtab: 'sessions' })}
         className="mt-4 inline-flex h-8 items-center gap-2 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted transition-colors hover:border-border-strong hover:text-text-primary"
       >
         <KeyRound size={14} />
@@ -1320,7 +1338,7 @@ function BranchCard() {
           )}
         </div>
       )}
-      {justPushedSha && !error && (
+      {justPushedSha && !error && !branch.openPrUrl && (
         <p className="mt-2 inline-flex items-center gap-1 text-[0.6875rem] text-success">
           <CheckCircle2 size={11} aria-hidden="true" />
           Pushed <code>{justPushedSha.slice(0, 7)}</code>
@@ -1334,9 +1352,9 @@ function BranchCard() {
       )}
 
       {branch.openPrUrl && (
-        <p className="mt-2 inline-flex items-center gap-1 text-[0.6875rem] text-accent">
+        <div className="flex items-center gap-1 text-[0.6875rem] text-accent">
           <GitPullRequest size={11} aria-hidden="true" />
-          PR open:{' '}
+          <span>PR open:</span>
           <a
             href={branch.openPrUrl}
             target="_blank"
@@ -1346,7 +1364,7 @@ function BranchCard() {
             {branch.openPrUrl.replace(/^https:\/\/github\.com\//, '')}
             <ExternalLink size={10} aria-hidden="true" />
           </a>
-        </p>
+        </div>
       )}
 
       <div className="mt-2 flex flex-wrap gap-2">
@@ -1354,7 +1372,11 @@ function BranchCard() {
           type="button"
           onClick={() => void onPush()}
           disabled={anyInFlight}
-          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+          className={
+            isClean
+              ? 'inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50'
+              : 'inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50'
+          }
         >
           <Upload size={11} />
           {pushing ? 'Pushing…' : 'Push to save'}
@@ -1379,29 +1401,27 @@ function BranchCard() {
           <Download size={11} className={syncing ? 'animate-spin' : undefined} />
           {syncing ? 'Syncing…' : 'Sync attachments'}
         </button>
-        <button
-          type="button"
-          onClick={() => setPrModalOpen(true)}
-          disabled={!canCreatePr || anyInFlight}
-          title={
-            !branch.lastPushedSha
-              ? 'Push to save before opening a PR'
-              : branch.openPrUrl
-                ? 'A PR is already open for this branch'
-                : undefined
-          }
-          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <GitPullRequest size={11} />
-          Create PR
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowMessageField((v) => !v)}
-          className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-border-strong hover:text-text-primary"
-        >
-          {showMessageField ? 'Hide message' : 'Custom commit message'}
-        </button>
+        {!branch.openPrUrl && (
+          <button
+            type="button"
+            onClick={() => setPrModalOpen(true)}
+            disabled={!canCreatePr || anyInFlight}
+            title={!branch.lastPushedSha ? 'Push to save before opening a PR' : undefined}
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <GitPullRequest size={11} />
+            Create PR
+          </button>
+        )}
+        {!isClean && (
+          <button
+            type="button"
+            onClick={() => setShowMessageField((v) => !v)}
+            className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-border-strong hover:text-text-primary"
+          >
+            {showMessageField ? 'Hide message' : 'Custom commit message'}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setConfirmDiscardOpen(true)}
@@ -1535,6 +1555,26 @@ function UnpushedChangesModal({
   );
 }
 
+/**
+ * Pull a method/URL pair out of whichever side of the diff entry has data,
+ * so the row can show enough information to tell two similarly-named
+ * entries apart. Falls back gracefully when the change isn't a request
+ * (mockServer endpoints, plans, etc. have their own identity that the
+ * `label` column already covers).
+ */
+function getDisambiguation(change: UnpushedChange): { method?: string; url?: string } | null {
+  if (change.bucket !== 'request') return null;
+  const source = (change.local ?? change.base) as
+    | { method?: string; url?: string }
+    | null
+    | undefined;
+  if (!source || typeof source !== 'object') return null;
+  return {
+    method: typeof source.method === 'string' ? source.method : undefined,
+    url: typeof source.url === 'string' ? source.url : undefined,
+  };
+}
+
 function UnpushedChangeRow({ change }: { change: UnpushedChange }) {
   const [open, setOpen] = useState(false);
   const tone =
@@ -1543,6 +1583,13 @@ function UnpushedChangeRow({ change }: { change: UnpushedChange }) {
       : change.kind === 'modified'
         ? 'border-warning/40 bg-warning/5 text-warning'
         : 'border-danger/40 bg-danger/5 text-danger';
+  // Disambiguate similarly-named entries (multiple "Sample: GET /anything"
+  // requests, two folders named "v1", etc.) by surfacing the data that
+  // makes them unique: method + URL for requests, plus a short id badge
+  // anchored to the entry's id. Without these, the only column shown was
+  // `label` and the user had no way to tell which entry the diff meant.
+  const disambig = getDisambiguation(change);
+  const shortId = change.key ? change.key.slice(0, 8) : null;
   return (
     <li className="rounded-sm border border-border bg-surface">
       <button
@@ -1560,7 +1607,28 @@ function UnpushedChangeRow({ change }: { change: UnpushedChange }) {
         <span className="rounded-sm border border-border bg-card px-1.5 py-0.5 text-[0.625rem] text-text-dim">
           {change.bucket}
         </span>
+        {disambig?.method && (
+          <span className="shrink-0 rounded-sm border border-accent/30 bg-accent/5 px-1.5 py-0.5 text-[0.625rem] font-mono text-accent">
+            {disambig.method}
+          </span>
+        )}
         <code className="flex-1 truncate text-text-primary">{change.label}</code>
+        {disambig?.url && (
+          <code
+            className="hidden max-w-[20rem] shrink-0 truncate text-[0.625rem] text-text-muted md:inline"
+            title={disambig.url}
+          >
+            {disambig.url}
+          </code>
+        )}
+        {shortId && (
+          <code
+            className="shrink-0 rounded-sm bg-card px-1 py-0.5 font-mono text-[0.625rem] text-text-faint"
+            title={`Entry id: ${change.key}`}
+          >
+            {shortId}
+          </code>
+        )}
         <span className="text-[0.625rem] text-text-dim">{open ? '−' : '+'}</span>
       </button>
       {open && (
@@ -1713,13 +1781,17 @@ function CreatePrModal({ open, onClose }: { open: boolean; onClose: () => void }
 
 function CreateBranchForm() {
   const repo = useWorkspaceStore((s) => s.local!.connectedRepo!);
-  const workspaceName = useWorkspaceStore((s) => s.synced?.workspaceName ?? 'workspace');
+  const displayName = useWorkspaceStore((s) => {
+    const reg = s.workspaceRegistry;
+    if (!reg) return 'workspace';
+    return reg.workspaces.find((w) => w.id === reg.activeWorkspaceId)?.name ?? 'workspace';
+  });
   const createWorkingBranch = useWorkspaceStore((s) => s.createWorkingBranch);
   const listRepoBranches = useWorkspaceStore((s) => s.listRepoBranches);
   const seedInitialCommit = useWorkspaceStore((s) => s.seedInitialCommit);
   const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
 
-  const [name, setName] = useState(() => generateWorkingBranchName({ workspaceName }));
+  const [name, setName] = useState(() => generateWorkingBranchName({ displayName }));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1920,7 +1992,7 @@ function CreateBranchForm() {
         </button>
         <button
           type="button"
-          onClick={() => setName(generateWorkingBranchName({ workspaceName }))}
+          onClick={() => setName(generateWorkingBranchName({ displayName }))}
           className="text-[0.6875rem] text-text-dim hover:text-text-muted"
           aria-label="Regenerate branch name"
         >
@@ -1996,7 +2068,7 @@ function RetiredBranchBanner() {
             <a
               href={retired.prUrl}
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-[0.6875rem] text-accent hover:underline"
             >
               <GitPullRequest size={11} aria-hidden="true" />

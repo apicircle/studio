@@ -15,6 +15,7 @@
 // If the import fails or the module is missing, we log and no-op.
 
 import { ipcMain, type BrowserWindow } from 'electron';
+import { assertTrustedSender } from './security/assertTrustedSender';
 
 /** Payload the renderer receives on `apicircle:update:available`. */
 export interface UpdateAvailablePayload {
@@ -60,11 +61,14 @@ export async function registerAutoUpdater(getWindow: () => BrowserWindow | null)
   } catch (err) {
     console.warn('[autoUpdater] electron-updater is not installed; auto-update is disabled.', err);
     // Register no-op handlers so the renderer-side IPC contract is stable.
-    ipcMain.handle('apicircle:update:apply', () => undefined);
-    ipcMain.handle('apicircle:update:checkNow', () => ({
-      checked: false,
-      reason: 'electron-updater not installed',
-    }));
+    ipcMain.handle('apicircle:update:apply', (event) => {
+      assertTrustedSender(event);
+      return undefined;
+    });
+    ipcMain.handle('apicircle:update:checkNow', (event) => {
+      assertTrustedSender(event);
+      return { checked: false, reason: 'electron-updater not installed' };
+    });
     return;
   }
 
@@ -99,7 +103,8 @@ export async function registerAutoUpdater(getWindow: () => BrowserWindow | null)
 
   // Renderer-driven "apply now" — calls quitAndInstall, which relaunches
   // into the installer with the downloaded artifact.
-  ipcMain.handle('apicircle:update:apply', () => {
+  ipcMain.handle('apicircle:update:apply', (event) => {
+    assertTrustedSender(event);
     if (!lastDownloaded) {
       throw new Error('No update has been downloaded yet.');
     }
@@ -107,7 +112,8 @@ export async function registerAutoUpdater(getWindow: () => BrowserWindow | null)
   });
 
   // Renderer-driven "check now" for the About modal / settings.
-  ipcMain.handle('apicircle:update:checkNow', async () => {
+  ipcMain.handle('apicircle:update:checkNow', async (event) => {
+    assertTrustedSender(event);
     try {
       await updater.checkForUpdates();
       return { checked: true };

@@ -22,9 +22,15 @@ import { cn } from '../../primitives/cn';
 
 export interface PreSendPanelProps {
   request: ApiRequest | null | undefined;
-  scope: ResolutionScope;
   /** From `local.settings.validateOnSend`. Hidden entirely when false. */
   enabled: boolean;
+  /**
+   * Pre-computed validation result. The host (EditorPanel) calls
+   * `usePreSendValidation` once and threads the result here so the hook
+   * doesn't run twice per render. Optional for any caller that doesn't
+   * have a result handy — we fall back to an empty result in that case.
+   */
+  validation?: PreSendValidationResult;
 }
 
 /**
@@ -46,8 +52,10 @@ export function usePreSendValidation(
   }, [request, scope, enabled]);
 }
 
-export function PreSendPanel({ request, scope, enabled }: PreSendPanelProps) {
-  const { warnings, blockers } = usePreSendValidation(request, scope, enabled);
+const EMPTY_VALIDATION: PreSendValidationResult = { warnings: [], blockers: [] };
+
+export function PreSendPanel({ request, enabled, validation }: PreSendPanelProps) {
+  const { warnings, blockers } = validation ?? EMPTY_VALIDATION;
   if (!enabled || !request) return null;
   if (warnings.length === 0 && blockers.length === 0) return null;
 

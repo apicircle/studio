@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildDigestAuthHeader, parseDigestChallenge } from './digest';
+import {
+  buildDigestAuthHeader,
+  parseDigestChallenge,
+  selectStrongestDigestChallenge,
+} from './digest';
 
 describe('parseDigestChallenge', () => {
   it('parses the directives from a typical RFC 7616 challenge', () => {
@@ -242,3 +246,58 @@ describe('buildDigestAuthHeader — RFC 2617 §3.5 worked example', () => {
 function extractResponse(header: string): string {
   return /response="([^"]+)"/.exec(header)?.[1] ?? '';
 }
+
+describe('selectStrongestDigestChallenge — algorithm preference', () => {
+  it('returns the single challenge when only one is offered', () => {
+    const c = selectStrongestDigestChallenge('Digest realm="x", nonce="n", algorithm=SHA-256');
+    expect(c?.algorithm).toBe('SHA-256');
+  });
+
+  it('returns null when no Digest challenge contains realm/nonce', () => {
+    expect(selectStrongestDigestChallenge('')).toBeNull();
+    expect(selectStrongestDigestChallenge('Digest stale=true')).toBeNull();
+  });
+
+  it('prefers SHA-256 over MD5 when both are offered', () => {
+    // Servers stack multiple WWW-Authenticate headers; fetch comma-joins them.
+    const stacked =
+      'Digest realm="r", nonce="n-md5", algorithm=MD5, ' +
+      'Digest realm="r", nonce="n-sha256", algorithm=SHA-256';
+    const c = selectStrongestDigestChallenge(stacked);
+    expect(c?.algorithm).toBe('SHA-256');
+    expect(c?.nonce).toBe('n-sha256');
+  });
+
+  it('prefers SHA-512-256 over SHA-256 and MD5', () => {
+    const stacked =
+      'Digest realm="r", nonce="n-md5", algorithm=MD5, ' +
+      'Digest realm="r", nonce="n-sha256", algorithm=SHA-256, ' +
+      'Digest realm="r", nonce="n-sha512", algorithm=SHA-512-256';
+    const c = selectStrongestDigestChallenge(stacked);
+    expect(c?.algorithm).toBe('SHA-512-256');
+    expect(c?.nonce).toBe('n-sha512');
+  });
+
+  it('preserves the algorithm-family choice across -sess variants', () => {
+    const stacked =
+      'Digest realm="r", nonce="n1", algorithm=MD5-sess, ' +
+      'Digest realm="r", nonce="n2", algorithm=SHA-256-sess';
+    const c = selectStrongestDigestChallenge(stacked);
+    expect(c?.algorithm).toBe('SHA-256-sess');
+  });
+
+  it('falls back to MD5 when nothing else is offered', () => {
+    const c = selectStrongestDigestChallenge('Digest realm="r", nonce="n", algorithm=MD5');
+    expect(c?.algorithm).toBe('MD5');
+  });
+
+  it('handles qop values containing commas inside the challenge', () => {
+    // qop="auth,auth-int" has an embedded comma — the split must not mis-
+    // tokenise this as a second challenge.
+    const c = selectStrongestDigestChallenge(
+      'Digest realm="r", qop="auth,auth-int", nonce="n", algorithm=SHA-256',
+    );
+    expect(c?.algorithm).toBe('SHA-256');
+    expect(c?.qop).toBe('auth,auth-int');
+  });
+});

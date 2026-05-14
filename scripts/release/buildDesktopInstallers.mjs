@@ -12,6 +12,17 @@ import { resolve } from 'node:path';
 
 const repoRoot = resolve(new URL('../..', import.meta.url).pathname);
 
+// Regenerate the launcher mark from the source SVG before every installer
+// build. Keeps build/icon.{png,ico,icns} + build/icons/<size>.png in lockstep
+// with apps/web/public/favicon.svg, so a brand tweak only needs to land in
+// one place to reach every OS launcher.
+const icons = spawnSync('node', ['scripts/render-icons.mjs'], {
+  stdio: 'inherit',
+  cwd: repoRoot,
+  shell: true,
+});
+if ((icons.status ?? 0) !== 0) process.exit(icons.status ?? 1);
+
 const result = spawnSync(
   'pnpm',
   [

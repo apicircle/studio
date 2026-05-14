@@ -88,7 +88,7 @@ export function ExecutionSidebar() {
               <li key={plan.id}>
                 <div
                   className={cn(
-                    'group flex items-center gap-1 rounded-sm border px-0.5',
+                    'group flex h-7 items-center gap-1 rounded-sm border px-0.5',
                     isActive
                       ? 'border-accent/40 bg-accent/10'
                       : 'border-transparent hover:bg-surface',
@@ -99,7 +99,7 @@ export function ExecutionSidebar() {
                     onClick={() => setActivePlanId(plan.id)}
                     aria-current={isActive ? 'true' : undefined}
                     className={cn(
-                      'flex flex-1 items-center gap-2 rounded-sm px-1.5 py-1 text-left text-xs transition-colors',
+                      'flex h-full flex-1 items-center gap-2 rounded-sm px-1.5 text-left text-xs transition-colors',
                       isActive ? 'text-accent' : 'text-text-muted hover:text-text-primary',
                     )}
                   >

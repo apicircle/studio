@@ -32,7 +32,6 @@ function makeLink(id: string): LinkedWorkspace {
 
 function makeSnapshotWithEnv(envName: string, value: string): LinkedSnapshot {
   return {
-    workspaceName: 'Source',
     pulledAt: T0,
     ref: 'v1.0.0',
     collections: { tree: { id: 'r', type: 'root', children: [] }, requests: {}, folders: {} },

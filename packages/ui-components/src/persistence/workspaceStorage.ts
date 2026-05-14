@@ -1,13 +1,19 @@
 import type {
   EnvPriorityRef,
   ExecutionPlan,
+  Folder,
   FontFamilyId,
   Request as ApiRequest,
   SecretKeyMeta,
   WorkspaceLocal,
   WorkspaceSynced,
 } from '@apicircle/shared';
-import { FONT_SIZE_PERCENT_DEFAULT, generateId, normalizeAuth } from '@apicircle/shared';
+import {
+  DEFAULT_WORKSPACE_NAME,
+  FONT_SIZE_PERCENT_DEFAULT,
+  generateId,
+  normalizeAuth,
+} from '@apicircle/shared';
 import { generateSlotSalt } from '@apicircle/core';
 import {
   LOCAL_STORE,
@@ -205,6 +211,16 @@ function readLegacyFontFromLocalStorage(): FontFamilyId | null {
 // `auth` field on Request; pre-P16 docs lack `extractions`. Fill defaults
 // instead of erroring.
 function normalizeSyncedShape(synced: WorkspaceSynced): WorkspaceSynced {
+  // `workspaceName` moved from the git-tracked synced doc to the local
+  // registry. Strip any stale field a pre-rename blob still carries so
+  // we never silently round-trip it back to disk / git.
+  if ('workspaceName' in synced) {
+    const { workspaceName: _strip, ...rest } = synced as WorkspaceSynced & {
+      workspaceName?: unknown;
+    };
+    void _strip;
+    synced = rest;
+  }
   let touched = false;
   const requests: Record<string, ApiRequest> = {};
   for (const [id, req] of Object.entries(synced.collections.requests)) {
@@ -328,7 +344,100 @@ function normalizeSyncedShape(synced: WorkspaceSynced): WorkspaceSynced {
       result = { ...result, executionPlans: normalized };
     }
   }
+  // Collection-orphan self-heal. Two drift cases the sidebar can't render but
+  // the unpushed-changes diff still surfaces — root cause was an asymmetric
+  // applyMerge that mutated the dict without touching the tree. The merge
+  // path is now fixed (see `reconcileTreeForEntry` in threeWayDiff.ts) but
+  // existing IDB blobs from before the fix still carry orphans; this normalizer
+  // step heals them on next load.
+  //
+  //   1. Top-level orphan: request/folder has parent === null but is not in
+  //      `tree.children`. Recover by appending — the entry belongs at root
+  //      and just lost its tree pointer; no data loss possible.
+  //
+  //   2. Dangling-parent orphan: request.folderId / folder.parentId points
+  //      at an id that no longer exists in the corresponding dict. Drop the
+  //      entry (matches the user-confirmed Option B — the parent folder was
+  //      removed and the orphan would otherwise re-appear unexpectedly at
+  //      root via case 1's rescue if we re-nulled the parent).
+  result = healCollectionOrphans(result);
   return result;
+}
+
+function healCollectionOrphans(synced: WorkspaceSynced): WorkspaceSynced {
+  const folders = synced.collections.folders;
+  const folderIds = new Set(Object.keys(folders));
+
+  // Pass 1: drop dict entries whose parent id is dangling.
+  const requestsAfterDrop: Record<string, ApiRequest> = {};
+  let droppedRequests = 0;
+  for (const [id, req] of Object.entries(synced.collections.requests)) {
+    if (req.folderId !== null && !folderIds.has(req.folderId)) {
+      droppedRequests += 1;
+      continue;
+    }
+    requestsAfterDrop[id] = req;
+  }
+  const foldersAfterDrop: Record<string, Folder> = {};
+  let droppedFolders = 0;
+  for (const [id, folder] of Object.entries(folders)) {
+    if (folder.parentId !== null && !folderIds.has(folder.parentId)) {
+      droppedFolders += 1;
+      continue;
+    }
+    foldersAfterDrop[id] = folder;
+  }
+
+  // Pass 2: re-attach top-level orphans (parent === null but missing from
+  // tree.children).
+  const treeChildIds = new Set(synced.collections.tree.children.map((c) => `${c.kind}:${c.id}`));
+  const additions: Array<{ kind: 'folder' | 'request'; id: string }> = [];
+  for (const req of Object.values(requestsAfterDrop)) {
+    if (req.folderId === null && !treeChildIds.has(`request:${req.id}`)) {
+      additions.push({ kind: 'request', id: req.id });
+    }
+  }
+  for (const folder of Object.values(foldersAfterDrop)) {
+    if (folder.parentId === null && !treeChildIds.has(`folder:${folder.id}`)) {
+      additions.push({ kind: 'folder', id: folder.id });
+    }
+  }
+
+  // Pass 3: drop tree.children entries pointing at ids that no longer exist.
+  const validRequestIds = new Set(Object.keys(requestsAfterDrop));
+  const validFolderIds = new Set(Object.keys(foldersAfterDrop));
+  const cleanedChildren = synced.collections.tree.children.filter((c) => {
+    if (c.kind === 'request') return validRequestIds.has(c.id);
+    return validFolderIds.has(c.id);
+  });
+
+  const needsRewrite =
+    droppedRequests > 0 ||
+    droppedFolders > 0 ||
+    additions.length > 0 ||
+    cleanedChildren.length !== synced.collections.tree.children.length;
+  if (!needsRewrite) return synced;
+
+  if (droppedRequests > 0 || droppedFolders > 0 || additions.length > 0) {
+    // Best-effort visibility for dev/devtools — the user-facing toast happens
+    // upstream in App.tsx when this reports drift.
+    console.warn(
+      `[workspace.normalize] healed orphans: dropped ${droppedRequests} request(s) + ${droppedFolders} folder(s) with dangling parents, re-attached ${additions.length} top-level orphan(s)`,
+    );
+  }
+
+  return {
+    ...synced,
+    collections: {
+      ...synced.collections,
+      requests: requestsAfterDrop,
+      folders: foldersAfterDrop,
+      tree: {
+        ...synced.collections.tree,
+        children: [...cleanedChildren, ...additions],
+      },
+    },
+  };
 }
 
 // Reshape a legacy MockEndpoint (or already-new shape) into the new
@@ -408,7 +517,7 @@ export async function loadWorkspace(): Promise<{
     const now = new Date().toISOString();
     const entry: WorkspaceRegistryEntry = {
       id: fresh.synced.workspaceId,
-      name: fresh.synced.workspaceName,
+      name: DEFAULT_WORKSPACE_NAME,
       createdAt: now,
       lastOpenedAt: now,
     };
@@ -562,22 +671,21 @@ export async function createWorkspace(
     throw new Error(`A workspace named "${trimmed}" already exists`);
   }
   const fresh = createEmptyWorkspace();
-  const synced: WorkspaceSynced = { ...fresh.synced, workspaceName: trimmed };
   const now = new Date().toISOString();
   const entry: WorkspaceRegistryEntry = {
-    id: synced.workspaceId,
+    id: fresh.synced.workspaceId,
     name: trimmed,
     createdAt: now,
     lastOpenedAt: now,
   };
   const nextRegistry: WorkspaceRegistry = {
     ...registry,
-    activeWorkspaceId: synced.workspaceId,
+    activeWorkspaceId: fresh.synced.workspaceId,
     workspaces: [...registry.workspaces, entry],
   };
-  await writeBoth(synced, fresh.local);
+  await writeBoth(fresh.synced, fresh.local);
   await writeRegistry(nextRegistry);
-  return { synced, local: fresh.local, registry: nextRegistry };
+  return { synced: fresh.synced, local: fresh.local, registry: nextRegistry };
 }
 
 /**
@@ -608,7 +716,7 @@ export async function deleteWorkspace(
     const now = new Date().toISOString();
     const entry: WorkspaceRegistryEntry = {
       id: fresh.synced.workspaceId,
-      name: fresh.synced.workspaceName,
+      name: DEFAULT_WORKSPACE_NAME,
       createdAt: now,
       lastOpenedAt: now,
     };
@@ -635,8 +743,9 @@ export async function deleteWorkspace(
 }
 
 /**
- * Sync the workspaceName change back into the registry entry so the
- * switcher UI reflects renames without a full reload.
+ * Update the workspace's local display name in the registry. The name is
+ * registry-only (never git-synced) so each user / machine names their
+ * local copy independently.
  */
 export async function updateRegistryEntryName(
   registry: WorkspaceRegistry,
@@ -672,7 +781,7 @@ export async function resetWorkspace(): Promise<{
   const now = new Date().toISOString();
   const entry: WorkspaceRegistryEntry = {
     id: fresh.synced.workspaceId,
-    name: fresh.synced.workspaceName,
+    name: DEFAULT_WORKSPACE_NAME,
     createdAt: now,
     lastOpenedAt: now,
   };
@@ -764,7 +873,6 @@ export function createEmptyWorkspace(): { synced: WorkspaceSynced; local: Worksp
   const synced: WorkspaceSynced = {
     schemaVersion: 1,
     workspaceId,
-    workspaceName: 'My Workspace',
     collections: {
       tree: {
         id: rootId,

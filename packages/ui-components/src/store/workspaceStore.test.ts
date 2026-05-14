@@ -73,21 +73,22 @@ describe('workspaceStore', () => {
     });
   });
 
-  it('setWorkspaceName updates synced doc and bumps updatedAt', async () => {
+  it('setWorkspaceName updates the registry entry name (registry is the single source of truth)', async () => {
     await act(async () => {
       await useWorkspaceStore.getState().hydrate();
     });
-    const before = useWorkspaceStore.getState().synced!.meta.updatedAt;
-    // Tiny pause so the updatedAt timestamp is strictly newer.
-    await new Promise((r) => setTimeout(r, 5));
     act(() => {
       useWorkspaceStore.getState().setWorkspaceName('Payments API');
     });
-    const after = useWorkspaceStore.getState().synced!;
-    expect(after.workspaceName).toBe('Payments API');
-    expect(new Date(after.meta.updatedAt).getTime()).toBeGreaterThanOrEqual(
-      new Date(before).getTime(),
-    );
+    const reg = useWorkspaceStore.getState().workspaceRegistry!;
+    const active = reg.workspaces.find((w) => w.id === reg.activeWorkspaceId)!;
+    expect(active.name).toBe('Payments API');
+    // The synced doc must NOT carry a name — that's the entire point of
+    // moving the field out of git: two machines sharing a repo each pick
+    // their own local label without fighting.
+    expect(
+      (useWorkspaceStore.getState().synced as unknown as { workspaceName?: string }).workspaceName,
+    ).toBeUndefined();
   });
 
   it('toggleSidebarSection toggles a section in/out of the expanded list', async () => {

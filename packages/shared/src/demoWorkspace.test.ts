@@ -13,7 +13,7 @@ describe('Demo workspace fixture', () => {
     // the import-with-cast if the JSON shape doesn't match the type.
     const synced: WorkspaceSynced = demoFixture as unknown as WorkspaceSynced;
     expect(synced.schemaVersion).toBe(1);
-    expect(synced.workspaceName).toBe('Demo Workspace');
+    expect(synced.workspaceId).toBe('demo-workspace-fixture');
     expect(Object.keys(synced.collections.requests).length).toBeGreaterThanOrEqual(8);
   });
 
@@ -71,7 +71,7 @@ describe('Linked pets-api fixture', () => {
       with: { type: 'json' },
     })) as unknown as { default: WorkspaceSynced };
     const synced = linked.default;
-    expect(synced.workspaceName).toBe('Pets API');
+    expect(synced.workspaceId).toBe('linked-pets-api-fixture');
     expect(synced.releases.self?.versions).toHaveLength(2);
     expect(synced.releases.self?.currentVersion).toBe('0.2.0');
   });

@@ -107,6 +107,11 @@ function applyOneMultiplier(body: unknown, jsonPath: string, count: number): App
 
 type PathSegment = { kind: 'key'; name: string } | { kind: 'index'; idx: number };
 
+// Names we never traverse into, even if the user-supplied path explicitly
+// requests them. `__proto__`/`constructor`/`prototype` always resolve via the
+// prototype chain on plain objects and have no place in a JSON multiplier.
+const FORBIDDEN_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor', 'prototype']);
+
 function parsePathSegments(jsonPath: string): PathSegment[] {
   let path = jsonPath.trim();
   if (path.startsWith('$')) path = path.slice(1);
@@ -118,11 +123,16 @@ function parsePathSegments(jsonPath: string): PathSegment[] {
   let match: RegExpExecArray | null;
   while ((match = re.exec(path)) !== null) {
     if (match[1] !== undefined) {
+      if (FORBIDDEN_KEYS.has(match[1])) return [];
       out.push({ kind: 'key', name: match[1] });
     } else if (match[2] !== undefined) {
       const n = Number(match[2]);
-      if (Number.isInteger(n)) out.push({ kind: 'index', idx: n });
-      else out.push({ kind: 'key', name: match[2] });
+      if (Number.isInteger(n)) {
+        out.push({ kind: 'index', idx: n });
+      } else {
+        if (FORBIDDEN_KEYS.has(match[2])) return [];
+        out.push({ kind: 'key', name: match[2] });
+      }
     }
   }
   return out;
