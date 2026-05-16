@@ -210,7 +210,7 @@ describe('workspaceStore — GitHub session', () => {
       // default in the test bundle — the bundled default must drive the
       // device-flow start call so unforked builds work out of the box.
       const fetchSpy = vi.fn(
-        async () =>
+        async (_input: RequestInfo | URL, _init?: RequestInit) =>
           new Response(JSON.stringify({ error: 'authorization_pending' }), {
             status: 200,
             headers: { 'content-type': 'application/json' },
@@ -246,7 +246,7 @@ describe('workspaceStore — GitHub session', () => {
       await expect(promise).rejects.toThrow(/cancelled|expired/);
       expect(codeReady).not.toBeNull();
 
-      const firstCallBody = JSON.parse(String(fetchSpy.mock.calls[0]![1]!.body)) as {
+      const firstCallBody = JSON.parse(fetchSpy.mock.calls[0]![1]!.body as string) as {
         client_id: string;
       };
       expect(firstCallBody.client_id).toBe('Ov23lidibDgD8hoGFB67');

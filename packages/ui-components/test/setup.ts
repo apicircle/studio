@@ -45,7 +45,10 @@ vi.mock('@monaco-editor/react', () => {
       readOnly: options?.readOnly ?? false,
       onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => onChange?.(e.target.value),
     });
-  return { default: Editor };
+  // `MonacoEditorBase` calls `loader.config(...)` to point Monaco at the
+  // local vendor bundle. The real module exposes it; the mock must too,
+  // or the loader throws and the wrapper falls back to a bare textarea.
+  return { default: Editor, loader: { config: () => {} } };
 });
 
 // Snapshot the store's initial state on import. Action closures (which carry

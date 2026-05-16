@@ -49,17 +49,10 @@ export class SecretsNotProtectedError extends Error {
   }
 }
 
-/** Explicit per-test opt-in to bypassing the gate. Production never sets
- *  this. */
-let bypassForTests = false;
 /** Auto-bypass when running under vitest — keeps the existing test suite
  *  green without touching every callsite. Defaults true; the gate's OWN
  *  tests flip it off via `__forceCheckSecretGateForTests`. */
 let autoVitestBypass = true;
-
-export function __bypassSecretGateForTests(): void {
-  bypassForTests = true;
-}
 
 /** The gate's own tests need to verify the strict behaviour, so they
  *  disable the vitest auto-bypass for the duration of the test. */
@@ -68,7 +61,6 @@ export function __forceCheckSecretGateForTests(): void {
 }
 
 export function __resetSecretGateForTests(): void {
-  bypassForTests = false;
   autoVitestBypass = true;
 }
 
@@ -91,7 +83,6 @@ function isUnderVitest(): boolean {
 export async function assertSecretsProtected(
   secretCrypto: SecretCryptoMeta | null | undefined,
 ): Promise<void> {
-  if (bypassForTests) return;
   if (autoVitestBypass && isUnderVitest()) return;
   // Passphrase model is set up — the master JWK isn't load-bearing.
   if (secretCrypto && secretCrypto.kdf) return;

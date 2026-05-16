@@ -13,3 +13,11 @@ coverage
 **/playwright-report
 **/test-results
 **/playwright/.cache
+
+# Tool caches
+.eslintcache
+__pycache__/
+*.pyc
+
+# Claude Code agent worktrees
+.claude/worktrees/

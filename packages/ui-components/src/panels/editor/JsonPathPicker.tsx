@@ -299,5 +299,3 @@ function valueClass(value: unknown): string {
   if (typeof value === 'boolean') return 'text-http-put';
   return 'text-text-primary';
 }
-
-export default JsonPathPicker;

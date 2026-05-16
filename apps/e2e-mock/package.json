@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@apicircle/core": "workspace:*",
-    "@apicircle/shared": "workspace:*",
     "@hono/node-server": "^1.13.0",
     "hono": "^4.12.18"
   },

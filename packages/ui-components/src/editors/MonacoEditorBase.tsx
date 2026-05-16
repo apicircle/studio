@@ -58,10 +58,6 @@ async function loadMonacoEditorComponent(): Promise<ComponentType<EditorProps> |
   return monacoEditorLoader;
 }
 
-export function __resetMonacoEditorLoaderForTests(): void {
-  monacoEditorLoader = null;
-}
-
 function estimatePayloadBytes(value: string): number {
   if (typeof TextEncoder === 'undefined') return value.length;
   return new TextEncoder().encode(value).byteLength;

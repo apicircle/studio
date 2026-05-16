@@ -13,9 +13,6 @@
     "test": "vitest run",
     "clean": "rm -rf dist node_modules"
   },
-  "dependencies": {
-    "@apicircle/shared": "workspace:*"
-  },
   "devDependencies": {
     "typescript": "^5.4.0",
     "vitest": "^2.0.0"

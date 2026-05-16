@@ -1,0 +1,18 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "ignore": [".claude/**"],
+  "ignoreBinaries": ["python"],
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/**/*.mjs"],
+      "ignoreDependencies": ["png2icons"]
+    },
+    "apps/web": {
+      "entry": ["e2e/**/*.spec.ts", "e2e/manual-residue.ts", "scripts/*.mjs"]
+    },
+    "apps/desktop": {
+      "entry": ["src/main/main.ts", "src/main/preload.ts", "e2e/**/*.spec.ts", "scripts/*.mjs"],
+      "ignore": ["src/main/electron-updater.d.ts"]
+    }
+  }
+}

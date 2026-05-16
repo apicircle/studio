@@ -93,7 +93,7 @@ function makeMonaco(p: ChromePalette): MonacoThemeDef {
   };
 }
 
-export const THEME_REGISTRY: ReadonlyArray<ThemeMonacoBinding> = [
+const THEME_REGISTRY: ReadonlyArray<ThemeMonacoBinding> = [
   // Built-in defaults
   {
     themeId: 'studio-dark',

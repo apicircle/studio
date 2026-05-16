@@ -196,7 +196,7 @@ export interface WorkspaceSynced {
    *
    * The actual encrypted secret-value payloads still live in device-local
    * IndexedDB today; migrating those into the synced doc is its own
-   * follow-up (see docs/passphrase-secret-model-handoff.md).
+   * follow-up.
    *
    * `kdf` / `salt` / `iterations` parameterise the PBKDF2 derivation;
    * `verifier` lets us reject a wrong passphrase up front without trying

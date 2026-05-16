@@ -9,7 +9,7 @@ function withGlobalAssets(synced: WorkspaceSynced): WorkspaceSynced['globalAsset
   return synced.globalAssets ?? { schemas: {}, graphql: {} };
 }
 
-export function createGlobalSchema(args: {
+function createGlobalSchema(args: {
   name: string;
   schema: string;
   description?: string;
@@ -96,7 +96,7 @@ export function removeGlobalSchema(synced: WorkspaceSynced, id: string): Workspa
   };
 }
 
-export function createGlobalGraphQL(args: {
+function createGlobalGraphQL(args: {
   name: string;
   source: string;
   kind: GlobalGraphQL['kind'];

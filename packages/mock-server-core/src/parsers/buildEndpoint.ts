@@ -35,7 +35,7 @@ export interface BuildEndpointInput {
   response: ParsedResponseShape;
 }
 
-export function bodyTypeForContentType(contentType: string | undefined): MockResponseBodyType {
+function bodyTypeForContentType(contentType: string | undefined): MockResponseBodyType {
   if (!contentType) return 'json';
   const main = contentType.toLowerCase().split(';')[0]?.trim() ?? '';
   if (main.includes('json')) return 'json';
@@ -61,7 +61,7 @@ function bodyFromString(content: string, type: MockResponseBodyType): MockRespon
 }
 
 /** Wrap a flat status/headers/body parse into a `MockResponseConfig`. */
-export function buildMockResponse(parsed: ParsedResponseShape): MockResponseConfig {
+function buildMockResponse(parsed: ParsedResponseShape): MockResponseConfig {
   const contentType = parsed.headers.find((h) => h.key.toLowerCase() === 'content-type')?.value;
   const bodyType = bodyTypeForContentType(contentType);
   return {

@@ -133,9 +133,6 @@ importers:
       '@apicircle/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@apicircle/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@hono/node-server':
         specifier: ^1.13.0
         version: 1.19.14(hono@4.12.18)
@@ -158,9 +155,6 @@ importers:
       '@apicircle/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@apicircle/git':
-        specifier: workspace:*
-        version: link:../../packages/git
       '@apicircle/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -173,9 +167,6 @@ importers:
       react-dom:
         specifier: ^18.3.0
         version: 18.3.1(react@18.3.1)
-      zustand:
-        specifier: ^4.5.0
-        version: 4.5.7(@types/react@18.3.28)(react@18.3.1)
     devDependencies:
       '@axe-core/playwright':
         specifier: ^4.10.0
@@ -287,10 +278,6 @@ importers:
         version: 2.1.9(@types/node@20.19.39)(jsdom@25.0.1)
 
   packages/git:
-    dependencies:
-      '@apicircle/shared':
-        specifier: workspace:*
-        version: link:../shared
     devDependencies:
       typescript:
         specifier: ^5.4.0

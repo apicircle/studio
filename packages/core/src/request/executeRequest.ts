@@ -69,7 +69,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 /** Hard cap on the response body we'll buffer. An attacker-controlled server
  *  can stream gigabytes with chunked transfer-encoding; we abort the read
  *  once we cross this threshold and surface the truncation in the result. */
-export const MAX_RESPONSE_BODY_BYTES = 50 * 1024 * 1024;
+const MAX_RESPONSE_BODY_BYTES = 50 * 1024 * 1024;
 
 /** Max redirects we'll follow before giving up. RFC 7231 §6.4 doesn't
  *  mandate a number; 10 matches what curl uses by default. */

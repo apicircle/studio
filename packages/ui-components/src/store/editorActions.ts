@@ -14,7 +14,7 @@ import { generateId } from '@apicircle/shared';
 // `WorkspaceSynced` snapshot so callers can wrap them in a single store
 // transition + persist.
 
-export function createRequest(parentFolderId: string | null, name = 'New request'): ApiRequest {
+function createRequest(parentFolderId: string | null, name = 'New request'): ApiRequest {
   const now = new Date().toISOString();
   return {
     id: generateId(),
@@ -42,7 +42,7 @@ export function createRequest(parentFolderId: string | null, name = 'New request
   };
 }
 
-export function createFolder(parentFolderId: string | null, name = 'New folder'): Folder {
+function createFolder(parentFolderId: string | null, name = 'New folder'): Folder {
   return { id: generateId(), name, parentId: parentFolderId };
 }
 

@@ -76,8 +76,7 @@ export function PassphrasePromptModalGate({ forceUnlock = false }: GateProps) {
   // Setup mode: lazy. Not fired automatically — exposed for the
   // "first secret added" flow to call. Kept as a no-op placeholder
   // surface so the wiring lands cleanly when payload encryption moves
-  // off device-local IDB and onto workspace.json. See the handoff doc
-  // (docs/passphrase-secret-model-handoff.md).
+  // off device-local IDB and onto workspace.json.
   return (
     <>
       <PassphrasePromptModal

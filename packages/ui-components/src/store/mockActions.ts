@@ -90,7 +90,7 @@ function cloneResponseRule(rule: MockResponseRule): MockResponseRule {
  * multiplier. Used both by `duplicateMockEndpoint` and as a helper inside
  * `duplicateMockServer`.
  */
-export function cloneEndpoint(endpoint: MockEndpoint): MockEndpoint {
+function cloneEndpoint(endpoint: MockEndpoint): MockEndpoint {
   return {
     ...endpoint,
     id: generateId(),
