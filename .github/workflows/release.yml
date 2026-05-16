@@ -32,7 +32,7 @@ jobs:
       published: ${{ steps.changesets.outputs.published }}
       publishedPackages: ${{ steps.changesets.outputs.publishedPackages }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -79,7 +79,7 @@ jobs:
           - os: windows-latest
             target: win-x64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
         with:
           version: 9.15.0
@@ -107,7 +107,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
         with:
           version: 9.15.0
@@ -145,7 +145,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
