@@ -28,7 +28,7 @@ Result and record what you saw.
   `C:/Local Development/APICircle/studio/docs/qa/results/evidence/«run-id»/`
 - **App URL (web only)**: `«http://localhost:5173 or staging URL»`
 - **Test workspace path on disk**:
-  `C:/Local Development/APICircle/studio/docs/qa/runner/fixtures/«workspace-dir»`
+  `C:/Local Development/APICircle/studio/e2e/qa/runner/fixtures/«workspace-dir»`
 - **Run scope** (one of):
   - `--all` (everything in the workbook)
   - `--priority High` (smoke pass)
@@ -89,7 +89,7 @@ reason.
 ## Setup (do this once per run)
 
 ```bash
-cd "C:/Local Development/APICircle/studio/docs/qa/runner"
+cd "C:/Local Development/APICircle/studio/e2e/qa/runner"
 
 # 1. Initialize the results workbook (copy of source).
 python tc_results.py init \

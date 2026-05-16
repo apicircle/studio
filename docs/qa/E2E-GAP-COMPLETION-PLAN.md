@@ -140,7 +140,7 @@ already exercise.
 - [x] Bulk retrofit pass 2 (per-test tagging):
       [`scripts/retrofit_tc_tags.py`](../../scripts/retrofit_tc_tags.py)
       tags every `test()` call with `tc(id('<workbook key>'),
-    '<title>')`. **204 tests retagged across 36 specs.** The
+  '<title>')`. **204 tests retagged across 36 specs.** The
       script uses Jaccard token overlap between test title and tcMap
       keys for semantic matching; falls back to greedy unused-key
       assignment when no semantic match exists. Always-unique key per
@@ -246,7 +246,7 @@ shape.
       button works, regenerates on request edit, includes auth header,
       handles each body type.
 - [ ] Cross-check generated snippets against fixtures in
-      `docs/qa/runner/fixtures/codegen/` if present; otherwise
+      `e2e/qa/runner/fixtures/codegen/` if present; otherwise
       assertion is "non-empty + contains URL + contains method".
 
 **Acceptance.**
@@ -302,7 +302,7 @@ HAR import flows; export to JSON / curl / Postman.
 - [ ] Create `apps/web/e2e/import-postman.spec.ts`,
       `import-openapi.spec.ts`, `import-insomnia.spec.ts`,
       `import-har.spec.ts` — each loads a fixture from
-      `docs/qa/runner/fixtures/import/`, asserts the resulting
+      `e2e/qa/runner/fixtures/import/`, asserts the resulting
       workspace shape.
 - [ ] Create `apps/web/e2e/export.spec.ts` for the export side
       (curl, JSON, Postman v2.1).
@@ -361,7 +361,7 @@ binary boundaries, CRLF injection, encoding charsets).
 
 - [ ] Extend `body-content-type.spec.ts` with the BC edge-case
       matrix. Reuse `qaAssets.bodies.large100kb / huge1mb /
-    sampleUnicode / sampleIso88591 / injectionCrlf / invalid*`.
+  sampleUnicode / sampleIso88591 / injectionCrlf / invalid*`.
 - [ ] Extend `body-types.spec.ts` with form-data attachment edge
       cases, multipart boundary edge cases.
 
@@ -537,7 +537,7 @@ specific keys the spec actually dereferences.
       replace `STRICT_MAP_USAGE` whole-map credit with key-specific
       credit. Parse the spec source for `tcMapXX['<key>']` and
       `tcMapXX[<var>]` where `<var>` is bound by a `for...of
-    Object.entries(tcMapXX)` (in which case all keys ARE iterated —
+  Object.entries(tcMapXX)` (in which case all keys ARE iterated —
       credit all). Single-key indexing credits only that key.
 - [ ] Re-run strict report; the live count likely dips by 100-300
       cells. Identify those rows and either: - (a) Add explicit `tc(id(...), ...)` tags to existing tests

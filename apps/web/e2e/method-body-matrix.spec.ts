@@ -18,7 +18,7 @@
 //     workbook TC-MM-0001..0009.
 //
 // Body content for non-empty bodies pulls from the manual-test fixture
-// library at `docs/qa/runner/fixtures/` (via qaAssets) so a failure here
+// library at `e2e/qa/runner/fixtures/` (via qaAssets) so a failure here
 // reproduces what a human tester picking those same fixtures would see.
 //
 // Scope:

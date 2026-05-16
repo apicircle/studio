@@ -26,7 +26,7 @@ The fixtures in this directory are produced by [`../fixtures_seed.py`](../fixtur
 To rebuild from scratch:
 
 ```bash
-cd docs/qa/runner
+cd e2e/qa/runner
 python fixtures_seed.py
 ```
 

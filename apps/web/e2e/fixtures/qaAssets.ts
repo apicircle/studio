@@ -1,11 +1,11 @@
 // Bridge from the manual-test fixture library at
-// `docs/qa/runner/fixtures/` into Playwright specs. Use this in any
+// `e2e/qa/runner/fixtures/` into Playwright specs. Use this in any
 // automation that exercises a case where a human tester would pick a
 // seeded body / binary / schema / import file. Reusing these means a
 // failure in automation reproduces what the manual run sees.
 //
-// The fixture files are produced by `docs/qa/runner/fixtures_seed.py`
-// (run once, idempotent). The catalog is `docs/qa/runner/fixtures/
+// The fixture files are produced by `e2e/qa/runner/fixtures_seed.py`
+// (run once, idempotent). The catalog is `e2e/qa/runner/fixtures/
 // CATALOG.md`.
 
 import { readFileSync } from 'node:fs';
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const QA_FIXTURES_ROOT = resolve(__dirname, '../../../../docs/qa/runner/fixtures');
+const QA_FIXTURES_ROOT = resolve(__dirname, '../../../../e2e/qa/runner/fixtures');
 
 function p(rel: string): string {
   return resolve(QA_FIXTURES_ROOT, rel);

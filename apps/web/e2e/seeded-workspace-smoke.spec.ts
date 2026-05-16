@@ -2,7 +2,7 @@
 // `apps/web/e2e/fixtures/seededApp.ts` + `./idbSeed.ts`.
 //
 // CURRENT STATE: the JSON fixtures at
-// `docs/qa/runner/fixtures/workspaces/{empty,seeded}-ws.json` were
+// `e2e/qa/runner/fixtures/workspaces/{empty,seeded}-ws.json` were
 // designed for the manual-test FileBackedWorkspaceProvider, whose
 // schema diverges slightly from the IDB-stored `WorkspaceSynced`
 // shape (some array fields are written as objects, executionPlans /
@@ -13,7 +13,7 @@
 // FOLLOW-UP (S3 continuation):
 //   1. Dump the actual IDB shape after a `createNewWorkspace('X')`
 //      call in a real running app — that's the canonical schema.
-//   2. Regenerate `docs/qa/runner/fixtures/workspaces/*.json` so the
+//   2. Regenerate `e2e/qa/runner/fixtures/workspaces/*.json` so the
 //      manual + automation fixtures share that shape.
 //   3. Re-enable these smokes.
 //

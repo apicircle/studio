@@ -9,7 +9,7 @@ should) create additional fixtures on demand under fixtures/<category>/
 when a specific test needs something more elaborate.
 
 All paths are relative to this script's parent directory
-(docs/qa/runner/fixtures/).
+(e2e/qa/runner/fixtures/).
 """
 from __future__ import annotations
 import base64
