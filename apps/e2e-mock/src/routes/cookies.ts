@@ -35,5 +35,23 @@ export function buildCookieRoutes(): Hono {
     });
   });
 
+  // Attribute-flexible Set-Cookie endpoint for cookie-matrix tests.
+  // Query: ?name=...&value=...&attrs=Path=/api;Secure;HttpOnly;Max-Age=0;SameSite=Strict
+  // The attrs string is appended verbatim to `<name>=<value>` so callers
+  // control the full attribute list. Use this when /cookies/set's
+  // hard-coded `Path=/` isn't enough.
+  app.get('/cookies/set-attrs', (c) => {
+    const name = c.req.query('name') ?? 'sid';
+    const value = c.req.query('value') ?? 'v';
+    const attrs = c.req.query('attrs') ?? 'Path=/';
+    return new Response(JSON.stringify({ set: { [name]: value }, attrs }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Set-Cookie': `${name}=${value}; ${attrs}`,
+      },
+    });
+  });
+
   return app;
 }

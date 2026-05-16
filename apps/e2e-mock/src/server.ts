@@ -18,6 +18,12 @@ import { buildJsonPathRoutes } from './routes/jsonPath';
 import { buildBinaryRoutes } from './routes/binary';
 import { buildUploadRoutes } from './routes/upload';
 import { buildCookieRoutes } from './routes/cookies';
+import { buildCompressionRoutes } from './routes/compression';
+import { buildCachingRoutes } from './routes/caching';
+import { buildStreamingRoutes } from './routes/streaming';
+import { buildRedirectRoutes } from './routes/redirect';
+import { buildHoldRoutes } from './routes/hold';
+import { buildGithubRoutes } from './routes/github';
 import { buildBasicAuthRoutes } from './routes/auth/basic';
 import { buildBearerAuthRoutes } from './routes/auth/bearer';
 import { buildApiKeyAuthRoutes } from './routes/auth/apiKey';
@@ -77,6 +83,16 @@ export async function buildE2eMockServer(): Promise<E2eMockServer> {
   app.route('/', buildBinaryRoutes());
   app.route('/', buildUploadRoutes());
   app.route('/', buildCookieRoutes());
+
+  // Protocol extensions (S5).
+  app.route('/', buildCompressionRoutes());
+  app.route('/', buildCachingRoutes());
+  app.route('/', buildStreamingRoutes());
+  app.route('/', buildRedirectRoutes());
+  app.route('/', buildHoldRoutes());
+
+  // GitHub REST API mock (S4) — exposed under `/_gh/*` + `/__gh/*` (control plane).
+  app.route('/', buildGithubRoutes());
 
   // Auth.
   app.route('/', buildBasicAuthRoutes());

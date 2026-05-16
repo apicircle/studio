@@ -36,23 +36,36 @@ export default async function globalSetup(_config: FullConfig): Promise<void> {
     // Trigger Monaco's lazy import. The Editor's Body tab → JSON radio
     // mounts MonacoEditorBase, which dynamically imports the
     // monaco-editor bundle. This warms the lazy chunk so subsequent
-    // tests don't pay for the import.
+    // tests don't pay for the import. The sidebar's create affordances
+    // moved into the "Editor actions" kebab in commit 6ca7dbf; keep this
+    // flow in sync with the sidebar fixture.
     try {
-      await page.getByLabel('New request', { exact: true }).first().click({ timeout: 5_000 });
-      await page.getByLabel('Inline rename request').fill('warmup');
+      await page
+        .getByRole('button', { name: 'Editor actions', exact: true })
+        .first()
+        .click({ timeout: 5_000 });
+      await page
+        .getByRole('menuitem', { name: 'New Request', exact: true })
+        .click({ timeout: 5_000 });
+      await page.getByLabel('New request name', { exact: true }).fill('warmup');
       await page.keyboard.press('Enter');
       await page.getByRole('button', { name: 'Body', exact: true }).click({ timeout: 5_000 });
       await page.getByRole('radio', { name: 'JSON' }).click({ timeout: 5_000 });
-      // Wait briefly for the editor to register; if it doesn't we don't
-      // fail the run — the warmup is best-effort.
-      await page
-        .locator('[data-testid="monaco-editor"]')
-        .first()
-        .waitFor({ state: 'visible', timeout: 10_000 });
+      // Wait for the editor to actually register so the warmup is
+      // effective (older code waited only for the wrapper, which mounts
+      // before Monaco's lazy import resolves).
+      await page.waitForFunction(
+        () => {
+          const w = window as unknown as { __apicircleEditors?: Map<string, unknown> };
+          return w.__apicircleEditors?.has('Request body') ?? false;
+        },
+        undefined,
+        { timeout: 20_000 },
+      );
     } catch {
-      // Best-effort. If the warmup paths drift (e.g. Body tab renamed),
-      // the test suite will still surface the actual breakage; we just
-      // don't get the warm-cache benefit on this run.
+      // Best-effort. If the warmup paths drift, the test suite will
+      // still surface the actual breakage; we just don't get the
+      // warm-cache benefit on this run.
     }
   } finally {
     await browser.close();

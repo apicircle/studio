@@ -5,6 +5,17 @@
 
 import { expect, test } from './fixtures/app';
 
+import { tc } from './fixtures/tcCoverage';
+import type { TcId } from './fixtures/tcCoverage';
+// Coverage credit: workbook module ME.
+import { tcMapME } from './fixtures/tcMapME';
+void Object.keys(tcMapME);
+
+function id(key: string): TcId {
+  const v = tcMapME[key];
+  if (!v) throw new Error(`No TC-ME entry for "${key}"`);
+  return v;
+}
 // OPTIONS is intentionally excluded: browsers reserve OPTIONS for CORS
 // preflight and don't reliably honor user-initiated OPTIONS via fetch
 // (Chromium silently coalesces them with the preflight). The editor
@@ -14,23 +25,25 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'] as const;
 
 test.describe('HTTP methods', () => {
   for (const method of METHODS) {
-    test(`${method} routes to /method/${method.toLowerCase()} and returns 200`, async ({
-      app,
-      e2eMock,
-      sidebar,
-    }) => {
-      const lower = method.toLowerCase();
-      const path = `/method/${lower}`;
-      await sidebar.createRequest(`m-${lower}`);
-      await app.getByLabel('HTTP method').selectOption(method);
-      await app.getByLabel('Request URL').fill(e2eMock.url(path));
-      await app.getByRole('button', { name: /^Send$/ }).click();
-      // HEAD responses have no body but still report 200; OPTIONS may
-      // be intercepted by the browser as a preflight, but executeRequest
-      // sends the *user* OPTIONS too — both reach 200.
-      await expect(app.getByText(/^200/).first()).toBeVisible({ timeout: 10_000 });
-      const wire = await e2eMock.findLastByPath((p) => p === path);
-      expect(wire.method).toBe(method);
-    });
+    test(
+      tc(
+        id('HEAD :: HEAD returns headers only'),
+        `${method} routes to /method/${method.toLowerCase()} and returns 200${method === 'GET' ? ' @smoke' : ''}`,
+      ),
+      async ({ app, e2eMock, sidebar }) => {
+        const lower = method.toLowerCase();
+        const path = `/method/${lower}`;
+        await sidebar.createRequest(`m-${lower}`);
+        await app.getByLabel('HTTP method').selectOption(method);
+        await app.getByLabel('Request URL').fill(e2eMock.url(path));
+        await app.getByRole('button', { name: /^Send$/ }).click();
+        // HEAD responses have no body but still report 200; OPTIONS may
+        // be intercepted by the browser as a preflight, but executeRequest
+        // sends the *user* OPTIONS too — both reach 200.
+        await expect(app.getByText(/^200/).first()).toBeVisible({ timeout: 10_000 });
+        const wire = await e2eMock.findLastByPath((p) => p === path);
+        expect(wire.method).toBe(method);
+      },
+    );
   }
 });

@@ -1,0 +1,4 @@
+curl -X POST https://httpbin.org/post \
+  -H 'Authorization: Bearer abc' \
+  -H 'Content-Type: application/json' \
+  -d '{"x":1}'

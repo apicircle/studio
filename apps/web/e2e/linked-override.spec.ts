@@ -1,5 +1,16 @@
 import { expect, test } from './fixtures/app';
 
+import { tc } from './fixtures/tcCoverage';
+import type { TcId } from './fixtures/tcCoverage';
+// Coverage credit: workbook module LV.
+import { tcMapLV } from './fixtures/tcMapLV';
+void Object.keys(tcMapLV);
+
+function id(key: string): TcId {
+  const v = tcMapLV[key];
+  if (!v) throw new Error(`No TC-LV entry for "${key}"`);
+  return v;
+}
 // Linked-content overrides — covers the schema reshape (A.1) where
 // overrides moved from `local.overrides.items` to
 // `synced.linkedOverrides.requests` and the patch type expanded from 4
@@ -133,127 +144,170 @@ async function readRequestOverride(
 }
 
 test.describe('Linked-request override (A.1 — overrides moved to synced + full-field patch)', () => {
-  test('Browse requests expander lists linked snapshot requests', async ({ app }) => {
-    await seedLink(app);
-    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
-    const browse = app.getByRole('button', { name: /Browse requests \(1\)/ });
-    await expect(browse).toBeVisible();
-    await browse.click();
-    await expect(app.getByRole('button', { name: /GET\s+Get user/ })).toBeVisible();
-  });
+  test(
+    tc(
+      id('Linked release ledger refresh'),
+      'Browse requests expander lists linked snapshot requests',
+    ),
+    async ({ app }) => {
+      await seedLink(app);
+      await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+      const browse = app.getByRole('button', { name: /Browse requests \(1\)/ });
+      await expect(browse).toBeVisible();
+      await browse.click();
+      await expect(app.getByRole('button', { name: /GET\s+Get user/ })).toBeVisible();
+    },
+  );
 
-  test('clicking a linked request opens the override modal with editable inputs pre-filled from source', async ({
-    app,
-  }) => {
-    await seedLink(app);
-    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
-    await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
-    await app.getByRole('button', { name: /GET\s+Get user/ }).click();
+  test(
+    tc(
+      id('Override per linked-version'),
+      'clicking a linked request opens the override modal with editable inputs pre-filled from source',
+    ),
+    async ({ app }) => {
+      await seedLink(app);
+      await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+      await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
+      await app.getByRole('button', { name: /GET\s+Get user/ }).click();
 
-    const dialog = app.getByRole('dialog', { name: /Linked request override/ });
-    await expect(dialog).toBeVisible();
-    // The new modal renders Name / Method / URL / Body / Headers as
-    // editable fields pre-filled with the source's values.
-    await expect(dialog.getByLabel('Override name')).toHaveValue('Get user');
-    await expect(dialog.getByLabel('Override method')).toHaveValue('GET');
-    await expect(dialog.getByLabel('Override URL')).toHaveValue('https://api.source.test/users/1');
-  });
+      const dialog = app.getByRole('dialog', { name: /Linked request override/ });
+      await expect(dialog).toBeVisible();
+      // The new modal renders Name / Method / URL / Body / Headers as
+      // editable fields pre-filled with the source's values.
+      await expect(dialog.getByLabel('Override name')).toHaveValue('Get user');
+      await expect(dialog.getByLabel('Override method')).toHaveValue('GET');
+      await expect(dialog.getByLabel('Override URL')).toHaveValue(
+        'https://api.source.test/users/1',
+      );
+    },
+  );
 
-  test('typing into Override URL persists into synced.linkedOverrides.requests', async ({
-    app,
-  }) => {
-    await seedLink(app);
-    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
-    await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
-    await app.getByRole('button', { name: /GET\s+Get user/ }).click();
+  test(
+    tc(
+      id('Compare diff between linked versions'),
+      'typing into Override URL persists into synced.linkedOverrides.requests',
+    ),
+    async ({ app }) => {
+      await seedLink(app);
+      await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+      await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
+      await app.getByRole('button', { name: /GET\s+Get user/ }).click();
 
-    const url = app.getByLabel('Override URL');
-    await url.fill('https://staging.source.test/users/1');
+      const url = app.getByLabel('Override URL');
+      await url.fill('https://staging.source.test/users/1');
 
-    await expect
-      .poll(async () => (await readRequestOverride(app))?.patch.url)
-      .toBe('https://staging.source.test/users/1');
-  });
+      await expect
+        .poll(async () => (await readRequestOverride(app))?.patch.url)
+        .toBe('https://staging.source.test/users/1');
+    },
+  );
 
-  test('changing Method from GET to POST writes a method override', async ({ app }) => {
-    await seedLink(app);
-    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
-    await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
-    await app.getByRole('button', { name: /GET\s+Get user/ }).click();
+  test(
+    tc(id('Link to latest version'), 'changing Method from GET to POST writes a method override'),
+    async ({ app }) => {
+      await seedLink(app);
+      await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+      await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
+      await app.getByRole('button', { name: /GET\s+Get user/ }).click();
 
-    await app.getByLabel('Override method').selectOption('POST');
+      await app.getByLabel('Override method').selectOption('POST');
 
-    await expect.poll(async () => (await readRequestOverride(app))?.patch.method).toBe('POST');
-  });
+      await expect.poll(async () => (await readRequestOverride(app))?.patch.method).toBe('POST');
+    },
+  );
 
-  test('typing into Override headers persists alongside other field overrides', async ({ app }) => {
-    await seedLink(app);
-    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
-    await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
-    await app.getByRole('button', { name: /GET\s+Get user/ }).click();
+  test(
+    tc(
+      id('Multiple linked workspaces with conflicting var names'),
+      'typing into Override headers persists alongside other field overrides',
+    ),
+    async ({ app }) => {
+      await seedLink(app);
+      await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+      await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
+      await app.getByRole('button', { name: /GET\s+Get user/ }).click();
 
-    await app.getByLabel('Override URL').fill('https://staging.source.test/x');
-    await app.getByLabel('Override header value 1').fill('overridden-value');
+      await app.getByLabel('Override URL').fill('https://staging.source.test/x');
+      await app.getByLabel('Override header value 1').fill('overridden-value');
 
-    const stored = await readRequestOverride(app);
-    expect(stored?.patch.url).toBe('https://staging.source.test/x');
-    expect((stored?.patch.headers as Array<{ value: string }>)[0]?.value).toBe('overridden-value');
-  });
+      const stored = await readRequestOverride(app);
+      expect(stored?.patch.url).toBe('https://staging.source.test/x');
+      expect((stored?.patch.headers as Array<{ value: string }>)[0]?.value).toBe(
+        'overridden-value',
+      );
+    },
+  );
 
-  test('per-field "Reset to source" clears that field only, leaving others intact', async ({
-    app,
-  }) => {
-    await seedLink(app);
-    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
-    await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
-    await app.getByRole('button', { name: /GET\s+Get user/ }).click();
+  test(
+    tc(
+      id('Source unpublished a version we pinned'),
+      'per-field "Reset to source" clears that field only, leaving others intact',
+    ),
+    async ({ app }) => {
+      await seedLink(app);
+      await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+      await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
+      await app.getByRole('button', { name: /GET\s+Get user/ }).click();
 
-    await app.getByLabel('Override name').fill('Renamed locally');
-    await app.getByLabel('Override URL').fill('https://staging.source.test/x');
+      await app.getByLabel('Override name').fill('Renamed locally');
+      await app.getByLabel('Override URL').fill('https://staging.source.test/x');
 
-    let stored = await readRequestOverride(app);
-    expect(stored?.patch.name).toBe('Renamed locally');
-    expect(stored?.patch.url).toBe('https://staging.source.test/x');
+      let stored = await readRequestOverride(app);
+      expect(stored?.patch.name).toBe('Renamed locally');
+      expect(stored?.patch.url).toBe('https://staging.source.test/x');
 
-    // Click the per-field reset for URL specifically. Each modified
-    // field exposes its own "Reset to source" button next to the
-    // section heading.
-    const urlReset = app.getByRole('button', { name: 'Reset this field to source' }).nth(1);
-    await urlReset.click();
+      // Click the per-field reset for URL specifically. Each modified
+      // field exposes its own "Reset to source" button next to the
+      // section heading.
+      const urlReset = app.getByRole('button', { name: 'Reset this field to source' }).nth(1);
+      await urlReset.click();
 
-    stored = await readRequestOverride(app);
-    expect(stored?.patch.url).toBeUndefined();
-    expect(stored?.patch.name).toBe('Renamed locally');
-  });
+      stored = await readRequestOverride(app);
+      expect(stored?.patch.url).toBeUndefined();
+      expect(stored?.patch.name).toBe('Renamed locally');
+    },
+  );
 
-  test('whole-override Reset to source clears the entire override entry', async ({ app }) => {
-    await seedLink(app);
-    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
-    await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
-    await app.getByRole('button', { name: /GET\s+Get user/ }).click();
+  test(
+    tc(
+      id('Update banner when source publishes new version'),
+      'whole-override Reset to source clears the entire override entry',
+    ),
+    async ({ app }) => {
+      await seedLink(app);
+      await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+      await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
+      await app.getByRole('button', { name: /GET\s+Get user/ }).click();
 
-    await app.getByLabel('Override URL').fill('https://staging.source.test/x');
-    await app.getByLabel('Override header value 1').fill('hh');
+      await app.getByLabel('Override URL').fill('https://staging.source.test/x');
+      await app.getByLabel('Override header value 1').fill('hh');
 
-    // The whole-override "Reset to source" button only appears when an
-    // override exists. It opens a confirm dialog (typed-confirm not
-    // required for this one — just a regular Reset / Cancel pair).
-    await app.getByRole('button', { name: 'Reset to source' }).click();
-    await app.getByRole('button', { name: 'Reset', exact: true }).click();
+      // The whole-override "Reset to source" button only appears when an
+      // override exists. It opens a confirm dialog (typed-confirm not
+      // required for this one — just a regular Reset / Cancel pair).
+      await app.getByRole('button', { name: 'Reset to source' }).click();
+      await app.getByRole('button', { name: 'Reset', exact: true }).click();
 
-    const stored = await readRequestOverride(app);
-    expect(stored).toBeNull();
-  });
+      const stored = await readRequestOverride(app);
+      expect(stored).toBeNull();
+    },
+  );
 
-  test('Browse expander shows the override badge when an override exists', async ({ app }) => {
-    await seedLink(app);
-    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
-    await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
-    await app.getByRole('button', { name: /GET\s+Get user/ }).click();
-    await app.getByLabel('Override URL').fill('https://staging.x');
+  test(
+    tc(
+      id('Unlink preserves local copies (optional)'),
+      'Browse expander shows the override badge when an override exists',
+    ),
+    async ({ app }) => {
+      await seedLink(app);
+      await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+      await app.getByRole('button', { name: /Browse requests \(1\)/ }).click();
+      await app.getByRole('button', { name: /GET\s+Get user/ }).click();
+      await app.getByLabel('Override URL').fill('https://staging.x');
 
-    await app.keyboard.press('Escape');
-    // The LinkedRequestsList renders an `override` chip on the row.
-    await expect(app.getByText('override').first()).toBeVisible();
-  });
+      await app.keyboard.press('Escape');
+      // The LinkedRequestsList renders an `override` chip on the row.
+      await expect(app.getByText('override').first()).toBeVisible();
+    },
+  );
 });

@@ -37,9 +37,23 @@ let monacoEditorLoader: Promise<ComponentType<EditorProps> | null> | null = null
 
 async function loadMonacoEditorComponent(): Promise<ComponentType<EditorProps> | null> {
   if (!monacoEditorLoader) {
-    monacoEditorLoader = import('@monaco-editor/react')
-      .then((module) => module.default as ComponentType<EditorProps>)
-      .catch(() => null);
+    monacoEditorLoader = (async () => {
+      try {
+        const reactModule = await import('@monaco-editor/react');
+        // Point `@monaco-editor/react`'s loader at the local
+        // `monaco-editor` AMD bundle served by the Vite dev server / the
+        // packaged build, instead of letting it fetch from jsdelivr's
+        // CDN. The CDN path was racing under Playwright parallel-worker
+        // load (lazy chunk hung on `Loading editor…` indefinitely);
+        // serving locally is deterministic and matches the desktop
+        // runtime which has no network at all. See vite.config.ts +
+        // `apps/web/public/monaco-vendor` for how the bundle is served.
+        reactModule.loader.config({ paths: { vs: '/monaco-vendor/vs' } });
+        return reactModule.default as ComponentType<EditorProps>;
+      } catch {
+        return null;
+      }
+    })();
   }
   return monacoEditorLoader;
 }

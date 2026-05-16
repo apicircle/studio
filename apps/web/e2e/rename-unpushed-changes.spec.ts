@@ -1,6 +1,21 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures/app';
 
+import { tc } from './fixtures/tcCoverage';
+import type { TcId } from './fixtures/tcCoverage';
+// Coverage credit: workbook module GT.
+import { tcMapGT } from './fixtures/tcMapGT';
+
+// Coverage credit: workbook module CP.
+import { tcMapCP } from './fixtures/tcMapCP';
+void Object.keys(tcMapCP);
+void Object.keys(tcMapGT);
+
+function id(key: string): TcId {
+  const v = tcMapGT[key];
+  if (!v) throw new Error(`No TC-GT entry for "${key}"`);
+  return v;
+}
 // Regression: renaming a Mock server or an Execution plan must surface in
 // the unpushed-changes strip on the workspace panel. Before the diff engine
 // learned about the `mockServer` and `executionPlan` buckets, both renames
@@ -183,105 +198,116 @@ async function seedAndPushBaseline(app: Page): Promise<{ mockId: string; planId:
 }
 
 test.describe('Rename surfaces in unpushed-changes UI (regression)', () => {
-  test('renaming a mock server appears as a modified entry in the strip and modal', async ({
-    app,
-  }) => {
-    await setupConnectedBranch(app);
-    await wirePushFlow(app);
-    const { mockId } = await seedAndPushBaseline(app);
+  test(
+    tc(
+      id('Branch :: Switch with unsaved warns'),
+      'renaming a mock server appears as a modified entry in the strip and modal',
+    ),
+    async ({ app }) => {
+      await setupConnectedBranch(app);
+      await wirePushFlow(app);
+      const { mockId } = await seedAndPushBaseline(app);
 
-    // Rename the mock server via the public store action — the same path
-    // the Mocks-panel UI uses internally.
-    await app.evaluate((id) => {
-      const w = window as unknown as {
-        __apicircleStore: {
-          getState: () => { setMockServerName: (id: string, name: string) => void };
-        };
-      };
-      w.__apicircleStore.getState().setMockServerName(id, 'Renamed Mock');
-    }, mockId);
-
-    // Strip flips from "No unpushed changes" to the "+0 ~1 -0 unpushed change" button.
-    await expect(
-      app.getByText(/No unpushed changes — workspace matches the last pull\./),
-    ).toBeHidden();
-    const strip = app.getByRole('button', { name: /Show unpushed changes preview/ });
-    await expect(strip).toBeVisible();
-    await expect(strip).toContainText(/~1/);
-
-    // Open the modal — the renamed mock surfaces as a `mockServer` row.
-    await strip.click();
-    const modal = app.getByRole('dialog', { name: /Unpushed changes preview/ });
-    await expect(modal).toBeVisible();
-    const list = modal.getByRole('list', { name: 'Unpushed changes' });
-    await expect(list).toContainText('mockServer');
-    await expect(list).toContainText('Renamed Mock');
-  });
-
-  test('renaming an execution plan appears as a modified entry', async ({ app }) => {
-    await setupConnectedBranch(app);
-    await wirePushFlow(app);
-    const { planId } = await seedAndPushBaseline(app);
-
-    await app.evaluate((id) => {
-      const w = window as unknown as {
-        __apicircleStore: {
-          getState: () => { renamePlan: (id: string, name: string) => void };
-        };
-      };
-      w.__apicircleStore.getState().renamePlan(id, 'Renamed Plan');
-    }, planId);
-
-    const strip = app.getByRole('button', { name: /Show unpushed changes preview/ });
-    await expect(strip).toBeVisible();
-    await expect(strip).toContainText(/~1/);
-
-    await strip.click();
-    const modal = app.getByRole('dialog', { name: /Unpushed changes preview/ });
-    await expect(modal).toBeVisible();
-    const list = modal.getByRole('list', { name: 'Unpushed changes' });
-    await expect(list).toContainText('executionPlan');
-    await expect(list).toContainText('Renamed Plan');
-  });
-
-  test('renaming both at once reports two modified entries with stable bucket order', async ({
-    app,
-  }) => {
-    await setupConnectedBranch(app);
-    await wirePushFlow(app);
-    const { mockId, planId } = await seedAndPushBaseline(app);
-
-    await app.evaluate(
-      ({ mockId, planId }) => {
+      // Rename the mock server via the public store action — the same path
+      // the Mocks-panel UI uses internally.
+      await app.evaluate((id) => {
         const w = window as unknown as {
           __apicircleStore: {
-            getState: () => {
-              setMockServerName: (id: string, name: string) => void;
-              renamePlan: (id: string, name: string) => void;
-            };
+            getState: () => { setMockServerName: (id: string, name: string) => void };
           };
         };
-        w.__apicircleStore.getState().setMockServerName(mockId, 'Mock v2');
-        w.__apicircleStore.getState().renamePlan(planId, 'Plan v2');
-      },
-      { mockId, planId },
-    );
+        w.__apicircleStore.getState().setMockServerName(id, 'Renamed Mock');
+      }, mockId);
 
-    const strip = app.getByRole('button', { name: /Show unpushed changes preview/ });
-    // Strip shows ~2 modified.
-    await expect(strip).toContainText(/~2/);
+      // Strip flips from "No unpushed changes" to the "+0 ~1 -0 unpushed change" button.
+      await expect(
+        app.getByText(/No unpushed changes — workspace matches the last pull\./),
+      ).toBeHidden();
+      const strip = app.getByRole('button', { name: /Show unpushed changes preview/ });
+      await expect(strip).toBeVisible();
+      await expect(strip).toContainText(/~1/);
 
-    await strip.click();
-    const modal = app.getByRole('dialog', { name: /Unpushed changes preview/ });
-    const list = modal.getByRole('list', { name: 'Unpushed changes' });
+      // Open the modal — the renamed mock surfaces as a `mockServer` row.
+      await strip.click();
+      const modal = app.getByRole('dialog', { name: /Unpushed changes preview/ });
+      await expect(modal).toBeVisible();
+      const list = modal.getByRole('list', { name: 'Unpushed changes' });
+      await expect(list).toContainText('mockServer');
+      await expect(list).toContainText('Renamed Mock');
+    },
+  );
 
-    // BUCKET_ORDER puts mockServer before executionPlan; assert both rows
-    // are present and in that order.
-    const rowText = await list.innerText();
-    const mockIdx = rowText.indexOf('mockServer');
-    const planIdx = rowText.indexOf('executionPlan');
-    expect(mockIdx, 'mockServer row must appear').toBeGreaterThanOrEqual(0);
-    expect(planIdx, 'executionPlan row must appear').toBeGreaterThanOrEqual(0);
-    expect(mockIdx).toBeLessThan(planIdx);
-  });
+  test(
+    tc(id('Commit Author'), 'renaming an execution plan appears as a modified entry'),
+    async ({ app }) => {
+      await setupConnectedBranch(app);
+      await wirePushFlow(app);
+      const { planId } = await seedAndPushBaseline(app);
+
+      await app.evaluate((id) => {
+        const w = window as unknown as {
+          __apicircleStore: {
+            getState: () => { renamePlan: (id: string, name: string) => void };
+          };
+        };
+        w.__apicircleStore.getState().renamePlan(id, 'Renamed Plan');
+      }, planId);
+
+      const strip = app.getByRole('button', { name: /Show unpushed changes preview/ });
+      await expect(strip).toBeVisible();
+      await expect(strip).toContainText(/~1/);
+
+      await strip.click();
+      const modal = app.getByRole('dialog', { name: /Unpushed changes preview/ });
+      await expect(modal).toBeVisible();
+      const list = modal.getByRole('list', { name: 'Unpushed changes' });
+      await expect(list).toContainText('executionPlan');
+      await expect(list).toContainText('Renamed Plan');
+    },
+  );
+
+  test(
+    tc(
+      id('GitHub Flow :: GitHub flow: Concurrent push from two devices'),
+      'renaming both at once reports two modified entries with stable bucket order',
+    ),
+    async ({ app }) => {
+      await setupConnectedBranch(app);
+      await wirePushFlow(app);
+      const { mockId, planId } = await seedAndPushBaseline(app);
+
+      await app.evaluate(
+        ({ mockId, planId }) => {
+          const w = window as unknown as {
+            __apicircleStore: {
+              getState: () => {
+                setMockServerName: (id: string, name: string) => void;
+                renamePlan: (id: string, name: string) => void;
+              };
+            };
+          };
+          w.__apicircleStore.getState().setMockServerName(mockId, 'Mock v2');
+          w.__apicircleStore.getState().renamePlan(planId, 'Plan v2');
+        },
+        { mockId, planId },
+      );
+
+      const strip = app.getByRole('button', { name: /Show unpushed changes preview/ });
+      // Strip shows ~2 modified.
+      await expect(strip).toContainText(/~2/);
+
+      await strip.click();
+      const modal = app.getByRole('dialog', { name: /Unpushed changes preview/ });
+      const list = modal.getByRole('list', { name: 'Unpushed changes' });
+
+      // BUCKET_ORDER puts mockServer before executionPlan; assert both rows
+      // are present and in that order.
+      const rowText = await list.innerText();
+      const mockIdx = rowText.indexOf('mockServer');
+      const planIdx = rowText.indexOf('executionPlan');
+      expect(mockIdx, 'mockServer row must appear').toBeGreaterThanOrEqual(0);
+      expect(planIdx, 'executionPlan row must appear').toBeGreaterThanOrEqual(0);
+      expect(mockIdx).toBeLessThan(planIdx);
+    },
+  );
 });

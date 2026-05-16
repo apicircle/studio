@@ -2,7 +2,10 @@ import { defineConfig } from 'tsup';
 
 // Single bin entry. Output is CJS with a node shebang so package managers
 // can drop the resulting `dist/index.cjs` straight into `bin/`. Workspace
-// deps are bundled inline so the released CLI is self-contained.
+// deps are bundled inline so the released CLI is self-contained — Node
+// spawns the binary standalone (no workspace TS resolver in front), so
+// `require('@apicircle/shared')` MUST resolve to bundled JS, not a .ts
+// source file. The same reasoning applies to mcp-server/dist/bin.
 export default defineConfig({
   entry: { index: 'src/index.ts' },
   format: ['cjs', 'esm'],
@@ -11,9 +14,6 @@ export default defineConfig({
   sourcemap: true,
   target: 'node20',
   banner: { js: '#!/usr/bin/env node' },
-  // Workspace deps: leave external — published versions resolve them at
-  // install time. For platform binaries (P29 with @yao-pkg/pkg), we'll
-  // bundle inline at that step.
   external: [
     '@apicircle/shared',
     '@apicircle/core',

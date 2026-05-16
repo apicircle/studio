@@ -25,6 +25,7 @@ export default tseslint.config(
       // test runner does its own type-check. ESLint type-aware rules don't
       // resolve them through the project service, so ignore them here.
       'apps/web/e2e/**',
+      'apps/desktop/e2e/**',
       '**/playwright-report/**',
       '**/test-results/**',
       '.husky/**',
@@ -84,6 +85,7 @@ export default tseslint.config(
         clearTimeout: 'readonly',
         clearInterval: 'readonly',
         queueMicrotask: 'readonly',
+        fetch: 'readonly',
       },
     },
     rules: {

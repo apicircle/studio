@@ -1,12 +1,23 @@
 import { expect, test } from './fixtures/app';
 
+import { tc } from './fixtures/tcCoverage';
+import type { TcId } from './fixtures/tcCoverage';
+// Coverage credit: workbook module ST.
+import { tcMapST } from './fixtures/tcMapST';
+void Object.keys(tcMapST);
+
+function id(key: string): TcId {
+  const v = tcMapST[key];
+  if (!v) throw new Error(`No TC-ST entry for "${key}"`);
+  return v;
+}
 // Phase 2 sanity: the Monaco wheel-consume setting toggles in Settings
 // and propagates to the editor instance's runtime options. Doesn't try to
 // simulate a real wheel interaction in the editor — that's flaky in
 // headless browsers — instead verifies the editor's `getRawOptions` flips.
 
 test.describe('Monaco scroll setting', () => {
-  test('toggles via Settings popover', async ({ app, sidebar }) => {
+  test(tc(id('Browser Zoom'), 'toggles via Settings popover'), async ({ app, sidebar }) => {
     // Default is `false` (page-scroll friendly). Read the editor option
     // through the test registry the editor exposes on `window`.
     await sidebar.createRequest('Scroll test');

@@ -30,7 +30,7 @@ interface MockApi {
   capturedUrls: () => string[];
 }
 
-interface MonacoHelpers {
+export interface MonacoHelpers {
   /** Wait for Monaco's lazy import to finish for the given aria-label. */
   ready: (label: string) => Promise<Locator>;
   /** Replace the contents of a Monaco editor (focus + Ctrl+A + type). */
@@ -39,7 +39,7 @@ interface MonacoHelpers {
   read: (label: string) => Promise<string>;
 }
 
-interface SidebarHelpers {
+export interface SidebarHelpers {
   /**
    * Click the sidebar's "New request" button, fill the inline-rename input
    * with `name`, press Enter, and wait for the editor to switch to the new
@@ -262,19 +262,30 @@ export const test = base.extend<Fixtures>({
     await use({ baseUrl, url, sameOriginUrl, clearInspection, inspectLast, findLastByPath });
   },
   sidebar: async ({ page }, use) => {
+    // The sidebar's create affordances live behind the "Editor actions"
+    // kebab menu (see EditorSidebar.tsx EditorSidebarActions). Older
+    // top-level "New request" / "New folder" buttons were removed when
+    // the row of CTA buttons was replaced with a kebab to free vertical
+    // space — see commit 6ca7dbf.
+    const openEditorActions = async (): Promise<void> => {
+      await page.getByRole('button', { name: 'Editor actions', exact: true }).first().click();
+    };
     const createRequest: SidebarHelpers['createRequest'] = async (name) => {
-      await page.getByLabel('New request', { exact: true }).first().click();
-      const input = page.getByLabel('Inline rename request');
+      await openEditorActions();
+      await page.getByRole('menuitem', { name: 'New Request', exact: true }).click();
+      // The inline name-first input is labelled `New ${kind} name` —
+      // see EditorSidebar.tsx CreateNamePrompt.
+      const input = page.getByLabel('New request name', { exact: true });
       await expect(input).toBeVisible();
       await input.fill(name);
       await input.press('Enter');
-      // Wait for the editor to switch to the freshly-created request. The
-      // editor's title input shows it.
+      // Wait for the editor to switch to the freshly-created request.
       await expect(page.getByLabel('Request name', { exact: true })).toHaveValue(name);
     };
     const createFolder: SidebarHelpers['createFolder'] = async (name) => {
-      await page.getByLabel('New folder', { exact: true }).first().click();
-      const input = page.getByLabel('Inline rename folder');
+      await openEditorActions();
+      await page.getByRole('menuitem', { name: 'New Folder', exact: true }).click();
+      const input = page.getByLabel('New folder name', { exact: true });
       await expect(input).toBeVisible();
       await input.fill(name);
       await input.press('Enter');

@@ -25,7 +25,14 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 2 : undefined,
   reporter: process.env.CI
-    ? [['github'], ['html', { open: 'never' }]]
+    ? [
+        ['github'],
+        ['html', { open: 'never' }],
+        // CI also emits a JSON report so scripts/e2e_coverage_report.py
+        // --from-results=apps/web/test-results.json can attribute passes
+        // to TC-IDs after the run completes.
+        ['json', { outputFile: 'test-results.json' }],
+      ]
     : [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: BASE_URL,
@@ -44,7 +51,11 @@ export default defineConfig({
       // popup's first navigation, even with 90s timeouts. The dedicated
       // `chromium-oauth2-popup` project below isolates them with
       // workers=1; the default project skips them.
-      testIgnore: /auth-oauth2-(cc|popup)\.spec\.ts$/,
+      //
+      // visual-baseline.spec.ts is gated by `testInfo.project.name` so
+      // the default project would just skip every test — exclude it
+      // outright to keep the chromium run focused.
+      testIgnore: [/auth-oauth2-(cc|popup)\.spec\.ts$/, /visual-baseline\.spec\.ts$/],
       // The two parameterized header sweeps are scoped down by default
       // (a representative 14-entry / first-value subset) so the suite
       // stays under ~5 min wall-time. The `chromium-full-sweep` project
@@ -72,6 +83,71 @@ export default defineConfig({
       // Inject the env vars the parameterized loops read so this project
       // expands to the full set of cases.
       metadata: { fullSweep: true },
+    },
+    // Method × Body matrix full sweep (S3). Default chromium project runs
+    // a smoke subset (~14 cells); this project runs the full 56-cell
+    // workbook matrix when invoked with `FULL_MM_SWEEP=1`. Kept on its
+    // own project so PR CI can stay fast and the matrix run is opt-in:
+    //
+    //   FULL_MM_SWEEP=1 pnpm --filter @apicircle/web exec \
+    //     playwright test --project=chromium-full-sweep-mm
+    {
+      name: 'chromium-full-sweep-mm',
+      testMatch: /method-body-matrix\.spec\.ts$/,
+      use: { ...devices['Desktop Chrome'] },
+      // Form-data + binary cells include Monaco wires + attachment-slot
+      // round-trips; bump the per-test ceiling to cover cold compile.
+      timeout: 60_000,
+      fullyParallel: true,
+      metadata: { fullSweep: true },
+    },
+    // Cross-browser smoke projects (S10). Each runs only tests tagged
+    // `@smoke` so CI runtime stays bounded — the full suite remains
+    // chromium-only. Firefox/WebKit smokes prove the app boots and the
+    // critical paths render correctly outside Blink.
+    {
+      name: 'firefox-smoke',
+      testMatch: /.*\.spec\.ts$/,
+      testIgnore: [/auth-oauth2-(cc|popup)\.spec\.ts$/, /visual-baseline\.spec\.ts$/],
+      grep: /@smoke/,
+      use: { ...devices['Desktop Firefox'] },
+      timeout: 45_000,
+    },
+    {
+      name: 'webkit-smoke',
+      testMatch: /.*\.spec\.ts$/,
+      testIgnore: [/auth-oauth2-(cc|popup)\.spec\.ts$/, /visual-baseline\.spec\.ts$/],
+      grep: /@smoke/,
+      use: { ...devices['Desktop Safari'] },
+      timeout: 45_000,
+    },
+    // Visual baseline project — runs only `visual-baseline.spec.ts` and
+    // pins `expect.toHaveScreenshot` to deterministic settings. Screenshots
+    // live under `apps/web/e2e/__screenshots__/`. Use
+    // `pnpm exec playwright test --project=visual-baseline --update-snapshots`
+    // to refresh after intentional visual changes.
+    {
+      name: 'visual-baseline',
+      testMatch: /visual-baseline\.spec\.ts$/,
+      use: {
+        ...devices['Desktop Chrome'],
+        // Pin viewport so screenshots are reproducible across machines.
+        viewport: { width: 1280, height: 800 },
+        deviceScaleFactor: 1,
+      },
+      timeout: 30_000,
+      expect: {
+        toHaveScreenshot: {
+          // 0.2% pixel-difference tolerance absorbs sub-pixel rendering
+          // drift between CI Linux and local Windows/macOS without hiding
+          // genuine regressions.
+          maxDiffPixelRatio: 0.002,
+          // Animations off — toHaveScreenshot already disables them, but
+          // CSS transitions can leak past the disable; allow a small
+          // settle window.
+          animations: 'disabled',
+        },
+      },
     },
   ],
   webServer: [

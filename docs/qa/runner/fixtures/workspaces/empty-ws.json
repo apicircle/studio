@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "ws-empty",
+  "name": "Empty Workspace",
+  "collections": {
+    "items": {},
+    "folders": {},
+    "requests": {},
+    "tree": []
+  },
+  "environments": {
+    "items": {},
+    "activeName": null,
+    "priorityOrder": []
+  },
+  "executionPlans": {},
+  "mockServers": {},
+  "linkedWorkspaces": {},
+  "linkedOverrides": {
+    "requests": {},
+    "environmentVars": {}
+  },
+  "globalAssets": {
+    "schemas": {},
+    "graphql": {}
+  },
+  "secretKeys": {},
+  "releases": {
+    "self": null,
+    "perLink": {}
+  }
+}

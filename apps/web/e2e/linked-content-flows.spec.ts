@@ -1,6 +1,17 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures/app';
 
+import { tc } from './fixtures/tcCoverage';
+import type { TcId } from './fixtures/tcCoverage';
+// Coverage credit: workbook module LV.
+import { tcMapLV } from './fixtures/tcMapLV';
+void Object.keys(tcMapLV);
+
+function id(key: string): TcId {
+  const v = tcMapLV[key];
+  if (!v) throw new Error(`No TC-LV entry for "${key}"`);
+  return v;
+}
 // End-to-end coverage for the Part-A linked-content redesign:
 //
 //   • A.2a — sidebar renders linked workspaces as collapsible groups
@@ -273,61 +284,73 @@ async function setupRealSession(app: Page): Promise<void> {
 // ===========================================================================
 
 test.describe('A.2a — Editor sidebar linked-workspace tree', () => {
-  test('linked workspace renders as a collapsible top-level group with pinned-version chip', async ({
-    app,
-  }) => {
-    await seedLink(app, {
-      snapshot: makeSnapshot({ requests: [makeRequest('src-1', { name: 'Get user' })] }),
-      pinnedVersion: '1.0.0',
-      name: 'Payments',
-    });
-    await app.getByRole('button', { name: /^Editor$/ }).click();
+  test(
+    tc(
+      id('Override per linked-version'),
+      'linked workspace renders as a collapsible top-level group with pinned-version chip',
+    ),
+    async ({ app }) => {
+      await seedLink(app, {
+        snapshot: makeSnapshot({ requests: [makeRequest('src-1', { name: 'Get user' })] }),
+        pinnedVersion: '1.0.0',
+        name: 'Payments',
+      });
+      await app.getByRole('button', { name: /^Editor$/ }).click();
 
-    // The whole "Linked workspaces" group renders as a sectionheader.
-    await expect(app.getByText('Linked workspaces').first()).toBeVisible();
-    // The link's row shows name + pinned-version chip.
-    await expect(app.getByText('Payments').first()).toBeVisible();
-    await expect(app.getByText('v1.0.0').first()).toBeVisible();
-  });
+      // The whole "Linked workspaces" group renders as a sectionheader.
+      await expect(app.getByText('Linked workspaces').first()).toBeVisible();
+      // The link's row shows name + pinned-version chip.
+      await expect(app.getByText('Payments').first()).toBeVisible();
+      await expect(app.getByText('v1.0.0').first()).toBeVisible();
+    },
+  );
 
-  test('expanding the group reveals source requests; click opens the linked editor modal', async ({
-    app,
-  }) => {
-    await seedLink(app, {
-      snapshot: makeSnapshot({ requests: [makeRequest('src-1', { name: 'Get user' })] }),
-      name: 'Payments',
-    });
-    await app.getByRole('button', { name: /^Editor$/ }).click();
+  test(
+    tc(
+      id('Linked release ledger refresh'),
+      'expanding the group reveals source requests; click opens the linked editor modal',
+    ),
+    async ({ app }) => {
+      await seedLink(app, {
+        snapshot: makeSnapshot({ requests: [makeRequest('src-1', { name: 'Get user' })] }),
+        name: 'Payments',
+      });
+      await app.getByRole('button', { name: /^Editor$/ }).click();
 
-    await app.getByRole('button', { name: /Expand linked workspace Payments/ }).click();
-    const open = app.getByRole('button', { name: /Open Get user from Payments/ });
-    await expect(open).toBeVisible();
-    await open.click();
+      await app.getByRole('button', { name: /Expand linked workspace Payments/ }).click();
+      const open = app.getByRole('button', { name: /Open Get user from Payments/ });
+      await expect(open).toBeVisible();
+      await open.click();
 
-    await expect(app.getByRole('dialog', { name: /Linked request override/ })).toBeVisible();
-  });
+      await expect(app.getByRole('dialog', { name: /Linked request override/ })).toBeVisible();
+    },
+  );
 
-  test('a modified linked request shows the "modified" cue + override count badge', async ({
-    app,
-  }) => {
-    await seedLink(app, {
-      snapshot: makeSnapshot({ requests: [makeRequest('src-1', { name: 'Get user' })] }),
-      name: 'Payments',
-    });
-    await app.getByRole('button', { name: /^Editor$/ }).click();
+  test(
+    tc(
+      id('Compare diff between linked versions'),
+      'a modified linked request shows the "modified" cue + override count badge',
+    ),
+    async ({ app }) => {
+      await seedLink(app, {
+        snapshot: makeSnapshot({ requests: [makeRequest('src-1', { name: 'Get user' })] }),
+        name: 'Payments',
+      });
+      await app.getByRole('button', { name: /^Editor$/ }).click();
 
-    // Open and modify the URL to register an override.
-    await app.getByRole('button', { name: /Expand linked workspace Payments/ }).click();
-    await app.getByRole('button', { name: /Open Get user from Payments/ }).click();
-    await app.getByLabel('Override URL').fill('https://staging.source.test/users/1');
-    await app.keyboard.press('Escape');
+      // Open and modify the URL to register an override.
+      await app.getByRole('button', { name: /Expand linked workspace Payments/ }).click();
+      await app.getByRole('button', { name: /Open Get user from Payments/ }).click();
+      await app.getByLabel('Override URL').fill('https://staging.source.test/users/1');
+      await app.keyboard.press('Escape');
 
-    // Re-expand and confirm the modified label + the X-mod badge on the root row.
-    await expect(
-      app.getByRole('button', { name: /Open Get user from Payments \(modified\)/ }),
-    ).toBeVisible();
-    await expect(app.getByText(/^1 mod$/)).toBeVisible();
-  });
+      // Re-expand and confirm the modified label + the X-mod badge on the root row.
+      await expect(
+        app.getByRole('button', { name: /Open Get user from Payments \(modified\)/ }),
+      ).toBeVisible();
+      await expect(app.getByText(/^1 mod$/)).toBeVisible();
+    },
+  );
 });
 
 // ===========================================================================
@@ -335,75 +358,93 @@ test.describe('A.2a — Editor sidebar linked-workspace tree', () => {
 // ===========================================================================
 
 test.describe('A.2c — Linked environments section', () => {
-  test('renders source variables; per-row edit writes a per-variable override', async ({ app }) => {
-    await seedLink(app, {
-      snapshot: makeSnapshot({
-        requests: [makeRequest('src-1')],
-        envVars: [
-          { envName: 'dev', key: 'BASE_URL', value: 'https://api.source.test' },
-          { envName: 'dev', key: 'API_KEY', value: 'src-key' },
-        ],
-      }),
-      name: 'Payments',
-    });
-    await app.getByRole('button', { name: /^Environments$/ }).click();
-    await app.getByRole('button', { name: /Expand linked environments for Payments/ }).click();
+  test(
+    tc(
+      id('Source unpublished a version we pinned'),
+      'renders source variables; per-row edit writes a per-variable override',
+    ),
+    async ({ app }) => {
+      await seedLink(app, {
+        snapshot: makeSnapshot({
+          requests: [makeRequest('src-1')],
+          envVars: [
+            { envName: 'dev', key: 'BASE_URL', value: 'https://api.source.test' },
+            { envName: 'dev', key: 'API_KEY', value: 'src-key' },
+          ],
+        }),
+        name: 'Payments',
+      });
+      await app.getByRole('button', { name: /^Environments$/ }).click();
+      await app.getByRole('button', { name: /Expand linked environments for Payments/ }).click();
 
-    // Both source vars rendered.
-    await expect(app.getByText('BASE_URL').first()).toBeVisible();
-    await expect(app.getByText('API_KEY').first()).toBeVisible();
+      // Both source vars rendered.
+      await expect(app.getByText('BASE_URL').first()).toBeVisible();
+      await expect(app.getByText('API_KEY').first()).toBeVisible();
 
-    // Edit BASE_URL.
-    await app.getByLabel('Override value for BASE_URL').fill('https://my-fork.source.test');
-    const stored = await readSyncedSlice(app, (s) => {
-      const ov = (
-        s.synced as {
-          linkedOverrides: { environmentVars: Record<string, { value?: string }> };
-        }
-      ).linkedOverrides.environmentVars['link-1:dev:BASE_URL'];
-      return ov?.value ?? null;
-    });
-    expect(stored).toBe('https://my-fork.source.test');
-  });
+      // Edit BASE_URL.
+      await app.getByLabel('Override value for BASE_URL').fill('https://my-fork.source.test');
+      const stored = await readSyncedSlice(app, (s) => {
+        const ov = (
+          s.synced as {
+            linkedOverrides: { environmentVars: Record<string, { value?: string }> };
+          }
+        ).linkedOverrides.environmentVars['link-1:dev:BASE_URL'];
+        return ov?.value ?? null;
+      });
+      expect(stored).toBe('https://my-fork.source.test');
+    },
+  );
 
-  test('Hide soft-deletes a source variable; Restore brings it back', async ({ app }) => {
-    await seedLink(app, {
-      snapshot: makeSnapshot({
-        requests: [makeRequest('src-1')],
-        envVars: [{ envName: 'dev', key: 'OLD_VAR', value: 'old' }],
-      }),
-      name: 'Payments',
-    });
-    await app.getByRole('button', { name: /^Environments$/ }).click();
-    await app.getByRole('button', { name: /Expand linked environments for Payments/ }).click();
+  test(
+    tc(
+      id('Update banner when source publishes new version'),
+      'Hide soft-deletes a source variable; Restore brings it back',
+    ),
+    async ({ app }) => {
+      await seedLink(app, {
+        snapshot: makeSnapshot({
+          requests: [makeRequest('src-1')],
+          envVars: [{ envName: 'dev', key: 'OLD_VAR', value: 'old' }],
+        }),
+        name: 'Payments',
+      });
+      await app.getByRole('button', { name: /^Environments$/ }).click();
+      await app.getByRole('button', { name: /Expand linked environments for Payments/ }).click();
 
-    await app.getByRole('button', { name: /Hide OLD_VAR from this workspace/ }).click();
-    await expect(app.getByText('hidden by you')).toBeVisible();
+      await app.getByRole('button', { name: /Hide OLD_VAR from this workspace/ }).click();
+      await expect(app.getByText('hidden by you')).toBeVisible();
 
-    await app.getByRole('button', { name: /Restore OLD_VAR from source/ }).click();
-    // After restore the editable input is back.
-    await expect(app.getByLabel('Override value for OLD_VAR')).toBeVisible();
-  });
+      await app.getByRole('button', { name: /Restore OLD_VAR from source/ }).click();
+      // After restore the editable input is back.
+      await expect(app.getByLabel('Override value for OLD_VAR')).toBeVisible();
+    },
+  );
 
-  test('Add row injects a consumer-only variable that doesn’t exist in source', async ({ app }) => {
-    await seedLink(app, {
-      snapshot: makeSnapshot({
-        requests: [makeRequest('src-1')],
-        envVars: [{ envName: 'dev', key: 'BASE_URL', value: 'src' }],
-      }),
-      name: 'Payments',
-    });
-    await app.getByRole('button', { name: /^Environments$/ }).click();
-    await app.getByRole('button', { name: /Expand linked environments for Payments/ }).click();
+  test(
+    tc(
+      id('Multiple linked workspaces with conflicting var names'),
+      'Add row injects a consumer-only variable that doesn’t exist in source',
+    ),
+    async ({ app }) => {
+      await seedLink(app, {
+        snapshot: makeSnapshot({
+          requests: [makeRequest('src-1')],
+          envVars: [{ envName: 'dev', key: 'BASE_URL', value: 'src' }],
+        }),
+        name: 'Payments',
+      });
+      await app.getByRole('button', { name: /^Environments$/ }).click();
+      await app.getByRole('button', { name: /Expand linked environments for Payments/ }).click();
 
-    await app.getByRole('button', { name: /Add variable for this workspace/ }).click();
-    await app.getByLabel('New consumer-only variable name').fill('LOCAL_FLAG');
-    await app.getByRole('button', { name: 'Add', exact: true }).click();
+      await app.getByRole('button', { name: /Add variable for this workspace/ }).click();
+      await app.getByLabel('New consumer-only variable name').fill('LOCAL_FLAG');
+      await app.getByRole('button', { name: 'Add', exact: true }).click();
 
-    await expect(app.getByText('LOCAL_FLAG')).toBeVisible();
-    // Use exact match — the section header also contains the substring "added".
-    await expect(app.getByText('added', { exact: true })).toBeVisible();
-  });
+      await expect(app.getByText('LOCAL_FLAG')).toBeVisible();
+      // Use exact match — the section header also contains the substring "added".
+      await expect(app.getByText('added', { exact: true })).toBeVisible();
+    },
+  );
 });
 
 // ===========================================================================
@@ -411,112 +452,125 @@ test.describe('A.2c — Linked environments section', () => {
 // ===========================================================================
 
 test.describe('A.3 — Single-request Send for linked requests', () => {
-  test('Send walks the source folder chain when request.auth = inherit', async ({ app }) => {
-    // Source structure: folder F has bearer auth; request lives inside F
-    // and inherits. Consumer has no folders — the resolver MUST use the
-    // snapshot's folder chain.
-    const folder: SeedFolder = {
-      id: 'src-folder-1',
-      name: 'Authed folder',
-      parentId: null,
-      auth: { type: 'bearer', token: 'src-bearer' },
-    };
-    const req = makeRequest('src-1', {
-      folderId: 'src-folder-1',
-      auth: { type: 'inherit' },
-      url: 'https://api.source.test/protected',
-    });
-    await seedLink(app, {
-      snapshot: makeSnapshot({ requests: [req], folders: [folder] }),
-      name: 'Payments',
-    });
-
-    // Intercept the outbound request so we can assert the Authorization header.
-    let capturedAuth: string | null = null;
-    await app.route('https://api.source.test/protected', async (route) => {
-      capturedAuth = route.request().headers().authorization ?? null;
-      await route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'application/json', ...corsHeaders },
-        body: JSON.stringify({ ok: true }),
+  test(
+    tc(
+      id('Linked WS that itself links to another WS (chain)'),
+      'Send walks the source folder chain when request.auth = inherit',
+    ),
+    async ({ app }) => {
+      // Source structure: folder F has bearer auth; request lives inside F
+      // and inherits. Consumer has no folders — the resolver MUST use the
+      // snapshot's folder chain.
+      const folder: SeedFolder = {
+        id: 'src-folder-1',
+        name: 'Authed folder',
+        parentId: null,
+        auth: { type: 'bearer', token: 'src-bearer' },
+      };
+      const req = makeRequest('src-1', {
+        folderId: 'src-folder-1',
+        auth: { type: 'inherit' },
+        url: 'https://api.source.test/protected',
       });
-    });
-
-    // Open the linked request from the sidebar tree, then Send. The source
-    // request lives inside a folder, so we expand the folder first.
-    await app.getByRole('button', { name: /^Editor$/ }).click();
-    await app.getByRole('button', { name: /Expand linked workspace Payments/ }).click();
-    await app.getByRole('button', { name: /Expand Authed folder/ }).click();
-    await app.getByRole('button', { name: /Open Request src-1 from Payments/ }).click();
-    await app.getByRole('button', { name: 'Send linked request' }).click();
-    // Wait until the modal reflects a successful run via its lastRun status line.
-    await expect(app.getByText(/Last run:.*200/)).toBeVisible();
-
-    expect(capturedAuth).toBe('Bearer src-bearer');
-  });
-
-  test('URL override is honored at Send time', async ({ app }) => {
-    const req = makeRequest('src-1', { url: 'https://api.source.test/prod-only' });
-    await seedLink(app, {
-      snapshot: makeSnapshot({ requests: [req] }),
-      name: 'Payments',
-    });
-
-    let capturedUrl: string | null = null;
-    await app.route('https://staging.source.test/v2', async (route) => {
-      capturedUrl = route.request().url();
-      await route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'application/json', ...corsHeaders },
-        body: JSON.stringify({ ok: true }),
+      await seedLink(app, {
+        snapshot: makeSnapshot({ requests: [req], folders: [folder] }),
+        name: 'Payments',
       });
-    });
 
-    await app.getByRole('button', { name: /^Editor$/ }).click();
-    await app.getByRole('button', { name: /Expand linked workspace Payments/ }).click();
-    await app.getByRole('button', { name: /Open Request src-1 from Payments/ }).click();
-    await app.getByLabel('Override URL').fill('https://staging.source.test/v2');
-    await app.getByRole('button', { name: 'Send linked request' }).click();
-    await expect(app.getByText(/Last run:.*200/)).toBeVisible();
-
-    expect(capturedUrl).toBe('https://staging.source.test/v2');
-  });
-
-  test('source env {{VAR}} resolves via the snapshot, with consumer override applied on top', async ({
-    app,
-  }) => {
-    const req = makeRequest('src-1', { url: '{{BASE_URL}}/users/1' });
-    await seedLink(app, {
-      snapshot: makeSnapshot({
-        requests: [req],
-        envVars: [{ envName: 'dev', key: 'BASE_URL', value: 'https://from-source.test' }],
-      }),
-      name: 'Payments',
-    });
-
-    // Override the source env value via the linked envs section.
-    await app.getByRole('button', { name: /^Environments$/ }).click();
-    await app.getByRole('button', { name: /Expand linked environments for Payments/ }).click();
-    await app.getByLabel('Override value for BASE_URL').fill('https://my-fork.test');
-
-    let capturedUrl: string | null = null;
-    await app.route('https://my-fork.test/users/1', async (route) => {
-      capturedUrl = route.request().url();
-      await route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'application/json', ...corsHeaders },
-        body: JSON.stringify({}),
+      // Intercept the outbound request so we can assert the Authorization header.
+      let capturedAuth: string | null = null;
+      await app.route('https://api.source.test/protected', async (route) => {
+        capturedAuth = route.request().headers().authorization ?? null;
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify({ ok: true }),
+        });
       });
-    });
 
-    await app.getByRole('button', { name: /^Editor$/ }).click();
-    await app.getByRole('button', { name: /Expand linked workspace Payments/ }).click();
-    await app.getByRole('button', { name: /Open Request src-1 from Payments/ }).click();
-    await app.getByRole('button', { name: 'Send linked request' }).click();
-    await expect(app.getByText(/Last run:.*200/)).toBeVisible();
+      // Open the linked request from the sidebar tree, then Send. The source
+      // request lives inside a folder, so we expand the folder first.
+      await app.getByRole('button', { name: /^Editor$/ }).click();
+      await app.getByRole('button', { name: /Expand linked workspace Payments/ }).click();
+      await app.getByRole('button', { name: /Expand Authed folder/ }).click();
+      await app.getByRole('button', { name: /Open Request src-1 from Payments/ }).click();
+      await app.getByRole('button', { name: 'Send linked request' }).click();
+      // Wait until the modal reflects a successful run via its lastRun status line.
+      await expect(app.getByText(/Last run:.*200/)).toBeVisible();
 
-    expect(capturedUrl).toBe('https://my-fork.test/users/1');
-  });
+      expect(capturedAuth).toBe('Bearer src-bearer');
+    },
+  );
+
+  test(
+    tc(id('Unlink preserves local copies (optional)'), 'URL override is honored at Send time'),
+    async ({ app }) => {
+      const req = makeRequest('src-1', { url: 'https://api.source.test/prod-only' });
+      await seedLink(app, {
+        snapshot: makeSnapshot({ requests: [req] }),
+        name: 'Payments',
+      });
+
+      let capturedUrl: string | null = null;
+      await app.route('https://staging.source.test/v2', async (route) => {
+        capturedUrl = route.request().url();
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify({ ok: true }),
+        });
+      });
+
+      await app.getByRole('button', { name: /^Editor$/ }).click();
+      await app.getByRole('button', { name: /Expand linked workspace Payments/ }).click();
+      await app.getByRole('button', { name: /Open Request src-1 from Payments/ }).click();
+      await app.getByLabel('Override URL').fill('https://staging.source.test/v2');
+      await app.getByRole('button', { name: 'Send linked request' }).click();
+      await expect(app.getByText(/Last run:.*200/)).toBeVisible();
+
+      expect(capturedUrl).toBe('https://staging.source.test/v2');
+    },
+  );
+
+  test(
+    tc(
+      id('Breaking change in new version (removed env var)'),
+      'source env {{VAR}} resolves via the snapshot, with consumer override applied on top',
+    ),
+    async ({ app }) => {
+      const req = makeRequest('src-1', { url: '{{BASE_URL}}/users/1' });
+      await seedLink(app, {
+        snapshot: makeSnapshot({
+          requests: [req],
+          envVars: [{ envName: 'dev', key: 'BASE_URL', value: 'https://from-source.test' }],
+        }),
+        name: 'Payments',
+      });
+
+      // Override the source env value via the linked envs section.
+      await app.getByRole('button', { name: /^Environments$/ }).click();
+      await app.getByRole('button', { name: /Expand linked environments for Payments/ }).click();
+      await app.getByLabel('Override value for BASE_URL').fill('https://my-fork.test');
+
+      let capturedUrl: string | null = null;
+      await app.route('https://my-fork.test/users/1', async (route) => {
+        capturedUrl = route.request().url();
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify({}),
+        });
+      });
+
+      await app.getByRole('button', { name: /^Editor$/ }).click();
+      await app.getByRole('button', { name: /Expand linked workspace Payments/ }).click();
+      await app.getByRole('button', { name: /Open Request src-1 from Payments/ }).click();
+      await app.getByRole('button', { name: 'Send linked request' }).click();
+      await expect(app.getByText(/Last run:.*200/)).toBeVisible();
+
+      expect(capturedUrl).toBe('https://my-fork.test/users/1');
+    },
+  );
 });
 
 // ===========================================================================
@@ -550,232 +604,252 @@ test.describe('A.4 — Update preview flow', () => {
     });
   }
 
-  test('source-only entry classifies as fast-forward and applies cleanly', async ({ app }) => {
-    await setupRealSession(app);
-    // Base: r1 with old URL. Target: r1 with new URL. No override.
-    const baseSnap = makeSnapshot({
-      requests: [makeRequest('r1', { name: 'r1', url: 'https://old.test/r1' })],
-    });
-    await seedLink(app, {
-      snapshot: baseSnap,
-      pinnedVersion: '1.0.0',
-      perLinkLedger: {
-        versions: [{ version: '1.0.0' }, { version: '2.0.0' }],
-        currentVersion: '2.0.0',
-      },
-    });
-
-    // Target snapshot the source's workspace.json should produce.
-    await mockSourceFetch(app, {
-      workspaceName: 'Source workspace',
-      collections: {
-        tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
-        requests: {
-          r1: makeRequest('r1', { name: 'r1', url: 'https://new.test/r1' }),
+  test(
+    tc(
+      id('Pin to specific version'),
+      'source-only entry classifies as fast-forward and applies cleanly',
+    ),
+    async ({ app }) => {
+      await setupRealSession(app);
+      // Base: r1 with old URL. Target: r1 with new URL. No override.
+      const baseSnap = makeSnapshot({
+        requests: [makeRequest('r1', { name: 'r1', url: 'https://old.test/r1' })],
+      });
+      await seedLink(app, {
+        snapshot: baseSnap,
+        pinnedVersion: '1.0.0',
+        perLinkLedger: {
+          versions: [{ version: '1.0.0' }, { version: '2.0.0' }],
+          currentVersion: '2.0.0',
         },
-        folders: {},
-      },
-      environments: { items: {}, activeName: null, priorityOrder: [] },
-      releases: {
-        self: { versions: [{ version: '2.0.0' }], currentVersion: '2.0.0' },
-      },
-    });
+      });
 
-    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
-    await app.getByRole('button', { name: /Review update.*v2\.0\.0/ }).click();
+      // Target snapshot the source's workspace.json should produce.
+      await mockSourceFetch(app, {
+        workspaceName: 'Source workspace',
+        collections: {
+          tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
+          requests: {
+            r1: makeRequest('r1', { name: 'r1', url: 'https://new.test/r1' }),
+          },
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
+        releases: {
+          self: { versions: [{ version: '2.0.0' }], currentVersion: '2.0.0' },
+        },
+      });
 
-    const dialog = app.getByRole('dialog', { name: /Update Source workspace.*v1\.0\.0.*v2\.0\.0/ });
-    await expect(dialog).toBeVisible();
-    // Single source-only entry, no decision required.
-    await expect(dialog.getByText(/source-only · 1/i)).toBeVisible();
-    await dialog.getByRole('button', { name: 'Apply update' }).click();
+      await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+      await app.getByRole('button', { name: /Review update.*v2\.0\.0/ }).click();
 
-    // After apply: pinnedVersion bumps and the modal closes.
-    await expect(dialog).not.toBeVisible();
-    const pinned = await readSyncedSlice(
-      app,
-      (s) =>
-        (
-          s.synced as {
-            linkedWorkspaces: Record<string, { pinnedVersion: string | null }>;
-          }
-        ).linkedWorkspaces['link-1'].pinnedVersion,
-    );
-    expect(pinned).toBe('2.0.0');
-  });
+      const dialog = app.getByRole('dialog', {
+        name: /Update Source workspace.*v1\.0\.0.*v2\.0\.0/,
+      });
+      await expect(dialog).toBeVisible();
+      // Single source-only entry, no decision required.
+      await expect(dialog.getByText(/source-only · 1/i)).toBeVisible();
+      await dialog.getByRole('button', { name: 'Apply update' }).click();
 
-  test('both-changed entry requires a decision; "Accept source" drops the override', async ({
-    app,
-  }) => {
-    await setupRealSession(app);
-    // Base: r1 with old URL. Override: header X. Target: r1 with new URL.
-    const baseReq = makeRequest('r1', { name: 'r1', url: 'https://old.test/r1' });
-    await seedLink(app, {
-      snapshot: makeSnapshot({ requests: [baseReq] }),
-      pinnedVersion: '1.0.0',
-      perLinkLedger: {
-        versions: [{ version: '1.0.0' }, { version: '2.0.0' }],
-        currentVersion: '2.0.0',
-      },
-    });
-    // Add a request override.
-    await app.evaluate(() => {
-      const w = window as unknown as {
-        __apicircleStore?: {
-          getState: () => {
-            setLinkedRequestOverride: (
-              linkedWorkspaceId: string,
-              itemId: string,
-              patch: Record<string, unknown>,
-            ) => void;
+      // After apply: pinnedVersion bumps and the modal closes.
+      await expect(dialog).not.toBeVisible();
+      const pinned = await readSyncedSlice(
+        app,
+        (s) =>
+          (
+            s.synced as {
+              linkedWorkspaces: Record<string, { pinnedVersion: string | null }>;
+            }
+          ).linkedWorkspaces['link-1'].pinnedVersion,
+      );
+      expect(pinned).toBe('2.0.0');
+    },
+  );
+
+  test(
+    tc(
+      id('Adopt new version'),
+      'both-changed entry requires a decision; "Accept source" drops the override',
+    ),
+    async ({ app }) => {
+      await setupRealSession(app);
+      // Base: r1 with old URL. Override: header X. Target: r1 with new URL.
+      const baseReq = makeRequest('r1', { name: 'r1', url: 'https://old.test/r1' });
+      await seedLink(app, {
+        snapshot: makeSnapshot({ requests: [baseReq] }),
+        pinnedVersion: '1.0.0',
+        perLinkLedger: {
+          versions: [{ version: '1.0.0' }, { version: '2.0.0' }],
+          currentVersion: '2.0.0',
+        },
+      });
+      // Add a request override.
+      await app.evaluate(() => {
+        const w = window as unknown as {
+          __apicircleStore?: {
+            getState: () => {
+              setLinkedRequestOverride: (
+                linkedWorkspaceId: string,
+                itemId: string,
+                patch: Record<string, unknown>,
+              ) => void;
+            };
           };
         };
-      };
-      w.__apicircleStore?.getState().setLinkedRequestOverride('link-1', 'r1', {
-        headers: [{ key: 'X', value: '1', enabled: true }],
+        w.__apicircleStore?.getState().setLinkedRequestOverride('link-1', 'r1', {
+          headers: [{ key: 'X', value: '1', enabled: true }],
+        });
       });
-    });
 
-    await mockSourceFetch(app, {
-      workspaceName: 'Source workspace',
-      collections: {
-        tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
-        requests: {
-          r1: makeRequest('r1', { name: 'r1', url: 'https://new.test/r1' }),
+      await mockSourceFetch(app, {
+        workspaceName: 'Source workspace',
+        collections: {
+          tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
+          requests: {
+            r1: makeRequest('r1', { name: 'r1', url: 'https://new.test/r1' }),
+          },
+          folders: {},
         },
-        folders: {},
-      },
-      environments: { items: {}, activeName: null, priorityOrder: [] },
-      releases: { self: { versions: [{ version: '2.0.0' }], currentVersion: '2.0.0' } },
-    });
+        environments: { items: {}, activeName: null, priorityOrder: [] },
+        releases: { self: { versions: [{ version: '2.0.0' }], currentVersion: '2.0.0' } },
+      });
 
-    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
-    await app.getByRole('button', { name: /Review update.*v2\.0\.0/ }).click();
-    const dialog = app.getByRole('dialog', { name: /Update Source workspace.*v2\.0\.0/ });
-    await expect(dialog).toBeVisible();
+      await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+      await app.getByRole('button', { name: /Review update.*v2\.0\.0/ }).click();
+      const dialog = app.getByRole('dialog', { name: /Update Source workspace.*v2\.0\.0/ });
+      await expect(dialog).toBeVisible();
 
-    // Apply is disabled until the both-changed decision is made.
-    const apply = dialog.getByRole('button', { name: 'Apply update' });
-    await expect(apply).toBeDisabled();
+      // Apply is disabled until the both-changed decision is made.
+      const apply = dialog.getByRole('button', { name: 'Apply update' });
+      await expect(apply).toBeDisabled();
 
-    await dialog.getByRole('button', { name: 'Accept source' }).click();
-    await expect(apply).toBeEnabled();
-    await apply.click();
+      await dialog.getByRole('button', { name: 'Accept source' }).click();
+      await expect(apply).toBeEnabled();
+      await apply.click();
 
-    // After apply: override dropped, pinnedVersion bumped.
-    const stateAfter = await readSyncedSlice(app, (s) => {
-      const synced = s.synced as {
-        linkedWorkspaces: Record<string, { pinnedVersion: string | null }>;
-        linkedOverrides: { requests: Record<string, unknown> };
-      };
-      return {
-        pinned: synced.linkedWorkspaces['link-1'].pinnedVersion,
-        hasOverride: Boolean(synced.linkedOverrides.requests['link-1:r1']),
-      };
-    });
-    expect(stateAfter.pinned).toBe('2.0.0');
-    expect(stateAfter.hasOverride).toBe(false);
-  });
+      // After apply: override dropped, pinnedVersion bumped.
+      const stateAfter = await readSyncedSlice(app, (s) => {
+        const synced = s.synced as {
+          linkedWorkspaces: Record<string, { pinnedVersion: string | null }>;
+          linkedOverrides: { requests: Record<string, unknown> };
+        };
+        return {
+          pinned: synced.linkedWorkspaces['link-1'].pinnedVersion,
+          hasOverride: Boolean(synced.linkedOverrides.requests['link-1:r1']),
+        };
+      });
+      expect(stateAfter.pinned).toBe('2.0.0');
+      expect(stateAfter.hasOverride).toBe(false);
+    },
+  );
 
-  test('both-changed with "Keep mine" preserves the override across the version bump', async ({
-    app,
-  }) => {
-    await setupRealSession(app);
-    const baseReq = makeRequest('r1', { name: 'r1', url: 'https://old.test/r1' });
-    await seedLink(app, {
-      snapshot: makeSnapshot({ requests: [baseReq] }),
-      pinnedVersion: '1.0.0',
-      perLinkLedger: {
-        versions: [{ version: '1.0.0' }, { version: '2.0.0' }],
-        currentVersion: '2.0.0',
-      },
-    });
-    await app.evaluate(() => {
-      const w = window as unknown as {
-        __apicircleStore?: {
-          getState: () => {
-            setLinkedRequestOverride: (
-              a: string,
-              b: string,
-              patch: Record<string, unknown>,
-            ) => void;
+  test(
+    tc(
+      id('Link to latest version'),
+      'both-changed with "Keep mine" preserves the override across the version bump',
+    ),
+    async ({ app }) => {
+      await setupRealSession(app);
+      const baseReq = makeRequest('r1', { name: 'r1', url: 'https://old.test/r1' });
+      await seedLink(app, {
+        snapshot: makeSnapshot({ requests: [baseReq] }),
+        pinnedVersion: '1.0.0',
+        perLinkLedger: {
+          versions: [{ version: '1.0.0' }, { version: '2.0.0' }],
+          currentVersion: '2.0.0',
+        },
+      });
+      await app.evaluate(() => {
+        const w = window as unknown as {
+          __apicircleStore?: {
+            getState: () => {
+              setLinkedRequestOverride: (
+                a: string,
+                b: string,
+                patch: Record<string, unknown>,
+              ) => void;
+            };
           };
         };
-      };
-      w.__apicircleStore?.getState().setLinkedRequestOverride('link-1', 'r1', {
-        url: 'https://my-fork.test/r1',
+        w.__apicircleStore?.getState().setLinkedRequestOverride('link-1', 'r1', {
+          url: 'https://my-fork.test/r1',
+        });
       });
-    });
 
-    await mockSourceFetch(app, {
-      workspaceName: 'Source workspace',
-      collections: {
-        tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
-        requests: { r1: makeRequest('r1', { name: 'r1', url: 'https://new.test/r1' }) },
-        folders: {},
-      },
-      environments: { items: {}, activeName: null, priorityOrder: [] },
-      releases: { self: { versions: [{ version: '2.0.0' }], currentVersion: '2.0.0' } },
-    });
+      await mockSourceFetch(app, {
+        workspaceName: 'Source workspace',
+        collections: {
+          tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
+          requests: { r1: makeRequest('r1', { name: 'r1', url: 'https://new.test/r1' }) },
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
+        releases: { self: { versions: [{ version: '2.0.0' }], currentVersion: '2.0.0' } },
+      });
 
-    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
-    await app.getByRole('button', { name: /Review update.*v2\.0\.0/ }).click();
-    const dialog = app.getByRole('dialog', { name: /Update Source workspace.*v2\.0\.0/ });
-    await dialog.getByRole('button', { name: 'Keep mine' }).click();
-    await dialog.getByRole('button', { name: 'Apply update' }).click();
+      await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+      await app.getByRole('button', { name: /Review update.*v2\.0\.0/ }).click();
+      const dialog = app.getByRole('dialog', { name: /Update Source workspace.*v2\.0\.0/ });
+      await dialog.getByRole('button', { name: 'Keep mine' }).click();
+      await dialog.getByRole('button', { name: 'Apply update' }).click();
 
-    const after = await readSyncedSlice(app, (s) => {
-      const synced = s.synced as {
-        linkedWorkspaces: Record<string, { pinnedVersion: string | null }>;
-        linkedOverrides: { requests: Record<string, { patch: { url?: string } }> };
-      };
-      return {
-        pinned: synced.linkedWorkspaces['link-1'].pinnedVersion,
-        url: synced.linkedOverrides.requests['link-1:r1']?.patch.url,
-      };
-    });
-    expect(after.pinned).toBe('2.0.0');
-    expect(after.url).toBe('https://my-fork.test/r1');
-  });
+      const after = await readSyncedSlice(app, (s) => {
+        const synced = s.synced as {
+          linkedWorkspaces: Record<string, { pinnedVersion: string | null }>;
+          linkedOverrides: { requests: Record<string, { patch: { url?: string } }> };
+        };
+        return {
+          pinned: synced.linkedWorkspaces['link-1'].pinnedVersion,
+          url: synced.linkedOverrides.requests['link-1:r1']?.patch.url,
+        };
+      });
+      expect(after.pinned).toBe('2.0.0');
+      expect(after.url).toBe('https://my-fork.test/r1');
+    },
+  );
 
-  test('byte-equal source with stale pin offers a one-click "Update pin" (no merge needed)', async ({
-    app,
-  }) => {
-    // Common post-refresh state: pin lags ledger.currentVersion AND the
-    // source's bytes are identical to what the consumer already has —
-    // because we Apply'd v2 once before the source published a v2 that
-    // happens to match v1, OR (in this test) because the ledger was
-    // bumped without content changing. Either way the modal lets the
-    // user advance the pin in one click.
-    await setupRealSession(app);
-    const r = makeRequest('r1', { name: 'r1' });
-    await seedLink(app, {
-      snapshot: makeSnapshot({ requests: [r] }),
-      pinnedVersion: '1.0.0',
-      perLinkLedger: { versions: [{ version: '2.0.0' }], currentVersion: '2.0.0' },
-    });
-    // Target is byte-identical to base.
-    await mockSourceFetch(app, {
-      workspaceName: 'Source workspace',
-      collections: {
-        tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
-        requests: { r1: r },
-        folders: {},
-      },
-      environments: { items: {}, activeName: null, priorityOrder: [] },
-      releases: { self: { versions: [{ version: '2.0.0' }], currentVersion: '2.0.0' } },
-    });
+  test(
+    tc(
+      id('Decline new version (stay pinned)'),
+      'byte-equal source with stale pin offers a one-click "Update pin" (no merge needed)',
+    ),
+    async ({ app }) => {
+      // Common post-refresh state: pin lags ledger.currentVersion AND the
+      // source's bytes are identical to what the consumer already has —
+      // because we Apply'd v2 once before the source published a v2 that
+      // happens to match v1, OR (in this test) because the ledger was
+      // bumped without content changing. Either way the modal lets the
+      // user advance the pin in one click.
+      await setupRealSession(app);
+      const r = makeRequest('r1', { name: 'r1' });
+      await seedLink(app, {
+        snapshot: makeSnapshot({ requests: [r] }),
+        pinnedVersion: '1.0.0',
+        perLinkLedger: { versions: [{ version: '2.0.0' }], currentVersion: '2.0.0' },
+      });
+      // Target is byte-identical to base.
+      await mockSourceFetch(app, {
+        workspaceName: 'Source workspace',
+        collections: {
+          tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
+          requests: { r1: r },
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
+        releases: { self: { versions: [{ version: '2.0.0' }], currentVersion: '2.0.0' } },
+      });
 
-    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
-    await app.getByRole('button', { name: /Review update.*v2\.0\.0/ }).click();
-    const dialog = app.getByRole('dialog', { name: /Update Source workspace.*v2\.0\.0/ });
-    // The pin-only empty state: explanatory message + enabled "Update
-    // pin to v2.0.0" button. The user shouldn't be stuck.
-    await expect(dialog.getByText(/No content changes between/)).toBeVisible();
-    const updatePin = dialog.getByRole('button', { name: /Update pin/ });
-    await expect(updatePin).toBeEnabled();
-    await expect(updatePin).toHaveText(/Update pin to v2\.0\.0/);
-  });
+      await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+      await app.getByRole('button', { name: /Review update.*v2\.0\.0/ }).click();
+      const dialog = app.getByRole('dialog', { name: /Update Source workspace.*v2\.0\.0/ });
+      // The pin-only empty state: explanatory message + enabled "Update
+      // pin to v2.0.0" button. The user shouldn't be stuck.
+      await expect(dialog.getByText(/No content changes between/)).toBeVisible();
+      const updatePin = dialog.getByRole('button', { name: /Update pin/ });
+      await expect(updatePin).toBeEnabled();
+      await expect(updatePin).toHaveText(/Update pin to v2\.0\.0/);
+    },
+  );
 });
 
 // ===========================================================================
@@ -783,71 +857,75 @@ test.describe('A.4 — Update preview flow', () => {
 // ===========================================================================
 
 test.describe('A.4 — Discard all modifications', () => {
-  test('"Discard N mods" drops every override for the link without changing pinned version', async ({
-    app,
-  }) => {
-    const r = makeRequest('r1', { name: 'r1' });
-    await seedLink(app, {
-      snapshot: makeSnapshot({
-        requests: [r],
-        envVars: [{ envName: 'dev', key: 'BASE_URL', value: 'src' }],
-      }),
-      name: 'Payments',
-    });
+  test(
+    tc(
+      id('Renamed entity in new version'),
+      '"Discard N mods" drops every override for the link without changing pinned version',
+    ),
+    async ({ app }) => {
+      const r = makeRequest('r1', { name: 'r1' });
+      await seedLink(app, {
+        snapshot: makeSnapshot({
+          requests: [r],
+          envVars: [{ envName: 'dev', key: 'BASE_URL', value: 'src' }],
+        }),
+        name: 'Payments',
+      });
 
-    // Add one request override and one env-var override.
-    await app.evaluate(() => {
-      const w = window as unknown as {
-        __apicircleStore?: {
-          getState: () => {
-            setLinkedRequestOverride: (
-              a: string,
-              b: string,
-              patch: Record<string, unknown>,
-            ) => void;
-            setLinkedEnvVarOverride: (
-              a: string,
-              env: string,
-              key: string,
-              patch: Record<string, unknown>,
-            ) => void;
+      // Add one request override and one env-var override.
+      await app.evaluate(() => {
+        const w = window as unknown as {
+          __apicircleStore?: {
+            getState: () => {
+              setLinkedRequestOverride: (
+                a: string,
+                b: string,
+                patch: Record<string, unknown>,
+              ) => void;
+              setLinkedEnvVarOverride: (
+                a: string,
+                env: string,
+                key: string,
+                patch: Record<string, unknown>,
+              ) => void;
+            };
           };
         };
-      };
-      w.__apicircleStore?.getState().setLinkedRequestOverride('link-1', 'r1', {
-        url: 'https://staging.test/r1',
+        w.__apicircleStore?.getState().setLinkedRequestOverride('link-1', 'r1', {
+          url: 'https://staging.test/r1',
+        });
+        w.__apicircleStore?.getState().setLinkedEnvVarOverride('link-1', 'dev', 'BASE_URL', {
+          value: 'https://override.test',
+        });
       });
-      w.__apicircleStore?.getState().setLinkedEnvVarOverride('link-1', 'dev', 'BASE_URL', {
-        value: 'https://override.test',
-      });
-    });
 
-    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
-    // The card shows "Discard 2 mods" — typed-confirm pattern via ConfirmDialog
-    // (Discard all / Cancel pair; no typed-confirm string for this one).
-    await app
-      .getByRole('button', { name: /Discard all 2 local modifications for Payments/ })
-      .click();
-    await app.getByRole('button', { name: 'Discard all', exact: true }).click();
+      await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+      // The card shows "Discard 2 mods" — typed-confirm pattern via ConfirmDialog
+      // (Discard all / Cancel pair; no typed-confirm string for this one).
+      await app
+        .getByRole('button', { name: /Discard all 2 local modifications for Payments/ })
+        .click();
+      await app.getByRole('button', { name: 'Discard all', exact: true }).click();
 
-    const after = await readSyncedSlice(app, (s) => {
-      const synced = s.synced as {
-        linkedWorkspaces: Record<string, { pinnedVersion: string | null }>;
-        linkedOverrides: {
-          requests: Record<string, unknown>;
-          environmentVars: Record<string, unknown>;
+      const after = await readSyncedSlice(app, (s) => {
+        const synced = s.synced as {
+          linkedWorkspaces: Record<string, { pinnedVersion: string | null }>;
+          linkedOverrides: {
+            requests: Record<string, unknown>;
+            environmentVars: Record<string, unknown>;
+          };
         };
-      };
-      return {
-        pinned: synced.linkedWorkspaces['link-1'].pinnedVersion,
-        reqs: Object.keys(synced.linkedOverrides.requests).length,
-        envs: Object.keys(synced.linkedOverrides.environmentVars).length,
-      };
-    });
-    expect(after.pinned).toBe('1.0.0');
-    expect(after.reqs).toBe(0);
-    expect(after.envs).toBe(0);
-  });
+        return {
+          pinned: synced.linkedWorkspaces['link-1'].pinnedVersion,
+          reqs: Object.keys(synced.linkedOverrides.requests).length,
+          envs: Object.keys(synced.linkedOverrides.environmentVars).length,
+        };
+      });
+      expect(after.pinned).toBe('1.0.0');
+      expect(after.reqs).toBe(0);
+      expect(after.envs).toBe(0);
+    },
+  );
 });
 
 // ===========================================================================
@@ -860,70 +938,74 @@ test.describe('A.4 — Discard all modifications', () => {
 // ===========================================================================
 
 test.describe('A.5 — Overrides live on synced (precondition for push round-trip)', () => {
-  test('every override path writes to synced.linkedOverrides, never to local.overrides', async ({
-    app,
-  }) => {
-    const r = makeRequest('r1', { name: 'r1' });
-    await seedLink(app, {
-      snapshot: makeSnapshot({
-        requests: [r],
-        envVars: [{ envName: 'dev', key: 'BASE_URL', value: 'src' }],
-      }),
-      name: 'Payments',
-    });
-    await app.evaluate(() => {
-      const w = window as unknown as {
-        __apicircleStore?: {
-          getState: () => {
-            setLinkedRequestOverride: (
-              a: string,
-              b: string,
-              patch: Record<string, unknown>,
-            ) => void;
-            setLinkedEnvVarOverride: (
-              a: string,
-              env: string,
-              key: string,
-              patch: Record<string, unknown>,
-            ) => void;
-          };
-        };
-      };
-      w.__apicircleStore?.getState().setLinkedRequestOverride('link-1', 'r1', {
-        method: 'POST',
-        url: 'https://staging.test/r1',
+  test(
+    tc(
+      id('Release notes Markdown rendered'),
+      'every override path writes to synced.linkedOverrides, never to local.overrides',
+    ),
+    async ({ app }) => {
+      const r = makeRequest('r1', { name: 'r1' });
+      await seedLink(app, {
+        snapshot: makeSnapshot({
+          requests: [r],
+          envVars: [{ envName: 'dev', key: 'BASE_URL', value: 'src' }],
+        }),
+        name: 'Payments',
       });
-      w.__apicircleStore
-        ?.getState()
-        .setLinkedEnvVarOverride('link-1', 'dev', 'OLD_VAR', { removed: true });
-    });
-
-    const shape = await app.evaluate(() => {
-      const w = window as unknown as {
-        __apicircleStore?: {
-          getState: () => {
-            synced: {
-              linkedOverrides: {
-                requests: Record<string, unknown>;
-                environmentVars: Record<string, unknown>;
-              };
+      await app.evaluate(() => {
+        const w = window as unknown as {
+          __apicircleStore?: {
+            getState: () => {
+              setLinkedRequestOverride: (
+                a: string,
+                b: string,
+                patch: Record<string, unknown>,
+              ) => void;
+              setLinkedEnvVarOverride: (
+                a: string,
+                env: string,
+                key: string,
+                patch: Record<string, unknown>,
+              ) => void;
             };
-            local: Record<string, unknown>;
           };
         };
-      };
-      const state = w.__apicircleStore!.getState();
-      return {
-        reqOverrideCount: Object.keys(state.synced.linkedOverrides.requests).length,
-        envOverrideCount: Object.keys(state.synced.linkedOverrides.environmentVars).length,
-        // Pre-A.1 there was a `local.overrides` field. Confirm it's gone.
-        localHasLegacyOverrides: 'overrides' in state.local,
-      };
-    });
-    expect(shape.reqOverrideCount).toBe(1);
-    expect(shape.envOverrideCount).toBe(1);
-    expect(shape.localHasLegacyOverrides).toBe(false);
-  });
+        w.__apicircleStore?.getState().setLinkedRequestOverride('link-1', 'r1', {
+          method: 'POST',
+          url: 'https://staging.test/r1',
+        });
+        w.__apicircleStore
+          ?.getState()
+          .setLinkedEnvVarOverride('link-1', 'dev', 'OLD_VAR', { removed: true });
+      });
+
+      const shape = await app.evaluate(() => {
+        const w = window as unknown as {
+          __apicircleStore?: {
+            getState: () => {
+              synced: {
+                linkedOverrides: {
+                  requests: Record<string, unknown>;
+                  environmentVars: Record<string, unknown>;
+                };
+              };
+              local: Record<string, unknown>;
+            };
+          };
+        };
+        const state = w.__apicircleStore!.getState();
+        return {
+          reqOverrideCount: Object.keys(state.synced.linkedOverrides.requests).length,
+          envOverrideCount: Object.keys(state.synced.linkedOverrides.environmentVars).length,
+          // Pre-A.1 there was a `local.overrides` field. Confirm it's gone.
+          localHasLegacyOverrides: 'overrides' in state.local,
+        };
+      });
+      expect(shape.reqOverrideCount).toBe(1);
+      expect(shape.envOverrideCount).toBe(1);
+      expect(shape.localHasLegacyOverrides).toBe(false);
+    },
+  );
 });
 
 // ===========================================================================
@@ -967,158 +1049,168 @@ test.describe('Lifecycle audit — Refresh / Preview / Apply', () => {
     });
   }
 
-  test('Refresh updates ledger only — snapshot + pin frozen until Apply', async ({ app }) => {
-    await setupRealSession(app);
+  test(
+    tc(id('Adopt new version'), 'Refresh updates ledger only — snapshot + pin frozen until Apply'),
+    async ({ app }) => {
+      await setupRealSession(app);
 
-    // Link at v1.0.0 with a single request whose URL is "/v1".
-    const v1Request = makeRequest('r1', { name: 'r1', url: 'https://api.source.test/v1' });
-    await seedLink(app, {
-      snapshot: makeSnapshot({ requests: [v1Request], ref: 'v1.0.0' }),
-      pinnedVersion: '1.0.0',
-      perLinkLedger: { versions: [{ version: '1.0.0' }], currentVersion: '1.0.0' },
-    });
+      // Link at v1.0.0 with a single request whose URL is "/v1".
+      const v1Request = makeRequest('r1', { name: 'r1', url: 'https://api.source.test/v1' });
+      await seedLink(app, {
+        snapshot: makeSnapshot({ requests: [v1Request], ref: 'v1.0.0' }),
+        pinnedVersion: '1.0.0',
+        perLinkLedger: { versions: [{ version: '1.0.0' }], currentVersion: '1.0.0' },
+      });
 
-    // Source publishes v2.0.0 with a different URL.
-    await mockSource(app, {
-      workspaceName: 'Source workspace',
-      collections: {
-        tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
-        requests: {
-          r1: makeRequest('r1', { name: 'r1', url: 'https://api.source.test/v2' }),
+      // Source publishes v2.0.0 with a different URL.
+      await mockSource(app, {
+        workspaceName: 'Source workspace',
+        collections: {
+          tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
+          requests: {
+            r1: makeRequest('r1', { name: 'r1', url: 'https://api.source.test/v2' }),
+          },
+          folders: {},
         },
-        folders: {},
-      },
-      environments: { items: {}, activeName: null, priorityOrder: [] },
-      releases: {
-        self: {
-          versions: [{ version: '1.0.0' }, { version: '2.0.0' }],
-          currentVersion: '2.0.0',
+        environments: { items: {}, activeName: null, priorityOrder: [] },
+        releases: {
+          self: {
+            versions: [{ version: '1.0.0' }, { version: '2.0.0' }],
+            currentVersion: '2.0.0',
+          },
         },
-      },
-    });
+      });
 
-    // Click "Refresh ledger".
-    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
-    await app.getByRole('button', { name: /Refresh ledger/ }).click();
+      // Click "Refresh ledger".
+      await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+      await app.getByRole('button', { name: /Refresh ledger/ }).click();
 
-    // Update Available badge fires — pin lags currentVersion now.
-    await expect(app.getByText(/update available · v2\.0\.0/)).toBeVisible();
+      // Update Available badge fires — pin lags currentVersion now.
+      await expect(app.getByText(/update available · v2\.0\.0/)).toBeVisible();
 
-    // Snapshot still at v1 (refresh doesn't touch it). Read directly.
-    const snapshotUrl = await readSyncedSlice<string>(app, ((s) => {
-      const local = (s as unknown as { local: { linkedCollections: Record<string, unknown> } })
-        .local;
-      const snap = local.linkedCollections['link-1'] as {
-        collections: { requests: Record<string, { url: string }> };
-      };
-      return snap.collections.requests.r1.url;
-    }) as never);
-    expect(snapshotUrl).toBe('https://api.source.test/v1');
-
-    // Pin still at 1.0.0.
-    const pinAfterRefresh = await readSyncedSlice<string | null>(app, (s) => {
-      const link = (
-        s as unknown as { synced: { linkedWorkspaces: Record<string, { pinnedVersion: string }> } }
-      ).synced.linkedWorkspaces['link-1'];
-      return link.pinnedVersion ?? null;
-    });
-    expect(pinAfterRefresh).toBe('1.0.0');
-  });
-
-  test('Apply advances pin + replaces snapshot + refreshes ledger; refresh-after is a no-op', async ({
-    app,
-  }) => {
-    await setupRealSession(app);
-    await seedLink(app, {
-      snapshot: makeSnapshot({
-        requests: [makeRequest('r1', { name: 'r1', url: 'https://api.source.test/v1' })],
-        ref: 'v1.0.0',
-      }),
-      pinnedVersion: '1.0.0',
-      perLinkLedger: { versions: [{ version: '1.0.0' }], currentVersion: '1.0.0' },
-    });
-
-    const v2Snapshot = {
-      workspaceName: 'Source workspace',
-      collections: {
-        tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
-        requests: {
-          r1: makeRequest('r1', { name: 'r1', url: 'https://api.source.test/v2' }),
-        },
-        folders: {},
-      },
-      environments: { items: {}, activeName: null, priorityOrder: [] },
-      releases: {
-        self: {
-          versions: [{ version: '1.0.0' }, { version: '2.0.0' }],
-          currentVersion: '2.0.0',
-        },
-      },
-    };
-
-    await mockSource(app, v2Snapshot);
-    await app.getByRole('button', { name: /^Link Workspace$/ }).click();
-    await app.getByRole('button', { name: /Refresh ledger/ }).click();
-    await app.getByRole('button', { name: /Review update.*v2\.0\.0/ }).click();
-    const dialog = app.getByRole('dialog', { name: /Update Source workspace.*v2\.0\.0/ });
-    // The diff is real (snapshot at v1, target at v2) — entries appear.
-    await expect(dialog.getByText(/Source updated.*adopt|Both changed/)).toBeVisible();
-    await dialog.getByRole('button', { name: 'Apply update' }).click();
-    await expect(dialog).not.toBeVisible();
-
-    // Post-apply: pin at 2.0.0, snapshot updated to v2 URL, ledger at 2.0.0.
-    const postApply = await readSyncedSlice<{ pin: string; url: string; ledger: string | null }>(
-      app,
-      ((s) => {
-        const synced = (
-          s as unknown as {
-            synced: {
-              linkedWorkspaces: Record<string, { pinnedVersion: string }>;
-              releases: { perLink: Record<string, { currentVersion: string | null }> };
-            };
-            local: { linkedCollections: Record<string, unknown> };
-          }
-        ).synced;
+      // Snapshot still at v1 (refresh doesn't touch it). Read directly.
+      const snapshotUrl = await readSyncedSlice<string>(app, ((s) => {
         const local = (s as unknown as { local: { linkedCollections: Record<string, unknown> } })
           .local;
-        return {
-          pin: synced.linkedWorkspaces['link-1'].pinnedVersion,
-          url: (
-            local.linkedCollections['link-1'] as {
-              collections: { requests: Record<string, { url: string }> };
-            }
-          ).collections.requests.r1.url,
-          ledger: synced.releases.perLink['link-1'].currentVersion,
+        const snap = local.linkedCollections['link-1'] as {
+          collections: { requests: Record<string, { url: string }> };
         };
-      }) as never,
-    );
-    expect(postApply.pin).toBe('2.0.0');
-    expect(postApply.url).toBe('https://api.source.test/v2');
-    expect(postApply.ledger).toBe('2.0.0');
+        return snap.collections.requests.r1.url;
+      }) as never);
+      expect(snapshotUrl).toBe('https://api.source.test/v1');
 
-    // Update-available chip is gone.
-    await expect(app.getByText(/update available · v/)).toHaveCount(0);
+      // Pin still at 1.0.0.
+      const pinAfterRefresh = await readSyncedSlice<string | null>(app, (s) => {
+        const link = (
+          s as unknown as {
+            synced: { linkedWorkspaces: Record<string, { pinnedVersion: string }> };
+          }
+        ).synced.linkedWorkspaces['link-1'];
+        return link.pinnedVersion ?? null;
+      });
+      expect(pinAfterRefresh).toBe('1.0.0');
+    },
+  );
 
-    // Refresh again — source still at 2.0.0 — should be a no-op.
-    await app.getByRole('button', { name: /Refresh ledger/ }).click();
-    const afterSecondRefresh = await readSyncedSlice<{ pin: string; ledger: string | null }>(app, ((
-      s,
-    ) => {
-      const synced = (
-        s as unknown as {
-          synced: {
-            linkedWorkspaces: Record<string, { pinnedVersion: string }>;
-            releases: { perLink: Record<string, { currentVersion: string | null }> };
-          };
-        }
-      ).synced;
-      return {
-        pin: synced.linkedWorkspaces['link-1'].pinnedVersion,
-        ledger: synced.releases.perLink['link-1'].currentVersion,
+  test(
+    tc(
+      id('Breaking change in new version (removed env var)'),
+      'Apply advances pin + replaces snapshot + refreshes ledger; refresh-after is a no-op',
+    ),
+    async ({ app }) => {
+      await setupRealSession(app);
+      await seedLink(app, {
+        snapshot: makeSnapshot({
+          requests: [makeRequest('r1', { name: 'r1', url: 'https://api.source.test/v1' })],
+          ref: 'v1.0.0',
+        }),
+        pinnedVersion: '1.0.0',
+        perLinkLedger: { versions: [{ version: '1.0.0' }], currentVersion: '1.0.0' },
+      });
+
+      const v2Snapshot = {
+        workspaceName: 'Source workspace',
+        collections: {
+          tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
+          requests: {
+            r1: makeRequest('r1', { name: 'r1', url: 'https://api.source.test/v2' }),
+          },
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
+        releases: {
+          self: {
+            versions: [{ version: '1.0.0' }, { version: '2.0.0' }],
+            currentVersion: '2.0.0',
+          },
+        },
       };
-    }) as never);
-    expect(afterSecondRefresh.pin).toBe('2.0.0');
-    expect(afterSecondRefresh.ledger).toBe('2.0.0');
-    await expect(app.getByText(/update available · v/)).toHaveCount(0);
-  });
+
+      await mockSource(app, v2Snapshot);
+      await app.getByRole('button', { name: /^Link Workspace$/ }).click();
+      await app.getByRole('button', { name: /Refresh ledger/ }).click();
+      await app.getByRole('button', { name: /Review update.*v2\.0\.0/ }).click();
+      const dialog = app.getByRole('dialog', { name: /Update Source workspace.*v2\.0\.0/ });
+      // The diff is real (snapshot at v1, target at v2) — entries appear.
+      await expect(dialog.getByText(/Source updated.*adopt|Both changed/)).toBeVisible();
+      await dialog.getByRole('button', { name: 'Apply update' }).click();
+      await expect(dialog).not.toBeVisible();
+
+      // Post-apply: pin at 2.0.0, snapshot updated to v2 URL, ledger at 2.0.0.
+      const postApply = await readSyncedSlice<{ pin: string; url: string; ledger: string | null }>(
+        app,
+        ((s) => {
+          const synced = (
+            s as unknown as {
+              synced: {
+                linkedWorkspaces: Record<string, { pinnedVersion: string }>;
+                releases: { perLink: Record<string, { currentVersion: string | null }> };
+              };
+              local: { linkedCollections: Record<string, unknown> };
+            }
+          ).synced;
+          const local = (s as unknown as { local: { linkedCollections: Record<string, unknown> } })
+            .local;
+          return {
+            pin: synced.linkedWorkspaces['link-1'].pinnedVersion,
+            url: (
+              local.linkedCollections['link-1'] as {
+                collections: { requests: Record<string, { url: string }> };
+              }
+            ).collections.requests.r1.url,
+            ledger: synced.releases.perLink['link-1'].currentVersion,
+          };
+        }) as never,
+      );
+      expect(postApply.pin).toBe('2.0.0');
+      expect(postApply.url).toBe('https://api.source.test/v2');
+      expect(postApply.ledger).toBe('2.0.0');
+
+      // Update-available chip is gone.
+      await expect(app.getByText(/update available · v/)).toHaveCount(0);
+
+      // Refresh again — source still at 2.0.0 — should be a no-op.
+      await app.getByRole('button', { name: /Refresh ledger/ }).click();
+      const afterSecondRefresh = await readSyncedSlice<{ pin: string; ledger: string | null }>(
+        app,
+        ((s) => {
+          const synced = (
+            s as unknown as {
+              synced: {
+                linkedWorkspaces: Record<string, { pinnedVersion: string }>;
+                releases: { perLink: Record<string, { currentVersion: string | null }> };
+              };
+            }
+          ).synced;
+          return {
+            pin: synced.linkedWorkspaces['link-1'].pinnedVersion,
+            ledger: synced.releases.perLink['link-1'].currentVersion,
+          };
+        }) as never,
+      );
+      expect(afterSecondRefresh.pin).toBe('2.0.0');
+      expect(afterSecondRefresh.ledger).toBe('2.0.0');
+      await expect(app.getByText(/update available · v/)).toHaveCount(0);
+    },
+  );
 });

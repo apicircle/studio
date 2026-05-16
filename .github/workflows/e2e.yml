@@ -12,11 +12,13 @@ concurrency:
 
 jobs:
   playwright:
-    name: Playwright
+    name: Playwright (chromium)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
         with:
@@ -26,6 +28,14 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install Python deps for coverage report
+        run: pip install openpyxl
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -49,10 +59,18 @@ jobs:
       - name: Build web app
         run: pnpm --filter @apicircle/web build
 
-      - name: Run E2E suite
+      - name: Run E2E suite (chromium)
         run: pnpm test:e2e
         env:
           CI: 'true'
+
+      - name: Generate strict coverage report
+        if: always()
+        run: |
+          python scripts/e2e_coverage_report.py \
+            --strict --json \
+            --from-results apps/web/test-results.json \
+            --fail-under 20
 
       - name: Upload Playwright HTML report
         if: always()
@@ -62,10 +80,142 @@ jobs:
           path: apps/web/playwright-report
           retention-days: 14
 
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-coverage-${{ github.run_id }}
+          path: |
+            docs/qa/results/e2e-coverage.md
+            docs/qa/results/e2e-coverage.json
+            apps/web/test-results.json
+          retention-days: 90
+
       - name: Upload failure traces
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-traces-${{ github.run_id }}
+          path: apps/web/test-results
+          retention-days: 14
+
+      - name: Coverage delta vs main
+        if: github.event_name == 'pull_request'
+        run: node scripts/e2e_coverage_delta.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+
+  cross-browser-smoke:
+    name: Smoke (firefox + webkit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Smoke matrix runs only on PRs and main pushes; we don't gate the
+    # build on it (cross-engine drift is informational), but we still
+    # surface the report so engine-only regressions get caught.
+    needs: playwright
+    if: success() || failure()
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-cross-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      - name: Install Playwright browsers (firefox + webkit)
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: pnpm --filter @apicircle/web exec playwright install --with-deps firefox webkit
+
+      - name: Install Playwright OS deps
+        run: pnpm --filter @apicircle/web exec playwright install-deps firefox webkit
+
+      - name: Build web app
+        run: pnpm --filter @apicircle/web build
+
+      - name: Firefox smoke
+        run: pnpm --filter @apicircle/web exec playwright test --project=firefox-smoke
+        env:
+          CI: 'true'
+
+      - name: WebKit smoke
+        run: pnpm --filter @apicircle/web exec playwright test --project=webkit-smoke
+        env:
+          CI: 'true'
+
+      - name: Upload smoke HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-report-${{ github.run_id }}
+          path: apps/web/playwright-report
+          retention-days: 14
+
+  visual-baseline:
+    name: Visual baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: playwright
+    if: success() || failure()
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright browsers
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: pnpm test:e2e:install
+
+      - name: Install Playwright OS deps
+        run: pnpm --filter @apicircle/web exec playwright install-deps chromium
+
+      - name: Build web app
+        run: pnpm --filter @apicircle/web build
+
+      - name: Visual baseline
+        run: pnpm --filter @apicircle/web exec playwright test --project=visual-baseline
+        env:
+          CI: 'true'
+
+      - name: Upload visual diff on regression
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diffs-${{ github.run_id }}
           path: apps/web/test-results
           retention-days: 14
