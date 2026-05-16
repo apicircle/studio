@@ -50,10 +50,12 @@ test(
     id('Schema with enum'),
     'invalid JSON against the picked schema → Monaco surfaces diagnostics',
   ),
-  async ({ app, monaco }) => {
-    // 1. Seed a JSON Schema via Global Assets.
-    await app.getByRole('button', { name: /Open Global Assets library/ }).click();
-    await app.getByRole('button', { name: 'Add JSON Schema' }).click();
+  async ({ app, monaco, sidebar }) => {
+    // 1. Seed a JSON Schema via the right-dock Global Assets tab.
+    await app.getByRole('button', { name: 'Open Global Assets', exact: true }).click();
+    const dock = app.getByRole('complementary', { name: 'Workspace inspector' });
+    await expect(dock).toBeVisible();
+    await dock.getByRole('button', { name: 'Add JSON Schema' }).click();
     await monaco.ready('Schema body');
     await app.getByLabel('Schema name').fill('UserSchemaDiag');
     await monaco.fill(
@@ -65,12 +67,10 @@ test(
         additionalProperties: false,
       }),
     );
-    await app.keyboard.press('Escape');
+    await app.getByRole('button', { name: 'Close Global Assets', exact: true }).click();
 
     // 2. Create a request, switch body to JSON, pick the schema.
-    await app.getByLabel('New request', { exact: true }).first().click();
-    await app.getByLabel('Inline rename request').fill('schema-diag');
-    await app.keyboard.press('Enter');
+    await sidebar.createRequest('schema-diag');
     await app.getByRole('button', { name: 'Body', exact: true }).click();
     await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
     await app.getByRole('radio', { name: 'JSON' }).click();

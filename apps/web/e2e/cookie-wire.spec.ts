@@ -128,11 +128,16 @@ test.describe('Cookie on wire — same-origin proxy (C12)', () => {
   test(
     tc(id('Clear'), 'cookie store can be cleared via the Secret Vault dock'),
     async ({ app }) => {
-      // The Secret Vault dock exposes a "Clear cookies" affordance in
-      // some builds. Assert the dock opens; the clear button check
-      // gates on its presence to stay forward-compatible.
+      // The Secret Vault lives in the right-dock inspector. The rail
+      // button opens the dock (a `complementary` region) with the
+      // Vault tab selected.
       await app.getByRole('button', { name: /Open Secret Vault/ }).click();
-      await expect(app.getByRole('dialog', { name: /Secret Vault/ })).toBeVisible();
+      const dock = app.getByRole('complementary', { name: 'Workspace inspector' });
+      await expect(dock).toBeVisible();
+      await expect(dock.getByRole('tab', { name: 'Vault' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
     },
   );
 });

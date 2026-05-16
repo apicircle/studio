@@ -20,18 +20,17 @@ function id(key: string): TcId {
 test.describe('Editor golden path', () => {
   test(
     tc(id('Send :: Cancel in-flight'), 'create → edit → send → assertions → delete @smoke'),
-    async ({ app, mockApi, monaco }) => {
+    async ({ app, mockApi, monaco, sidebar }) => {
       // 1. Land on the Editor (default panel).
       await expect(app.getByRole('button', { name: /^Editor$/, exact: false })).toHaveAttribute(
         'aria-current',
         'page',
       );
 
-      // 2. Create a request via the sidebar toolbar (name-first flow:
-      //    button opens an inline-rename input, Enter commits the new request).
-      await app.getByLabel('New request').click();
-      await app.getByLabel('Inline rename request').fill('Get example');
-      await app.keyboard.press('Enter');
+      // 2. Create a request via the sidebar's "Editor actions" kebab
+      //    (name-first flow: the menu item opens an inline name prompt,
+      //    Enter commits the new request).
+      await sidebar.createRequest('Get example');
 
       // The new request is auto-selected and the editor surface is up.
       await expect(app.getByLabel('Request name', { exact: true })).toHaveValue('Get example');
@@ -75,10 +74,13 @@ test.describe('Editor golden path', () => {
       await app.getByRole('button', { name: 'Headers', exact: true }).click();
       await expect(app.getByText('content-type')).toBeVisible();
 
-      // 10. Delete the request. The demo Sample request stays so the
-      // tree-empty hint isn't expected; just confirm our row vanished.
-      await app.getByLabel('Delete Get example').click();
-      await expect(app.getByLabel('Delete Get example')).not.toBeVisible();
+      // 10. Delete the request via its sidebar kebab → "Delete request" →
+      // ConfirmDialog. The demo Sample request stays so the tree-empty hint
+      // isn't expected; just confirm our row vanished.
+      await app.getByRole('button', { name: 'Request actions for Get example' }).click();
+      await app.getByRole('menuitem', { name: 'Delete request' }).click();
+      await app.getByRole('button', { name: 'Delete request' }).click();
+      await expect(app.getByRole('button', { name: 'GET Get example' })).not.toBeVisible();
     },
   );
 
@@ -87,11 +89,9 @@ test.describe('Editor golden path', () => {
       id('Headers :: Variable interpolation in header value'),
       'header autocomplete surfaces the expanded v1 dictionary + curated value lists',
     ),
-    async ({ app }) => {
+    async ({ app, sidebar }) => {
       // Create a fresh request via the name-first flow.
-      await app.getByLabel('New request').click();
-      await app.getByLabel('Inline rename request').fill('autocomplete-test');
-      await app.keyboard.press('Enter');
+      await sidebar.createRequest('autocomplete-test');
       await app
         .getByRole('button', { name: /^Headers/ })
         .first()
@@ -131,13 +131,11 @@ test.describe('Editor golden path', () => {
       id('Headers :: Header autocomplete suggests standard names'),
       'passing assertions render with positive explanation text in the response panel',
     ),
-    async ({ app, mockApi }) => {
+    async ({ app, mockApi, sidebar }) => {
       // Mock returns 200 so the default status=200 assertion passes.
       await mockApi.json(/api\.example\.test\/ping/, { ok: true });
 
-      await app.getByLabel('New request').click();
-      await app.getByLabel('Inline rename request').fill('assertion-test');
-      await app.keyboard.press('Enter');
+      await sidebar.createRequest('assertion-test');
       await app.getByLabel('Request URL').fill('https://api.example.test/ping');
 
       // Add a status assertion (default expected=200, equals).

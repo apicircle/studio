@@ -97,19 +97,24 @@ test.describe('GraphQL request body (P19)', () => {
       await app.getByRole('button', { name: /^Send$/ }).click();
       await expect(app.getByText('200')).toBeVisible();
       // The errors array is part of the JSON body — the response viewer is a
-      // Monaco editor, so we read via the same helper.
+      // Monaco editor, so we read via the same helper. The error message's
+      // inner quotes are JSON-escaped in the rendered body, so parse the
+      // body back to JSON before asserting on the message text.
       const body = await monaco.read('Response body');
-      expect(body).toContain('Field "missing" not found on type Query');
+      const parsed = JSON.parse(body) as { errors?: Array<{ message?: string }> };
+      expect(parsed.errors?.[0]?.message).toBe('Field "missing" not found on type Query');
     },
   );
 
   test(
     tc(id('Schema Reuse'), 'GraphQL schema picker maps a workspace SDL definition to the request'),
     async ({ app, monaco, sidebar }) => {
-      // Add a workspace SDL definition.
-      await app.getByRole('button', { name: /Open Global Assets library/ }).click();
-      await app.getByRole('button', { name: /^GraphQL/ }).click();
-      await app.getByRole('button', { name: 'Add GraphQL schema' }).click();
+      // Add a workspace SDL definition via the right-dock Assets tab.
+      await app.getByRole('button', { name: 'Open Global Assets', exact: true }).click();
+      const dock = app.getByRole('complementary', { name: 'Workspace inspector' });
+      await expect(dock).toBeVisible();
+      await dock.getByRole('button', { name: /^GraphQL/ }).click();
+      await dock.getByRole('button', { name: 'Add GraphQL schema' }).click();
       await monaco.ready('GraphQL schema body');
       await app.getByLabel('GraphQL schema name').fill('Pets');
       await monaco.fill(
@@ -122,7 +127,7 @@ test.describe('GraphQL request body (P19)', () => {
         name: String
       }`,
       );
-      await app.keyboard.press('Escape');
+      await app.getByRole('button', { name: 'Close Global Assets', exact: true }).click();
 
       // Map it to a new request.
       await sidebar.createRequest('graphql-schema-pick');

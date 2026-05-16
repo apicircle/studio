@@ -393,6 +393,9 @@ test.describe('Workspace management', () => {
     ),
     async ({ app }) => {
       await seedWorkspace(app, 'with-secrets');
+      // The seeded request "Get user" lives inside the "Users" folder,
+      // which renders collapsed — expand it so the request row shows.
+      await app.getByRole('button', { name: 'Expand Users', exact: true }).click();
       // The seeded request "Get user" should still be reachable via
       // the sidebar tree even though the workspace is locked.
       await expect(app.getByRole('button', { name: /Get user/ }).first()).toBeVisible({

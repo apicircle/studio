@@ -147,15 +147,23 @@ function makeMockServer(o: Partial<MockServer> & Pick<MockServer, 'id' | 'name'>
     kind: 'manual',
     endpoints: [],
   }) as MockServer['source'];
+  // The MockServer type mirrors manual endpoints into BOTH `source.endpoints`
+  // and the top-level `endpoints` table — and `normalizeSyncedShape` on
+  // hydrate rebuilds `source.endpoints` FROM the top-level `endpoints`.
+  // So a seed that only fills `source.endpoints` loses them on reload.
+  // Keep the two in sync here.
+  const endpoints: MockServer['endpoints'] =
+    o.endpoints ?? (source.kind === 'manual' ? source.endpoints : []);
   return {
-    source,
-    endpoints: [],
+    source: source.kind === 'manual' ? { ...source, endpoints } : source,
+    endpoints,
     defaultPort: null,
     cors: { enabled: false, origins: [] },
     createdAt: NOW,
     updatedAt: NOW,
     ...o,
-    source,
+    source: source.kind === 'manual' ? { ...source, endpoints } : source,
+    endpoints,
   };
 }
 
@@ -303,27 +311,25 @@ function buildSeeded(variant: 'seeded' | 'with-secrets'): SeedData {
     envPriorityOrder: [{ kind: 'local', name: 'Dev' }],
   });
 
+  const usersEndpoint: MockServer['endpoints'][number] = {
+    id: 'e1',
+    name: 'GET /users/:id',
+    method: 'GET',
+    pathPattern: '/users/:id',
+    requestSchema: { pathParams: [], queryParams: [], headers: [], cookies: [] },
+    requestValidation: [],
+    responseRules: [],
+    defaultResponse: {
+      status: 200,
+      headers: [{ key: 'Content-Type', value: 'application/json', enabled: true }],
+      body: { type: 'json', content: '{"id":"{id}","name":"alice"}' },
+    },
+  };
   const mockServer = makeMockServer({
     id: mockServerId,
     name: 'Users Mock',
-    source: {
-      kind: 'manual',
-      endpoints: [
-        {
-          id: 'e1',
-          method: 'GET',
-          path: '/users/:id',
-          responses: [
-            {
-              id: 'rsp1',
-              status: 200,
-              headers: [{ key: 'Content-Type', value: 'application/json' }],
-              body: '{"id":"{id}","name":"alice"}',
-            },
-          ],
-        },
-      ],
-    } as MockServer['source'],
+    source: { kind: 'manual', endpoints: [usersEndpoint] },
+    endpoints: [usersEndpoint],
   });
 
   const schema = makeSchema(

@@ -434,13 +434,17 @@ test.describe('Response Panel — Body Viewer', () => {
       id('Body Viewer :: Preview cap on large'),
       'large response body is rendered without locking the panel',
     ),
-    async ({ app, e2eMock, sidebar }) => {
-      // Hit the mock's /anything endpoint with a request that produces
-      // a sizeable echo body via a long query string.
-      const big = 'x'.repeat(50_000);
-      const path = `/anything/rp-large?big=${big}`;
+    async ({ app, mockApi, sidebar }) => {
+      // Serve a sizeable RESPONSE body via the route mocker. The earlier
+      // approach (a 50KB query string on the request URL) failed because
+      // the e2e mock's HTTP server rejects an oversized request line with
+      // 431 — that exercised "large URL", not "large response body".
+      const bigBody = 'x'.repeat(200_000);
+      await mockApi.text('https://api.example.test/rp-large', bigBody, {
+        contentType: 'text/plain',
+      });
       await sidebar.createRequest('rp-large');
-      await app.getByLabel('Request URL').fill(e2eMock.url(path));
+      await app.getByLabel('Request URL').fill('https://api.example.test/rp-large');
       await app.getByRole('button', { name: /^Send$/ }).click();
       await expect(app.getByText('200').first()).toBeVisible({ timeout: 15_000 });
     },

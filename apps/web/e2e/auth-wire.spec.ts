@@ -8,6 +8,8 @@
 // programmatic paths.
 
 import { expect, test } from './fixtures/app';
+import type { Page } from '@playwright/test';
+import type { SidebarHelpers } from './fixtures/app';
 
 import { tc } from './fixtures/tcCoverage';
 import type { TcId } from './fixtures/tcCoverage';
@@ -19,6 +21,30 @@ function id(key: string): TcId {
   const v = tcMapAU[key];
   if (!v) throw new Error(`No TC-AU entry for "${key}"`);
   return v;
+}
+
+// Open the folder-auth modal: each folder row carries an "Editor actions"
+// kebab (`Folder actions for <name>`) whose "Set auth…" item opens
+// FolderAuthModal. Older specs used a dedicated `Edit auth for <name>`
+// button which the kebab refactor removed.
+async function openFolderAuth(app: Page, folderName: string): Promise<void> {
+  await app.getByRole('button', { name: `Folder actions for ${folderName}`, exact: true }).click();
+  await app.getByRole('menuitem', { name: /^(Set auth|Edit auth)/ }).click();
+}
+
+// Create a request inside a folder via the folder kebab's "New request
+// inside" item, then commit the name-first inline prompt.
+async function createRequestInFolder(
+  app: Page,
+  folderName: string,
+  requestName: string,
+): Promise<void> {
+  await app.getByRole('button', { name: `Folder actions for ${folderName}`, exact: true }).click();
+  await app.getByRole('menuitem', { name: 'New request inside', exact: true }).click();
+  const input = app.getByLabel('New request name', { exact: true });
+  await input.fill(requestName);
+  await input.press('Enter');
+  await expect(app.getByLabel('Request name', { exact: true })).toHaveValue(requestName);
 }
 test.describe('Auth wire-level — programmatic types', () => {
   test(
@@ -83,7 +109,7 @@ test.describe('Auth wire-level — programmatic types', () => {
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByRole('button', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('api-key');
-      await app.getByLabel('API key add-to').selectOption('header');
+      await app.getByLabel('API key location').selectOption('header');
       await app.getByRole('textbox', { name: 'API key name', exact: true }).fill('X-API-Key');
       await app.getByRole('textbox', { name: 'API key value', exact: true }).fill('secret-123');
       await app.getByRole('button', { name: /^Send$/ }).click();
@@ -104,7 +130,7 @@ test.describe('Auth wire-level — programmatic types', () => {
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByRole('button', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('api-key');
-      await app.getByLabel('API key add-to').selectOption('query');
+      await app.getByLabel('API key location').selectOption('query');
       await app.getByRole('textbox', { name: 'API key name', exact: true }).fill('access_token');
       await app.getByRole('textbox', { name: 'API key value', exact: true }).fill('q-secret');
       await app.getByRole('button', { name: /^Send$/ }).click();
@@ -127,7 +153,7 @@ test.describe('Auth wire-level — programmatic types', () => {
       await app.getByLabel('Request URL').fill(e2eMock.url('/anything'));
       await app.getByRole('button', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('api-key');
-      await app.getByLabel('API key add-to').selectOption('cookie');
+      await app.getByLabel('API key location').selectOption('cookie');
       await app.getByRole('textbox', { name: 'API key name', exact: true }).fill('session');
       await app.getByRole('textbox', { name: 'API key value', exact: true }).fill('c-secret');
       // The composition shows in the auth note OR in the request panel.
@@ -212,7 +238,7 @@ test.describe('Auth wire-level — programmatic types', () => {
       await app
         .getByRole('textbox', { name: 'AWS secret access key', exact: true })
         .fill('wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY');
-      await app.getByRole('textbox', { name: 'AWS region', exact: true }).fill('us-east-1');
+      await app.getByLabel('AWS region').fill('us-east-1');
       await app.getByRole('textbox', { name: 'AWS service', exact: true }).fill('service');
       await app.getByRole('button', { name: /^Send$/ }).click();
       // Mock-server recomputes the SigV4 signature and 401s on mismatch;
@@ -278,21 +304,17 @@ test.describe('Folder auth — single send + plan run', () => {
     ),
     async ({ app, e2eMock, sidebar }) => {
       // 1. Create a folder + set api-key auth on it.
-      await app.getByLabel('New folder', { exact: true }).first().click();
-      await app.getByLabel('Inline rename folder').fill('FolderAuthA');
-      await app.keyboard.press('Enter');
-      await app.getByLabel('Edit auth for FolderAuthA').click();
+      await sidebar.createFolder('FolderAuthA');
+      await openFolderAuth(app, 'FolderAuthA');
       // FolderAuthModal renders a full AuthEditor.
       await app.getByLabel('Auth type').selectOption('api-key');
-      await app.getByLabel('API key add-to').selectOption('header');
+      await app.getByLabel('API key location').selectOption('header');
       await app.getByRole('textbox', { name: 'API key name', exact: true }).fill('X-API-Key');
       await app.getByRole('textbox', { name: 'API key value', exact: true }).fill('folder-secret');
       await app.getByRole('button', { name: /^Done$/ }).click();
 
       // 2. Create a new request INSIDE the folder. Default auth=`inherit`.
-      await app.getByLabel('New request in FolderAuthA').click();
-      await app.getByLabel('Inline rename request').fill('inside-folder');
-      await app.keyboard.press('Enter');
+      await createRequestInFolder(app, 'FolderAuthA', 'inside-folder');
       const path = '/anything/auth-folder-inherit';
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByRole('button', { name: /^Send$/ }).click();
@@ -311,18 +333,14 @@ test.describe('Folder auth — single send + plan run', () => {
     ),
     async ({ app, sidebar }) => {
       // 1. Create a folder with bearer auth.
-      await app.getByLabel('New folder', { exact: true }).first().click();
-      await app.getByLabel('Inline rename folder').fill('FolderAuthB');
-      await app.keyboard.press('Enter');
-      await app.getByLabel('Edit auth for FolderAuthB').click();
+      await sidebar.createFolder('FolderAuthB');
+      await openFolderAuth(app, 'FolderAuthB');
       await app.getByLabel('Auth type').selectOption('bearer');
       await app.getByRole('textbox', { name: 'Bearer token', exact: true }).fill('folder-tok');
       await app.getByRole('button', { name: /^Done$/ }).click();
 
       // 2. Create a request inside, then explicitly set its auth to "none".
-      await app.getByLabel('New request in FolderAuthB').click();
-      await app.getByLabel('Inline rename request').fill('overrider');
-      await app.keyboard.press('Enter');
+      await createRequestInFolder(app, 'FolderAuthB', 'overrider');
       await app.getByRole('button', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('none');
 
@@ -345,12 +363,10 @@ test.describe('Folder auth — single send + plan run', () => {
     ),
     async ({ app, e2eMock, sidebar }) => {
       // 1. Folder + folder api-key auth.
-      await app.getByLabel('New folder', { exact: true }).first().click();
-      await app.getByLabel('Inline rename folder').fill('PlanFolder');
-      await app.keyboard.press('Enter');
-      await app.getByLabel('Edit auth for PlanFolder').click();
+      await sidebar.createFolder('PlanFolder');
+      await openFolderAuth(app, 'PlanFolder');
       await app.getByLabel('Auth type').selectOption('api-key');
-      await app.getByLabel('API key add-to').selectOption('header');
+      await app.getByLabel('API key location').selectOption('header');
       await app.getByRole('textbox', { name: 'API key name', exact: true }).fill('X-API-Key');
       await app
         .getByRole('textbox', { name: 'API key value', exact: true })
@@ -358,9 +374,7 @@ test.describe('Folder auth — single send + plan run', () => {
       await app.getByRole('button', { name: /^Done$/ }).click();
 
       // 2. Request inside the folder.
-      await app.getByLabel('New request in PlanFolder').click();
-      await app.getByLabel('Inline rename request').fill('plan-inside');
-      await app.keyboard.press('Enter');
+      await createRequestInFolder(app, 'PlanFolder', 'plan-inside');
       const path = '/anything/auth-folder-plan';
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
 

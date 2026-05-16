@@ -21,6 +21,19 @@ function readImportFixture(path: string): string {
   return readFileSync(path, 'utf-8');
 }
 
+// The top-level "Import" sidebar button moved into the "Editor actions"
+// kebab menu (see EditorSidebar.tsx EditorSidebarActions, commit 6ca7dbf).
+// That kebab lives in the Editor panel's sidebar header — the workspace
+// boots on the Workspace panel, so switch to Editor first.
+async function openImport(app: import('@playwright/test').Page): Promise<void> {
+  await app.getByRole('button', { name: /^Editor$/ }).click();
+  await app.getByRole('button', { name: 'Editor actions', exact: true }).first().click();
+  await app.getByRole('menuitem', { name: 'Import', exact: true }).click();
+  // ImportModal is code-split (ImportModalLazy) — the chunk can take a
+  // moment to resolve on a cold cache, so allow extra time.
+  await expect(app.getByRole('dialog', { name: 'Import' })).toBeVisible({ timeout: 15_000 });
+}
+
 test.describe('Import cURL (paste-import)', () => {
   test(
     tc(
@@ -28,7 +41,7 @@ test.describe('Import cURL (paste-import)', () => {
       'opens the dialog and disables Import until a URL is parsed @smoke',
     ),
     async ({ app }) => {
-      await app.getByLabel('Import', { exact: true }).click();
+      await openImport(app);
       const dialog = app.getByRole('dialog', { name: 'Import' });
       await expect(dialog).toBeVisible();
       await expect(dialog.getByRole('button', { name: 'Import' })).toBeDisabled();
@@ -43,7 +56,7 @@ test.describe('Import cURL (paste-import)', () => {
     async ({ app }) => {
       // The "Paste sample" button was removed from the unified import dialog;
       // typing a cURL directly is the canonical path now.
-      await app.getByLabel('Import', { exact: true }).click();
+      await openImport(app);
       await app
         .getByLabel('Import source')
         .fill(`curl -X POST 'https://api.example.test/users' --json '{"name":"alice"}'`);
@@ -58,7 +71,7 @@ test.describe('Import cURL (paste-import)', () => {
       'Importing creates a new request seeded with method/URL/headers/body',
     ),
     async ({ app, mockApi }) => {
-      await app.getByLabel('Import', { exact: true }).click();
+      await openImport(app);
       const dialog = app.getByRole('dialog', { name: 'Import' });
       const textarea = app.getByLabel('Import source');
       await textarea.fill(
@@ -90,7 +103,7 @@ test.describe('Import cURL (paste-import)', () => {
   test(
     tc(id('Export :: Export workspace JSON'), 'preview shows warnings for unrecognised flags'),
     async ({ app }) => {
-      await app.getByLabel('Import', { exact: true }).click();
+      await openImport(app);
       const textarea = app.getByLabel('Import source');
       await textarea.fill(`curl --magic-flag https://api.example.test/x`);
       await expect(app.getByText(/⚠.*--magic-flag/)).toBeVisible();
@@ -100,7 +113,7 @@ test.describe('Import cURL (paste-import)', () => {
   test(
     tc(id('cURL :: Paste cURL'), 'Cancel closes the modal without creating a request'),
     async ({ app }) => {
-      await app.getByLabel('Import', { exact: true }).click();
+      await openImport(app);
       await app.getByLabel('Import source').fill('curl https://api.example.test/x');
       await app.getByRole('button', { name: 'Cancel' }).click();
       await expect(app.getByRole('dialog', { name: 'Import' })).not.toBeVisible();
@@ -118,7 +131,7 @@ test.describe('Import cURL (paste-import)', () => {
       'cURL with \\ line continuations parses into a single request',
     ),
     async ({ app }) => {
-      await app.getByLabel('Import', { exact: true }).click();
+      await openImport(app);
       const dialog = app.getByRole('dialog', { name: 'Import' });
       const multi = [
         "curl -X POST 'https://api.example.test/users' \\",
@@ -139,7 +152,7 @@ test.describe('Import cURL (paste-import)', () => {
       'cURL --data-urlencode imports as urlencoded body',
     ),
     async ({ app }) => {
-      await app.getByLabel('Import', { exact: true }).click();
+      await openImport(app);
       const dialog = app.getByRole('dialog', { name: 'Import' });
       await app
         .getByLabel('Import source')
@@ -156,7 +169,7 @@ test.describe('Import cURL (paste-import)', () => {
   test(
     tc(id('cURL :: cURL with -F multipart'), 'cURL -F multipart parses into form-data body'),
     async ({ app }) => {
-      await app.getByLabel('Import', { exact: true }).click();
+      await openImport(app);
       const dialog = app.getByRole('dialog', { name: 'Import' });
       await app
         .getByLabel('Import source')
@@ -180,15 +193,24 @@ test.describe('Import cURL (paste-import)', () => {
     ),
     async ({ app }) => {
       const text = readImportFixture(qaAssetPaths.imports.postmanV21Simple);
-      await app.getByLabel('Import', { exact: true }).click();
+      await openImport(app);
       const dialog = app.getByRole('dialog', { name: 'Import' });
       await app.getByLabel('Import source').fill(text);
       // Auto-detect picks "postman-collection" — the dialog surfaces
-      // a list of requests parsed from the fixture.
-      await expect(dialog.getByText(/Get user/i)).toBeVisible({ timeout: 5_000 });
+      // a list of requests parsed from the fixture. Scope to a list
+      // item: the raw JSON is also in the "Import source" textarea,
+      // which would otherwise trip strict mode on a bare getByText.
+      await expect(
+        dialog
+          .getByRole('listitem')
+          .filter({ hasText: /Get user/i })
+          .first(),
+      ).toBeVisible({ timeout: 5_000 });
       await dialog.getByRole('button', { name: 'Import', exact: true }).click();
       await expect(dialog).not.toBeVisible({ timeout: 5_000 });
-      // The imported "Get user" appears in the sidebar.
+      // The collection imports as a folder named after the collection,
+      // with the requests nested inside. Expand it to reveal "Get user".
+      await app.getByRole('button', { name: /^Expand Sample Postman v2\.1 Simple/ }).click();
       await expect(app.getByRole('button', { name: /Get user/ }).first()).toBeVisible({
         timeout: 5_000,
       });
@@ -202,7 +224,7 @@ test.describe('Import cURL (paste-import)', () => {
     ),
     async ({ app }) => {
       const text = readImportFixture(qaAssetPaths.imports.postmanV21Auth);
-      await app.getByLabel('Import', { exact: true }).click();
+      await openImport(app);
       const dialog = app.getByRole('dialog', { name: 'Import' });
       await app.getByLabel('Import source').fill(text);
       await expect(dialog).toBeVisible();
@@ -225,7 +247,7 @@ test.describe('Import cURL (paste-import)', () => {
     tc(id('Insomnia'), 'Insomnia v4 export imports requests into the workspace'),
     async ({ app }) => {
       const text = readImportFixture(qaAssetPaths.imports.insomniaV4);
-      await app.getByLabel('Import', { exact: true }).click();
+      await openImport(app);
       const dialog = app.getByRole('dialog', { name: 'Import' });
       await app.getByLabel('Import source').fill(text);
       await expect(dialog).toBeVisible();

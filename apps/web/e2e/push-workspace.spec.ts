@@ -90,6 +90,9 @@ async function setupConnectedBranch(app: Page): Promise<void> {
   await app.keyboard.press('Escape');
 
   await app.getByRole('button', { name: /^Workspace$/ }).click();
+  // The owner/name input lives behind the "Manual entry" toggle — the
+  // ConnectRepoForm defaults to the repo browser (see WorkspacePanel.tsx).
+  await app.getByRole('button', { name: 'Switch to manual entry' }).click();
   await app.getByLabel('Repo full name').fill('me/api');
   await app.getByRole('button', { name: 'Connect repo' }).click();
   await expect(app.getByText('me/api')).toBeVisible();
@@ -207,7 +210,10 @@ test.describe('Refresh + 3-way conflict resolver (P4.5)', () => {
       );
 
       await app.getByRole('button', { name: /^Refresh$/ }).click();
-      await expect(app.getByText(/Up to date with the remote/)).toBeVisible();
+      // The freshly-connected workspace still has unpushed local changes, so
+      // the up-to-date refresh notice reads "Remote has no new changes."
+      // rather than the zero-unpushed "Up to date with the remote." copy.
+      await expect(app.getByText(/Remote has no new changes/)).toBeVisible();
       await expect(app.getByText(/Last pulled:/)).toBeVisible();
     },
   );
@@ -267,10 +273,12 @@ test.describe('Refresh + 3-way conflict resolver (P4.5)', () => {
 
       await app.getByRole('button', { name: /^Refresh$/ }).click();
       // Conflict resolver opens.
-      await expect(app.getByRole('dialog', { name: /Resolve conflicts/ })).toBeVisible();
-      // Pick the remote side for the environmentsActive conflict.
-      await app
-        .getByRole('button', { name: /Theirs.*Theirs/s })
+      const resolver = app.getByRole('dialog', { name: /Resolve conflicts/ });
+      await expect(resolver).toBeVisible();
+      // Pick the remote side for the environmentsActive conflict — each
+      // ConflictRow exposes a "Theirs (remote)" button (see ConflictSide).
+      await resolver
+        .getByRole('button', { name: /Theirs \(remote\)/ })
         .first()
         .click();
       await app.getByRole('button', { name: /Apply merge/ }).click();

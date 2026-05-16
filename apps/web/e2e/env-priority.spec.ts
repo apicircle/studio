@@ -19,22 +19,30 @@ function id(key: string): TcId {
   return v;
 }
 
+// The "New environment" affordance moved into the "Environments actions"
+// kebab menu (see EnvironmentsSidebar.tsx EnvironmentsSidebarActions).
+async function newEnvironment(app: import('@playwright/test').Page, name: string): Promise<void> {
+  await app.getByRole('button', { name: 'Environments actions', exact: true }).first().click();
+  await app.getByRole('menuitem', { name: 'New Environment', exact: true }).click();
+  // The sidebar inline-create input shares the aria-label with the
+  // panel's env-rename input; the create one renders first in the DOM.
+  const input = app.getByLabel('Environment name', { exact: true }).first();
+  await input.fill(name);
+  await input.press('Enter');
+}
+
 test(
   tc(id('Adjacent variables'), 'active env wins; per-request context vars win over env'),
   async ({ app, e2eMock, sidebar }) => {
     // Create two environments with the same KEY.
     await app.getByRole('button', { name: /^Environments$/ }).click();
-    await app.getByLabel('New environment').click();
-    await app.getByPlaceholder('Environment name').fill('low');
-    await app.getByPlaceholder('Environment name').press('Enter');
+    await newEnvironment(app, 'low');
     await app.getByRole('button', { name: 'Add variable' }).click();
     await app.getByLabel('Variable key').first().fill('PRIORITY_KEY');
     await app.getByLabel('Variable value').first().fill('low-env-value');
     await app.getByLabel('Variable value').first().blur();
 
-    await app.getByLabel('New environment').click();
-    await app.getByPlaceholder('Environment name').fill('high');
-    await app.getByPlaceholder('Environment name').press('Enter');
+    await newEnvironment(app, 'high');
     await app.getByRole('button', { name: 'Add variable' }).click();
     await app.getByLabel('Variable key').first().fill('PRIORITY_KEY');
     await app.getByLabel('Variable value').first().fill('high-env-value');

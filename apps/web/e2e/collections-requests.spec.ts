@@ -472,7 +472,10 @@ test.describe('Collections & Requests', () => {
                     string,
                     {
                       name: string;
-                      source: { kind: string; endpoints?: Array<{ id: string; path: string }> };
+                      source: {
+                        kind: string;
+                        endpoints?: Array<{ id: string; pathPattern: string }>;
+                      };
                     }
                   >;
                 };
@@ -484,11 +487,11 @@ test.describe('Collections & Requests', () => {
           s.renameMockServer?.(mockServerId, 'Users Mock 2');
           const m = w.__apicircleStore!.getState().synced!.mockServers[mockServerId];
           const ep = m.source.kind === 'manual' ? (m.source.endpoints ?? []) : [];
-          return ep.map((e) => ({ id: e.id, path: e.path }));
+          return ep.map((e) => ({ id: e.id, pathPattern: e.pathPattern }));
         },
         { mockServerId: ids.mockServerId },
       );
-      expect(endpoints).toEqual([{ id: 'e1', path: '/users/:id' }]);
+      expect(endpoints).toEqual([{ id: 'e1', pathPattern: '/users/:id' }]);
     },
   );
 
@@ -825,7 +828,7 @@ test.describe('Collections & Requests', () => {
   test(
     tc(
       id('Delete Safety :: Schema ref orphaned'),
-      'delete schema -> request.bodySchemaId points at deleted id',
+      'delete schema -> request.bodySchemaId is cleared (no dangling ref)',
     ),
     async ({ app }) => {
       const ids = await seedWorkspace(app, 'seeded');
@@ -855,9 +858,10 @@ test.describe('Collections & Requests', () => {
         { r1Id: ids.requestIds[0], schemaId: ids.schemaId },
       );
       expect(after.schemaGone).toBe(true);
-      // The orphaned ref stays as the (now-stale) id; resolution
-      // returns null at edit time.
-      expect(after.refId).toBe(ids.schemaId);
+      // removeGlobalSchema cascades: any request whose bodySchemaId
+      // pointed at the deleted schema has its ref nulled out so there
+      // are never dangling references (globalAssetsActions.ts).
+      expect(after.refId).toBeNull();
     },
   );
 

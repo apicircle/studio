@@ -64,6 +64,7 @@ import {
   type PublishReleaseArgs,
   type AuthApplyOptions,
   type ResolutionMap,
+  type ResolutionScope,
   type ThreeWayDiff,
   applyLinkedUpdate as applyLinkedUpdateCore,
   applyMerge,
@@ -1721,6 +1722,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         synced: migrated,
         local,
         workspaceRegistry: registry,
+        // Derive the secret-lock state from the freshly-loaded workspace:
+        // a workspace with `secretCrypto` boots `locked` (no key in memory
+        // yet); one without is `unset`. The in-memory key never survives a
+        // hydrate, so always clear it.
+        secretKey: null,
+        secretLockState: migrated.secretCrypto ? 'locked' : 'unset',
+        lastSecretActivityAt: null,
       });
     } catch (err) {
       console.error('[workspace.hydrate] failed', err);
@@ -1756,6 +1764,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       synced: result.synced,
       local: result.local,
       workspaceRegistry: result.registry,
+      // The incoming workspace has its own secret-lock state — derive it
+      // from `secretCrypto` and drop the outgoing workspace's in-memory key.
+      secretKey: null,
+      secretLockState: result.synced.secretCrypto ? 'locked' : 'unset',
+      lastSecretActivityAt: null,
       // Reset transient panel state so the new workspace boots clean.
       pendingRefresh: null,
       activePlanId: null,
@@ -6384,10 +6397,37 @@ function commitSynced(
 // case a future feature wants the symmetry helper back.
 
 /**
+ * Resolve `{{var}}` placeholders inside an auth config's string fields.
+ *
+ * Every `RequestAuth` variant is a flat object of string-valued fields
+ * (a Bearer token, a Basic username/password, an OAuth2 client secret,
+ * an AWS access key, …) plus a handful of non-string discriminants /
+ * enums (`type`, `addTo`, `algorithm`, `expiresAt`, `bindPayload`, …).
+ * Without this step a `{{token}}` typed into the Bearer field would
+ * reach the wire verbatim — URL/header/body fields are interpolated in
+ * `resolveRequest` but `resolveInheritedAuth` only resolves folder
+ * inheritance, never variable substitution.
+ *
+ * We map `resolveString` over every string property; non-string fields
+ * pass through untouched, and enum-typed strings (which never contain
+ * `{{`) are a harmless no-op.
+ */
+function resolveAuthVariables(auth: RequestAuth, scope: ResolutionScope): RequestAuth {
+  const resolved: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(auth)) {
+    // `type` is the discriminant — never templated, keep it verbatim.
+    resolved[key] =
+      key !== 'type' && typeof value === 'string' ? resolveString(value, scope).value : value;
+  }
+  return resolved as unknown as RequestAuth;
+}
+
+/**
  * Apply variable substitution + secret decryption to a request before it
- * goes to the executor. URL, query params, headers, body content, and
- * (for json/text/xml/graphql) the raw body string are all resolved against
- * the workspace scope (context vars > active env > priority list > secrets).
+ * goes to the executor. URL, query params, headers, body content, auth
+ * fields, and (for json/text/xml/graphql) the raw body string are all
+ * resolved against the workspace scope (context vars > active env >
+ * priority list > secrets).
  *
  * Encrypted env-var values are decrypted in this single pass — the master
  * key is fetched once, decryption runs in parallel for the variables that
@@ -6514,11 +6554,16 @@ async function resolveRequest(
   // Resolve folder-level inheritance: if request.auth.type === 'inherit',
   // walk up the folder chain and pick the first explicit auth. The resolver
   // returns the original auth unchanged for non-inherit types.
-  const auth = resolveInheritedAuth({
+  const inheritedAuth = resolveInheritedAuth({
     requestAuth: request.auth ?? { type: 'none' },
     folderId: request.folderId,
     folders: synced.collections.folders,
   });
+  // Interpolate `{{var}}` placeholders in the auth's string fields —
+  // resolveInheritedAuth only resolves folder inheritance, so a
+  // `{{token}}` typed into a Bearer / Basic / API-key field would
+  // otherwise reach the wire verbatim.
+  const auth = resolveAuthVariables(inheritedAuth, scope);
 
   return { ...request, url, headers, query, body, auth };
 }

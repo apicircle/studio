@@ -92,15 +92,18 @@ test.describe('Plan-scoped env priority — C9', () => {
     async ({ app }) => {
       // Seed three envs and create a plan in one go via the store, then
       // verify the up/down buttons reorder the plan-scoped priority.
+      // `envPriorityOrder` is `EnvPriorityRef[]` (objects), not `string[]`.
       await app.evaluate(() => {
         const w = window as unknown as {
           __apicircleStore?: {
             getState: () => {
               addEnvironment: (n: string) => void;
               addPlan: () => string;
-              setPlanEnvPriority: (id: string, order: string[]) => void;
+              setPlanEnvPriority: (
+                id: string,
+                order: Array<{ kind: 'local'; name: string }>,
+              ) => void;
               renamePlan: (id: string, name: string) => void;
-              local?: { executionPlans: Record<string, { id: string }> };
             };
           };
         };
@@ -111,7 +114,11 @@ test.describe('Plan-scoped env priority — C9', () => {
         const planId = s.addPlan();
         s.renamePlan(planId, 'ReorderPlan');
         // Seed all three in alpha→beta→gamma order.
-        s.setPlanEnvPriority(planId, ['alpha', 'beta', 'gamma']);
+        s.setPlanEnvPriority(planId, [
+          { kind: 'local', name: 'alpha' },
+          { kind: 'local', name: 'beta' },
+          { kind: 'local', name: 'gamma' },
+        ]);
       });
 
       await app.getByRole('button', { name: /^Execution$/ }).click();
@@ -122,23 +129,29 @@ test.describe('Plan-scoped env priority — C9', () => {
       await app.getByRole('button', { name: 'Move gamma up' }).click();
       await app.getByRole('button', { name: 'Move gamma up' }).click();
 
-      // Read back from the store.
+      // Read back from the store. Plans now live on `synced.executionPlans`
+      // (Git-synced); `envPriorityOrder` is an `EnvPriorityRef[]` — map to
+      // names for the assertion.
       const finalOrder = await app.evaluate(() => {
         const w = window as unknown as {
           __apicircleStore?: {
             getState: () => {
-              local?: {
-                executionPlans: Record<
+              synced?: {
+                executionPlans?: Record<
                   string,
-                  { id: string; name: string; envPriorityOrder: string[] }
+                  {
+                    id: string;
+                    name: string;
+                    envPriorityOrder: Array<{ kind: string; name?: string }>;
+                  }
                 >;
               };
             };
           };
         };
-        const plans = w.__apicircleStore!.getState().local?.executionPlans ?? {};
+        const plans = w.__apicircleStore!.getState().synced?.executionPlans ?? {};
         const plan = Object.values(plans).find((p) => p.name === 'ReorderPlan');
-        return plan?.envPriorityOrder ?? null;
+        return plan ? plan.envPriorityOrder.map((r) => r.name ?? null) : null;
       });
       expect(finalOrder).toEqual(['gamma', 'beta', 'alpha']);
     },
@@ -148,7 +161,11 @@ test.describe('Plan-scoped env priority — C9', () => {
 // --- helpers --------------------------------------------------------------
 
 async function createEnv(app: import('@playwright/test').Page, name: string): Promise<void> {
-  await app.getByLabel('New environment').click();
+  // "New environment" moved into the "Environments actions" kebab menu
+  // (EnvironmentsSidebar.tsx EnvironmentsSidebarActions) — parallel to the
+  // editor sidebar's "Editor actions" refactor.
+  await app.getByRole('button', { name: 'Environments actions', exact: true }).first().click();
+  await app.getByRole('menuitem', { name: 'New Environment', exact: true }).click();
   await app.getByLabel('Environment name', { exact: false }).first().fill(name);
   await app.getByLabel('Environment name', { exact: false }).first().press('Enter');
   await expect(app.getByRole('button', { name: `Edit variables in ${name}` })).toBeVisible();

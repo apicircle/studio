@@ -2,6 +2,7 @@ import { expect, test } from './fixtures/app';
 import { tc } from './fixtures/tcCoverage';
 import type { TcId } from './fixtures/tcCoverage';
 import type { Page } from '@playwright/test';
+import type { SidebarHelpers } from './fixtures/app';
 import { tcMapAU } from './fixtures/tcMapAU';
 import { tcMapO2 } from './fixtures/tcMapO2';
 
@@ -32,13 +33,15 @@ function o2Id(key: string): TcId {
 // show/hide toggle is `aria-label="Show <name>"`. Use the textbox role
 // + exact:true to disambiguate.
 
-async function openAuthTab(app: Page, name = 'auth-test-req'): Promise<void> {
-  // Name-first flow: New request opens an inline-rename input, Enter
-  // commits the new request and switches the editor to it.
-  await app.getByLabel('New request', { exact: true }).first().click();
-  const input = app.getByLabel('Inline rename request');
-  await input.fill(`${name}-${Math.random().toString(36).slice(2, 8)}`);
-  await input.press('Enter');
+async function openAuthTab(
+  app: Page,
+  sidebar: SidebarHelpers,
+  name = 'auth-test-req',
+): Promise<void> {
+  // The sidebar's create affordances live behind the "Editor actions"
+  // kebab menu; `sidebar.createRequest` drives the name-first flow and
+  // waits for the editor to switch to the new request.
+  await sidebar.createRequest(`${name}-${Math.random().toString(36).slice(2, 8)}`);
   await app.getByRole('button', { name: /^Auth/ }).first().click();
 }
 
@@ -50,8 +53,8 @@ test.describe('Auth tab (P13)', () => {
       id('Inherit :: Folder Bearer inherited'),
       'renders the Inherit note by default (folder-auth ergonomic default) @smoke',
     ),
-    async ({ app }) => {
-      await openAuthTab(app);
+    async ({ app, sidebar }) => {
+      await openAuthTab(app, sidebar);
       // Default flipped from `none` → `inherit` so requests created inside
       // a folder pick up folder auth automatically.
       await expect(app.getByLabel('Auth type')).toHaveValue('inherit');
@@ -63,8 +66,8 @@ test.describe('Auth tab (P13)', () => {
 
   test(
     tc(id('Bearer :: Token masked in UI'), 'Bearer token form persists into the request'),
-    async ({ app, mockApi }) => {
-      await openAuthTab(app);
+    async ({ app, mockApi, sidebar }) => {
+      await openAuthTab(app, sidebar);
       await app.getByLabel('Auth type').selectOption('bearer');
       await tx(app, 'Bearer token').fill('tok-abc');
 
@@ -77,8 +80,8 @@ test.describe('Auth tab (P13)', () => {
 
   test(
     tc(id('Basic :: Special chars in password'), 'Basic auth shows username + password fields'),
-    async ({ app }) => {
-      await openAuthTab(app);
+    async ({ app, sidebar }) => {
+      await openAuthTab(app, sidebar);
       await app.getByLabel('Auth type').selectOption('basic');
       await expect(tx(app, 'Username')).toBeVisible();
       await expect(tx(app, 'Password')).toBeVisible();
@@ -94,12 +97,12 @@ test.describe('Auth tab (P13)', () => {
       id('API Key :: Cookie placement'),
       'API Key form shows Add-to selector with all three options',
     ),
-    async ({ app }) => {
-      await openAuthTab(app);
+    async ({ app, sidebar }) => {
+      await openAuthTab(app, sidebar);
       await app.getByLabel('Auth type').selectOption('api-key');
       await expect(tx(app, 'API key name')).toBeVisible();
       await expect(tx(app, 'API key value')).toBeVisible();
-      const select = app.getByLabel('API key add-to');
+      const select = app.getByLabel('API key location');
       await select.selectOption('query');
       await expect(select).toHaveValue('query');
       await select.selectOption('cookie');
@@ -107,8 +110,8 @@ test.describe('Auth tab (P13)', () => {
     },
   );
 
-  test(tc(id('Custom Header'), 'Custom header form renders'), async ({ app }) => {
-    await openAuthTab(app);
+  test(tc(id('Custom Header'), 'Custom header form renders'), async ({ app, sidebar }) => {
+    await openAuthTab(app, sidebar);
     await app.getByLabel('Auth type').selectOption('custom-header');
     await expect(tx(app, 'Header name')).toBeVisible();
     await expect(tx(app, 'Header value')).toBeVisible();
@@ -116,22 +119,25 @@ test.describe('Auth tab (P13)', () => {
 
   test(
     tc(o2Id('Client Credentials'), 'OAuth2 client credentials form renders all canonical fields'),
-    async ({ app }) => {
-      await openAuthTab(app);
+    async ({ app, sidebar }) => {
+      await openAuthTab(app, sidebar);
       await app.getByLabel('Auth type').selectOption('oauth2-client-credentials');
       await expect(tx(app, 'Token URL')).toBeVisible();
       await expect(tx(app, 'Client ID')).toBeVisible();
       await expect(tx(app, 'Client secret')).toBeVisible();
       await expect(tx(app, 'Scope')).toBeVisible();
       await expect(app.getByLabel('Client auth method')).toBeVisible();
-      await expect(tx(app, 'Access token')).toBeVisible();
+      // Token acquisition + cached-token state moved out of the form into
+      // OAuth2FlowActions — assert its Get-token control instead of the
+      // removed manual "Access token" field.
+      await expect(app.getByRole('button', { name: /Get token/i })).toBeVisible();
     },
   );
 
   test(
     tc(o2Id('Auth Code'), 'OAuth2 authorization code form has authUrl + redirectUri + state'),
-    async ({ app }) => {
-      await openAuthTab(app);
+    async ({ app, sidebar }) => {
+      await openAuthTab(app, sidebar);
       await app.getByLabel('Auth type').selectOption('oauth2-auth-code');
       await expect(tx(app, 'Authorization URL')).toBeVisible();
       await expect(tx(app, 'Redirect URI')).toBeVisible();
@@ -139,27 +145,33 @@ test.describe('Auth tab (P13)', () => {
     },
   );
 
-  test(tc(o2Id('PKCE'), 'OAuth2 PKCE shows code verifier + challenge method'), async ({ app }) => {
-    await openAuthTab(app);
-    await app.getByLabel('Auth type').selectOption('oauth2-pkce');
-    await expect(tx(app, 'Code verifier (PKCE)')).toBeVisible();
-    const challengeMethod = app.getByLabel('PKCE code challenge method');
-    await expect(challengeMethod).toHaveValue('S256');
-    await challengeMethod.selectOption('plain');
-    await expect(challengeMethod).toHaveValue('plain');
-  });
+  test(
+    tc(o2Id('PKCE'), 'OAuth2 PKCE shows code verifier + challenge method'),
+    async ({ app, sidebar }) => {
+      await openAuthTab(app, sidebar);
+      await app.getByLabel('Auth type').selectOption('oauth2-pkce');
+      await expect(tx(app, 'Code verifier (PKCE)')).toBeVisible();
+      const challengeMethod = app.getByLabel('PKCE code challenge method');
+      await expect(challengeMethod).toHaveValue('S256');
+      await challengeMethod.selectOption('plain');
+      await expect(challengeMethod).toHaveValue('plain');
+    },
+  );
 
-  test(tc(o2Id('Password'), 'OAuth2 ROPC shows username + password fields'), async ({ app }) => {
-    await openAuthTab(app);
-    await app.getByLabel('Auth type').selectOption('oauth2-password');
-    await expect(tx(app, 'Username')).toBeVisible();
-    await expect(tx(app, 'Password')).toBeVisible();
-  });
+  test(
+    tc(o2Id('Password'), 'OAuth2 ROPC shows username + password fields'),
+    async ({ app, sidebar }) => {
+      await openAuthTab(app, sidebar);
+      await app.getByLabel('Auth type').selectOption('oauth2-password');
+      await expect(tx(app, 'Username')).toBeVisible();
+      await expect(tx(app, 'Password')).toBeVisible();
+    },
+  );
 
   test(
     tc(o2Id('Implicit'), 'OAuth2 implicit form has just authUrl + clientId + redirectUri'),
-    async ({ app }) => {
-      await openAuthTab(app);
+    async ({ app, sidebar }) => {
+      await openAuthTab(app, sidebar);
       await app.getByLabel('Auth type').selectOption('oauth2-implicit');
       await expect(tx(app, 'Authorization URL')).toBeVisible();
       await expect(tx(app, 'Client ID')).toBeVisible();
@@ -167,28 +179,33 @@ test.describe('Auth tab (P13)', () => {
     },
   );
 
-  test(tc(o2Id('Device Code'), 'OAuth2 device shows device authorization URL'), async ({ app }) => {
-    await openAuthTab(app);
-    await app.getByLabel('Auth type').selectOption('oauth2-device');
-    await expect(tx(app, 'Device authorization URL')).toBeVisible();
-  });
+  test(
+    tc(o2Id('Device Code'), 'OAuth2 device shows device authorization URL'),
+    async ({ app, sidebar }) => {
+      await openAuthTab(app, sidebar);
+      await app.getByLabel('Auth type').selectOption('oauth2-device');
+      await expect(tx(app, 'Device authorization URL')).toBeVisible();
+    },
+  );
 
   test(
     tc(id('AWS SigV4 :: Sign GET'), 'AWS SigV4 form shows region, service, and add-to selector'),
-    async ({ app }) => {
-      await openAuthTab(app);
+    async ({ app, sidebar }) => {
+      await openAuthTab(app, sidebar);
       await app.getByLabel('Auth type').selectOption('aws-sigv4');
       await expect(tx(app, 'AWS access key ID')).toBeVisible();
-      await expect(tx(app, 'AWS region')).toHaveValue('us-east-1');
+      // The region field carries a <datalist> of common regions, so it
+      // exposes role=combobox (not textbox) — match by label instead.
+      await expect(app.getByLabel('AWS region')).toHaveValue('us-east-1');
       await expect(tx(app, 'AWS service')).toBeVisible();
-      await expect(app.getByLabel('SigV4 add-to')).toBeVisible();
+      await expect(app.getByLabel('SigV4 location')).toBeVisible();
     },
   );
 
   test(
     tc(id('Hawk :: MAC accepted'), 'Hawk form shows id, key, algorithm, ext'),
-    async ({ app }) => {
-      await openAuthTab(app);
+    async ({ app, sidebar }) => {
+      await openAuthTab(app, sidebar);
       await app.getByLabel('Auth type').selectOption('hawk');
       await expect(tx(app, 'Hawk ID')).toBeVisible();
       await expect(tx(app, 'Hawk key')).toBeVisible();
@@ -204,8 +221,8 @@ test.describe('Auth tab (P13)', () => {
       id('JWT :: HS256'),
       'JWT Bearer with HS256 shows algorithm + signing key + payload + token override',
     ),
-    async ({ app }) => {
-      await openAuthTab(app);
+    async ({ app, sidebar }) => {
+      await openAuthTab(app, sidebar);
       await app.getByLabel('Auth type').selectOption('jwt-bearer');
       await expect(app.getByLabel('JWT algorithm')).toHaveValue('HS256');
       await expect(tx(app, 'JWT signing key')).toBeVisible();
@@ -216,8 +233,8 @@ test.describe('Auth tab (P13)', () => {
 
   test(
     tc(id('Digest :: qop=auth-int'), 'Digest shows the deferred-handling note'),
-    async ({ app }) => {
-      await openAuthTab(app);
+    async ({ app, sidebar }) => {
+      await openAuthTab(app, sidebar);
       await app.getByLabel('Auth type').selectOption('digest');
       await expect(app.getByText(/Digest is challenge-based/i)).toBeVisible();
     },
@@ -228,8 +245,8 @@ test.describe('Auth tab (P13)', () => {
       id('NTLM :: Without workstation'),
       'NTLM shows domain + workstation fields and a deferred-handling note',
     ),
-    async ({ app }) => {
-      await openAuthTab(app);
+    async ({ app, sidebar }) => {
+      await openAuthTab(app, sidebar);
       await app.getByLabel('Auth type').selectOption('ntlm');
       await expect(tx(app, 'NTLM domain')).toBeVisible();
       await expect(tx(app, 'NTLM workstation')).toBeVisible();
@@ -239,8 +256,8 @@ test.describe('Auth tab (P13)', () => {
 
   test(
     tc(id('Inherit :: Nested folder walk'), 'Inherit shows the parent-folder explanatory note'),
-    async ({ app }) => {
-      await openAuthTab(app);
+    async ({ app, sidebar }) => {
+      await openAuthTab(app, sidebar);
       await app.getByLabel('Auth type').selectOption('inherit');
       await expect(
         app.getByText(/walks up the folder chain and uses the first folder/i),

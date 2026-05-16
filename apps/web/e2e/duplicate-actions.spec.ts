@@ -61,7 +61,10 @@ test.describe('Duplicate actions', () => {
     async ({ app }) => {
       // Switch to Environments panel.
       await app.getByRole('button', { name: /^Environments$/ }).click();
-      await app.getByLabel('New environment').click();
+      // The "New environment" affordance moved into the "Environments
+      // actions" kebab next to the sidebar header.
+      await app.getByRole('button', { name: 'Environments actions', exact: true }).click();
+      await app.getByRole('menuitem', { name: 'New Environment', exact: true }).click();
       await app.getByLabel('Environment name').fill('dev');
       await app.keyboard.press('Enter');
 

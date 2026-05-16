@@ -303,7 +303,8 @@ const cases: Case[] = [
     expected: 'xml',
     url: (m) => m('/json'),
     shouldPass: false,
-    failDetail: /did not contain/,
+    // Product wording (runAssertions.ts): `expected to contain "…", got "…"`.
+    failDetail: /expected to contain "xml"/,
   },
   // header value with `matches` (regex).
   {
@@ -324,7 +325,8 @@ const cases: Case[] = [
     expected: '^text/xml',
     url: (m) => m('/json'),
     shouldPass: false,
-    failDetail: /did not match/,
+    // Product wording (runAssertions.ts): `did not match pattern /…/`.
+    failDetail: /did not match pattern/,
   },
   // json-path with `contains`.
   {
@@ -345,7 +347,8 @@ const cases: Case[] = [
     expected: 'zzz',
     url: (m) => m('/json'),
     shouldPass: false,
-    failDetail: /did not contain/,
+    // Product wording (runAssertions.ts): `expected to contain "…", got "…"`.
+    failDetail: /expected to contain "zzz"/,
   },
   // json-path with `matches` (regex).
   {
@@ -370,16 +373,17 @@ const cases: Case[] = [
     shouldPass: false,
     failDetail: /duration/i,
   },
-  // status with `contains` — coerced to string comparison; "20" is a
-  // substring of "200".
+  // status with `contains` — status is a numeric kind, so `contains`
+  // is unsupported (runAssertions.ts compareNumber). The assertion
+  // fails with a clear "not supported for numeric values" message.
   {
-    name: 'status contains "20" → pass',
+    name: 'status contains "20" → unsupported',
     kind: 'status',
     op: 'contains',
     expected: '20',
     url: (m) => m('/status/200'),
-    shouldPass: true,
-    passDetail: /contains|200/i,
+    shouldPass: false,
+    failDetail: /op "contains" not supported for numeric values/,
   },
 ];
 

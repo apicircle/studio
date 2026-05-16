@@ -348,16 +348,28 @@ export async function buildRequest(
     const hasUserCookie = Object.keys(baseHeaders).some((k) => k.toLowerCase() === 'cookie');
     return hasUserCookie ? baseHeaders : { ...baseHeaders, Cookie: cookieValue };
   })();
-  // form-data and binary: let fetch set Content-Type from the FormData
-  // boundary or the Blob's own type. Any user-set Content-Type would break
-  // the request.
-  const sanitizedHeaders =
-    req.body.type === 'form-data' || req.body.type === 'binary'
-      ? stripContentType(headers)
-      : headers;
+  // GET and HEAD requests cannot carry a body on the fetch transport —
+  // the WHATWG `Request` constructor throws `TypeError: Request with
+  // GET/HEAD method cannot have body`. If the user configured a body and
+  // then switched the method, drop the body silently rather than letting
+  // the whole send fail. (Other tools — Postman, curl — behave the same.)
+  const methodAllowsBody = req.method !== 'GET' && req.method !== 'HEAD';
+  const body = methodAllowsBody ? await composeBody(req.body, opts.resolveAttachment) : null;
+  // Strip the Content-Type header when it describes a payload that won't
+  // reach the wire:
+  //  - form-data / binary: fetch must set Content-Type itself (multipart
+  //    boundary, Blob's own type) — a user-set value would corrupt it;
+  //  - GET / HEAD carrying a configured body: the body was just dropped
+  //    above, so its body-type Content-Type now describes nothing.
+  // A Content-Type with no body behind it (`body.type === 'none'`) is a
+  // plain user-set header — keep it; the browser sends it on GET too.
+  const stripBodyContentType =
+    req.body.type === 'form-data' ||
+    req.body.type === 'binary' ||
+    (!methodAllowsBody && req.body.type !== 'none');
+  const sanitizedHeaders = stripBodyContentType ? stripContentType(headers) : headers;
   const urlWithPath = applyPathParams(req.url, req.pathParams ?? {});
   const url = composeUrl(urlWithPath, req.query);
-  const body = await composeBody(req.body, opts.resolveAttachment);
 
   // Auth runs last — schemes like AWS SigV4 read the final URL + headers +
   // body to compute their signature. Older synced docs may lack `auth`;

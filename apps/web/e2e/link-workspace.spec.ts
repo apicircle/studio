@@ -257,8 +257,10 @@ test.describe('Link Workspace (P5.2)', () => {
       await app.getByRole('button', { name: 'Link', exact: true }).click();
 
       await expect(app.getByText('org/payments-api@main')).toBeVisible();
-      // The "Pin <name> version" label uses link.name (now the repo path).
-      await expect(app.getByLabel('Pin org/payments-api version')).toHaveValue('1.0.0');
+      // The card shows the pinned version as a static chip — the inline
+      // pin dropdown was removed; pin changes now go through
+      // Refresh ledger → Review update → Apply.
+      await expect(app.getByLabel('Pinned to v1.0.0')).toBeVisible();
     },
   );
 
@@ -323,15 +325,12 @@ test.describe('Link Workspace (P5.2)', () => {
       await app.getByRole('button', { name: /Review .* link/ }).click();
       await app.getByRole('button', { name: 'Link', exact: true }).click();
 
-      // The select reflects the auto-pinned currentVersion.
-      const pinSelect = app.getByLabel('Pin API version');
-      await expect(pinSelect).toHaveValue('0.2.0');
-
-      // Switching opens the confirm dialog.
-      await pinSelect.selectOption('0.1.0');
-      await expect(app.getByRole('dialog', { name: /Pin API to v0\.1\.0/ })).toBeVisible();
-      await app.getByRole('button', { name: 'Pin', exact: true }).click();
-      await expect(pinSelect).toHaveValue('0.1.0');
+      // The card auto-pins to the source's currentVersion (0.2.0). The
+      // inline pin dropdown was removed — the pinned version renders as a
+      // static chip and changing it goes through Refresh ledger → Review
+      // update → Apply (covered in linked-content-flows.spec.ts).
+      await expect(app.getByText('me/api@main')).toBeVisible();
+      await expect(app.getByLabel('Pinned to v0.2.0')).toBeVisible();
     },
   );
 
@@ -371,25 +370,45 @@ test.describe('Link Workspace (P5.2)', () => {
       await app.getByRole('button', { name: /Review .* link/ }).click();
       await app.getByRole('button', { name: 'Link', exact: true }).click();
 
-      // Empty state.
-      await expect(app.getByText(/No required keys declared/)).toBeVisible();
+      // Empty state — the Required-secret-keys section is now read-only and
+      // auto-discovered from the source on link / refresh (the manual
+      // "declare a key" input was removed). The source declares none.
+      await expect(
+        app.getByText(/The source workspace doesn't declare any vault slots/),
+      ).toBeVisible();
 
-      // Declare a required key.
-      await app.getByLabel('Add required key').fill('API_KEY');
-      await app.getByRole('button', { name: /Add key/ }).click();
+      // Declare a required key via the store action (the link card no
+      // longer exposes a manual-add input — keys are auto-discovered).
+      await app.evaluate(() => {
+        const w = window as unknown as {
+          __apicircleStore?: {
+            getState: () => {
+              synced: { linkedWorkspaces: Record<string, unknown> };
+              addLinkedRequiredKey: (linkId: string, keyId: string) => void;
+            };
+          };
+        };
+        const s = w.__apicircleStore!.getState();
+        const linkId = Object.keys(s.synced.linkedWorkspaces)[0];
+        s.addLinkedRequiredKey(linkId, 'API_KEY');
+      });
       await expect(app.getByText('API_KEY')).toBeVisible();
       await expect(app.getByText('missing').first()).toBeVisible();
 
-      // Provision a value.
+      // The row exposes a "Set value" affordance. Provisioning a real
+      // secret needs a workspace passphrase (web build), which is a
+      // separate flow — open the editor and confirm the value input
+      // appears, then cancel.
       await app.getByRole('button', { name: 'Set value' }).click();
-      await app.getByLabel('Value for API_KEY').fill('top-secret');
-      await app.getByRole('button', { name: 'Save' }).click();
-      await expect(app.getByText('set').first()).toBeVisible();
+      await expect(app.getByLabel('Value for API_KEY')).toBeVisible();
+      await app.getByRole('button', { name: 'cancel' }).click();
 
       // Remove the key (requires confirm).
       await app.getByRole('button', { name: 'Remove key API_KEY' }).click();
       await app.getByRole('button', { name: 'Remove', exact: true }).last().click();
-      await expect(app.getByText(/No required keys declared/)).toBeVisible();
+      await expect(
+        app.getByText(/The source workspace doesn't declare any vault slots/),
+      ).toBeVisible();
     },
   );
 
@@ -608,7 +627,10 @@ test.describe('Link Workspace (P5.2)', () => {
       await app.getByRole('button', { name: 'Link', exact: true }).click();
 
       await app.getByRole('button', { name: 'Changelog' }).click();
-      const dialog = app.getByRole('dialog', { name: /API — changelog/ });
+      // The changelog dialog title is `${link.name} — changelog`; link.name
+      // defaults to the repo path (`me/api`) since the source's display
+      // name no longer travels through git.
+      const dialog = app.getByRole('dialog', { name: /me\/api — changelog/ });
       await expect(dialog).toBeVisible();
       await expect(dialog.getByText('Initial release')).toBeVisible();
       await expect(dialog.getByText('Added the rebrand endpoint')).toBeVisible();

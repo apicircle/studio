@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures/app';
+import type { Page } from '@playwright/test';
 
 import { tc } from './fixtures/tcCoverage';
 import type { TcId } from './fixtures/tcCoverage';
@@ -11,6 +12,33 @@ function id(key: string): TcId {
   if (!v) throw new Error(`No TC-VR entry for "${key}"`);
   return v;
 }
+
+/**
+ * Set a workspace passphrase via the store. On the web build, secrets
+ * can't be added until `synced.secretCrypto` is configured — the
+ * platform secret gate (`persistence/platformSecretGate.ts`) refuses
+ * otherwise because the master key would sit in plaintext IndexedDB.
+ *
+ * The product's lazy "Set passphrase" prompt (PassphrasePromptModalGate)
+ * isn't wired to a UI trigger yet, so the E2E suite drives the
+ * `setupPassphrase` store action directly — the passphrase model itself
+ * is fully functional, only the trigger UI is pending.
+ */
+async function setWorkspacePassphrase(app: Page, passphrase: string): Promise<void> {
+  const result = await app.evaluate(async (pass: string) => {
+    const w = window as unknown as {
+      __apicircleStore?: {
+        getState: () => {
+          setupPassphrase: (p: string) => Promise<{ ok: true } | { ok: false; reason: string }>;
+        };
+      };
+    };
+    const store = w.__apicircleStore;
+    if (!store) return { ok: false, reason: '__apicircleStore not exposed' };
+    return store.getState().setupPassphrase(pass);
+  }, passphrase);
+  expect(result.ok, result.ok ? '' : `setupPassphrase failed: ${result.reason}`).toBe(true);
+}
 // Plan §10.2 "Secret Vault" suite — open vault → add secret → reveal →
 // reference it in a request → see the where-used expander → try to delete
 // → confirmation gate fires → confirm and verify deletion.
@@ -22,8 +50,16 @@ test.describe('Secret Vault', () => {
       'add → list → reveal cycle persists through master-key crypto @smoke',
     ),
     async ({ app }) => {
+      // Web build gates secret creation behind a workspace passphrase.
+      await setWorkspacePassphrase(app, 'e2e-test-passphrase');
+      // The Secret Vault opens in the right-side dock (an `aside` with
+      // role="complementary"), not a modal — see layout/RightDock.tsx.
       await app.getByRole('button', { name: /Open Secret Vault/ }).click();
-      await expect(app.getByRole('dialog', { name: /Secret Vault/ })).toBeVisible();
+      await expect(app.getByRole('complementary', { name: 'Workspace inspector' })).toBeVisible();
+      await expect(app.getByRole('tab', { name: 'Vault' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
 
       await app.getByRole('button', { name: 'New secret' }).click();
       await app.getByLabel('New secret label').fill('API_KEY');
@@ -48,6 +84,8 @@ test.describe('Secret Vault', () => {
       'delete is blocked when usedIn is non-empty until confirmed',
     ),
     async ({ app, sidebar }) => {
+      // Web build gates secret creation behind a workspace passphrase.
+      await setWorkspacePassphrase(app, 'e2e-test-passphrase');
       // Seed a secret via the vault.
       await app.getByRole('button', { name: /Open Secret Vault/ }).click();
       await app.getByRole('button', { name: 'New secret' }).click();
@@ -55,8 +93,10 @@ test.describe('Secret Vault', () => {
       await app.getByLabel('New secret value').fill('hello');
       await app.getByRole('button', { name: 'Save', exact: true }).click();
       await expect(app.getByRole('listitem').filter({ hasText: 'TOKEN' })).toBeVisible();
-      // Close the modal so we can interact with the editor.
-      await app.keyboard.press('Escape');
+      // Close the dock so we can interact with the editor. The dock has a
+      // dedicated "Close workspace inspector" button (RightDock.tsx) — it's
+      // not Escape-dismissable like a modal.
+      await app.getByRole('button', { name: 'Close workspace inspector' }).click();
 
       // Create a request that references the secret label.
       await sidebar.createRequest('secret-ref');

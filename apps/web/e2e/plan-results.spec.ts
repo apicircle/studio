@@ -63,7 +63,9 @@ test.describe('Plan run details (P21)', () => {
       // the per-step Status badge instead (201, since beta returns 201).
       await detailsSection.getByRole('button', { expanded: false, name: /beta-req/ }).click();
       await expect(detailsSection.getByText('https://api.example.test/beta')).toBeVisible();
-      await expect(detailsSection.getByRole('button', { name: /2\..*beta-req/ })).toBeVisible();
+      // Per-step row button is labelled `Step <n> <name> details`
+      // (ExecutionPanel.tsx ~line 523).
+      await expect(detailsSection.getByRole('button', { name: /Step 2 .*beta-req/ })).toBeVisible();
     },
   );
 

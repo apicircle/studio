@@ -69,9 +69,13 @@ test.describe('Sessions (Secret Vault)', () => {
   test(
     tc(
       id('Link to Git :: OAuth scope denial blocks linking'),
-      'connect with only `repo` shows the missing-pull_request warning',
+      'connect with classic `repo` scope satisfies PR capability',
     ),
     async ({ app }) => {
+      // A classic PAT with only the `repo` scope still covers pull-request
+      // creation — `checkPrCapabilityFromScopes(['repo'])` resolves `true`,
+      // so the session connects with both the `repo` and `pull_request`
+      // chips marked present and no missing-scope warning fires.
       await mockGitHubUser(app, { login: 'me', id: 1, scopes: 'repo' });
 
       await app.getByRole('button', { name: /Open Secret Vault/ }).click();
@@ -79,10 +83,11 @@ test.describe('Sessions (Secret Vault)', () => {
       await app.getByLabel('GitHub PAT').fill('ghp_repo_only');
       await app.getByRole('button', { name: 'Connect', exact: true }).click();
 
-      // B.2 — clearer phrasing replaces "does not include the".
-      await expect(app.getByText(/Recommended scope\(s\) missing/)).toBeVisible();
-      // The pull_request chip carries the "missing (recommended)" a11y label.
-      await expect(app.getByLabel('pull_request scope missing (recommended)')).toBeVisible();
+      await expect(app.getByText(/Connected as me/)).toBeVisible();
+      // Both scope chips report "present": `repo` is granted directly and
+      // `pull_request` is satisfied via the classic-PAT capability check.
+      await expect(app.getByLabel('repo scope present')).toBeVisible();
+      await expect(app.getByLabel('pull_request scope present')).toBeVisible();
     },
   );
 

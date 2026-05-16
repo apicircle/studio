@@ -95,6 +95,9 @@ async function setupConnectedBranch(app: Page): Promise<void> {
   await app.keyboard.press('Escape');
 
   await app.getByRole('button', { name: /^Workspace$/ }).click();
+  // The owner/name input lives behind the "Manual entry" toggle — the
+  // ConnectRepoForm defaults to the repo browser (see WorkspacePanel.tsx).
+  await app.getByRole('button', { name: 'Switch to manual entry' }).click();
   await app.getByLabel('Repo full name').fill('me/api');
   await app.getByRole('button', { name: 'Connect repo' }).click();
   await expect(app.getByText('me/api')).toBeVisible();

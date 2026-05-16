@@ -43,7 +43,8 @@ test.describe('Query params', () => {
 
       await app.getByLabel('Query value 2').fill('edited');
       await app.getByLabel('Delete Query row 3').click();
-      await app.getByLabel('Enable row 3').uncheck();
+      // After deleting row 3 (c-delete), d-disable renumbers to row 3.
+      await app.getByLabel('Enable Query row 3').uncheck();
 
       await app.getByRole('button', { name: /^Send$/ }).click();
       await expect(app.getByText('200').first()).toBeVisible();
@@ -230,7 +231,7 @@ test.describe('Cookie params', () => {
       await app.getByRole('button', { name: 'Add row' }).first().click();
       await app.getByLabel('Cookies key 2').fill('skip_disable');
       await app.getByLabel('Cookies value 2').fill('no');
-      await app.getByLabel('Enable row 2').uncheck();
+      await app.getByLabel('Enable Cookies row 2').uncheck();
       await expect(app.getByText('keep_disable=yes', { exact: false })).toBeVisible();
       // skip_disable should NOT appear anywhere in the editor's composed
       // preview surface.
@@ -281,16 +282,17 @@ test.describe('Request Editor — URL Bar edge cases', () => {
     async ({ app, sidebar }) => {
       await sidebar.createRequest('re-empty-url');
       await app.getByLabel('Request URL').fill('');
-      await app.getByRole('button', { name: /^Send$/ }).click();
       // Either Send is disabled OR an error surfaces. Both are
-      // workbook-acceptable.
+      // workbook-acceptable. Don't click — a disabled Send button would
+      // hang the action; inspect its state directly instead.
+      const sendButton = app.getByRole('button', { name: /^Send$/ }).first();
+      const disabled = await sendButton.isDisabled().catch(() => false);
+      if (!disabled) {
+        // Send is enabled — clicking should surface a validation error.
+        await sendButton.click();
+      }
       const errOrDisabled = app.getByText(/url is required|invalid url|^ERR/i);
-      const sendButton = app.getByRole('button', { name: /^Send$/ });
       const errCount = await errOrDisabled.count();
-      const disabled = await sendButton
-        .first()
-        .isDisabled()
-        .catch(() => false);
       expect(errCount > 0 || disabled).toBe(true);
     },
   );
@@ -345,7 +347,7 @@ test.describe('Request Editor — URL Bar edge cases', () => {
   test(
     tc(
       id('URL Bar :: Undefined variable resolves empty'),
-      '{{nonexistent}} resolves to empty string',
+      '{{nonexistent}} is left as the literal placeholder',
     ),
     async ({ app, e2eMock, sidebar }) => {
       const path = `/anything/re-undef-${Math.random().toString(36).slice(2, 6)}`;
@@ -356,9 +358,11 @@ test.describe('Request Editor — URL Bar edge cases', () => {
         timeout: 10_000,
       });
       const wire = await e2eMock.findLastByPath((p) => p === path);
-      // Undefined variables resolve to empty — the query param is
-      // either empty string or omitted.
-      expect(wire.query.v === '' || wire.query.v === undefined).toBe(true);
+      // Per resolveString() in variableResolver.ts, unknown `{{NAME}}`
+      // placeholders are intentionally left as-is so the user can see
+      // which placeholder didn't resolve — they are NOT collapsed to
+      // empty. The literal token reaches the wire.
+      expect(wire.query.v).toBe('{{nonexistent_var_xyz}}');
     },
   );
 

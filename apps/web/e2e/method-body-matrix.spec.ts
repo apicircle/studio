@@ -282,6 +282,14 @@ test.describe(`Method x Body matrix — ${FULL_SWEEP ? 'full sweep' : 'smoke sub
       // still reports 200). 10s ceiling covers binary + cold-compile.
       await expect(app.getByText(/^(2|3|4|5)\d\d/).first()).toBeVisible({ timeout: 10_000 });
 
+      // OPTIONS requests are intercepted by the e2e mock's CORS
+      // middleware (Hono `cors` short-circuits the preflight before the
+      // request reaches the introspection-capture middleware), so the
+      // mock never records them. The send still completes — the status
+      // badge above proves the request landed — but there's no wire
+      // entry to introspect, so skip the wire-shape assertion for OPTIONS.
+      if (method === 'OPTIONS') return;
+
       const wire = await e2eMock.findLastByPath((p) => p === path);
       expect(wire.method).toBe(method);
 
@@ -295,7 +303,9 @@ test.describe(`Method x Body matrix — ${FULL_SWEEP ? 'full sweep' : 'smoke sub
           expect(wire.body.kind).toBe(EXPECTED_KIND[body]);
         }
       } else {
-        // GET / HEAD: per TC-MM-0001..0009 either outcome is acceptable.
+        // GET / HEAD: the body is dropped on the fetch transport
+        // (buildRequest strips it — those methods can't carry a body),
+        // so the mock records an empty body.
         expect([EXPECTED_KIND[body], 'empty']).toContain(wire.body.kind);
       }
     });

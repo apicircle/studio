@@ -48,7 +48,17 @@ async function loadMonacoEditorComponent(): Promise<ComponentType<EditorProps> |
         // serving locally is deterministic and matches the desktop
         // runtime which has no network at all. See vite.config.ts +
         // `apps/web/public/monaco-vendor` for how the bundle is served.
-        reactModule.loader.config({ paths: { vs: '/monaco-vendor/vs' } });
+        //
+        // The `vs` path MUST be absolute (origin-qualified). Monaco spawns
+        // its language workers (JSON/TS/CSS) inside a blob-URL worker; a
+        // root-relative `/monaco-vendor/vs` can't be resolved against a
+        // `blob:` base, so the worker's `importScripts` throws "invalid
+        // URL" and JSON-schema / syntax diagnostics silently never run.
+        const vsBase =
+          typeof window !== 'undefined'
+            ? `${window.location.origin}/monaco-vendor/vs`
+            : '/monaco-vendor/vs';
+        reactModule.loader.config({ paths: { vs: vsBase } });
         return reactModule.default as ComponentType<EditorProps>;
       } catch {
         return null;
@@ -266,14 +276,20 @@ function MonacoEditorBaseComponent({
       // Test-friendly registry. Monaco's hidden textarea fights synthetic
       // typing (auto-bracket pairs, suggestion popups), so e2e specs need
       // a way to set the editor value programmatically. We expose the
-      // instance keyed by aria-label on a window-bound map; production
-      // doesn't depend on this hook, but Playwright specs read it.
-      if (typeof window !== 'undefined' && ariaLabel) {
+      // instance keyed by aria-label on a window-bound map, plus the
+      // `monaco` namespace itself so specs can read model markers
+      // (`monaco.editor.getModelMarkers`); production doesn't depend on
+      // this hook, but Playwright specs read it.
+      if (typeof window !== 'undefined') {
         const w = window as unknown as {
           __apicircleEditors?: Map<string, editor.IStandaloneCodeEditor>;
+          monaco?: Monaco;
         };
-        if (!w.__apicircleEditors) w.__apicircleEditors = new Map();
-        w.__apicircleEditors.set(ariaLabel, instance);
+        if (ariaLabel) {
+          if (!w.__apicircleEditors) w.__apicircleEditors = new Map();
+          w.__apicircleEditors.set(ariaLabel, instance);
+        }
+        w.monaco = monaco;
       }
       onEditorMount?.(instance, monaco);
     },

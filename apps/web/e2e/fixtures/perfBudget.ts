@@ -99,17 +99,21 @@ export async function seedRequests(
           }
         ).synced?.collections?.requests ?? {};
       const beforeCount = Object.keys(before).length;
+      const now = new Date().toISOString();
       store.setState((state) => {
+        // `collections.tree` is a single FolderNode whose `.children` is an
+        // array of `{ kind, id }`; `requests` / `folders` are keyed records.
         const s = state as {
           synced: {
             collections: {
               requests: Record<string, unknown>;
-              tree: Array<{ kind: 'request'; requestId: string }>;
+              folders: Record<string, unknown>;
+              tree: { id: string; type: string; children: Array<{ kind: string; id: string }> };
             };
           };
         };
         const requests = { ...s.synced.collections.requests };
-        const tree = [...s.synced.collections.tree];
+        const children = [...s.synced.collections.tree.children];
         for (let i = 0; i < n; i++) {
           const id = `synthetic-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`;
           requests[id] = {
@@ -121,18 +125,24 @@ export async function seedRequests(
             headers: [],
             query: [],
             body: { type: 'none', content: '' },
-            auth: { kind: 'inherit' },
+            auth: { type: 'inherit' },
             assertions: [],
-            contextExtractions: [],
-            description: '',
+            contextVars: [],
+            extractions: [],
+            createdAt: now,
+            updatedAt: now,
           };
-          tree.push({ kind: 'request', requestId: id });
+          children.push({ kind: 'request', id });
         }
         return {
           ...s,
           synced: {
             ...s.synced,
-            collections: { ...s.synced.collections, requests, tree },
+            collections: {
+              ...s.synced.collections,
+              requests,
+              tree: { ...s.synced.collections.tree, children },
+            },
           },
         };
       });
@@ -163,39 +173,53 @@ export async function seedEnvVars(page: Page, count: number): Promise<number> {
     const store = w.__apicircleStore;
     if (!store?.setState) return -1;
     store.setState((state) => {
+      // `environments` is `{ items: Record<name,Environment>; activeName; ... }`.
+      // An `Environment` is `{ name, variables }`; each variable is
+      // `{ key, value, encrypted }`.
       const s = state as {
         synced: {
-          environments: Array<{
-            id: string;
-            name: string;
-            variables: Array<{ key: string; value: string; enabled: boolean; isSecret: boolean }>;
-          }>;
+          environments: {
+            items: Record<
+              string,
+              { name: string; variables: Array<{ key: string; value: string; encrypted: boolean }> }
+            >;
+            activeName: string | null;
+            priorityOrder: Array<{ kind: 'local'; name: string }>;
+          };
         };
       };
-      const environments = [...s.synced.environments];
-      let env = environments[0];
-      if (!env) {
-        env = { id: `synthetic-env-${Date.now()}`, name: 'Perf', variables: [] };
-        environments.push(env);
-      }
+      const items = { ...s.synced.environments.items };
+      const existingName = Object.keys(items)[0];
+      const envName = existingName ?? 'Perf';
+      const env = items[envName] ?? { name: envName, variables: [] };
       const variables = [...env.variables];
       for (let i = 0; i < n; i++) {
-        variables.push({
-          key: `var_${i}_${Date.now()}`,
-          value: `value-${i}`,
-          enabled: true,
-          isSecret: false,
-        });
+        variables.push({ key: `var_${i}_${Date.now()}`, value: `value-${i}`, encrypted: false });
       }
-      environments[environments.indexOf(env)] = { ...env, variables };
-      return { ...s, synced: { ...s.synced, environments } };
+      items[envName] = { ...env, variables };
+      const priorityOrder = s.synced.environments.priorityOrder.some((p) => p.name === envName)
+        ? s.synced.environments.priorityOrder
+        : [...s.synced.environments.priorityOrder, { kind: 'local' as const, name: envName }];
+      return {
+        ...s,
+        synced: {
+          ...s.synced,
+          environments: {
+            ...s.synced.environments,
+            items,
+            activeName: s.synced.environments.activeName ?? envName,
+            priorityOrder,
+          },
+        },
+      };
     });
-    const ws = (
+    const items = (
       store.getState() as {
-        synced?: { environments?: Array<{ variables: unknown[] }> };
+        synced?: { environments?: { items?: Record<string, { variables: unknown[] }> } };
       }
-    ).synced?.environments;
-    return ws?.[0]?.variables.length ?? -1;
+    ).synced?.environments?.items;
+    const first = items ? Object.values(items)[0] : undefined;
+    return first?.variables.length ?? -1;
   }, count);
 }
 
@@ -213,26 +237,32 @@ export async function seedFolders(page: Page, count: number): Promise<number> {
     const store = w.__apicircleStore;
     if (!store?.setState) return -1;
     store.setState((state) => {
+      // `folders` is a keyed record; the tree is a single FolderNode whose
+      // `.children` holds `{ kind, id }` refs.
       const s = state as {
         synced: {
           collections: {
             folders: Record<string, unknown>;
-            tree: Array<{ kind: 'folder'; folderId: string; children: unknown[] }>;
+            tree: { id: string; type: string; children: Array<{ kind: string; id: string }> };
           };
         };
       };
       const folders = { ...(s.synced.collections.folders ?? {}) };
-      const tree = [...s.synced.collections.tree];
+      const children = [...s.synced.collections.tree.children];
       for (let i = 0; i < n; i++) {
         const id = `synthetic-folder-${Date.now()}-${i}`;
         folders[id] = { id, name: `Folder ${i}`, parentId: null };
-        tree.push({ kind: 'folder', folderId: id, children: [] });
+        children.push({ kind: 'folder', id });
       }
       return {
         ...s,
         synced: {
           ...s.synced,
-          collections: { ...s.synced.collections, folders, tree },
+          collections: {
+            ...s.synced.collections,
+            folders,
+            tree: { ...s.synced.collections.tree, children },
+          },
         },
       };
     });

@@ -119,7 +119,11 @@ test.describe('Plan features — C10', () => {
       await app.getByRole('checkbox', { name: 'Select c10-dup' }).click();
       await app.getByRole('button', { name: 'Add step' }).last().click();
 
-      await app.getByRole('button', { name: 'Duplicate DupSrc' }).click();
+      // "Duplicate" moved into the per-plan kebab in the Execution
+      // sidebar (ExecutionSidebar.tsx) — `<plan name> actions` →
+      // `Duplicate` menuitem.
+      await app.getByRole('button', { name: 'DupSrc actions', exact: true }).click();
+      await app.getByRole('menuitem', { name: 'Duplicate', exact: true }).click();
       // The active plan switches to the clone.
       await expect(app.getByLabel('Plan name')).toHaveValue('DupSrc (copy)');
       // The clone has the same step (c10-dup).
@@ -136,7 +140,9 @@ test.describe('Plan features — C10', () => {
     async ({ app, e2eMock, sidebar }) => {
       // Env layer: BACKEND=env-backend.
       await app.getByRole('button', { name: /^Environments$/ }).click();
-      await app.getByLabel('New environment').click();
+      // "New environment" lives behind the "Environments actions" kebab.
+      await app.getByRole('button', { name: 'Environments actions', exact: true }).first().click();
+      await app.getByRole('menuitem', { name: 'New Environment', exact: true }).click();
       await app.getByLabel('Environment name').fill('env-c10');
       await app.getByLabel('Environment name').press('Enter');
       await app.getByRole('button', { name: 'Add variable' }).click();
@@ -405,12 +411,13 @@ test.describe('Plan features — C10', () => {
           __apicircleStore?: {
             getState: () => {
               runPlan: (id: string) => Promise<unknown>;
-              local?: { executionPlans: Record<string, { id: string; name: string }> };
+              synced?: { executionPlans?: Record<string, { id: string; name: string }> };
             };
           };
         };
         const state = w.__apicircleStore!.getState();
-        const planId = Object.values(state.local?.executionPlans ?? {}).find(
+        // Plans live on `synced.executionPlans` (Git-synced), not local.
+        const planId = Object.values(state.synced?.executionPlans ?? {}).find(
           (p) => p.name === 'ConcurrentPlan',
         )?.id;
         if (!planId) return { ok: false, msg: 'plan id not found' };

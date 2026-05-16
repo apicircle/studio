@@ -141,7 +141,11 @@ test.describe('Monaco foundation (P12)', () => {
       // a `vs-dark` className on the inner editor.
       await expect(wrapper.locator('.monaco-editor').first()).toHaveClass(/vs-dark/);
 
-      await app.getByRole('button', { name: 'Choose theme' }).click();
+      // The theme picker moved into the top-bar "Workspace settings"
+      // popover (the standalone "Choose theme" button was removed). Open
+      // Settings → the Theme row → pick Paper Light from the listbox.
+      await app.getByRole('button', { name: 'Open workspace settings' }).click();
+      await app.getByRole('button', { name: /^Theme:/ }).click();
       await app.getByRole('option', { name: /Paper Light/ }).click();
       await expect(app.locator('html')).toHaveAttribute('data-theme', 'paper-light');
 

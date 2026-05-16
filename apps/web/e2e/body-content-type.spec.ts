@@ -248,19 +248,18 @@ test.describe('TC-BC JSON edge cases', () => {
     if (!cell) continue;
     test(
       tc(tcId as TcId, `${key} — JSON body sends with correct shape`),
-      async ({ app, e2eMock, sidebar }) => {
+      async ({ app, e2eMock, monaco, sidebar }) => {
         const path = `/anything/bc-json-${tcId}`;
         await sidebar.createRequest(`bc-${tcId}`);
         await app.getByLabel('HTTP method').selectOption('POST');
         await app.getByLabel('Request URL').fill(e2eMock.url(path));
         await app.getByRole('button', { name: 'Body', exact: true }).click();
         await app.getByRole('radio', { name: 'JSON' }).click();
-        await app.evaluate((content: string) => {
-          const w = window as unknown as {
-            __apicircleEditors?: Map<string, { setValue: (s: string) => void }>;
-          };
-          w.__apicircleEditors?.get('Request body')?.setValue(content);
-        }, cell.content);
+        // `monaco.fill` waits for the editor to register on
+        // `window.__apicircleEditors` before calling setValue — a raw
+        // `app.evaluate(...setValue...)` would no-op if the lazy Monaco
+        // import hasn't mounted yet, leaving the body empty on the wire.
+        await monaco.fill('Request body', cell.content);
         await app.getByRole('button', { name: /^Send$/ }).click();
         // Accept any response; the wire-level check is what matters.
         await expect(app.getByText(/^(2|3|4|5)\d\d/).first()).toBeVisible({
@@ -294,19 +293,15 @@ test.describe('TC-BC XML edge cases', () => {
   for (const [key, tcId] of Object.entries(tcMapBC)) {
     const cell = XML_CELLS.find((c) => c.keyMatch.test(key));
     if (!cell) continue;
-    test(tc(tcId as TcId, `${key} — XML body sends`), async ({ app, e2eMock, sidebar }) => {
+    test(tc(tcId as TcId, `${key} — XML body sends`), async ({ app, e2eMock, monaco, sidebar }) => {
       const path = `/anything/bc-xml-${tcId}`;
       await sidebar.createRequest(`bc-${tcId}`);
       await app.getByLabel('HTTP method').selectOption('POST');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByRole('button', { name: 'Body', exact: true }).click();
       await app.getByRole('radio', { name: 'XML' }).click();
-      await app.evaluate((content: string) => {
-        const w = window as unknown as {
-          __apicircleEditors?: Map<string, { setValue: (s: string) => void }>;
-        };
-        w.__apicircleEditors?.get('Request body')?.setValue(content);
-      }, cell.content);
+      // See JSON loop above — `monaco.fill` waits for editor registration.
+      await monaco.fill('Request body', cell.content);
       await app.getByRole('button', { name: /^Send$/ }).click();
       await expect(app.getByText(/^(2|3|4|5)\d\d/).first()).toBeVisible({
         timeout: 10_000,

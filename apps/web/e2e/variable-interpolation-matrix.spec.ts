@@ -22,6 +22,7 @@ import { expect, test } from './fixtures/app';
 import { tc } from './fixtures/tcCoverage';
 import { tcMapVI } from './fixtures/tcMapVI';
 import type { TcId } from './fixtures/tcCoverage';
+import type { MonacoHelpers } from './fixtures/app';
 import { seedWorkspace } from './fixtures/idbSeed';
 import type { Page } from '@playwright/test';
 
@@ -87,6 +88,7 @@ interface ConsumerDriver {
     sidebar: { createRequest: (n: string) => Promise<void> },
     path: string,
     expected: string,
+    monaco: MonacoHelpers,
   ) => Promise<WireAssertion | null>;
 }
 
@@ -147,18 +149,16 @@ const CONSUMER_DRIVERS: Record<string, ConsumerDriver> = {
     },
   },
   'JSON body value': {
-    async configure(app, e2eMock, sidebar, path, expected) {
+    async configure(app, e2eMock, sidebar, path, expected, monaco) {
       await sidebar.createRequest('vi-json-val');
       await app.getByLabel('HTTP method').selectOption('POST');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByRole('button', { name: 'Body', exact: true }).click();
       await app.getByRole('radio', { name: 'JSON' }).click();
-      await app.evaluate((vname: string) => {
-        const w = window as unknown as {
-          __apicircleEditors?: Map<string, { setValue: (s: string) => void }>;
-        };
-        w.__apicircleEditors?.get('Request body')?.setValue(`{"v":"{{${vname}}}"}`);
-      }, KNOWN_VAR);
+      // `monaco.fill` waits for the editor to register before setValue —
+      // a raw `app.evaluate(...setValue...)` no-ops if Monaco hasn't
+      // mounted yet, leaving the body empty on the wire.
+      await monaco.fill('Request body', `{"v":"{{${KNOWN_VAR}}}"}`);
       return (wire) => {
         expect(wire.body.kind).toBe('json');
         if (wire.body.kind === 'json') {
@@ -168,18 +168,13 @@ const CONSUMER_DRIVERS: Record<string, ConsumerDriver> = {
     },
   },
   'JSON body key': {
-    async configure(app, e2eMock, sidebar, path) {
+    async configure(app, e2eMock, sidebar, path, _expected, monaco) {
       await sidebar.createRequest('vi-json-key');
       await app.getByLabel('HTTP method').selectOption('POST');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByRole('button', { name: 'Body', exact: true }).click();
       await app.getByRole('radio', { name: 'JSON' }).click();
-      await app.evaluate((vname: string) => {
-        const w = window as unknown as {
-          __apicircleEditors?: Map<string, { setValue: (s: string) => void }>;
-        };
-        w.__apicircleEditors?.get('Request body')?.setValue(`{"k-{{${vname}}}":"x"}`);
-      }, KNOWN_VAR);
+      await monaco.fill('Request body', `{"k-{{${KNOWN_VAR}}}":"x"}`);
       return (wire) => {
         expect(wire.body.kind).toBe('json');
       };
@@ -355,24 +350,27 @@ test.describe('Variable Interpolation Matrix', () => {
       continue;
     }
 
-    test(tc(cell.tcId, `${cell.consumer} <- ${cell.source}`), async ({ app, e2eMock, sidebar }) => {
-      await seedWorkspace(app, 'seeded');
-      const path = `/anything/vi-${tcId}`;
-      const assertion = await driver.configure(app, e2eMock, sidebar, path, KNOWN_VALUE);
-      if (assertion === null) {
-        test.skip(true, `consumer "${cell.consumer}" not driveable on wire`);
-        return;
-      }
-      if (cell.source === 'Request context var (pm.variables.set)') {
-        await applyRequestContextVar(app, KNOWN_VAR, KNOWN_VALUE);
-      }
-      await app.getByRole('button', { name: /^Send$/ }).click();
-      await expect(app.getByText(/^(2|3|4|5)\d\d/).first()).toBeVisible({
-        timeout: 10_000,
-      });
-      const wire = await e2eMock.findLastByPath((p) => p.startsWith(path));
-      assertion(wire);
-    });
+    test(
+      tc(cell.tcId, `${cell.consumer} <- ${cell.source}`),
+      async ({ app, e2eMock, monaco, sidebar }) => {
+        await seedWorkspace(app, 'seeded');
+        const path = `/anything/vi-${tcId}`;
+        const assertion = await driver.configure(app, e2eMock, sidebar, path, KNOWN_VALUE, monaco);
+        if (assertion === null) {
+          test.skip(true, `consumer "${cell.consumer}" not driveable on wire`);
+          return;
+        }
+        if (cell.source === 'Request context var (pm.variables.set)') {
+          await applyRequestContextVar(app, KNOWN_VAR, KNOWN_VALUE);
+        }
+        await app.getByRole('button', { name: /^Send$/ }).click();
+        await expect(app.getByText(/^(2|3|4|5)\d\d/).first()).toBeVisible({
+          timeout: 10_000,
+        });
+        const wire = await e2eMock.findLastByPath((p) => p.startsWith(path));
+        assertion(wire);
+      },
+    );
   }
 
   // "Adjacent variables" special cell — two placeholders side-by-side.

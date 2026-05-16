@@ -59,41 +59,53 @@ test.describe('Workspace-self releases (P5.1)', () => {
     await app.getByRole('button', { name: 'Deprecate', exact: true }).last().click();
     await expect(app.getByText(/deprecated/i)).toBeVisible();
 
-    // Yank requires typed confirmation.
-    await app.getByRole('button', { name: /Yank/ }).first().click();
-    const yankButton = app.getByRole('button', { name: 'Yank', exact: true }).last();
-    await expect(yankButton).toBeDisabled();
-    await app.getByLabel('Type to confirm').fill('YANK v0.1.0');
-    await expect(yankButton).toBeEnabled();
-    await yankButton.click();
-    await expect(app.getByText(/yanked/i)).toBeVisible();
+    // Withdraw (formerly "yank") requires typed confirmation.
+    await app
+      .getByRole('button', { name: /Withdraw/ })
+      .first()
+      .click();
+    const withdrawButton = app.getByRole('button', { name: 'Withdraw', exact: true }).last();
+    await expect(withdrawButton).toBeDisabled();
+    await app.getByLabel('Type to confirm').fill('WITHDRAW v0.1.0');
+    await expect(withdrawButton).toBeEnabled();
+    await withdrawButton.click();
+    await expect(app.getByText(/withdrawn/i)).toBeVisible();
   });
 
   test(
     tc(
       id('Linked release ledger refresh'),
-      'B.4 — without working branch, GitHub-tag/release checkboxes are disabled',
+      'B.4 — publish modal explains the separate Git-tag / GitHub-Release path',
     ),
     async ({ app }) => {
+      // The publish modal no longer carries inline tag / release checkboxes.
+      // Publishing writes the version to workspace.json and pushes to the
+      // working branch; tagging happens via "Release & topics" on the Repo
+      // card AFTER the PR is merged (tags target main, never an unmerged
+      // working-branch commit).
       await app.getByRole('button', { name: /^Workspace$/ }).click();
       await app.getByRole('button', { name: /Publish release/ }).click();
-      // Helper text explains the prerequisite.
-      await expect(app.getByText(/Connect a repo and create a working branch/)).toBeVisible();
-      // Both checkboxes are disabled.
-      await expect(app.getByLabel('Create Git tag')).toBeDisabled();
-      await expect(app.getByLabel('Create GitHub Release')).toBeDisabled();
+      await expect(app.getByLabel('Release version')).toBeVisible();
+      await expect(
+        app.getByText(/To create a Git tag.*merge the PR first.*Release & topics/),
+      ).toBeVisible();
+      // No inline tag / release checkboxes in the publish modal.
+      await expect(app.getByLabel('Create Git tag')).toHaveCount(0);
+      await expect(app.getByLabel('Create GitHub Release')).toHaveCount(0);
     },
   );
 
   test(
     tc(
       id('Release notes Markdown rendered'),
-      'B.4 — publish + tag + GitHub Release: tag fires with the post-push commit SHA, release URL surfaces',
+      'B.4 — Release & topics: tag main HEAD + cut a GitHub Release, release URL surfaces',
     ),
     async ({ app }) => {
-      // Set up a real session via /user so decryptSessionToken has a
-      // decryptable PAT in the vault — the publish action calls it after
-      // pushWorkspace returns.
+      // The tag + GitHub-Release flow moved out of the publish modal into
+      // the Repo card's "Release & topics" modal — tags always target
+      // main's HEAD, never an unmerged working-branch commit. Drive the
+      // new surface: a release already lives on main's workspace.json and
+      // hasn't been tagged yet.
       await fulfillJson(
         app,
         'https://api.github.com/user',
@@ -108,9 +120,8 @@ test.describe('Workspace-self releases (P5.1)', () => {
       await expect(app.getByText(/Connected as me/)).toBeVisible();
       await app.keyboard.press('Escape');
 
-      // Seed connectedRepo + workingBranch and stub pushWorkspace so the
-      // test stays focused on the B.4 surface (tag + release call) rather
-      // than the full push roundtrip (covered in push-workspace.spec.ts).
+      // Seed connectedRepo so the Repo card (with the "Tag release" button)
+      // renders.
       await app.evaluate(() => {
         const w = window as unknown as {
           __apicircleStore?: {
@@ -131,23 +142,44 @@ test.describe('Workspace-self releases (P5.1)', () => {
               isPrivate: true,
               pushable: true,
             },
-            workingBranch: {
-              name: 'apicircle/test',
-              baseBranch: 'main',
-              createdAt: '2026-04-27T00:00:00.000Z',
-              headSha: 'parent-sha',
-              lastPushedSha: 'parent-sha',
-              diffSummary: null,
-              openPrUrl: null,
-            },
           },
-          // Stub the push action to return a synthetic post-publish commit
-          // SHA without touching the network.
-          pushWorkspace: async () => ({ commitSha: 'release-commit-sha' }),
         });
       });
 
-      // createTag POSTs to /git/refs and createRelease POSTs to /releases.
+      // main's workspace.json carries one published release (v1.0.0).
+      const mainJson = JSON.stringify({
+        releases: { self: { versions: [{ version: '1.0.0', notes: 'first cut' }] } },
+      });
+      const mainBase64 = Buffer.from(mainJson, 'utf-8').toString('base64');
+      await app.route(
+        'https://api.github.com/repos/me/api/contents/workspace.json**',
+        async (route) => {
+          await route.fulfill({
+            status: 200,
+            headers: { 'content-type': 'application/json', ...corsHeaders },
+            body: JSON.stringify({
+              type: 'file',
+              path: 'workspace.json',
+              sha: 'main-sha',
+              size: mainJson.length,
+              content: mainBase64,
+              encoding: 'base64',
+            }),
+          });
+        },
+      );
+      // v1.0.0 is not yet tagged — getTagSha 404s.
+      await fulfillJson(app, 'https://api.github.com/repos/me/api/git/refs/tags/v1.0.0', 404, {
+        message: 'Not Found',
+      });
+      // getRef(main) resolves main's HEAD.
+      await fulfillJson(app, 'https://api.github.com/repos/me/api/git/refs/heads/main', 200, {
+        ref: 'refs/heads/main',
+        object: { sha: 'main-head-sha' },
+      });
+      // Repo topics (the modal's second section loads these on open).
+      await fulfillJson(app, 'https://api.github.com/repos/me/api/topics', 200, { names: [] });
+      // createTag POSTs to /git/refs.
       const taggedRefs: Array<{ ref: string; sha: string }> = [];
       await app.route('https://api.github.com/repos/me/api/git/refs', async (route) => {
         const body = JSON.parse(route.request().postData() ?? '{}') as {
@@ -174,22 +206,26 @@ test.describe('Workspace-self releases (P5.1)', () => {
       });
 
       await app.getByRole('button', { name: /^Workspace$/ }).click();
-      await app.getByRole('button', { name: /Publish release/ }).click();
-      await app.getByLabel('Release version').fill('1.0.0');
+      await app.getByRole('button', { name: 'Tag release' }).click();
+      // The modal picks the latest untagged release (v1.0.0).
+      await expect(app.getByRole('button', { name: /Create tag v1\.0\.0/ })).toBeVisible();
+      await app.getByLabel('Also create GitHub Release').check();
       await app.getByLabel('Release notes').fill('first cut');
-      // Checking the GitHub Release box auto-implies Create-Git-tag.
-      await app.getByLabel('Create GitHub Release').check();
-      await expect(app.getByLabel('Create Git tag')).toBeChecked();
-      await app.getByRole('button', { name: /Review .* publish/ }).click();
-      await app.getByRole('button', { name: 'Publish', exact: true }).click();
+      await app.getByRole('button', { name: /Create tag v1\.0\.0/ }).click();
 
-      // The released-URL banner surfaces the GitHub Release URL.
-      await expect(app.getByText(/me\/api\/releases\/tag\/v1\.0\.0/)).toBeVisible();
+      // The success line surfaces a "View Release" link to the GitHub
+      // Release URL.
+      const releaseLink = app.getByRole('link', { name: /View Release/ });
+      await expect(releaseLink).toBeVisible();
+      await expect(releaseLink).toHaveAttribute(
+        'href',
+        'https://github.com/me/api/releases/tag/v1.0.0',
+      );
 
-      // Tag was created with the v1.0.0 ref pointing at the post-publish commit.
+      // The tag ref points at main's HEAD commit.
       const tagRef = taggedRefs.find((r) => r.ref === 'refs/tags/v1.0.0');
       expect(tagRef).toBeDefined();
-      expect(tagRef!.sha).toBe('release-commit-sha');
+      expect(tagRef!.sha).toBe('main-head-sha');
     },
   );
 });

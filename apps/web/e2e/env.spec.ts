@@ -120,8 +120,8 @@ test.describe('Environments — C8', () => {
         app.getByRole('button', { name: /Edit variables in crud-renamed/ }),
       ).toBeVisible();
 
-      // Duplicate via the row's icon-button.
-      await app.getByRole('button', { name: 'Duplicate crud-renamed' }).click();
+      // Duplicate via the row's kebab menu (Environment actions).
+      await envRowAction(app, 'crud-renamed', 'Duplicate');
       // The clone exists.
       await expect(
         app.getByRole('button', { name: /Edit variables in crud-renamed \(copy\)/ }),
@@ -147,10 +147,10 @@ test.describe('Environments — C8', () => {
       expect(parsed.name).toBe('crud-renamed (copy)');
       expect(parsed.variables).toEqual([{ key: 'KEY', value: 'val-1', encrypted: false }]);
 
-      // Delete the original. window.confirm is auto-accepted via the
-      // `dialog` event handler.
-      app.once('dialog', (d) => void d.accept());
-      await app.getByRole('button', { name: 'Delete crud-renamed', exact: true }).click();
+      // Delete the original via the kebab menu. Delete routes through a
+      // ConfirmDialog (not window.confirm) — confirm via its button.
+      await envRowAction(app, 'crud-renamed', 'Delete');
+      await app.getByRole('button', { name: 'Delete environment', exact: true }).click();
       await expect(
         app.getByRole('button', { name: /Edit variables in crud-renamed$/ }),
       ).not.toBeVisible();
@@ -191,7 +191,7 @@ test.describe('Environments — C8', () => {
       await addVar(app, 'A', '1');
       await addVar(app, 'B', '2');
 
-      await app.getByRole('button', { name: 'Duplicate dup-src' }).click();
+      await envRowAction(app, 'dup-src', 'Duplicate');
 
       // Click the clone in the sidebar to focus it.
       await app.getByRole('button', { name: /Edit variables in dup-src \(copy\)/ }).click();
@@ -261,8 +261,12 @@ test.describe('Environments — C8', () => {
       'encrypted var round-trip: bind to vault key → wire receives decrypted value',
     ),
     async ({ app, e2eMock, sidebar }) => {
-      // 1. Seed the vault with a secret. Use the store action so we can
-      //    feed the same id into the env binding without scraping the UI.
+      // 0. The web build gates the Secret Vault behind a passphrase.
+      await setupVaultPassphrase(app);
+      // 1. Create the vault slot. `addSecret`'s value is the SLOT key
+      //    material — `bindVariableToSecretKey` encrypts the env var's
+      //    own plaintext under that slot, so the var must carry the
+      //    decrypted value BEFORE binding (see secretSlotRoundtrip.test).
       const secretId = await app.evaluate(async () => {
         const w = window as unknown as {
           __apicircleStore?: {
@@ -273,25 +277,34 @@ test.describe('Environments — C8', () => {
         };
         return await w.__apicircleStore!.getState().addSecret({
           label: 'PROD_TOKEN',
-          value: 'sk_live_decrypted_ok',
+          value: 'slot-key-material',
           origin: 'workspace',
         });
       });
       expect(typeof secretId).toBe('string');
 
-      // 2. Create an env with a single var, then bind it to the vault id.
+      // 2. Create an env var carrying the plaintext, then bind it: the
+      //    bind encrypts that plaintext into the slot's ciphertext.
       await createEnv(app, 'env-encrypt');
-      await addVar(app, 'API_KEY', '');
+      await addVar(app, 'API_KEY', 'sk_live_decrypted_ok');
       await app.evaluate(
-        ({ id }) => {
+        async ({ id }) => {
           const w = window as unknown as {
             __apicircleStore?: {
               getState: () => {
-                bindVariableToSecretKey: (env: string, idx: number, sid: string) => void;
+                bindVariableToSecretKey: (
+                  env: string,
+                  idx: number,
+                  sid: string,
+                ) => Promise<boolean>;
               };
             };
           };
-          w.__apicircleStore!.getState().bindVariableToSecretKey('env-encrypt', 0, id as string);
+          // bindVariableToSecretKey is async (it encrypts the value into
+          // the slot) — await it so the encrypted value lands before send.
+          await w
+            .__apicircleStore!.getState()
+            .bindVariableToSecretKey('env-encrypt', 0, id as string);
         },
         { id: secretId },
       );
@@ -324,6 +337,7 @@ test.describe('Environments — C8', () => {
       'unbind secret returns the row to a plain input + clears the value',
     ),
     async ({ app }) => {
+      await setupVaultPassphrase(app);
       const secretId = await app.evaluate(async () => {
         const w = window as unknown as {
           __apicircleStore?: {
@@ -342,15 +356,21 @@ test.describe('Environments — C8', () => {
       await createEnv(app, 'env-unbind');
       await addVar(app, 'TOKEN', '');
       await app.evaluate(
-        ({ id }) => {
+        async ({ id }) => {
           const w = window as unknown as {
             __apicircleStore?: {
               getState: () => {
-                bindVariableToSecretKey: (env: string, idx: number, sid: string) => void;
+                bindVariableToSecretKey: (
+                  env: string,
+                  idx: number,
+                  sid: string,
+                ) => Promise<boolean>;
               };
             };
           };
-          w.__apicircleStore!.getState().bindVariableToSecretKey('env-unbind', 0, id as string);
+          await w
+            .__apicircleStore!.getState()
+            .bindVariableToSecretKey('env-unbind', 0, id as string);
         },
         { id: secretId },
       );
@@ -372,6 +392,7 @@ test.describe('Environments — C8', () => {
       'change secret key: rebind to a different vault entry',
     ),
     async ({ app }) => {
+      await setupVaultPassphrase(app);
       const [idA, idB] = await app.evaluate(async () => {
         const w = window as unknown as {
           __apicircleStore?: {
@@ -396,37 +417,51 @@ test.describe('Environments — C8', () => {
       await createEnv(app, 'env-rebind');
       await addVar(app, 'TOKEN', '');
       await app.evaluate(
-        ({ id }) => {
+        async ({ id }) => {
           const w = window as unknown as {
             __apicircleStore?: {
               getState: () => {
-                bindVariableToSecretKey: (env: string, idx: number, sid: string) => void;
+                bindVariableToSecretKey: (
+                  env: string,
+                  idx: number,
+                  sid: string,
+                ) => Promise<boolean>;
               };
             };
           };
-          w.__apicircleStore!.getState().bindVariableToSecretKey('env-rebind', 0, id as string);
+          await w
+            .__apicircleStore!.getState()
+            .bindVariableToSecretKey('env-rebind', 0, id as string);
         },
         { id: idA },
       );
       await app.getByRole('button', { name: /Edit variables in env-rebind/ }).click();
-      // The row is bound. The id chip prefix matches idA's first 6 chars.
-      await expect(app.getByText(`id: ${(idA as string).slice(0, 6)}`)).toBeVisible();
+      // The bound chip shows the secret's LABEL (see EnvironmentsPanel.tsx
+      // `boundLabel`), so the row reflects KEY_A.
+      const boundChip = app.getByLabel('Variable value (bound to secret key)');
+      await expect(boundChip).toContainText('KEY_A');
 
-      // Rebind to KEY_B via the picker (clicked twice = open, then pick).
+      // Rebind to KEY_B via the store (mirrors the picker's action).
       await app.evaluate(
-        ({ id }) => {
+        async ({ id }) => {
           const w = window as unknown as {
             __apicircleStore?: {
               getState: () => {
-                bindVariableToSecretKey: (env: string, idx: number, sid: string) => void;
+                bindVariableToSecretKey: (
+                  env: string,
+                  idx: number,
+                  sid: string,
+                ) => Promise<boolean>;
               };
             };
           };
-          w.__apicircleStore!.getState().bindVariableToSecretKey('env-rebind', 0, id as string);
+          await w
+            .__apicircleStore!.getState()
+            .bindVariableToSecretKey('env-rebind', 0, id as string);
         },
         { id: idB },
       );
-      await expect(app.getByText(`id: ${(idB as string).slice(0, 6)}`)).toBeVisible();
+      await expect(boundChip).toContainText('KEY_B');
     },
   );
 });
@@ -434,11 +469,51 @@ test.describe('Environments — C8', () => {
 // --- helpers --------------------------------------------------------------
 
 async function createEnv(app: import('@playwright/test').Page, name: string): Promise<void> {
-  await app.getByLabel('New environment').click();
-  await app.getByLabel('Environment name', { exact: false }).first().fill(name);
-  await app.getByLabel('Environment name', { exact: false }).first().press('Enter');
+  // The "New environment" affordance moved into the "Environments actions"
+  // kebab menu (see EnvironmentsSidebar.tsx EnvironmentsSidebarActions).
+  await app.getByRole('button', { name: 'Environments actions', exact: true }).first().click();
+  await app.getByRole('menuitem', { name: 'New Environment', exact: true }).click();
+  // The sidebar inline-create input shares the aria-label with the
+  // panel's env-rename input — once an env is focused both exist. The
+  // create input is the sidebar one, which renders first in DOM order.
+  const input = app.getByLabel('Environment name', { exact: true }).first();
+  await input.fill(name);
+  await input.press('Enter');
   // Wait for the panel to focus the new env.
   await expect(app.getByRole('button', { name: `Edit variables in ${name}` })).toBeVisible();
+}
+
+// Per-row environment actions (Duplicate / Delete / Export as JSON) moved
+// into a kebab menu — see EnvironmentsSidebar.tsx KebabMenu, aria-label
+// `Environment actions for <name>`.
+async function envRowAction(
+  app: import('@playwright/test').Page,
+  envName: string,
+  action: 'Duplicate' | 'Delete' | 'Export as JSON',
+): Promise<void> {
+  await app
+    .getByRole('button', { name: `Environment actions for ${envName}`, exact: true })
+    .click();
+  await app.getByRole('menuitem', { name: action, exact: true }).click();
+}
+
+// On the web build, the Secret Vault is gated behind a workspace
+// passphrase — `addSecret` throws SecretsNotProtectedError until one is
+// set. Tests that exercise encrypted vars must initialise the vault
+// crypto first via `setupPassphrase` (the store action the "Set
+// passphrase" UI calls).
+async function setupVaultPassphrase(app: import('@playwright/test').Page): Promise<void> {
+  const result = await app.evaluate(async () => {
+    const w = window as unknown as {
+      __apicircleStore?: {
+        getState: () => {
+          setupPassphrase: (p: string) => Promise<{ ok: true } | { ok: false; reason: string }>;
+        };
+      };
+    };
+    return await w.__apicircleStore!.getState().setupPassphrase('e2e-test-passphrase');
+  });
+  expect(result.ok).toBe(true);
 }
 
 async function addVar(

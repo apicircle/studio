@@ -74,9 +74,13 @@ test.describe('a11y sweep', () => {
     });
   }
 
-  test('Secret Vault modal has zero WCAG 2.1 AA violations', async ({ app }) => {
+  test('Secret Vault dock has zero WCAG 2.1 AA violations', async ({ app }) => {
+    // The Secret Vault now opens in the right-side dock (an `aside` with
+    // role="complementary"), not a modal — see layout/RightDock.tsx.
+    // The rail button opens the dock with the Vault tab selected.
     await app.getByRole('button', { name: /Open Secret Vault/ }).click();
-    await expect(app.getByRole('dialog', { name: /Secret Vault/ })).toBeVisible();
+    await expect(app.getByRole('complementary', { name: 'Workspace inspector' })).toBeVisible();
+    await expect(app.getByRole('tab', { name: 'Vault' })).toHaveAttribute('aria-selected', 'true');
     const results = await new AxeBuilder({ page: app })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .disableRules(['region', 'color-contrast'])
@@ -191,9 +195,15 @@ test.describe('A11y — workbook AL rows', () => {
       await tab.click();
       const ariaSel = await tab.getAttribute('aria-selected');
       const dataState = await tab.getAttribute('data-state');
+      // The editor tab strip marks the active tab with `aria-current="page"`
+      // (see panels/editor/EditorPanel.tsx) — a valid WCAG non-colour signal.
+      const ariaCurrent = await tab.getAttribute('aria-current');
       const className = (await tab.getAttribute('class')) ?? '';
       const hasNonColourSignal =
-        ariaSel === 'true' || dataState === 'active' || /active|selected/i.test(className);
+        ariaSel === 'true' ||
+        dataState === 'active' ||
+        ariaCurrent === 'page' ||
+        /active|selected/i.test(className);
       expect(hasNonColourSignal).toBe(true);
     },
   );

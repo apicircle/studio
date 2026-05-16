@@ -1,4 +1,6 @@
 import { expect, test } from './fixtures/app';
+import type { Page } from '@playwright/test';
+import type { SidebarHelpers } from './fixtures/app';
 
 import { tc } from './fixtures/tcCoverage';
 import type { TcId } from './fixtures/tcCoverage';
@@ -16,9 +18,12 @@ function id(key: string): TcId {
 // editor is also wired but isn't asserted here (Monaco's suggestion popup
 // is hard to drive deterministically across platforms — covered by unit).
 
-async function seedEnv(app: import('@playwright/test').Page) {
+async function seedEnv(app: Page, sidebar: SidebarHelpers) {
   await app.getByRole('button', { name: /^Environments$/ }).click();
-  await app.getByLabel('New environment').click();
+  // The "New environment" affordance moved into the "Environments
+  // actions" kebab next to the sidebar header.
+  await app.getByRole('button', { name: 'Environments actions', exact: true }).click();
+  await app.getByRole('menuitem', { name: 'New Environment', exact: true }).click();
   await app.getByLabel('Environment name').fill('dev');
   await app.getByLabel('Environment name').press('Enter');
   await app.getByRole('button', { name: 'Add variable' }).click();
@@ -26,11 +31,8 @@ async function seedEnv(app: import('@playwright/test').Page) {
   await app.getByLabel('Variable value').fill('https://api.example.test');
   await app.getByLabel('Variable value').blur();
   await app.getByRole('button', { name: /^Editor$/ }).click();
-  // Name-first new-request flow.
-  await app.getByLabel('New request', { exact: true }).first().click();
-  const input = app.getByLabel('Inline rename request');
-  await input.fill(`autocomplete-${Math.random().toString(36).slice(2, 8)}`);
-  await input.press('Enter');
+  // Name-first new-request flow via the sidebar's "Editor actions" kebab.
+  await sidebar.createRequest(`autocomplete-${Math.random().toString(36).slice(2, 8)}`);
 }
 
 test.describe('Variable autocomplete (P15)', () => {
@@ -39,8 +41,8 @@ test.describe('Variable autocomplete (P15)', () => {
       id('URL Bar :: Empty URL on Send'),
       'typing `{{` in the URL bar opens the suggestion listbox @smoke',
     ),
-    async ({ app }) => {
-      await seedEnv(app);
+    async ({ app, sidebar }) => {
+      await seedEnv(app, sidebar);
       const url = app.getByLabel('Request URL');
       await url.click();
       await url.fill('');
@@ -54,8 +56,8 @@ test.describe('Variable autocomplete (P15)', () => {
 
   test(
     tc(id('Headers :: Add custom header'), 'Tab inserts the highlighted suggestion'),
-    async ({ app }) => {
-      await seedEnv(app);
+    async ({ app, sidebar }) => {
+      await seedEnv(app, sidebar);
       const url = app.getByLabel('Request URL');
       await url.click();
       await url.fill('');
@@ -68,8 +70,8 @@ test.describe('Variable autocomplete (P15)', () => {
 
   test(
     tc(id('Headers :: Variable interpolation in header value'), 'Escape collapses the listbox'),
-    async ({ app }) => {
-      await seedEnv(app);
+    async ({ app, sidebar }) => {
+      await seedEnv(app, sidebar);
       const url = app.getByLabel('Request URL');
       await url.click();
       await url.fill('');
@@ -86,8 +88,8 @@ test.describe('Variable autocomplete (P15)', () => {
       id('Params Matrix :: Query params: Variable in value on DELETE'),
       'clicking a suggestion inserts the variable in a header value',
     ),
-    async ({ app }) => {
-      await seedEnv(app);
+    async ({ app, sidebar }) => {
+      await seedEnv(app, sidebar);
       await app
         .getByRole('button', { name: /^Headers/ })
         .first()

@@ -31,17 +31,26 @@ test.describe('Clear History (P14)', () => {
 
       await app.getByRole('button', { name: /^History$/ }).click();
       await expect(app.getByRole('tab', { name: /^Requests/ })).toBeVisible();
-      await expect(app.getByText('alpha')).toBeVisible();
-      await expect(app.getByText('beta')).toBeVisible();
+      // The run-name appears both as the disclosure button's accessible
+      // name ("<name> run details") and inside the URL text — scope the
+      // existence check to the disclosure button to avoid strict-mode.
+      await expect(app.getByRole('button', { name: 'alpha run details' })).toBeVisible();
+      await expect(app.getByRole('button', { name: 'beta run details' })).toBeVisible();
 
-      // Per-row trash on the alpha row. The listitem contains BOTH the
-      // expandable run button AND a delete span-with-role-button — match
-      // the delete control by its exact aria-label.
-      const alphaRow = app.getByRole('listitem').filter({ hasText: 'alpha' }).first();
+      // Per-row trash on the alpha row. Scope to the listitem that owns
+      // the "alpha run details" disclosure but NOT the beta one — the
+      // enclosing "History group" listitem contains both rows, so a
+      // has-only filter would still match it (and pick beta's delete).
+      const alphaRow = app
+        .getByRole('listitem')
+        .filter({ has: app.getByRole('button', { name: 'alpha run details' }) })
+        .filter({ hasNot: app.getByRole('button', { name: 'beta run details' }) });
       await alphaRow.getByLabel(/^Delete request run from /).click();
+      // Per-row delete routes through a ConfirmDialog — confirm it.
+      await app.getByRole('button', { name: 'Delete run', exact: true }).click();
 
-      await expect(app.getByText('alpha')).not.toBeVisible();
-      await expect(app.getByText('beta')).toBeVisible();
+      await expect(app.getByRole('button', { name: 'alpha run details' })).not.toBeVisible();
+      await expect(app.getByRole('button', { name: 'beta run details' })).toBeVisible();
     },
   );
 
@@ -79,11 +88,13 @@ test.describe('Clear History (P14)', () => {
       await app.getByRole('button', { name: /^Clear matching/ }).click();
       await app.getByRole('button', { name: 'Clear', exact: true }).click();
 
-      // Drop the filter; only the keep row should remain.
+      // Drop the filter; only the keep row should remain. Scope to the
+      // run-details disclosure button — the run name also appears inside
+      // the URL text, which would trip strict mode on a bare getByText.
       await app.getByLabel('Filter by search').fill('');
-      await expect(app.getByText('keep-1')).toBeVisible();
-      await expect(app.getByText('drop-1')).not.toBeVisible();
-      await expect(app.getByText('drop-2')).not.toBeVisible();
+      await expect(app.getByRole('button', { name: 'keep-1 run details' })).toBeVisible();
+      await expect(app.getByRole('button', { name: 'drop-1 run details' })).not.toBeVisible();
+      await expect(app.getByRole('button', { name: 'drop-2 run details' })).not.toBeVisible();
     },
   );
 

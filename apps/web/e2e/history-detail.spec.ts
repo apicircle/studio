@@ -59,8 +59,12 @@ test.describe('History — C11', () => {
       // tab with the explanation we added in C9 build).
       await expect(app.getByText('200 OK').first()).toBeVisible();
       // The Headers + Assertions tabs from ResponseViewer are visible.
-      await expect(app.getByRole('button', { name: 'Headers', exact: true })).toBeVisible();
-      await expect(app.getByRole('button', { name: /Assertions/ }).first()).toBeVisible();
+      // ResponseViewer's tab row is a labelled group "Response sections".
+      const responseTabs = app.getByRole('group', { name: 'Response sections' }).first();
+      await expect(
+        responseTabs.getByRole('button', { name: 'Headers', exact: true }),
+      ).toBeVisible();
+      await expect(responseTabs.getByRole('button', { name: /Assertions/ })).toBeVisible();
     },
   );
 
@@ -574,15 +578,23 @@ test.describe('History — C11', () => {
       // Seed an env variable, send a request that uses it, then mutate
       // the env value and replay — the wire request should carry the
       // new value (current resolution, not historical capture).
+      // addEnvironment creates the env AND adds it to priorityOrder, so
+      // {{HRVAR}} resolves at send time; setVariables seeds the value.
       await app.evaluate(() => {
         const w = window as unknown as {
           __apicircleStore?: {
             getState: () => {
-              setEnvironmentVariable?: (env: string, key: string, val: string) => void;
+              addEnvironment: (name: string) => void;
+              setVariables: (
+                env: string,
+                vars: Array<{ key: string; value: string; encrypted: boolean }>,
+              ) => void;
             };
           };
         };
-        w.__apicircleStore?.getState().setEnvironmentVariable?.('default', 'HRVAR', 'before');
+        const s = w.__apicircleStore!.getState();
+        s.addEnvironment('hr-env');
+        s.setVariables('hr-env', [{ key: 'HRVAR', value: 'before', encrypted: false }]);
       });
 
       const path = `/anything/hr-var-${Math.random().toString(36).slice(2, 8)}`;
@@ -598,11 +610,16 @@ test.describe('History — C11', () => {
         const w = window as unknown as {
           __apicircleStore?: {
             getState: () => {
-              setEnvironmentVariable?: (env: string, key: string, val: string) => void;
+              setVariables: (
+                env: string,
+                vars: Array<{ key: string; value: string; encrypted: boolean }>,
+              ) => void;
             };
           };
         };
-        w.__apicircleStore?.getState().setEnvironmentVariable?.('default', 'HRVAR', 'after');
+        w.__apicircleStore!.getState().setVariables('hr-env', [
+          { key: 'HRVAR', value: 'after', encrypted: false },
+        ]);
       });
 
       await app.getByRole('button', { name: /^History$/ }).click();

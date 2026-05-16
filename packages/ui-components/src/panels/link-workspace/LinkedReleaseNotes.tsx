@@ -73,7 +73,7 @@ function ReleaseNoteEntry({ version }: { version: ReleaseVersion }) {
           </span>
         )}
       </header>
-      {version.notes.trim() ? (
+      {version.notes?.trim() ? (
         <p className="whitespace-pre-wrap rounded-sm border border-border-subtle bg-surface px-2 py-1.5 text-[0.6875rem] leading-relaxed text-text-muted">
           {version.notes}
         </p>

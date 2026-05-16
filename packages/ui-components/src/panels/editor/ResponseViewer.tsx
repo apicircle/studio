@@ -157,7 +157,11 @@ export function ResponseViewer({ result, assertions, isExecuting, onRetry }: Res
         )}
       </div>
 
-      <div className="flex border-b border-border-subtle px-2">
+      <div
+        role="group"
+        aria-label="Response sections"
+        className="flex border-b border-border-subtle px-2"
+      >
         {(['body', 'headers', 'assertions'] as const).map((t) => (
           <button
             key={t}

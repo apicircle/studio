@@ -74,7 +74,9 @@ interface SeedSnapshot {
       }
     >;
     activeName: string | null;
-    priorityOrder: string[];
+    // EnvPriorityRef[] — the resolver keys the flat env map by
+    // `{ kind: 'local', name }`, not by a bare env-name string.
+    priorityOrder: Array<{ kind: 'local'; name: string }>;
   };
 }
 
@@ -137,7 +139,7 @@ function makeSnapshot(args: {
     environments: {
       items: envItems,
       activeName: Object.keys(envItems)[0] ?? null,
-      priorityOrder: Object.keys(envItems),
+      priorityOrder: Object.keys(envItems).map((name) => ({ kind: 'local' as const, name })),
     },
   };
 }
@@ -191,7 +193,12 @@ async function seedLink(
               id: linkId,
               kind: 'private',
               name: args.name ?? 'Source workspace',
-              source: { provider: 'github', repoFullName: 'a/b', branch: 'main' },
+              source: {
+                provider: 'github',
+                repoFullName: 'a/b',
+                branch: 'main',
+                sessionMode: 'workspace',
+              },
               scope: ['collections', 'environments'],
               pinnedVersion: args.pinnedVersion ?? '1.0.0',
               updatePolicy: 'manual',
@@ -219,18 +226,26 @@ async function seedLink(
           // Only stub a fake session when the real session-connect helper
           // hasn't been called yet. Tests that go through
           // `setupRealSession` already have a decryptable token in the
-          // vault — keep it.
-          sessions: (local as { sessions?: { github?: unknown } }).sessions?.github
+          // vault — keep it. The `sessions.github` slot is
+          // `{ workspace, links }` (see WorkspaceLocal in shared/types.ts).
+          sessions: (
+            local as {
+              sessions?: { github?: { workspace?: unknown } };
+            }
+          ).sessions?.github?.workspace
             ? (local as { sessions: unknown }).sessions
             : {
                 ...((local as { sessions?: unknown }).sessions ?? {}),
                 github: {
-                  accountLogin: 'tester',
-                  tokenSecretId: 'sec-fake',
-                  grantedScopes: ['repo'],
-                  addedAt: t0,
-                  lastVerifiedAt: t0,
-                  canCreatePullRequests: true,
+                  workspace: {
+                    accountLogin: 'tester',
+                    tokenSecretId: 'sec-fake',
+                    grantedScopes: ['repo'],
+                    addedAt: t0,
+                    lastVerifiedAt: t0,
+                    canCreatePullRequests: true,
+                  },
+                  links: {},
                 },
               },
         },
@@ -322,7 +337,10 @@ test.describe('A.2a — Editor sidebar linked-workspace tree', () => {
       await expect(open).toBeVisible();
       await open.click();
 
-      await expect(app.getByRole('dialog', { name: /Linked request override/ })).toBeVisible();
+      // Linked editing is inline in the main EditorPanel (the modal was
+      // removed) — the editor renders the merged request + Linked banner.
+      await expect(app.getByLabel('Request name')).toHaveValue('Get user');
+      await expect(app.getByText(/Linked from/)).toBeVisible();
     },
   );
 
@@ -341,10 +359,9 @@ test.describe('A.2a — Editor sidebar linked-workspace tree', () => {
       // Open and modify the URL to register an override.
       await app.getByRole('button', { name: /Expand linked workspace Payments/ }).click();
       await app.getByRole('button', { name: /Open Get user from Payments/ }).click();
-      await app.getByLabel('Override URL').fill('https://staging.source.test/users/1');
-      await app.keyboard.press('Escape');
+      await app.getByLabel('Request URL').fill('https://staging.source.test/users/1');
 
-      // Re-expand and confirm the modified label + the X-mod badge on the root row.
+      // Confirm the modified label on the sidebar row + the X-mod badge.
       await expect(
         app.getByRole('button', { name: /Open Get user from Payments \(modified\)/ }),
       ).toBeVisible();
@@ -489,14 +506,15 @@ test.describe('A.3 — Single-request Send for linked requests', () => {
       });
 
       // Open the linked request from the sidebar tree, then Send. The source
-      // request lives inside a folder, so we expand the folder first.
+      // request lives inside a folder, so we expand the folder first. Linked
+      // editing is inline in the main EditorPanel — the standard Send button
+      // runs the request and the response panel surfaces the status.
       await app.getByRole('button', { name: /^Editor$/ }).click();
       await app.getByRole('button', { name: /Expand linked workspace Payments/ }).click();
       await app.getByRole('button', { name: /Expand Authed folder/ }).click();
       await app.getByRole('button', { name: /Open Request src-1 from Payments/ }).click();
-      await app.getByRole('button', { name: 'Send linked request' }).click();
-      // Wait until the modal reflects a successful run via its lastRun status line.
-      await expect(app.getByText(/Last run:.*200/)).toBeVisible();
+      await app.getByRole('button', { name: /^Send$/ }).click();
+      await expect(app.getByText('200').first()).toBeVisible();
 
       expect(capturedAuth).toBe('Bearer src-bearer');
     },
@@ -524,9 +542,9 @@ test.describe('A.3 — Single-request Send for linked requests', () => {
       await app.getByRole('button', { name: /^Editor$/ }).click();
       await app.getByRole('button', { name: /Expand linked workspace Payments/ }).click();
       await app.getByRole('button', { name: /Open Request src-1 from Payments/ }).click();
-      await app.getByLabel('Override URL').fill('https://staging.source.test/v2');
-      await app.getByRole('button', { name: 'Send linked request' }).click();
-      await expect(app.getByText(/Last run:.*200/)).toBeVisible();
+      await app.getByLabel('Request URL').fill('https://staging.source.test/v2');
+      await app.getByRole('button', { name: /^Send$/ }).click();
+      await expect(app.getByText('200').first()).toBeVisible();
 
       expect(capturedUrl).toBe('https://staging.source.test/v2');
     },
@@ -565,8 +583,8 @@ test.describe('A.3 — Single-request Send for linked requests', () => {
       await app.getByRole('button', { name: /^Editor$/ }).click();
       await app.getByRole('button', { name: /Expand linked workspace Payments/ }).click();
       await app.getByRole('button', { name: /Open Request src-1 from Payments/ }).click();
-      await app.getByRole('button', { name: 'Send linked request' }).click();
-      await expect(app.getByText(/Last run:.*200/)).toBeVisible();
+      await app.getByRole('button', { name: /^Send$/ }).click();
+      await expect(app.getByText('200').first()).toBeVisible();
 
       expect(capturedUrl).toBe('https://my-fork.test/users/1');
     },
@@ -719,10 +737,10 @@ test.describe('A.4 — Update preview flow', () => {
       const dialog = app.getByRole('dialog', { name: /Update Source workspace.*v2\.0\.0/ });
       await expect(dialog).toBeVisible();
 
-      // Apply is disabled until the both-changed decision is made.
+      // The modal pre-defaults every both-changed row to "Keep mine" on
+      // open, so Apply is enabled immediately. Explicitly pick "Accept
+      // source" for the both-changed entry so the override is dropped.
       const apply = dialog.getByRole('button', { name: 'Apply update' });
-      await expect(apply).toBeDisabled();
-
       await dialog.getByRole('button', { name: 'Accept source' }).click();
       await expect(apply).toBeEnabled();
       await apply.click();
@@ -1151,9 +1169,11 @@ test.describe('Lifecycle audit — Refresh / Preview / Apply', () => {
       await app.getByRole('button', { name: /Refresh ledger/ }).click();
       await app.getByRole('button', { name: /Review update.*v2\.0\.0/ }).click();
       const dialog = app.getByRole('dialog', { name: /Update Source workspace.*v2\.0\.0/ });
-      // The diff is real (snapshot at v1, target at v2) — entries appear.
-      await expect(dialog.getByText(/Source updated.*adopt|Both changed/)).toBeVisible();
-      await dialog.getByRole('button', { name: 'Apply update' }).click();
+      // Refresh updates the ledger only — the cached snapshot stays at v1,
+      // so the preview shows a real diff (snapshot v1 vs target v2). The
+      // entry chip carries the source-only "Source updated · adopt" status.
+      await expect(dialog.getByText('Source updated · adopt')).toBeVisible();
+      await dialog.getByRole('button', { name: /Apply update/ }).click();
       await expect(dialog).not.toBeVisible();
 
       // Post-apply: pin at 2.0.0, snapshot updated to v2 URL, ledger at 2.0.0.

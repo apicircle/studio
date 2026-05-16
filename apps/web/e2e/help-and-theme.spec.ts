@@ -19,14 +19,20 @@ function stId(key: string): TcId {
 test.describe('Help Center (P7)', () => {
   test('renders sections by default and filters via search @smoke', async ({ app }) => {
     await app.getByRole('button', { name: /^Help Center$/ }).click();
+    // The Help Center is a sidebar (section list) + article pane. The
+    // article shows ONE section at a time — Welcome by default — while
+    // the sidebar nav lists every section as a selectable button.
     await expect(app.getByRole('heading', { level: 2, name: 'Welcome' })).toBeVisible();
-    await expect(app.getByRole('heading', { level: 2, name: 'Keyboard Shortcuts' })).toBeVisible();
+    const nav = app.getByRole('navigation');
+    await expect(nav.getByRole('button', { name: 'Keyboard Shortcuts' })).toBeVisible();
 
     const search = app.getByLabel('Search help');
     await search.fill('yank');
+    // Search filters the sidebar; the first match becomes the selected
+    // article (Release Management is the only "yank" hit).
     await expect(app.getByRole('heading', { level: 2, name: 'Release Management' })).toBeVisible();
-    // Welcome shouldn't match "yank" — should be hidden.
-    await expect(app.getByRole('heading', { level: 2, name: 'Welcome' })).not.toBeVisible();
+    // Welcome no longer matches "yank" — its sidebar button is gone.
+    await expect(nav.getByRole('button', { name: 'Welcome' })).toHaveCount(0);
 
     // Empty query restores everything.
     await search.fill('');
@@ -36,7 +42,9 @@ test.describe('Help Center (P7)', () => {
   test('search with no matches shows empty state', async ({ app }) => {
     await app.getByRole('button', { name: /^Help Center$/ }).click();
     await app.getByLabel('Search help').fill('zzz-no-such-thing-zzz');
-    await expect(app.getByText('No matching sections.')).toBeVisible();
+    // Both the sidebar nav and the article pane render the empty-state
+    // copy — scope to the first match to avoid a strict-mode violation.
+    await expect(app.getByText('No matching sections.').first()).toBeVisible();
   });
 });
 
@@ -49,7 +57,10 @@ test.describe('Theme persistence (P7)', () => {
       const initialTheme = await app.locator('html').getAttribute('data-theme');
       expect(initialTheme).toBe('studio-dark');
 
-      await app.getByLabel('Theme').click();
+      // The theme picker now lives inside the Settings popover: open
+      // Settings → click the "Theme" appearance row → pick a theme option.
+      await app.getByRole('button', { name: 'Open workspace settings' }).click();
+      await app.getByRole('button', { name: /^Theme:/ }).click();
       await app.getByRole('option', { name: /Paper Light/ }).click();
       await expect(app.locator('html')).toHaveAttribute('data-theme', 'paper-light');
 
@@ -153,7 +164,7 @@ test.describe('Font + Font Size (P7)', () => {
             getState: () => { setFontSizePercent?: (n: number) => void };
           };
         };
-        w.__apicircleStore!.getState().setFontSizePercent!(125);
+        w.__apicircleStore!.getState().setFontSizePercent!(130);
       });
       const after = await app.evaluate(() => {
         const w = window as unknown as {
@@ -164,7 +175,9 @@ test.describe('Font + Font Size (P7)', () => {
         return w.__apicircleStore!.getState().local?.ui.fontSizePercent ?? 100;
       });
       expect(after).toBeGreaterThan(before);
-      expect(after).toBe(125);
+      // setFontSizePercent snaps to FONT_SIZE_PERCENT_STEP (10) via
+      // clampFontSizePercent — 130 is already step-aligned.
+      expect(after).toBe(130);
     },
   );
 

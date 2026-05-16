@@ -139,8 +139,11 @@ test.describe('Workspace — auto-branch flow (P4.2)', () => {
       // Close the modal so the Workspace panel is clickable.
       await app.keyboard.press('Escape');
 
-      // Move to the Workspace panel and connect the repo.
+      // Move to the Workspace panel and connect the repo. The owner/name
+      // input lives behind the "Manual entry" toggle — the ConnectRepoForm
+      // defaults to the repo browser.
       await app.getByRole('button', { name: /^Workspace$/ }).click();
+      await app.getByRole('button', { name: 'Switch to manual entry' }).click();
       await app.getByLabel('Repo full name').fill('devaprakash/payments');
       await app.getByRole('button', { name: 'Connect repo' }).click();
       await expect(app.getByText('devaprakash/payments')).toBeVisible();
@@ -185,6 +188,7 @@ test.describe('Workspace — auto-branch flow (P4.2)', () => {
       await app.keyboard.press('Escape');
 
       await app.getByRole('button', { name: /^Workspace$/ }).click();
+      await app.getByRole('button', { name: 'Switch to manual entry' }).click();
       await app.getByLabel('Repo full name').fill('me/api');
       await app.getByRole('button', { name: 'Connect repo' }).click();
       await expect(app.getByText('me/api')).toBeVisible();

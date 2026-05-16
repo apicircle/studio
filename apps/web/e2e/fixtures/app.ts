@@ -127,6 +127,18 @@ interface Fixtures {
 export const test = base.extend<Fixtures>({
   // eslint-disable-next-line no-empty-pattern
   app: async ({ page }, use) => {
+    // Suppress the first-run onboarding tip. It renders a fixed-position
+    // dialog pinned to the bottom-right corner with `pointer-events-auto`,
+    // which intercepts clicks on any control underneath it (e.g. the
+    // "Publish release" button). addInitScript runs before page scripts on
+    // every navigation, so the key is set before OnboardingTips reads it.
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem('apicircle:onboarding-dismissed-v1', '1');
+      } catch {
+        /* storage disabled — onboarding will just render */
+      }
+    });
     await page.goto('/');
     // The shell renders the brand once the workspace is hydrated. Use
     // exact match because a welcome banner ("Welcome to API Circle Studio")

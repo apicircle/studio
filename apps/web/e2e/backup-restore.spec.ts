@@ -36,13 +36,19 @@ interface StoreShape {
   local?: {
     history: { requestRuns: unknown[]; planRuns: unknown[] };
     snapshots: {
+      // WorkspaceSnapshot (packages/shared/src/types.ts): the captured
+      // synced doc lives under `workspaceSyncedSnapshot`, the trigger under
+      // `triggeredBy`, and the timestamp under `createdAt`.
       entries: Array<{
         id: string;
-        trigger: string;
+        triggeredBy: string;
         note?: string;
-        capturedAt: string;
+        createdAt: string;
         sizeBytes: number;
-        synced: { collections: { requests: Record<string, unknown> } };
+        workspaceSyncedSnapshot: {
+          schemaVersion: number;
+          collections: { requests: Record<string, unknown> };
+        };
       }>;
       maxBytes: number;
     };
@@ -75,7 +81,7 @@ test.describe('Backup & Restore — implemented cells', () => {
       });
       expect(snapId).not.toBeNull();
       const snap = (await readSnapshots(app)).entries[0];
-      expect(snap.trigger).toBe('pre-push');
+      expect(snap.triggeredBy).toBe('pre-push');
       expect(snap.note).toContain('Before push');
       expect(snap.sizeBytes).toBeGreaterThan(0);
     },
@@ -153,7 +159,7 @@ test.describe('Backup & Restore — implemented cells', () => {
       const entry = ledger.entries[0];
       // The snapshot serializes only the synced doc — no request runs,
       // no plan runs, no session tokens.
-      expect(entry.synced.collections.requests).toBeDefined();
+      expect(entry.workspaceSyncedSnapshot.collections.requests).toBeDefined();
       // The local history slice is NOT in the snapshot payload by design.
       expect((entry as unknown as { local?: unknown }).local).toBeUndefined();
     },
@@ -178,13 +184,14 @@ test.describe('Backup & Restore — implemented cells', () => {
             getState: () => {
               local?: {
                 snapshots: {
-                  entries: Array<{ synced: { schemaVersion: number } }>;
+                  entries: Array<{ workspaceSyncedSnapshot: { schemaVersion: number } }>;
                 };
               };
             };
           };
         };
-        return w.__apicircleStore!.getState().local?.snapshots.entries[0]?.synced.schemaVersion;
+        return w.__apicircleStore!.getState().local?.snapshots.entries[0]?.workspaceSyncedSnapshot
+          .schemaVersion;
       });
       expect(sv).toBe(1);
       // Restore round-trip succeeds.

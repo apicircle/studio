@@ -114,6 +114,12 @@ test.describe('Security', () => {
             'Content-Security-Policy': "default-src 'self'",
             'Strict-Transport-Security': 'max-age=63072000; includeSubDomains',
             'X-Frame-Options': 'DENY',
+            // The request is cross-origin; the browser hides non-safelisted
+            // response headers from JS unless they're explicitly exposed.
+            // Without this, the response panel only sees content-type /
+            // content-length and the security trio never reaches the UI.
+            'Access-Control-Expose-Headers':
+              'Content-Security-Policy, Strict-Transport-Security, X-Frame-Options',
           },
         },
       );
@@ -121,8 +127,13 @@ test.describe('Security', () => {
       await app.getByLabel('Request URL').fill('https://sec-headers.example.test/x');
       await app.getByRole('button', { name: /^Send$/ }).click();
       await expect(app.getByText('200').first()).toBeVisible({ timeout: 10_000 });
-      // The response panel has a Headers tab — click into it.
-      await app.getByRole('button', { name: 'Headers', exact: true }).click();
+      // The response panel has a Headers tab — scope to the response
+      // section group so we don't also match the request editor's
+      // Headers tab (strict-mode collision).
+      await app
+        .getByRole('group', { name: 'Response sections' })
+        .getByRole('button', { name: 'Headers', exact: true })
+        .click();
       await expect(app.getByText('content-security-policy')).toBeVisible();
       await expect(app.getByText('strict-transport-security')).toBeVisible();
       await expect(app.getByText('x-frame-options')).toBeVisible();

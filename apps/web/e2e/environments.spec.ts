@@ -26,10 +26,12 @@ test.describe('Environments', () => {
       // 1. Move into the Environments panel.
       await app.getByRole('button', { name: /^Environments$/ }).click();
 
-      // 2. Create an environment.
-      await app.getByLabel('New environment').click();
-      await app.getByLabel('Environment name').fill('dev');
-      await app.getByLabel('Environment name').press('Enter');
+      // 2. Create an environment. The "New environment" affordance moved
+      // into the "Environments actions" kebab menu.
+      await app.getByRole('button', { name: 'Environments actions', exact: true }).first().click();
+      await app.getByRole('menuitem', { name: 'New Environment', exact: true }).click();
+      await app.getByLabel('Environment name', { exact: true }).first().fill('dev');
+      await app.getByLabel('Environment name', { exact: true }).first().press('Enter');
 
       // 3. Add a plain BASE_URL.
       await app.getByRole('button', { name: 'Add variable' }).click();
