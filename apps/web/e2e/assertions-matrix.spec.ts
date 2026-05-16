@@ -286,7 +286,7 @@ const cases: Case[] = [
   // ---- Additional (kind, op) coverage ---------------------------------
   // header value with `contains` (substring match).
   {
-    name: 'header contains → pass',
+    name: 'header contains → pass (extended)',
     kind: 'header',
     op: 'contains',
     target: 'content-type',
@@ -307,7 +307,7 @@ const cases: Case[] = [
   },
   // header value with `matches` (regex).
   {
-    name: 'header matches → pass',
+    name: 'header matches → pass (extended)',
     kind: 'header',
     op: 'matches',
     target: 'content-type',
@@ -328,7 +328,7 @@ const cases: Case[] = [
   },
   // json-path with `contains`.
   {
-    name: 'json-path contains → pass',
+    name: 'json-path contains → pass (extended)',
     kind: 'json-path',
     op: 'contains',
     target: 'name',
@@ -349,7 +349,7 @@ const cases: Case[] = [
   },
   // json-path with `matches` (regex).
   {
-    name: 'json-path matches → pass',
+    name: 'json-path matches → pass (extended)',
     kind: 'json-path',
     op: 'matches',
     target: 'name',

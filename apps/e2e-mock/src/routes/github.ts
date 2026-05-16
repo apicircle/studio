@@ -18,6 +18,8 @@
 //   PUT    /repos/:owner/:repo/contents/:path            — putContents
 //   GET    /repos/:owner/:repo/compare/:base...:head     — compareCommits
 //   POST   /repos/:owner/:repo/pulls                     — createPullRequest
+//   GET    /repos/:owner/:repo/pulls                     — listPullRequests
+//   GET    /repos/:owner/:repo/pulls/:number             — getPullRequest
 //   GET    /repos/:owner/:repo/topics                    — listRepoTopics
 //   PUT    /repos/:owner/:repo/topics                    — setRepoTopics
 //   POST   /repos/:owner/:repo/releases                  — createRelease
@@ -30,6 +32,9 @@
 // Control plane (tests use these to seed + inspect the mock):
 //   POST   /__gh/repos                  — create or replace a mock repo
 //   GET    /__gh/repos/:owner/:repo     — read mock repo state
+//   POST   /__gh/scopes                 — replace OAuth scope header
+//   POST   /__gh/auth-failure           — force authenticated endpoints to fail
+//   DELETE /__gh/auth-failure           — clear forced auth failure
 //   DELETE /__gh                        — reset all state
 //
 // All endpoints are exposed under `/_gh/*` to keep the mock origin
@@ -89,6 +94,8 @@ interface MockRepo {
     base: string;
     title: string;
     state: 'open' | 'closed';
+    merged: boolean;
+    draft: boolean;
     htmlUrl: string;
   }>;
   releases: Array<{ id: number; tagName: string; htmlUrl: string; name: string; body: string }>;
@@ -97,6 +104,9 @@ interface MockRepo {
 interface MockState {
   viewer: { login: string; id: number; name: string | null; avatarUrl: string | null };
   scopes: string;
+  tokenScopes: Map<string, string>;
+  authFailure: { status: 401 | 403; message: string; acceptedScopes?: string } | null;
+  tokenAuthFailures: Map<string, { status: 401 | 403; message: string; acceptedScopes?: string }>;
   repos: Map<string, MockRepo>; // key = "owner/name"
   // Device-flow scratch: device code → status
   deviceCodes: Map<
@@ -120,6 +130,9 @@ function freshState(): MockState {
       avatarUrl: 'https://example.test/avatar.png',
     },
     scopes: 'repo,read:user',
+    tokenScopes: new Map(),
+    authFailure: null,
+    tokenAuthFailures: new Map(),
     repos: new Map(),
     deviceCodes: new Map(),
   };
@@ -153,8 +166,59 @@ function repoEnvelope(repo: MockRepo) {
   };
 }
 
+function pullEnvelope(pull: MockRepo['pulls'][number]) {
+  return {
+    number: pull.number,
+    head: { ref: pull.head },
+    base: { ref: pull.base },
+    title: pull.title,
+    state: pull.state,
+    merged: pull.merged,
+    draft: pull.draft,
+    html_url: pull.htmlUrl,
+  };
+}
+
+function bearerToken(c: { req: { header: (name: string) => string | undefined } }): string | null {
+  const authorization = c.req.header('authorization') ?? c.req.header('Authorization') ?? '';
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match?.[1] ?? null;
+}
+
+function scopesFor(c: { req: { header: (name: string) => string | undefined } }): string {
+  const token = bearerToken(c);
+  return (token ? state.tokenScopes.get(token) : undefined) ?? state.scopes;
+}
+
+function authFailureFor(c: {
+  req: { header: (name: string) => string | undefined };
+}): { status: 401 | 403; message: string; acceptedScopes?: string } | null {
+  const token = bearerToken(c);
+  return (token ? state.tokenAuthFailures.get(token) : undefined) ?? state.authFailure;
+}
+
 function branchEnvelope(branch: string, sha: string) {
   return { name: branch, commit: { sha } };
+}
+
+function updateContentsFromTree(repo: MockRepo, branchName: string, treeSha: string): void {
+  const tree = repo.trees.get(treeSha);
+  if (!tree) return;
+  for (const entry of tree.entries) {
+    if (entry.type !== 'blob') continue;
+    const blob = repo.blobs.get(entry.sha);
+    if (!blob) continue;
+    let perPath = repo.contents.get(entry.path);
+    if (!perPath) {
+      perPath = new Map();
+      repo.contents.set(entry.path, perPath);
+    }
+    const content =
+      blob.encoding === 'base64'
+        ? Buffer.from(blob.content, 'base64').toString('utf-8')
+        : blob.content;
+    perPath.set(branchName, { sha: entry.sha, content });
+  }
 }
 
 function ensureSeedCommit(repo: MockRepo): string {
@@ -265,11 +329,66 @@ export function buildGithubRoutes(): Hono {
     return c.json({ ok: true });
   });
 
+  app.post('/__gh/scopes', async (c) => {
+    const body = await c.req.json<{ scopes: string | string[]; token?: string }>();
+    const scopes = Array.isArray(body.scopes) ? body.scopes.join(',') : body.scopes;
+    if (body.token) {
+      state.tokenScopes.set(body.token, scopes);
+    } else {
+      state.scopes = scopes;
+    }
+    return c.json({ ok: true, scopes, token: body.token ?? null });
+  });
+
+  app.post('/__gh/auth-failure', async (c) => {
+    const body = await c.req.json<{
+      status?: 401 | 403;
+      message?: string;
+      acceptedScopes?: string;
+      token?: string;
+    }>();
+    const failure = {
+      status: body.status ?? 401,
+      message: body.message ?? 'Bad credentials',
+      acceptedScopes: body.acceptedScopes,
+    };
+    if (body.token) {
+      state.tokenAuthFailures.set(body.token, failure);
+    } else {
+      state.authFailure = failure;
+    }
+    return c.json({ ok: true, authFailure: failure, token: body.token ?? null });
+  });
+
+  app.delete('/__gh/auth-failure', (c) => {
+    const token = c.req.query('token');
+    if (token) {
+      state.tokenAuthFailures.delete(token);
+    } else {
+      state.authFailure = null;
+      state.tokenAuthFailures.clear();
+    }
+    return c.json({ ok: true });
+  });
+
+  app.use('/_gh/*', async (c, next) => {
+    const authFailure = authFailureFor(c);
+    if (!authFailure) {
+      await next();
+      return;
+    }
+    c.header('x-oauth-scopes', scopesFor(c));
+    if (authFailure.acceptedScopes) {
+      c.header('x-accepted-oauth-scopes', authFailure.acceptedScopes);
+    }
+    return c.json({ message: authFailure.message }, authFailure.status);
+  });
+
   // --------------------------------------------------------------------
   // User
   // --------------------------------------------------------------------
   app.get('/_gh/user', (c) => {
-    c.header('x-oauth-scopes', state.scopes);
+    c.header('x-oauth-scopes', scopesFor(c));
     return c.json({
       login: state.viewer.login,
       id: state.viewer.id,
@@ -353,6 +472,8 @@ export function buildGithubRoutes(): Hono {
     const ref = `refs/heads/${branch}`;
     if (!repo.refs.has(ref)) return c.json({ message: 'Ref not found' }, 404);
     repo.refs.set(ref, body.sha);
+    const commit = repo.commits.get(body.sha);
+    if (commit) updateContentsFromTree(repo, branch, commit.treeSha);
     return c.json({ ref, object: { sha: body.sha, type: 'commit' } });
   });
 
@@ -361,7 +482,7 @@ export function buildGithubRoutes(): Hono {
     if (!repo) return c.json({ message: 'Not Found' }, 404);
     const url = new URL(c.req.url);
     const idx = url.pathname.indexOf('/git/refs/');
-    const refSuffix = url.pathname.slice(idx + '/git/refs/'.length);
+    const refSuffix = decodeURIComponent(url.pathname.slice(idx + '/git/refs/'.length));
     const full = `refs/${refSuffix}`;
     repo.refs.delete(full);
     return new Response(null, { status: 204 });
@@ -439,7 +560,10 @@ export function buildGithubRoutes(): Hono {
       treeSha: body.tree,
       parents: body.parents,
     });
-    // Update contents view from this tree.
+    // Update contents view from this tree for refs that uniquely point to
+    // the parent. The updateRef route also refreshes the exact target
+    // branch after a push, which handles the common case where a new branch
+    // still shares its parent SHA with main.
     const tree = repo.trees.get(body.tree);
     if (tree) {
       // Determine which branch this commit will land on by looking for
@@ -447,21 +571,7 @@ export function buildGithubRoutes(): Hono {
       for (const [refName, refSha] of repo.refs) {
         if (body.parents.includes(refSha) && refName.startsWith('refs/heads/')) {
           const branchName = refName.slice('refs/heads/'.length);
-          for (const entry of tree.entries) {
-            if (entry.type !== 'blob') continue;
-            const blob = repo.blobs.get(entry.sha);
-            if (!blob) continue;
-            let perPath = repo.contents.get(entry.path);
-            if (!perPath) {
-              perPath = new Map();
-              repo.contents.set(entry.path, perPath);
-            }
-            const content =
-              blob.encoding === 'base64'
-                ? Buffer.from(blob.content, 'base64').toString('utf-8')
-                : blob.content;
-            perPath.set(branchName, { sha: entry.sha, content });
-          }
+          updateContentsFromTree(repo, branchName, body.tree);
           break;
         }
       }
@@ -601,18 +711,39 @@ export function buildGithubRoutes(): Hono {
   app.post('/_gh/repos/:owner/:name/pulls', async (c) => {
     const repo = ensureRepo(c.req.param('owner'), c.req.param('name'));
     if (!repo) return c.json({ message: 'Not Found' }, 404);
-    const body = await c.req.json<{ title: string; head: string; base: string }>();
+    const body = await c.req.json<{ title: string; head: string; base: string; draft?: boolean }>();
     const num = repo.pulls.length + 1;
     const htmlUrl = `https://github.test/${repo.owner}/${repo.name}/pull/${num}`;
-    repo.pulls.push({
+    const pull: MockRepo['pulls'][number] = {
       number: num,
       head: body.head,
       base: body.base,
       title: body.title,
       state: 'open',
+      merged: false,
+      draft: body.draft ?? false,
       htmlUrl,
-    });
-    return c.json({ number: num, html_url: htmlUrl, state: 'open', title: body.title });
+    };
+    repo.pulls.push(pull);
+    return c.json(pullEnvelope(pull));
+  });
+
+  app.get('/_gh/repos/:owner/:name/pulls', (c) => {
+    const repo = ensureRepo(c.req.param('owner'), c.req.param('name'));
+    if (!repo) return c.json({ message: 'Not Found' }, 404);
+    const stateFilter = c.req.query('state') ?? 'open';
+    const pulls =
+      stateFilter === 'all' ? repo.pulls : repo.pulls.filter((pull) => pull.state === stateFilter);
+    return c.json(pulls.map((pull) => pullEnvelope(pull)));
+  });
+
+  app.get('/_gh/repos/:owner/:name/pulls/:number', (c) => {
+    const repo = ensureRepo(c.req.param('owner'), c.req.param('name'));
+    if (!repo) return c.json({ message: 'Not Found' }, 404);
+    const number = Number.parseInt(c.req.param('number'), 10);
+    const pull = repo.pulls.find((p) => p.number === number);
+    if (!pull) return c.json({ message: 'Not Found' }, 404);
+    return c.json(pullEnvelope(pull));
   });
 
   app.get('/_gh/repos/:owner/:name/topics', (c) => {

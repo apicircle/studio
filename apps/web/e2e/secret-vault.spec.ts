@@ -11,11 +11,6 @@ function id(key: string): TcId {
   if (!v) throw new Error(`No TC-VR entry for "${key}"`);
   return v;
 }
-function id(key: string): TcId {
-  const v = tcMapVR[key];
-  if (!v) throw new Error(`No TC-VR entry for "${key}"`);
-  return v;
-}
 // Plan §10.2 "Secret Vault" suite — open vault → add secret → reveal →
 // reference it in a request → see the where-used expander → try to delete
 // → confirmation gate fires → confirm and verify deletion.

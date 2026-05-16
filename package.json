@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "pnpm --filter @apicircle/web test:e2e",
+    "test:e2e:live-github": "pnpm --filter @apicircle/web test:e2e:live-github",
     "test:e2e:install": "pnpm --filter @apicircle/web test:e2e:install",
     "test:e2e:smoke": "pnpm --filter @apicircle/web exec playwright test --grep @smoke",
     "test:e2e:visual": "pnpm --filter @apicircle/web exec playwright test --project=visual-baseline",

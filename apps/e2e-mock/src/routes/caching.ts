@@ -8,6 +8,15 @@ import { Hono } from 'hono';
 const BODY = JSON.stringify({ cached: true, when: '2026-01-01T00:00:00Z' });
 const ETAG = '"e2e-mock-etag-v1"';
 const LAST_MODIFIED = 'Wed, 01 Jan 2026 00:00:00 GMT';
+const EXPIRES_OLD = 'Thu, 01 Jan 1970 00:00:00 GMT';
+
+function bodyEtag(text: string): string {
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+  }
+  return `"e2e-body-${text.length}-${hash.toString(16)}"`;
+}
 
 export function buildCachingRoutes(): Hono {
   const app = new Hono();
@@ -53,6 +62,47 @@ export function buildCachingRoutes(): Hono {
       headers: {
         'content-type': 'application/json',
         'cache-control': 'no-store',
+      },
+    });
+  });
+
+  app.get('/cache/private', () => {
+    return new Response(BODY, {
+      status: 200,
+      headers: {
+        'content-type': 'application/json',
+        'cache-control': 'private, max-age=60',
+      },
+    });
+  });
+
+  app.get('/cache/public', () => {
+    return new Response(BODY, {
+      status: 200,
+      headers: {
+        'content-type': 'application/json',
+        'cache-control': 'public, max-age=60',
+      },
+    });
+  });
+
+  app.post('/cache/etag-body', async (c) => {
+    const text = await c.req.text();
+    return new Response(BODY, {
+      status: 200,
+      headers: {
+        'content-type': 'application/json',
+        etag: bodyEtag(text),
+      },
+    });
+  });
+
+  app.get('/cache/expires-old', () => {
+    return new Response(BODY, {
+      status: 200,
+      headers: {
+        'content-type': 'application/json',
+        expires: EXPIRES_OLD,
       },
     });
   });

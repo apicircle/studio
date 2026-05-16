@@ -106,6 +106,26 @@ regression gate.
    `gap` array lists every TC-ID that lost coverage; cross-reference
    with the diff to find the spec that lost a `tc()` tag.
 
+## Live GitHub Credential Smoke
+
+The default E2E suite uses the local GitHub mock. Real GitHub credentials
+are opt-in and must be supplied only as runtime environment variables.
+Never commit a PAT, put it in a package script, or paste it into a test
+file.
+
+PowerShell:
+
+```powershell
+$env:APICIRCLE_E2E_LIVE_GITHUB = '1'
+$env:APICIRCLE_E2E_GITHUB_PAT = '<your GitHub PAT>'
+$env:APICIRCLE_E2E_GITHUB_REPO = 'owner/repo'
+pnpm test:e2e:live-github
+```
+
+The dedicated `chromium-live-github` Playwright project disables trace,
+screenshots, and video so the PAT is not captured in local artifacts.
+Use a short-lived token scoped only to the target test repository.
+
 ## Updating the coverage floor
 
 The current floor is `--fail-under 20` (strict-live ≥ 20%). The number

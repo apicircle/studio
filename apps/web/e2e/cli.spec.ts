@@ -7,6 +7,9 @@
 // the lenient coverage scanner sees the tcMap import from a web spec
 // — it emits no tests of its own.
 
+import { test } from './fixtures/app';
+import { tc } from './fixtures/tcCoverage';
+import type { TcId } from './fixtures/tcCoverage';
 import { tcMapCL } from './fixtures/tcMapCL';
 void tcMapCL;
 

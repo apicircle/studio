@@ -301,16 +301,34 @@ const CONSUMER_DRIVERS: Record<string, ConsumerDriver> = {
 };
 
 async function applyRequestContextVar(app: Page, name: string, value: string) {
-  await app
-    .getByRole('button', { name: /^Context/ })
-    .first()
-    .click();
-  await app
-    .getByRole('button', { name: /^Add context var$/ })
-    .first()
-    .click();
-  await app.getByLabel('Context var 1 name').fill(name);
-  await app.getByLabel('Context var 1 value').fill(value);
+  await app.evaluate(
+    ({ key, val }) => {
+      const w = window as unknown as {
+        __apicircleStore?: {
+          getState: () => {
+            local?: { ui?: { activeRequestId?: string | null } };
+            synced?: {
+              collections: {
+                requests: Record<string, { contextVars?: Array<{ key: string; value: string }> }>;
+              };
+            };
+            setRequestContextVars: (
+              id: string,
+              contextVars: Array<{ key: string; value: string }>,
+            ) => void;
+          };
+        };
+      };
+      const store = w.__apicircleStore;
+      if (!store) throw new Error('__apicircleStore not exposed');
+      const state = store.getState();
+      const id = state.local?.ui?.activeRequestId;
+      if (!id) throw new Error('No active request for context var setup');
+      const current = state.synced?.collections.requests[id]?.contextVars ?? [];
+      store.getState().setRequestContextVars(id, [...current, { key, value: val }]);
+    },
+    { key: name, val: value },
+  );
 }
 
 test.describe('Variable Interpolation Matrix', () => {

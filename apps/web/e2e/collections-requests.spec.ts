@@ -401,8 +401,8 @@ test.describe('Collections & Requests', () => {
         return w.__apicircleStore!.getState().synced!.environments.priorityOrder;
       });
       expect(order).toEqual([
-        { kind: 'local', envName: 'Dev' },
-        { kind: 'local', envName: 'Prod' },
+        { kind: 'local', name: 'Dev' },
+        { kind: 'local', name: 'Prod' },
       ]);
     },
   );

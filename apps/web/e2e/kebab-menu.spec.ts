@@ -11,11 +11,6 @@ function id(key: string): TcId {
   if (!v) throw new Error(`No TC-CC entry for "${key}"`);
   return v;
 }
-function id(key: string): TcId {
-  const v = tcMapCC[key];
-  if (!v) throw new Error(`No TC-CC entry for "${key}"`);
-  return v;
-}
 // Phase 3 sanity: the kebab menu primitive opens, navigates by keyboard,
 // and closes on Escape. Exercises the editor sidebar request row since
 // that's the densest application of the menu.

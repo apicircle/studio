@@ -34,6 +34,17 @@ export interface MockGithubControl {
   reset: () => Promise<void>;
   /** Create or replace a mock repo. */
   seedRepo: (seed: MockRepoSeed) => Promise<void>;
+  /** Replace the mock OAuth scope header returned by GitHub API calls. */
+  setScopes: (scopes: string | string[], token?: string) => Promise<void>;
+  /** Force authenticated GitHub API calls to return a 401/403 response. */
+  setAuthFailure: (failure?: {
+    status?: 401 | 403;
+    message?: string;
+    acceptedScopes?: string;
+    token?: string;
+  }) => Promise<void>;
+  /** Clear any forced auth failure. */
+  clearAuthFailure: (token?: string) => Promise<void>;
   /** Read the current mock state for a repo. */
   inspectRepo: (
     owner: string,
@@ -48,7 +59,15 @@ export interface MockGithubControl {
     };
     refs: Record<string, string>;
     contents: Record<string, Record<string, { sha: string; content: string }>>;
-    pulls: Array<{ number: number; head: string; base: string; title: string }>;
+    pulls: Array<{
+      number: number;
+      head: string;
+      base: string;
+      title: string;
+      state: 'open' | 'closed';
+      merged: boolean;
+      draft: boolean;
+    }>;
     releases: Array<{ id: number; tagName: string; htmlUrl: string }>;
   } | null>;
   /**
@@ -130,6 +149,33 @@ export const test = base.extend<GitFixture>({
         });
         if (!res.ok) {
           throw new Error(`mockGithub.seedRepo failed: HTTP ${res.status}`);
+        }
+      },
+      setScopes: async (scopes, token) => {
+        const res = await fetch(`${MOCK_BASE}/__gh/scopes`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ scopes, token }),
+        });
+        if (!res.ok) {
+          throw new Error(`mockGithub.setScopes failed: HTTP ${res.status}`);
+        }
+      },
+      setAuthFailure: async (failure = {}) => {
+        const res = await fetch(`${MOCK_BASE}/__gh/auth-failure`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(failure),
+        });
+        if (!res.ok) {
+          throw new Error(`mockGithub.setAuthFailure failed: HTTP ${res.status}`);
+        }
+      },
+      clearAuthFailure: async (token) => {
+        const qs = token ? `?token=${encodeURIComponent(token)}` : '';
+        const res = await fetch(`${MOCK_BASE}/__gh/auth-failure${qs}`, { method: 'DELETE' });
+        if (!res.ok) {
+          throw new Error(`mockGithub.clearAuthFailure failed: HTTP ${res.status}`);
         }
       },
       inspectRepo: async (owner, name) => {

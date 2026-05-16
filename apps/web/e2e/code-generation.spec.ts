@@ -30,7 +30,7 @@ test.describe('Code Generation — residue (no web UI)', () => {
   // Anchor test that exercises the helper so the spec is alive in CI.
   test.fixme(
     tc(
-      id('curl :: Codegen curl: GET'),
+      id('curl :: Codegen curl: Simple GET'),
       'Codegen has no web-UI surface — see apps/desktop/e2e/mcp.spec.ts generate.code',
     ),
     async () => {

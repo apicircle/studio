@@ -133,22 +133,79 @@ test.describe('HTTP caching', () => {
     },
   );
 
-  test.fixme(
+  test(
     tc(id('Cache-Control: private vs public'), 'private vs public cache hint'),
-    async () => {
-      // The request panel doesn't surface a "where would the browser cache
-      // this?" distinction. Defer until the panel exposes cache-tier info.
+    async ({ app, e2eMock, sidebar }) => {
+      await sidebar.createRequest('ca-private-public');
+      await app.getByLabel('Request URL').fill(e2eMock.url('/cache/private'));
+      await app.getByRole('button', { name: /^Send$/ }).click();
+      await expect(app.getByText('200').first()).toBeVisible({ timeout: 10_000 });
+      await app
+        .getByRole('button', { name: /^Headers/ })
+        .last()
+        .click();
+      await expect(app.getByRole('row', { name: /cache-control.*private/i })).toBeVisible();
+
+      await app.getByLabel('Request URL').fill(e2eMock.url('/cache/public'));
+      await app.getByRole('button', { name: /^Send$/ }).click();
+      await expect(app.getByText('200').first()).toBeVisible({ timeout: 10_000 });
+      await app
+        .getByRole('button', { name: /^Headers/ })
+        .last()
+        .click();
+      await expect(app.getByRole('row', { name: /cache-control.*public/i })).toBeVisible();
     },
   );
 
-  test.fixme(tc(id('ETag changes on body change'), 'ETag changes per body'), async () => {
-    // Needs a stateful mock endpoint (mutate the body, observe new ETag).
-    // Add `/cache/etag-mutable` when this becomes a priority.
-  });
+  test(
+    tc(id('ETag changes on body change'), 'ETag changes per body'),
+    async ({ app, monaco, e2eMock, sidebar }) => {
+      await sidebar.createRequest('ca-etag-body');
+      await app.getByLabel('HTTP method').selectOption('POST');
+      await app.getByLabel('Request URL').fill(e2eMock.url('/cache/etag-body'));
+      await app.getByRole('button', { name: 'Body', exact: true }).first().click();
+      await app.getByRole('radio', { name: 'JSON' }).click();
+      await monaco.fill('Request body', '{"value":"alpha"}');
+      await app.getByRole('button', { name: /^Send$/ }).click();
+      await expect(app.getByText('200').first()).toBeVisible({ timeout: 10_000 });
+      await app
+        .getByRole('button', { name: /^Headers/ })
+        .last()
+        .click();
+      const firstEtag = await app.getByRole('row', { name: /etag/i }).textContent();
 
-  test.fixme(tc(id('Expires header old (HTTP/1.0)'), 'old Expires header parsed'), async () => {
-    // Mock endpoint not yet wired; add `/cache/expires-old`.
-  });
+      await app.getByRole('button', { name: 'Body', exact: true }).first().click();
+      await monaco.fill('Request body', '{"value":"alphabet"}');
+      await app.getByRole('button', { name: /^Send$/ }).click();
+      await expect(app.getByText('200').first()).toBeVisible({ timeout: 10_000 });
+      await app
+        .getByRole('button', { name: /^Headers/ })
+        .last()
+        .click();
+      const secondEtag = await app.getByRole('row', { name: /etag/i }).textContent();
+
+      expect(firstEtag).toBeTruthy();
+      expect(secondEtag).toBeTruthy();
+      expect(secondEtag).not.toBe(firstEtag);
+    },
+  );
+
+  test(
+    tc(id('Expires header old (HTTP/1.0)'), 'old Expires header parsed'),
+    async ({ app, e2eMock, sidebar }) => {
+      await sidebar.createRequest('ca-expires-old');
+      await app.getByLabel('Request URL').fill(e2eMock.url('/cache/expires-old'));
+      await app.getByRole('button', { name: /^Send$/ }).click();
+      await expect(app.getByText('200').first()).toBeVisible({ timeout: 10_000 });
+      await app
+        .getByRole('button', { name: /^Headers/ })
+        .last()
+        .click();
+      await expect(
+        app.getByRole('row', { name: /expires.*Thu, 01 Jan 1970 00:00:00 GMT/i }),
+      ).toBeVisible();
+    },
+  );
 
   test.fixme(
     tc(id('Stale-while-revalidate (if respected)'), 'stale-while-revalidate cache hint'),

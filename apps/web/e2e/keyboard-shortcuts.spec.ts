@@ -82,16 +82,13 @@ test.describe('Keyboard shortcuts', () => {
     expect(await readPercent()).toBe(100);
   });
 
-  test.fixme(
+  test(
     tc(id('New Request'), 'Ctrl/Cmd+N creates a new request inside the Editor panel'),
-    async () => {
-      // Verified by hand against the codebase: KeyboardShortcuts.tsx
-      // wires Ctrl+N to addRequest when the Editor panel is active,
-      // but the inline rename input doesn't surface after the press
-      // in headless Chromium (rename input requires a fresh pending-
-      // create state that the binding seems to skip on this code
-      // path). Real-implementation TODO: trace addRequest call vs
-      // setEditorPendingCreate to find the divergence.
+    async ({ app }) => {
+      await app.getByRole('button', { name: 'Editor', exact: true }).click();
+      await app.keyboard.press('Control+N');
+      await expect(app.getByLabel('Request name', { exact: true })).toHaveValue(/^New request/);
+      await expect(app.getByRole('treeitem', { name: /^GET New request/ }).first()).toBeVisible();
     },
   );
 

@@ -55,12 +55,28 @@ export default defineConfig({
       // visual-baseline.spec.ts is gated by `testInfo.project.name` so
       // the default project would just skip every test — exclude it
       // outright to keep the chromium run focused.
-      testIgnore: [/auth-oauth2-(cc|popup)\.spec\.ts$/, /visual-baseline\.spec\.ts$/],
+      testIgnore: [
+        /auth-oauth2-(cc|popup)\.spec\.ts$/,
+        /visual-baseline\.spec\.ts$/,
+        /live-github\.spec\.ts$/,
+      ],
       // The two parameterized header sweeps are scoped down by default
       // (a representative 14-entry / first-value subset) so the suite
       // stays under ~5 min wall-time. The `chromium-full-sweep` project
       // below runs the same specs with FULL_HEADER_SWEEP / FULL_VALUE_SWEEP
       // set so every dictionary entry + every curated value gets verified.
+    },
+    {
+      name: 'chromium-live-github',
+      testMatch: /live-github\.spec\.ts$/,
+      use: {
+        ...devices['Desktop Chrome'],
+        trace: 'off',
+        screenshot: 'off',
+        video: 'off',
+      },
+      timeout: 60_000,
+      fullyParallel: false,
     },
     {
       name: 'chromium-oauth2-popup',
@@ -108,7 +124,11 @@ export default defineConfig({
     {
       name: 'firefox-smoke',
       testMatch: /.*\.spec\.ts$/,
-      testIgnore: [/auth-oauth2-(cc|popup)\.spec\.ts$/, /visual-baseline\.spec\.ts$/],
+      testIgnore: [
+        /auth-oauth2-(cc|popup)\.spec\.ts$/,
+        /visual-baseline\.spec\.ts$/,
+        /live-github\.spec\.ts$/,
+      ],
       grep: /@smoke/,
       use: { ...devices['Desktop Firefox'] },
       timeout: 45_000,
@@ -116,7 +136,11 @@ export default defineConfig({
     {
       name: 'webkit-smoke',
       testMatch: /.*\.spec\.ts$/,
-      testIgnore: [/auth-oauth2-(cc|popup)\.spec\.ts$/, /visual-baseline\.spec\.ts$/],
+      testIgnore: [
+        /auth-oauth2-(cc|popup)\.spec\.ts$/,
+        /visual-baseline\.spec\.ts$/,
+        /live-github\.spec\.ts$/,
+      ],
       grep: /@smoke/,
       use: { ...devices['Desktop Safari'] },
       timeout: 45_000,

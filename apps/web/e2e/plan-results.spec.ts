@@ -11,11 +11,6 @@ function id(key: string): TcId {
   if (!v) throw new Error(`No TC-AS entry for "${key}"`);
   return v;
 }
-function id(key: string): TcId {
-  const v = tcMapAS[key];
-  if (!v) throw new Error(`No TC-AS entry for "${key}"`);
-  return v;
-}
 // P21 — Per-step plan run details. Builds a 2-step plan, runs it, and
 // verifies the new "Last run · per-step details" section renders one
 // expandable row per step with status + duration + assertion verdicts +

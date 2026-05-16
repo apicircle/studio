@@ -7,6 +7,9 @@
 // coverage scanner's tcMap link from the web-side spec list; it emits
 // no tests of its own.
 
+import { test } from './fixtures/app';
+import { tc } from './fixtures/tcCoverage';
+import type { TcId } from './fixtures/tcCoverage';
 import { tcMapMR } from './fixtures/tcMapMR';
 void tcMapMR;
 

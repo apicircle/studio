@@ -231,13 +231,41 @@ test.describe('Workspace management', () => {
     },
   );
 
-  test.fixme(
+  test(
     tc(id('Switcher :: Recent workspaces persist across restart'), 'recents persist across reload'),
-    async () => {
-      // Needs a second context that picks up the same IDB origin —
-      // Playwright's per-test storageState reset is the opposite of
-      // what this needs. Implement as a fixture variant that re-uses
-      // a named context. Deferred to S6 (two-context fixture work).
+    async ({ app }) => {
+      const suffix = Math.random().toString(36).slice(2, 6);
+      const a = `persist-A-${suffix}`;
+      const b = `persist-B-${suffix}`;
+      const c = `persist-C-${suffix}`;
+
+      await createWorkspace(app, a);
+      await app.waitForTimeout(10);
+      await createWorkspace(app, b);
+      await app.waitForTimeout(10);
+      await createWorkspace(app, c);
+
+      // Make B the most recent workspace, with C next and A third.
+      await openSwitcher(app);
+      await app.getByRole('option', { name: `Switch to ${b}` }).click();
+      await expect(
+        app
+          .getByRole('button', { name: new RegExp(`Switch workspace.*${escapeRegex(b)}`) })
+          .first(),
+      ).toBeVisible({ timeout: 5_000 });
+
+      await app.reload();
+      await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+
+      await openSwitcher(app);
+      const optionNames = await app
+        .getByRole('option')
+        .evaluateAll((options) => options.map((option) => option.getAttribute('aria-label')));
+      expect(optionNames.slice(0, 3)).toEqual([
+        `Switch to ${b}`,
+        `Switch to ${c}`,
+        `Switch to ${a}`,
+      ]);
     },
   );
 
@@ -454,9 +482,12 @@ test.describe('Workspace management — multi-tab', () => {
 // mockGithub control plane.
 interface StoreApi {
   connectGitHubSession: (t: string) => Promise<unknown>;
+  verifyGitHubScopes: () => Promise<string[] | null>;
   connectRepo: (o: string, n: string) => Promise<unknown>;
   createWorkingBranch: (b?: string) => Promise<unknown>;
+  discardWorkingBranch: () => void;
   pushWorkspace: (m?: string) => Promise<{ commitSha: string }>;
+  refreshWorkspace: () => Promise<{ status: string; retired?: { reason: string } }>;
   disconnectRepo: () => void;
   disconnectGitHubSession: () => Promise<unknown>;
 }
@@ -518,18 +549,203 @@ test.describe('Workspace management — git', () => {
     },
   );
 
-  // The remaining git cells require richer mock state (offline mode,
-  // OAuth scope denial, repo without write access, in-flight pull race)
-  // or behavioral overlays the mock doesn't expose yet.
+  gitTest(
+    tc(
+      id('Link to Git :: OAuth scope denial blocks linking'),
+      'missing repo scope rejects session connect',
+    ),
+    async ({ appWithGithubMock, mockGithub }) => {
+      const token = `ghp_mock_scope_denied_${gitTest.info().workerIndex}`;
+      await mockGithub.setScopes(['read:user'], token);
+      const message = await appWithGithubMock.evaluate(async (t) => {
+        const w = window as unknown as { __apicircleStore?: { getState: () => StoreApi } };
+        try {
+          await w.__apicircleStore!.getState().connectGitHubSession(t);
+          return null;
+        } catch (err) {
+          return err instanceof Error ? err.message : String(err);
+        }
+      }, token);
+      expect(message).toMatch(/missing required (?:GitHub |base )?scope(?:\(s\)|s): repo/i);
+    },
+  );
+
+  gitTest(
+    tc(
+      id('Link to Git :: Token revoked surfaces re-auth prompt'),
+      'revoked token fails verification',
+    ),
+    async ({ appWithGithubMock, mockGithub }) => {
+      const token = `ghp_mock_revoked_${gitTest.info().workerIndex}`;
+      await appWithGithubMock.evaluate(async (t) => {
+        const w = window as unknown as { __apicircleStore?: { getState: () => StoreApi } };
+        await w.__apicircleStore!.getState().connectGitHubSession(t);
+      }, token);
+      await mockGithub.setAuthFailure({ token, status: 401, message: 'Bad credentials' });
+      const message = await appWithGithubMock.evaluate(async () => {
+        const w = window as unknown as { __apicircleStore?: { getState: () => StoreApi } };
+        try {
+          await w.__apicircleStore!.getState().verifyGitHubScopes();
+          return null;
+        } catch (err) {
+          return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+        }
+      });
+      expect(message).toMatch(/UnauthorizedError: Bad credentials/i);
+      await mockGithub.clearAuthFailure(token);
+    },
+  );
+
+  gitTest(
+    tc(
+      id('Link to Git :: Link to repo without write permission'),
+      'read-only repo links with push disabled',
+    ),
+    async ({ appWithGithubMock, mockGithub }) => {
+      const owner = 'mock-user';
+      const name = `ws-readonly-${gitTest.info().workerIndex}`;
+      await mockGithub.seedRepo({ owner, name, pushable: false });
+      const pushable = await appWithGithubMock.evaluate(
+        async ({ o, n }) => {
+          const w = window as unknown as {
+            __apicircleStore?: {
+              getState: () => StoreApi & {
+                local?: { connectedRepo?: { pushable: boolean } | null };
+              };
+            };
+          };
+          const s = w.__apicircleStore!.getState();
+          await s.connectGitHubSession('ghp_mock_test_token');
+          await s.connectRepo(o, n);
+          return w.__apicircleStore!.getState().local?.connectedRepo?.pushable ?? null;
+        },
+        { o: owner, n: name },
+      );
+      expect(pushable).toBe(false);
+    },
+  );
+
+  gitTest(
+    tc(id('Pull'), 'refresh reads current remote workspace'),
+    async ({ appWithGithubMock, mockGithub }) => {
+      const owner = 'mock-user';
+      const name = `ws-pull-${gitTest.info().workerIndex}`;
+      await mockGithub.seedRepo({ owner, name });
+      const result = await appWithGithubMock.evaluate(
+        async ({ o, n }) => {
+          const w = window as unknown as { __apicircleStore?: { getState: () => StoreApi } };
+          const s = w.__apicircleStore!.getState();
+          await s.connectGitHubSession('ghp_mock_test_token');
+          await s.connectRepo(o, n);
+          await s.createWorkingBranch();
+          await s.pushWorkspace('seed remote workspace');
+          return s.refreshWorkspace();
+        },
+        { o: owner, n: name },
+      );
+      expect(result.status).toBe('up-to-date');
+    },
+  );
+
+  gitTest(
+    tc(
+      id('Refresh :: Refresh detects retired branch'),
+      'deleted remote branch retires local working branch',
+    ),
+    async ({ appWithGithubMock, mockGithub }) => {
+      const owner = 'mock-user';
+      const name = `ws-retired-${gitTest.info().workerIndex}`;
+      await mockGithub.seedRepo({ owner, name });
+      const branchName = await appWithGithubMock.evaluate(
+        async ({ o, n }) => {
+          const w = window as unknown as {
+            __apicircleStore?: {
+              getState: () => StoreApi & {
+                local?: { workingBranch?: { name: string } | null };
+              };
+            };
+          };
+          const s = w.__apicircleStore!.getState();
+          await s.connectGitHubSession('ghp_mock_test_token');
+          await s.connectRepo(o, n);
+          await s.createWorkingBranch();
+          return w.__apicircleStore!.getState().local!.workingBranch!.name;
+        },
+        { o: owner, n: name },
+      );
+      const deleteRes = await fetch(
+        `${mockGithub.baseUrl}/_gh/repos/${owner}/${name}/git/refs/heads/${encodeURIComponent(branchName)}`,
+        { method: 'DELETE' },
+      );
+      expect(deleteRes.ok).toBe(true);
+      const result = await appWithGithubMock.evaluate(async () => {
+        const w = window as unknown as {
+          __apicircleStore?: {
+            getState: () => StoreApi & {
+              local?: {
+                workingBranch?: { name: string } | null;
+                retiredBranch?: { reason: string } | null;
+              };
+            };
+          };
+        };
+        const s = w.__apicircleStore!.getState();
+        const refresh = await s.refreshWorkspace();
+        const after = w.__apicircleStore!.getState();
+        return {
+          status: refresh.status,
+          reason: after.local?.retiredBranch?.reason ?? null,
+          workingBranch: after.local?.workingBranch?.name ?? null,
+        };
+      });
+      expect(result).toEqual({
+        status: 'retired',
+        reason: 'branch-deleted',
+        workingBranch: null,
+      });
+    },
+  );
+
+  gitTest(
+    tc(id('Reset'), 'discard working branch keeps repo linked'),
+    async ({ appWithGithubMock, mockGithub }) => {
+      const owner = 'mock-user';
+      const name = `ws-reset-${gitTest.info().workerIndex}`;
+      await mockGithub.seedRepo({ owner, name });
+      const state = await appWithGithubMock.evaluate(
+        async ({ o, n }) => {
+          const w = window as unknown as {
+            __apicircleStore?: {
+              getState: () => StoreApi & {
+                local?: {
+                  connectedRepo?: { fullName: string } | null;
+                  workingBranch?: { name: string } | null;
+                };
+              };
+            };
+          };
+          const s = w.__apicircleStore!.getState();
+          await s.connectGitHubSession('ghp_mock_test_token');
+          await s.connectRepo(o, n);
+          await s.createWorkingBranch();
+          s.discardWorkingBranch();
+          const after = w.__apicircleStore!.getState();
+          return {
+            repo: after.local?.connectedRepo?.fullName ?? null,
+            branch: after.local?.workingBranch?.name ?? null,
+          };
+        },
+        { o: owner, n: name },
+      );
+      expect(state).toEqual({ repo: `${owner}/${name}`, branch: null });
+    },
+  );
+
+  // The remaining git cells still need product behavior or a stronger
+  // network simulation layer before they can be asserted safely.
   const NEEDS_RICHER_MOCK = [
-    'Link to Git :: OAuth scope denial blocks linking',
-    'Link to Git :: Token revoked surfaces re-auth prompt',
-    'Link to Git :: Link to repo without write permission',
     'Push :: Push with no changes is no-op',
     'Push :: Push during offline shows clear error',
-    'Pull',
-    'Refresh :: Refresh detects retired branch',
-    'Reset',
     'Restore',
   ] as const;
   for (const key of NEEDS_RICHER_MOCK) {

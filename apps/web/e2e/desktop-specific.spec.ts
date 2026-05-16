@@ -7,6 +7,9 @@
 // scanner sees the tcMap import from a web-side spec for backward
 // compatibility — it emits no tests of its own.
 
+import { test } from './fixtures/app';
+import { tc } from './fixtures/tcCoverage';
+import type { TcId } from './fixtures/tcCoverage';
 import { tcMapDS } from './fixtures/tcMapDS';
 void tcMapDS;
 

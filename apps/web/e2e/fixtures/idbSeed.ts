@@ -300,7 +300,7 @@ function buildSeeded(variant: 'seeded' | 'with-secrets'): SeedData {
       { requestId: r1Id, enabled: true },
       { requestId: r2Id, enabled: true },
     ],
-    envPriorityOrder: [{ kind: 'local', envName: 'Dev' }],
+    envPriorityOrder: [{ kind: 'local', name: 'Dev' }],
   });
 
   const mockServer = makeMockServer({
@@ -348,8 +348,8 @@ function buildSeeded(variant: 'seeded' | 'with-secrets'): SeedData {
       items: envs,
       activeName: 'Dev',
       priorityOrder: [
-        { kind: 'local', envName: 'Dev' },
-        { kind: 'local', envName: 'Prod' },
+        { kind: 'local', name: 'Dev' },
+        { kind: 'local', name: 'Prod' },
       ],
     },
     linkedWorkspaces: {},

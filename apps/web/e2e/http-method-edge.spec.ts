@@ -164,16 +164,25 @@ test.describe('HTTP method edge cases', () => {
     },
   );
 
-  test.fixme(
-    tc(id('OPTIONS :: OPTIONS lists allowed methods'), 'OPTIONS — wire shows OPTIONS'),
-    async () => {
-      // Browsers reserve OPTIONS for CORS preflight (Fetch spec
-      // §3.1.5) and don't reliably honor user-initiated OPTIONS via
-      // fetch — Chromium silently coalesces them with the preflight.
-      // The editor accepts OPTIONS as a method choice for non-fetch
-      // transports (desktop shell uses native HTTP); web e2e cannot
-      // prove this round-trip. Matches the comment in
-      // `http-methods.spec.ts` that excludes OPTIONS from METHODS.
+  test(
+    tc(id('OPTIONS :: OPTIONS lists allowed methods'), 'OPTIONS returns allowed-methods header'),
+    async ({ app, e2eMock, sidebar }) => {
+      const path = `/method/options`;
+      await sidebar.createRequest(`me-options-${Math.random().toString(36).slice(2, 8)}`);
+      await app.getByLabel('HTTP method').selectOption('OPTIONS');
+      await app.getByLabel('Request URL').fill(e2eMock.sameOriginUrl(path));
+      await app.getByRole('button', { name: /^Send$/ }).click();
+      await expect(app.getByText(/^204 No Content$/).first()).toBeVisible({ timeout: 10_000 });
+
+      await app
+        .getByRole('button', { name: /^Headers/ })
+        .last()
+        .click();
+      const allowMethods = app.getByRole('row', { name: /access-control-allow-methods/i });
+      await expect(allowMethods).toBeVisible();
+      await expect(allowMethods).toContainText(/GET/);
+      await expect(allowMethods).toContainText(/POST/);
+      await expect(allowMethods).toContainText(/DELETE/);
     },
   );
 

@@ -105,20 +105,29 @@ test.describe('Request body types', () => {
     },
   );
 
-  test.fixme(
+  test(
     tc(
       id('Form Data :: Empty value row'),
       'urlencoded: wire body.kind === form with parsed key/value pairs',
     ),
-    async () => {
-      // The urlencoded editor migrated from Monaco to a dedicated
-      // KeyValueRows component (Audit gap A6). The new component's
-      // aria-labels and "Add row" affordance need to be re-pinned
-      // to match what's currently rendered — the bare `Form field
-      // key 1` locator times out on the dev build's KeyValueRows
-      // wrapper. Follow-up: inspect KeyValueRows.tsx's actual
-      // aria-label format and update both this test and
-      // method-body-matrix.spec.ts.
+    async ({ app, e2eMock, sidebar }) => {
+      const path = '/anything/body-urlencoded-empty-value';
+      await sidebar.createRequest('body-urlencoded');
+      await app.getByLabel('Request URL').fill(e2eMock.url(path));
+      await app.getByLabel('HTTP method').selectOption('POST');
+      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
+      await app.getByRole('radio', { name: 'urlencoded' }).click();
+      await app.getByLabel('Form field key 1').fill('emptyValue');
+      await app.getByLabel('Form field value 1').fill('');
+      await app.getByRole('button', { name: /^Send$/ }).click();
+      await expect(app.getByText('200').first()).toBeVisible();
+
+      const wire = await e2eMock.findLastByPath((p) => p === path);
+      expect(wire.body.kind).toBe('form');
+      if (wire.body.kind === 'form') {
+        expect(wire.body.form).toEqual({ emptyValue: '' });
+      }
     },
   );
 
