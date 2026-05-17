@@ -66,7 +66,7 @@ jobs:
       - name: Build platform installers
         run: node scripts/release/buildDesktopInstallers.mjs
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: installers-${{ matrix.os }}
           # latest*.yml are the index files electron-updater consults;
