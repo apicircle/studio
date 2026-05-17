@@ -16,7 +16,6 @@ import { tc } from './fixtures/tcCoverage';
 import type { TcId } from './fixtures/tcCoverage';
 // Coverage credit: workbook module VR.
 import { tcMapVR } from './fixtures/tcMapVR';
-void Object.keys(tcMapVR);
 
 function id(key: string): TcId {
   const v = tcMapVR[key];
@@ -78,10 +77,7 @@ test.describe('Environments — C8', () => {
   );
 
   test(
-    tc(
-      id('Var :: Autocomplete in URL'),
-      'empty/whitespace var values resolve to empty string in URL',
-    ),
+    tc(id('Resolution'), 'empty/whitespace var values resolve to empty string in URL'),
     async ({ app, e2eMock, sidebar }) => {
       await createEnv(app, 'env-empty');
       await addVar(app, 'EMPTY', '');
@@ -105,7 +101,10 @@ test.describe('Environments — C8', () => {
   );
 
   test(
-    tc(id('Env :: Duplicate env'), 'rename → delete → duplicate → export round-trip'),
+    tc(
+      [id('Env :: Delete env with confirm'), id('Env :: Rename env updates refs')],
+      'rename → delete → duplicate → export round-trip',
+    ),
     async ({ app }) => {
       await createEnv(app, 'crud-src');
       await addVar(app, 'KEY', 'val-1');
@@ -161,31 +160,27 @@ test.describe('Environments — C8', () => {
     },
   );
 
-  test(
-    tc(
-      id('Var :: Hyphen in name'),
-      'name-collision warning: two var rows with the same key flag role="alert"',
-    ),
-    async ({ app }) => {
-      await createEnv(app, 'env-collide');
-      await addVar(app, 'KEY', 'first');
-      // Add a second row with the same key.
-      await app.getByRole('button', { name: 'Add variable' }).click();
-      await app.getByLabel('Variable key').nth(1).fill('KEY');
+  test('name-collision warning: two var rows with the same key flag role="alert"', async ({
+    app,
+  }) => {
+    await createEnv(app, 'env-collide');
+    await addVar(app, 'KEY', 'first');
+    // Add a second row with the same key.
+    await app.getByRole('button', { name: 'Add variable' }).click();
+    await app.getByLabel('Variable key').nth(1).fill('KEY');
 
-      // Both inputs go red (aria-invalid=true) and an inline alert renders.
-      await expect(app.getByLabel('Variable key').first()).toHaveAttribute('aria-invalid', 'true');
-      await expect(app.getByLabel('Variable key').nth(1)).toHaveAttribute('aria-invalid', 'true');
-      // Two alerts (one per row).
-      const alerts = app
-        .getByRole('alert', { name: /Name already used/ })
-        .or(app.locator('[role="alert"]', { hasText: 'Name already used' }));
-      await expect(alerts.first()).toBeVisible();
-    },
-  );
+    // Both inputs go red (aria-invalid=true) and an inline alert renders.
+    await expect(app.getByLabel('Variable key').first()).toHaveAttribute('aria-invalid', 'true');
+    await expect(app.getByLabel('Variable key').nth(1)).toHaveAttribute('aria-invalid', 'true');
+    // Two alerts (one per row).
+    const alerts = app
+      .getByRole('alert', { name: /Name already used/ })
+      .or(app.locator('[role="alert"]', { hasText: 'Name already used' }));
+    await expect(alerts.first()).toBeVisible();
+  });
 
   test(
-    tc(id('Env :: Rename env updates refs'), 'duplicate clone preserves variables verbatim'),
+    tc(id('Env :: Duplicate env'), 'duplicate clone preserves variables verbatim'),
     async ({ app }) => {
       await createEnv(app, 'dup-src');
       await addVar(app, 'A', '1');
@@ -204,60 +199,51 @@ test.describe('Environments — C8', () => {
     },
   );
 
-  test(
-    tc(
-      id('Linked Env :: Consumer override'),
-      'exportEnvironment payload is portable JSON with v1 marker',
-    ),
-    async ({ app }) => {
-      await createEnv(app, 'export-src');
-      await addVar(app, 'API_BASE', 'https://api.example.test');
-      await addVar(app, 'TIMEOUT', '5000');
+  test('exportEnvironment payload is portable JSON with v1 marker', async ({ app }) => {
+    await createEnv(app, 'export-src');
+    await addVar(app, 'API_BASE', 'https://api.example.test');
+    await addVar(app, 'TIMEOUT', '5000');
 
-      // Drive the store action directly (UI button triggers a Blob
-      // download — this verifies the produced payload, mirroring the
-      // unit-test contract end-to-end).
-      const json = await app.evaluate((name) => {
-        const w = window as unknown as {
-          __apicircleStore?: {
-            getState: () => { exportEnvironment: (n: string) => string | null };
-          };
+    // Drive the store action directly (UI button triggers a Blob
+    // download — this verifies the produced payload, mirroring the
+    // unit-test contract end-to-end).
+    const json = await app.evaluate((name) => {
+      const w = window as unknown as {
+        __apicircleStore?: {
+          getState: () => { exportEnvironment: (n: string) => string | null };
         };
-        return w.__apicircleStore?.getState().exportEnvironment(name) ?? null;
-      }, 'export-src');
-      expect(json).not.toBeNull();
-      const parsed = JSON.parse(json!);
-      expect(parsed).toEqual({
-        apicircleEnvironment: 1,
-        name: 'export-src',
-        variables: [
-          { key: 'API_BASE', value: 'https://api.example.test', encrypted: false },
-          { key: 'TIMEOUT', value: '5000', encrypted: false },
-        ],
-      });
-    },
-  );
+      };
+      return w.__apicircleStore?.getState().exportEnvironment(name) ?? null;
+    }, 'export-src');
+    expect(json).not.toBeNull();
+    const parsed = JSON.parse(json!);
+    expect(parsed).toEqual({
+      apicircleEnvironment: 1,
+      name: 'export-src',
+      variables: [
+        { key: 'API_BASE', value: 'https://api.example.test', encrypted: false },
+        { key: 'TIMEOUT', value: '5000', encrypted: false },
+      ],
+    });
+  });
 
-  test(
-    tc(id('Env :: Create env'), 'Export returns null for unknown env names'),
-    async ({ app }) => {
-      const json = await app.evaluate(() => {
-        const w = window as unknown as {
-          __apicircleStore?: {
-            getState: () => { exportEnvironment: (n: string) => string | null };
-          };
+  test('Export returns null for unknown env names', async ({ app }) => {
+    const json = await app.evaluate(() => {
+      const w = window as unknown as {
+        __apicircleStore?: {
+          getState: () => { exportEnvironment: (n: string) => string | null };
         };
-        return w.__apicircleStore?.getState().exportEnvironment('does-not-exist') ?? null;
-      });
-      expect(json).toBeNull();
-    },
-  );
+      };
+      return w.__apicircleStore?.getState().exportEnvironment('does-not-exist') ?? null;
+    });
+    expect(json).toBeNull();
+  });
 
   // ----- C9 encrypted-var round-trip --------------------------------------
 
   test(
     tc(
-      id('Var :: Very long value (1MB)'),
+      id('Var :: Add secret var masked'),
       'encrypted var round-trip: bind to vault key → wire receives decrypted value',
     ),
     async ({ app, e2eMock, sidebar }) => {
@@ -333,7 +319,7 @@ test.describe('Environments — C8', () => {
 
   test(
     tc(
-      id('Var :: Add secret var masked'),
+      id('Var :: Toggle secret->plaintext warns'),
       'unbind secret returns the row to a plain input + clears the value',
     ),
     async ({ app }) => {
@@ -464,6 +450,135 @@ test.describe('Environments — C8', () => {
       await expect(boundChip).toContainText('KEY_B');
     },
   );
+
+  // ----- VR var-resolution coverage ---------------------------------------
+
+  test(
+    tc(id('Var :: Add plaintext var'), 'a plaintext env var resolves into the request URL'),
+    async ({ app, e2eMock, sidebar }) => {
+      await createEnv(app, 'env-plaintext');
+      await addVar(app, 'PLAIN_HOST', 'plain.example.test');
+
+      await app.getByRole('button', { name: /^Editor$/ }).click();
+      await sidebar.createRequest('plaintext-var-req');
+      const path = '/anything/plaintext-var';
+      await app.getByLabel('Request URL').fill(`${e2eMock.url(path)}?host={{PLAIN_HOST}}`);
+      await app.getByRole('button', { name: /^Send$/ }).click();
+      await expect(app.getByText('200').first()).toBeVisible();
+
+      const hit = await e2eMock.findLastByPath((p) => p === path);
+      expect(hit.query.host).toBe('plain.example.test');
+    },
+  );
+
+  test(
+    tc(id('Var :: Autocomplete in URL'), 'typing `{{` in the URL bar suggests an env var'),
+    async ({ app, sidebar }) => {
+      await createEnv(app, 'env-autocomplete');
+      await addVar(app, 'AUTOCOMPLETE_HOST', 'example.test');
+
+      await app.getByRole('button', { name: /^Editor$/ }).click();
+      await sidebar.createRequest('autocomplete-req');
+      const url = app.getByLabel('Request URL');
+      await url.click();
+      await url.fill('');
+      await app.keyboard.type('{{', { delay: 30 });
+
+      const listbox = app.getByRole('listbox', { name: /Request URL suggestions/ });
+      await expect(listbox).toBeVisible();
+      await expect(app.getByRole('option', { name: /AUTOCOMPLETE_HOST/ })).toBeVisible();
+    },
+  );
+
+  test(
+    tc(
+      id('Var :: Special chars in var name'),
+      'a var name with dots and underscores resolves into the URL',
+    ),
+    async ({ app, e2eMock, sidebar }) => {
+      await createEnv(app, 'env-special');
+      await addVar(app, 'svc.api_v2', 'special-ok');
+
+      await app.getByRole('button', { name: /^Editor$/ }).click();
+      await sidebar.createRequest('special-chars-req');
+      const path = '/anything/special-chars';
+      await app.getByLabel('Request URL').fill(`${e2eMock.url(path)}?s={{svc.api_v2}}`);
+      await app.getByRole('button', { name: /^Send$/ }).click();
+      await expect(app.getByText('200').first()).toBeVisible();
+
+      const hit = await e2eMock.findLastByPath((p) => p === path);
+      expect(hit.query.s).toBe('special-ok');
+    },
+  );
+
+  test(
+    tc(id('Var :: Hyphen in name'), 'a hyphenated var name resolves into the request URL'),
+    async ({ app, e2eMock, sidebar }) => {
+      await createEnv(app, 'env-hyphen');
+      await addVar(app, 'api-host', 'hyphen.example.test');
+
+      await app.getByRole('button', { name: /^Editor$/ }).click();
+      await sidebar.createRequest('hyphen-var-req');
+      const path = '/anything/hyphen-var';
+      await app.getByLabel('Request URL').fill(`${e2eMock.url(path)}?h={{api-host}}`);
+      await app.getByRole('button', { name: /^Send$/ }).click();
+      await expect(app.getByText('200').first()).toBeVisible();
+
+      const hit = await e2eMock.findLastByPath((p) => p === path);
+      expect(hit.query.h).toBe('hyphen.example.test');
+    },
+  );
+
+  test(
+    tc(id('Var :: Very long value (1MB)'), 'a 1MB var value round-trips through env export'),
+    async ({ app }) => {
+      const bigValue = 'x'.repeat(1024 * 1024);
+      await createEnv(app, 'env-bigvar');
+      await addVar(app, 'BIG', bigValue);
+
+      // A 1MB value on the wire hits URL/header length limits, so pin the
+      // env's at-rest round-trip instead: the variable survives
+      // create → store → serialize intact.
+      const json = await app.evaluate((name) => {
+        const w = window as unknown as {
+          __apicircleStore?: {
+            getState: () => { exportEnvironment: (n: string) => string | null };
+          };
+        };
+        return w.__apicircleStore?.getState().exportEnvironment(name) ?? null;
+      }, 'env-bigvar');
+      expect(json).not.toBeNull();
+      const parsed = JSON.parse(json!);
+      expect(parsed.variables[0].key).toBe('BIG');
+      expect(parsed.variables[0].value).toHaveLength(1024 * 1024);
+    },
+  );
+
+  test(
+    tc(
+      id('Scope :: Workspace var fallback'),
+      'a var resolves from a non-active env in the workspace layer',
+    ),
+    async ({ app, e2eMock, sidebar }) => {
+      // Both envs sit in the global layer (addEnvironment ticks each into
+      // priorityOrder). The first-created env lacks FALLBACK_VAR, so
+      // resolution falls back to the env that defines it.
+      await createEnv(app, 'env-primary');
+      await addVar(app, 'PRIMARY_VAR', 'primary');
+      await createEnv(app, 'env-fallback');
+      await addVar(app, 'FALLBACK_VAR', 'fallback-value');
+
+      await app.getByRole('button', { name: /^Editor$/ }).click();
+      await sidebar.createRequest('workspace-fallback-req');
+      const path = '/anything/workspace-fallback';
+      await app.getByLabel('Request URL').fill(`${e2eMock.url(path)}?v={{FALLBACK_VAR}}`);
+      await app.getByRole('button', { name: /^Send$/ }).click();
+      await expect(app.getByText('200').first()).toBeVisible();
+
+      const hit = await e2eMock.findLastByPath((p) => p === path);
+      expect(hit.query.v).toBe('fallback-value');
+    },
+  );
 });
 
 // --- helpers --------------------------------------------------------------
@@ -531,18 +646,3 @@ async function addVar(
   await valueInputs.nth(idx).fill(value);
   await valueInputs.nth(idx).blur();
 }
-
-// Workbook iteration — credits every cell in the imported tcMap
-// via real `Object.entries(...)` iteration so the strict scanner
-// (`STRICT_MAP_ITERATION` in scripts/e2e_coverage_report.py) attributes
-// each TC-VR cell to this spec. Cells with dedicated assertions
-// above already run; this loop documents the long tail as `test.skip`
-// with a clear rationale rather than leaving cells silently gap.
-test.describe('TC-VR workbook iteration', () => {
-  for (const [key, tcId] of Object.entries(tcMapVR)) {
-    test.skip(tc(tcId as TcId, `${key} — workbook iteration placeholder`), async () => {
-      // Pending a dedicated assertion in a follow-up module session.
-    });
-  }
-});
-// workbook iteration generated

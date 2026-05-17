@@ -513,6 +513,20 @@ export const MANUAL_RESIDUE_TC_IDS: Readonly<Record<TcId, string>> = {
     'Linked-workspace fixture (S6) not built (Cookie value <- Linked workspace override)',
   'TC-VR-0016': 'Linked-workspace fixture (S6) not built (Scope :: Linked env per priority)',
   'TC-VR-0018': 'Linked-workspace fixture (S6) not built (Linked Env :: Drag reorder priority)',
+  'TC-VR-0019': 'Linked-workspace fixture (S6) not built (Linked Env :: Consumer override)',
+
+  // Module VR — variable crypto + context-scope cells with no standalone
+  // web-UI surface. Variable resolution, CRUD, autocomplete and secret
+  // binding are covered by real tests in env.spec.ts.
+  'TC-VR-0014':
+    'Request-context variable precedence — context vars are produced by response extraction; covered by context-extraction.spec.ts',
+  'TC-VR-0020':
+    'AES-GCM secret crypto internals — covered by packages/core/src/secrets/crypto.test.ts unit tests',
+  'TC-VR-0021':
+    'Master-key at-rest format — covered by packages/core/src/secrets/crypto.test.ts unit tests',
+  'TC-VR-0022':
+    'Workspace passphrase setup — covered by workspace-management.spec.ts; vault crypto exercised by env.spec.ts encrypted-var tests',
+  'TC-VR-0023': 'OS keychain integration — desktop-only, no web surface',
 
   // MCP-only — covered in apps/desktop/e2e/mcp.spec.ts
   'TC-MC-0054':
