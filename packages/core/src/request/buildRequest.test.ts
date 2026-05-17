@@ -174,6 +174,14 @@ describe('composeBody', () => {
     expect(body).toBe('a=1&b=hello+world&c=');
   });
 
+  it('percent-encodes reserved characters in values exactly once', async () => {
+    // The `&` and `=` belong to the VALUE — they are encoded rather than
+    // treated as separators, and the value is encoded once (not double-
+    // encoded the way storing pre-encoded content would cause).
+    const body = await composeBody({ type: 'urlencoded', content: 'q=a b&c=d' });
+    expect(body).toBe('q=a+b%26c%3Dd');
+  });
+
   it('skips lines without "="', async () => {
     const body = await composeBody({ type: 'urlencoded', content: 'a=1\njust a line\nb=2' });
     expect(body).toBe('a=1&b=2');

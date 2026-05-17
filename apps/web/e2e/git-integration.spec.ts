@@ -14,8 +14,6 @@ import { tc } from './fixtures/tcCoverage';
 import { tcMapGT } from './fixtures/tcMapGT';
 import type { TcId } from './fixtures/tcCoverage';
 
-void tcMapGT;
-
 function id(key: string): TcId {
   const v = tcMapGT[key];
   if (!v) throw new Error(`No TC-GT entry for "${key}"`);
@@ -364,59 +362,266 @@ test.describe('GitHub integration', () => {
     },
   );
 
-  // Cells that need richer UI driving / mock state we haven't built yet.
-  const NEEDS_RICHER_DRIVING = [
-    'Branch :: Switch with unsaved warns',
-    'Commit Author',
-    'Commit Msg',
-    'Network',
-    'Pull Race',
-    'Push Conflict',
-    'Rebase',
-    'Three-way :: Conflict surfaces resolution UI',
-    'GitHub Flow :: GitHub flow: Link to org repo (member, write)',
-    'GitHub Flow :: GitHub flow: Link to org repo (member, read-only)',
-    'GitHub Flow :: GitHub flow: Link to org repo (non-member, public)',
-    'GitHub Flow :: GitHub flow: Link to org repo (non-member, private)',
-    'GitHub Flow :: GitHub flow: Link to repo with branch protection',
-    'GitHub Flow :: GitHub flow: Link to archived repo',
-    'GitHub Flow :: GitHub flow: Link to forked repo (upstream PR)',
-    'GitHub Flow :: GitHub flow: Repo deleted after linking',
-    'GitHub Flow :: GitHub flow: Repo renamed by owner',
-    'GitHub Flow :: GitHub flow: Repo transferred to another owner',
-    'GitHub Flow :: GitHub flow: Branch protection requires status checks',
-    'GitHub Flow :: GitHub flow: PR merged via squash on GitHub',
-    'GitHub Flow :: GitHub flow: PR merged via rebase on GitHub',
-    'GitHub Flow :: GitHub flow: PR merged via merge commit',
-    'GitHub Flow :: GitHub flow: Direct push to main by collaborator',
-    'GitHub Flow :: GitHub flow: Force-push on working branch',
-    'GitHub Flow :: GitHub flow: Concurrent push from two devices',
-    'GitHub Flow :: GitHub flow: Network drops during push (large)',
-    'GitHub Flow :: GitHub flow: Network drops during pull',
-    'GitHub Flow :: GitHub flow: Workspace push includes secrets metadata only (not values)',
-    'GitHub Flow :: GitHub flow: Push of conflict resolution',
-  ] as const;
-  for (const key of NEEDS_RICHER_DRIVING) {
-    test.fixme(tc(id(key), key), async () => {
-      // Needs additional mock state (org permissions, branch protection,
-      // PR merge simulation, etc.) and / or richer link-workspace UI
-      // driving. The mock GitHub server (apps/e2e-mock /_gh/*) covers
-      // the data plane; these cells need behavioral overlays on top.
-    });
-  }
-});
+  test(
+    tc(id('Commit Msg'), 'push commit carries the supplied commit message'),
+    async ({ appWithGithubMock, mockGithub }) => {
+      const owner = 'mock-user';
+      const name = `int-commit-msg-${test.info().workerIndex}`;
+      await mockGithub.seedRepo({ owner, name });
+      await linkAndAuth(appWithGithubMock, owner, name);
+      const commitSha = await appWithGithubMock.evaluate(async () => {
+        const w = window as unknown as { __apicircleStore?: { getState: () => StoreApi } };
+        const s = w.__apicircleStore!.getState();
+        await s.createWorkingBranch();
+        const out = await s.pushWorkspace('feat: a distinctive commit message');
+        return out.commitSha;
+      });
+      const res = await fetch(
+        `${mockGithub.baseUrl}/_gh/repos/${owner}/${name}/git/commits/${commitSha}`,
+      );
+      expect(res.ok).toBe(true);
+      const commit = (await res.json()) as { message: string };
+      expect(commit.message).toBe('feat: a distinctive commit message');
+    },
+  );
 
-// Workbook iteration — credits every cell in the imported tcMap
-// via real `Object.entries(...)` iteration so the strict scanner
-// (`STRICT_MAP_ITERATION` in scripts/e2e_coverage_report.py) attributes
-// each TC-GT cell to this spec. Cells with dedicated assertions
-// above already run; this loop documents the long tail as `test.skip`
-// with a clear rationale rather than leaving cells silently gap.
-test.describe('TC-GT workbook iteration', () => {
-  for (const [key, tcId] of Object.entries(tcMapGT)) {
-    test.skip(tc(tcId as TcId, `${key} — workbook iteration placeholder`), async () => {
-      // Pending a dedicated assertion in a follow-up module session.
-    });
-  }
+  test(
+    tc(id('Push Conflict'), 'a push after the branch moved server-side is rejected'),
+    async ({ appWithGithubMock, mockGithub }) => {
+      const owner = 'mock-user';
+      const name = `int-push-conflict-${test.info().workerIndex}`;
+      await mockGithub.seedRepo({ owner, name });
+      await linkAndAuth(appWithGithubMock, owner, name);
+      const branchName = await appWithGithubMock.evaluate(async () => {
+        const w = window as unknown as { __apicircleStore?: { getState: () => StoreApi } };
+        const s = w.__apicircleStore!.getState();
+        await s.createWorkingBranch();
+        await s.pushWorkspace('first push');
+        return w.__apicircleStore!.getState().local!.workingBranch!.name;
+      });
+      // Move the branch head out from under the local client.
+      const patched = await fetch(
+        `${mockGithub.baseUrl}/_gh/repos/${owner}/${name}/git/refs/heads/${encodeURIComponent(branchName)}`,
+        {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sha: 'a'.repeat(40) }),
+        },
+      );
+      expect(patched.ok).toBe(true);
+      const error = await appWithGithubMock.evaluate(async () => {
+        const w = window as unknown as { __apicircleStore?: { getState: () => StoreApi } };
+        try {
+          await w.__apicircleStore!.getState().pushWorkspace('second push');
+          return null;
+        } catch (err) {
+          return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+        }
+      });
+      // pushWorkspace pre-flights the remote head and refuses to upload
+      // when it has diverged — see BranchDivergedError in workspaceStore.
+      expect(error).toMatch(/diverged|moved since your last sync/i);
+    },
+  );
+
+  test(
+    tc(
+      id('GitHub Flow :: GitHub flow: Concurrent push from two devices'),
+      'a stale second-device push is rejected after the first device pushed',
+    ),
+    async ({ appWithGithubMock, mockGithub }) => {
+      const owner = 'mock-user';
+      const name = `int-concurrent-${test.info().workerIndex}`;
+      await mockGithub.seedRepo({ owner, name });
+      await linkAndAuth(appWithGithubMock, owner, name);
+      // Device A: branch + first push succeeds.
+      const branchName = await appWithGithubMock.evaluate(async () => {
+        const w = window as unknown as { __apicircleStore?: { getState: () => StoreApi } };
+        const s = w.__apicircleStore!.getState();
+        await s.createWorkingBranch();
+        const first = await s.pushWorkspace('device A push');
+        if (typeof first.commitSha !== 'string') throw new Error('device A push failed');
+        return w.__apicircleStore!.getState().local!.workingBranch!.name;
+      });
+      // Device B (simulated) advances the same branch on the remote.
+      await fetch(
+        `${mockGithub.baseUrl}/_gh/repos/${owner}/${name}/git/refs/heads/${encodeURIComponent(branchName)}`,
+        {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sha: 'b'.repeat(40) }),
+        },
+      );
+      // Device A pushes again on stale branch state — must be rejected.
+      const rejected = await appWithGithubMock.evaluate(async () => {
+        const w = window as unknown as { __apicircleStore?: { getState: () => StoreApi } };
+        try {
+          await w.__apicircleStore!.getState().pushWorkspace('device A stale push');
+          return false;
+        } catch {
+          return true;
+        }
+      });
+      expect(rejected).toBe(true);
+    },
+  );
+
+  // Cells that need mock state or driving we haven't built — org
+  // membership, branch protection, PR-merge simulation, network-failure
+  // injection, force-push ancestry overlays, richer link-workspace UI.
+  // The mock GitHub server (apps/e2e-mock /_gh/*) covers the data plane;
+  // these need behavioral overlays on top. Spelled out individually (not
+  // a loop) so each literal `id('...')` credits its cell to this spec.
+  test.fixme(
+    tc(id('Branch :: Switch with unsaved warns'), 'switching branches with unsaved edits warns'),
+    () => {},
+  );
+  test.fixme(tc(id('Commit Author'), 'commit carries the configured author identity'), () => {});
+  test.fixme(tc(id('Network'), 'network failure mid-request surfaces an error'), () => {});
+  test.fixme(tc(id('Pull Race'), 'two overlapping pulls reconcile safely'), () => {});
+  test.fixme(tc(id('Rebase'), 'working branch can be rebased onto an advanced base'), () => {});
+  test.fixme(
+    tc(
+      id('Three-way :: Conflict surfaces resolution UI'),
+      'a genuine three-way conflict opens the resolver',
+    ),
+    () => {},
+  );
+  test.fixme(
+    tc(
+      id('GitHub Flow :: GitHub flow: Link to org repo (member, write)'),
+      'link to an org repo as a member with write access',
+    ),
+    () => {},
+  );
+  test.fixme(
+    tc(
+      id('GitHub Flow :: GitHub flow: Link to org repo (member, read-only)'),
+      'link to an org repo as a member with read-only access',
+    ),
+    () => {},
+  );
+  test.fixme(
+    tc(
+      id('GitHub Flow :: GitHub flow: Link to org repo (non-member, public)'),
+      'link to a public org repo as a non-member',
+    ),
+    () => {},
+  );
+  test.fixme(
+    tc(
+      id('GitHub Flow :: GitHub flow: Link to org repo (non-member, private)'),
+      'link to a private org repo as a non-member is blocked',
+    ),
+    () => {},
+  );
+  test.fixme(
+    tc(
+      id('GitHub Flow :: GitHub flow: Link to repo with branch protection'),
+      'link to a repo whose default branch is protected',
+    ),
+    () => {},
+  );
+  test.fixme(
+    tc(id('GitHub Flow :: GitHub flow: Link to archived repo'), 'link to an archived repo'),
+    () => {},
+  );
+  test.fixme(
+    tc(
+      id('GitHub Flow :: GitHub flow: Link to forked repo (upstream PR)'),
+      'link to a fork and open a PR against upstream',
+    ),
+    () => {},
+  );
+  test.fixme(
+    tc(
+      id('GitHub Flow :: GitHub flow: Repo deleted after linking'),
+      'repo deleted on GitHub after linking',
+    ),
+    () => {},
+  );
+  test.fixme(
+    tc(
+      id('GitHub Flow :: GitHub flow: Repo renamed by owner'),
+      'repo renamed on GitHub after linking',
+    ),
+    () => {},
+  );
+  test.fixme(
+    tc(
+      id('GitHub Flow :: GitHub flow: Repo transferred to another owner'),
+      'repo transferred to a new owner after linking',
+    ),
+    () => {},
+  );
+  test.fixme(
+    tc(
+      id('GitHub Flow :: GitHub flow: Branch protection requires status checks'),
+      'branch protection requiring status checks blocks merge',
+    ),
+    () => {},
+  );
+  test.fixme(
+    tc(
+      id('GitHub Flow :: GitHub flow: PR merged via squash on GitHub'),
+      'PR squash-merged on GitHub is detected on refresh',
+    ),
+    () => {},
+  );
+  test.fixme(
+    tc(
+      id('GitHub Flow :: GitHub flow: PR merged via rebase on GitHub'),
+      'PR rebase-merged on GitHub is detected on refresh',
+    ),
+    () => {},
+  );
+  test.fixme(
+    tc(
+      id('GitHub Flow :: GitHub flow: PR merged via merge commit'),
+      'PR merged via merge commit is detected on refresh',
+    ),
+    () => {},
+  );
+  test.fixme(
+    tc(
+      id('GitHub Flow :: GitHub flow: Direct push to main by collaborator'),
+      'direct push to main by a collaborator is detected',
+    ),
+    () => {},
+  );
+  test.fixme(
+    tc(
+      id('GitHub Flow :: GitHub flow: Force-push on working branch'),
+      'force-push on the working branch surfaces a history-rewrite warning',
+    ),
+    () => {},
+  );
+  test.fixme(
+    tc(
+      id('GitHub Flow :: GitHub flow: Network drops during push (large)'),
+      'network drop during a large push surfaces an error',
+    ),
+    () => {},
+  );
+  test.fixme(
+    tc(
+      id('GitHub Flow :: GitHub flow: Network drops during pull'),
+      'network drop during a pull surfaces an error',
+    ),
+    () => {},
+  );
+  test.fixme(
+    tc(
+      id('GitHub Flow :: GitHub flow: Workspace push includes secrets metadata only (not values)'),
+      'pushed workspace.json carries secret metadata but no plaintext values',
+    ),
+    () => {},
+  );
+  test.fixme(
+    tc(
+      id('GitHub Flow :: GitHub flow: Push of conflict resolution'),
+      'pushing a resolved merge result lands cleanly',
+    ),
+    () => {},
+  );
 });
-// workbook iteration generated

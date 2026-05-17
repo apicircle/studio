@@ -375,25 +375,3 @@ test.describe('TC-BC Urlencoded + FormData edge cases', () => {
     });
   }
 });
-
-// Workbook iteration — catches everything not handled above. The
-// drivable cells above run real bodies; this loop fills in the long
-// tail (Encoding sub-matrix, Variable interpolation BC cells, Binary
-// edge cases needing locked files, etc.) as documented skips.
-test.describe('TC-BC workbook iteration', () => {
-  const HANDLED = new Set<string>();
-  // Build set of already-handled keys from the sub-feature loops above
-  // by re-using the same regexes.
-  // (Kept compact — the regexes live in the loops; here we just skip
-  // duplicates by listing the matched keys.)
-  for (const [key, tcId] of Object.entries(tcMapBC)) {
-    if (HANDLED.has(key)) continue;
-    test.skip(tc(tcId as TcId, `${key} — workbook iteration placeholder`), async () => {
-      // Pending a dedicated assertion in a follow-up module session.
-      // Encoding cells: request-side encoding control is uncommon in
-      // browser fetch (always UTF-8). Variable interpolation cells:
-      // covered by variable-interpolation-matrix.spec.ts.
-    });
-  }
-});
-// workbook iteration generated

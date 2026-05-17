@@ -207,18 +207,3 @@ test.describe('HTTP method edge cases', () => {
     // gap to surface in the coverage report.
   });
 });
-
-// Workbook iteration — credits every cell in the imported tcMap
-// via real `Object.entries(...)` iteration so the strict scanner
-// (`STRICT_MAP_ITERATION` in scripts/e2e_coverage_report.py) attributes
-// each TC-ME cell to this spec. Cells with dedicated assertions
-// above already run; this loop documents the long tail as `test.skip`
-// with a clear rationale rather than leaving cells silently gap.
-test.describe('TC-ME workbook iteration', () => {
-  for (const [key, tcId] of Object.entries(tcMapME)) {
-    test.skip(tc(tcId as TcId, `${key} — workbook iteration placeholder`), async () => {
-      // Pending a dedicated assertion in a follow-up module session.
-    });
-  }
-});
-// workbook iteration generated

@@ -199,11 +199,13 @@ function parseBody(body: InsomniaResource['body'], warnings: string[], name?: st
     }
   }
   if (mime.includes('x-www-form-urlencoded')) {
+    // `body.content` for urlencoded is raw, newline-delimited `key=value`
+    // lines — `buildRequest.composeBody` percent-encodes them at send time.
     const rows = body.params ?? [];
     const content = rows
       .filter((r) => !r.disabled && (r.name ?? '').length > 0)
-      .map((r) => `${encodeURIComponent(r.name ?? '')}=${encodeURIComponent(r.value ?? '')}`)
-      .join('&');
+      .map((r) => `${r.name ?? ''}=${r.value ?? ''}`)
+      .join('\n');
     return { type: 'urlencoded', content };
   }
   if (mime.includes('multipart/form-data')) {

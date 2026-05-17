@@ -90,6 +90,28 @@ describe('parseCurl', () => {
     expect(r.body.content).toContain('k=v with space');
   });
 
+  it('joins multiple -d flags into newline-delimited urlencoded fields', () => {
+    const r = parseCurl(
+      `curl -H 'Content-Type: application/x-www-form-urlencoded' -d a=1 -d b=2 https://x`,
+    );
+    expect(r.body.type).toBe('urlencoded');
+    expect(r.body.content).toBe('a=1\nb=2');
+  });
+
+  it('splits a single &-joined -d value into separate urlencoded fields', () => {
+    const r = parseCurl(
+      `curl -H 'Content-Type: application/x-www-form-urlencoded' --data-raw 'a=1&b=2' https://x`,
+    );
+    expect(r.body.type).toBe('urlencoded');
+    expect(r.body.content).toBe('a=1\nb=2');
+  });
+
+  it('keeps a literal & inside a --data-urlencode value as one field', () => {
+    const r = parseCurl(`curl --data-urlencode 'q=a&b' https://x`);
+    expect(r.body.type).toBe('urlencoded');
+    expect(r.body.content).toBe('q=a&b');
+  });
+
   it('parses --json verbatim', () => {
     const r = parseCurl(`curl --json '{"x":1}' https://x`);
     expect(r.body).toEqual({ type: 'json', content: '{"x":1}' });

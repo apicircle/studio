@@ -129,11 +129,6 @@ function detectBodyType(body: string, contentType: string): RequestBody['type'] 
   return 'text';
 }
 
-function appendUrlEncodedField(current: string, field: string): string {
-  if (!current) return field;
-  return `${current}\n${field}`;
-}
-
 export function parseCurl(input: string): ParsedCurl {
   // Normalise CRLF → LF and trim a leading `$ ` prompt that copy-paste
   // sometimes carries.
@@ -157,8 +152,14 @@ export function parseCurl(input: string): ParsedCurl {
   // Skip the leading `curl` token.
   let i = tokens[0]?.toLowerCase() === 'curl' ? 1 : 0;
 
-  let bodyContent = '';
-  let bodyType: RequestBody['type'] | null = null;
+  // Body accumulators, kept separate so the urlencoded composer can tell a
+  // field separator (`&` between `-d` fields) from a literal `&` inside a
+  // `--data-urlencode` value: `-d`/`--data` flags carry `&`-separated fields
+  // (curl's wire format), `--data-urlencode` carries one discrete field each,
+  // `--json` is a verbatim JSON document.
+  const dataFlags: string[] = [];
+  const urlencodeFields: string[] = [];
+  let jsonContent: string | null = null;
   let bodyContentType = '';
   let methodExplicit = false;
   const formRows: NonNullable<RequestBody['formRows']> = [];
@@ -194,8 +195,7 @@ export function parseCurl(input: string): ParsedCurl {
     if (tok === '-d' || tok === '--data' || tok === '--data-raw' || tok === '--data-binary') {
       const v = consume();
       if (v == null) continue;
-      bodyContent = bodyContent ? `${bodyContent}&${v}` : v;
-      if (!bodyType) bodyType = 'text'; // refined later
+      dataFlags.push(v);
       continue;
     }
 
@@ -203,8 +203,7 @@ export function parseCurl(input: string): ParsedCurl {
       const v = consume();
       if (v == null) continue;
       const { body, contentType } = parseUrlEncodedBody(v);
-      bodyContent = appendUrlEncodedField(bodyContent, body);
-      bodyType = 'urlencoded';
+      urlencodeFields.push(body);
       if (!bodyContentType) bodyContentType = contentType;
       continue;
     }
@@ -212,9 +211,7 @@ export function parseCurl(input: string): ParsedCurl {
     if (tok === '--json') {
       const v = consume();
       if (v == null) continue;
-      bodyContent = v;
-      bodyType = 'json';
-      bodyContentType = 'application/json';
+      jsonContent = v;
       continue;
     }
 
@@ -240,7 +237,6 @@ export function parseCurl(input: string): ParsedCurl {
       } else {
         formRows.push({ kind: 'text', key, value, enabled: true });
       }
-      bodyType = 'form-data';
       continue;
     }
 
@@ -323,7 +319,13 @@ export function parseCurl(input: string): ParsedCurl {
 
   // Promote method to POST when a body is present and -X wasn't given —
   // matches cURL's own default.
-  if (!methodExplicit && (bodyContent || formRows.length > 0)) {
+  if (
+    !methodExplicit &&
+    (jsonContent !== null ||
+      dataFlags.length > 0 ||
+      urlencodeFields.length > 0 ||
+      formRows.length > 0)
+  ) {
     out.method = 'POST';
   }
 
@@ -348,16 +350,32 @@ export function parseCurl(input: string): ParsedCurl {
   // or the body shape.
   if (formRows.length > 0) {
     out.body = { type: 'form-data', content: '', formRows };
-  } else if (bodyContent) {
+  } else if (jsonContent !== null) {
+    out.body = { type: 'json', content: jsonContent };
+    const userContentType = out.headers.find((h) => h.key.toLowerCase() === 'content-type')?.value;
+    if (!userContentType) {
+      out.headers = applyContentTypeForBodyType(out.headers, 'json');
+    }
+  } else if (dataFlags.length > 0 || urlencodeFields.length > 0) {
     const userContentType = out.headers.find((h) => h.key.toLowerCase() === 'content-type')?.value;
     const effectiveContentType = userContentType ?? bodyContentType;
-    const detectedType =
-      bodyType === 'urlencoded' ? 'urlencoded' : detectBodyType(bodyContent, effectiveContentType);
-    out.body = { type: detectedType, content: bodyContent };
+    // curl's `-d` family concatenates its fields with `&` on the wire.
+    const wireBody = dataFlags.join('&');
+    const detectedType: RequestBody['type'] =
+      urlencodeFields.length > 0 ? 'urlencoded' : detectBodyType(wireBody, effectiveContentType);
+    if (detectedType === 'urlencoded') {
+      // Store the raw, newline-delimited `key=value` form `composeBody`
+      // expects. `-d` fields are `&`-separated on the wire; `--data-urlencode`
+      // fields are already discrete and may carry a literal `&` in a value.
+      const fields = [...dataFlags.flatMap((v) => v.split('&')), ...urlencodeFields].filter(
+        (f) => f !== '',
+      );
+      out.body = { type: 'urlencoded', content: fields.join('\n') };
+    } else {
+      out.body = { type: detectedType, content: wireBody };
+    }
     if (!userContentType) {
-      // Auto-fill Content-Type so the request doesn't go out without one —
-      // this fires for both --data (no header given) and --json (header
-      // implied by the flag).
+      // Auto-fill Content-Type so the request doesn't go out without one.
       out.headers = applyContentTypeForBodyType(out.headers, detectedType);
     }
   }

@@ -224,13 +224,14 @@ function parseBody(body: PostmanBody | undefined, warnings: string[], name?: str
       return { type, content: body.raw ?? '' };
     }
     case 'urlencoded': {
-      // Reuse the form-data shape: store rows on the body.
-      // Editor's RequestBody for urlencoded is a string — we serialize.
+      // `body.content` for urlencoded is raw, newline-delimited `key=value`
+      // lines — `buildRequest.composeBody` percent-encodes them at send
+      // time. Encoding here would double-encode the wire body.
       const rows = body.urlencoded ?? [];
       const content = rows
         .filter((r) => !r.disabled && (r.key ?? '').length > 0)
-        .map((r) => `${encodeURIComponent(r.key ?? '')}=${encodeURIComponent(r.value ?? '')}`)
-        .join('&');
+        .map((r) => `${r.key ?? ''}=${r.value ?? ''}`)
+        .join('\n');
       return { type: 'urlencoded', content };
     }
     case 'graphql': {

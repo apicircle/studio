@@ -8,12 +8,41 @@ import { tcMapCR } from './fixtures/tcMapCR';
 import type { TcId } from './fixtures/tcCoverage';
 import { seedIds, seedWorkspace } from './fixtures/idbSeed';
 
-void tcMapCR;
-
 function id(key: string): TcId {
   const v = tcMapCR[key];
   if (!v) throw new Error(`No TC-CR entry for "${key}"`);
   return v;
+}
+
+// Store surface the collection-CRUD tests drive through the
+// `__apicircleStore` window bridge (workspaceStore.ts). Declared once
+// here so the per-test `evaluate` blocks stay compact.
+interface CrTreeNode {
+  id: string;
+  type: 'root' | 'folder';
+  children: Array<{ kind: 'folder' | 'request'; id: string }>;
+}
+interface CrStore {
+  synced: {
+    collections: {
+      tree: CrTreeNode;
+      folders: Record<
+        string,
+        { id: string; name: string; parentId: string | null; auth?: { type: string } }
+      >;
+      requests: Record<
+        string,
+        { id: string; name: string; folderId: string | null; auth: { type: string } }
+      >;
+    };
+  };
+  addFolder: (parentFolderId: string | null, name?: string) => string;
+  addRequest: (parentFolderId: string | null, name?: string) => string;
+  renameFolder: (folderId: string, name: string) => void;
+  removeFolder: (folderId: string) => void;
+  duplicateFolder: (folderId: string) => string | null;
+  setFolderAuth: (folderId: string, auth: { type: string; token?: string } | undefined) => void;
+  setRequestAuth: (requestId: string, auth: { type: string }) => void;
 }
 
 async function openEditorActions(app: import('@playwright/test').Page): Promise<void> {
@@ -135,45 +164,218 @@ test.describe('Collections & Requests', () => {
     },
   );
 
-  // -------------------------------------------------------------------
-  // Cells deferred to follow-up — drag/drop, deep-copy semantics,
-  // reference-integrity audits. These need either a populated multi-
-  // collection workspace fixture or HTML5 drag-and-drop simulation
-  // (Playwright's dragTo works but the underlying TreeNode mouse
-  // events need careful coordinate computation).
-  // -------------------------------------------------------------------
-  const NEEDS_DRAG_DROP = [
-    'Reorder :: Drag request between folders',
-    'Reorder :: Reorder within folder',
-    'Reorder :: Drag folder into descendant blocked',
-    'Move',
-  ] as const;
-  for (const key of NEEDS_DRAG_DROP) {
-    test.fixme(tc(id(key), key), async () => {
-      // Drag-and-drop in the tree needs Playwright dragTo with
-      // pixel-perfect coordinates. Implementable but flaky in CI;
-      // park until a stable test pattern exists.
-    });
-  }
+  // Collection / folder CRUD — driven through the store bridge, the same
+  // way the Reference-Safety / Delete-Safety blocks below operate. A
+  // "collection" in the workbook is a root-level folder.
 
-  const NEEDS_FIXTURES = [
-    'Collection :: Create collection at root',
-    'Collection :: Rename collection inline',
-    'Collection :: Duplicate name at same level',
-    'Collection :: Delete empty collection',
-    'Collection :: Delete collection cascades to children',
-    'Collection :: Duplicate collection deep-copies tree',
-    'Folder :: 5-level nesting',
-    'Folder :: Folder auth inherited by requests',
-  ] as const;
-  for (const key of NEEDS_FIXTURES) {
-    test.fixme(tc(id(key), key), async () => {
-      // Collections live behind a separate kebab path not currently
-      // surfaced (the sidebar starts with all requests at root). Add
-      // a "Create collection" item to the Editor-actions menu, then
-      // enable these.
+  test(
+    tc(id('Collection :: Create collection at root'), 'create a root-level collection folder'),
+    async ({ app }) => {
+      const result = await app.evaluate(() => {
+        const store = (window as unknown as { __apicircleStore: { getState: () => CrStore } })
+          .__apicircleStore;
+        const folderId = store.getState().addFolder(null, 'Root collection');
+        const s = store.getState();
+        return {
+          folder: s.synced.collections.folders[folderId] ?? null,
+          atRoot: s.synced.collections.tree.children.some(
+            (c) => c.kind === 'folder' && c.id === folderId,
+          ),
+        };
+      });
+      expect(result.folder?.name).toBe('Root collection');
+      expect(result.folder?.parentId).toBeNull();
+      expect(result.atRoot).toBe(true);
+    },
+  );
+
+  test(
+    tc(id('Collection :: Rename collection inline'), 'rename a collection folder'),
+    async ({ app }) => {
+      const renamed = await app.evaluate(() => {
+        const store = (window as unknown as { __apicircleStore: { getState: () => CrStore } })
+          .__apicircleStore;
+        const folderId = store.getState().addFolder(null, 'Original name');
+        store.getState().renameFolder(folderId, 'Renamed collection');
+        return store.getState().synced.collections.folders[folderId]?.name ?? null;
+      });
+      expect(renamed).toBe('Renamed collection');
+    },
+  );
+
+  test(
+    tc(
+      id('Collection :: Duplicate name at same level'),
+      'two root collections may share a name without collision',
+    ),
+    async ({ app }) => {
+      const result = await app.evaluate(() => {
+        const store = (window as unknown as { __apicircleStore: { getState: () => CrStore } })
+          .__apicircleStore;
+        const first = store.getState().addFolder(null, 'Shared name');
+        const second = store.getState().addFolder(null, 'Shared name');
+        const s = store.getState();
+        return {
+          distinct: first !== second,
+          bothExist:
+            first in s.synced.collections.folders && second in s.synced.collections.folders,
+          rootFolders: s.synced.collections.tree.children.filter((c) => c.kind === 'folder').length,
+        };
+      });
+      expect(result.distinct).toBe(true);
+      expect(result.bothExist).toBe(true);
+      expect(result.rootFolders).toBeGreaterThanOrEqual(2);
+    },
+  );
+
+  test(
+    tc(id('Collection :: Delete empty collection'), 'delete an empty collection folder'),
+    async ({ app }) => {
+      const result = await app.evaluate(() => {
+        const store = (window as unknown as { __apicircleStore: { getState: () => CrStore } })
+          .__apicircleStore;
+        const folderId = store.getState().addFolder(null, 'Disposable');
+        store.getState().removeFolder(folderId);
+        const s = store.getState();
+        return {
+          gone: !(folderId in s.synced.collections.folders),
+          notInTree: !s.synced.collections.tree.children.some((c) => c.id === folderId),
+        };
+      });
+      expect(result.gone).toBe(true);
+      expect(result.notInTree).toBe(true);
+    },
+  );
+
+  test(
+    tc(
+      id('Collection :: Delete collection cascades to children'),
+      'delete collection removes nested folders + requests',
+    ),
+    async ({ app }) => {
+      const result = await app.evaluate(() => {
+        const store = (window as unknown as { __apicircleStore: { getState: () => CrStore } })
+          .__apicircleStore;
+        const folderId = store.getState().addFolder(null, 'Parent collection');
+        const nestedId = store.getState().addFolder(folderId, 'Nested folder');
+        const requestId = store.getState().addRequest(folderId, 'Child request');
+        store.getState().removeFolder(folderId);
+        const s = store.getState();
+        return {
+          parentGone: !(folderId in s.synced.collections.folders),
+          nestedGone: !(nestedId in s.synced.collections.folders),
+          requestGone: !(requestId in s.synced.collections.requests),
+        };
+      });
+      expect(result.parentGone).toBe(true);
+      expect(result.nestedGone).toBe(true);
+      expect(result.requestGone).toBe(true);
+    },
+  );
+
+  test(
+    tc(
+      id('Collection :: Duplicate collection deep-copies tree'),
+      'duplicate collection deep-copies descendants with fresh ids',
+    ),
+    async ({ app }) => {
+      const result = await app.evaluate(() => {
+        const store = (window as unknown as { __apicircleStore: { getState: () => CrStore } })
+          .__apicircleStore;
+        const folderId = store.getState().addFolder(null, 'Template');
+        const nestedId = store.getState().addFolder(folderId, 'Nested folder');
+        const requestId = store.getState().addRequest(folderId, 'Endpoint');
+        const copyId = store.getState().duplicateFolder(folderId);
+        const s = store.getState();
+        const childFolders = Object.values(s.synced.collections.folders).filter(
+          (f) => f.parentId === copyId,
+        );
+        const childRequests = Object.values(s.synced.collections.requests).filter(
+          (r) => r.folderId === copyId,
+        );
+        return {
+          copyMade: copyId !== null && copyId !== folderId,
+          copyName: copyId ? (s.synced.collections.folders[copyId]?.name ?? null) : null,
+          freshNestedId: childFolders.length === 1 && childFolders[0].id !== nestedId,
+          freshRequestId: childRequests.length === 1 && childRequests[0].id !== requestId,
+        };
+      });
+      expect(result.copyMade).toBe(true);
+      expect(result.copyName).toContain('Template');
+      expect(result.freshNestedId).toBe(true);
+      expect(result.freshRequestId).toBe(true);
+    },
+  );
+
+  test(tc(id('Folder :: 5-level nesting'), 'folders nest five levels deep'), async ({ app }) => {
+    const result = await app.evaluate(() => {
+      const store = (window as unknown as { __apicircleStore: { getState: () => CrStore } })
+        .__apicircleStore;
+      let parent: string | null = null;
+      const ids: string[] = [];
+      for (let level = 1; level <= 5; level++) {
+        const folderId = store.getState().addFolder(parent, `Level ${level}`);
+        ids.push(folderId);
+        parent = folderId;
+      }
+      const folders = store.getState().synced.collections.folders;
+      return { ids, parents: ids.map((fid) => folders[fid]?.parentId ?? null) };
     });
-  }
+    expect(result.ids).toHaveLength(5);
+    expect(result.parents[0]).toBeNull();
+    for (let level = 1; level < 5; level++) {
+      expect(result.parents[level]).toBe(result.ids[level - 1]);
+    }
+  });
+
+  test(
+    tc(
+      id('Folder :: Folder auth inherited by requests'),
+      'request with auth=inherit is parented to a folder carrying auth',
+    ),
+    async ({ app }) => {
+      const result = await app.evaluate(() => {
+        const store = (window as unknown as { __apicircleStore: { getState: () => CrStore } })
+          .__apicircleStore;
+        const folderId = store.getState().addFolder(null, 'Secured folder');
+        store.getState().setFolderAuth(folderId, { type: 'bearer', token: 'folder-token' });
+        const requestId = store.getState().addRequest(folderId, 'Inheriting request');
+        store.getState().setRequestAuth(requestId, { type: 'inherit' });
+        const s = store.getState();
+        return {
+          folderId,
+          folderAuth: s.synced.collections.folders[folderId]?.auth?.type ?? null,
+          requestAuth: s.synced.collections.requests[requestId]?.auth.type ?? null,
+          requestFolderId: s.synced.collections.requests[requestId]?.folderId ?? null,
+        };
+      });
+      // The folder carries bearer auth; the request opts into inheritance
+      // and is parented to that folder, so the resolver walks up to it.
+      expect(result.folderAuth).toBe('bearer');
+      expect(result.requestAuth).toBe('inherit');
+      expect(result.requestFolderId).toBe(result.folderId);
+    },
+  );
+
+  // Tree reordering / moving is a drag-and-drop-only interaction — there
+  // is no store-level move action (only `reorderPlanSteps`, for plans),
+  // so these need a stable Playwright drag-and-drop harness.
+  test.fixme(
+    tc(id('Reorder :: Drag request between folders'), 'drag a request between folders'),
+    () => {},
+  );
+  test.fixme(
+    tc(id('Reorder :: Reorder within folder'), 'reorder siblings within a folder'),
+    () => {},
+  );
+  test.fixme(
+    tc(
+      id('Reorder :: Drag folder into descendant blocked'),
+      'dragging a folder into its own descendant is rejected',
+    ),
+    () => {},
+  );
+  test.fixme(tc(id('Move'), 'move a tree node to another parent'), () => {});
 
   // ---------------------------------------------------------------
   // Reference-Safety / Delete-Safety — drive the seeded workspace
@@ -1028,18 +1230,3 @@ test.describe('Collections & Requests', () => {
     expect(a).toEqual(b);
   });
 });
-
-// Workbook iteration — credits every cell in the imported tcMap
-// via real `Object.entries(...)` iteration so the strict scanner
-// (`STRICT_MAP_ITERATION` in scripts/e2e_coverage_report.py) attributes
-// each TC-CR cell to this spec. Cells with dedicated assertions
-// above already run; this loop documents the long tail as `test.skip`
-// with a clear rationale rather than leaving cells silently gap.
-test.describe('TC-CR workbook iteration', () => {
-  for (const [key, tcId] of Object.entries(tcMapCR)) {
-    test.skip(tc(tcId as TcId, `${key} — workbook iteration placeholder`), async () => {
-      // Pending a dedicated assertion in a follow-up module session.
-    });
-  }
-});
-// workbook iteration generated

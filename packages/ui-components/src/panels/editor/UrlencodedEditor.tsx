@@ -41,46 +41,37 @@ export function UrlencodedEditor({ request }: { request: ApiRequest }) {
 }
 
 /**
- * Parse `a=1&b=2&c=` into rows. Empty input → one empty enabled row so
- * the user has somewhere to start typing. Decoding uses `decodeURIComponent`
- * so percent-encoded source is editable as plain text in the UI.
+ * Parse the request's `body.content` into editor rows. The stored format
+ * is raw, newline-delimited `key=value` lines — un-encoded, with any
+ * `{{var}}` references left intact. `buildRequest.composeBody` percent-
+ * encodes each pair at send time, so the editor must NOT encode here
+ * (doing so would double-encode the wire body and hide variables from
+ * resolution). Empty input → one empty enabled row to type into.
  */
 export function parseUrlencoded(content: string): KeyValueRow[] {
   if (!content || content.trim() === '') {
     return [{ key: '', value: '', enabled: true }];
   }
   const out: KeyValueRow[] = [];
-  for (const segment of content.split('&')) {
-    if (segment === '') continue;
-    const eqIdx = segment.indexOf('=');
-    const rawKey = eqIdx === -1 ? segment : segment.slice(0, eqIdx);
-    const rawValue = eqIdx === -1 ? '' : segment.slice(eqIdx + 1);
-    out.push({
-      key: safeDecode(rawKey),
-      value: safeDecode(rawValue),
-      enabled: true,
-    });
+  for (const line of content.split(/\r?\n/)) {
+    if (line.trim() === '') continue;
+    const eqIdx = line.indexOf('=');
+    const key = eqIdx === -1 ? line : line.slice(0, eqIdx);
+    const value = eqIdx === -1 ? '' : line.slice(eqIdx + 1);
+    out.push({ key, value, enabled: true });
   }
   return out.length > 0 ? out : [{ key: '', value: '', enabled: true }];
 }
 
 /**
- * Encode rows back into the wire-format string, filtering disabled rows.
- * `+` in keys/values → `%20` (form spec uses `+` for space, but
- * encodeURIComponent emits `%20`; either is accepted by parsers).
+ * Serialize rows into `body.content` — raw, newline-delimited `key=value`
+ * lines, filtering disabled and empty-key rows. Values are stored verbatim
+ * (no percent-encoding): `composeBody` encodes the pairs when it builds
+ * the wire body. This is the format `buildRequest` expects.
  */
 export function serializeUrlencoded(rows: ReadonlyArray<KeyValueRow>): string {
   return rows
     .filter((r) => r.enabled && r.key !== '')
-    .map((r) => `${encodeURIComponent(r.key)}=${encodeURIComponent(r.value)}`)
-    .join('&');
-}
-
-function safeDecode(value: string): string {
-  try {
-    return decodeURIComponent(value.replace(/\+/g, ' '));
-  } catch {
-    // Malformed percent escape — fall back to the raw segment.
-    return value;
-  }
+    .map((r) => `${r.key}=${r.value}`)
+    .join('\n');
 }
