@@ -1,7 +1,9 @@
 # @apicircle/example-mock-server
 
-Tiny Hono mock backend that exercises every canonical request shape
-the demo workspace targets. Plan §10.1.
+Tiny Hono mock backend that exercises every canonical request shape the
+[`examples/demo-workspace`](../demo-workspace/) fixture targets. It is a
+learning aid for trying the product — not test infrastructure. The
+Playwright E2E suite uses the `e2e/mock` package instead.
 
 ## Run
 

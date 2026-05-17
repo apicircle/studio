@@ -1,6 +1,6 @@
 # MCP tool catalog reference
 
-The `@apicircle/mcp-server` host exposes 50 tools, namespaced by capability area. The full list is canonical in [`packages/shared/src/mcp.ts`](../packages/shared/src/mcp.ts) and registered in [`packages/mcp-server/src/tools/registry.ts`](../packages/mcp-server/src/tools/registry.ts).
+The `@apicircle/mcp-server` host exposes 71 tools, namespaced by capability area. The full list is canonical in [`packages/shared/src/mcp.ts`](../packages/shared/src/mcp.ts) and registered in [`packages/mcp-server/src/tools/registry.ts`](../packages/mcp-server/src/tools/registry.ts).
 
 ## Imports
 
@@ -45,22 +45,41 @@ The `@apicircle/mcp-server` host exposes 50 tools, namespaced by capability area
 
 ## Environment CRUD
 
-| Tool                 | Input                 |
-| -------------------- | --------------------- |
-| `environment.create` | `{ name, variables }` |
-| `environment.read`   | `{ name? }`           |
-| `environment.update` | `{ name, variables }` |
-| `environment.delete` | `{ name }`            |
+| Tool                       | Input                                                                                                                  |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `environment.create`       | `{ name, variables }`                                                                                                  |
+| `environment.read`         | `{ name? }`                                                                                                            |
+| `environment.update`       | `{ name, variables }`                                                                                                  |
+| `environment.delete`       | `{ name }`                                                                                                             |
+| `environment.set_active`   | `{ name: string \| null }` — `null` deactivates the current environment                                                |
+| `environment.set_priority` | `{ order }` — highest-priority first; strings are local env names, or `{ kind: 'linked', linkedWorkspaceId, envName }` |
+| `environment.export`       | `{ name }` → portable JSON (encrypted variables drop their value, keep `secretKeyId`)                                  |
+| `environment.import`       | `{ json, overwrite? }` — `json` is the `environment.export` shape                                                      |
 
 ## Plan CRUD
 
-| Tool          | Input                                                                       |
-| ------------- | --------------------------------------------------------------------------- |
-| `plan.create` | `{ name, steps, envPriorityOrder }`                                         |
-| `plan.read`   | `{ id? }`                                                                   |
-| `plan.update` | `{ id, patch }`                                                             |
-| `plan.delete` | `{ id }`                                                                    |
-| `plan.run`    | `{ id, withAssertions }` _(returns not-implemented marker outside Desktop)_ |
+| Tool                 | Input                                                                                          |
+| -------------------- | ---------------------------------------------------------------------------------------------- |
+| `plan.create`        | `{ name, steps, envPriorityOrder }`                                                            |
+| `plan.read`          | `{ id? }`                                                                                      |
+| `plan.update`        | `{ id, patch }`                                                                                |
+| `plan.delete`        | `{ id }`                                                                                       |
+| `plan.run`           | `{ id, withAssertions }` _(returns not-implemented marker outside Desktop)_                    |
+| `plan.add_step`      | `{ planId, requestId, linkedWorkspaceId?, position? }` — `position` inserts at a 0-based index |
+| `plan.remove_step`   | `{ planId, index }` (0-based)                                                                  |
+| `plan.reorder_steps` | `{ planId, order: number[] }` — a permutation of current step indices                          |
+| `plan.set_variables` | `{ planId, variables: [{ key, value }] }` — replaces plan-scoped variables                     |
+
+## History
+
+Local request/plan run buffers — `WorkspaceLocal.history`.
+
+| Tool                   | Input                                                                                               |
+| ---------------------- | --------------------------------------------------------------------------------------------------- |
+| `history.list_runs`    | `{ requestId?, ok?, since?, until?, limit? }` — reverse-chronological; `limit` default 100, max 500 |
+| `history.get_run`      | `{ id }` → full row (headers, body preview, assertion results)                                      |
+| `history.delete_run`   | `{ id }`                                                                                            |
+| `history.purge_by_age` | `{ olderThanDays }` — drops runs older than N days; `0` clears all history                          |
 
 ## Assertion CRUD
 
@@ -101,16 +120,32 @@ These tools accept LLM-shaped JSON envelopes — flat, sensible defaults, ids au
 
 ## Mock server lifecycle
 
-| Tool                                  | Input                                       |
-| ------------------------------------- | ------------------------------------------- |
-| `mock.create_from_openapi`            | `{ name, spec, format?: 'json' \| 'yaml' }` |
-| `mock.create_from_postman`            | `{ name, collection }`                      |
-| `mock.create_from_insomnia`           | `{ name, export }`                          |
-| `mock.import_postman_mock_collection` | `{ name, collection }`                      |
-| `mock.list`                           | `{}`                                        |
-| `mock.start`                          | `{ id, port? }`                             |
-| `mock.stop`                           | `{ id }`                                    |
-| `mock.delete`                         | `{ id }` _(stops first if running)_         |
+| Tool                                  | Input                                                                               |
+| ------------------------------------- | ----------------------------------------------------------------------------------- |
+| `mock.create_from_openapi`            | `{ name, spec, format?: 'json' \| 'yaml' }`                                         |
+| `mock.create_from_postman`            | `{ name, collection }`                                                              |
+| `mock.create_from_insomnia`           | `{ name, export }`                                                                  |
+| `mock.create_manual`                  | `{ name, defaultPort? }` — empty manual-mode mock; populate via `mock.add_endpoint` |
+| `mock.import_postman_mock_collection` | `{ name, collection }`                                                              |
+| `mock.list`                           | `{}`                                                                                |
+| `mock.start`                          | `{ id, port? }`                                                                     |
+| `mock.stop`                           | `{ id }`                                                                            |
+| `mock.delete`                         | `{ id }` _(stops first if running)_                                                 |
+
+## Mock endpoints (manual-mode)
+
+Endpoint-level editing for manual-mode mock servers. Validation- and
+response-rule shapes mirror the `prompt.set_endpoint_*` tools above.
+
+| Tool                        | Input                                                                                                                                        |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mock.list_endpoints`       | `{ mockId }` → `[{ id, method, path, name }]`                                                                                                |
+| `mock.add_endpoint`         | `{ mockId, method, pathPattern, name?, description?, response? }` — defaults to a `200` JSON `{}` response                                   |
+| `mock.update_endpoint`      | `{ mockId, endpointId, method?, pathPattern?, name?, description?, ... }` — patches only the supplied fields                                 |
+| `mock.delete_endpoint`      | `{ mockId, endpointId }`                                                                                                                     |
+| `mock.set_validation_rules` | `{ mockId, endpointId, rules: [{ kind, target, expected?, message?, enabled?, failResponse? }] }` — empty array clears                       |
+| `mock.set_response_rules`   | `{ mockId, endpointId, rules: [{ name, enabled?, when: [...], response }] }` — first match wins; empty array falls back to `defaultResponse` |
+| `mock.set_multipliers`      | `{ mockId, endpointId, multipliers: [{ source, targetJsonPath, defaultCount, min?, max? }] }` — empty array clears                           |
 
 ## Error handling
 

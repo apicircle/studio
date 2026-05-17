@@ -42,4 +42,5 @@ pnpm dev:web            # http://localhost:5174
 - [Connect your AI client](docs/connect-your-ai-client.md)
 - [Mock server](docs/mock-server.md)
 - [MCP tool catalog reference](docs/mcp-tools-reference.md)
-- [Phase 2 architecture (P22–P30)](docs/architecture/p22-p30.md)
+- [Platform architecture (MCP, mock engine, CLI, desktop)](docs/architecture/platform.md)
+- [QA — coverage status & E2E CI](docs/qa/README.md)

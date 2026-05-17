@@ -1,5 +1,5 @@
 """Generate canonical TC-ID maps from the manual workbooks for every
-module. Output: `apps/web/e2e/fixtures/tcMap<MM|AM|...>.ts` — one map
+module. Output: `e2e/web/fixtures/tcMap<MM|AM|...>.ts` — one map
 per module-code. The maps are imported by Playwright specs; the coverage
 report (`scripts/e2e_coverage_report.py`) scans them to credit which
 TC-IDs each spec covers.
@@ -19,7 +19,7 @@ from openpyxl import load_workbook
 REPO = Path(__file__).parent.parent
 WEB = REPO / "docs" / "qa" / "web-app-manual-test-cases.xlsx"
 DESK = REPO / "docs" / "qa" / "desktop-app-manual-test-cases.xlsx"
-OUT_DIR = REPO / "apps" / "web" / "e2e" / "fixtures"
+OUT_DIR = REPO / "e2e" / "web" / "fixtures"
 
 
 def safe_key(s: str) -> str:

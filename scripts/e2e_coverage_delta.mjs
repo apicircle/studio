@@ -187,7 +187,7 @@ async function main() {
         ? `> ✅  Live coverage improved by ${deltaPct.toFixed(2)}pp.`
         : '> Live coverage unchanged.',
     '',
-    'Definitions: live = inline `tc()` / `tcRange()` in non-fixme `test()` calls. Scaffold-only = `test.fixme()` placeholders. Manual-residue = explicitly excluded from automation (see `apps/web/e2e/manual-residue.ts`).',
+    'Definitions: live = inline `tc()` / `tcRange()` in non-fixme `test()` calls. Scaffold-only = `test.fixme()` placeholders. Manual-residue = explicitly excluded from automation (see `e2e/web/manual-residue.ts`).',
     '',
     'Full report in the `e2e-coverage-${{ run_id }}` artifact.',
   ]

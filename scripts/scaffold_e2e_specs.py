@@ -31,7 +31,7 @@ from openpyxl import load_workbook
 REPO = Path(__file__).parent.parent
 WEB = REPO / "docs" / "qa" / "web-app-manual-test-cases.xlsx"
 DESK = REPO / "docs" / "qa" / "desktop-app-manual-test-cases.xlsx"
-SPEC_DIR = REPO / "apps" / "web" / "e2e"
+SPEC_DIR = REPO / "e2e" / "web"
 FIXTURES_DIR = SPEC_DIR / "fixtures"
 
 # Module-code → (spec-file-name, dedicated-spec-already-exists)
@@ -39,7 +39,7 @@ HAND_WRITTEN = {
     "MM": "method-body-matrix.spec.ts",
     "AM": "auth-method-matrix.spec.ts",
     "ME": "http-method-edge.spec.ts",
-    # Modules already covered by existing E2E specs in apps/web/e2e/
+    # Modules already covered by existing E2E specs in e2e/web/
     # (their tcMap is referenced inline via tc() so the coverage report
     # credits them; the scaffold generator doesn't shadow them).
     "AU": "auth.spec.ts",  # existing auth-wire spec extends here too

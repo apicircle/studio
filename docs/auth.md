@@ -116,17 +116,17 @@ pnpm vitest run --no-coverage
 
 ## Reference vectors
 
-| Helper                                                 | RFC vector                                                                                                           |
-| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `md5`                                                  | RFC 1321 §A.5                                                                                                        |
-| `md4`                                                  | RFC 1320 §A.5                                                                                                        |
-| `hmacMd5`                                              | RFC 2202 §2 (tests 1, 2, 6)                                                                                          |
-| `sha512_256`                                           | NIST CAVS / FIPS 180-4 §C.6 ("abc", empty, 112-byte multi-block)                                                     |
-| `parseDigestChallenge` + `buildDigestAuthHeader` (MD5) | RFC 2617 §3.5 worked example                                                                                         |
-| `buildDigestAuthHeader` (SHA-256)                      | RFC 7616 §3.9.1                                                                                                      |
-| `buildDigestAuthHeader` (SHA-512-256)                  | RFC 7616 §3.5.1 (FIPS 180-4 SHA-512/256)                                                                             |
-| `computeCodeChallenge` (S256)                          | RFC 7636 §4.6                                                                                                        |
-| `buildHawkAuthHeader` MAC                              | Mozilla Hawk README worked example                                                                                   |
-| `buildHawkAuthHeader` payload-hash                     | mozilla/hawk `Crypto.calculatePayloadHash` reference vector                                                          |
-| `buildNtlmType3Authenticate` MIC                       | re-derived from inputs per [MS-NLMP] §3.1.5.1.2                                                                      |
-| `applyAwsSigV4`                                        | AWS docs S3 GET-object credentials (self-snapshot signature; S3 PUT requires extra signed headers — see issue #\_\_) |
+| Helper                                                 | RFC vector                                                                                              |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `md5`                                                  | RFC 1321 §A.5                                                                                           |
+| `md4`                                                  | RFC 1320 §A.5                                                                                           |
+| `hmacMd5`                                              | RFC 2202 §2 (tests 1, 2, 6)                                                                             |
+| `sha512_256`                                           | NIST CAVS / FIPS 180-4 §C.6 ("abc", empty, 112-byte multi-block)                                        |
+| `parseDigestChallenge` + `buildDigestAuthHeader` (MD5) | RFC 2617 §3.5 worked example                                                                            |
+| `buildDigestAuthHeader` (SHA-256)                      | RFC 7616 §3.9.1                                                                                         |
+| `buildDigestAuthHeader` (SHA-512-256)                  | RFC 7616 §3.5.1 (FIPS 180-4 SHA-512/256)                                                                |
+| `computeCodeChallenge` (S256)                          | RFC 7636 §4.6                                                                                           |
+| `buildHawkAuthHeader` MAC                              | Mozilla Hawk README worked example                                                                      |
+| `buildHawkAuthHeader` payload-hash                     | mozilla/hawk `Crypto.calculatePayloadHash` reference vector                                             |
+| `buildNtlmType3Authenticate` MIC                       | re-derived from inputs per [MS-NLMP] §3.1.5.1.2                                                         |
+| `applyAwsSigV4`                                        | AWS docs S3 GET-object credentials (self-snapshot signature; S3 PUT requires additional signed headers) |

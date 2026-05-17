@@ -14,7 +14,7 @@ but with:
   GitHub repo on a working branch; teams collaborate via pull requests.
 - **Local mock servers**: describe an API in OpenAPI / Postman / Insomnia and
   run a Hono-backed mock on `localhost`.
-- An **MCP server**: exposes the workspace as a ~40-tool catalog any
+- An **MCP server**: exposes the workspace as a 71-tool catalog any
   Model Context Protocol client (Claude Desktop, ChatGPT, Cursor, Copilot,
   Continue, Cline, Zed, Windsurf) can drive.
 - A **CLI** for headless use (`apicircle mock | mcp | import`).
@@ -34,9 +34,8 @@ Turbo + pnpm monorepo. Node ≥ 20, pnpm ≥ 9.
 studio/
 ├── apps/
 │   ├── web/              Vite + React 18 shell — the browser build (dev port 5174)
-│   ├── desktop/          Electron shell — hosts the web UI, OS-keychain secrets,
-│   │                       mock + MCP IPC bridges (src/main/*)
-│   └── e2e-mock/          Hono localhost mock server used by the web E2E suite
+│   └── desktop/          Electron shell — hosts the web UI, OS-keychain secrets,
+│                           mock + MCP IPC bridges (src/main/*)
 ├── packages/
 │   ├── shared/            Types, generateId, validators, encryption + MCP envelopes
 │   ├── core/              Request execution, env resolution, auth signing, assertions,
@@ -44,18 +43,19 @@ studio/
 │   ├── git/               GitHub REST client + typed error taxonomy
 │   ├── ui-components/      ALL React UI + the Zustand store + IndexedDB persistence
 │   ├── mock-server-core/   Hono mock-server engine + OpenAPI/Postman/Insomnia parsers
-│   ├── mcp-server/         stdio MCP host + ~40-tool catalog + workspace providers
+│   ├── mcp-server/         stdio MCP host + 71-tool catalog + workspace providers
 │   └── cli/                `apicircle` binary — mock / mcp / import subcommands
 ├── examples/              Demo workspaces + a standalone mock-server example
 ├── docs/                  Product + architecture + QA docs (see §9)
-├── e2e/                   Cowork manual-test runner — fixtures + seed script + runner prompt
+├── e2e/                   E2E suites — web/ + desktop/ (Playwright), mock/ (Hono
+│                            test backend), qa/ (Cowork manual-test runner)
 ├── scripts/               Build (icons, release binaries) + E2E coverage tooling
 └── .github/workflows/     CI: ci, codeql, e2e, release, desktop-release
 ```
 
 **Publishable npm packages** (`@apicircle/*`): `shared`, `core`,
 `mock-server-core`, `mcp-server`, `cli`. `git` and `ui-components` are
-workspace-private; `apps/*` are private.
+workspace-private; `apps/*` and `e2e/*` are private.
 
 ---
 
@@ -167,9 +167,11 @@ Desktop: `pnpm --filter @apicircle/desktop build` then `… start`.
 ## 8. Testing & CI
 
 - **Unit:** Vitest, co-located `*.test.ts(x)`. Per-package coverage thresholds.
-- **E2E:** Playwright. Specs in `apps/web/e2e/**` and `apps/desktop/e2e/**`.
-  The web suite drives the app against `apps/e2e-mock`. Test-case coverage is
-  tracked against workbooks via `tcMap*` fixtures + `scripts/e2e_coverage_*`.
+- **E2E:** Playwright. The `@apicircle/e2e-web` (`e2e/web/`) and
+  `@apicircle/e2e-desktop` (`e2e/desktop/`) packages hold the specs. The web
+  suite drives the app against `@apicircle/e2e-mock` (`e2e/mock/`). Test-case
+  coverage is tracked against workbooks via `tcMap*` fixtures +
+  `scripts/e2e_coverage_*`.
 - **CI workflows** (`.github/workflows/`):
   - `ci.yml` — lint / typecheck / unit tests (quality gates).
   - `codeql.yml` — security analysis.
@@ -183,13 +185,13 @@ Desktop: `pnpm --filter @apicircle/desktop build` then `… start`.
 
 | Doc                                                                | Purpose                                                          |
 | ------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| [`docs/architecture/p22-p30.md`](docs/architecture/p22-p30.md)     | Phase 2 design record (MCP, mock engine, CLI, desktop)           |
+| [`docs/architecture/platform.md`](docs/architecture/platform.md)   | Platform surfaces design record (MCP, mock engine, CLI, desktop) |
 | [`docs/auth.md`](docs/auth.md)                                     | The 17-auth-type matrix                                          |
 | [`docs/mock-server.md`](docs/mock-server.md)                       | Mock server feature guide                                        |
 | [`docs/mcp-tools-reference.md`](docs/mcp-tools-reference.md)       | MCP tool catalog reference                                       |
 | [`docs/connect-your-ai-client.md`](docs/connect-your-ai-client.md) | Wiring an MCP client                                             |
 | [`docs/installing.md`](docs/installing.md)                         | Install instructions                                             |
-| [`docs/qa/`](docs/qa/)                                             | QA automation plans, CI notes, E2E coverage tooling              |
+| [`docs/qa/README.md`](docs/qa/README.md)                           | QA status, E2E CI reference, coverage tooling                    |
 | [`e2e/qa/runner/`](e2e/qa/runner/)                                 | Cowork manual-test runner — fixtures, seed script, runner prompt |
 
 ---

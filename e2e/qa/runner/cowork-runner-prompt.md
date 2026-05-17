@@ -234,7 +234,7 @@ For each row in the scoped subset, **in the order they appear**:
      because a fixture is missing; that's something you build.
    - Stub external services with the in-repo mocks
      (`packages/core/test/fixtures/mockIdp.ts`-style harness; see
-     `apps/web/e2e/fixtures/` for the import path).
+     `e2e/web/fixtures/` for the import path).
    - Reset cookies / clear local storage between unrelated test sets.
 
 3. **Execute the steps** with the tools listed above. Take screenshots

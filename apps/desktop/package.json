@@ -11,12 +11,10 @@
     "check": "tsc -p tsconfig.main.json --noEmit",
     "smoke": "node scripts/build-smoke.mjs",
     "test": "vitest run",
-    "test:e2e": "playwright test",
     "start": "electron dist/main/main.js",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@apicircle/cli": "workspace:*",
     "@apicircle/mcp-server": "workspace:*",
     "@apicircle/mock-server-core": "workspace:*",
     "@apicircle/shared": "workspace:*",
@@ -26,7 +24,6 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "@playwright/test": "^1.48.0",
     "@types/node": "^20.0.0",
     "electron": "^32.0.0",
     "electron-builder": "^25.0.0",

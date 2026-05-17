@@ -9,11 +9,6 @@
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test --project=chromium",
-    "test:e2e:live-github": "playwright test --project=chromium-live-github",
-    "test:e2e:full-sweep": "node scripts/run-full-sweep.mjs",
-    "test:e2e:install": "playwright install --with-deps chromium",
-    "test:e2e:regression-freeze": "node scripts/regression-freeze.mjs",
     "clean": "rm -rf dist node_modules"
   },
   "dependencies": {
@@ -24,8 +19,6 @@
     "react-dom": "^18.3.0"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.10.0",
-    "@playwright/test": "^1.48.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",

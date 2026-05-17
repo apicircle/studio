@@ -31,8 +31,8 @@ from collections import defaultdict
 
 REPO = Path(__file__).parent.parent
 SPEC_GLOBS = (
-    "apps/web/e2e/**/*.spec.ts",
-    "apps/desktop/e2e/**/*.spec.ts",
+    "e2e/web/**/*.spec.ts",
+    "e2e/desktop/**/*.spec.ts",
 )
 
 # Match `test(` (or `test.only(`) but NOT `test.skip(` or `test.fixme(`.

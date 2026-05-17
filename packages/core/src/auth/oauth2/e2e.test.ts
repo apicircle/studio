@@ -1,7 +1,7 @@
 /**
  * End-to-end OAuth2 grant tests against an in-process mock IdP.
  *
- * Lives in `packages/core` rather than `apps/web/e2e` because the only
+ * Lives in `packages/core` rather than `e2e/web` because the only
  * thing under test is the core token-acquisition pipeline — no UI, no
  * Playwright. The mock IdP is shared with the Playwright suite for
  * consistency.

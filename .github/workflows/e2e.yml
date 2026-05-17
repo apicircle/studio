@@ -54,7 +54,7 @@ jobs:
         run: pnpm test:e2e:install
 
       - name: Install Playwright OS deps (always — fast no-op on cache hit)
-        run: pnpm --filter @apicircle/web exec playwright install-deps chromium
+        run: pnpm --filter @apicircle/e2e-web exec playwright install-deps chromium
 
       - name: Build web app
         run: pnpm --filter @apicircle/web build
@@ -69,7 +69,7 @@ jobs:
         run: |
           python scripts/e2e_coverage_report.py \
             --strict --json \
-            --from-results apps/web/test-results.json \
+            --from-results e2e/web/test-results.json \
             --fail-under 20
 
       - name: Upload Playwright HTML report
@@ -77,7 +77,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-${{ github.run_id }}
-          path: apps/web/playwright-report
+          path: e2e/web/playwright-report
           retention-days: 14
 
       - name: Upload coverage report
@@ -88,7 +88,7 @@ jobs:
           path: |
             docs/qa/results/e2e-coverage.md
             docs/qa/results/e2e-coverage.json
-            apps/web/test-results.json
+            e2e/web/test-results.json
           retention-days: 90
 
       - name: Upload failure traces
@@ -96,7 +96,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-traces-${{ github.run_id }}
-          path: apps/web/test-results
+          path: e2e/web/test-results
           retention-days: 14
 
       - name: Coverage delta vs main
@@ -143,21 +143,21 @@ jobs:
 
       - name: Install Playwright browsers (firefox + webkit)
         if: steps.pw-cache.outputs.cache-hit != 'true'
-        run: pnpm --filter @apicircle/web exec playwright install --with-deps firefox webkit
+        run: pnpm --filter @apicircle/e2e-web exec playwright install --with-deps firefox webkit
 
       - name: Install Playwright OS deps
-        run: pnpm --filter @apicircle/web exec playwright install-deps firefox webkit
+        run: pnpm --filter @apicircle/e2e-web exec playwright install-deps firefox webkit
 
       - name: Build web app
         run: pnpm --filter @apicircle/web build
 
       - name: Firefox smoke
-        run: pnpm --filter @apicircle/web exec playwright test --project=firefox-smoke
+        run: pnpm --filter @apicircle/e2e-web exec playwright test --project=firefox-smoke
         env:
           CI: 'true'
 
       - name: WebKit smoke
-        run: pnpm --filter @apicircle/web exec playwright test --project=webkit-smoke
+        run: pnpm --filter @apicircle/e2e-web exec playwright test --project=webkit-smoke
         env:
           CI: 'true'
 
@@ -166,7 +166,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: smoke-report-${{ github.run_id }}
-          path: apps/web/playwright-report
+          path: e2e/web/playwright-report
           retention-days: 14
 
   visual-baseline:
@@ -202,13 +202,13 @@ jobs:
         run: pnpm test:e2e:install
 
       - name: Install Playwright OS deps
-        run: pnpm --filter @apicircle/web exec playwright install-deps chromium
+        run: pnpm --filter @apicircle/e2e-web exec playwright install-deps chromium
 
       - name: Build web app
         run: pnpm --filter @apicircle/web build
 
       - name: Visual baseline
-        run: pnpm --filter @apicircle/web exec playwright test --project=visual-baseline
+        run: pnpm --filter @apicircle/e2e-web exec playwright test --project=visual-baseline
         env:
           CI: 'true'
 
@@ -217,5 +217,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: visual-diffs-${{ github.run_id }}
-          path: apps/web/test-results
+          path: e2e/web/test-results
           retention-days: 14

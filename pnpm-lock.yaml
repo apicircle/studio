@@ -81,9 +81,6 @@ importers:
 
   apps/desktop:
     dependencies:
-      '@apicircle/cli':
-        specifier: workspace:*
-        version: link:../../packages/cli
       '@apicircle/mcp-server':
         specifier: workspace:*
         version: link:../../packages/mcp-server
@@ -106,9 +103,6 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.0.0
         version: 1.29.0(zod@3.25.76)
-      '@playwright/test':
-        specifier: ^1.48.0
-        version: 1.59.1
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.39
@@ -121,28 +115,6 @@ importers:
       tsx:
         specifier: ^4.22.0
         version: 4.22.0
-      typescript:
-        specifier: ^5.4.0
-        version: 5.9.3
-      vitest:
-        specifier: ^2.0.0
-        version: 2.1.9(@types/node@20.19.39)(jsdom@25.0.1)
-
-  apps/e2e-mock:
-    dependencies:
-      '@apicircle/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@hono/node-server':
-        specifier: ^1.13.0
-        version: 1.19.14(hono@4.12.18)
-      hono:
-        specifier: ^4.12.18
-        version: 4.12.18
-    devDependencies:
-      tsx:
-        specifier: ^4.19.0
-        version: 4.21.0
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
@@ -168,12 +140,6 @@ importers:
         specifier: ^18.3.0
         version: 18.3.1(react@18.3.1)
     devDependencies:
-      '@axe-core/playwright':
-        specifier: ^4.10.0
-        version: 4.11.2(playwright-core@1.59.1)
-      '@playwright/test':
-        specifier: ^1.48.0
-        version: 1.59.1
       '@types/react':
         specifier: ^18.3.0
         version: 18.3.28
@@ -201,6 +167,72 @@ importers:
       vitest:
         specifier: ^2.0.0
         version: 2.1.9(@types/node@20.19.39)(jsdom@25.0.1)
+
+  e2e/desktop:
+    dependencies:
+      '@apicircle/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
+      '@apicircle/mock-server-core':
+        specifier: workspace:*
+        version: link:../../packages/mock-server-core
+      '@apicircle/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+    devDependencies:
+      '@playwright/test':
+        specifier: ^1.48.0
+        version: 1.59.1
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.39
+      electron:
+        specifier: ^32.0.0
+        version: 32.3.3
+      tsx:
+        specifier: ^4.22.0
+        version: 4.22.0
+
+  e2e/mock:
+    dependencies:
+      '@apicircle/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@hono/node-server':
+        specifier: ^1.13.0
+        version: 1.19.14(hono@4.12.18)
+      hono:
+        specifier: ^4.12.18
+        version: 4.12.18
+    devDependencies:
+      tsx:
+        specifier: ^4.19.0
+        version: 4.22.0
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.0.0
+        version: 2.1.9(@types/node@20.19.39)(jsdom@25.0.1)
+
+  e2e/web:
+    dependencies:
+      '@apicircle/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@apicircle/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+    devDependencies:
+      '@axe-core/playwright':
+        specifier: ^4.10.0
+        version: 4.11.2(playwright-core@1.59.1)
+      '@playwright/test':
+        specifier: ^1.48.0
+        version: 1.59.1
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.39
 
   examples/mock-server:
     dependencies:
