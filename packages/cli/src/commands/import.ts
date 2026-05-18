@@ -1,0 +1,156 @@
+import { promises as fs } from 'node:fs';
+import * as path from 'node:path';
+import type { Command } from 'commander';
+import kleur from 'kleur';
+import { applyMutation } from '@apicircle/core';
+import { saveToFile } from '@apicircle/core/workspace/file-backed';
+import {
+  parseInsomniaToEndpoints,
+  parseOpenApiToEndpoints,
+  parsePostmanToEndpoints,
+} from '@apicircle/mock-server-core';
+import { generateId, type Request as ApiRequest } from '@apicircle/shared';
+import { ensureWorkspace } from '../util/loadWorkspace';
+
+// =============================================================================
+// `apicircle import <type> <spec>` — read an external spec, persist one
+// request per operation into `<workspace>/workspace.synced.json`.
+// =============================================================================
+
+type ImportType = 'curl' | 'openapi' | 'postman' | 'insomnia';
+
+interface ImportOptions {
+  workspace?: string;
+  format?: 'json' | 'yaml';
+}
+
+export function registerImportCommand(program: Command): void {
+  program
+    .command('import')
+    .description('Import a spec into a workspace folder')
+    .argument('<type>', 'Source type: openapi | postman | insomnia | curl')
+    .argument('<input>', 'Path to a spec file, or `-` to read from stdin')
+    .option('-w, --workspace <dir>', 'Workspace directory (defaults to current directory)')
+    .option('-f, --format <format>', 'OpenAPI format: json | yaml', 'json')
+    .action(async (type: ImportType, input: string, opts: ImportOptions) => {
+      const dir = path.resolve(opts.workspace ?? process.cwd());
+      const raw = await readInput(input);
+      const state = await ensureWorkspace(dir);
+      let nextSynced = state.synced;
+      let nextLocal = state.local;
+      const created: string[] = [];
+
+      const append = (req: ApiRequest) => {
+        const out = applyMutation(
+          { synced: nextSynced, local: nextLocal },
+          { kind: 'request.create', request: req },
+        );
+        nextSynced = out.next.synced;
+        nextLocal = out.next.local;
+        created.push(req.id);
+      };
+
+      if (type === 'curl') {
+        const { parseCurl } = await import('@apicircle/core');
+        const parsed = parseCurl(raw);
+        append(
+          blankRequest({
+            name: `cURL ${parsed.method} ${parsed.url}`.slice(0, 80),
+            method: parsed.method,
+            url: parsed.url,
+            headers: parsed.headers,
+            query: parsed.query,
+            body: parsed.body,
+            auth: parsed.auth,
+          }),
+        );
+      } else if (type === 'openapi') {
+        const parsed = await parseOpenApiToEndpoints(raw, opts.format ?? 'json');
+        for (const ep of parsed.endpoints) {
+          append(
+            blankRequest({
+              name: ep.example ?? `${ep.method} ${ep.pathPattern}`,
+              method: ep.method,
+              url: ep.pathPattern,
+            }),
+          );
+        }
+      } else if (type === 'postman') {
+        const parsed = parsePostmanToEndpoints(raw);
+        for (const ep of parsed.endpoints) {
+          append(
+            blankRequest({
+              name: ep.example ?? `${ep.method} ${ep.pathPattern}`,
+              method: ep.method,
+              url: ep.pathPattern,
+            }),
+          );
+        }
+      } else if (type === 'insomnia') {
+        const parsed = parseInsomniaToEndpoints(raw);
+        for (const ep of parsed.endpoints) {
+          append(
+            blankRequest({
+              name: ep.example ?? `${ep.method} ${ep.pathPattern}`,
+              method: ep.method,
+              url: ep.pathPattern,
+            }),
+          );
+        }
+      } else {
+        // The four-branch chain above is exhaustive at the type level, so
+        // `type` narrows to `never` here. Cast to string for the error
+        // message — at runtime this only fires if a caller bypasses the
+        // commander enum and passes garbage like `apicircle import xml ...`.
+        process.stderr.write(`${kleur.red('error')}: unknown type '${String(type)}'\n`);
+        process.exit(2);
+      }
+
+      await saveToFile(dir, { synced: nextSynced, local: nextLocal });
+      process.stdout.write(
+        `${kleur.green('imported')} ${created.length} request${created.length === 1 ? '' : 's'} into ${dir}\n`,
+      );
+    });
+}
+
+async function readInput(p: string): Promise<string> {
+  if (p === '-') {
+    return new Promise<string>((resolve, reject) => {
+      let data = '';
+      process.stdin.setEncoding('utf-8');
+      // setEncoding('utf-8') causes `chunk` to arrive as a string at runtime,
+      // but Node's types still surface it as `string | Buffer`. Coerce to
+      // satisfy `restrict-plus-operands` without changing behaviour.
+      process.stdin.on('data', (chunk: string | Buffer) => {
+        data += typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
+      });
+      process.stdin.on('end', () => resolve(data));
+      process.stdin.on('error', reject);
+    });
+  }
+  return fs.readFile(path.resolve(p), 'utf-8');
+}
+
+function blankRequest(
+  partial: Partial<ApiRequest> & {
+    name: string;
+    method: ApiRequest['method'];
+    url: string;
+  },
+): ApiRequest {
+  const now = new Date().toISOString();
+  return {
+    id: generateId(),
+    folderId: null,
+    headers: [],
+    query: [],
+    body: { type: 'none', content: '' },
+    auth: { type: 'none' },
+    contextVars: [],
+    extractions: [],
+    assertions: [],
+    createdAt: now,
+    updatedAt: now,
+    ...partial,
+  };
+}

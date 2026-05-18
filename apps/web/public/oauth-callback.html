@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Completing sign-in…</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #0f0e17;
+        color: #fffffe;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        min-height: 100vh;
+      }
+      .card {
+        text-align: center;
+        max-width: 24rem;
+        padding: 2rem;
+        border-radius: 8px;
+        background: #232036;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      }
+      h1 {
+        font-size: 1.25rem;
+        margin: 0 0 0.5rem;
+        color: #a786df;
+      }
+      p {
+        font-size: 0.875rem;
+        margin: 0;
+        color: #b4b3c9;
+      }
+      .err h1 {
+        color: #ff6b6b;
+      }
+      code {
+        background: #0f0e17;
+        padding: 2px 6px;
+        border-radius: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card" id="card">
+      <h1 id="title">You can close this tab.</h1>
+      <p id="message">Sign-in complete. APICircle Studio captured the credentials.</p>
+    </div>
+    <!--
+      OAuth2 callback relay for the web build.
+
+      The IdP redirects here with `?code=…&state=…` (auth-code / PKCE)
+      or `#access_token=…&state=…` (implicit). We:
+        1. Pull every parameter out of both `location.search` and
+           `location.hash`. Implicit-grant tokens live in the fragment,
+           which would otherwise never reach a server-rendered page.
+        2. POST them to the parent app via `BroadcastChannel` keyed by
+           the `state` value (primary), AND `window.opener.postMessage`
+           with `targetOrigin = location.origin` (same-origin fallback
+           for browsers / privacy modes where BroadcastChannel is gone).
+           We deliberately do NOT use localStorage as a fallback — it
+           emits a `storage` event to every same-origin tab, which would
+           briefly expose the access_token to anything listening.
+        3. Close the popup. If `window.close()` is blocked (browsers
+           sometimes refuse to close non-popup tabs), the page stays up
+           with the success message and the user can close it manually.
+    -->
+    <script>
+      (function () {
+        var search = window.location.search.startsWith('?') ? window.location.search.slice(1) : '';
+        var hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : '';
+
+        var params = new URLSearchParams(search);
+        if (hash) {
+          var hashParams = new URLSearchParams(hash);
+          hashParams.forEach(function (value, key) {
+            params.set(key, value);
+          });
+        }
+
+        var state = params.get('state') || '';
+        var error = params.get('error');
+
+        var payload = {
+          code: params.get('code') || undefined,
+          accessToken: params.get('access_token') || undefined,
+          tokenType: params.get('token_type') || undefined,
+          expiresIn: params.has('expires_in') ? Number(params.get('expires_in')) : undefined,
+          scope: params.get('scope') || undefined,
+          state: state,
+          error: error || undefined,
+          errorDescription: params.get('error_description') || undefined,
+        };
+
+        if (error) {
+          var card = document.getElementById('card');
+          card.className = 'err';
+          document.getElementById('title').textContent = 'Sign-in failed';
+          document.getElementById('message').innerHTML =
+            'The IdP returned <code>' + (error + '').replace(/[<>&"]/g, '') + '</code>.';
+        }
+
+        // Channel name is namespaced AND keyed by state so the parent
+        // can listen for exactly THIS flow without picking up stale
+        // callbacks from a previous tab.
+        var channelName = 'apicircle-oauth-' + (state || 'no-state');
+        var deliveredAny = false;
+        try {
+          var channel = new BroadcastChannel(channelName);
+          channel.postMessage(payload);
+          channel.close();
+          deliveredAny = true;
+        } catch (_) {
+          // BroadcastChannel unavailable — fall through to postMessage.
+        }
+
+        // Same-origin postMessage fallback. We target the parent window
+        // explicitly with `targetOrigin = location.origin` so the payload
+        // is delivered ONLY to a same-origin opener (the Studio app
+        // running in the parent tab) and NEVER cross-origin. Previously
+        // we used localStorage here, which broadcasts a `storage` event
+        // to every other same-origin tab — a brief access_token leak we
+        // are not willing to accept.
+        try {
+          if (window.opener && !window.opener.closed) {
+            window.opener.postMessage(payload, window.location.origin);
+            deliveredAny = true;
+          }
+        } catch (_) {
+          /* opener unreachable across origins / closed */
+        }
+
+        if (!deliveredAny) {
+          var card = document.getElementById('card');
+          card.className = 'err';
+          document.getElementById('title').textContent = 'Sign-in incomplete';
+          document.getElementById('message').textContent =
+            'Could not return tokens to APICircle Studio. Close this tab and retry from the auth panel.';
+          return;
+        }
+
+        // Give the parent a tick to receive, then close.
+        setTimeout(function () {
+          window.close();
+        }, 250);
+      })();
+    </script>
+  </body>
+</html>

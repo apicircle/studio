@@ -1,0 +1,125 @@
+import { describe, expect, it } from 'vitest';
+import type { Request as ApiRequest, WorkspaceSynced } from '@apicircle/shared';
+import {
+  addGlobalGraphQL,
+  addGlobalSchema,
+  removeGlobalGraphQL,
+  removeGlobalSchema,
+  updateGlobalGraphQL,
+  updateGlobalSchema,
+} from './globalAssetsActions';
+
+const baseSynced = (): WorkspaceSynced => ({
+  schemaVersion: 1,
+  workspaceId: 'ws-1',
+  collections: { tree: { id: 'r', type: 'root', children: [] }, requests: {}, folders: {} },
+  environments: { items: {}, activeName: null, priorityOrder: [] },
+  linkedWorkspaces: {},
+  linkedOverrides: { requests: {}, environmentVars: {} },
+  releases: { self: null, perLink: {} },
+  globalAssets: { schemas: {}, graphql: {} },
+  mockServers: {},
+  meta: { createdAt: 't', updatedAt: 't', appVersion: '0.1.0' },
+});
+
+const seedRequest = (synced: WorkspaceSynced, partial: Partial<ApiRequest>): WorkspaceSynced => {
+  const req: ApiRequest = {
+    id: partial.id ?? 'r1',
+    name: 'r',
+    folderId: null,
+    method: 'GET',
+    url: 'https://x',
+    headers: [],
+    query: [],
+    body: { type: 'none', content: '' },
+    auth: { type: 'none' },
+    contextVars: [],
+    extractions: [],
+    assertions: [],
+    createdAt: 't',
+    updatedAt: 't',
+    ...partial,
+  };
+  return {
+    ...synced,
+    collections: {
+      ...synced.collections,
+      requests: { ...synced.collections.requests, [req.id]: req },
+    },
+  };
+};
+
+describe('addGlobalSchema', () => {
+  it('appends a new entry with a fresh id and updates meta.updatedAt', () => {
+    const before = baseSynced();
+    const { synced, schema } = addGlobalSchema(before, { name: 'User' });
+    expect(synced.globalAssets.schemas[schema.id]).toBe(schema);
+    expect(schema.name).toBe('User');
+    expect(synced.meta.updatedAt).not.toBe(before.meta.updatedAt);
+  });
+
+  it('seeds a draft 2020-12 schema body when none is supplied', () => {
+    const { schema } = addGlobalSchema(baseSynced(), { name: 'X' });
+    expect(schema.schema).toContain('https://json-schema.org/draft/2020-12/schema');
+  });
+});
+
+describe('updateGlobalSchema', () => {
+  it('patches name + body fields', () => {
+    const { synced, schema } = addGlobalSchema(baseSynced(), { name: 'A' });
+    const next = updateGlobalSchema(synced, schema.id, { name: 'B', schema: '{"type":"string"}' });
+    expect(next.globalAssets.schemas[schema.id]?.name).toBe('B');
+    expect(next.globalAssets.schemas[schema.id]?.schema).toBe('{"type":"string"}');
+    // Original createdAt must be preserved.
+    expect(next.globalAssets.schemas[schema.id]?.createdAt).toBe(schema.createdAt);
+  });
+
+  it('is a no-op when the schema is unknown', () => {
+    const before = baseSynced();
+    expect(updateGlobalSchema(before, 'missing', { name: 'X' })).toBe(before);
+  });
+});
+
+describe('removeGlobalSchema', () => {
+  it('drops the entry and clears bodySchemaId on referencing requests', () => {
+    const { synced: withSchema, schema } = addGlobalSchema(baseSynced(), { name: 'A' });
+    const withReq = seedRequest(withSchema, { id: 'r1', bodySchemaId: schema.id });
+    const next = removeGlobalSchema(withReq, schema.id);
+    expect(next.globalAssets.schemas[schema.id]).toBeUndefined();
+    expect(next.collections.requests['r1']?.bodySchemaId).toBeNull();
+  });
+
+  it('is a no-op when the id is unknown', () => {
+    const before = baseSynced();
+    expect(removeGlobalSchema(before, 'nope')).toBe(before);
+  });
+});
+
+describe('addGlobalGraphQL', () => {
+  it('defaults to SDL kind and seeds a stub Query type', () => {
+    const { synced, graphql } = addGlobalGraphQL(baseSynced(), { name: 'API' });
+    expect(graphql.kind).toBe('sdl');
+    expect(graphql.source).toContain('type Query');
+    expect(synced.globalAssets.graphql[graphql.id]).toBe(graphql);
+  });
+});
+
+describe('updateGlobalGraphQL', () => {
+  it('patches kind/source and bumps updatedAt', () => {
+    const { synced, graphql } = addGlobalGraphQL(baseSynced(), { name: 'API' });
+    const next = updateGlobalGraphQL(synced, graphql.id, {
+      kind: 'introspection',
+      source: '{"__schema":{}}',
+    });
+    expect(next.globalAssets.graphql[graphql.id]?.kind).toBe('introspection');
+  });
+});
+
+describe('removeGlobalGraphQL', () => {
+  it('clears graphqlSchemaId on referencing requests', () => {
+    const { synced: withGraphQL, graphql } = addGlobalGraphQL(baseSynced(), { name: 'API' });
+    const withReq = seedRequest(withGraphQL, { id: 'r1', graphqlSchemaId: graphql.id });
+    const next = removeGlobalGraphQL(withReq, graphql.id);
+    expect(next.collections.requests['r1']?.graphqlSchemaId).toBeNull();
+  });
+});

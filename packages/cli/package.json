@@ -1,0 +1,66 @@
+{
+  "name": "@apicircle/cli",
+  "version": "1.0.0",
+  "private": false,
+  "type": "module",
+  "description": "Command-line interface for APICircle Studio. Run mock servers, drive the MCP server, and import OpenAPI / Postman / Insomnia collections from any terminal.",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/apicircle/studio.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/apicircle/studio#readme",
+  "bugs": "https://github.com/apicircle/studio/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "bin": {
+    "apicircle": "./dist/index.cjs"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "main": "./dist/index.cjs",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.cts",
+    "exports": {
+      ".": {
+        "import": {
+          "types": "./dist/index.d.ts",
+          "default": "./dist/index.js"
+        },
+        "require": {
+          "types": "./dist/index.d.cts",
+          "default": "./dist/index.cjs"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist node_modules"
+  },
+  "dependencies": {
+    "@apicircle/core": "workspace:*",
+    "@apicircle/mcp-server": "workspace:*",
+    "@apicircle/mock-server-core": "workspace:*",
+    "@apicircle/shared": "workspace:*",
+    "commander": "^12.0.0",
+    "kleur": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0"
+  }
+}

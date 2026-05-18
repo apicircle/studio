@@ -1,0 +1,63 @@
+{
+  "name": "@apicircle/mock-server-core",
+  "version": "1.0.0",
+  "private": false,
+  "type": "module",
+  "description": "Hono-based mock server engine for APICircle. Parses OpenAPI/Postman/Insomnia into mock endpoints, serves them on Node/Bun/edge runtimes.",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/apicircle/studio.git",
+    "directory": "packages/mock-server-core"
+  },
+  "homepage": "https://github.com/apicircle/studio#readme",
+  "bugs": "https://github.com/apicircle/studio/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "main": "./dist/index.cjs",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.cts",
+    "exports": {
+      ".": {
+        "import": {
+          "types": "./dist/index.d.ts",
+          "default": "./dist/index.js"
+        },
+        "require": {
+          "types": "./dist/index.d.cts",
+          "default": "./dist/index.cjs"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist node_modules"
+  },
+  "dependencies": {
+    "@apicircle/shared": "workspace:*",
+    "@hono/node-server": "^1.13.0",
+    "hono": "^4.12.18",
+    "@apidevtools/swagger-parser": "^10.1.0",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.0.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0"
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "info": {
+    "_postman_id": "11111111-2222-3333-4444-555555555555",
+    "name": "Sample Postman v2.1 Simple",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Get user",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "https://httpbin.org/get?id=1",
+          "protocol": "https",
+          "host": ["httpbin", "org"],
+          "path": ["get"],
+          "query": [
+            {
+              "key": "id",
+              "value": "1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Create user",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\":\"alice\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "https://httpbin.org/post",
+          "protocol": "https",
+          "host": ["httpbin", "org"],
+          "path": ["post"]
+        }
+      }
+    }
+  ]
+}

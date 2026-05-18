@@ -1,0 +1,118 @@
+// Single source of truth: apps/web/public/favicon.svg → every icon the
+// desktop bundle, OS launchers, and dev BrowserWindow need.
+//
+// Outputs:
+//   apps/desktop/build/icon.png            1024×1024 transparent PNG (Linux + electron-builder default)
+//   apps/desktop/build/icon-transparent.png  same as icon.png (kept as a legacy alias)
+//   apps/desktop/build/icon.ico            multi-resolution Windows .ico (16/24/32/48/64/128/256)
+//   apps/desktop/build/icon.icns           multi-resolution macOS .icns (16/32/64/128/256/512/1024 + @2x)
+//   apps/desktop/build/icons/<size>.png    per-size PNGs (16, 24, 32, 48, 64, 128, 256, 512, 1024)
+//                                          consumed by BrowserWindow.icon in dev + by Linux desktop entries
+//
+// Run:  pnpm icons    (re-runs on every release)
+
+import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
+import { dirname, resolve, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(__dirname, '..');
+
+// @playwright/test is installed only inside apps/web — resolve against that.
+const requireFromWeb = createRequire(resolve(ROOT, 'apps/web/package.json'));
+const pw = requireFromWeb('@playwright/test');
+const chromium = pw.chromium ?? pw.default?.chromium;
+if (!chromium) throw new Error('chromium not exported from @playwright/test');
+
+const requireFromRoot = createRequire(resolve(ROOT, 'package.json'));
+const png2icons = requireFromRoot('png2icons');
+
+const SVG_PATH = resolve(ROOT, 'apps/web/public/favicon.svg');
+const BUILD_DIR = resolve(ROOT, 'apps/desktop/build');
+const PER_SIZE_DIR = join(BUILD_DIR, 'icons');
+
+// Sizes the OS launchers actually read. The ICO/ICNS packers downsample
+// internally from the 1024 master, but per-size PNGs are useful for:
+//   - BrowserWindow.icon (dev mode, no .ico available on Linux)
+//   - Linux .desktop entries / freedesktop hicolor theme
+//   - Future tray-icon use (16/32 needed)
+const PNG_SIZES = [16, 24, 32, 48, 64, 128, 256, 512, 1024];
+
+async function rasterize(svg, size, browser) {
+  const html = `<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  html,body { margin:0; padding:0; background:transparent; }
+  #wrap { width:${size}px; height:${size}px; }
+  #wrap > svg { width:100%; height:100%; display:block; }
+</style></head>
+<body><div id="wrap">${svg}</div></body></html>`;
+
+  const ctx = await browser.newContext({
+    viewport: { width: size, height: size },
+    deviceScaleFactor: 1,
+  });
+  const page = await ctx.newPage();
+  await page.setContent(html, { waitUntil: 'load' });
+  const el = await page.$('#wrap');
+  const buf = await el.screenshot({ omitBackground: true, type: 'png' });
+  await ctx.close();
+  return buf;
+}
+
+async function main() {
+  const svg = await readFile(SVG_PATH, 'utf8');
+  await mkdir(BUILD_DIR, { recursive: true });
+  // Clean per-size dir so stale sizes don't accumulate.
+  await rm(PER_SIZE_DIR, { recursive: true, force: true });
+  await mkdir(PER_SIZE_DIR, { recursive: true });
+
+  const browser = await chromium.launch();
+  try {
+    // Rasterize each target size in parallel. Playwright is happy with one
+    // browser + many contexts, and the SVG is tiny so this finishes in
+    // ~3s total on a laptop.
+    const pngs = await Promise.all(
+      PNG_SIZES.map(async (size) => {
+        const buf = await rasterize(svg, size, browser);
+        await writeFile(join(PER_SIZE_DIR, `${size}.png`), buf);
+        return { size, buf };
+      }),
+    );
+
+    const master = pngs.find((p) => p.size === 1024);
+    if (!master) throw new Error('1024 master missing — PNG_SIZES regression?');
+
+    // Linux + electron-builder default
+    await writeFile(join(BUILD_DIR, 'icon.png'), master.buf);
+    // Legacy alias kept for any tooling still reading the old name.
+    await writeFile(join(BUILD_DIR, 'icon-transparent.png'), master.buf);
+
+    // Windows .ico — embeds multi-resolution rasters so Windows can pick the
+    // right size for the taskbar, alt-tab, and Explorer thumbnails.
+    const ico = png2icons.createICO(
+      master.buf,
+      png2icons.BICUBIC,
+      0,
+      true /* multi-resolution */,
+      true /* transparent */,
+    );
+    if (!ico) throw new Error('png2icons.createICO returned null');
+    await writeFile(join(BUILD_DIR, 'icon.ico'), ico);
+
+    // macOS .icns — same idea, all standard slots from 16 to 1024 @2x.
+    const icns = png2icons.createICNS(master.buf, png2icons.BICUBIC, 0);
+    if (!icns) throw new Error('png2icons.createICNS returned null');
+    await writeFile(join(BUILD_DIR, 'icon.icns'), icns);
+
+    const sizesList = pngs.map((p) => `${p.size}px (${p.buf.byteLength}B)`).join(', ');
+    console.log(`✓ ${PNG_SIZES.length} PNGs in build/icons/: ${sizesList}`);
+    console.log(`✓ build/icon.png        (1024×1024)`);
+    console.log(`✓ build/icon.ico        (${ico.byteLength}B, multi-res)`);
+    console.log(`✓ build/icon.icns       (${icns.byteLength}B, multi-res)`);
+  } finally {
+    await browser.close();
+  }
+}
+
+await main();

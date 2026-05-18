@@ -1,0 +1,25 @@
+{
+  "name": "@apicircle/example-mock-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tiny Hono mock server backing the examples/demo-workspace fixture.",
+  "scripts": {
+    "dev": "MOCK_SERVER_AUTOSTART=true tsx watch src/server.ts",
+    "start": "MOCK_SERVER_AUTOSTART=true tsx src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.0",
+    "hono": "^4.12.18"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0"
+  }
+}

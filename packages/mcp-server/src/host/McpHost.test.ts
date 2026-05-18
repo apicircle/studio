@@ -1,0 +1,146 @@
+import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
+import { McpHost } from './McpHost';
+import type { AnyToolDef, ToolHandlerContext } from '../tools/types';
+
+// Trivial paired transport — the host and client each get a Transport whose
+// `send` calls into the other's `onmessage`. Lets us exercise the whole
+// JSON-RPC round-trip in-process without spawning child processes.
+class PairedTransport implements Transport {
+  onclose?: () => void;
+  onerror?: (err: Error) => void;
+  onmessage?: (msg: JSONRPCMessage) => void;
+  partner?: PairedTransport;
+
+  async start(): Promise<void> {}
+
+  async send(msg: JSONRPCMessage): Promise<void> {
+    queueMicrotask(() => this.partner?.onmessage?.(msg));
+  }
+
+  async close(): Promise<void> {
+    this.onclose?.();
+  }
+}
+
+function pair(): { server: PairedTransport; client: PairedTransport } {
+  const server = new PairedTransport();
+  const client = new PairedTransport();
+  server.partner = client;
+  client.partner = server;
+  return { server, client };
+}
+
+const echoTool: AnyToolDef = {
+  name: 'request.create',
+  description: 'echo',
+  inputSchema: z.object({ message: z.string() }),
+  async handler(input) {
+    return { echoed: input.message };
+  },
+};
+
+const failingTool: AnyToolDef = {
+  name: 'request.read',
+  description: 'always fails',
+  inputSchema: z.object({}),
+  async handler() {
+    throw new Error('boom');
+  },
+};
+
+function makeContext(): ToolHandlerContext {
+  return {
+    workspace: {
+      async read() {
+        throw new Error('not used');
+      },
+      async apply() {
+        throw new Error('not used');
+      },
+      async write() {
+        throw new Error('not used');
+      },
+    },
+    mock: {
+      async start() {
+        throw new Error('not used');
+      },
+      async stop() {},
+      async list() {
+        return [];
+      },
+    },
+  };
+}
+
+describe('McpHost', () => {
+  it('lists registered tools over the protocol', async () => {
+    const host = new McpHost({ context: makeContext(), tools: [echoTool] });
+    const { server, client } = pair();
+    await host.connect(server);
+
+    const c = new Client({ name: 'test', version: '0.0.0' });
+    await c.connect(client);
+    const tools = await c.listTools();
+    expect(tools.tools.find((t) => t.name === 'request.create')?.description).toBe('echo');
+
+    await c.close();
+    await host.close();
+  });
+
+  it('dispatches a successful tool call', async () => {
+    const host = new McpHost({ context: makeContext(), tools: [echoTool] });
+    const { server, client } = pair();
+    await host.connect(server);
+
+    const c = new Client({ name: 'test', version: '0.0.0' });
+    await c.connect(client);
+    const result = await c.callTool({
+      name: 'request.create',
+      arguments: { message: 'hi' },
+    });
+    expect(result.isError).toBeFalsy();
+    const text = (result.content as Array<{ type: string; text: string }>)[0].text;
+    expect(JSON.parse(text)).toEqual({ echoed: 'hi' });
+
+    await c.close();
+    await host.close();
+  });
+
+  it('returns isError on validation failure', async () => {
+    const host = new McpHost({ context: makeContext(), tools: [echoTool] });
+    const { server, client } = pair();
+    await host.connect(server);
+
+    const c = new Client({ name: 'test', version: '0.0.0' });
+    await c.connect(client);
+    const result = await c.callTool({
+      name: 'request.create',
+      arguments: {},
+    });
+    expect(result.isError).toBe(true);
+
+    await c.close();
+    await host.close();
+  });
+
+  it('returns isError when the handler throws', async () => {
+    const host = new McpHost({ context: makeContext(), tools: [failingTool] });
+    const { server, client } = pair();
+    await host.connect(server);
+
+    const c = new Client({ name: 'test', version: '0.0.0' });
+    await c.connect(client);
+    const result = await c.callTool({ name: 'request.read', arguments: {} });
+    expect(result.isError).toBe(true);
+    const text = (result.content as Array<{ type: string; text: string }>)[0].text;
+    expect(text).toContain('boom');
+
+    await c.close();
+    await host.close();
+  });
+});

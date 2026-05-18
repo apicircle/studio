@@ -1,0 +1,204 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import type { MockRuntimeEntry, MockServer } from '@apicircle/shared';
+import { MockServersPanel } from './MockServersPanel';
+import { renderWithStore } from '../../../test/renderWithStore';
+import { useWorkspaceStore } from '../../store/workspaceStore';
+
+const T0 = '2026-04-27T00:00:00.000Z';
+
+function fixtureMock(id: string, name: string): MockServer {
+  const endpoint = {
+    id: 'ep1',
+    name: 'GET /health',
+    method: 'GET' as const,
+    pathPattern: '/health',
+    requestSchema: {
+      pathParams: [],
+      queryParams: [],
+      headers: [],
+      cookies: [],
+    },
+    requestValidation: [],
+    responseRules: [],
+    defaultResponse: {
+      status: 200,
+      headers: [{ key: 'Content-Type', value: 'application/json', enabled: true }],
+      body: { type: 'json' as const, content: '{}' },
+    },
+  };
+  return {
+    id,
+    name,
+    source: { kind: 'manual', endpoints: [endpoint] },
+    endpoints: [endpoint],
+    defaultPort: null,
+    cors: { enabled: false, origins: [] },
+    createdAt: T0,
+    updatedAt: T0,
+  };
+}
+
+let bridge: {
+  start: ReturnType<typeof vi.fn>;
+  stop: ReturnType<typeof vi.fn>;
+  list: ReturnType<typeof vi.fn>;
+  getRuntime: ReturnType<typeof vi.fn>;
+  stopAll: ReturnType<typeof vi.fn>;
+};
+
+beforeEach(() => {
+  bridge = {
+    start: vi.fn().mockResolvedValue({
+      port: 4040,
+      pid: 1234,
+      startedAt: T0,
+      lastError: null,
+      requestCount: 0,
+    } satisfies MockRuntimeEntry),
+    stop: vi.fn().mockResolvedValue({ ok: true }),
+    list: vi.fn().mockResolvedValue([]),
+    getRuntime: vi.fn().mockResolvedValue(null),
+    stopAll: vi.fn().mockResolvedValue({ ok: true }),
+  };
+  (window as unknown as { apicircleDesktop?: unknown }).apicircleDesktop = { mock: bridge };
+});
+
+afterEach(() => {
+  delete (window as unknown as { apicircleDesktop?: unknown }).apicircleDesktop;
+  vi.useRealTimers();
+});
+
+describe('MockServersPanel (post-rich-editor redesign)', () => {
+  it('shows the empty state when no mocks exist + no active selection', async () => {
+    delete (window as unknown as { apicircleDesktop?: unknown }).apicircleDesktop;
+    await renderWithStore(<MockServersPanel />);
+    expect(screen.getByText('No mock servers yet.')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /Create your first mock server/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('renders the server-summary view when a server is active without an endpoint', async () => {
+    await renderWithStore(<MockServersPanel />);
+    useWorkspaceStore.setState((s) => ({
+      ...s,
+      synced: {
+        ...(s.synced ?? ({} as never)),
+        mockServers: { m1: fixtureMock('m1', 'Petstore') },
+      },
+      activeMockServerId: 'm1',
+      activeMockEndpointId: null,
+    }));
+    expect(await screen.findByLabelText('Mock server name')).toHaveValue('Petstore');
+  });
+
+  it('renders the MockEndpointEditor flow + node editor when both a server and endpoint are active', async () => {
+    await renderWithStore(<MockServersPanel />);
+    useWorkspaceStore.setState((s) => ({
+      ...s,
+      synced: {
+        ...(s.synced ?? ({} as never)),
+        mockServers: { m1: fixtureMock('m1', 'Petstore') },
+      },
+      activeMockServerId: 'm1',
+      activeMockEndpointId: 'ep1',
+    }));
+    // Flow renders the four nodes as buttons. The Request tab is gone
+    // (its inputs were not consumed elsewhere) — the flow shows the
+    // pipeline shape directly.
+    expect(
+      await screen.findByRole('button', { name: /Endpoint GET \/health/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Validation node/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Response rules node/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Default response node/ })).toBeInTheDocument();
+  });
+
+  it('clicking the Default response node surfaces the response editor below the flow', async () => {
+    await renderWithStore(<MockServersPanel />);
+    useWorkspaceStore.setState((s) => ({
+      ...s,
+      synced: {
+        ...(s.synced ?? ({} as never)),
+        mockServers: { m1: fixtureMock('m1', 'Petstore') },
+      },
+      activeMockServerId: 'm1',
+      activeMockEndpointId: 'ep1',
+    }));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /Default response node/ }));
+    // The MockResponseEditor surfaces a status input labelled by its label prop.
+    expect(screen.getByLabelText('Default response status')).toBeInTheDocument();
+  });
+
+  it('shows the desktop runtime banner when the bridge is missing AND mocks exist', async () => {
+    delete (window as unknown as { apicircleDesktop?: unknown }).apicircleDesktop;
+    await renderWithStore(<MockServersPanel />);
+    useWorkspaceStore.setState((s) => ({
+      ...s,
+      synced: {
+        ...(s.synced ?? ({} as never)),
+        mockServers: { m1: fixtureMock('m1', 'Petstore') },
+      },
+    }));
+    expect(await screen.findByText(/Running them needs the Desktop App/)).toBeInTheDocument();
+  });
+
+  it('B-fix: empty-state Create CTA opens the modal', async () => {
+    delete (window as unknown as { apicircleDesktop?: unknown }).apicircleDesktop;
+    await renderWithStore(<MockServersPanel />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Create your first mock server/ }));
+    expect(useWorkspaceStore.getState().mocksCreateModalOpen).toBe(true);
+  });
+
+  it('B-fix: createMockServer (manual, empty) seeds a server with no endpoints — endpoints added later via the sidebar', async () => {
+    await renderWithStore(<MockServersPanel />);
+    const id = useWorkspaceStore
+      .getState()
+      .createMockServer({ name: 'Smoke', source: { kind: 'manual', endpoints: [] } });
+    const created = useWorkspaceStore.getState().synced!.mockServers[id];
+    expect(created.source.kind).toBe('manual');
+    expect(created.endpoints).toEqual([]);
+  });
+
+  it('B-fix: addMockEndpoint seeds the new schema shape (defaultResponse, requestSchema, etc.) and selects the endpoint', async () => {
+    await renderWithStore(<MockServersPanel />);
+    const sid = useWorkspaceStore
+      .getState()
+      .createMockServer({ name: 'Smoke', source: { kind: 'manual', endpoints: [] } });
+    const eid = useWorkspaceStore.getState().addMockEndpoint(sid);
+    const ep = useWorkspaceStore.getState().synced!.mockServers[sid].endpoints[0];
+    expect(ep.id).toBe(eid);
+    expect(ep.requestSchema).toEqual({
+      pathParams: [],
+      queryParams: [],
+      headers: [],
+      cookies: [],
+    });
+    expect(ep.responseRules).toEqual([]);
+    expect(ep.requestValidation).toEqual([]);
+    expect(ep.defaultResponse.status).toBe(200);
+    expect(ep.defaultResponse.body.type).toBe('json');
+    // The new endpoint becomes active so the editor pane surfaces it.
+    expect(useWorkspaceStore.getState().activeMockEndpointId).toBe(eid);
+  });
+
+  it('B-fix: updateMockEndpoint patches a single endpoint field while preserving the rest', async () => {
+    await renderWithStore(<MockServersPanel />);
+    const sid = useWorkspaceStore
+      .getState()
+      .createMockServer({ name: 'Smoke', source: { kind: 'manual', endpoints: [] } });
+    const eid = useWorkspaceStore.getState().addMockEndpoint(sid);
+    useWorkspaceStore
+      .getState()
+      .updateMockEndpoint(sid, eid, { method: 'POST', pathPattern: '/orders' });
+    const ep = useWorkspaceStore.getState().synced!.mockServers[sid].endpoints[0];
+    expect(ep.method).toBe('POST');
+    expect(ep.pathPattern).toBe('/orders');
+    // Defaults preserved.
+    expect(ep.defaultResponse.status).toBe(200);
+  });
+});
