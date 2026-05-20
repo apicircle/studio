@@ -1,0 +1,195 @@
+{
+  "schemaVersion": 1,
+  "id": "ws-seeded",
+  "name": "Seeded Workspace",
+  "collections": {
+    "items": {
+      "c1": {
+        "id": "c1",
+        "name": "API v1"
+      }
+    },
+    "folders": {
+      "f1": {
+        "id": "f1",
+        "name": "Users",
+        "collectionId": "c1"
+      }
+    },
+    "requests": {
+      "r1": {
+        "id": "r1",
+        "name": "Get user",
+        "method": "GET",
+        "url": "https://httpbin.org/get?id={{id}}",
+        "folderId": "f1",
+        "collectionId": "c1",
+        "headers": [
+          {
+            "key": "Accept",
+            "value": "application/json",
+            "enabled": true
+          }
+        ],
+        "auth": {
+          "type": "inherit"
+        },
+        "body": {
+          "type": "none"
+        }
+      },
+      "r2": {
+        "id": "r2",
+        "name": "Create user",
+        "method": "POST",
+        "url": "https://httpbin.org/post",
+        "folderId": "f1",
+        "collectionId": "c1",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "enabled": true
+          }
+        ],
+        "auth": {
+          "type": "bearer",
+          "bearer": {
+            "token": "{{token}}"
+          }
+        },
+        "body": {
+          "type": "raw",
+          "raw": "{\"name\":\"alice\"}",
+          "rawLanguage": "json"
+        }
+      }
+    },
+    "tree": [
+      {
+        "id": "c1",
+        "type": "collection",
+        "children": [
+          {
+            "id": "f1",
+            "type": "folder",
+            "children": [
+              {
+                "id": "r1",
+                "type": "request"
+              },
+              {
+                "id": "r2",
+                "type": "request"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "environments": {
+    "items": {
+      "Dev": {
+        "name": "Dev",
+        "variables": [
+          {
+            "key": "baseUrl",
+            "value": "https://httpbin.org",
+            "secret": false
+          },
+          {
+            "key": "id",
+            "value": "1",
+            "secret": false
+          },
+          {
+            "key": "token",
+            "value": "abc.def.ghi",
+            "secret": false
+          }
+        ]
+      },
+      "Prod": {
+        "name": "Prod",
+        "variables": [
+          {
+            "key": "baseUrl",
+            "value": "https://api.example.com",
+            "secret": false
+          },
+          {
+            "key": "id",
+            "value": "42",
+            "secret": false
+          }
+        ]
+      }
+    },
+    "activeName": "Dev",
+    "priorityOrder": ["Dev", "Prod"]
+  },
+  "executionPlans": {
+    "p1": {
+      "id": "p1",
+      "name": "Smoke",
+      "steps": [
+        {
+          "requestId": "r1",
+          "enabled": true
+        },
+        {
+          "requestId": "r2",
+          "enabled": true
+        }
+      ],
+      "envPriorityOrder": ["Dev"]
+    }
+  },
+  "mockServers": {
+    "m1": {
+      "id": "m1",
+      "name": "Users Mock",
+      "endpoints": [
+        {
+          "id": "e1",
+          "method": "GET",
+          "path": "/users/:id",
+          "responses": [
+            {
+              "id": "rsp1",
+              "status": 200,
+              "headers": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\"id\":\"{id}\",\"name\":\"alice\"}"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "linkedWorkspaces": {},
+  "linkedOverrides": {
+    "requests": {},
+    "environmentVars": {}
+  },
+  "globalAssets": {
+    "schemas": {
+      "sUser": {
+        "id": "sUser",
+        "name": "User",
+        "content": "{\"type\": \"object\", \"required\": [\"name\"], \"properties\": {\"id\": {\"type\": \"integer\"}, \"name\": {\"type\": \"string\"}}}"
+      }
+    },
+    "graphql": {}
+  },
+  "secretKeys": {},
+  "releases": {
+    "self": null,
+    "perLink": {}
+  }
+}

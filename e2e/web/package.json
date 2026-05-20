@@ -1,0 +1,25 @@
+{
+  "name": "@apicircle/e2e-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Playwright E2E suite for the web app.",
+  "scripts": {
+    "test:e2e": "playwright test --project=chromium",
+    "test:e2e:live-github": "playwright test --project=chromium-live-github",
+    "test:e2e:smoke": "playwright test --grep @smoke",
+    "test:e2e:visual": "playwright test --project=visual-baseline",
+    "test:e2e:full-sweep": "node scripts/run-full-sweep.mjs",
+    "test:e2e:regression-freeze": "node scripts/regression-freeze.mjs",
+    "test:e2e:install": "playwright install --with-deps chromium"
+  },
+  "dependencies": {
+    "@apicircle/core": "workspace:*",
+    "@apicircle/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.0",
+    "@playwright/test": "^1.48.0",
+    "@types/node": "^20.0.0"
+  }
+}

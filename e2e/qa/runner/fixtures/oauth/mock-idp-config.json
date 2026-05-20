@@ -1,0 +1,23 @@
+{
+  "issuer": "https://mock-idp.local",
+  "authorizationEndpoint": "http://localhost:5176/_mock/oauth/authorize",
+  "tokenEndpoint": "http://localhost:5176/_mock/oauth/token",
+  "deviceAuthorizationEndpoint": "http://localhost:5176/_mock/oauth/device",
+  "clients": {
+    "test-confidential": {
+      "clientSecret": "shh",
+      "grants": ["client_credentials", "authorization_code", "password", "refresh_token"]
+    },
+    "test-public-pkce": {
+      "grants": ["authorization_code"],
+      "pkce": true
+    }
+  },
+  "users": [
+    {
+      "username": "alice",
+      "password": "wonder"
+    }
+  ],
+  "scopes": ["read", "write", "admin"]
+}

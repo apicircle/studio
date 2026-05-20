@@ -1,0 +1,38 @@
+openapi: 3.0.3
+info:
+  title: Sample API
+  version: 1.0.0
+servers:
+  - url: https://httpbin.org
+paths:
+  /get:
+    get:
+      summary: Echo GET
+      parameters:
+        - in: query
+          name: id
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+  /post:
+    post:
+      summary: Echo POST
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/User' }
+      responses:
+        '200': { description: OK }
+components:
+  schemas:
+    User:
+      type: object
+      required: [name]
+      properties:
+        id: { type: integer }
+        name: { type: string }

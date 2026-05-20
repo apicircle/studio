@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm -r check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Unit + integration tests with coverage
+        run: pnpm test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.run_id }}
+          path: |
+            packages/*/coverage
+            apps/*/coverage
+          retention-days: 14
+
+      - name: Build
+        run: pnpm build
+
+      - name: Bundle-size budget (web app)
+        run: |
+          set -e
+          GZIP_JS=$(gzip -c apps/web/dist/assets/index-*.js | wc -c)
+          GZIP_CSS=$(gzip -c apps/web/dist/assets/index-*.css | wc -c)
+          echo "JS gzip: $GZIP_JS bytes"
+          echo "CSS gzip: $GZIP_CSS bytes"
+          # Ceiling sits above the current ~294 KB app bundle (Monaco is
+          # vendored separately and not counted here). Lower this once the
+          # panels are code-split with dynamic import().
+          if [ "$GZIP_JS" -gt 340000 ]; then
+            echo "::error::JS bundle exceeds 332 KB gzipped budget ($GZIP_JS bytes)"
+            exit 1
+          fi
+          if [ "$GZIP_CSS" -gt 30720 ]; then
+            echo "::error::CSS bundle exceeds 30 KB gzipped budget ($GZIP_CSS bytes)"
+            exit 1
+          fi
+
+  commit-lint:
+    name: Conventional commits
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Lint PR commits
+        run: pnpm dlx @commitlint/cli --from origin/${{ github.base_ref }} --to HEAD

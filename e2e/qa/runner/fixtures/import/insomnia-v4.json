@@ -1,0 +1,37 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-05-14T00:00:00.000Z",
+  "__export_source": "insomnia.desktop.app:v8.0.0",
+  "resources": [
+    {
+      "_id": "wrk_1",
+      "_type": "workspace",
+      "name": "Sample Insomnia",
+      "scope": "collection"
+    },
+    {
+      "_id": "req_1",
+      "parentId": "wrk_1",
+      "_type": "request",
+      "name": "Get",
+      "method": "GET",
+      "url": "https://httpbin.org/get",
+      "headers": [
+        {
+          "name": "Accept",
+          "value": "application/json"
+        }
+      ]
+    },
+    {
+      "_id": "env_1",
+      "parentId": "wrk_1",
+      "_type": "environment",
+      "name": "Base",
+      "data": {
+        "baseUrl": "https://httpbin.org"
+      }
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "info": {
+    "name": "Postman v2.1 - Auth Variants",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Bearer",
+      "request": {
+        "method": "GET",
+        "url": "https://httpbin.org/bearer",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "abc"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Basic",
+      "request": {
+        "method": "GET",
+        "url": "https://httpbin.org/basic-auth/user/pass",
+        "auth": {
+          "type": "basic",
+          "basic": [
+            {
+              "key": "username",
+              "value": "user"
+            },
+            {
+              "key": "password",
+              "value": "pass"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "API Key (header)",
+      "request": {
+        "method": "GET",
+        "url": "https://httpbin.org/headers",
+        "auth": {
+          "type": "apikey",
+          "apikey": [
+            {
+              "key": "key",
+              "value": "X-Api-Key"
+            },
+            {
+              "key": "value",
+              "value": "secret-123"
+            },
+            {
+              "key": "in",
+              "value": "header"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "token",
+      "value": "abc"
+    }
+  ]
+}

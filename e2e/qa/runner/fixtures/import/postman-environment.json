@@ -1,0 +1,18 @@
+{
+  "id": "env-fixture",
+  "name": "Dev",
+  "values": [
+    {
+      "key": "baseUrl",
+      "value": "https://httpbin.org",
+      "enabled": true
+    },
+    {
+      "key": "token",
+      "value": "abc.def.ghi",
+      "type": "secret",
+      "enabled": true
+    }
+  ],
+  "_postman_variable_scope": "environment"
+}

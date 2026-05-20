@@ -1,0 +1,103 @@
+appId: com.apicircle.studio
+productName: API Circle Studio
+copyright: 'Copyright © 2026 API Circle'
+
+directories:
+  output: release
+  buildResources: build
+
+# Stable filename pattern so electron-updater's latest.yml index can resolve
+# the right artifact across releases.
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+files:
+  - dist/**/*
+  - package.json
+  # Brand mark — main.ts reads build/icon.{png,ico,icns} at runtime for the
+  # BrowserWindow + dock icon, so the directory has to land inside the asar.
+  - build/icon.png
+  - build/icon.ico
+  - build/icon.icns
+  - build/icons/**/*
+  - '!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}'
+  - '!**/*.{md,markdown,test.ts,spec.ts}'
+  - '!**/{tsconfig.json,vitest.config.ts,tsup.config.ts}'
+
+extraResources:
+  # The web build output is loaded by main.ts via file://; ship it inside
+  # the app bundle.
+  - from: ../web/dist
+    to: web/dist
+
+# Auto-update channel. The desktop process queries
+# https://github.com/apicircle/studio/releases/latest at launch + on demand;
+# electron-updater downloads the matching artifact in the background and
+# surfaces an "Update ready — restart" banner via the
+# `apicircle:update:available` IPC channel.
+#
+# Code-signing: configured below for both macOS (Developer ID + notarisation
+# via env vars) and Windows (Authenticode certificate via env vars).
+# Local dev builds (no env vars set) skip signing and continue to produce
+# unsigned artifacts; CI builds with the env vars set produce signed ones.
+# electron-updater verifies the publisher chain when the running app was
+# signed, so once signed builds ship, the auto-update path is integrity-
+# protected against MITM + GitHub account compromise.
+publish:
+  - provider: github
+    owner: apicircle
+    repo: studio
+    releaseType: release
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  icon: build/icon.icns
+  # Code-signing wiring for CI builds. Local dev / unset-env builds remain
+  # unsigned (electron-builder skips signing when no identity / cert is
+  # available). To produce signed + notarised macOS artifacts in CI, set:
+  #   - `CSC_LINK`              (base64 of the .p12 Developer ID Application cert)
+  #   - `CSC_KEY_PASSWORD`      (cert password)
+  #   - `APPLE_ID`              (notarisation account email)
+  #   - `APPLE_APP_SPECIFIC_PASSWORD` (app-specific password)
+  #   - `APPLE_TEAM_ID`         (notarisation team id)
+  # When all are present electron-builder signs the .app + notarises the .dmg.
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  # Notarisation defaults to true when APPLE_ID is set; explicit null lets
+  # local builds skip without erroring on missing creds.
+  notarize: null
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+  # Authenticode certificate is provided via env at build time:
+  #   - `CSC_LINK`         (path or base64 of the .pfx)
+  #   - `CSC_KEY_PASSWORD` (cert password)
+  # `publisherName` MUST match the certificate's Subject CN — electron-
+  # updater uses it to verify that downloaded update artifacts share the
+  # publisher chain with the running app. Once signed builds ship, this
+  # closes audit P1 #17 (auto-updater installing unsigned artifacts).
+  # Local dev / unset-cert builds are still produced unsigned — same
+  # behaviour as before, just with `publisherName` now declared.
+  publisherName: 'API Circle'
+  signingHashAlgorithms:
+    - sha256
+  # electron-updater on Windows verifies update artifacts against this
+  # publisher name at install-time when the running app was signed by the
+  # same publisher. Default is true; we set it explicitly so a future
+  # release that disables auto-update signing is a visible change.
+  verifyUpdateCodeSignature: true
+
+linux:
+  category: Development
+  target:
+    - AppImage
+    - deb
+  icon: build/icon.png
+
+asar: true
+nodeGypRebuild: false
