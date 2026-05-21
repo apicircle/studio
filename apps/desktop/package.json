@@ -3,6 +3,11 @@
   "version": "1.0.1",
   "private": true,
   "description": "Electron shell that hosts the API Circle Studio UI with native OS-keychain secret storage.",
+  "homepage": "https://github.com/apicircle/studio",
+  "author": {
+    "name": "API Circle",
+    "email": "apicircle365@gmail.com"
+  },
   "main": "dist/main/main.js",
   "scripts": {
     "build:main": "tsc -p tsconfig.main.json",

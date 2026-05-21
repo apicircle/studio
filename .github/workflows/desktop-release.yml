@@ -119,10 +119,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
           # Optional code-signing wiring. When any of these secrets are
-          # missing, electron-builder produces unsigned artifacts — same
-          # behaviour as a local dev build — instead of erroring. The
-          # comments in apps/desktop/electron-builder.yml document the
-          # exact set of env vars per OS.
+          # missing, GitHub substitutes an empty string — and electron-
+          # builder treats an empty CSC_LINK as a literal path, resolves
+          # it to the cwd, and fails with "not a file". The run script
+          # below unsets these env vars when empty so electron-builder
+          # cleanly falls back to producing unsigned artifacts.
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -138,6 +139,16 @@ jobs:
           # is what we ship until real Developer ID certs land.
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: |
+          # Unset any empty signing env vars so electron-builder treats
+          # them as "not provided" rather than "provided but empty". This
+          # is the difference between "produce unsigned artifact" (good)
+          # and "try to read empty path as cert file → ENOENT" (bad).
+          for v in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [[ -z "${!v}" ]]; then
+              unset "$v"
+            fi
+          done
+
           pnpm --filter @apicircle/desktop exec electron-builder \
             --config electron-builder.yml \
             --publish "${{ steps.publish_mode.outputs.mode }}"
