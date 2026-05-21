@@ -1,0 +1,125 @@
+name: Desktop Release
+
+# Builds the Electron installers on each native host (linux/macos/windows) and,
+# when triggered by a `v*` tag or an explicit workflow_dispatch opt-in,
+# publishes them to a GitHub Release together with electron-updater's
+# `latest*.yml` index files. Casual runs (re-run, dispatch with publish=false)
+# only upload artifacts and never touch the Releases API, so a missing
+# code-signing cert or release token can't fail the pipeline.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish installers to GitHub Releases (otherwise only upload as workflow artifacts)
+        type: boolean
+        default: false
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # fail-fast off so a broken signing pipeline on one OS doesn't kill the
+    # whole release.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Tag + history needed so electron-builder can stamp the release
+          # notes from the git log when --publish always is set.
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace (web renderer + desktop main)
+        # `turbo build` walks the workspace graph so @apicircle/web (renderer)
+        # and the shared/core/ui packages it depends on land in dist/ before
+        # electron-builder packages the asar.
+        run: pnpm build
+
+      - name: Resolve publish mode
+        id: publish_mode
+        shell: bash
+        run: |
+          # Tag pushes always publish. Manual dispatch publishes only when
+          # the input is checked. Everything else (re-run, branch push that
+          # got here somehow) stays on "never".
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" ]]; then
+            mode="always"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.publish }}" == "true" ]]; then
+            mode="always"
+          else
+            mode="never"
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "Publish mode: $mode"
+
+      - name: Build installers
+        shell: bash
+        env:
+          # GH_TOKEN is what electron-builder reads when publishing to GitHub.
+          # The default GITHUB_TOKEN scope (contents:write, set above) is
+          # sufficient for uploading release assets to the same repo.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          # Optional code-signing wiring. When any of these secrets are
+          # missing, electron-builder produces unsigned artifacts — same
+          # behaviour as a local dev build — instead of erroring. The
+          # comments in apps/desktop/electron-builder.yml document the
+          # exact set of env vars per OS.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          pnpm --filter @apicircle/desktop exec electron-builder \
+            --config electron-builder.yml \
+            --publish "${{ steps.publish_mode.outputs.mode }}"
+
+      - name: Upload installer artifacts
+        # Always upload so a failing publish step still leaves something
+        # downloadable on the workflow run for triage.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-installers-${{ matrix.os }}
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest*.yml
+          # Each runner only emits its own platform's installers, so the
+          # globs that don't match are expected — don't fail the step.
+          if-no-files-found: ignore
+          retention-days: 14
