@@ -59,6 +59,34 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install Linux packaging tools
+        # electron-builder produces the `deb` target via dpkg + fakeroot. They
+        # are usually preinstalled on ubuntu-latest, but recent runner-image
+        # refreshes have occasionally dropped fakeroot — when that happens the
+        # AppImage builds and uploads fine, then deb packaging fails and
+        # marks the whole job red. Installing explicitly removes the variance.
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fakeroot dpkg
+
+      - name: Verify tag matches apps/desktop/package.json version
+        # When this workflow is fired by a `v*` tag, the package.json version
+        # MUST match the tag — otherwise electron-builder names artifacts and
+        # creates the Release using the package.json version, silently
+        # uploading to the wrong (or pre-existing) Release. Failing fast here
+        # surfaces the mismatch before any build cost is paid.
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(node -p "require('./apps/desktop/package.json').version")
+          if [[ "$tag" != "$pkg" ]]; then
+            echo "::error::Tag v$tag does not match apps/desktop/package.json version $pkg. Bump apps/desktop/package.json (and run pnpm install --lockfile-only) before retagging."
+            exit 1
+          fi
+          echo "Tag and package version both at $pkg ✓"
+
       - name: Build workspace (web renderer + desktop main)
         # `turbo build` walks the workspace graph so @apicircle/web (renderer)
         # and the shared/core/ui packages it depends on land in dist/ before
@@ -100,6 +128,15 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+          # Disable electron-builder's auto-discovery of macOS signing
+          # identities. On macos-14 (Apple Silicon) runners the system
+          # keychain has a stub identity that electron-builder picks up,
+          # then fails to use — the dmg step dies in ~30-60s before
+          # producing any artifact. With auto-discovery off, missing
+          # CSC_LINK/APPLE_* secrets cleanly produce unsigned dmgs, which
+          # is what we ship until real Developer ID certs land.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
         run: |
           pnpm --filter @apicircle/desktop exec electron-builder \
             --config electron-builder.yml \
