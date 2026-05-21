@@ -19,11 +19,30 @@ import { createRequire } from 'node:module';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 
-// @playwright/test is installed only inside apps/web — resolve against that.
+// @playwright/test is only present in the dev tree (hoisted from the e2e
+// packages that depend on it). CI release runners install with strict pnpm
+// isolation and a frozen lockfile, where the renderer can't see it. The
+// rendered icons are committed in apps/desktop/build/, so a missing
+// Playwright is treated as "skip the refresh, use the committed assets"
+// rather than a hard failure. If you genuinely want to re-render, run
+// `pnpm icons` locally where the e2e workspace has installed Playwright.
 const requireFromWeb = createRequire(resolve(ROOT, 'apps/web/package.json'));
-const pw = requireFromWeb('@playwright/test');
-const chromium = pw.chromium ?? pw.default?.chromium;
-if (!chromium) throw new Error('chromium not exported from @playwright/test');
+let chromium;
+try {
+  const pw = requireFromWeb('@playwright/test');
+  chromium = pw.chromium ?? pw.default?.chromium;
+  if (!chromium) throw new Error('chromium not exported from @playwright/test');
+} catch (err) {
+  if (err && err.code === 'MODULE_NOT_FOUND') {
+    console.warn(
+      '[render-icons] @playwright/test not resolvable from apps/web — ' +
+        'skipping icon rasterisation. The committed apps/desktop/build/icon.* ' +
+        'assets will be used as-is.',
+    );
+    process.exit(0);
+  }
+  throw err;
+}
 
 const requireFromRoot = createRequire(resolve(ROOT, 'package.json'));
 const png2icons = requireFromRoot('png2icons');
