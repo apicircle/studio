@@ -16,13 +16,39 @@ jobs:
       actions: read
       contents: read
       security-events: write
-    timeout-minutes: 20
+    # security-extended is heavy; bump the cap to absorb the full sweep
+    # plus the autobuild step on a fresh runner cache.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: github/codeql-action/init@v3
         with:
           languages: javascript-typescript
-          queries: security-extended
+          # Inline config that skips dependency / build / coverage trees so
+          # the analyzer only looks at code we wrote. Without these excludes
+          # the database balloons with node_modules and the analyze step OOMs
+          # or times out on a 7 GB ubuntu-latest runner.
+          config: |
+            paths:
+              - apps
+              - packages
+              - scripts
+              - e2e
+            paths-ignore:
+              - '**/node_modules'
+              - '**/dist'
+              - '**/build'
+              - '**/coverage'
+              - '**/.turbo'
+              - '**/playwright-report'
+              - '**/test-results'
+              - 'docs/qa/results'
+              - 'apps/desktop/release'
+              - '**/*.min.js'
+              - '**/*.d.ts'
+          # Default suite is enough to clear the public-repo bar; switch back
+          # to `security-extended` once we can afford a larger runner.
+          queries: +security-and-quality
       - uses: github/codeql-action/analyze@v3
         with:
           category: '/language:javascript-typescript'
