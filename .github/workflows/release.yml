@@ -171,7 +171,13 @@ jobs:
               echo "▶ publishing $pkg@$version"
             fi
 
-            if (cd "$dir" && npm publish "${publish_args[@]}"); then
+            # `pnpm publish` (not `npm publish`) is critical here: when
+            # publishing from a workspace, pnpm rewrites `workspace:*`
+            # specifiers in dependencies to the actual version of each
+            # local package. `npm publish` leaves `workspace:*` in the
+            # tarball, producing packages npm consumers can't install
+            # (EUNSUPPORTEDPROTOCOL).
+            if (cd "$dir" && pnpm publish "${publish_args[@]}"); then
               published+=("$pkg@$version")
             else
               failed+=("$pkg@$version")

@@ -1,6 +1,6 @@
 {
   "name": "@apicircle/mock-server-core",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": false,
   "type": "module",
   "description": "Hono-based mock server engine for API Circle. Parses OpenAPI/Postman/Insomnia into mock endpoints, serves them on Node/Bun/edge runtimes.",
