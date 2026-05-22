@@ -20,8 +20,8 @@ jobs:
     # plus the autobuild step on a fresh runner cache.
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
+      - uses: actions/checkout@v6
+      - uses: github/codeql-action/init@v4
         with:
           languages: javascript-typescript
           # Inline config that skips dependency / build / coverage trees so
@@ -49,6 +49,6 @@ jobs:
           # Default suite is enough to clear the public-repo bar; switch back
           # to `security-extended` once we can afford a larger runner.
           queries: +security-and-quality
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@v4
         with:
           category: '/language:javascript-typescript'

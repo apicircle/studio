@@ -39,19 +39,19 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           # Tag + history needed so electron-builder can stamp the release
           # notes from the git log when --publish always is set.
           fetch-depth: 0
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 9.15.0
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: pnpm
@@ -157,7 +157,7 @@ jobs:
         # Always upload so a failing publish step still leaves something
         # downloadable on the workflow run for triage.
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-installers-${{ matrix.os }}
           path: |

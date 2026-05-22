@@ -33,4 +33,14 @@ export default defineConfig({
   // imported and bundles poorly. Both stay resolvable from node_modules in the
   // packaged asar.
   external: ['electron', 'electron-updater'],
+  // Prefer CJS entry points over ESM when bundling node_modules deps.
+  // tsup defaults to `['module', 'main']` (tree-shaking-friendly), which
+  // pulls @jsdevtools/ono's ESM build into our CJS bundle and crashes at
+  // runtime with "Cannot convert undefined or null to object" inside
+  // Object.assign — an ESM/CJS interop mismatch. Forcing `main` priority
+  // lands us on the CJS build, which inlines cleanly.
+  esbuildOptions(options) {
+    options.mainFields = ['main', 'module'];
+    options.conditions = ['require', 'node'];
+  },
 });
