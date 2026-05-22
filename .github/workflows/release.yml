@@ -1,20 +1,27 @@
 name: Release
 
-# Publishes every non-private @apicircle/* package to npm at the version
-# currently checked in to its package.json. Designed to release straight
+# Publishes the five public @apicircle/* packages to npm at the version
+# currently checked in to each package.json. Designed to release straight
 # from the main branch — no changeset PR dance.
 #
 # Triggers:
-#   - workflow_dispatch (manual button in the Actions tab) — the normal way
-#     to cut a release. Optional `dry-run` input runs `npm publish --dry-run`
-#     so you can preview the tarball without pushing anything to npm.
+#   - workflow_dispatch — manual button in the Actions tab. Optional
+#     `dry-run` input runs `npm publish --dry-run` so you can preview
+#     the tarball without pushing anything to npm.
 #   - push to main — auto-publishes whenever a commit lands on main that
 #     bumps a publishable package version. Versions already on npm are
 #     skipped, so re-running on an unrelated commit is a safe no-op.
 #
-# Publishable packages (anything in packages/* with "private": false):
-#   @apicircle/shared, @apicircle/core, @apicircle/cli,
-#   @apicircle/mock-server-core, @apicircle/mcp-server.
+# Packages published (explicit allowlist — keep in sync with the matrix):
+#   @apicircle/shared
+#   @apicircle/core
+#   @apicircle/mock-server-core
+#   @apicircle/mcp-server
+#   @apicircle/cli
+#
+# Other workspace members (@apicircle/git, @apicircle/ui-components,
+# @apicircle/web, @apicircle/desktop, examples/*) are intentionally NOT
+# published — they're either private or internal-only.
 #
 # Required secret: NPM_TOKEN — npm automation token for the `apicircle`
 # account (the @apicircle scope is owned by that user).
@@ -36,6 +43,12 @@ concurrency:
 permissions:
   contents: write
   id-token: write
+
+env:
+  # Single source of truth for what ships. Space-separated list of the
+  # pnpm package names to publish. The build step uses these as
+  # `--filter` arguments; the publish step iterates them.
+  RELEASE_PACKAGES: '@apicircle/shared @apicircle/core @apicircle/mock-server-core @apicircle/mcp-server @apicircle/cli'
 
 jobs:
   release:
@@ -66,17 +79,42 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
-        run: pnpm -r check
+      - name: Typecheck (release packages only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          filters=""
+          for pkg in $RELEASE_PACKAGES; do
+            filters+=" --filter $pkg"
+          done
+          # shellcheck disable=SC2086
+          pnpm $filters check
 
-      - name: Unit + integration tests
-        run: pnpm test
+      - name: Unit tests (release packages only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          filters=""
+          for pkg in $RELEASE_PACKAGES; do
+            filters+=" --filter $pkg"
+          done
+          # shellcheck disable=SC2086
+          pnpm $filters test
 
-      - name: Build workspace
-        # Produces dist/ for every package via tsup. Required before publish
-        # so the files referenced by each package's publishConfig
-        # (./dist/index.{js,cjs,d.ts,d.cts}) exist when npm packs.
-        run: pnpm build
+      - name: Build release packages
+        # `--filter <pkg>...` (note the trailing `...`) tells pnpm to build
+        # the package AND its workspace dependencies, but nothing else.
+        # That excludes apps/web, apps/desktop, examples/*, and any
+        # private packages that aren't depended on by the release set.
+        shell: bash
+        run: |
+          set -euo pipefail
+          filters=""
+          for pkg in $RELEASE_PACKAGES; do
+            filters+=" --filter ${pkg}..."
+          done
+          # shellcheck disable=SC2086
+          pnpm $filters build
 
       - name: Publish to npm
         env:
@@ -87,30 +125,23 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Collect every non-private package directory under packages/*.
-          # `pnpm m ls` would also work but reading package.json directly
-          # keeps this independent of pnpm's filter syntax.
-          mapfile -t pkg_dirs < <(
-            for dir in packages/*/; do
-              if [[ -f "$dir/package.json" ]]; then
-                is_private=$(node -p "require('./$dir/package.json').private === true")
-                if [[ "$is_private" != "true" ]]; then
-                  echo "$dir"
-                fi
-              fi
-            done
-          )
+          # Resolve each release package name to its on-disk directory by
+          # reading the workspace manifest. This avoids hard-coding
+          # packages/<name> paths in case a package ever moves.
+          declare -A pkg_dirs
+          for pkg in $RELEASE_PACKAGES; do
+            dir=$(pnpm --filter "$pkg" exec node -p 'process.cwd()' | tail -n1)
+            if [[ -z "$dir" || ! -f "$dir/package.json" ]]; then
+              echo "::error::Could not resolve directory for $pkg"
+              exit 1
+            fi
+            pkg_dirs[$pkg]="$dir"
+          done
 
-          if [[ ${#pkg_dirs[@]} -eq 0 ]]; then
-            echo "::error::No publishable packages found under packages/*"
-            exit 1
-          fi
-
-          echo "Publishable packages:"
-          for dir in "${pkg_dirs[@]}"; do
-            name=$(node -p "require('./$dir/package.json').name")
-            version=$(node -p "require('./$dir/package.json').version")
-            echo "  - $name@$version  ($dir)"
+          echo "Release set:"
+          for pkg in $RELEASE_PACKAGES; do
+            version=$(node -p "require('${pkg_dirs[$pkg]}/package.json').version")
+            echo "  - $pkg@$version  (${pkg_dirs[$pkg]})"
           done
           echo
 
@@ -118,33 +149,33 @@ jobs:
           skipped=()
           failed=()
 
-          for dir in "${pkg_dirs[@]}"; do
-            name=$(node -p "require('./$dir/package.json').name")
-            version=$(node -p "require('./$dir/package.json').version")
+          for pkg in $RELEASE_PACKAGES; do
+            dir="${pkg_dirs[$pkg]}"
+            version=$(node -p "require('$dir/package.json').version")
 
-            # Skip if this exact version is already on npm. `npm view` exits
-            # non-zero when the version is missing, so guard with `|| true`
-            # and check the captured output.
-            existing=$(npm view "$name@$version" version 2>/dev/null || true)
+            # Skip if this exact version is already on npm. `npm view`
+            # exits non-zero when the version is missing, so guard with
+            # `|| true` and check the captured output.
+            existing=$(npm view "$pkg@$version" version 2>/dev/null || true)
             if [[ "$existing" == "$version" ]]; then
-              echo "↷ $name@$version already on npm — skipping"
-              skipped+=("$name@$version")
+              echo "↷ $pkg@$version already on npm — skipping"
+              skipped+=("$pkg@$version")
               continue
             fi
 
             publish_args=(--access public --no-git-checks)
             if [[ "${DRY_RUN:-false}" == "true" ]]; then
               publish_args+=(--dry-run)
-              echo "▶ [dry-run] publishing $name@$version"
+              echo "▶ [dry-run] publishing $pkg@$version"
             else
-              echo "▶ publishing $name@$version"
+              echo "▶ publishing $pkg@$version"
             fi
 
             if (cd "$dir" && npm publish "${publish_args[@]}"); then
-              published+=("$name@$version")
+              published+=("$pkg@$version")
             else
-              failed+=("$name@$version")
-              # Keep going so one bad package doesn't block the others —
+              failed+=("$pkg@$version")
+              # Keep going so one bad package doesn't block the others;
               # the job is marked failed at the end if any failed.
             fi
           done

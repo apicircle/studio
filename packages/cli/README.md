@@ -4,19 +4,65 @@
 
 <h1 align="center">@apicircle/cli</h1>
 
-Command-line companion to [API Circle Studio](https://github.com/apicircle/studio). Run mock servers, drive the MCP server, import OpenAPI / Postman / Insomnia / curl into a workspace, execute saved plans, and manage multiple workspaces — all from any terminal, no Electron required.
+<p align="center">
+  <strong>API Circle Studio, without the UI.</strong><br />
+  Mock servers, MCP, spec imports, headless plan runs, and multi-workspace management — every Studio feature your team needs in CI, scripts, and SSH sessions.
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/@apicircle/cli"><img src="https://img.shields.io/npm/v/@apicircle/cli?color=cb3837&logo=npm" alt="npm version" /></a>
+  <img src="https://img.shields.io/badge/subcommands-5-blue" alt="5 subcommands" />
+  <img src="https://img.shields.io/badge/runs-CI%20%C2%B7%20Docker%20%C2%B7%20SSH%20%C2%B7%20local-success" alt="Runs everywhere" />
+  <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-brightgreen" alt="Node ≥ 20" />
+</p>
+
+---
+
+## Why a CLI?
+
+The Studio desktop app is great for authoring. But the moment you want to
+**ship**, **schedule**, or **automate**, you need a binary. `@apicircle/cli`
+is exactly that — every workflow the desktop app supports, accessible from
+any terminal, container, or pipeline. No Electron, no GUI dependency, no
+mouse required.
+
+```bash
+# Spin up a mock from an OpenAPI spec — in one command
+apicircle mock ./openapi.yaml --port 4040
+
+# Run your saved smoke tests in CI, fail the build if they fail
+apicircle run "Smoke Tests" --reporter junit
+
+# Boot an MCP server so an AI assistant can drive your workspace
+apicircle mcp
+```
 
 ## Install
 
 ```bash
 npm install -g @apicircle/cli
-# or use without installing
+# or run without installing
 npx @apicircle/cli --help
 ```
 
+Single command, single binary: `apicircle`.
+
+## What you can do with it
+
+| You need to…                                      | Command                                                             |
+| ------------------------------------------------- | ------------------------------------------------------------------- |
+| List, create, switch between workspaces           | `apicircle workspaces <list \| create \| use \| path>`              |
+| Run a local mock server from a spec file          | `apicircle mock <spec> [--port] [--type] [--cors]`                  |
+| Import a spec into a workspace                    | `apicircle import <openapi \| postman \| insomnia \| curl> <input>` |
+| Execute a saved plan headlessly                   | `apicircle run <plan>`                                              |
+| Expose your workspace to an AI assistant over MCP | `apicircle mcp [--workspace-name \| --workspace-path]`              |
+
 ## Workspaces, in one minute
 
-API Circle Studio is **multi-workspace by default**. A workspace is a `{ synced, local }` pair of JSON documents — your collections, environments, mock-server definitions, plans, history. You can have many on a single machine; each is its own GitHub repo, environment set, etc.
+API Circle Studio is **multi-workspace by default**. A workspace is a
+`{ synced, local }` pair of JSON documents — your collections, environments,
+mock-server definitions, plans, history. You can have many on a single
+machine; each is its own GitHub repo, environment set, etc.
 
 There are two ways the CLI finds a workspace:
 
@@ -28,23 +74,30 @@ There are two ways the CLI finds a workspace:
 
 The flags are **mutually exclusive** — passing both is an error.
 
-The registry root defaults to the desktop app's userData (`%APPDATA%\@apicircle\desktop\workspaces\` on Windows; `~/Library/Application Support/@apicircle/desktop/workspaces/` on macOS; `~/.config/@apicircle/desktop/workspaces/` on Linux). Override with `APICIRCLE_WORKSPACES_ROOT` for CI / tests.
+The registry root defaults to the desktop app's userData:
+
+- **Windows** — `%APPDATA%\@apicircle\desktop\workspaces\`
+- **macOS** — `~/Library/Application Support/@apicircle/desktop/workspaces/`
+- **Linux** — `~/.config/@apicircle/desktop/workspaces/`
+
+Override with `APICIRCLE_WORKSPACES_ROOT` for CI / tests.
 
 ## Subcommands
 
 ### `apicircle workspaces` — manage the registry
 
 ```bash
-apicircle workspaces list                 # every registered workspace + which is active
-apicircle workspaces list --json          # JSON for scripts
-apicircle workspaces create "Petstore"    # seed a new workspace and add it to the registry
-apicircle workspaces create "Sandbox" --sample   # seed with one sample request
-apicircle workspaces use Petstore         # set the active workspace by name (or id)
-apicircle workspaces path Petstore        # print the on-disk path for one workspace
-apicircle workspaces path                 # print the workspaces root
+apicircle workspaces list                          # every registered workspace + which is active
+apicircle workspaces list --json                   # JSON for scripts
+apicircle workspaces create "Petstore"             # seed a new workspace + add to the registry
+apicircle workspaces create "Sandbox" --sample     # seed with one sample request
+apicircle workspaces use Petstore                  # set the active workspace by name (or id)
+apicircle workspaces path Petstore                 # print the on-disk path for one workspace
+apicircle workspaces path                          # print the workspaces root
 ```
 
-`workspaces use` accepts the same name-or-id resolution as `--workspace-name`. Case-insensitive name match; falls back to id.
+`workspaces use` resolves the same way as `--workspace-name`: case-insensitive
+name match, falling back to id.
 
 ### `apicircle mcp` — boot the MCP stdio server
 
@@ -59,9 +112,13 @@ apicircle mcp --workspace-name Petstore
 apicircle mcp --workspace-path ./checkout-repo
 ```
 
-With no workspace flag, the server boots against the desktop app's registry root and exposes **all** workspaces. AI clients see them via the new `workspace.list` tool; entity-specific tools default to the active workspace and accept an optional `workspaceId` to scope.
+With no workspace flag, the server boots against the desktop app's registry
+root and exposes **all** workspaces. AI clients see them through the
+`workspace.list` tool; entity tools default to the active workspace and accept
+an optional `workspaceId` to scope.
 
-Wire this into Claude Desktop / Cursor / Codex / etc — see [Connect your AI client](https://github.com/apicircle/studio/blob/main/docs/connect-your-ai-client.md).
+Wire this into Claude Desktop / Cursor / Codex / etc — see
+[Connect your AI client](https://github.com/apicircle/studio/blob/main/docs/connect-your-ai-client.md).
 
 ### `apicircle mock <spec>` — local mock server
 
@@ -71,7 +128,12 @@ apicircle mock ./postman_collection.json --type postman
 apicircle mock ./insomnia_export.json --type insomnia --cors=false
 ```
 
-The CLI binds to a free port unless `--port` is set, prints the URL, and runs until you `Ctrl-C`. This subcommand operates on a spec file directly; it does **not** consult the workspace registry.
+The CLI binds to a free port unless `--port` is set, prints the URL, and runs
+until you `Ctrl-C`. This subcommand operates on a spec file directly — it does
+**not** consult the workspace registry.
+
+Under the hood: `@apicircle/mock-server-core`, the same Hono engine the
+desktop app uses.
 
 ### `apicircle import <type> <input>` — import a spec
 
@@ -90,7 +152,8 @@ apicircle import openapi ./spec.yaml --workspace-path ./checkout-repo
 apicircle import openapi - --workspace-name Petstore < ./spec.yaml
 ```
 
-`<type>` is `curl`, `openapi`, `postman`, or `insomnia`. Each import appends one request per operation / item.
+`<type>` is `curl`, `openapi`, `postman`, or `insomnia`. Each import appends
+one request per operation / item — your existing folder structure stays intact.
 
 ### `apicircle run <plan>` — execute a saved plan headlessly
 
@@ -100,21 +163,25 @@ apicircle run plan_a1b2c3 --env staging --bail --workspace-name Petstore
 apicircle run "Nightly" --secrets ./secrets.json --no-save
 ```
 
-Resolves a plan by name or id, runs each step through the real request engine, evaluates assertions, and carries extracted context forward.
+Resolves a plan by name or id, runs each step through the **real** request
+engine (same auth, same retries, same assertions as the desktop app),
+evaluates assertions, and carries extracted context forward between steps.
 
-Flags:
+**Flags:**
 
-- `--reporter text|json|junit`
-- `--bail` — stop at the first failed step
-- `--env <name>` — layer an environment onto the run
-- `--secrets <file>` or `APICIRCLE_SECRET_*` env vars — encrypted variables
-- `--no-save` — don't write the run to history
-- `--no-assertions` — execute requests but skip assertions
-- `--as <actor>` — override the recorded runner identity
+- `--reporter text|json|junit` — output format; `junit` is ready for CI test reporters.
+- `--bail` — stop at the first failed step.
+- `--env <name>` — layer an environment onto the run.
+- `--secrets <file>` or `APICIRCLE_SECRET_*` env vars — supply encrypted variables.
+- `--no-save` — don't write the run to history.
+- `--no-assertions` — execute requests but skip assertions.
+- `--as <actor>` — override the recorded runner identity.
 
-Exit codes: `0` every step passed, `1` a step failed (or the run was aborted), `2` usage error, `3` the run was denied by the authorization gate. CI gates on it directly.
+**Exit codes:** `0` every step passed, `1` a step failed (or the run was
+aborted), `2` usage error, `3` denied by the authorization gate. Pipelines
+gate on it directly.
 
-## Examples — common workflows
+## Common workflows
 
 **Set up a new workspace from scratch**
 
@@ -132,7 +199,21 @@ cd checkout-workspace
 apicircle run "Smoke Tests" --reporter junit
 ```
 
-(No `--workspace-path` needed when running inside the workspace directory — the CLI's cwd fallback picks it up automatically.)
+(No `--workspace-path` needed when running inside the workspace directory —
+the CLI's cwd fallback picks it up automatically.)
+
+**Mock a third-party API for the duration of your test suite**
+
+```bash
+apicircle mock ./stripe-openapi.yaml --port 4242 &
+MOCK_PID=$!
+
+npm test
+RESULT=$?
+
+kill $MOCK_PID
+exit $RESULT
+```
 
 **Switch the active workspace and verify**
 
@@ -141,6 +222,40 @@ apicircle workspaces use Sandbox
 apicircle workspaces list
 # Sandbox now shows ● next to it.
 ```
+
+## Use cases
+
+- **CI / CD gates** — run smoke tests, contract tests, or full regression
+  plans against staging before promoting to prod.
+- **Mock-driven local dev** — `apicircle mock` in a side terminal, your
+  frontend pointed at it, your backend team unblocked.
+- **Headless onboarding** — `apicircle import openapi <url>` turns a public
+  spec into a typed, runnable workspace in seconds.
+- **AI-assistant wiring on servers** — boot `apicircle mcp` in a remote
+  session so a headless agent can drive the workspace.
+- **Workspace migration & backup** — `workspaces path` + `tar` = a clean
+  on-disk archive any other machine can pick up.
+
+## Where it fits
+
+```
+@apicircle/shared              (types + utilities)
+@apicircle/core                (request engine + auth + imports + workspace I/O)
+@apicircle/mock-server-core    (mock-server engine)
+@apicircle/mcp-server          (MCP host + tool catalog)
+└── @apicircle/cli             ◀── you are here
+```
+
+Every subcommand is a thin wrapper around one of the sister packages — same
+behaviour as the desktop app, same on-disk format. An edit made by the CLI
+is visible to the desktop app on the next read, and vice versa.
+
+## Stability
+
+Each subcommand is exercised by both unit tests and Playwright-driven E2E
+suites; the same engine runs in **1,900+ tests** across the wider Studio
+codebase. Exit codes and JSON output shapes are part of the contract — gates
+that pass today will keep passing as long as the major version doesn't change.
 
 ## License
 
