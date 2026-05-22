@@ -1,13 +1,13 @@
-import { BookOpen, Plug, Sparkles } from 'lucide-react';
+import { Plug, Sparkles } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 import { MCP_PANEL_SECTIONS, type McpPanelSection } from './mcpPanelTypes';
 
 /**
- * MCP sidebar — top-level navigation between "How to Connect" (setup
- * instructions), "Connection" (live mirror status + refresh), and
- * "Prompts" (curated starter prompts). One section visible at a time;
- * the panel renders the matching component in its main pane.
+ * MCP sidebar — top-level navigation between "Connection" (the unified
+ * setup-and-mirror surface) and "Prompts" (curated starter prompts).
+ * One section visible at a time; the panel renders the matching component
+ * in its main pane.
  */
 export function McpSidebar() {
   const activeSection = useWorkspaceStore((s) => s.mcpActiveSection);
@@ -47,8 +47,6 @@ export function McpSidebar() {
 function SectionIcon({ id }: { id: McpPanelSection }) {
   const props = { size: 12, 'aria-hidden': true } as const;
   switch (id) {
-    case 'how-to-connect':
-      return <BookOpen {...props} />;
     case 'connection':
       return <Plug {...props} />;
     case 'prompts':

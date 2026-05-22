@@ -211,13 +211,16 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 function useThemeLabel(): string {
-  const themeId = useWorkspaceStore((s) => s.local?.ui.themeId ?? 'studio-dark');
-  return useMemo(() => ALL_THEMES.find((t) => t.id === themeId)?.label ?? 'Studio Dark', [themeId]);
+  const themeId = useWorkspaceStore((s) => s.local?.ui.themeId ?? 'one-dark-pro');
+  return useMemo(
+    () => ALL_THEMES.find((t) => t.id === themeId)?.label ?? 'One Dark Pro',
+    [themeId],
+  );
 }
 
 function useFontLabel(): string {
-  const fontId = useWorkspaceStore((s) => s.local?.ui.fontId ?? 'system-mono');
-  return useMemo(() => ALL_FONTS.find((f) => f.id === fontId)?.label ?? 'System mono', [fontId]);
+  const fontId = useWorkspaceStore((s) => s.local?.ui.fontId ?? 'system-sans');
+  return useMemo(() => ALL_FONTS.find((f) => f.id === fontId)?.label ?? 'System Sans', [fontId]);
 }
 
 interface AppearanceRowProps {

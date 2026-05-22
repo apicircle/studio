@@ -35,8 +35,9 @@ beforeEach(() => {
     mcp: mcpBridge,
     workspaceFile: workspaceFileBridge,
   };
-  // Reset MCP panel section so tests start in a known state.
-  useWorkspaceStore.getState().setMcpActiveSection('how-to-connect');
+  // Reset MCP panel section so tests start in a known state. 'connection' is
+  // also the default — calling it explicitly keeps the contract obvious.
+  useWorkspaceStore.getState().setMcpActiveSection('connection');
   useWorkspaceStore.getState().setMcpHowToConnectClient(null);
 });
 
@@ -54,24 +55,20 @@ async function findSnippetText() {
 }
 
 describe('McpServerPanel router', () => {
-  it('renders "How to Connect" by default', async () => {
+  it('renders Connection by default with both Setup + Workspace mirror blocks visible', async () => {
     await renderWithStore(<McpServerPanel />);
-    expect(await screen.findByRole('heading', { name: /How to Connect/ })).toBeInTheDocument();
+    // Two block H2 headings under the single Connection tab. The mirror
+    // InfoRow also renders an H3 with "Workspace mirror" — scope to level 2
+    // so we don't accidentally match both.
+    expect(
+      await screen.findByRole('heading', { level: 2, name: /Set up your AI client/ }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 2, name: /Workspace mirror/ }),
+    ).toBeInTheDocument();
     // Default-pick client is claude-desktop → its snippet should load.
     expect(await findSnippetText()).toContain('"claude-desktop"');
-  });
-
-  it('switches to Connection when the sidebar selects it', async () => {
-    const user = userEvent.setup();
-    await renderWithStore(
-      <>
-        <McpSidebar />
-        <McpServerPanel />
-      </>,
-    );
-    await user.click(screen.getByRole('button', { name: /Connection/ }));
-    expect(await screen.findByRole('heading', { name: /^Connection$/ })).toBeInTheDocument();
-    // Workspace dir from the bridge surface should render.
+    // Mirror path resolves from the workspaceFile bridge.
     expect(await screen.findByText('/tmp/ws')).toBeInTheDocument();
   });
 
@@ -90,7 +87,7 @@ describe('McpServerPanel router', () => {
   });
 });
 
-describe('HowToConnectSection', () => {
+describe('HowToConnect (setup block in Connection)', () => {
   it('lets the user pick a different AI client and updates the snippet', async () => {
     const user = userEvent.setup();
     await renderWithStore(<McpServerPanel />);
@@ -173,15 +170,18 @@ describe('HowToConnectSection', () => {
   });
 });
 
-describe('ConnectionSection', () => {
-  beforeEach(() => {
-    useWorkspaceStore.getState().setMcpActiveSection('connection');
-  });
-
+describe('ConnectionSection — Workspace mirror block', () => {
   it('renders the workspace mirror path + binary name', async () => {
     await renderWithStore(<McpServerPanel />);
     expect(await screen.findByText('/tmp/ws')).toBeInTheDocument();
-    expect(await screen.findByText('apicircle-mcp')).toBeInTheDocument();
+    // "apicircle-mcp" appears in the install-instructions step card too,
+    // so scope to the MCP binary InfoRow (its H3 label is unique).
+    // Anchored regex — StepCard 1's heading "Install the apicircle-mcp binary"
+    // also matches an unanchored /MCP binary/i, which would throw a multi-match.
+    const binaryRow = (
+      await screen.findByRole('heading', { level: 3, name: /^MCP binary$/i })
+    ).closest('section') as HTMLElement;
+    expect(await within(binaryRow).findByText('apicircle-mcp')).toBeInTheDocument();
   });
 
   it('refresh button calls the refreshFromDisk store action', async () => {
@@ -206,8 +206,8 @@ describe('ConnectionSection', () => {
   it('hides the Copy button on Workspace Mirror while the path is loading', async () => {
     // Hold the workspaceFile.status() promise open so the renderer stays in
     // its "Loading…" state — Copy should NOT render alongside the
-    // placeholder text. This is the regression we just fixed: previously it
-    // rendered a permanently-disabled button next to "Loading…" forever.
+    // placeholder text. This is the regression we previously fixed: it used
+    // to render a permanently-disabled button next to "Loading…" forever.
     let resolveStatus: (v: { workspacesRoot: string }) => void = () => {};
     workspaceFileBridge.status.mockReturnValue(
       new Promise((r) => {
@@ -215,9 +215,11 @@ describe('ConnectionSection', () => {
       }),
     );
     await renderWithStore(<McpServerPanel />);
-    const mirrorRow = (await screen.findByRole('heading', { name: /Workspace mirror/i })).closest(
-      'section',
-    ) as HTMLElement;
+    // Two headings in the DOM both contain "Workspace mirror" — the block
+    // heading (h2) and the InfoRow label (h3). Scope to the InfoRow.
+    const mirrorRow = (
+      await screen.findByRole('heading', { level: 3, name: /Workspace mirror/i })
+    ).closest('section') as HTMLElement;
     expect(within(mirrorRow).getByText(/Loading/)).toBeInTheDocument();
     expect(
       within(mirrorRow).queryByRole('button', { name: /Copy Workspace mirror/i }),
@@ -284,11 +286,12 @@ describe('PromptsSection', () => {
 });
 
 describe('McpSidebar', () => {
-  it('renders the three top-level sections', async () => {
+  it('renders the two top-level sections', async () => {
     await renderWithStore(<McpSidebar />);
-    expect(screen.getByRole('button', { name: /How to Connect/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Connection/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Prompts/ })).toBeInTheDocument();
+    // "How to Connect" no longer exists as a sidebar entry.
+    expect(screen.queryByRole('button', { name: /How to Connect/ })).not.toBeInTheDocument();
   });
 
   it('marks the active section with aria-current', async () => {

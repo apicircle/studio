@@ -1,5 +1,4 @@
 import { useWorkspaceStore } from '../../store/workspaceStore';
-import { HowToConnectSection } from './HowToConnectSection';
 import { ConnectionSection } from './ConnectionSection';
 import { PromptsSection } from './PromptsSection';
 import { MCP_PANEL_SECTIONS } from './mcpPanelTypes';
@@ -39,8 +38,6 @@ export function McpServerPanel() {
 function ActiveSection() {
   const activeSection = useWorkspaceStore((s) => s.mcpActiveSection);
   switch (activeSection) {
-    case 'how-to-connect':
-      return <HowToConnectSection />;
     case 'connection':
       return <ConnectionSection />;
     case 'prompts':

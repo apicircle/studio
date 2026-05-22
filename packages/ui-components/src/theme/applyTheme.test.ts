@@ -29,7 +29,7 @@ describe('applyTheme / getStoredThemeId', () => {
     }
   });
 
-  it('keeps studio-dark as the first entry (boot default)', () => {
+  it('keeps studio-dark as the first entry (catalog ordering)', () => {
     expect(ALL_THEMES[0].id).toBe('studio-dark');
   });
 
@@ -53,14 +53,14 @@ describe('applyTheme / getStoredThemeId', () => {
     expect(getStoredThemeId()).toBe('dracula');
   });
 
-  it('getStoredThemeId falls back to studio-dark when nothing stored', () => {
+  it('getStoredThemeId falls back to one-dark-pro when nothing stored', () => {
     localStorage.removeItem('apicircle-v2:theme');
-    expect(getStoredThemeId()).toBe('studio-dark');
+    expect(getStoredThemeId()).toBe('one-dark-pro');
   });
 
   it('getStoredThemeId rejects unknown values gracefully', () => {
     localStorage.setItem('apicircle-v2:theme', 'not-a-real-theme');
-    expect(getStoredThemeId()).toBe('studio-dark');
+    expect(getStoredThemeId()).toBe('one-dark-pro');
   });
 
   it('applyTheme survives a localStorage that throws on setItem', () => {
@@ -82,7 +82,7 @@ describe('applyTheme / getStoredThemeId', () => {
       throw new Error('access denied');
     });
     try {
-      expect(getStoredThemeId()).toBe('studio-dark');
+      expect(getStoredThemeId()).toBe('one-dark-pro');
     } finally {
       getItem.mockRestore();
     }

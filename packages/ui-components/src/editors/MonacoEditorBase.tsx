@@ -27,6 +27,7 @@ import { FONT_SIZE_PERCENT_DEFAULT } from '@apicircle/shared';
 import { useApplyMonacoLanguage } from './useMonacoLanguage';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { getMonacoThemeId, registerMonacoThemes } from '../theme/monacoThemes';
+import { getRenderedFontSizePercent } from '../theme/applyFontSize';
 
 const MONACO_BASE_FONT_SIZE_PX = 12;
 
@@ -121,7 +122,7 @@ function MonacoEditorBaseComponent({
   onEditorMount,
   ariaLabel,
 }: MonacoEditorBaseProps) {
-  const themeId = useWorkspaceStore((state) => state.local?.ui.themeId ?? 'studio-dark');
+  const themeId = useWorkspaceStore((state) => state.local?.ui.themeId ?? 'one-dark-pro');
   // Workspace setting: when true, the editor's scrollbar consumes wheel
   // events and the page won't scroll while the cursor sits in the editor.
   // Default false — most users find page-scroll-friendly behavior less
@@ -138,7 +139,7 @@ function MonacoEditorBaseComponent({
   );
   const scaledFontSize = Math.max(
     1,
-    Math.round((MONACO_BASE_FONT_SIZE_PX * fontSizePercent) / 100),
+    Math.round((MONACO_BASE_FONT_SIZE_PX * getRenderedFontSizePercent(fontSizePercent)) / 100),
   );
   const [editorComponent, setEditorComponent] = useState<ComponentType<EditorProps> | null>(null);
   const [editorInstance, setEditorInstance] = useState<editor.IStandaloneCodeEditor | null>(null);

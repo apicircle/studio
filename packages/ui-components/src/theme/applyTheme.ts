@@ -12,7 +12,7 @@ export interface ThemeDef {
 }
 
 export const ALL_THEMES: ReadonlyArray<ThemeDef> = [
-  // Built-in defaults — preserve order so studio-dark stays the boot default.
+  // Built-in themes first — preserve order for the catalog grouping in the picker.
   { id: 'studio-dark', label: 'Studio Dark', mode: 'dark' },
   { id: 'graphite-dark', label: 'Graphite Dark', mode: 'dark' },
   { id: 'midnight-blue', label: 'Midnight Blue', mode: 'dark' },
@@ -59,12 +59,12 @@ export function applyTheme(themeId: ThemeId): void {
 }
 
 export function getStoredThemeId(): ThemeId {
-  if (typeof localStorage === 'undefined') return 'studio-dark';
+  if (typeof localStorage === 'undefined') return 'one-dark-pro';
   try {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
     if (stored && ALL_THEMES.some((t) => t.id === stored)) return stored as ThemeId;
   } catch {
     // ignore
   }
-  return 'studio-dark';
+  return 'one-dark-pro';
 }

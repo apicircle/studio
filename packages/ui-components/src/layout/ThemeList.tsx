@@ -44,7 +44,7 @@ interface ThemeListProps {
  * so the user can browse without committing.
  */
 export function ThemeList({ onCommit, onCancel, registerCancel }: ThemeListProps) {
-  const themeId = useWorkspaceStore((s) => s.local?.ui.themeId ?? 'studio-dark');
+  const themeId = useWorkspaceStore((s) => s.local?.ui.themeId ?? 'one-dark-pro');
   const setThemeId = useWorkspaceStore((s) => s.setThemeId);
   const optionRefs = useRef<Map<ThemeId, HTMLButtonElement>>(new Map());
   const originalThemeRef = useRef<ThemeId>(themeId);

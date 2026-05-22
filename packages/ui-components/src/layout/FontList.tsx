@@ -21,7 +21,7 @@ interface FontListProps {
 }
 
 export function FontList({ onCommit, onCancel, registerCancel }: FontListProps) {
-  const fontId = useWorkspaceStore((s) => s.local?.ui.fontId ?? 'system-mono');
+  const fontId = useWorkspaceStore((s) => s.local?.ui.fontId ?? 'system-sans');
   const setFontId = useWorkspaceStore((s) => s.setFontId);
   const optionRefs = useRef<Map<FontFamilyId, HTMLButtonElement>>(new Map());
   const originalFontRef = useRef<FontFamilyId>(fontId);

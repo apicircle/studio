@@ -140,7 +140,7 @@ const STEPS: ReadonlyArray<TourStep> = [
   {
     id: 'mcp',
     title: 'MCP',
-    body: 'Expose this workspace to AI clients like Claude, Cursor, and Copilot through the Model Context Protocol.',
+    body: 'Expose this workspace to AI clients like Claude, Cursor, and Copilot. Open MCP → Connection and follow the four-step "Set up your AI client" flow — install the binary, pick your client, paste the snippet, restart. The workspace-mirror path and Refresh control sit below the setup steps.',
     panel: 'mcp',
     target: 'nav-mcp',
   },

@@ -17,6 +17,13 @@ import {
   FONT_SIZE_PERCENT_STEP,
 } from '@apicircle/shared';
 
+// Constant offset applied between the stored/labelled percent and the
+// actual rendered CSS percent. The stored default of 100 renders as
+// 110%, 90 renders as 100%, etc. Bumps the baseline UI text size so the
+// picker labels (80/90/100/...) map to a more comfortable rendered range
+// without forcing a migration of every existing workspace.
+export const FONT_SIZE_PERCENT_RENDER_OFFSET = 10;
+
 /**
  * Snap `percent` into the supported range and round to the nearest
  * `FONT_SIZE_PERCENT_STEP`. Non-finite inputs collapse to the default.
@@ -31,6 +38,15 @@ export function clampFontSizePercent(percent: number): number {
 }
 
 /**
+ * Translate a stored/labelled percent to the percent actually written
+ * to the DOM. Shared with Monaco's px scaler so the editor stays in
+ * visual lockstep with the rest of the UI.
+ */
+export function getRenderedFontSizePercent(percent: number): number {
+  return clampFontSizePercent(percent) + FONT_SIZE_PERCENT_RENDER_OFFSET;
+}
+
+/**
  * Write the percentage as `font-size` on `<html>`. Also sets a
  * `data-font-size-percent` attribute so CSS hooks / debugging tools can
  * see the active value without parsing inline style.
@@ -38,6 +54,7 @@ export function clampFontSizePercent(percent: number): number {
 export function applyFontSize(percent: number): void {
   if (typeof document === 'undefined') return;
   const clamped = clampFontSizePercent(percent);
-  document.documentElement.style.fontSize = `${clamped}%`;
+  const rendered = clamped + FONT_SIZE_PERCENT_RENDER_OFFSET;
+  document.documentElement.style.fontSize = `${rendered}%`;
   document.documentElement.setAttribute('data-font-size-percent', String(clamped));
 }

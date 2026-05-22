@@ -37,7 +37,7 @@ describe('applyFont', () => {
     expect(links.length).toBe(0);
   });
 
-  it('falls back to system-mono when given an unknown id', () => {
+  it('falls back to the first catalog entry (system-mono) when given an unknown id', () => {
     const def = getFontDef('not-a-font' as never);
     expect(def.id).toBe('system-mono');
   });

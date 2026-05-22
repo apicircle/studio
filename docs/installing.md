@@ -60,7 +60,7 @@ needed.
   code-signing certificates — the OS warning above is expected, not a sign
   of a tampered or unsafe download. Builds are produced in the open by this
   repository's GitHub Actions.
-- We may ship breaking changes between minor releases until v1.0.
+- Early Access releases (the `1.0.x` line) may still ship breaking changes between versions while the project stabilises.
 - Workspace data is stored locally and (optionally) synced via Git, so
   you keep ownership of your data even if the app changes.
 - Auto-update will replace the app binary in place; your workspace is

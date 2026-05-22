@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Check, Copy, ExternalLink, Info } from 'lucide-react';
+import { AlertTriangle, Check, Copy, Info } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 import { MCP_CLIENTS } from './clients';
@@ -7,11 +7,10 @@ import { getDesktopMcpBridge, type ConfigSnippetVariants } from '../../desktop/b
 import { MonacoEditorBase } from '../../editors/MonacoEditorBase';
 
 // =============================================================================
-// HowToConnectSection — one-time setup instructions for wiring an AI client
-// to this workspace via the local MCP server. Replaces the old "one card per
-// client" loop with a single picker that swaps the snippet + config path
-// inline. The four steps mirror what the docs say: install → pick client →
-// paste snippet → restart and verify.
+// HowToConnect — the four-step setup block (install → pick client + copy
+// snippet → restart → verify). Renders inside ConnectionSection; owns no
+// page-level chrome (no max-width wrapper, no top-level h2) — its parent
+// composes it alongside the Workspace mirror block.
 // =============================================================================
 
 const DEFAULT_CLIENT_ID = 'claude-desktop';
@@ -28,11 +27,10 @@ function normalizeSnippetResponse(raw: unknown): ConfigSnippetVariants {
   if (typeof raw === 'string') {
     return { forwardSlash: raw, escaped: raw, identical: true };
   }
-  // Already-typed bridge: trust the shape.
   return raw as ConfigSnippetVariants;
 }
 
-export function HowToConnectSection() {
+export function HowToConnect() {
   const bridge = getDesktopMcpBridge();
   const pushToast = useWorkspaceStore((s) => s.pushToast);
   const pickedClient = useWorkspaceStore((s) => s.mcpHowToConnectClient);
@@ -69,15 +67,7 @@ export function HowToConnectSection() {
   }, [bridge, activeClientId, pushToast]);
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-      <header>
-        <h2 className="text-base font-medium text-text-primary">How to Connect</h2>
-        <p className="mt-1 text-xs text-text-muted">
-          Wire any MCP-compatible AI client to this workspace in four steps. The desktop app mirrors
-          your workspace to disk on every change, so no separate import step is needed.
-        </p>
-      </header>
-
+    <div className="flex flex-col gap-4">
       <StepCard
         number={1}
         title="Install the apicircle-mcp binary"
@@ -398,7 +388,3 @@ function EscapedReference({
     </details>
   );
 }
-
-// Re-export the icon so storybook / future surfaces can render the same
-// external-link affordance without re-importing lucide.
-export { ExternalLink };

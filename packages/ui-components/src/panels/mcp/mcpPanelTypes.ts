@@ -3,12 +3,13 @@
 /**
  * Top-level sections in the MCP panel. Selecting one swaps the right pane.
  *
- *   - 'how-to-connect' — setup instructions + per-client snippet picker
- *   - 'connection'     — live workspace mirror + binary status + refresh
- *   - 'prompts'        — curated starter prompts the user can copy into
- *                        their AI client
+ *   - 'connection' — unified setup + live mirror status: the four-step
+ *                    "wire your AI client" flow followed by the workspace
+ *                    mirror path, MCP binary, and refresh control.
+ *   - 'prompts'    — curated starter prompts the user can copy into
+ *                    their AI client.
  */
-export type McpPanelSection = 'how-to-connect' | 'connection' | 'prompts';
+export type McpPanelSection = 'connection' | 'prompts';
 
 export const MCP_PANEL_SECTIONS: ReadonlyArray<{
   id: McpPanelSection;
@@ -16,14 +17,9 @@ export const MCP_PANEL_SECTIONS: ReadonlyArray<{
   description: string;
 }> = [
   {
-    id: 'how-to-connect',
-    label: 'How to Connect',
-    description: 'Install the binary and wire your AI client to this workspace.',
-  },
-  {
     id: 'connection',
     label: 'Connection',
-    description: 'Mirror status, binary path, and a refresh to pick up CLI / MCP edits.',
+    description: 'Wire up an AI client and inspect the workspace mirror.',
   },
   {
     id: 'prompts',

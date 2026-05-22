@@ -194,8 +194,8 @@ function createEmptyLocalForSynced(synced: WorkspaceSynced): WorkspaceLocal {
     ui: {
       activeRequestId: null,
       sidebarExpandedSections: [],
-      themeId: 'studio-dark',
-      fontId: 'system-mono',
+      themeId: 'one-dark-pro',
+      fontId: 'system-sans',
       fontSizePercent: FONT_SIZE_PERCENT_DEFAULT,
     },
     settings: { validateOnSend: true, monacoConsumesWheel: false },

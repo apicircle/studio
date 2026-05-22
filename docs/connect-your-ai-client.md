@@ -15,16 +15,22 @@ config-file editing, the Desktop app has a one-click flow described below.
 1. Open the Desktop or Web app — your workspace is created automatically in
    browser storage (IndexedDB). No git repo, no folder, no `--workspace`
    needed.
-2. Go to the **MCP panel**. Pick your AI client from the list (Claude Desktop,
-   Claude Code, Cursor, GitHub Copilot, ChatGPT, Continue, Cline, Zed,
-   Windsurf, or generic stdio).
+2. Go to **MCP → Connection**. The top of the tab is a "Set up your AI client"
+   block — pick your AI client from the list (Claude Desktop, Claude Code,
+   Cursor, GitHub Copilot, ChatGPT, Continue, Cline, Zed, Windsurf, or
+   generic stdio).
 3. Click **Copy snippet**. The snippet is pre-filled with the correct binary
    name, the absolute workspace path, and the right config schema for that
    client.
-4. Paste it into the client's config file (the panel also shows you exactly
-   which file to open), restart the client, and you're done.
+4. Paste it into the client's config file (the block shows you exactly which
+   file to open), restart the client, and you're done.
 
-The same panel surfaces handshake status — green dot = connected.
+Below the setup steps the same tab shows live workspace-mirror status — the
+mirror path the MCP binary reads from, and a **Refresh** button that pulls in
+any CLI / MCP edits made since you last opened the app. Handshake state itself
+lives inside each AI client (Claude Desktop's connector menu, Cursor's MCP
+indicator, etc.) — the desktop app can't observe child processes spawned by
+other clients, so rely on your client's own indicator for "is it connected".
 
 ### Headless: hand-edit configs (the rest of this doc)
 

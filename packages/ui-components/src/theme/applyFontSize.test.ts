@@ -40,19 +40,19 @@ describe('clampFontSizePercent', () => {
 });
 
 describe('applyFontSize', () => {
-  it('writes the clamped percent to html.style.fontSize', () => {
+  it('writes the clamped percent + render offset to html.style.fontSize', () => {
     applyFontSize(120);
-    expect(document.documentElement.style.fontSize).toBe('120%');
+    expect(document.documentElement.style.fontSize).toBe('130%');
   });
 
-  it('sets the data-font-size-percent attribute for debugging hooks', () => {
+  it('sets the data-font-size-percent attribute to the stored (un-offset) value', () => {
     applyFontSize(110);
     expect(document.documentElement.getAttribute('data-font-size-percent')).toBe('110');
   });
 
   it('clamps before applying — out-of-range values never reach the DOM', () => {
     applyFontSize(9999);
-    expect(document.documentElement.style.fontSize).toBe(`${FONT_SIZE_PERCENT_MAX}%`);
+    expect(document.documentElement.style.fontSize).toBe(`${FONT_SIZE_PERCENT_MAX + 10}%`);
   });
 
   it('does not touch localStorage — the workspace owns the persistence', () => {

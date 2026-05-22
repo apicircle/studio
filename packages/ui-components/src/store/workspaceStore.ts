@@ -896,12 +896,11 @@ type WorkspaceStore = {
   setHelpSectionId: (value: string | null) => void;
 
   /** MCP panel: which top-level section is active. The panel renders one
-   * section at a time (How to Connect / Connection / Prompts); the
-   * sidebar lists the three. */
+   *  section at a time (Connection / Prompts); the sidebar lists the two. */
   mcpActiveSection: McpPanelSection;
   setMcpActiveSection: (value: McpPanelSection) => void;
-  /** MCP "How to Connect" sub-state: which AI client's snippet is in the
-   *  picker. `null` means the picker hasn't been touched yet — the section
+  /** MCP Connection sub-state: which AI client's snippet is in the setup
+   *  picker. `null` means the picker hasn't been touched yet — the block
    *  defaults to Claude Desktop in that case. */
   mcpHowToConnectClient: string | null;
   setMcpHowToConnectClient: (value: string | null) => void;
@@ -1706,7 +1705,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   envAdding: false,
   helpQuery: '',
   helpSectionId: null,
-  mcpActiveSection: 'how-to-connect',
+  mcpActiveSection: 'connection',
   mcpHowToConnectClient: null,
   activeLinkedRequest: null,
   pendingRefresh: null,

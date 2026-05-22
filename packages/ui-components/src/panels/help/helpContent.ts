@@ -1034,12 +1034,11 @@ For each incoming request the mock checks, in order: validation rules, then resp
     title: 'MCP',
     body: `The MCP server exposes your workspace to AI assistants and other Model Context Protocol clients over stdio — they read and edit it as a catalog of tools.
 
-## Three sections in the panel
+## Two sections in the panel
 
-The MCP panel is organised into three top-level sections:
+The MCP panel is organised into two top-level sections:
 
-- **How to Connect** — step-by-step setup. Install the binary, pick your AI client, paste the snippet, restart.
-- **Connection** — live mirror status, the binary your AI client spawns, and a **Refresh** button. Refresh re-reads the on-disk workspace so CLI / MCP edits show up in the app without a restart.
+- **Connection** — the unified setup-and-status surface. Top half: the four-step "wire your AI client" flow (install → pick client + copy snippet → restart → verify). Bottom half: live workspace-mirror path, the binary your AI client spawns, and a **Refresh** button that re-reads the on-disk workspace so CLI / MCP edits show up in the app without a restart.
 - **Prompts** — curated starter prompts you can paste into your AI client to drive the workspace. Searchable + grouped by tool family.
 
 ## What an AI client can do
@@ -1074,7 +1073,7 @@ The AI client uses that hint to either ask the user which workspace they meant o
 
 ## Connecting a client
 
-The **How to Connect** section walks through it in four steps — install \`@apicircle/mcp-server\` globally, pick your client (Claude Desktop / Claude Code / Cursor / Codex / etc), paste the snippet into the right config file, restart the client. The panel shows the exact config-file path for each supported client.
+The **Set up your AI client** block at the top of the **Connection** tab walks through it in four steps — install \`@apicircle/mcp-server\` globally, pick your client (Claude Desktop / Claude Code / Cursor / Codex / etc), paste the snippet into the right config file, restart the client. The panel shows the exact config-file path for each supported client.
 
 MCP runs over stdio, so it needs the desktop app open or the \`apicircle mcp\` CLI subcommand. The web build cannot expose a stdio server. Note MCP returns code as text — your assistant writes it to a file; MCP itself does not touch the filesystem.
 
