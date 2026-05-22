@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { cp, stat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve as resolvePath } from 'node:path';
@@ -11,15 +11,25 @@ import react from '@vitejs/plugin-react';
 // app origin instead of jsdelivr. Pinning to local removes the CDN
 // dependency (the original cause of Playwright "Loading editor…" hangs)
 // and matches the desktop runtime which has no internet at all.
+//
+// Two hooks because dev and production paths differ:
+//   - `configureServer`: middleware that streams files from
+//     `node_modules/monaco-editor/min/vs/` on each request (dev only).
+//   - `writeBundle`: copies the same tree into `dist/monaco-vendor/vs/`
+//     after the build (production — both packaged desktop and any hosted
+//     web deploy). Without this hook the desktop app's `file://` loader
+//     misses every Monaco asset and the Editor panel crashes during init.
 function monacoVendor(): Plugin {
   let monacoRoot: string | null = null;
+  let outDir: string | null = null;
   return {
     name: 'apicircle-monaco-vendor',
-    configResolved() {
+    configResolved(config) {
       const here = dirname(fileURLToPath(import.meta.url));
       const require = createRequire(`${here}/_resolve.js`);
       const pkgPath = require.resolve('monaco-editor/package.json');
       monacoRoot = resolvePath(dirname(pkgPath), 'min', 'vs');
+      outDir = resolvePath(config.root, config.build.outDir);
     },
     configureServer(server) {
       server.middlewares.use('/monaco-vendor/vs', async (req, res, next) => {
@@ -47,6 +57,14 @@ function monacoVendor(): Plugin {
           next();
         }
       });
+    },
+    async writeBundle() {
+      // Production: stage the same `min/vs/` tree under the build's outDir
+      // so a deployed bundle (file:// or hosted) can resolve
+      // `./monaco-vendor/vs/loader.js` and the rest of the AMD chunks.
+      if (!monacoRoot || !outDir) return;
+      const dest = resolvePath(outDir, 'monaco-vendor', 'vs');
+      await cp(monacoRoot, dest, { recursive: true });
     },
   };
 }

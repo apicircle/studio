@@ -52,12 +52,21 @@ export async function registerAutoUpdater(getWindow: () => BrowserWindow | null)
   let updater: AutoUpdaterShape;
   try {
     // Dynamic import keeps the TS build from breaking if the dep is not
-    // yet installed (fresh clone). Cast through `unknown` because we only
-    // need a tiny slice of the module's surface.
+    // yet installed (fresh clone). `electron-updater` ships CommonJS, so
+    // under tsup's ESM-interop the named export lands on either the
+    // namespace root OR under `.default` depending on host bundler /
+    // Node version. Probe both before declaring the module unusable.
     const mod = (await import('electron-updater')) as unknown as {
-      autoUpdater: AutoUpdaterShape;
+      autoUpdater?: AutoUpdaterShape;
+      default?: { autoUpdater?: AutoUpdaterShape };
     };
-    updater = mod.autoUpdater;
+    const resolved = mod.autoUpdater ?? mod.default?.autoUpdater;
+    if (!resolved) {
+      throw new Error(
+        'electron-updater loaded but did not expose `autoUpdater` on the namespace or default export',
+      );
+    }
+    updater = resolved;
   } catch (err) {
     console.warn('[autoUpdater] electron-updater is not installed; auto-update is disabled.', err);
     // Register no-op handlers so the renderer-side IPC contract is stable.

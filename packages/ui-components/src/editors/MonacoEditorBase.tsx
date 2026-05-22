@@ -46,17 +46,30 @@ async function loadMonacoEditorComponent(): Promise<ComponentType<EditorProps> |
         // CDN. The CDN path was racing under Playwright parallel-worker
         // load (lazy chunk hung on `Loading editor…` indefinitely);
         // serving locally is deterministic and matches the desktop
-        // runtime which has no network at all. See vite.config.ts +
-        // `apps/web/public/monaco-vendor` for how the bundle is served.
+        // runtime which has no network at all. The Vite plugin in
+        // `apps/web/vite.config.ts` handles both surfaces — dev serves
+        // from node_modules via middleware, prod copies the tree into
+        // `dist/monaco-vendor/vs/` at build time.
         //
-        // The `vs` path MUST be absolute (origin-qualified). Monaco spawns
-        // its language workers (JSON/TS/CSS) inside a blob-URL worker; a
-        // root-relative `/monaco-vendor/vs` can't be resolved against a
-        // `blob:` base, so the worker's `importScripts` throws "invalid
-        // URL" and JSON-schema / syntax diagnostics silently never run.
+        // The `vs` path MUST be absolute (fully-qualified URL). Monaco
+        // spawns its language workers (JSON/TS/CSS) inside a blob-URL
+        // worker; a root-relative `/monaco-vendor/vs` can't be resolved
+        // against a `blob:` base, so the worker's `importScripts` throws
+        // "invalid URL" and JSON-schema / syntax diagnostics silently
+        // never run.
+        //
+        // We resolve against `window.location.href` rather than `origin`
+        // because the packaged desktop loads via `file://`, where
+        // `origin` is `null` / `"file://"` and string concatenation
+        // produces `file:///monaco-vendor/vs` — which resolves to the
+        // filesystem root, not the index.html's directory. `new URL()`
+        // honours the document's actual path so `./monaco-vendor/vs`
+        // becomes `file:///C:/.../resources/web/dist/monaco-vendor/vs`,
+        // which is what we want under Electron and works just as well
+        // under http(s).
         const vsBase =
           typeof window !== 'undefined'
-            ? `${window.location.origin}/monaco-vendor/vs`
+            ? new URL('./monaco-vendor/vs', window.location.href).toString()
             : '/monaco-vendor/vs';
         reactModule.loader.config({ paths: { vs: vsBase } });
         return reactModule.default as ComponentType<EditorProps>;

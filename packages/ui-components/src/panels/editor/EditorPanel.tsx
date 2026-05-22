@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Cookie, GitBranch, Link2, RotateCcw, Send, Square, X } from 'lucide-react';
+import { Cookie, GitBranch, Link2, RotateCcw, Send, ShieldAlert, Square, X } from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import type { HttpMethod, Request as ApiRequest, RequestOverridePatch } from '@apicircle/shared';
+import type {
+  HttpMethod,
+  Request as ApiRequest,
+  RequestOverridePatch,
+  ValidationResult,
+} from '@apicircle/shared';
 import { validateUrl } from '@apicircle/shared';
 import {
   applyPathParams,
@@ -107,18 +112,74 @@ function EffectiveRequestPreview({
     return composeCookieHeader(resolved);
   }, [request.cookies, scope]);
 
-  const urlChanged = effectiveUrl !== request.url;
-  if (!urlChanged && !cookieValue) return null;
+  // Validation runs against the *effective* URL (what would actually be sent
+  // on the wire) rather than the raw template — so a URL like
+  // `http://localhost:{{PORT}}/x` is judged by its resolved form, not by a
+  // probe that might fail in port / host slots. Empty URLs are PreSendPanel's
+  // job to flag; this row stays quiet on them.
+  const urlValidation = useMemo<ValidationResult>(() => {
+    if (effectiveUrl.trim() === '') return { ok: true };
+    return validateUrl(effectiveUrl);
+  }, [effectiveUrl]);
+  const urlInvalid = !urlValidation.ok;
+
+  // The Effective URL row is only meaningful when the user has used
+  // `{{VAR}}` syntax somewhere in the URL or query rows — otherwise the
+  // value would be a verbatim copy of the URL input and adds no info.
+  // Scan the raw fields (not the resolved string) so the row shows even
+  // when the variable is currently unresolved; the row's value will then
+  // reveal which token didn't bind.
+  const hasUrlVariables = useMemo(() => {
+    const TEMPLATE = /\{\{[^{}]+\}\}/;
+    if (TEMPLATE.test(request.url)) return true;
+    for (const q of request.query) {
+      if (!q.enabled) continue;
+      if (TEMPLATE.test(q.key) || TEMPLATE.test(q.value)) return true;
+    }
+    for (const [, v] of Object.entries(request.pathParams ?? {})) {
+      if (TEMPLATE.test(v)) return true;
+    }
+    return false;
+  }, [request.url, request.query, request.pathParams]);
+
+  // Card is shown whenever there's something to surface: a resolved-URL
+  // preview (variables used), a validation failure, or a Cookie composition.
+  if (!hasUrlVariables && !urlInvalid && !cookieValue) return null;
+
+  // When the resolved URL fails validation we adopt the same visual
+  // treatment as PreSendPanel's BlockerRow — danger-tinted border + bg,
+  // ShieldAlert icon, primary text colour — so the user gets a single
+  // consistent "this is broken" signal. PreSendPanel suppresses its own
+  // `unparseable-url` blocker so the same error isn't shown twice.
+  const cardClassName = urlInvalid
+    ? 'flex flex-col gap-1 rounded-sm border border-danger/40 bg-danger/5 px-2 py-1.5 font-mono text-[0.6875rem] text-text-primary'
+    : 'flex flex-col gap-0.5 rounded-sm border border-border-subtle bg-card px-2 py-1.5 font-mono text-[0.6875rem] text-text-muted';
 
   return (
-    <div className="flex flex-col gap-0.5 rounded-sm border border-border-subtle bg-card px-2 py-1.5 font-mono text-[0.6875rem] text-text-muted">
-      {urlChanged && (
-        <div className="flex items-center gap-2">
-          <span className="shrink-0 text-[0.625rem] uppercase tracking-wider text-text-dim">
+    <div className={cardClassName}>
+      {hasUrlVariables && (
+        <div className="flex items-start gap-2">
+          <span
+            className={cn(
+              'shrink-0 text-[0.625rem] uppercase tracking-wider',
+              urlInvalid ? 'text-danger' : 'text-text-dim',
+            )}
+          >
             Effective URL
           </span>
-          <span className="truncate text-accent" title={effectiveUrl}>
+          <span
+            className={cn('truncate', urlInvalid ? 'text-text-primary' : 'text-accent')}
+            title={effectiveUrl}
+          >
             {effectiveUrl}
+          </span>
+        </div>
+      )}
+      {urlInvalid && (
+        <div role="alert" className="flex items-start gap-2">
+          <ShieldAlert size={12} className="mt-0.5 shrink-0 text-danger" aria-hidden="true" />
+          <span className="truncate text-text-primary" title={effectiveUrl}>
+            URL &quot;{effectiveUrl}&quot; is invalid
           </span>
         </div>
       )}
@@ -293,7 +354,6 @@ export function EditorPanel() {
               placeholder="https://api.example.com/v1"
               className="h-9 px-3 text-sm focus:ring-2"
             />
-            <UrlInlineValidation url={composedUrl} />
           </div>
           {isExecuting ? (
             // Same slot as the Send button — swap to a Cancel control while
@@ -446,26 +506,6 @@ export function EditorPanel() {
  * into the URL bar. They can convert it to a new request (the standard cURL
  * importer creates a sibling in the same folder) or dismiss to keep typing.
  */
-/**
- * Inline validation cue below the URL field. Renders nothing when the URL
- * is valid (the field already shows valid state). On invalid input,
- * renders a `role="alert"` line with the reason. PreSendPanel keeps its
- * Send-time blocker — this just gives the user the cue earlier, while typing.
- */
-function UrlInlineValidation({ url }: { url: string }) {
-  // Empty URL is rejected at Send time by PreSendPanel — the inline cue
-  // would feel preachy ("URL is required" on the empty state). Only show
-  // for actual garbage input.
-  if (url.trim() === '') return null;
-  const result = validateUrl(url);
-  if (result.ok) return null;
-  return (
-    <p role="alert" className="mt-1 text-[0.6875rem] text-warning">
-      {result.reason}
-    </p>
-  );
-}
-
 function CurlPasteConfirm({
   curl,
   onConfirm,

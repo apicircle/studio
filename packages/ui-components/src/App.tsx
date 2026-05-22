@@ -75,6 +75,7 @@ import { KeyboardShortcuts } from './layout/KeyboardShortcuts';
 // modal (LinkedRequestEditor) is no longer mounted. The activeLinkedRequest
 // store state still drives the editor's selector, but no modal opens.
 import { UpdatePreviewModal } from './panels/link-workspace/UpdatePreviewModal';
+import { CloseConfirmModal } from './layout/CloseConfirmModal';
 import { OnboardingTour } from './onboarding/OnboardingTour';
 import { ConfirmDialog } from './primitives/ConfirmDialog';
 import { Modal } from './primitives/Modal';
@@ -121,6 +122,7 @@ export function App() {
       <ToastSlot />
       <UpdateAvailableBanner />
       <PassphrasePromptModalGate />
+      <CloseConfirmModal />
     </div>
   );
 }

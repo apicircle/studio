@@ -161,7 +161,27 @@ function createWindow(): BrowserWindow {
   };
   win.on('resize', persist);
   win.on('move', persist);
-  win.on('close', persist);
+  // Intercept the close BEFORE the window is destroyed. On Windows clicking
+  // the X destroys the window before `before-quit` fires, so any prompt we
+  // tried to show from before-quit would have no webContents to send to.
+  // Holding the close here lets the confirm modal render against a live
+  // window; once the drain completes we set `quitState = 'complete'` and
+  // re-issue close, which falls through this handler the second time.
+  win.on('close', (event) => {
+    persist();
+    if (quitState === 'complete') return;
+    const running = snapshotRunningMocks();
+    if (running.length === 0) {
+      // Nothing to drain — let the close proceed. `before-quit` will still
+      // run the (no-op) drainAndQuit path on non-darwin via window-all-closed.
+      return;
+    }
+    // Mocks running: hold the close, prompt the renderer.
+    event.preventDefault();
+    if (quitState === 'awaiting-user' || quitState === 'shutting-down') return;
+    quitState = 'awaiting-user';
+    safeSendToRenderer('apicircle:lifecycle:prompt-close', { runningMocks: running });
+  });
   void win.loadFile(WEB_DIST_INDEX);
   return win;
 }
@@ -326,17 +346,121 @@ void app.whenReady().then(() => {
   });
 });
 
-app.on('window-all-closed', () => {
-  // macOS apps stay alive when the last window closes; everywhere else
-  // we shut down so the dock / taskbar icon disappears.
-  void mockManager.stopAll();
-  if (process.platform !== 'darwin') app.quit();
+// =============================================================================
+// Quit-lifecycle state machine.
+//
+//   idle           → no quit in progress
+//   awaiting-user  → renderer modal asking "you have N mocks running, proceed?"
+//   shutting-down  → user confirmed; draining mocks + emitting progress
+//   complete       → drains done; the next before-quit fires through to exit
+//
+// `before-quit` fires for X-button on Win/Linux, app menu Quit, Cmd-Q on macOS,
+// and our own `app.quit()` calls. We `event.preventDefault()` it on the first
+// pass when mocks are running, ask the renderer, then re-quit once the user
+// confirms and the drain completes. The `complete` sentinel lets the re-entry
+// through without re-prompting.
+// =============================================================================
+type QuitState = 'idle' | 'awaiting-user' | 'shutting-down' | 'complete';
+let quitState: QuitState = 'idle';
+
+interface RunningMockSnapshot {
+  serverId: string;
+  port: number;
+}
+
+function snapshotRunningMocks(): RunningMockSnapshot[] {
+  return mockManager.list().map((e) => ({ serverId: e.serverId, port: e.runtime.port }));
+}
+
+// Safe webContents.send — no-ops cleanly if the BrowserWindow has been
+// destroyed since we last looked. The optional-chain `?.` covers the case
+// where mainWindow was never assigned, but a window that has been
+// destroyed remains truthy while `webContents.send` throws "Object has
+// been destroyed". On Windows the close-X destroys the window before
+// `before-quit` fires, so by the time the drain progress events come back
+// the window is gone — sending in that state is harmless to skip; the
+// drain still needs to complete on the main process side.
+function safeSendToRenderer(channel: string, payload?: unknown): void {
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) return;
+  try {
+    if (payload === undefined) {
+      win.webContents.send(channel);
+    } else {
+      win.webContents.send(channel, payload);
+    }
+  } catch (err) {
+    // webContents can also be destroyed independently of the BrowserWindow
+    // (rare, but seen during fast quit + DevTools-detached races). Don't
+    // let the IPC blip abort the shutdown.
+    console.warn(`[main] safeSendToRenderer(${channel}) suppressed:`, err);
+  }
+}
+
+// Drain mocks (with no UI prompt) then quit. Used both when zero mocks are
+// running and when the user dismisses the prompt by choosing "Stop & close".
+// Sends shutdown-progress events to the renderer so the modal can render an
+// X-of-N progress bar. Always ends by setting state to 'complete' and
+// calling app.quit() so the next before-quit pass exits cleanly.
+async function drainAndQuit(): Promise<void> {
+  quitState = 'shutting-down';
+  try {
+    await mockManager.stopAllWithProgress((completed, total) => {
+      safeSendToRenderer('apicircle:lifecycle:shutdown-progress', { completed, total });
+    });
+  } catch (err) {
+    console.error('[main] drainAndQuit failed:', err);
+  }
+  safeSendToRenderer('apicircle:lifecycle:shutdown-complete');
+  quitState = 'complete';
+  app.quit();
+}
+
+ipcMain.handle('apicircle:lifecycle:cancel-close', (event) => {
+  assertTrustedSender(event);
+  // User dismissed the modal — abort the pending quit. Subsequent close
+  // attempts will re-prompt (we reset back to 'idle').
+  if (quitState === 'awaiting-user') {
+    quitState = 'idle';
+  }
 });
 
-app.on('before-quit', () => {
-  // Belt-and-braces: if the user quits via the app menu / Cmd-Q, ensure
-  // every spawned mock server is torn down before the process exits.
-  void mockManager.stopAll();
+ipcMain.handle('apicircle:lifecycle:confirm-close', (event) => {
+  assertTrustedSender(event);
+  // Renderer's modal pressed "Stop & close". Only proceed if we're actually
+  // waiting for that answer — defends against a stale modal firing after a
+  // cancel, or against a hostile renderer issuing the call out of band.
+  if (quitState !== 'awaiting-user') return;
+  void drainAndQuit();
+});
+
+app.on('window-all-closed', () => {
+  // macOS keeps the app alive after the last window closes; everywhere
+  // else we exit. By the time we get here the BrowserWindow's `close`
+  // handler has either let the close through (no mocks running, or
+  // drain completed) — in both cases we're safe to quit.
+  if (process.platform === 'darwin') return;
+  app.quit();
+});
+
+app.on('before-quit', (event) => {
+  // Re-entry after drainAndQuit's app.quit(): let the quit proceed.
+  if (quitState === 'complete') return;
+  // The user-facing prompt is handled in the BrowserWindow `close`
+  // handler (it fires before the window is destroyed, which is the only
+  // moment we can still show a modal). This path covers quit attempts
+  // that bypass `close` — Cmd-Q on macOS with the dock kept open, an
+  // explicit `app.quit()` from code, or a `before-quit` from a context
+  // where no window exists. In those cases we silently drain so we
+  // don't leak listening sockets.
+  if (quitState === 'shutting-down' || quitState === 'awaiting-user') {
+    // Drain (or the user prompt) is already running. Hold the quit until
+    // drainAndQuit re-issues it.
+    event.preventDefault();
+    return;
+  }
+  event.preventDefault();
+  void drainAndQuit();
 });
 
 // Last-resort guards so a stray error in an IPC handler or mock callback

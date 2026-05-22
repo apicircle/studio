@@ -28,7 +28,14 @@ export function validateUrl(value: string): ValidationResult {
   // we can't validate the resolved form here so accept it with a hint.
   if (/^\s*\{\{\s*[^{}]+\s*\}\}/.test(trimmed)) return OK;
   // Substitute placeholders so URL.canParse accepts the template form.
-  const probe = trimmed.replace(/\{\{[^{}]+\}\}/g, 'placeholder');
+  // `1` is used because it parses cleanly in every URL slot a variable
+  // might occupy — host (`http://1`), port (`http://localhost:1`), path
+  // segment (`/1`), query value (`?q=1`), userinfo, fragment. A word
+  // placeholder like `placeholder` fails port positions
+  // (`http://localhost:placeholder/x` is invalid because the port must
+  // be numeric), which is what trips up templates like
+  // `http://localhost:{{PORT}}/api` even though they resolve fine.
+  const probe = trimmed.replace(/\{\{[^{}]+\}\}/g, '1');
   try {
     const u = new URL(probe);
     if (!/^https?:|^file:$/i.test(u.protocol)) {

@@ -16,6 +16,17 @@ export interface UpdateAvailablePayload {
   releaseDate: string | null;
 }
 
+/** Payload pushed by main when a quit is pending and mocks are still running. */
+export interface PromptClosePayload {
+  runningMocks: Array<{ serverId: string; port: number }>;
+}
+
+/** Payload pushed during the drain — `completed` increments toward `total`. */
+export interface ShutdownProgressPayload {
+  completed: number;
+  total: number;
+}
+
 const bridge = {
   encryptString: (plaintext: string): Promise<string> =>
     ipcRenderer.invoke('apicircle:secret:encrypt', plaintext) as Promise<string>,
@@ -77,6 +88,33 @@ const bridge = {
       port: number;
       redirectUri: string;
     }> => ipcRenderer.invoke('apicircle:oauth2:startFlow', args),
+  },
+
+  // App-quit lifecycle bridge. Main holds the quit when mocks are running
+  // and pushes `prompt-close` so the renderer can show a confirm modal;
+  // the renderer answers via `cancelClose` or `confirmClose`. During the
+  // drain main emits `shutdown-progress` events the modal can render as
+  // an X-of-N bar; `shutdown-complete` fires just before app.quit().
+  lifecycle: {
+    onPromptClose: (cb: (payload: PromptClosePayload) => void): (() => void) => {
+      const handler = (_e: IpcRendererEvent, payload: PromptClosePayload) => cb(payload);
+      ipcRenderer.on('apicircle:lifecycle:prompt-close', handler);
+      return () => ipcRenderer.removeListener('apicircle:lifecycle:prompt-close', handler);
+    },
+    onShutdownProgress: (cb: (payload: ShutdownProgressPayload) => void): (() => void) => {
+      const handler = (_e: IpcRendererEvent, payload: ShutdownProgressPayload) => cb(payload);
+      ipcRenderer.on('apicircle:lifecycle:shutdown-progress', handler);
+      return () => ipcRenderer.removeListener('apicircle:lifecycle:shutdown-progress', handler);
+    },
+    onShutdownComplete: (cb: () => void): (() => void) => {
+      const handler = () => cb();
+      ipcRenderer.on('apicircle:lifecycle:shutdown-complete', handler);
+      return () => ipcRenderer.removeListener('apicircle:lifecycle:shutdown-complete', handler);
+    },
+    cancelClose: (): Promise<void> =>
+      ipcRenderer.invoke('apicircle:lifecycle:cancel-close') as Promise<void>,
+    confirmClose: (): Promise<void> =>
+      ipcRenderer.invoke('apicircle:lifecycle:confirm-close') as Promise<void>,
   },
 
   // Auto-update bridge. The renderer subscribes once at mount; the main

@@ -57,14 +57,19 @@ const EMPTY_VALIDATION: PreSendValidationResult = { warnings: [], blockers: [] }
 export function PreSendPanel({ request, enabled, validation }: PreSendPanelProps) {
   const { warnings, blockers } = validation ?? EMPTY_VALIDATION;
   if (!enabled || !request) return null;
-  if (warnings.length === 0 && blockers.length === 0) return null;
+  // `unparseable-url` is suppressed here because the Effective URL card on
+  // the Editor surface already shows the same error in its own danger-styled
+  // box. The blocker is still present in `validation.blockers`, so Send
+  // stays disabled — we just don't render the duplicate row.
+  const visibleBlockers = blockers.filter((b) => b.kind !== 'unparseable-url');
+  if (warnings.length === 0 && visibleBlockers.length === 0) return null;
 
   return (
     <section
       aria-label="Pre-send validation"
       className="flex flex-col gap-1.5 rounded-sm border border-border-subtle bg-surface px-3 py-2"
     >
-      {blockers.map((b, i) => (
+      {visibleBlockers.map((b, i) => (
         <BlockerRow key={`b-${i}`} blocker={b} />
       ))}
       {warnings.map((w, i) => (

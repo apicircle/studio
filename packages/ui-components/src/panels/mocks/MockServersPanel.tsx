@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Play, Plus, Server, Square, Trash2 } from 'lucide-react';
+import { AlertTriangle, Loader2, Play, Plus, Server, Square, Trash2 } from 'lucide-react';
 import type { MockRuntimeEntry, MockServer } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { MockEndpointEditor } from './MockEndpointEditor';
@@ -303,9 +303,14 @@ function ServerSummary({
               type="button"
               onClick={onStop}
               disabled={stopping}
+              aria-busy={stopping}
               className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-muted hover:bg-card-hover disabled:opacity-50"
             >
-              <Square size={10} aria-hidden="true" />
+              {stopping ? (
+                <Loader2 size={10} className="animate-spin text-accent" aria-hidden="true" />
+              ) : (
+                <Square size={10} aria-hidden="true" />
+              )}
               {stopping ? 'Stopping…' : 'Stop'}
             </button>
           </>

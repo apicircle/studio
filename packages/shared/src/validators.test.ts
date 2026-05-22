@@ -27,6 +27,13 @@ describe('validateUrl', () => {
   it('accepts URLs with embedded templates', () => {
     expect(validateUrl('https://api.example.com/users/{{ID}}').ok).toBe(true);
   });
+  it.each([
+    'http://localhost:{{PORT}}/todos',
+    'https://{{HOST}}:{{PORT}}/api',
+    'https://example.com/{{PATH}}?q={{Q}}',
+  ])('accepts templates in port / host / path / query slots: %s', (v) => {
+    expect(validateUrl(v).ok).toBe(true);
+  });
   it('rejects empty + whitespace', () => {
     expect(validateUrl('').ok).toBe(false);
     expect(validateUrl('   ').ok).toBe(false);

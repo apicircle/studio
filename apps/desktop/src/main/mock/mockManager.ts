@@ -47,16 +47,56 @@ export class MockManager {
   async stop(serverId: string): Promise<void> {
     const handle = this.handles.get(serverId);
     if (!handle) return;
-    await stopMockServer(handle);
+    // Drop the bookkeeping FIRST so a hanging close() can't keep us in a
+    // half-stopped state. The Hono adapter already force-drops sockets and
+    // hard-times-out after CLOSE_TIMEOUT_MS, but if it ever throws here we
+    // still want the renderer's `list()` to stop reporting this mock as
+    // running — otherwise the UI's Stop button stays jammed.
     this.handles.delete(serverId);
     this.meta.delete(serverId);
+    try {
+      await stopMockServer(handle);
+    } catch (err) {
+      console.error(`[MockManager] stopMockServer(${serverId}) threw:`, err);
+    }
   }
 
   async stopAll(): Promise<void> {
+    // Parallelise: a single slow mock shouldn't block the others on quit.
     const ids = Array.from(this.handles.keys());
-    for (const id of ids) {
-      await this.stop(id);
-    }
+    await Promise.all(ids.map((id) => this.stop(id)));
+  }
+
+  /**
+   * Like `stopAll`, but yields a `(completed, total)` callback after each
+   * mock finishes shutting down. Used by the app-quit confirmation flow so
+   * the renderer can render an X-of-N progress bar while the listeners
+   * drain in the background. Stops in parallel — `completed` increments in
+   * whichever order each `stop()` resolves.
+   *
+   * Always fires the callback at least once with `(0, total)` so the
+   * renderer can size its progress bar before any stop completes (useful
+   * when N is large and the first stop has noticeable latency).
+   */
+  async stopAllWithProgress(onProgress: (completed: number, total: number) => void): Promise<void> {
+    const ids = Array.from(this.handles.keys());
+    const total = ids.length;
+    onProgress(0, total);
+    if (total === 0) return;
+    let completed = 0;
+    await Promise.all(
+      ids.map(async (id) => {
+        await this.stop(id);
+        completed += 1;
+        try {
+          onProgress(completed, total);
+        } catch (err) {
+          // Renderer callback shouldn't fail (it's a webContents.send),
+          // but if it does we don't want one stuck IPC to block quit.
+          console.error('[MockManager] stopAllWithProgress callback threw:', err);
+        }
+      }),
+    );
   }
 
   list(): MockManagerEntry[] {
