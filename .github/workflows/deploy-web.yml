@@ -1,10 +1,11 @@
 name: Deploy web app to GitHub Pages
 
-# Publishes the Vite-built `apps/web` bundle to GitHub Pages. While zero
-# custom domain is configured the site is served from
-# https://apicircle.github.io/studio/ — `vite.config.ts` already uses
-# `base: './'` (relative asset paths), so the same bundle works under a
-# project sub-path today and a root custom domain later without rebuilding.
+# Publishes the Vite-built `apps/web` bundle to GitHub Pages, served from
+# https://studio.apicircle.dev (custom domain baked in via
+# `apps/web/public/CNAME`, which Vite copies into the build verbatim so it
+# survives every re-deploy). `vite.config.ts` uses `base: './'` so the
+# same bundle also works under the project sub-path fallback
+# (https://apicircle.github.io/studio/) without rebuilding.
 #
 # Triggers:
 #   - push to main when web-relevant files change
@@ -12,14 +13,8 @@ name: Deploy web app to GitHub Pages
 #
 # Required repo configuration (one-time):
 #   Settings → Pages → Build and deployment → Source: "GitHub Actions"
-#
-# Adding a custom domain later:
-#   1. In Settings → Pages set the custom domain (GitHub will create the
-#      CNAME file on the live site automatically).
-#   2. To bake it into every deploy instead, drop a `CNAME` file into
-#      `apps/web/public/` with the bare domain (e.g. `studio.apicircle.dev`)
-#      — Vite copies `public/` into the build verbatim, so it ships with
-#      the artifact and survives re-deploys.
+#   Settings → Pages → Custom domain: studio.apicircle.dev (+ Enforce HTTPS)
+#   Namecheap DNS: CNAME `studio` → `apicircle.github.io`
 
 on:
   push:
