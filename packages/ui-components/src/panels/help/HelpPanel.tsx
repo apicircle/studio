@@ -2,6 +2,7 @@ import { useMemo, type ReactNode } from 'react';
 import { ExternalLink, HelpCircle, Lightbulb } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { replayOnboarding } from '../../onboarding/OnboardingTour';
+import { GITHUB_ISSUES_NEW_URL } from '../../primitives/externalLinks';
 import { searchHelp, type HelpSection } from './helpContent';
 
 // Right pane of the Help Center. The search input + section list lives in
@@ -104,13 +105,19 @@ function renderHelpBody(body: string): ReactNode {
 }
 
 /**
- * Inline span parser for help body text. Turns `**bold**` into a primary-
- * weight emphasis and `` `code` `` into a monospace chip. Anything else is
- * passed through verbatim.
+ * Inline span parser for help body text. Supports three primitive spans:
+ *  - `**bold**` → primary-weight emphasis
+ *  - `` `code` `` → monospace chip
+ *  - `[text](https://…)` → external anchor opening in a new tab
+ * Anything else is passed through verbatim.
  */
 function renderInline(text: string): ReactNode[] {
   const out: ReactNode[] = [];
-  const pattern = /\*\*([^*]+)\*\*|`([^`]+)`/g;
+  // Order matters: links are matched first so a `[label](url)` containing
+  // backticks or asterisks inside `label` doesn't get half-eaten by the
+  // other spans. Each alternative captures into its own group:
+  //   1 = bold, 2 = code, 3 = link text, 4 = link href.
+  const pattern = /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
   let lastIndex = 0;
   let key = 0;
   let match: RegExpExecArray | null;
@@ -130,6 +137,18 @@ function renderInline(text: string): ReactNode[] {
         >
           {match[2]}
         </code>,
+      );
+    } else if (match[3] !== undefined && match[4] !== undefined) {
+      out.push(
+        <a
+          key={key++}
+          href={match[4]}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline text-accent underline-offset-2 hover:underline"
+        >
+          {match[3]}
+        </a>,
       );
     }
     lastIndex = match.index + match[0].length;
@@ -155,7 +174,7 @@ function HelpFooter() {
         Re-launch onboarding tour
       </button>
       <a
-        href="https://github.com/apicircle/studio/issues/new"
+        href={GITHUB_ISSUES_NEW_URL}
         target="_blank"
         rel="noopener noreferrer"
         className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"

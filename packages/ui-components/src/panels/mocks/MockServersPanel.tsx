@@ -4,6 +4,7 @@ import type { MockRuntimeEntry, MockServer } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { MockEndpointEditor } from './MockEndpointEditor';
 import { CreateMockServerModal } from './CreateMockServerModal';
+import { DesktopAppLink } from '../../primitives/desktopDownload';
 
 // =============================================================================
 // MockServersPanel — split pane: the sidebar (handled by Sidebar.tsx for the
@@ -172,7 +173,8 @@ export function MockServersPanel() {
           <div className="mx-auto flex max-w-3xl items-start gap-2">
             <AlertTriangle size={12} className="mt-0.5 shrink-0 text-warning" aria-hidden="true" />
             <span>
-              Definitions can be created and edited here. Running them needs the Desktop App or{' '}
+              Definitions can be created and edited here. Running them needs the <DesktopAppLink />{' '}
+              or{' '}
               <code className="rounded-sm bg-surface px-1 py-0.5 font-mono">
                 apicircle mock run &lt;id&gt;
               </code>
@@ -229,7 +231,7 @@ function NoSelection({ empty, onCreate }: { empty: boolean; onCreate: () => void
           <p className="text-sm text-text-primary">No mock servers yet.</p>
           <p className="max-w-md text-xs text-text-muted">
             Create a definition by typing endpoints manually or by pasting an OpenAPI / Postman /
-            Insomnia spec. Run the mock from the Desktop App or via{' '}
+            Insomnia spec. Run the mock from the <DesktopAppLink /> or via{' '}
             <code className="rounded-sm bg-card px-1 py-0.5 font-mono">
               apicircle mock run &lt;id&gt;
             </code>
@@ -315,20 +317,29 @@ function ServerSummary({
             </button>
           </>
         ) : (
-          <button
-            type="button"
-            onClick={onStart}
-            disabled={!bridge || starting}
-            title={
-              bridge
-                ? `Start ${server.name}`
-                : 'Running mocks needs the Desktop App or `apicircle mock run`'
-            }
-            className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary hover:bg-card-hover disabled:opacity-40"
-          >
-            <Play size={10} aria-hidden="true" />
-            {starting ? 'Starting…' : 'Start'}
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={onStart}
+              disabled={!bridge || starting}
+              title={
+                bridge
+                  ? `Start ${server.name}`
+                  : 'Running mocks needs the Desktop App or `apicircle mock run`'
+              }
+              className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary hover:bg-card-hover disabled:opacity-40"
+            >
+              <Play size={10} aria-hidden="true" />
+              {starting ? 'Starting…' : 'Start'}
+            </button>
+            {!bridge && (
+              <span className="text-[0.6875rem] text-text-muted">
+                Needs the <DesktopAppLink /> or{' '}
+                <code className="rounded-sm bg-card px-1 py-0.5 font-mono">apicircle mock run</code>
+                .
+              </span>
+            )}
+          </>
         )}
       </div>
     </div>

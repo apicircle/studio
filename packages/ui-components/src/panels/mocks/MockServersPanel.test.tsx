@@ -143,7 +143,19 @@ describe('MockServersPanel (post-rich-editor redesign)', () => {
         mockServers: { m1: fixtureMock('m1', 'Petstore') },
       },
     }));
-    expect(await screen.findByText(/Running them needs the Desktop App/)).toBeInTheDocument();
+    // The banner explains web is read-only and points at the Desktop App
+    // download. "Desktop App" is rendered as an anchor — match on the
+    // banner's flattened textContent, then assert at least one Desktop App
+    // link points at the GitHub Releases URL. (A second link surfaces in
+    // the ServerSummary below the Start button when the bridge is missing,
+    // which is expected.)
+    const banner = await screen.findByText(/Running them needs the/);
+    expect(banner.textContent).toMatch(/Running them needs the Desktop App/);
+    const links = screen.getAllByRole('link', { name: /Desktop App/ });
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) {
+      expect(link).toHaveAttribute('href', 'https://github.com/apicircle/studio/releases/latest');
+    }
   });
 
   it('B-fix: empty-state Create CTA opens the modal', async () => {

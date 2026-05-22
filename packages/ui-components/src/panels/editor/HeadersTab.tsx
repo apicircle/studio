@@ -4,6 +4,7 @@ import type { Request as ApiRequest } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useVariableScope } from '../../editors/useVariableScope';
 import { VariableAutocompleteField } from '../../editors/VariableAutocompleteField';
+import { DesktopAppLink } from '../../primitives/desktopDownload';
 import { HeaderKeyAutocomplete, HeaderValueRecommendations } from './HeaderAutocomplete';
 
 interface HeadersTabProps {
@@ -137,7 +138,7 @@ export const HeadersTab = memo(function HeadersTab({ request }: HeadersTabProps)
           </li>
           <li>
             <code className="text-text-primary">Origin</code> /{' '}
-            <code className="text-text-primary">Referer</code> — desktop only
+            <code className="text-text-primary">Referer</code> — sent by the <DesktopAppLink /> only
           </li>
         </ul>
         <p className="mt-1 text-text-dim">Add a row above with the same name to override.</p>

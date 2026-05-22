@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertTriangle, Copy, Folder, RefreshCw, Terminal } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { formatRelativeTime } from '../../primitives/relativeTime';
+import { DesktopAppLink } from '../../primitives/desktopDownload';
 import { HowToConnect } from './HowToConnect';
 import { getDesktopMcpBridge, getDesktopWorkspaceFileBridge } from '../../desktop/bridge';
 
@@ -123,7 +124,13 @@ export function ConnectionSection() {
             <p className="mt-1 text-xs text-text-muted">
               The desktop app mirrors your workspace to disk so the CLI and MCP can read and write
               it. Use Refresh to pull in any edits the CLI or MCP made since you last opened this
-              app.
+              app.{' '}
+              {!wsFileBridge && (
+                <>
+                  Not running on desktop yet?{' '}
+                  <DesktopAppLink>Download the Desktop App</DesktopAppLink>.
+                </>
+              )}
             </p>
           </div>
           <button

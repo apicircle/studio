@@ -10,6 +10,7 @@ import { findPathPlaceholders } from '@apicircle/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useVariableScope } from '../../editors/useVariableScope';
 import { cn } from '../../primitives/cn';
+import { DesktopAppLink } from '../../primitives/desktopDownload';
 import { KeyValueRows } from './KeyValueRows';
 
 /**
@@ -150,9 +151,9 @@ export const ParamsTab = memo(function ParamsTab({ request }: ParamsTabProps) {
                 </p>
                 <p className="mt-1">
                   Cookies you add here are still saved on the request and{' '}
-                  <em className="not-italic text-text-primary">will be sent</em> by the desktop app
-                  and CLI runner. The browser&rsquo;s own cookie jar (e.g. cookies set by a previous
-                  response) goes along automatically when the request is{' '}
+                  <em className="not-italic text-text-primary">will be sent</em> by the{' '}
+                  <DesktopAppLink /> and CLI runner. The browser&rsquo;s own cookie jar (e.g.
+                  cookies set by a previous response) goes along automatically when the request is{' '}
                   <code>credentials: 'include'</code>.
                 </p>
               </div>

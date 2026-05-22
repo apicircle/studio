@@ -20,6 +20,11 @@ export const REGISTRY_STORE = 'registry';
 const REGISTRY_KEY = 'meta';
 /** Legacy single-workspace key used pre-B.6. We migrate records keyed by this. */
 const LEGACY_KEY = 'current';
+/** Install-scoped cache for the Settings → Community section. Lives in the
+ *  registry store alongside `'meta'` because it's the same scope (per
+ *  origin, never workspace-bound) and a new object store would need a DB
+ *  version bump for a ~200-byte payload. */
+const COMMUNITY_STATS_KEY = 'community-stats';
 
 export interface WorkspaceRegistryEntry {
   id: string;
@@ -204,6 +209,56 @@ export async function writeRegistry(registry: WorkspaceRegistry): Promise<void> 
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(asError(tx.error, 'IndexedDB registry write failed'));
   });
+}
+
+/** Read the install-scoped community-stats cache. Returns `null` if no
+ *  record has been written yet. Errors resolve as `null` rather than
+ *  rejecting — the section's lazy-fetch fallback covers an empty cache. */
+export async function readCommunityStatsRecord<T>(): Promise<T | null> {
+  try {
+    const db = await openDb();
+    return await new Promise<T | null>((resolve, reject) => {
+      const tx = db.transaction(REGISTRY_STORE, 'readonly');
+      const req = tx.objectStore(REGISTRY_STORE).get(COMMUNITY_STATS_KEY);
+      req.onsuccess = () => resolve((req.result as T | undefined) ?? null);
+      req.onerror = () => reject(asError(req.error, 'IndexedDB community stats read failed'));
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** Persist the community-stats cache. Best-effort — failures are swallowed
+ *  so a flaky IndexedDB (private-mode browsers, quota exhausted) doesn't
+ *  surface as an error to the user; the section just re-fetches next time. */
+export async function writeCommunityStatsRecord<T>(value: T): Promise<void> {
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(REGISTRY_STORE, 'readwrite');
+      tx.objectStore(REGISTRY_STORE).put(value, COMMUNITY_STATS_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(asError(tx.error, 'IndexedDB community stats write failed'));
+      tx.onabort = () => reject(asError(tx.error, 'IndexedDB community stats write aborted'));
+    });
+  } catch {
+    // ignored — see jsdoc.
+  }
+}
+
+/** Drop the community-stats cache. Exposed for tests; the UI never clears it. */
+export async function clearCommunityStatsRecord(): Promise<void> {
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(REGISTRY_STORE, 'readwrite');
+      tx.objectStore(REGISTRY_STORE).delete(COMMUNITY_STATS_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(asError(tx.error, 'IndexedDB community stats clear failed'));
+    });
+  } catch {
+    // ignored
+  }
 }
 
 export async function clearAll(): Promise<void> {

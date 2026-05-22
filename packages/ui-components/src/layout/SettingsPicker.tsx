@@ -30,6 +30,7 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 import { cn } from '../primitives/cn';
 import { ALL_THEMES } from '../theme/applyTheme';
 import { ALL_FONTS } from '../theme/applyFont';
+import { CommunitySection } from '../community/CommunitySection';
 import { ThemeList } from './ThemeList';
 import { FontList } from './FontList';
 
@@ -152,7 +153,11 @@ export function SettingsPicker() {
         <div
           role="dialog"
           aria-label="Workspace settings"
-          className="absolute left-0 top-full z-30 mt-1 flex w-72 flex-col gap-2 rounded-sm border border-border bg-card p-3 shadow-lg"
+          // `max-h-[calc(100vh-4rem)] overflow-y-auto` lets the popover
+          // scroll when its content (now including the Community section)
+          // is taller than the viewport — without this, the bottom of
+          // the popover is clipped off-screen and unreachable.
+          className="absolute left-0 top-full z-30 mt-1 flex max-h-[calc(100vh-4rem)] w-72 flex-col gap-2 overflow-y-auto rounded-sm border border-border bg-card p-3 shadow-lg"
         >
           <SectionLabel>Appearance</SectionLabel>
           <AppearanceRow
@@ -196,6 +201,9 @@ export function SettingsPicker() {
             ariaLabel="Code editor captures mouse wheel"
           />
           <SnapshotCapRow current={snapshotMaxBytes} onChange={setSnapshotMaxBytes} />
+
+          <div className="my-1 h-px bg-border-subtle" aria-hidden="true" />
+          <CommunitySection />
         </div>
       )}
     </div>

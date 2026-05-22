@@ -425,7 +425,7 @@ Worked example — Client Credentials:
     Scope:          reports:read
     Get token   ->  access token stored on the request, expiry tracked
 
-Once a token is on file, Send injects it as \`Authorization: Bearer ...\`. When the token is near expiry and a refresh token exists, Studio refreshes it automatically before the request goes out — you rarely press Refresh by hand. (Implicit grants have no refresh token, per the spec.) Authorization Code and PKCE need a browser redirect: on desktop a loopback callback server catches it; on the web a popup window relays the result back over a BroadcastChannel.
+Once a token is on file, Send injects it as \`Authorization: Bearer ...\`. When the token is near expiry and a refresh token exists, Studio refreshes it automatically before the request goes out — you rarely press Refresh by hand. (Implicit grants have no refresh token, per the spec.) Authorization Code and PKCE need a browser redirect: on the [Desktop App](https://github.com/apicircle/studio/releases/latest) a loopback callback server catches it; on the web a popup window relays the result back over a BroadcastChannel.
 
 ## OAuth and the CLI — the limitation
 
@@ -686,7 +686,7 @@ What actually travels in \`workspace.json\`:
 
 The encryption is identical; only how the master key is protected differs:
 
-- **Desktop** — the key is wrapped by the OS keychain through Electron \`safeStorage\` (macOS Keychain, Windows Credential Manager, Linux libsecret). It never sits unprotected on disk, and a payload encrypted by one machine/user will not decrypt on another.
+- **[Desktop](https://github.com/apicircle/studio/releases/latest)** — the key is wrapped by the OS keychain through Electron \`safeStorage\` (macOS Keychain, Windows Credential Manager, Linux libsecret). It never sits unprotected on disk, and a payload encrypted by one machine/user will not decrypt on another.
 - **Web** — there is no OS keychain, so a workspace passphrase model is used: you set a passphrase of 12+ characters, the app derives the key from it, and holds the key in memory only for the session. After a reload you re-enter the passphrase.
 
 In both cases the passphrase and key are never written to Git and never persisted in plaintext. The trade-off: there is **no recovery** — lose the passphrase and the encrypted values cannot be read; teammates need the same passphrase to decrypt shared encrypted variables.`,
@@ -904,7 +904,7 @@ Snapshots live only on this machine. They are kept within a size budget — pick
   {
     id: 'mocks',
     title: 'Mock servers',
-    body: `A mock server stands in for a real API — describe the endpoints and Studio answers requests on \`localhost\`. Definitions are data and live in the synced doc; running one needs the desktop app or the CLI.
+    body: `A mock server stands in for a real API — describe the endpoints and Studio answers requests on \`localhost\`. Definitions are data and live in the synced doc; running one needs the [Desktop App](https://github.com/apicircle/studio/releases/latest) or the CLI.
 
 ## Creating a mock server
 
@@ -935,7 +935,7 @@ The **web app cannot run a mock server** — a browser tab cannot open a listeni
 
     CLI           apicircle mock ./openapi.yaml --port 4100
 
-Whichever you use, point your requests at the printed \`localhost\` address.`,
+Whichever you use, point your requests at the printed \`localhost\` address. Don't have the desktop build yet? [Download the Desktop App](https://github.com/apicircle/studio/releases/latest).`,
     keywords: [
       'mock',
       'mock server',
@@ -956,11 +956,11 @@ Whichever you use, point your requests at the printed \`localhost\` address.`,
 
 ## Why running a mock needs the Desktop app or the CLI
 
-A server has to open a network port and listen on it, and a browser tab is not allowed to do that. So the **web app cannot run a mock** — it can only create and edit the definition, which is why the Mocks panel shows a "run it elsewhere" banner. To actually serve traffic, use the Desktop app or the \`apicircle\` command-line tool. The definition is the same either way; only the thing that runs it differs.
+A server has to open a network port and listen on it, and a browser tab is not allowed to do that. So the **web app cannot run a mock** — it can only create and edit the definition, which is why the Mocks panel shows a "run it elsewhere" banner. To actually serve traffic, use the [Desktop App](https://github.com/apicircle/studio/releases/latest) or the \`apicircle\` command-line tool. The definition is the same either way; only the thing that runs it differs.
 
 ## Run a mock in the Desktop app
 
-Open the Mocks panel, select the mock server, and press **Start**. Studio boots it and shows the address it is listening on:
+[Grab the latest Desktop build](https://github.com/apicircle/studio/releases/latest), then open the Mocks panel, select the mock server, and press **Start**. Studio boots it and shows the address it is listening on:
 
     Started "Payments mock" on http://127.0.0.1:4100
 
@@ -1013,7 +1013,8 @@ For each incoming request the mock checks, in order: validation rules, then resp
 
 - **"Port already in use"** — another process holds that port. Stop it, or start the mock on a different \`--port\`.
 - **A browser client gets a CORS error** — turn CORS on for the server. The CLI enables it by default; in the app it is a toggle on the server card.
-- **The mock stops answering** — the Desktop app was closed, or the CLI process was stopped. A mock runs only as long as its host is alive.`,
+- **The mock stops answering** — the Desktop app was closed, or the CLI process was stopped. A mock runs only as long as its host is alive.
+- **Don't have the Desktop app?** [Download it from GitHub Releases](https://github.com/apicircle/studio/releases/latest).`,
     keywords: [
       'mock runtime',
       'run mock',
@@ -1075,7 +1076,7 @@ The AI client uses that hint to either ask the user which workspace they meant o
 
 The **Set up your AI client** block on the **Connection** tab walks through it in four steps — install \`@apicircle/mcp-server\` globally, pick your client (Claude Desktop / Claude Code / Cursor / Codex / etc), paste the snippet into the right config file, restart the client. The block sits below the workspace-mirror status and shows the exact config-file path for each supported client.
 
-MCP runs over stdio, so it needs the desktop app open or the \`apicircle mcp\` CLI subcommand. The web build cannot expose a stdio server. Note MCP returns code as text — your assistant writes it to a file; MCP itself does not touch the filesystem.
+MCP runs over stdio, so it needs the [Desktop App](https://github.com/apicircle/studio/releases/latest) open or the \`apicircle mcp\` CLI subcommand. The web build cannot expose a stdio server. Note MCP returns code as text — your assistant writes it to a file; MCP itself does not touch the filesystem.
 
 ## Code generation — the time-saver
 
@@ -1096,6 +1097,10 @@ MCP runs over stdio, so it needs the desktop app open or the \`apicircle mcp\` C
     id: 'desktop',
     title: 'Desktop App',
     body: `The desktop app is the Electron build of API Circle Studio. It runs the same interface as the browser build and adds the things a browser tab cannot do — running mock servers, hosting the MCP stdio server, OS-keychain secret storage, and sending requests without browser CORS or stripped cookies.
+
+## Download
+
+[Get the latest build from GitHub Releases](https://github.com/apicircle/studio/releases/latest) — macOS, Windows, and Linux binaries are published on every release. Per-platform install steps live alongside each release.
 
 ## Early Access — the desktop builds are not code-signed
 
@@ -1348,7 +1353,7 @@ The passphrase does not match the one the encrypted values were created with. En
 
 ## Cookies are not being sent
 
-In the browser build the Fetch API strips the \`Cookie\` header. The desktop app and the CLI do send it — run cookie-dependent requests there.
+In the browser build the Fetch API strips the \`Cookie\` header. The [Desktop App](https://github.com/apicircle/studio/releases/latest) and the CLI do send it — run cookie-dependent requests there.
 
 ## A variable is sent literally as \`{{NAME}}\`
 
@@ -1356,11 +1361,11 @@ No layer resolved it. Check the variable exists in an active environment, the co
 
 ## A request fails with a network or CORS error
 
-The target server is unreachable, or a browser CORS policy blocked it. Try the desktop app or the CLI (no browser CORS), and confirm the URL and that the host is up.
+The target server is unreachable, or a browser CORS policy blocked it. Try the [Desktop App](https://github.com/apicircle/studio/releases/latest) or the CLI (no browser CORS), and confirm the URL and that the host is up.
 
 ## A mock server will not start
 
-Common causes: the port is already in use (stop the other server, or pass a different \`--port\`); the spec failed to parse (check the OpenAPI / Postman / Insomnia text is valid); or an OAuth2 callback never fired (browser-redirect grants need the desktop app).
+Common causes: the port is already in use (stop the other server, or pass a different \`--port\`); the spec failed to parse (check the OpenAPI / Postman / Insomnia text is valid); or an OAuth2 callback never fired (browser-redirect grants need the [Desktop App](https://github.com/apicircle/studio/releases/latest)).
 
 ## A plan step fails but the run continues
 

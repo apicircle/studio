@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, screen } from '@testing-library/react';
 import { SettingsPicker } from './SettingsPicker';
 import { useWorkspaceStore } from '../store/workspaceStore';
@@ -9,7 +9,55 @@ async function openSettings() {
   fireEvent.click(screen.getByRole('button', { name: /Open workspace settings/ }));
 }
 
+// Settings → Community mounts a component that fetches GitHub stats on
+// open. Stub fetch with a benign empty response so the section renders
+// its happy path without hitting the network in unrelated tests below.
+function installCommunityFetchStub() {
+  const empty = new Response(JSON.stringify({ stargazers_count: 0, open_issues_count: 0 }), {
+    status: 200,
+  });
+  const release = new Response('{"message":"Not Found"}', { status: 404 });
+  const search = new Response(JSON.stringify({ total_count: 0 }), { status: 200 });
+  const contributors = new Response('[]', { status: 200 });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes('/releases/latest')) return release.clone();
+      if (url.includes('/contributors')) return contributors.clone();
+      if (url.includes('/search/issues')) return search.clone();
+      return empty.clone();
+    }),
+  );
+}
+
+describe('SettingsPicker — Community section', () => {
+  beforeEach(() => {
+    installCommunityFetchStub();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('mounts the Community section under Settings → Behavior', async () => {
+    await openSettings();
+    expect(screen.getByText('Community')).toBeInTheDocument();
+    expect(screen.getByText(/Studio helping you ship/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Star on GitHub/ })).toHaveAttribute(
+      'href',
+      'https://github.com/apicircle/studio/stargazers',
+    );
+    expect(screen.getByRole('button', { name: /Refresh community stats/ })).toBeInTheDocument();
+  });
+});
+
 describe('SettingsPicker — text size row', () => {
+  beforeEach(() => {
+    installCommunityFetchStub();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
   it('renders the row with the current percentage', async () => {
     await openSettings();
     // Live region shows e.g. "100%" — anchor on the aria-live element via its

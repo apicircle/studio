@@ -43,7 +43,8 @@ export class SecretsNotProtectedError extends Error {
     super(
       'Secrets cannot be added on the web build until you set a workspace passphrase. ' +
         'Open the Secret Vault → "Set passphrase" first, or switch to the Desktop App ' +
-        'where secrets are protected by the OS keychain.',
+        '(https://github.com/apicircle/studio/releases/latest) where secrets are ' +
+        'protected by the OS keychain.',
     );
     this.name = 'SecretsNotProtectedError';
   }
