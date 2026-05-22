@@ -1,0 +1,109 @@
+name: Deploy web app to GitHub Pages
+
+# Publishes the Vite-built `apps/web` bundle to GitHub Pages. While zero
+# custom domain is configured the site is served from
+# https://apicircle.github.io/studio/ — `vite.config.ts` already uses
+# `base: './'` (relative asset paths), so the same bundle works under a
+# project sub-path today and a root custom domain later without rebuilding.
+#
+# Triggers:
+#   - push to main when web-relevant files change
+#   - manual workflow_dispatch from the Actions tab
+#
+# Required repo configuration (one-time):
+#   Settings → Pages → Build and deployment → Source: "GitHub Actions"
+#
+# Adding a custom domain later:
+#   1. In Settings → Pages set the custom domain (GitHub will create the
+#      CNAME file on the live site automatically).
+#   2. To bake it into every deploy instead, drop a `CNAME` file into
+#      `apps/web/public/` with the bare domain (e.g. `studio.apicircle.dev`)
+#      — Vite copies `public/` into the build verbatim, so it ships with
+#      the artifact and survives re-deploys.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'turbo.json'
+      - 'tsconfig*.json'
+      - '.github/workflows/deploy-web.yml'
+  workflow_dispatch:
+
+concurrency:
+  # One in-flight Pages deploy at a time; queue (don't cancel) so we never
+  # publish a stale build over a fresh one.
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build web bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web app
+        # `--filter @apicircle/web...` builds the web app plus every
+        # workspace package it depends on (shared, core, ui-components,
+        # …) — nothing else.
+        run: pnpm --filter @apicircle/web... build
+
+      - name: Prepare Pages artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          dist=apps/web/dist
+
+          # Disable Jekyll so files/dirs starting with `_` are served
+          # untouched. Vite doesn't emit any today, but the safety net
+          # costs one empty file.
+          touch "$dist/.nojekyll"
+
+          # SPA deep-link fallback. GitHub Pages serves `404.html` for
+          # any path that doesn't map to a file, so copying index.html
+          # lets the React app boot on refresh of an in-app route.
+          cp "$dist/index.html" "$dist/404.html"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: apps/web/dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

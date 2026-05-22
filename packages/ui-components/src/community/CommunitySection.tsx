@@ -124,13 +124,16 @@ export function CommunitySection() {
         API Circle Studio is open source.
       </p>
 
+      {/*
+        When cache.error is non-null and there's no prior cache, we render
+        nothing — skip the chips entirely and let the link rows carry the
+        section's value.
+      */}
       {showStats ? (
         <StatChips cache={cache} />
       ) : loading ? (
         <StatChipsSkeleton />
-      ) : cache.error !== null ? // No prior cache + the fetch failed → skip the chips entirely
-      // and let the link rows carry the section's value.
-      null : (
+      ) : cache.error !== null ? null : (
         <StatChipsSkeleton />
       )}
 
