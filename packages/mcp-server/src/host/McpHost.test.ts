@@ -53,17 +53,24 @@ const failingTool: AnyToolDef = {
 };
 
 function makeContext(): ToolHandlerContext {
+  const workspace = {
+    async read(): Promise<never> {
+      throw new Error('not used');
+    },
+    async apply(): Promise<never> {
+      throw new Error('not used');
+    },
+    async write(): Promise<never> {
+      throw new Error('not used');
+    },
+  };
   return {
-    workspace: {
-      async read() {
-        throw new Error('not used');
-      },
-      async apply() {
-        throw new Error('not used');
-      },
-      async write() {
-        throw new Error('not used');
-      },
+    workspace,
+    workspaces: {
+      list: () => Promise.resolve([]),
+      for: () => workspace,
+      activeId: () => null,
+      setActive: () => Promise.resolve(),
     },
     mock: {
       async start() {

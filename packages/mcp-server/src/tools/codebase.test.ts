@@ -1,5 +1,6 @@
 ﻿import { describe, expect, it } from 'vitest';
 import { InMemoryWorkspaceProvider } from '../providers/InMemoryWorkspaceProvider';
+import { SingleWorkspaceAdapter } from '../providers/Workspaces';
 import { InProcessMockController } from '../providers/InProcessMockController';
 import { codebaseExtractCollectionTool } from './codebase';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
@@ -47,8 +48,10 @@ function freshState(): { synced: WorkspaceSynced; local: WorkspaceLocal } {
 }
 
 function makeCtx() {
+  const workspace = new InMemoryWorkspaceProvider(freshState());
   return {
-    workspace: new InMemoryWorkspaceProvider(freshState()),
+    workspace,
+    workspaces: new SingleWorkspaceAdapter(workspace, 'ws-test'),
     mock: new InProcessMockController(),
   };
 }

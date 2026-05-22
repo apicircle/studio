@@ -1,6 +1,7 @@
 ﻿import { beforeEach, describe, expect, it } from 'vitest';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
 import { InMemoryWorkspaceProvider } from '../providers/InMemoryWorkspaceProvider';
+import { SingleWorkspaceAdapter } from '../providers/Workspaces';
 import { InProcessMockController } from '../providers/InProcessMockController';
 import {
   assertionCreateTool,
@@ -72,11 +73,17 @@ function freshState(): { synced: WorkspaceSynced; local: WorkspaceLocal } {
   };
 }
 
-let ctx: { workspace: InMemoryWorkspaceProvider; mock: InProcessMockController };
+let ctx: {
+  workspace: InMemoryWorkspaceProvider;
+  workspaces: SingleWorkspaceAdapter;
+  mock: InProcessMockController;
+};
 
 beforeEach(() => {
+  const workspace = new InMemoryWorkspaceProvider(freshState());
   ctx = {
-    workspace: new InMemoryWorkspaceProvider(freshState()),
+    workspace,
+    workspaces: new SingleWorkspaceAdapter(workspace, 'ws-test'),
     mock: new InProcessMockController(),
   };
 });
@@ -309,14 +316,37 @@ describe('assertion CRUD tools', () => {
 });
 
 describe('workspace bulk read/write', () => {
-  it('workspace.read returns the full pair', async () => {
+  it('workspace.read returns a single-envelope when only one workspace is registered', async () => {
+    // SingleWorkspaceAdapter surfaces exactly one entry, so omitted
+    // workspaceId stays in single-mode and returns the active pair.
     const out = (await workspaceReadTool.handler({}, ctx)) as {
+      kind: 'single';
+      workspaceId: string;
       synced: WorkspaceSynced;
     };
+    expect(out.kind).toBe('single');
+    expect(out.workspaceId).toBe('ws-1');
     expect(out.synced.workspaceId).toBe('ws-1');
   });
 
-  it('workspace.write replaces the pair', async () => {
+  it('workspace.read routes by workspaceId when one is supplied', async () => {
+    // The single-workspace adapter only knows about one id; passing it
+    // explicitly should still resolve. Asking for a different id is an
+    // error in single-workspace mode.
+    const out = (await workspaceReadTool.handler({ workspaceId: 'ws-test' }, ctx)) as {
+      kind: 'single';
+      workspaceId: string;
+    };
+    expect(out.kind).toBe('single');
+  });
+
+  it('workspace.read rejects an unknown workspaceId in single-workspace mode', async () => {
+    await expect(workspaceReadTool.handler({ workspaceId: 'ws-not-here' }, ctx)).rejects.toThrow(
+      /workspace.*"ws-not-here".*available/,
+    );
+  });
+
+  it('workspace.write writes to the active workspace when no workspaceId is given', async () => {
     const fresh = freshState();
     const out = (await workspaceWriteTool.handler(
       {
@@ -326,9 +356,42 @@ describe('workspace bulk read/write', () => {
         },
       },
       ctx,
-    )) as { ok: boolean };
+    )) as { ok: boolean; workspaceId: string };
     expect(out.ok).toBe(true);
+    expect(out.workspaceId).toBe('ws-1');
     const state = await ctx.workspace.read();
     expect(state.synced.meta.appVersion).toBe('renamed-version');
+  });
+
+  it('workspace.write routes to ctx.workspaces.for(id) when a workspaceId is supplied', async () => {
+    // Single-workspace adapter routes back to the same provider for its
+    // own id. Pass the adapter's id explicitly — the write should still
+    // land on the active state.
+    const fresh = freshState();
+    await workspaceWriteTool.handler(
+      {
+        workspaceId: 'ws-test',
+        synced: {
+          ...fresh.synced,
+          meta: { ...fresh.synced.meta, appVersion: 'via-workspace-id' },
+        },
+      },
+      ctx,
+    );
+    const state = await ctx.workspace.read();
+    expect(state.synced.meta.appVersion).toBe('via-workspace-id');
+  });
+
+  it('workspace.write rejects an unknown workspaceId in single-workspace mode', async () => {
+    const fresh = freshState();
+    await expect(
+      workspaceWriteTool.handler(
+        {
+          workspaceId: 'ws-not-here',
+          synced: fresh.synced,
+        },
+        ctx,
+      ),
+    ).rejects.toThrow(/workspace.*"ws-not-here".*available/);
   });
 });

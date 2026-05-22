@@ -5,6 +5,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
 import { InMemoryWorkspaceProvider } from '../providers/InMemoryWorkspaceProvider';
+import { SingleWorkspaceAdapter } from '../providers/Workspaces';
 import { InProcessMockController } from '../providers/InProcessMockController';
 import {
   environmentCreateTool,
@@ -74,13 +75,23 @@ function freshState(): { synced: WorkspaceSynced; local: WorkspaceLocal } {
   };
 }
 
-let ctx: { workspace: InMemoryWorkspaceProvider; mock: InProcessMockController };
+let ctx: {
+  workspace: InMemoryWorkspaceProvider;
+  workspaces: SingleWorkspaceAdapter;
+  mock: InProcessMockController;
+};
 
-beforeEach(() => {
-  ctx = {
-    workspace: new InMemoryWorkspaceProvider(freshState()),
+function buildCtx(state = freshState()): typeof ctx {
+  const workspace = new InMemoryWorkspaceProvider(state);
+  return {
+    workspace,
+    workspaces: new SingleWorkspaceAdapter(workspace, 'ws-test'),
     mock: new InProcessMockController(),
   };
+}
+
+beforeEach(() => {
+  ctx = buildCtx();
 });
 
 // =============================================================================
@@ -327,10 +338,7 @@ describe('history MCP tools', () => {
         assertions: [],
       },
     ];
-    ctx = {
-      workspace: new InMemoryWorkspaceProvider(fresh),
-      mock: new InProcessMockController(),
-    };
+    ctx = buildCtx(fresh);
   });
 
   it('history.list_runs returns rows in reverse chronological order', async () => {
@@ -398,10 +406,7 @@ describe('environment import/export MCP tools', () => {
     expect(exp.ok).toBe(true);
     // Re-import into a fresh ctx with overwrite false; should succeed because
     // the env doesn't exist there yet.
-    ctx = {
-      workspace: new InMemoryWorkspaceProvider(freshState()),
-      mock: new InProcessMockController(),
-    };
+    ctx = buildCtx();
     const imp = (await environmentImportTool.handler(
       { json: exp.json, overwrite: false },
       ctx,

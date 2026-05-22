@@ -130,9 +130,14 @@ import {
 // the disk write before continuing.
 import {
   flushPendingPersist,
+  primeObservedWorkspace,
+  queueSaveBoth,
   queueSaveLocal,
   queueSaveSynced,
 } from '../persistence/debouncedPersist';
+import { getDiskMirror } from '../persistence/diskMirror';
+import { mergeSyncedFromDisk } from '../persistence/diskMirrorMerge';
+import type { McpPanelSection, McpRefreshResult } from '../panels/mcp/mcpPanelTypes';
 import { applyTheme } from '../theme/applyTheme';
 import type { ToastRecord } from '../primitives/Toast';
 import { bytesToBase64 } from './attachmentBlobs';
@@ -890,11 +895,23 @@ type WorkspaceStore = {
   setHelpQuery: (value: string) => void;
   setHelpSectionId: (value: string | null) => void;
 
-  /** MCP: which AI client the sidebar has currently focused. The main panel
-   * still renders a card per client, but selecting in the sidebar scrolls
-   * that client's snippet card into view (and highlights it). */
-  mcpFocusedClient: string | null;
-  setMcpFocusedClient: (value: string | null) => void;
+  /** MCP panel: which top-level section is active. The panel renders one
+   * section at a time (How to Connect / Connection / Prompts); the
+   * sidebar lists the three. */
+  mcpActiveSection: McpPanelSection;
+  setMcpActiveSection: (value: McpPanelSection) => void;
+  /** MCP "How to Connect" sub-state: which AI client's snippet is in the
+   *  picker. `null` means the picker hasn't been touched yet — the section
+   *  defaults to Claude Desktop in that case. */
+  mcpHowToConnectClient: string | null;
+  setMcpHowToConnectClient: (value: string | null) => void;
+  /**
+   * MCP "Connection" refresh: re-read `workspace.synced.json` from disk
+   * and, if it's newer than the in-memory copy, hydrate the store with
+   * it. Returns a result discriminator so the caller can render a toast
+   * describing what happened. No-op (returns 'no-mirror') on web.
+   */
+  refreshFromDisk: () => Promise<McpRefreshResult>;
 
   // --- Linked-content overrides ---------------------------------------
   /**
@@ -1689,7 +1706,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   envAdding: false,
   helpQuery: '',
   helpSectionId: null,
-  mcpFocusedClient: null,
+  mcpActiveSection: 'how-to-connect',
+  mcpHowToConnectClient: null,
   activeLinkedRequest: null,
   pendingRefresh: null,
   missingScopePrompt: null,
@@ -1717,18 +1735,87 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           console.error('[workspace.hydrate] legacy env-var migration could not persist', saveErr);
         }
       }
+      // Bridge IDB ↔ on-disk multi-workspace mirror. The desktop main
+      // process owns `<root>/registry.json` + per-id subdirectories; on
+      // web this is a no-op so the renderer can drive it unconditionally.
+      //
+      // Boot-time outcomes for the active workspace:
+      //
+      //   1. No bridge (web)               → no-op.
+      //   2. Disk has the same workspaceId → write through so the MCP
+      //                                      server / CLI see the same doc.
+      //   3. Disk has a different shape    → run the one-time merge
+      //      under the same id (legacy        (IDB wins on collision) and
+      //      migration trail)                 persist the merged result.
+      //
+      // Mirror also fans out every OTHER IDB-registered workspace through
+      // its own disk write so multi-workspace state lives on disk from
+      // the moment the desktop boots — not just on first edit per id.
+      let finalSynced = migrated;
+      const finalLocal = local;
+      const mirror = getDiskMirror();
+      if (mirror.isAvailable()) {
+        try {
+          await mirror.init();
+          const onDisk = await mirror.readWorkspace(migrated.workspaceId);
+          if (onDisk && onDisk.synced.workspaceId !== migrated.workspaceId) {
+            const { merged, importedRequestIds, importedFolderIds } = mergeSyncedFromDisk(
+              migrated,
+              onDisk.synced,
+            );
+            if (importedRequestIds.length + importedFolderIds.length > 0) {
+              console.warn(
+                `[workspace.hydrate] one-time disk merge: imported ${importedRequestIds.length} request(s) + ${importedFolderIds.length} folder(s) from on-disk workspace ${onDisk.synced.workspaceId}`,
+              );
+            }
+            finalSynced = merged;
+            try {
+              await saveSynced(merged);
+            } catch (saveErr) {
+              console.error('[workspace.hydrate] disk-merge persist failed', saveErr);
+              finalSynced = migrated;
+            }
+          }
+          // Register every IDB workspace with the on-disk registry so the
+          // CLI / MCP discover them. Idempotent — `registerWorkspace`
+          // upserts. We do this BEFORE the initial write so the registry
+          // is in lockstep before the first per-id pair lands.
+          for (const w of registry.workspaces) {
+            await mirror.registerWorkspace({
+              id: w.id,
+              name: w.name,
+              createdAt: w.createdAt,
+              lastOpenedAt: w.lastOpenedAt,
+            });
+          }
+          await mirror.setActiveWorkspace(registry.activeWorkspaceId ?? migrated.workspaceId);
+        } catch (mirrorErr) {
+          // A disk-mirror failure must NEVER block hydration of the
+          // IDB-backed UI. Log and continue with whatever IDB had.
+          console.error('[workspace.hydrate] disk mirror init failed', mirrorErr);
+        }
+        // Seed the debounced-persist observer with the full pair so the
+        // first mutation (which may only touch one half) still produces a
+        // complete disk-mirror write. Also queue an initial write so the
+        // active workspace's disk file reflects boot-time IDB even with
+        // zero user mutations.
+        primeObservedWorkspace(finalSynced, finalLocal);
+        queueSaveBoth(finalSynced, finalLocal);
+      } else {
+        primeObservedWorkspace(finalSynced, finalLocal);
+      }
       set({
         ready: true,
         hydrationError: null,
-        synced: migrated,
-        local,
+        synced: finalSynced,
+        local: finalLocal,
         workspaceRegistry: registry,
         // Derive the secret-lock state from the freshly-loaded workspace:
         // a workspace with `secretCrypto` boots `locked` (no key in memory
         // yet); one without is `unset`. The in-memory key never survives a
         // hydrate, so always clear it.
         secretKey: null,
-        secretLockState: migrated.secretCrypto ? 'locked' : 'unset',
+        secretLockState: finalSynced.secretCrypto ? 'locked' : 'unset',
         lastSecretActivityAt: null,
       });
     } catch (err) {
@@ -1752,13 +1839,29 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (workspaceId === registry.activeWorkspaceId) return;
     // Flush any pending writes for the OUTGOING workspace before switching,
     // otherwise a late-firing debounce would write the previous workspace's
-    // in-memory state on top of the freshly-loaded incoming state.
+    // in-memory state on top of the freshly-loaded incoming state. The
+    // disk mirror also drains here so the on-disk file matches whatever
+    // the outgoing workspace last queued before we overwrite it with the
+    // incoming one's content below.
     await flushPendingPersist();
     const updatedRegistry = await setActiveWorkspacePersisted(registry, workspaceId);
+    // Mirror the active-id flip to disk so CLI / MCP consumers (including
+    // anything pointing at the workspaces root) observe the same active
+    // workspace after the user switches in the UI. Best-effort — a disk
+    // failure here must not block the IDB-backed switch.
+    await getDiskMirror().setActiveWorkspace(workspaceId);
     const result = await loadWorkspaceById(workspaceId, updatedRegistry);
     applyTheme(result.local.ui.themeId);
     applyFont(result.local.ui.fontId);
     applyFontSize(result.local.ui.fontSizePercent);
+    // Re-seed the disk-mirror observer with the incoming workspace's
+    // full pair AND queue an immediate write so the on-disk file reflects
+    // the new active workspace even before the user mutates anything.
+    // No-op on web (mirror is unavailable).
+    primeObservedWorkspace(result.synced, result.local);
+    if (getDiskMirror().isAvailable()) {
+      queueSaveBoth(result.synced, result.local);
+    }
     set({
       ready: true,
       hydrationError: null,
@@ -1787,6 +1890,25 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     applyTheme(result.local.ui.themeId);
     applyFont(result.local.ui.fontId);
     applyFontSize(result.local.ui.fontSizePercent);
+    // Mirror the new workspace + registry entry to disk so CLI / MCP can
+    // see it before the user makes any edit. Best-effort.
+    const mirror = getDiskMirror();
+    const created = result.registry.workspaces.find((w) => w.id === result.synced.workspaceId);
+    if (mirror.isAvailable() && created) {
+      await mirror.writeWorkspace({
+        workspaceId: result.synced.workspaceId,
+        synced: result.synced,
+        local: result.local,
+      });
+      await mirror.registerWorkspace({
+        id: created.id,
+        name: created.name,
+        createdAt: created.createdAt,
+        lastOpenedAt: created.lastOpenedAt,
+      });
+      await mirror.setActiveWorkspace(result.synced.workspaceId);
+    }
+    primeObservedWorkspace(result.synced, result.local);
     set({
       ready: true,
       hydrationError: null,
@@ -1813,6 +1935,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     applyTheme(result.local.ui.themeId);
     applyFont(result.local.ui.fontId);
     applyFontSize(result.local.ui.fontSizePercent);
+    // Mirror the delete to disk so the CLI / MCP stop seeing the workspace
+    // immediately. Best-effort — a disk failure here doesn't roll back IDB.
+    await getDiskMirror().deleteWorkspace(workspaceId);
+    primeObservedWorkspace(result.synced, result.local);
     set({
       ready: true,
       hydrationError: null,
@@ -2635,7 +2761,70 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   setEnvAdding: (value) => set({ envAdding: value }),
   setHelpQuery: (value) => set({ helpQuery: value }),
   setHelpSectionId: (value) => set({ helpSectionId: value }),
-  setMcpFocusedClient: (value) => set({ mcpFocusedClient: value }),
+  setMcpActiveSection: (value) => set({ mcpActiveSection: value }),
+  setMcpHowToConnectClient: (value) => set({ mcpHowToConnectClient: value }),
+
+  refreshFromDisk: async () => {
+    const mirror = getDiskMirror();
+    if (!mirror.isAvailable()) return { kind: 'no-mirror' };
+    // Drain any in-flight write first so the disk reflects whatever the
+    // store just queued (otherwise we'd race ourselves and see stale
+    // bytes). Then read the ACTIVE workspace's per-id pair.
+    try {
+      await flushPendingPersist();
+    } catch {
+      /* the write path logs its own errors; press on with the read */
+    }
+    const current = get().synced;
+    const targetId = current?.workspaceId;
+    if (!targetId) {
+      // Hydration hasn't completed — there's no in-memory workspace to
+      // compare against. Best-effort: if the registry has an active id,
+      // hydrate from that; otherwise report no-file.
+      const registry = await mirror.readRegistry();
+      const activeId = registry?.activeWorkspaceId;
+      if (!activeId) return { kind: 'no-file' };
+      const onDisk = await mirror.readWorkspace(activeId);
+      if (!onDisk) return { kind: 'no-file' };
+      set({ synced: onDisk.synced, local: onDisk.local });
+      primeObservedWorkspace(onDisk.synced, onDisk.local);
+      return { kind: 'updated', importedAt: onDisk.synced.meta.updatedAt };
+    }
+    let onDisk: { synced: WorkspaceSynced; local: WorkspaceLocal } | null;
+    try {
+      onDisk = await mirror.readWorkspace(targetId);
+    } catch (err) {
+      return { kind: 'error', message: err instanceof Error ? err.message : String(err) };
+    }
+    if (!onDisk) return { kind: 'no-file' };
+    if (onDisk.synced.workspaceId !== current.workspaceId) {
+      // Per-id read returned a doc with a different id — corrupted dir.
+      // Treat as a one-time merge (IDB wins on collision) and re-write.
+      const { merged, importedRequestIds, importedFolderIds } = mergeSyncedFromDisk(
+        current,
+        onDisk.synced,
+      );
+      const currentLocal = get().local;
+      if (currentLocal) {
+        set({ synced: merged });
+        primeObservedWorkspace(merged, currentLocal);
+        queueSaveBoth(merged, currentLocal);
+      }
+      return { kind: 'merged', importedRequestIds, importedFolderIds };
+    }
+    // Same workspaceId — compare timestamps. Disk newer means CLI / MCP
+    // wrote since the desktop last hydrated; pull it in.
+    const diskUpdatedAt = Date.parse(onDisk.synced.meta.updatedAt);
+    const memUpdatedAt = Date.parse(current.meta.updatedAt);
+    if (Number.isFinite(diskUpdatedAt) && diskUpdatedAt > memUpdatedAt) {
+      const currentLocal = get().local;
+      const nextLocal = currentLocal ?? onDisk.local;
+      set({ synced: onDisk.synced, local: nextLocal });
+      primeObservedWorkspace(onDisk.synced, nextLocal);
+      return { kind: 'updated', importedAt: onDisk.synced.meta.updatedAt };
+    }
+    return { kind: 'up-to-date' };
+  },
 
   setLinkedRequestOverride: (linkedWorkspaceId, itemId, patch) => {
     const key = `${linkedWorkspaceId}:${itemId}`;

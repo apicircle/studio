@@ -24,11 +24,31 @@ npm install @apicircle/core
 ## Entry points
 
 ```ts
+// Engine API
 import { executeRequest, applyMutation, runPlan } from '@apicircle/core';
+
+// Disk-backed single-workspace helpers (load/save/withWorkspace under lock)
 import { loadFromFile, saveToFile, withWorkspace } from '@apicircle/core/workspace/file-backed';
+
+// Multi-workspace registry (registry.json + per-id subdirectories)
+import {
+  loadRegistry,
+  saveRegistry,
+  loadWorkspaceById,
+  saveWorkspaceById,
+  registerWorkspace,
+  setActiveWorkspace,
+  deleteWorkspaceById,
+  findWorkspaceEntry,
+  migrateLegacyWorkspace,
+  workspaceDirFor,
+  type WorkspaceRegistry,
+} from '@apicircle/core/workspace/registry';
 ```
 
-`@apicircle/core/workspace/file-backed` provides disk-backed workspace helpers with `proper-lockfile` advisory locking — used by `@apicircle/cli` and the headless `@apicircle/mcp-server`.
+`@apicircle/core/workspace/file-backed` provides disk-backed workspace helpers with `proper-lockfile` advisory locking — used by `@apicircle/cli` and the headless `@apicircle/mcp-server` for one-workspace flows.
+
+`@apicircle/core/workspace/registry` adds the multi-workspace surface: a `registry.json` index at the root plus per-id subdirectories that each hold a single `{ synced, local }` pair. The desktop app, the CLI, and the MCP server all read this same on-disk shape, so an edit in one is visible to the others.
 
 ## License
 

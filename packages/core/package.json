@@ -20,6 +20,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./workspace/file-backed": "./src/workspace/fileBackedWorkspace.ts",
+    "./workspace/registry": "./src/workspace/workspaceRegistry.ts",
     "./test/mock-idp": "./src/auth/oauth2/__fixtures__/mockIdp.ts"
   },
   "files": [
@@ -48,6 +49,16 @@
         "require": {
           "types": "./dist/workspace/file-backed.d.cts",
           "default": "./dist/workspace/file-backed.cjs"
+        }
+      },
+      "./workspace/registry": {
+        "import": {
+          "types": "./dist/workspace/registry.d.ts",
+          "default": "./dist/workspace/registry.js"
+        },
+        "require": {
+          "types": "./dist/workspace/registry.d.cts",
+          "default": "./dist/workspace/registry.cjs"
         }
       },
       "./test/mock-idp": {

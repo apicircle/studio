@@ -24,7 +24,8 @@ export type McpToolName =
   // Code generation
   | 'generate.code'
 
-  // Workspace bulk read/write
+  // Workspace bulk read/write + multi-workspace discovery
+  | 'workspace.list'
   | 'workspace.read'
   | 'workspace.write'
 
@@ -115,6 +116,7 @@ export const MCP_TOOL_NAMES: ReadonlyArray<McpToolName> = [
   'import.insomnia',
   'import.har',
   'generate.code',
+  'workspace.list',
   'workspace.read',
   'workspace.write',
   'request.create',

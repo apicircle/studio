@@ -9,8 +9,10 @@ import * as path from 'path';
 import { ipcMain } from 'electron';
 import { MockManager } from './mock/mockManager';
 import { McpManager } from './mcp/mcpManager';
+import { WorkspaceFileManager } from './workspaceFile/workspaceFileManager';
 import { registerMockBridge } from './ipc/mockBridge';
 import { registerMcpBridge } from './ipc/mcpBridge';
+import { registerWorkspaceFileBridge } from './ipc/workspaceFileBridge';
 import {
   findFreePort,
   openInBrowser,
@@ -98,6 +100,7 @@ function assertHttpUrl(value: unknown, label: string): string {
 
 const mockManager = new MockManager();
 let mcpManager: McpManager | null = null;
+let workspaceFileManager: WorkspaceFileManager | null = null;
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow(): BrowserWindow {
@@ -330,11 +333,19 @@ void app.whenReady().then(() => {
       console.warn('[main] dock.setIcon failed:', err);
     }
   }
-  // McpManager is constructed after `app` is ready because it reads
-  // `app.getPath('userData')`, which is only valid post-ready.
+  // McpManager + WorkspaceFileManager are constructed after `app` is ready
+  // because they read `app.getPath('userData')`, which is only valid
+  // post-ready. The file manager owns `userData/workspaces/` (multi-workspace
+  // registry + per-id subdirectories); McpManager points AI clients at the
+  // same root. `init()` runs the legacy-layout migration once.
   mcpManager = new McpManager();
+  workspaceFileManager = new WorkspaceFileManager();
+  void workspaceFileManager.init().catch((err) => {
+    console.error('[main] workspace file manager init failed:', err);
+  });
   registerMockBridge(mockManager);
   registerMcpBridge(mcpManager);
+  registerWorkspaceFileBridge(workspaceFileManager);
   mainWindow = createWindow();
   // Auto-update bridge — emits `apicircle:update:available` to the
   // renderer once an update has been downloaded. No-ops cleanly when
@@ -410,6 +421,17 @@ async function drainAndQuit(): Promise<void> {
     });
   } catch (err) {
     console.error('[main] drainAndQuit failed:', err);
+  }
+  // Drain any in-flight workspace mirror write so the on-disk file matches
+  // whatever the renderer last queued. Renderer would have called its own
+  // flush on `beforeunload`, but the IPC handler may still be settling
+  // here; this awaits it so the next CLI / MCP read sees the latest state.
+  if (workspaceFileManager) {
+    try {
+      await workspaceFileManager.flush();
+    } catch (err) {
+      console.error('[main] workspace mirror flush failed:', err);
+    }
   }
   safeSendToRenderer('apicircle:lifecycle:shutdown-complete');
   quitState = 'complete';

@@ -3,6 +3,7 @@ import { registerMockCommand } from './commands/mock';
 import { registerMcpCommand } from './commands/mcp';
 import { registerImportCommand } from './commands/import';
 import { registerRunCommand } from './commands/run';
+import { registerWorkspacesCommand } from './commands/workspaces';
 
 // =============================================================================
 // `apicircle` — root CLI binary. Sub-commands live under ./commands.
@@ -25,6 +26,7 @@ export function buildProgram(): Command {
   registerMcpCommand(program);
   registerImportCommand(program);
   registerRunCommand(program);
+  registerWorkspacesCommand(program);
 
   return program;
 }

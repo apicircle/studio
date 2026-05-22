@@ -1,6 +1,7 @@
 ﻿import { describe, expect, it } from 'vitest';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
 import { InMemoryWorkspaceProvider } from '../providers/InMemoryWorkspaceProvider';
+import { SingleWorkspaceAdapter } from '../providers/Workspaces';
 import { InProcessMockController } from '../providers/InProcessMockController';
 import {
   importCurlTool,
@@ -55,8 +56,10 @@ function freshState(): { synced: WorkspaceSynced; local: WorkspaceLocal } {
 }
 
 function makeCtx() {
+  const workspace = new InMemoryWorkspaceProvider(freshState());
   return {
-    workspace: new InMemoryWorkspaceProvider(freshState()),
+    workspace,
+    workspaces: new SingleWorkspaceAdapter(workspace, 'ws-test'),
     mock: new InProcessMockController(),
   };
 }

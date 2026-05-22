@@ -7,7 +7,14 @@
 // only ship the calls renderer features actually need.
 
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
-import type { MockServer, MockRuntimeEntry, McpToolName } from '@apicircle/shared';
+import type {
+  MockServer,
+  MockRuntimeEntry,
+  McpToolName,
+  WorkspaceLocal,
+  WorkspaceSynced,
+} from '@apicircle/shared';
+import type { WorkspaceRegistry, WorkspaceRegistryEntry } from '@apicircle/core/workspace/registry';
 
 /** Payload emitted on the `apicircle:update:available` IPC channel. */
 export interface UpdateAvailablePayload {
@@ -62,6 +69,54 @@ const bridge = {
       ipcRenderer.invoke('apicircle:mcp:getConfigPath', client) as Promise<string | null>,
     toolCatalog: (): Promise<readonly McpToolName[]> =>
       ipcRenderer.invoke('apicircle:mcp:toolCatalog') as Promise<readonly McpToolName[]>,
+  },
+
+  // On-disk multi-workspace mirror. The renderer writes every debounced
+  // persistence flush through `writeWorkspace` so each workspace's pair
+  // (`workspace.synced.json` + `workspace.local.json`) stays in sync with
+  // IndexedDB — that's the pair `apicircle-mcp` and the CLI read.
+  workspaceFile: {
+    status: (): Promise<{ workspacesRoot: string }> =>
+      ipcRenderer.invoke('apicircle:workspaceFile:status') as Promise<{ workspacesRoot: string }>,
+    init: (): Promise<{ registry: WorkspaceRegistry; migrated: boolean }> =>
+      ipcRenderer.invoke('apicircle:workspaceFile:init') as Promise<{
+        registry: WorkspaceRegistry;
+        migrated: boolean;
+      }>,
+    readRegistry: (): Promise<WorkspaceRegistry> =>
+      ipcRenderer.invoke('apicircle:workspaceFile:readRegistry') as Promise<WorkspaceRegistry>,
+    writeRegistry: (registry: WorkspaceRegistry): Promise<void> =>
+      ipcRenderer.invoke('apicircle:workspaceFile:writeRegistry', registry) as Promise<void>,
+    readWorkspace: (
+      workspaceId: string,
+    ): Promise<{ synced: WorkspaceSynced; local: WorkspaceLocal } | null> =>
+      ipcRenderer.invoke('apicircle:workspaceFile:readWorkspace', workspaceId) as Promise<{
+        synced: WorkspaceSynced;
+        local: WorkspaceLocal;
+      } | null>,
+    writeWorkspace: (payload: {
+      workspaceId: string;
+      synced: WorkspaceSynced;
+      local: WorkspaceLocal;
+    }): Promise<void> =>
+      ipcRenderer.invoke('apicircle:workspaceFile:writeWorkspace', payload) as Promise<void>,
+    deleteWorkspace: (workspaceId: string): Promise<WorkspaceRegistry> =>
+      ipcRenderer.invoke(
+        'apicircle:workspaceFile:deleteWorkspace',
+        workspaceId,
+      ) as Promise<WorkspaceRegistry>,
+    registerWorkspace: (entry: WorkspaceRegistryEntry): Promise<WorkspaceRegistry> =>
+      ipcRenderer.invoke(
+        'apicircle:workspaceFile:registerWorkspace',
+        entry,
+      ) as Promise<WorkspaceRegistry>,
+    setActiveWorkspace: (workspaceId: string): Promise<WorkspaceRegistry> =>
+      ipcRenderer.invoke(
+        'apicircle:workspaceFile:setActiveWorkspace',
+        workspaceId,
+      ) as Promise<WorkspaceRegistry>,
+    flush: (): Promise<void> =>
+      ipcRenderer.invoke('apicircle:workspaceFile:flush') as Promise<void>,
   },
 
   // OAuth2 callback bridge — wraps the localhost http server in main.ts.

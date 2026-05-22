@@ -53,6 +53,76 @@ First time here? An onboarding tour runs on first launch — replay it any time 
     keywords: ['intro', 'about', 'overview', 'getting started', 'panels', 'dock', 'two document'],
   },
   {
+    id: 'multi-workspace',
+    title: 'Multi-workspace',
+    body: `A single Studio install can hold many independent workspaces. Each workspace is its own \`{ synced, local }\` pair — its own collection of requests, environments, mocks, plans, history, and GitHub session. Switching between them is one click in the top bar.
+
+## What "multi-workspace" looks like
+
+- **In the app** — the workspace switcher next to the brand mark cycles between every workspace this install knows about. The active workspace's name shows in the chip.
+- **On disk** — the desktop app mirrors every workspace into a per-id subdirectory under \`userData/workspaces/\` plus a single \`registry.json\` index. CLI and MCP consumers read those files.
+- **In Git** — each workspace can link to its own GitHub repo + branch. Switching workspaces switches which repo the Workspace panel talks to.
+
+## Disk layout
+
+The desktop app's userData (Windows: \`%APPDATA%\\@apicircle\\desktop\\\`, macOS: \`~/Library/Application Support/@apicircle/desktop/\`, Linux: \`~/.config/@apicircle/desktop/\`) holds:
+
+    workspaces/
+      registry.json                       <- { activeWorkspaceId, workspaces: [...] }
+      <workspace-id-1>/
+        workspace.synced.json             <- the git-tracked half
+        workspace.local.json              <- the device-private half
+      <workspace-id-2>/
+        ...
+
+The renderer keeps the canonical copy in IndexedDB and mirrors every change to this layout so the CLI, the MCP server, and (Phase 2) external file watchers see the same content.
+
+## Picking a workspace from the CLI
+
+Two mutually-exclusive flags, no ambiguity:
+
+    apicircle mcp                                       # active workspace from the registry
+    apicircle import openapi spec.yaml \\
+       --workspace-name Petstore                        # by name (or id) — registry lookup
+    apicircle run "Smoke" --workspace-name ws-x         # by id
+    apicircle run "Smoke" --workspace-path ./ws         # by filesystem dir (skips the registry)
+
+Passing both flags is an error. Names are matched case-insensitively, so \`--workspace-name petstore\` resolves to "Petstore". Ids are stable across renames — ideal for CI scripts.
+
+Manage the registry from the terminal:
+
+    apicircle workspaces list                # every workspace + which is active
+    apicircle workspaces create "Petstore"   # seed a new one
+    apicircle workspaces use Petstore        # change active
+    apicircle workspaces path Petstore       # print the on-disk path
+
+## How MCP handles multiple workspaces
+
+\`apicircle-mcp\` boots against the registry root by default and exposes every workspace at once. Two new behaviours follow from that:
+
+- **\`workspace.list\`** — new tool. Returns every workspace + per-workspace counts (requests, folders, environments, mocks, plans) + which is active. AI clients call it to disambiguate.
+- **Multi-workspace envelope** — \`workspace.read\` (and any other tool that takes \`workspaceId\`) returns a structured "found multiple workspaces" response when no \`workspaceId\` is given AND more than one workspace is registered. The AI uses the included \`hint\` to ask the user which workspace they meant, or to call entity-specific tools (which default to the active workspace) when scoping to one is acceptable.
+
+Most tools (\`request.read\`, \`environment.create\`, etc) default to the active workspace and don't require \`workspaceId\` — multi-workspace is opt-in per tool call.
+
+## Refreshing without restarting
+
+The MCP panel's **Connection** section has a **Refresh** button. It re-reads the active workspace's \`workspace.synced.json\` from disk and merges any newer changes (e.g. from a \`apicircle import\` invocation or an AI-driven MCP edit) into the in-memory store. No more "quit and reopen the desktop app to see CLI edits".`,
+    keywords: [
+      'multi-workspace',
+      'multiple workspaces',
+      'workspaces',
+      'registry',
+      'switcher',
+      'workspace id',
+      'workspace name',
+      'cli workspace',
+      'mcp multi-workspace',
+      'workspace.list',
+      'workspaceId',
+    ],
+  },
+  {
     id: 'workspace-and-git',
     title: 'Workspace & Git',
     body: `The Workspace panel connects your workspace to a GitHub repository and runs the working-branch sync model. With no GitHub session it stays in local-only mode — fully usable, nothing leaves your machine.
@@ -962,41 +1032,55 @@ For each incoming request the mock checks, in order: validation rules, then resp
   {
     id: 'mcp',
     title: 'MCP',
-    body: `The MCP server exposes your workspace to AI assistants and other Model Context Protocol clients over stdio — they read and edit it as a catalog of tools (71 of them).
+    body: `The MCP server exposes your workspace to AI assistants and other Model Context Protocol clients over stdio — they read and edit it as a catalog of tools.
+
+## Three sections in the panel
+
+The MCP panel is organised into three top-level sections:
+
+- **How to Connect** — step-by-step setup. Install the binary, pick your AI client, paste the snippet, restart.
+- **Connection** — live mirror status, the binary your AI client spawns, and a **Refresh** button. Refresh re-reads the on-disk workspace so CLI / MCP edits show up in the app without a restart.
+- **Prompts** — curated starter prompts you can paste into your AI client to drive the workspace. Searchable + grouped by tool family.
 
 ## What an AI client can do
 
 The tools cluster into areas:
 
-- **Read & search** the workspace — requests, folders, environments, plans, assertions.
+- **Workspaces** — \`workspace.list\` enumerates every workspace the server can see; \`workspace.read\` returns the full doc and, when multiple workspaces are registered, returns a "multiple workspaces" envelope listing each summary so the AI can disambiguate before drilling in.
+- **Read & search** — requests, folders, environments, plans, assertions, history.
 - **Author** — create / update / delete requests, folders, environments, assertions; reshape execution plans.
 - **Import** — pull in OpenAPI, Postman, Insomnia, HAR, or curl as requests.
 - **Mock servers** — create from a spec, edit endpoints, validation rules, response rules, multipliers.
-- **History** — list, read, and purge run history.
-- **Generate code** — turn a request into runnable client code.
+- **Generate code** — turn a request into runnable client code (\`curl\`, \`fetch\`, \`node-axios\`, \`python-requests\`, \`go\`, \`rust\`).
 
-## Code generation — the time-saver
+## Multi-workspace handling
 
-\`generate.code\` takes a request id plus a target and returns ready-to-paste code. Targets: \`curl\`, \`fetch\`, \`node-axios\`, \`python-requests\`, \`go\`, \`rust\`.
+The desktop app maintains one **registry** on disk (\`userData/workspaces/registry.json\`) plus a per-workspace subdirectory for each registered workspace. \`apicircle-mcp\` boots against the registry root and exposes every workspace by id; most tools default to the **active** workspace, and ones that need to scope (\`workspace.read\`, \`workspace.write\`) accept an optional \`workspaceId\`.
 
-Example — you have a request "Create user" in the workspace and ask your assistant for Python:
+When an AI asks "show me my requests" and more than one workspace is registered, the response is a structured envelope:
 
-    generate.code  { requestId: "req_create_user", target: "python-requests" }
+    {
+      "kind": "multiple-workspaces",
+      "activeWorkspaceId": "ws-a",
+      "workspaceCount": 2,
+      "workspaces": [
+        { "id": "ws-a", "name": "Petstore", "isActive": true, "counts": {...} },
+        { "id": "ws-b", "name": "Internal API", "isActive": false, "counts": {...} }
+      ],
+      "hint": "Found 2 workspaces. Re-call workspace.read with workspaceId set..."
+    }
 
-    import requests
-    resp = requests.post(
-        "https://api.example.com/v1/users",
-        headers={"Content-Type": "application/json"},
-        json={"name": "Ada Lovelace"},
-    )
-
-Why it saves time: the request — URL, headers, body, auth, query and path params — is already defined and tested in Studio. Codegen renders that exact, known-good request into your codebase, so the client code and the request you verified cannot drift apart. Define once, Send to confirm it works, then generate the call in whatever language your service is written in.
+The AI client uses that hint to either ask the user which workspace they meant or to call entity-specific tools (which silently default to the active workspace).
 
 ## Connecting a client
 
-The MCP panel has a card per client — Claude Desktop, Claude Code, Cursor, GitHub Copilot, ChatGPT, Continue, Cline, Zed, Windsurf, and a generic stdio option — each with a copy-ready config snippet and the default config-file path.
+The **How to Connect** section walks through it in four steps — install \`@apicircle/mcp-server\` globally, pick your client (Claude Desktop / Claude Code / Cursor / Codex / etc), paste the snippet into the right config file, restart the client. The panel shows the exact config-file path for each supported client.
 
-MCP runs over stdio, so it needs the desktop app, or \`npx @apicircle/cli mcp\` from a terminal. The web build cannot expose a stdio server. Note MCP returns code as text — your assistant writes it to a file; MCP itself does not touch the filesystem.`,
+MCP runs over stdio, so it needs the desktop app open or the \`apicircle mcp\` CLI subcommand. The web build cannot expose a stdio server. Note MCP returns code as text — your assistant writes it to a file; MCP itself does not touch the filesystem.
+
+## Code generation — the time-saver
+
+\`generate.code\` takes a request id plus a target and returns ready-to-paste code. The request — URL, headers, body, auth, query and path params — is already defined and tested in Studio; codegen renders that exact known-good request into your codebase so the client code and the request you verified cannot drift apart.`,
     keywords: [
       'mcp',
       'model context protocol',
@@ -1078,23 +1162,44 @@ Run a mock server:
 
 Options: \`--port\` (default: a free port), \`--host\` (default \`127.0.0.1\`), \`--type\` (\`openapi\`/\`postman\`/\`insomnia\`/\`auto\`), \`--format\` (\`json\`/\`yaml\`/\`auto\`), \`--cors\`.
 
-Run the MCP server against a workspace folder, for AI clients:
+Run the MCP server. With no workspace flag it boots against the desktop app's registry root (multi-workspace mode) and exposes every workspace:
 
-    apicircle mcp --workspace ./my-workspace
+    apicircle mcp                                       # multi-workspace mode, active workspace by default
+    apicircle mcp --workspace-name Petstore             # scope to the "Petstore" workspace (by name or id)
+    apicircle mcp --workspace-path ./checkout-repo      # legacy single-workspace dir (CI / git-cloned)
 
-Import a spec into a workspace folder's \`workspace.json\`, one request per operation:
+Import a spec into a workspace, one request per operation. The same workspace flags apply:
 
-    apicircle import openapi ./petstore.yaml
-    apicircle import curl - < request.txt
+    apicircle import openapi ./petstore.yaml                                  # active workspace
+    apicircle import openapi ./petstore.yaml --workspace-name Petstore        # named workspace
+    apicircle import curl - --workspace-path ./checkout-repo < request.txt    # by directory
 
-\`<type>\` is \`openapi\`, \`postman\`, \`insomnia\`, or \`curl\`; \`<input>\` is a file path or \`-\` for stdin; \`--workspace\` picks the target folder.
+\`<type>\` is \`openapi\`, \`postman\`, \`insomnia\`, or \`curl\`; \`<input>\` is a file path or \`-\` for stdin.
 
 Run a saved execution plan and report the result:
 
     apicircle run "Smoke -- core API" --reporter junit
-    apicircle run <plan-id> --bail --env Staging
+    apicircle run <plan-id> --bail --env Staging --workspace-name Petstore
 
-The plan is given by name or id. Options: \`--reporter\` (\`text\`/\`json\`/\`junit\`), \`--bail\` (stop at the first failed step), \`--env <name>\` (layer an environment onto the run), \`--secrets <file>\` (supply encrypted values), \`--no-assertions\`, \`--no-save\`. The exit code is \`0\` when every step passes and \`1\` when one fails, so CI can gate on it.
+The plan is given by name or id. Options: \`--reporter\` (\`text\`/\`json\`/\`junit\`), \`--bail\` (stop at the first failed step), \`--env <name>\` (layer an environment onto the run), \`--secrets <file>\` (supply encrypted values), \`--no-assertions\`, \`--no-save\`. Exit code: \`0\` when every step passes, \`1\` when one fails. CI gates on it directly.
+
+## Multi-workspace registry
+
+Every workspace-aware subcommand accepts two mutually-exclusive flags:
+
+- \`--workspace-name <name-or-id>\` — registry lookup. Matches case-insensitively against the friendly name first, then by id. Use this whenever the workspace is one the desktop app knows about.
+- \`--workspace-path <dir>\` — a literal filesystem directory containing \`workspace.synced.json\`. Skips the registry entirely. Use this for CI / git-cloned workspace repos that aren't registered locally.
+
+When **neither** flag is passed, the CLI uses the registry's active workspace (or the current directory when no registry exists).
+
+The registry root defaults to the desktop app's userData (\`%APPDATA%\\@apicircle\\desktop\\workspaces\\\` on Windows; equivalent under \`~/Library/Application Support\` or \`~/.config\` elsewhere). Override with \`APICIRCLE_WORKSPACES_ROOT\` for CI / tests.
+
+Manage the registry from the terminal with the \`workspaces\` subcommand:
+
+    apicircle workspaces list                # see every registered workspace + which is active
+    apicircle workspaces create "Petstore"   # seed a new workspace + add it to the registry
+    apicircle workspaces use Petstore        # set the active workspace by name (or id)
+    apicircle workspaces path Petstore       # print the on-disk path for one workspace
 
 ## Who it is for
 

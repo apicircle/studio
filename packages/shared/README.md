@@ -18,9 +18,17 @@ npm install @apicircle/shared
 - **`generateId()`** — collision-resistant ID generation; the only sanctioned way to mint entity IDs.
 - **Validators** — shape checks for workspace documents and imported specs.
 - **Encryption helpers** — AES-GCM via WebCrypto for at-rest secret material.
-- **MCP envelopes** — the request/response envelope types shared with `@apicircle/mcp-server`.
+- **MCP catalog** — `MCP_TOOL_NAMES` is the authoritative list of every tool the MCP server exposes. The multi-workspace tool `workspace.list` and the optional `workspaceId` parameter on `workspace.read` / `workspace.write` are part of this catalog.
 
 This package is mostly consumed indirectly through the other API Circle packages — install it directly when you are building tooling against the workspace format.
+
+```ts
+import { MCP_TOOL_NAMES, type McpToolName, type WorkspaceSynced } from '@apicircle/shared';
+
+// Drives Studio's MCP tool registry; any external MCP consumer can
+// import the same list to stay in lockstep with the server.
+const tools = MCP_TOOL_NAMES; // includes 'workspace.list', 'workspace.read', ...
+```
 
 ## License
 

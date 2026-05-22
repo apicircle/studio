@@ -173,15 +173,34 @@ Download the installer for your OS from the
 # Spin up a mock server from an OpenAPI spec — no workspace needed
 npx @apicircle/cli mock ./openapi.yaml
 
-# Start the MCP server against a workspace folder (a git-cloned workspace repo)
-npx @apicircle/cli mcp --workspace ./my-workspace-repo
+# Start the MCP server. With no workspace flag, it boots against the desktop's
+# multi-workspace registry and exposes every workspace via workspace.list.
+npx @apicircle/cli mcp
 
-# Import a spec into a workspace folder
-npx @apicircle/cli import ./postman_collection.json --workspace ./my-workspace-repo
+# Pick a registered workspace (matches by name or id, case-insensitive)
+npx @apicircle/cli mcp --workspace-name Petstore
+npx @apicircle/cli import openapi ./postman_collection.json --workspace-name Petstore
+npx @apicircle/cli run "Smoke Tests" --workspace-name Petstore --reporter junit
 
-# Run a saved execution plan from CI, headlessly
-npx @apicircle/cli run "Smoke Tests" --workspace ./my-workspace-repo --reporter junit
+# Point at a workspace directory directly (CI / git-cloned, skips the registry)
+npx @apicircle/cli run "Smoke Tests" --workspace-path ./checkout-repo --reporter junit
+
+# Manage the workspace registry from the terminal
+npx @apicircle/cli workspaces list
+npx @apicircle/cli workspaces create "Internal API"
+npx @apicircle/cli workspaces use Petstore
 ```
+
+Two mutually-exclusive flags pick the workspace:
+
+- `--workspace-name <name-or-id>` — registry lookup. Names are case-insensitive;
+  ids survive renames (good for CI).
+- `--workspace-path <dir>` — literal filesystem directory containing
+  `workspace.synced.json`. Skips the registry; ideal for git-cloned workspace
+  repos.
+
+When neither is passed, the CLI uses the registry's active workspace (or the
+current directory when no registry exists yet).
 
 ### Run from source
 
@@ -194,9 +213,17 @@ pnpm dev:web            # web app → http://localhost:5174
 
 ## Connect your AI client
 
-**Easiest path:** open the Desktop app, go to the **MCP panel**, pick your AI
-client (Claude Desktop / Cursor / Copilot / …), click **Copy snippet**, paste
-into the client's config, restart. Done.
+**Easiest path:** open the Desktop app, go to the **MCP panel**, follow the
+four steps in **How to Connect** — install the binary, pick your AI client,
+paste the snippet, restart. The panel also surfaces live mirror status
+(**Connection**) and a curated catalog of starter prompts (**Prompts**).
+
+**Multi-workspace by default:** `apicircle-mcp` boots against the desktop's
+multi-workspace registry. AI clients see every workspace via the new
+`workspace.list` tool. When the AI asks for data without naming a workspace
+and more than one is registered, the server returns a structured "found
+multiple workspaces" envelope so the AI can disambiguate or call entity-
+specific tools (which default to the active workspace).
 
 **Headless / repo-cloned path:**
 
@@ -210,14 +237,17 @@ npm install -g @apicircle/mcp-server
   "mcpServers": {
     "apicircle": {
       "command": "apicircle-mcp",
-      "args": ["--workspace", "/absolute/path/to/your/cloned/workspace/repo"],
+      // Omit --workspace to boot in multi-workspace mode against the
+      // desktop's registry. Pass a directory to pin to a single workspace
+      // (CI / repo-cloned flows).
+      "args": [],
     },
   },
 }
 ```
 
-Full per-client instructions (Cursor, Copilot, ChatGPT, Continue, Cline, Zed,
-Windsurf, generic stdio) are in
+Full per-client instructions (Cursor, Copilot, ChatGPT, Codex, Continue, Cline,
+Zed, Windsurf, generic stdio) are in
 **[Connect your AI client](docs/connect-your-ai-client.md)**.
 
 ## How it works

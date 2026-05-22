@@ -32,11 +32,16 @@ interface ResolvedPaths {
 }
 
 export class McpManager {
-  /** Path to the workspace directory the MCP server should bind to. */
+  /**
+   * Path the MCP server should bind to. This is the *registry root*
+   * (`userData/workspaces/`), not a single-workspace dir — the server
+   * resolves the active workspace from `registry.json` inside it and
+   * exposes the others via `workspace.list`.
+   */
   readonly workspaceDir: string;
 
   constructor(workspaceDir?: string) {
-    this.workspaceDir = workspaceDir ?? path.join(app.getPath('userData'), 'workspace');
+    this.workspaceDir = workspaceDir ?? path.join(app.getPath('userData'), 'workspaces');
   }
 
   resolvePaths(): ResolvedPaths {

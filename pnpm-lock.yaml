@@ -81,6 +81,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@apicircle/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@apicircle/mcp-server':
         specifier: workspace:*
         version: link:../../packages/mcp-server

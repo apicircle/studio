@@ -44,7 +44,7 @@ describe('apicircle import', () => {
       'import',
       'openapi',
       specPath,
-      '--workspace',
+      '--workspace-path',
       ws,
       '--format',
       'json',
@@ -59,7 +59,15 @@ describe('apicircle import', () => {
     await fs.writeFile(curlPath, "curl -X POST https://api.example.test/users -d '{}'");
     const ws = path.join(tmpDir, 'ws');
     const program = buildProgram();
-    await program.parseAsync(['node', 'apicircle', 'import', 'curl', curlPath, '--workspace', ws]);
+    await program.parseAsync([
+      'node',
+      'apicircle',
+      'import',
+      'curl',
+      curlPath,
+      '--workspace-path',
+      ws,
+    ]);
     const loaded = await loadFromFile(ws);
     expect(Object.values(loaded!.synced.collections.requests)[0].method).toBe('POST');
   });
@@ -81,7 +89,7 @@ describe('apicircle import', () => {
       'import',
       'postman',
       colPath,
-      '--workspace',
+      '--workspace-path',
       ws,
     ]);
     const loaded = await loadFromFile(ws);
@@ -105,7 +113,7 @@ describe('apicircle import', () => {
       'import',
       'insomnia',
       expPath,
-      '--workspace',
+      '--workspace-path',
       ws,
     ]);
     const loaded = await loadFromFile(ws);

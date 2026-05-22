@@ -1,41 +1,40 @@
-import { Bot } from 'lucide-react';
+import { BookOpen, Plug, Sparkles } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
-import { MCP_CLIENTS } from './clients';
 import { cn } from '../../primitives/cn';
+import { MCP_PANEL_SECTIONS, type McpPanelSection } from './mcpPanelTypes';
 
 /**
- * MCP sidebar — list of AI clients. Clicking a client focuses its snippet
- * card in the main pane (the panel renders one card per client and scrolls
- * the focused one into view). Selecting here is purely navigation; every
- * client's snippet stays visible in the body.
+ * MCP sidebar — top-level navigation between "How to Connect" (setup
+ * instructions), "Connection" (live mirror status + refresh), and
+ * "Prompts" (curated starter prompts). One section visible at a time;
+ * the panel renders the matching component in its main pane.
  */
 export function McpSidebar() {
-  const focusedClient = useWorkspaceStore((s) => s.mcpFocusedClient);
-  const setFocusedClient = useWorkspaceStore((s) => s.setMcpFocusedClient);
+  const activeSection = useWorkspaceStore((s) => s.mcpActiveSection);
+  const setActiveSection = useWorkspaceStore((s) => s.setMcpActiveSection);
 
   return (
     <div className="flex h-full flex-col gap-2">
-      <div className="flex items-center gap-2 px-1 text-[0.6875rem] uppercase tracking-wider text-text-dim">
-        <Bot size={11} aria-hidden="true" />
-        <span>AI Clients</span>
-      </div>
+      <div className="px-1 text-[0.6875rem] uppercase tracking-wider text-text-dim">MCP</div>
       <ul className="flex flex-col gap-0.5">
-        {MCP_CLIENTS.map((c) => {
-          const active = focusedClient === c.id;
+        {MCP_PANEL_SECTIONS.map((section) => {
+          const active = activeSection === section.id;
           return (
-            <li key={c.id}>
+            <li key={section.id}>
               <button
                 type="button"
-                onClick={() => setFocusedClient(c.id)}
-                aria-current={active ? 'true' : undefined}
+                onClick={() => setActiveSection(section.id)}
+                aria-current={active ? 'page' : undefined}
+                title={section.description}
                 className={cn(
-                  'w-full rounded-sm px-2 py-1.5 text-left text-[0.6875rem] transition-colors',
+                  'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[0.6875rem] transition-colors',
                   active
                     ? 'border border-accent/40 bg-accent/10 text-accent'
                     : 'border border-transparent text-text-muted hover:border-border-subtle hover:bg-surface hover:text-text-primary',
                 )}
               >
-                {c.label}
+                <SectionIcon id={section.id} />
+                <span>{section.label}</span>
               </button>
             </li>
           );
@@ -43,4 +42,16 @@ export function McpSidebar() {
       </ul>
     </div>
   );
+}
+
+function SectionIcon({ id }: { id: McpPanelSection }) {
+  const props = { size: 12, 'aria-hidden': true } as const;
+  switch (id) {
+    case 'how-to-connect':
+      return <BookOpen {...props} />;
+    case 'connection':
+      return <Plug {...props} />;
+    case 'prompts':
+      return <Sparkles {...props} />;
+  }
 }

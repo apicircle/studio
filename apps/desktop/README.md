@@ -38,6 +38,30 @@ pnpm --filter @apicircle/desktop start
 channel names. CI runs this without launching Electron so we don't
 need a display.
 
+## Workspace mirror (multi-workspace on disk)
+
+The renderer keeps every workspace in IndexedDB; the desktop main
+process mirrors each one to disk so the CLI (`@apicircle/cli`) and
+the MCP server (`@apicircle/mcp-server`) see the same content. Layout
+under `app.getPath('userData')`:
+
+```
+workspaces/
+  registry.json                       <- multi-workspace index
+  <workspace-id-1>/
+    workspace.synced.json             <- git-tracked half
+    workspace.local.json              <- device-private half
+  <workspace-id-2>/
+    ...
+```
+
+The mirror is owned by `WorkspaceFileManager`
+(`src/main/workspaceFile/workspaceFileManager.ts`) and exposed to the
+renderer via the `apicircle:workspaceFile:*` IPC channels in
+`src/main/ipc/workspaceFileBridge.ts`. On first boot we migrate the
+legacy `userData/workspace/` single-workspace layout into
+`workspaces/<id>/` automatically — no data loss.
+
 ## Why a shell, not a fork
 
 The plan (§1) calls for "web-first; port Electron shell after web is

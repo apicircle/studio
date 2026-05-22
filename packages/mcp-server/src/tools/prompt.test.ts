@@ -1,6 +1,7 @@
 ﻿import { beforeEach, describe, expect, it } from 'vitest';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
 import { InMemoryWorkspaceProvider } from '../providers/InMemoryWorkspaceProvider';
+import { SingleWorkspaceAdapter } from '../providers/Workspaces';
 import { InProcessMockController } from '../providers/InProcessMockController';
 import { requestCreateTool } from './crud';
 import {
@@ -63,11 +64,17 @@ function freshState(): { synced: WorkspaceSynced; local: WorkspaceLocal } {
   };
 }
 
-let ctx: { workspace: InMemoryWorkspaceProvider; mock: InProcessMockController };
+let ctx: {
+  workspace: InMemoryWorkspaceProvider;
+  workspaces: SingleWorkspaceAdapter;
+  mock: InProcessMockController;
+};
 
 beforeEach(() => {
+  const workspace = new InMemoryWorkspaceProvider(freshState());
   ctx = {
-    workspace: new InMemoryWorkspaceProvider(freshState()),
+    workspace,
+    workspaces: new SingleWorkspaceAdapter(workspace, 'ws-test'),
     mock: new InProcessMockController(),
   };
 });

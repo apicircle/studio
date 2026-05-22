@@ -1,5 +1,4 @@
 import * as os from 'node:os';
-import * as path from 'node:path';
 import type { Command } from 'commander';
 import kleur from 'kleur';
 import {
@@ -15,6 +14,7 @@ import {
 import { loadFromFile, saveToFile } from '@apicircle/core/workspace/file-backed';
 import type { ExecutionPlan, WorkspaceLocal } from '@apicircle/shared';
 import { buildSecretsFromCli } from '../util/secrets';
+import { resolveWorkspace, WorkspaceResolutionError } from '../util/resolveWorkspace';
 
 // =============================================================================
 // `apicircle run <plan>` — execute a saved execution plan headlessly and print
@@ -34,7 +34,8 @@ const REPORTERS = ['text', 'json', 'junit'] as const;
 type Reporter = (typeof REPORTERS)[number];
 
 interface RunOptions {
-  workspace?: string;
+  workspaceName?: string;
+  workspacePath?: string;
   /** Commander sets this `false` when `--no-assertions` is passed. */
   assertions?: boolean;
   secrets?: string;
@@ -51,7 +52,14 @@ export function registerRunCommand(program: Command): void {
     .command('run')
     .description('Run a saved execution plan from a workspace and report the result')
     .argument('<plan>', 'Plan name or id to run')
-    .option('-w, --workspace <dir>', 'Workspace directory (defaults to current directory)')
+    .option(
+      '--workspace-name <name-or-id>',
+      'Registry workspace name (case-insensitive) or id. Defaults to the active workspace.',
+    )
+    .option(
+      '--workspace-path <dir>',
+      'Filesystem directory containing workspace.synced.json (skips the registry).',
+    )
     .option('--no-assertions', 'Run requests without evaluating their assertions')
     .option('-s, --secrets <file>', 'JSON file mapping secretKeyId → plaintext value')
     .option('--no-save', 'Do not write the plan run to workspace history')
@@ -60,7 +68,26 @@ export function registerRunCommand(program: Command): void {
     .option('-e, --env <name>', 'Layer a local environment on top of the run')
     .option('--as <actor>', 'Override the recorded runner identity')
     .action(async (planRef: string, opts: RunOptions) => {
-      const dir = path.resolve(opts.workspace ?? process.cwd());
+      let dir: string;
+      try {
+        const resolved = await resolveWorkspace({
+          name: opts.workspaceName,
+          path: opts.workspacePath,
+          expectExists: false,
+        });
+        dir = resolved.dir;
+        if (resolved.fromRegistry) {
+          process.stderr.write(
+            `${kleur.dim('workspace')}: ${kleur.cyan(resolved.name ?? resolved.id ?? '')} ${kleur.dim(`(${dir})`)}\n`,
+          );
+        }
+      } catch (err) {
+        if (err instanceof WorkspaceResolutionError) {
+          fail(err.message);
+          return;
+        }
+        throw err;
+      }
 
       const reporter = opts.reporter ?? 'text';
       if (!isReporter(reporter)) {

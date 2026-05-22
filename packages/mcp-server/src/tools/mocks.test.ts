@@ -6,6 +6,7 @@ import type {
   WorkspaceSynced,
 } from '@apicircle/shared';
 import { InMemoryWorkspaceProvider } from '../providers/InMemoryWorkspaceProvider';
+import { SingleWorkspaceAdapter } from '../providers/Workspaces';
 import type { MockController, StartMockResult } from '../providers/MockController';
 import {
   mockCreateFromInsomniaTool,
@@ -92,11 +93,17 @@ function freshState(): { synced: WorkspaceSynced; local: WorkspaceLocal } {
   };
 }
 
-let ctx: { workspace: InMemoryWorkspaceProvider; mock: FakeMockController };
+let ctx: {
+  workspace: InMemoryWorkspaceProvider;
+  workspaces: SingleWorkspaceAdapter;
+  mock: FakeMockController;
+};
 
 beforeEach(() => {
+  const workspace = new InMemoryWorkspaceProvider(freshState());
   ctx = {
-    workspace: new InMemoryWorkspaceProvider(freshState()),
+    workspace,
+    workspaces: new SingleWorkspaceAdapter(workspace, 'ws-test'),
     mock: new FakeMockController(),
   };
 });

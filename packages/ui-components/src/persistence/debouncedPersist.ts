@@ -28,6 +28,7 @@ import {
   saveLocal as defaultSaveLocal,
   saveSynced as defaultSaveSynced,
 } from './workspaceStorage';
+import { getDiskMirror } from './diskMirror';
 
 /** Quiet-time window before a queued write actually hits IndexedDB.
  *  250 ms is fast enough that a crash mid-typing loses <1 second of edits,
@@ -66,6 +67,14 @@ let timer: ReturnType<typeof setTimeout> | null = null;
  *  a previous flush is still settling. */
 let inflight: Promise<void> | null = null;
 
+// The on-disk mirror needs the FULL `{ synced, local }` pair every write
+// (saveToFile writes both files atomically). Callers may queue just one
+// half via `queueSaveSynced` / `queueSaveLocal`, so we remember the last
+// observed half here and pair it with whatever was queued. Hydration
+// seeds both at boot so the mirror always has a full pair to write.
+let lastObservedSynced: WorkspaceSynced | null = null;
+let lastObservedLocal: WorkspaceLocal | null = null;
+
 function scheduleFlush(): void {
   if (timer !== null) clearTimeout(timer);
   timer = setTimeout(() => {
@@ -78,6 +87,7 @@ function scheduleFlush(): void {
  *  snapshot — only the most recent value is ever written to disk. */
 export function queueSaveSynced(synced: WorkspaceSynced): void {
   pendingSynced = synced;
+  lastObservedSynced = synced;
   scheduleFlush();
 }
 
@@ -85,6 +95,7 @@ export function queueSaveSynced(synced: WorkspaceSynced): void {
  *  `queueSaveSynced`. */
 export function queueSaveLocal(local: WorkspaceLocal): void {
   pendingLocal = local;
+  lastObservedLocal = local;
   scheduleFlush();
 }
 
@@ -93,7 +104,20 @@ export function queueSaveLocal(local: WorkspaceLocal): void {
 export function queueSaveBoth(synced: WorkspaceSynced, local: WorkspaceLocal): void {
   pendingSynced = synced;
   pendingLocal = local;
+  lastObservedSynced = synced;
+  lastObservedLocal = local;
   scheduleFlush();
+}
+
+/**
+ * Hydration seam — seed the last-observed pair from the boot-time load so
+ * the disk mirror has a full `{ synced, local }` snapshot to write even
+ * if the first user mutation only touches one half. Called once from the
+ * store's hydrate path after IndexedDB is loaded.
+ */
+export function primeObservedWorkspace(synced: WorkspaceSynced, local: WorkspaceLocal): void {
+  lastObservedSynced = synced;
+  lastObservedLocal = local;
 }
 
 /**
@@ -127,6 +151,9 @@ export async function flushPendingPersist(): Promise<void> {
         /* logged in the inflight branch */
       }
     }
+    // Disk mirror may still be draining its own queue from an earlier
+    // write — let it settle so callers see "all persistence has landed".
+    await getDiskMirror().flush();
     return;
   }
   if (inflight) {
@@ -136,15 +163,41 @@ export async function flushPendingPersist(): Promise<void> {
       /* errors will be reported by the prior caller; carry on */
     }
   }
-  let work: Promise<void>;
+  // IDB write: matches the queued half(s) exactly.
+  let idbWork: Promise<void>;
   if (synced && local) {
-    work = saveBoth(synced, local);
+    idbWork = saveBoth(synced, local);
   } else if (synced) {
-    work = saveSynced(synced);
+    idbWork = saveSynced(synced);
   } else {
     // local must be set here (early-return above covers both-null).
-    work = saveLocal(local!);
+    idbWork = saveLocal(local!);
   }
+  // Disk mirror write: needs the full `{ synced, local }` pair every time,
+  // keyed by the workspace id (so multi-workspace state lands in the right
+  // per-id subdirectory). Fill in unchanged halves from the last-observed
+  // snapshot — primed at boot, updated by every queue/observe call. If we
+  // don't yet have a full pair (caller wrote one half before hydration
+  // completed — should be impossible in practice), skip the mirror this
+  // round.
+  const mirrorSynced = synced ?? lastObservedSynced;
+  const mirrorLocal = local ?? lastObservedLocal;
+  const mirror = getDiskMirror();
+  const mirrorWork: Promise<void> =
+    mirror.isAvailable() &&
+    mirrorSynced &&
+    mirrorLocal &&
+    mirrorSynced.workspaceId === mirrorLocal.workspaceId
+      ? mirror.writeWorkspace({
+          workspaceId: mirrorSynced.workspaceId,
+          synced: mirrorSynced,
+          local: mirrorLocal,
+        })
+      : Promise.resolve();
+  // Run IDB + disk in parallel — they're independent stores. We await
+  // both before clearing `inflight` so callers see a single linearised
+  // "everything persisted" boundary.
+  const work = Promise.all([idbWork, mirrorWork]).then(() => undefined);
   inflight = work;
   try {
     await work;
@@ -165,6 +218,8 @@ export function resetPendingPersistForTests(): void {
   }
   pendingSynced = null;
   pendingLocal = null;
+  lastObservedSynced = null;
+  lastObservedLocal = null;
   inflight = null;
 }
 

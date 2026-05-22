@@ -4,48 +4,78 @@
 
 <h1 align="center">@apicircle/mcp-server</h1>
 
-Model Context Protocol server for [API Circle Studio](https://github.com/apicircle/studio). Exposes the workspace as a 71-tool catalog any [MCP-compatible AI client](https://modelcontextprotocol.io) can drive — Claude Desktop, Claude Code, ChatGPT, GitHub Copilot, Cursor, Continue, Cline, Zed, Windsurf, and more.
+Model Context Protocol server for [API Circle Studio](https://github.com/apicircle/studio). Exposes the workspace as a tool catalog any [MCP-compatible AI client](https://modelcontextprotocol.io) can drive — Claude Desktop, Claude Code, ChatGPT, Codex, GitHub Copilot, Cursor, Continue, Cline, Zed, Windsurf, and any other stdio MCP client.
 
 ## Install
 
 ```bash
-# Globally for use as a stdio binary
+# Globally for use as a stdio binary (the common case)
 npm install -g @apicircle/mcp-server
 
-# Or as a dependency
+# Or as a dependency for embedding the server programmatically
 npm install @apicircle/mcp-server
 ```
 
-## What's a "workspace folder"?
-
-`--workspace <dir>` points the server at a directory containing
-`workspace.synced.json` + `workspace.local.json`. **That directory is a
-git-cloned API Circle workspace repo** — created by the Desktop app's
-_Link to Git_ feature, then cloned with `git clone`:
+## Quick start
 
 ```bash
-git clone https://github.com/<you>/<your-workspace-repo>
-apicircle-mcp --workspace ./<your-workspace-repo>
+# Multi-workspace mode — boot against the desktop app's registry root and
+# expose every workspace via `workspace.list`. AI clients pass `workspaceId`
+# to scope reads; most tools default to the active workspace.
+apicircle-mcp
+
+# Single-workspace mode — point at a directory holding workspace.synced.json
+# (CI / git-cloned workspace repo). Auto-detected when `<dir>` does NOT
+# contain a `registry.json`.
+apicircle-mcp --workspace /path/to/checkout-repo
 ```
 
-**Don't have a workspace repo yet?** Use the **Desktop or Web app** instead.
-Its workspace lives in browser storage (no folder needed), and the in-app
-**MCP panel** generates a ready-to-paste config snippet for every supported
-AI client — Claude Desktop, Cursor, Copilot, ChatGPT, and the rest — wired to
-the app's workspace directly. This binary is the headless equivalent for
-when you've outgrown the in-app flow.
+The server reads JSON-RPC on stdin and writes responses on stdout; logs go to stderr. Wire it into your AI client per [Connect your AI client](https://github.com/apicircle/studio/blob/main/docs/connect-your-ai-client.md), or paste the snippet generated in the desktop app's **MCP → How to Connect** panel.
 
-## Run as a binary
+## How the server picks a workspace
 
-```bash
-apicircle-mcp --workspace /path/to/your/cloned/workspace/repo
-# or
-APICIRCLE_WORKSPACE=/path/to/cloned/workspace/repo apicircle-mcp
+The directory passed via `--workspace <dir>` (or `APICIRCLE_WORKSPACE`) is auto-detected at boot:
+
+- Contains `registry.json` → **multi-workspace mode**. The server loads the registry, binds the active workspace to `ctx.workspace`, and exposes every other workspace via `workspace.list`. AI clients pass an optional `workspaceId` to scope reads/writes.
+- Contains `workspace.synced.json` directly (no `registry.json`) → **single-workspace mode**. Legacy boot for CI / git-cloned repos. `workspace.list` still works — it returns one entry.
+
+If no `--workspace` is passed, the current working directory is used.
+
+## Multi-workspace tools
+
+Two surfaces let AI clients reason about multiple workspaces:
+
+- **`workspace.list`** — returns every workspace + per-workspace counts (requests, folders, environments, mocks, plans) + which is active. The response includes a `hint` string the AI can surface to the user when disambiguating.
+- **`workspace.read` ambiguous envelope** — when called with no `workspaceId` and more than one workspace is registered, the response is a structured `{ kind: 'multiple-workspaces', activeWorkspaceId, workspaceCount, workspaces, hint }` so the AI can clarify before drilling in.
+
+```json
+{
+  "kind": "multiple-workspaces",
+  "activeWorkspaceId": "ws-a",
+  "workspaceCount": 2,
+  "workspaces": [
+    {
+      "id": "ws-a",
+      "name": "Petstore",
+      "isActive": true,
+      "counts": { "requests": 12, "...": "..." }
+    },
+    {
+      "id": "ws-b",
+      "name": "Internal API",
+      "isActive": false,
+      "counts": { "requests": 47, "...": "..." }
+    }
+  ],
+  "hint": "Found 2 workspaces. Re-call workspace.read with workspaceId set to the desired entry, or call entity-specific tools (which default to the active workspace) when scoping to one workspace is acceptable."
+}
 ```
 
-The server reads JSON-RPC on stdin and writes responses on stdout. Logs go to stderr. Wire it into your AI client per [Connect your AI client](https://github.com/apicircle/studio/blob/main/docs/connect-your-ai-client.md).
+Entity tools (`request.read`, `environment.create`, `mock.start`, etc.) default to the active workspace and don't require `workspaceId` — multi-workspace handling is opt-in per tool call.
 
 ## Use programmatically
+
+Single-workspace (in-memory state or a single on-disk dir):
 
 ```ts
 import {
@@ -58,26 +88,51 @@ const host = createMcpServer({
   workspace: new FileBackedWorkspaceProvider('/path/to/workspace'),
   mock: new InProcessMockController(),
 });
-await host.connect(); // stdio by default
+await host.connect();
+```
+
+Multi-workspace (registry root):
+
+```ts
+import {
+  createMcpServer,
+  MultiWorkspaceProvider,
+  InProcessMockController,
+} from '@apicircle/mcp-server';
+
+const workspaces = new MultiWorkspaceProvider('/path/to/workspaces-root');
+const registry = await workspaces.init();
+console.error(`Booting against ${registry.workspaces.length} workspace(s)`);
+
+const host = createMcpServer({
+  workspace: workspaces.activeProvider(),
+  workspaces, // the multi-workspace surface — backs `workspace.list`
+  mock: new InProcessMockController(),
+});
+await host.connect();
 ```
 
 ## Tool catalog
 
-71 tools — see the [MCP tool catalog reference](https://github.com/apicircle/studio/blob/main/docs/mcp-tools-reference.md). Highlights:
+See the [MCP tool catalog reference](https://github.com/apicircle/studio/blob/main/docs/mcp-tools-reference.md) for the full list. Highlights:
 
-- **Imports**: `import.{curl,openapi,postman,insomnia,har}`
+- **Workspaces**: `workspace.list` (multi-workspace discovery), `workspace.read` / `workspace.write` (bulk + optional `workspaceId`)
+- **Entity CRUD**: full read/write surface for requests, folders, environments, plans, assertions
+- **Imports**: `import.{curl, openapi, postman, insomnia, har}`
 - **Codegen**: `generate.code` (curl, fetch, axios, requests, Go, Rust)
 - **Codebase**: `codebase.extract_collection` (Express, FastAPI, NestJS, Spring)
-- **Prompt-driven**: LLM-shaped JSON entry points covering every authoring workflow — `prompt.create_request` / `update_request`, `prompt.create_folder_tree`, `prompt.create_environment`, `prompt.create_assertion`, `prompt.create_plan` / `add_plan_steps` / `set_plan_variables`, `prompt.create_mock_server` / `add_mock_endpoint` / `set_endpoint_{validation,response}_rules` / `set_endpoint_multipliers`
-- **Mock CRUD**: `mock.{create_from_openapi,start,stop,delete,...}`
-- **Entity CRUD**: full read/write surface for requests, folders, environments, plans, assertions
+- **Prompt-driven authoring**: LLM-shaped JSON entry points covering request / folder / environment / assertion / plan / mock creation flows
+- **Mock CRUD**: `mock.{create_from_openapi, start, stop, delete, …}`
+- **History**: `history.{list_runs, get_run, delete_run, purge_by_age}`
 
 ## Provider interfaces
 
-The host is decoupled from where state lives. Three providers ship:
+The host is decoupled from where state lives:
 
 - `InMemoryWorkspaceProvider` — for tests / programmatic embedding.
 - `FileBackedWorkspaceProvider` — for CLI / headless use; advisory-locks the workspace file via `proper-lockfile`.
+- `MultiWorkspaceProvider` — registry-root-backed; implements the `Workspaces` interface (`list` / `for` / `activeId` / `setActive`) that backs `workspace.list`.
+- `SingleWorkspaceAdapter` — wraps a single `WorkspaceProvider` so legacy single-dir hosts still answer `workspace.list` (returning one entry).
 - `InProcessMockController` — runs mocks directly via `@apicircle/mock-server-core`.
 
 The Electron desktop app supplies its own IPC-backed providers so renderer-side state stays consistent.

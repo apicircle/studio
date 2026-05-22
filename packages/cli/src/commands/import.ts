@@ -11,6 +11,7 @@ import {
 } from '@apicircle/mock-server-core';
 import { generateId, type Request as ApiRequest } from '@apicircle/shared';
 import { ensureWorkspace } from '../util/loadWorkspace';
+import { resolveWorkspace, WorkspaceResolutionError } from '../util/resolveWorkspace';
 
 // =============================================================================
 // `apicircle import <type> <spec>` — read an external spec, persist one
@@ -20,7 +21,8 @@ import { ensureWorkspace } from '../util/loadWorkspace';
 type ImportType = 'curl' | 'openapi' | 'postman' | 'insomnia';
 
 interface ImportOptions {
-  workspace?: string;
+  workspaceName?: string;
+  workspacePath?: string;
   format?: 'json' | 'yaml';
 }
 
@@ -30,10 +32,36 @@ export function registerImportCommand(program: Command): void {
     .description('Import a spec into a workspace folder')
     .argument('<type>', 'Source type: openapi | postman | insomnia | curl')
     .argument('<input>', 'Path to a spec file, or `-` to read from stdin')
-    .option('-w, --workspace <dir>', 'Workspace directory (defaults to current directory)')
+    .option(
+      '--workspace-name <name-or-id>',
+      'Registry workspace name (case-insensitive) or id. Defaults to the active workspace.',
+    )
+    .option(
+      '--workspace-path <dir>',
+      'Filesystem directory containing workspace.synced.json (skips the registry).',
+    )
     .option('-f, --format <format>', 'OpenAPI format: json | yaml', 'json')
     .action(async (type: ImportType, input: string, opts: ImportOptions) => {
-      const dir = path.resolve(opts.workspace ?? process.cwd());
+      let dir: string;
+      try {
+        const resolved = await resolveWorkspace({
+          name: opts.workspaceName,
+          path: opts.workspacePath,
+          expectExists: false,
+        });
+        dir = resolved.dir;
+        if (resolved.fromRegistry) {
+          process.stderr.write(
+            `${kleur.dim('workspace')}: ${kleur.cyan(resolved.name ?? resolved.id ?? '')} ${kleur.dim(`(${dir})`)}\n`,
+          );
+        }
+      } catch (err) {
+        if (err instanceof WorkspaceResolutionError) {
+          process.stderr.write(`${kleur.red('error')}: ${err.message}\n`);
+          process.exit(2);
+        }
+        throw err;
+      }
       const raw = await readInput(input);
       const state = await ensureWorkspace(dir);
       let nextSynced = state.synced;

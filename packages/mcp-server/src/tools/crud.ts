@@ -687,25 +687,77 @@ export const assertionDeleteTool: AnyToolDef = {
 export const workspaceReadTool: AnyToolDef = {
   name: 'workspace.read',
   description:
-    'Return the full `{ synced, local }` workspace pair. Use sparingly — entity-specific tools are more efficient for small reads.',
-  inputSchema: z.object({}),
-  async handler(_input, ctx) {
-    return await ctx.workspace.read();
+    'Return the full `{ synced, local }` workspace pair. Pass `workspaceId` to scope to a specific ' +
+    'workspace when multiple are registered (call `workspace.list` first to discover ids). When ' +
+    'omitted and multiple workspaces exist, the response is a structured "multiple workspaces found" ' +
+    'envelope listing each summary so the AI can clarify before drilling in. Use sparingly — ' +
+    'entity-specific tools are more efficient for small reads.',
+  inputSchema: z.object({
+    workspaceId: z
+      .string()
+      .min(1)
+      .max(256)
+      .optional()
+      .describe(
+        'Optional workspace id (from `workspace.list`). Omit to read the active workspace; the ' +
+          'tool will switch to the "multiple workspaces" envelope when ambiguous.',
+      ),
+  }),
+  async handler(input, ctx) {
+    if (input.workspaceId) {
+      const provider = ctx.workspaces.for(input.workspaceId);
+      const state = await provider.read();
+      return {
+        kind: 'single' as const,
+        workspaceId: state.synced.workspaceId,
+        synced: state.synced,
+        local: state.local,
+      };
+    }
+    const summaries = await ctx.workspaces.list();
+    if (summaries.length > 1) {
+      return {
+        kind: 'multiple-workspaces' as const,
+        activeWorkspaceId: ctx.workspaces.activeId(),
+        workspaceCount: summaries.length,
+        workspaces: summaries,
+        hint:
+          `Found ${summaries.length} workspaces. Re-call \`workspace.read\` with \`workspaceId\` set ` +
+          'to the desired entry, or call entity-specific tools (which default to the active workspace) ' +
+          'when scoping to one workspace is acceptable.',
+      };
+    }
+    const state = await ctx.workspace.read();
+    return {
+      kind: 'single' as const,
+      workspaceId: state.synced.workspaceId,
+      synced: state.synced,
+      local: state.local,
+    };
   },
 };
 
 export const workspaceWriteTool: AnyToolDef = {
   name: 'workspace.write',
   description:
-    'Bulk-replace the workspace. Pass `synced` and/or `local` to overwrite either side. Mutating tools are preferred — this is for full-doc imports/exports.',
+    'Bulk-replace the workspace. Pass `synced` and/or `local` to overwrite either side. Use ' +
+    '`workspaceId` to target a non-active workspace (omit to write the active one). Mutating tools ' +
+    'are preferred — this is for full-doc imports/exports.',
   inputSchema: z.object({
+    workspaceId: z
+      .string()
+      .min(1)
+      .max(256)
+      .optional()
+      .describe('Optional workspace id; omit to write the active workspace.'),
     synced: z.unknown().optional(),
     local: z.unknown().optional(),
   }),
   async handler(input, ctx) {
-    const next = await ctx.workspace.write({
-      synced: input.synced as Parameters<typeof ctx.workspace.write>[0]['synced'],
-      local: input.local as Parameters<typeof ctx.workspace.write>[0]['local'],
+    const provider = input.workspaceId ? ctx.workspaces.for(input.workspaceId) : ctx.workspace;
+    const next = await provider.write({
+      synced: input.synced as Parameters<typeof provider.write>[0]['synced'],
+      local: input.local as Parameters<typeof provider.write>[0]['local'],
     });
     return { workspaceId: next.synced.workspaceId, ok: true };
   },

@@ -8,6 +8,7 @@ import {
   importHarTool,
 } from './imports';
 import { generateCodeTool } from './codegen';
+import { workspaceListTool } from './workspaceList';
 import {
   workspaceReadTool,
   workspaceWriteTool,
@@ -91,6 +92,7 @@ export const TOOL_REGISTRY: AnyToolDef[] = [
   importInsomniaTool,
   importHarTool,
   generateCodeTool,
+  workspaceListTool,
   workspaceReadTool,
   workspaceWriteTool,
   requestCreateTool,

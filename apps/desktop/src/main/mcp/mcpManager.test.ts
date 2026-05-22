@@ -14,9 +14,9 @@ vi.mock('electron', () => ({
 import { McpManager } from './mcpManager';
 
 describe('McpManager', () => {
-  it('defaults workspaceDir to <userData>/workspace', () => {
+  it('defaults workspaceDir to <userData>/workspaces (multi-workspace root)', () => {
     const m = new McpManager();
-    expect(m.workspaceDir.endsWith('workspace')).toBe(true);
+    expect(m.workspaceDir.endsWith('workspaces')).toBe(true);
   });
 
   it('honors an explicit workspaceDir', () => {

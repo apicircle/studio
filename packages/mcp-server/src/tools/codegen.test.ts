@@ -1,6 +1,7 @@
 ﻿import { describe, expect, it } from 'vitest';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
 import { InMemoryWorkspaceProvider } from '../providers/InMemoryWorkspaceProvider';
+import { SingleWorkspaceAdapter } from '../providers/Workspaces';
 import { InProcessMockController } from '../providers/InProcessMockController';
 import { generateCodeTool } from './codegen';
 
@@ -70,8 +71,10 @@ function stateWithRequest(): { synced: WorkspaceSynced; local: WorkspaceLocal } 
 }
 
 function makeCtx() {
+  const workspace = new InMemoryWorkspaceProvider(stateWithRequest());
   return {
-    workspace: new InMemoryWorkspaceProvider(stateWithRequest()),
+    workspace,
+    workspaces: new SingleWorkspaceAdapter(workspace, 'ws-test'),
     mock: new InProcessMockController(),
   };
 }
