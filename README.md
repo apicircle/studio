@@ -213,11 +213,11 @@ pnpm dev:web            # web app → http://localhost:5174
 
 ## Connect your AI client
 
-**The easy path:** open the Desktop app, head to **MCP → Connection**, and
-follow the four steps under **Set up your AI client** — install the binary,
-pick your AI client, paste the snippet, restart. The same tab surfaces the
-live workspace-mirror path and a Refresh button below the setup steps, and
-**MCP → Prompts** ships a curated catalog of starter prompts.
+**The easy path:** open the Desktop app, head to **MCP → Connection**. The
+top of the tab shows the live workspace-mirror path and a Refresh button.
+Below that, follow the four steps under **Set up your AI client** — install
+the binary, pick your AI client, paste the snippet, restart. **MCP →
+Prompts** ships a curated catalog of starter prompts.
 
 **Multi-workspace by default:** `apicircle-mcp` boots against the desktop's
 multi-workspace registry. AI clients see every workspace via the

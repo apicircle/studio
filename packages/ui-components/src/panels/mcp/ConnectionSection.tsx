@@ -8,14 +8,15 @@ import { getDesktopMcpBridge, getDesktopWorkspaceFileBridge } from '../../deskto
 // =============================================================================
 // ConnectionSection — the unified MCP tab. Two blocks under one heading:
 //
-//   1. Set up your AI client — the four-step install/wire/restart/verify
-//      flow (delegates to <HowToConnect />).
-//   2. Workspace mirror — live mirror path, the binary AI clients spawn,
+//   1. Workspace mirror — live mirror path, the binary AI clients spawn,
 //      and a Refresh that re-reads the on-disk workspace so CLI / MCP
 //      edits show up without a restart.
+//   2. Set up your AI client — the four-step install/wire/restart/verify
+//      flow (delegates to <HowToConnect />).
 //
-// Setup goes first because that's the new-user journey; once you're wired
-// up, the mirror block is the surface you'll come back to.
+// Mirror goes first: it's the at-a-glance "is my setup healthy" surface
+// users return to after first-time wiring. Setup steps live below for new
+// users to follow in order.
 // =============================================================================
 
 export function ConnectionSection() {
@@ -114,21 +115,7 @@ export function ConnectionSection() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-      {/* Block 1 — Set up your AI client */}
-      <section className="flex flex-col gap-4">
-        <header>
-          <h2 className="text-base font-medium text-text-primary">Set up your AI client</h2>
-          <p className="mt-1 text-xs text-text-muted">
-            Wire any MCP-compatible AI client to this workspace in four steps. The desktop app
-            mirrors your workspace to disk on every change, so no separate import step is needed.
-          </p>
-        </header>
-        <HowToConnect />
-      </section>
-
-      <hr className="border-border-subtle" aria-hidden="true" />
-
-      {/* Block 2 — Workspace mirror */}
+      {/* Block 1 — Workspace mirror */}
       <section className="flex flex-col gap-4">
         <header className="flex items-start justify-between gap-3">
           <div>
@@ -199,6 +186,20 @@ export function ConnectionSection() {
             Last refreshed {formatRelativeTime(lastRefreshedAt)}
           </p>
         )}
+      </section>
+
+      <hr className="border-border-subtle" aria-hidden="true" />
+
+      {/* Block 2 — Set up your AI client */}
+      <section className="flex flex-col gap-4">
+        <header>
+          <h2 className="text-base font-medium text-text-primary">Set up your AI client</h2>
+          <p className="mt-1 text-xs text-text-muted">
+            Wire any MCP-compatible AI client to this workspace in four steps. The desktop app
+            mirrors your workspace to disk on every change, so no separate import step is needed.
+          </p>
+        </header>
+        <HowToConnect />
       </section>
     </div>
   );

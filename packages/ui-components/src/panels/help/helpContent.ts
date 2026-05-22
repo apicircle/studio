@@ -1038,7 +1038,7 @@ For each incoming request the mock checks, in order: validation rules, then resp
 
 The MCP panel is organised into two top-level sections:
 
-- **Connection** — the unified setup-and-status surface. Top half: the four-step "wire your AI client" flow (install → pick client + copy snippet → restart → verify). Bottom half: live workspace-mirror path, the binary your AI client spawns, and a **Refresh** button that re-reads the on-disk workspace so CLI / MCP edits show up in the app without a restart.
+- **Connection** — the unified setup-and-status surface. Top half: live workspace-mirror path, the binary your AI client spawns, and a **Refresh** button that re-reads the on-disk workspace so CLI / MCP edits show up in the app without a restart. Bottom half: the four-step "wire your AI client" flow (install → pick client + copy snippet → restart → verify).
 - **Prompts** — curated starter prompts you can paste into your AI client to drive the workspace. Searchable + grouped by tool family.
 
 ## What an AI client can do
@@ -1073,7 +1073,7 @@ The AI client uses that hint to either ask the user which workspace they meant o
 
 ## Connecting a client
 
-The **Set up your AI client** block at the top of the **Connection** tab walks through it in four steps — install \`@apicircle/mcp-server\` globally, pick your client (Claude Desktop / Claude Code / Cursor / Codex / etc), paste the snippet into the right config file, restart the client. The panel shows the exact config-file path for each supported client.
+The **Set up your AI client** block on the **Connection** tab walks through it in four steps — install \`@apicircle/mcp-server\` globally, pick your client (Claude Desktop / Claude Code / Cursor / Codex / etc), paste the snippet into the right config file, restart the client. The block sits below the workspace-mirror status and shows the exact config-file path for each supported client.
 
 MCP runs over stdio, so it needs the desktop app open or the \`apicircle mcp\` CLI subcommand. The web build cannot expose a stdio server. Note MCP returns code as text — your assistant writes it to a file; MCP itself does not touch the filesystem.
 
