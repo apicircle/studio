@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { McpServerPanel } from './McpServerPanel';
 import { McpSidebar } from './McpSidebar';
@@ -18,11 +18,18 @@ let workspaceFileBridge: {
 beforeEach(() => {
   mcpBridge = {
     status: vi.fn().mockResolvedValue({ workspaceDir: '/tmp/ws', binary: 'apicircle-mcp' }),
-    getConfigSnippet: vi.fn(async (client: string) => `{"mcpServers":{"${client}":{}}}`),
+    getConfigSnippet: vi.fn(async (client: string) => {
+      const text = `{"mcpServers":{"${client}":{}}}`;
+      return { forwardSlash: text, escaped: text, identical: true };
+    }),
     getConfigPath: vi.fn().mockResolvedValue('/Users/me/.claude/claude_desktop_config.json'),
   };
+  // Bridge contract: this surface returns `workspacesRoot` (the multi-workspace
+  // registry root), NOT `workspaceDir`. An earlier version of this mock lied
+  // about the field name and masked a real bug where the renderer's
+  // destructure resolved to `undefined` and the panel hung on "Loading…".
   workspaceFileBridge = {
-    status: vi.fn().mockResolvedValue({ workspaceDir: '/tmp/ws' }),
+    status: vi.fn().mockResolvedValue({ workspacesRoot: '/tmp/ws' }),
   };
   (window as unknown as { apicircleDesktop?: unknown }).apicircleDesktop = {
     mcp: mcpBridge,
@@ -37,12 +44,21 @@ afterEach(() => {
   delete (window as unknown as { apicircleDesktop?: unknown }).apicircleDesktop;
 });
 
+async function findSnippetText() {
+  // The snippet renders in a read-only Monaco editor, mocked in test setup as
+  // a textarea exposing its value via `value=`. `findByDisplayValue` won't
+  // match a regex on a long substring cleanly, so we grab the textarea by
+  // its test-id and assert on `.value`.
+  const editor = (await screen.findByTestId('monaco-editor-mock')) as HTMLTextAreaElement;
+  return editor.value;
+}
+
 describe('McpServerPanel router', () => {
   it('renders "How to Connect" by default', async () => {
     await renderWithStore(<McpServerPanel />);
     expect(await screen.findByRole('heading', { name: /How to Connect/ })).toBeInTheDocument();
     // Default-pick client is claude-desktop → its snippet should load.
-    expect(await screen.findByText(/"claude-desktop"/)).toBeInTheDocument();
+    expect(await findSnippetText()).toContain('"claude-desktop"');
   });
 
   it('switches to Connection when the sidebar selects it', async () => {
@@ -78,9 +94,13 @@ describe('HowToConnectSection', () => {
   it('lets the user pick a different AI client and updates the snippet', async () => {
     const user = userEvent.setup();
     await renderWithStore(<McpServerPanel />);
-    await screen.findByText(/"claude-desktop"/);
+    await waitFor(async () => {
+      expect(await findSnippetText()).toContain('"claude-desktop"');
+    });
     await user.click(screen.getByRole('radio', { name: 'Cursor' }));
-    expect(await screen.findByText(/"cursor"/)).toBeInTheDocument();
+    await waitFor(async () => {
+      expect(await findSnippetText()).toContain('"cursor"');
+    });
     expect(useWorkspaceStore.getState().mcpHowToConnectClient).toBe('cursor');
   });
 
@@ -91,14 +111,65 @@ describe('HowToConnectSection', () => {
       value: { writeText },
     });
     await renderWithStore(<McpServerPanel />);
-    await screen.findByText(/"claude-desktop"/);
-    const copyButtons = screen.getAllByRole('button', { name: /Copy/ });
-    // First copy button is for the install command; the snippet's Copy
-    // is the one inside the JSON snippet block — find it by counting.
-    const snippetCopy = copyButtons.find((b) => b.closest('pre')?.parentElement);
-    // Fall back: just click the second Copy button which is the snippet one.
-    await userEvent.click(snippetCopy ?? copyButtons[1]);
+    await waitFor(async () => {
+      expect(await findSnippetText()).toContain('"claude-desktop"');
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Copy snippet' }));
     expect(writeText).toHaveBeenCalled();
+  });
+
+  it('hides the escaped-reference panel when the two snippets are identical (POSIX paths)', async () => {
+    await renderWithStore(<McpServerPanel />);
+    await waitFor(async () => {
+      expect(await findSnippetText()).toContain('"claude-desktop"');
+    });
+    // On POSIX there's no `\\` to escape, so the reference block is suppressed.
+    expect(
+      screen.queryByText(/Windows: snippet above uses forward slashes/),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Copy escaped snippet' })).not.toBeInTheDocument();
+  });
+
+  it('shows the escaped-form reference on Windows (variants differ)', async () => {
+    mcpBridge.getConfigSnippet.mockResolvedValue({
+      forwardSlash: '{"path":"C:/Users/me"}',
+      escaped: '{"path":"C:\\\\Users\\\\me"}',
+      identical: false,
+    });
+    await renderWithStore(<McpServerPanel />);
+    // The single editor renders the forward-slash form by default — no picker,
+    // no Option 1/Option 2 tabs.
+    await waitFor(async () => {
+      expect(await findSnippetText()).toContain('"C:/Users/me"');
+    });
+    expect(screen.queryByRole('tab', { name: /Option/ })).not.toBeInTheDocument();
+    // The collapsible reference is present and contains the escaped form.
+    expect(screen.getByText(/Windows: snippet above uses forward slashes/)).toBeInTheDocument();
+    // Expand the details and verify the escaped snippet renders + can be copied.
+    const summary = screen
+      .getByText(/Windows: snippet above uses forward slashes/)
+      .closest('summary');
+    expect(summary).not.toBeNull();
+    await userEvent.click(summary as HTMLElement);
+    expect(screen.getByText('{"path":"C:\\\\Users\\\\me"}')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy escaped snippet' })).toBeInTheDocument();
+  });
+
+  it('tolerates a legacy bridge that returns a bare string snippet', async () => {
+    // Older preload returning a string (pre-variant refactor). The renderer
+    // must normalize it into the variants shape so the editor still renders
+    // — instead of silently hanging on "(loading…)" because
+    // `variants.forwardSlash` came back `undefined`.
+    mcpBridge.getConfigSnippet.mockResolvedValue('{"legacy":true}');
+    await renderWithStore(<McpServerPanel />);
+    await waitFor(async () => {
+      expect(await findSnippetText()).toBe('{"legacy":true}');
+    });
+    // The escaped-form reference is hidden because the string was normalized
+    // to `identical: true`.
+    expect(
+      screen.queryByText(/Windows: snippet above uses forward slashes/),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -130,6 +201,32 @@ describe('ConnectionSection', () => {
     await renderWithStore(<McpServerPanel />);
     const refreshBtn = await screen.findByRole('button', { name: /Refresh from disk/ });
     expect(refreshBtn).toBeDisabled();
+  });
+
+  it('hides the Copy button on Workspace Mirror while the path is loading', async () => {
+    // Hold the workspaceFile.status() promise open so the renderer stays in
+    // its "Loading…" state — Copy should NOT render alongside the
+    // placeholder text. This is the regression we just fixed: previously it
+    // rendered a permanently-disabled button next to "Loading…" forever.
+    let resolveStatus: (v: { workspacesRoot: string }) => void = () => {};
+    workspaceFileBridge.status.mockReturnValue(
+      new Promise((r) => {
+        resolveStatus = r;
+      }),
+    );
+    await renderWithStore(<McpServerPanel />);
+    const mirrorRow = (await screen.findByRole('heading', { name: /Workspace mirror/i })).closest(
+      'section',
+    ) as HTMLElement;
+    expect(within(mirrorRow).getByText(/Loading/)).toBeInTheDocument();
+    expect(
+      within(mirrorRow).queryByRole('button', { name: /Copy Workspace mirror/i }),
+    ).not.toBeInTheDocument();
+    // Once the path resolves, Copy appears.
+    resolveStatus({ workspacesRoot: '/tmp/ws' });
+    expect(
+      await within(mirrorRow).findByRole('button', { name: /Copy Workspace mirror/i }),
+    ).toBeInTheDocument();
   });
 });
 

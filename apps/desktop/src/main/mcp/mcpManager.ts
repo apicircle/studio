@@ -2,6 +2,7 @@ import { app } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import { MCP_TOOL_NAMES, type McpToolName } from '@apicircle/shared';
+import type { ConfigSnippetVariants } from '@apicircle/ui-components';
 
 // =============================================================================
 // McpManager — surfaces config snippets that the user pastes into their AI
@@ -57,32 +58,28 @@ export class McpManager {
   }
 
   /**
-   * Generate a config snippet for the given AI client. All clients share the
-   * same shape (`mcpServers: { apicircle: { command, args, env } }`); we
-   * tailor the wrapping outer JSON object so the user can paste verbatim
-   * into the right config file.
+   * Generate the MCP config snippet the user pastes into their AI client's
+   * config file. Returns two byte-identical-but-for-path-escaping renderings:
+   *
+   *   - `forwardSlash`: the workspace path uses `/` separators on Windows
+   *     (`"C:/Users/.../workspaces"`). This is valid JSON without any
+   *     backslash escapes — easier to read, and accepted by Node.js,
+   *     Electron, and Windows file APIs.
+   *   - `escaped`: the literal OS path, which on Windows means `\\` escapes
+   *     inside JSON strings (`"C:\\Users\\...\\workspaces"`). This is what
+   *     `JSON.stringify` emits by default.
+   *
+   * On macOS and Linux paths contain no backslashes, so the two strings are
+   * byte-identical and `identical` is true — the UI uses that to suppress
+   * the picker on those platforms.
+   *
+   * All clients share the same outer shape (`mcpServers: { apicircle: ... }`)
+   * today; per-client tailoring of the wrapper lives here in case a future
+   * client (e.g. Zed-style nested key) needs a different envelope.
    */
-  getConfigSnippet(client: AiClient): string {
+  getConfigSnippet(client: AiClient): ConfigSnippetVariants {
     const { binary, workspace } = this.resolvePaths();
-    const env = { APICIRCLE_WORKSPACE: workspace };
-    const entry = {
-      command: binary,
-      args: ['--workspace', workspace],
-      env,
-    };
-    switch (client) {
-      case 'claude-desktop':
-      case 'claude-code':
-      case 'chatgpt':
-      case 'github-copilot':
-      case 'continue':
-      case 'cline':
-      case 'cursor':
-      case 'windsurf':
-      case 'zed':
-      case 'generic':
-        return JSON.stringify({ mcpServers: { apicircle: entry } }, null, 2);
-    }
+    return buildSnippetVariants(client, binary, workspace);
   }
 
   /**
@@ -114,4 +111,30 @@ export class McpManager {
         return null;
     }
   }
+}
+
+// Centralized snippet builder. Kept outside the class so it's trivially
+// unit-testable without instantiating an Electron-coupled McpManager.
+function buildSnippetVariants(
+  _client: AiClient,
+  binary: string,
+  workspace: string,
+): ConfigSnippetVariants {
+  const forwardWorkspace = workspace.replace(/\\/g, '/');
+  const escaped = renderSnippet(binary, workspace);
+  const forwardSlash = renderSnippet(binary, forwardWorkspace);
+  return {
+    forwardSlash,
+    escaped,
+    identical: forwardSlash === escaped,
+  };
+}
+
+function renderSnippet(binary: string, workspace: string): string {
+  const entry = {
+    command: binary,
+    args: ['--workspace', workspace],
+    env: { APICIRCLE_WORKSPACE: workspace },
+  };
+  return JSON.stringify({ mcpServers: { apicircle: entry } }, null, 2);
 }

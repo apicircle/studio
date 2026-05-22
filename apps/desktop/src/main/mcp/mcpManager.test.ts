@@ -26,11 +26,32 @@ describe('McpManager', () => {
 
   it('produces a Claude Desktop snippet wrapped in mcpServers', () => {
     const m = new McpManager('/ws');
-    const snippet = m.getConfigSnippet('claude-desktop');
-    const parsed = JSON.parse(snippet);
+    const { forwardSlash, escaped, identical } = m.getConfigSnippet('claude-desktop');
+    // POSIX path → both variants are byte-identical.
+    expect(identical).toBe(true);
+    expect(forwardSlash).toBe(escaped);
+    const parsed = JSON.parse(forwardSlash);
     expect(parsed.mcpServers.apicircle.command).toBe('apicircle-mcp');
     expect(parsed.mcpServers.apicircle.args).toEqual(['--workspace', '/ws']);
     expect(parsed.mcpServers.apicircle.env.APICIRCLE_WORKSPACE).toBe('/ws');
+  });
+
+  it('emits forward-slash and escaped variants for a Windows path', () => {
+    const m = new McpManager('C:\\Users\\me\\workspaces');
+    const { forwardSlash, escaped, identical } = m.getConfigSnippet('claude-desktop');
+    expect(identical).toBe(false);
+    // Forward-slash form is valid JSON and contains the cleaned path.
+    expect(JSON.parse(forwardSlash).mcpServers.apicircle.env.APICIRCLE_WORKSPACE).toBe(
+      'C:/Users/me/workspaces',
+    );
+    // Escaped form is also valid JSON; JSON.parse decodes the `\\` escapes
+    // back to literal backslashes.
+    expect(JSON.parse(escaped).mcpServers.apicircle.env.APICIRCLE_WORKSPACE).toBe(
+      'C:\\Users\\me\\workspaces',
+    );
+    // Raw text differs in escape form: escaped has `\\`, forward-slash has `/`.
+    expect(escaped).toContain('\\\\');
+    expect(forwardSlash).not.toContain('\\\\');
   });
 
   it('produces a snippet for every supported client', () => {
@@ -48,8 +69,8 @@ describe('McpManager', () => {
       'generic',
     ] as const;
     for (const client of clients) {
-      const snippet = m.getConfigSnippet(client);
-      expect(JSON.parse(snippet).mcpServers.apicircle.command).toBe('apicircle-mcp');
+      const { forwardSlash } = m.getConfigSnippet(client);
+      expect(JSON.parse(forwardSlash).mcpServers.apicircle.command).toBe('apicircle-mcp');
     }
   });
 

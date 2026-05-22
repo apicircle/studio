@@ -15,6 +15,7 @@ import type {
   WorkspaceSynced,
 } from '@apicircle/shared';
 import type { WorkspaceRegistry, WorkspaceRegistryEntry } from '@apicircle/core/workspace/registry';
+import type { ConfigSnippetVariants, DesktopBridgeContract } from '@apicircle/ui-components';
 
 /** Payload emitted on the `apicircle:update:available` IPC channel. */
 export interface UpdateAvailablePayload {
@@ -63,8 +64,11 @@ const bridge = {
         workspaceDir: string;
         binary: string;
       }>,
-    getConfigSnippet: (client: string): Promise<string> =>
-      ipcRenderer.invoke('apicircle:mcp:getConfigSnippet', client) as Promise<string>,
+    getConfigSnippet: (client: string): Promise<ConfigSnippetVariants> =>
+      ipcRenderer.invoke(
+        'apicircle:mcp:getConfigSnippet',
+        client,
+      ) as Promise<ConfigSnippetVariants>,
     getConfigPath: (client: string): Promise<string | null> =>
       ipcRenderer.invoke('apicircle:mcp:getConfigPath', client) as Promise<string | null>,
     toolCatalog: (): Promise<readonly McpToolName[]> =>
@@ -192,5 +196,13 @@ const bridge = {
       }>,
   },
 };
+
+// Compile-time enforcement of the renderer-facing contract. If the bridge
+// implementation here drifts from what `@apicircle/ui-components` consumes
+// (e.g. a method's return shape changes, or a field gets renamed), this line
+// fails `pnpm check` — instead of silently rendering "Loading…" forever in
+// the panel that destructured the now-missing field.
+const _enforceRendererContract: DesktopBridgeContract = bridge;
+void _enforceRendererContract;
 
 contextBridge.exposeInMainWorld('apicircleDesktop', bridge);

@@ -12,6 +12,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { formatRelativeTime } from '../../primitives/relativeTime';
 import { cn } from '../../primitives/cn';
 import { MCP_CLIENTS, type McpClient } from './clients';
+import { getDesktopMcpBridge, getDesktopWorkspaceFileBridge } from '../../desktop/bridge';
 
 // =============================================================================
 // ConnectionSection — live MCP-mirror status. Shows where the on-disk
@@ -20,31 +21,9 @@ import { MCP_CLIENTS, type McpClient } from './clients';
 // hydrate — no more "quit and reopen the desktop app to see CLI edits".
 // =============================================================================
 
-interface DesktopMcpBridge {
-  status: () => Promise<{ workspaceDir: string; binary: string }>;
-}
-
-interface DesktopWorkspaceFileBridge {
-  status: () => Promise<{ workspaceDir: string }>;
-}
-
-function getMcpBridge(): DesktopMcpBridge | null {
-  if (typeof window === 'undefined') return null;
-  const w = window as unknown as { apicircleDesktop?: { mcp?: DesktopMcpBridge } };
-  return w.apicircleDesktop?.mcp ?? null;
-}
-
-function getWorkspaceFileBridge(): DesktopWorkspaceFileBridge | null {
-  if (typeof window === 'undefined') return null;
-  const w = window as unknown as {
-    apicircleDesktop?: { workspaceFile?: DesktopWorkspaceFileBridge };
-  };
-  return w.apicircleDesktop?.workspaceFile ?? null;
-}
-
 export function ConnectionSection() {
-  const mcpBridge = getMcpBridge();
-  const wsFileBridge = getWorkspaceFileBridge();
+  const mcpBridge = getDesktopMcpBridge();
+  const wsFileBridge = getDesktopWorkspaceFileBridge();
   const pushToast = useWorkspaceStore((s) => s.pushToast);
   const refreshFromDisk = useWorkspaceStore((s) => s.refreshFromDisk);
   const syncedUpdatedAt = useWorkspaceStore((s) => s.synced?.meta.updatedAt ?? null);
@@ -59,11 +38,13 @@ export function ConnectionSection() {
     let cancelled = false;
     void (async () => {
       try {
-        // Prefer the workspace-file bridge for the dir (it's what the
-        // mirror actually writes to), fall back to the MCP bridge.
+        // Prefer the workspace-file bridge for the dir (it's the multi-
+        // workspace registry root the mirror actually writes to); fall back
+        // to the MCP bridge's `workspaceDir` if the workspace-file surface
+        // isn't wired (older preload, future renderer-only host).
         if (wsFileBridge) {
-          const { workspaceDir: dir } = await wsFileBridge.status();
-          if (!cancelled) setWorkspaceDir(dir);
+          const { workspacesRoot } = await wsFileBridge.status();
+          if (!cancelled) setWorkspaceDir(workspacesRoot);
         }
         if (mcpBridge) {
           const s = await mcpBridge.status();
@@ -266,13 +247,16 @@ function InfoRow({
         ) : (
           <span className="text-[0.75rem] text-text-dim">{emptyLabel}</span>
         )}
-        {copyable && (
+        {/* Copy is only rendered when there's a value to copy. Showing a
+            disabled Copy next to a "Loading…" / "Unavailable" placeholder
+            is visual noise — the affordance has nothing to do until the
+            path actually resolves. */}
+        {copyable && value && (
           <button
             type="button"
             onClick={() => void handleCopy()}
-            disabled={!value}
             aria-label={`Copy ${label}`}
-            className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-2 py-1 text-[0.6875rem] text-text-muted hover:border-accent hover:text-accent disabled:opacity-40"
+            className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-2 py-1 text-[0.6875rem] text-text-muted hover:border-accent hover:text-accent"
           >
             <Copy size={10} aria-hidden="true" />
             {copied ? 'Copied' : 'Copy'}

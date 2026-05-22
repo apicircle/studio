@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Check, Copy, ExternalLink } from 'lucide-react';
+import { AlertTriangle, Check, Copy, ExternalLink, Info } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 import { MCP_CLIENTS } from './clients';
+import { getDesktopMcpBridge, type ConfigSnippetVariants } from '../../desktop/bridge';
+import { MonacoEditorBase } from '../../editors/MonacoEditorBase';
 
 // =============================================================================
 // HowToConnectSection — one-time setup instructions for wiring an AI client
@@ -14,25 +16,30 @@ import { MCP_CLIENTS } from './clients';
 
 const DEFAULT_CLIENT_ID = 'claude-desktop';
 
-interface DesktopMcpBridge {
-  getConfigSnippet: (client: string) => Promise<string>;
-  getConfigPath: (client: string) => Promise<string | null>;
-}
-
-function getMcpBridge(): DesktopMcpBridge | null {
-  if (typeof window === 'undefined') return null;
-  const w = window as unknown as { apicircleDesktop?: { mcp?: DesktopMcpBridge } };
-  return w.apicircleDesktop?.mcp ?? null;
+/**
+ * Coerce whatever the bridge returns into the {@link ConfigSnippetVariants}
+ * shape. Tolerates a legacy preload returning a bare string (older desktop
+ * build whose `dist/main/preload.js` hasn't been rebuilt against the current
+ * renderer) — without this normalization the renderer would set
+ * `variants = "{...}"`, then `variants.forwardSlash` would be `undefined`,
+ * and the editor would silently render "(loading…)" forever.
+ */
+function normalizeSnippetResponse(raw: unknown): ConfigSnippetVariants {
+  if (typeof raw === 'string') {
+    return { forwardSlash: raw, escaped: raw, identical: true };
+  }
+  // Already-typed bridge: trust the shape.
+  return raw as ConfigSnippetVariants;
 }
 
 export function HowToConnectSection() {
-  const bridge = getMcpBridge();
+  const bridge = getDesktopMcpBridge();
   const pushToast = useWorkspaceStore((s) => s.pushToast);
   const pickedClient = useWorkspaceStore((s) => s.mcpHowToConnectClient);
   const setPickedClient = useWorkspaceStore((s) => s.setMcpHowToConnectClient);
   const activeClientId = pickedClient ?? DEFAULT_CLIENT_ID;
 
-  const [snippet, setSnippet] = useState('');
+  const [variants, setVariants] = useState<ConfigSnippetVariants | null>(null);
   const [configPath, setConfigPath] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -46,7 +53,7 @@ export function HowToConnectSection() {
           bridge.getConfigPath(activeClientId),
         ]);
         if (cancelled) return;
-        setSnippet(s);
+        setVariants(normalizeSnippetResponse(s));
         setConfigPath(p);
         setLoadError(null);
       } catch (err) {
@@ -107,7 +114,7 @@ export function HowToConnectSection() {
               </p>
             )}
             <SnippetBlock
-              snippet={snippet}
+              variants={variants}
               bridgeAvailable={!!bridge}
               loadError={loadError}
               onCopySuccess={() =>
@@ -240,17 +247,31 @@ function CommandBlock({ command }: { command: string }) {
 }
 
 function SnippetBlock({
-  snippet,
+  variants,
   bridgeAvailable,
   loadError,
   onCopySuccess,
 }: {
-  snippet: string;
+  variants: ConfigSnippetVariants | null;
   bridgeAvailable: boolean;
   loadError: string | null;
   onCopySuccess: () => void;
 }) {
+  // The renderer shows ONE snippet — the forward-slash form. It's valid
+  // JSON, reads cleanly without `\\` clutter, and Windows / Node / Electron
+  // all accept forward-slash paths. The escaped-backslash form is shown as
+  // a secondary reference below for the rare case an AI client refuses
+  // forward slashes on Windows. On macOS / Linux the two forms are
+  // byte-identical (`identical: true`), so the reference block is hidden.
   const [copied, setCopied] = useState(false);
+  const snippet = variants?.forwardSlash ?? '';
+  const showEscapedReference = !!variants && !variants.identical;
+  const emptyMessage = loadError
+    ? `(could not load: ${loadError})`
+    : bridgeAvailable
+      ? '(loading…)'
+      : '(open the desktop build to see the snippet)';
+
   const handleCopy = async () => {
     if (!navigator.clipboard || !snippet) return;
     await navigator.clipboard.writeText(snippet);
@@ -258,29 +279,123 @@ function SnippetBlock({
     onCopySuccess();
     setTimeout(() => setCopied(false), 1500);
   };
+
   return (
-    <div className="overflow-hidden rounded-sm border border-border bg-surface">
-      <div className="flex items-center justify-between border-b border-border-subtle px-3 py-1.5">
-        <span className="text-[0.625rem] uppercase tracking-wider text-text-dim">JSON snippet</span>
-        <button
-          type="button"
-          onClick={() => void handleCopy()}
-          disabled={!snippet}
-          className="inline-flex items-center gap-1 rounded-sm border border-border px-2 py-0.5 text-[0.6875rem] text-text-primary hover:border-accent hover:text-accent disabled:opacity-40"
-        >
-          {copied ? <Check size={10} aria-hidden="true" /> : <Copy size={10} aria-hidden="true" />}
-          {copied ? 'Copied' : 'Copy'}
-        </button>
+    <div className="flex flex-col gap-2">
+      <div className="overflow-hidden rounded-sm border border-border bg-surface">
+        <div className="flex items-center justify-between border-b border-border-subtle px-3 py-1.5">
+          <span className="text-[0.625rem] uppercase tracking-wider text-text-dim">
+            JSON snippet
+          </span>
+          <button
+            type="button"
+            onClick={() => void handleCopy()}
+            disabled={!snippet}
+            aria-label="Copy snippet"
+            className="inline-flex items-center gap-1 rounded-sm border border-border px-2 py-0.5 text-[0.6875rem] text-text-primary hover:border-accent hover:text-accent disabled:opacity-40"
+          >
+            {copied ? (
+              <Check size={10} aria-hidden="true" />
+            ) : (
+              <Copy size={10} aria-hidden="true" />
+            )}
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+        {snippet ? (
+          <MonacoEditorBase
+            value={snippet}
+            language="json"
+            readOnly
+            minHeight={180}
+            ariaLabel="MCP config snippet"
+            options={{
+              lineNumbers: 'off',
+              folding: false,
+              scrollBeyondLastLine: false,
+              renderLineHighlight: 'none',
+              overviewRulerLanes: 0,
+              minimap: { enabled: false },
+              wordWrap: 'on',
+              padding: { top: 8, bottom: 8 },
+            }}
+          />
+        ) : (
+          <p className="px-3 py-3 text-[0.6875rem] text-text-dim">{emptyMessage}</p>
+        )}
       </div>
-      <pre className="overflow-x-auto px-3 py-2 text-[0.6875rem] text-text-primary">
-        {snippet ||
-          (loadError
-            ? `(could not load: ${loadError})`
-            : bridgeAvailable
-              ? '(loading…)'
-              : '(open the desktop build to see the snippet)')}
-      </pre>
+
+      {showEscapedReference && variants && (
+        <EscapedReference escapedSnippet={variants.escaped} onCopySuccess={onCopySuccess} />
+      )}
     </div>
+  );
+}
+
+// Shown on Windows hosts only (paths contain backslashes). Documents why the
+// main snippet uses forward slashes, and offers the escaped-backslash form as
+// an escape hatch if a particular AI client's JSON parser rejects forward
+// slashes in the workspace path.
+function EscapedReference({
+  escapedSnippet,
+  onCopySuccess,
+}: {
+  escapedSnippet: string;
+  onCopySuccess: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    if (!navigator.clipboard) return;
+    await navigator.clipboard.writeText(escapedSnippet);
+    setCopied(true);
+    onCopySuccess();
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <details className="group rounded-sm border border-border-subtle bg-card">
+      <summary
+        className={cn(
+          'flex cursor-pointer list-none items-start gap-2 rounded-sm px-3 py-2 text-[0.6875rem] text-text-muted',
+          'hover:text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent',
+        )}
+      >
+        <Info size={12} aria-hidden="true" className="mt-0.5 shrink-0 text-text-dim" />
+        <span className="flex-1">
+          <strong className="font-medium text-text-primary">
+            Windows: snippet above uses forward slashes
+          </strong>{' '}
+          (e.g. <code className="rounded-sm bg-surface px-1">C:/Users/&hellip;</code>) — valid JSON
+          and accepted by Windows, Node, and Electron. If your AI client rejects it, expand for the
+          escaped-backslash form.
+        </span>
+      </summary>
+      <div className="border-t border-border-subtle px-3 py-2 text-[0.6875rem] text-text-muted">
+        <p className="mb-2">
+          <strong className="font-medium text-text-primary">Why the `\\` escapes?</strong> JSON uses{' '}
+          <code className="rounded-sm bg-surface px-1">\</code> as the string-escape character, so a
+          literal Windows path like <code className="rounded-sm bg-surface px-1">C:\Users\me</code>{' '}
+          must be written as{' '}
+          <code className="rounded-sm bg-surface px-1">{'"C:\\\\Users\\\\me"'}</code> inside a JSON
+          string. Forward slashes avoid this entirely.
+        </p>
+        <div className="flex items-center justify-between gap-2 rounded-sm border border-border bg-surface px-2 py-1.5 font-mono text-[0.6875rem] text-text-primary">
+          <code className="select-all break-all">{escapedSnippet}</code>
+          <button
+            type="button"
+            onClick={() => void handleCopy()}
+            aria-label="Copy escaped snippet"
+            className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-2 py-0.5 text-[0.6875rem] text-text-muted hover:border-accent hover:text-accent"
+          >
+            {copied ? (
+              <Check size={10} aria-hidden="true" />
+            ) : (
+              <Copy size={10} aria-hidden="true" />
+            )}
+            {copied ? 'Copied' : 'Copy escaped'}
+          </button>
+        </div>
+      </div>
+    </details>
   );
 }
 

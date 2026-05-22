@@ -135,8 +135,12 @@ describe('mcp IPC bridge', () => {
 
   it('snippet + path + catalog delegate to the manager', () => {
     registerMcpBridge(new McpManager('/ws'));
-    const snippet = handlers.get(MCP_CHANNELS.getConfigSnippet)!(trustedEvent, 'claude-desktop');
-    expect(JSON.parse(snippet as string).mcpServers).toBeDefined();
+    const snippet = handlers.get(MCP_CHANNELS.getConfigSnippet)!(
+      trustedEvent,
+      'claude-desktop',
+    ) as { forwardSlash: string; escaped: string; identical: boolean };
+    expect(snippet.identical).toBe(true);
+    expect(JSON.parse(snippet.forwardSlash).mcpServers).toBeDefined();
     const cfgPath = handlers.get(MCP_CHANNELS.getConfigPath)!(trustedEvent, 'cursor');
     expect(typeof cfgPath).toBe('string');
     const catalog = handlers.get(MCP_CHANNELS.toolCatalog)!(trustedEvent) as readonly string[];

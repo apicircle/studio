@@ -1,4 +1,5 @@
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
+import { getDesktopWorkspaceFileBridge, type DesktopWorkspaceFileBridge } from '../desktop/bridge';
 
 // =============================================================================
 // Platform-aware bridge to the desktop main process's `WorkspaceFileManager`.
@@ -27,32 +28,12 @@ export interface DiskWorkspaceRegistry {
   workspaces: DiskWorkspaceRegistryEntry[];
 }
 
-interface DesktopWorkspaceFileSurface {
-  status(): Promise<{ workspacesRoot: string }>;
-  init(): Promise<{ registry: DiskWorkspaceRegistry; migrated: boolean }>;
-  readRegistry(): Promise<DiskWorkspaceRegistry>;
-  writeRegistry(registry: DiskWorkspaceRegistry): Promise<void>;
-  readWorkspace(
-    workspaceId: string,
-  ): Promise<{ synced: WorkspaceSynced; local: WorkspaceLocal } | null>;
-  writeWorkspace(payload: {
-    workspaceId: string;
-    synced: WorkspaceSynced;
-    local: WorkspaceLocal;
-  }): Promise<void>;
-  deleteWorkspace(workspaceId: string): Promise<DiskWorkspaceRegistry>;
-  registerWorkspace(entry: DiskWorkspaceRegistryEntry): Promise<DiskWorkspaceRegistry>;
-  setActiveWorkspace(workspaceId: string): Promise<DiskWorkspaceRegistry>;
-  flush(): Promise<void>;
-}
-
-function getSurface(): DesktopWorkspaceFileSurface | null {
-  if (typeof globalThis === 'undefined') return null;
-  const w = globalThis as unknown as {
-    apicircleDesktop?: { workspaceFile?: DesktopWorkspaceFileSurface };
-  };
-  return w.apicircleDesktop?.workspaceFile ?? null;
-}
+// The bridge surface lives in `../desktop/bridge` (single source of truth so
+// renderer expectations and preload implementation can't silently drift).
+// The canonical type uses `@apicircle/core/workspace/registry`'s
+// `WorkspaceRegistry`, which is structurally identical to the
+// `DiskWorkspaceRegistry` alias kept here for legacy test consumers.
+const getSurface = getDesktopWorkspaceFileBridge;
 
 export interface DiskMirror {
   /** True when the desktop bridge is wired (Electron); false on web. */
@@ -90,7 +71,7 @@ export interface DiskMirror {
 }
 
 class DesktopDiskMirror implements DiskMirror {
-  constructor(private surface: DesktopWorkspaceFileSurface) {}
+  constructor(private surface: DesktopWorkspaceFileBridge) {}
 
   isAvailable(): boolean {
     return true;
