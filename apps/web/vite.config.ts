@@ -61,6 +61,12 @@ function monacoVendor(): Plugin {
 const MOCK_PROXY_PORT = process.env.E2E_MOCK_PORT ?? '5176';
 
 export default defineConfig({
+  // Relative base so the built `index.html` references assets as
+  // `./assets/...` instead of `/assets/...`. The desktop shell loads the
+  // bundle from `file://`, where absolute paths resolve to filesystem
+  // root and break — same SPA still serves correctly under any hosted
+  // origin once that ships.
+  base: './',
   plugins: [react(), monacoVendor()],
   server: {
     port: 5174,
