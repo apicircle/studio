@@ -15,25 +15,34 @@ resume development without prior context
 ## 1. What it is
 
 **API Circle Studio** is an API workspace tool — think Postman or
-Insomnia — with three things that set it apart:
+Insomnia — with a handful of things that set it apart:
 
 - **Git-backed workspace.** A workspace is a JSON document pushed to a
   GitHub repo on a working branch; teams collaborate via pull requests.
+- **On-disk workspace mirror.** The desktop app keeps a plain-JSON
+  mirror of every workspace on disk (a multi-workspace registry under
+  `userData/workspaces/`) so the CLI, the MCP server, and external
+  tools can read or edit the same source of truth the UI uses.
 - **Local mock servers.** Describe an API in OpenAPI / Postman /
   Insomnia and run a Hono-backed mock on `localhost`.
-- **An MCP server.** The workspace is exposed as a 71-tool catalog any
+- **An MCP server.** The workspace is exposed as a 72-tool catalog any
   Model Context Protocol client (Claude Desktop, ChatGPT, Cursor,
   GitHub Copilot, Continue, Cline, Zed, Windsurf) can drive.
-- **A CLI** (`apicircle mock | mcp | import | run`) for headless use.
+- **A CLI** (`apicircle mock | mcp | import | run | workspaces`) for
+  headless use.
 
-It ships in three forms: a browser web app, an Electron desktop app, and
-npm packages + platform binaries.
+It ships in three forms: a browser web app (continuously deployed to
+GitHub Pages from `main`), an Electron desktop app, and npm packages +
+platform binaries.
 
 ## 2. Project status
 
-**Pre-launch. Zero users.** There is no installed base, no production
-data, and no public API contract to preserve. This shapes how to work
-here — see §14.
+**Pre-launch, public 1.0.x. Zero installed users.** v1.0.0 was the
+first public release; 1.0.1 hardened the desktop installer pipeline,
+1.0.2 shipped the disk-mirror + multi-workspace addressing, and 1.0.3
+shipped the MCP "connect" flow and the Settings → Community section.
+There is still no production data and no public API contract to
+preserve — see §14. Full notes: [`CHANGELOG.md`](../../CHANGELOG.md).
 
 ## 3. Repo layout
 
@@ -53,14 +62,14 @@ studio/
 │   ├── git/              GitHub REST client + typed error taxonomy
 │   ├── ui-components/    ALL React UI + the Zustand store + IndexedDB persistence
 │   ├── mock-server-core/ Hono mock engine + OpenAPI/Postman/Insomnia parsers
-│   ├── mcp-server/       stdio MCP host + 71-tool catalog + workspace providers
-│   └── cli/              `apicircle` binary — mock / mcp / import / run subcommands
+│   ├── mcp-server/       stdio MCP host + 72-tool catalog + workspace providers
+│   └── cli/              `apicircle` binary — mock / mcp / import / run / workspaces
 ├── examples/             Demo workspaces + a standalone example mock server
 ├── docs/                 Product + architecture + QA docs (see §16)
 ├── e2e/                  E2E suites — web/ + desktop/ (Playwright packages),
 │                           mock/ (Hono test backend), qa/ (Cowork runner)
 ├── scripts/              Build (icons, release binaries) + E2E coverage tooling
-└── .github/workflows/    CI: ci, codeql, e2e, release, desktop-release
+└── .github/workflows/    CI: ci, codeql, e2e, release, desktop-release, deploy-web
 ```
 
 **Publishable npm packages** (`@apicircle/*`): `shared`, `core`,
@@ -99,12 +108,18 @@ tool.
 
 ### MCP provider abstraction
 
-`@apicircle/mcp-server` tool handlers depend on two interfaces, not
+`@apicircle/mcp-server` tool handlers depend on three interfaces, not
 concretes:
 
-- **`WorkspaceProvider`** — `read()` / `apply(patch)` / `write({synced?,
-local?})`. Implementations: `InMemoryWorkspaceProvider`,
-  `FileBackedWorkspaceProvider` (disk + `proper-lockfile` advisory lock).
+- **`WorkspaceProvider`** — `read()` / `apply(patch)` /
+  `write({synced?, local?})`. Implementations:
+  `InMemoryWorkspaceProvider` and `FileBackedWorkspaceProvider` (disk +
+  `proper-lockfile` advisory lock).
+- **`Workspaces`** — multi-workspace discovery: `list()` /
+  `get(id)` / `setActive(id)`. Implementations:
+  `SingleWorkspaceWorkspaces` (one workspace, fixed) and
+  `MultiWorkspaceProvider` (registry root on disk, rebuilds the per-id
+  `FileBackedWorkspaceProvider` whenever the active id changes).
 - **`MockController`** — `start` / `stop` / `list`. Implementation:
   `InProcessMockController` (wraps `mock-server-core` directly).
 
@@ -116,6 +131,36 @@ Electron, standalone via the CLI, or in a future hosted service.
 `@apicircle/mock-server-core` is a Hono app builder. The same factory
 powers the desktop `MockManager`, the CLI `apicircle mock`, and the MCP
 `mock.start` tool.
+
+### Disk mirror + workspace registry
+
+Desktop persistence is two-layer: IndexedDB (canonical for the
+renderer) plus a plain-JSON mirror on disk under
+`userData/workspaces/<id>/{workspace.synced.json,workspace.local.json}`
+with a sibling `registry.json` listing every workspace and its
+`lastOpenedAt`. The mirror exists so external readers (the CLI, the
+MCP server, an editor poking at the JSON, future hosted services) can
+operate on the same source of truth the UI uses, without any IPC.
+
+- `diskMirror` + `diskMirrorMerge` (`packages/ui-components/src/persistence/`)
+  debounce writes and do a three-way merge when refreshing from disk.
+- `workspaceRegistry` (`packages/core/src/workspace/workspaceRegistry.ts`)
+  owns the on-disk registry shape; the IDB-side `WorkspaceRegistry`
+  type in `packages/ui-components/src/persistence/db.ts` mirrors it
+  exactly.
+- `resolveWorkspace` (`packages/cli/src/util/resolveWorkspace.ts`)
+  gives every CLI subcommand the same `--workspace-name` /
+  `--workspace-path` addressing model the desktop uses.
+
+### Desktop bridge contract
+
+`packages/ui-components/src/desktop/bridge.ts` is the single source of
+truth for the `window.apicircleDesktop` IPC surface. Both
+`apps/desktop/src/main/preload.ts` and every renderer consumer (the
+MCP panel, the Workspace Mirror row, the mock-server controls) import
+the typed shapes here — `preload.ts` uses `satisfies DesktopBridge` so
+missing or mistyped fields fail `pnpm check`. Add a new bridge surface
+here first; never redeclare an ad-hoc interface in the consumer.
 
 Full design record: [`docs/architecture/platform.md`](../architecture/platform.md).
 
@@ -133,6 +178,12 @@ Full design record: [`docs/architecture/platform.md`](../architecture/platform.m
 - **UI:** `packages/ui-components/src/` — `App.tsx` + 9 panels
   (`layout/panels.ts`): Workspace, Link Workspace, Editor, Environments,
   Execution, History, Mocks, MCP, Help Center. Editors are Monaco-based.
+- **Settings popover** (`layout/SettingsPicker.tsx`) hangs off the top
+  bar — behavioral toggles, theme + font pickers, and the
+  **Community section** (`community/CommunitySection.tsx`) that
+  fetches live GitHub stats with a 6h IndexedDB cache.
+- **Per-panel error boundary** (`primitives/PanelErrorBoundary`) catches
+  render errors per panel without taking down the shell.
 
 ## 6. Auth
 
@@ -150,14 +201,24 @@ response retries (Digest 401, NTLM 3-way). Full matrix:
 
 ## 7. MCP server
 
-`@apicircle/mcp-server` exposes **71 tools** over stdio, namespaced by
-capability: imports, code generation, workspace read/write, request /
-folder / environment / plan / assertion CRUD, history, codebase
-extraction, prompt-driven authoring, and mock-server lifecycle +
-endpoint editing. Canonical list: `packages/shared/src/mcp.ts`;
-registered in `packages/mcp-server/src/tools/registry.ts`. Per-tool
-input shapes: [`docs/mcp-tools-reference.md`](../mcp-tools-reference.md).
-Wiring a client: [`docs/connect-your-ai-client.md`](../connect-your-ai-client.md).
+`@apicircle/mcp-server` exposes **72 tools** over stdio, namespaced by
+capability: imports, code generation, multi-workspace discovery
+(`workspace.list`), workspace read/write, request / folder /
+environment / plan / assertion CRUD, history, codebase extraction,
+prompt-driven authoring, and mock-server lifecycle + endpoint editing.
+Canonical list: `packages/shared/src/mcp.ts`; registered in
+`packages/mcp-server/src/tools/registry.ts`. Per-tool input shapes:
+[`docs/mcp-tools-reference.md`](../mcp-tools-reference.md).
+
+The in-product **MCP panel** (`panels/mcp/`) has two sections driven
+by `mcpPanelTypes`: **Connection** (the four-step `HowToConnect` setup
+flow that emits a per-client config snippet via the desktop bridge,
+plus the workspace mirror status and refresh) and **Prompts** (the
+curated `mcpPrompts` catalog). Setup snippets handle Windows path
+encoding via the `ConfigSnippetVariants` `{forwardSlash, escaped,
+identical}` shape — the UI lets the user pick which JSON-escape form
+to paste. Wiring a client end-to-end:
+[`docs/connect-your-ai-client.md`](../connect-your-ai-client.md).
 
 ## 8. Mock server
 
@@ -171,12 +232,16 @@ mock runtime needs the desktop bridge or the CLI. Feature guide:
 
 ## 9. CLI
 
-`@apicircle/cli` ships the `apicircle` binary with four subcommands:
+`@apicircle/cli` ships the `apicircle` binary with five subcommands:
 `mock` (run a mock server from a spec), `mcp` (run the MCP server over
-stdio), `import` (load a spec into a workspace), and `run` (execute a
-saved execution plan and report pass/fail — for CI gates). Distributed
-as an npm package and as platform binaries (linux-x64, macos-x64,
-macos-arm64, win-x64).
+stdio), `import` (load a spec into a workspace), `run` (execute a
+saved execution plan and report pass/fail — for CI gates), and
+`workspaces` (`list | create | use | path` — manage the on-disk
+multi-workspace registry the desktop app shares with the CLI and AI
+clients). Every command resolves `--workspace-name` /
+`--workspace-path` against that registry via `resolveWorkspace`.
+Distributed as an npm package and as platform binaries (linux-x64,
+macos-x64, macos-arm64, win-x64).
 
 ## 10. Build & test commands
 
@@ -205,8 +270,12 @@ Desktop: `pnpm --filter @apicircle/desktop build` then `… start`.
   `docs/qa/test_cases/` via `tcMap*` fixtures + `scripts/e2e_coverage_*`.
 - **CI workflows** (`.github/workflows/`): `ci.yml` (lint / typecheck /
   unit), `codeql.yml` (security), `e2e.yml` (Playwright + cross-browser
-  smoke + visual baseline), `release.yml` (changesets npm publish),
-  `desktop-release.yml` (Electron installers).
+  smoke + visual baseline), `release.yml` (changesets-driven npm
+  publish of `@apicircle/*`), `desktop-release.yml` (Electron
+  installers + `electron-updater` indexes), and `deploy-web.yml`
+  (builds `apps/web` and deploys it to GitHub Pages on every push to
+  `main` — the hosted web build is continuously available; custom
+  domain wired via a checked-in `CNAME`).
 - QA status, coverage modes, and the E2E CI reference live in
   [`docs/qa/README.md`](../qa/README.md).
 
@@ -228,18 +297,68 @@ promises`, `consistent-type-imports`, `prefer-const`, `eqeqeq` are all
 ## 13. Current status & what's pending
 
 The product surfaces are built and functional: the web + desktop apps,
-the 17 auth types, the mock-server engine across all three runtimes, the
-71-tool MCP server, and the CLI. Unit tests are green.
+the 17 auth types, the mock-server engine across all three runtimes,
+the 72-tool MCP server, the CLI with multi-workspace addressing, the
+disk-mirror persistence layer, the MCP **Connection / Prompts** panel
+sections, the Settings → Community surface, and the GitHub Pages web
+deploy. Unit tests are green.
 
 Open work is concentrated in **E2E test depth**: a large share of the
-"covered" test-case rows are workbook-iteration placeholders rather than
-executing assertions, so converting those into real assertions
-module-by-module is the main outstanding effort. Some test-case rows are
-genuinely manual (cross-OS installer signing, real-IdP live tier,
+"covered" test-case rows are workbook-iteration placeholders rather
+than executing assertions, so converting those into real assertions
+module-by-module is the main outstanding effort. Some test-case rows
+are genuinely manual (cross-OS installer signing, real-IdP live tier,
 perception perf) and a few wait on product features not yet shipped
 (code-generation web UI, pre-request script sandbox, telemetry panel,
 web-UI HAR/OpenAPI import). The authoritative status, numbers, and
 pending list are in [`docs/qa/README.md`](../qa/README.md).
+
+## 13a. Planned next — Networking & Social Activity
+
+The next product thread builds on the Settings → Community section
+(which today is read-only: GitHub stars / contributors / latest
+release with a 6h IndexedDB cache). The intent is to grow that
+beachhead into a first-class **community** surface inside the app.
+
+In flight / under design:
+
+- **Networking** — user-to-user surfaces beyond the Git/PR loop:
+  profiles, follow / follower lists, mutual connections, and
+  follow-based filtering of the Link Workspace marketplace. The Link
+  Workspace panel already hosts public workspaces, marketplace search,
+  and version pinning — these are the natural attach points.
+- **Social Media Activity** — an activity feed of community signals:
+  what your followed creators just published, new releases on workspaces
+  you've linked, stars / forks / comments on public workspaces, and
+  outbound "share to Twitter / Mastodon / LinkedIn" hooks on a public
+  Link Workspace page.
+
+Architectural anchors when this work starts:
+
+- **Schema lives in `WorkspaceSynced`** — a new `social` and/or
+  `network` slice in `packages/shared/src/types.ts`. Pre-launch
+  freedom (§14) still applies: reshape the existing types if a clean
+  social schema demands it. No migration shims.
+- **Mutations route through `applyMutation`** — add the relevant
+  `WorkspacePatch` variants and matching MCP tools (`social.follow`,
+  `social.activity_feed`, etc.) so AI clients can drive the same
+  social surfaces the UI does.
+- **Feed data is per-device** — anything fetched from a remote feed
+  endpoint lives in `WorkspaceLocal`, not Git-synced. The same TTL +
+  IndexedDB caching pattern `community/communityStorage.ts` already
+  uses is the template.
+- **UI lands in two places** — a new sub-section inside the existing
+  Settings → Community popover for self/network management, and feed
+  surfaces inside the Link Workspace panel. A dedicated top-nav panel
+  is a later call; keep the surface count to 9 until the social
+  feature set is meaningful enough to warrant one.
+- **External shares are share-link generation, not OAuth** — first
+  cut is opening the network's compose URL in the browser rather than
+  full OAuth-to-post integrations; OAuth comes later only if usage
+  justifies it.
+
+When this work begins, replace this section with the concrete plan
+record (or link out to one under `docs/architecture/`).
 
 ## 14. How to work in this repo
 
@@ -263,10 +382,11 @@ Because the product is pre-launch with zero users:
 | Doc                                                              | Purpose                                         |
 | ---------------------------------------------------------------- | ----------------------------------------------- |
 | [`CLAUDE.md`](../../CLAUDE.md)                                   | Repo-root cold-start briefing                   |
+| [`CHANGELOG.md`](../../CHANGELOG.md)                             | Release-by-release feature notes (1.0.0 → now)  |
 | [`docs/architecture/platform.md`](../architecture/platform.md)   | MCP / mock engine / CLI / desktop design record |
 | [`docs/auth.md`](../auth.md)                                     | The 17-auth-type matrix                         |
 | [`docs/mock-server.md`](../mock-server.md)                       | Mock server feature guide                       |
-| [`docs/mcp-tools-reference.md`](../mcp-tools-reference.md)       | MCP tool catalog reference (71 tools)           |
+| [`docs/mcp-tools-reference.md`](../mcp-tools-reference.md)       | MCP tool catalog reference (72 tools)           |
 | [`docs/connect-your-ai-client.md`](../connect-your-ai-client.md) | Wiring an MCP client                            |
 | [`docs/installing.md`](../installing.md)                         | Install instructions                            |
 | [`docs/qa/README.md`](../qa/README.md)                           | QA status, E2E CI reference, coverage tooling   |
