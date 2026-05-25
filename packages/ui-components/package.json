@@ -18,7 +18,7 @@
     "@apicircle/git": "workspace:*",
     "@apicircle/shared": "workspace:*",
     "@monaco-editor/react": "^4.6.0",
-    "lucide-react": "^0.575.0",
+    "lucide-react": "^1.16.0",
     "monaco-editor": "^0.52.0",
     "react-resizable-panels": "^2.1.0",
     "zustand": "^4.5.0"
