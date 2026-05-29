@@ -1,4 +1,4 @@
-import { expect, test } from '../../fixtures/app';
+import { expect, test } from '../fixtures/app';
 import {
   connectAndBranchV2,
   createV2HostRepo,
@@ -10,7 +10,7 @@ import {
   v2SkipReason,
 } from './_helpers';
 
-test.describe('V2 Live GitHub - branch and workspace transitions @live-github-v2', () => {
+test.describe('Live GitHub - branch and workspace transitions @live-github', () => {
   const skip = v2SkipReason();
   test.skip(skip !== null, skip ?? '');
 
@@ -33,7 +33,7 @@ test.describe('V2 Live GitHub - branch and workspace transitions @live-github-v2
       const api = window.__apicircleStore!.getState() as any;
       const requestId = api.addRequest(null, 'v2 transition request A');
       api.addEnvironment('v2-transition-env-a');
-      await api.pushWorkspace('e2e v2: transition A');
+      await api.pushWorkspace('e2e live: transition A');
       const pr = await api.createPullRequest({
         title: 'e2e v2 transition A',
         body: 'first transition merge',
@@ -55,7 +55,7 @@ test.describe('V2 Live GitHub - branch and workspace transitions @live-github-v2
         const refresh = await api.refreshWorkspace();
         const requestId = api.addRequest(null, 'v2 transition request B');
         api.addEnvironment('v2-transition-env-b');
-        await api.pushWorkspace('e2e v2: transition B');
+        await api.pushWorkspace('e2e live: transition B');
         const pr = await api.createPullRequest({
           title: 'e2e v2 transition B',
           body: 'second transition merge',

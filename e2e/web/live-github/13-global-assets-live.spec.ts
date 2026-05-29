@@ -1,5 +1,5 @@
 import { summarizeUnpushedChanges } from '@apicircle/core';
-import { expect, test } from '../../fixtures/app';
+import { expect, test } from '../fixtures/app';
 import {
   attachmentBlobPathV2,
   assertRemoteWorkspaceHasNoLocalOnlyData,
@@ -27,7 +27,7 @@ function summary(pair: { base: any; current: any }) {
   });
 }
 
-test.describe('V2 Live GitHub - global assets through linked workspaces @live-github-v2', () => {
+test.describe('Live GitHub - global assets through linked workspaces @live-github', () => {
   const skip = v2SkipReason();
   test.skip(skip !== null, skip ?? '');
 
@@ -44,7 +44,7 @@ test.describe('V2 Live GitHub - global assets through linked workspaces @live-gi
     const source = await createV2SourceRepo(tracker, bot, 'global-assets-source', 'private');
     const branch = makeV2BranchName(test.info().workerIndex, 'global-assets');
     const fileBytes = v2Bytes('consumer reusable global file asset');
-    await updateWorkspaceJson(source.cfg, source.branch, 'e2e v2: source global assets', (ws) => {
+    await updateWorkspaceJson(source.cfg, source.branch, 'e2e live: source global assets', (ws) => {
       const typed = ws as Record<string, any>;
       typed.globalAssets = {
         schemas: {
@@ -192,7 +192,7 @@ test.describe('V2 Live GitHub - global assets through linked workspaces @live-gi
     expect(linked.mockBody.attachment.globalFileAssetId).toBe(linked.ids.fileAssetId);
     expect(linked.mockBody.attachment.slotId).toBe(linked.fileAsset.slotId);
 
-    const remote = await pushAndFetchWorkspaceV2(app, host, branch, 'e2e v2: global assets');
+    const remote = await pushAndFetchWorkspaceV2(app, host, branch, 'e2e live: global assets');
     assertRemoteWorkspaceHasNoLocalOnlyData(remote);
     expect(remote.globalAssets.schemas[linked.ids.schemaId]).toBeDefined();
     expect(remote.globalAssets.graphql[linked.ids.graphqlId]).toBeDefined();
@@ -246,7 +246,7 @@ test.describe('V2 Live GitHub - global assets through linked workspaces @live-gi
       app,
       host,
       branch,
-      'e2e v2: rename global file asset',
+      'e2e live: rename global file asset',
     );
     expect(renamedRemote.globalAssets.files[linked.ids.fileAssetId].name).toBe(
       'Consumer payload file renamed',
@@ -282,7 +282,7 @@ test.describe('V2 Live GitHub - global assets through linked workspaces @live-gi
       app,
       host,
       branch,
-      'e2e v2: remove global file asset',
+      'e2e live: remove global file asset',
     );
     expect(removedRemote.globalAssets.files[linked.ids.fileAssetId]).toBeUndefined();
     expect(removedRemote.collections.requests[linked.ids.binaryRequestId].body).toEqual({

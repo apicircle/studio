@@ -39,8 +39,10 @@ platform binaries.
 
 **Pre-launch, public 1.0.x. Zero installed users.** v1.0.0 was the
 first public release; 1.0.1 hardened the desktop installer pipeline,
-1.0.2 shipped the disk-mirror + multi-workspace addressing, and 1.0.3
-shipped the MCP "connect" flow and the Settings → Community section.
+1.0.2 shipped the disk-mirror + multi-workspace addressing 1.0.3
+shipped the MCP "connect" flow -> Community section and
+1.0.4 ships the Global Assets file library plus the canonical live GitHub
+dependency/snapshot/release E2E pipeline.
 There is still no production data and no public API contract to
 preserve — see §14. Full notes: [`CHANGELOG.md`](../../CHANGELOG.md).
 

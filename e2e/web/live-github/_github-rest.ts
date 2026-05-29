@@ -1,80 +1,20 @@
-// Shared helpers for the `chromium-live-github` Playwright project's
-// full-flow specs (`e2e/web/live/*.spec.ts`). All flows in here hit
-// the real `api.github.com` — the existing in-process GitHub mock
-// (`e2e/mock/_gh/*`) is NOT in the picture for these tests.
+// Node-side REST helpers for the canonical live GitHub Playwright suite
+// (`e2e/web/live-github/*.spec.ts`). All flows in here hit the real
+// `api.github.com`; the in-process GitHub mock is not used.
 //
-// Token rule (same as `live-github.spec.ts`): the PAT is read from
-// process.env at runtime. Never hard-code, never log, never echo into
-// error messages.
-//
-// Isolation rule: every spec creates its own working branch named
-// `apicircle/e2e-<workerIndex>-<unix-ms>-<slug>` on the sandbox repo
-// and deletes that ref in `test.afterAll` via raw GitHub REST. The
-// default branch (typically `main`) is never written to.
+// Token rule: PATs are read from process.env at runtime. Never hard-code,
+// never log, never echo them into error messages.
 
 import type { Page } from '@playwright/test';
 
 const ENABLE_ENV = 'APICIRCLE_E2E_LIVE_GITHUB';
 const TOKEN_ENV = 'APICIRCLE_E2E_GITHUB_PAT';
-const REPO_ENV = 'APICIRCLE_E2E_GITHUB_REPO';
-const LINK_PUBLIC_REPO_ENV = 'APICIRCLE_E2E_GITHUB_LINK_PUBLIC_REPO';
 
 export interface LiveGithubConfig {
   token: string;
   owner: string;
   name: string;
   fullName: string;
-}
-
-export interface LinkPublicRepoConfig {
-  owner: string;
-  name: string;
-  fullName: string;
-  branch: string;
-}
-
-export function getLiveConfig(): LiveGithubConfig | null {
-  if (process.env[ENABLE_ENV] !== '1') return null;
-  const token = process.env[TOKEN_ENV]?.trim();
-  const repo = process.env[REPO_ENV]?.trim();
-  if (!token || !repo) return null;
-  const [owner, name, ...rest] = repo.split('/');
-  if (!owner || !name || rest.length > 0) return null;
-  return { token, owner, name, fullName: `${owner}/${name}` };
-}
-
-export function liveSkipReason(): string | null {
-  if (process.env[ENABLE_ENV] !== '1') {
-    return `Set ${ENABLE_ENV}=1 to run live GitHub flows.`;
-  }
-  if (!process.env[TOKEN_ENV]?.trim()) {
-    return `Set ${TOKEN_ENV} to a GitHub PAT (repo scope) at runtime.`;
-  }
-  const repo = process.env[REPO_ENV]?.trim();
-  if (!repo) return `Set ${REPO_ENV}=owner/repo for the writable sandbox repo.`;
-  if (!/^[^/]+\/[^/]+$/.test(repo)) return `${REPO_ENV} must use owner/repo format.`;
-  return null;
-}
-
-/**
- * Optional public repo target for the anon-link test. Format:
- *   APICIRCLE_E2E_GITHUB_LINK_PUBLIC_REPO=owner/repo[@branch]
- * Branch defaults to `main`. The spec that consumes this skips
- * gracefully when unset — anon GitHub probes don't depend on the
- * sandbox PAT, so this is a separate opt-in.
- */
-export function getLinkPublicRepoConfig(): LinkPublicRepoConfig | null {
-  const raw = process.env[LINK_PUBLIC_REPO_ENV]?.trim();
-  if (!raw) return null;
-  const [repoPart, branch = 'main'] = raw.split('@');
-  if (!repoPart) return null;
-  const [owner, name, ...rest] = repoPart.split('/');
-  if (!owner || !name || rest.length > 0) return null;
-  return { owner, name, fullName: `${owner}/${name}`, branch };
-}
-
-export function linkPublicRepoSkipReason(): string {
-  return `Set ${LINK_PUBLIC_REPO_ENV}=owner/repo[@branch] to a public repo whose default branch contains a workspace.json.`;
 }
 
 export interface StoreCommit {
@@ -295,7 +235,7 @@ export async function disconnect(page: Page): Promise<void> {
 }
 
 /**
- * Delete a working branch via raw GitHub REST. Idempotent — a 404 or
+ * Delete a working branch via raw GitHub REST. Idempotent Ã¢â‚¬â€ a 404 or
  * 422 is fine (branch already gone or never reached push). Calls go
  * directly to api.github.com from the test process (Node fetch), NOT
  * via the browser, so this works even after the page has navigated
@@ -318,20 +258,20 @@ export async function deleteBranch(cfg: LiveGithubConfig, branchName: string): P
   }
 }
 
-// ─── Repo bootstrap (empty-repo handling) ──────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Repo bootstrap (empty-repo handling) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 //
 // Production workflow expectation: an APICircle user can point a brand-new,
 // freshly-created (and therefore empty) GitHub repository at the workspace
 // and start working. The live-github E2E suite mirrors that workflow by
-// seeding the sandbox repo on first run if it has no commits yet — no
+// seeding the sandbox repo on first run if it has no commits yet Ã¢â‚¬â€ no
 // out-of-band UI clicks required.
 //
 // The three primitives below are idempotent so re-runs are cheap:
-//   1. `getDefaultBranchHead` — `{name, sha}` if the default branch has a
+//   1. `getDefaultBranchHead` Ã¢â‚¬â€ `{name, sha}` if the default branch has a
 //      HEAD commit; `{name, sha: null}` if the repo is empty.
-//   2. `seedRepoIfEmpty` — `PUT /contents/README.md` on an empty repo to
+//   2. `seedRepoIfEmpty` Ã¢â‚¬â€ `PUT /contents/README.md` on an empty repo to
 //      create the first commit on the default branch.
-//   3. `ensureWorkspaceJsonOnMain` — make sure the default branch carries
+//   3. `ensureWorkspaceJsonOnMain` Ã¢â‚¬â€ make sure the default branch carries
 //      a valid `workspace.json` (the `linkPrivateWorkspace` precondition).
 
 function ghHeaders(token: string): Record<string, string> {
@@ -350,7 +290,7 @@ export interface DefaultBranchHead {
 /**
  * Resolve the repo's default branch name and current HEAD SHA. Returns
  * `{name, sha: null}` for a brand-new empty repo (default branch chosen
- * by GitHub but never created — `git/refs/heads/<branch>` 404s).
+ * by GitHub but never created Ã¢â‚¬â€ `git/refs/heads/<branch>` 404s).
  */
 export async function getDefaultBranchHead(cfg: LiveGithubConfig): Promise<DefaultBranchHead> {
   const repoRes = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.name}`, {
@@ -368,7 +308,7 @@ export async function getDefaultBranchHead(cfg: LiveGithubConfig): Promise<Defau
     { headers: ghHeaders(cfg.token) },
   );
   if (refRes.status === 404 || refRes.status === 409) {
-    // 404 — branch literally has no commits yet. 409 (Git Repository is
+    // 404 Ã¢â‚¬â€ branch literally has no commits yet. 409 (Git Repository is
     // empty) is the older GitHub response for the same condition.
     return { name: branch, sha: null };
   }
@@ -390,7 +330,7 @@ export interface SeedRepoOptions {
 
 /**
  * Seed a `README.md` on the default branch if the repo is empty. Sequel
- * call: optionally also seed `workspace.json`. Idempotent — the second
+ * call: optionally also seed `workspace.json`. Idempotent Ã¢â‚¬â€ the second
  * and subsequent invocations are no-ops.
  *
  * Returns the resulting `DefaultBranchHead` (with a non-null `sha`) so
@@ -436,7 +376,7 @@ export async function seedRepoIfEmpty(
 /**
  * Minimal `WorkspaceSynced`-compatible JSON used as the seed for an empty
  * `workspace.json` on the default branch. Mirrors the shape produced by
- * a fresh `createNewWorkspace()` — enough that `linkPrivateWorkspace`'s
+ * a fresh `createNewWorkspace()` Ã¢â‚¬â€ enough that `linkPrivateWorkspace`'s
  * probe round-trips successfully.
  */
 const MIN_WORKSPACE_JSON = {
@@ -473,7 +413,7 @@ export async function ensureWorkspaceJsonOnMain(
     `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/workspace.json?ref=${encodeURIComponent(branch)}`,
     { headers: ghHeaders(cfg.token) },
   );
-  if (probeRes.ok) return; // already present — nothing to do.
+  if (probeRes.ok) return; // already present Ã¢â‚¬â€ nothing to do.
   if (probeRes.status !== 404) {
     throw new Error(`workspace.json probe on ${cfg.fullName}@${branch} failed: ${probeRes.status}`);
   }
@@ -753,7 +693,7 @@ export async function setRepoTopics(cfg: LiveGithubConfig, topics: string[]): Pr
   return body.names ?? [];
 }
 
-// ─── Repo lifecycle (create / delete via REST) ─────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Repo lifecycle (create / delete via REST) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 //
 // Used by the live pipeline + by specs that need a fresh repo per run
 // (e.g. cross-repo-linking creates a third repo at test time). The
@@ -761,8 +701,6 @@ export async function setRepoTopics(cfg: LiveGithubConfig, topics: string[]): Pr
 // configured bot owner so a typo can't destroy something that matters.
 
 const BOT_OWNER_ENV = 'APICIRCLE_E2E_BOT_OWNER';
-const PIPELINE_PRIVATE_REPO_ENV = 'APICIRCLE_E2E_PIPELINE_PRIVATE_REPO';
-const PIPELINE_PUBLIC_REPO_ENV = 'APICIRCLE_E2E_PIPELINE_PUBLIC_REPO';
 
 export function getBotOwner(): string | null {
   return process.env[BOT_OWNER_ENV]?.trim() || null;
@@ -803,7 +741,7 @@ export interface CreatedRepo {
 
 /**
  * Create a repository under the bot owner. Returns metadata once
- * GitHub returns 201. Throws on conflict — caller is expected to use
+ * GitHub returns 201. Throws on conflict Ã¢â‚¬â€ caller is expected to use
  * a unique name per run (e.g. `apicircle-e2e-private-<run_id>`).
  */
 export async function createRepo(token: string, args: CreateRepoArgs): Promise<CreatedRepo> {
@@ -818,7 +756,7 @@ export async function createRepo(token: string, args: CreateRepoArgs): Promise<C
       name: args.name,
       private: args.visibility === 'private',
       visibility: args.visibility,
-      description: args.description ?? 'APICircle e2e — ephemeral, auto-managed',
+      description: args.description ?? 'APICircle e2e Ã¢â‚¬â€ ephemeral, auto-managed',
       auto_init: false,
     }),
   });
@@ -843,7 +781,7 @@ export async function createRepo(token: string, args: CreateRepoArgs): Promise<C
 }
 
 /**
- * Delete a repository under the bot owner. Idempotent — a 404 is fine
+ * Delete a repository under the bot owner. Idempotent Ã¢â‚¬â€ a 404 is fine
  * (already deleted). Requires `delete_repo` scope on the token.
  */
 export async function deleteRepo(token: string, owner: string, name: string): Promise<void> {
@@ -859,7 +797,7 @@ export async function deleteRepo(token: string, owner: string, name: string): Pr
   }
 }
 
-// ─── Pull request lifecycle ────────────────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Pull request lifecycle Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 export interface CreatePullRequestArgs {
   head: string;
@@ -942,33 +880,7 @@ export async function forceUpdateRef(
   }
 }
 
-// ─── Pipeline-provisioned repos (read env var contract) ────────────────
-
-export interface PipelineRepoConfig {
-  privateRepo: LiveGithubConfig | null;
-  publicRepo: LiveGithubConfig | null;
-}
-
-/**
- * Resolve pipeline-provided repo identities from env. When the pipeline
- * has pre-created repos, it sets these two vars; otherwise specs fall
- * back to consuming `APICIRCLE_E2E_GITHUB_REPO` / link-public-repo for
- * single-repo local-dev runs.
- */
-export function getPipelineRepoConfig(): PipelineRepoConfig {
-  const base = getLiveConfig();
-  if (!base) return { privateRepo: null, publicRepo: null };
-  const priv = process.env[PIPELINE_PRIVATE_REPO_ENV]?.trim();
-  const pub = process.env[PIPELINE_PUBLIC_REPO_ENV]?.trim();
-  const cfgFrom = (slug: string | undefined): LiveGithubConfig | null => {
-    if (!slug || !/^[^/]+\/[^/]+$/.test(slug)) return null;
-    const [owner, name] = slug.split('/');
-    return { token: base.token, owner, name, fullName: `${owner}/${name}` };
-  };
-  return { privateRepo: cfgFrom(priv), publicRepo: cfgFrom(pub) };
-}
-
-// ─── Multi-workspace browser helpers ───────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Multi-workspace browser helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 /**
  * Create + switch to a fresh workspace inside the same Playwright page,
@@ -1026,16 +938,16 @@ export async function deleteAndCreateWorkspace(
       try {
         await api.deleteWorkspaceById(activeId);
       } catch {
-        /* tolerate — the new workspace is already active */
+        /* tolerate Ã¢â‚¬â€ the new workspace is already active */
       }
     }
     return newId;
   }, newName);
 }
 
-// ─── Orphan repo sweep (used by pipeline + local cleanup) ──────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Orphan repo sweep (used by pipeline + local cleanup) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
-// ─── Repo-mutation helpers (rename / archive / fork / branch-protection) ──
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Repo-mutation helpers (rename / archive / fork / branch-protection) Ã¢â€â‚¬Ã¢â€â‚¬
 
 export async function archiveRepo(cfg: LiveGithubConfig, archived: boolean): Promise<void> {
   assertBotOwner(cfg.owner, 'archiveRepo');
@@ -1099,7 +1011,7 @@ export async function forkRepo(
 }
 
 /**
- * Set branch protection on the default branch — `required_status_checks`
+ * Set branch protection on the default branch Ã¢â‚¬â€ `required_status_checks`
  * with a non-existent check name, which the bot will never satisfy, so
  * any direct push gets rejected. Used by the branch-protection edge case.
  */
@@ -1143,7 +1055,7 @@ export async function removeBranchProtection(cfg: LiveGithubConfig, branch: stri
 
 /**
  * Append a release entry to a source repo's main `workspace.json` and
- * push the update — used by linked-version-transition tests to simulate
+ * push the update Ã¢â‚¬â€ used by linked-version-transition tests to simulate
  * "source publishes a new version" without spinning up a second app
  * instance. Writes via the Contents API (auto-commits to the branch).
  */
@@ -1265,7 +1177,7 @@ export async function addLinkedWorkspaceOnSource(
   }
 }
 
-// ─── Extra env-var readers (org repos + dedicated link sessions) ───────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Extra env-var readers (org repos + dedicated link sessions) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 export function getBotOrg(): string | null {
   return process.env.APICIRCLE_E2E_BOT_ORG?.trim() || null;
@@ -1275,7 +1187,7 @@ export function getDedicatedLinkToken(): string | null {
   return process.env.APICIRCLE_E2E_BOT_PAT_LINK_DEDICATED?.trim() || null;
 }
 
-// ─── Rate-limit budget probe ───────────────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Rate-limit budget probe Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 /**
  * Read the bot PAT's current rate-limit budget. Returns the core API

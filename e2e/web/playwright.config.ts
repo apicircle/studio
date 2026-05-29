@@ -59,8 +59,7 @@ export default defineConfig({
         /auth-oauth2-(cc|popup)\.spec\.ts$/,
         /visual-baseline\.spec\.ts$/,
         /live-github\.spec\.ts$/,
-        /[\\/]live[\\/].*\.spec\.ts$/,
-        /[\\/]v2[\\/]live-github[\\/].*\.spec\.ts$/,
+        /[\\/]live-github[\\/].*\.spec\.ts$/,
       ],
       // The two parameterized header sweeps are scoped down by default
       // (a representative 14-entry / first-value subset) so the suite
@@ -70,29 +69,10 @@ export default defineConfig({
     },
     {
       name: 'chromium-live-github',
-      // Picks up both the legacy `live-github.spec.ts` credential
-      // smoke AND every full-flow spec under `live/`. The full-flow
-      // specs talk to api.github.com — see `e2e/web/live/_helpers.ts`
-      // for the env-var contract.
-      testMatch: /(live-github\.spec\.ts|[\\/]live[\\/].*\.spec\.ts)$/,
-      use: {
-        ...devices['Desktop Chrome'],
-        trace: 'off',
-        screenshot: 'off',
-        video: 'off',
-      },
-      timeout: 60_000,
-      fullyParallel: false,
-      // Real GitHub has rate limits and shared remote state — one
-      // worker keeps the suite predictable.
-      workers: 1,
-    },
-    {
-      name: 'chromium-live-github-v2',
-      // Opt-in manual stabilization suite. These specs use bot-owned
-      // ephemeral repos and are promoted to CI only after they pass
-      // file-by-file on a developer machine.
-      testMatch: /[\\/]v2[\\/]live-github[\\/].*\.spec\.ts$/,
+      // Canonical live suite. Specs create/delete bot-owned ephemeral
+      // repos and talk to api.github.com; see
+      // `e2e/web/live-github/_helpers.ts` for the env-var contract.
+      testMatch: /[\\/]live-github[\\/].*\.spec\.ts$/,
       use: {
         ...devices['Desktop Chrome'],
         trace: 'retain-on-failure',
@@ -153,8 +133,7 @@ export default defineConfig({
         /auth-oauth2-(cc|popup)\.spec\.ts$/,
         /visual-baseline\.spec\.ts$/,
         /live-github\.spec\.ts$/,
-        /[\\/]live[\\/].*\.spec\.ts$/,
-        /[\\/]v2[\\/]live-github[\\/].*\.spec\.ts$/,
+        /[\\/]live-github[\\/].*\.spec\.ts$/,
       ],
       grep: /@smoke/,
       use: { ...devices['Desktop Firefox'] },
@@ -167,8 +146,7 @@ export default defineConfig({
         /auth-oauth2-(cc|popup)\.spec\.ts$/,
         /visual-baseline\.spec\.ts$/,
         /live-github\.spec\.ts$/,
-        /[\\/]live[\\/].*\.spec\.ts$/,
-        /[\\/]v2[\\/]live-github[\\/].*\.spec\.ts$/,
+        /[\\/]live-github[\\/].*\.spec\.ts$/,
       ],
       grep: /@smoke/,
       use: { ...devices['Desktop Safari'] },

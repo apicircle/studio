@@ -113,7 +113,7 @@ const STEPS: ReadonlyArray<TourStep> = [
   {
     id: 'dock-assets',
     title: 'Global Assets',
-    body: 'Reusable schemas, snippets, and files shared across every request in the workspace.',
+    body: 'Reusable schemas, GraphQL definitions, and files for requests, mocks, and execution plans. Missing linked files download on demand before a run continues.',
     target: 'dock-assets',
   },
   {

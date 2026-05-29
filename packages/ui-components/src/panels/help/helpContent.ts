@@ -1224,7 +1224,7 @@ The CLI suits power users who skip the desktop app, and CI jobs that keep a work
   {
     id: 'global-assets',
     title: 'Global Assets',
-    body: `Global Assets is a workspace-wide library of reusable schema documents. It opens as the Assets tab of the inspector dock and lives in the synced doc, so pushing the workspace shares the library with the team. It has two libraries: JSON Schemas and GraphQL definitions.
+    body: `Global Assets is a workspace-wide library of reusable API contract and file assets. It opens as the Assets tab of the inspector dock and lives in the synced doc, so pushing the workspace shares the library with the team. It has three libraries: JSON Schemas, GraphQL definitions, and Files.
 
 ## Schemas — JSON Schema documents
 
@@ -1252,15 +1252,23 @@ Store a GraphQL schema as SDL or as introspection JSON:
 
 A request with a graphql body that references the definition gets field and argument awareness while you write the query — a typo in a field name surfaces in the editor.
 
+## Files
+
+Upload a file once in Global Assets, then reuse it from binary request bodies, form-data file rows, and mock binary responses. The workspace tracks filename, size, MIME type, checksum, and the requests or mock responses that require the file.
+
+When a workspace is pushed to GitHub, file bytes are stored as attachment blobs outside \`workspace.json\`. That keeps the JSON small and makes diffs readable. On another machine, linked or synced file assets show as missing until you download them. Sending a request or running a plan that needs missing files opens a download prompt; after the download verifies the checksum, execution continues. The \`apicircle run\` CLI follows the same rule for headless plans.
+
 ## Why one library
 
-A single source of truth: update the "User" asset once and every request that references it moves with it — no copy-pasted schemas drifting apart. Deleting an asset is gated by a confirm dialog because it cascades: any request that referenced it has its mapping cleared.`,
+A single source of truth: update the "User" asset once and every request that references it moves with it — no copy-pasted schemas drifting apart. Deleting an asset is gated by a confirm dialog because it cascades: any request or mock response that referenced it has its mapping cleared.`,
     keywords: [
       'global assets',
       'asset',
       'schema',
       'json schema',
       'graphql',
+      'file upload',
+      'attachments',
       'sdl',
       'introspection',
       'library',

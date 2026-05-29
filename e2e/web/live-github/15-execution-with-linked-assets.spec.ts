@@ -1,4 +1,4 @@
-import { expect, test } from '../../fixtures/app';
+import { expect, test } from '../fixtures/app';
 import {
   assertRemoteWorkspaceHasNoLocalOnlyData,
   connectAndBranchV2,
@@ -17,7 +17,7 @@ import {
 const SOURCE_SCHEMA_ID = 'v2-exec-source-json-schema';
 const SOURCE_GRAPHQL_ID = 'v2-exec-source-graphql-schema';
 
-test.describe('V2 Live GitHub - execution plans with linked assets @live-github-v2', () => {
+test.describe('Live GitHub - execution plans with linked assets @live-github', () => {
   const skip = v2SkipReason();
   test.skip(skip !== null, skip ?? '');
 
@@ -45,7 +45,7 @@ test.describe('V2 Live GitHub - execution plans with linked assets @live-github-
     await updateWorkspaceJson(
       source.cfg,
       source.branch,
-      'e2e v2: linked execution global assets',
+      'e2e live: linked execution global assets',
       (ws) => {
         const typed = ws as Record<string, any>;
         typed.globalAssets = {
@@ -144,7 +144,7 @@ test.describe('V2 Live GitHub - execution plans with linked assets @live-github-
         const api = window.__apicircleStore!.getState() as any;
         const detail = api.lastPlanResults[planId]?.[0];
         const attachmentCache = api.local.attachmentCache?.['v2-exec-linked-file'] ?? null;
-        const push = await api.pushWorkspace('e2e v2: persist linked asset execution plan');
+        const push = await api.pushWorkspace('e2e live: persist linked asset execution plan');
         return {
           planStepPassed: planRun.steps[0]?.passed ?? false,
           resultStatus: detail?.result?.status ?? null,

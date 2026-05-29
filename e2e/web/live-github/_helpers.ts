@@ -15,13 +15,14 @@ import {
   setRepoTopics,
   updateWorkspaceJson,
   writeWorkspaceJson,
-} from '../../live/_helpers';
+} from './_github-rest';
 
 const ENABLE_ENV = 'APICIRCLE_E2E_LIVE_GITHUB';
 const TOKEN_ENV = 'APICIRCLE_E2E_GITHUB_PAT';
 const BOT_OWNER_ENV = 'APICIRCLE_E2E_BOT_OWNER';
 const DEDICATED_TOKEN_ENV = 'APICIRCLE_E2E_BOT_PAT_LINK_DEDICATED';
-const KEEP_ENV = 'APICIRCLE_E2E_V2_KEEP_REPOS';
+const KEEP_ENV = 'APICIRCLE_E2E_KEEP_REPOS';
+const LEGACY_KEEP_ENV = 'APICIRCLE_E2E_V2_KEEP_REPOS';
 
 export interface V2BotConfig {
   token: string;
@@ -58,7 +59,7 @@ export { createPullRequest, mergePullRequest };
 export { seedRepoIfEmpty };
 
 export function v2SkipReason(): string | null {
-  if (process.env[ENABLE_ENV] !== '1') return `Set ${ENABLE_ENV}=1 to run v2 live GitHub tests.`;
+  if (process.env[ENABLE_ENV] !== '1') return `Set ${ENABLE_ENV}=1 to run Live GitHub tests.`;
   if (!process.env[TOKEN_ENV]?.trim())
     return `Set ${TOKEN_ENV} to a classic PAT with repo + delete_repo.`;
   if (!process.env[BOT_OWNER_ENV]?.trim())
@@ -69,7 +70,7 @@ export function v2SkipReason(): string | null {
 export function getV2BotConfig(): V2BotConfig {
   const token = process.env[TOKEN_ENV]?.trim();
   const owner = process.env[BOT_OWNER_ENV]?.trim();
-  if (!token || !owner) throw new Error('v2 live GitHub config missing after skip guard');
+  if (!token || !owner) throw new Error('Live GitHub config missing after skip guard');
   return {
     token,
     owner,
@@ -78,7 +79,7 @@ export function getV2BotConfig(): V2BotConfig {
 }
 
 export function keepV2Repos(): boolean {
-  return process.env[KEEP_ENV] === '1';
+  return process.env[KEEP_ENV] === '1' || process.env[LEGACY_KEEP_ENV] === '1';
 }
 
 export function createV2Tracker(): V2Tracker {
@@ -95,7 +96,7 @@ export function createV2Tracker(): V2Tracker {
     cleanup: async () => {
       if (keepV2Repos()) {
         console.log(
-          `[live-github-v2] APICIRCLE_E2E_V2_KEEP_REPOS=1, keeping repos: ${
+          `[live-github] ${KEEP_ENV}=1, keeping repos: ${
             repos.map((repo) => `https://github.com/${repo.fullName}`).join(', ') || '<none>'
           }`,
         );
@@ -116,7 +117,7 @@ export function createV2Tracker(): V2Tracker {
 }
 
 export function makeV2BranchName(workerIndex: number, label: string): string {
-  return `apicircle/e2e-v2-${workerIndex}-${Date.now()}-${slug(label)}`;
+  return `apicircle/e2e-live-${workerIndex}-${Date.now()}-${slug(label)}`;
 }
 
 export function v2Bytes(input: string): Uint8Array {
@@ -138,14 +139,12 @@ export async function createV2Repo(
 ): Promise<LiveGithubConfig> {
   const created = await createRepo(bot.token, {
     owner: bot.owner,
-    name: `apicircle-e2e-v2-${slug(label).slice(0, 34)}-${visibility}-${Date.now().toString(36)}-${Math.random()
+    name: `apicircle-e2e-live-${slug(label).slice(0, 34)}-${visibility}-${Date.now().toString(36)}-${Math.random()
       .toString(36)
       .slice(2, 8)}`,
     visibility,
   });
-  console.log(
-    `[live-github-v2] created ${visibility} repo: https://github.com/${created.fullName}`,
-  );
+  console.log(`[live-github] created ${visibility} repo: https://github.com/${created.fullName}`);
   return {
     token: bot.token,
     owner: created.owner,
@@ -177,14 +176,14 @@ export async function createV2SourceRepo(
   await writeWorkspaceJson(
     cfg,
     head.name,
-    makeDeterministicWorkspace(`v2-${label}`, {
+    makeDeterministicWorkspace(`live-${label}`, {
       version: opts.version ?? '1.0.0',
-      notes: opts.notes ?? `# V2 ${label} v1\n\n- Seeded by v2 live GitHub E2E.`,
+      notes: opts.notes ?? `# V2 ${label} v1\n\n- Seeded by Live GitHub E2E.`,
     }),
-    `e2e v2: seed ${label}`,
+    `e2e live: seed ${label}`,
   );
   if (visibility === 'public') {
-    await setRepoTopics(cfg, ['apicircle', 'apicircle-e2e', 'apicircle-e2e-v2']);
+    await setRepoTopics(cfg, ['apicircle', 'apicircle-e2e', 'apicircle-e2e-live']);
   }
   return { cfg, branch: head.name };
 }
@@ -270,7 +269,7 @@ export async function publishSourceVersionV2(
     source.cfg,
     source.branch,
     version,
-    `# V2 ${label} ${version}\n\n- Updated by v2 E2E.`,
+    `# V2 ${label} ${version}\n\n- Updated by live E2E.`,
     (ws) => {
       const safe = slug(label);
       const requests = ((ws.collections as any)?.requests ?? {}) as Record<string, any>;
@@ -292,7 +291,7 @@ export async function publishSourceVersionV2(
     },
   );
   if (opts.deprecated || opts.yanked) {
-    await updateWorkspaceJson(source.cfg, source.branch, `e2e v2: flag ${version}`, (ws) => {
+    await updateWorkspaceJson(source.cfg, source.branch, `e2e live: flag ${version}`, (ws) => {
       const versions = ((ws.releases as any)?.self?.versions ?? []) as Array<
         Record<string, unknown>
       >;
@@ -313,7 +312,7 @@ export async function seedSourceAttachmentRequestV2(
   await updateWorkspaceJson(
     source.cfg,
     source.branch,
-    `e2e v2: seed attachment ${args.slotId}`,
+    `e2e live: seed attachment ${args.slotId}`,
     (ws) => {
       const typed = ws as Record<string, any>;
       const req = Object.values(typed.collections.requests)[0] as any;
@@ -355,7 +354,7 @@ export async function seedSourceAttachmentRequestV2(
     source.branch,
     attachmentBlobPathV2(args.slotId),
     args.bytes,
-    `e2e v2: write attachment ${args.slotId}`,
+    `e2e live: write attachment ${args.slotId}`,
   );
   return { sha256 };
 }

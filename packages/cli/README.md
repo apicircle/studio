@@ -166,6 +166,10 @@ apicircle run "Nightly" --secrets ./secrets.json --no-save
 Resolves a plan by name or id, runs each step through the **real** request
 engine (same auth, same retries, same assertions as the desktop app),
 evaluates assertions, and carries extracted context forward between steps.
+If a request or linked-workspace step needs Global Assets file bytes that are
+missing on this machine, the CLI downloads the attachment blobs from GitHub,
+verifies their checksums, and only then starts the request. A checksum mismatch
+fails closed instead of sending a partial upload.
 
 **Flags:**
 

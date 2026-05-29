@@ -1,4 +1,4 @@
-# Live-GitHub v2 end-to-end suite. Specs create/delete bot-owned
+# Live-GitHub end-to-end suite. Specs create/delete bot-owned
 # ephemeral repos per test against real api.github.com; the workflow
 # keeps an orphan sweep as an outer safety net for crashed runs.
 #
@@ -82,8 +82,8 @@ jobs:
       - name: Sweep orphan repos older than 12h
         run: node scripts/live-github/sweep-orphans.mjs
 
-      - name: Run live-github v2 E2E suite
-        run: pnpm test:e2e:live-github-v2
+      - name: Run live-github E2E suite
+        run: pnpm test:e2e:live-github
 
       - name: Upload Playwright report
         if: always()

@@ -1,5 +1,5 @@
 import { summarizeUnpushedChanges } from '@apicircle/core';
-import { expect, test } from '../../fixtures/app';
+import { expect, test } from '../fixtures/app';
 import {
   assertRemoteWorkspaceHasNoLocalOnlyData,
   connectAndBranchV2,
@@ -25,7 +25,7 @@ function expectDiff(pair: { base: any; current: any }, bucket: string, kind = 'a
   ).toBe(true);
 }
 
-test.describe('V2 Live GitHub - dependency diff buckets @live-github-v2', () => {
+test.describe('Live GitHub - dependency diff buckets @live-github', () => {
   const skip = v2SkipReason();
   test.skip(skip !== null, skip ?? '');
 
@@ -74,7 +74,7 @@ test.describe('V2 Live GitHub - dependency diff buckets @live-github-v2', () => 
 
     const afterPush = await app.evaluate(async () => {
       const api = window.__apicircleStore!.getState() as any;
-      await api.pushWorkspace('e2e v2: dependency diff');
+      await api.pushWorkspace('e2e live: dependency diff');
       const state = window.__apicircleStore!.getState() as any;
       return { base: state.local.sync.lastPulledSnapshot ?? null, current: state.synced };
     });

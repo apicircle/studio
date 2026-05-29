@@ -95,6 +95,10 @@ teammates share them; _runtime_ state stays on the local machine.
 - **Generate client code** from any saved request — cURL, fetch, Node (axios),
   Python (requests), Go, and Rust.
 - **Environments** with priority ordering and cross-workspace variable sources.
+- **Global Assets** for reusable JSON Schemas, GraphQL definitions, and file
+  assets. Request uploads, linked workspace downloads, execution plans, and
+  mock binary responses can all point at the same tracked asset metadata while
+  file bytes travel as Git blobs outside `workspace.json`.
 - **Assertions** and multi-step **execution plans** that chain requests.
 - **Request history** with full headers, body previews, and assertion results.
 
@@ -311,6 +315,7 @@ pnpm check              # typecheck (tsc --noEmit per package)
 pnpm lint               # eslint
 pnpm test               # vitest unit tests
 pnpm test:e2e           # Playwright E2E (web)
+pnpm test:e2e:live-github # live api.github.com suite; requires bot PAT env
 ```
 
 Desktop: `pnpm --filter @apicircle/desktop build`, then `… start`.

@@ -1,4 +1,4 @@
-import { expect, test } from '../../fixtures/app';
+import { expect, test } from '../fixtures/app';
 import {
   attachmentBlobPathV2,
   connectAndBranchV2,
@@ -15,7 +15,7 @@ import {
   v2SkipReason,
 } from './_helpers';
 
-test.describe('V2 Live GitHub - attachment blob transmission @live-github-v2', () => {
+test.describe('Live GitHub - attachment blob transmission @live-github', () => {
   const skip = v2SkipReason();
   test.skip(skip !== null, skip ?? '');
 
@@ -46,7 +46,7 @@ test.describe('V2 Live GitHub - attachment blob transmission @live-github-v2', (
         );
         const state = window.__apicircleStore!.getState() as any;
         const attachment = state.synced.collections.requests[requestId].body.attachment;
-        const push = await api.pushWorkspace('e2e v2: push host attachment');
+        const push = await api.pushWorkspace('e2e live: push host attachment');
         return { requestId, attachment, commitSha: push.commitSha };
       },
       { payload: Array.from(bytes) },
@@ -273,7 +273,7 @@ test.describe('V2 Live GitHub - attachment blob transmission @live-github-v2', (
     await updateWorkspaceJson(
       source.cfg,
       source.branch,
-      'e2e v2: corrupt attachment checksum',
+      'e2e live: corrupt attachment checksum',
       (ws) => {
         const req = Object.values((ws as any).collections.requests)[0] as any;
         const row = req.body.formRows.find((item: any) => item.kind === 'file');

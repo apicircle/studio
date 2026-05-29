@@ -1,4 +1,4 @@
-import { expect, test } from '../../fixtures/app';
+import { expect, test } from '../fixtures/app';
 import {
   connectAndBranchV2,
   createV2HostRepo,
@@ -11,7 +11,7 @@ import {
   waitForLinkedLedgerVersionV2,
 } from './_helpers';
 
-test.describe('V2 Live GitHub - release update flow @live-github-v2', () => {
+test.describe('Live GitHub - release update flow @live-github', () => {
   const skip = v2SkipReason();
   test.skip(skip !== null, skip ?? '');
 

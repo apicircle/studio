@@ -1,6 +1,6 @@
 {
   "name": "@apicircle/e2e-desktop",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "description": "Playwright E2E suite for the desktop (Electron) app.",
   "scripts": {

@@ -1,6 +1,6 @@
 {
   "name": "@apicircle/mcp-server",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": false,
   "type": "module",
   "description": "Model Context Protocol server exposing API Circle Studio's workspace as a tool catalog. Used by Claude Desktop, ChatGPT, Cursor, GitHub Copilot, and any other MCP-compatible AI client.",

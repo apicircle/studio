@@ -1,4 +1,4 @@
-import { expect, test } from '../../fixtures/app';
+import { expect, test } from '../fixtures/app';
 import {
   connectAndBranchV2,
   createV2HostRepo,
@@ -11,7 +11,7 @@ import {
   v2SkipReason,
 } from './_helpers';
 
-test.describe('V2 Live GitHub - connect, branch, push @live-github-v2', () => {
+test.describe('Live GitHub - connect, branch, push @live-github', () => {
   const skip = v2SkipReason();
   test.skip(skip !== null, skip ?? '');
 
@@ -34,7 +34,12 @@ test.describe('V2 Live GitHub - connect, branch, push @live-github-v2', () => {
       api.setRequestBody(requestId, { type: 'json', content: '{"v2":true}' });
     });
 
-    const remote = await pushAndFetchWorkspaceV2(app, host, branch, 'e2e v2: connect branch push');
+    const remote = await pushAndFetchWorkspaceV2(
+      app,
+      host,
+      branch,
+      'e2e live: connect branch push',
+    );
     expect(Object.keys(remote.collections?.requests ?? {}).length).toBeGreaterThan(0);
     expect(JSON.stringify(remote)).toContain('https://v2.example.test/push');
 

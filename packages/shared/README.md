@@ -45,15 +45,15 @@ Ships dual ESM + CJS builds and full `.d.ts` types. Zero runtime dependencies.
 
 ## What's in the box
 
-| Surface              | What you get                                                                                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Workspace schema** | `WorkspaceSynced` (the git-tracked document) and `WorkspaceLocal` (per-device state) — every entity type Studio knows about, fully typed.                    |
-| **Entity types**     | Requests, folders, environments, mock-server definitions, plans, assertions, releases, linked workspaces, global assets, history runs, secret-crypto blobs.  |
-| **`generateId()`**   | The only sanctioned way to mint entity IDs — collision-resistant, URL-safe, length-bounded.                                                                  |
-| **Validators**       | Lightweight shape checks for workspace documents and imported specs — handy when you're loading untrusted JSON.                                              |
-| **Crypto helpers**   | AES-GCM via WebCrypto for at-rest secret material. Browser-safe, no Node-only modules.                                                                       |
-| **MCP catalog**      | `MCP_TOOL_NAMES` — the canonical list of every tool the MCP server exposes, plus the `McpToolName` union type. Stay in lockstep with the server, by version. |
-| **Envelope types**   | Discriminated unions for MCP responses (`multiple-workspaces`, error envelopes, etc.) so your client gets exhaustive narrowing for free.                     |
+| Surface              | What you get                                                                                                                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Workspace schema** | `WorkspaceSynced` (the git-tracked document) and `WorkspaceLocal` (per-device state) — every entity type Studio knows about, fully typed.                                             |
+| **Entity types**     | Requests, folders, environments, mock-server definitions, plans, assertions, releases, linked workspaces, global assets (schemas, GraphQL, files), history runs, secret-crypto blobs. |
+| **`generateId()`**   | The only sanctioned way to mint entity IDs — collision-resistant, URL-safe, length-bounded.                                                                                           |
+| **Validators**       | Lightweight shape checks for workspace documents and imported specs — handy when you're loading untrusted JSON.                                                                       |
+| **Crypto helpers**   | AES-GCM via WebCrypto for at-rest secret material. Browser-safe, no Node-only modules.                                                                                                |
+| **MCP catalog**      | `MCP_TOOL_NAMES` — the canonical list of every tool the MCP server exposes, plus the `McpToolName` union type. Stay in lockstep with the server, by version.                          |
+| **Envelope types**   | Discriminated unions for MCP responses (`multiple-workspaces`, error envelopes, etc.) so your client gets exhaustive narrowing for free.                                              |
 
 ## A taste of it
 

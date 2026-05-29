@@ -1,4 +1,4 @@
-import { expect, test } from '../../fixtures/app';
+import { expect, test } from '../fixtures/app';
 import {
   connectAndBranchV2,
   createV2HostRepo,
@@ -10,7 +10,7 @@ import {
   waitForMarketplaceResultV2,
 } from './_helpers';
 
-test.describe('V2 Live GitHub - public marketplace discovery @live-github-v2', () => {
+test.describe('Live GitHub - public marketplace discovery @live-github', () => {
   const skip = v2SkipReason();
   test.skip(skip !== null, skip ?? '');
 

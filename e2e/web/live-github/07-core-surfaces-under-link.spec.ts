@@ -1,5 +1,5 @@
 import { summarizeUnpushedChanges } from '@apicircle/core';
-import { expect, test } from '../../fixtures/app';
+import { expect, test } from '../fixtures/app';
 import {
   assertRemoteWorkspaceHasNoLocalOnlyData,
   connectAndBranchV2,
@@ -26,7 +26,7 @@ function expectBucket(pair: { base: any; current: any }, bucket: string): void {
   ).toBe(true);
 }
 
-test.describe('V2 Live GitHub - core surfaces under linked source @live-github-v2', () => {
+test.describe('Live GitHub - core surfaces under linked source @live-github', () => {
   const skip = v2SkipReason();
   test.skip(skip !== null, skip ?? '');
 
@@ -130,7 +130,7 @@ test.describe('V2 Live GitHub - core surfaces under linked source @live-github-v
     expectBucket(state.pair, 'executionPlan');
     expectBucket(state.pair, 'mockServer');
 
-    const remote = await pushAndFetchWorkspaceV2(app, host, branch, 'e2e v2: core surfaces');
+    const remote = await pushAndFetchWorkspaceV2(app, host, branch, 'e2e live: core surfaces');
     assertRemoteWorkspaceHasNoLocalOnlyData(remote, {
       forbiddenNeedles: ['V2_BEARER_SHOULD_NOT_PUSH', 'V2_SECRET_SHOULD_NOT_PUSH'],
     });

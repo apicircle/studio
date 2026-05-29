@@ -1,5 +1,5 @@
 import { summarizeUnpushedChanges } from '@apicircle/core';
-import { expect, test } from '../../fixtures/app';
+import { expect, test } from '../fixtures/app';
 import {
   connectAndBranchV2,
   createV2HostRepo,
@@ -40,7 +40,7 @@ function addRemoteRequest(ws: Record<string, any>, id: string): void {
   ws.collections.tree.children = [...(ws.collections.tree.children ?? []), { kind: 'request', id }];
 }
 
-test.describe('V2 Live GitHub - refresh conflict resolution @live-github-v2', () => {
+test.describe('Live GitHub - refresh conflict resolution @live-github', () => {
   const skip = v2SkipReason();
   test.skip(skip !== null, skip ?? '');
 
@@ -63,7 +63,7 @@ test.describe('V2 Live GitHub - refresh conflict resolution @live-github-v2', ()
           branch: sourceBranch,
           pinnedVersion: '1.0.0',
         });
-        await api.pushWorkspace('e2e v2: refresh baseline');
+        await api.pushWorkspace('e2e live: refresh baseline');
         const snapshot = window.__apicircleStore!.getState().local.linkedCollections[link.id];
         const reqId = Object.keys(snapshot.collections.requests)[0];
         const env = Object.values(snapshot.environments.items)[0] as any;
@@ -84,7 +84,7 @@ test.describe('V2 Live GitHub - refresh conflict resolution @live-github-v2', ()
     app,
   }) => {
     const { host, branch, setup } = await setupLinkedBaseline(app, 'auto-merge');
-    await updateWorkspaceJson(host, branch, 'e2e v2: remote dep and core', (ws) => {
+    await updateWorkspaceJson(host, branch, 'e2e live: remote dep and core', (ws) => {
       const typed = ws as Record<string, any>;
       typed.linkedWorkspaces[setup.linkId].name = 'remote dependency name';
       typed.releases.perLink[setup.linkId].versions.push({
@@ -130,7 +130,7 @@ test.describe('V2 Live GitHub - refresh conflict resolution @live-github-v2', ()
     app,
   }) => {
     const mine = await setupLinkedBaseline(app, 'conflict-mine');
-    await updateWorkspaceJson(mine.host, mine.branch, 'e2e v2: remote mine conflict', (ws) => {
+    await updateWorkspaceJson(mine.host, mine.branch, 'e2e live: remote mine conflict', (ws) => {
       const typed = ws as Record<string, any>;
       typed.linkedOverrides.requests[mine.setup.key] = {
         linkedWorkspaceId: mine.setup.linkId,
@@ -171,7 +171,7 @@ test.describe('V2 Live GitHub - refresh conflict resolution @live-github-v2', ()
     await updateWorkspaceJson(
       theirs.host,
       theirs.branch,
-      'e2e v2: remote theirs conflict',
+      'e2e live: remote theirs conflict',
       (ws) => {
         const typed = ws as Record<string, any>;
         typed.linkedOverrides.requests[theirs.setup.key] = {

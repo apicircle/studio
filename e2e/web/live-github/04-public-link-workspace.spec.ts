@@ -1,4 +1,4 @@
-import { expect, test } from '../../fixtures/app';
+import { expect, test } from '../fixtures/app';
 import {
   connectAndBranchV2,
   createV2HostRepo,
@@ -9,7 +9,7 @@ import {
   v2SkipReason,
 } from './_helpers';
 
-test.describe('V2 Live GitHub - public anonymous workspace link @live-github-v2', () => {
+test.describe('Live GitHub - public anonymous workspace link @live-github', () => {
   const skip = v2SkipReason();
   test.skip(skip !== null, skip ?? '');
 

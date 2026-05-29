@@ -1,4 +1,4 @@
-import { expect, test } from '../../fixtures/app';
+import { expect, test } from '../fixtures/app';
 import {
   assertRepoReadableWithTokenV2,
   createV2Repo,
@@ -8,7 +8,7 @@ import {
   v2SkipReason,
 } from './_helpers';
 
-test.describe('V2 Live GitHub - preflight @live-github-v2', () => {
+test.describe('Live GitHub - preflight @live-github', () => {
   const skip = v2SkipReason();
   test.skip(skip !== null, skip ?? '');
 
@@ -22,7 +22,7 @@ test.describe('V2 Live GitHub - preflight @live-github-v2', () => {
     expect(bot.owner).toBeTruthy();
     expect(
       bot.dedicatedToken,
-      'APICIRCLE_E2E_BOT_PAT_LINK_DEDICATED is required for v2 coverage',
+      'APICIRCLE_E2E_BOT_PAT_LINK_DEDICATED is required for dedicated private-link coverage',
     ).toBeTruthy();
 
     const privateRepo = tracker.trackRepo(await createV2Repo(bot, 'preflight-private', 'private'));

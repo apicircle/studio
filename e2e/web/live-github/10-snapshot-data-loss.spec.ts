@@ -1,4 +1,4 @@
-import { expect, test } from '../../fixtures/app';
+import { expect, test } from '../fixtures/app';
 import {
   connectAndBranchV2,
   createV2HostRepo,
@@ -13,7 +13,7 @@ import {
 
 const SNAPSHOT_BEARER = 'V2_SNAPSHOT_BEARER_SHOULD_RESTORE';
 
-test.describe('V2 Live GitHub - snapshots and data-loss guards @live-github-v2', () => {
+test.describe('Live GitHub - snapshots and data-loss guards @live-github', () => {
   const skip = v2SkipReason();
   test.skip(skip !== null, skip ?? '');
 
@@ -52,7 +52,7 @@ test.describe('V2 Live GitHub - snapshots and data-loss guards @live-github-v2',
           name: 'v2 snapshot mock',
           source: { kind: 'manual', endpoints: [] },
         });
-        await api.pushWorkspace('e2e v2: snapshot baseline');
+        await api.pushWorkspace('e2e live: snapshot baseline');
         const state = window.__apicircleStore!.getState() as any;
         return {
           linkId: link.id,
@@ -72,7 +72,7 @@ test.describe('V2 Live GitHub - snapshots and data-loss guards @live-github-v2',
     const remote = (await fetchWorkspaceJson(host, branch)).json as Record<string, any>;
     expect(remote.collections.requests[setup.requestId].auth.token).toBe('');
 
-    await updateWorkspaceJson(host, branch, 'e2e v2: remote snapshot merge', (ws) => {
+    await updateWorkspaceJson(host, branch, 'e2e live: remote snapshot merge', (ws) => {
       const typed = ws as Record<string, any>;
       typed.linkedWorkspaces[setup.linkId].name = 'snapshot remote link name';
     });

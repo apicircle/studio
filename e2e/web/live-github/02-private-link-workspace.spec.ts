@@ -1,4 +1,4 @@
-import { expect, test } from '../../fixtures/app';
+import { expect, test } from '../fixtures/app';
 import {
   assertRemoteWorkspaceHasNoLocalOnlyData,
   connectAndBranchV2,
@@ -11,7 +11,7 @@ import {
   v2SkipReason,
 } from './_helpers';
 
-test.describe('V2 Live GitHub - private workspace link @live-github-v2', () => {
+test.describe('Live GitHub - private workspace link @live-github', () => {
   const skip = v2SkipReason();
   test.skip(skip !== null, skip ?? '');
 
@@ -62,7 +62,7 @@ test.describe('V2 Live GitHub - private workspace link @live-github-v2', () => {
 
     const pushed = await app.evaluate(async () => {
       const api = window.__apicircleStore!.getState() as any;
-      return api.pushWorkspace('e2e v2: persist private linked workspace metadata');
+      return api.pushWorkspace('e2e live: persist private linked workspace metadata');
     });
     expect(pushed.commitSha).toMatch(/^[a-f0-9]{40}$/);
 
