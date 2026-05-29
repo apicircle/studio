@@ -52,10 +52,10 @@ export function collectAttachmentSlots(synced: WorkspaceSynced): AttachmentSlotR
   for (const server of Object.values(synced.mockServers ?? {})) {
     for (const endpoint of server.endpoints) {
       collectMockResponseAttachment(endpoint.defaultResponse, seen);
-      for (const rule of endpoint.requestValidation) {
+      for (const rule of endpoint.requestValidation ?? []) {
         collectMockResponseAttachment(rule.failResponse, seen);
       }
-      for (const rule of endpoint.responseRules) {
+      for (const rule of endpoint.responseRules ?? []) {
         collectMockResponseAttachment(rule.response, seen);
       }
     }
@@ -75,17 +75,17 @@ export function collectAttachmentSlots(synced: WorkspaceSynced): AttachmentSlotR
 }
 
 function collectMockResponseAttachment(
-  response: MockResponseConfig,
+  response: MockResponseConfig | null | undefined,
   seen: Map<string, AttachmentSlotRef>,
 ): void {
-  collectMockResponseBodyAttachment(response.body, seen);
+  collectMockResponseBodyAttachment(response?.body, seen);
 }
 
 function collectMockResponseBodyAttachment(
-  body: MockResponseBody,
+  body: MockResponseBody | null | undefined,
   seen: Map<string, AttachmentSlotRef>,
 ): void {
-  if (body.type !== 'binary') return;
+  if (body?.type !== 'binary') return;
   const ref = body.attachment;
   if (!ref?.slotId || seen.has(ref.slotId)) return;
   seen.set(ref.slotId, {

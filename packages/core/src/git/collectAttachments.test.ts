@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { Request as ApiRequest, WorkspaceSynced } from '@apicircle/shared';
+import type {
+  MockResponseRule,
+  MockValidationRule,
+  Request as ApiRequest,
+  WorkspaceSynced,
+} from '@apicircle/shared';
 import { collectAttachmentSlots } from './collectAttachments';
 
 function workspace(requests: Record<string, ApiRequest>): WorkspaceSynced {
@@ -173,6 +178,53 @@ describe('collectAttachmentSlots', () => {
         size: 7,
       },
     ]);
+  });
+
+  it('ignores mock rules without response configs while collecting attachments', () => {
+    const ws = workspace({});
+    ws.mockServers = {
+      mock1: {
+        id: 'mock1',
+        name: 'Partial rules',
+        source: { kind: 'manual', endpoints: [] },
+        endpoints: [
+          {
+            id: 'ep1',
+            name: 'GET partial',
+            method: 'GET',
+            pathPattern: '/partial',
+            requestSchema: { pathParams: [], queryParams: [], headers: [], cookies: [] },
+            requestValidation: [
+              {
+                id: 'needs-header',
+                kind: 'header-required',
+                target: 'x-test',
+                enabled: true,
+              } as unknown as MockValidationRule,
+            ],
+            responseRules: [
+              {
+                id: 'rule-1',
+                name: 'partial',
+                enabled: true,
+                when: [],
+              } as unknown as MockResponseRule,
+            ],
+            defaultResponse: {
+              status: 200,
+              headers: [],
+              body: { type: 'json', content: '{}' },
+            },
+          },
+        ],
+        defaultPort: null,
+        cors: { enabled: false, origins: [] },
+        createdAt: 't',
+        updatedAt: 't',
+      },
+    };
+
+    expect(collectAttachmentSlots(ws)).toEqual([]);
   });
 
   it('skips non-attachment body types', () => {

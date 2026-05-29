@@ -335,10 +335,10 @@ function collectAttachmentSlotsFromMockServers(
   for (const server of Object.values(mockServers ?? {})) {
     for (const endpoint of server.endpoints) {
       collectMockResponseAttachmentSlots(endpoint.defaultResponse, endpoint.name, seen);
-      for (const rule of endpoint.requestValidation) {
+      for (const rule of endpoint.requestValidation ?? []) {
         collectMockResponseAttachmentSlots(rule.failResponse, `${endpoint.name} validation`, seen);
       }
-      for (const rule of endpoint.responseRules) {
+      for (const rule of endpoint.responseRules ?? []) {
         collectMockResponseAttachmentSlots(rule.response, `${endpoint.name} rule`, seen);
       }
     }
@@ -347,12 +347,12 @@ function collectAttachmentSlotsFromMockServers(
 }
 
 function collectMockResponseAttachmentSlots(
-  response: MockResponseConfig,
+  response: MockResponseConfig | null | undefined,
   label: string,
   seen: Map<string, AttachmentSlotRefLike>,
 ): void {
-  const body = response.body;
-  if (body.type !== 'binary') return;
+  const body = response?.body;
+  if (body?.type !== 'binary') return;
   const ref = body.attachment;
   if (!ref?.slotId) return;
   const requiredBy = {
