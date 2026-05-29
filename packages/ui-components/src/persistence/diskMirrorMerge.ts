@@ -26,7 +26,7 @@ import type { Folder, Request as ApiRequest, WorkspaceSynced } from '@apicircle/
 //                                can locate them.
 //   - `environments.items`     : union by name, IDB wins.
 //   - `mockServers`            : union by ID, IDB wins.
-//   - `globalAssets.{schemas,graphql}` : union by ID, IDB wins.
+//   - `globalAssets.{schemas,graphql,files}` : union by ID, IDB wins.
 //   - `secretKeys`             : union by ID, IDB wins.
 //   - Everything else (meta, priorityOrder, releases, etc.) : IDB wins.
 //
@@ -135,6 +135,11 @@ export function mergeSyncedFromDisk(idb: WorkspaceSynced, disk: WorkspaceSynced)
     if (id in mergedGraphql) continue;
     mergedGraphql[id] = asset;
   }
+  const mergedFiles = { ...(idb.globalAssets.files ?? {}) };
+  for (const [id, asset] of Object.entries(disk.globalAssets?.files ?? {})) {
+    if (id in mergedFiles) continue;
+    mergedFiles[id] = asset;
+  }
 
   const mergedSecretKeys = { ...(idb.secretKeys ?? {}) };
   for (const [id, meta] of Object.entries(disk.secretKeys ?? {})) {
@@ -154,7 +159,7 @@ export function mergeSyncedFromDisk(idb: WorkspaceSynced, disk: WorkspaceSynced)
       items: mergedEnvItems,
     },
     mockServers: mergedMocks,
-    globalAssets: { schemas: mergedSchemas, graphql: mergedGraphql },
+    globalAssets: { schemas: mergedSchemas, graphql: mergedGraphql, files: mergedFiles },
     secretKeys: mergedSecretKeys,
     meta: {
       ...idb.meta,

@@ -324,19 +324,55 @@ describe('runPlan', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('records a linked-workspace step as an unsupported failure', async () => {
+  it('runs a linked-workspace step from the cached snapshot', async () => {
+    const linkedRequest = makeRequest('r1', { url: 'https://linked.test/upload' });
     const synced = makeSynced({
+      linkedWorkspaces: {
+        lw1: {
+          id: 'lw1',
+          kind: 'private',
+          name: 'Linked API',
+          source: {
+            provider: 'github',
+            repoFullName: 'acme/linked-api',
+            branch: 'main',
+            sessionMode: 'workspace',
+          },
+          scope: ['collections', 'environments'],
+          pinnedVersion: null,
+          updatePolicy: 'manual',
+          linkedAt: T0,
+          requiredSecretKeyIds: [],
+        },
+      },
       executionPlans: {
         p1: makePlan('p1', { steps: [{ requestId: 'r1', linkedWorkspaceId: 'lw1' }] }),
       },
     });
-    const state: WorkspaceState = { synced, local: makeLocal() };
-    const { fetchImpl } = makeFetch({ '*': { status: 200 } });
+    const state: WorkspaceState = {
+      synced,
+      local: makeLocal({
+        linkedCollections: {
+          lw1: {
+            pulledAt: T0,
+            ref: 'HEAD@main',
+            collections: {
+              tree: { id: 'root', type: 'root', children: [] },
+              requests: { r1: linkedRequest },
+              folders: {},
+            },
+            environments: { items: {}, activeName: null, priorityOrder: [] },
+          },
+        },
+      }),
+    };
+    const { fetchImpl, calls } = makeFetch({ '*': { status: 200 } });
 
     const out = await runPlan(state, 'p1', { fetchImpl });
 
-    expect(out.passed).toBe(false);
-    expect(out.steps[0].error).toMatch(/not supported/);
+    expect(out.passed).toBe(true);
+    expect(out.steps[0].requestName).toBe('r1');
+    expect(calls[0].url).toBe('https://linked.test/upload');
   });
 
   it('resolves env-priority variables and CLI-supplied secrets', async () => {

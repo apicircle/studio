@@ -15,6 +15,7 @@
     "test:e2e": "pnpm --filter @apicircle/e2e-web test:e2e",
     "test:e2e:desktop": "pnpm --filter @apicircle/e2e-desktop test:e2e",
     "test:e2e:live-github": "pnpm --filter @apicircle/e2e-web test:e2e:live-github",
+    "test:e2e:live-github-v2": "pnpm --filter @apicircle/e2e-web test:e2e:live-github-v2",
     "test:e2e:install": "pnpm --filter @apicircle/e2e-web test:e2e:install",
     "test:e2e:smoke": "pnpm --filter @apicircle/e2e-web exec playwright test --grep @smoke",
     "test:e2e:visual": "pnpm --filter @apicircle/e2e-web exec playwright test --project=visual-baseline",

@@ -1168,7 +1168,7 @@ function BranchCard() {
       } else {
         setRefreshNotice(
           `Attachments: ${result.fetched} fetched, ${result.alreadyPresent} already present` +
-            (result.failed > 0 ? `, ${result.failed} failed` : '') +
+            (result.failed > 0 ? `, ${result.failed} failed or failed checksum verification` : '') +
             '.',
         );
       }
@@ -1389,6 +1389,11 @@ function BranchCard() {
           </a>
         </div>
       )}
+
+      <p className="mt-2 text-[0.6875rem] text-text-dim">
+        File assets synced from workspace.json are local to this machine. Sync them here, or Studio
+        will ask to download required files before sending a request or running a plan.
+      </p>
 
       <div className="mt-2 flex flex-wrap gap-2">
         <button

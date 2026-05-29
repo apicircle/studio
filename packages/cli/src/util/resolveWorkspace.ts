@@ -340,7 +340,7 @@ function buildEmptyState(workspaceId: string, now: string, withSample: boolean):
       linkedWorkspaces: {},
       linkedOverrides: { requests: {}, environmentVars: {} },
       releases: { self: null, perLink: {} },
-      globalAssets: { schemas: {}, graphql: {} },
+      globalAssets: { schemas: {}, graphql: {}, files: {} },
       mockServers: {},
       meta: { createdAt: now, updatedAt: now, appVersion: '1.0.0' },
     },
@@ -357,6 +357,7 @@ function buildEmptyState(workspaceId: string, now: string, withSample: boolean):
       retiredBranch: null,
       sync: { lastPulledSnapshot: null, lastPulledSha: null, lastPulledAt: null, dirtyKeys: [] },
       linkedCollections: {},
+      attachmentCache: {},
       globalContext: {},
       mockRuntime: { active: {} },
       ui: {

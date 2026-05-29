@@ -186,7 +186,6 @@ describe('workspaceStore.pushWorkspace', () => {
         filename: 'pic.png',
         mimeType: 'image/png',
         size: bytes.length,
-        sha256: 'aabb',
       },
     });
 
@@ -229,6 +228,37 @@ describe('workspaceStore.pushWorkspace', () => {
       path: `.apicircle/attachments/${slotId}`,
       sha: 'blob-1',
     });
+  });
+
+  it('aborts push when cached attachment bytes fail checksum verification', async () => {
+    await setupConnectedBranch();
+
+    const slotId = 'bad-slot';
+    await putAttachment({
+      slotId,
+      filename: 'bad.bin',
+      mimeType: 'application/octet-stream',
+      size: 3,
+      sha256: 'local-sha',
+      savedAt: '2026-04-27T00:00:00.000Z',
+      bytes: new Uint8Array([1, 2, 3]),
+    });
+    const id = useWorkspaceStore.getState().addRequest(null);
+    useWorkspaceStore.getState().setRequestBody(id, {
+      type: 'binary',
+      content: '',
+      attachment: { slotId, filename: 'bad.bin', sha256: 'expected-remote-sha' },
+    });
+    const fetchMock = queuedFetch([
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
+      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(useWorkspaceStore.getState().pushWorkspace()).rejects.toThrow(
+      /checksum verification/,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('skips slots whose bytes are not in local IDB (pulled but not downloaded)', async () => {

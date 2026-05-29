@@ -240,7 +240,9 @@ function normalizeSyncedShape(synced: WorkspaceSynced): WorkspaceSynced {
     : synced;
   let result = out;
   if (!result.globalAssets) {
-    result = { ...result, globalAssets: { schemas: {}, graphql: {} } };
+    result = { ...result, globalAssets: { schemas: {}, graphql: {}, files: {} } };
+  } else if (!result.globalAssets.files) {
+    result = { ...result, globalAssets: { ...result.globalAssets, files: {} } };
   }
   if (!result.mockServers) {
     result = { ...result, mockServers: {} };
@@ -588,6 +590,7 @@ export async function loadWorkspaceById(
       // it if the working branch turns out to be over.
       retiredBranch: local.retiredBranch ?? null,
       linkedCollections: local.linkedCollections ?? {},
+      attachmentCache: local.attachmentCache ?? {},
       globalContext: local.globalContext ?? {},
       mockRuntime: local.mockRuntime ?? { active: {} },
       // Forward-fill new settings keys when hydrating older workspaces;
@@ -890,7 +893,7 @@ export function createEmptyWorkspace(): { synced: WorkspaceSynced; local: Worksp
     linkedWorkspaces: {},
     linkedOverrides: { requests: {}, environmentVars: {} },
     releases: { self: null, perLink: {} },
-    globalAssets: { schemas: {}, graphql: {} },
+    globalAssets: { schemas: {}, graphql: {}, files: {} },
     mockServers: {},
     secretKeys: {},
     meta: { createdAt: now, updatedAt: now, appVersion: '1.0.0' },
@@ -913,6 +916,7 @@ export function createEmptyWorkspace(): { synced: WorkspaceSynced; local: Worksp
       dirtyKeys: [],
     },
     linkedCollections: {},
+    attachmentCache: {},
     globalContext: {},
     mockRuntime: { active: {} },
     ui: {

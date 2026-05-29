@@ -299,6 +299,91 @@ describe('workspaceStore.linkPrivateWorkspace', () => {
   });
 });
 
+describe('workspaceStore.linkPublicWorkspace', () => {
+  beforeEach(async () => {
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrate();
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('links a public workspace anonymously when no GitHub session is active', async () => {
+    const remoteJson = JSON.stringify({
+      collections: {
+        tree: { id: 'r', type: 'root', children: [] },
+        requests: {},
+        folders: {},
+      },
+      environments: { items: {}, activeName: null, priorityOrder: [] },
+      releases: { self: null },
+    });
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      expect(headers.Authorization).toBeUndefined();
+      return fakeResponse(fileContents(remoteJson));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const link = await useWorkspaceStore.getState().linkPublicWorkspace({
+      repoFullName: 'open/source',
+      branch: 'main',
+    });
+
+    expect(link.kind).toBe('public');
+    expect(link.source.repoFullName).toBe('open/source');
+    expect(useWorkspaceStore.getState().synced!.linkedWorkspaces[link.id]).toEqual(link);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes a public workspace anonymously after the workspace session is absent', async () => {
+    const initial = JSON.stringify({
+      releases: { self: { versions: [], currentVersion: null } },
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => fakeResponse(fileContents(initial))),
+    );
+    const link = await useWorkspaceStore.getState().linkPublicWorkspace({
+      repoFullName: 'open/source',
+      branch: 'main',
+    });
+
+    const updated = JSON.stringify({
+      releases: {
+        self: {
+          versions: [
+            {
+              version: '1.0.0',
+              publishedAt: 't',
+              notes: 'public',
+              workspaceSnapshot: 'a'.repeat(64),
+              deprecated: false,
+              yanked: false,
+            },
+          ],
+          currentVersion: '1.0.0',
+        },
+      },
+    });
+    const refreshFetch = vi.fn(async (_url: string, init?: RequestInit) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      expect(headers.Authorization).toBeUndefined();
+      return fakeResponse(fileContents(updated));
+    });
+    vi.stubGlobal('fetch', refreshFetch);
+
+    await useWorkspaceStore.getState().refreshLinkedWorkspace(link.id);
+
+    expect(useWorkspaceStore.getState().synced!.releases.perLink[link.id].currentVersion).toBe(
+      '1.0.0',
+    );
+    expect(refreshFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('workspaceStore.refreshLinkedWorkspace + unlinkWorkspace', () => {
   beforeEach(async () => {
     await act(async () => {

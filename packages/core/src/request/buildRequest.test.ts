@@ -247,28 +247,36 @@ describe('composeBody', () => {
       expect(resolver).toHaveBeenCalledWith('slot-A');
     });
 
-    it('skips file rows when the resolver returns null', async () => {
+    it('throws when a file row attachment is not downloaded', async () => {
       const resolver = vi.fn(async () => null);
-      const result = await composeBody(
-        {
-          type: 'form-data',
-          content: '',
-          formRows: [{ kind: 'file', key: 'avatar', slotId: 'missing', enabled: true }],
-        },
-        resolver,
-      );
-      const fd = result as FormData;
-      expect(fd.has('avatar')).toBe(false);
+      await expect(
+        composeBody(
+          {
+            type: 'form-data',
+            content: '',
+            formRows: [
+              {
+                kind: 'file',
+                key: 'avatar',
+                slotId: 'missing',
+                filename: 'avatar.png',
+                enabled: true,
+              },
+            ],
+          },
+          resolver,
+        ),
+      ).rejects.toThrow(/avatar\.png .*not downloaded/i);
     });
 
-    it('skips file rows when no resolver is provided', async () => {
-      const result = await composeBody({
-        type: 'form-data',
-        content: '',
-        formRows: [{ kind: 'file', key: 'avatar', slotId: 'slot-A', enabled: true }],
-      });
-      const fd = result as FormData;
-      expect(fd.has('avatar')).toBe(false);
+    it('throws when a file row has no attachment resolver', async () => {
+      await expect(
+        composeBody({
+          type: 'form-data',
+          content: '',
+          formRows: [{ kind: 'file', key: 'avatar', slotId: 'slot-A', enabled: true }],
+        }),
+      ).rejects.toThrow(/not downloaded/i);
     });
   });
 
@@ -287,12 +295,17 @@ describe('composeBody', () => {
       expect(result).toBeNull();
     });
 
-    it('returns null when the attachment resolver returns null', async () => {
-      const result = await composeBody(
-        { type: 'binary', content: '', attachment: { slotId: 'missing' } },
-        async () => null,
-      );
-      expect(result).toBeNull();
+    it('throws when the binary attachment resolver returns null', async () => {
+      await expect(
+        composeBody(
+          {
+            type: 'binary',
+            content: '',
+            attachment: { slotId: 'missing', filename: 'body.bin' },
+          },
+          async () => null,
+        ),
+      ).rejects.toThrow(/body\.bin .*not downloaded/i);
     });
   });
 

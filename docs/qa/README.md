@@ -192,23 +192,130 @@ scatter residue rationales across specs.
 
 ---
 
-## Live GitHub credential smoke
+## Live GitHub end-to-end suite
 
 The default E2E suite uses the local GitHub mock. Real GitHub credentials
 are opt-in and must be supplied only as runtime environment variables.
 **Never** commit a PAT, put it in a package script, or paste it into a
 test file.
 
+The `chromium-live-github` Playwright project picks up:
+
+- [`e2e/web/live-github.spec.ts`](../../e2e/web/live-github.spec.ts) — the
+  one-test PAT credential smoke.
+- [`e2e/web/live/*.spec.ts`](../../e2e/web/live/) — the full-flow suite:
+  workspace lifecycle (connect / branch / push / refresh / secrets
+  metadata-only), CRUD round-trips for Editor / Environments / Execution
+  Plans / Mock Servers, branch creation + switching + retired-branch
+  no-data-loss, release publish / deprecate / withdraw on a real repo,
+  Link Workspace (private workspace-session, private dedicated-session,
+  and public anon), dependency diff buckets, snapshots, release notes,
+  and on-demand linked release updates.
+
+Every spec creates a uniquely named working branch
+(`apicircle/e2e-<workerIndex>-<unix-ms>-<slug>`) on the sandbox repo and
+deletes it via raw GitHub REST in `test.afterAll`. The default branch
+(`main`) is never written to during local sandbox runs. The CI pipeline
+uses bot-owned ephemeral repos and tears them down, so the main bot PAT
+needs `repo` + `delete_repo`.
+
+| Env var                                 | Required? | Purpose                                                                                                                 |
+| --------------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `APICIRCLE_E2E_LIVE_GITHUB`             | yes       | Master opt-in. Set to `1` to enable.                                                                                    |
+| `APICIRCLE_E2E_GITHUB_PAT`              | yes       | Main GitHub PAT. Local sandbox runs need `repo`; CI bot runs need classic `repo` + `delete_repo`. Read only at runtime. |
+| `APICIRCLE_E2E_GITHUB_REPO`             | yes       | `owner/repo` for the writable sandbox. Every test creates + deletes a fresh working branch on this repo.                |
+| `APICIRCLE_E2E_BOT_OWNER`               | CI yes    | Bot owner guard for ephemeral repo create/delete tests.                                                                 |
+| `APICIRCLE_E2E_BOT_PAT_LINK_DEDICATED`  | CI yes    | Dedicated per-link PAT with `repo` access for private dependency session coverage.                                      |
+| `APICIRCLE_E2E_GITHUB_LINK_PUBLIC_REPO` | optional  | `owner/repo[@branch]` fallback for local anon-link tests. CI provisions public repos per run.                           |
+
 ```powershell
 $env:APICIRCLE_E2E_LIVE_GITHUB = '1'
 $env:APICIRCLE_E2E_GITHUB_PAT  = '<your GitHub PAT>'
-$env:APICIRCLE_E2E_GITHUB_REPO = 'owner/repo'
+$env:APICIRCLE_E2E_GITHUB_REPO = 'owner/sandbox-repo'
+$env:APICIRCLE_E2E_BOT_OWNER = 'dedicated-bot-login'                   # required for ephemeral-source specs
+$env:APICIRCLE_E2E_BOT_PAT_LINK_DEDICATED = '<dedicated link PAT>'     # required for dedicated-link specs
+$env:APICIRCLE_E2E_GITHUB_LINK_PUBLIC_REPO = 'owner/public-repo@main'  # optional
 pnpm test:e2e:live-github
 ```
 
-The dedicated `chromium-live-github` Playwright project disables trace,
-screenshots, and video so the PAT is not captured in local artifacts.
-Use a short-lived token scoped only to the target test repository.
+The project disables trace, screenshots, and video so the PAT cannot leak
+into local artifacts; it runs single-worker (`workers: 1`) to stay inside
+GitHub's API rate limits.
+
+**Empty-repo bootstrap is automatic.** The `live/_helpers.ts` module
+exports `seedRepoIfEmpty(cfg, { workspaceJson? })`, called from every
+spec's `beforeAll`. On a brand-new empty sandbox, the helper creates an
+initial `README.md` commit on the default branch via `PUT /contents/...`
+so `createWorkingBranch` always has a base SHA. The Link Workspace spec
+additionally calls it with `workspaceJson: true` to seed a minimal
+`workspace.json` on the default branch — that's the precondition for
+`linkPrivateWorkspace`. Both seeds are idempotent; subsequent runs are
+no-ops. The explicit-coverage spec at
+[`e2e/web/live/repo-seeding.spec.ts`](../../e2e/web/live/repo-seeding.spec.ts)
+pins this bootstrap behavior in place.
+
+### Live-GitHub CI pipeline
+
+The [`.github/workflows/e2e-live-github.yml`](../../.github/workflows/e2e-live-github.yml)
+workflow runs the full live-github suite nightly (and on
+`workflow_dispatch`) and on pushes to `main` against ephemeral repos that
+the pipeline itself creates and deletes. Operator runbook:
+[`docs/qa/live-github-bot-setup.md`](./live-github-bot-setup.md).
+
+The flow per run:
+
+1. **Sweep** — `scripts/live-github/sweep-orphans.mjs` deletes any
+   bot-owned repos prefixed `apicircle-e2e-` older than 12h.
+2. **Provision** — `scripts/live-github/provision-repos.mjs` creates one
+   private + one public repo with run-scoped unique names and writes
+   their `owner/name` slugs into `$GITHUB_ENV`.
+3. **Run** — `pnpm test:e2e:live-github` consumes the env vars; specs
+   in `e2e/web/live/` exercise the full user narrative (create branch
+   → first push → second workspace pulls same branch → PR → merge →
+   third workspace branches from main → release → cross-repo link).
+4. **Teardown** — `scripts/live-github/teardown-repos.mjs` deletes both
+   repos (runs `if: always()`). The orphan sweep on the next run
+   catches anything teardown missed.
+
+The bot account safety guard (`assertBotOwner` in
+[`e2e/web/live/_helpers.ts`](../../e2e/web/live/_helpers.ts)) refuses any
+repo-mutating call whose owner doesn't match
+`APICIRCLE_E2E_BOT_OWNER`. The bot PAT scopes (`repo` +
+`delete_repo`) and the bot account itself are detailed in the operator
+runbook — read it before configuring secrets.
+
+The live specs that ship today, all serial under
+`chromium-live-github`:
+
+| Spec                                          | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `live-github.spec.ts`                         | One-test PAT credential smoke                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `live/pipeline-managed-repos.spec.ts`         | Pipeline env-var contract handshake                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `live/repo-seeding.spec.ts`                   | Empty-repo bootstrap idempotency                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `live/lifecycle.spec.ts`                      | Connect / branch / push / refresh / secrets metadata-only                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `live/crud-diff.spec.ts`                      | Editor / Env / Plans / Mocks CRUD round-trips through push                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `live/branch-switching.spec.ts`               | Branch create / switch / retired-branch no-data-loss                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `live/repo-cycle.spec.ts`                     | 9-step narrative (parametric over private + public): branch → first push → 2nd workspace → PR → merge → 3rd workspace from main → release                                                                                                                                                                                                                                                                                                                                                                    |
+| `live/pr-edge-cases.spec.ts`                  | PR-against-no-commits, merge → retire, merge+delete → retire, push-after-retire, concurrent push, force-push detection                                                                                                                                                                                                                                                                                                                                                                                       |
+| `live/release-tagging.spec.ts`                | `tagReleaseVersion` against main; `setRepoTopics`/`listRepoTopics` round-trip on the public repo                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `live/cross-repo-linking.spec.ts`             | Runtime-created third repo links both private+public; `setLinkedRequestOverride` + `setLinkedEnvVarOverride`                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `live/mocks-and-plans-against-linked.spec.ts` | Consumer workspace assembles plan + mock referencing linked sources; round-trip through push                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `live/github-dependencies.spec.ts`            | Private/public dependency linking, dedicated per-link PAT, marketplace discovery, markdown release notes, latest/pinned versions, decline/adopt-on-demand, deprecated/yanked visibility, unlink cleanup                                                                                                                                                                                                                                                                                                      |
+| `live/git-diff-dependencies.spec.ts`          | Dependency diff buckets (`linkedWorkspace`, request/env overrides, `releasePerLink`), push reset, auto-merge, conflict cancellation, mine/theirs resolution                                                                                                                                                                                                                                                                                                                                                  |
+| `live/core-surfaces-live-regression.spec.ts`  | Editor, Environments, Execution Plans, and Mock Servers mutate under linked dependencies, push/refresh cleanly, and restore from pre-push snapshots without secret/local-only leakage                                                                                                                                                                                                                                                                                                                        |
+| `live/data-loss-invariants.spec.ts`           | **100% data-loss coverage** — 20 invariants: workspace switch / createNewWorkspace / deleteWorkspaceById / disconnectRepo / disconnectGitHubSession / connectRepo-reconnect / dismissRetiredBranch / createWorkingBranch / push / refresh / commitRefresh / cancelRefresh / unlinkWorkspace / removeSecret / removeRequest-referenced-by-plan / removeEnvironment-of-active / captureSnapshot / restoreSnapshot / page reload IDB rehydration / new-context IDB privacy boundary / push-failure preservation |
+| `live/marketplace.spec.ts`                    | `searchMarketplace` returns array w/ topic:apicircle (TC-SE-0001), empty-results path (TC-SE-0003), `linkPublicWorkspace` from marketplace result (TC-SE-0002)                                                                                                                                                                                                                                                                                                                                               |
+| `live/pr-merge-methods.spec.ts`               | PR merge via squash, rebase, draft PR push, branch-protected push rejection                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `live/repo-mutation-edges.spec.ts`            | Repo deleted-after-link, renamed, archived, forked; transferred (fixme: needs 2nd bot)                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `live/linked-version-transitions.spec.ts`     | Source publishes new version, adopt, decline, breaking change, renamed entity, multiple links with conflicts, source unpublished, compare versions, chain source setup                                                                                                                                                                                                                                                                                                                                       |
+| `live/session-edges.spec.ts`                  | Rate-limit budget probe (always runs); per-link dedicated session; OAuth scope downgrade (TC-GT-0023) — real `api.github.com` 403 + `X-Accepted-OAuth-Scopes` from a scope-restricted endpoint the bot PAT lacks; OAuth token revoked (TC-GT-0035) — real `api.github.com` 401 `Bad credentials` from a syntactically-valid but unrecognized token. Both also pinned at unit tier in `packages/git/src/github/api.test.ts`.                                                                                  |
+
+### Optional env vars for extended coverage
+
+| Env var                             | Purpose                                    | Effect when unset                   |
+| ----------------------------------- | ------------------------------------------ | ----------------------------------- |
+| `APICIRCLE_E2E_BOT_ORG`             | Bot-org login for org-repo user stories    | Org tests skip with directed reason |
+| `APICIRCLE_E2E_BOT_OWNER_SECONDARY` | Second bot account for repo-transfer tests | Transfer test stays in fixme        |
 
 ---
 

@@ -1,4 +1,4 @@
-import type { WorkspaceSynced } from '@apicircle/shared';
+import type { RequestAuth, WorkspaceSynced } from '@apicircle/shared';
 
 // 3-way diff for the refresh / pull flow (plan §3.5). The "base" is the
 // snapshot from the last successful pull, captured in
@@ -19,6 +19,7 @@ export type EntityBucket =
   | 'secretKey'
   | 'globalSchema'
   | 'globalGraphql'
+  | 'globalFile'
   | 'linkedRequestOverride'
   | 'linkedEnvOverride'
   | 'releasePerLink'
@@ -46,6 +47,8 @@ export interface ThreeWayDiff {
 }
 
 export type ConflictResolution = 'mine' | 'theirs';
+
+type TreeChild = WorkspaceSynced['collections']['tree']['children'][number];
 
 /** Map keyed by `bucket:key` (e.g. `request:r-1`, `releaseSelf:`). */
 export type ResolutionMap = Record<string, ConflictResolution>;
@@ -167,6 +170,16 @@ const dictBuckets: DictBucketSpec[] = [
     },
   },
   {
+    // Reusable file assets registered at workspace scope. The metadata
+    // travels in workspace.json; bytes travel as Git blobs by slotId.
+    bucket: 'globalFile',
+    extract: (s) => s.globalAssets.files ?? {},
+    label: (key, value) => {
+      const v = value as { name?: string; filename?: string } | undefined;
+      return v?.name ?? v?.filename ?? key;
+    },
+  },
+  {
     // Consumer-side patches to a linked workspace's requests. Keyed
     // `${linkedWorkspaceId}:${requestId}`; the label leans on the key
     // since the override itself doesn't carry a name.
@@ -283,6 +296,7 @@ export function computeThreeWayDiff(
     });
   }
 
+  resolveAutoMergeableTreeConflict(entries, base, local, remote);
   const conflicts = entries.filter((e) => e.status === 'conflict');
   return { entries, conflicts };
 }
@@ -309,6 +323,108 @@ function classify(hasBase: boolean, base: unknown, local: unknown, remote: unkno
   // Both changed.
   if (structurallyEqual(local, remote)) return 'both-equal';
   return 'conflict';
+}
+
+function resolveAutoMergeableTreeConflict(
+  entries: DiffEntry[],
+  base: WorkspaceSynced | null,
+  local: WorkspaceSynced,
+  remote: WorkspaceSynced,
+): void {
+  if (!base) return;
+  const treeEntry = entries.find((entry) => entry.bucket === 'tree' && entry.status === 'conflict');
+  if (!treeEntry) return;
+  const merged = mergeRootTreeMembershipIfSafe(base, local, remote, entries);
+  if (!merged) return;
+  treeEntry.status = 'remote-only';
+  treeEntry.remote = merged;
+}
+
+function mergeRootTreeMembershipIfSafe(
+  base: WorkspaceSynced,
+  local: WorkspaceSynced,
+  remote: WorkspaceSynced,
+  entries: DiffEntry[],
+): WorkspaceSynced['collections']['tree'] | null {
+  const baseChildren = base.collections.tree.children;
+  const localChildren = local.collections.tree.children;
+  const remoteChildren = remote.collections.tree.children;
+  const baseKeys = treeKeySet(baseChildren);
+  const localKeys = treeKeySet(localChildren);
+  const remoteKeys = treeKeySet(remoteChildren);
+  if (!baseKeys || !localKeys || !remoteKeys) return null;
+
+  const changed = new Set<string>();
+  for (const key of new Set([...baseKeys, ...localKeys, ...remoteKeys])) {
+    const localChanged = baseKeys.has(key) !== localKeys.has(key);
+    const remoteChanged = baseKeys.has(key) !== remoteKeys.has(key);
+    if (!localChanged && !remoteChanged) continue;
+    if (localChanged && remoteChanged) return null;
+    const entry = bucketEntryForTreeChild(entries, key);
+    if (!entry || entry.status === 'conflict') return null;
+    if (localChanged && entry.status !== 'local-only') return null;
+    if (remoteChanged && entry.status !== 'remote-only') return null;
+    changed.add(key);
+  }
+  if (changed.size === 0) return null;
+
+  const stableBaseOrder = baseChildren.map(treeChildKey).filter((key) => !changed.has(key));
+  if (
+    !sameOrder(
+      localChildren.map(treeChildKey).filter((key) => !changed.has(key)),
+      stableBaseOrder,
+    )
+  ) {
+    return null;
+  }
+  if (
+    !sameOrder(
+      remoteChildren.map(treeChildKey).filter((key) => !changed.has(key)),
+      stableBaseOrder,
+    )
+  ) {
+    return null;
+  }
+
+  let children = [...localChildren];
+  for (const child of remoteChildren) {
+    const key = treeChildKey(child);
+    if (!changed.has(key) || !remoteKeys.has(key)) continue;
+    if (!children.some((existing) => treeChildKey(existing) === key)) children.push(child);
+  }
+  for (const key of changed) {
+    if (remoteKeys.has(key)) continue;
+    const entry = bucketEntryForTreeChild(entries, key);
+    if (entry?.status === 'remote-only') {
+      children = children.filter((child) => treeChildKey(child) !== key);
+    }
+  }
+  return { ...local.collections.tree, children };
+}
+
+function bucketEntryForTreeChild(entries: DiffEntry[], key: string): DiffEntry | undefined {
+  const [kind, id] = key.split(':', 2);
+  if (kind !== 'request' && kind !== 'folder') return undefined;
+  return entries.find((entry) => entry.bucket === kind && entry.key === id);
+}
+
+function treeKeySet(children: TreeChild[]): Set<string> | null {
+  const keys = new Set<string>();
+  for (const child of children) {
+    const key = treeChildKey(child);
+    if (keys.has(key)) return null;
+    keys.add(key);
+  }
+  return keys;
+}
+
+function treeChildKey(child: TreeChild): string {
+  return `${child.kind}:${child.id}`;
+}
+
+function sameOrder(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((value, index) => value === b[index]);
 }
 
 /**
@@ -405,7 +521,17 @@ function applyEntry(
           ? { kind: 'remove' }
           : { kind: 'upsert', parent: (value as { folderId: string | null }).folderId ?? null };
       if (value === undefined) delete requests[entry.key];
-      else requests[entry.key] = value as (typeof requests)[string];
+      else {
+        const remoteRequest = value as (typeof requests)[string];
+        const localRequest = local.collections.requests[entry.key];
+        requests[entry.key] =
+          localRequest && remoteRequest.auth
+            ? {
+                ...remoteRequest,
+                auth: preserveLocalCredentialPlaceholders(localRequest.auth, remoteRequest.auth),
+              }
+            : remoteRequest;
+      }
       const tree = reconcileTreeForEntry(local.collections.tree, 'request', entry.key, treeOp);
       return { ...local, collections: { ...local.collections, requests, tree } };
     }
@@ -416,7 +542,17 @@ function applyEntry(
           ? { kind: 'remove' }
           : { kind: 'upsert', parent: (value as { parentId: string | null }).parentId ?? null };
       if (value === undefined) delete folders[entry.key];
-      else folders[entry.key] = value as (typeof folders)[string];
+      else {
+        const remoteFolder = value as (typeof folders)[string];
+        const localFolder = local.collections.folders[entry.key];
+        folders[entry.key] =
+          localFolder?.auth && remoteFolder.auth
+            ? {
+                ...remoteFolder,
+                auth: preserveLocalCredentialPlaceholders(localFolder.auth, remoteFolder.auth),
+              }
+            : remoteFolder;
+      }
       const tree = reconcileTreeForEntry(local.collections.tree, 'folder', entry.key, treeOp);
       return { ...local, collections: { ...local.collections, folders, tree } };
     }
@@ -468,6 +604,13 @@ function applyEntry(
       else graphql[entry.key] = value as (typeof graphql)[string];
       return { ...local, globalAssets: { ...local.globalAssets, graphql } };
     }
+    case 'globalFile': {
+      const files = { ...(local.globalAssets.files ?? {}) };
+      if (value === undefined) delete files[entry.key];
+      else
+        files[entry.key] = value as NonNullable<WorkspaceSynced['globalAssets']['files']>[string];
+      return { ...local, globalAssets: { ...local.globalAssets, files } };
+    }
     case 'linkedRequestOverride': {
       const requests = { ...local.linkedOverrides.requests };
       if (value === undefined) delete requests[entry.key];
@@ -487,7 +630,13 @@ function applyEntry(
       return { ...local, releases: { ...local.releases, perLink } };
     }
     case 'tree':
-      return { ...local, collections: { ...local.collections, tree: remote.collections.tree } };
+      return {
+        ...local,
+        collections: {
+          ...local.collections,
+          tree: (value as WorkspaceSynced['collections']['tree']) ?? remote.collections.tree,
+        },
+      };
     case 'environmentsActive':
       return {
         ...local,
@@ -506,4 +655,70 @@ function applyEntry(
     case 'secretCrypto':
       return { ...local, secretCrypto: remote.secretCrypto ?? null };
   }
+}
+
+function preserveLocalCredentialPlaceholders(
+  localAuth: RequestAuth,
+  remoteAuth: RequestAuth,
+): RequestAuth {
+  if (localAuth.type !== remoteAuth.type) return remoteAuth;
+  switch (remoteAuth.type) {
+    case 'basic':
+    case 'digest':
+    case 'ntlm':
+      return preserveBlankStringFields(localAuth, remoteAuth, ['password']);
+    case 'bearer':
+      return preserveBlankStringFields(localAuth, remoteAuth, ['token']);
+    case 'api-key':
+      return preserveBlankStringFields(localAuth, remoteAuth, ['value']);
+    case 'hawk':
+      return preserveBlankStringFields(localAuth, remoteAuth, ['hawkKey']);
+    case 'jwt-bearer':
+      return preserveBlankStringFields(localAuth, remoteAuth, ['secretOrKey', 'token']);
+    case 'aws-sigv4':
+      return preserveBlankStringFields(localAuth, remoteAuth, ['secretAccessKey', 'sessionToken']);
+    case 'oauth2-client-credentials':
+    case 'oauth2-auth-code':
+    case 'oauth2-pkce':
+      return preserveBlankStringFields(localAuth, remoteAuth, [
+        'clientSecret',
+        'accessToken',
+        'refreshToken',
+      ]);
+    case 'oauth2-password':
+      return preserveBlankStringFields(localAuth, remoteAuth, [
+        'clientSecret',
+        'password',
+        'accessToken',
+        'refreshToken',
+      ]);
+    case 'oauth2-implicit':
+      return preserveBlankStringFields(localAuth, remoteAuth, ['accessToken']);
+    case 'oauth2-device':
+      return preserveBlankStringFields(localAuth, remoteAuth, ['accessToken', 'refreshToken']);
+    case 'none':
+    case 'inherit':
+    case 'custom-header':
+      return remoteAuth;
+    default: {
+      const _exhaustive: never = remoteAuth;
+      void _exhaustive;
+      return remoteAuth;
+    }
+  }
+}
+
+function preserveBlankStringFields<T extends RequestAuth>(
+  localAuth: T,
+  remoteAuth: T,
+  fields: string[],
+): T {
+  const next = { ...remoteAuth } as Record<string, unknown>;
+  const local = localAuth as Record<string, unknown>;
+  for (const field of fields) {
+    if (next[field] === '' && typeof local[field] === 'string' && local[field] !== '') {
+      next[field] = local[field];
+    }
+  }
+  return next as T;
 }

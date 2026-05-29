@@ -1,24 +1,30 @@
-// Workspace-wide library of reusable JSON Schemas + GraphQL definitions.
+// Workspace-wide library of reusable JSON Schemas, GraphQL definitions, and files.
 // Lives in the synced doc — pushing the workspace shares them with the
 // team. Requests opt in via the Body tab (P18/P19) by selecting a schema
 // from the dropdown.
 //
-// Hosted as the "Assets" tab of the right-side dock. Two sub-tabs:
-// Schemas (JSON Schema docs) and GraphQL (SDL or introspection JSON).
+// Hosted as the "Assets" tab of the right-side dock. Three sub-tabs:
+// Schemas (JSON Schema docs), GraphQL (SDL or introspection JSON), and
+// Files (slot-backed upload assets reused by request bodies).
 // The list/editor split is width-responsive — at narrow dock widths the
 // list takes the full panel and the editor opens with a Back affordance.
 // Delete is gated through ConfirmDialog because it cascades — any
 // request referencing the deleted id has its mapping cleared.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
-import type { GlobalGraphQL, GlobalSchema } from '@apicircle/shared';
+import { ArrowLeft, FileArchive, Plus, Trash2, Upload } from 'lucide-react';
+import {
+  formatBytes,
+  type GlobalFileAsset,
+  type GlobalGraphQL,
+  type GlobalSchema,
+} from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { MonacoEditorBase } from '../../editors/MonacoEditorBase';
 import { cn } from '../../primitives/cn';
 
-type Tab = 'schemas' | 'graphql';
+type Tab = 'schemas' | 'graphql' | 'files';
 
 // Threshold below which the list+editor stack vertically with a Back
 // affordance. ~520 keeps the side-by-side layout usable on default dock
@@ -35,6 +41,9 @@ export function GlobalAssetsDockPanel() {
   );
   const graphql = useWorkspaceStore((s) =>
     s.synced ? Object.values(s.synced.globalAssets.graphql) : [],
+  );
+  const files = useWorkspaceStore((s) =>
+    s.synced ? Object.values(s.synced.globalAssets.files ?? {}) : [],
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -75,6 +84,15 @@ export function GlobalAssetsDockPanel() {
         >
           GraphQL <span className="ml-1 text-text-dim">({graphql.length})</span>
         </TabButton>
+        <TabButton
+          active={tab === 'files'}
+          onClick={() => {
+            setTab('files');
+            setSelectedId(null);
+          }}
+        >
+          Files <span className="ml-1 text-text-dim">({files.length})</span>
+        </TabButton>
       </div>
 
       <div className="min-h-0 flex-1 p-3">
@@ -83,6 +101,7 @@ export function GlobalAssetsDockPanel() {
             tab={tab}
             schemas={schemas}
             graphql={graphql}
+            files={files}
             selectedId={selectedId}
             onSelect={setSelectedId}
           />
@@ -91,6 +110,7 @@ export function GlobalAssetsDockPanel() {
             tab={tab}
             schemas={schemas}
             graphql={graphql}
+            files={files}
             selectedId={selectedId}
             onSelect={setSelectedId}
           />
@@ -104,33 +124,44 @@ interface LayoutProps {
   tab: Tab;
   schemas: GlobalSchema[];
   graphql: GlobalGraphQL[];
+  files: GlobalFileAsset[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
 }
 
-function SideBySideLayout({ tab, schemas, graphql, selectedId, onSelect }: LayoutProps) {
+function SideBySideLayout({ tab, schemas, graphql, files, selectedId, onSelect }: LayoutProps) {
   return (
     <div className="grid h-full min-h-0 grid-cols-[200px_1fr] gap-3">
       {tab === 'schemas' ? (
         <SchemaList items={schemas} selectedId={selectedId} onSelect={onSelect} />
-      ) : (
+      ) : tab === 'graphql' ? (
         <GraphQLList items={graphql} selectedId={selectedId} onSelect={onSelect} />
+      ) : (
+        <FileAssetList items={files} selectedId={selectedId} onSelect={onSelect} />
       )}
       <div className="min-h-0">
-        {tab === 'schemas' ? <SchemaEditor id={selectedId} /> : <GraphQLEditor id={selectedId} />}
+        {tab === 'schemas' ? (
+          <SchemaEditor id={selectedId} />
+        ) : tab === 'graphql' ? (
+          <GraphQLEditor id={selectedId} />
+        ) : (
+          <FileAssetEditor id={selectedId} />
+        )}
       </div>
     </div>
   );
 }
 
-function NarrowLayout({ tab, schemas, graphql, selectedId, onSelect }: LayoutProps) {
+function NarrowLayout({ tab, schemas, graphql, files, selectedId, onSelect }: LayoutProps) {
   if (selectedId === null) {
     return (
       <div className="flex h-full min-h-0 flex-col">
         {tab === 'schemas' ? (
           <SchemaList items={schemas} selectedId={selectedId} onSelect={onSelect} />
-        ) : (
+        ) : tab === 'graphql' ? (
           <GraphQLList items={graphql} selectedId={selectedId} onSelect={onSelect} />
+        ) : (
+          <FileAssetList items={files} selectedId={selectedId} onSelect={onSelect} />
         )}
       </div>
     );
@@ -147,7 +178,13 @@ function NarrowLayout({ tab, schemas, graphql, selectedId, onSelect }: LayoutPro
         Back to list
       </button>
       <div className="min-h-0 flex-1">
-        {tab === 'schemas' ? <SchemaEditor id={selectedId} /> : <GraphQLEditor id={selectedId} />}
+        {tab === 'schemas' ? (
+          <SchemaEditor id={selectedId} />
+        ) : tab === 'graphql' ? (
+          <GraphQLEditor id={selectedId} />
+        ) : (
+          <FileAssetEditor id={selectedId} />
+        )}
       </div>
     </div>
   );
@@ -279,6 +316,85 @@ function GraphQLList({
               <span className="block truncate font-medium">{g.name}</span>
               <span className="block truncate text-[0.6875rem] text-text-dim">
                 {g.kind === 'sdl' ? 'SDL' : 'Introspection JSON'}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function FileAssetList({
+  items,
+  selectedId,
+  onSelect,
+}: {
+  items: GlobalFileAsset[];
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
+}) {
+  const addFileAsset = useWorkspaceStore((s) => s.addGlobalFileAsset);
+  const pushToast = useWorkspaceStore((s) => s.pushToast);
+  const fileInput = useRef<HTMLInputElement | null>(null);
+
+  const onPick = (file: File) => {
+    void addFileAsset(file)
+      .then((id) => onSelect(id))
+      .catch((err) => {
+        pushToast({
+          tone: 'error',
+          title: 'Could not add file asset',
+          detail: err instanceof Error ? err.message : String(err),
+        });
+      });
+  };
+
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto pr-1">
+      <input
+        ref={fileInput}
+        type="file"
+        className="hidden"
+        aria-label="Global file asset"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) onPick(file);
+          e.target.value = '';
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => fileInput.current?.click()}
+        className="inline-flex h-7 items-center justify-center gap-1.5 rounded-sm border border-dashed border-border px-2 text-xs text-text-muted hover:border-accent hover:text-text-primary"
+      >
+        <Upload size={12} aria-hidden="true" />
+        Add file asset
+      </button>
+      {items.length === 0 && (
+        <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-xs text-text-dim">
+          No file assets yet.
+        </p>
+      )}
+      <ul className="flex flex-col gap-1">
+        {items.map((file) => (
+          <li key={file.id}>
+            <button
+              type="button"
+              onClick={() => onSelect(file.id)}
+              className={cn(
+                'w-full truncate rounded-sm border px-2 py-1.5 text-left text-xs',
+                selectedId === file.id
+                  ? 'border-accent/40 bg-accent/10 text-accent'
+                  : 'border-border bg-card text-text-primary hover:border-border-strong',
+              )}
+            >
+              <span className="flex min-w-0 items-center gap-1.5">
+                <FileArchive size={12} className="shrink-0" aria-hidden="true" />
+                <span className="truncate font-medium">{file.name}</span>
+              </span>
+              <span className="block truncate text-[0.6875rem] text-text-dim">
+                {file.filename} · {formatBytes(file.size)}
               </span>
             </button>
           </li>
@@ -448,4 +564,139 @@ function GraphQLEditor({ id }: { id: string | null }) {
       />
     </div>
   );
+}
+
+function FileAssetEditor({ id }: { id: string | null }) {
+  const file = useWorkspaceStore((s) => (id ? (s.synced?.globalAssets.files?.[id] ?? null) : null));
+  const usage = useWorkspaceStore((s) => (id ? collectFileAssetUsage(s.synced, id) : []));
+  const update = useWorkspaceStore((s) => s.updateGlobalFileAsset);
+  const remove = useWorkspaceStore((s) => s.removeGlobalFileAsset);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  if (!file) {
+    return (
+      <div className="flex h-full items-center justify-center rounded-sm border border-dashed border-border-subtle p-6 text-center text-xs text-text-dim">
+        Select a file asset, or add a new one to reuse uploads across requests.
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+        <input
+          aria-label="File asset name"
+          value={file.name}
+          onChange={(e) => update(file.id, { name: e.target.value })}
+          className={inputClass}
+        />
+        <button
+          type="button"
+          onClick={() => setConfirmDelete(true)}
+          aria-label={`Delete file asset ${file.name}`}
+          title="Delete"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-sm border border-border bg-surface text-text-muted hover:bg-danger/10 hover:text-danger"
+        >
+          <Trash2 size={13} aria-hidden="true" />
+        </button>
+      </div>
+      <input
+        aria-label="File asset description"
+        placeholder="Description (optional)"
+        value={file.description ?? ''}
+        onChange={(e) => update(file.id, { description: e.target.value })}
+        className={inputClass}
+      />
+
+      <dl className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-2 rounded-sm border border-border bg-surface p-3 text-xs">
+        <dt className="text-text-dim">Filename</dt>
+        <dd className="truncate text-text-primary" title={file.filename}>
+          {file.filename}
+        </dd>
+        <dt className="text-text-dim">Size</dt>
+        <dd className="text-text-primary">{formatBytes(file.size)}</dd>
+        <dt className="text-text-dim">MIME</dt>
+        <dd className="truncate text-text-primary" title={file.mimeType}>
+          {file.mimeType}
+        </dd>
+        <dt className="text-text-dim">Slot</dt>
+        <dd className="truncate font-mono text-text-muted" title={file.slotId}>
+          {file.slotId}
+        </dd>
+        {file.sha256 && (
+          <>
+            <dt className="text-text-dim">SHA-256</dt>
+            <dd className="truncate font-mono text-text-muted" title={file.sha256}>
+              {file.sha256}
+            </dd>
+          </>
+        )}
+      </dl>
+
+      <div className="min-h-0 flex-1 rounded-sm border border-border bg-card p-3">
+        <div className="mb-2 text-xs font-medium text-text-primary">
+          Used by {usage.length} request{usage.length === 1 ? '' : 's'}
+        </div>
+        {usage.length === 0 ? (
+          <p className="text-xs text-text-dim">No requests reference this file asset yet.</p>
+        ) : (
+          <ul className="space-y-1 overflow-y-auto text-xs text-text-muted">
+            {usage.map((item) => (
+              <li
+                key={`${item.requestId}:${item.location}`}
+                className="truncate"
+                title={item.location}
+              >
+                <span className="text-text-primary">{item.requestName}</span>
+                <span className="text-text-dim"> · {item.location}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title={`Delete "${file.name}"`}
+        description={
+          <p>
+            This will remove the file asset, clear it from any requests that reference it, and
+            remove the local cached bytes on this machine.
+          </p>
+        }
+        confirmLabel="Delete"
+        tone="danger"
+        onConfirm={() => {
+          void remove(file.id);
+          setConfirmDelete(false);
+        }}
+        onCancel={() => setConfirmDelete(false)}
+      />
+    </div>
+  );
+}
+
+function collectFileAssetUsage(
+  synced: ReturnType<typeof useWorkspaceStore.getState>['synced'],
+  fileAssetId: string,
+): Array<{ requestId: string; requestName: string; location: string }> {
+  if (!synced) return [];
+  const usage: Array<{ requestId: string; requestName: string; location: string }> = [];
+  for (const req of Object.values(synced.collections.requests)) {
+    if (req.body.type === 'binary' && req.body.attachment?.globalFileAssetId === fileAssetId) {
+      usage.push({ requestId: req.id, requestName: req.name, location: 'binary body' });
+    }
+    if (req.body.type === 'form-data') {
+      for (const row of req.body.formRows ?? []) {
+        if (row.kind === 'file' && row.globalFileAssetId === fileAssetId) {
+          usage.push({
+            requestId: req.id,
+            requestName: req.name,
+            location: `form-data ${row.key || 'file'}`,
+          });
+        }
+      }
+    }
+  }
+  return usage;
 }

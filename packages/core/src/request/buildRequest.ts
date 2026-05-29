@@ -19,13 +19,36 @@ export interface BuiltRequest {
 
 /**
  * Resolves an attachment slotId to a Blob (with filename for form-data).
- * The host (UI layer) reads this from its IndexedDB attachments store.
- * Returns null when the attachment is missing — composeBody treats missing
- * attachments as empty fields rather than throwing.
+ * The host reads this from IndexedDB; the CLI reads it from its filesystem
+ * cache. A null return means "not downloaded" and becomes a hard execution
+ * failure.
  */
 export type AttachmentResolver = (
   slotId: string,
 ) => Promise<{ blob: Blob; filename: string } | null>;
+
+function missingAttachmentMessage(slotId: string, filename?: string): string {
+  const label = filename ? `${filename} (${slotId})` : slotId;
+  return (
+    `Attachment ${label} is required for this request but is not downloaded locally. ` +
+    'Download the missing attachments before sending or running the plan.'
+  );
+}
+
+async function requireAttachment(
+  slotId: string,
+  resolveAttachment: AttachmentResolver | undefined,
+  filename?: string,
+): Promise<{ blob: Blob; filename: string }> {
+  if (!resolveAttachment) {
+    throw new Error(missingAttachmentMessage(slotId, filename));
+  }
+  const file = await resolveAttachment(slotId);
+  if (!file) {
+    throw new Error(missingAttachmentMessage(slotId, filename));
+  }
+  return file;
+}
 
 /**
  * Match URL placeholders in either Express-style (`:name`) or OpenAPI-style
@@ -299,18 +322,22 @@ export async function composeBody(
       if (!row.enabled || !row.key.trim()) continue;
       if (row.kind === 'text') {
         fd.append(row.key, row.value);
-      } else if (row.slotId && resolveAttachment) {
-        const file = await resolveAttachment(row.slotId);
-        if (file) fd.append(row.key, file.blob, file.filename);
+      } else if (row.slotId) {
+        const file = await requireAttachment(row.slotId, resolveAttachment, row.filename);
+        fd.append(row.key, file.blob, file.filename);
       }
     }
     return fd;
   }
 
   if (body.type === 'binary') {
-    if (body.attachment?.slotId && resolveAttachment) {
-      const file = await resolveAttachment(body.attachment.slotId);
-      if (file) return file.blob;
+    if (body.attachment?.slotId) {
+      const file = await requireAttachment(
+        body.attachment.slotId,
+        resolveAttachment,
+        body.attachment.filename,
+      );
+      return file.blob;
     }
     return null;
   }

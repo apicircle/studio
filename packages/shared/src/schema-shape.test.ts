@@ -28,7 +28,7 @@ describe('WorkspaceSynced shape (regression)', () => {
       linkedWorkspaces: {},
       linkedOverrides: { requests: {}, environmentVars: {} },
       releases: { self: null, perLink: {} },
-      globalAssets: { schemas: {}, graphql: {} },
+      globalAssets: { schemas: {}, graphql: {}, files: {} },
       mockServers: {},
       meta: {
         createdAt: '2026-04-27T00:00:00.000Z',
@@ -55,7 +55,7 @@ describe('WorkspaceSynced shape (regression)', () => {
         'workspaceId',
       ].sort(),
     );
-    expect(Object.keys(empty.globalAssets).sort()).toEqual(['graphql', 'schemas'].sort());
+    expect(Object.keys(empty.globalAssets).sort()).toEqual(['files', 'graphql', 'schemas'].sort());
     expect(Object.keys(empty.collections).sort()).toEqual(['folders', 'requests', 'tree'].sort());
     expect(Object.keys(empty.environments).sort()).toEqual(
       ['activeName', 'items', 'priorityOrder'].sort(),
@@ -88,6 +88,7 @@ describe('WorkspaceLocal shape (regression)', () => {
         dirtyKeys: [],
       },
       linkedCollections: {},
+      attachmentCache: {},
       globalContext: {},
       mockRuntime: { active: {} },
       ui: {
@@ -104,6 +105,7 @@ describe('WorkspaceLocal shape (regression)', () => {
     expect(Object.keys(empty).sort()).toEqual(
       [
         'connectedRepo',
+        'attachmentCache',
         'executionPlans',
         'globalContext',
         'history',

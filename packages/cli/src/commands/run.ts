@@ -15,6 +15,11 @@ import { loadFromFile, saveToFile } from '@apicircle/core/workspace/file-backed'
 import type { ExecutionPlan, WorkspaceLocal } from '@apicircle/shared';
 import { buildSecretsFromCli } from '../util/secrets';
 import { resolveWorkspace, WorkspaceResolutionError } from '../util/resolveWorkspace';
+import {
+  prepareExecutionAttachments,
+  type AttachmentPreparationSummary,
+  type PreparedExecutionAttachments,
+} from '../util/executionAttachments';
 
 // =============================================================================
 // `apicircle run <plan>` — execute a saved execution plan headlessly and print
@@ -139,15 +144,28 @@ export function registerRunCommand(program: Command): void {
 
       if (text) process.stdout.write(formatHeader(ref.plan, actor, withAssertions, opts));
 
+      let prepared: PreparedExecutionAttachments;
+      try {
+        prepared = await prepareExecutionAttachments(dir, state, ref.plan);
+      } catch (err) {
+        process.off('SIGINT', onSigint);
+        fail(err instanceof Error ? err.message : String(err), 1, 'attachment');
+        return;
+      }
+      if (text && prepared.summary.total > 0) {
+        process.stdout.write(formatAttachmentPreparation(prepared.summary));
+      }
+
       let result: RunPlanResult;
       try {
-        result = await runPlan(state, ref.id, {
+        result = await runPlan(prepared.state, ref.id, {
           withAssertions,
           bail: opts.bail === true,
           env: opts.env,
           secretsById,
           actor,
           signal: controller.signal,
+          resolveAttachment: prepared.resolveAttachment,
           authorize: checkRunPermission,
           onStep: text ? (step) => process.stdout.write(formatStepLine(step)) : undefined,
         });
@@ -168,7 +186,7 @@ export function registerRunCommand(program: Command): void {
       if (reporter === 'json') {
         process.stdout.write(
           JSON.stringify(
-            buildJsonReport(dir, ref.id, ref.plan, actor, result, saved, aborted),
+            buildJsonReport(dir, ref.id, ref.plan, actor, result, saved, aborted, prepared.summary),
             null,
             2,
           ) + '\n',
@@ -242,6 +260,28 @@ function formatHeader(
       `(${enabled}/${plan.steps.length} steps · ${flags.join(' · ')})`,
     )}\n` + `${kleur.dim('Run by')} ${actor.name} ${kleur.dim(`(${actor.kind})`)}\n\n`
   );
+}
+
+function formatAttachmentPreparation(summary: AttachmentPreparationSummary): string {
+  const status = `${summary.downloaded} downloaded, ${summary.alreadyPresent} already local`;
+  const lines = [
+    `${kleur.bold('Attachments')} ${summary.total} required ${kleur.dim(
+      `(${status} - ${summary.cacheDir})`,
+    )}`,
+  ];
+  for (const entry of summary.entries) {
+    const source =
+      entry.source === 'linked-workspace'
+        ? `linked:${entry.linkedWorkspaceId ?? 'unknown'}`
+        : 'workspace';
+    const requiredBy = entry.requiredBy.map((item) => item.requestName).join(', ');
+    lines.push(
+      `  ${kleur.dim('file')} ${entry.filename} ${kleur.dim(
+        `${source} - ${requiredBy} - ${entry.localPath}`,
+      )}`,
+    );
+  }
+  return `${lines.join('\n')}\n\n`;
 }
 
 export function formatStepLine(step: PlanStepResult): string {
@@ -322,6 +362,7 @@ function buildJsonReport(
   result: RunPlanResult,
   saved: boolean,
   aborted: boolean,
+  attachments: AttachmentPreparationSummary,
 ): unknown {
   return {
     workspace,
@@ -332,6 +373,7 @@ function buildJsonReport(
     aborted,
     durationMs: result.planRun.durationMs,
     saved,
+    attachments,
     counts: tally(result),
     steps: result.steps.map((s) => ({
       step: s.stepIndex + 1,

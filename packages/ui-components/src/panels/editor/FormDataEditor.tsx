@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { FileUp, Plus, Trash2, X } from 'lucide-react';
-import type { FormDataRow, Request as ApiRequest } from '@apicircle/shared';
+import type { FormDataRow, GlobalFileAsset, Request as ApiRequest } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 import { useRowKeyboardNav } from './useRowKeyboardNav';
@@ -13,6 +13,10 @@ export function FormDataEditor({ request }: FormDataEditorProps) {
   const setRequestFormRows = useWorkspaceStore((s) => s.setRequestFormRows);
   const attachFormFile = useWorkspaceStore((s) => s.attachFormFile);
   const detachFormFile = useWorkspaceStore((s) => s.detachFormFile);
+  const setFormRowGlobalFileAsset = useWorkspaceStore((s) => s.setFormRowGlobalFileAsset);
+  const globalFiles = useWorkspaceStore((s) =>
+    s.synced ? Object.values(s.synced.globalAssets.files ?? {}) : [],
+  );
 
   const rows: FormDataRow[] =
     request.body.type === 'form-data' ? (request.body.formRows ?? []) : [];
@@ -83,7 +87,11 @@ export function FormDataEditor({ request }: FormDataEditorProps) {
           onUpdate={update}
           onRemove={removeRow}
           onPickFile={(file) => void attachFormFile(request.id, index, file)}
+          onUseGlobalFile={(fileAssetId) =>
+            void setFormRowGlobalFileAsset(request.id, index, fileAssetId)
+          }
           onClearFile={() => void detachFormFile(request.id, index)}
+          globalFiles={globalFiles}
           onCellKeyDown={onKeyDown}
         />
       ))}
@@ -123,7 +131,9 @@ interface RowViewProps {
   onUpdate: (index: number, next: FormDataRow) => void;
   onRemove: (index: number) => void;
   onPickFile: (file: File) => void;
+  onUseGlobalFile: (fileAssetId: string | null) => void;
   onClearFile: () => void;
+  globalFiles: GlobalFileAsset[];
   /** Keyboard nav handler from useRowKeyboardNav. */
   onCellKeyDown: (e: React.KeyboardEvent<HTMLElement>, rowIndex: number, field: string) => void;
 }
@@ -135,7 +145,9 @@ function FormDataRowView({
   onUpdate,
   onRemove,
   onPickFile,
+  onUseGlobalFile,
   onClearFile,
+  globalFiles,
   onCellKeyDown,
 }: RowViewProps) {
   const fileInput = useRef<HTMLInputElement | null>(null);
@@ -232,6 +244,11 @@ function FormDataRowView({
               <span className="truncate text-text-primary" title={row.filename}>
                 {row.filename}
               </span>
+              {row.globalFileAssetId && (
+                <span className="shrink-0 rounded-sm border border-accent/30 bg-accent/10 px-1 text-[0.625rem] text-accent">
+                  library
+                </span>
+              )}
               <span className="ml-auto shrink-0 text-text-dim">{formatSize(row.size ?? 0)}</span>
               <button
                 type="button"
@@ -251,6 +268,21 @@ function FormDataRowView({
               <FileUp size={12} />
               Choose file
             </button>
+          )}
+          {globalFiles.length > 0 && (
+            <select
+              aria-label={`Form-data row ${index + 1} file asset`}
+              value={row.globalFileAssetId ?? ''}
+              onChange={(e) => onUseGlobalFile(e.target.value || null)}
+              className="h-5 max-w-[44%] shrink-0 rounded-sm border border-border bg-surface px-1 text-[0.625rem] text-text-muted focus:border-accent focus:outline-none"
+            >
+              <option value="">Library...</option>
+              {globalFiles.map((file) => (
+                <option key={file.id} value={file.id}>
+                  {file.name}
+                </option>
+              ))}
+            </select>
           )}
         </div>
       )}

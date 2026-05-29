@@ -56,6 +56,7 @@ export async function loadFromFile(
   let local: WorkspaceLocal;
   try {
     local = JSON.parse(await fs.readFile(localPath, 'utf-8')) as WorkspaceLocal;
+    local = { ...local, attachmentCache: local.attachmentCache ?? {} };
   } catch (err) {
     if (!isENOENT(err)) throw err;
     local = createEmptyLocalForSynced(synced);
@@ -120,6 +121,7 @@ export async function withWorkspace<T>(
     let local: WorkspaceLocal;
     try {
       local = JSON.parse(await fs.readFile(localPath, 'utf-8')) as WorkspaceLocal;
+      local = { ...local, attachmentCache: local.attachmentCache ?? {} };
     } catch (err) {
       if (!isENOENT(err)) throw err;
       local = createEmptyLocalForSynced(synced);
@@ -189,6 +191,7 @@ function createEmptyLocalForSynced(synced: WorkspaceSynced): WorkspaceLocal {
       dirtyKeys: [],
     },
     linkedCollections: {},
+    attachmentCache: {},
     globalContext: {},
     mockRuntime: { active: {} },
     ui: {

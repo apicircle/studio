@@ -56,6 +56,26 @@ describe('executeRequest', () => {
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
   });
 
+  it('returns a visible error when a required attachment is not downloaded', async () => {
+    const fetchImpl = vi.fn();
+    const result = await executeRequest(
+      baseReq({
+        method: 'POST',
+        body: {
+          type: 'binary',
+          content: '',
+          attachment: { slotId: 'missing-slot', filename: 'payload.bin' },
+        },
+      }),
+      { fetchImpl, resolveAttachment: async () => null },
+    );
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    expect(result.status).toBeNull();
+    expect(result.error).toMatch(/payload\.bin .*not downloaded/i);
+  });
+
   it('classifies bodyKind from response Content-Type', async () => {
     const cases: Array<[string, string, 'json' | 'text' | 'binary' | 'empty']> = [
       ['application/json', '{}', 'json'],

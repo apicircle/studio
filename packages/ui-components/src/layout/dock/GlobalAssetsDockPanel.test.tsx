@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useWorkspaceStore } from '../../store/workspaceStore';
@@ -17,6 +17,7 @@ describe('GlobalAssetsDockPanel', () => {
     render(<GlobalAssetsDockPanel />);
     expect(screen.getByRole('button', { name: /JSON Schemas/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^GraphQL/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Files/ })).toBeInTheDocument();
   });
 
   it('Add JSON Schema appends an entry and selects it', async () => {
@@ -55,5 +56,28 @@ describe('GlobalAssetsDockPanel', () => {
     const confirmDialog = dialogs[dialogs.length - 1];
     await userEvent.click(within(confirmDialog).getByRole('button', { name: 'Delete' }));
     expect(useWorkspaceStore.getState().synced!.globalAssets.schemas[id]).toBeUndefined();
+  });
+
+  it('uploads and edits a reusable file asset', async () => {
+    render(<GlobalAssetsDockPanel />);
+    await userEvent.click(screen.getByRole('button', { name: /^Files/ }));
+    const input = screen.getByLabelText('Global file asset');
+    const file = new File(['payload'], 'payload.txt', { type: 'text/plain' });
+    await userEvent.upload(input, file);
+
+    await waitFor(() =>
+      expect(
+        Object.values(useWorkspaceStore.getState().synced!.globalAssets.files ?? {}),
+      ).toHaveLength(1),
+    );
+    const stored = Object.values(useWorkspaceStore.getState().synced!.globalAssets.files ?? {});
+    expect(stored[0]).toMatchObject({ filename: 'payload.txt', size: 7, mimeType: 'text/plain' });
+    expect(screen.getByLabelText('File asset name')).toBeInTheDocument();
+
+    await userEvent.clear(screen.getByLabelText('File asset name'));
+    await userEvent.type(screen.getByLabelText('File asset name'), 'Shared payload');
+    expect(useWorkspaceStore.getState().synced!.globalAssets.files?.[stored[0].id]?.name).toBe(
+      'Shared payload',
+    );
   });
 });

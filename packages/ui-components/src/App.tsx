@@ -70,6 +70,7 @@ import { PanelContent } from './layout/PanelContent';
 import { RightDock } from './layout/RightDock';
 import { RightDockRail } from './layout/RightDockRail';
 import { MissingScopeGate } from './layout/MissingScopeGate';
+import { AttachmentDownloadPromptModal } from './layout/AttachmentDownloadPromptModal';
 import { KeyboardShortcuts } from './layout/KeyboardShortcuts';
 // Linked request editing now happens in the main EditorPanel — the old
 // modal (LinkedRequestEditor) is no longer mounted. The activeLinkedRequest
@@ -117,6 +118,7 @@ export function App() {
       </div>
       <UpdatePreviewModal />
       <MissingScopeGate />
+      <AttachmentDownloadPromptModal />
       <KeyboardShortcuts />
       <OnboardingTour />
       <ToastSlot />

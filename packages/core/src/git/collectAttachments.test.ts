@@ -98,6 +98,83 @@ describe('collectAttachmentSlots', () => {
     expect(slots[0].sha256).toBe('aa');
   });
 
+  it('collects reusable global file assets even when no request references them', () => {
+    const ws = workspace({});
+    ws.globalAssets.files = {
+      file1: {
+        id: 'file1',
+        name: 'Shared payload',
+        slotId: 'global-slot',
+        filename: 'payload.json',
+        mimeType: 'application/json',
+        size: 42,
+        sha256: 'cc',
+        createdAt: 't',
+        updatedAt: 't',
+      },
+    };
+    expect(collectAttachmentSlots(ws)).toEqual([
+      {
+        slotId: 'global-slot',
+        sha256: 'cc',
+        filename: 'payload.json',
+        mimeType: 'application/json',
+        size: 42,
+      },
+    ]);
+  });
+
+  it('collects mock response binary attachments', () => {
+    const ws = workspace({});
+    ws.mockServers = {
+      mock1: {
+        id: 'mock1',
+        name: 'Files',
+        source: { kind: 'manual', endpoints: [] },
+        endpoints: [
+          {
+            id: 'ep1',
+            name: 'GET file',
+            method: 'GET',
+            pathPattern: '/file',
+            requestSchema: { pathParams: [], queryParams: [], headers: [], cookies: [] },
+            requestValidation: [],
+            responseRules: [],
+            defaultResponse: {
+              status: 200,
+              headers: [],
+              body: {
+                type: 'binary',
+                content: '',
+                attachment: {
+                  slotId: 'mock-slot',
+                  filename: 'mock.bin',
+                  mimeType: 'application/octet-stream',
+                  size: 7,
+                  sha256: 'dd',
+                },
+              },
+            },
+          },
+        ],
+        defaultPort: null,
+        cors: { enabled: false, origins: [] },
+        createdAt: 't',
+        updatedAt: 't',
+      },
+    };
+
+    expect(collectAttachmentSlots(ws)).toEqual([
+      {
+        slotId: 'mock-slot',
+        sha256: 'dd',
+        filename: 'mock.bin',
+        mimeType: 'application/octet-stream',
+        size: 7,
+      },
+    ]);
+  });
+
   it('skips non-attachment body types', () => {
     const json = req('j', { type: 'json', content: '{"x":1}' });
     const text = req('t', { type: 'text', content: 'hi' });

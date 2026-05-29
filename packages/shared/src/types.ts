@@ -152,13 +152,15 @@ export interface WorkspaceSynced {
     // Cached release history of each linked workspace, keyed by linkedWorkspaceId.
     perLink: Record<string, ReleaseHistory>;
   };
-  // Workspace-wide library of reusable JSON Schemas + GraphQL schema
-  // definitions. Requests opt in by setting `bodySchemaId` /
-  // `graphqlSchemaId`. Lives in the synced doc so teams share definitions
-  // through the regular push/pull flow.
+  // Workspace-wide library of reusable JSON Schemas, GraphQL schema
+  // definitions, and file assets. Requests opt in by setting
+  // `bodySchemaId`, `graphqlSchemaId`, or by pointing file body rows at a
+  // file asset. File bytes stay outside workspace.json as Git blobs under
+  // `.apicircle/attachments/<slotId>`; only metadata lives here.
   globalAssets: {
     schemas: Record<string, GlobalSchema>;
     graphql: Record<string, GlobalGraphQL>;
+    files?: Record<string, GlobalFileAsset>;
   };
   // Workspace-wide mock-server library. Definitions push to git so a
   // teammate cloning the repo can spin up the same mocks via Desktop or
@@ -322,6 +324,19 @@ export interface GlobalGraphQL {
   description?: string;
   kind: 'sdl' | 'introspection';
   source: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GlobalFileAsset {
+  id: string;
+  name: string;
+  description?: string;
+  slotId: string;
+  filename: string;
+  size: number;
+  mimeType: string;
+  sha256?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -499,10 +514,10 @@ export interface JwtBearerAuth {
 // field — text rows carry their own value, file rows reference an
 // attachment by slotId. For binary the whole body is a single attachment.
 //
-// Attachments themselves (the actual blobs + filename/mimeType) live only
-// in the local IndexedDB `attachments` store; the synced doc only carries
-// the slotId reference plus minimal display metadata. Blobs never round-
-// trip through Git.
+// Attachments themselves (the actual blobs + filename/mimeType) live in the
+// local IndexedDB `attachments` store and are uploaded as Git blobs under
+// `.apicircle/attachments/<slotId>` on push. The synced doc carries only the
+// slotId reference plus minimal display metadata so diffs stay small.
 export interface RequestBody {
   type: BodyType;
   content: string;
@@ -520,6 +535,7 @@ export type FormDataRow =
       kind: 'file';
       key: string;
       slotId: string | null;
+      globalFileAssetId?: string | null;
       filename?: string;
       size?: number;
       mimeType?: string;
@@ -532,10 +548,30 @@ export type FormDataRow =
 
 export interface AttachmentRef {
   slotId: string | null;
+  globalFileAssetId?: string | null;
   filename?: string;
   size?: number;
   mimeType?: string;
   sha256?: string;
+}
+
+export interface LocalAttachmentCacheEntry {
+  slotId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  sha256?: string;
+  /**
+   * Local-only path or storage URI where this device can read the bytes for
+   * execution. Browser builds use an IndexedDB URI; CLI runs use an absolute
+   * filesystem path under `.apicircle/attachments/`.
+   */
+  localPath: string;
+  storage: 'indexeddb' | 'filesystem';
+  source: 'workspace' | 'linked-workspace';
+  linkedWorkspaceId?: string;
+  requiredBy: Array<{ requestId: string; requestName: string }>;
+  downloadedAt: string;
 }
 
 export interface Assertion {
@@ -761,6 +797,13 @@ export interface WorkspaceLocal {
   // shouldn't carry the source's whole tree — it's a materialization of
   // intent, not intent itself. Keyed by linkedWorkspace.id.
   linkedCollections: Record<string, LinkedSnapshot>;
+  /**
+   * Local-only attachment cache metadata. The bytes themselves live outside
+   * workspace.json (IndexedDB in the web app, `.apicircle/attachments` for
+   * the CLI). This tells execution where the bytes are available locally and
+   * which request(s) require each file.
+   */
+  attachmentCache?: Record<string, LocalAttachmentCacheEntry>;
   // Local-only workspace-wide context. Populated by the post-run
   // extractions defined on each request. Latest write wins. Survives
   // reload (it's persisted in IDB) but never round-trips through Git.
@@ -889,6 +932,13 @@ export interface LinkedSnapshot {
   ref: string;
   collections: WorkspaceSynced['collections'];
   environments: WorkspaceSynced['environments'];
+  /**
+   * Source workspace assets referenced by linked requests
+   * (`bodySchemaId` / `graphqlSchemaId`). Cached locally with the linked
+   * collections so linked editors and execution can resolve schema refs
+   * without copying assets into the consumer's synced workspace.
+   */
+  globalAssets?: WorkspaceSynced['globalAssets'];
   /**
    * The source workspace's secret-key registry, cached so the link card
    * can render slot labels (not just raw ids). Optional — older

@@ -45,7 +45,7 @@ describe('GitHubClient.getViewer', () => {
     expect(result.viewer).toEqual({ login: 'u', id: 1, name: null, avatarUrl: null });
   });
 
-  it('forwards Bearer token, accept header, and api version', async () => {
+  it('forwards Bearer token, accept header, api version, and cache bypass mode', async () => {
     const fetchImpl: typeof fetch = vi.fn(async () => jsonResponse({ login: 'u', id: 1 }));
     const client = new GitHubClient({ fetchImpl });
     await client.getViewer('tok-secret');
@@ -54,7 +54,9 @@ describe('GitHubClient.getViewer', () => {
     const headers = (init as RequestInit).headers as Record<string, string>;
     expect(headers.Authorization).toBe('Bearer tok-secret');
     expect(headers.Accept).toBe('application/vnd.github+json');
+    expect(headers['Cache-Control']).toBeUndefined();
     expect(headers['X-GitHub-Api-Version']).toBe('2022-11-28');
+    expect((init as RequestInit).cache).toBe('no-store');
   });
 
   it('throws UnauthorizedError on 401', async () => {
@@ -105,6 +107,66 @@ describe('GitHubClient.getViewer', () => {
       expect(err).toBeInstanceOf(MissingScopeError);
       expect((err as MissingScopeError).missingScopes).toEqual(['pull_request']);
     }
+  });
+
+  // ─── User-story coverage (live-suite mirror) ─────────────────────────
+  //
+  // The two cases below pin the user stories that the live-GitHub suite
+  // can't directly drive against a classic PAT (`live/session-edges.spec.ts`
+  // references these by file path + line). They credit:
+  //   * TC-GT-0023 — OAuth scope downgrade after linking
+  //   * TC-GT-0035 — OAuth token revoked on github.com mid-session
+
+  it('TC-GT-0023 — scope downgrade after linking surfaces MissingScopeError on next authed call', async () => {
+    // Call sequence: connect with full scopes (200), then GitHub returns
+    // 403 with downgraded scope headers because the user revoked
+    // `pull_request` mid-session. The client must classify the second
+    // response as a MissingScopeError so the UI can prompt re-auth.
+    let call = 0;
+    const fetchImpl: typeof fetch = vi.fn(async () => {
+      call += 1;
+      if (call === 1) {
+        return jsonResponse(
+          { login: 'u', id: 1 },
+          { headers: { 'x-oauth-scopes': 'repo, pull_request' } },
+        );
+      }
+      return jsonResponse(
+        { message: 'Resource not accessible by personal access token' },
+        {
+          status: 403,
+          headers: {
+            'x-oauth-scopes': 'repo',
+            'x-accepted-oauth-scopes': 'repo, pull_request',
+          },
+        },
+      );
+    });
+    const client = new GitHubClient({ fetchImpl });
+    const first = await client.getViewer('tok');
+    expect(first.scopes.granted).toEqual(['repo', 'pull_request']);
+    await expect(client.getViewer('tok')).rejects.toBeInstanceOf(MissingScopeError);
+  });
+
+  it('TC-GT-0035 — token revoked on github.com mid-session: subsequent authed calls throw UnauthorizedError', async () => {
+    // Call sequence: viewer succeeds initially, then GitHub revokes the
+    // token (user clicked Revoke on github.com), so every subsequent
+    // authed call returns 401 Bad credentials.
+    let call = 0;
+    const fetchImpl: typeof fetch = vi.fn(async () => {
+      call += 1;
+      if (call === 1) {
+        return jsonResponse({ login: 'u', id: 1 }, { headers: { 'x-oauth-scopes': 'repo' } });
+      }
+      return jsonResponse(
+        { message: 'Bad credentials' },
+        { status: 401, statusText: 'Unauthorized' },
+      );
+    });
+    const client = new GitHubClient({ fetchImpl });
+    const first = await client.getViewer('tok-good');
+    expect(first.viewer.login).toBe('u');
+    await expect(client.getViewer('tok-revoked')).rejects.toBeInstanceOf(UnauthorizedError);
   });
 
   it('throws RateLimitedError when remaining=0 on 403, with humanised wait', async () => {

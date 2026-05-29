@@ -2,10 +2,15 @@ import { describe, expect, it } from 'vitest';
 import type { Request as ApiRequest, WorkspaceSynced } from '@apicircle/shared';
 import {
   addGlobalGraphQL,
+  addGlobalFileAsset,
   addGlobalSchema,
+  attachmentRefFromGlobalFileAsset,
+  formDataRowFromGlobalFileAsset,
+  removeGlobalFileAsset,
   removeGlobalGraphQL,
   removeGlobalSchema,
   updateGlobalGraphQL,
+  updateGlobalFileAsset,
   updateGlobalSchema,
 } from './globalAssetsActions';
 
@@ -17,7 +22,7 @@ const baseSynced = (): WorkspaceSynced => ({
   linkedWorkspaces: {},
   linkedOverrides: { requests: {}, environmentVars: {} },
   releases: { self: null, perLink: {} },
-  globalAssets: { schemas: {}, graphql: {} },
+  globalAssets: { schemas: {}, graphql: {}, files: {} },
   mockServers: {},
   meta: { createdAt: 't', updatedAt: 't', appVersion: '0.1.0' },
 });
@@ -121,5 +126,147 @@ describe('removeGlobalGraphQL', () => {
     const withReq = seedRequest(withGraphQL, { id: 'r1', graphqlSchemaId: graphql.id });
     const next = removeGlobalGraphQL(withReq, graphql.id);
     expect(next.collections.requests['r1']?.graphqlSchemaId).toBeNull();
+  });
+});
+
+describe('global file assets', () => {
+  it('adds and updates reusable file metadata', () => {
+    const { synced, file } = addGlobalFileAsset(baseSynced(), {
+      name: 'Payload',
+      slotId: 'slot-1',
+      filename: 'payload.json',
+      size: 12,
+      mimeType: 'application/json',
+      sha256: 'abc',
+    });
+    expect(synced.globalAssets.files?.[file.id]).toMatchObject({
+      name: 'Payload',
+      slotId: 'slot-1',
+      filename: 'payload.json',
+    });
+
+    const next = updateGlobalFileAsset(synced, file.id, { name: 'Renamed' });
+    expect(next.globalAssets.files?.[file.id]?.name).toBe('Renamed');
+    expect(next.globalAssets.files?.[file.id]?.slotId).toBe('slot-1');
+  });
+
+  it('builds request refs from reusable file metadata', () => {
+    const { file } = addGlobalFileAsset(baseSynced(), {
+      name: 'Payload',
+      slotId: 'slot-1',
+      filename: 'payload.json',
+      size: 12,
+      mimeType: 'application/json',
+      sha256: 'abc',
+    });
+    expect(attachmentRefFromGlobalFileAsset(file)).toMatchObject({
+      globalFileAssetId: file.id,
+      slotId: 'slot-1',
+      filename: 'payload.json',
+    });
+    expect(
+      formDataRowFromGlobalFileAsset(
+        { kind: 'file', key: 'upload', enabled: true, slotId: null },
+        file,
+      ),
+    ).toMatchObject({
+      key: 'upload',
+      globalFileAssetId: file.id,
+      slotId: 'slot-1',
+    });
+  });
+
+  it('removes the asset and clears request references', () => {
+    const { synced, file } = addGlobalFileAsset(baseSynced(), {
+      name: 'Payload',
+      slotId: 'slot-1',
+      filename: 'payload.json',
+      size: 12,
+      mimeType: 'application/json',
+    });
+    const withForm = seedRequest(synced, {
+      id: 'form',
+      body: {
+        type: 'form-data',
+        content: '',
+        formRows: [
+          formDataRowFromGlobalFileAsset(
+            { kind: 'file', key: 'f', enabled: true, slotId: null },
+            file,
+          ),
+        ],
+      },
+    });
+    const withBinary = seedRequest(withForm, {
+      id: 'binary',
+      body: { type: 'binary', content: '', attachment: attachmentRefFromGlobalFileAsset(file) },
+    });
+
+    const next = removeGlobalFileAsset(withBinary, file.id);
+    expect(next.globalAssets.files?.[file.id]).toBeUndefined();
+    const formRows =
+      next.collections.requests.form?.body.type === 'form-data'
+        ? next.collections.requests.form.body.formRows
+        : [];
+    expect(formRows?.[0]).toMatchObject({ kind: 'file', slotId: null });
+    expect(next.collections.requests.binary?.body).toEqual({ type: 'binary', content: '' });
+  });
+
+  it('clears mock response references when a reusable file is removed', () => {
+    const { synced, file } = addGlobalFileAsset(baseSynced(), {
+      name: 'Payload',
+      slotId: 'slot-1',
+      filename: 'payload.json',
+      size: 12,
+      mimeType: 'application/json',
+    });
+    const withMock: WorkspaceSynced = {
+      ...synced,
+      mockServers: {
+        m1: {
+          id: 'm1',
+          name: 'Files',
+          source: { kind: 'manual', endpoints: [] },
+          endpoints: [
+            {
+              id: 'e1',
+              name: 'GET file',
+              method: 'GET',
+              pathPattern: '/file',
+              requestSchema: { pathParams: [], queryParams: [], headers: [], cookies: [] },
+              requestValidation: [],
+              responseRules: [],
+              defaultResponse: {
+                status: 200,
+                headers: [],
+                body: {
+                  type: 'binary',
+                  content: '',
+                  attachment: attachmentRefFromGlobalFileAsset(file),
+                },
+              },
+            },
+          ],
+          defaultPort: null,
+          cors: { enabled: false, origins: [] },
+          createdAt: 't',
+          updatedAt: 't',
+        },
+      },
+    };
+
+    const next = removeGlobalFileAsset(withMock, file.id);
+
+    expect(next.mockServers.m1?.endpoints[0]?.defaultResponse.body).toEqual({
+      type: 'binary',
+      content: '',
+    });
+    expect(next.mockServers.m1?.source.kind).toBe('manual');
+    if (next.mockServers.m1?.source.kind === 'manual') {
+      expect(next.mockServers.m1.source.endpoints[0]?.defaultResponse.body).toEqual({
+        type: 'binary',
+        content: '',
+      });
+    }
   });
 });

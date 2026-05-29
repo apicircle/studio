@@ -1080,6 +1080,7 @@ export class GitHubClient {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
           ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         },
+        cache: 'no-store',
         body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
         signal: controller.signal,
       });

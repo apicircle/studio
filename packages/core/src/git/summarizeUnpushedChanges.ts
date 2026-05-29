@@ -1,4 +1,5 @@
 import type { WorkspaceSynced } from '@apicircle/shared';
+import { redactForGit } from './redactWorkspace';
 import { type EntityBucket, computeThreeWayDiff } from './threeWayDiff';
 
 // Pre-push diff summary: compares the consumer's currently-edited synced
@@ -44,6 +45,7 @@ const BUCKET_ORDER: EntityBucket[] = [
   'executionPlan',
   'globalSchema',
   'globalGraphql',
+  'globalFile',
   'secretKey',
   'secretCrypto',
   'releaseSelf',
@@ -65,18 +67,23 @@ export function summarizeUnpushedChanges(
   options: { now?: () => Date } = {},
 ): UnpushedSummary {
   const now = options.now ?? (() => new Date());
+  // The push path writes a redacted workspace.json. Compare the same synced
+  // intent here so local-only credential values do not appear as phantom
+  // unpushed changes after a refresh/merge preserves them in memory.
+  const gitCurrent = redactForGit(current);
   if (!base) {
     // No upstream yet (workspace was just created or never pulled).
     // Everything in `current` counts as "added" — walking the buckets
     // directly is simpler than feeding an empty-shape doc to the diff
     // engine.
-    return summarizeAllAsAdded(current, now().toISOString());
+    return summarizeAllAsAdded(gitCurrent, now().toISOString());
   }
   // Reuse the existing 3-way diff with `remote = base` so every entry
   // is either 'unchanged' or 'local-only'. We then translate
   // 'local-only' into added / modified / removed by inspecting which of
   // base / local is undefined.
-  const diff = computeThreeWayDiff(base, current, base);
+  const gitBase = redactForGit(base);
+  const diff = computeThreeWayDiff(gitBase, gitCurrent, gitBase);
   const changes: UnpushedChange[] = [];
   for (const entry of diff.entries) {
     if (entry.status !== 'local-only') continue;
@@ -211,6 +218,16 @@ function summarizeAllAsAdded(synced: WorkspaceSynced, computedAt: string): Unpus
       kind: 'added',
       base: undefined,
       local: gql,
+    });
+  }
+  for (const [id, file] of Object.entries(synced.globalAssets.files ?? {})) {
+    changes.push({
+      bucket: 'globalFile',
+      key: id,
+      label: file.name || file.filename || id,
+      kind: 'added',
+      base: undefined,
+      local: file,
     });
   }
   for (const [key, override] of Object.entries(synced.linkedOverrides.requests)) {

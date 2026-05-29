@@ -1,14 +1,18 @@
 import type {
+  Environment,
   EnvPriorityRef,
   ExecutionPlan,
   PlanRun,
   Request as ApiRequest,
   RequestAuth,
+  RequestOverridePatch,
   RequestRun,
+  WorkspaceLocal,
   WorkspaceSynced,
 } from '@apicircle/shared';
 import { envPriorityKey, generateId, RUN_BODY_PREVIEW_LIMIT } from '@apicircle/shared';
 import { executeRequest, type ExecutionResult } from '../request/executeRequest';
+import type { AttachmentResolver } from '../request/buildRequest';
 import { runAssertions, type AssertionResult } from '../assertions/runAssertions';
 import { extractContext } from '../environment/extractContext';
 import { resolveInheritedAuth } from '../request/resolveInheritedAuth';
@@ -92,6 +96,8 @@ export interface RunPlanOptions {
   signal?: AbortSignal;
   /** Per-request hard timeout in ms. `null` disables. Defaults to executeRequest's 30s. */
   timeoutMs?: number | null;
+  /** Resolver for local and linked attachment bytes used by file/binary bodies. */
+  resolveAttachment?: AttachmentResolver;
   /** Plaintext secret values keyed by `secretKeyId`, for encrypted env vars. */
   secretsById?: Record<string, string>;
   /** Identity of whoever launched the run. Defaults to {@link ANONYMOUS_ACTOR}. */
@@ -170,6 +176,136 @@ export function resolvePlanRef(synced: WorkspaceSynced, ref: string): ResolvePla
   return { ok: false, error: `No plan named "${ref}" in this workspace.`, available };
 }
 
+function lookupPlanStepRequest(
+  step: { requestId: string; linkedWorkspaceId?: string },
+  synced: WorkspaceSynced,
+  local: WorkspaceLocal,
+): {
+  request: ApiRequest | null;
+  linkedEnvironments?: WorkspaceSynced['environments'];
+  linkedFolders?: WorkspaceSynced['collections']['folders'];
+  linkedGlobalAssets?: WorkspaceSynced['globalAssets'];
+  error?: string;
+} {
+  if (!step.linkedWorkspaceId) {
+    const request = synced.collections.requests[step.requestId];
+    return request
+      ? { request }
+      : { request: null, error: 'Request no longer exists in workspace.' };
+  }
+
+  const link = synced.linkedWorkspaces[step.linkedWorkspaceId];
+  if (!link) return { request: null, error: 'Linked workspace was unlinked.' };
+
+  const snapshot = local.linkedCollections[step.linkedWorkspaceId];
+  if (!snapshot) {
+    return {
+      request: null,
+      error: `No cached snapshot for "${link.name}". Refresh the link before running this plan.`,
+    };
+  }
+
+  const baseRequest = snapshot.collections.requests[step.requestId];
+  if (!baseRequest) {
+    return {
+      request: null,
+      error: `Request not present in the cached snapshot of "${link.name}".`,
+    };
+  }
+
+  const overrideKey = `${step.linkedWorkspaceId}:${step.requestId}`;
+  const override = synced.linkedOverrides.requests[overrideKey];
+  const request = override ? mergeRequestOverride(baseRequest, override.patch) : baseRequest;
+  return {
+    request,
+    linkedEnvironments: applyEnvironmentOverrides(
+      snapshot.environments,
+      step.linkedWorkspaceId,
+      synced,
+    ),
+    linkedFolders: snapshot.collections.folders,
+    linkedGlobalAssets: snapshot.globalAssets,
+  };
+}
+
+function mergeRequestOverride(base: ApiRequest, patch: RequestOverridePatch): ApiRequest {
+  const merged: ApiRequest = { ...base };
+  if (patch.name !== undefined) merged.name = patch.name;
+  if (patch.method !== undefined) merged.method = patch.method;
+  if (patch.url !== undefined) merged.url = patch.url;
+  if (patch.headers !== undefined) merged.headers = patch.headers;
+  if (patch.query !== undefined) merged.query = patch.query;
+  if (patch.pathParams !== undefined) merged.pathParams = patch.pathParams;
+  if (patch.cookies !== undefined) merged.cookies = patch.cookies;
+  if (patch.body !== undefined) merged.body = patch.body;
+  if (patch.auth !== undefined) merged.auth = patch.auth;
+  if (patch.contextVars !== undefined) merged.contextVars = patch.contextVars;
+  if (patch.extractions !== undefined) merged.extractions = patch.extractions;
+  if (patch.assertions !== undefined) merged.assertions = patch.assertions;
+  return merged;
+}
+
+function applyEnvironmentOverrides(
+  source: WorkspaceSynced['environments'],
+  linkedWorkspaceId: string,
+  synced: WorkspaceSynced,
+): WorkspaceSynced['environments'] {
+  const overrides = Object.values(synced.linkedOverrides.environmentVars).filter(
+    (override) => override.linkedWorkspaceId === linkedWorkspaceId,
+  );
+  if (overrides.length === 0) return source;
+
+  const items: WorkspaceSynced['environments']['items'] = {};
+  for (const [envName, env] of Object.entries(source.items)) {
+    const envOverrides = overrides.filter((override) => override.envName === envName);
+    if (envOverrides.length === 0) {
+      items[envName] = env;
+      continue;
+    }
+
+    const removed = new Set(
+      envOverrides.filter((override) => override.removed).map((override) => override.varKey),
+    );
+    const replaceMap = new Map<string, (typeof envOverrides)[number]>();
+    for (const override of envOverrides) {
+      if (!override.removed) replaceMap.set(override.varKey, override);
+    }
+    const variables: Environment['variables'] = [];
+    const seenKeys = new Set<string>();
+    for (const variable of env.variables) {
+      if (removed.has(variable.key)) continue;
+      const override = replaceMap.get(variable.key);
+      if (override) {
+        variables.push({
+          key: variable.key,
+          value: override.value ?? variable.value,
+          encrypted: override.encrypted ?? variable.encrypted,
+          ...(override.secretKeyId !== undefined
+            ? { secretKeyId: override.secretKeyId }
+            : variable.secretKeyId !== undefined
+              ? { secretKeyId: variable.secretKeyId }
+              : {}),
+        });
+      } else {
+        variables.push(variable);
+      }
+      seenKeys.add(variable.key);
+    }
+
+    for (const override of envOverrides) {
+      if (override.removed || seenKeys.has(override.varKey)) continue;
+      variables.push({
+        key: override.varKey,
+        value: override.value ?? '',
+        encrypted: override.encrypted ?? false,
+        ...(override.secretKeyId !== undefined ? { secretKeyId: override.secretKeyId } : {}),
+      });
+    }
+    items[envName] = { ...env, variables };
+  }
+  return { ...source, items };
+}
+
 /**
  * Execute every enabled step of `planId` against the workspace. Never throws
  * for HTTP / assertion failures — those land in the returned step results.
@@ -194,7 +330,7 @@ export async function runPlan(
   // on any failed step. Both feed the post-step break below.
   const stopOnAssertion = withAssertions && (plan.stopOnAssertionFailure ?? false);
   const secretsById = opts.secretsById ?? {};
-  const flatEnvs = buildEnvMaps(state.synced, secretsById);
+  const flatEnvs = buildEnvMaps(state.synced, secretsById, state.local);
   const secretsByLabel = buildSecretsByLabel(state.synced, secretsById);
 
   // Env priority for this run: the plan's overlay (or the workspace order),
@@ -249,20 +385,17 @@ export async function runPlan(
 
     if (opts.signal?.aborted) break;
 
-    // Linked-workspace steps need the consumer's cached snapshot + override
-    // merge — the headless runner doesn't replicate that resolution layer.
-    // Surface an explicit failed step rather than skipping it silently.
-    if (step.linkedWorkspaceId) {
+    const lookup = lookupPlanStepRequest(step, state.synced, state.local);
+    const baseRequest = lookup.request;
+    if (!baseRequest) {
       const runId = generateId();
-      const error =
-        'Linked-workspace plan steps are not supported by the headless runner. ' +
-        'Run this plan from the desktop app.';
+      const error = lookup.error ?? 'Request no longer exists in workspace.';
       newRequestRuns.push(orphanRun(runId, step.requestId, error));
       stepRecords.push({ requestRunId: runId, passed: false });
       record({
         stepIndex: i,
         requestId: step.requestId,
-        requestName: '(linked request)',
+        requestName: step.linkedWorkspaceId ? '(linked request)' : '(missing request)',
         requestMethod: '—',
         skipped: false,
         result: null,
@@ -275,35 +408,30 @@ export async function runPlan(
       continue;
     }
 
-    const baseRequest = requests[step.requestId];
-    if (!baseRequest) {
-      const runId = generateId();
-      const error = 'Request no longer exists in workspace.';
-      newRequestRuns.push(orphanRun(runId, step.requestId, error));
-      stepRecords.push({ requestRunId: runId, passed: false });
-      record({
-        stepIndex: i,
-        requestId: step.requestId,
-        requestName: '(missing request)',
-        requestMethod: '—',
-        skipped: false,
-        result: null,
-        assertionResults: [],
-        missingVariables: [],
-        passed: false,
-        error,
-      });
-      if (bail) break;
-      continue;
-    }
+    const resolveSynced: WorkspaceSynced =
+      step.linkedWorkspaceId && lookup.linkedEnvironments
+        ? {
+            ...state.synced,
+            environments: lookup.linkedEnvironments,
+            globalAssets: lookup.linkedGlobalAssets ?? state.synced.globalAssets,
+            collections: {
+              ...state.synced.collections,
+              folders: lookup.linkedFolders ?? {},
+            },
+          }
+        : state.synced;
+    const stepEnvRefs =
+      step.linkedWorkspaceId && plan.envPriorityOrder.length === 0
+        ? (lookup.linkedEnvironments?.priorityOrder ?? envRefs)
+        : envRefs;
 
     const { request: resolved, missing } = resolveRequest(
       baseRequest,
-      state.synced,
+      resolveSynced,
       plan,
-      envRefs,
+      stepEnvRefs,
       globalContext,
-      flatEnvs,
+      step.linkedWorkspaceId ? buildEnvMaps(resolveSynced, secretsById, state.local) : flatEnvs,
       secretsByLabel,
     );
 
@@ -311,9 +439,10 @@ export async function runPlan(
       fetchImpl: opts.fetchImpl,
       signal: opts.signal,
       timeoutMs: opts.timeoutMs,
+      resolveAttachment: opts.resolveAttachment,
       authOptions: {
         onTokenRefreshed: (refreshedAuth) => {
-          tokenRefreshes.set(baseRequest.id, refreshedAuth);
+          if (!step.linkedWorkspaceId) tokenRefreshes.set(baseRequest.id, refreshedAuth);
         },
       },
     });
@@ -343,7 +472,7 @@ export async function runPlan(
 
     // Fold a refreshed token back into `requests` so a later step reusing the
     // same request sees the fresh access token instead of re-refreshing.
-    const refreshed = tokenRefreshes.get(baseRequest.id);
+    const refreshed = step.linkedWorkspaceId ? undefined : tokenRefreshes.get(baseRequest.id);
     if (refreshed) {
       requests = {
         ...requests,
@@ -406,6 +535,7 @@ export async function runPlan(
 function buildEnvMaps(
   synced: WorkspaceSynced,
   secretsById: Record<string, string>,
+  local?: WorkspaceLocal,
 ): Record<string, Record<string, string>> {
   const flat: Record<string, Record<string, string>> = {};
   for (const [name, env] of Object.entries(synced.environments.items)) {
@@ -421,6 +551,25 @@ function buildEnvMaps(
       }
     }
     flat[envPriorityKey({ kind: 'local', name })] = vars;
+  }
+  if (local) {
+    for (const [linkId, snapshot] of Object.entries(local.linkedCollections)) {
+      const overridden = applyEnvironmentOverrides(snapshot.environments, linkId, synced);
+      for (const [envName, env] of Object.entries(overridden.items)) {
+        const vars: Record<string, string> = {};
+        for (const variable of env.variables) {
+          if (!variable.key) continue;
+          if (variable.encrypted) {
+            const supplied = variable.secretKeyId ? secretsById[variable.secretKeyId] : undefined;
+            if (supplied === undefined) continue;
+            vars[variable.key] = supplied;
+          } else {
+            vars[variable.key] = variable.value;
+          }
+        }
+        flat[envPriorityKey({ kind: 'linked', linkedWorkspaceId: linkId, envName })] = vars;
+      }
+    }
   }
   return flat;
 }

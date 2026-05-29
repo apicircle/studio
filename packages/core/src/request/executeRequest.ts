@@ -46,9 +46,9 @@ export interface ExecuteOptions {
   // Hard timeout in ms. Defaults to 30s; null disables.
   timeoutMs?: number | null;
   signal?: AbortSignal;
-  // Resolver for form-data file rows and binary bodies. Wired to the IDB
-  // attachments store on the host side. When omitted, file rows in form-data
-  // are skipped and binary bodies send as null.
+  // Resolver for form-data file rows and binary bodies. When a request
+  // references a file slot and the resolver is missing or returns null, the
+  // send fails loudly instead of silently omitting the file.
   resolveAttachment?: AttachmentResolver;
   /**
    * applyAuth options — `onTokenRefreshed` is the important one for
@@ -132,11 +132,6 @@ export async function executeRequest(
   req: ApiRequest,
   opts: ExecuteOptions = {},
 ): Promise<ExecutionResult> {
-  const built = await buildRequest(req, {
-    resolveAttachment: opts.resolveAttachment,
-    authOptions: opts.authOptions,
-    autoHeaderOverrides: opts.autoHeaderOverrides,
-  });
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
   const timeoutMs = opts.timeoutMs === undefined ? DEFAULT_TIMEOUT_MS : opts.timeoutMs;
 
@@ -146,31 +141,39 @@ export async function executeRequest(
       ? performance.now()
       : Date.now();
 
+  let built: Awaited<ReturnType<typeof buildRequest>> | null = null;
   const controller = new AbortController();
   const externalAbort = () => controller.abort(opts.signal!.reason);
   if (opts.signal) {
     if (opts.signal.aborted) controller.abort(opts.signal.reason);
     else opts.signal.addEventListener('abort', externalAbort, { once: true });
   }
-  const timeoutHandle =
-    timeoutMs === null
-      ? null
-      : setTimeout(
-          () => controller.abort(new Error(`Request timed out after ${timeoutMs}ms`)),
-          timeoutMs,
-        );
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 
   try {
+    built = await buildRequest(req, {
+      resolveAttachment: opts.resolveAttachment,
+      authOptions: opts.authOptions,
+      autoHeaderOverrides: opts.autoHeaderOverrides,
+    });
+    const builtRequest = built;
+    timeoutHandle =
+      timeoutMs === null
+        ? null
+        : setTimeout(
+            () => controller.abort(new Error(`Request timed out after ${timeoutMs}ms`)),
+            timeoutMs,
+          );
     // Manual redirect handling. The browser's default `redirect: 'follow'`
     // preserves `Authorization` / `Cookie` headers across cross-origin
     // redirects — a `302 Location: https://attacker/` from a legitimate
     // host would exfiltrate the bearer/basic credential. We walk the
     // redirect chain ourselves and strip cross-origin credential headers
     // at each hop.
-    let currentUrl = built.url;
-    let currentHeaders: Record<string, string> = { ...built.headers };
-    let currentMethod = built.method;
-    let currentBody: BodyInit | null = built.body;
+    let currentUrl = builtRequest.url;
+    let currentHeaders: Record<string, string> = { ...builtRequest.headers };
+    let currentMethod = builtRequest.method;
+    let currentBody: BodyInit | null = builtRequest.body;
     let response = await fetchImpl(currentUrl, {
       method: currentMethod,
       headers: currentHeaders,
@@ -313,7 +316,7 @@ export async function executeRequest(
       bodyKind,
       url: currentUrl,
       method: currentMethod,
-      authWarnings: built.authWarnings,
+      authWarnings: builtRequest.authWarnings,
       ...(truncated ? { responseTruncated: true } : {}),
     };
   } catch (err) {
@@ -333,9 +336,9 @@ export async function executeRequest(
       error: err instanceof Error ? err.message : String(err),
       // We may have already followed redirects before throwing — report the
       // last URL we tried so the user sees where the error originated.
-      url: built.url,
-      method: built.method,
-      authWarnings: built.authWarnings,
+      url: built?.url ?? req.url,
+      method: built?.method ?? req.method,
+      authWarnings: built?.authWarnings ?? [],
     };
   } finally {
     if (timeoutHandle !== null) clearTimeout(timeoutHandle);

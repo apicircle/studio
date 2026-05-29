@@ -8,14 +8,17 @@ import type {
   FormDataRow,
   GitHubSession,
   HttpMethod,
+  LocalAttachmentCacheEntry,
   LinkedWorkspace,
   MockEndpoint,
   MockResponseBody,
+  MockResponseConfig,
   MockServerSource,
   PanelId,
   PlanRun,
   ReleaseHistory,
   ContextExtraction,
+  GlobalFileAsset,
   GlobalGraphQL,
   GlobalSchema,
   Request as ApiRequest,
@@ -172,10 +175,15 @@ import {
   duplicateMockServer as duplicateMockServerAction,
 } from './mockActions';
 import {
+  addGlobalFileAsset as addGlobalFileAssetAction,
   addGlobalGraphQL as addGlobalGraphQLAction,
   addGlobalSchema as addGlobalSchemaAction,
+  attachmentRefFromGlobalFileAsset,
+  formDataRowFromGlobalFileAsset,
+  removeGlobalFileAsset as removeGlobalFileAssetAction,
   removeGlobalGraphQL as removeGlobalGraphQLAction,
   removeGlobalSchema as removeGlobalSchemaAction,
+  updateGlobalFileAsset as updateGlobalFileAssetAction,
   updateGlobalGraphQL as updateGlobalGraphQLAction,
   updateGlobalSchema as updateGlobalSchemaAction,
 } from './globalAssetsActions';
@@ -217,6 +225,190 @@ const attachmentResolver: AttachmentResolver = async (slotId) => {
   if (!record) return null;
   return { blob: materializeAttachment(record), filename: record.filename };
 };
+
+interface AttachmentSlotRefLike {
+  slotId: string;
+  sha256?: string;
+  filename?: string;
+  mimeType?: string;
+  size?: number;
+  requiredBy: Array<{ requestId: string; requestName: string }>;
+}
+
+export interface AttachmentDownloadPromptItem {
+  slotId: string;
+  sha256?: string;
+  filename: string;
+  mimeType: string;
+  size?: number;
+  source: 'workspace' | 'linked-workspace';
+  linkedWorkspaceId?: string;
+  requiredBy: Array<{ requestId: string; requestName: string }>;
+  localPath?: string;
+}
+
+export interface AttachmentDownloadPromptState {
+  id: string;
+  title: string;
+  detail: string;
+  items: AttachmentDownloadPromptItem[];
+  resolve: (accepted: boolean) => void;
+}
+
+interface ExecutionAttachmentRequestRef {
+  request: ApiRequest;
+  source: AttachmentDownloadPromptItem['source'];
+  linkedWorkspaceId?: string;
+}
+
+function collectAttachmentSlotsFromCollections(
+  collections: WorkspaceSynced['collections'],
+): AttachmentSlotRefLike[] {
+  const seen = new Map<string, AttachmentSlotRefLike>();
+  for (const req of Object.values(collections.requests)) {
+    collectBodyAttachmentSlots(req, req.body, seen);
+  }
+  return [...seen.values()];
+}
+
+function collectBodyAttachmentSlots(
+  request: ApiRequest,
+  body: RequestBody,
+  seen: Map<string, AttachmentSlotRefLike>,
+): void {
+  if (body.type === 'form-data' && body.formRows) {
+    for (const row of body.formRows) {
+      if (row.kind === 'file' && row.slotId && !seen.has(row.slotId)) {
+        seen.set(row.slotId, {
+          slotId: row.slotId,
+          sha256: row.sha256,
+          filename: row.filename,
+          mimeType: row.mimeType,
+          size: row.size,
+          requiredBy: [{ requestId: request.id, requestName: request.name }],
+        });
+      } else if (row.kind === 'file' && row.slotId) {
+        addAttachmentRequiredBy(seen.get(row.slotId), request);
+      }
+    }
+  }
+  if (body.type === 'binary') {
+    const ref = body.attachment;
+    if (ref?.slotId && !seen.has(ref.slotId)) {
+      seen.set(ref.slotId, {
+        slotId: ref.slotId,
+        sha256: ref.sha256,
+        filename: ref.filename,
+        mimeType: ref.mimeType,
+        size: ref.size,
+        requiredBy: [{ requestId: request.id, requestName: request.name }],
+      });
+    } else if (ref?.slotId) {
+      addAttachmentRequiredBy(seen.get(ref.slotId), request);
+    }
+  }
+}
+
+function collectAttachmentSlotsFromRequest(request: ApiRequest): AttachmentSlotRefLike[] {
+  const seen = new Map<string, AttachmentSlotRefLike>();
+  collectBodyAttachmentSlots(request, request.body, seen);
+  return [...seen.values()];
+}
+
+function collectAttachmentSlotsFromGlobalAssets(
+  globalAssets: WorkspaceSynced['globalAssets'] | undefined,
+): AttachmentSlotRefLike[] {
+  return Object.values(globalAssets?.files ?? {}).map((file) => ({
+    slotId: file.slotId,
+    sha256: file.sha256,
+    filename: file.filename,
+    mimeType: file.mimeType,
+    size: file.size,
+    requiredBy: [],
+  }));
+}
+
+function collectAttachmentSlotsFromMockServers(
+  mockServers: WorkspaceSynced['mockServers'] | undefined,
+): AttachmentSlotRefLike[] {
+  const seen = new Map<string, AttachmentSlotRefLike>();
+  for (const server of Object.values(mockServers ?? {})) {
+    for (const endpoint of server.endpoints) {
+      collectMockResponseAttachmentSlots(endpoint.defaultResponse, endpoint.name, seen);
+      for (const rule of endpoint.requestValidation) {
+        collectMockResponseAttachmentSlots(rule.failResponse, `${endpoint.name} validation`, seen);
+      }
+      for (const rule of endpoint.responseRules) {
+        collectMockResponseAttachmentSlots(rule.response, `${endpoint.name} rule`, seen);
+      }
+    }
+  }
+  return [...seen.values()];
+}
+
+function collectMockResponseAttachmentSlots(
+  response: MockResponseConfig,
+  label: string,
+  seen: Map<string, AttachmentSlotRefLike>,
+): void {
+  const body = response.body;
+  if (body.type !== 'binary') return;
+  const ref = body.attachment;
+  if (!ref?.slotId) return;
+  const requiredBy = {
+    requestId: `mock:${label}:${ref.slotId}`,
+    requestName: `Mock response: ${label}`,
+  };
+  if (!seen.has(ref.slotId)) {
+    seen.set(ref.slotId, {
+      slotId: ref.slotId,
+      sha256: ref.sha256,
+      filename: ref.filename,
+      mimeType: ref.mimeType,
+      size: ref.size,
+      requiredBy: [requiredBy],
+    });
+    return;
+  }
+  const existing = seen.get(ref.slotId);
+  if (
+    existing &&
+    !existing.requiredBy.some((item) => item.requestName === requiredBy.requestName)
+  ) {
+    existing.requiredBy.push(requiredBy);
+  }
+}
+
+function dedupeAttachmentSlots(slots: AttachmentSlotRefLike[]): AttachmentSlotRefLike[] {
+  const seen = new Map<string, AttachmentSlotRefLike>();
+  for (const slot of slots) {
+    const existing = seen.get(slot.slotId);
+    if (!existing) {
+      seen.set(slot.slotId, { ...slot, requiredBy: [...slot.requiredBy] });
+      continue;
+    }
+    for (const required of slot.requiredBy) {
+      if (!existing.requiredBy.some((item) => item.requestId === required.requestId)) {
+        existing.requiredBy.push(required);
+      }
+    }
+  }
+  return [...seen.values()];
+}
+
+function addAttachmentRequiredBy(
+  slot: AttachmentSlotRefLike | undefined,
+  request: ApiRequest,
+): void {
+  if (!slot) return;
+  if (!slot.requiredBy.some((item) => item.requestId === request.id)) {
+    slot.requiredBy.push({ requestId: request.id, requestName: request.name });
+  }
+}
+
+function isGlobalFileSlot(synced: WorkspaceSynced, slotId: string): boolean {
+  return Object.values(synced.globalAssets.files ?? {}).some((file) => file.slotId === slotId);
+}
 
 const PANEL_STORAGE_KEY = 'apicircle-v2:active-panel';
 const VALID_PANELS: PanelId[] = [
@@ -516,6 +708,12 @@ type WorkspaceStore = {
    */
   missingScopePrompt: string[] | null;
   /**
+   * Blocking execution prompt shown when a request/plan references file
+   * attachments whose bytes are not cached on this machine yet.
+   */
+  attachmentDownloadPrompt: AttachmentDownloadPromptState | null;
+  resolveAttachmentDownloadPrompt: (accepted: boolean) => void;
+  /**
    * Surfaced after `createWorkingBranch` when the new branch already has
    * a `workspace.json` (i.e. the repo was pre-populated). The banner in
    * WorkspacePanel uses this to offer a "Pull first" path so the user
@@ -741,6 +939,12 @@ type WorkspaceStore = {
     endpointId: string,
     file: File,
   ) => Promise<AttachmentRef>;
+  /** Point a mock endpoint binary response at a reusable Global Assets file. */
+  setMockResponseGlobalFileAsset: (
+    serverId: string,
+    endpointId: string,
+    fileAssetId: string | null,
+  ) => Promise<void>;
   /** Drop the attachment for a mock endpoint's response body. */
   detachMockResponseFile: (serverId: string, endpointId: string) => Promise<void>;
 
@@ -861,6 +1065,21 @@ type WorkspaceStore = {
     patch: Partial<Omit<GlobalGraphQL, 'id' | 'createdAt'>>,
   ) => void;
   removeGlobalGraphQL: (id: string) => void;
+  addGlobalFileAsset: (
+    file: File,
+    init?: { name?: string; description?: string },
+  ) => Promise<string>;
+  updateGlobalFileAsset: (
+    id: string,
+    patch: Partial<Omit<GlobalFileAsset, 'id' | 'createdAt' | 'slotId' | 'sha256'>>,
+  ) => void;
+  removeGlobalFileAsset: (id: string) => Promise<void>;
+  setFormRowGlobalFileAsset: (
+    requestId: string,
+    rowIndex: number,
+    fileAssetId: string | null,
+  ) => Promise<void>;
+  setBinaryGlobalFileAsset: (requestId: string, fileAssetId: string | null) => Promise<void>;
 
   /**
    * Open/close the Import modal. Driven from sidebar kebab menus (Editor and
@@ -1710,6 +1929,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   activeLinkedRequest: null,
   pendingRefresh: null,
   missingScopePrompt: null,
+  attachmentDownloadPrompt: null,
+  resolveAttachmentDownloadPrompt: (accepted) => {
+    const prompt = get().attachmentDownloadPrompt;
+    if (!prompt) return;
+    set({ attachmentDownloadPrompt: null });
+    prompt.resolve(accepted);
+  },
   firstPullPrompt: null,
   acknowledgeFirstPull: () => set({ firstPullPrompt: null }),
   activePlanId: null,
@@ -2399,7 +2625,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const endpoint = server.endpoints.find((e) => e.id === endpointId);
     if (!endpoint) throw new Error(`Endpoint ${endpointId} not found`);
     const previousSlot =
-      endpoint.defaultResponse.body.type === 'binary'
+      endpoint.defaultResponse.body.type === 'binary' &&
+      !endpoint.defaultResponse.body.attachment?.globalFileAssetId
         ? (endpoint.defaultResponse.body.attachment?.slotId ?? null)
         : null;
     const slotId = generateId();
@@ -2424,6 +2651,29 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     return ref;
   },
 
+  setMockResponseGlobalFileAsset: async (serverId, endpointId, fileAssetId) => {
+    const synced = get().synced;
+    if (!synced) throw new Error('Workspace not ready');
+    const server = synced.mockServers[serverId];
+    if (!server) throw new Error(`Mock server ${serverId} not found`);
+    const endpoint = server.endpoints.find((e) => e.id === endpointId);
+    if (!endpoint) throw new Error(`Endpoint ${endpointId} not found`);
+    const previousSlot =
+      endpoint.defaultResponse.body.type === 'binary' &&
+      !endpoint.defaultResponse.body.attachment?.globalFileAssetId
+        ? (endpoint.defaultResponse.body.attachment?.slotId ?? null)
+        : null;
+    const asset = fileAssetId ? synced.globalAssets.files?.[fileAssetId] : null;
+    const nextBody: MockResponseBody = asset
+      ? { type: 'binary', content: '', attachment: attachmentRefFromGlobalFileAsset(asset) }
+      : { type: 'binary', content: '' };
+    get().updateMockEndpoint(serverId, endpointId, {
+      defaultResponse: { ...endpoint.defaultResponse, body: nextBody },
+    });
+    if (previousSlot && !isGlobalFileSlot(synced, previousSlot))
+      await deleteAttachment(previousSlot);
+  },
+
   detachMockResponseFile: async (serverId, endpointId) => {
     const synced = get().synced;
     if (!synced) return;
@@ -2431,7 +2681,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!server) return;
     const endpoint = server.endpoints.find((e) => e.id === endpointId);
     if (!endpoint || endpoint.defaultResponse.body.type !== 'binary') return;
-    const previousSlot = endpoint.defaultResponse.body.attachment?.slotId ?? null;
+    const previousSlot = endpoint.defaultResponse.body.attachment?.globalFileAssetId
+      ? null
+      : (endpoint.defaultResponse.body.attachment?.slotId ?? null);
     const nextBody: MockResponseBody = {
       type: 'binary',
       content: '',
@@ -2562,7 +2814,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const original = synced.collections.requests[rid];
       if (original) slotIds.push(...collectRequestSlotIds(original));
     }
-    if (slotIds.length > 0) void deleteManyAttachments(slotIds);
+    const ownedSlotIds = slotIds.filter((slotId) => !isGlobalFileSlot(synced, slotId));
+    if (ownedSlotIds.length > 0) void deleteManyAttachments(ownedSlotIds);
     const activeId = get().local?.ui.activeRequestId ?? null;
     if (activeId && deletedRequestIds.includes(activeId)) {
       get().setActiveRequestId(null);
@@ -2578,7 +2831,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set({ synced: next });
     queueSaveSynced(next);
     if (existing) {
-      const slotIds = collectRequestSlotIds(existing);
+      const slotIds = collectRequestSlotIds(existing).filter(
+        (slotId) => !isGlobalFileSlot(synced, slotId),
+      );
       if (slotIds.length > 0) void deleteManyAttachments(slotIds);
     }
     if (get().local?.ui.activeRequestId === id) get().setActiveRequestId(null);
@@ -2754,6 +3009,69 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   updateGlobalGraphQL: (id, patch) =>
     commitSynced(set, get, (s) => updateGlobalGraphQLAction(s, id, patch)),
   removeGlobalGraphQL: (id) => commitSynced(set, get, (s) => removeGlobalGraphQLAction(s, id)),
+  addGlobalFileAsset: async (file, init) => {
+    enforceAttachmentSize(file);
+    const synced = get().synced;
+    if (!synced) throw new Error('Workspace not ready');
+    const slotId = generateId();
+    const record = await createAttachmentFromFile(file, slotId);
+    await putAttachment(record);
+    const result = addGlobalFileAssetAction(synced, {
+      name: init?.name ?? record.filename,
+      description: init?.description,
+      slotId,
+      filename: record.filename,
+      size: record.size,
+      mimeType: record.mimeType,
+      sha256: record.sha256,
+    });
+    commitSynced(set, get, () => result.synced);
+    return result.file.id;
+  },
+  updateGlobalFileAsset: (id, patch) =>
+    commitSynced(set, get, (s) => updateGlobalFileAssetAction(s, id, patch)),
+  removeGlobalFileAsset: async (id) => {
+    const synced = get().synced;
+    const asset = synced?.globalAssets.files?.[id];
+    if (!asset) return;
+    commitSynced(set, get, (s) => removeGlobalFileAssetAction(s, id));
+    await deleteAttachment(asset.slotId);
+  },
+  setFormRowGlobalFileAsset: async (requestId, rowIndex, fileAssetId) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const existing = synced.collections.requests[requestId];
+    if (!existing || existing.body.type !== 'form-data' || !existing.body.formRows) return;
+    const oldRow = existing.body.formRows[rowIndex];
+    if (!oldRow || oldRow.kind !== 'file') return;
+    const previousSlot = oldRow.globalFileAssetId ? null : oldRow.slotId;
+    const asset = fileAssetId ? synced.globalAssets.files?.[fileAssetId] : null;
+    const nextRow: FormDataRow = asset
+      ? formDataRowFromGlobalFileAsset(oldRow, asset)
+      : { kind: 'file', key: oldRow.key, enabled: oldRow.enabled, slotId: null };
+    const nextRows = existing.body.formRows.map((r, i) => (i === rowIndex ? nextRow : r));
+    const nextBody: RequestBody = { ...existing.body, formRows: nextRows };
+    commitSynced(set, get, (s) => setRequestBodyAction(s, requestId, nextBody));
+    if (previousSlot && !isGlobalFileSlot(synced, previousSlot))
+      await deleteAttachment(previousSlot);
+  },
+  setBinaryGlobalFileAsset: async (requestId, fileAssetId) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const existing = synced.collections.requests[requestId];
+    if (!existing) return;
+    const previousSlot =
+      existing.body.type === 'binary' && !existing.body.attachment?.globalFileAssetId
+        ? (existing.body.attachment?.slotId ?? null)
+        : null;
+    const asset = fileAssetId ? synced.globalAssets.files?.[fileAssetId] : null;
+    const nextBody: RequestBody = asset
+      ? { type: 'binary', content: '', attachment: attachmentRefFromGlobalFileAsset(asset) }
+      : { type: 'binary', content: '' };
+    commitSynced(set, get, (s) => setRequestBodyAction(s, requestId, nextBody));
+    if (previousSlot && !isGlobalFileSlot(synced, previousSlot))
+      await deleteAttachment(previousSlot);
+  },
   openImportModal: () => set({ importModalOpen: true }),
   closeImportModal: () => set({ importModalOpen: false }),
   setEditorPendingCreate: (value) => set({ editorPendingCreate: value }),
@@ -2995,7 +3313,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const before =
       existing.body.type === 'form-data' && existing.body.formRows ? existing.body.formRows : [];
     const beforeSlots = new Set(
-      before.flatMap((r) => (r.kind === 'file' && r.slotId ? [r.slotId] : [])),
+      before.flatMap((r) =>
+        r.kind === 'file' && r.slotId && !r.globalFileAssetId ? [r.slotId] : [],
+      ),
     );
     const afterSlots = new Set(
       rows.flatMap((r) => (r.kind === 'file' && r.slotId ? [r.slotId] : [])),
@@ -3003,7 +3323,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const orphaned = [...beforeSlots].filter((s) => !afterSlots.has(s));
     const nextBody: RequestBody = { ...existing.body, type: 'form-data', formRows: rows };
     commitSynced(set, get, (s) => setRequestBodyAction(s, id, nextBody));
-    if (orphaned.length > 0) void deleteManyAttachments(orphaned);
+    const ownedOrphaned = orphaned.filter((slotId) => !isGlobalFileSlot(synced, slotId));
+    if (ownedOrphaned.length > 0) void deleteManyAttachments(ownedOrphaned);
   },
 
   attachFormFile: async (requestId, rowIndex, file) => {
@@ -3014,7 +3335,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!existing || existing.body.type !== 'form-data' || !existing.body.formRows) return;
     const oldRow = existing.body.formRows[rowIndex];
     if (!oldRow) return;
-    const previousSlot = oldRow.kind === 'file' && oldRow.slotId ? oldRow.slotId : null;
+    const previousSlot =
+      oldRow.kind === 'file' && oldRow.slotId && !oldRow.globalFileAssetId ? oldRow.slotId : null;
 
     const slotId = generateId();
     const record = await createAttachmentFromFile(file, slotId);
@@ -3033,7 +3355,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const nextRows = existing.body.formRows.map((r, i) => (i === rowIndex ? nextRow : r));
     const nextBody: RequestBody = { ...existing.body, formRows: nextRows };
     commitSynced(set, get, (s) => setRequestBodyAction(s, requestId, nextBody));
-    if (previousSlot) await deleteAttachment(previousSlot);
+    if (previousSlot && !isGlobalFileSlot(synced, previousSlot))
+      await deleteAttachment(previousSlot);
   },
 
   detachFormFile: async (requestId, rowIndex) => {
@@ -3043,7 +3366,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!existing || existing.body.type !== 'form-data' || !existing.body.formRows) return;
     const oldRow = existing.body.formRows[rowIndex];
     if (!oldRow || oldRow.kind !== 'file') return;
-    const previousSlot = oldRow.slotId;
+    const previousSlot = oldRow.globalFileAssetId ? null : oldRow.slotId;
 
     const nextRow: FormDataRow = {
       kind: 'file',
@@ -3054,7 +3377,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const nextRows = existing.body.formRows.map((r, i) => (i === rowIndex ? nextRow : r));
     const nextBody: RequestBody = { ...existing.body, formRows: nextRows };
     commitSynced(set, get, (s) => setRequestBodyAction(s, requestId, nextBody));
-    if (previousSlot) await deleteAttachment(previousSlot);
+    if (previousSlot && !isGlobalFileSlot(synced, previousSlot))
+      await deleteAttachment(previousSlot);
   },
 
   attachBinaryFile: async (requestId, file) => {
@@ -3064,7 +3388,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const existing = synced.collections.requests[requestId];
     if (!existing) return;
     const previousSlot =
-      existing.body.type === 'binary' ? (existing.body.attachment?.slotId ?? null) : null;
+      existing.body.type === 'binary' && !existing.body.attachment?.globalFileAssetId
+        ? (existing.body.attachment?.slotId ?? null)
+        : null;
 
     const slotId = generateId();
     const record = await createAttachmentFromFile(file, slotId);
@@ -3079,7 +3405,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     };
     const nextBody: RequestBody = { type: 'binary', content: '', attachment: ref };
     commitSynced(set, get, (s) => setRequestBodyAction(s, requestId, nextBody));
-    if (previousSlot) await deleteAttachment(previousSlot);
+    if (previousSlot && !isGlobalFileSlot(synced, previousSlot))
+      await deleteAttachment(previousSlot);
   },
 
   detachBinaryFile: async (requestId) => {
@@ -3087,11 +3414,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!synced) return;
     const existing = synced.collections.requests[requestId];
     if (!existing || existing.body.type !== 'binary') return;
-    const previousSlot = existing.body.attachment?.slotId ?? null;
+    const previousSlot = existing.body.attachment?.globalFileAssetId
+      ? null
+      : (existing.body.attachment?.slotId ?? null);
 
     const nextBody: RequestBody = { type: 'binary', content: '' };
     commitSynced(set, get, (s) => setRequestBodyAction(s, requestId, nextBody));
-    if (previousSlot) await deleteAttachment(previousSlot);
+    if (previousSlot && !isGlobalFileSlot(synced, previousSlot))
+      await deleteAttachment(previousSlot);
   },
 
   // --- environments ------------------------------------------------------
@@ -3884,7 +4214,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         linkedWorkspaces: {},
         linkedOverrides: { requests: {}, environmentVars: {} },
         releases: { self: null, perLink: {} },
-        globalAssets: { schemas: {}, graphql: {} },
+        globalAssets: { schemas: {}, graphql: {}, files: {} },
         mockServers: {},
         secretKeys: {},
         meta: synced.meta,
@@ -3978,6 +4308,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     for (const slot of slots) {
       const record = await getAttachment(slot.slotId);
       if (!record) continue;
+      const actualSha = await sha256HexBytes(record.bytes);
+      if (slot.sha256 && actualSha !== slot.sha256) {
+        throw new Error(
+          `Attachment ${slot.filename ?? slot.slotId} failed checksum verification; push aborted.`,
+        );
+      }
       const blob = await client.createBlob(token, owner, name, {
         content: bytesToBase64(record.bytes),
         encoding: 'base64',
@@ -4850,6 +5186,25 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const plan = synced.executionPlans?.[planId];
     if (!plan) throw new Error(`Plan ${planId} not found`);
 
+    const executionRequests: ExecutionAttachmentRequestRef[] = [];
+    for (const step of plan.steps) {
+      if (step.enabled === false) continue;
+      const lookup = lookupPlanStepRequest(step, synced, local);
+      if (!lookup.request) continue;
+      executionRequests.push({
+        request: lookup.request,
+        source: step.linkedWorkspaceId ? 'linked-workspace' : 'workspace',
+        ...(step.linkedWorkspaceId ? { linkedWorkspaceId: step.linkedWorkspaceId } : {}),
+      });
+    }
+    const attachmentsReady = await ensureExecutionAttachmentsReady(set, get, {
+      title: 'Download attachments before running this plan?',
+      detail:
+        'This plan includes requests that need file assets not available on this machine. Download them now to continue the run, or cancel execution.',
+      requests: executionRequests,
+    });
+    if (!attachmentsReady) throw new Error('Execution cancelled.');
+
     // Concurrent-run guard: refuse to start a second run of the same
     // plan while the first is still in flight. The UI surfaces this as
     // a toast ("Plan already running"); we don't queue.
@@ -4949,6 +5304,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
             ? {
                 ...synced,
                 environments: lookup.linkedEnvironments,
+                globalAssets: lookup.linkedGlobalAssets ?? synced.globalAssets,
                 collections: {
                   ...synced.collections,
                   folders: lookup.linkedFolders ?? {},
@@ -5047,35 +5403,64 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const synced = get().synced;
     if (!local || !synced) throw new Error('Workspace not ready');
     const branch = local.workingBranch;
-    if (!branch) throw new Error('Create a working branch before syncing attachments');
 
-    const slots = collectAttachmentSlots(synced);
-    if (slots.length === 0) return { fetched: 0, alreadyPresent: 0, failed: 0 };
-
-    const token = await decryptSessionToken(local);
+    const workspaceToken = await tryDecryptSessionToken(local);
     const client = new GitHubClient();
     let fetched = 0;
     let alreadyPresent = 0;
     let failed = 0;
+    const cacheUpdates: Record<string, LocalAttachmentCacheEntry> = {};
 
-    for (const slot of slots) {
+    const syncSlot = async (
+      slot: AttachmentSlotRefLike,
+      source: {
+        token: string;
+        owner: string;
+        name: string;
+        ref: string;
+        attachmentSource: 'workspace' | 'linked-workspace';
+        linkedWorkspaceId?: string;
+      },
+    ): Promise<void> => {
+      const markCached = (size: number): void => {
+        cacheUpdates[slot.slotId] = {
+          slotId: slot.slotId,
+          filename: slot.filename ?? slot.slotId,
+          mimeType: slot.mimeType ?? 'application/octet-stream',
+          size,
+          sha256: slot.sha256,
+          localPath: `indexeddb://apicircle-attachments/${encodeURIComponent(slot.slotId)}`,
+          storage: 'indexeddb',
+          source: source.attachmentSource,
+          ...(source.linkedWorkspaceId ? { linkedWorkspaceId: source.linkedWorkspaceId } : {}),
+          requiredBy: slot.requiredBy,
+          downloadedAt: new Date().toISOString(),
+        };
+      };
       // Skip when local already has bytes whose sha256 matches the synced ref.
       const existing = await getAttachment(slot.slotId);
-      if (existing && existing.sha256 === slot.sha256) {
+      if (existing && (!slot.sha256 || (await sha256HexBytes(existing.bytes)) === slot.sha256)) {
         alreadyPresent++;
-        continue;
+        markCached(existing.size);
+        return;
       }
       try {
         const file = await client.getBinaryContents(
-          token,
-          branch.repoOwner,
-          branch.repoName,
+          source.token,
+          source.owner,
+          source.name,
           `.apicircle/attachments/${slot.slotId}`,
-          branch.name,
+          source.ref,
         );
         if (!file) {
           failed++;
-          continue;
+          return;
+        }
+        const actualSha = await sha256HexBytes(file.bytes);
+        if (slot.sha256 && actualSha !== slot.sha256) {
+          throw new Error(
+            `Attachment ${slot.filename ?? slot.slotId} failed checksum verification.`,
+          );
         }
         await putAttachment({
           slotId: slot.slotId,
@@ -5084,13 +5469,65 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           size: file.bytes.length,
           // Trust the recorded sha256 for now; mismatch detection is a future
           // tightening (plan §7.6 mentions "surfaces tampering and corruption").
-          sha256: slot.sha256 ?? (await sha256HexBytes(file.bytes)),
+          sha256: slot.sha256 ?? actualSha,
           savedAt: new Date().toISOString(),
           bytes: file.bytes,
         });
+        markCached(file.bytes.length);
         fetched++;
       } catch {
         failed++;
+      }
+    };
+
+    const localSlots = dedupeAttachmentSlots([
+      ...collectAttachmentSlotsFromCollections(synced.collections),
+      ...collectAttachmentSlotsFromMockServers(synced.mockServers),
+      ...collectAttachmentSlotsFromGlobalAssets(synced.globalAssets),
+    ]);
+    if (localSlots.length > 0) {
+      if (!branch) throw new Error('Create a working branch before syncing workspace attachments');
+      if (!workspaceToken) throw new Error('No GitHub session - connect a PAT first');
+      for (const slot of localSlots) {
+        await syncSlot(slot, {
+          token: workspaceToken,
+          owner: branch.repoOwner,
+          name: branch.repoName,
+          ref: branch.name,
+          attachmentSource: 'workspace',
+        });
+      }
+    }
+
+    for (const [linkId, snapshot] of Object.entries(local.linkedCollections)) {
+      const link = synced.linkedWorkspaces[linkId];
+      if (!link) continue;
+      const [owner, name] = link.source.repoFullName.split('/', 2);
+      const linkToken = await decryptLinkSessionToken(local, link);
+      const slots = dedupeAttachmentSlots([
+        ...collectAttachmentSlotsFromCollections(snapshot.collections),
+        ...collectAttachmentSlotsFromGlobalAssets(snapshot.globalAssets),
+      ]);
+      for (const slot of slots) {
+        await syncSlot(slot, {
+          token: linkToken,
+          owner,
+          name,
+          ref: link.source.branch,
+          attachmentSource: 'linked-workspace',
+          linkedWorkspaceId: linkId,
+        });
+      }
+    }
+    if (Object.keys(cacheUpdates).length > 0) {
+      const liveLocal = get().local;
+      if (liveLocal) {
+        const next: WorkspaceLocal = {
+          ...liveLocal,
+          attachmentCache: { ...(liveLocal.attachmentCache ?? {}), ...cacheUpdates },
+        };
+        set({ local: next });
+        queueSaveLocal(next);
       }
     }
     return { fetched, alreadyPresent, failed };
@@ -5467,12 +5904,27 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         ? {
             ...synced,
             environments: lookup.linkedEnvironments,
+            globalAssets: lookup.linkedGlobalAssets ?? synced.globalAssets,
             collections: {
               ...synced.collections,
               folders: lookup.linkedFolders,
             },
           }
         : synced;
+
+    const attachmentsReady = await ensureExecutionAttachmentsReady(set, get, {
+      title: 'Download attachment before sending this linked request?',
+      detail:
+        'This linked request needs file assets from the source workspace that are not available on this machine. Download them now to continue, or cancel execution.',
+      requests: [
+        {
+          request,
+          source: 'linked-workspace',
+          linkedWorkspaceId: active.linkedWorkspaceId,
+        },
+      ],
+    });
+    if (!attachmentsReady) return;
 
     // Register an AbortController under both the linked itemId AND the
     // source request.id so the EditorPanel's Cancel button (which keys by
@@ -5547,6 +5999,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!id || !synced) return;
     const request = synced.collections.requests[id];
     if (!request) return;
+
+    const attachmentsReady = await ensureExecutionAttachmentsReady(set, get, {
+      title: 'Download attachment before sending this request?',
+      detail:
+        'This request needs file assets that are not available on this machine. Download them now to continue, or cancel execution.',
+      requests: [{ request, source: 'workspace' }],
+    });
+    if (!attachmentsReady) return;
 
     // Allocate an AbortController and register it before kicking off
     // resolveRequest. cancelExecuteRequest looks the controller up by
@@ -5658,6 +6118,19 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
             collections: { ...synced.collections, folders: lookup.linkedFolders ?? {} },
           }
         : synced;
+    const attachmentsReady = await ensureExecutionAttachmentsReady(set, get, {
+      title: 'Download attachment before retrying this step?',
+      detail:
+        'This plan step needs file assets that are not available on this machine. Download them now to retry the step, or cancel execution.',
+      requests: [
+        {
+          request,
+          source: step.linkedWorkspaceId ? 'linked-workspace' : 'workspace',
+          ...(step.linkedWorkspaceId ? { linkedWorkspaceId: step.linkedWorkspaceId } : {}),
+        },
+      ],
+    });
+    if (!attachmentsReady) return;
     const resolved = await resolveRequest(request, resolveSynced, get().local, planScope);
     const result = await coreExecuteRequest(resolved, { resolveAttachment: attachmentResolver });
     const assertionResults = runAssertions(request.assertions, result);
@@ -5706,6 +6179,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // changes. Surface as null; UI disables the button.
     if (!request) return null;
 
+    const attachmentsReady = await ensureExecutionAttachmentsReady(set, get, {
+      title: 'Download attachment before replaying this request?',
+      detail:
+        'This replay needs file assets that are not available on this machine. Download them now to continue, or cancel execution.',
+      requests: [{ request, source: 'workspace' }],
+    });
+    if (!attachmentsReady) return null;
+
     set((s) => ({ isExecuting: { ...s.isExecuting, [request.id]: true } }));
     try {
       const resolved = await resolveRequest(request, synced, get().local);
@@ -5751,6 +6232,105 @@ type SetState = (
   partial: Partial<WorkspaceStore> | ((state: WorkspaceStore) => Partial<WorkspaceStore>),
 ) => void;
 type GetState = () => WorkspaceStore;
+
+async function collectMissingExecutionAttachments(
+  get: GetState,
+  refs: readonly ExecutionAttachmentRequestRef[],
+): Promise<AttachmentDownloadPromptItem[]> {
+  const cache = get().local?.attachmentCache ?? {};
+  const items = new Map<string, AttachmentDownloadPromptItem>();
+
+  for (const ref of refs) {
+    for (const slot of collectAttachmentSlotsFromRequest(ref.request)) {
+      const existing = await getAttachment(slot.slotId);
+      if (existing && (!slot.sha256 || (await sha256HexBytes(existing.bytes)) === slot.sha256)) {
+        continue;
+      }
+
+      const key = `${ref.source}:${ref.linkedWorkspaceId ?? ''}:${slot.slotId}`;
+      const cached = cache[slot.slotId];
+      const existingItem = items.get(key);
+      if (existingItem) {
+        for (const required of slot.requiredBy) {
+          if (!existingItem.requiredBy.some((item) => item.requestId === required.requestId)) {
+            existingItem.requiredBy.push(required);
+          }
+        }
+        continue;
+      }
+
+      items.set(key, {
+        slotId: slot.slotId,
+        sha256: slot.sha256,
+        filename: slot.filename ?? slot.slotId,
+        mimeType: slot.mimeType ?? 'application/octet-stream',
+        size: slot.size,
+        source: ref.source,
+        ...(ref.linkedWorkspaceId ? { linkedWorkspaceId: ref.linkedWorkspaceId } : {}),
+        requiredBy: [...slot.requiredBy],
+        ...(cached?.localPath ? { localPath: cached.localPath } : {}),
+      });
+    }
+  }
+
+  return [...items.values()];
+}
+
+function promptForAttachmentDownload(
+  set: SetState,
+  get: GetState,
+  args: {
+    title: string;
+    detail: string;
+    items: AttachmentDownloadPromptItem[];
+  },
+): Promise<boolean> {
+  if (args.items.length === 0) return Promise.resolve(true);
+  if (get().attachmentDownloadPrompt) return Promise.resolve(false);
+
+  return new Promise((resolve) => {
+    set({
+      attachmentDownloadPrompt: {
+        id: generateId(),
+        title: args.title,
+        detail: args.detail,
+        items: args.items,
+        resolve,
+      },
+    });
+  });
+}
+
+async function ensureExecutionAttachmentsReady(
+  set: SetState,
+  get: GetState,
+  args: {
+    title: string;
+    detail: string;
+    requests: readonly ExecutionAttachmentRequestRef[];
+  },
+): Promise<boolean> {
+  const missing = await collectMissingExecutionAttachments(get, args.requests);
+  if (missing.length === 0) return true;
+
+  const accepted = await promptForAttachmentDownload(set, get, {
+    title: args.title,
+    detail: args.detail,
+    items: missing,
+  });
+  if (!accepted) return false;
+
+  const remaining = await collectMissingExecutionAttachments(get, args.requests);
+  if (remaining.length === 0) return true;
+
+  get().pushToast({
+    tone: 'error',
+    title: 'Attachments still missing',
+    detail:
+      'Download did not complete for every file required by this execution. The request was not sent.',
+  });
+  return false;
+}
 
 /**
  * Decrypt the active GitHub PAT via the master key. Throws when no session
@@ -5895,6 +6475,8 @@ async function doLinkWorkspace(
       canCreatePullRequests: null,
     };
     token = provided;
+  } else if (args.kind === 'public') {
+    token = (await tryDecryptSessionToken(local)) ?? '';
   } else {
     token = await decryptSessionToken(local);
   }
@@ -6030,6 +6612,7 @@ function lookupPlanStepRequest(
   // so that requests with `auth.type === 'inherit'` can walk up the source's
   // folder chain (not the consumer's, which doesn't know about the source).
   linkedFolders?: WorkspaceSynced['collections']['folders'];
+  linkedGlobalAssets?: WorkspaceSynced['globalAssets'];
   error?: string;
 } {
   if (!step.linkedWorkspaceId) {
@@ -6072,6 +6655,7 @@ function lookupPlanStepRequest(
       synced,
     ),
     linkedFolders: snapshot.collections.folders,
+    linkedGlobalAssets: snapshot.globalAssets,
   };
 }
 
@@ -6183,6 +6767,7 @@ function buildLinkedSnapshot(
     // render slot labels instead of raw ids. Falls through to undefined
     // when the source doesn't declare any.
     ...(parsed.secretKeys ? { secretKeys: parsed.secretKeys } : {}),
+    ...(parsed.globalAssets ? { globalAssets: parsed.globalAssets } : {}),
   };
 }
 
@@ -6208,6 +6793,7 @@ interface LinkedWorkspaceProbe {
    * user to scroll down on the link card after the fact.
    */
   secretKeys?: Record<string, SecretKeyMeta>;
+  globalAssets?: WorkspaceSynced['globalAssets'];
 }
 // Forbidden JSON keys we drop at parse time — see `parseWorkspaceJson` in
 // @apicircle/core for the full rationale. Mirrored here because the linked-
@@ -6254,7 +6840,12 @@ function parseLinkedWorkspaceJson(text: string): LinkedWorkspaceProbe {
     typeof secretKeysValue === 'object' && secretKeysValue !== null
       ? (secretKeysValue as Record<string, SecretKeyMeta>)
       : undefined;
-  return { releases, collections, environments, secretKeys };
+  const globalAssetsValue = obj.globalAssets;
+  const globalAssets =
+    typeof globalAssetsValue === 'object' && globalAssetsValue !== null
+      ? (globalAssetsValue as WorkspaceSynced['globalAssets'])
+      : undefined;
+  return { releases, collections, environments, secretKeys, globalAssets };
 }
 
 /**
@@ -6345,6 +6936,7 @@ async function decryptLinkSessionToken(
   const mode = link.source.sessionMode ?? 'workspace';
   if (mode === 'workspace') {
     if (!local.sessions.github.workspace) {
+      if (link.kind === 'public') return '';
       throw new Error(
         `Link "${link.name}" uses the workspace session — connect a PAT in Sessions to fetch it.`,
       );

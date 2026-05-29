@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowDown,
   ChevronDown,
+  Download,
+  FileArchive,
   GitBranch,
   Globe,
   Info,
@@ -19,8 +21,10 @@ import {
 } from 'lucide-react';
 import { type GitHubBranch, type GitHubRepo, GitHubError, MissingScopeError } from '@apicircle/git';
 import { sortVersionsDesc } from '@apicircle/core';
-import type { LinkedWorkspace, SecretKeyMeta } from '@apicircle/shared';
+import { formatBytes } from '@apicircle/shared';
+import type { LinkedSnapshot, LinkedWorkspace, SecretKeyMeta } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { getAttachment } from '../../persistence/attachments';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';
 
@@ -941,6 +945,8 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
 
       <RequiredKeysSection link={link} />
 
+      <LinkedAttachmentsSection link={link} />
+
       <div className="mt-3 flex flex-wrap gap-2">
         {updatesAvailable && (
           <button
@@ -1047,6 +1053,250 @@ function LinkCard({ link }: { link: LinkedWorkspace }) {
       <LinkedRequestsList linkId={link.id} />
     </div>
   );
+}
+
+interface LinkedAttachmentUsage {
+  slotId: string;
+  filename: string;
+  size?: number;
+  mimeType?: string;
+  sha256?: string;
+  requestNames: string[];
+}
+
+function LinkedAttachmentsSection({ link }: { link: LinkedWorkspace }) {
+  const snapshot = useWorkspaceStore((s) => s.local?.linkedCollections[link.id] ?? null);
+  const attachmentCache = useWorkspaceStore((s) => s.local?.attachmentCache ?? {});
+  const syncAttachments = useWorkspaceStore((s) => s.syncAttachments);
+  const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
+  const pushToast = useWorkspaceStore((s) => s.pushToast);
+  const items = useMemo(() => collectLinkedAttachmentUsage(snapshot), [snapshot]);
+  const [downloaded, setDownloaded] = useState<Record<string, boolean>>({});
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function checkDownloaded() {
+      const entries = await Promise.all(
+        items.map(async (item) => {
+          const present = await attachmentRecordMatches(item.slotId, item.sha256);
+          return [item.slotId, present] as const;
+        }),
+      );
+      if (!cancelled) setDownloaded(Object.fromEntries(entries));
+    }
+    void checkDownloaded();
+    return () => {
+      cancelled = true;
+    };
+  }, [items]);
+
+  if (!snapshot) {
+    return (
+      <div className="mt-3 border-t border-border-subtle pt-3 text-xs text-text-dim">
+        Refresh this link to inspect required attachments.
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="mt-3 border-t border-border-subtle pt-3 text-xs text-text-dim">
+        No request attachments in this linked workspace.
+      </div>
+    );
+  }
+
+  const totalSize = items.reduce((sum, item) => sum + (item.size ?? 0), 0);
+  const missingCount = items.filter((item) => !downloaded[item.slotId]).length;
+
+  const onDownload = async () => {
+    setSyncing(true);
+    setError(null);
+    try {
+      const result = await syncAttachments();
+      pushToast({
+        tone: result.failed > 0 ? 'error' : 'success',
+        title: result.failed > 0 ? 'Some attachments failed' : 'Attachments downloaded',
+        detail:
+          result.failed > 0
+            ? `${result.fetched} fetched, ${result.alreadyPresent} already present, ${result.failed} failed or failed checksum verification.`
+            : `${result.fetched} fetched, ${result.alreadyPresent} already present, 0 failed.`,
+      });
+      const entries = await Promise.all(
+        items.map(async (item) => {
+          const present = await attachmentRecordMatches(item.slotId, item.sha256);
+          return [item.slotId, present] as const;
+        }),
+      );
+      setDownloaded(Object.fromEntries(entries));
+    } catch (err) {
+      if (err instanceof MissingScopeError) {
+        surfaceMissingScope(err.missingScopes);
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Attachment download failed');
+      }
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 border-t border-border-subtle pt-3 text-xs">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-1 font-medium text-text-primary">
+          <FileArchive size={12} aria-hidden="true" />
+          Attachments
+        </span>
+        <span className="text-text-dim">
+          {items.length} file{items.length === 1 ? '' : 's'} · {formatBytes(totalSize)} ·{' '}
+          {missingCount} missing
+        </span>
+        <button
+          type="button"
+          onClick={() => void onDownload()}
+          disabled={syncing || missingCount === 0}
+          aria-label={`Download attachments for ${link.name}`}
+          className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
+        >
+          <Download size={11} aria-hidden="true" />
+          {syncing ? 'Downloading...' : missingCount === 0 ? 'Downloaded' : 'Download missing'}
+        </button>
+      </div>
+      {error && (
+        <p className="mb-2 text-xs text-danger" role="alert">
+          {error}
+        </p>
+      )}
+      <p className="mb-2 text-[0.6875rem] text-text-dim">
+        Execution stops when a required file is missing. Downloads are recorded in local metadata
+        for this device.
+      </p>
+      <ul className="space-y-1" aria-label={`Attachments required by ${link.name}`}>
+        {items.map((item) => {
+          const isDownloaded = downloaded[item.slotId] === true;
+          const localPath = attachmentCache[item.slotId]?.localPath;
+          return (
+            <li
+              key={item.slotId}
+              className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-sm border border-border bg-surface px-2 py-1.5"
+            >
+              <div className="min-w-0">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="truncate font-mono text-text-primary">{item.filename}</span>
+                  <span className="text-[0.625rem] text-text-dim">
+                    {formatBytes(item.size ?? 0)}
+                  </span>
+                  {item.mimeType && (
+                    <span className="text-[0.625rem] text-text-dim">{item.mimeType}</span>
+                  )}
+                </div>
+                <p className="mt-0.5 text-[0.6875rem] text-text-dim">
+                  Required by {item.requestNames.join(', ')}
+                </p>
+                <p className="mt-0.5 truncate text-[0.625rem] text-text-dim">
+                  Local: {localPath ?? 'not downloaded'}
+                </p>
+              </div>
+              <span
+                className={
+                  isDownloaded
+                    ? 'self-start rounded-sm border border-success/40 bg-success/10 px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-success'
+                    : 'self-start rounded-sm border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider text-warning'
+                }
+              >
+                {isDownloaded ? 'downloaded' : 'missing'}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function collectLinkedAttachmentUsage(snapshot: LinkedSnapshot | null): LinkedAttachmentUsage[] {
+  const requests = snapshot?.collections.requests;
+  if (!requests || typeof requests !== 'object') return [];
+  const seen = new Map<string, LinkedAttachmentUsage>();
+  for (const req of Object.values(requests)) {
+    const requestName = req.name || 'Unnamed request';
+    const body = req.body;
+    if (body.type === 'form-data' && Array.isArray(body.formRows)) {
+      for (const row of body.formRows) {
+        if (row?.kind !== 'file' || !row.slotId) continue;
+        addAttachmentUsage(seen, {
+          slotId: row.slotId,
+          filename: row.filename,
+          size: row.size,
+          mimeType: row.mimeType,
+          sha256: row.sha256,
+          requestName,
+        });
+      }
+    }
+    const attachment = body.attachment;
+    if (body.type === 'binary' && attachment?.slotId) {
+      addAttachmentUsage(seen, {
+        slotId: attachment.slotId,
+        filename: attachment.filename,
+        size: attachment.size,
+        mimeType: attachment.mimeType,
+        sha256: attachment.sha256,
+        requestName,
+      });
+    }
+  }
+  return [...seen.values()].sort((a, b) => a.filename.localeCompare(b.filename));
+}
+
+function addAttachmentUsage(
+  seen: Map<string, LinkedAttachmentUsage>,
+  input: {
+    slotId: string;
+    filename?: string;
+    size?: number;
+    mimeType?: string;
+    sha256?: string;
+    requestName: string;
+  },
+): void {
+  const existing = seen.get(input.slotId);
+  if (existing) {
+    if (!existing.requestNames.includes(input.requestName)) {
+      existing.requestNames.push(input.requestName);
+    }
+    return;
+  }
+  seen.set(input.slotId, {
+    slotId: input.slotId,
+    filename: input.filename || input.slotId,
+    size: input.size,
+    mimeType: input.mimeType,
+    sha256: input.sha256,
+    requestNames: [input.requestName],
+  });
+}
+
+async function attachmentRecordMatches(slotId: string, sha256?: string): Promise<boolean> {
+  const record = await getAttachment(slotId);
+  if (!record) return false;
+  if (!sha256) return true;
+  return (await sha256HexBytes(record.bytes)) === sha256;
+}
+
+async function sha256HexBytes(bytes: Uint8Array): Promise<string> {
+  const source = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+  const digest = await crypto.subtle.digest('SHA-256', source);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 function LinkedRequestsList({ linkId }: { linkId: string }) {

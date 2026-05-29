@@ -1,0 +1,95 @@
+# Live-GitHub v2 end-to-end suite. Specs create/delete bot-owned
+# ephemeral repos per test against real api.github.com; the workflow
+# keeps an orphan sweep as an outer safety net for crashed runs.
+#
+# Schedule: main pushes + nightly + workflow_dispatch. Never on PR push:
+# real GitHub calls are rate-limited and should only gate trusted code paths.
+#
+# Required secrets (configure in repo Settings -> Secrets and variables):
+#   APICIRCLE_E2E_BOT_PAT    - bot PAT, scopes: repo + delete_repo
+#   APICIRCLE_E2E_BOT_PAT_LINK_DEDICATED
+#                            - second bot PAT, scopes: repo
+#
+# Required variables (configure in repo Settings -> Variables):
+#   APICIRCLE_E2E_BOT_OWNER  - bot account login, e.g. apicirclebot
+#
+# Operator runbook: docs/qa/live-github-bot-setup.md
+
+name: e2e-live-github
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    # Nightly at 02:30 UTC.
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Single-instance: real GitHub state and rate limits are shared across runs.
+concurrency:
+  group: e2e-live-github
+  cancel-in-progress: false
+
+jobs:
+  live-github:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      RUN_TAG: ${{ github.run_id }}-${{ github.run_attempt }}
+      APICIRCLE_E2E_BOT_OWNER: ${{ vars.APICIRCLE_E2E_BOT_OWNER }}
+      APICIRCLE_E2E_GITHUB_PAT: ${{ secrets.APICIRCLE_E2E_BOT_PAT }}
+      APICIRCLE_E2E_BOT_PAT_LINK_DEDICATED: ${{ secrets.APICIRCLE_E2E_BOT_PAT_LINK_DEDICATED }}
+      APICIRCLE_E2E_LIVE_GITHUB: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @apicircle/e2e-web exec playwright install --with-deps chromium
+
+      - name: Validate secrets and variables
+        run: |
+          if [ -z "${APICIRCLE_E2E_BOT_OWNER}" ]; then
+            echo "::error::APICIRCLE_E2E_BOT_OWNER variable missing (Settings -> Variables)."
+            exit 1
+          fi
+          if [ -z "${APICIRCLE_E2E_GITHUB_PAT}" ]; then
+            echo "::error::APICIRCLE_E2E_BOT_PAT secret missing (Settings -> Secrets)."
+            exit 1
+          fi
+          if [ -z "${APICIRCLE_E2E_BOT_PAT_LINK_DEDICATED}" ]; then
+            echo "::error::APICIRCLE_E2E_BOT_PAT_LINK_DEDICATED secret missing (Settings -> Secrets)."
+            exit 1
+          fi
+
+      - name: Sweep orphan repos older than 12h
+        run: node scripts/live-github/sweep-orphans.mjs
+
+      - name: Run live-github v2 E2E suite
+        run: pnpm test:e2e:live-github-v2
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-github-report-${{ env.RUN_TAG }}
+          path: e2e/web/playwright-report/
+          retention-days: 14
+          if-no-files-found: ignore

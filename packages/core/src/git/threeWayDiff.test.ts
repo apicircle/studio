@@ -46,6 +46,22 @@ const withRequests = (...rs: ApiRequest[]): WorkspaceSynced => {
   });
 };
 
+const withRootRequests = (...rs: ApiRequest[]): WorkspaceSynced => {
+  const requests: Record<string, ApiRequest> = {};
+  for (const r of rs) requests[r.id] = r;
+  return baseDoc({
+    collections: {
+      tree: {
+        id: 'r',
+        type: 'root',
+        children: rs.map((r) => ({ kind: 'request' as const, id: r.id })),
+      },
+      requests,
+      folders: {},
+    },
+  });
+};
+
 const mock = (id: string, name: string): MockServer => ({
   id,
   name,
@@ -102,6 +118,29 @@ describe('computeThreeWayDiff', () => {
     const remote = withRequests();
     const d = computeThreeWayDiff(base, local, remote);
     expect(d.entries[0].status).toBe('local-only');
+  });
+
+  it('preserves local credential fields when remote only has git-redacted placeholders', () => {
+    const localRequest = {
+      ...req('r-1', 'Get'),
+      auth: { type: 'bearer', token: 'local-secret-token' },
+    } as ApiRequest;
+    const remoteRequest = {
+      ...localRequest,
+      url: 'https://remote.example.test',
+      auth: { type: 'bearer', token: '' },
+    } as ApiRequest;
+    const base = withRequests(localRequest);
+    const local = withRequests(localRequest);
+    const remote = withRequests(remoteRequest);
+    const d = computeThreeWayDiff(base, local, remote);
+    expect(d.entries[0]).toMatchObject({ bucket: 'request', key: 'r-1', status: 'remote-only' });
+    const merged = applyMerge(local, remote, d, {});
+    expect(merged.collections.requests['r-1'].url).toBe('https://remote.example.test');
+    expect(merged.collections.requests['r-1'].auth).toEqual({
+      type: 'bearer',
+      token: 'local-secret-token',
+    });
   });
 
   it('marks identical changes on both sides as both-equal (auto-resolvable)', () => {
@@ -180,6 +219,79 @@ describe('applyMerge', () => {
       'only-local',
       'only-remote',
     ]);
+  });
+
+  it('auto-merges disjoint root tree additions represented by request entries', () => {
+    const base = withRootRequests(req('keeps-base', 'Base'));
+    const local = withRootRequests(req('keeps-base', 'Base'), req('only-local', 'Local'));
+    const remote = withRootRequests(req('keeps-base', 'Base'), req('only-remote', 'Remote'));
+    const d = computeThreeWayDiff(base, local, remote);
+    expect(d.conflicts).toEqual([]);
+    expect(d.entries.find((entry) => entry.bucket === 'tree')?.status).toBe('remote-only');
+
+    const merged = applyMerge(local, remote, d, {});
+    expect(Object.keys(merged.collections.requests).sort()).toEqual([
+      'keeps-base',
+      'only-local',
+      'only-remote',
+    ]);
+    expect(merged.collections.tree.children).toEqual([
+      { kind: 'request', id: 'keeps-base' },
+      { kind: 'request', id: 'only-local' },
+      { kind: 'request', id: 'only-remote' },
+    ]);
+  });
+
+  it('keeps true tree reorder conflicts in the resolver', () => {
+    const r1 = req('r-1', 'One');
+    const r2 = req('r-2', 'Two');
+    const r3 = req('r-3', 'Three');
+    const requests = { 'r-1': r1, 'r-2': r2, 'r-3': r3 };
+    const base = baseDoc({
+      collections: {
+        tree: {
+          id: 'r',
+          type: 'root',
+          children: [
+            { kind: 'request', id: 'r-1' },
+            { kind: 'request', id: 'r-2' },
+            { kind: 'request', id: 'r-3' },
+          ],
+        },
+        requests,
+        folders: {},
+      },
+    });
+    const local = {
+      ...base,
+      collections: {
+        ...base.collections,
+        tree: {
+          ...base.collections.tree,
+          children: [
+            { kind: 'request' as const, id: 'r-2' },
+            { kind: 'request' as const, id: 'r-1' },
+            { kind: 'request' as const, id: 'r-3' },
+          ],
+        },
+      },
+    };
+    const remote = {
+      ...base,
+      collections: {
+        ...base.collections,
+        tree: {
+          ...base.collections.tree,
+          children: [
+            { kind: 'request' as const, id: 'r-1' },
+            { kind: 'request' as const, id: 'r-3' },
+            { kind: 'request' as const, id: 'r-2' },
+          ],
+        },
+      },
+    };
+    const d = computeThreeWayDiff(base, local, remote);
+    expect(d.conflicts.find((entry) => entry.bucket === 'tree')).toBeDefined();
   });
 
   it('resolves conflicts by mine/theirs per the resolution map', () => {
@@ -435,6 +547,33 @@ describe('computeThreeWayDiff — newly-tracked buckets', () => {
     const entry = d.entries.find((e) => e.bucket === 'globalGraphql');
     expect(entry?.status).toBe('local-only');
     expect(entry?.label).toBe('Catalog');
+  });
+
+  it('surfaces a globalFile add as local-only', () => {
+    const base = baseDoc({ globalAssets: { schemas: {}, graphql: {}, files: {} } });
+    const local = baseDoc({
+      globalAssets: {
+        schemas: {},
+        graphql: {},
+        files: {
+          file1: {
+            id: 'file1',
+            name: 'Payload',
+            slotId: 'slot-1',
+            filename: 'payload.json',
+            size: 12,
+            mimeType: 'application/json',
+            createdAt: 't',
+            updatedAt: 't',
+          },
+        },
+      },
+    });
+    const remote = baseDoc({ globalAssets: { schemas: {}, graphql: {}, files: {} } });
+    const d = computeThreeWayDiff(base, local, remote);
+    const entry = d.entries.find((e) => e.bucket === 'globalFile');
+    expect(entry?.status).toBe('local-only');
+    expect(entry?.label).toBe('Payload');
   });
 
   it('surfaces a linkedRequestOverride add as local-only', () => {

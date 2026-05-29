@@ -6,6 +6,7 @@ import {
   generateId,
   getAllowedMockResponseBodyTypes,
   makeDefaultMockResponseBody,
+  type GlobalFileAsset,
   type MockMultiplierSourceKind,
   type MockResponseBody,
   type MockResponseBodyType,
@@ -404,6 +405,10 @@ function BinaryBodyEditor({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachMockResponseFile = useWorkspaceStore((s) => s.attachMockResponseFile);
   const detachMockResponseFile = useWorkspaceStore((s) => s.detachMockResponseFile);
+  const setMockResponseGlobalFileAsset = useWorkspaceStore((s) => s.setMockResponseGlobalFileAsset);
+  const globalFiles = useWorkspaceStore((s) =>
+    s.synced ? Object.values(s.synced.globalAssets.files ?? {}) : [],
+  );
 
   if (!attachmentSlot) {
     return (
@@ -468,31 +473,79 @@ function BinaryBodyEditor({
   }
 
   return (
-    <div
-      onClick={() => fileInputRef.current?.click()}
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => void onDrop(e)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click();
-      }}
-      aria-label="Upload response file"
-      className="flex cursor-pointer flex-col items-center gap-1 rounded-sm border-2 border-dashed border-border bg-card px-3 py-6 text-center text-[0.6875rem] text-text-muted hover:border-accent/40 hover:text-accent"
-    >
-      <Paperclip size={16} aria-hidden="true" />
-      <span>Click or drop a file to attach</span>
-      <span className="text-[0.625rem] text-text-dim">
-        Stored as a workspace attachment — survives push to Git.
-      </span>
-      <input
-        ref={fileInputRef}
-        type="file"
-        className="hidden"
-        onChange={(e) => void onPick(e.target.files?.[0])}
-        aria-hidden="true"
+    <div className="space-y-2">
+      <GlobalFileAssetSelect
+        files={globalFiles}
+        value=""
+        onChange={(id) =>
+          void setMockResponseGlobalFileAsset(
+            attachmentSlot.serverId,
+            attachmentSlot.endpointId,
+            id || null,
+          )
+        }
       />
+      <div
+        onClick={() => fileInputRef.current?.click()}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => void onDrop(e)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click();
+        }}
+        aria-label="Upload response file"
+        className="flex cursor-pointer flex-col items-center gap-1 rounded-sm border-2 border-dashed border-border bg-card px-3 py-6 text-center text-[0.6875rem] text-text-muted hover:border-accent/40 hover:text-accent"
+      >
+        <Paperclip size={16} aria-hidden="true" />
+        <span>Click or drop a file to attach</span>
+        <span className="text-[0.625rem] text-text-dim">
+          Stored as a workspace attachment — survives push to Git.
+        </span>
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          onChange={(e) => void onPick(e.target.files?.[0])}
+          aria-hidden="true"
+        />
+      </div>
     </div>
+  );
+}
+
+function GlobalFileAssetSelect({
+  files,
+  value,
+  onChange,
+}: {
+  files: GlobalFileAsset[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  if (files.length === 0) {
+    return (
+      <p className="rounded-sm border border-border bg-surface px-2 py-1.5 text-[0.625rem] text-text-dim">
+        No reusable files in Global Assets.
+      </p>
+    );
+  }
+  return (
+    <label className="block text-[0.625rem] text-text-dim">
+      Reusable file
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1 h-7 w-full rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+      >
+        <option value="">Choose from Global Assets...</option>
+        {files.map((file) => (
+          <option key={file.id} value={file.id}>
+            {file.name} ({file.filename}, {formatBytes(file.size)})
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

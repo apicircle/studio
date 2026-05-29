@@ -1,7 +1,13 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { LinkedWorkspace, ReleaseHistory, WorkspaceLocal } from '@apicircle/shared';
+import type {
+  LinkedSnapshot,
+  LinkedWorkspace,
+  ReleaseHistory,
+  WorkspaceLocal,
+} from '@apicircle/shared';
+import { putAttachment } from '../../persistence/attachments';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { LinkWorkspacePanel } from './LinkWorkspacePanel';
 
@@ -447,6 +453,114 @@ describe('LinkWorkspacePanel — link card surface', () => {
     // No manual-add button — the affordance was removed since linking
     // auto-discovers slots from the source registry.
     expect(screen.queryByRole('button', { name: /Add a key manually/ })).toBeNull();
+  });
+
+  it('shows linked attachment size, request usage, and downloads missing bytes on demand', async () => {
+    const slotId = 'linked-attachment-slot-ui';
+    seedLink({ id: 'lw-attachments', name: 'AttachmentsAPI' });
+    const snapshot: LinkedSnapshot = {
+      pulledAt: '2026-04-27T00:00:00.000Z',
+      ref: 'v1.0.0',
+      collections: {
+        tree: { id: 'root', type: 'root', children: [{ kind: 'request', id: 'req-upload' }] },
+        folders: {},
+        requests: {
+          'req-upload': {
+            id: 'req-upload',
+            name: 'Upload invoice',
+            folderId: null,
+            method: 'POST',
+            url: 'https://api.example.test/upload',
+            headers: [],
+            query: [],
+            pathParams: {},
+            cookies: [],
+            body: {
+              type: 'form-data',
+              content: '',
+              formRows: [
+                {
+                  kind: 'file',
+                  key: 'invoice',
+                  slotId,
+                  filename: 'invoice.pdf',
+                  size: 12,
+                  mimeType: 'application/pdf',
+                  enabled: true,
+                },
+              ],
+            },
+            auth: { type: 'none' },
+            contextVars: [],
+            extractions: [],
+            assertions: [],
+            createdAt: '2026-04-27T00:00:00.000Z',
+            updatedAt: '2026-04-27T00:00:00.000Z',
+          },
+        },
+      },
+      environments: { items: {}, activeName: null, priorityOrder: [] },
+    };
+    const local = useWorkspaceStore.getState().local!;
+    const syncAttachments = vi.fn(async () => {
+      await putAttachment({
+        slotId,
+        filename: 'invoice.pdf',
+        mimeType: 'application/pdf',
+        size: 12,
+        sha256: '',
+        savedAt: '2026-04-27T00:00:00.000Z',
+        bytes: new Uint8Array(12),
+      });
+      const liveLocal = useWorkspaceStore.getState().local!;
+      useWorkspaceStore.setState({
+        local: {
+          ...liveLocal,
+          attachmentCache: {
+            ...(liveLocal.attachmentCache ?? {}),
+            [slotId]: {
+              slotId,
+              filename: 'invoice.pdf',
+              mimeType: 'application/pdf',
+              size: 12,
+              localPath: `indexeddb://apicircle-attachments/${slotId}`,
+              storage: 'indexeddb',
+              source: 'linked-workspace',
+              linkedWorkspaceId: 'lw-attachments',
+              requiredBy: [{ requestId: 'req-upload', requestName: 'Upload invoice' }],
+              downloadedAt: '2026-04-27T00:00:00.000Z',
+            },
+          },
+        },
+      });
+      return { fetched: 1, alreadyPresent: 0, failed: 0 };
+    });
+    useWorkspaceStore.setState({
+      local: {
+        ...local,
+        linkedCollections: { ...local.linkedCollections, 'lw-attachments': snapshot },
+      },
+      syncAttachments,
+    });
+
+    const user = userEvent.setup();
+    render(<LinkWorkspacePanel />);
+
+    expect(screen.getByText('Attachments')).toBeInTheDocument();
+    expect(screen.getByText(/1 file .* 12 B .* 1 missing/)).toBeInTheDocument();
+    expect(screen.getByText('invoice.pdf')).toBeInTheDocument();
+    expect(screen.getByText('application/pdf')).toBeInTheDocument();
+    expect(screen.getByText('Required by Upload invoice')).toBeInTheDocument();
+    expect(screen.getByText('Local: not downloaded')).toBeInTheDocument();
+    expect(screen.getByText('missing')).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole('button', { name: 'Download attachments for AttachmentsAPI' }),
+    );
+    await waitFor(() => expect(syncAttachments).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByText('downloaded')).toBeVisible());
+    expect(screen.getByText(`Local: indexeddb://apicircle-attachments/${slotId}`)).toBeVisible();
+    expect(screen.getByText(/1 file .* 12 B .* 0 missing/)).toBeInTheDocument();
   });
 });
 

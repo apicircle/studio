@@ -232,6 +232,80 @@ describe('summarizeUnpushedChanges — base != null', () => {
     expect(summary.removed).toBe(0);
   });
 
+  it('ignores local credential values when base has git-redacted placeholders', () => {
+    const baseRequest = req('r1', { auth: { type: 'bearer', token: '' } });
+    const currentRequest = req('r1', {
+      auth: { type: 'bearer', token: 'local-secret-token' },
+    });
+    const base = emptyDoc({
+      collections: {
+        tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
+        requests: { r1: baseRequest },
+        folders: {},
+      },
+    });
+    const current = emptyDoc({
+      collections: {
+        tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
+        requests: { r1: currentRequest },
+        folders: {},
+      },
+    });
+    expect(summarizeUnpushedChanges(base, current, { now: NOW }).total).toBe(0);
+    expect(hasUnpushedChanges(base, current)).toBe(false);
+  });
+
+  it('ignores credential-only differences when both base and current keep local secrets', () => {
+    const baseRequest = req('r1', { auth: { type: 'bearer', token: 'old-local-secret' } });
+    const currentRequest = req('r1', {
+      auth: { type: 'bearer', token: 'new-local-secret' },
+    });
+    const base = emptyDoc({
+      collections: {
+        tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
+        requests: { r1: baseRequest },
+        folders: {},
+      },
+    });
+    const current = emptyDoc({
+      collections: {
+        tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
+        requests: { r1: currentRequest },
+        folders: {},
+      },
+    });
+    expect(summarizeUnpushedChanges(base, current, { now: NOW }).total).toBe(0);
+  });
+
+  it('still reports real request edits while ignoring git-redacted credentials', () => {
+    const baseRequest = req('r1', {
+      url: 'https://example.test/old',
+      auth: { type: 'bearer', token: '' },
+    });
+    const currentRequest = req('r1', {
+      url: 'https://example.test/new',
+      auth: { type: 'bearer', token: 'local-secret-token' },
+    });
+    const base = emptyDoc({
+      collections: {
+        tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
+        requests: { r1: baseRequest },
+        folders: {},
+      },
+    });
+    const current = emptyDoc({
+      collections: {
+        tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'r1' }] },
+        requests: { r1: currentRequest },
+        folders: {},
+      },
+    });
+    const summary = summarizeUnpushedChanges(base, current, { now: NOW });
+    const requestChange = summary.changes.find((c) => c.bucket === 'request');
+    expect(requestChange?.kind).toBe('modified');
+    expect(summary.total).toBe(1);
+  });
+
   it('sorts changes by BUCKET_ORDER (singletons → requests → folders → environments → linked → releases)', () => {
     const r1 = req('r1');
     const base = emptyDoc();
