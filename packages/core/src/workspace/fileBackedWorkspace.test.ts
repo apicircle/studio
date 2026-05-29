@@ -37,6 +37,7 @@ function makeLocal(): WorkspaceLocal {
     retiredBranch: null,
     sync: { lastPulledSnapshot: null, lastPulledSha: null, lastPulledAt: null, dirtyKeys: [] },
     linkedCollections: {},
+    attachmentCache: {},
     globalContext: {},
     mockRuntime: { active: {} },
     ui: {
