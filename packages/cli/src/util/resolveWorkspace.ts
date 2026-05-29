@@ -363,8 +363,8 @@ function buildEmptyState(workspaceId: string, now: string, withSample: boolean):
       ui: {
         activeRequestId: sample?.id ?? null,
         sidebarExpandedSections: [],
-        themeId: 'one-dark-pro',
-        fontId: 'system-sans',
+        themeId: 'command-center',
+        fontId: 'cascadia-code',
         fontSizePercent: 100,
       },
       settings: { validateOnSend: true, monacoConsumesWheel: false },

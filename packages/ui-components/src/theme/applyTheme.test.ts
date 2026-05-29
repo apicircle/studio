@@ -62,14 +62,14 @@ describe('applyTheme / getStoredThemeId', () => {
     expect(getStoredThemeId()).toBe('github-dark-dimmed');
   });
 
-  it('getStoredThemeId falls back to one-dark-pro when nothing stored', () => {
+  it('getStoredThemeId falls back to command-center when nothing stored', () => {
     localStorage.removeItem('apicircle-v2:theme');
-    expect(getStoredThemeId()).toBe('one-dark-pro');
+    expect(getStoredThemeId()).toBe('command-center');
   });
 
   it('getStoredThemeId rejects unknown values gracefully', () => {
     localStorage.setItem('apicircle-v2:theme', 'not-a-real-theme');
-    expect(getStoredThemeId()).toBe('one-dark-pro');
+    expect(getStoredThemeId()).toBe('command-center');
   });
 
   it('applyTheme survives a localStorage that throws on setItem', () => {

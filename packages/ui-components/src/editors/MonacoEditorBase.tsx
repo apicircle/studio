@@ -122,7 +122,7 @@ function MonacoEditorBaseComponent({
   onEditorMount,
   ariaLabel,
 }: MonacoEditorBaseProps) {
-  const themeId = useWorkspaceStore((state) => state.local?.ui.themeId ?? 'one-dark-pro');
+  const themeId = useWorkspaceStore((state) => state.local?.ui.themeId ?? 'command-center');
   // Workspace setting: when true, the editor's scrollbar consumes wheel
   // events and the page won't scroll while the cursor sits in the editor.
   // Default false — most users find page-scroll-friendly behavior less

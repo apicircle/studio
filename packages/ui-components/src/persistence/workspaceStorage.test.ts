@@ -63,7 +63,7 @@ describe('workspaceStorage — createEmptyWorkspace', () => {
       lastPulledAt: null,
       dirtyKeys: [],
     });
-    expect(local.ui.themeId).toBe('one-dark-pro');
+    expect(local.ui.themeId).toBe('command-center');
     expect(local.ui.activeRequestId).toBe(Object.keys(synced.collections.requests)[0]);
   });
 });
