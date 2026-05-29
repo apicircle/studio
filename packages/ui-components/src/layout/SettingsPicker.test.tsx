@@ -51,6 +51,116 @@ describe('SettingsPicker — Community section', () => {
   });
 });
 
+describe('SettingsPicker appearance pickers', () => {
+  beforeEach(() => {
+    installCommunityFetchStub();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('opens the theme list and commits a new expanded-catalog theme', async () => {
+    await openSettings();
+
+    fireEvent.click(screen.getByRole('button', { name: /Theme: One Dark Pro/ }));
+    expect(screen.getByRole('listbox', { name: 'Themes' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Hover or use keyboard navigation to preview. Click to apply.'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('option', { name: /GitHub Dark Dimmed/ }));
+
+    expect(useWorkspaceStore.getState().local!.ui.themeId).toBe('github-dark-dimmed');
+    expect(screen.queryByRole('listbox', { name: 'Themes' })).toBeNull();
+  });
+
+  it('opens appearance lists on click only, not hover', async () => {
+    await openSettings();
+    vi.useFakeTimers();
+    try {
+      const themeRow = screen.getByRole('button', { name: /Theme: One Dark Pro/ });
+
+      fireEvent.pointerEnter(themeRow);
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      expect(screen.queryByRole('listbox', { name: 'Themes' })).toBeNull();
+
+      fireEvent.click(themeRow);
+      expect(screen.getByRole('listbox', { name: 'Themes' })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('previews a hovered theme after the 1 second intent delay', async () => {
+    await openSettings();
+    fireEvent.click(screen.getByRole('button', { name: /Theme: One Dark Pro/ }));
+
+    vi.useFakeTimers();
+    try {
+      const option = screen.getByRole('option', { name: /GitHub Dark Dimmed/ });
+      fireEvent.mouseEnter(option);
+      expect(screen.getByTestId('theme-github-dark-dimmed-preview-pending')).toBeInTheDocument();
+      act(() => {
+        vi.advanceTimersByTime(999);
+      });
+      expect(useWorkspaceStore.getState().local!.ui.themeId).toBe('one-dark-pro');
+      expect(screen.getByTestId('theme-github-dark-dimmed-preview-pending')).toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(useWorkspaceStore.getState().local!.ui.themeId).toBe('github-dark-dimmed');
+      expect(screen.queryByTestId('theme-github-dark-dimmed-preview-pending')).toBeNull();
+      expect(screen.getByTestId('theme-github-dark-dimmed-preview-active')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('opens the font list and commits the macOS system stack', async () => {
+    await openSettings();
+
+    fireEvent.click(screen.getByRole('button', { name: /Font family: System Sans/ }));
+    expect(screen.getByRole('listbox', { name: 'Font families' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Hover or use keyboard navigation to preview. Click to apply.'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('option', { name: /macOS System/ }));
+
+    expect(useWorkspaceStore.getState().local!.ui.fontId).toBe('macos-system');
+    expect(screen.queryByRole('listbox', { name: 'Font families' })).toBeNull();
+  });
+
+  it('previews a hovered font after the 1 second intent delay', async () => {
+    await openSettings();
+    fireEvent.click(screen.getByRole('button', { name: /Font family: System Sans/ }));
+
+    vi.useFakeTimers();
+    try {
+      const option = screen.getByRole('option', { name: /macOS System/ });
+      fireEvent.mouseEnter(option);
+      expect(screen.getByTestId('font-macos-system-preview-pending')).toBeInTheDocument();
+      act(() => {
+        vi.advanceTimersByTime(999);
+      });
+      expect(useWorkspaceStore.getState().local!.ui.fontId).toBe('system-sans');
+      expect(screen.getByTestId('font-macos-system-preview-pending')).toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(useWorkspaceStore.getState().local!.ui.fontId).toBe('macos-system');
+      expect(screen.queryByTestId('font-macos-system-preview-pending')).toBeNull();
+      expect(screen.getByTestId('font-macos-system-preview-active')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('SettingsPicker — text size row', () => {
   beforeEach(() => {
     installCommunityFetchStub();

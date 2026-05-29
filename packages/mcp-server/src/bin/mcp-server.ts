@@ -1,10 +1,7 @@
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
-import { createMcpServer } from '../index';
-import { FileBackedWorkspaceProvider } from '../providers/FileBackedWorkspaceProvider';
-import { MultiWorkspaceProvider } from '../providers/MultiWorkspaceProvider';
-import { InProcessMockController } from '../providers/InProcessMockController';
-import { SingleWorkspaceAdapter } from '../providers/Workspaces';
+import { formatHelp, hasHelpFlag, hasVersionFlag } from './args';
+import { MCP_PACKAGE_VERSION } from '../packageVersion';
 
 // =============================================================================
 // stdio entry point — published as the `apicircle-mcp` bin. Reads the
@@ -45,6 +42,30 @@ async function fileExists(p: string): Promise<boolean> {
 }
 
 async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+  if (hasVersionFlag(args)) {
+    process.stdout.write(`${MCP_PACKAGE_VERSION}\n`);
+    return;
+  }
+  if (hasHelpFlag(args)) {
+    process.stdout.write(formatHelp());
+    return;
+  }
+
+  const [
+    { createMcpServer },
+    { FileBackedWorkspaceProvider },
+    { MultiWorkspaceProvider },
+    { InProcessMockController },
+    { SingleWorkspaceAdapter },
+  ] = await Promise.all([
+    import('../index'),
+    import('../providers/FileBackedWorkspaceProvider'),
+    import('../providers/MultiWorkspaceProvider'),
+    import('../providers/InProcessMockController'),
+    import('../providers/Workspaces'),
+  ]);
+
   const dir = getWorkspaceDir();
   const registryPath = path.join(dir, 'registry.json');
   const isRegistryRoot = await fileExists(registryPath);

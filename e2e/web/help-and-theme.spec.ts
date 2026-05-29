@@ -69,6 +69,78 @@ test.describe('Theme persistence (P7)', () => {
     },
   );
 
+  test('Settings appearance popover does not horizontally scroll the Settings dialog', async ({
+    app,
+  }) => {
+    await app.setViewportSize({ width: 1280, height: 720 });
+    await app.getByRole('button', { name: 'Open workspace settings' }).click();
+
+    const settings = app.getByRole('dialog', { name: 'Workspace settings' });
+    await expect(settings).toBeVisible();
+
+    const themeRow = app.getByRole('button', { name: /^Theme:/ });
+    const fontRow = app.getByRole('button', { name: /^Font family:/ });
+    await themeRow.click();
+
+    const themeList = app.getByRole('listbox', { name: 'Themes' });
+    await expect(themeList).toBeVisible();
+    await expect(themeRow).toBeVisible();
+    await expect(fontRow).toBeVisible();
+    await expect.poll(() => settings.evaluate((el) => el.scrollLeft)).toBe(0);
+
+    const settingsBox = await settings.boundingBox();
+    const themeRowBox = await themeRow.boundingBox();
+    const themeListBox = await themeList.boundingBox();
+    if (!settingsBox || !themeRowBox || !themeListBox) {
+      throw new Error('Settings appearance picker did not render measurable layout boxes');
+    }
+
+    expect(themeRowBox.x).toBeGreaterThanOrEqual(settingsBox.x - 1);
+    expect(themeRowBox.x + themeRowBox.width).toBeLessThanOrEqual(
+      settingsBox.x + settingsBox.width + 1,
+    );
+    expect(themeListBox.x).toBeGreaterThanOrEqual(settingsBox.x + settingsBox.width - 1);
+
+    await app.getByRole('option', { name: /GitHub Dark Dimmed/ }).click();
+    await expect(app.locator('html')).toHaveAttribute('data-theme', 'github-dark-dimmed');
+  });
+
+  test('Settings appearance lists show pending hover preview before activation', async ({
+    app,
+  }) => {
+    await app.getByRole('button', { name: 'Open workspace settings' }).click();
+
+    await app.getByRole('button', { name: /^Theme:/ }).click();
+    await expect(
+      app.getByText('Hover or use keyboard navigation to preview. Click to apply.'),
+    ).toBeVisible();
+    await app.getByRole('option', { name: /GitHub Dark Dimmed/ }).hover();
+    await expect(app.getByTestId('theme-github-dark-dimmed-preview-pending')).toBeVisible();
+    await expect(app.getByTestId('theme-github-dark-dimmed-preview-active')).toBeVisible({
+      timeout: 1500,
+    });
+    await expect(app.locator('html')).toHaveAttribute('data-theme', 'github-dark-dimmed');
+
+    await app.getByRole('button', { name: /^Font family:/ }).click();
+    await expect(
+      app.getByText('Hover or use keyboard navigation to preview. Click to apply.'),
+    ).toBeVisible();
+    await app.getByRole('option', { name: /macOS System/ }).hover();
+    await expect(app.getByTestId('font-macos-system-preview-pending')).toBeVisible();
+    await expect(app.getByTestId('font-macos-system-preview-active')).toBeVisible({
+      timeout: 1500,
+    });
+    const fontId = await app.evaluate(() => {
+      const w = window as unknown as {
+        __apicircleStore?: {
+          getState: () => { local?: { ui: { fontId: string } } };
+        };
+      };
+      return w.__apicircleStore!.getState().local?.ui.fontId;
+    });
+    expect(fontId).toBe('macos-system');
+  });
+
   test(
     tc(stId('Theme :: High-contrast WCAG 2.1'), 'high-contrast theme applies and persists'),
     async ({ app }) => {

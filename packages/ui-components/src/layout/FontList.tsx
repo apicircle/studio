@@ -2,8 +2,8 @@
 // ThemeList — lives in SettingsPicker as a side popover with the same
 // live-preview / Esc-revert / Enter-commit semantics.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check } from 'lucide-react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Check, LoaderCircle } from 'lucide-react';
 import type { FontFamilyId } from '@apicircle/shared';
 import { ALL_FONTS, type FontFamilyDef } from '../theme/applyFont';
 import { cn } from '../primitives/cn';
@@ -20,12 +20,17 @@ interface FontListProps {
   registerCancel?: (fn: (() => void) | null) => void;
 }
 
+const HOVER_PREVIEW_DELAY_MS = 1000;
+
 export function FontList({ onCommit, onCancel, registerCancel }: FontListProps) {
   const fontId = useWorkspaceStore((s) => s.local?.ui.fontId ?? 'system-sans');
   const setFontId = useWorkspaceStore((s) => s.setFontId);
   const optionRefs = useRef<Map<FontFamilyId, HTMLButtonElement>>(new Map());
   const originalFontRef = useRef<FontFamilyId>(fontId);
   const currentFontRef = useRef(fontId);
+  const hoverPreviewTimerRef = useRef<number | null>(null);
+  const guidanceId = useId();
+  const [pendingPreviewId, setPendingPreviewId] = useState<FontFamilyId | null>(null);
   // True only after an explicit commit (Enter / click). Drives the
   // unmount-revert below.
   const committedRef = useRef(false);
@@ -52,6 +57,34 @@ export function FontList({ onCommit, onCancel, registerCancel }: FontListProps) 
   const activeIndex = flatOrder.indexOf(fontId);
   const [focusIndex, setFocusIndex] = useState(activeIndex >= 0 ? activeIndex : 0);
 
+  const clearHoverPreviewTimer = useCallback(() => {
+    if (hoverPreviewTimerRef.current !== null) {
+      window.clearTimeout(hoverPreviewTimerRef.current);
+      hoverPreviewTimerRef.current = null;
+    }
+  }, []);
+
+  const cancelHoverPreview = useCallback(() => {
+    clearHoverPreviewTimer();
+    setPendingPreviewId(null);
+  }, [clearHoverPreviewTimer]);
+
+  const scheduleHoverPreview = useCallback(
+    (id: FontFamilyId) => {
+      cancelHoverPreview();
+      if (id === currentFontRef.current) return;
+      setPendingPreviewId(id);
+      hoverPreviewTimerRef.current = window.setTimeout(() => {
+        setFontId(id);
+        setPendingPreviewId(null);
+        hoverPreviewTimerRef.current = null;
+      }, HOVER_PREVIEW_DELAY_MS);
+    },
+    [cancelHoverPreview, setFontId],
+  );
+
+  useEffect(() => () => clearHoverPreviewTimer(), [clearHoverPreviewTimer]);
+
   useEffect(() => {
     originalFontRef.current = currentFontRef.current;
     const id = flatOrder[focusIndex];
@@ -74,12 +107,14 @@ export function FontList({ onCommit, onCancel, registerCancel }: FontListProps) 
   }, [focusIndex, flatOrder, setFontId]);
 
   const revertAndCancel = () => {
+    cancelHoverPreview();
     const original = originalFontRef.current;
     if (original !== currentFontRef.current) setFontId(original);
     onCancel();
   };
 
   const commit = () => {
+    cancelHoverPreview();
     originalFontRef.current = currentFontRef.current;
     committedRef.current = true;
     onCommit();
@@ -91,13 +126,14 @@ export function FontList({ onCommit, onCancel, registerCancel }: FontListProps) 
   useEffect(() => {
     if (!registerCancel) return;
     const fn = () => {
+      cancelHoverPreview();
       const original = originalFontRef.current;
       if (original !== currentFontRef.current) setFontId(original);
       committedRef.current = true;
     };
     registerCancel(fn);
     return () => registerCancel(null);
-  }, [registerCancel, setFontId]);
+  }, [cancelHoverPreview, registerCancel, setFontId]);
 
   // Belt-and-braces revert on unmount when nothing committed.
   useEffect(() => {
@@ -109,6 +145,9 @@ export function FontList({ onCommit, onCancel, registerCancel }: FontListProps) 
   }, [setFontId]);
 
   const handleKey = (e: React.KeyboardEvent<HTMLUListElement>) => {
+    if (['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' ', 'Escape'].includes(e.key)) {
+      cancelHoverPreview();
+    }
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       setFocusIndex((i) => Math.min(flatOrder.length - 1, i + 1));
@@ -131,53 +170,77 @@ export function FontList({ onCommit, onCancel, registerCancel }: FontListProps) 
   };
 
   return (
-    <ul
-      role="listbox"
-      aria-label="Font families"
-      onKeyDown={handleKey}
-      className="max-h-[60vh] w-64 overflow-y-auto overscroll-contain rounded-sm border border-border-strong bg-card shadow-elevated"
-    >
-      {groups.map((group) => (
-        <li key={group.key}>
-          <div
-            role="presentation"
-            className="sticky top-0 z-10 border-b border-border-subtle bg-card px-3 pb-1 pt-2 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim"
-          >
-            {group.label}
-          </div>
-          <ul role="presentation">
-            {group.fonts.map((font) => (
-              <FontOption
-                key={font.id}
-                font={font}
-                active={font.id === fontId}
-                onSelect={() => {
-                  setFontId(font.id);
-                  originalFontRef.current = font.id;
-                  committedRef.current = true;
-                  onCommit();
-                }}
-                registerRef={(el) => {
-                  if (el) optionRefs.current.set(font.id, el);
-                  else optionRefs.current.delete(font.id);
-                }}
-              />
-            ))}
-          </ul>
-        </li>
-      ))}
-    </ul>
+    <div className="w-64 overflow-hidden rounded-sm border border-border-strong bg-card shadow-elevated">
+      <div
+        id={guidanceId}
+        className="sticky top-0 z-20 border-b border-border-subtle bg-card px-3 py-2 text-[0.6875rem] leading-snug text-text-muted"
+      >
+        Hover or use keyboard navigation to preview. Click to apply.
+      </div>
+      <ul
+        role="listbox"
+        aria-label="Font families"
+        aria-describedby={guidanceId}
+        onKeyDown={handleKey}
+        className="max-h-[calc(60vh-2.5rem)] overflow-y-auto overscroll-contain"
+      >
+        {groups.map((group) => (
+          <li key={group.key}>
+            <div
+              role="presentation"
+              className="sticky top-0 z-10 border-b border-border-subtle bg-card px-3 pb-1 pt-2 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim"
+            >
+              {group.label}
+            </div>
+            <ul role="presentation">
+              {group.fonts.map((font) => (
+                <FontOption
+                  key={font.id}
+                  font={font}
+                  active={font.id === fontId}
+                  pending={pendingPreviewId === font.id}
+                  onSelect={() => {
+                    cancelHoverPreview();
+                    setFontId(font.id);
+                    originalFontRef.current = font.id;
+                    committedRef.current = true;
+                    onCommit();
+                  }}
+                  onPreviewIntent={() => scheduleHoverPreview(font.id)}
+                  onPreviewCancel={cancelHoverPreview}
+                  registerRef={(el) => {
+                    if (el) optionRefs.current.set(font.id, el);
+                    else optionRefs.current.delete(font.id);
+                  }}
+                />
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
 interface FontOptionProps {
   font: FontFamilyDef;
   active: boolean;
+  pending: boolean;
   onSelect: () => void;
+  onPreviewIntent: () => void;
+  onPreviewCancel: () => void;
   registerRef: (el: HTMLButtonElement | null) => void;
 }
 
-function FontOption({ font, active, onSelect, registerRef }: FontOptionProps) {
+function FontOption({
+  font,
+  active,
+  pending,
+  onSelect,
+  onPreviewIntent,
+  onPreviewCancel,
+  registerRef,
+}: FontOptionProps) {
   return (
     <li>
       <button
@@ -187,6 +250,8 @@ function FontOption({ font, active, onSelect, registerRef }: FontOptionProps) {
         aria-selected={active}
         tabIndex={-1}
         onClick={onSelect}
+        onMouseEnter={onPreviewIntent}
+        onMouseLeave={onPreviewCancel}
         className={cn(
           'flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors',
           active
@@ -194,16 +259,51 @@ function FontOption({ font, active, onSelect, registerRef }: FontOptionProps) {
             : 'text-text-muted hover:bg-surface hover:text-text-primary',
         )}
       >
-        <span className="flex flex-col">
-          <span style={{ fontFamily: font.stack }}>{font.label}</span>
+        <span className="flex min-w-0 flex-col pr-2">
+          <span style={{ fontFamily: font.stack }} className="truncate">
+            {font.label}
+          </span>
           {!active && (
-            <span style={{ fontFamily: font.stack }} className="text-[0.625rem] text-text-dim">
+            <span
+              style={{ fontFamily: font.stack }}
+              className="truncate text-[0.625rem] text-text-dim"
+            >
               AaBbCc 0123 {'{'} {'}'}
             </span>
           )}
         </span>
-        {active && <Check size={14} className="text-accent" />}
+        <OptionStatus active={active} pending={pending} testId={`font-${font.id}`} />
       </button>
     </li>
+  );
+}
+
+function OptionStatus({
+  active,
+  pending,
+  testId,
+}: {
+  active: boolean;
+  pending: boolean;
+  testId: string;
+}) {
+  return (
+    <span className="ml-2 flex h-4 w-4 shrink-0 items-center justify-center">
+      {pending ? (
+        <LoaderCircle
+          size={14}
+          aria-hidden="true"
+          data-testid={`${testId}-preview-pending`}
+          className="animate-spin text-accent transition-opacity"
+        />
+      ) : active ? (
+        <Check
+          size={14}
+          aria-hidden="true"
+          data-testid={`${testId}-preview-active`}
+          className="text-accent transition-transform duration-150"
+        />
+      ) : null}
+    </span>
   );
 }

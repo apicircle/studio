@@ -3,6 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { z } from 'zod';
 import type { AnyToolDef, ToolHandlerContext } from '../tools/types';
+import { MCP_PACKAGE_VERSION } from '../packageVersion';
 
 // =============================================================================
 // McpHost — wraps `@modelcontextprotocol/sdk`'s `McpServer`. The thin layer
@@ -15,7 +16,6 @@ import type { AnyToolDef, ToolHandlerContext } from '../tools/types';
 // =============================================================================
 
 const PACKAGE_NAME = 'apicircle-mcp';
-const PACKAGE_VERSION = '1.0.0';
 
 export interface McpHostOptions {
   serverInfo?: { name: string; version: string };
@@ -31,7 +31,7 @@ export class McpHost {
   constructor(options: McpHostOptions) {
     this.server = new McpServer({
       name: options.serverInfo?.name ?? PACKAGE_NAME,
-      version: options.serverInfo?.version ?? PACKAGE_VERSION,
+      version: options.serverInfo?.version ?? MCP_PACKAGE_VERSION,
     });
     this.tools = options.tools;
     this.context = options.context;

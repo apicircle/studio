@@ -44,15 +44,23 @@ describe('applyFont', () => {
 });
 
 describe('catalog', () => {
-  it('catalog has at least 30 fonts', () => {
-    expect(ALL_FONTS.length).toBeGreaterThanOrEqual(30);
+  it('catalog has at least 50 fonts', () => {
+    expect(ALL_FONTS.length).toBeGreaterThanOrEqual(50);
   });
 
-  it('every font has a unique id and a non-empty stack', () => {
-    const seen = new Set<string>();
+  it('every font has a unique id, label, and stack', () => {
+    const ids = new Set<string>();
+    const labels = new Set<string>();
+    const stacks = new Set<string>();
     for (const f of ALL_FONTS) {
-      expect(seen.has(f.id)).toBe(false);
-      seen.add(f.id);
+      const label = f.label.toLowerCase();
+      const stack = f.stack.replace(/\s+/g, ' ').toLowerCase();
+      expect(ids.has(f.id)).toBe(false);
+      expect(labels.has(label)).toBe(false);
+      expect(stacks.has(stack)).toBe(false);
+      ids.add(f.id);
+      labels.add(label);
+      stacks.add(stack);
       expect(f.stack.length).toBeGreaterThan(0);
     }
   });
@@ -69,5 +77,15 @@ describe('catalog', () => {
         expect(f.webfontHref).toMatch(/^https:\/\//);
       }
     }
+  });
+
+  it('includes a macOS system stack without bundling Apple font files', () => {
+    const font = ALL_FONTS.find((f) => f.id === 'macos-system');
+    expect(font).toMatchObject({ label: 'macOS System', category: 'sans' });
+    expect(font?.stack).toContain('-apple-system');
+    expect(font?.stack).toContain('BlinkMacSystemFont');
+    expect(font?.stack).toContain('"SF Pro Display"');
+    expect(font?.stack).toContain('"SF Pro Text"');
+    expect(font?.webfontHref).toBeUndefined();
   });
 });

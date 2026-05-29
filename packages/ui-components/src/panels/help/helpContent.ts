@@ -1277,19 +1277,19 @@ A single source of truth: update the "User" asset once and every request that re
   {
     id: 'settings',
     title: 'Settings & appearance',
-    body: `The Settings chip in the top bar opens a popover of appearance and behaviour options. Settings are per-device — they live in the local document, so they do not follow the workspace to Git.
+    body: `The Settings chip in the top bar opens a popover of appearance and behaviour options. Settings are per-device - they live in the local document, so they do not follow the workspace to Git.
 
 ## Appearance
 
-- **Theme** — pick a colour theme. Hovering the row opens a live preview; **Enter** commits, **Esc** reverts.
-- **Font family** — the UI font, with the same live-preview behaviour.
-- **Text size** — scales all UI text, including code editors, in fixed steps, with a Reset to 100%. Also available as **Ctrl/Cmd + Shift + =** / **-** / **0**. Example: bump to 120% on a 4K display, reset before a screen-share.
+- **Theme** - pick from the expanded dark, light, high-contrast, terminal-like, GitHub-like, VS Code-like, OLED, warm, and muted professional palettes. Click the row to open the list. Hover an option for one second, or move with the keyboard, to preview it; the right edge shows a loader while preview is pending and a check when active. Click or press **Enter** to apply; **Esc** or outside click reverts.
+- **Font family** - choose from developer-friendly mono and sans stacks, including the safe macOS system stack. It uses the same click-open, hover-preview, keyboard-preview, click-to-apply behaviour.
+- **Text size** - scales all UI text, including code editors, in fixed steps, with a Reset to 100%. Also available as **Ctrl/Cmd + Shift + =** / **-** / **0**. Example: bump to 120% on a 4K display, reset before a screen-share.
 
 ## Behavior
 
-- **Validate before sending** — on: the editor shows pre-send warnings and blocks Send when required auth fields are blank. Off: Send is never blocked. Example — leave it on while authoring, turn it off to fire a deliberately malformed request.
-- **Code editor captures mouse wheel** — on: scrolling inside a code editor stays there until its edge; off (default): the page keeps scrolling so a long body does not trap the wheel.
-- **Workspace snapshot cap** — the size budget for the local snapshot list: **10 / 50 / 200 MB / Unlimited**. Example: set 10 MB on a small laptop, Unlimited if you lean on snapshots heavily.`,
+- **Validate before sending** - on: the editor shows pre-send warnings and blocks Send when required auth fields are blank. Off: Send is never blocked. Example: leave it on while authoring, turn it off to fire a deliberately malformed request.
+- **Code editor captures mouse wheel** - on: scrolling inside a code editor stays there until its edge; off (default): the page keeps scrolling so a long body does not trap the wheel.
+- **Workspace snapshot cap** - the size budget for the local snapshot list: **10 / 50 / 200 MB / Unlimited**. Example: set 10 MB on a small laptop, Unlimited if you lean on snapshots heavily.`,
     keywords: [
       'settings',
       'theme',

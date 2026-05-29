@@ -6,6 +6,7 @@ import type { BodyType, Request as ApiRequest, RequestBody } from '@apicircle/sh
 import { applyContentTypeForBodyType } from '@apicircle/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
+import { Select } from '../../primitives/Select';
 import { FullscreenOverlay } from '../../primitives/FullscreenOverlay';
 import { MonacoBodyEditor } from '../../editors/MonacoBodyEditor';
 import { MonacoEditorBase } from '../../editors/MonacoEditorBase';
@@ -286,12 +287,14 @@ function JsonSchemaPicker({ request }: { request: ApiRequest }) {
       >
         Validate against
       </label>
-      <select
+      <Select
+        size="sm"
         id={`schema-${request.id}`}
         aria-label="JSON schema"
         value={request.bodySchemaId ?? ''}
         onChange={(e) => setRequestBodySchemaId(request.id, e.target.value || null)}
-        className="h-7 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+        className="text-text-primary"
+        wrapperClassName="min-w-[9.25rem]"
       >
         <option value="">No schema</option>
         {schemas.map((s) => (
@@ -299,7 +302,7 @@ function JsonSchemaPicker({ request }: { request: ApiRequest }) {
             {s.name}
           </option>
         ))}
-      </select>
+      </Select>
       <button
         type="button"
         onClick={() => openRightDockTab('assets')}
@@ -348,12 +351,14 @@ function GraphqlSchemaPicker({ request }: { request: ApiRequest }) {
       >
         GraphQL schema
       </label>
-      <select
+      <Select
+        size="sm"
         id={`gql-${request.id}`}
         aria-label="GraphQL schema"
         value={request.graphqlSchemaId ?? ''}
         onChange={(e) => setRequestGraphqlSchemaId(request.id, e.target.value || null)}
-        className="h-7 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+        className="text-text-primary"
+        wrapperClassName="min-w-[9.25rem]"
       >
         <option value="">No schema</option>
         {schemas.map((s) => (
@@ -361,7 +366,7 @@ function GraphqlSchemaPicker({ request }: { request: ApiRequest }) {
             {s.name}
           </option>
         ))}
-      </select>
+      </Select>
       <button
         type="button"
         onClick={() => openRightDockTab('assets')}

@@ -15,7 +15,6 @@ export function McpSidebar() {
 
   return (
     <div className="flex h-full flex-col gap-2">
-      <div className="px-1 text-[0.6875rem] uppercase tracking-wider text-text-dim">MCP</div>
       <ul className="flex flex-col gap-0.5">
         {MCP_PANEL_SECTIONS.map((section) => {
           const active = activeSection === section.id;

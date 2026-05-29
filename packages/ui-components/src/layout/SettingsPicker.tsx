@@ -1,13 +1,20 @@
 // Workspace settings popover. Opens via the Settings chip in the top
 // bar and hosts both behavioral toggles (validate-on-send, etc.) and
 // the appearance pickers (theme + font). Theme/Font rows host a side
-// popover that opens on hover (with a 200ms intent delay so an
-// accidental cursor pass doesn't trigger it) and on click for keyboard
-// users. The side popover preserves the standalone pickers' live
-// preview / Esc revert / Enter commit semantics via shared ThemeList /
-// FontList components.
+// popover that opens on click. The side popover preserves the
+// standalone pickers' live preview / Esc revert / Enter commit
+// semantics via shared ThemeList / FontList components.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
+import { createPortal } from 'react-dom';
 import {
   Check,
   ChevronDown,
@@ -41,14 +48,11 @@ const SNAPSHOT_CAP_OPTIONS: Array<{ label: string; bytes: number }> = [
   { label: 'Unlimited', bytes: Number.POSITIVE_INFINITY },
 ];
 
-// Hover-intent timing. Open is generous so brushing past doesn't fire.
-// There's no hover-leave close timer by design — once the popover is
-// open, only an explicit click outside the Settings popover or an Esc
-// keypress dismisses it. This avoids the "I moved my mouse and the
-// theme list disappeared mid-browse" problem.
-const HOVER_OPEN_DELAY_MS = 200;
-
 type SidePopover = 'theme' | 'font' | null;
+const SIDE_POPOVER_ATTR = 'data-settings-side-popover';
+const SIDE_POPOVER_GAP_PX = 6;
+const SIDE_POPOVER_WIDTH_PX = 256;
+const SIDE_POPOVER_VIEWPORT_PADDING_PX = 8;
 
 export function SettingsPicker() {
   const validateOnSend = useWorkspaceStore((s) => s.local?.settings?.validateOnSend ?? true);
@@ -95,7 +99,11 @@ export function SettingsPicker() {
       cancelSidePopoverRef.current = null;
     };
     const onPointer = (e: PointerEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const sidePopover = document.querySelector(`[${SIDE_POPOVER_ATTR}]`);
+      const insideSettings = wrapperRef.current?.contains(target) ?? false;
+      const insideSidePopover = sidePopover?.contains(target) ?? false;
+      if (!insideSettings && !insideSidePopover) {
         cancelSidePopover();
         setOpen(false);
         setSidePopover(null);
@@ -251,13 +259,10 @@ interface AppearanceRowProps {
 }
 
 /**
- * Row inside the Settings popover. Hover with a 200ms intent delay
- * opens the side popover hosting the Theme or Font listbox; clicking
- * the row toggles the same popover (handy for keyboard users). The
- * popover does NOT auto-close on hover-leave — only an explicit click
- * outside Settings or an Esc keypress dismisses it. The active state
- * stays applied to the row whose popover is open so the user has a
- * clear visual anchor while browsing the list.
+ * Row inside the Settings popover. Click toggles the side popover
+ * hosting the Theme or Font listbox. The active state stays applied to
+ * the row whose popover is open so the user has a clear visual anchor
+ * while browsing the list.
  */
 function AppearanceRow({
   row,
@@ -270,41 +275,58 @@ function AppearanceRow({
   onCancel,
   registerCancel,
 }: AppearanceRowProps) {
-  const openTimerRef = useRef<number | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const [popoverStyle, setPopoverStyle] = useState<CSSProperties | null>(null);
 
-  const cancelOpenTimer = () => {
-    if (openTimerRef.current !== null) {
-      window.clearTimeout(openTimerRef.current);
-      openTimerRef.current = null;
-    }
-  };
+  const updatePopoverPosition = useCallback(() => {
+    const button = buttonRef.current;
+    const rect = button?.getBoundingClientRect();
+    if (!button || !rect) return;
+    const settingsRect = button
+      .closest('[role="dialog"][aria-label="Workspace settings"]')
+      ?.getBoundingClientRect();
+    const anchorRight = Math.max(rect.right, settingsRect?.right ?? rect.right);
+    const anchorLeft = Math.min(rect.left, settingsRect?.left ?? rect.left);
+    const padding = SIDE_POPOVER_VIEWPORT_PADDING_PX;
+    const listHeight = Math.min(window.innerHeight * 0.6, window.innerHeight - padding * 2);
+    const hasRightRoom =
+      anchorRight + SIDE_POPOVER_GAP_PX + SIDE_POPOVER_WIDTH_PX <= window.innerWidth - padding;
+    const left = hasRightRoom
+      ? anchorRight + SIDE_POPOVER_GAP_PX
+      : Math.max(padding, anchorLeft - SIDE_POPOVER_GAP_PX - SIDE_POPOVER_WIDTH_PX);
+    const top = Math.min(
+      Math.max(padding, rect.top),
+      Math.max(padding, window.innerHeight - listHeight - padding),
+    );
+    setPopoverStyle({ left, top });
+  }, []);
 
-  const scheduleOpen = () => {
-    cancelOpenTimer();
-    if (open) return;
-    openTimerRef.current = window.setTimeout(() => {
-      onOpen();
-      openTimerRef.current = null;
-    }, HOVER_OPEN_DELAY_MS);
-  };
+  const openSidePopover = useCallback(() => {
+    updatePopoverPosition();
+    onOpen();
+  }, [onOpen, updatePopoverPosition]);
 
-  // Cleanup if the row unmounts before the open timer fires.
-  useEffect(() => () => cancelOpenTimer(), []);
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePopoverPosition();
+  }, [open, updatePopoverPosition]);
+
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener('resize', updatePopoverPosition);
+    window.addEventListener('scroll', updatePopoverPosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePopoverPosition);
+      window.removeEventListener('scroll', updatePopoverPosition, true);
+    };
+  }, [open, updatePopoverPosition]);
 
   return (
-    <div
-      className="relative"
-      // Intent-delayed open on hover. The popover persists after mouse
-      // leave — closing happens via click-outside / Esc.
-      onPointerEnter={scheduleOpen}
-      // Cancel any pending open if the cursor leaves before the delay
-      // elapses. Once `open === true`, this is a no-op.
-      onPointerLeave={cancelOpenTimer}
-    >
+    <div className="relative">
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => (open ? onCancel() : onOpen())}
-        onFocus={onOpen}
+        onClick={() => (open ? onCancel() : openSidePopover())}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`${label}: ${valueLabel} — open list`}
@@ -335,23 +357,29 @@ function AppearanceRow({
           <ChevronRight size={11} aria-hidden="true" />
         </span>
       </button>
-      {open && (
-        <div
-          // Side popover sits to the right of the Settings popover.
-          // Settings is left-anchored under the top-bar trigger, so
-          // there's room. Vertical alignment matches the row's top.
-          // `bg-card` ensures the popover surface paints opaque even if
-          // the inner list is briefly mid-render or its own background
-          // doesn't fully cover (e.g. rounded corners).
-          className="absolute left-full top-0 z-40 ml-1.5 rounded-sm bg-card"
-        >
-          {row === 'theme' ? (
-            <ThemeList onCommit={onCommit} onCancel={onCancel} registerCancel={registerCancel} />
-          ) : (
-            <FontList onCommit={onCommit} onCancel={onCancel} registerCancel={registerCancel} />
-          )}
-        </div>
-      )}
+      {open &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            {...{ [SIDE_POPOVER_ATTR]: '' }}
+            // The side popover is portalled out of the scrollable
+            // Settings dialog. Rendering it inside the dialog allowed
+            // listbox focus/scrollIntoView to horizontally scroll the
+            // Settings panel itself.
+            // `bg-card` ensures the popover surface paints opaque even if
+            // the inner list is briefly mid-render or its own background
+            // doesn't fully cover (e.g. rounded corners).
+            className="fixed z-40 rounded-sm bg-card"
+            style={popoverStyle ?? { left: -9999, top: -9999 }}
+          >
+            {row === 'theme' ? (
+              <ThemeList onCommit={onCommit} onCancel={onCancel} registerCancel={registerCancel} />
+            ) : (
+              <FontList onCommit={onCommit} onCancel={onCancel} registerCancel={registerCancel} />
+            )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

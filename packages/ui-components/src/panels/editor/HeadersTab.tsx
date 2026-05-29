@@ -79,7 +79,7 @@ export const HeadersTab = memo(function HeadersTab({ request }: HeadersTabProps)
                 scope={scope}
                 ariaLabel={`Headers value ${index + 1}`}
                 placeholder="Header value"
-                className="h-7"
+                className="h-8"
               />
               <HeaderValueRecommendations
                 headerKey={row.key}

@@ -248,7 +248,7 @@ export function MocksSidebar() {
                                   aria-label={`Open ${endpoint.method} ${endpoint.pathPattern}`}
                                   aria-current={isActive ? 'true' : undefined}
                                   className={cn(
-                                    'flex h-full flex-1 items-center gap-1.5 rounded-sm px-1.5 text-[0.6875rem]',
+                                    'flex h-full flex-1 items-center gap-2 truncate px-2 py-1.5 text-left text-xs',
                                     isActive
                                       ? 'text-accent'
                                       : 'text-text-muted group-hover:text-text-primary',
@@ -335,21 +335,33 @@ export function MocksSidebarActions() {
 }
 
 function MethodChip({ method }: { method: string }) {
-  const tone =
-    method === 'GET'
-      ? 'border-accent/40 text-accent'
-      : method === 'POST'
-        ? 'border-success/40 text-success'
-        : method === 'PUT' || method === 'PATCH'
-          ? 'border-warning/40 text-warning'
-          : method === 'DELETE'
-            ? 'border-danger/40 text-danger'
-            : 'border-border text-text-muted';
+  const tone = methodTone(method);
   return (
     <span
-      className={`inline-flex w-12 shrink-0 items-center justify-center rounded-sm border bg-card px-1 py-0 font-mono text-[0.5625rem] uppercase ${tone}`}
+      className={`inline-block w-10 shrink-0 text-left font-mono text-[0.625rem] font-medium uppercase tracking-wider tabular-nums ${tone}`}
     >
       {method}
     </span>
   );
+}
+
+function methodTone(method: string): string {
+  switch (method) {
+    case 'GET':
+      return 'text-http-get';
+    case 'POST':
+      return 'text-http-post';
+    case 'PUT':
+      return 'text-http-put';
+    case 'PATCH':
+      return 'text-http-patch';
+    case 'DELETE':
+      return 'text-http-delete';
+    case 'HEAD':
+      return 'text-http-head';
+    case 'OPTIONS':
+      return 'text-http-options';
+    default:
+      return 'text-text-muted';
+  }
 }

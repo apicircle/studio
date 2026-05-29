@@ -133,7 +133,7 @@ const STEPS: ReadonlyArray<TourStep> = [
   {
     id: 'mocks',
     title: 'Mocks',
-    body: 'Turn an OpenAPI, Postman, or Insomnia spec into a mock server running locally — handy before the real API exists.',
+    body: 'Turn an OpenAPI, Postman, or Insomnia spec into a mock server and scan endpoints in the same compact method-and-path style as the Editor.',
     panel: 'mocks',
     target: 'nav-mocks',
   },
@@ -153,7 +153,7 @@ const STEPS: ReadonlyArray<TourStep> = [
   {
     id: 'settings',
     title: 'Settings & appearance',
-    body: 'Theme, font, text size, and behaviour toggles all live in here.',
+    body: 'Theme, font family, text size, and behaviour toggles all live here. Click Theme or Font family to open the list, hover an option for one second to preview it, or use keyboard navigation before applying.',
     target: 'settings',
   },
   {

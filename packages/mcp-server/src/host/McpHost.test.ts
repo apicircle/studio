@@ -4,6 +4,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import { McpHost } from './McpHost';
+import { MCP_PACKAGE_VERSION } from '../packageVersion';
 import type { AnyToolDef, ToolHandlerContext } from '../tools/types';
 
 // Trivial paired transport — the host and client each get a Transport whose
@@ -85,6 +86,22 @@ function makeContext(): ToolHandlerContext {
 }
 
 describe('McpHost', () => {
+  it('reports the package version during protocol initialization', async () => {
+    const host = new McpHost({ context: makeContext(), tools: [] });
+    const { server, client } = pair();
+    await host.connect(server);
+
+    const c = new Client({ name: 'test', version: '0.0.0' });
+    await c.connect(client);
+    expect(c.getServerVersion()).toEqual({
+      name: 'apicircle-mcp',
+      version: MCP_PACKAGE_VERSION,
+    });
+
+    await c.close();
+    await host.close();
+  });
+
   it('lists registered tools over the protocol', async () => {
     const host = new McpHost({ context: makeContext(), tools: [echoTool] });
     const { server, client } = pair();

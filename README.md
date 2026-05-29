@@ -50,6 +50,10 @@ your repo.
 - **Runs everywhere you do.** Desktop, browser, CLI, and embeddable npm
   packages — one engine, one workspace format, one mutation API behind all of
   them.
+- **Comfortable to tune.** Settings includes expanded theme and font catalogs,
+  a safe macOS system font stack, click-open Theme and Font Family pickers,
+  one-second hover previews with a pending indicator, keyboard previews, and
+  UI text-size scaling.
 - **Built on open standards.** MCP for AI, Git for sync, OpenAPI / Postman /
   Insomnia / HAR for import. No proprietary formats waiting to trap you.
 

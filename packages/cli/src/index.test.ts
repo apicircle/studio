@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildProgram } from './index';
+import { CLI_PACKAGE_VERSION } from './packageVersion';
 
 describe('CLI program', () => {
   it('registers the five top-level commands', () => {
@@ -11,6 +12,13 @@ describe('CLI program', () => {
   it('exposes a stable name and version for `--version`', () => {
     const program = buildProgram();
     expect(program.name()).toBe('apicircle');
-    expect(program.version()).toBe('1.0.0');
+    expect(program.version()).toBe(CLI_PACKAGE_VERSION);
+  });
+
+  it('exposes help for command-line users', () => {
+    const help = buildProgram().helpInformation();
+    expect(help).toContain('Usage: apicircle [options] [command]');
+    expect(help).toContain('--version');
+    expect(help).toContain('--help');
   });
 });

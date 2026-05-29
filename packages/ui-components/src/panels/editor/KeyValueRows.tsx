@@ -122,7 +122,7 @@ export function KeyValueRows({
             onChange={(e) => update(index, { key: e.target.value })}
             onKeyDown={(e) => onKeyDown(e, index, 'key')}
             aria-label={`${ariaLabel} key ${index + 1}`}
-            className="h-7 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+            className="h-8 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
           />
           {valueScope ? (
             <div className="flex-[2]">
@@ -132,7 +132,7 @@ export function KeyValueRows({
                 scope={valueScope}
                 ariaLabel={`${ariaLabel} value ${index + 1}`}
                 placeholder={valuePlaceholder}
-                className="h-7"
+                className="h-8"
               />
             </div>
           ) : (
@@ -143,7 +143,7 @@ export function KeyValueRows({
               onChange={(e) => update(index, { value: e.target.value })}
               onKeyDown={(e) => onKeyDown(e, index, 'value')}
               aria-label={`${ariaLabel} value ${index + 1}`}
-              className="h-7 flex-[2] rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+              className="h-8 flex-[2] rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
             />
           )}
           {rightSlot?.(row, index)}

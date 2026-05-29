@@ -3,14 +3,15 @@
 // needs the same picker. Keeps the live-preview / Esc-revert /
 // Enter-commit semantics identical to the standalone version.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check } from 'lucide-react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Check, LoaderCircle } from 'lucide-react';
 import type { ThemeId } from '@apicircle/shared';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { ALL_THEMES, type ThemeDef } from '../theme/applyTheme';
 import { cn } from '../primitives/cn';
 
 type Group = { key: 'dark' | 'light' | 'high-contrast'; label: string; themes: ThemeDef[] };
+const HOVER_PREVIEW_DELAY_MS = 1000;
 
 function groupThemes(themes: ReadonlyArray<ThemeDef>): Group[] {
   const dark = themes.filter((t) => t.mode === 'dark' && t.tag !== 'high-contrast');
@@ -49,6 +50,9 @@ export function ThemeList({ onCommit, onCancel, registerCancel }: ThemeListProps
   const optionRefs = useRef<Map<ThemeId, HTMLButtonElement>>(new Map());
   const originalThemeRef = useRef<ThemeId>(themeId);
   const currentThemeRef = useRef(themeId);
+  const hoverPreviewTimerRef = useRef<number | null>(null);
+  const guidanceId = useId();
+  const [pendingPreviewId, setPendingPreviewId] = useState<ThemeId | null>(null);
   useEffect(() => {
     currentThemeRef.current = themeId;
   }, [themeId]);
@@ -62,6 +66,34 @@ export function ThemeList({ onCommit, onCancel, registerCancel }: ThemeListProps
   const flatOrder = useMemo(() => groups.flatMap((g) => g.themes.map((t) => t.id)), [groups]);
   const activeIndex = flatOrder.indexOf(themeId);
   const [focusIndex, setFocusIndex] = useState(activeIndex >= 0 ? activeIndex : 0);
+
+  const clearHoverPreviewTimer = useCallback(() => {
+    if (hoverPreviewTimerRef.current !== null) {
+      window.clearTimeout(hoverPreviewTimerRef.current);
+      hoverPreviewTimerRef.current = null;
+    }
+  }, []);
+
+  const cancelHoverPreview = useCallback(() => {
+    clearHoverPreviewTimer();
+    setPendingPreviewId(null);
+  }, [clearHoverPreviewTimer]);
+
+  const scheduleHoverPreview = useCallback(
+    (id: ThemeId) => {
+      cancelHoverPreview();
+      if (id === currentThemeRef.current) return;
+      setPendingPreviewId(id);
+      hoverPreviewTimerRef.current = window.setTimeout(() => {
+        setThemeId(id);
+        setPendingPreviewId(null);
+        hoverPreviewTimerRef.current = null;
+      }, HOVER_PREVIEW_DELAY_MS);
+    },
+    [cancelHoverPreview, setThemeId],
+  );
+
+  useEffect(() => () => clearHoverPreviewTimer(), [clearHoverPreviewTimer]);
 
   // Snapshot the original on mount — list lives only while open, so the
   // mount is the open moment. If the consumer unmounts us without a
@@ -90,12 +122,14 @@ export function ThemeList({ onCommit, onCancel, registerCancel }: ThemeListProps
   }, [focusIndex, flatOrder, setThemeId]);
 
   const revertAndCancel = () => {
+    cancelHoverPreview();
     const original = originalThemeRef.current;
     if (original !== currentThemeRef.current) setThemeId(original);
     onCancel();
   };
 
   const commit = () => {
+    cancelHoverPreview();
     originalThemeRef.current = currentThemeRef.current;
     committedRef.current = true;
     onCommit();
@@ -107,13 +141,14 @@ export function ThemeList({ onCommit, onCancel, registerCancel }: ThemeListProps
   useEffect(() => {
     if (!registerCancel) return;
     const fn = () => {
+      cancelHoverPreview();
       const original = originalThemeRef.current;
       if (original !== currentThemeRef.current) setThemeId(original);
       committedRef.current = true; // suppresses unmount-revert below
     };
     registerCancel(fn);
     return () => registerCancel(null);
-  }, [registerCancel, setThemeId]);
+  }, [cancelHoverPreview, registerCancel, setThemeId]);
 
   // Belt-and-braces revert: if we unmount without an explicit commit (e.g.
   // a parent that doesn't use registerCancel), restore the original.
@@ -126,6 +161,9 @@ export function ThemeList({ onCommit, onCancel, registerCancel }: ThemeListProps
   }, [setThemeId]);
 
   const handleKey = (e: React.KeyboardEvent<HTMLUListElement>) => {
+    if (['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' ', 'Escape'].includes(e.key)) {
+      cancelHoverPreview();
+    }
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       setFocusIndex((i) => Math.min(flatOrder.length - 1, i + 1));
@@ -148,56 +186,103 @@ export function ThemeList({ onCommit, onCancel, registerCancel }: ThemeListProps
   };
 
   return (
-    <ul
-      role="listbox"
-      aria-label="Themes"
-      onKeyDown={handleKey}
-      className="max-h-[60vh] w-64 overflow-y-auto overscroll-contain rounded-sm border border-border-strong bg-card shadow-elevated"
-    >
-      {groups.map((group) => (
-        <li key={group.key}>
-          <div
-            role="presentation"
-            className="sticky top-0 z-10 border-b border-border-subtle bg-card px-3 pb-1 pt-2 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim"
-          >
-            {group.label}
-          </div>
-          <ul role="presentation">
-            {group.themes.map((theme) => {
-              const active = theme.id === themeId;
-              return (
-                <li key={theme.id}>
-                  <button
-                    ref={(el) => {
-                      if (el) optionRefs.current.set(theme.id, el);
-                      else optionRefs.current.delete(theme.id);
-                    }}
-                    type="button"
-                    role="option"
-                    aria-selected={active}
-                    tabIndex={-1}
-                    onClick={() => {
-                      setThemeId(theme.id);
-                      originalThemeRef.current = theme.id;
-                      committedRef.current = true;
-                      onCommit();
-                    }}
-                    className={cn(
-                      'flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors',
-                      active
-                        ? 'bg-accent/10 text-text-primary'
-                        : 'text-text-muted hover:bg-surface hover:text-text-primary',
-                    )}
-                  >
-                    <span>{theme.label}</span>
-                    {active && <Check size={14} className="text-accent" />}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </li>
-      ))}
-    </ul>
+    <div className="w-64 overflow-hidden rounded-sm border border-border-strong bg-card shadow-elevated">
+      <div
+        id={guidanceId}
+        className="sticky top-0 z-20 border-b border-border-subtle bg-card px-3 py-2 text-[0.6875rem] leading-snug text-text-muted"
+      >
+        Hover or use keyboard navigation to preview. Click to apply.
+      </div>
+      <ul
+        role="listbox"
+        aria-label="Themes"
+        aria-describedby={guidanceId}
+        onKeyDown={handleKey}
+        className="max-h-[calc(60vh-2.5rem)] overflow-y-auto overscroll-contain"
+      >
+        {groups.map((group) => (
+          <li key={group.key}>
+            <div
+              role="presentation"
+              className="sticky top-0 z-10 border-b border-border-subtle bg-card px-3 pb-1 pt-2 text-[0.625rem] font-medium uppercase tracking-wider text-text-dim"
+            >
+              {group.label}
+            </div>
+            <ul role="presentation">
+              {group.themes.map((theme) => {
+                const active = theme.id === themeId;
+                const pending = pendingPreviewId === theme.id;
+                return (
+                  <li key={theme.id}>
+                    <button
+                      ref={(el) => {
+                        if (el) optionRefs.current.set(theme.id, el);
+                        else optionRefs.current.delete(theme.id);
+                      }}
+                      type="button"
+                      role="option"
+                      aria-selected={active}
+                      tabIndex={-1}
+                      onClick={() => {
+                        cancelHoverPreview();
+                        setThemeId(theme.id);
+                        originalThemeRef.current = theme.id;
+                        committedRef.current = true;
+                        onCommit();
+                      }}
+                      onMouseEnter={() => scheduleHoverPreview(theme.id)}
+                      onMouseLeave={cancelHoverPreview}
+                      className={cn(
+                        'flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors',
+                        active
+                          ? 'bg-accent/10 text-text-primary'
+                          : 'text-text-muted hover:bg-surface hover:text-text-primary',
+                      )}
+                    >
+                      <span>{theme.label}</span>
+                      <OptionStatus
+                        active={active}
+                        pending={pending}
+                        testId={`theme-${theme.id}`}
+                      />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function OptionStatus({
+  active,
+  pending,
+  testId,
+}: {
+  active: boolean;
+  pending: boolean;
+  testId: string;
+}) {
+  return (
+    <span className="ml-2 flex h-4 w-4 shrink-0 items-center justify-center">
+      {pending ? (
+        <LoaderCircle
+          size={14}
+          aria-hidden="true"
+          data-testid={`${testId}-preview-pending`}
+          className="animate-spin text-accent transition-opacity"
+        />
+      ) : active ? (
+        <Check
+          size={14}
+          aria-hidden="true"
+          data-testid={`${testId}-preview-active`}
+          className="text-accent transition-transform duration-150"
+        />
+      ) : null}
+    </span>
   );
 }

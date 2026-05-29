@@ -159,6 +159,79 @@ export const ALL_FONTS: ReadonlyArray<FontFamilyDef> = [
       'https://fonts.googleapis.com/css2?family=Victor+Mono:wght@400;500;600;700&display=swap',
   },
   {
+    id: 'noto-sans-mono',
+    label: 'Noto Sans Mono',
+    category: 'mono',
+    stack: '"Noto Sans Mono", ui-monospace, Menlo, Consolas, monospace',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Noto+Sans+Mono:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'martian-mono',
+    label: 'Martian Mono',
+    category: 'mono',
+    stack: '"Martian Mono", ui-monospace, Menlo, Consolas, monospace',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Martian+Mono:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'fragment-mono',
+    label: 'Fragment Mono',
+    category: 'mono',
+    stack: '"Fragment Mono", ui-monospace, Menlo, Consolas, monospace',
+    webfontHref: 'https://fonts.googleapis.com/css2?family=Fragment+Mono&display=swap',
+  },
+  {
+    id: 'overpass-mono',
+    label: 'Overpass Mono',
+    category: 'mono',
+    stack: '"Overpass Mono", ui-monospace, Menlo, Consolas, monospace',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Overpass+Mono:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'cousine',
+    label: 'Cousine',
+    category: 'mono',
+    stack: 'Cousine, ui-monospace, Menlo, Consolas, monospace',
+    webfontHref: 'https://fonts.googleapis.com/css2?family=Cousine:wght@400;700&display=swap',
+  },
+  {
+    id: 'courier-prime',
+    label: 'Courier Prime',
+    category: 'mono',
+    stack: '"Courier Prime", ui-monospace, Menlo, Consolas, monospace',
+    webfontHref: 'https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap',
+  },
+  {
+    id: 'pt-mono',
+    label: 'PT Mono',
+    category: 'mono',
+    stack: '"PT Mono", ui-monospace, Menlo, Consolas, monospace',
+    webfontHref: 'https://fonts.googleapis.com/css2?family=PT+Mono&display=swap',
+  },
+  {
+    id: 'oxygen-mono',
+    label: 'Oxygen Mono',
+    category: 'mono',
+    stack: '"Oxygen Mono", ui-monospace, Menlo, Consolas, monospace',
+    webfontHref: 'https://fonts.googleapis.com/css2?family=Oxygen+Mono&display=swap',
+  },
+  {
+    id: 'b612-mono',
+    label: 'B612 Mono',
+    category: 'mono',
+    stack: '"B612 Mono", ui-monospace, Menlo, Consolas, monospace',
+    webfontHref: 'https://fonts.googleapis.com/css2?family=B612+Mono:wght@400;700&display=swap',
+  },
+  {
+    id: 'share-tech-mono',
+    label: 'Share Tech Mono',
+    category: 'mono',
+    stack: '"Share Tech Mono", ui-monospace, Menlo, Consolas, monospace',
+    webfontHref: 'https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap',
+  },
+  {
     id: 'system-sans',
     label: 'System Sans',
     category: 'sans',
@@ -255,6 +328,82 @@ export const ALL_FONTS: ReadonlyArray<FontFamilyDef> = [
     stack: '"Work Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
     webfontHref:
       'https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'macos-system',
+    label: 'macOS System',
+    category: 'sans',
+    stack:
+      '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif',
+  },
+  {
+    id: 'aptos',
+    label: 'Aptos',
+    category: 'sans',
+    stack: 'Aptos, "Segoe UI", system-ui, -apple-system, sans-serif',
+  },
+  {
+    id: 'public-sans',
+    label: 'Public Sans',
+    category: 'sans',
+    stack: '"Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'noto-sans',
+    label: 'Noto Sans',
+    category: 'sans',
+    stack: '"Noto Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'atkinson-hyperlegible',
+    label: 'Atkinson Hyperlegible',
+    category: 'sans',
+    stack: '"Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap',
+  },
+  {
+    id: 'lexend',
+    label: 'Lexend',
+    category: 'sans',
+    stack: 'Lexend, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'outfit',
+    label: 'Outfit',
+    category: 'sans',
+    stack: 'Outfit, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'sora',
+    label: 'Sora',
+    category: 'sans',
+    stack: 'Sora, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    webfontHref: 'https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'barlow',
+    label: 'Barlow',
+    category: 'sans',
+    stack: 'Barlow, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap',
+  },
+  {
+    id: 'urbanist',
+    label: 'Urbanist',
+    category: 'sans',
+    stack: 'Urbanist, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    webfontHref:
+      'https://fonts.googleapis.com/css2?family=Urbanist:wght@400;500;600;700&display=swap',
   },
 ];
 

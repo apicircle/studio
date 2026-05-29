@@ -901,6 +901,938 @@
   color-scheme: light;
 }
 
+/* ===== Expanded developer palettes ===== */
+
+[data-theme='vscode-dark'] {
+  --surface: 30 30 30;
+  --card: 37 37 38;
+  --border: 62 62 66;
+  --border-strong: 92 92 98;
+  --border-subtle: 45 45 48;
+  --text-primary: 212 212 212;
+  --text-muted: 176 176 176;
+  --text-dim: 140 140 140;
+  --text-faint: 105 105 105;
+  --accent: 0 122 204;
+  --accent-strong: 55 148 230;
+  --success: 78 201 176;
+  --warning: 220 180 80;
+  --danger: 244 71 71;
+  --info: 86 156 214;
+  --purple: 197 134 192;
+  --blue: 86 156 214;
+  --green: 106 153 85;
+  --amber: 206 145 120;
+  --red: 244 71 71;
+  --http-get: 78 201 176;
+  --http-post: 86 156 214;
+  --http-put: 220 180 80;
+  --http-patch: 197 134 192;
+  --http-delete: 244 71 71;
+  --http-head: 176 176 176;
+  --http-options: 176 176 176;
+  color-scheme: dark;
+}
+
+[data-theme='github-dark-dimmed'] {
+  --surface: 34 39 46;
+  --card: 45 51 59;
+  --border: 68 76 86;
+  --border-strong: 118 131 144;
+  --border-subtle: 55 62 71;
+  --text-primary: 205 217 229;
+  --text-muted: 173 186 199;
+  --text-dim: 144 157 171;
+  --text-faint: 99 110 123;
+  --accent: 83 155 245;
+  --accent-strong: 112 178 255;
+  --success: 87 171 90;
+  --warning: 218 165 32;
+  --danger: 229 83 75;
+  --info: 83 155 245;
+  --purple: 211 153 255;
+  --blue: 83 155 245;
+  --green: 87 171 90;
+  --amber: 218 165 32;
+  --red: 229 83 75;
+  --http-get: 87 171 90;
+  --http-post: 83 155 245;
+  --http-put: 218 165 32;
+  --http-patch: 211 153 255;
+  --http-delete: 229 83 75;
+  --http-head: 173 186 199;
+  --http-options: 173 186 199;
+  color-scheme: dark;
+}
+
+[data-theme='terminal-green'] {
+  --surface: 5 18 12;
+  --card: 8 29 20;
+  --border: 22 80 50;
+  --border-strong: 46 160 100;
+  --border-subtle: 12 48 31;
+  --text-primary: 220 255 232;
+  --text-muted: 148 220 174;
+  --text-dim: 98 176 128;
+  --text-faint: 64 126 88;
+  --accent: 80 255 150;
+  --accent-strong: 128 255 180;
+  --success: 80 255 150;
+  --warning: 237 190 80;
+  --danger: 255 95 95;
+  --info: 82 208 255;
+  --purple: 190 150 255;
+  --blue: 82 208 255;
+  --green: 80 255 150;
+  --amber: 237 190 80;
+  --red: 255 95 95;
+  --http-get: 80 255 150;
+  --http-post: 82 208 255;
+  --http-put: 237 190 80;
+  --http-patch: 190 150 255;
+  --http-delete: 255 95 95;
+  --http-head: 148 220 174;
+  --http-options: 148 220 174;
+  color-scheme: dark;
+}
+
+[data-theme='terminal-amber'] {
+  --surface: 22 14 6;
+  --card: 35 23 10;
+  --border: 90 58 26;
+  --border-strong: 172 118 52;
+  --border-subtle: 62 40 18;
+  --text-primary: 255 242 212;
+  --text-muted: 225 194 138;
+  --text-dim: 184 142 82;
+  --text-faint: 132 96 52;
+  --accent: 255 190 88;
+  --accent-strong: 255 214 130;
+  --success: 112 213 130;
+  --warning: 255 190 88;
+  --danger: 255 110 96;
+  --info: 92 190 255;
+  --purple: 205 150 255;
+  --blue: 92 190 255;
+  --green: 112 213 130;
+  --amber: 255 190 88;
+  --red: 255 110 96;
+  --http-get: 112 213 130;
+  --http-post: 92 190 255;
+  --http-put: 255 190 88;
+  --http-patch: 205 150 255;
+  --http-delete: 255 110 96;
+  --http-head: 225 194 138;
+  --http-options: 225 194 138;
+  color-scheme: dark;
+}
+
+[data-theme='oled-black'] {
+  --surface: 0 0 0;
+  --card: 7 8 10;
+  --border: 36 40 46;
+  --border-strong: 78 86 98;
+  --border-subtle: 18 20 24;
+  --text-primary: 245 248 252;
+  --text-muted: 190 198 210;
+  --text-dim: 145 154 168;
+  --text-faint: 96 104 118;
+  --accent: 0 225 255;
+  --accent-strong: 91 240 255;
+  --success: 80 240 150;
+  --warning: 255 208 80;
+  --danger: 255 95 95;
+  --info: 0 225 255;
+  --purple: 190 150 255;
+  --blue: 0 225 255;
+  --green: 80 240 150;
+  --amber: 255 208 80;
+  --red: 255 95 95;
+  --http-get: 80 240 150;
+  --http-post: 0 225 255;
+  --http-put: 255 208 80;
+  --http-patch: 190 150 255;
+  --http-delete: 255 95 95;
+  --http-head: 190 198 210;
+  --http-options: 190 198 210;
+  color-scheme: dark;
+}
+
+[data-theme='carbon-dark'] {
+  --surface: 22 22 22;
+  --card: 38 38 38;
+  --border: 57 57 57;
+  --border-strong: 111 111 111;
+  --border-subtle: 48 48 48;
+  --text-primary: 244 244 244;
+  --text-muted: 198 198 198;
+  --text-dim: 160 160 160;
+  --text-faint: 120 120 120;
+  --accent: 15 98 254;
+  --accent-strong: 69 137 255;
+  --success: 66 190 101;
+  --warning: 240 180 41;
+  --danger: 250 77 86;
+  --info: 15 98 254;
+  --purple: 190 135 255;
+  --blue: 15 98 254;
+  --green: 66 190 101;
+  --amber: 240 180 41;
+  --red: 250 77 86;
+  --http-get: 66 190 101;
+  --http-post: 15 98 254;
+  --http-put: 240 180 41;
+  --http-patch: 190 135 255;
+  --http-delete: 250 77 86;
+  --http-head: 198 198 198;
+  --http-options: 198 198 198;
+  color-scheme: dark;
+}
+
+[data-theme='slate-dark'] {
+  --surface: 15 23 42;
+  --card: 30 41 59;
+  --border: 51 65 85;
+  --border-strong: 100 116 139;
+  --border-subtle: 37 50 70;
+  --text-primary: 241 245 249;
+  --text-muted: 203 213 225;
+  --text-dim: 148 163 184;
+  --text-faint: 100 116 139;
+  --accent: 56 189 248;
+  --accent-strong: 125 211 252;
+  --success: 74 222 128;
+  --warning: 251 191 36;
+  --danger: 248 113 113;
+  --info: 56 189 248;
+  --purple: 192 132 252;
+  --blue: 96 165 250;
+  --green: 74 222 128;
+  --amber: 251 191 36;
+  --red: 248 113 113;
+  --http-get: 74 222 128;
+  --http-post: 96 165 250;
+  --http-put: 251 191 36;
+  --http-patch: 192 132 252;
+  --http-delete: 248 113 113;
+  --http-head: 203 213 225;
+  --http-options: 203 213 225;
+  color-scheme: dark;
+}
+
+[data-theme='zinc-dark'] {
+  --surface: 24 24 27;
+  --card: 39 39 42;
+  --border: 63 63 70;
+  --border-strong: 113 113 122;
+  --border-subtle: 45 45 49;
+  --text-primary: 244 244 245;
+  --text-muted: 212 212 216;
+  --text-dim: 161 161 170;
+  --text-faint: 113 113 122;
+  --accent: 132 204 22;
+  --accent-strong: 163 230 53;
+  --success: 34 197 94;
+  --warning: 234 179 8;
+  --danger: 239 68 68;
+  --info: 14 165 233;
+  --purple: 168 85 247;
+  --blue: 14 165 233;
+  --green: 34 197 94;
+  --amber: 234 179 8;
+  --red: 239 68 68;
+  --http-get: 34 197 94;
+  --http-post: 14 165 233;
+  --http-put: 234 179 8;
+  --http-patch: 168 85 247;
+  --http-delete: 239 68 68;
+  --http-head: 212 212 216;
+  --http-options: 212 212 216;
+  color-scheme: dark;
+}
+
+[data-theme='everforest-dark'] {
+  --surface: 45 53 59;
+  --card: 52 63 68;
+  --border: 75 86 88;
+  --border-strong: 127 137 125;
+  --border-subtle: 62 72 77;
+  --text-primary: 211 198 170;
+  --text-muted: 188 176 150;
+  --text-dim: 157 169 160;
+  --text-faint: 127 137 125;
+  --accent: 131 192 146;
+  --accent-strong: 167 215 151;
+  --success: 167 192 128;
+  --warning: 219 188 127;
+  --danger: 230 126 128;
+  --info: 127 187 179;
+  --purple: 211 134 155;
+  --blue: 127 187 179;
+  --green: 167 192 128;
+  --amber: 219 188 127;
+  --red: 230 126 128;
+  --http-get: 167 192 128;
+  --http-post: 127 187 179;
+  --http-put: 219 188 127;
+  --http-patch: 211 134 155;
+  --http-delete: 230 126 128;
+  --http-head: 188 176 150;
+  --http-options: 188 176 150;
+  color-scheme: dark;
+}
+
+[data-theme='kanagawa-wave'] {
+  --surface: 31 31 40;
+  --card: 42 42 55;
+  --border: 54 54 72;
+  --border-strong: 114 119 140;
+  --border-subtle: 39 39 52;
+  --text-primary: 220 215 186;
+  --text-muted: 192 187 160;
+  --text-dim: 150 154 160;
+  --text-faint: 114 119 140;
+  --accent: 126 156 216;
+  --accent-strong: 149 183 255;
+  --success: 152 187 108;
+  --warning: 230 195 132;
+  --danger: 224 108 117;
+  --info: 127 180 202;
+  --purple: 149 127 184;
+  --blue: 126 156 216;
+  --green: 152 187 108;
+  --amber: 230 195 132;
+  --red: 224 108 117;
+  --http-get: 152 187 108;
+  --http-post: 126 156 216;
+  --http-put: 230 195 132;
+  --http-patch: 149 127 184;
+  --http-delete: 224 108 117;
+  --http-head: 192 187 160;
+  --http-options: 192 187 160;
+  color-scheme: dark;
+}
+
+[data-theme='kanagawa-dragon'] {
+  --surface: 24 22 22;
+  --card: 34 32 32;
+  --border: 58 52 50;
+  --border-strong: 126 116 105;
+  --border-subtle: 42 38 38;
+  --text-primary: 197 201 197;
+  --text-muted: 166 176 166;
+  --text-dim: 131 143 131;
+  --text-faint: 94 105 94;
+  --accent: 139 164 176;
+  --accent-strong: 166 194 210;
+  --success: 135 159 112;
+  --warning: 196 162 95;
+  --danger: 196 87 88;
+  --info: 123 162 172;
+  --purple: 147 121 169;
+  --blue: 123 162 172;
+  --green: 135 159 112;
+  --amber: 196 162 95;
+  --red: 196 87 88;
+  --http-get: 135 159 112;
+  --http-post: 123 162 172;
+  --http-put: 196 162 95;
+  --http-patch: 147 121 169;
+  --http-delete: 196 87 88;
+  --http-head: 166 176 166;
+  --http-options: 166 176 166;
+  color-scheme: dark;
+}
+
+[data-theme='horizon-dark'] {
+  --surface: 28 30 38;
+  --card: 36 40 50;
+  --border: 62 67 82;
+  --border-strong: 102 112 135;
+  --border-subtle: 45 50 62;
+  --text-primary: 213 216 218;
+  --text-muted: 184 188 198;
+  --text-dim: 144 150 164;
+  --text-faint: 104 112 132;
+  --accent: 233 86 120;
+  --accent-strong: 255 125 150;
+  --success: 41 199 153;
+  --warning: 250 190 88;
+  --danger: 233 86 86;
+  --info: 38 180 230;
+  --purple: 181 126 220;
+  --blue: 38 180 230;
+  --green: 41 199 153;
+  --amber: 250 190 88;
+  --red: 233 86 86;
+  --http-get: 41 199 153;
+  --http-post: 38 180 230;
+  --http-put: 250 190 88;
+  --http-patch: 181 126 220;
+  --http-delete: 233 86 86;
+  --http-head: 184 188 198;
+  --http-options: 184 188 198;
+  color-scheme: dark;
+}
+
+[data-theme='city-lights'] {
+  --surface: 29 37 44;
+  --card: 36 47 56;
+  --border: 52 67 78;
+  --border-strong: 90 112 126;
+  --border-subtle: 42 54 64;
+  --text-primary: 232 244 252;
+  --text-muted: 180 205 220;
+  --text-dim: 130 160 180;
+  --text-faint: 92 118 134;
+  --accent: 94 196 255;
+  --accent-strong: 128 215 255;
+  --success: 83 203 132;
+  --warning: 236 190 86;
+  --danger: 240 100 110;
+  --info: 94 196 255;
+  --purple: 187 154 247;
+  --blue: 94 196 255;
+  --green: 83 203 132;
+  --amber: 236 190 86;
+  --red: 240 100 110;
+  --http-get: 83 203 132;
+  --http-post: 94 196 255;
+  --http-put: 236 190 86;
+  --http-patch: 187 154 247;
+  --http-delete: 240 100 110;
+  --http-head: 180 205 220;
+  --http-options: 180 205 220;
+  color-scheme: dark;
+}
+
+[data-theme='nightfox-dark'] {
+  --surface: 25 35 48;
+  --card: 33 45 62;
+  --border: 59 76 98;
+  --border-strong: 104 125 151;
+  --border-subtle: 42 55 74;
+  --text-primary: 205 214 229;
+  --text-muted: 174 184 202;
+  --text-dim: 139 151 176;
+  --text-faint: 104 117 143;
+  --accent: 113 156 214;
+  --accent-strong: 144 183 232;
+  --success: 129 200 190;
+  --warning: 241 190 118;
+  --danger: 224 102 102;
+  --info: 99 178 213;
+  --purple: 184 146 224;
+  --blue: 113 156 214;
+  --green: 129 200 190;
+  --amber: 241 190 118;
+  --red: 224 102 102;
+  --http-get: 129 200 190;
+  --http-post: 113 156 214;
+  --http-put: 241 190 118;
+  --http-patch: 184 146 224;
+  --http-delete: 224 102 102;
+  --http-head: 174 184 202;
+  --http-options: 174 184 202;
+  color-scheme: dark;
+}
+
+[data-theme='command-center'] {
+  --surface: 14 18 24;
+  --card: 24 30 38;
+  --border: 42 52 66;
+  --border-strong: 82 96 118;
+  --border-subtle: 30 38 50;
+  --text-primary: 232 238 246;
+  --text-muted: 178 188 202;
+  --text-dim: 134 148 168;
+  --text-faint: 92 106 126;
+  --accent: 34 197 94;
+  --accent-strong: 74 222 128;
+  --success: 34 197 94;
+  --warning: 234 179 8;
+  --danger: 248 81 73;
+  --info: 56 189 248;
+  --purple: 168 85 247;
+  --blue: 56 189 248;
+  --green: 34 197 94;
+  --amber: 234 179 8;
+  --red: 248 81 73;
+  --http-get: 34 197 94;
+  --http-post: 56 189 248;
+  --http-put: 234 179 8;
+  --http-patch: 168 85 247;
+  --http-delete: 248 81 73;
+  --http-head: 178 188 202;
+  --http-options: 178 188 202;
+  color-scheme: dark;
+}
+
+[data-theme='ink-dark'] {
+  --surface: 9 10 15;
+  --card: 18 20 29;
+  --border: 39 43 58;
+  --border-strong: 84 92 118;
+  --border-subtle: 27 30 42;
+  --text-primary: 239 242 248;
+  --text-muted: 186 194 210;
+  --text-dim: 140 151 174;
+  --text-faint: 92 102 128;
+  --accent: 99 102 241;
+  --accent-strong: 129 140 248;
+  --success: 52 211 153;
+  --warning: 251 191 36;
+  --danger: 251 113 133;
+  --info: 96 165 250;
+  --purple: 167 139 250;
+  --blue: 96 165 250;
+  --green: 52 211 153;
+  --amber: 251 191 36;
+  --red: 251 113 133;
+  --http-get: 52 211 153;
+  --http-post: 96 165 250;
+  --http-put: 251 191 36;
+  --http-patch: 167 139 250;
+  --http-delete: 251 113 133;
+  --http-head: 186 194 210;
+  --http-options: 186 194 210;
+  color-scheme: dark;
+}
+
+[data-theme='muted-teal-dark'] {
+  --surface: 14 27 30;
+  --card: 22 40 44;
+  --border: 39 70 75;
+  --border-strong: 75 132 138;
+  --border-subtle: 28 52 56;
+  --text-primary: 229 244 242;
+  --text-muted: 176 211 207;
+  --text-dim: 130 174 170;
+  --text-faint: 92 128 126;
+  --accent: 45 212 191;
+  --accent-strong: 94 234 212;
+  --success: 74 222 128;
+  --warning: 245 190 88;
+  --danger: 248 113 113;
+  --info: 103 232 249;
+  --purple: 196 181 253;
+  --blue: 103 232 249;
+  --green: 74 222 128;
+  --amber: 245 190 88;
+  --red: 248 113 113;
+  --http-get: 74 222 128;
+  --http-post: 103 232 249;
+  --http-put: 245 190 88;
+  --http-patch: 196 181 253;
+  --http-delete: 248 113 113;
+  --http-head: 176 211 207;
+  --http-options: 176 211 207;
+  color-scheme: dark;
+}
+
+[data-theme='redwood-dark'] {
+  --surface: 35 26 24;
+  --card: 48 35 32;
+  --border: 80 56 50;
+  --border-strong: 138 88 78;
+  --border-subtle: 58 42 38;
+  --text-primary: 250 238 230;
+  --text-muted: 222 190 178;
+  --text-dim: 180 142 130;
+  --text-faint: 132 96 88;
+  --accent: 232 93 79;
+  --accent-strong: 255 125 110;
+  --success: 111 207 128;
+  --warning: 223 177 91;
+  --danger: 255 99 99;
+  --info: 103 190 230;
+  --purple: 200 145 220;
+  --blue: 103 190 230;
+  --green: 111 207 128;
+  --amber: 223 177 91;
+  --red: 255 99 99;
+  --http-get: 111 207 128;
+  --http-post: 103 190 230;
+  --http-put: 223 177 91;
+  --http-patch: 200 145 220;
+  --http-delete: 255 99 99;
+  --http-head: 222 190 178;
+  --http-options: 222 190 178;
+  color-scheme: dark;
+}
+
+[data-theme='vscode-light'] {
+  --surface: 255 255 255;
+  --card: 243 243 243;
+  --border: 224 224 224;
+  --border-strong: 120 120 120;
+  --border-subtle: 238 238 238;
+  --text-primary: 31 31 31;
+  --text-muted: 80 80 80;
+  --text-dim: 110 110 110;
+  --text-faint: 150 150 150;
+  --accent: 0 122 204;
+  --accent-strong: 0 99 177;
+  --success: 38 127 91;
+  --warning: 156 103 0;
+  --danger: 197 15 31;
+  --info: 0 122 204;
+  --purple: 111 66 193;
+  --blue: 0 122 204;
+  --green: 38 127 91;
+  --amber: 156 103 0;
+  --red: 197 15 31;
+  --http-get: 38 127 91;
+  --http-post: 0 122 204;
+  --http-put: 156 103 0;
+  --http-patch: 111 66 193;
+  --http-delete: 197 15 31;
+  --http-head: 80 80 80;
+  --http-options: 80 80 80;
+  color-scheme: light;
+}
+
+[data-theme='xcode-light'] {
+  --surface: 251 251 253;
+  --card: 255 255 255;
+  --border: 219 222 229;
+  --border-strong: 132 140 155;
+  --border-subtle: 235 238 244;
+  --text-primary: 29 29 31;
+  --text-muted: 79 86 100;
+  --text-dim: 110 118 132;
+  --text-faint: 151 158 170;
+  --accent: 0 102 204;
+  --accent-strong: 0 82 163;
+  --success: 36 138 61;
+  --warning: 172 111 25;
+  --danger: 215 55 55;
+  --info: 0 122 255;
+  --purple: 125 82 190;
+  --blue: 0 102 204;
+  --green: 36 138 61;
+  --amber: 172 111 25;
+  --red: 215 55 55;
+  --http-get: 36 138 61;
+  --http-post: 0 102 204;
+  --http-put: 172 111 25;
+  --http-patch: 125 82 190;
+  --http-delete: 215 55 55;
+  --http-head: 79 86 100;
+  --http-options: 79 86 100;
+  color-scheme: light;
+}
+
+[data-theme='minimal-light'] {
+  --surface: 247 247 248;
+  --card: 255 255 255;
+  --border: 221 222 225;
+  --border-strong: 142 145 152;
+  --border-subtle: 235 236 238;
+  --text-primary: 32 33 36;
+  --text-muted: 78 80 86;
+  --text-dim: 110 113 120;
+  --text-faint: 150 153 160;
+  --accent: 37 99 235;
+  --accent-strong: 29 78 216;
+  --success: 22 128 80;
+  --warning: 161 98 7;
+  --danger: 190 18 60;
+  --info: 2 132 199;
+  --purple: 126 34 206;
+  --blue: 37 99 235;
+  --green: 22 128 80;
+  --amber: 161 98 7;
+  --red: 190 18 60;
+  --http-get: 22 128 80;
+  --http-post: 37 99 235;
+  --http-put: 161 98 7;
+  --http-patch: 126 34 206;
+  --http-delete: 190 18 60;
+  --http-head: 78 80 86;
+  --http-options: 78 80 86;
+  color-scheme: light;
+}
+
+[data-theme='porcelain-light'] {
+  --surface: 247 249 251;
+  --card: 255 255 255;
+  --border: 213 222 232;
+  --border-strong: 124 142 163;
+  --border-subtle: 229 235 242;
+  --text-primary: 31 41 55;
+  --text-muted: 74 88 106;
+  --text-dim: 103 119 139;
+  --text-faint: 148 163 184;
+  --accent: 15 118 110;
+  --accent-strong: 13 100 95;
+  --success: 22 132 94;
+  --warning: 176 113 24;
+  --danger: 190 52 52;
+  --info: 14 116 144;
+  --purple: 124 58 160;
+  --blue: 37 99 235;
+  --green: 22 132 94;
+  --amber: 176 113 24;
+  --red: 190 52 52;
+  --http-get: 22 132 94;
+  --http-post: 37 99 235;
+  --http-put: 176 113 24;
+  --http-patch: 124 58 160;
+  --http-delete: 190 52 52;
+  --http-head: 74 88 106;
+  --http-options: 74 88 106;
+  color-scheme: light;
+}
+
+[data-theme='cloud-light'] {
+  --surface: 244 247 251;
+  --card: 255 255 255;
+  --border: 214 223 235;
+  --border-strong: 115 132 155;
+  --border-subtle: 229 236 244;
+  --text-primary: 23 32 51;
+  --text-muted: 69 84 109;
+  --text-dim: 99 116 143;
+  --text-faint: 143 158 182;
+  --accent: 56 103 214;
+  --accent-strong: 42 84 190;
+  --success: 32 134 88;
+  --warning: 177 112 24;
+  --danger: 199 43 60;
+  --info: 8 145 178;
+  --purple: 124 77 191;
+  --blue: 56 103 214;
+  --green: 32 134 88;
+  --amber: 177 112 24;
+  --red: 199 43 60;
+  --http-get: 32 134 88;
+  --http-post: 56 103 214;
+  --http-put: 177 112 24;
+  --http-patch: 124 77 191;
+  --http-delete: 199 43 60;
+  --http-head: 69 84 109;
+  --http-options: 69 84 109;
+  color-scheme: light;
+}
+
+[data-theme='everforest-light'] {
+  --surface: 243 234 213;
+  --card: 255 251 235;
+  --border: 220 207 180;
+  --border-strong: 130 136 120;
+  --border-subtle: 232 222 196;
+  --text-primary: 76 86 86;
+  --text-muted: 92 106 104;
+  --text-dim: 120 132 128;
+  --text-faint: 148 154 142;
+  --accent: 45 121 166;
+  --accent-strong: 32 99 140;
+  --success: 75 137 93;
+  --warning: 172 122 40;
+  --danger: 192 80 77;
+  --info: 45 121 166;
+  --purple: 143 104 164;
+  --blue: 45 121 166;
+  --green: 75 137 93;
+  --amber: 172 122 40;
+  --red: 192 80 77;
+  --http-get: 75 137 93;
+  --http-post: 45 121 166;
+  --http-put: 172 122 40;
+  --http-patch: 143 104 164;
+  --http-delete: 192 80 77;
+  --http-head: 92 106 104;
+  --http-options: 92 106 104;
+  color-scheme: light;
+}
+
+[data-theme='kanagawa-lotus'] {
+  --surface: 242 236 188;
+  --card: 255 247 209;
+  --border: 220 207 154;
+  --border-strong: 118 114 83;
+  --border-subtle: 232 224 172;
+  --text-primary: 84 84 100;
+  --text-muted: 100 100 120;
+  --text-dim: 126 124 138;
+  --text-faint: 152 148 142;
+  --accent: 93 87 163;
+  --accent-strong: 73 68 136;
+  --success: 91 128 75;
+  --warning: 154 111 47;
+  --danger: 183 81 89;
+  --info: 66 130 150;
+  --purple: 93 87 163;
+  --blue: 51 106 167;
+  --green: 91 128 75;
+  --amber: 154 111 47;
+  --red: 183 81 89;
+  --http-get: 91 128 75;
+  --http-post: 51 106 167;
+  --http-put: 154 111 47;
+  --http-patch: 93 87 163;
+  --http-delete: 183 81 89;
+  --http-head: 100 100 120;
+  --http-options: 100 100 120;
+  color-scheme: light;
+}
+
+[data-theme='clarity-light'] {
+  --surface: 248 250 252;
+  --card: 255 255 255;
+  --border: 226 232 240;
+  --border-strong: 100 116 139;
+  --border-subtle: 241 245 249;
+  --text-primary: 15 23 42;
+  --text-muted: 51 65 85;
+  --text-dim: 100 116 139;
+  --text-faint: 148 163 184;
+  --accent: 2 132 199;
+  --accent-strong: 3 105 161;
+  --success: 22 163 74;
+  --warning: 161 98 7;
+  --danger: 220 38 38;
+  --info: 2 132 199;
+  --purple: 124 58 237;
+  --blue: 37 99 235;
+  --green: 22 163 74;
+  --amber: 161 98 7;
+  --red: 220 38 38;
+  --http-get: 22 163 74;
+  --http-post: 37 99 235;
+  --http-put: 161 98 7;
+  --http-patch: 124 58 237;
+  --http-delete: 220 38 38;
+  --http-head: 51 65 85;
+  --http-options: 51 65 85;
+  color-scheme: light;
+}
+
+[data-theme='nord-light'] {
+  --surface: 236 239 244;
+  --card: 229 233 240;
+  --border: 216 222 233;
+  --border-strong: 94 110 130;
+  --border-subtle: 226 232 240;
+  --text-primary: 46 52 64;
+  --text-muted: 67 76 94;
+  --text-dim: 76 86 106;
+  --text-faint: 118 128 148;
+  --accent: 94 129 172;
+  --accent-strong: 80 112 153;
+  --success: 92 145 100;
+  --warning: 180 126 37;
+  --danger: 191 97 106;
+  --info: 91 142 162;
+  --purple: 129 118 170;
+  --blue: 94 129 172;
+  --green: 92 145 100;
+  --amber: 180 126 37;
+  --red: 191 97 106;
+  --http-get: 92 145 100;
+  --http-post: 94 129 172;
+  --http-put: 180 126 37;
+  --http-patch: 129 118 170;
+  --http-delete: 191 97 106;
+  --http-head: 67 76 94;
+  --http-options: 67 76 94;
+  color-scheme: light;
+}
+
+[data-theme='sage-light'] {
+  --surface: 244 247 242;
+  --card: 255 255 252;
+  --border: 218 226 214;
+  --border-strong: 120 142 116;
+  --border-subtle: 233 239 230;
+  --text-primary: 35 48 38;
+  --text-muted: 72 91 74;
+  --text-dim: 102 121 104;
+  --text-faint: 146 160 140;
+  --accent: 64 130 109;
+  --accent-strong: 44 110 90;
+  --success: 44 138 86;
+  --warning: 162 116 36;
+  --danger: 190 62 72;
+  --info: 44 129 140;
+  --purple: 112 93 150;
+  --blue: 48 100 170;
+  --green: 44 138 86;
+  --amber: 162 116 36;
+  --red: 190 62 72;
+  --http-get: 44 138 86;
+  --http-post: 48 100 170;
+  --http-put: 162 116 36;
+  --http-patch: 112 93 150;
+  --http-delete: 190 62 72;
+  --http-head: 72 91 74;
+  --http-options: 72 91 74;
+  color-scheme: light;
+}
+
+[data-theme='github-dark-high-contrast'] {
+  --surface: 1 4 9;
+  --card: 13 17 23;
+  --border: 139 148 158;
+  --border-strong: 240 246 252;
+  --border-subtle: 72 79 88;
+  --text-primary: 240 246 252;
+  --text-muted: 201 209 217;
+  --text-dim: 177 186 196;
+  --text-faint: 139 148 158;
+  --accent: 47 129 247;
+  --accent-strong: 121 184 255;
+  --success: 63 185 80;
+  --warning: 210 153 34;
+  --danger: 255 123 114;
+  --info: 47 129 247;
+  --purple: 210 168 255;
+  --blue: 47 129 247;
+  --green: 63 185 80;
+  --amber: 210 153 34;
+  --red: 255 123 114;
+  --http-get: 63 185 80;
+  --http-post: 47 129 247;
+  --http-put: 210 153 34;
+  --http-patch: 210 168 255;
+  --http-delete: 255 123 114;
+  --http-head: 201 209 217;
+  --http-options: 201 209 217;
+  color-scheme: dark;
+}
+
+[data-theme='github-light-high-contrast'] {
+  --surface: 255 255 255;
+  --card: 246 248 250;
+  --border: 87 96 106;
+  --border-strong: 10 12 16;
+  --border-subtle: 208 215 222;
+  --text-primary: 10 12 16;
+  --text-muted: 36 41 47;
+  --text-dim: 87 96 106;
+  --text-faint: 110 119 129;
+  --accent: 3 73 180;
+  --accent-strong: 9 105 218;
+  --success: 17 99 41;
+  --warning: 116 78 0;
+  --danger: 164 14 38;
+  --info: 3 73 180;
+  --purple: 101 53 167;
+  --blue: 3 73 180;
+  --green: 17 99 41;
+  --amber: 116 78 0;
+  --red: 164 14 38;
+  --http-get: 17 99 41;
+  --http-post: 3 73 180;
+  --http-put: 116 78 0;
+  --http-patch: 101 53 167;
+  --http-delete: 164 14 38;
+  --http-head: 36 41 47;
+  --http-options: 36 41 47;
+  color-scheme: light;
+}
+
 @layer base {
   html,
   body,
@@ -966,5 +1898,11 @@
     background-position: right 0.5rem center;
     background-size: 12px 12px;
     padding-right: 1.75rem;
+  }
+
+  select option,
+  select optgroup {
+    background-color: rgb(var(--card));
+    color: rgb(var(--text-primary));
   }
 }

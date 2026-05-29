@@ -4,6 +4,7 @@ import { registerMcpCommand } from './commands/mcp';
 import { registerImportCommand } from './commands/import';
 import { registerRunCommand } from './commands/run';
 import { registerWorkspacesCommand } from './commands/workspaces';
+import { CLI_PACKAGE_VERSION } from './packageVersion';
 
 // =============================================================================
 // `apicircle` — root CLI binary. Sub-commands live under ./commands.
@@ -20,7 +21,7 @@ export function buildProgram(): Command {
   program
     .name('apicircle')
     .description('Command-line companion to API Circle Studio.')
-    .version('1.0.0');
+    .version(CLI_PACKAGE_VERSION);
 
   registerMockCommand(program);
   registerMcpCommand(program);

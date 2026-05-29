@@ -38,6 +38,24 @@ export type ThemeId =
   | 'night-owl'
   | 'github-dark'
   | 'material-palenight'
+  | 'vscode-dark'
+  | 'github-dark-dimmed'
+  | 'terminal-green'
+  | 'terminal-amber'
+  | 'oled-black'
+  | 'carbon-dark'
+  | 'slate-dark'
+  | 'zinc-dark'
+  | 'everforest-dark'
+  | 'kanagawa-wave'
+  | 'kanagawa-dragon'
+  | 'horizon-dark'
+  | 'city-lights'
+  | 'nightfox-dark'
+  | 'command-center'
+  | 'ink-dark'
+  | 'muted-teal-dark'
+  | 'redwood-dark'
   // Light — community palettes
   | 'solarized-light'
   | 'github-light'
@@ -45,7 +63,20 @@ export type ThemeId =
   | 'ayu-light'
   | 'atom-one-light'
   | 'rose-pine-dawn'
-  | 'tokyo-night-day';
+  | 'tokyo-night-day'
+  | 'vscode-light'
+  | 'xcode-light'
+  | 'minimal-light'
+  | 'porcelain-light'
+  | 'cloud-light'
+  | 'everforest-light'
+  | 'kanagawa-lotus'
+  | 'clarity-light'
+  | 'nord-light'
+  | 'sage-light'
+  // Additional high-contrast palettes
+  | 'github-dark-high-contrast'
+  | 'github-light-high-contrast';
 
 // Font family preference. Matches `ALL_FONTS` in `applyFont.ts` — the
 // bare id lives here because it's persisted on `WorkspaceLocal.ui` so
@@ -69,6 +100,16 @@ export type FontFamilyId =
   | 'red-hat-mono'
   | 'azeret-mono'
   | 'victor-mono'
+  | 'noto-sans-mono'
+  | 'martian-mono'
+  | 'fragment-mono'
+  | 'overpass-mono'
+  | 'cousine'
+  | 'courier-prime'
+  | 'pt-mono'
+  | 'oxygen-mono'
+  | 'b612-mono'
+  | 'share-tech-mono'
   // Sans-serif
   | 'system-sans'
   | 'inter'
@@ -82,7 +123,17 @@ export type FontFamilyId =
   | 'geist'
   | 'plus-jakarta-sans'
   | 'ibm-plex-sans'
-  | 'work-sans';
+  | 'work-sans'
+  | 'macos-system'
+  | 'aptos'
+  | 'public-sans'
+  | 'noto-sans'
+  | 'atkinson-hyperlegible'
+  | 'lexend'
+  | 'outfit'
+  | 'sora'
+  | 'barlow'
+  | 'urbanist';
 
 // No 'settings' panel — Secret Vault and Theme moved to TopBar.
 // No 'command' panel — feature dropped per revision #2.

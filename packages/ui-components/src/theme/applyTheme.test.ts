@@ -11,12 +11,21 @@ describe('applyTheme / getStoredThemeId', () => {
     document.head.querySelectorAll('link[rel="icon"]').forEach((el) => el.remove());
     document.documentElement.style.removeProperty('--accent');
   });
-  it('catalog has at least 30 themes and unique ids', () => {
-    expect(ALL_THEMES.length).toBeGreaterThanOrEqual(30);
+  it('catalog has at least 60 themes and unique ids', () => {
+    expect(ALL_THEMES.length).toBeGreaterThanOrEqual(60);
     const ids = new Set<string>();
     for (const t of ALL_THEMES) {
       expect(ids.has(t.id)).toBe(false);
       ids.add(t.id);
+    }
+  });
+
+  it('catalog labels are unique', () => {
+    const labels = new Set<string>();
+    for (const t of ALL_THEMES) {
+      const label = t.label.toLowerCase();
+      expect(labels.has(label)).toBe(false);
+      labels.add(label);
     }
   });
 
@@ -49,8 +58,8 @@ describe('applyTheme / getStoredThemeId', () => {
   });
 
   it('getStoredThemeId returns newly-added community themes', () => {
-    applyTheme('dracula');
-    expect(getStoredThemeId()).toBe('dracula');
+    applyTheme('github-dark-dimmed');
+    expect(getStoredThemeId()).toBe('github-dark-dimmed');
   });
 
   it('getStoredThemeId falls back to one-dark-pro when nothing stored', () => {

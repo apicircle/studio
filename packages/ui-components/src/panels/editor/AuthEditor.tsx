@@ -25,6 +25,7 @@ import {
 } from '@apicircle/shared';
 import { SecretInput } from '../../primitives/SecretInput';
 import { cn } from '../../primitives/cn';
+import { Select } from '../../primitives/Select';
 import { OAuth2FlowActions } from './OAuth2FlowActions';
 
 export interface AuthEditorProps {
@@ -120,13 +121,15 @@ export function AuthEditor({
         <label htmlFor={`auth-type-${idPrefix}`} className={labelClass}>
           Auth type
         </label>
-        <select
+        <Select
+          size="md"
           id={`auth-type-${idPrefix}`}
           value={auth.type}
           onChange={(e) => onChangeType(e.target.value as RequestAuthType)}
           // The visible <label htmlFor=...> already names this select; an
           // explicit aria-label here doubled the screen-reader readout.
-          className={cn(inputClass, 'max-w-sm')}
+          className="text-text-primary"
+          wrapperClassName="w-full max-w-sm"
         >
           {AUTH_GROUPS.map((group) => (
             <optgroup key={group.label} label={group.label}>
@@ -139,7 +142,7 @@ export function AuthEditor({
                 ))}
             </optgroup>
           ))}
-        </select>
+        </Select>
       </div>
 
       {auth.type === 'none' && (
@@ -208,16 +211,18 @@ export function AuthEditor({
             </Field>
           </div>
           <Field label="Location">
-            <select
+            <Select
+              size="md"
               aria-label="API key location"
               value={auth.addTo}
               onChange={(e) => update({ addTo: e.target.value as 'header' | 'query' | 'cookie' })}
-              className={cn(inputClass, 'max-w-xs')}
+              className="text-text-primary"
+              wrapperClassName="w-full max-w-xs"
             >
               <option value="header">Header</option>
               <option value="query">Query parameter</option>
               <option value="cookie">Cookie</option>
-            </select>
+            </Select>
           </Field>
         </div>
       )}
@@ -250,17 +255,19 @@ export function AuthEditor({
             idPrefix={idPrefix}
             extra={
               <Field label="Client auth method">
-                <select
+                <Select
+                  size="md"
                   aria-label="Client auth method"
                   value={auth.clientAuthMethod}
                   onChange={(e) =>
                     update({ clientAuthMethod: e.target.value as 'header' | 'body' })
                   }
-                  className={cn(inputClass, 'max-w-xs')}
+                  className="text-text-primary"
+                  wrapperClassName="w-full max-w-xs"
                 >
                   <option value="header">Header (Basic auth)</option>
                   <option value="body">Body</option>
-                </select>
+                </Select>
               </Field>
             }
           />
@@ -306,17 +313,19 @@ export function AuthEditor({
             idPrefix={idPrefix}
             extra={
               <Field label="Code challenge method">
-                <select
+                <Select
+                  size="md"
                   aria-label="PKCE code challenge method"
                   value={auth.codeChallengeMethod}
                   onChange={(e) =>
                     update({ codeChallengeMethod: e.target.value as 'S256' | 'plain' })
                   }
-                  className={cn(inputClass, 'max-w-xs')}
+                  className="text-text-primary"
+                  wrapperClassName="w-full max-w-xs"
                 >
                   <option value="S256">S256 (recommended)</option>
                   <option value="plain">plain</option>
-                </select>
+                </Select>
               </Field>
             }
           />
@@ -500,15 +509,17 @@ function AwsSigV4Form({
         />
       </Field>
       <Field label="Signature location">
-        <select
+        <Select
+          size="md"
           aria-label="SigV4 location"
           value={auth.addTo}
           onChange={(e) => update({ addTo: e.target.value as 'header' | 'query' })}
-          className={inputClass}
+          className="text-text-primary"
+          wrapperClassName="w-full"
         >
           <option value="header">Authorization header</option>
           <option value="query">Query string (presigned)</option>
-        </select>
+        </Select>
       </Field>
     </div>
   );
@@ -539,15 +550,17 @@ function HawkForm({
         />
       </Field>
       <Field label="Algorithm">
-        <select
+        <Select
+          size="md"
           aria-label="Hawk algorithm"
           value={auth.algorithm}
           onChange={(e) => update({ algorithm: e.target.value as 'sha256' | 'sha1' })}
-          className={inputClass}
+          className="text-text-primary"
+          wrapperClassName="w-full"
         >
           <option value="sha256">SHA-256</option>
           <option value="sha1">SHA-1</option>
-        </select>
+        </Select>
       </Field>
       <Field label="Ext (optional)">
         <input
@@ -573,11 +586,13 @@ function JwtBearerForm({
     <div className="flex flex-col gap-3">
       <div className={gridClass}>
         <Field label="Algorithm">
-          <select
+          <Select
+            size="md"
             aria-label="JWT algorithm"
             value={auth.algorithm}
             onChange={(e) => update({ algorithm: e.target.value as JwtBearerAuth['algorithm'] })}
-            className={inputClass}
+            className="text-text-primary"
+            wrapperClassName="w-full"
           >
             <option value="HS256">HS256</option>
             <option value="HS384">HS384</option>
@@ -586,7 +601,7 @@ function JwtBearerForm({
             <option value="RS384">RS384 (paste pre-signed token below)</option>
             <option value="RS512">RS512 (paste pre-signed token below)</option>
             <option value="ES256">ES256 (paste pre-signed token below)</option>
-          </select>
+          </Select>
         </Field>
         <Field label={isHs ? 'Secret (signing key)' : 'Public key (PEM, for reference)'}>
           <SecretInput

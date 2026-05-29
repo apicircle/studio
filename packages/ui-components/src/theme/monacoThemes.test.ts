@@ -4,6 +4,7 @@ import {
   getMonacoThemeId,
   registerMonacoThemes,
 } from './monacoThemes';
+import { ALL_THEMES } from './applyTheme';
 
 afterEach(() => {
   __resetMonacoThemesForTests();
@@ -37,7 +38,10 @@ describe('registerMonacoThemes', () => {
     expect(names).toContain('apicircle-v2-github-dark');
     expect(names).toContain('apicircle-v2-github-light');
     expect(names).toContain('apicircle-v2-catppuccin-latte');
-    expect(names.length).toBeGreaterThanOrEqual(30);
+    expect(names).toContain('apicircle-v2-vscode-dark');
+    expect(names).toContain('apicircle-v2-vscode-light');
+    expect(names).toContain('apicircle-v2-github-dark-high-contrast');
+    expect(names.length).toBe(ALL_THEMES.length);
     expect(new Set(names).size).toBe(names.length); // unique
   });
 

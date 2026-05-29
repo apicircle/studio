@@ -18,7 +18,7 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "bin": {
-    "apicircle": "./dist/index.cjs"
+    "apicircle": "./dist/bin/cli.cjs"
   },
   "exports": {
     ".": "./src/index.ts"
