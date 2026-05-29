@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type {
   MockRuntimeEntry,
   MockServer,
@@ -271,14 +271,14 @@ describe('mock tools', () => {
 
   // Parser warnings surface in the tool response so MCP clients can see
   // which operations were skipped. Tested with an OpenAPI spec that has
-  // a path with no responses defined â€” the parser emits a warning.
+  // a path with no responses defined - the parser emits a warning.
   it('create_from_openapi surfaces parser warnings on partial specs', async () => {
     const spec = JSON.stringify({
       openapi: '3.0.0',
       info: { title: 'X', version: '1.0' },
       paths: {
         '/good': { get: { responses: { '200': { description: 'ok' } } } },
-        // No responses at all â†’ parser typically warns + skips.
+        // No responses at all -> parser typically warns + skips.
         '/no-responses': { get: {} },
       },
     });

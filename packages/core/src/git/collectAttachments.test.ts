@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { Request as ApiRequest, WorkspaceSynced } from '@apicircle/shared';
 import { collectAttachmentSlots } from './collectAttachments';
 
@@ -94,7 +94,7 @@ describe('collectAttachmentSlots', () => {
     const slots = collectAttachmentSlots(workspace({ a, b }));
     expect(slots).toHaveLength(1);
     expect(slots[0].slotId).toBe('shared');
-    // First occurrence wins â€” binary's metadata comes through.
+    // First occurrence wins - binary's metadata comes through.
     expect(slots[0].sha256).toBe('aa');
   });
 

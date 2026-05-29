@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { WorkspaceSynced } from '@apicircle/shared';
 import { deprecateRelease, publishRelease, yankRelease } from './publishRelease';
 
@@ -103,7 +103,7 @@ describe('deprecateRelease + yankRelease', () => {
 
   it('preserves an earlier deprecate flag when a different version is yanked later', async () => {
     // Repro: user deprecates v2.3.0, then yanks v1.0.0. The
-    // deprecated flag on v2.3.0 must survive â€” a regression where
+    // deprecated flag on v2.3.0 must survive - a regression where
     // yankRelease cloned a stale ledger entry would silently flip
     // it back to false.
     let state = await publishRelease(empty, { version: '1.0.0', notes: 'first' });

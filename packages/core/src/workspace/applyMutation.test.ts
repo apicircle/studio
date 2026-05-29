@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type {
   Folder,
   Request as ApiRequest,
@@ -79,7 +79,7 @@ function makeFolder(id: string, parentId: string | null = null, name = id): Fold
   return { id, name, parentId };
 }
 
-describe('applyMutation â€” request', () => {
+describe('applyMutation - request', () => {
   it('creates a request and adds it to the tree', () => {
     const state = { synced: makeSynced(), local: makeLocal() };
     const req = makeRequest('r1');
@@ -149,7 +149,7 @@ describe('applyMutation â€” request', () => {
     // Linked-request overrides live on `synced.linkedOverrides.requests`
     // and are keyed by the LINKED workspace's request id, not by an owned
     // request id. Deleting an owned request must not collateral-damage
-    // them â€” the test pins this invariant.
+    // them - the test pins this invariant.
     const state = {
       synced: makeSynced({
         collections: {
@@ -180,7 +180,7 @@ describe('applyMutation â€” request', () => {
     const out = applyMutation(state, { kind: 'request.delete', id: 'r1' }, { now: T1 });
     expect(out.next.synced.collections.requests['r1']).toBeUndefined();
     expect(out.next.synced.collections.tree.children).toEqual([]);
-    // Linked overrides untouched â€” both keys still present.
+    // Linked overrides untouched - both keys still present.
     expect(Object.keys(out.next.synced.linkedOverrides.requests).sort()).toEqual(
       ['lw1:other', 'lw1:r1'].sort(),
     );
@@ -209,7 +209,7 @@ describe('applyMutation â€” request', () => {
   });
 });
 
-describe('applyMutation â€” folder', () => {
+describe('applyMutation - folder', () => {
   it('creates a folder and adds it to the tree', () => {
     const state = { synced: makeSynced(), local: makeLocal() };
     const folder = makeFolder('f1');
@@ -352,7 +352,7 @@ describe('applyMutation â€” folder', () => {
   });
 });
 
-describe('applyMutation â€” environments', () => {
+describe('applyMutation - environments', () => {
   it('creates a new env and appends it to the priority list', () => {
     const state = { synced: makeSynced(), local: makeLocal() };
     const out = applyMutation(
@@ -502,7 +502,7 @@ describe('applyMutation â€” environments', () => {
   });
 });
 
-describe('applyMutation â€” assertions', () => {
+describe('applyMutation - assertions', () => {
   it('appends a new assertion', () => {
     const state = {
       synced: makeSynced({
@@ -613,7 +613,7 @@ describe('applyMutation â€” assertions', () => {
   });
 });
 
-describe('applyMutation â€” mocks', () => {
+describe('applyMutation - mocks', () => {
   const fixtureMock = {
     id: 'm1',
     name: 'Petstore',
@@ -682,7 +682,7 @@ describe('applyMutation â€” mocks', () => {
   });
 });
 
-describe('applyMutation â€” plans', () => {
+describe('applyMutation - plans', () => {
   const plan = {
     id: 'p1',
     name: 'Smoke',
@@ -757,7 +757,7 @@ describe('applyMutation â€” plans', () => {
   });
 });
 
-describe('applyMutation â€” defaults', () => {
+describe('applyMutation - defaults', () => {
   it('uses the current time when `now` is not supplied', () => {
     const state = { synced: makeSynced(), local: makeLocal() };
     const before = new Date().toISOString();

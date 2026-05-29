@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { RequestAuth, WorkspaceSynced, Request as ApiRequest } from '@apicircle/shared';
 import { assertNoPlaintextCredentials, redactForGit } from './redactWorkspace';
 
@@ -34,7 +34,7 @@ function syncedWith(requests: Record<string, ApiRequest>): WorkspaceSynced {
   } as unknown as WorkspaceSynced;
 }
 
-describe('redactForGit â€” credential field blanking', () => {
+describe('redactForGit - credential field blanking', () => {
   it('blanks basic.password', () => {
     const synced = syncedWith({
       r: reqWithAuth('r', { type: 'basic', username: 'alice', password: 'hunter2' }),
@@ -217,7 +217,7 @@ describe('redactForGit â€” credential field blanking', () => {
   });
 });
 
-describe('assertNoPlaintextCredentials â€” fail-closed lint pass', () => {
+describe('assertNoPlaintextCredentials - fail-closed lint pass', () => {
   it('passes a redacted workspace', () => {
     const synced = syncedWith({
       r: reqWithAuth('r', { type: 'basic', username: 'u', password: 'hunter2' }),

@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { parseWorkspaceJson, RemoteWorkspaceParseError } from './parseWorkspaceJson';
 
 // Minimum valid shape: `workspaceId` + `collections` + `environments`.
@@ -11,7 +11,7 @@ function minimumValidJson(): string {
   });
 }
 
-describe('parseWorkspaceJson â€” happy path', () => {
+describe('parseWorkspaceJson - happy path', () => {
   it('returns the parsed workspace for a minimum-valid doc', () => {
     const parsed = parseWorkspaceJson(minimumValidJson());
     expect(parsed.workspaceId).toBe('ws-1');
@@ -27,7 +27,7 @@ describe('parseWorkspaceJson â€” happy path', () => {
   });
 });
 
-describe('parseWorkspaceJson â€” prototype pollution defense', () => {
+describe('parseWorkspaceJson - prototype pollution defense', () => {
   it('strips top-level __proto__ keys', () => {
     const doc = JSON.parse(minimumValidJson()) as Record<string, unknown>;
     const polluted = { ...doc, __proto__: { polluted: true } };
@@ -35,7 +35,7 @@ describe('parseWorkspaceJson â€” prototype pollution defense', () => {
       string,
       unknown
     >;
-    // The key is dropped â€” `polluted` is NOT on the parsed object or its prototype.
+    // The key is dropped - `polluted` is NOT on the parsed object or its prototype.
     expect((parsed as { polluted?: boolean }).polluted).toBeUndefined();
     expect((Object.prototype as { polluted?: boolean }).polluted).toBeUndefined();
   });
@@ -63,7 +63,7 @@ describe('parseWorkspaceJson â€” prototype pollution defense', () => {
   });
 });
 
-describe('parseWorkspaceJson â€” shape enforcement', () => {
+describe('parseWorkspaceJson - shape enforcement', () => {
   it('throws RemoteWorkspaceParseError for invalid JSON', () => {
     expect.assertions(2);
     try {
@@ -138,7 +138,7 @@ describe('parseWorkspaceJson â€” shape enforcement', () => {
   });
 });
 
-describe('parseWorkspaceJson â€” size cap', () => {
+describe('parseWorkspaceJson - size cap', () => {
   it('rejects input over 16 MiB without attempting to parse', () => {
     const giant = 'x'.repeat(16 * 1024 * 1024 + 1);
     expect.assertions(1);
