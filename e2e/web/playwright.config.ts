@@ -79,7 +79,13 @@ export default defineConfig({
         screenshot: 'only-on-failure',
         video: 'retain-on-failure',
       },
-      timeout: 90_000,
+      // 240s per test: 60s of post-rate-limit Retry-After wait (see
+      // `fetchWithSecondaryRateLimit` in `live-github/_github-rest.ts`)
+      // plus ~180s of real test work. Full live runs create 40+ repos
+      // back-to-back; GitHub's secondary content-creation limit
+      // intermittently 403s a single call, the wrapper waits + retries,
+      // and the test still needs room to finish.
+      timeout: 240_000,
       fullyParallel: false,
       workers: 1,
     },

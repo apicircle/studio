@@ -5,6 +5,14 @@
 # Schedule: main pushes + nightly + workflow_dispatch. Never on PR push:
 # real GitHub calls are rate-limited and should only gate trusted code paths.
 #
+# Sharding: one matrix job per `e2e/web/live-github/*.spec.ts` file, run
+# sequentially (`max-parallel: 1`). Per-spec isolation means one failing
+# spec no longer aborts the rest of the suite — every spec gets its own
+# log + report artifact + retryability — while a single bot PAT keeps
+# the cross-shard rate-limit footprint identical to the previous
+# monolithic job. The 16-way matrix is discovered at runtime so adding a
+# spec needs no workflow edit.
+#
 # Required secrets (configure in repo Settings -> Secrets and variables):
 #   APICIRCLE_E2E_BOT_PAT    - bot PAT, scopes: repo + delete_repo
 #   APICIRCLE_E2E_BOT_PAT_LINK_DEDICATED
@@ -35,9 +43,66 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  live-github:
+  discover:
+    name: Discover spec files
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 5
+    outputs:
+      specs: ${{ steps.list.outputs.specs }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: list
+        # Emit a JSON array of bare spec filenames
+        # (e.g. ["00-preflight.spec.ts", ...]). The `shard` matrix below
+        # consumes this via fromJson, so adding a new live-github spec
+        # spawns a new shard with no workflow edit needed.
+        run: |
+          specs=$(ls e2e/web/live-github/*.spec.ts \
+            | xargs -n1 basename \
+            | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "specs=$specs" >> "$GITHUB_OUTPUT"
+          echo "Discovered specs: $specs"
+
+  sweep:
+    name: Sweep orphan repos (>12h old)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      APICIRCLE_E2E_BOT_OWNER: ${{ vars.APICIRCLE_E2E_BOT_OWNER }}
+      APICIRCLE_E2E_GITHUB_PAT: ${{ secrets.APICIRCLE_E2E_BOT_PAT }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+      - name: Validate sweep credentials
+        run: |
+          if [ -z "${APICIRCLE_E2E_BOT_OWNER}" ]; then
+            echo "::error::APICIRCLE_E2E_BOT_OWNER variable missing (Settings -> Variables)."
+            exit 1
+          fi
+          if [ -z "${APICIRCLE_E2E_GITHUB_PAT}" ]; then
+            echo "::error::APICIRCLE_E2E_BOT_PAT secret missing (Settings -> Secrets)."
+            exit 1
+          fi
+      - name: Sweep orphans
+        run: node scripts/live-github/sweep-orphans.mjs
+
+  shard:
+    # One job per spec file, run sequentially so all shards share the
+    # same per-PAT secondary-rate-limit budget the monolithic job had.
+    # `fail-fast: false` is critical — without it, the first failing
+    # shard would cancel every spec that hasn't started yet, defeating
+    # the whole point of the split.
+    name: ${{ matrix.spec }}
+    needs: [discover, sweep]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        spec: ${{ fromJson(needs.discover.outputs.specs) }}
     env:
       RUN_TAG: ${{ github.run_id }}-${{ github.run_attempt }}
       APICIRCLE_E2E_BOT_OWNER: ${{ vars.APICIRCLE_E2E_BOT_OWNER }}
@@ -47,13 +112,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: 'pnpm'
@@ -62,7 +127,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install Playwright Chromium
-        run: pnpm --filter @apicircle/e2e-web exec playwright install --with-deps chromium
+        # Headless launches in Playwright 1.49+ use `chromium-headless-shell`,
+        # which is shipped as a separate browser bundle.
+        run: pnpm --filter @apicircle/e2e-web exec playwright install --with-deps chromium chromium-headless-shell
 
       - name: Validate secrets and variables
         run: |
@@ -79,17 +146,36 @@ jobs:
             exit 1
           fi
 
-      - name: Sweep orphan repos older than 12h
-        run: node scripts/live-github/sweep-orphans.mjs
-
-      - name: Run live-github E2E suite
-        run: pnpm test:e2e:live-github
+      - name: Run live-github spec (${{ matrix.spec }})
+        working-directory: e2e/web
+        run: pnpm exec playwright test --project=chromium-live-github "live-github/${{ matrix.spec }}"
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: live-github-report-${{ env.RUN_TAG }}
+          name: live-github-${{ matrix.spec }}-${{ env.RUN_TAG }}
           path: e2e/web/playwright-report/
           retention-days: 14
           if-no-files-found: ignore
+
+  summary:
+    # Aggregates the matrix into a single required-check signal. `needs`
+    # on a matrix job collapses to one status: `success` only if every
+    # shard succeeded, otherwise `failure`. Without this aggregator the
+    # workflow itself would still be green when individual shards fail.
+    name: Live-GitHub summary
+    needs: [shard]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check shard results
+        run: |
+          result="${{ needs.shard.result }}"
+          echo "Aggregated shard result: $result"
+          if [ "$result" != "success" ]; then
+            echo "::error::One or more live-github shards failed (result=$result). See per-shard logs above."
+            exit 1
+          fi
+          echo "All live-github shards passed."

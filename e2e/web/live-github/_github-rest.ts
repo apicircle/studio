@@ -282,6 +282,53 @@ function ghHeaders(token: string): Record<string, string> {
   };
 }
 
+/**
+ * Wrap `fetch` with retry-on-secondary-rate-limit. GitHub returns 403
+ * with a body containing "secondary rate limit" (or 429) when the bot
+ * PAT exceeds the per-minute content-creation budget — common when a
+ * single live-github run creates 40+ repos in ~80 s. The response
+ * carries a `Retry-After` header (seconds) that says when to retry;
+ * we honor it, capping each wait at 75 s and the total attempt count
+ * at 3. All other responses (including non-secondary 403s such as a
+ * missing scope) pass through unchanged so caller error messages stay
+ * specific.
+ */
+async function fetchWithSecondaryRateLimit(
+  url: string,
+  init: RequestInit,
+  opts: { maxAttempts?: number; defaultRetryAfterSeconds?: number } = {},
+): Promise<Response> {
+  const maxAttempts = opts.maxAttempts ?? 3;
+  const defaultWaitSeconds = opts.defaultRetryAfterSeconds ?? 60;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const res = await fetch(url, init);
+    if (res.ok || attempt === maxAttempts) return res;
+    if (res.status !== 403 && res.status !== 429) return res;
+    // Body must be inspected to distinguish secondary-rate-limit from
+    // (e.g.) scope errors. `res.text()` consumes the body, so clone first
+    // — failed-but-non-rate-limit responses still need their body for the
+    // caller's error message.
+    const bodyText = await res
+      .clone()
+      .text()
+      .catch(() => '');
+    const isSecondary =
+      res.status === 429 ||
+      /secondary rate limit|abuse detection|too many requests/i.test(bodyText);
+    if (!isSecondary) return res;
+    const retryAfterHeader = res.headers.get('retry-after');
+    const retryAfter = Number(retryAfterHeader);
+    const waitSeconds =
+      Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 75) : defaultWaitSeconds;
+    // Small jitter so concurrent callers don't unblock at the exact same
+    // instant and re-trigger the secondary limit.
+    const jitterMs = Math.floor(((attempt * 31) % 17) * 50);
+    await wait(waitSeconds * 1000 + jitterMs);
+  }
+  // Unreachable: the final attempt returns above.
+  throw new Error('fetchWithSecondaryRateLimit: loop exhausted without returning');
+}
+
 export interface DefaultBranchHead {
   name: string;
   sha: string | null;
@@ -378,7 +425,7 @@ export async function seedRepoIfEmpty(
   // `git/refs/heads/<branch>` endpoint lags the PUT response.
   let head = await getDefaultBranchHeadWithPropagation(cfg);
   if (head.sha === null) {
-    const putRes = await fetch(
+    const putRes = await fetchWithSecondaryRateLimit(
       `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/README.md`,
       {
         method: 'PUT',
@@ -471,7 +518,7 @@ export async function ensureWorkspaceJsonOnMain(
   if (probeRes.status !== 404) {
     throw new Error(`workspace.json probe on ${cfg.fullName}@${branch} failed: ${probeRes.status}`);
   }
-  const putRes = await fetch(
+  const putRes = await fetchWithSecondaryRateLimit(
     `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/workspace.json`,
     {
       method: 'PUT',
@@ -573,7 +620,7 @@ export async function writeWorkspaceJson(
       }
       throw new Error(`writeWorkspaceJson probe failed (${existing.status}): ${text}`);
     }
-    const res = await fetch(
+    const res = await fetchWithSecondaryRateLimit(
       `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/workspace.json`,
       {
         method: 'PUT',
@@ -830,7 +877,7 @@ export async function createRepo(token: string, args: CreateRepoArgs): Promise<C
   const url = args.isOrg
     ? `https://api.github.com/orgs/${args.owner}/repos`
     : `https://api.github.com/user/repos`;
-  const res = await fetch(url, {
+  const res = await fetchWithSecondaryRateLimit(url, {
     method: 'POST',
     headers: { ...ghHeaders(token), 'Content-Type': 'application/json' },
     body: JSON.stringify({
