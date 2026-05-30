@@ -6,6 +6,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Check, LoaderCircle } from 'lucide-react';
 import type { FontFamilyId } from '@apicircle/shared';
 import { ALL_FONTS, type FontFamilyDef } from '../theme/applyFont';
+import { getAvailableFonts } from '../theme/fontAvailability';
 import { cn } from '../primitives/cn';
 import { useWorkspaceStore } from '../store/workspaceStore';
 
@@ -31,6 +32,9 @@ export function FontList({ onCommit, onCancel, registerCancel }: FontListProps) 
   const hoverPreviewTimerRef = useRef<number | null>(null);
   const guidanceId = useId();
   const [pendingPreviewId, setPendingPreviewId] = useState<FontFamilyId | null>(null);
+  // Detector hydrates after webfonts settle. Until then we render the
+  // full catalog so the picker is never empty mid-load.
+  const [availableFonts, setAvailableFonts] = useState<readonly FontFamilyDef[]>(ALL_FONTS);
   // True only after an explicit commit (Enter / click). Drives the
   // unmount-revert below.
   const committedRef = useRef(false);
@@ -38,21 +42,35 @@ export function FontList({ onCommit, onCancel, registerCancel }: FontListProps) 
     currentFontRef.current = fontId;
   }, [fontId]);
 
-  const groups = useMemo(
-    () => [
+  useEffect(() => {
+    let alive = true;
+    void getAvailableFonts().then((fonts) => {
+      if (alive) setAvailableFonts(fonts);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const groups = useMemo(() => {
+    // Force-include the currently-selected font even if the detector
+    // filtered it — otherwise the user has no way to deselect it.
+    const visibleIds = new Set(availableFonts.map((f) => f.id));
+    visibleIds.add(fontId);
+    const visible = ALL_FONTS.filter((f) => visibleIds.has(f.id));
+    return [
       {
         key: 'mono' as const,
         label: 'Monospace',
-        fonts: ALL_FONTS.filter((f) => f.category === 'mono'),
+        fonts: visible.filter((f) => f.category === 'mono'),
       },
       {
         key: 'sans' as const,
         label: 'Sans-serif',
-        fonts: ALL_FONTS.filter((f) => f.category === 'sans'),
+        fonts: visible.filter((f) => f.category === 'sans'),
       },
-    ],
-    [],
-  );
+    ];
+  }, [availableFonts, fontId]);
   const flatOrder = useMemo(() => groups.flatMap((g) => g.fonts.map((f) => f.id)), [groups]);
   const activeIndex = flatOrder.indexOf(fontId);
   const [focusIndex, setFocusIndex] = useState(activeIndex >= 0 ? activeIndex : 0);
@@ -95,13 +113,23 @@ export function FontList({ onCommit, onCancel, registerCancel }: FontListProps) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Re-anchor focus to the active font when the visible list narrows
+  // (detector resolves) — otherwise the old focusIndex points at a
+  // different option in the shrunk list and the next effect would
+  // preview-apply the wrong font.
+  useEffect(() => {
+    const activeIdx = flatOrder.indexOf(currentFontRef.current);
+    if (activeIdx >= 0 && activeIdx !== focusIndex) setFocusIndex(activeIdx);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flatOrder]);
+
   useEffect(() => {
     const id = flatOrder[focusIndex];
     if (!id) return;
     const btn = optionRefs.current.get(id);
     if (btn && document.activeElement !== btn) {
       btn.focus({ preventScroll: true });
-      btn.scrollIntoView({ block: 'nearest' });
+      btn.scrollIntoView?.({ block: 'nearest' });
     }
     if (id !== currentFontRef.current) setFontId(id);
   }, [focusIndex, flatOrder, setFontId]);

@@ -1,5 +1,48 @@
 # Changelog
 
+> ### ⚠️ macOS install note — remove the quarantine flag
+>
+> The desktop builds are **unsigned** until code-signing certificates are
+> funded. On macOS Sequoia and newer, this means that after dragging
+> **API Circle Studio** into `/Applications`, the first launch can fail with
+> _"API Circle Studio is damaged and can't be opened. You should move it to
+> the Trash."_ — and the **Open Anyway** button under System Settings →
+> Privacy & Security may not appear at all. The binary is fine; macOS is
+> refusing to run anything carrying the download-quarantine extended
+> attribute from an unidentified developer.
+>
+> Open **Terminal** and run this once to strip the flag, then re-launch the
+> app from `/Applications`:
+>
+> ```
+> xattr -d com.apple.quarantine /Applications/API\ Circle\ Studio.app
+> ```
+>
+> If Terminal answers `No such xattr` the flag was already absent — ignore
+> the message. Repeat the command once per auto-update until signed builds
+> ship. Full per-platform walk-through:
+> [`docs/installing.md`](docs/installing.md).
+
+## Unreleased
+
+### Font picker — auto-filter "no-op" options
+
+- The Settings → Font family picker now hides any catalog entry whose stack
+  silently falls through to the same OS face as your platform default. A
+  webfont that failed to download, or a named family that isn't installed,
+  no longer appears as an option you can "pick" without anything changing.
+- Detection uses a canvas advance-width comparison against the
+  `system-mono` and `system-sans` baselines, runs once per app load
+  (cached), preloads every catalog webfont stylesheet so the measurement
+  sees real metrics, and waits on `document.fonts.ready` before
+  measuring.
+- The currently-selected font is always force-included in the list — even
+  if the detector would otherwise filter it — so a user whose saved font
+  later stops loading can still see it and choose something else.
+- New module `packages/ui-components/src/theme/fontAvailability.ts` plus
+  unit tests; `ensureWebfontLink` is now exported from
+  `theme/applyFont.ts` so the detector can preload stylesheets.
+
 ## 1.0.5 - 2026-05-29
 
 A theme and font expansion release. Studio's appearance catalog roughly

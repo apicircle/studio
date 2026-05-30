@@ -30,6 +30,36 @@ After that, the app launches normally. Auto-updates land silently in the
 background; the same "Open Anyway" approval is needed once per update
 until we ship signed binaries.
 
+> ### ⚠️ "API Circle Studio is damaged and can't be opened" — remove the quarantine flag
+>
+> On **macOS Sequoia and newer**, the **Open Anyway** button above can be
+> missing entirely and the app refuses to launch with:
+>
+> > _"API Circle Studio is damaged and can't be opened. You should move it
+> > to the Trash."_
+>
+> The binary is **not** damaged. macOS is refusing to run anything carrying
+> the `com.apple.quarantine` extended attribute downloaded from an
+> unidentified developer. Open **Terminal** (Applications → Utilities →
+> Terminal) and run this one command to strip the flag, then re-launch the
+> app from `/Applications`:
+>
+> ```bash
+> xattr -d com.apple.quarantine /Applications/API\ Circle\ Studio.app
+> ```
+>
+> If the app is still wedged after that, run the recursive variant with
+> `sudo` (will prompt for your account password) — it clears the flag on
+> every file inside the app bundle:
+>
+> ```bash
+> sudo xattr -rd com.apple.quarantine /Applications/API\ Circle\ Studio.app
+> ```
+>
+> If Terminal answers `No such xattr` you can ignore it — the flag was
+> already absent. You will need to repeat this step once after every
+> auto-update until signed builds ship.
+
 ## Windows (`.exe` installer)
 
 1. Run the downloaded `API Circle Studio-<version>-win-x64.exe`.

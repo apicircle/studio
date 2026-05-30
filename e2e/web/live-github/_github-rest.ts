@@ -554,17 +554,42 @@ async function wait(ms: number): Promise<void> {
 /**
  * Read `workspace.json` from a repo branch through the GitHub Contents API.
  * Specs use this to assert the exact payload that collaborators would pull.
+ *
+ * Stale-read guard: when the caller knows the SHA of the commit they want
+ * to observe (e.g. the `commitSha` returned by `api.pushWorkspace`), pass
+ * it as `expectedCommitSha`. The request then uses `?ref=<commitSha>` so
+ * GitHub serves the content addressed by the immutable commit hash rather
+ * than the current branch HEAD — bypassing the Contents-API
+ * eventual-consistency window where `?ref=<branchName>` can still return a
+ * pre-push snapshot of the file for several seconds after `updateRef`
+ * succeeds. The propagation race is exactly what broke
+ * `10-snapshot-data-loss.spec.ts:73`: the host repo was seeded with an
+ * empty `workspace.json` (`MIN_WORKSPACE_JSON.collections.requests = {}`),
+ * the push committed the real workspace including the new request, but
+ * the immediately-following branch-ref read kept serving the seed —
+ * `requests[<uuid>]` was `undefined` and the assertion blew up.
+ *
+ * Cache-Control: no-cache is sent on every read so any intermediate HTTP
+ * cache (rare on Node fetch but possible on hosted runners) is bypassed.
  */
 export async function fetchWorkspaceJson<T = Record<string, unknown>>(
   cfg: LiveGithubConfig,
-  branch: string,
+  branchOrSha: string,
+  opts: { expectedCommitSha?: string } = {},
 ): Promise<WorkspaceFile<T>> {
+  // Prefer the immutable commit SHA when provided — see docblock above.
+  const ref = opts.expectedCommitSha ?? branchOrSha;
   let lastStatus = 0;
   let lastText = '<no-body>';
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const res = await fetch(
-      `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/workspace.json?ref=${encodeURIComponent(branch)}`,
-      { headers: ghHeaders(cfg.token) },
+      `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/workspace.json?ref=${encodeURIComponent(ref)}`,
+      {
+        headers: {
+          ...ghHeaders(cfg.token),
+          'Cache-Control': 'no-cache',
+        },
+      },
     );
     if (res.ok) {
       const body = (await res.json()) as { content: string; encoding: string; sha: string };
@@ -577,12 +602,16 @@ export async function fetchWorkspaceJson<T = Record<string, unknown>>(
     }
     lastStatus = res.status;
     lastText = await res.text().catch(() => '<no-body>');
-    if (!isTransientWorkspaceReadFailure(lastStatus, lastText) || attempt === 7) break;
+    // A 404 on a known-committed SHA is itself a propagation race (the
+    // commit hasn't replicated to the read replica yet) — treat it as
+    // transient when we're reading by SHA.
+    const transient =
+      isTransientWorkspaceReadFailure(lastStatus, lastText) ||
+      (opts.expectedCommitSha !== undefined && lastStatus === 404);
+    if (!transient || attempt === 7) break;
     await wait(750 * (attempt + 1));
   }
-  throw new Error(
-    `fetchWorkspaceJson ${cfg.fullName}@${branch} failed (${lastStatus}): ${lastText}`,
-  );
+  throw new Error(`fetchWorkspaceJson ${cfg.fullName}@${ref} failed (${lastStatus}): ${lastText}`);
 }
 
 /**

@@ -427,7 +427,7 @@ export function applyFont(id: FontFamilyId): void {
   if (def.webfontHref) ensureWebfontLink(def.webfontHref);
 }
 
-function ensureWebfontLink(href: string): void {
+export function ensureWebfontLink(href: string): void {
   if (typeof document === 'undefined') return;
   const existing = document.head.querySelector<HTMLLinkElement>(
     `link[${WEBFONT_LINK_ATTR}][href="${href}"]`,

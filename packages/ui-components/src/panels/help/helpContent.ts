@@ -1108,10 +1108,22 @@ API Circle Studio is pre-launch and self-funded. Code signing needs paid certifi
 
 That is expected, not a sign of a tampered download. What you will see:
 
-- **macOS** — Gatekeeper says the developer "cannot be verified". Approve it once under System Settings → Privacy & Security → Open Anyway.
+- **macOS** — Gatekeeper says the developer "cannot be verified". Approve it once under System Settings → Privacy & Security → Open Anyway. On macOS Sequoia and newer the **Open Anyway** button can be missing entirely and the app refuses to launch with "API Circle Studio is damaged and can't be opened" — see the quarantine fix below.
 - **Windows** — SmartScreen shows "Windows protected your PC". Click More info, then Run anyway.
 - **Linux** — no signing prompt; the AppImage and \`.deb\` run directly.
 - **Auto-updates** — each update is unsigned too, so the same one-time approval is needed after a new build installs.
+
+## macOS quarantine — "app is damaged and can't be opened"
+
+When macOS shows "API Circle Studio is damaged and can't be opened. You should move it to the Trash.", the binary is **not** damaged. macOS is refusing to run anything carrying the \`com.apple.quarantine\` extended attribute downloaded from an unidentified developer. Open **Terminal** (Applications → Utilities → Terminal) and strip the flag with one command, then re-launch the app from \`/Applications\`:
+
+    xattr -d com.apple.quarantine /Applications/API\\ Circle\\ Studio.app
+
+If the app is still wedged, run the recursive variant with \`sudo\` — it clears the flag on every file inside the app bundle and will prompt for your account password:
+
+    sudo xattr -rd com.apple.quarantine /Applications/API\\ Circle\\ Studio.app
+
+If Terminal answers \`No such xattr\` the flag was already absent — ignore the message. You will need to repeat this step once after every auto-update until signed builds ship.
 
 The binaries are built in the open by this repository's GitHub Actions, and nothing about being unsigned touches your workspace data. Per-platform steps live in the install guide on the GitHub Releases page. Signed builds will ship once the project can afford the certificates.
 
@@ -1139,6 +1151,11 @@ The desktop app checks for updates and shows a banner when one is ready — clic
       'smartscreen',
       'early access',
       'auto-update',
+      'quarantine',
+      'xattr',
+      'damaged',
+      'macos',
+      'sequoia',
     ],
   },
   {
@@ -1282,7 +1299,7 @@ A single source of truth: update the "User" asset once and every request that re
 ## Appearance
 
 - **Theme** - pick from the expanded dark, light, high-contrast, terminal-like, GitHub-like, VS Code-like, OLED, warm, and muted professional palettes. Click the row to open the list. Hover an option for one second, or move with the keyboard, to preview it; the right edge shows a loader while preview is pending and a check when active. Click or press **Enter** to apply; **Esc** or outside click reverts.
-- **Font family** - choose from developer-friendly mono and sans stacks, including the safe macOS system stack. It uses the same click-open, hover-preview, keyboard-preview, click-to-apply behaviour.
+- **Font family** - choose from developer-friendly mono and sans stacks, including the safe macOS system stack. It uses the same click-open, hover-preview, keyboard-preview, click-to-apply behaviour. The picker auto-detects which faces actually render distinctly on your device and hides any whose stack would silently fall through to your platform default - so every option in the list is a real visual change.
 - **Text size** - scales all UI text, including code editors, in fixed steps, with a Reset to 100%. Also available as **Ctrl/Cmd + Shift + =** / **-** / **0**. Example: bump to 120% on a 4K display, reset before a screen-share.
 
 ## Behavior

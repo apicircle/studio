@@ -1,6 +1,6 @@
 {
   "name": "@apicircle/e2e-web",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "private": true,
   "type": "module",
   "description": "Playwright E2E suite for the web app.",

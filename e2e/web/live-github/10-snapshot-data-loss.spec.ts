@@ -52,7 +52,10 @@ test.describe('Live GitHub - snapshots and data-loss guards @live-github', () =>
           name: 'v2 snapshot mock',
           source: { kind: 'manual', endpoints: [] },
         });
-        await api.pushWorkspace('e2e live: snapshot baseline');
+        // Capture pushWorkspace's commitSha — `fetchWorkspaceJson` below
+        // uses it as the content-addressed ref so we don't read a stale
+        // pre-push snapshot from GitHub's Contents-API cache window.
+        const pushResult = await api.pushWorkspace('e2e live: snapshot baseline');
         const state = window.__apicircleStore!.getState() as any;
         return {
           linkId: link.id,
@@ -60,6 +63,7 @@ test.describe('Live GitHub - snapshots and data-loss guards @live-github', () =>
           planId,
           mockId,
           pushedSnapshot: state.local.snapshots.entries[0]?.id ?? null,
+          pushedCommitSha: pushResult.commitSha,
         };
       },
       {
@@ -69,7 +73,10 @@ test.describe('Live GitHub - snapshots and data-loss guards @live-github', () =>
       },
     );
     expect(setup.pushedSnapshot).toBeTruthy();
-    const remote = (await fetchWorkspaceJson(host, branch)).json as Record<string, any>;
+    expect(setup.pushedCommitSha).toMatch(/^[a-f0-9]{40}$/);
+    const remote = (
+      await fetchWorkspaceJson(host, branch, { expectedCommitSha: setup.pushedCommitSha })
+    ).json as Record<string, any>;
     expect(remote.collections.requests[setup.requestId].auth.token).toBe('');
 
     await updateWorkspaceJson(host, branch, 'e2e live: remote snapshot merge', (ws) => {
