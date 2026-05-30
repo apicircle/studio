@@ -336,11 +336,45 @@ export interface SeedRepoOptions {
  * Returns the resulting `DefaultBranchHead` (with a non-null `sha`) so
  * callers can chain on the seeded state.
  */
+/**
+ * Wait until `GET /repos/{owner}/{name}` returns 2xx. GitHub takes
+ * ~500-3000 ms after `POST /user/repos` returns 201 to make the new repo
+ * resolvable; calling `getDefaultBranchHead` immediately races that
+ * propagation and 404s. Exponential backoff: 0.5/1/2/4/8/16/32 s, total
+ * ~64 s ceiling — well below the suite's 90s per-test budget.
+ *
+ * The retry only swallows the 404 ("repo not propagated yet") case. Any
+ * other error (403 missing scope, 401 bad token, transient 5xx) re-throws
+ * immediately so we don't mask real failures behind silent retries.
+ */
+async function getDefaultBranchHeadWithPropagation(
+  cfg: LiveGithubConfig,
+): Promise<DefaultBranchHead> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      return await getDefaultBranchHead(cfg);
+    } catch (err) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      // `getDefaultBranchHead` throws on non-OK repo info — the propagation
+      // race surfaces as `status 404`. Anything else is a real error.
+      if (!msg.includes('status 404')) throw err;
+      if (attempt === 7) break;
+      await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+    }
+  }
+  throw lastErr ?? new Error('getDefaultBranchHeadWithPropagation: exhausted retries');
+}
+
 export async function seedRepoIfEmpty(
   cfg: LiveGithubConfig,
   opts: SeedRepoOptions = {},
 ): Promise<DefaultBranchHead> {
-  let head = await getDefaultBranchHead(cfg);
+  // First call goes through the propagation-aware wrapper because callers
+  // hit this immediately after `createRepo`; the refresh call below uses
+  // the bare helper since the branch HEAD is now established.
+  let head = await getDefaultBranchHeadWithPropagation(cfg);
   if (head.sha === null) {
     const putRes = await fetch(
       `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/README.md`,
@@ -390,7 +424,14 @@ const MIN_WORKSPACE_JSON = {
   linkedWorkspaces: {},
   linkedOverrides: { requests: {}, environmentVars: {} },
   releases: { self: null, perLink: {} },
-  globalAssets: { schemas: {}, graphql: {} },
+  // `files: {}` matches the shape the hydration normalizer backfills in
+  // packages/ui-components/src/persistence/workspaceStorage.ts. Keep these
+  // aligned — if the renderer adds `files: {}` after readback but the seed
+  // omits it, deep-equality assertions against the original seeded shape
+  // fail (the failure mode that broke
+  // 15-execution-with-linked-assets.spec.ts and the file-asset paths of
+  // 13-global-assets-live + 14-attachments-live).
+  globalAssets: { schemas: {}, graphql: {}, files: {} },
   secretCrypto: null,
   meta: {
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -631,7 +672,9 @@ export function makeDeterministicWorkspace(
       },
       perLink: {},
     },
-    globalAssets: { schemas: {}, graphql: {} },
+    // Same `files: {}` invariant as MIN_WORKSPACE_JSON above — keep them
+    // aligned with the hydration normalizer.
+    globalAssets: { schemas: {}, graphql: {}, files: {} },
     mockServers: {},
     executionPlans: {},
     secretKeys: {

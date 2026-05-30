@@ -67,7 +67,11 @@ jobs:
         run: pnpm --filter @apicircle/web... build
 
       - name: Install Playwright Chromium
-        run: pnpm --filter @apicircle/e2e-web exec playwright install --with-deps chromium
+        # `chromium-headless-shell` is the variant Playwright 1.49+ launches
+        # when `chromium.launch()` runs in headless mode (the default in CI).
+        # globalSetup.ts uses that path, so the shell binary must be present
+        # in addition to the regular chromium build.
+        run: pnpm --filter @apicircle/e2e-web exec playwright install --with-deps chromium chromium-headless-shell
 
       - name: Run shard ${{ matrix.shard }}/8
         # `--shard=K/N` deterministically picks ~1/N of the tests for this
@@ -127,6 +131,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install coverage-report Python deps
+        # `scripts/e2e_coverage_report.py` reads the workbook fixtures via
+        # `openpyxl`. No project-level requirements.txt yet, so install ad-hoc.
+        run: pip install openpyxl
+
       - name: Download all shard blob reports
         uses: actions/download-artifact@v5
         with:
@@ -137,15 +151,30 @@ jobs:
       - name: Merge into unified HTML + JSON
         # The merged JSON lands at e2e/web/test-results.json (the same
         # path single-job runs would write) so the coverage script doesn't
-        # need to special-case the sharded layout.
+        # need to special-case the sharded layout. If the download step
+        # produced no blob reports (all shards crashed before emitting),
+        # skip the merge — playwright merge-reports errors on an empty
+        # input dir, and the shard-failure gate at the end of this job
+        # is what should surface those crashes.
+        working-directory: e2e/web
+        env:
+          # The json reporter writes to this env var when set; otherwise
+          # it dumps to stdout. Pin it so we land at e2e/web/test-results.json
+          # (the same path the single-job CI configuration would write).
+          PLAYWRIGHT_JSON_OUTPUT_NAME: test-results.json
         run: |
-          mkdir -p e2e/web/playwright-report
-          pnpm --filter @apicircle/e2e-web exec playwright merge-reports \
-            --reporter html,json \
-            all-blob-reports \
-            > e2e/web/test-results.json
-          # `merge-reports html` writes to the project's configured
-          # playwright-report dir (e2e/web/playwright-report).
+          mkdir -p ../../all-blob-reports
+          mkdir -p playwright-report
+          if [ -z "$(ls -A ../../all-blob-reports 2>/dev/null)" ]; then
+            echo "::warning::No blob reports to merge — all shards may have crashed before emitting. Skipping merge; shard-failure gate will surface the underlying failures."
+            # Emit an empty JSON skeleton so downstream steps that read
+            # the file don't error on a missing path.
+            echo '{"config":{},"suites":[],"errors":[],"stats":{"expected":0,"unexpected":0,"flaky":0,"skipped":0}}' > test-results.json
+          else
+            pnpm exec playwright merge-reports \
+              --reporter=html,json \
+              ../../all-blob-reports
+          fi
 
       - name: Compute coverage report (strict)
         if: always()
@@ -245,8 +274,13 @@ jobs:
       - name: Build workspace packages
         run: pnpm --filter @apicircle/web... build
 
-      - name: Install Playwright ${{ matrix.browser }}
-        run: pnpm --filter @apicircle/e2e-web exec playwright install --with-deps ${{ matrix.browser }}
+      - name: Install Playwright browsers (chromium + ${{ matrix.browser }})
+        # globalSetup launches chromium to pre-warm the dev server's lazy
+        # module graph (see e2e/web/global-setup.ts) — so even firefox /
+        # webkit projects need chromium installed before any test runs.
+        # Headless launches in Playwright 1.49+ use `chromium-headless-shell`,
+        # which is shipped as a separate browser bundle, so install it too.
+        run: pnpm --filter @apicircle/e2e-web exec playwright install --with-deps chromium chromium-headless-shell ${{ matrix.browser }}
 
       - name: Run @smoke tests in ${{ matrix.browser }}
         run: pnpm --filter @apicircle/e2e-web exec playwright test --project=${{ matrix.browser }}-smoke
@@ -262,12 +296,21 @@ jobs:
 
   visual-baseline:
     name: Visual baseline (chromium)
-    # Visual-snapshot diffs are flaky on the runner-vs-local font stack, so
-    # gate them to main + manual only — local devs refresh the baseline with
-    # `--update-snapshots` after intentional visual changes.
+    # Visual-snapshot diffs are sensitive to the runner-vs-local font stack,
+    # so gate them to main + manual only — local devs refresh the baseline
+    # with `--update-snapshots` after intentional visual changes.
+    #
+    # First-run note: this job will report "snapshot doesn't exist" the
+    # first time it runs on Linux because the baselines have not been
+    # committed yet. The job uses `continue-on-error` so this doesn't fail
+    # the workflow; the generated PNGs are uploaded as an artifact so a
+    # maintainer can download, sanity-check, and commit them under
+    # `e2e/web/visual-baseline.spec.ts-snapshots/` to establish the
+    # baseline. Subsequent runs gate on diff.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -290,10 +333,27 @@ jobs:
         run: pnpm --filter @apicircle/web... build
 
       - name: Install Playwright Chromium
-        run: pnpm --filter @apicircle/e2e-web exec playwright install --with-deps chromium
+        # See playwright shard job above — `chromium-headless-shell` is
+        # required for globalSetup's headless launch on Playwright 1.49+.
+        run: pnpm --filter @apicircle/e2e-web exec playwright install --with-deps chromium chromium-headless-shell
 
       - name: Run visual baseline project
         run: pnpm test:e2e:visual
+
+      - name: Upload generated baseline candidates
+        # Captures both the actuals (for first-run baseline bootstrap) and
+        # any diff PNGs (for subsequent regression triage). Maintainer
+        # workflow on first failure: download this artifact, copy the
+        # `-actual.png` files into the spec's `-snapshots/` dir, commit.
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: visual-baseline-snapshots-${{ github.run_id }}
+          path: |
+            e2e/web/test-results
+            e2e/web/visual-baseline.spec.ts-snapshots
+          retention-days: 30
+          if-no-files-found: ignore
 
       - name: Upload screenshot diffs on failure
         if: failure()
