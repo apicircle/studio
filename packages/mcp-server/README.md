@@ -61,6 +61,10 @@ apicircle-mcp
 # Single-workspace mode — point at a folder with a workspace.synced.json
 # (CI, a git-cloned workspace repo, etc.)
 apicircle-mcp --workspace /path/to/checkout-repo
+
+# Diagnostics — handled in-process, no MCP handshake involved
+apicircle-mcp --version    # prints the package version
+apicircle-mcp --help       # prints the usage block
 ```
 
 The server speaks JSON-RPC on stdin/stdout (logs to stderr). Plug it into

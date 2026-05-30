@@ -124,27 +124,34 @@ function EffectiveRequestPreview({
   const urlInvalid = !urlValidation.ok;
 
   // The Effective URL row is only meaningful when the user has used
-  // `{{VAR}}` syntax somewhere in the URL or query rows — otherwise the
-  // value would be a verbatim copy of the URL input and adds no info.
-  // Scan the raw fields (not the resolved string) so the row shows even
-  // when the variable is currently unresolved; the row's value will then
-  // reveal which token didn't bind.
-  const hasUrlVariables = useMemo(() => {
+  // `{{VAR}}` template syntax OR `:name` / `{name}` path-placeholder syntax
+  // somewhere in the URL or query rows — otherwise the value would be a
+  // verbatim copy of the URL input and adds no info. Scan the raw fields
+  // (not the resolved string) so the row shows even when a variable is
+  // currently unresolved; the row's value will then reveal which token
+  // didn't bind. Path placeholders mirror PATH_PLACEHOLDER in
+  // `@apicircle/core` buildRequest.ts so the trigger stays consistent with
+  // what `applyPathParams` actually substitutes.
+  const hasUrlSubstitutions = useMemo(() => {
     const TEMPLATE = /\{\{[^{}]+\}\}/;
-    if (TEMPLATE.test(request.url)) return true;
+    const PATH_PLACEHOLDER = /(?::[A-Za-z_][\w-]*|(?<!\{)\{[A-Za-z_][\w-]*\}(?!\}))/;
+    if (TEMPLATE.test(request.url) || PATH_PLACEHOLDER.test(request.url)) return true;
     for (const q of request.query) {
       if (!q.enabled) continue;
       if (TEMPLATE.test(q.key) || TEMPLATE.test(q.value)) return true;
     }
-    for (const [, v] of Object.entries(request.pathParams ?? {})) {
+    const pathParamEntries = Object.entries(request.pathParams ?? {});
+    if (pathParamEntries.length > 0) return true;
+    for (const [, v] of pathParamEntries) {
       if (TEMPLATE.test(v)) return true;
     }
     return false;
   }, [request.url, request.query, request.pathParams]);
 
   // Card is shown whenever there's something to surface: a resolved-URL
-  // preview (variables used), a validation failure, or a Cookie composition.
-  if (!hasUrlVariables && !urlInvalid && !cookieValue) return null;
+  // preview (variables or path params used), a validation failure, or a
+  // Cookie composition.
+  if (!hasUrlSubstitutions && !urlInvalid && !cookieValue) return null;
 
   // When the resolved URL fails validation we adopt the same visual
   // treatment as PreSendPanel's BlockerRow — danger-tinted border + bg,
@@ -157,7 +164,7 @@ function EffectiveRequestPreview({
 
   return (
     <div className={cardClassName}>
-      {hasUrlVariables && (
+      {hasUrlSubstitutions && (
         <div className="flex items-start gap-2">
           <span
             className={cn(

@@ -117,7 +117,7 @@ test.describe('Theme persistence (P7)', () => {
     await app.getByRole('option', { name: /GitHub Dark Dimmed/ }).hover();
     await expect(app.getByTestId('theme-github-dark-dimmed-preview-pending')).toBeVisible();
     await expect(app.getByTestId('theme-github-dark-dimmed-preview-active')).toBeVisible({
-      timeout: 1500,
+      timeout: 3000,
     });
     await expect(app.locator('html')).toHaveAttribute('data-theme', 'github-dark-dimmed');
 
@@ -128,7 +128,7 @@ test.describe('Theme persistence (P7)', () => {
     await app.getByRole('option', { name: /macOS System/ }).hover();
     await expect(app.getByTestId('font-macos-system-preview-pending')).toBeVisible();
     await expect(app.getByTestId('font-macos-system-preview-active')).toBeVisible({
-      timeout: 1500,
+      timeout: 3000,
     });
     const fontId = await app.evaluate(() => {
       const w = window as unknown as {

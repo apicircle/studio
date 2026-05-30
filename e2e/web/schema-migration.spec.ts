@@ -141,7 +141,7 @@ test.describe('Schema migration — hydration normalizer', () => {
           };
         };
       };
-      expect(state.synced!.globalAssets).toEqual({ schemas: {}, graphql: {} });
+      expect(state.synced!.globalAssets).toEqual({ schemas: {}, graphql: {}, files: {} });
       expect(state.synced!.mockServers).toEqual({});
       expect(state.synced!.secretKeys).toEqual({});
       expect(state.synced!.linkedOverrides).toEqual({

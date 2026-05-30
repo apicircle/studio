@@ -213,7 +213,9 @@ test.describe('Refresh + 3-way conflict resolver (P4.5)', () => {
       // The freshly-connected workspace still has unpushed local changes, so
       // the up-to-date refresh notice reads "Remote has no new changes."
       // rather than the zero-unpushed "Up to date with the remote." copy.
-      await expect(app.getByText(/Remote has no new changes/)).toBeVisible();
+      // The refresh path resolves several mocked GitHub endpoints serially,
+      // so allow more time than the default 5s expect timeout.
+      await expect(app.getByText(/Remote has no new changes/)).toBeVisible({ timeout: 15_000 });
       await expect(app.getByText(/Last pulled:/)).toBeVisible();
     },
   );

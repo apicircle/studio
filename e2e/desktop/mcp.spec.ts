@@ -43,16 +43,30 @@ let shared: McpClient | undefined;
 // that reads workspace state.
 function seedWorkspaceDir(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apicircle-mcp-seed-'));
+  // Shape must match `WorkspaceSynced` in `packages/shared/src/types.ts`.
+  // SingleWorkspaceAdapter.list() (called by workspace.read) dereferences
+  // `synced.meta.createdAt`, `synced.environments.items`, etc., so a
+  // partial doc throws a TypeError that the host catches and converts to
+  // `{ isError: true }`. Mirror the canonical empty fixture used by the
+  // unit tests (FileBackedWorkspaceProvider.test.ts :: emptySynced()).
+  const now = '2026-05-30T00:00:00.000Z';
   fs.writeFileSync(
     path.join(dir, 'workspace.synced.json'),
     JSON.stringify({
-      workspaceId: 'ws-e2e-seed',
       schemaVersion: 1,
-      collections: { tree: [], requests: {}, folders: {} },
-      environments: [],
-      plans: [],
-      assertions: [],
-      mockServers: [],
+      workspaceId: 'ws-e2e-seed',
+      collections: {
+        tree: { id: 'root', type: 'root', children: [] },
+        requests: {},
+        folders: {},
+      },
+      environments: { items: {}, activeName: null, priorityOrder: [] },
+      linkedWorkspaces: {},
+      linkedOverrides: { requests: {}, environmentVars: {} },
+      releases: { self: null, perLink: {} },
+      globalAssets: { schemas: {}, graphql: {} },
+      mockServers: {},
+      meta: { createdAt: now, updatedAt: now, appVersion: '0.0.0-e2e' },
     }),
   );
   return dir;
@@ -248,16 +262,25 @@ test.describe('MCP — lifecycle', () => {
     ),
     async () => {
       const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-syncedonly-'));
+      // Same canonical empty-synced shape as `seedWorkspaceDir` above.
+      const now = '2026-05-30T00:00:00.000Z';
       fs.writeFileSync(
         path.join(ws, 'workspace.synced.json'),
         JSON.stringify({
-          workspaceId: 'ws-x',
           schemaVersion: 1,
-          collections: { tree: [], requests: {} },
-          environments: [],
-          plans: [],
-          assertions: [],
-          mockServers: [],
+          workspaceId: 'ws-x',
+          collections: {
+            tree: { id: 'root', type: 'root', children: [] },
+            requests: {},
+            folders: {},
+          },
+          environments: { items: {}, activeName: null, priorityOrder: [] },
+          linkedWorkspaces: {},
+          linkedOverrides: { requests: {}, environmentVars: {} },
+          releases: { self: null, perLink: {} },
+          globalAssets: { schemas: {}, graphql: {} },
+          mockServers: {},
+          meta: { createdAt: now, updatedAt: now, appVersion: '0.0.0-e2e' },
         }),
       );
       const c = await spawnMcpServer({ workspaceDir: ws });

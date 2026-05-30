@@ -444,6 +444,13 @@ test.describe('History — C11', () => {
   test(
     tc(hrId('POST with JSON body'), 'replay of a POST with JSON body re-sends the body verbatim'),
     async ({ app, monaco, e2eMock, sidebar }) => {
+      // This test is the only HR case that exercises Monaco. Under
+      // parallel-worker contention the Vite dev server can take the
+      // full 15s+15s monaco.fill budget (wrapper mount + lazy-chunk
+      // import + editor registration) just to set the body, leaving
+      // <0s for the Send/Replay/poll that follows. Bump the per-test
+      // budget to 60s so the cold-cache Monaco compile fits.
+      test.setTimeout(60_000);
       const path = `/anything/hr-post-${Math.random().toString(36).slice(2, 8)}`;
       await sidebar.createRequest('hr-post');
       await app.getByLabel('HTTP method').selectOption('POST');

@@ -198,6 +198,19 @@ export const test = base.extend<GitFixture>({
     // additive-safe across concurrent runs.
     void mockGithub.baseUrl;
     await installRoutes(context);
+    // Suppress the first-run onboarding tour. It renders a full-screen
+    // spotlight overlay that intercepts every click on the app behind
+    // it, so tests that drive the UI (e.g. clicking the Workspace nav
+    // button to surface the repo card) must mark it done before the
+    // renderer boots. addInitScript runs before page scripts on every
+    // navigation, so the key is set before OnboardingTour reads it.
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem('apicircle:onboarding-tour-done-v2', '1');
+      } catch {
+        /* storage disabled — onboarding will just render */
+      }
+    });
     await page.goto('/');
     await expect(page.getByText('API Circle Studio', { exact: true })).toBeVisible();
     // Pre-seed an OAuth token in localStorage so the app sees a

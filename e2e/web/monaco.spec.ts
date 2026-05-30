@@ -119,7 +119,16 @@ test.describe('Monaco foundation (P12)', () => {
       // ("Request body — …") if one is open in another test's leakage.
       const dialog = app.getByRole('dialog', { name: 'Response', exact: true });
       await expect(dialog).toBeVisible();
-      await expect.poll(() => monaco.read('Response body')).toContain('"ok": true');
+      // Toggling fullscreen fully unmounts the in-place MonacoResponseViewer
+      // and mounts a fresh one inside the overlay (ResponseViewer renders
+      // either `!fullscreen && panelContent` OR the overlay copy, never
+      // both). The fixture's `monaco.ready()` allows Monaco 15s to
+      // re-register on `window.__apicircleEditors`, so the outer poll
+      // needs a timeout comfortably above that — Playwright's 5s default
+      // would race the re-mount on slower CI runs.
+      await expect
+        .poll(() => monaco.read('Response body'), { timeout: 20_000 })
+        .toContain('"ok": true');
 
       // Close via Escape.
       await app.keyboard.press('Escape');

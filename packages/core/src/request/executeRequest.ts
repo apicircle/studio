@@ -116,6 +116,14 @@ function resolveLocation(from: string, location: string): string | null {
   }
 }
 
+/** True when running inside a browser-style fetch implementation, where
+ *  `redirect: 'manual'` yields an opaqueredirect response that we can't
+ *  read headers/status from. Node's undici exposes those fields fully so
+ *  the manual redirect loop can drive the chain itself. */
+function isBrowserRuntime(): boolean {
+  return typeof window !== 'undefined' && typeof window.document !== 'undefined';
+}
+
 /**
  * Execute a request through the browser's fetch (or an injected impl for
  * tests). Returns a flat ExecutionResult — never throws for HTTP errors.
@@ -164,12 +172,23 @@ export async function executeRequest(
             () => controller.abort(new Error(`Request timed out after ${timeoutMs}ms`)),
             timeoutMs,
           );
-    // Manual redirect handling. The browser's default `redirect: 'follow'`
-    // preserves `Authorization` / `Cookie` headers across cross-origin
-    // redirects — a `302 Location: https://attacker/` from a legitimate
-    // host would exfiltrate the bearer/basic credential. We walk the
-    // redirect chain ourselves and strip cross-origin credential headers
-    // at each hop.
+    // Redirect handling has to fork by runtime:
+    //
+    // - In Node fetch the spec's default `redirect: 'follow'` preserves
+    //   `Authorization` / `Cookie` headers across cross-origin redirects,
+    //   so a `302 Location: https://attacker/` from a legitimate host
+    //   would exfiltrate the bearer/basic credential. We pass
+    //   `redirect: 'manual'`, walk the chain ourselves, and strip
+    //   credential headers at each cross-origin hop.
+    //
+    // - Browser fetch returns an opaqueredirect response when given
+    //   `redirect: 'manual'` (type === 'opaqueredirect', status === 0,
+    //   headers unreadable), so the same code path stalls before the
+    //   first hop. Browsers already strip `Authorization` across
+    //   cross-origin redirects per the Fetch spec §4.4 step 13, so we
+    //   delegate to the platform with `redirect: 'follow'` instead of
+    //   trying to drive the chain ourselves.
+    const redirectMode: RequestRedirect = isBrowserRuntime() ? 'follow' : 'manual';
     let currentUrl = builtRequest.url;
     let currentHeaders: Record<string, string> = { ...builtRequest.headers };
     let currentMethod = builtRequest.method;
@@ -179,7 +198,7 @@ export async function executeRequest(
       headers: currentHeaders,
       body: currentBody,
       signal: controller.signal,
-      redirect: 'manual',
+      redirect: redirectMode,
     });
     let redirectCount = 0;
     while (REDIRECT_STATUSES.has(response.status) && redirectCount < MAX_REDIRECTS) {
@@ -213,7 +232,7 @@ export async function executeRequest(
         headers: currentHeaders,
         body: currentBody,
         signal: controller.signal,
-        redirect: 'manual',
+        redirect: redirectMode,
       });
       redirectCount++;
     }

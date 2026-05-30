@@ -252,8 +252,13 @@ test.describe('Web browser-specific — multi-tab', () => {
     tc(id('Tab Close'), 'closing one tab leaves the other usable'),
     async ({ context, twoTabs }) => {
       const { tabA, tabB } = twoTabs;
-      await tabA.close();
-      await expect(tabB.getByText('API Circle Studio', { exact: true })).toBeVisible();
+      // Close the fixture-owned tab (tabB) rather than tabA — tabA IS
+      // the worker's primary `page` fixture, and closing it mid-test
+      // races with Playwright's built-in teardown and intermittently
+      // hangs the worker. The TC-WB-0003 semantic ("close one tab,
+      // the other stays usable") is identical either way.
+      await tabB.close();
+      await expect(tabA.getByText('API Circle Studio', { exact: true })).toBeVisible();
       // Open another tab from the surviving context — the shared IDB
       // partition should still be readable.
       const tabC = await context.newPage();

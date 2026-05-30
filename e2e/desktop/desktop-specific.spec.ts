@@ -43,6 +43,26 @@ test.describe('Desktop-specific (DS)', () => {
       await win1!.waitForTimeout(600);
       await app1.close();
 
+      // Read the persisted bounds off disk. On Windows with a non-100%
+      // DPI scale factor (125% / 150% / 175%), `BrowserWindow.getBounds()`
+      // returns DIPs that have been snapped to the nearest physical
+      // pixel, so the saved value can differ from the requested value
+      // by a few px. `writeWindowBounds` saves whatever the OS realized,
+      // and `readWindowBounds` must round-trip it exactly — that's the
+      // persistence contract this test owns.
+      const statePath = path.join(userDataDir, 'window.json');
+      const persisted = JSON.parse(fs.readFileSync(statePath, 'utf8')) as {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      };
+      // Sanity-check that the persisted footprint is close to what we
+      // requested — a few-px DPI rounding delta is fine, anything larger
+      // is a real regression (e.g. constructor ignored the bounds).
+      expect(Math.abs(persisted.width - 1100)).toBeLessThanOrEqual(5);
+      expect(Math.abs(persisted.height - 720)).toBeLessThanOrEqual(5);
+
       const { app: app2, window: win2 } = await launchElectron({
         extraArgs: [`--user-data-dir=${userDataDir}`],
       });
@@ -51,8 +71,15 @@ test.describe('Desktop-specific (DS)', () => {
         return w?.getBounds() ?? null;
       });
       expect(bounds).not.toBeNull();
-      expect(bounds!.width).toBe(1100);
-      expect(bounds!.height).toBe(720);
+      // After relaunch the realized frame should track the persisted file,
+      // but Windows applies DPI snapping inside BrowserWindow's constructor
+      // (the same way it did during the first launch), so the readback can
+      // differ from the persisted value by a few px on fractional-DPI
+      // displays. ±5 px is the same tolerance we use for the persisted
+      // sanity-check above; anything larger indicates the constructor
+      // ignored the saved bounds.
+      expect(Math.abs(bounds!.width - persisted.width)).toBeLessThanOrEqual(5);
+      expect(Math.abs(bounds!.height - persisted.height)).toBeLessThanOrEqual(5);
       await win2!.close().catch(() => {});
       await app2.close();
     },
@@ -238,24 +265,48 @@ test.describe('Desktop-specific (DS)', () => {
     ),
     async ({ mainWindow }) => {
       const roundtripped = await mainWindow.evaluate(async () => {
+        // The preload exposes flat methods (encryptString / decryptString /
+        // isEncryptionAvailable) on `apicircleDesktop` — there's no nested
+        // `.secret` namespace. See apps/desktop/src/main/preload.ts.
         const w = window as unknown as {
           apicircleDesktop?: {
-            secret?: {
-              encrypt: (plain: string) => Promise<string>;
-              decrypt: (cipher: string) => Promise<string>;
-            };
+            encryptString?: (plain: string) => Promise<string>;
+            decryptString?: (cipher: string) => Promise<string>;
+            isEncryptionAvailable?: () => Promise<boolean>;
           };
         };
-        const secret = w.apicircleDesktop?.secret;
-        if (!secret) return null;
-        const cipher = await secret.encrypt('hello-from-e2e');
-        const plain = await secret.decrypt(cipher);
-        return { cipher, plain };
+        const bridge = w.apicircleDesktop;
+        if (
+          !bridge ||
+          typeof bridge.encryptString !== 'function' ||
+          typeof bridge.decryptString !== 'function' ||
+          typeof bridge.isEncryptionAvailable !== 'function'
+        ) {
+          return { status: 'no-bridge' as const };
+        }
+        // If the OS keychain isn't available on this runner (rare on Win/macOS,
+        // common on headless Linux without libsecret), surface that explicitly
+        // so the assertion can branch instead of throwing an opaque IPC error.
+        const available = await bridge.isEncryptionAvailable();
+        if (!available) {
+          return { status: 'keychain-unavailable' as const };
+        }
+        const cipher = await bridge.encryptString('hello-from-e2e');
+        const plain = await bridge.decryptString(cipher);
+        return { status: 'ok' as const, cipher, plain };
       });
       expect(roundtripped).not.toBeNull();
-      expect(roundtripped!.plain).toBe('hello-from-e2e');
+      // Headless Linux CI runners may not have libsecret wired up; on Windows
+      // (DPAPI) and macOS (Keychain) the roundtrip must succeed.
+      if (roundtripped.status === 'keychain-unavailable') {
+        test.skip(true, 'OS keychain not available on this runner (no DPAPI/Keychain/libsecret)');
+        return;
+      }
+      expect(roundtripped.status).toBe('ok');
+      if (roundtripped.status !== 'ok') return;
+      expect(roundtripped.plain).toBe('hello-from-e2e');
       // The ciphertext must NOT equal the plaintext.
-      expect(roundtripped!.cipher).not.toBe('hello-from-e2e');
+      expect(roundtripped.cipher).not.toBe('hello-from-e2e');
     },
   );
 
@@ -269,23 +320,26 @@ test.describe('Desktop-specific (DS)', () => {
       // payload must be rejected — this is the "unavailable / refuse"
       // failure path the manual workbook exercises.
       const err = await mainWindow.evaluate(async () => {
+        // Flat preload surface — no `.secret` namespace. See
+        // apps/desktop/src/main/preload.ts.
         const w = window as unknown as {
           apicircleDesktop?: {
-            secret?: { encrypt: (plain: string) => Promise<string> };
+            encryptString?: (plain: string) => Promise<string>;
           };
         };
-        const secret = w.apicircleDesktop?.secret;
-        if (!secret) return 'no-bridge';
+        const encryptString = w.apicircleDesktop?.encryptString;
+        if (typeof encryptString !== 'function') return 'no-bridge';
         try {
-          await secret.encrypt('x'.repeat(2_097_152));
+          await encryptString('x'.repeat(2_097_152));
           return 'no-error';
         } catch (e) {
           return e instanceof Error ? e.message : String(e);
         }
       });
-      // Either the bridge surfaced a payload-size error, or the OS
-      // keychain is unavailable on the runner (returns "no-bridge") —
-      // both are valid paths through the fallback branch.
+      // The bridge must surface a real error string — neither the missing-
+      // bridge sentinel nor "the call silently succeeded" is acceptable.
+      // Any other string is a legitimate refusal (payload-size guard, or an
+      // OS-keychain "unavailable" error on a runner without DPAPI/libsecret).
       expect(['no-bridge', 'no-error'].includes(err)).toBe(false);
     },
   );

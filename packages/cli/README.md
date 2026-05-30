@@ -45,7 +45,10 @@ npm install -g @apicircle/cli
 npx @apicircle/cli --help
 ```
 
-Single command, single binary: `apicircle`.
+Single command, single binary: `apicircle`. Top-level `--version` /
+`-v` / `-V` and `--help` / `-h` are handled by the binary itself, so
+`apicircle --version` prints the package version without booting a
+subcommand.
 
 ## What you can do with it
 

@@ -1,0 +1,371 @@
+name: E2E
+
+# Playwright E2E suites — the chromium web run is the gate, with cross-browser
+# smoke + visual-baseline + the desktop Electron suite running alongside on
+# main. The coverage delta script (scripts/e2e_coverage_delta.mjs) gates PRs
+# against the most recent successful main run.
+#
+# Trigger model:
+#   - pull_request → playwright (chromium web) + coverage-delta only.
+#     Cross-browser / visual / desktop don't gate PR merges; they run on main.
+#   - push to main → all jobs.
+#   - workflow_dispatch → all jobs (for manual re-runs).
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  playwright:
+    # Each matrix entry runs ~1/8 of the chromium suite in parallel. Wall-clock
+    # for the whole gate drops from ~45 min (single job) to ~7-10 min
+    # (slowest shard). Per-shard outputs are written as Playwright `blob`
+    # reports and merged by the `playwright-merge` job below, which is where
+    # the coverage gate + unified HTML report live.
+    name: Playwright shard ${{ matrix.shard }}/8
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        # The e2e-web suite imports from @apicircle/core / @apicircle/shared at
+        # runtime via the dev server's module graph, so the dist outputs must
+        # exist before Playwright boots.
+        run: pnpm --filter @apicircle/web... build
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @apicircle/e2e-web exec playwright install --with-deps chromium
+
+      - name: Run shard ${{ matrix.shard }}/8
+        # `--shard=K/N` deterministically picks ~1/N of the tests for this
+        # job. `--reporter=blob` emits a single shard-scoped binary report
+        # that the merge job downloads + combines below.
+        run: |
+          pnpm --filter @apicircle/e2e-web exec playwright test \
+            --project=chromium \
+            --shard=${{ matrix.shard }}/8 \
+            --reporter=blob
+
+      - name: Upload blob report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: blob-report-${{ matrix.shard }}
+          path: e2e/web/blob-report
+          retention-days: 1
+          if-no-files-found: ignore
+
+      - name: Upload Playwright traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-traces-shard-${{ matrix.shard }}
+          path: e2e/web/test-results
+          retention-days: 7
+          if-no-files-found: ignore
+
+  playwright-merge:
+    # Aggregates the 8 shard blobs into a single HTML report + JSON result
+    # set, then runs the strict coverage gate against that aggregate. Runs
+    # even if some shards failed so we still publish a merged report
+    # showing every failure across the suite.
+    name: Merge shard reports + coverage gate
+    needs: playwright
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download all shard blob reports
+        uses: actions/download-artifact@v5
+        with:
+          pattern: blob-report-*
+          path: all-blob-reports
+          merge-multiple: true
+
+      - name: Merge into unified HTML + JSON
+        # The merged JSON lands at e2e/web/test-results.json (the same
+        # path single-job runs would write) so the coverage script doesn't
+        # need to special-case the sharded layout.
+        run: |
+          mkdir -p e2e/web/playwright-report
+          pnpm --filter @apicircle/e2e-web exec playwright merge-reports \
+            --reporter html,json \
+            all-blob-reports \
+            > e2e/web/test-results.json
+          # `merge-reports html` writes to the project's configured
+          # playwright-report dir (e2e/web/playwright-report).
+
+      - name: Compute coverage report (strict)
+        if: always()
+        run: |
+          python3 scripts/e2e_coverage_report.py \
+            --strict \
+            --json \
+            --from-results=e2e/web/test-results.json \
+            --fail-under=20
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-coverage-${{ github.run_id }}
+          path: |
+            docs/qa/results/e2e-coverage.json
+            docs/qa/results/e2e-coverage.md
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload merged Playwright HTML report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-web-${{ github.run_id }}
+          path: e2e/web/playwright-report
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Fail the job if any shard failed
+        # `needs: playwright` with `if: always()` lets us run even when
+        # shards fail (so we still publish the merged report), but the
+        # gate's exit code must reflect shard health.
+        if: contains(needs.playwright.result, 'failure')
+        run: |
+          echo "::error::One or more playwright shards failed — see the merged report."
+          exit 1
+
+  coverage-delta:
+    name: Coverage delta vs main
+    needs: playwright-merge
+    if: github.event_name == 'pull_request' && always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - name: Download PR coverage artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: e2e-coverage-${{ github.run_id }}
+          path: docs/qa/results/
+
+      - name: Compare coverage vs main baseline
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+        run: node scripts/e2e_coverage_delta.mjs
+
+  cross-browser-smoke:
+    name: Cross-browser smoke (${{ matrix.browser }})
+    # Only run on main + manual dispatch. PRs gate on chromium only.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [firefox, webkit]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm --filter @apicircle/web... build
+
+      - name: Install Playwright ${{ matrix.browser }}
+        run: pnpm --filter @apicircle/e2e-web exec playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Run @smoke tests in ${{ matrix.browser }}
+        run: pnpm --filter @apicircle/e2e-web exec playwright test --project=${{ matrix.browser }}-smoke
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-${{ matrix.browser }}-${{ github.run_id }}
+          path: e2e/web/playwright-report
+          retention-days: 14
+          if-no-files-found: ignore
+
+  visual-baseline:
+    name: Visual baseline (chromium)
+    # Visual-snapshot diffs are flaky on the runner-vs-local font stack, so
+    # gate them to main + manual only — local devs refresh the baseline with
+    # `--update-snapshots` after intentional visual changes.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm --filter @apicircle/web... build
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @apicircle/e2e-web exec playwright install --with-deps chromium
+
+      - name: Run visual baseline project
+        run: pnpm test:e2e:visual
+
+      - name: Upload screenshot diffs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: visual-baseline-diffs-${{ github.run_id }}
+          path: |
+            e2e/web/test-results
+            e2e/web/__screenshots__
+          retention-days: 14
+          if-no-files-found: ignore
+
+  desktop:
+    name: Desktop (Electron · ${{ matrix.os }})
+    # Electron on the runner needs an X server; we run on linux only for now
+    # via xvfb-run. macOS/Windows runners exist if we want to wire them in
+    # later, but the suite is platform-neutral by design.
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages and desktop main
+        # Desktop specs spawn the built CLI + MCP binaries directly, so all
+        # of cli, mcp-server, and the desktop main bundle must be built.
+        run: |
+          pnpm --filter @apicircle/cli build
+          pnpm --filter @apicircle/mcp-server build
+          pnpm --filter @apicircle/desktop build
+
+      - name: Install Electron runtime deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2t64
+
+      - name: Run desktop E2E suite under xvfb
+        run: xvfb-run -a pnpm test:e2e:desktop
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-desktop-${{ matrix.os }}-${{ github.run_id }}
+          path: e2e/desktop/playwright-report
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload Playwright traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-traces-desktop-${{ matrix.os }}-${{ github.run_id }}
+          path: e2e/desktop/test-results
+          retention-days: 7
+          if-no-files-found: ignore

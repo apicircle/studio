@@ -91,7 +91,7 @@ describe('applyTheme / getStoredThemeId', () => {
       throw new Error('access denied');
     });
     try {
-      expect(getStoredThemeId()).toBe('one-dark-pro');
+      expect(getStoredThemeId()).toBe('command-center');
     } finally {
       getItem.mockRestore();
     }

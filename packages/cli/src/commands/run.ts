@@ -62,7 +62,7 @@ export function registerRunCommand(program: Command): void {
       'Registry workspace name (case-insensitive) or id. Defaults to the active workspace.',
     )
     .option(
-      '--workspace-path <dir>',
+      '-w, --workspace-path <dir>',
       'Filesystem directory containing workspace.synced.json (skips the registry).',
     )
     .option('--no-assertions', 'Run requests without evaluating their assertions')

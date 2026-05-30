@@ -62,7 +62,7 @@ describe('SettingsPicker appearance pickers', () => {
   it('opens the theme list and commits a new expanded-catalog theme', async () => {
     await openSettings();
 
-    fireEvent.click(screen.getByRole('button', { name: /Theme: One Dark Pro/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Theme: Command Center/ }));
     expect(screen.getByRole('listbox', { name: 'Themes' })).toBeInTheDocument();
     expect(
       screen.getByText('Hover or use keyboard navigation to preview. Click to apply.'),
@@ -78,7 +78,7 @@ describe('SettingsPicker appearance pickers', () => {
     await openSettings();
     vi.useFakeTimers();
     try {
-      const themeRow = screen.getByRole('button', { name: /Theme: One Dark Pro/ });
+      const themeRow = screen.getByRole('button', { name: /Theme: Command Center/ });
 
       fireEvent.pointerEnter(themeRow);
       act(() => {
@@ -95,7 +95,7 @@ describe('SettingsPicker appearance pickers', () => {
 
   it('previews a hovered theme after the 1 second intent delay', async () => {
     await openSettings();
-    fireEvent.click(screen.getByRole('button', { name: /Theme: One Dark Pro/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Theme: Command Center/ }));
 
     vi.useFakeTimers();
     try {
@@ -105,7 +105,7 @@ describe('SettingsPicker appearance pickers', () => {
       act(() => {
         vi.advanceTimersByTime(999);
       });
-      expect(useWorkspaceStore.getState().local!.ui.themeId).toBe('one-dark-pro');
+      expect(useWorkspaceStore.getState().local!.ui.themeId).toBe('command-center');
       expect(screen.getByTestId('theme-github-dark-dimmed-preview-pending')).toBeInTheDocument();
 
       act(() => {
@@ -122,7 +122,7 @@ describe('SettingsPicker appearance pickers', () => {
   it('opens the font list and commits the macOS system stack', async () => {
     await openSettings();
 
-    fireEvent.click(screen.getByRole('button', { name: /Font family: System Sans/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Font family: Cascadia Code/ }));
     expect(screen.getByRole('listbox', { name: 'Font families' })).toBeInTheDocument();
     expect(
       screen.getByText('Hover or use keyboard navigation to preview. Click to apply.'),
@@ -136,7 +136,7 @@ describe('SettingsPicker appearance pickers', () => {
 
   it('previews a hovered font after the 1 second intent delay', async () => {
     await openSettings();
-    fireEvent.click(screen.getByRole('button', { name: /Font family: System Sans/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Font family: Cascadia Code/ }));
 
     vi.useFakeTimers();
     try {
@@ -146,7 +146,7 @@ describe('SettingsPicker appearance pickers', () => {
       act(() => {
         vi.advanceTimersByTime(999);
       });
-      expect(useWorkspaceStore.getState().local!.ui.fontId).toBe('system-sans');
+      expect(useWorkspaceStore.getState().local!.ui.fontId).toBe('cascadia-code');
       expect(screen.getByTestId('font-macos-system-preview-pending')).toBeInTheDocument();
 
       act(() => {

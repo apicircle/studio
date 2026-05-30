@@ -44,8 +44,12 @@ export const test = base.extend<TwoTabsFixture>({
     await use({ tabA, tabB });
 
     // Tab B is owned by the fixture; close it on teardown so the
-    // worker's page count stays predictable.
-    await tabB.close();
+    // worker's page count stays predictable. Guard against tests that
+    // close tabB themselves (e.g. the TC-WB-0003 tab-close spec) so
+    // the fixture stays idempotent.
+    if (!tabB.isClosed()) {
+      await tabB.close();
+    }
   },
 
   twoContexts: async ({ browser }, use) => {

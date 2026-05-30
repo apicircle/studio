@@ -123,7 +123,6 @@ import {
   setActiveWorkspace as setActiveWorkspacePersisted,
   updateRegistryEntryName as updateRegistryEntryNamePersisted,
   resetWorkspace as resetWorkspaceStorage,
-  saveLocal,
   saveSynced,
 } from '../persistence/workspaceStorage';
 // Hot-path persistence is coalesced through a 250ms debounce — `commitSynced`
@@ -6368,7 +6367,15 @@ async function persistMerged(
     },
   };
   set({ synced: merged, local: nextLocal });
-  await Promise.all([saveSynced(merged), saveLocal(nextLocal)]);
+  // Route through the debounce queue (then immediately flush) instead of
+  // writing direct. If a prior action — e.g. restoreSnapshot before a
+  // refresh — left stale `pendingSynced`/`pendingLocal` in the queue, a
+  // direct write here would land first, then the stale flush (triggered
+  // later by workspace switch / push / debounce timeout) would clobber
+  // the merged state on disk. queueSaveBoth replaces the pending pair
+  // with the merged one so the subsequent flush writes the correct state.
+  queueSaveBoth(merged, nextLocal);
+  await flushPendingPersist();
 
   // Bootstrap snapshots for any linkedWorkspaces that just arrived via
   // pull but have no local cached snapshot yet. Fixes the fresh-clone

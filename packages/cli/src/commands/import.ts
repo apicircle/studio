@@ -37,7 +37,7 @@ export function registerImportCommand(program: Command): void {
       'Registry workspace name (case-insensitive) or id. Defaults to the active workspace.',
     )
     .option(
-      '--workspace-path <dir>',
+      '-w, --workspace-path <dir>',
       'Filesystem directory containing workspace.synced.json (skips the registry).',
     )
     .option('-f, --format <format>', 'OpenAPI format: json | yaml', 'json')

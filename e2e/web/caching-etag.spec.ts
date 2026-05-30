@@ -21,16 +21,36 @@ test.describe('HTTP caching', () => {
   test(
     tc(id('If-None-Match with stored ETag'), 'conditional GET round-trip with ETag'),
     async ({ app, e2eMock, sidebar }) => {
+      // Parallel tests in this file all hit `/cache/etag`, and the mock
+      // server's introspection buffer is shared across workers — scope
+      // each send with a unique query param so the wire-side assertions
+      // can disambiguate this test's captures from sibling ones.
+      const scope = `ca-etag-1-${Math.random().toString(36).slice(2, 8)}`;
+
       // First send establishes ETag in the response panel.
       await sidebar.createRequest('ca-etag-1');
-      await app.getByLabel('Request URL').fill(e2eMock.url('/cache/etag'));
+      await app.getByLabel('Request URL').fill(e2eMock.url(`/cache/etag?t=${scope}-a`));
       await app.getByRole('button', { name: /^Send$/ }).click();
       await expect(app.getByText('200').first()).toBeVisible({ timeout: 10_000 });
-      const first = await e2eMock.findLastByPath((p) => p === '/cache/etag');
+      const findScoped = async (
+        tag: string,
+        predicate: (entry: { query: Record<string, string> }) => boolean,
+      ): Promise<{ headers: Record<string, string>; query: Record<string, string> }> => {
+        const deadline = Date.now() + 5_000;
+        while (Date.now() < deadline) {
+          const entries = await e2eMock.inspectLast(50);
+          const match = entries.find((e) => e.path === '/cache/etag' && predicate(e));
+          if (match) return match;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        throw new Error(`mock-server: no /cache/etag capture matched scope ${tag}`);
+      };
+      const first = await findScoped(`${scope}-a`, (e) => e.query.t === `${scope}-a`);
       expect(first.headers['if-none-match']).toBeUndefined();
 
       // Manually re-send with If-None-Match header set — verify the server
       // would 304 (we drive the wire via the headers panel).
+      await app.getByLabel('Request URL').fill(e2eMock.url(`/cache/etag?t=${scope}-b`));
       await app
         .getByRole('button', { name: /^Headers/ })
         .first()
@@ -41,7 +61,7 @@ test.describe('HTTP caching', () => {
       await app.getByRole('button', { name: /^Send$/ }).click();
       // Browser may surface either 304 or 200 depending on how the response
       // panel labels conditional responses — assert wire shape instead.
-      const second = await e2eMock.findLastByPath((p) => p === '/cache/etag', { timeout: 5_000 });
+      const second = await findScoped(`${scope}-b`, (e) => e.query.t === `${scope}-b`);
       expect(second.headers['if-none-match']).toBe('"e2e-mock-etag-v1"');
     },
   );

@@ -22,12 +22,34 @@ function id(key: string): TcId {
 test.describe('Streaming / SSE / WS', () => {
   test.describe.configure({ mode: 'parallel' });
 
+  // Helper: parallel-safe lookup of the most-recent /stream/sse wire entry
+  // whose `count` query matches the value this test sent. Plain
+  // `findLastByPath('/stream/sse')` collides under parallel mode because
+  // sibling tests share the mock-server capture buffer.
+  async function findSseByCount(
+    e2eMock: {
+      inspectLast: (
+        n: number,
+      ) => Promise<Array<{ path: string; query: Record<string, string>; url: string }>>;
+    },
+    count: string,
+  ): Promise<{ path: string; query: Record<string, string>; url: string }> {
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      const entries = await e2eMock.inspectLast(200);
+      const hit = entries.find((e) => e.path === '/stream/sse' && e.query.count === count);
+      if (hit) return hit;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error(`mock-server: no /stream/sse capture with count=${count}`);
+  }
+
   test(tc(id('SSE connect'), 'SSE round-trip emits events'), async ({ app, e2eMock, sidebar }) => {
     await sidebar.createRequest('wk-sse-connect');
     await app.getByLabel('Request URL').fill(e2eMock.url('/stream/sse?count=3&intervalMs=50'));
     await app.getByRole('button', { name: /^Send$/ }).click();
     await expect(app.getByText('200').first()).toBeVisible({ timeout: 15_000 });
-    const wire = await e2eMock.findLastByPath((p) => p === '/stream/sse');
+    const wire = await findSseByCount(e2eMock, '3');
     expect(wire.path).toBe('/stream/sse');
   });
 
@@ -40,7 +62,7 @@ test.describe('Streaming / SSE / WS', () => {
       await app.getByLabel('Request URL').fill(e2eMock.url('/stream/sse?count=2&intervalMs=20'));
       await app.getByRole('button', { name: /^Send$/ }).click();
       await expect(app.getByText('200').first()).toBeVisible({ timeout: 15_000 });
-      const wire = await e2eMock.findLastByPath((p) => p === '/stream/sse');
+      const wire = await findSseByCount(e2eMock, '2');
       expect(wire.query.count).toBe('2');
     },
   );
@@ -52,7 +74,7 @@ test.describe('Streaming / SSE / WS', () => {
       await app.getByLabel('Request URL').fill(e2eMock.url('/stream/sse?count=5&intervalMs=20'));
       await app.getByRole('button', { name: /^Send$/ }).click();
       await expect(app.getByText('200').first()).toBeVisible({ timeout: 15_000 });
-      const wire = await e2eMock.findLastByPath((p) => p === '/stream/sse');
+      const wire = await findSseByCount(e2eMock, '5');
       expect(wire.query.count).toBe('5');
     },
   );

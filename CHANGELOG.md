@@ -1,5 +1,62 @@
 # Changelog
 
+## 1.0.5 - 2026-05-29
+
+A theme and font expansion release. Studio's appearance catalog roughly
+doubles, every theme gains a matched Monaco editor variant, and the
+out-of-the-box look-and-feel switches to **Command Center** + **Cascadia
+Code**.
+
+### Themes — 30 new palettes
+
+- 18 new dark presets: VS Code Dark, GitHub Dark Dimmed, Terminal Green,
+  Terminal Amber, OLED Black, Carbon Dark, Slate Dark, Zinc Dark,
+  Everforest Dark, Kanagawa Wave, Kanagawa Dragon, Horizon Dark, City
+  Lights, Nightfox Dark, Command Center, Ink Dark, Muted Teal Dark, and
+  Redwood Dark.
+- 10 new light presets: VS Code Light, Xcode Light, Minimal Light,
+  Porcelain Light, Cloud Light, Everforest Light, Kanagawa Lotus,
+  Clarity Light, Nord Light, and Sage Light.
+- 2 new high-contrast variants: GitHub Dark High Contrast and GitHub
+  Light High Contrast.
+- New `monacoThemes.ts` ships a matched Monaco editor variant for every
+  preset, so the code editor recolors in lockstep with the shell.
+- Supporting CSS-variable surface rewritten in
+  `apps/web/src/styles/global.css` to back the broader palette set.
+
+### Fonts — 20 new families
+
+- 10 new monospace families: Noto Sans Mono, Martian Mono, Fragment
+  Mono, Overpass Mono, Cousine, Courier Prime, PT Mono, Oxygen Mono,
+  B612 Mono, Share Tech Mono.
+- 10 new sans families: macOS System, Aptos, Public Sans, Noto Sans,
+  Atkinson Hyperlegible, Lexend, Outfit, Sora, Barlow, Urbanist.
+
+### New defaults
+
+- The default theme is now **Command Center** (was One Dark Pro).
+- The default font is now **Cascadia Code** (was System Sans).
+- Existing workspaces keep their saved preference; only the
+  out-of-the-box experience changes.
+
+### Editor and CLI polish
+
+- Cleaner spacing and focus styling in `AuthEditor`, `BodyTab`,
+  `HeadersTab`, `KeyValueRows`, and `HeaderAutocomplete`.
+- `apicircle` and `apicircle-mcp` now expose `--version` / `-v` / `-V`
+  and `--help` / `-h` flags via new `bin/args.ts` parsers and an
+  auto-generated `packageVersion.ts` constant per package.
+- New Playwright spec `e2e/web/help-and-theme.spec.ts` covers the
+  Settings → Help / Theme picker flow against the new catalog.
+
+### Bumped packages
+
+`@apicircle/desktop`, `@apicircle/web`, `@apicircle/git`,
+`@apicircle/ui-components`, `@apicircle/cli`, `@apicircle/core`,
+`@apicircle/mcp-server`, `@apicircle/mock-server-core`,
+`@apicircle/shared`, plus the e2e and example workspaces — all at
+`1.0.5`.
+
 ## 1.0.4 - 2026-05-29
 
 The Global Assets and live-GitHub hardening release. This release makes file

@@ -251,7 +251,9 @@ test.describe('Effective URL preview', () => {
       await app.getByLabel('Request URL').fill(`${e2eMock.url('/anything/preview-:id')}?q=1`);
       await app.getByRole('tab', { name: /^path/i }).click();
       await app.getByLabel('Path param id value').fill('XYZ');
-      await expect(app.getByText('EFFECTIVE URL')).toBeVisible();
+      // The label is visually uppercase via Tailwind's `uppercase` class but
+      // the DOM text is the mixed-case literal — Playwright matches DOM.
+      await expect(app.getByText('Effective URL')).toBeVisible();
       await expect(
         app.getByText(`${e2eMock.baseUrl}/anything/preview-XYZ?q=1`, { exact: false }),
       ).toBeVisible();
