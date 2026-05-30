@@ -80,17 +80,24 @@ test.describe('Visual baseline', () => {
   test(
     tc(
       id('Concurrency :: Concurrency: Delete the request being sent'),
-      'Secret Vault dialog matches baseline',
+      'Secret Vault dock matches baseline',
     ),
     async ({ app }, testInfo) => {
       test.skip(
         testInfo.project.name !== 'visual-baseline',
         'Visual baseline runs only on the visual-baseline project',
       );
+      // The Vault lives in the right-side `Workspace inspector` dock
+      // (an aside, not a modal). Clicking the rail's "Open Secret
+      // Vault" button toggles the dock open and selects the vault tab.
       await app.getByRole('button', { name: /Open Secret Vault/ }).click();
-      const dialog = app.getByRole('dialog', { name: /Secret Vault/ });
-      await expect(dialog).toBeVisible();
-      await expect(dialog).toHaveScreenshot('secret-vault-dialog.png');
+      const dock = app.getByRole('complementary', { name: 'Workspace inspector' });
+      await expect(dock).toBeVisible();
+      await expect(dock.getByRole('tab', { name: 'Vault' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      await expect(dock).toHaveScreenshot('secret-vault-dock.png');
     },
   );
 });

@@ -9,6 +9,7 @@
 // If a store action stops persisting silently — or the IDB schema drifts
 // from the type — these tests catch it. The existing 290+ tests don't.
 
+import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures/app';
 
 import { tc } from './fixtures/tcCoverage';
@@ -16,6 +17,18 @@ import type { TcId } from './fixtures/tcCoverage';
 // Coverage credit: workbook module WS.
 import { tcMapWS } from './fixtures/tcMapWS';
 void Object.keys(tcMapWS);
+
+// Drain the 250ms debounced IDB write before reload. Without this,
+// Firefox's stricter unload semantics abort the in-flight transaction
+// and the most recent mutation is lost — Chromium/WebKit happen to
+// commit during unload, hiding the race.
+async function flushPersistAndReload(app: Page): Promise<void> {
+  await app.evaluate(async () => {
+    const w = window as unknown as { __apicircleFlushPersist?: () => Promise<void> };
+    await w.__apicircleFlushPersist?.();
+  });
+  await app.reload();
+}
 
 function id(key: string): TcId {
   const v = tcMapWS[key];
@@ -46,7 +59,7 @@ test.describe('Reload persistence', () => {
       await app.getByRole('radio', { name: 'JSON' }).click();
       await monaco.fill('Request body', '{"persisted":true}');
 
-      await app.reload();
+      await flushPersistAndReload(app);
       // Wait for hydration — the brand text appears once `__apicircleStore` is wired.
       await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
 
@@ -86,7 +99,7 @@ test.describe('Reload persistence', () => {
       await app.getByRole('button', { name: /^Send$/ }).click();
       await expect(app.getByText('200').first()).toBeVisible();
 
-      await app.reload();
+      await flushPersistAndReload(app);
       await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
 
       // History panel still has both runs.
@@ -113,7 +126,7 @@ test.describe('Reload persistence', () => {
         await expect(app.getByText('200').first()).toBeVisible();
       }
 
-      await app.reload();
+      await flushPersistAndReload(app);
       await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
 
       await app.getByRole('button', { name: /^History$/ }).click();
@@ -149,7 +162,7 @@ test.describe('Reload persistence', () => {
       // Wait for the run to land — verdict becomes visible.
       await expect(app.getByText(/1\/1 requests succeeded/)).toBeVisible({ timeout: 10_000 });
 
-      await app.reload();
+      await flushPersistAndReload(app);
       await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
 
       await app.getByRole('button', { name: /^History$/ }).click();

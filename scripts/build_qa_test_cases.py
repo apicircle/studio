@@ -17,8 +17,8 @@ combinatorial coverage across every dimension the team cares about:
   - Performance scenarios
 
 Outputs:
-  docs/qa/web-app-manual-test-cases.xlsx
-  docs/qa/desktop-app-manual-test-cases.xlsx
+  docs/qa/test_cases/web-app-test-cases.xlsx
+  docs/qa/test_cases/desktop-app-test-cases.xlsx
 """
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -27,7 +27,7 @@ from openpyxl.formatting.rule import CellIsRule
 from openpyxl.worksheet.datavalidation import DataValidation
 import os
 
-OUT_DIR = r"C:/Local Development/APICircle/studio/docs/qa"
+OUT_DIR = r"C:/Local Development/APICircle/studio/docs/qa/test_cases"
 
 # Styling
 FONT_NAME = "Arial"
@@ -5765,8 +5765,8 @@ def build_workbook(platform, out_path):
 
 
 os.makedirs(OUT_DIR, exist_ok=True)
-web_count = build_workbook("web", os.path.join(OUT_DIR, "web-app-manual-test-cases.xlsx"))
-desktop_count = build_workbook("desktop", os.path.join(OUT_DIR, "desktop-app-manual-test-cases.xlsx"))
+web_count = build_workbook("web", os.path.join(OUT_DIR, "web-app-test-cases.xlsx"))
+desktop_count = build_workbook("desktop", os.path.join(OUT_DIR, "desktop-app-test-cases.xlsx"))
 print(f"Web file: {web_count} tests")
 print(f"Desktop file: {desktop_count} tests")
 print(f"Total unique entries: {len(TESTS)}")

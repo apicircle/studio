@@ -6222,9 +6222,21 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 // session) without going through the full connect/refresh flow. Reading
 // from the store via this hook is safe; writing is allowed but only
 // expected from e2e specs.
+//
+// `__apicircleFlushPersist` lets reload-persistence specs await the
+// 250ms debounced IDB write before navigating. The production
+// `beforeunload` listener fires `flushPendingPersist()` fire-and-forget;
+// Chromium/WebKit commit the in-flight transaction during unload but
+// Firefox aborts it — so a Firefox reload that's racing the debounce
+// loses the most recent mutation. Test specs call this before reload to
+// pin the boundary.
 if (typeof window !== 'undefined') {
-  (window as unknown as { __apicircleStore?: typeof useWorkspaceStore }).__apicircleStore =
-    useWorkspaceStore;
+  const w = window as unknown as {
+    __apicircleStore?: typeof useWorkspaceStore;
+    __apicircleFlushPersist?: typeof flushPendingPersist;
+  };
+  w.__apicircleStore = useWorkspaceStore;
+  w.__apicircleFlushPersist = flushPendingPersist;
 }
 
 type SetState = (

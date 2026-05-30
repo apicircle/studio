@@ -29,8 +29,8 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 REPO = Path(__file__).parent.parent
-WEB = REPO / "docs" / "qa" / "web-app-manual-test-cases.xlsx"
-DESK = REPO / "docs" / "qa" / "desktop-app-manual-test-cases.xlsx"
+WEB = REPO / "docs" / "qa" / "test_cases" / "web-app-test-cases.xlsx"
+DESK = REPO / "docs" / "qa" / "test_cases" / "desktop-app-test-cases.xlsx"
 SPEC_DIR = REPO / "e2e" / "web"
 FIXTURES_DIR = SPEC_DIR / "fixtures"
 

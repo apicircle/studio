@@ -2,7 +2,7 @@
 
 Scans `e2e/web/**/*.spec.ts` and `e2e/desktop/**/*.spec.ts` for TC-ID
 coverage and cross-references against the
-manual test workbooks at `docs/qa/{web,desktop}-app-manual-test-cases.xlsx`.
+manual test workbooks at `docs/qa/test_cases/{web,desktop}-app-test-cases.xlsx`.
 
 ## Two coverage modes
 
@@ -47,8 +47,8 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 REPO = Path(__file__).parent.parent
-WEB_WORKBOOK = REPO / "docs" / "qa" / "web-app-manual-test-cases.xlsx"
-DESKTOP_WORKBOOK = REPO / "docs" / "qa" / "desktop-app-manual-test-cases.xlsx"
+WEB_WORKBOOK = REPO / "docs" / "qa" / "test_cases" / "web-app-test-cases.xlsx"
+DESKTOP_WORKBOOK = REPO / "docs" / "qa" / "test_cases" / "desktop-app-test-cases.xlsx"
 SPEC_GLOBS = (
     "e2e/web/**/*.spec.ts",
     "e2e/desktop/**/*.spec.ts",
