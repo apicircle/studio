@@ -359,6 +359,16 @@ export async function seedSourceAttachmentRequestV2(
   return { sha256 };
 }
 
+// Budget: 30 attempts × 2s ≈ 60s wall time (plus per-attempt Contents API
+// latency). The previous 12 × 1s = ~12s budget intermittently timed out
+// against the GitHub Contents API propagation window after back-to-back
+// writes — e.g. `publishSourceVersionV2(..., { deprecated, yanked })` does
+// a publish commit followed by a flag-update commit, and the consumer's
+// `refreshLinkedWorkspace` can see the older snapshot for several seconds
+// after the second PUT returns. 60s sits well below the live-github
+// project's 90s per-test timeout (see `chromium-live-github` in
+// `playwright.config.ts`) and mirrors the propagation-aware ceiling used
+// by `getDefaultBranchHeadWithPropagation` in `_github-rest.ts`.
 export async function waitForLinkedLedgerVersionV2(
   page: Page,
   linkedWorkspaceId: string,
@@ -367,13 +377,13 @@ export async function waitForLinkedLedgerVersionV2(
   await page.evaluate(
     async ({ id, targetVersion }) => {
       let lastVersion: string | null = null;
-      for (let attempt = 0; attempt < 12; attempt += 1) {
+      for (let attempt = 0; attempt < 30; attempt += 1) {
         const api = window.__apicircleStore!.getState() as any;
         await api.refreshLinkedWorkspace(id);
         const ledger = (window.__apicircleStore!.getState() as any).synced.releases.perLink[id];
         lastVersion = ledger?.currentVersion ?? null;
         if (lastVersion === targetVersion) return;
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 2000));
       }
       throw new Error(
         `Timed out waiting for linked ledger ${id} to reach ${targetVersion}; last=${lastVersion}`,
