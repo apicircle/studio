@@ -372,8 +372,10 @@ export async function seedRepoIfEmpty(
   opts: SeedRepoOptions = {},
 ): Promise<DefaultBranchHead> {
   // First call goes through the propagation-aware wrapper because callers
-  // hit this immediately after `createRepo`; the refresh call below uses
-  // the bare helper since the branch HEAD is now established.
+  // hit this immediately after `createRepo` and GitHub takes ~500-3000 ms
+  // to make `GET /repos/{owner}/{name}` resolvable. The post-PUT refresh
+  // below has its own polling loop for the parallel race where the
+  // `git/refs/heads/<branch>` endpoint lags the PUT response.
   let head = await getDefaultBranchHeadWithPropagation(cfg);
   if (head.sha === null) {
     const putRes = await fetch(
@@ -394,8 +396,19 @@ export async function seedRepoIfEmpty(
       const text = await putRes.text().catch(() => '<no-body>');
       throw new Error(`seedRepoIfEmpty: README seed failed (${putRes.status}): ${text}`);
     }
-    // Refresh: the branch now exists.
-    head = await getDefaultBranchHead(cfg);
+    // Refresh: poll until the new branch HEAD is visible. The PUT returns
+    // 201 with the new commit, but the `GET /git/refs/heads/<branch>`
+    // endpoint can take another ~500-3000 ms before it reflects the ref —
+    // a one-shot bare `getDefaultBranchHead` here races that window and
+    // throws `README PUT succeeded but default branch still has no SHA`
+    // intermittently in CI. Backoff: 0.5/1/2/4/8/16/32 s, ~64 s ceiling,
+    // mirroring the propagation-aware reader above.
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      head = await getDefaultBranchHead(cfg);
+      if (head.sha !== null) break;
+      if (attempt === 7) break;
+      await wait(500 * 2 ** attempt);
+    }
     if (head.sha === null) {
       throw new Error('seedRepoIfEmpty: README PUT succeeded but default branch still has no SHA');
     }
@@ -535,36 +548,61 @@ export async function writeWorkspaceJson(
   workspace: Record<string, unknown>,
   message = 'e2e: update workspace.json',
 ): Promise<string> {
-  const existing = await fetch(
-    `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/workspace.json?ref=${encodeURIComponent(branch)}`,
-    { headers: ghHeaders(cfg.token) },
-  );
-  let sha: string | undefined;
-  if (existing.ok) {
-    sha = ((await existing.json()) as { sha: string }).sha;
-  } else if (existing.status !== 404) {
-    const text = await existing.text().catch(() => '<no-body>');
-    throw new Error(`writeWorkspaceJson probe failed (${existing.status}): ${text}`);
+  // Retry budget: 6 attempts × ~0.75-4.5 s backoff covers the GitHub
+  // Contents-API propagation window that opens after a recent push or
+  // concurrent write. The two transient failure modes we recover from:
+  //   * Probe transients (409 "empty repo" / 404 "no commit for the ref")
+  //     — re-read on backoff.
+  //   * PUT 409/422 SHA mismatch — Contents API returned a stale `sha` on
+  //     the probe; re-read and retry with the fresh one.
+  let lastStatus = 0;
+  let lastText = '<no-body>';
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const existing = await fetch(
+      `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/workspace.json?ref=${encodeURIComponent(branch)}`,
+      { headers: ghHeaders(cfg.token) },
+    );
+    let sha: string | undefined;
+    if (existing.ok) {
+      sha = ((await existing.json()) as { sha: string }).sha;
+    } else if (existing.status !== 404) {
+      const text = await existing.text().catch(() => '<no-body>');
+      if (isTransientWorkspaceReadFailure(existing.status, text) && attempt < 5) {
+        await wait(750 * (attempt + 1));
+        continue;
+      }
+      throw new Error(`writeWorkspaceJson probe failed (${existing.status}): ${text}`);
+    }
+    const res = await fetch(
+      `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/workspace.json`,
+      {
+        method: 'PUT',
+        headers: { ...ghHeaders(cfg.token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          content: Buffer.from(`${JSON.stringify(workspace, null, 2)}\n`).toString('base64'),
+          branch,
+          ...(sha ? { sha } : {}),
+        }),
+      },
+    );
+    if (res.ok) {
+      const body = (await res.json()) as { content?: { sha?: string } };
+      return body.content?.sha ?? '';
+    }
+    lastStatus = res.status;
+    lastText = await res.text().catch(() => '<no-body>');
+    if ((res.status === 409 || res.status === 422) && attempt < 5) {
+      await wait(750 * (attempt + 1));
+      continue;
+    }
+    throw new Error(
+      `writeWorkspaceJson ${cfg.fullName}@${branch} failed (${res.status}): ${lastText}`,
+    );
   }
-  const res = await fetch(
-    `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/workspace.json`,
-    {
-      method: 'PUT',
-      headers: { ...ghHeaders(cfg.token), 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message,
-        content: Buffer.from(`${JSON.stringify(workspace, null, 2)}\n`).toString('base64'),
-        branch,
-        ...(sha ? { sha } : {}),
-      }),
-    },
+  throw new Error(
+    `writeWorkspaceJson ${cfg.fullName}@${branch} exhausted retries (last ${lastStatus}): ${lastText}`,
   );
-  if (!res.ok) {
-    const text = await res.text().catch(() => '<no-body>');
-    throw new Error(`writeWorkspaceJson ${cfg.fullName}@${branch} failed (${res.status}): ${text}`);
-  }
-  const body = (await res.json()) as { content?: { sha?: string } };
-  return body.content?.sha ?? '';
 }
 
 export async function updateWorkspaceJson<T extends Record<string, unknown>>(
