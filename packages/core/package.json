@@ -1,6 +1,6 @@
 {
   "name": "@apicircle/core",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "private": false,
   "type": "module",
   "description": "Request execution, environment resolution, auth signing, assertions, spec imports, and the applyMutation workspace engine for API Circle Studio.",

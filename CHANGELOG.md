@@ -25,7 +25,22 @@
 
 ## Unreleased
 
-### Fixed
+## 1.0.8 - 2026-06-03
+
+The workspace-sync hardening release. The disk-mirror loop between the
+desktop, the MCP server, the CLI, and any external editor of
+`workspace.synced.json` finally closes: MCP no longer pins to whichever
+workspace was active at boot, desktop hydrate no longer clobbers writes
+made while it was closed, and external file changes auto-surface in the
+running UI without the user clicking **Refresh**. Registry changes from
+the CLI flow into the switcher live, and the switcher disambiguates
+name collisions so legacy duplicates aren't a dead end. Workspace name
+uniqueness is now case-insensitive end-to-end, and the refresh toasts
+report on-disk request / folder / environment counts so an AI client
+that claims to have created a 21-request collection while the desktop
+only sees one can be spotted at a glance.
+
+### Workspace sync — MCP / CLI / desktop now share one source of truth
 
 - **MCP server no longer pins to its boot-time active workspace.**
   `MultiWorkspaceProvider` used to cache the per-id
@@ -58,15 +73,24 @@
   what it's meant to surface.
   (`packages/ui-components/src/store/workspaceStore.ts`,
   `refreshFromDisk.test.ts`)
-- **Auto-refresh on external file changes.** The desktop main process
-  now watches `<userData>/workspaces/` and the per-id
-  `workspace.synced.json` files. When MCP / CLI / a hand-edit writes
-  one, the renderer auto-fires `refreshFromDisk` so the editor and
-  Environments panel reflect the change without the user clicking
-  Refresh. Self-writes from the desktop's own mirror are suppressed via
-  a stat-snapshot (`{mtimeMs, size}`) recorded after each manager
-  write — robust against OS event delays and burst writes (an earlier
-  prototype's 1.5s time window had both failure modes).
+- **Refresh-from-disk persists the adopted state to IndexedDB.** When
+  refresh sees a newer disk doc, it now writes that state back to IDB
+  immediately instead of waiting for the next user mutation. Closes a
+  small window where a crash between adoption and the next mutation
+  would lose the freshly-imported content.
+  (`packages/ui-components/src/store/workspaceStore.ts`)
+
+### Auto-refresh on external file changes
+
+- **The renderer reflects MCP / CLI / hand-edits without a click.** The
+  desktop main process now watches `<userData>/workspaces/` and the
+  per-id `workspace.synced.json` files. When an external writer
+  touches one, the renderer auto-fires `refreshFromDisk` so the editor
+  and Environments panel pick up the change immediately. Self-writes
+  from the desktop's own mirror are suppressed via a stat-snapshot
+  (`{mtimeMs, size}`) recorded after each manager write — robust
+  against OS event delays and burst writes (an earlier prototype's
+  1.5s time window had both failure modes).
   (`apps/desktop/src/main/workspaceFile/workspaceWatcher.ts`,
   `apps/desktop/src/main/workspaceFile/workspaceFileManager.ts`,
   `apps/desktop/src/main/ipc/workspaceFileBridge.ts`,
@@ -90,14 +114,6 @@
   suppression wired. Previously a small window existed where the
   watcher saw the desktop's own initial mirror write as "external" and
   triggered a needless refresh cycle. (`apps/desktop/src/main/main.ts`)
-- **Refresh toasts now report on-disk counts.** "Already up to date" /
-  "Workspace refreshed from disk" / "Merged in" all include a
-  `1 request · 0 folders · 1 environment` line, so when an AI client
-  claims to have created a 21-request collection but the desktop only
-  sees `httpbin`, the mismatch is visible at a glance instead of hiding
-  behind a generic success toast.
-  (`packages/ui-components/src/panels/mcp/mcpPanelTypes.ts`,
-  `packages/ui-components/src/panels/mcp/ConnectionSection.tsx`)
 - **End-to-end desktop coverage for the auto-refresh path.** New
   Playwright spec `e2e/desktop/external-write-refresh.spec.ts` boots
   the Electron app, writes `workspace.synced.json` externally
@@ -105,6 +121,9 @@
   in the editor without the user clicking Refresh. A second case
   appends a workspace to `registry.json` and asserts the switcher /
   toast picks it up.
+
+### Workspace name uniqueness — case-insensitive end-to-end
+
 - **Workspace create + rename are now case-insensitive unique.**
   Previously `My Workspace` and `my workspace` could coexist (the CLI
   rejected the collision, but the desktop's persistence helper only
@@ -118,12 +137,17 @@
   a short `#xxxx` id suffix to ONLY the colliding rows so the user
   can tell them apart. Unique names render unchanged.
   (`packages/ui-components/src/layout/WorkspaceSwitcher.tsx`)
-- **Refresh-from-disk persists the adopted state to IndexedDB.** When
-  refresh sees a newer disk doc, it now writes that state back to IDB
-  immediately instead of waiting for the next user mutation. Closes a
-  small window where a crash between adoption and the next mutation
-  would lose the freshly-imported content.
-  (`packages/ui-components/src/store/workspaceStore.ts`)
+
+### Refresh visibility
+
+- **Refresh toasts now report on-disk counts.** "Already up to date" /
+  "Workspace refreshed from disk" / "Merged in" all include a
+  `1 request · 0 folders · 1 environment` line, so when an AI client
+  claims to have created a 21-request collection but the desktop only
+  sees `httpbin`, the mismatch is visible at a glance instead of hiding
+  behind a generic success toast.
+  (`packages/ui-components/src/panels/mcp/mcpPanelTypes.ts`,
+  `packages/ui-components/src/panels/mcp/ConnectionSection.tsx`)
 
 ### Internals
 
@@ -134,6 +158,14 @@
   when (re)generating baselines. No change to local
   `pnpm test:e2e:visual`. (`.github/workflows/e2e.yml`,
   `docs/qa/README.md`, `CLAUDE.md`)
+
+### Bumped packages
+
+`@apicircle/desktop`, `@apicircle/web`, `@apicircle/git`,
+`@apicircle/ui-components`, `@apicircle/cli`, `@apicircle/core`,
+`@apicircle/mcp-server`, `@apicircle/mock-server-core`,
+`@apicircle/shared`, plus the e2e and example workspaces — all at
+`1.0.8`.
 
 ## 1.0.7 - 2026-06-02
 

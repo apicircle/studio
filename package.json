@@ -1,6 +1,6 @@
 {
   "name": "studio",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "private": true,
   "type": "module",
   "description": "API Circle Studio - greenfield API workspace with Git-backed sync, local mock servers, and an MCP server for AI clients",
