@@ -1,0 +1,1226 @@
+openapi: 3.0.3
+info:
+  title: API Circle Demo Workspace API
+  version: 1.0.0
+  description: 'Demo OpenAPI file for API Circle Studio end-to-end showcase.
+
+
+    It contains exactly 20 operations covering authentication, organizations,
+
+    projects, collections, requests, mock servers, execution plans, and plan runs.
+
+
+    Suggested demo flow:
+
+    1. Import this OpenAPI file as a collection.
+
+    2. Create a mock server from this same file.
+
+    3. Add assertions to selected requests.
+
+    4. Create an execution plan.
+
+    5. Run the plan in CI using @apicircle/cli run.
+
+    '
+servers:
+  - url: http://localhost:4010
+    description: Local mock server
+  - url: https://api.demo.apicircle.local/v1
+    description: Demo production API
+tags:
+  - name: Health
+  - name: Auth
+  - name: Users
+  - name: Organizations
+  - name: Projects
+  - name: Collections
+  - name: Requests
+  - name: Mock Servers
+  - name: Execution Plans
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags:
+        - Health
+      summary: Check API health
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: ok
+                version: 1.0.0
+                uptimeSeconds: 18422
+                checkedAt: '2026-05-31T05:30:00Z'
+  /auth/login:
+    post:
+      operationId: login
+      tags:
+        - Auth
+      summary: Login and receive access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: developer@example.com
+              password: demo-password
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+              example:
+                accessToken: demo-access-token
+                refreshToken: demo-refresh-token
+                tokenType: Bearer
+                expiresIn: 3600
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /users/me:
+    get:
+      operationId: getCurrentUser
+      tags:
+        - Users
+      summary: Get current user profile
+      responses:
+        '200':
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+              example:
+                id: usr_1001
+                name: Deva Prakash
+                email: developer@example.com
+                role: admin
+                createdAt: '2026-05-01T10:00:00Z'
+  /organizations:
+    get:
+      operationId: listOrganizations
+      tags:
+        - Organizations
+      summary: List organizations available to current user
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: List of organizations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationListResponse'
+              example:
+                items:
+                  - id: org_1001
+                    name: API Circle Labs
+                    slug: api-circle-labs
+                    plan: pro
+                    createdAt: '2026-05-01T10:00:00Z'
+                page: 1
+                pageSize: 20
+                total: 1
+    post:
+      operationId: createOrganization
+      tags:
+        - Organizations
+      summary: Create an organization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrganizationRequest'
+            example:
+              name: API Circle Labs
+              slug: api-circle-labs
+      responses:
+        '201':
+          description: Organization created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+              example:
+                id: org_1001
+                name: API Circle Labs
+                slug: api-circle-labs
+                plan: free
+                createdAt: '2026-05-31T05:30:00Z'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /organizations/{orgId}/projects:
+    get:
+      operationId: listProjects
+      tags:
+        - Projects
+      summary: List projects inside an organization
+      parameters:
+        - $ref: '#/components/parameters/OrgIdParam'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectListResponse'
+              example:
+                items:
+                  - id: prj_1001
+                    orgId: org_1001
+                    name: Checkout API
+                    slug: checkout-api
+                    status: active
+                    createdAt: '2026-05-10T09:00:00Z'
+                page: 1
+                pageSize: 20
+                total: 1
+    post:
+      operationId: createProject
+      tags:
+        - Projects
+      summary: Create a project inside an organization
+      parameters:
+        - $ref: '#/components/parameters/OrgIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+            example:
+              name: Checkout API
+              slug: checkout-api
+              description: APIs for checkout and payment orchestration
+      responses:
+        '201':
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+              example:
+                id: prj_1001
+                orgId: org_1001
+                name: Checkout API
+                slug: checkout-api
+                status: active
+                createdAt: '2026-05-31T05:30:00Z'
+  /projects/{projectId}:
+    get:
+      operationId: getProject
+      tags:
+        - Projects
+      summary: Get project details
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdParam'
+      responses:
+        '200':
+          description: Project details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+              example:
+                id: prj_1001
+                orgId: org_1001
+                name: Checkout API
+                slug: checkout-api
+                status: active
+                createdAt: '2026-05-10T09:00:00Z'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: updateProject
+      tags:
+        - Projects
+      summary: Update project metadata
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectRequest'
+            example:
+              name: Checkout Platform API
+              status: active
+      responses:
+        '200':
+          description: Project updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+              example:
+                id: prj_1001
+                orgId: org_1001
+                name: Checkout Platform API
+                slug: checkout-api
+                status: active
+                createdAt: '2026-05-10T09:00:00Z'
+  /projects/{projectId}/collections:
+    get:
+      operationId: listCollections
+      tags:
+        - Collections
+      summary: List API collections for a project
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdParam'
+      responses:
+        '200':
+          description: List of collections
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionListResponse'
+              example:
+                items:
+                  - id: col_1001
+                    projectId: prj_1001
+                    name: Checkout Smoke Collection
+                    description: Minimal CI-ready smoke test collection
+                    requestCount: 5
+                    createdAt: '2026-05-15T08:00:00Z'
+    post:
+      operationId: createCollection
+      tags:
+        - Collections
+      summary: Create a collection
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCollectionRequest'
+            example:
+              name: Checkout Smoke Collection
+              description: Minimal CI-ready smoke test collection
+      responses:
+        '201':
+          description: Collection created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Collection'
+              example:
+                id: col_1001
+                projectId: prj_1001
+                name: Checkout Smoke Collection
+                description: Minimal CI-ready smoke test collection
+                requestCount: 0
+                createdAt: '2026-05-31T05:30:00Z'
+  /collections/{collectionId}/requests:
+    get:
+      operationId: listRequests
+      tags:
+        - Requests
+      summary: List requests inside a collection
+      parameters:
+        - $ref: '#/components/parameters/CollectionIdParam'
+      responses:
+        '200':
+          description: List of requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestListResponse'
+              example:
+                items:
+                  - id: req_1001
+                    collectionId: col_1001
+                    name: Get project
+                    method: GET
+                    path: /projects/{projectId}
+                    authRequired: true
+                    createdAt: '2026-05-15T08:00:00Z'
+    post:
+      operationId: createRequest
+      tags:
+        - Requests
+      summary: Create a request in a collection
+      parameters:
+        - $ref: '#/components/parameters/CollectionIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApiRequest'
+            example:
+              name: Get project
+              method: GET
+              path: /projects/{projectId}
+              authRequired: true
+      responses:
+        '201':
+          description: Request created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiRequest'
+              example:
+                id: req_1001
+                collectionId: col_1001
+                name: Get project
+                method: GET
+                path: /projects/{projectId}
+                authRequired: true
+                createdAt: '2026-05-31T05:30:00Z'
+  /requests/{requestId}:
+    get:
+      operationId: getRequest
+      tags:
+        - Requests
+      summary: Get request details
+      parameters:
+        - $ref: '#/components/parameters/RequestIdParam'
+      responses:
+        '200':
+          description: Request details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiRequest'
+              example:
+                id: req_1001
+                collectionId: col_1001
+                name: Get project
+                method: GET
+                path: /projects/{projectId}
+                authRequired: true
+                createdAt: '2026-05-15T08:00:00Z'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /requests/{requestId}/send:
+    post:
+      operationId: sendRequest
+      tags:
+        - Requests
+      summary: Execute a saved request
+      parameters:
+        - $ref: '#/components/parameters/RequestIdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendRequestOptions'
+            example:
+              environment: Mock Local
+              variables:
+                projectId: prj_1001
+      responses:
+        '200':
+          description: Request execution result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestRunResult'
+              example:
+                id: run_1001
+                requestId: req_1001
+                statusCode: 200
+                durationMs: 92
+                passed: true
+                assertionSummary:
+                  total: 3
+                  passed: 3
+                  failed: 0
+                startedAt: '2026-05-31T05:31:00Z'
+  /projects/{projectId}/mock-servers:
+    post:
+      operationId: createMockServer
+      tags:
+        - Mock Servers
+      summary: Create a mock server definition for a project
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMockServerRequest'
+            example:
+              name: Checkout Mock
+              port: 4010
+              sourceType: openapi
+              sourcePath: ./apicircle-demo-openapi.yaml
+      responses:
+        '201':
+          description: Mock server definition created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MockServer'
+              example:
+                id: mock_1001
+                projectId: prj_1001
+                name: Checkout Mock
+                port: 4010
+                sourceType: openapi
+                status: stopped
+                createdAt: '2026-05-31T05:30:00Z'
+  /mock-servers/{mockServerId}/start:
+    post:
+      operationId: startMockServer
+      tags:
+        - Mock Servers
+      summary: Start a mock server runtime
+      parameters:
+        - $ref: '#/components/parameters/MockServerIdParam'
+      responses:
+        '200':
+          description: Mock server started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MockServerRuntime'
+              example:
+                id: mock_1001
+                status: running
+                baseUrl: http://localhost:4010
+                startedAt: '2026-05-31T05:32:00Z'
+  /projects/{projectId}/execution-plans:
+    post:
+      operationId: createExecutionPlan
+      tags:
+        - Execution Plans
+      summary: Create an execution plan
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateExecutionPlanRequest'
+            example:
+              name: Checkout API Smoke Plan
+              environment: Mock Local
+              requestIds:
+                - req_1001
+                - req_1002
+                - req_1003
+      responses:
+        '201':
+          description: Execution plan created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionPlan'
+              example:
+                id: plan_1001
+                projectId: prj_1001
+                name: Checkout API Smoke Plan
+                environment: Mock Local
+                requestIds:
+                  - req_1001
+                  - req_1002
+                  - req_1003
+                createdAt: '2026-05-31T05:30:00Z'
+  /execution-plans/{planId}/runs:
+    post:
+      operationId: runExecutionPlan
+      tags:
+        - Execution Plans
+      summary: Run an execution plan
+      parameters:
+        - $ref: '#/components/parameters/PlanIdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunExecutionPlanRequest'
+            example:
+              reporter: junit
+              failFast: true
+      responses:
+        '202':
+          description: Execution plan run accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionPlanRun'
+              example:
+                id: plan_run_1001
+                planId: plan_1001
+                status: running
+                totalRequests: 3
+                passedRequests: 0
+                failedRequests: 0
+                startedAt: '2026-05-31T05:34:00Z'
+  /execution-runs/{runId}:
+    get:
+      operationId: getExecutionRun
+      tags:
+        - Execution Plans
+      summary: Get execution plan run result
+      parameters:
+        - $ref: '#/components/parameters/RunIdParam'
+      responses:
+        '200':
+          description: Execution run result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionPlanRun'
+              example:
+                id: plan_run_1001
+                planId: plan_1001
+                status: passed
+                totalRequests: 3
+                passedRequests: 3
+                failedRequests: 0
+                startedAt: '2026-05-31T05:34:00Z'
+                finishedAt: '2026-05-31T05:34:05Z'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    OrgIdParam:
+      name: orgId
+      in: path
+      required: true
+      schema:
+        type: string
+        example: org_1001
+    ProjectIdParam:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        example: prj_1001
+    CollectionIdParam:
+      name: collectionId
+      in: path
+      required: true
+      schema:
+        type: string
+        example: col_1001
+    RequestIdParam:
+      name: requestId
+      in: path
+      required: true
+      schema:
+        type: string
+        example: req_1001
+    MockServerIdParam:
+      name: mockServerId
+      in: path
+      required: true
+      schema:
+        type: string
+        example: mock_1001
+    PlanIdParam:
+      name: planId
+      in: path
+      required: true
+      schema:
+        type: string
+        example: plan_1001
+    RunIdParam:
+      name: runId
+      in: path
+      required: true
+      schema:
+        type: string
+        example: plan_run_1001
+    PageParam:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSizeParam:
+      name: pageSize
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  responses:
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: unauthorized
+            message: Missing or invalid token
+            traceId: trc_401
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: not_found
+            message: Resource was not found
+            traceId: trc_404
+    Conflict:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: conflict
+            message: Resource already exists
+            traceId: trc_409
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - version
+        - uptimeSeconds
+        - checkedAt
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+        version:
+          type: string
+        uptimeSeconds:
+          type: integer
+        checkedAt:
+          type: string
+          format: date-time
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+    AuthTokenResponse:
+      type: object
+      required:
+        - accessToken
+        - refreshToken
+        - tokenType
+        - expiresIn
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        tokenType:
+          type: string
+          enum:
+            - Bearer
+        expiresIn:
+          type: integer
+    User:
+      type: object
+      required:
+        - id
+        - name
+        - email
+        - role
+        - createdAt
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum:
+            - admin
+            - maintainer
+            - viewer
+        createdAt:
+          type: string
+          format: date-time
+    UpdateUserRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 2
+    Organization:
+      type: object
+      required:
+        - id
+        - name
+        - slug
+        - plan
+        - createdAt
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        plan:
+          type: string
+          enum:
+            - free
+            - pro
+            - enterprise
+        createdAt:
+          type: string
+          format: date-time
+    CreateOrganizationRequest:
+      type: object
+      required:
+        - name
+        - slug
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+          pattern: ^[a-z0-9-]+$
+    OrganizationListResponse:
+      allOf:
+        - $ref: '#/components/schemas/PaginationMeta'
+        - type: object
+          required:
+            - items
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Organization'
+    Project:
+      type: object
+      required:
+        - id
+        - orgId
+        - name
+        - slug
+        - status
+        - createdAt
+      properties:
+        id:
+          type: string
+        orgId:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - archived
+        createdAt:
+          type: string
+          format: date-time
+    CreateProjectRequest:
+      type: object
+      required:
+        - name
+        - slug
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+    UpdateProjectRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - archived
+    ProjectListResponse:
+      allOf:
+        - $ref: '#/components/schemas/PaginationMeta'
+        - type: object
+          required:
+            - items
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Project'
+    Collection:
+      type: object
+      required:
+        - id
+        - projectId
+        - name
+        - requestCount
+        - createdAt
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        requestCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+    CreateCollectionRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+    CollectionListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Collection'
+    ApiRequest:
+      type: object
+      required:
+        - id
+        - collectionId
+        - name
+        - method
+        - path
+        - authRequired
+        - createdAt
+      properties:
+        id:
+          type: string
+        collectionId:
+          type: string
+        name:
+          type: string
+        method:
+          type: string
+          enum:
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+        path:
+          type: string
+        authRequired:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+    CreateApiRequest:
+      type: object
+      required:
+        - name
+        - method
+        - path
+      properties:
+        name:
+          type: string
+        method:
+          type: string
+          enum:
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+        path:
+          type: string
+        authRequired:
+          type: boolean
+          default: true
+    RequestListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiRequest'
+    SendRequestOptions:
+      type: object
+      properties:
+        environment:
+          type: string
+        variables:
+          type: object
+          additionalProperties:
+            type: string
+    RequestRunResult:
+      type: object
+      required:
+        - id
+        - requestId
+        - statusCode
+        - durationMs
+        - passed
+        - assertionSummary
+        - startedAt
+      properties:
+        id:
+          type: string
+        requestId:
+          type: string
+        statusCode:
+          type: integer
+        durationMs:
+          type: integer
+        passed:
+          type: boolean
+        assertionSummary:
+          $ref: '#/components/schemas/AssertionSummary'
+        startedAt:
+          type: string
+          format: date-time
+    AssertionSummary:
+      type: object
+      required:
+        - total
+        - passed
+        - failed
+      properties:
+        total:
+          type: integer
+        passed:
+          type: integer
+        failed:
+          type: integer
+    CreateMockServerRequest:
+      type: object
+      required:
+        - name
+        - port
+        - sourceType
+        - sourcePath
+      properties:
+        name:
+          type: string
+        port:
+          type: integer
+          minimum: 1024
+          maximum: 65535
+        sourceType:
+          type: string
+          enum:
+            - openapi
+            - swagger
+        sourcePath:
+          type: string
+    MockServer:
+      type: object
+      required:
+        - id
+        - projectId
+        - name
+        - port
+        - sourceType
+        - status
+        - createdAt
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        name:
+          type: string
+        port:
+          type: integer
+        sourceType:
+          type: string
+          enum:
+            - openapi
+            - swagger
+        status:
+          type: string
+          enum:
+            - stopped
+            - running
+        createdAt:
+          type: string
+          format: date-time
+    MockServerRuntime:
+      type: object
+      required:
+        - id
+        - status
+        - baseUrl
+        - startedAt
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum:
+            - running
+        baseUrl:
+          type: string
+          format: uri
+        startedAt:
+          type: string
+          format: date-time
+    CreateExecutionPlanRequest:
+      type: object
+      required:
+        - name
+        - environment
+        - requestIds
+      properties:
+        name:
+          type: string
+        environment:
+          type: string
+        requestIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+    RunExecutionPlanRequest:
+      type: object
+      properties:
+        reporter:
+          type: string
+          enum:
+            - json
+            - junit
+          default: json
+        failFast:
+          type: boolean
+          default: true
+    ExecutionPlan:
+      type: object
+      required:
+        - id
+        - projectId
+        - name
+        - environment
+        - requestIds
+        - createdAt
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        name:
+          type: string
+        environment:
+          type: string
+        requestIds:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+    ExecutionPlanRun:
+      type: object
+      required:
+        - id
+        - planId
+        - status
+        - totalRequests
+        - passedRequests
+        - failedRequests
+        - startedAt
+      properties:
+        id:
+          type: string
+        planId:
+          type: string
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - passed
+            - failed
+        totalRequests:
+          type: integer
+        passedRequests:
+          type: integer
+        failedRequests:
+          type: integer
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+    PaginationMeta:
+      type: object
+      required:
+        - page
+        - pageSize
+        - total
+      properties:
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+        - traceId
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        traceId:
+          type: string

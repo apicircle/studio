@@ -1,0 +1,568 @@
+{
+  "format": "apicircle.folder/v1",
+  "exportedAt": "2026-06-02T21:04:48.095Z",
+  "appVersion": "apicircle-studio",
+  "source": {
+    "workspaceId": "e8747b41-c0d9-4646-bb9c-d5ebde3faaf3",
+    "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+    "folderName": "API Circle Demo Workspace API"
+  },
+  "folder": {
+    "name": "API Circle Demo Workspace API",
+    "subfolders": [],
+    "requests": [
+      {
+        "id": "b64da7d8-718a-4252-b6de-e36acf964dd0",
+        "name": "Check API health",
+        "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+        "method": "GET",
+        "url": "{{baseUrl}}:{{port}}/health",
+        "headers": [],
+        "query": [],
+        "body": {
+          "type": "none",
+          "content": ""
+        },
+        "auth": {
+          "type": "none"
+        },
+        "contextVars": [],
+        "extractions": [],
+        "assertions": [],
+        "createdAt": "2026-06-02T20:56:03.581Z",
+        "updatedAt": "2026-06-02T20:56:03.581Z"
+      },
+      {
+        "id": "3f35f3fd-c6df-4f99-834c-e1063810e882",
+        "name": "Login and receive access token",
+        "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+        "method": "POST",
+        "url": "{{baseUrl}}:{{port}}/auth/login",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "enabled": true
+          }
+        ],
+        "query": [],
+        "body": {
+          "type": "json",
+          "content": "{\"email\":\"developer@example.com\",\"password\":\"demo-password\"}"
+        },
+        "auth": {
+          "type": "none"
+        },
+        "contextVars": [],
+        "extractions": [],
+        "assertions": [],
+        "createdAt": "2026-06-02T20:56:14.964Z",
+        "updatedAt": "2026-06-02T20:56:14.964Z"
+      },
+      {
+        "id": "a93a45eb-d4f8-4c77-a029-ead77e224538",
+        "name": "Get current user profile",
+        "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+        "method": "GET",
+        "url": "{{baseUrl}}:{{port}}/users/me",
+        "headers": [],
+        "query": [],
+        "body": {
+          "type": "none",
+          "content": ""
+        },
+        "auth": {
+          "type": "inherit"
+        },
+        "contextVars": [],
+        "extractions": [],
+        "assertions": [],
+        "createdAt": "2026-06-02T20:56:21.053Z",
+        "updatedAt": "2026-06-02T20:56:21.053Z"
+      },
+      {
+        "id": "2e2fa3e7-df25-4d10-a22c-7d0bbf0e93b2",
+        "name": "List organizations available to current user",
+        "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+        "method": "GET",
+        "url": "{{baseUrl}}:{{port}}/organizations",
+        "headers": [],
+        "query": [
+          {
+            "key": "page",
+            "value": "1",
+            "enabled": true
+          },
+          {
+            "key": "pageSize",
+            "value": "20",
+            "enabled": true
+          }
+        ],
+        "body": {
+          "type": "none",
+          "content": ""
+        },
+        "auth": {
+          "type": "inherit"
+        },
+        "contextVars": [],
+        "extractions": [],
+        "assertions": [],
+        "createdAt": "2026-06-02T20:56:27.499Z",
+        "updatedAt": "2026-06-02T20:56:27.499Z"
+      },
+      {
+        "id": "1d158d2e-1d5f-4a45-9990-c15b0d5c881d",
+        "name": "Create an organization",
+        "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+        "method": "POST",
+        "url": "{{baseUrl}}:{{port}}/organizations",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "enabled": true
+          }
+        ],
+        "query": [],
+        "body": {
+          "type": "json",
+          "content": "{\"name\":\"API Circle Labs\",\"slug\":\"api-circle-labs\"}"
+        },
+        "auth": {
+          "type": "inherit"
+        },
+        "contextVars": [],
+        "extractions": [],
+        "assertions": [],
+        "createdAt": "2026-06-02T20:56:34.785Z",
+        "updatedAt": "2026-06-02T20:56:34.785Z"
+      },
+      {
+        "id": "14240549-18bb-47dd-bb22-040205e26da2",
+        "name": "List projects inside an organization",
+        "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+        "method": "GET",
+        "url": "{{baseUrl}}:{{port}}/organizations/{orgId}/projects",
+        "headers": [],
+        "query": [
+          {
+            "key": "page",
+            "value": "1",
+            "enabled": true
+          },
+          {
+            "key": "pageSize",
+            "value": "20",
+            "enabled": true
+          }
+        ],
+        "pathParams": {
+          "orgId": "org_1001"
+        },
+        "body": {
+          "type": "none",
+          "content": ""
+        },
+        "auth": {
+          "type": "inherit"
+        },
+        "contextVars": [],
+        "extractions": [],
+        "assertions": [],
+        "createdAt": "2026-06-02T20:56:44.084Z",
+        "updatedAt": "2026-06-02T20:56:44.084Z"
+      },
+      {
+        "id": "e22634b2-b43a-4992-baa3-9e8026446429",
+        "name": "Create a project inside an organization",
+        "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+        "method": "POST",
+        "url": "{{baseUrl}}:{{port}}/organizations/{orgId}/projects",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "enabled": true
+          }
+        ],
+        "query": [],
+        "pathParams": {
+          "orgId": "org_1001"
+        },
+        "body": {
+          "type": "json",
+          "content": "{\"name\":\"Checkout API\",\"slug\":\"checkout-api\",\"description\":\"APIs for checkout and payment orchestration\"}"
+        },
+        "auth": {
+          "type": "inherit"
+        },
+        "contextVars": [],
+        "extractions": [],
+        "assertions": [],
+        "createdAt": "2026-06-02T20:56:51.472Z",
+        "updatedAt": "2026-06-02T20:56:51.472Z"
+      },
+      {
+        "id": "96bd5805-f205-4622-a2cc-615f68c89e29",
+        "name": "Get project details",
+        "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+        "method": "GET",
+        "url": "{{baseUrl}}:{{port}}/projects/{projectId}",
+        "headers": [],
+        "query": [],
+        "pathParams": {
+          "projectId": "prj_1001"
+        },
+        "body": {
+          "type": "none",
+          "content": ""
+        },
+        "auth": {
+          "type": "inherit"
+        },
+        "contextVars": [],
+        "extractions": [],
+        "assertions": [],
+        "createdAt": "2026-06-02T20:56:59.451Z",
+        "updatedAt": "2026-06-02T20:56:59.451Z"
+      },
+      {
+        "id": "d1001212-ab08-4445-b5b3-ada82f24f545",
+        "name": "Update project metadata",
+        "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+        "method": "PATCH",
+        "url": "{{baseUrl}}:{{port}}/projects/{projectId}",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "enabled": true
+          }
+        ],
+        "query": [],
+        "pathParams": {
+          "projectId": "prj_1001"
+        },
+        "body": {
+          "type": "json",
+          "content": "{\"name\":\"Checkout Platform API\",\"status\":\"active\"}"
+        },
+        "auth": {
+          "type": "inherit"
+        },
+        "contextVars": [],
+        "extractions": [],
+        "assertions": [],
+        "createdAt": "2026-06-02T20:57:06.911Z",
+        "updatedAt": "2026-06-02T20:57:06.911Z"
+      },
+      {
+        "id": "88a4e230-59dc-4319-85c8-32533aa77504",
+        "name": "List API collections for a project",
+        "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+        "method": "GET",
+        "url": "{{baseUrl}}:{{port}}/projects/{projectId}/collections",
+        "headers": [],
+        "query": [],
+        "pathParams": {
+          "projectId": "prj_1001"
+        },
+        "body": {
+          "type": "none",
+          "content": ""
+        },
+        "auth": {
+          "type": "inherit"
+        },
+        "contextVars": [],
+        "extractions": [],
+        "assertions": [],
+        "createdAt": "2026-06-02T20:57:13.980Z",
+        "updatedAt": "2026-06-02T20:57:13.980Z"
+      },
+      {
+        "id": "cd351002-127e-4fbe-92d9-90463db5469c",
+        "name": "Create a collection",
+        "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+        "method": "POST",
+        "url": "{{baseUrl}}:{{port}}/projects/{projectId}/collections",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "enabled": true
+          }
+        ],
+        "query": [],
+        "pathParams": {
+          "projectId": "prj_1001"
+        },
+        "body": {
+          "type": "json",
+          "content": "{\"name\":\"Checkout Smoke Collection\",\"description\":\"Minimal CI-ready smoke test collection\"}"
+        },
+        "auth": {
+          "type": "inherit"
+        },
+        "contextVars": [],
+        "extractions": [],
+        "assertions": [],
+        "createdAt": "2026-06-02T20:57:21.587Z",
+        "updatedAt": "2026-06-02T20:57:21.587Z"
+      },
+      {
+        "id": "3e6189a9-a89b-408b-bd70-73aee6343328",
+        "name": "List requests inside a collection",
+        "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+        "method": "GET",
+        "url": "{{baseUrl}}:{{port}}/collections/{collectionId}/requests",
+        "headers": [],
+        "query": [],
+        "pathParams": {
+          "collectionId": "col_1001"
+        },
+        "body": {
+          "type": "none",
+          "content": ""
+        },
+        "auth": {
+          "type": "inherit"
+        },
+        "contextVars": [],
+        "extractions": [],
+        "assertions": [],
+        "createdAt": "2026-06-02T20:57:34.762Z",
+        "updatedAt": "2026-06-02T20:57:34.762Z"
+      },
+      {
+        "id": "062ff9ec-02fa-43c9-80b9-cb2af03ad100",
+        "name": "Create a request in a collection",
+        "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+        "method": "POST",
+        "url": "{{baseUrl}}:{{port}}/collections/{collectionId}/requests",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "enabled": true
+          }
+        ],
+        "query": [],
+        "pathParams": {
+          "collectionId": "col_1001"
+        },
+        "body": {
+          "type": "json",
+          "content": "{\"name\":\"Get project\",\"method\":\"GET\",\"path\":\"/projects/{projectId}\",\"authRequired\":true}"
+        },
+        "auth": {
+          "type": "inherit"
+        },
+        "contextVars": [],
+        "extractions": [],
+        "assertions": [],
+        "createdAt": "2026-06-02T20:57:42.106Z",
+        "updatedAt": "2026-06-02T20:57:42.106Z"
+      },
+      {
+        "id": "8dfcab0d-30f8-4508-a5d6-0c5337276805",
+        "name": "Get request details",
+        "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+        "method": "GET",
+        "url": "{{baseUrl}}:{{port}}/requests/{requestId}",
+        "headers": [],
+        "query": [],
+        "pathParams": {
+          "requestId": "req_1001"
+        },
+        "body": {
+          "type": "none",
+          "content": ""
+        },
+        "auth": {
+          "type": "inherit"
+        },
+        "contextVars": [],
+        "extractions": [],
+        "assertions": [],
+        "createdAt": "2026-06-02T20:57:49.031Z",
+        "updatedAt": "2026-06-02T20:57:49.031Z"
+      },
+      {
+        "id": "83fe090b-af99-4d1e-a8fb-c759a09abdc3",
+        "name": "Execute a saved request",
+        "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+        "method": "POST",
+        "url": "{{baseUrl}}:{{port}}/requests/{requestId}/send",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "enabled": true
+          }
+        ],
+        "query": [],
+        "pathParams": {
+          "requestId": "req_1001"
+        },
+        "body": {
+          "type": "json",
+          "content": "{\"environment\":\"mock-env\",\"variables\":{\"projectId\":\"prj_1001\"}}"
+        },
+        "auth": {
+          "type": "inherit"
+        },
+        "contextVars": [],
+        "extractions": [],
+        "assertions": [],
+        "createdAt": "2026-06-02T20:57:58.671Z",
+        "updatedAt": "2026-06-02T20:57:58.671Z"
+      },
+      {
+        "id": "dfd76937-779a-4536-846c-f433c097eafa",
+        "name": "Create a mock server definition for a project",
+        "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+        "method": "POST",
+        "url": "{{baseUrl}}:{{port}}/projects/{projectId}/mock-servers",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "enabled": true
+          }
+        ],
+        "query": [],
+        "pathParams": {
+          "projectId": "prj_1001"
+        },
+        "body": {
+          "type": "json",
+          "content": "{\"name\":\"Checkout Mock\",\"port\":4010,\"sourceType\":\"openapi\",\"sourcePath\":\"./apicircle-demo-openapi.yaml\"}"
+        },
+        "auth": {
+          "type": "inherit"
+        },
+        "contextVars": [],
+        "extractions": [],
+        "assertions": [],
+        "createdAt": "2026-06-02T20:58:08.618Z",
+        "updatedAt": "2026-06-02T20:58:08.618Z"
+      },
+      {
+        "id": "50d2fe62-a04d-43f4-8aa5-aead4f8a583d",
+        "name": "Start a mock server runtime",
+        "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+        "method": "POST",
+        "url": "{{baseUrl}}:{{port}}/mock-servers/{mockServerId}/start",
+        "headers": [],
+        "query": [],
+        "pathParams": {
+          "mockServerId": "mock_1001"
+        },
+        "body": {
+          "type": "none",
+          "content": ""
+        },
+        "auth": {
+          "type": "inherit"
+        },
+        "contextVars": [],
+        "extractions": [],
+        "assertions": [],
+        "createdAt": "2026-06-02T20:58:15.160Z",
+        "updatedAt": "2026-06-02T20:58:15.160Z"
+      },
+      {
+        "id": "f599c821-226f-4422-9387-b17e37cad28d",
+        "name": "Create an execution plan",
+        "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+        "method": "POST",
+        "url": "{{baseUrl}}:{{port}}/projects/{projectId}/execution-plans",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "enabled": true
+          }
+        ],
+        "query": [],
+        "pathParams": {
+          "projectId": "prj_1001"
+        },
+        "body": {
+          "type": "json",
+          "content": "{\"name\":\"Checkout API Smoke Plan\",\"environment\":\"mock-env\",\"requestIds\":[\"req_1001\",\"req_1002\",\"req_1003\"]}"
+        },
+        "auth": {
+          "type": "inherit"
+        },
+        "contextVars": [],
+        "extractions": [],
+        "assertions": [],
+        "createdAt": "2026-06-02T20:58:23.255Z",
+        "updatedAt": "2026-06-02T20:58:23.255Z"
+      },
+      {
+        "id": "801a3107-637e-4103-8c17-dc96d66a99bf",
+        "name": "Run an execution plan",
+        "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+        "method": "POST",
+        "url": "{{baseUrl}}:{{port}}/execution-plans/{planId}/runs",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "enabled": true
+          }
+        ],
+        "query": [],
+        "pathParams": {
+          "planId": "plan_1001"
+        },
+        "body": {
+          "type": "json",
+          "content": "{\"reporter\":\"junit\",\"failFast\":true}"
+        },
+        "auth": {
+          "type": "inherit"
+        },
+        "contextVars": [],
+        "extractions": [],
+        "assertions": [],
+        "createdAt": "2026-06-02T20:58:30.531Z",
+        "updatedAt": "2026-06-02T20:58:30.531Z"
+      },
+      {
+        "id": "4e5872e0-8e3f-4a22-9981-b69874655b66",
+        "name": "Get execution plan run result",
+        "folderId": "299617ad-86b6-4db6-81a2-f1f22d4ecc5e",
+        "method": "GET",
+        "url": "{{baseUrl}}:{{port}}/execution-runs/{runId}",
+        "headers": [],
+        "query": [],
+        "pathParams": {
+          "runId": "plan_run_1001"
+        },
+        "body": {
+          "type": "none",
+          "content": ""
+        },
+        "auth": {
+          "type": "inherit"
+        },
+        "contextVars": [],
+        "extractions": [],
+        "assertions": [],
+        "createdAt": "2026-06-02T20:58:36.690Z",
+        "updatedAt": "2026-06-02T20:58:36.690Z"
+      }
+    ]
+  },
+  "dependencies": {
+    "schemas": [],
+    "graphql": [],
+    "files": []
+  }
+}

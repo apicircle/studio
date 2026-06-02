@@ -1,0 +1,16 @@
+{
+  "apicircleEnvironment": 2,
+  "name": "mock-env",
+  "variables": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost",
+      "encrypted": false
+    },
+    {
+      "key": "port",
+      "value": "4010",
+      "encrypted": false
+    }
+  ]
+}
