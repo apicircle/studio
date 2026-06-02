@@ -18,11 +18,11 @@ but with:
   source of truth the UI uses, no IPC required.
 - **Local mock servers**: describe an API in OpenAPI / Postman / Insomnia and
   run a Hono-backed mock on `localhost`.
-- An **MCP server**: exposes the workspace as a 72-tool catalog any
+- An **MCP server**: exposes the workspace as a 74-tool catalog any
   Model Context Protocol client (Claude Desktop, ChatGPT, Cursor, Copilot,
   Continue, Cline, Zed, Windsurf) can drive.
 - A **CLI** for headless use
-  (`apicircle mock | mcp | import | run | workspaces`).
+  (`apicircle mock | mcp | import | export | run | workspaces`).
 
 The web build is continuously deployed to GitHub Pages from `main`
 (custom domain via a checked-in `CNAME`).
@@ -30,10 +30,16 @@ The web build is continuously deployed to GitHub Pages from `main`
 **Project status: pre-launch 1.0.x, zero installed users.** 1.0.0 was the
 first public release; 1.0.1 hardened the desktop installer pipeline, 1.0.2
 shipped the disk mirror + multi-workspace addressing, 1.0.3 shipped the MCP
-connect flow and the Settings → Community section. There's still no
-production data and no public API contract to preserve. Prefer redesigning a
-bad shape over patching it — no migration shims, no backwards-compat
-branches. See §10. Release notes: [`CHANGELOG.md`](CHANGELOG.md).
+connect flow and the Settings → Community section; 1.0.4 promoted the
+Global Assets Files library + the live-GitHub test suite; 1.0.5 doubled the
+theme + font catalog and added Monaco-matched themes; 1.0.7 ships the
+portable folder + environment exchange envelope (`.apicircle.json` /
+encrypted-row v2), the Secret Vault "Set passphrase" / decrypt-failure
+recovery surfaces, and reverts the default appearance to **One Dark Pro** +
+**System Sans**. There's still no production data and no public API contract
+to preserve. Prefer redesigning a bad shape over patching it — no migration
+shims, no backwards-compat branches. See §10. Release notes:
+[`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
@@ -54,8 +60,8 @@ studio/
 │   ├── git/               GitHub REST client + typed error taxonomy
 │   ├── ui-components/      ALL React UI + the Zustand store + IndexedDB persistence
 │   ├── mock-server-core/   Hono mock-server engine + OpenAPI/Postman/Insomnia parsers
-│   ├── mcp-server/         stdio MCP host + 72-tool catalog + workspace providers
-│   └── cli/                `apicircle` binary — mock / mcp / import / run / workspaces
+│   ├── mcp-server/         stdio MCP host + 74-tool catalog + workspace providers
+│   └── cli/                `apicircle` binary — mock / mcp / import / export / run / workspaces
 ├── examples/              Demo workspaces + a standalone mock-server example
 ├── docs/                  Product + architecture + QA docs (see §9)
 ├── e2e/                   E2E suites — web/ + desktop/ (Playwright), mock/ (Hono
@@ -91,8 +97,9 @@ A workspace is split into two JSON documents:
 `applyMutation(state, patch)` in `@apicircle/core` is the **only** function that
 mutates a workspace. The UI store, MCP tool handlers, and CLI commands all
 funnel through it. `WorkspacePatch` is a discriminated union over
-`request.* | folder.* | environment.* | assertion.* | mock.* | plan.*`. Adding
-an entity type = one union variant + one switch case + one MCP tool.
+`request.* | folder.* | folder.import_apicircle | environment.* |
+secretKey.upsert | assertion.* | mock.* | plan.*`. Adding an entity type =
+one union variant + one switch case + one MCP tool.
 
 > Note: the live UI store (`workspaceStore.ts`) also performs some direct
 > `set({ synced, local })` transitions rather than routing every change through

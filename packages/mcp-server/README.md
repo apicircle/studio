@@ -6,12 +6,12 @@
 
 <p align="center">
   <strong>Give your AI assistant a real API client.</strong><br />
-  A Model Context Protocol server that exposes the API Circle Studio workspace as a <strong>71-tool catalog</strong> — so Claude, ChatGPT, Cursor, Copilot, and every other MCP client can read, author, mock, and run requests for you.
+  A Model Context Protocol server that exposes the API Circle Studio workspace as a <strong>74-tool catalog</strong> — so Claude, ChatGPT, Cursor, Copilot, and every other MCP client can read, author, mock, and run requests for you.
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@apicircle/mcp-server"><img src="https://img.shields.io/npm/v/@apicircle/mcp-server?color=cb3837&logo=npm" alt="npm version" /></a>
-  <img src="https://img.shields.io/badge/MCP%20tools-71-blueviolet" alt="71 MCP tools" />
+  <img src="https://img.shields.io/badge/MCP%20tools-74-blueviolet" alt="74 MCP tools" />
   <img src="https://img.shields.io/badge/transport-stdio-blue" alt="stdio transport" />
   <img src="https://img.shields.io/badge/multi--workspace-yes-success" alt="Multi-workspace" />
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-brightgreen" alt="Node ≥ 20" />
@@ -140,22 +140,23 @@ In multi-workspace mode the assistant gets two extra surfaces:
 Entity tools (`request.read`, `environment.create`, `mock.start`, etc.) all
 default to the active workspace — multi-workspace scoping is opt-in per call.
 
-## The tool catalog (71 tools)
+## The tool catalog (74 tools)
 
 The full list lives at
 [`docs/mcp-tools-reference.md`](https://github.com/apicircle/studio/blob/main/docs/mcp-tools-reference.md).
 Highlights by category:
 
-| Category                    | What the AI can do                                                                                 |
-| --------------------------- | -------------------------------------------------------------------------------------------------- |
-| **Workspaces**              | `workspace.list`, `workspace.read`, `workspace.write` (bulk + scoped by `workspaceId`)             |
-| **Entity CRUD**             | Requests, folders, environments, plans, assertions — full read / write surface                     |
-| **Imports**                 | `import.curl`, `import.openapi`, `import.postman`, `import.insomnia`, `import.har`                 |
-| **Code generation**         | `generate.code` for cURL, fetch, axios, Python requests, Go, Rust                                  |
-| **Codebase analysis**       | `codebase.extract_collection` — Express, FastAPI, NestJS, Spring                                   |
-| **Prompt-driven authoring** | LLM-shaped JSON entry points for request / folder / environment / assertion / plan / mock creation |
-| **Mock servers**            | `mock.create_from_openapi`, `mock.start`, `mock.stop`, `mock.delete`, …                            |
-| **History**                 | `history.list_runs`, `history.get_run`, `history.delete_run`, `history.purge_by_age`               |
+| Category                    | What the AI can do                                                                                                                                                     |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Workspaces**              | `workspace.list`, `workspace.read`, `workspace.write` (bulk + scoped by `workspaceId`)                                                                                 |
+| **Entity CRUD**             | Requests, folders, environments, plans, assertions — full read / write surface                                                                                         |
+| **Folder exchange**         | `folder.export_json`, `folder.import_json` — portable `apicircle.folder/v1` envelope with embedded JSON Schema + GraphQL dependencies; credentials redacted by default |
+| **Imports**                 | `import.curl`, `import.openapi`, `import.postman`, `import.insomnia`, `import.har`                                                                                     |
+| **Code generation**         | `generate.code` for cURL, fetch, axios, Python requests, Go, Rust                                                                                                      |
+| **Codebase analysis**       | `codebase.extract_collection` — Express, FastAPI, NestJS, Spring                                                                                                       |
+| **Prompt-driven authoring** | LLM-shaped JSON entry points for request / folder / environment / assertion / plan / mock creation                                                                     |
+| **Mock servers**            | `mock.create_from_openapi`, `mock.start`, `mock.stop`, `mock.delete`, …                                                                                                |
+| **History**                 | `history.list_runs`, `history.get_run`, `history.delete_run`, `history.purge_by_age`                                                                                   |
 
 ## Embed it in your own product
 

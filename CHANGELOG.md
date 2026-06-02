@@ -25,6 +25,299 @@
 
 ## Unreleased
 
+_Nothing yet._
+
+## 1.0.7 - 2026-06-02
+
+The portable-exchange and encrypted-env hardening release. Folders ship to —
+and re-attach from — a single self-describing `.apicircle.json` envelope
+through the UI, CLI, and MCP, with per-credential opt-in so secrets never
+leak by accident. Environment exports now travel with their ciphertext
+(envelope v2) so re-imports stop forcing manual rebinds across machines,
+and the Environments panel + Vault dock surface the missing-slot /
+decrypt-failure cases that previously dead-ended users. The MCP Prompts
+cards copy reliably (and the workspace-scope chip is renamed to
+**Collections**). The default theme and font revert to **One Dark Pro** +
+**System Sans** — the 1.0.5 Command Center + Cascadia Code defaults are
+still one click away under Settings → Appearance — and the font picker
+hides any catalog entry that silently falls back to your OS default face.
+
+### Folder export hardening — credentials, CLI, MCP, re-attach toast
+
+- **Security:** the Export Folder modal now enumerates every credential-bearing
+  field detected inside the subtree (Bearer tokens, OAuth2 client secrets +
+  access + refresh tokens, AWS SigV4 secret keys, NTLM / Digest passwords,
+  Hawk keys, JWT signing material, `api-key.value`). They are **redacted by
+  default**; the user opts each one in via a per-row checkbox. The summary
+  bar surfaces the live counter ("3 credentials will be redacted" → "1
+  credential included · 2 redacted"). Redaction blanks credential fields to
+  `""` and keeps identity fields (clientId, username, tokenUrl, …) so the
+  importer still knows which IdP the request belonged to. Same fail-safe
+  shape as `redactForGit`.
+- **`applyMutation` parity:** new `folder.import_apicircle` patch variant +
+  applyMutation switch case so headless writers (CLI, MCP, future automation)
+  graft an envelope through the same single mutation choke point the UI
+  store uses. The pure graft logic moved into
+  `@apicircle/core/workspace/apicircleFolderImport`;
+  `apicircleImportAction.ts` in `ui-components` is now a thin re-export
+  shim.
+- **MCP catalog:** two new tools (now 74 total).
+  - `folder.export_json` — collect a folder envelope. Accepts an optional
+    `includeCredentialIds` array (same id shape the export modal uses) and
+    redacts everything else. Returns `{ envelope, json, filename, report }`.
+  - `folder.import_json` — accept either `json` (string) or `envelope`
+    (object). Routes through
+    `WorkspaceProvider.apply({ kind: 'folder.import_apicircle' })`, so
+    name-uniquify + dependency dedupe semantics are identical to the UI.
+- **CLI:**
+  - `apicircle export folder <name-or-id> [--out file] [--include-credential <id> ...] [--list-credentials]`
+    — write the envelope to disk or stdout. `--list-credentials` prints the
+    detected credential rows so users can pick which `--include-credential`
+    ids to pass.
+  - `apicircle import apicircle <file>` (new source-type) — graft an
+    envelope via `folder.import_apicircle`. Emits a re-attach note on
+    stderr for any file-asset metadata that landed without bytes.
+- **Re-attach toast:** importing an envelope that carries file-asset metadata
+  now surfaces a one-time info toast pointing the user at **Global Assets →
+  Global Files**, eliminating the previous silent-fail UX.
+- **E2E:** new `e2e/web/folder-export.spec.ts` covering the kebab → modal →
+  redact toggle → download → re-import round trip (intercepted via the
+  Playwright `download` event).
+
+### Encrypted env vars — Export-as-JSON now carries ciphertext (envelope v2)
+
+- `apicircleEnvironment` envelope bumped from **v1 → v2**. Encrypted
+  variables now travel with their ciphertext + per-slot salt + slot
+  label, matching the contract Git push/pull has always had. On the
+  destination, the row decrypts with the user's local slot value at
+  request-execute time — no more forced manual rebind on every
+  machine. v1 envelopes still parse for back-compat; the parser
+  surfaces `payloadVersion: 1 | 2` so consumers can fork behavior.
+- Import-side resolution split: when the source's salt matches a
+  destination slot's salt (same workspace re-import, or two machines
+  that genuinely share the slot value), the row re-points and works
+  immediately. When the salts differ, a new slot is minted from the
+  source's salt + label so the row binds to something self-consistent
+  and the user is asked to provide the matching plaintext via the
+  existing missing-slots gate. The colliding-id case (different
+  source slot, same id by chance) generates a fresh id; the
+  destination's slot stays untouched.
+- `applyMutation` gains a new patch variant: `secretKey.upsert` —
+  used by MCP `environment.import` to mint slot metadata atomically
+  alongside the env upsert. The MCP response now includes
+  `mintedSlots` so AI clients can surface what the user needs to
+  provide. Headless writers (CLI, future automation) get the same
+  surface.
+- Plaintext slot VALUES still never leave the device. The change
+  shipped here is symmetric with Git: ciphertext + slot-derivation
+  parameters travel, the plaintext lives only on the user's machine.
+
+### Encrypted env vars — Decrypt-failure banner on the Environments panel
+
+- The resolver used to silently substitute `<MISSING:LABEL>` for ANY
+  decryption failure — including the case where the user provided a
+  slot value but it didn't decrypt the row's ciphertext (a re-keyed
+  slot, a passphrase change, a typo on re-entry). The user only
+  noticed when the request hit the wire with a literal
+  `<MISSING:LABEL>` and the upstream returned a 400.
+- The Environments panel now surfaces a per-env banner listing the
+  rows that failed to decrypt with a concrete next step:
+  _"`KEY_NAME` — slot `LABEL` — open the Vault dock and re-enter the
+  slot value, or use the row's Unbind button to clear the value and
+  type a fresh plaintext."_ `missing-slot-value` is intentionally
+  excluded from the banner (the Vault's `ProvideMissingSlotsGate`
+  already handles that case loudly enough); the banner focuses on
+  `decrypt-failed` + `invalid-ciphertext` rows the user can't fix
+  without more context.
+- The wire request still carries `<MISSING:LABEL>` for the failed
+  rows — that behavior is unchanged. The banner just tells the user
+  WHICH slot failed and WHY before they see the wire response.
+- New workspace-store surface: `envDecryptFailures` +
+  `clearEnvDecryptFailures()`. `decryptEnvironments` returns
+  structured failure reasons (`missing-slot-meta` /
+  `missing-slot-value` / `invalid-ciphertext` / `decrypt-failed`)
+  consumed by the banner and any future surfaces (e.g. a CLI warning
+  on `apicircle run`).
+
+### Encrypted env vars — Unbind no longer dead-ends on decrypt failure
+
+- Clicking **Unbind** on an encrypted environment variable used to
+  return a silent toast ("Could not unbind secret key") whenever the
+  row's ciphertext couldn't be decrypted with this device's slot value
+  — a common situation after pulling a workspace whose secret slot
+  hasn't been re-provisioned, or after a passphrase change. The user
+  was stuck: the only workaround was to rename the variable key, which
+  forced the row out of the encrypted branch by side effect.
+- Unbind now surfaces a confirm dialog when the soft decrypt path
+  fails: _"`KEY_NAME` can't be decrypted on this device. Unbinding
+  will clear the value to empty."_ On confirm, the binding is dropped
+  and `value` is set to `''` so the user can type a fresh plaintext
+  immediately. The happy path (this device CAN decrypt) is unchanged
+  — the value is recovered to plaintext without a prompt.
+- New store-action signature: `unbindVariableSecretKey(envName,
+index, opts?)`. The optional `opts.force` flag bypasses the decrypt
+  requirement and clears the value. UI callers run the soft path
+  first, then re-invoke with `{ force: true }` after user confirms.
+  External callers (MCP, CLI) keep the same default behaviour and can
+  opt in.
+
+### Secret Vault — "Set passphrase" CTA on web
+
+- The Secret Vault dock now surfaces a **Set passphrase** call-to-action
+  with a short rationale whenever the workspace has no `secretCrypto`
+  blob configured on the web build. Previously, attempting to add a
+  secret returned an error pointing at a "Set passphrase" button that
+  didn't exist anywhere in the UI — a dead end for users who hadn't
+  set one up. Clicking the CTA opens the existing passphrase-setup
+  modal; on success the New-secret form is unlocked.
+- A matching **Unlock secrets** CTA replaces the same slot when the
+  workspace already has a passphrase but the in-memory key was cleared
+  (cold start, idle-lock, browser refresh). Clicking it opens the
+  unlock modal directly instead of forcing a failed-Save round trip.
+- Defense-in-depth: if any flow still throws `SecretsNotProtectedError`
+  (deep link, race, legacy tab), the Vault tab now intercepts it and
+  opens the setup modal automatically instead of toasting a message
+  that referenced a button the user couldn't find.
+- New workspace-store surface: `passphraseModal`,
+  `openPassphraseSetup()`, `openPassphraseUnlock()`,
+  `closePassphraseModal()`. `PassphrasePromptModalGate` reads modal
+  state from the store now instead of the dead local `setupOpen` state
+  it carried before, so any flow can request the prompt.
+- Desktop builds are unaffected — `safeStorage`-wrapped master keys
+  already satisfy the platform secret gate, so the CTA isn't shown
+  there.
+
+### Import — API Circle environment exports round-trip with a "Provide secret values" bind step
+
+- The unified **Import** modal under the "API Circle exchange" source now
+  accepts environment exports (`{ "apicircleEnvironment": 1, ... }`) as
+  well as folder exports. The dropdown entry sniffs the document's magic
+  key and routes to the right parser, so the file the Environments
+  sidebar's **Export as JSON** action produces can be re-imported on
+  another machine (or back into the same workspace, where it lands under
+  a collision-renamed `<name> (2)` slot) without any extra step.
+- **Encrypted rows now travel with the slot's user-recognizable label.**
+  The v1 envelope's encrypted-row shape gained an additive `secret.label`
+  field alongside `secretKeyId`:
+  ```json
+  {
+    "key": "TOKEN",
+    "encrypted": true,
+    "secretKeyId": "sec_abc",
+    "secret": { "label": "PROD_TOKEN" }
+  }
+  ```
+  Older readers (including the previous MCP validator) ignore the new
+  field and still accept the row — strictly additive, no breaking
+  change. Older exports without `secret.label` continue to import; the
+  parser falls back to the variable key as the prompt label and flags
+  it so the UI can hint "this label was synthesized".
+- **The importer prompts you on import instead of silently storing dead
+  bindings.** When the destination workspace doesn't have a matching
+  vault slot for an encrypted row, the modal now switches into a
+  second-step "Provide secret values" form listing each unresolved
+  binding with a masked input. Filling a value creates a fresh vault
+  slot under the source's label and binds the variable to it. The step
+  is fully **skippable** — the env is already persisted, so a skip
+  leaves the bindings dangling for later resolution under Environments.
+- **Same-workspace re-imports stay quiet.** If the destination's
+  `synced.secretKeys` already carries a slot whose id or label matches
+  the export, the importer re-points the row's `secretKeyId` to that
+  slot and skips the bind step entirely.
+- Public surface from `@apicircle/core`:
+  - `parseApicircleEnvironment(input)` /
+    `parseApicircleEnvironmentDoc(doc)` →
+    `ParsedApicircleEnvironment` (`name`, `variables`,
+    `encryptedBindingHints`, `warnings`)
+  - `EncryptedBindingHint` — `{ varKey, label, originSecretKeyId?,
+labelFromFallback }`
+  - `isApicircleEnvironment(doc)` discriminator
+- New workspace store types + action:
+  - `ApicircleEnvironmentPendingBinding` —
+    `{ envName, varKey, label, labelFromFallback }`
+  - `importApicircleEnvironment(parsed) → { name, pendingBindings,
+warnings } | null` — collision-suffixes the env name, resolves
+    encrypted hints against `synced.secretKeys` (id match, then label
+    match), and returns the unresolved bindings for the UI to prompt.
+- MCP `environment.import` routes through the same core parser. Response
+  envelope grew a `pendingBindings` array and a `warnings` pass-through
+  so AI clients can surface unresolved bindings to the user (or wire
+  them up via the existing `addSecret` / bind tools). Error strings for
+  malformed envelopes now match the user-facing message the modal
+  surfaces, eliminating UI/MCP drift.
+- Parser warnings (dropped rows, demoted encrypted rows, missing
+  `secretKeyId`) now surface in the UI as an info toast after import
+  instead of disappearing silently.
+- This closes the asymmetry where the MCP `environment.import` tool
+  already accepted the v1 envelope but the human-facing UI did not —
+  the exporter, the bind step, the MCP path, and the env-panel are all
+  in lockstep.
+
+### Folder export — "Export as JSON" + API Circle exchange import
+
+- Each folder's kebab menu now carries an **Export as JSON** action. Picking
+  it opens a prompt that lists everything the export envelope will carry —
+  the folder + its subtree of subfolders and requests, plus a
+  **Global Asset dependencies** report broken down by:
+  - **JSON Schemas** referenced via `Request.bodySchemaId` (embedded in
+    the export so the importer can recreate them in Global Assets → JSON
+    Schemas with a name+content dedupe pass)
+  - **GraphQL definitions** referenced via `Request.graphqlSchemaId`
+    (embedded — same dedupe pattern, by name + kind + source)
+  - **Global files** referenced via binary attachments and form-data file
+    rows (**metadata-only** — bytes stay in their Git LFS sidecars; the
+    importer surfaces these so the user can re-attach them inside Global
+    Assets → Global Files after import)
+- The exporter emits a single self-describing JSON file
+  (`<slug>.apicircle.json`) carrying the `format: "apicircle.folder/v1"`
+  discriminator and a stable, indented serialization that round-trips
+  byte-for-byte through the importer.
+- The unified **Import** modal's `apicircle` source-format slot — previously
+  a placeholder that displayed a "not yet importable" message — is now a
+  real parser. The same modal accepts the exported file, shows the same
+  dependency breakdown, and routes through the new
+  `importApicircleFolder` workspace store action. Existing import paths
+  (Postman v2.1, Postman environment, Insomnia v4, cURL) are unchanged.
+- Public surface from `@apicircle/core`:
+  - `collectFolderExport({ synced, folderId })` → `{ envelope, report }`
+  - `serializeFolderExport(envelope)` → JSON string
+  - `suggestFolderExportFilename(envelope)` → safe slug.apicircle.json
+  - `parseApicircleFolderExport(input)` /
+    `parseApicircleFolderExportDoc(doc)` →
+    `ParsedApicircleFolderExport` with fresh ids, remapped refs, and
+    warnings for any dangling references
+  - `isApicircleFolderExport(doc)` discriminator + the
+    `APICIRCLE_FOLDER_EXPORT_FORMAT` token
+- All new code lands with co-located unit tests (Vitest) at 100% line,
+  branch, function, and statement coverage; the editor sidebar +
+  ImportModal integration is also covered.
+
+### MCP — Prompts copy fixed, category renamed to Collections
+
+- The MCP → Prompts cards now copy reliably: the click handler falls back
+  to `document.execCommand('copy')` when `navigator.clipboard.writeText`
+  is unavailable (HTTP, file://, embedded webview) and surfaces an error
+  toast when the write actually fails instead of silently no-op'ing.
+- Clicking a card now flashes an inline **Copied!** status tooltip next
+  to the Copy badge (in addition to the existing toast), so the
+  acknowledgement is anchored next to the affordance the user pressed.
+- The singular **Workspace** category chip is renamed to **Collections**
+  — the plural **Workspaces** (multi-workspace discovery) chip is
+  unchanged. Type/id `McpPromptCategory` member `'workspace'` was
+  renamed to `'collections'` along with the four prompt records that
+  reference it.
+
+### Default appearance reverts to One Dark Pro + System Sans
+
+- New workspaces now boot in **One Dark Pro** with **System Sans** instead
+  of the 1.0.5 defaults (Command Center + Cascadia Code). All built-in
+  themes and fonts remain available in the Settings → Appearance pickers;
+  this only changes the out-of-the-box look. Existing workspaces keep
+  their saved preference.
+- Updated runtime fallbacks across the UI store, CLI/core seeders, font
+  picker, theme picker, Monaco bridge, the legacy-migration default in
+  `workspaceStorage.hydrateWorkspace`, plus the matching unit + E2E specs.
+
 ### Font picker — auto-filter "no-op" options
 
 - The Settings → Font family picker now hides any catalog entry whose stack
@@ -42,6 +335,26 @@
 - New module `packages/ui-components/src/theme/fontAvailability.ts` plus
   unit tests; `ensureWebfontLink` is now exported from
   `theme/applyFont.ts` so the detector can preload stylesheets.
+
+### MCP tool catalog — now 74 tools
+
+- The catalog grows by two: `folder.export_json` and `folder.import_json`,
+  the headless equivalents of the new **Export as JSON** / API Circle
+  exchange import paths. The full enumeration lives in
+  [`packages/shared/src/mcp.ts`](packages/shared/src/mcp.ts); the signatures
+  - envelopes are documented in
+    [`docs/mcp-tools-reference.md`](docs/mcp-tools-reference.md).
+- `environment.import` gained a `pendingBindings` array in its response
+  envelope so AI clients can surface unresolved encrypted-row bindings to
+  the user (and wire them up via `secret.add` + the env-panel bind path).
+
+### Bumped packages
+
+`@apicircle/desktop`, `@apicircle/web`, `@apicircle/git`,
+`@apicircle/ui-components`, `@apicircle/cli`, `@apicircle/core`,
+`@apicircle/mcp-server`, `@apicircle/mock-server-core`,
+`@apicircle/shared`, plus the e2e and example workspaces — all at
+`1.0.7`.
 
 ## 1.0.5 - 2026-05-29
 

@@ -119,4 +119,107 @@ describe('apicircle import', () => {
     const loaded = await loadFromFile(ws);
     expect(Object.keys(loaded!.synced.collections.requests).length).toBe(1);
   });
+
+  it('imports an apicircle.folder/v1 envelope with embedded files (reattach note)', async () => {
+    const envPath = path.join(tmpDir, 'env-files.json');
+    const envelope = {
+      format: 'apicircle.folder/v1',
+      exportedAt: '2026-06-02T00:00:00.000Z',
+      appVersion: '1',
+      source: { workspaceId: 'ws', folderId: 'f-root', folderName: 'Uploads' },
+      folder: {
+        name: 'Uploads',
+        subfolders: [],
+        requests: [],
+      },
+      dependencies: {
+        schemas: [],
+        graphql: [],
+        files: [
+          {
+            id: 'file-1',
+            name: 'avatar',
+            slotId: 'slot-x',
+            filename: 'avatar.png',
+            size: 1,
+            mimeType: 'image/png',
+            createdAt: '2026-06-02T00:00:00.000Z',
+            updatedAt: '2026-06-02T00:00:00.000Z',
+          },
+        ],
+      },
+    };
+    await fs.writeFile(envPath, JSON.stringify(envelope));
+    const ws = path.join(tmpDir, 'ws');
+    const program = buildProgram();
+    await program.parseAsync([
+      'node',
+      'apicircle',
+      'import',
+      'apicircle',
+      envPath,
+      '--workspace-path',
+      ws,
+    ]);
+    const loaded = await loadFromFile(ws);
+    // The parser re-mints every embedded asset id, so look it up by name.
+    const file = Object.values(loaded!.synced.globalAssets.files ?? {}).find(
+      (f) => f.name === 'avatar',
+    );
+    expect(file).toBeDefined();
+  });
+
+  it('imports an apicircle.folder/v1 envelope', async () => {
+    const envPath = path.join(tmpDir, 'envelope.json');
+    const envelope = {
+      format: 'apicircle.folder/v1',
+      exportedAt: '2026-06-02T00:00:00.000Z',
+      appVersion: '1',
+      source: { workspaceId: 'ws', folderId: 'f-root', folderName: 'Imported Auth' },
+      folder: {
+        name: 'Imported Auth',
+        subfolders: [],
+        requests: [
+          {
+            id: 'r-1',
+            name: 'POST /login',
+            folderId: 'f-root',
+            method: 'POST',
+            url: 'https://api.example.com/login',
+            headers: [],
+            query: [],
+            body: { type: 'none', content: '' },
+            auth: { type: 'none' },
+            contextVars: [],
+            extractions: [],
+            assertions: [],
+            createdAt: '2026-06-02T00:00:00.000Z',
+            updatedAt: '2026-06-02T00:00:00.000Z',
+          },
+        ],
+      },
+      dependencies: { schemas: [], graphql: [], files: [] },
+    };
+    await fs.writeFile(envPath, JSON.stringify(envelope));
+    const ws = path.join(tmpDir, 'ws');
+    const program = buildProgram();
+    await program.parseAsync([
+      'node',
+      'apicircle',
+      'import',
+      'apicircle',
+      envPath,
+      '--workspace-path',
+      ws,
+    ]);
+    const loaded = await loadFromFile(ws);
+    const folder = Object.values(loaded!.synced.collections.folders).find(
+      (f) => f.name === 'Imported Auth',
+    );
+    expect(folder).toBeDefined();
+    const requests = Object.values(loaded!.synced.collections.requests).filter(
+      (r) => r.folderId === folder?.id,
+    );
+    expect(requests).toHaveLength(1);
+  });
 });

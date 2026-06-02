@@ -42,6 +42,7 @@ import {
   assertionUpdateTool,
   assertionDeleteTool,
 } from './crud';
+import { folderExportJsonTool, folderImportJsonTool } from './folderExchange';
 import {
   historyListRunsTool,
   historyGetRunTool,
@@ -103,6 +104,8 @@ export const TOOL_REGISTRY: AnyToolDef[] = [
   folderReadTool,
   folderUpdateTool,
   folderDeleteTool,
+  folderExportJsonTool,
+  folderImportJsonTool,
   environmentCreateTool,
   environmentReadTool,
   environmentUpdateTool,

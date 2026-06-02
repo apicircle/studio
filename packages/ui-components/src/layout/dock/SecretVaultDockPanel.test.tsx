@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SecretVaultDockPanel } from './SecretVaultDockPanel';
+import { __setWebBuildForTests } from './webBuild';
 import { renderWithStore } from '../../../test/renderWithStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 
@@ -447,6 +448,66 @@ describe('SecretVaultDockPanel', () => {
       expect(within(list).getByText('Database token')).toBeInTheDocument();
       expect(within(list).queryByText(/link:Payments:DB_TOKEN|DB_TOKEN/)).toBeNull();
       expect(within(list).getByText('linked')).toBeInTheDocument();
+    });
+  });
+
+  describe('Vault tab — passphrase gates (web build)', () => {
+    afterEach(() => {
+      __setWebBuildForTests(null);
+    });
+
+    it('shows the Set-passphrase CTA and hides New secret when no passphrase is set on web', async () => {
+      __setWebBuildForTests(true);
+      await renderWithStore(<SecretVaultDockPanel />);
+
+      // CTA is visible; New secret button is suppressed until a passphrase
+      // is configured.
+      expect(screen.getByRole('group', { name: /Set workspace passphrase/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^Set passphrase$/ })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /New secret/ })).toBeNull();
+    });
+
+    it('clicking Set passphrase flips the store modal state to "setup"', async () => {
+      __setWebBuildForTests(true);
+      await renderWithStore(<SecretVaultDockPanel />);
+
+      expect(useWorkspaceStore.getState().passphraseModal).toBeNull();
+      await userEvent.click(screen.getByRole('button', { name: /^Set passphrase$/ }));
+      expect(useWorkspaceStore.getState().passphraseModal).toBe('setup');
+    });
+
+    it('once setupPassphrase succeeds the CTA collapses and New secret returns', async () => {
+      __setWebBuildForTests(true);
+      await renderWithStore(<SecretVaultDockPanel />);
+
+      expect(screen.queryByRole('button', { name: /New secret/ })).toBeNull();
+      await act(async () => {
+        const result = await useWorkspaceStore.getState().setupPassphrase('a-strong-passphrase');
+        expect(result.ok).toBe(true);
+      });
+
+      expect(screen.queryByRole('group', { name: /Set workspace passphrase/ })).toBeNull();
+      expect(screen.getByRole('button', { name: /New secret/ })).toBeInTheDocument();
+    });
+
+    it('shows the Unlock-secrets CTA when secretLockState is locked', async () => {
+      __setWebBuildForTests(true);
+      await renderWithStore(<SecretVaultDockPanel />);
+
+      // Bring the workspace into the locked state directly. (Simulates a
+      // returning user whose synced.secretCrypto exists but whose
+      // in-memory key was cleared by restart or idle-lock.)
+      await act(async () => {
+        await useWorkspaceStore.getState().setupPassphrase('a-strong-passphrase');
+        useWorkspaceStore.getState().lockSecrets();
+      });
+
+      expect(useWorkspaceStore.getState().secretLockState).toBe('locked');
+      expect(screen.getByRole('group', { name: /Unlock workspace secrets/ })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /New secret/ })).toBeNull();
+
+      await userEvent.click(screen.getByRole('button', { name: /^Unlock secrets$/ }));
+      expect(useWorkspaceStore.getState().passphraseModal).toBe('unlock');
     });
   });
 });

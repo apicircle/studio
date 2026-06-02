@@ -54,8 +54,8 @@ export async function ensureWorkspace(dir: string): Promise<WorkspaceState> {
       ui: {
         activeRequestId: null,
         sidebarExpandedSections: [],
-        themeId: 'command-center',
-        fontId: 'cascadia-code',
+        themeId: 'one-dark-pro',
+        fontId: 'system-sans',
         fontSizePercent: FONT_SIZE_PERCENT_DEFAULT,
       },
       settings: { validateOnSend: true, monacoConsumesWheel: false },

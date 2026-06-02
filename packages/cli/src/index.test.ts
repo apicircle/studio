@@ -3,10 +3,10 @@ import { buildProgram } from './index';
 import { CLI_PACKAGE_VERSION } from './packageVersion';
 
 describe('CLI program', () => {
-  it('registers the five top-level commands', () => {
+  it('registers the six top-level commands', () => {
     const program = buildProgram();
     const names = program.commands.map((c) => c.name()).sort();
-    expect(names).toEqual(['import', 'mcp', 'mock', 'run', 'workspaces']);
+    expect(names).toEqual(['export', 'import', 'mcp', 'mock', 'run', 'workspaces']);
   });
 
   it('exposes a stable name and version for `--version`', () => {

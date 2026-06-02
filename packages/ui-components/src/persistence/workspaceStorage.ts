@@ -617,7 +617,7 @@ export async function loadWorkspaceById(
       // 100% default for any pre-existing on-disk workspace.
       ui: {
         ...local.ui,
-        fontId: local.ui.fontId ?? readLegacyFontFromLocalStorage() ?? 'cascadia-code',
+        fontId: local.ui.fontId ?? readLegacyFontFromLocalStorage() ?? 'system-sans',
         fontSizePercent: local.ui.fontSizePercent ?? FONT_SIZE_PERCENT_DEFAULT,
       },
     };
@@ -922,8 +922,8 @@ export function createEmptyWorkspace(): { synced: WorkspaceSynced; local: Worksp
     ui: {
       activeRequestId: sampleRequest.id,
       sidebarExpandedSections: [],
-      themeId: 'command-center',
-      fontId: 'cascadia-code',
+      themeId: 'one-dark-pro',
+      fontId: 'system-sans',
       fontSizePercent: FONT_SIZE_PERCENT_DEFAULT,
     },
     settings: { validateOnSend: true, monacoConsumesWheel: false },

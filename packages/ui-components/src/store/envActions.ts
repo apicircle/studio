@@ -109,22 +109,57 @@ export function duplicateEnvironment(synced: WorkspaceSynced, name: string): Wor
 }
 
 /**
- * Serialize an environment to a portable JSON string. Encrypted vars
- * intentionally drop their value — only the bound `secretKeyId` survives,
- * so importing on another machine requires the user to provide the secret
- * locally. Plain vars roundtrip in full.
+ * Serialize an environment to a portable JSON string (envelope v2).
+ *
+ * Encrypted vars now travel the same way they do over Git push/pull: the
+ * row's ciphertext goes on the wire, alongside the per-slot salt and the
+ * human-readable slot label. The destination tries to decrypt with its
+ * local slot value at request-execute time — when it matches, the value
+ * resolves transparently; when it doesn't, the user is prompted via the
+ * missing-slots gate (or the new decrypt-mismatch banner). This closes
+ * the asymmetry where Git push carried ciphertext but Export-as-JSON
+ * stripped it, forcing a manual rebind on every machine.
+ *
+ * Plain vars round-trip in full (unchanged from v1).
+ *
+ * The receiving parser accepts both v1 and v2 — older exports continue
+ * to import via the prompt-the-user-for-value path. See
+ * `@apicircle/core/import/apicircleEnvironment.ts` for the parser
+ * surface (`payloadVersion: 1 | 2`).
  */
 export function exportEnvironment(synced: WorkspaceSynced, name: string): string | null {
   const env = synced.environments.items[name];
   if (!env) return null;
   const payload = {
-    apicircleEnvironment: 1 as const,
+    apicircleEnvironment: 2 as const,
     name: env.name,
-    variables: env.variables.map((v) =>
-      v.encrypted && v.secretKeyId
-        ? { key: v.key, encrypted: true as const, secretKeyId: v.secretKeyId }
-        : { key: v.key, value: v.value, encrypted: false as const },
-    ),
+    variables: env.variables.map((v) => {
+      if (v.encrypted && v.secretKeyId) {
+        // Surface the slot's user-recognizable label so the importer can
+        // match against an existing slot on the destination. The per-slot
+        // salt lets the destination derive the same AES-GCM key the
+        // source used (PBKDF2 with this salt + the user's slot plaintext
+        // value). Falls back to the var key + null salt when slot
+        // metadata is missing (defensive — addSecret should have
+        // registered it, but lazy-bound rows may pre-date that path).
+        const slot = synced.secretKeys?.[v.secretKeyId];
+        const label = slot?.label ?? v.key;
+        // Carry the ciphertext as-is when the row actually has one. When
+        // a row is bound but its value is unexpectedly plain (e.g. legacy
+        // pre-encryption rows that survived a partial migration), emit
+        // an empty string so the destination still recognises the row as
+        // encrypted and prompts for a fresh value.
+        const value = typeof v.value === 'string' && v.value.startsWith('enc:') ? v.value : '';
+        return {
+          key: v.key,
+          encrypted: true as const,
+          value,
+          secretKeyId: v.secretKeyId,
+          secret: { label, salt: slot?.salt ?? null },
+        };
+      }
+      return { key: v.key, value: v.value, encrypted: false as const };
+    }),
   };
   return JSON.stringify(payload, null, 2);
 }

@@ -157,4 +157,109 @@ describe('secret-slot encryption round-trip', () => {
     expect(calledUrl).toContain('<MISSING:TEAM_KEY>');
     expect(calledUrl).not.toContain('sk_live_xyz');
   });
+
+  it('records a decrypt-failed failure when the local slot value does not match the ciphertext', async () => {
+    let secretId = '';
+    await act(async () => {
+      useWorkspaceStore.getState().addEnvironment('prod');
+      useWorkspaceStore.getState().setPriorityOrder([{ kind: 'local', name: 'prod' }]);
+      useWorkspaceStore
+        .getState()
+        .setVariables('prod', [{ key: 'API_TOKEN', value: 'sk_live_xyz', encrypted: false }]);
+      secretId = await useWorkspaceStore.getState().addSecret({
+        label: 'TEAM_KEY',
+        value: 'real-passphrase',
+        origin: 'workspace',
+      });
+      const ok = await useWorkspaceStore.getState().bindVariableToSecretKey('prod', 0, secretId);
+      expect(ok).toBe(true);
+    });
+
+    // Replace the slot value with a wrong one — slot is present, but
+    // ciphertext won't decrypt under it. This is the case the banner is
+    // designed to surface (different from "slot value missing entirely",
+    // which the Vault gate already covers).
+    await act(async () => {
+      await useWorkspaceStore.getState().provideSlotValue(secretId, 'WRONG-value');
+    });
+
+    // Execute a request that references the encrypted var. The resolver
+    // runs decryptEnvironments → populates envDecryptFailures.
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    await act(async () => {
+      const id = useWorkspaceStore.getState().addRequest(null);
+      useWorkspaceStore.getState().setRequestUrl(id, 'https://example.test/?t={{API_TOKEN}}');
+      useWorkspaceStore.getState().setActiveRequestId(id);
+      await useWorkspaceStore.getState().executeActiveRequest();
+    });
+
+    const failures = useWorkspaceStore.getState().envDecryptFailures;
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      envName: 'prod',
+      varKey: 'API_TOKEN',
+      secretKeyId: secretId,
+      label: 'TEAM_KEY',
+      reason: 'decrypt-failed',
+    });
+
+    // Banner state clears when the user dismisses it.
+    act(() => {
+      useWorkspaceStore.getState().clearEnvDecryptFailures();
+    });
+    expect(useWorkspaceStore.getState().envDecryptFailures).toEqual([]);
+  });
+
+  it('unbind refuses on decrypt failure by default, force-unbind clears the value', async () => {
+    let secretId = '';
+    await act(async () => {
+      useWorkspaceStore.getState().addEnvironment('prod');
+      useWorkspaceStore.getState().setPriorityOrder([{ kind: 'local', name: 'prod' }]);
+      useWorkspaceStore
+        .getState()
+        .setVariables('prod', [{ key: 'API_TOKEN', value: 'sk_live_abc', encrypted: false }]);
+      secretId = await useWorkspaceStore.getState().addSecret({
+        label: 'TEAM_KEY',
+        value: 'real-passphrase',
+        origin: 'workspace',
+      });
+      const ok = await useWorkspaceStore.getState().bindVariableToSecretKey('prod', 0, secretId);
+      expect(ok).toBe(true);
+    });
+
+    // Simulate the post-pull state where this device DOES have a slot
+    // value but it's the wrong one — i.e. the ciphertext won't decrypt.
+    // Replace the slot entry with a different plaintext via removeSecret +
+    // addSecret reusing nothing — easier: poke the IDB payload directly via
+    // re-adding under the same id. We just clear it and re-add a different
+    // value through the existing slot row.
+    await act(async () => {
+      await useWorkspaceStore.getState().provideSlotValue(secretId, 'WRONG-value');
+    });
+
+    // Default unbind refuses.
+    await act(async () => {
+      const ok = await useWorkspaceStore.getState().unbindVariableSecretKey('prod', 0);
+      expect(ok).toBe(false);
+    });
+    // Row should still be encrypted and unchanged.
+    const afterRefuse = useWorkspaceStore.getState().synced!.environments.items.prod.variables[0];
+    expect(afterRefuse.encrypted).toBe(true);
+    expect(afterRefuse.secretKeyId).toBe(secretId);
+    expect(afterRefuse.value.startsWith('enc:v1:')).toBe(true);
+
+    // Force unbind clears the value to empty and drops the binding.
+    await act(async () => {
+      const ok = await useWorkspaceStore
+        .getState()
+        .unbindVariableSecretKey('prod', 0, { force: true });
+      expect(ok).toBe(true);
+    });
+    const afterForce = useWorkspaceStore.getState().synced!.environments.items.prod.variables[0];
+    expect(afterForce.encrypted).toBe(false);
+    expect(afterForce.secretKeyId).toBeUndefined();
+    expect(afterForce.value).toBe('');
+    expect(afterForce.key).toBe('API_TOKEN');
+  });
 });

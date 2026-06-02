@@ -98,6 +98,16 @@ describe('EditorSidebar', () => {
     expect(within(tree).getByText('Auth')).toBeInTheDocument();
   });
 
+  it('folder kebab exposes "Export as JSON" which opens the export modal', async () => {
+    await renderWithStore(<EditorSidebar />);
+    await createFolderNamed('Auth');
+    await userEvent.click(screen.getByLabelText('Folder actions for Auth'));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Export as JSON' }));
+    expect(
+      await screen.findByRole('dialog', { name: 'Export folder as JSON' }),
+    ).toBeInTheDocument();
+  });
+
   it('children sort alphabetically within their parent', async () => {
     await renderWithStore(<EditorSidebar />);
     await createRequestNamed('zeta');

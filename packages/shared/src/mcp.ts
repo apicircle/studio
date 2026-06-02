@@ -38,6 +38,8 @@ export type McpToolName =
   | 'folder.read'
   | 'folder.update'
   | 'folder.delete'
+  | 'folder.export_json'
+  | 'folder.import_json'
   | 'environment.create'
   | 'environment.read'
   | 'environment.update'
@@ -127,6 +129,8 @@ export const MCP_TOOL_NAMES: ReadonlyArray<McpToolName> = [
   'folder.read',
   'folder.update',
   'folder.delete',
+  'folder.export_json',
+  'folder.import_json',
   'environment.create',
   'environment.read',
   'environment.update',

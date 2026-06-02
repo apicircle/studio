@@ -19,10 +19,11 @@ function id(key: string): TcId {
  * platform secret gate (`persistence/platformSecretGate.ts`) refuses
  * otherwise because the master key would sit in plaintext IndexedDB.
  *
- * The product's lazy "Set passphrase" prompt (PassphrasePromptModalGate)
- * isn't wired to a UI trigger yet, so the E2E suite drives the
- * `setupPassphrase` store action directly — the passphrase model itself
- * is fully functional, only the trigger UI is pending.
+ * The Vault dock now surfaces a "Set passphrase" CTA + modal for users
+ * (see the `set-passphrase CTA` test below for the UI path). Existing
+ * specs that just need to GET PAST the gate use this helper to skip
+ * the modal interaction — the passphrase model itself isn't under test
+ * here.
  */
 async function setWorkspacePassphrase(app: Page, passphrase: string): Promise<void> {
   const result = await app.evaluate(async (pass: string) => {
@@ -44,6 +45,43 @@ async function setWorkspacePassphrase(app: Page, passphrase: string): Promise<vo
 // → confirmation gate fires → confirm and verify deletion.
 
 test.describe('Secret Vault', () => {
+  test(
+    tc(id('Passphrase'), 'web-build "Set passphrase" CTA opens the modal and unblocks New secret'),
+    async ({ app }) => {
+      // Open the vault dock. On the web build with no `secretCrypto` set
+      // yet, the gate replaces the New-secret button with a primary
+      // "Set passphrase" CTA. This is the path that used to dead-end at
+      // a toast pointing the user at a button that didn't exist.
+      await app.getByRole('button', { name: /Open Secret Vault/ }).click();
+      await expect(app.getByRole('complementary', { name: 'Workspace inspector' })).toBeVisible();
+
+      // CTA visible; New secret hidden until passphrase is set.
+      await expect(app.getByRole('group', { name: /Set workspace passphrase/ })).toBeVisible();
+      await expect(app.getByRole('button', { name: 'New secret' })).toHaveCount(0);
+
+      // Click "Set passphrase" → setup modal opens.
+      await app.getByRole('button', { name: /^Set passphrase$/ }).click();
+      const passInput = app.getByLabel('Workspace passphrase');
+      await expect(passInput).toBeVisible();
+      await passInput.fill('e2e-test-passphrase');
+      await app.getByLabel('Confirm passphrase').fill('e2e-test-passphrase');
+      // The submit button's label is also "Set passphrase" — disambiguate
+      // by scoping to the modal dialog role.
+      const dialog = app.getByRole('dialog');
+      await dialog.getByRole('button', { name: /^Set passphrase$/ }).click();
+
+      // Modal closes, CTA collapses, New secret returns. Add a secret to
+      // prove the gate is fully released and crypto is wired.
+      await expect(dialog).toHaveCount(0);
+      await expect(app.getByRole('group', { name: /Set workspace passphrase/ })).toHaveCount(0);
+      await app.getByRole('button', { name: 'New secret' }).click();
+      await app.getByLabel('New secret label').fill('CTA_KEY');
+      await app.getByLabel('New secret value').fill('cta-value');
+      await app.getByRole('button', { name: 'Save', exact: true }).click();
+      await expect(app.getByRole('listitem').filter({ hasText: 'CTA_KEY' })).toBeVisible();
+    },
+  );
+
   test(
     tc(
       id('Var :: Add plaintext var'),

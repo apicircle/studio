@@ -20,7 +20,7 @@ export interface McpPrompt {
 
 export type McpPromptCategory =
   | 'workspaces'
-  | 'workspace'
+  | 'collections'
   | 'environments'
   | 'execution'
   | 'mocks'
@@ -32,7 +32,7 @@ export const MCP_PROMPT_CATEGORIES: ReadonlyArray<{
   label: string;
 }> = [
   { id: 'workspaces', label: 'Workspaces' },
-  { id: 'workspace', label: 'Workspace' },
+  { id: 'collections', label: 'Collections' },
   { id: 'environments', label: 'Environments' },
   { id: 'execution', label: 'Execution' },
   { id: 'mocks', label: 'Mocks' },
@@ -67,33 +67,33 @@ export const MCP_PROMPTS: ReadonlyArray<McpPrompt> = [
     tools: ['workspace.list'],
   },
 
-  // ── Workspace (single, active) ───────────────────────────────────
+  // ── Collections (requests + folders in the active workspace) ─────
   {
     id: 'list-requests',
     text: 'List every request in my API Circle workspace grouped by folder.',
     description: 'Quick overview of the request catalog so you know what is already wired up.',
-    category: 'workspace',
+    category: 'collections',
     tools: ['workspace.read', 'request.read', 'folder.read'],
   },
   {
     id: 'create-request',
     text: 'Add a new GET request named "Health check" pointing at https://example.com/healthz with an Accept: application/json header.',
     description: 'Have the AI author a request and persist it to the workspace.',
-    category: 'workspace',
+    category: 'collections',
     tools: ['request.create'],
   },
   {
     id: 'update-request',
     text: 'Find the "Create user" request and change its method to POST and body to {"name": "Ada"}.',
     description: 'Targeted edit by name — the AI looks it up, then updates.',
-    category: 'workspace',
+    category: 'collections',
     tools: ['request.read', 'request.update'],
   },
   {
     id: 'organize-folders',
     text: 'Move every request whose URL contains /users into a folder named "User API".',
     description: 'Bulk reorganisation via natural language.',
-    category: 'workspace',
+    category: 'collections',
     tools: ['workspace.read', 'folder.create', 'request.update'],
   },
 

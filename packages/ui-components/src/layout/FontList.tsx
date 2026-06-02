@@ -24,7 +24,7 @@ interface FontListProps {
 const HOVER_PREVIEW_DELAY_MS = 1000;
 
 export function FontList({ onCommit, onCancel, registerCancel }: FontListProps) {
-  const fontId = useWorkspaceStore((s) => s.local?.ui.fontId ?? 'cascadia-code');
+  const fontId = useWorkspaceStore((s) => s.local?.ui.fontId ?? 'system-sans');
   const setFontId = useWorkspaceStore((s) => s.setFontId);
   const optionRefs = useRef<Map<FontFamilyId, HTMLButtonElement>>(new Map());
   const originalFontRef = useRef<FontFamilyId>(fontId);

@@ -240,8 +240,12 @@ export function KebabMenu({
                 'focus:outline-none focus:ring-1 focus:ring-accent/40',
               )}
             >
-              {item.icon && <span className="shrink-0 text-text-faint">{item.icon}</span>}
-              <span className="flex-1">{item.label}</span>
+              {item.icon && (
+                <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center self-center text-text-faint">
+                  {item.icon}
+                </span>
+              )}
+              <span className="flex-1 self-center">{item.label}</span>
             </button>
           ))}
         </div>

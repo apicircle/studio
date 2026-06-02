@@ -274,6 +274,38 @@ describe('PromptsSection', () => {
     expect(writeText).toHaveBeenCalledWith(
       expect.stringContaining('List every request in my API Circle workspace'),
     );
+    // The card's badge swaps to "Copied" and an inline status tooltip appears.
+    const status = await screen.findByRole('status');
+    expect(status).toHaveTextContent('Copied!');
+  });
+
+  it('surfaces an error toast when the clipboard write fails', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('Permission denied'));
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    await renderWithStore(<McpServerPanel />);
+    const card = await screen.findByRole('button', {
+      name: /Copy prompt: List every request/i,
+    });
+    await userEvent.click(card);
+    // The ToastViewport isn't mounted in this harness — assert the toast
+    // record was queued on the store instead.
+    await waitFor(() => {
+      const toasts = useWorkspaceStore.getState().toasts;
+      expect(toasts.some((t) => t.tone === 'error' && /Copy failed/.test(t.title))).toBe(true);
+    });
+    expect(
+      useWorkspaceStore.getState().toasts.find((t) => /Copy failed/.test(t.title))?.detail,
+    ).toBe('Permission denied');
+  });
+
+  it('renames the singular workspace category to Collections', async () => {
+    await renderWithStore(<McpServerPanel />);
+    expect(screen.getByRole('tab', { name: /Collections/ })).toBeInTheDocument();
+    // The plural multi-workspace category survives.
+    expect(screen.getByRole('tab', { name: /Workspaces/ })).toBeInTheDocument();
   });
 
   it('shows an empty-state when no prompt matches the filter', async () => {

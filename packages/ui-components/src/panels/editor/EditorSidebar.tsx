@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Copy,
   Download,
+  FileJson,
   FilePlus2,
   Folder as FolderIcon,
   FolderOpen,
@@ -25,6 +26,7 @@ import { FolderAuthModal } from './FolderAuthModal';
 // parser bundle isn't paid for on initial app load. The name stays the
 // same so JSX callsites below don't need to change.
 import { ImportModalLazy as ImportModal } from './ImportModalLazy';
+import { ExportFolderModal } from './ExportFolderModal';
 import { LinkedWorkspaceTreeSection } from './LinkedWorkspaceTreeSection';
 
 const METHOD_COLOR: Record<string, string> = {
@@ -61,6 +63,7 @@ export function EditorSidebar() {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
   const [authModalFolderId, setAuthModalFolderId] = useState<string | null>(null);
+  const [exportFolderId, setExportFolderId] = useState<string | null>(null);
   // Tracks which node is currently being renamed inline. Keyed as
   // `folder:<id>` or `request:<id>` so a folder and request with the same id
   // (impossible today, but cheap to be explicit) can't collide.
@@ -263,6 +266,7 @@ export function EditorSidebar() {
             onDuplicateRequest={duplicateRequest}
             onDuplicateFolder={duplicateFolder}
             onEditFolderAuth={setAuthModalFolderId}
+            onExportFolder={setExportFolderId}
             renamingKey={renamingKey}
             onStartRename={setRenamingKey}
             onRenameFolder={(id, name) => {
@@ -302,6 +306,8 @@ export function EditorSidebar() {
           onClose={() => setAuthModalFolderId(null)}
         />
       )}
+
+      <ExportFolderModal folderId={exportFolderId} onClose={() => setExportFolderId(null)} />
 
       <ConfirmDialog
         open={pendingRequestDelete !== null}
@@ -409,6 +415,8 @@ interface TreeNodeProps {
   onDuplicateRequest: (id: string) => string | null;
   onDuplicateFolder: (id: string) => string | null;
   onEditFolderAuth: (folderId: string) => void;
+  /** Open the "Export as JSON" modal for the folder. */
+  onExportFolder: (folderId: string) => void;
   renamingKey: string | null;
   onStartRename: (key: string | null) => void;
   onRenameFolder: (id: string, name: string) => void;
@@ -445,6 +453,7 @@ function TreeNode(props: TreeNodeProps) {
     onDuplicateRequest,
     onDuplicateFolder,
     onEditFolderAuth,
+    onExportFolder,
     renamingKey,
     onStartRename,
     onRenameFolder,
@@ -544,13 +553,13 @@ function TreeNode(props: TreeNodeProps) {
                 },
                 {
                   id: 'new-request',
-                  label: 'New request inside',
+                  label: 'New request',
                   icon: <FilePlus2 size={12} aria-hidden="true" />,
                   onSelect: () => onAddRequestInside(folder.id),
                 },
                 {
                   id: 'new-folder',
-                  label: 'New folder inside',
+                  label: 'New folder',
                   icon: <FolderPlus size={12} aria-hidden="true" />,
                   onSelect: () => onAddFolderInside(folder.id),
                 },
@@ -559,7 +568,7 @@ function TreeNode(props: TreeNodeProps) {
                   label:
                     folder.auth && folder.auth.type !== 'none' && folder.auth.type !== 'inherit'
                       ? `Edit auth (${folder.auth.type})`
-                      : 'Set auth…',
+                      : 'Set auth',
                   icon: <Shield size={12} aria-hidden="true" />,
                   onSelect: () => onEditFolderAuth(folder.id),
                 },
@@ -568,6 +577,13 @@ function TreeNode(props: TreeNodeProps) {
                   label: 'Duplicate',
                   icon: <Copy size={12} aria-hidden="true" />,
                   onSelect: () => onDuplicateFolder(folder.id),
+                },
+                {
+                  id: 'export',
+                  label: 'Export as JSON',
+                  icon: <FileJson size={12} aria-hidden="true" />,
+                  onSelect: () => onExportFolder(folder.id),
+                  title: 'Export this folder for import into another API Circle workspace',
                 },
                 {
                   id: 'delete',

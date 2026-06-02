@@ -52,10 +52,10 @@ test.describe('Theme persistence (P7)', () => {
   test(
     tc(stId('Theme :: Dark to light'), 'selected theme survives a full reload'),
     async ({ app }) => {
-      // The default theme is command-center. Switch to paper-light, reload,
+      // The default theme is one-dark-pro. Switch to paper-light, reload,
       // and confirm the html data-theme attribute reflects the choice.
       const initialTheme = await app.locator('html').getAttribute('data-theme');
-      expect(initialTheme).toBe('command-center');
+      expect(initialTheme).toBe('one-dark-pro');
 
       // The theme picker now lives inside the Settings popover: open
       // Settings → click the "Theme" appearance row → pick a theme option.

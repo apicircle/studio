@@ -83,6 +83,77 @@ describe('EnvironmentsPanel', () => {
     expect(typeof meta?.salt).toBe('string');
     expect(meta?.salt.length).toBeGreaterThan(0);
   });
+
+  it('Unbind opens a confirm when decryption fails; confirm clears the value', async () => {
+    await renderWithStore(<EnvironmentsPanel />);
+    let secretId = '';
+    await act(async () => {
+      useWorkspaceStore.getState().addEnvironment('dev');
+      useWorkspaceStore
+        .getState()
+        .setVariables('dev', [{ key: 'API_TOKEN', value: 'sk_live_abc', encrypted: false }]);
+      secretId = await useWorkspaceStore.getState().addSecret({
+        label: 'PROD_TOKEN',
+        value: 'right-passphrase',
+        origin: 'workspace',
+      });
+      const ok = await useWorkspaceStore.getState().bindVariableToSecretKey('dev', 0, secretId);
+      expect(ok).toBe(true);
+    });
+    await screen.findByRole('group', { name: 'Variables for dev' });
+
+    // Replace the local slot value with a different plaintext. The
+    // ciphertext from the original bind will no longer decrypt with this
+    // value, so the soft unbind path will refuse.
+    await act(async () => {
+      await useWorkspaceStore.getState().provideSlotValue(secretId, 'wrong-passphrase');
+    });
+
+    // Click Unbind — soft path refuses → confirm dialog should appear.
+    await userEvent.click(screen.getByRole('button', { name: 'Unbind secret key' }));
+    const confirmDialog = await screen.findByRole('dialog', { name: 'Unbind anyway?' });
+    expect(confirmDialog).toBeInTheDocument();
+
+    // Confirm — force-unbind clears the value and drops the binding.
+    await userEvent.click(within(confirmDialog, /Unbind and clear value/i));
+    await waitFor(() => {
+      const v = useWorkspaceStore.getState().synced!.environments.items.dev.variables[0];
+      expect(v.encrypted).toBe(false);
+      expect(v.secretKeyId).toBeUndefined();
+      expect(v.value).toBe('');
+      expect(v.key).toBe('API_TOKEN');
+    });
+  });
+
+  it('Unbind succeeds without a confirm when this device has the matching slot value', async () => {
+    await renderWithStore(<EnvironmentsPanel />);
+    let secretId = '';
+    await act(async () => {
+      useWorkspaceStore.getState().addEnvironment('dev');
+      useWorkspaceStore
+        .getState()
+        .setVariables('dev', [{ key: 'API_TOKEN', value: 'sk_live_xyz', encrypted: false }]);
+      secretId = await useWorkspaceStore.getState().addSecret({
+        label: 'PROD_TOKEN',
+        value: 'team-passphrase',
+        origin: 'workspace',
+      });
+      const ok = await useWorkspaceStore.getState().bindVariableToSecretKey('dev', 0, secretId);
+      expect(ok).toBe(true);
+    });
+    await screen.findByRole('group', { name: 'Variables for dev' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Unbind secret key' }));
+
+    // No confirm — happy path decrypts and lands the plaintext.
+    await waitFor(() => {
+      const v = useWorkspaceStore.getState().synced!.environments.items.dev.variables[0];
+      expect(v.encrypted).toBe(false);
+      expect(v.secretKeyId).toBeUndefined();
+      expect(v.value).toBe('sk_live_xyz');
+    });
+    expect(screen.queryByRole('dialog', { name: 'Unbind anyway?' })).toBeNull();
+  });
 });
 
 // Helper: click the first button-like element inside a container whose text

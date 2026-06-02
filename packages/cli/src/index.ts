@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { registerMockCommand } from './commands/mock';
 import { registerMcpCommand } from './commands/mcp';
 import { registerImportCommand } from './commands/import';
+import { registerExportCommand } from './commands/export';
 import { registerRunCommand } from './commands/run';
 import { registerWorkspacesCommand } from './commands/workspaces';
 import { CLI_PACKAGE_VERSION } from './packageVersion';
@@ -26,6 +27,7 @@ export function buildProgram(): Command {
   registerMockCommand(program);
   registerMcpCommand(program);
   registerImportCommand(program);
+  registerExportCommand(program);
   registerRunCommand(program);
   registerWorkspacesCommand(program);
 

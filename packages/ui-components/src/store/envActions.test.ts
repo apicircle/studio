@@ -220,7 +220,7 @@ describe('envActions', () => {
       expect(exportEnvironment(synced, 'nope')).toBeNull();
     });
 
-    it('serializes plain vars verbatim under apicircleEnvironment v1 shape', () => {
+    it('serializes plain vars verbatim under apicircleEnvironment v2 shape', () => {
       const { synced } = createEmptyWorkspace();
       const a = addEnvironment(synced, 'dev');
       const b = setVariables(a, 'dev', [
@@ -231,7 +231,7 @@ describe('envActions', () => {
       expect(json).not.toBeNull();
       const parsed = JSON.parse(json!);
       expect(parsed).toEqual({
-        apicircleEnvironment: 1,
+        apicircleEnvironment: 2,
         name: 'dev',
         variables: [
           { key: 'A', value: '1', encrypted: false },
@@ -240,17 +240,72 @@ describe('envActions', () => {
       });
     });
 
-    it('omits the value for encrypted vars (only secretKeyId travels)', () => {
+    it('carries ciphertext + slot salt for encrypted vars (v2 parity with Git push)', () => {
       const { synced } = createEmptyWorkspace();
       const a = addEnvironment(synced, 'dev');
-      const b = setVariables(a, 'dev', [
-        { key: 'TOKEN', value: 'should-be-stripped', encrypted: true, secretKeyId: 'sec_abc' },
+      const withSlot: typeof a = {
+        ...a,
+        secretKeys: {
+          sec_abc: {
+            id: 'sec_abc',
+            label: 'PROD_TOKEN',
+            salt: 'AAAAAAAAAAAAAAAAAAAAAA==',
+            createdAt: '2026-06-02T00:00:00.000Z',
+          },
+        },
+      };
+      const b = setVariables(withSlot, 'dev', [
+        // Real bound row: the value is the AES-GCM ciphertext, not the plaintext.
+        {
+          key: 'TOKEN',
+          value: 'enc:v1:AAAAAAAAAAAAAAAA:abc==',
+          encrypted: true,
+          secretKeyId: 'sec_abc',
+        },
       ]);
       const parsed = JSON.parse(exportEnvironment(b, 'dev')!);
-      expect(parsed.variables).toEqual([{ key: 'TOKEN', encrypted: true, secretKeyId: 'sec_abc' }]);
-      // Defense-in-depth: the JSON payload must never contain the
-      // ciphertext / plaintext value, even by accident.
-      expect(exportEnvironment(b, 'dev')).not.toContain('should-be-stripped');
+      expect(parsed.apicircleEnvironment).toBe(2);
+      expect(parsed.variables).toEqual([
+        {
+          key: 'TOKEN',
+          encrypted: true,
+          value: 'enc:v1:AAAAAAAAAAAAAAAA:abc==',
+          secretKeyId: 'sec_abc',
+          secret: { label: 'PROD_TOKEN', salt: 'AAAAAAAAAAAAAAAAAAAAAA==' },
+        },
+      ]);
+      // The PLAINTEXT slot value never lives on the row, so the only thing
+      // sensitive on the wire is the ciphertext + salt. Both are useless
+      // without the user's local slot value — same model as Git push/pull.
+      expect(exportEnvironment(b, 'dev')).not.toContain('PLAINTEXT');
+    });
+
+    it('emits empty value + null salt when a row is bound but value or slot metadata is missing', () => {
+      const { synced } = createEmptyWorkspace();
+      const a = addEnvironment(synced, 'dev');
+      // No matching entry in synced.secretKeys — simulates a lazily-bound
+      // row that pre-dates the eager-register path in addSecret. The row's
+      // value is also plain (not a ciphertext) — defensive case from a
+      // half-migrated workspace. Both fall back cleanly.
+      const b = setVariables(a, 'dev', [
+        {
+          key: 'TOKEN',
+          value: 'plain-not-ciphertext',
+          encrypted: true,
+          secretKeyId: 'sec_missing',
+        },
+      ]);
+      const parsed = JSON.parse(exportEnvironment(b, 'dev')!);
+      expect(parsed.apicircleEnvironment).toBe(2);
+      expect(parsed.variables).toEqual([
+        {
+          key: 'TOKEN',
+          encrypted: true,
+          value: '', // non-encrypted value sanitized to empty so destination prompts
+          secretKeyId: 'sec_missing',
+          secret: { label: 'TOKEN', salt: null },
+        },
+      ]);
     });
   });
 });

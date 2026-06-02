@@ -561,7 +561,7 @@ Extracted values are local-only — they live in this machine's context, never i
 
 ## Import in the app
 
-The Editor sidebar's Import action opens a modal that takes pasted text or an uploaded file and auto-detects the format — Postman v2.1 collections, Postman environments (keys import as context variables), Insomnia v4 exports, and pasted cURL commands:
+The Editor sidebar's Import action opens a modal that takes pasted text or an uploaded file and auto-detects the format — Postman v2.1 collections, Postman environments (keys import as context variables), Insomnia v4 exports, **API Circle folder exports** (the \`.apicircle.json\` files produced by the new "Export as JSON" folder action — see below), **API Circle environment exports** (the JSON the Environments sidebar's "Export as JSON" action produces; encrypted variables travel with the slot's user-recognizable label and trigger a **"Provide secret values"** second step in the modal where you can fill the value to bind on the spot, or **Skip & finish** and re-bind later under Environments), and pasted cURL commands:
 
     curl -X POST https://api.example.com/v1/users \\
       -H "Content-Type: application/json" \\
@@ -586,7 +586,25 @@ API Circle workspaces are not shared as loose files — they live in Git. To use
 - **Link it** (Link Workspace) — consume its published releases read-only, with optional per-request overrides. Best when you depend on someone else's API.
 - **Connect its repo** (Workspace panel) — open the workspace directly to edit it. Best when it is your own workspace on another machine.
 
-A workspace snapshot can also be downloaded as a \`WorkspaceSynced\` JSON file from History → Snapshots — a portable, offline copy of the whole workspace state.`,
+A workspace snapshot can also be downloaded as a \`WorkspaceSynced\` JSON file from History → Snapshots — a portable, offline copy of the whole workspace state.
+
+## Exporting one folder as JSON
+
+A single folder can be exported on its own from the folder's kebab → **Export as JSON**. The result is a self-contained \`.apicircle.json\` file using the \`apicircle.folder/v1\` format. The prompt previews the manifest before download:
+
+- The folder itself plus its subfolders and requests, with folder-level auth preserved.
+- **Security credentials** — every credential-bearing auth field detected inside the subtree (Bearer tokens, OAuth2 client secrets / access / refresh tokens, AWS SigV4 secret keys, Digest / NTLM passwords, Hawk keys, JWT signing material, \`api-key.value\`) is listed with a per-row **include** checkbox. **All credentials are redacted by default** — anyone with the JSON could otherwise replay the request. Tick a row only if you genuinely want that credential to travel inside the file.
+- **Global Asset dependencies** discovered in the subtree — JSON Schemas (\`Request.bodySchemaId\`) and GraphQL definitions (\`Request.graphqlSchemaId\`) travel embedded. The importer adds them to the destination workspace's Global Assets → JSON Schemas / GraphQL definitions, reusing an existing entry when name + content match.
+- **Global file** references travel metadata-only — the file bytes stay in their Git LFS sidecars, so you'll be prompted to re-attach those files inside Global Assets → Global Files in the destination workspace.
+
+Drop the same \`.apicircle.json\` file into the Import modal in any other workspace to merge it in. All entity ids are reminted on import so re-importing into the same workspace adds a new copy instead of overwriting.
+
+### Headless export / import
+
+The same format is available outside the desktop / web app:
+
+- CLI: \`apicircle export folder <name-or-id> -o file.apicircle.json\` and \`apicircle import apicircle file.apicircle.json\`. \`--list-credentials\` enumerates the detected credential ids; pass \`--include-credential <id>\` to keep specific fields verbatim.
+- MCP: tools \`folder.export_json\` and \`folder.import_json\` expose the same surface to AI clients (Claude Desktop, Cursor, Copilot, …) so workflows can round-trip a folder without leaving the chat.`,
     keywords: ['import', 'curl', 'openapi', 'postman', 'insomnia', 'har', 'spec', 'collection'],
   },
   {
@@ -722,8 +740,38 @@ Each entry is a label and a value. Saving encrypts the value with AES-256-GCM un
 
 ## How it is stored
 
-The encrypted values live in this machine's IndexedDB and are never pushed to Git — only the key labels and crypto parameters sync. A teammate therefore sees which secrets a workspace needs, but only someone who enters a value on their own machine can use it. Moving machines, you re-enter vault values once.`,
-    keywords: ['secret', 'vault', 'credential', 'encrypted', 'masked', 'used in', 'origin'],
+The encrypted values live in this machine's IndexedDB and are never pushed to Git — only the key labels and crypto parameters sync. A teammate therefore sees which secrets a workspace needs, but only someone who enters a value on their own machine can use it. Moving machines, you re-enter vault values once.
+
+## Setting up the passphrase (web build)
+
+On the web build, secret values can only be saved after you set a workspace passphrase — the desktop OS keychain isn't available, so the passphrase is what protects the master key. The Vault tab surfaces a **Set passphrase** call-to-action at the top whenever no passphrase is configured; clicking it opens a setup modal where you pick a 12+ character passphrase and confirm it. After Save, the **New secret** button takes over the same slot and you can add entries normally. On a returning visit (cold start, idle-lock, browser refresh) the same slot shows **Unlock secrets** instead — enter the existing passphrase to bring the in-memory key back. There is no recovery: lose the passphrase, lose the secrets. Teammates need the same passphrase to decrypt shared encrypted variables. Desktop builds skip this step — the OS keychain stores the wrapped master key automatically.
+
+## Encrypted env vars across machines (export, import, Git)
+
+The model is the same on every path. The plaintext slot VALUE never leaves your device. The ciphertext + the slot's salt + the slot's label DO travel — through Git push/pull, through **Export as JSON** on the Environments sidebar, and through the MCP \`environment.export\` tool. On the receiving device:
+
+- If the local Vault has the matching slot value, the row decrypts transparently the next time you send the request.
+- If the local Vault doesn't know about the slot yet, the **Provide secret values** gate appears in the Vault dock — fill each one and you're set.
+- If the local Vault has a value for the slot but it doesn't decrypt the row's ciphertext (someone re-keyed the slot, or you typed a different value on this machine), the Environments panel raises a banner: "*N encrypted variables won't decrypt on this device*". Open the Vault and update the slot value, or click **Unbind** on the row to clear it and type a fresh plaintext.
+
+## Unbind: getting unstuck
+
+The **Unbind** button on an encrypted row tries to decrypt back to plaintext using your local slot value. When that works it just hands the plaintext back to you and drops the binding. When it can't decrypt — slot value missing locally, value mismatch, salt drift — a confirm dialog explains the situation: "*\`KEY_NAME\` can't be decrypted on this device. Unbinding will clear the value to empty.*" Confirming clears the row's value to \`''\` and removes the binding so you can type a fresh plaintext. The slot itself is untouched — other rows bound to the same slot keep their bindings.`,
+    keywords: [
+      'secret',
+      'vault',
+      'credential',
+      'encrypted',
+      'masked',
+      'used in',
+      'origin',
+      'passphrase',
+      'set passphrase',
+      'unbind',
+      'export json',
+      'decrypt failed',
+      'slot value mismatch',
+    ],
   },
   {
     id: 'sessions',

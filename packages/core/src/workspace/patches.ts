@@ -6,10 +6,12 @@ import type {
   Folder,
   MockServer,
   Request as ApiRequest,
+  SecretKeyMeta,
   WorkspaceLocal,
   WorkspaceSnapshotTrigger,
   WorkspaceSynced,
 } from '@apicircle/shared';
+import type { ParsedApicircleFolderExport } from '../import/apicircleFolder';
 
 // =============================================================================
 // WorkspacePatch — discriminated union of every mutation kind.
@@ -33,11 +35,30 @@ export type WorkspacePatch =
   | { kind: 'folder.create'; folder: Folder }
   | { kind: 'folder.delete'; id: string }
   | { kind: 'folder.move'; id: string; newParentId: string | null }
+  // Bulk import of a parsed `apicircle.folder/v1` envelope. Wraps every
+  // descendant folder/request/dependency in a single atomic mutation so
+  // headless writers (CLI / MCP) get the same name-uniquify + dependency
+  // dedupe semantics the UI store uses.
+  | {
+      kind: 'folder.import_apicircle';
+      parsed: ParsedApicircleFolderExport;
+      parentFolderId: string | null;
+    }
   // ----- Environments (synced.environments) ---------------------------------
   | { kind: 'environment.upsert'; environment: Environment }
   | { kind: 'environment.delete'; name: string }
   | { kind: 'environment.setActive'; name: string | null }
   | { kind: 'environment.setPriority'; order: EnvPriorityRef[] }
+  // ----- Secret-vault slot metadata (synced.secretKeys) ---------------------
+  // Headless writers (MCP environment.import on a v2 envelope, CLI tools)
+  // mint slot metadata when the import carries a ciphertext + salt the
+  // destination doesn't yet have. The slot's plaintext VALUE is per-device
+  // and lives in local.secretIndex — that's intentionally NOT part of this
+  // patch, so the missing-slots gate fires on the receiver until the user
+  // provides the value. Eagerly merges by id; later upserts overwrite the
+  // label + salt (a deliberate choice — a re-import with a different salt
+  // signals key rotation).
+  | { kind: 'secretKey.upsert'; meta: SecretKeyMeta }
   // ----- Assertions (slot of a Request) -------------------------------------
   | { kind: 'assertion.upsert'; requestId: string; assertion: Assertion }
   | { kind: 'assertion.delete'; requestId: string; assertionId: string }

@@ -9,6 +9,7 @@ import {
   Eye,
   EyeOff,
   KeyRound,
+  Lock,
   Plus,
   RefreshCw,
   ShieldCheck,
@@ -25,7 +26,9 @@ import {
   UnauthorizedError,
 } from '@apicircle/git';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { SecretsNotProtectedError } from '../../persistence/platformSecretGate';
 import { cn } from '../../primitives/cn';
+import { isWebBuild } from './webBuild';
 
 /**
  * Secret Vault tab content for the right-side dock. Two sub-tabs:
@@ -100,6 +103,18 @@ function VaultTab() {
   const entries = useWorkspaceStore((s) => Object.values(s.local?.secretIndex.entries ?? {}));
   const addSecret = useWorkspaceStore((s) => s.addSecret);
   const recompute = useWorkspaceStore((s) => s.recomputeSecretUsage);
+  const secretLockState = useWorkspaceStore((s) => s.secretLockState);
+  const openPassphraseSetup = useWorkspaceStore((s) => s.openPassphraseSetup);
+  const openPassphraseUnlock = useWorkspaceStore((s) => s.openPassphraseUnlock);
+  // Desktop has OS-keychain protection — the passphrase model is
+  // optional there, so we don't gate New Secret behind it. On web,
+  // `secretCrypto` must exist before any new entry can be encrypted,
+  // and the gate refuses to land plaintext writes (see
+  // platformSecretGate.ts header). Surface that as a CTA in the same
+  // slot as New Secret so the user can act on it immediately.
+  const onWeb = isWebBuild();
+  const needsPassphraseSetup = onWeb && secretLockState === 'unset';
+  const needsPassphraseUnlock = secretLockState === 'locked';
   // Slots declared in synced.secretKeys (in Git) without a local payload
   // yet — typical post-clone state. Surfacing these is the onboarding
   // gate: the user can't decrypt encrypted env vars referencing these
@@ -177,6 +192,20 @@ function VaultTab() {
       // were typed before the vault entry existed.
       recompute();
     } catch (err) {
+      // SecretsNotProtectedError on web means the user got here without
+      // setting up a passphrase first — the CTA below should have caught
+      // them, but if they reached the form anyway (race, deep link, old
+      // tab), recover by surfacing the setup modal instead of a dead-end
+      // error. We also tear down the inline form so the modal isn't
+      // competing with a stale draft.
+      if (err instanceof SecretsNotProtectedError) {
+        setAdding(false);
+        setDraftLabel('');
+        setDraftValue('');
+        setError(null);
+        openPassphraseSetup();
+        return;
+      }
       // Encrypt-side failures (master key missing, IDB write failure) used
       // to surface as unhandled rejections. Keep the inline error and
       // also push a toast so it's not buried inside the form.
@@ -213,11 +242,14 @@ function VaultTab() {
 
       {missingSlots.length > 0 && <ProvideMissingSlotsGate slots={missingSlots} />}
 
+      {needsPassphraseSetup && <SetupPassphraseGate onSet={openPassphraseSetup} />}
+      {needsPassphraseUnlock && <UnlockPassphraseGate onUnlock={openPassphraseUnlock} />}
+
       <div className="flex items-center justify-between">
         <h3 className="text-xs font-medium uppercase tracking-wider text-text-dim">
           Entries{entries.length > 0 ? ` (${entries.length})` : ''}
         </h3>
-        {!adding && (
+        {!adding && !needsPassphraseSetup && !needsPassphraseUnlock && (
           <button
             type="button"
             onClick={() => setAdding(true)}
@@ -234,19 +266,21 @@ function VaultTab() {
           <div className="flex gap-2">
             <input
               autoFocus
+              size={1}
               value={draftLabel}
               onChange={(e) => setDraftLabel(e.target.value)}
               placeholder="LABEL"
               aria-label="New secret label"
-              className="h-7 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+              className="h-7 min-w-0 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
             />
             <input
               type="password"
+              size={1}
               value={draftValue}
               onChange={(e) => setDraftValue(e.target.value)}
               placeholder="value"
               aria-label="New secret value"
-              className="h-7 flex-[2] rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+              className="h-7 min-w-0 flex-[2] rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void submit();
                 if (e.key === 'Escape') {
@@ -284,7 +318,7 @@ function VaultTab() {
         </div>
       )}
 
-      {entries.length === 0 && !adding && (
+      {entries.length === 0 && !adding && !needsPassphraseSetup && !needsPassphraseUnlock && (
         <div className="rounded-sm border border-dashed border-border-subtle p-6 text-center text-xs text-text-dim">
           No secrets yet. Click <span className="text-text-primary">New secret</span> to add one.
         </div>
@@ -303,6 +337,77 @@ function VaultTab() {
           clearing site data drops the key; re-enter your secrets afterwards.
         </p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Web-build gate: refuse to expose New Secret until the workspace has
+ * a passphrase set. Surfaces a primary CTA + rationale in the same
+ * vertical slot, so the user sees exactly what to do next instead of
+ * filling in a form that the encryption gate will reject on Save.
+ */
+function SetupPassphraseGate({ onSet }: { onSet: () => void }) {
+  return (
+    <div
+      role="group"
+      aria-label="Set workspace passphrase to enable Secret Vault"
+      className="space-y-2 rounded-sm border border-accent/40 bg-accent/5 p-3"
+    >
+      <div className="flex items-center gap-2">
+        <ShieldCheck size={14} className="text-accent" aria-hidden="true" />
+        <p className="text-sm text-text-primary">Set a workspace passphrase to add secrets</p>
+      </div>
+      <p className="text-[0.6875rem] text-text-muted">
+        On the web build, secret values can only be saved after you set a passphrase. The passphrase
+        encrypts every entry below and is required to decrypt them again — including on other
+        devices and for teammates who clone this workspace.
+      </p>
+      <p className="text-[0.6875rem] text-warning">
+        No recovery: lose the passphrase, lose the secrets.
+      </p>
+      <button
+        type="button"
+        onClick={onSet}
+        className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-2.5 text-xs text-accent hover:bg-accent/20"
+      >
+        <ShieldCheck size={12} aria-hidden="true" />
+        Set passphrase
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Returning-user gate: the workspace HAS a passphrase set, but the
+ * in-memory key is missing (cold start, idle-lock, browser refresh).
+ * Show an Unlock CTA in the same slot so reveal/decrypt of existing
+ * entries works again.
+ */
+function UnlockPassphraseGate({ onUnlock }: { onUnlock: () => void }) {
+  return (
+    <div
+      role="group"
+      aria-label="Unlock workspace secrets"
+      className="space-y-2 rounded-sm border border-warning/40 bg-warning/5 p-3"
+    >
+      <div className="flex items-center gap-2">
+        <Lock size={14} className="text-warning" aria-hidden="true" />
+        <p className="text-sm text-text-primary">Secrets are locked</p>
+      </div>
+      <p className="text-[0.6875rem] text-text-muted">
+        Enter the workspace passphrase to decrypt existing secrets and add new ones. The passphrase
+        is held only in memory; you&apos;ll be asked again after a restart or 15 minutes of
+        inactivity.
+      </p>
+      <button
+        type="button"
+        onClick={onUnlock}
+        className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-warning/40 bg-warning/10 px-2.5 text-xs text-warning hover:bg-warning/20"
+      >
+        <Lock size={12} aria-hidden="true" />
+        Unlock secrets
+      </button>
     </div>
   );
 }

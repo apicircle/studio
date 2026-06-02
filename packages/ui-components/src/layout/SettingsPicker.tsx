@@ -227,7 +227,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 function useThemeLabel(): string {
-  const themeId = useWorkspaceStore((s) => s.local?.ui.themeId ?? 'command-center');
+  const themeId = useWorkspaceStore((s) => s.local?.ui.themeId ?? 'one-dark-pro');
   return useMemo(
     () => ALL_THEMES.find((t) => t.id === themeId)?.label ?? 'One Dark Pro',
     [themeId],
@@ -235,7 +235,7 @@ function useThemeLabel(): string {
 }
 
 function useFontLabel(): string {
-  const fontId = useWorkspaceStore((s) => s.local?.ui.fontId ?? 'cascadia-code');
+  const fontId = useWorkspaceStore((s) => s.local?.ui.fontId ?? 'system-sans');
   return useMemo(() => ALL_FONTS.find((f) => f.id === fontId)?.label ?? 'System Sans', [fontId]);
 }
 

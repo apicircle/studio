@@ -83,6 +83,9 @@ export function PromptsSection() {
               onCopySuccess={() =>
                 pushToast({ tone: 'success', title: 'Prompt copied to clipboard' })
               }
+              onCopyFailure={(reason) =>
+                pushToast({ tone: 'error', title: 'Copy failed', detail: reason })
+              }
             />
           ))}
         </ul>
@@ -121,14 +124,52 @@ function CategoryChip({
   );
 }
 
-function PromptCard({ prompt, onCopySuccess }: { prompt: McpPrompt; onCopySuccess: () => void }) {
+function PromptCard({
+  prompt,
+  onCopySuccess,
+  onCopyFailure,
+}: {
+  prompt: McpPrompt;
+  onCopySuccess: () => void;
+  onCopyFailure: (reason: string) => void;
+}) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
-    if (!navigator.clipboard) return;
-    await navigator.clipboard.writeText(prompt.text);
-    setCopied(true);
-    onCopySuccess();
-    setTimeout(() => setCopied(false), 1500);
+    const fallbackCopy = (text: string): boolean => {
+      // execCommand('copy') still works in non-secure contexts where
+      // navigator.clipboard is unavailable (HTTP, file://, some embedded
+      // webviews). Keep it as a graceful fallback so the button isn't a
+      // dead end for those users.
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try {
+        ok = document.execCommand('copy');
+      } catch {
+        ok = false;
+      }
+      document.body.removeChild(ta);
+      return ok;
+    };
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(prompt.text);
+      } else if (!fallbackCopy(prompt.text)) {
+        throw new Error('Clipboard API unavailable');
+      }
+      setCopied(true);
+      onCopySuccess();
+      setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : 'Copy failed';
+      onCopyFailure(reason);
+    }
   };
   return (
     <li>
@@ -143,12 +184,35 @@ function PromptCard({ prompt, onCopySuccess }: { prompt: McpPrompt; onCopySucces
       >
         <div className="flex items-start justify-between gap-3">
           <p className="text-xs text-text-primary">{prompt.text}</p>
-          <span
-            aria-hidden="true"
-            className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border bg-surface px-1.5 py-0.5 text-[0.5625rem] text-text-muted group-hover:border-accent group-hover:text-accent"
-          >
-            {copied ? <Check size={9} /> : <Copy size={9} />}
-            {copied ? 'Copied' : 'Copy'}
+          <span className="relative inline-flex shrink-0">
+            <span
+              data-testid="prompt-copy-badge"
+              className={cn(
+                'inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[0.5625rem] transition-colors',
+                copied
+                  ? 'border-accent bg-accent/10 text-accent'
+                  : 'border-border bg-surface text-text-muted group-hover:border-accent group-hover:text-accent',
+              )}
+            >
+              {copied ? (
+                <Check size={9} aria-hidden="true" />
+              ) : (
+                <Copy size={9} aria-hidden="true" />
+              )}
+              {copied ? 'Copied' : 'Copy'}
+            </span>
+            {copied ? (
+              <span
+                role="status"
+                aria-live="polite"
+                className={cn(
+                  'pointer-events-none absolute right-0 top-full z-10 mt-1 whitespace-nowrap',
+                  'rounded-sm border border-accent/60 bg-card px-2 py-0.5 text-[0.5625rem] font-medium text-accent shadow-sm',
+                )}
+              >
+                Copied!
+              </span>
+            ) : null}
           </span>
         </div>
         <p className="text-[0.6875rem] text-text-dim">{prompt.description}</p>

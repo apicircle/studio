@@ -423,11 +423,14 @@ describe('environment import/export MCP tools', () => {
   });
 
   it('environment.import rejects unknown shapes', async () => {
-    const out = await environmentImportTool.handler(
+    const out = (await environmentImportTool.handler(
       { json: JSON.stringify({ foo: 'bar' }), overwrite: false },
       ctx,
-    );
-    expect(out).toMatchObject({ ok: false, error: 'unsupported export shape' });
+    )) as { ok: false; error: string };
+    expect(out.ok).toBe(false);
+    // Routed through the shared core parser — error string matches the
+    // user-facing message the modal surfaces too.
+    expect(out.error).toMatch(/Unsupported format/i);
   });
 
   it('environment.import refuses to overwrite without the flag', async () => {
@@ -438,5 +441,70 @@ describe('environment import/export MCP tools', () => {
     };
     const out = await environmentImportTool.handler({ json: exp.json, overwrite: false }, ctx);
     expect(out).toMatchObject({ ok: false });
+  });
+
+  it('environment.import surfaces pendingBindings for unresolved encrypted rows', async () => {
+    // Source workspace doesn't carry a slot — the envelope arrives with
+    // an encrypted row whose label has no match on the destination.
+    const envelope = {
+      apicircleEnvironment: 1,
+      name: 'with-secrets',
+      variables: [
+        { key: 'PLAIN', value: 'ok', encrypted: false },
+        {
+          key: 'TOKEN',
+          encrypted: true,
+          secretKeyId: 'sec_origin',
+          secret: { label: 'PROD_TOKEN' },
+        },
+      ],
+    };
+    ctx = buildCtx();
+    const out = (await environmentImportTool.handler(
+      { json: JSON.stringify(envelope), overwrite: false },
+      ctx,
+    )) as {
+      ok: true;
+      name: string;
+      pendingBindings: Array<{ varKey: string; label: string; labelFromFallback: boolean }>;
+      warnings: string[];
+    };
+    expect(out.ok).toBe(true);
+    expect(out.name).toBe('with-secrets');
+    expect(out.pendingBindings).toEqual([
+      { varKey: 'TOKEN', label: 'PROD_TOKEN', labelFromFallback: false },
+    ]);
+    expect(out.warnings).toEqual([]);
+    // Env was persisted with the source's binding id preserved — the AI
+    // client (or a teammate) can re-bind without re-importing.
+    const state = await ctx.workspace.read();
+    const env = state.synced.environments.items['with-secrets']!;
+    expect(env.variables[0]).toEqual({ key: 'PLAIN', value: 'ok', encrypted: false });
+    expect(env.variables[1]).toMatchObject({
+      key: 'TOKEN',
+      encrypted: true,
+      secretKeyId: 'sec_origin',
+    });
+  });
+
+  it('environment.import accepts the legacy shape (secretKeyId without secret.label)', async () => {
+    const envelope = {
+      apicircleEnvironment: 1,
+      name: 'legacy',
+      variables: [{ key: 'TOKEN', encrypted: true, secretKeyId: 'sec_legacy' }],
+    };
+    ctx = buildCtx();
+    const out = (await environmentImportTool.handler(
+      { json: JSON.stringify(envelope), overwrite: false },
+      ctx,
+    )) as {
+      ok: true;
+      pendingBindings: Array<{ varKey: string; label: string; labelFromFallback: boolean }>;
+    };
+    expect(out.ok).toBe(true);
+    // Fallback label is the var key — flagged so the UI can hint.
+    expect(out.pendingBindings).toEqual([
+      { varKey: 'TOKEN', label: 'TOKEN', labelFromFallback: true },
+    ]);
   });
 });

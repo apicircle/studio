@@ -127,6 +127,43 @@ export type { ParsedPostmanEnvironment } from './import/postmanEnvironment';
 
 export { isInsomniaExport, parseInsomniaCollection } from './import/insomniaCollection';
 
+export {
+  isApicircleFolderExport,
+  parseApicircleFolderExport,
+  parseApicircleFolderExportDoc,
+} from './import/apicircleFolder';
+export type { ParsedApicircleFolderExport } from './import/apicircleFolder';
+
+export {
+  isApicircleEnvironment,
+  parseApicircleEnvironment,
+  parseApicircleEnvironmentDoc,
+} from './import/apicircleEnvironment';
+export type {
+  EncryptedBindingHint,
+  ParsedApicircleEnvironment,
+} from './import/apicircleEnvironment';
+
+export {
+  APICIRCLE_FOLDER_EXPORT_FORMAT,
+  collectFolderExport,
+  serializeFolderExport,
+  suggestFolderExportFilename,
+} from './export/folderExport';
+export type {
+  ApicircleFolderExportDependencies,
+  ApicircleFolderExportV1,
+  CollectFolderExportArgs,
+  CollectFolderExportResult,
+  FolderExportReport,
+} from './export/folderExport';
+
+export {
+  collectFolderExportCredentials,
+  redactFolderExportCredentials,
+} from './export/folderExportCredentials';
+export type { FolderExportCredential } from './export/folderExportCredentials';
+
 export { readJsonPath, runAssertions } from './assertions/runAssertions';
 export type { AssertionResult } from './assertions/runAssertions';
 
@@ -222,6 +259,9 @@ export type {
 export { applyMutation } from './workspace/applyMutation';
 export type { ApplyMutationOptions, ApplyMutationResult } from './workspace/applyMutation';
 export type { WorkspacePatch, WorkspacePatchKind, WorkspaceState } from './workspace/patches';
+
+export { importApicircleFolderInto } from './workspace/apicircleFolderImport';
+export type { ImportApicircleFolderResult } from './workspace/apicircleFolderImport';
 
 export { ANONYMOUS_ACTOR, PlanRunDeniedError, resolvePlanRef, runPlan } from './workspace/runPlan';
 export type {

@@ -142,7 +142,7 @@ test.describe('Environments — C8', () => {
       }, 'crud-renamed (copy)');
       expect(json).not.toBeNull();
       const parsed = JSON.parse(json!);
-      expect(parsed.apicircleEnvironment).toBe(1);
+      expect(parsed.apicircleEnvironment).toBe(2);
       expect(parsed.name).toBe('crud-renamed (copy)');
       expect(parsed.variables).toEqual([{ key: 'KEY', value: 'val-1', encrypted: false }]);
 
@@ -199,7 +199,7 @@ test.describe('Environments — C8', () => {
     },
   );
 
-  test('exportEnvironment payload is portable JSON with v1 marker', async ({ app }) => {
+  test('exportEnvironment payload is portable JSON with v2 marker', async ({ app }) => {
     await createEnv(app, 'export-src');
     await addVar(app, 'API_BASE', 'https://api.example.test');
     await addVar(app, 'TIMEOUT', '5000');
@@ -218,13 +218,280 @@ test.describe('Environments — C8', () => {
     expect(json).not.toBeNull();
     const parsed = JSON.parse(json!);
     expect(parsed).toEqual({
-      apicircleEnvironment: 1,
+      apicircleEnvironment: 2,
       name: 'export-src',
       variables: [
         { key: 'API_BASE', value: 'https://api.example.test', encrypted: false },
         { key: 'TIMEOUT', value: '5000', encrypted: false },
       ],
     });
+  });
+
+  test('roundtrip: export an env, then import the JSON via the modal (collision-renamed)', async ({
+    app,
+  }) => {
+    // 1. Author the source env.
+    await createEnv(app, 'roundtrip-src');
+    await addVar(app, 'API_BASE', 'https://api.example.test');
+    await addVar(app, 'TOKEN', 'sk_demo_123');
+
+    // 2. Read the exported JSON straight from the store (mirrors the UI's
+    //    Export-as-JSON download flow — see exportEnvironment v2 test above).
+    const json = await app.evaluate((name) => {
+      const w = window as unknown as {
+        __apicircleStore?: {
+          getState: () => { exportEnvironment: (n: string) => string | null };
+        };
+      };
+      return w.__apicircleStore?.getState().exportEnvironment(name) ?? null;
+    }, 'roundtrip-src');
+    expect(json).not.toBeNull();
+
+    // 3. Open the Import modal via the Environments-actions kebab. The
+    //    modal is lazy — wait for the dialog to attach.
+    await app.getByRole('button', { name: 'Environments actions', exact: true }).first().click();
+    await app.getByRole('menuitem', { name: 'Import', exact: true }).click();
+    const textarea = await app.getByLabel('Import source').elementHandle();
+    expect(textarea).not.toBeNull();
+
+    // 4. Paste the JSON. Drive the controlled textarea via its setter so
+    //    the React state actually updates (mirrors pasteInto from the unit
+    //    tests in ImportModal.test.tsx).
+    await app.evaluate((value) => {
+      const t = document.querySelector(
+        'textarea[aria-label="Import source"]',
+      ) as HTMLTextAreaElement | null;
+      if (!t) throw new Error('Import source textarea not mounted');
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        'value',
+      )?.set;
+      setter?.call(t, value);
+      t.dispatchEvent(new Event('input', { bubbles: true }));
+    }, json!);
+
+    // 5. Detection preview must announce an API Circle environment.
+    await expect(app.getByText(/API Circle environment\)/)).toBeVisible();
+
+    // 6. Confirm the import. Source env still exists → the new env lands
+    //    under `roundtrip-src (2)` (importApicircleEnvironment collision
+    //    suffix, see workspaceStore.ts).
+    await app.getByRole('button', { name: 'Import', exact: true }).click();
+    await expect(
+      app.getByRole('button', { name: /Edit variables in roundtrip-src \(2\)/ }),
+    ).toBeVisible();
+
+    // 7. Vars round-trip verbatim.
+    await app.getByRole('button', { name: /Edit variables in roundtrip-src \(2\)/ }).click();
+    await expect(app.getByLabel('Variable key').first()).toHaveValue('API_BASE');
+    await expect(app.getByLabel('Variable value').first()).toHaveValue('https://api.example.test');
+    await expect(app.getByLabel('Variable key').nth(1)).toHaveValue('TOKEN');
+    await expect(app.getByLabel('Variable value').nth(1)).toHaveValue('sk_demo_123');
+  });
+
+  test('encrypted-binding import: bind step seeds a new vault slot and a new env entry into the git-tracked synced doc', async ({
+    app,
+  }) => {
+    // Workspace has its own vault unlocked so addSecret can encrypt.
+    await setupVaultPassphrase(app);
+
+    // The envelope simulates an export from a DIFFERENT workspace: the
+    // source's `sec_origin` id is meaningless here, but the `secret.label`
+    // ("PROD_TOKEN") is the human-recognizable name we prompt with.
+    const envelope = {
+      apicircleEnvironment: 1,
+      name: 'cross-ws-env',
+      variables: [
+        { key: 'API_BASE', value: 'https://api.example.test', encrypted: false },
+        {
+          key: 'TOKEN',
+          encrypted: true,
+          secretKeyId: 'sec_origin',
+          secret: { label: 'PROD_TOKEN' },
+        },
+      ],
+    };
+
+    // Open the Import modal via the Environments kebab → paste → Import.
+    await app.getByRole('button', { name: 'Environments actions', exact: true }).first().click();
+    await app.getByRole('menuitem', { name: 'Import', exact: true }).click();
+    await app.evaluate((value) => {
+      const t = document.querySelector(
+        'textarea[aria-label="Import source"]',
+      ) as HTMLTextAreaElement | null;
+      if (!t) throw new Error('Import source textarea not mounted');
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        'value',
+      )?.set;
+      setter?.call(t, value);
+      t.dispatchEvent(new Event('input', { bubbles: true }));
+    }, JSON.stringify(envelope));
+    await expect(app.getByText(/API Circle environment\)/)).toBeVisible();
+    await app.getByRole('button', { name: 'Import', exact: true }).click();
+
+    // Modal switches to step 2 — bind prompt with the slot label from
+    // the export. The modal didn't close yet.
+    await expect(app.getByText(/1 secret binding for/i)).toBeVisible();
+    await expect(app.getByText('PROD_TOKEN').first()).toBeVisible();
+
+    // Provide the secret value and click Bind & finish.
+    await app.getByLabel(/Secret value for PROD_TOKEN/i).fill('sk_live_e2e_abc');
+    await app.getByRole('button', { name: /Bind 1 & finish/i }).click();
+
+    // Sidebar reflects the imported env.
+    await expect(app.getByRole('button', { name: /Edit variables in cross-ws-env/ })).toBeVisible();
+
+    // Workspace state — the env + the new vault slot must both be in
+    // `synced` (where serializeWorkspaceForGit reads from). This is the
+    // E2E proof that the import drives a real git-diffable change.
+    const result = await app.evaluate(() => {
+      const w = window as unknown as {
+        __apicircleStore?: {
+          getState: () => {
+            synced: {
+              environments: { items: Record<string, { variables: unknown[] }> };
+              secretKeys?: Record<string, { id: string; label: string; salt: string }>;
+            };
+            local: { secretIndex: { entries: Record<string, { id: string; label: string }> } };
+          };
+        };
+      };
+      const s = w.__apicircleStore!.getState();
+      return {
+        env: s.synced.environments.items['cross-ws-env'],
+        slots: Object.values(s.synced.secretKeys ?? {}),
+        entries: Object.values(s.local.secretIndex.entries),
+      };
+    });
+    // Env carries both vars.
+    expect(result.env.variables).toHaveLength(2);
+    const [api, token] = result.env.variables as Array<{
+      key: string;
+      value: string;
+      encrypted: boolean;
+      secretKeyId?: string;
+    }>;
+    expect(api).toMatchObject({
+      key: 'API_BASE',
+      value: 'https://api.example.test',
+      encrypted: false,
+    });
+    expect(token.key).toBe('TOKEN');
+    expect(token.encrypted).toBe(true);
+    expect(typeof token.secretKeyId).toBe('string');
+    // The new vault slot landed under the user-supplied label.
+    const slot = result.slots.find((s) => s.label === 'PROD_TOKEN');
+    expect(slot).toBeDefined();
+    // The row was re-pointed from `sec_origin` (source id) to the
+    // destination's new slot id — proves the binding is live.
+    expect(token.secretKeyId).toBe(slot!.id);
+    expect(token.secretKeyId).not.toBe('sec_origin');
+    // The local-only secretIndex mirrors the synced metadata.
+    expect(result.entries.some((e) => e.id === slot!.id && e.label === 'PROD_TOKEN')).toBe(true);
+  });
+
+  test('encrypted-binding import: Skip & finish leaves the env imported with the source binding id (git diff still records the env, no new vault slot)', async ({
+    app,
+  }) => {
+    const envelope = {
+      apicircleEnvironment: 1,
+      name: 'skip-env',
+      variables: [
+        {
+          key: 'TOKEN',
+          encrypted: true,
+          secretKeyId: 'sec_origin',
+          secret: { label: 'PROD_TOKEN' },
+        },
+      ],
+    };
+
+    await app.getByRole('button', { name: 'Environments actions', exact: true }).first().click();
+    await app.getByRole('menuitem', { name: 'Import', exact: true }).click();
+    await app.evaluate((value) => {
+      const t = document.querySelector(
+        'textarea[aria-label="Import source"]',
+      ) as HTMLTextAreaElement | null;
+      if (!t) throw new Error('Import source textarea not mounted');
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        'value',
+      )?.set;
+      setter?.call(t, value);
+      t.dispatchEvent(new Event('input', { bubbles: true }));
+    }, JSON.stringify(envelope));
+    await app.getByRole('button', { name: 'Import', exact: true }).click();
+    await expect(app.getByText(/1 secret binding for/i)).toBeVisible();
+    await app.getByRole('button', { name: /Skip & finish/i }).click();
+
+    // Env is in the sidebar; importer left the source's id alone so the
+    // env-panel chip still renders something the user can re-target.
+    await expect(app.getByRole('button', { name: /Edit variables in skip-env/ })).toBeVisible();
+    const state = await app.evaluate(() => {
+      const w = window as unknown as {
+        __apicircleStore?: {
+          getState: () => {
+            synced: {
+              environments: { items: Record<string, { variables: unknown[] }> };
+              secretKeys?: Record<string, { id: string; label: string }>;
+            };
+          };
+        };
+      };
+      const s = w.__apicircleStore!.getState();
+      return {
+        env: s.synced.environments.items['skip-env'],
+        slotsByLabel: Object.values(s.synced.secretKeys ?? {}).map((slot) => slot.label),
+      };
+    });
+    const [token] = state.env.variables as Array<{
+      key: string;
+      encrypted: boolean;
+      secretKeyId?: string;
+    }>;
+    expect(token).toMatchObject({
+      key: 'TOKEN',
+      encrypted: true,
+      secretKeyId: 'sec_origin',
+    });
+    // The skip path must NOT create a vault slot — nothing was offered.
+    expect(state.slotsByLabel).not.toContain('PROD_TOKEN');
+  });
+
+  test('legacy-shape import (secretKeyId without secret.label) still triggers the bind step with a fallback label', async ({
+    app,
+  }) => {
+    const envelope = {
+      apicircleEnvironment: 1,
+      name: 'legacy-shape',
+      // Mimics an export from a v1.0.x build that pre-dated `secret.label`.
+      variables: [{ key: 'TOKEN', encrypted: true, secretKeyId: 'sec_legacy' }],
+    };
+
+    await app.getByRole('button', { name: 'Environments actions', exact: true }).first().click();
+    await app.getByRole('menuitem', { name: 'Import', exact: true }).click();
+    await app.evaluate((value) => {
+      const t = document.querySelector(
+        'textarea[aria-label="Import source"]',
+      ) as HTMLTextAreaElement | null;
+      if (!t) throw new Error('Import source textarea not mounted');
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        'value',
+      )?.set;
+      setter?.call(t, value);
+      t.dispatchEvent(new Event('input', { bubbles: true }));
+    }, JSON.stringify(envelope));
+    await app.getByRole('button', { name: 'Import', exact: true }).click();
+    // Parser uses the var key as the fallback label — the bind step
+    // renders it AND tells the user the label was synthesized so they
+    // know to rename the slot later.
+    await expect(app.getByText(/1 secret binding for/i)).toBeVisible();
+    await expect(app.getByText(/The source export didn’t carry a slot label/i)).toBeVisible();
+    await app.getByRole('button', { name: /Skip & finish/i }).click();
+    // Env survives, no breaking change.
+    await expect(app.getByRole('button', { name: /Edit variables in legacy-shape/ })).toBeVisible();
   });
 
   test('Export returns null for unknown env names', async ({ app }) => {

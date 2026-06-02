@@ -59,9 +59,12 @@ import {
 } from '@apicircle/shared';
 import {
   type AttachmentResolver,
+  type CollectFolderExportResult,
   type ExecutionResult,
   type LinkedUpdatePreview,
   type LinkedUpdateResolutionMap,
+  type ParsedApicircleEnvironment,
+  type ParsedApicircleFolderExport,
   type ParsedPostmanCollection,
   type ParsedPostmanEnvironment,
   type PublishReleaseArgs,
@@ -83,6 +86,7 @@ import {
   extractContext,
   generateSlotSalt,
   generateWorkingBranchName,
+  collectFolderExport,
   parseCurl,
   parseSemver,
   previewLinkedUpdate as previewLinkedUpdateCore,
@@ -173,6 +177,10 @@ import {
   duplicateMockEndpoint as duplicateMockEndpointAction,
   duplicateMockServer as duplicateMockServerAction,
 } from './mockActions';
+import {
+  importApicircleFolderInto,
+  type ImportApicircleFolderResult,
+} from './apicircleImportAction';
 import {
   addGlobalFileAsset as addGlobalFileAssetAction,
   addGlobalGraphQL as addGlobalGraphQLAction,
@@ -657,6 +665,23 @@ export interface HydrationError {
   localWorkspaceId: string | null;
 }
 
+/**
+ * One unresolved encrypted-row binding produced by importApicircleEnvironment.
+ * The ImportModal's second step renders one input per pending binding and
+ * (when the user provides a value) addSecret + bindVariableToSecretKey it
+ * onto the freshly-imported env.
+ */
+export interface ApicircleEnvironmentPendingBinding {
+  /** The destination env name (post-collision-rename). */
+  envName: string;
+  /** The variable key in the env that needs binding. */
+  varKey: string;
+  /** Human label from the source export (or var key fallback). */
+  label: string;
+  /** True when the source export carried no `secret.label` and the label was synthesized. */
+  labelFromFallback: boolean;
+}
+
 type WorkspaceStore = {
   ready: boolean;
   /**
@@ -765,6 +790,24 @@ type WorkspaceStore = {
    */
   lastSecretActivityAt: number | null;
   /**
+   * Which passphrase modal is open, if any. `null` means closed.
+   * `'setup'` triggers the "create new passphrase" form; `'unlock'`
+   * triggers "enter existing passphrase to decrypt". The Vault dock,
+   * `assertSecretsProtected` callsites, and any future secret-aware
+   * flow flip this to surface the modal — the gate at app root
+   * renders it from a single source of truth.
+   */
+  passphraseModal: 'setup' | 'unlock' | null;
+  /** Open the "set a new workspace passphrase" modal. No-op if the
+   *  workspace already has a `secretCrypto` blob — caller should use
+   *  `openPassphraseUnlock` instead. */
+  openPassphraseSetup: () => void;
+  /** Open the "enter passphrase to unlock secrets" modal. No-op if
+   *  the workspace has no `secretCrypto` set or is already unlocked. */
+  openPassphraseUnlock: () => void;
+  /** Close whichever passphrase modal is open (cancel path). */
+  closePassphraseModal: () => void;
+  /**
    * Initialise the secret-crypto blob from a fresh passphrase. Writes
    * `synced.secretCrypto` and stashes the derived key in memory.
    * Returns the verifier so the modal can confirm success.
@@ -789,6 +832,24 @@ type WorkspaceStore = {
    * reads or writes encrypted values.
    */
   noteSecretActivity: () => void;
+  /**
+   * Encrypted env vars whose decryption couldn't complete on the latest
+   * resolver pass. Populated by `buildResolverScope` after every
+   * request-execute / preview / autocomplete refresh. `missing-slot-value`
+   * is the common "post-pull, slot not provisioned yet" state and is
+   * already covered by the Vault's `ProvideMissingSlotsGate`. The new
+   * signal is `decrypt-failed` — slot was provided but its plaintext
+   * doesn't decrypt the row's ciphertext (most often: re-keyed slot,
+   * passphrase drift, or a value typo). Empty array means "everything
+   * decrypted last time we tried".
+   */
+  envDecryptFailures: EnvDecryptFailure[];
+  /**
+   * Clear the decryption-failure list. Called by the Environments panel
+   * banner's "dismiss" button — the failures will rebuild on the next
+   * resolver run if they're still real.
+   */
+  clearEnvDecryptFailures: () => void;
   // Per-request last-run cache. Not persisted — request runs land in
   // local.history once they complete; this is the live working result for
   // the editor panel.
@@ -1044,6 +1105,53 @@ type WorkspaceStore = {
    * (uniquified if it collided), or null if no synced doc was loaded.
    */
   importPostmanEnvironment: (parsed: ParsedPostmanEnvironment) => string | null;
+  /**
+   * Import a parsed API Circle environment export (the `apicircleEnvironment: 1`
+   * envelope produced by `exportEnvironment` / the MCP `environment.export`
+   * tool).
+   *
+   * Returns:
+   *   - `name`: the final env name (uniquified when it collided)
+   *   - `pendingBindings`: encrypted rows that couldn't be resolved
+   *     against the destination's vault — the caller (ImportModal)
+   *     surfaces a second step prompting the user to provide values
+   *   - `warnings`: pass-through from the parser
+   *
+   * Hint resolution order, per encrypted row:
+   *   1. `originSecretKeyId` matches a slot in `synced.secretKeys` →
+   *      reuse that slot, keep the binding intact (same-workspace
+   *      re-import path).
+   *   2. `label` matches a slot's label → re-point `secretKeyId` to the
+   *      matched slot and keep the binding (cross-workspace match).
+   *   3. No match → keep the row encrypted with the source's id (so the
+   *      env-panel chip renders something) and emit a `pendingBinding`.
+   *
+   * `null` when no synced doc is loaded.
+   */
+  importApicircleEnvironment: (parsed: ParsedApicircleEnvironment) => {
+    name: string;
+    pendingBindings: ApicircleEnvironmentPendingBinding[];
+    warnings: string[];
+  } | null;
+  /**
+   * Build the `apicircle.folder/v1` export envelope for a folder + a
+   * human-readable dependency report. Returns `null` when `folderId`
+   * doesn't exist or the workspace isn't loaded — UI callers should
+   * treat that as a no-op (the source folder was deleted between menu
+   * open and click). Read-only — does NOT mutate the workspace.
+   */
+  buildFolderExport: (folderId: string) => CollectFolderExportResult | null;
+  /**
+   * Graft a parsed API Circle folder export into the active workspace
+   * under `parentFolderId` (null = at root). The parser side
+   * (`@apicircle/core`) already minted fresh ids and warnings; this
+   * action de-dupes captured global assets against the destination
+   * workspace's library so re-imports don't pile up duplicates.
+   */
+  importApicircleFolder: (
+    parsed: ParsedApicircleFolderExport,
+    parentFolderId?: string | null,
+  ) => ImportApicircleFolderResult | null;
   setRequestExtractions: (id: string, extractions: ContextExtraction[]) => void;
   setRequestContextVars: (id: string, contextVars: ApiRequest['contextVars']) => void;
   setRequestBodySchemaId: (id: string, schemaId: string | null) => void;
@@ -1280,8 +1388,17 @@ type WorkspaceStore = {
    * plaintext under the slot's derived key, drop secretKeyId, set
    * encrypted=false. Resolves to `false` when the slot value is missing
    * locally and the row can't be safely unbound (we'd be wiping the value).
+   *
+   * Pass `{ force: true }` to unbind regardless of decrypt result — the row's
+   * value will be cleared to `''` and the caller is expected to have
+   * confirmed with the user first (the value is unrecoverable from this
+   * device). The decrypt-success path still recovers the plaintext.
    */
-  unbindVariableSecretKey: (envName: string, index: number) => Promise<boolean>;
+  unbindVariableSecretKey: (
+    envName: string,
+    index: number,
+    opts?: { force?: boolean },
+  ) => Promise<boolean>;
   /** Transient panel focus — which env's variables the panel is editing. */
   envFocus: string | null;
   setEnvFocus: (name: string | null) => void;
@@ -1864,6 +1981,19 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   secretKey: null,
   secretLockState: 'unset',
   lastSecretActivityAt: null,
+  passphraseModal: null,
+
+  openPassphraseSetup: () => {
+    if (get().synced?.secretCrypto) return;
+    set({ passphraseModal: 'setup' });
+  },
+  openPassphraseUnlock: () => {
+    const s = get();
+    if (!s.synced?.secretCrypto) return;
+    if (s.secretLockState === 'unlocked') return;
+    set({ passphraseModal: 'unlock' });
+  },
+  closePassphraseModal: () => set({ passphraseModal: null }),
 
   setupPassphrase: async (passphrase) => {
     const synced = get().synced;
@@ -1880,6 +2010,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         secretKey: key,
         secretLockState: 'unlocked',
         lastSecretActivityAt: Date.now(),
+        passphraseModal: null,
       });
       await saveSynced(next);
       return { ok: true };
@@ -1899,6 +2030,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       secretKey: result.key,
       secretLockState: 'unlocked',
       lastSecretActivityAt: Date.now(),
+      passphraseModal: null,
     });
     return { ok: true };
   },
@@ -1916,6 +2048,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (get().secretLockState !== 'unlocked') return;
     set({ lastSecretActivityAt: Date.now() });
   },
+  envDecryptFailures: [],
+  clearEnvDecryptFailures: () => set({ envDecryptFailures: [] }),
   activePanel: readStoredPanel(),
   rightDock: { tab: null, mode: 'overlay', vaultSubtab: 'vault' },
   importModalOpen: false,
@@ -2967,6 +3101,166 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     state.setVariables(finalName, variables);
     return finalName;
   },
+  importApicircleEnvironment: (parsed) => {
+    const state = get();
+    if (!state.synced) return null;
+    const { name, variables, encryptedBindingHints, payloadVersion, warnings } = parsed;
+    const existing = state.synced.environments.items;
+    let finalName = name;
+    let n = 2;
+    while (existing[finalName]) {
+      finalName = `${name} (${n})`;
+      n += 1;
+    }
+
+    // Resolve every encrypted hint against the destination's vault.
+    //
+    // The resolution rules split on whether the source carried ciphertext
+    // (v2) or only metadata (v1):
+    //
+    //   v2 — ciphertext + per-slot salt are on the wire. The row lands
+    //   encrypted, pointing at a destination slot whose salt matches the
+    //   source's so AES-GCM can decrypt with the local slot plaintext.
+    //   When no destination slot has the right salt, we register a new
+    //   slot using the source's salt + label so the binding is
+    //   self-consistent. The user is then asked to provide the matching
+    //   plaintext value via the missing-slots gate (same flow as a fresh
+    //   Git pull). No pendingBinding is needed — the ciphertext is the
+    //   value; the slot value is the missing piece.
+    //
+    //   v1 — only metadata. The row lands with `value: ''` and we
+    //   surface a pendingBinding for the import modal to prompt the
+    //   user for a fresh plaintext to encrypt under the destination's
+    //   slot. Existing label-match / origin-id-reuse behavior preserved.
+    const destSlots = state.synced.secretKeys ?? {};
+    const labelToSlotId = new Map<string, string>();
+    for (const slot of Object.values(destSlots)) {
+      // First slot to claim a label wins — deterministic and matches the
+      // env-panel label-picker (which lists each slot once).
+      if (!labelToSlotId.has(slot.label)) labelToSlotId.set(slot.label, slot.id);
+    }
+
+    const resolvedVariables: typeof variables = [];
+    const pendingBindings: ApicircleEnvironmentPendingBinding[] = [];
+    // Slots minted on the fly for v2 rows whose source slot doesn't have a
+    // destination counterpart. Accumulated here and merged into
+    // synced.secretKeys at the end so we hit IDB once.
+    const mintedSlots: Record<string, SecretKeyMeta> = {};
+    let hintCursor = 0;
+    for (const v of variables) {
+      if (!v.encrypted) {
+        resolvedVariables.push(v);
+        continue;
+      }
+      const hint = encryptedBindingHints[hintCursor];
+      hintCursor += 1;
+
+      // ---- v2 path: ciphertext + salt are present ----
+      if (hint && hint.ciphertext && hint.salt) {
+        // 1. Same-id reuse: only valid when the destination slot's salt
+        //    matches the source's. Different salts = different derived
+        //    keys → ciphertext will silently fail to decrypt. Better to
+        //    register a fresh slot with the right salt than to land a
+        //    binding that lies.
+        if (hint.originSecretKeyId && destSlots[hint.originSecretKeyId]?.salt === hint.salt) {
+          resolvedVariables.push({ ...v, secretKeyId: hint.originSecretKeyId });
+          continue;
+        }
+        // 2. Label match with matching salt.
+        const labelMatch = labelToSlotId.get(hint.label);
+        if (labelMatch && destSlots[labelMatch]?.salt === hint.salt) {
+          resolvedVariables.push({ ...v, secretKeyId: labelMatch });
+          continue;
+        }
+        // 3. Mint a new slot using source's salt + label. Prefer source's
+        //    id when it doesn't already collide; else generate a fresh id.
+        const mintedId =
+          hint.originSecretKeyId && !destSlots[hint.originSecretKeyId]
+            ? hint.originSecretKeyId
+            : generateId();
+        mintedSlots[mintedId] = {
+          id: mintedId,
+          label: hint.label,
+          salt: hint.salt,
+          createdAt: new Date().toISOString(),
+        };
+        // Track for future hints in the same import — a second v2 row
+        // bound to the same source slot should reuse the minted id.
+        if (!labelToSlotId.has(hint.label)) labelToSlotId.set(hint.label, mintedId);
+        resolvedVariables.push({ ...v, secretKeyId: mintedId });
+        continue;
+      }
+
+      // ---- v1 path: no ciphertext to land, fall back to pendingBindings ----
+      // 1. Same-workspace re-import: the source's id is also a slot here.
+      if (hint?.originSecretKeyId && destSlots[hint.originSecretKeyId]) {
+        resolvedVariables.push({ ...v, secretKeyId: hint.originSecretKeyId });
+        continue;
+      }
+      // 2. Cross-workspace label match.
+      if (hint?.label) {
+        const matchId = labelToSlotId.get(hint.label);
+        if (matchId) {
+          resolvedVariables.push({ ...v, secretKeyId: matchId });
+          continue;
+        }
+      }
+      // 3. Unresolved — keep the source's id (so the env-panel chip
+      //    renders something stable) and prompt the user.
+      resolvedVariables.push(v);
+      if (hint) {
+        pendingBindings.push({
+          envName: finalName,
+          varKey: hint.varKey,
+          label: hint.label,
+          labelFromFallback: hint.labelFromFallback,
+        });
+      }
+    }
+
+    // Persist any v2-minted slots into synced.secretKeys BEFORE the
+    // variables land — otherwise the resolver's first pass over the new
+    // env would see secretKeyIds pointing at nothing. v2 mint creates
+    // slot metadata only; the slot's plaintext value is the user's
+    // responsibility via the missing-slots gate.
+    if (Object.keys(mintedSlots).length > 0) {
+      const baseSynced = get().synced!;
+      const nextSynced: WorkspaceSynced = {
+        ...baseSynced,
+        secretKeys: { ...(baseSynced.secretKeys ?? {}), ...mintedSlots },
+        meta: { ...baseSynced.meta, updatedAt: new Date().toISOString() },
+      };
+      set({ synced: nextSynced });
+      queueSaveSynced(nextSynced);
+    }
+
+    // v2 with minted slots produces a quieter warning so the user knows
+    // why the missing-slots gate is about to fire on this device. v1 had
+    // no equivalent — pendingBindings already explained the gap.
+    const augmentedWarnings = [...warnings];
+    if (payloadVersion === 2 && Object.keys(mintedSlots).length > 0) {
+      augmentedWarnings.push(
+        `Imported ${Object.keys(mintedSlots).length} new Secret Vault slot(s) from the source workspace. Provide each value in the Vault dock to decrypt the imported variables.`,
+      );
+    }
+
+    state.addEnvironment(finalName);
+    state.setVariables(finalName, resolvedVariables);
+    return { name: finalName, pendingBindings, warnings: augmentedWarnings };
+  },
+  buildFolderExport: (folderId) => {
+    const synced = get().synced;
+    if (!synced) return null;
+    return collectFolderExport({ synced, folderId });
+  },
+  importApicircleFolder: (parsed, parentFolderId = null) => {
+    const synced = get().synced;
+    if (!synced) return null;
+    const result = importApicircleFolderInto(synced, parsed, parentFolderId);
+    set({ synced: result.synced });
+    queueSaveSynced(result.synced);
+    return result;
+  },
   setRequestExtractions: (id, extractions) => {
     if (routeLinkedField(get, set, id, 'extractions', extractions)) return;
     commitSynced(set, get, (s) => setRequestExtractionsAction(s, id, extractions));
@@ -3521,7 +3815,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     return true;
   },
 
-  unbindVariableSecretKey: async (envName, index) => {
+  unbindVariableSecretKey: async (envName, index, opts) => {
     const synced = get().synced;
     if (!synced) return false;
     const env = synced.environments.items[envName];
@@ -3538,10 +3832,26 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
 
     // Decrypt ciphertext back to plaintext under the slot's derived key. If
-    // the slot value isn't available we can't recover the plaintext — refuse
-    // and let the caller prompt the user.
+    // the slot value isn't available locally — or the value on this device
+    // doesn't decrypt the row's ciphertext (passphrase / value mismatch) —
+    // we can't recover the plaintext.
+    //
+    // Two failure modes from one path:
+    //   - Default: refuse and return false. Caller surfaces a confirm step
+    //     ("Decryption failed — unbind anyway? The value will be cleared.")
+    //     and re-invokes with `{ force: true }`.
+    //   - Forced:  proceed with an empty value, dropping the binding. The
+    //     row becomes a plaintext row with `value: ''` so the user can
+    //     type a fresh plaintext into the existing slot.
     const plaintext = await tryDecryptForSlot(get, existing.secretKeyId, existing.value);
-    if (plaintext === null) return false;
+    if (plaintext === null) {
+      if (!opts?.force) return false;
+      const nextVars: Environment['variables'] = env.variables.map((v, i) =>
+        i === index ? { ...v, encrypted: false, secretKeyId: undefined, value: '' } : v,
+      );
+      commitSynced(set, get, (s) => setVariablesAction(s, envName, nextVars));
+      return true;
+    }
 
     const nextVars: Environment['variables'] = env.variables.map((v, i) =>
       i === index ? { ...v, encrypted: false, secretKeyId: undefined, value: plaintext } : v,
@@ -7268,9 +7578,14 @@ async function resolveRequest(
     synced.secretKeys ?? {},
   );
   const flatEnvs: Record<string, Record<string, string>> = {};
-  for (const [name, vars] of Object.entries(localEnvs)) {
+  for (const [name, vars] of Object.entries(localEnvs.items)) {
     flatEnvs[envPriorityKey({ kind: 'local', name })] = vars;
   }
+  // Accumulate per-resolve decryption failures so the Environments panel
+  // can light up a banner ("3 encrypted variables won't decrypt on this
+  // device — re-enter their slot values or unbind"). The store action
+  // commits this to `envDecryptFailures` after the resolver returns.
+  const collectedFailures: EnvDecryptFailure[] = [...localEnvs.failures];
   // Eagerly fold in EVERY linked workspace's envs so the resolver's
   // autocomplete / suggestion paths see them too. Priority list controls
   // ordering; this just makes the names resolvable. Skips links whose
@@ -7284,10 +7599,28 @@ async function resolveRequest(
         vault.byId,
         synced.secretKeys ?? {},
       );
-      for (const [envName, vars] of Object.entries(decrypted)) {
+      for (const [envName, vars] of Object.entries(decrypted.items)) {
         flatEnvs[envPriorityKey({ kind: 'linked', linkedWorkspaceId: linkId, envName })] = vars;
       }
+      // Tag linked-env failures with the link id so the banner can
+      // disambiguate them from local-env failures (different surface to
+      // fix in the UI). LinkedSnapshot doesn't carry a label; the link
+      // id is stable + matchable to synced.linkedWorkspaces.
+      for (const f of decrypted.failures) {
+        collectedFailures.push({ ...f, envName: `linked:${linkId} :: ${f.envName}` });
+      }
     }
+  }
+  // Push the accumulated failures into the store. We only WRITE when the
+  // set is non-empty OR was previously non-empty (avoids triggering a
+  // re-render on every clean resolve). Comparison is by JSON shape — the
+  // list is small and structured, so deep-equal-via-stringify is fine.
+  // `resolveRequest` is a free function (no closure over set/get), so we
+  // reach the store via its module-level getState/setState.
+  const prevFailuresJson = JSON.stringify(useWorkspaceStore.getState().envDecryptFailures ?? []);
+  const nextFailuresJson = JSON.stringify(collectedFailures);
+  if (prevFailuresJson !== nextFailuresJson) {
+    useWorkspaceStore.setState({ envDecryptFailures: collectedFailures });
   }
 
   // contextVars layer ordering (lowest → highest priority):
@@ -7546,19 +7879,62 @@ async function migrateLegacyEncryptedEnvVars(synced: WorkspaceSynced): Promise<W
 }
 
 /**
+ * Per-row classification of why an encrypted env var failed to decrypt
+ * (or — implicit "no failure" — succeeded). Surfaced via the resolver
+ * so the Environments panel can show a precise, actionable banner
+ * instead of the silent `<MISSING:LABEL>` substitution we used to do.
+ *
+ *   missing-slot-meta:   secretKeyId references a slot that doesn't
+ *                        exist in synced.secretKeys (workspace data
+ *                        damaged, or pulled mid-rename).
+ *   missing-slot-value:  slot meta is present, but this device has no
+ *                        plaintext for it yet (the most common case
+ *                        post-pull / post-import). Covered by the
+ *                        existing missing-slots gate — surfaced here
+ *                        for completeness only.
+ *   invalid-ciphertext:  row's `value` isn't a parseable enc:v1:...
+ *                        payload (truncated, tampered, or never
+ *                        encrypted).
+ *   decrypt-failed:      everything else lined up but AES-GCM
+ *                        rejected the unwrap — the slot value on this
+ *                        device doesn't decrypt the row's ciphertext.
+ *                        This is the case Phase 4 was added to
+ *                        surface: a different value from the one used
+ *                        to encrypt, or a salt mismatch.
+ */
+export type EnvDecryptFailureReason =
+  | 'missing-slot-meta'
+  | 'missing-slot-value'
+  | 'invalid-ciphertext'
+  | 'decrypt-failed';
+
+export interface EnvDecryptFailure {
+  envName: string;
+  varKey: string;
+  secretKeyId: string;
+  label: string;
+  reason: EnvDecryptFailureReason;
+}
+
+/**
  * Flatten encrypted env vars to plaintext for the resolver. Each row's
  * `value` carries `enc:v1:<iv>:<ciphertext>` produced by `tryEncryptForSlot`;
  * decryption requires the slot's plaintext value (from `vaultById`) and the
- * slot's salt (from `synced.secretKeys[id].salt`). When either is missing,
- * substitute `<MISSING:LABEL>` so the user sees what didn't resolve in the
- * sent request rather than an empty/literal placeholder.
+ * slot's salt (from `synced.secretKeys[id].salt`). When decryption can't
+ * resolve we still substitute `<MISSING:LABEL>` (so the wire request
+ * shows the user *where* the failure was), but we also accumulate a
+ * structured `failures[]` so the store can light up a banner.
  */
 async function decryptEnvironments(
   items: Record<string, Environment>,
   vaultById: Record<string, string>,
   secretKeys: Record<string, SecretKeyMeta>,
-): Promise<Record<string, Record<string, string>>> {
+): Promise<{
+  items: Record<string, Record<string, string>>;
+  failures: EnvDecryptFailure[];
+}> {
   const out: Record<string, Record<string, string>> = {};
+  const failures: EnvDecryptFailure[] = [];
   // Cache derived keys per slot — same slot used N times in N env vars
   // shouldn't pay PBKDF2 N times.
   const derivedKeyCache = new Map<string, CryptoKey>();
@@ -7578,8 +7954,26 @@ async function decryptEnvironments(
         const meta = secretKeys[v.secretKeyId];
         const slotValue = vaultById[v.secretKeyId];
         const labelForMissing = meta?.label ?? v.secretKeyId;
-        if (!meta || typeof slotValue !== 'string') {
+        if (!meta) {
           flat[v.key] = `<MISSING:${labelForMissing}>`;
+          failures.push({
+            envName: name,
+            varKey: v.key,
+            secretKeyId: v.secretKeyId,
+            label: labelForMissing,
+            reason: 'missing-slot-meta',
+          });
+          continue;
+        }
+        if (typeof slotValue !== 'string') {
+          flat[v.key] = `<MISSING:${labelForMissing}>`;
+          failures.push({
+            envName: name,
+            varKey: v.key,
+            secretKeyId: v.secretKeyId,
+            label: labelForMissing,
+            reason: 'missing-slot-value',
+          });
           continue;
         }
         const payload = tryParsePayload(v.value);
@@ -7587,15 +7981,31 @@ async function decryptEnvironments(
           // Bound row with a non-cipher value — treat as missing rather
           // than silently passing a bad string to the wire.
           flat[v.key] = `<MISSING:${labelForMissing}>`;
+          failures.push({
+            envName: name,
+            varKey: v.key,
+            secretKeyId: v.secretKeyId,
+            label: labelForMissing,
+            reason: 'invalid-ciphertext',
+          });
           continue;
         }
         try {
           const key = await deriveOnce(v.secretKeyId, slotValue, meta.salt);
           flat[v.key] = await decryptString(payload, key);
         } catch {
-          // Wrong slot value, tampered ciphertext, or salt mismatch —
-          // surface as missing so the user can fix it.
+          // The high-value signal: everything was set up to decrypt but
+          // AES-GCM unwrap failed. Either the slot's local plaintext is
+          // wrong for this ciphertext, or salts diverged. Surface so the
+          // banner tells the user to re-enter the slot value or unbind.
           flat[v.key] = `<MISSING:${labelForMissing}>`;
+          failures.push({
+            envName: name,
+            varKey: v.key,
+            secretKeyId: v.secretKeyId,
+            label: labelForMissing,
+            reason: 'decrypt-failed',
+          });
         }
         continue;
       }
@@ -7603,5 +8013,5 @@ async function decryptEnvironments(
     }
     out[name] = flat;
   }
-  return out;
+  return { items: out, failures };
 }

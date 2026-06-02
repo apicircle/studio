@@ -1,6 +1,6 @@
 {
   "name": "studio",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "private": true,
   "type": "module",
   "description": "API Circle Studio - greenfield API workspace with Git-backed sync, local mock servers, and an MCP server for AI clients",
@@ -9,7 +9,7 @@
     "dev": "turbo dev",
     "dev:web": "turbo dev --filter=@apicircle/web",
     "build": "turbo build",
-    "test": "vitest run",
+    "test": "pnpm -r test",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "pnpm --filter @apicircle/e2e-web test:e2e",

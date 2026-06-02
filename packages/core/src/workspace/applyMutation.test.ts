@@ -768,3 +768,71 @@ describe('applyMutation - defaults', () => {
     expect(stamped <= after).toBe(true);
   });
 });
+
+describe('applyMutation - folder.import_apicircle', () => {
+  it('grafts a parsed apicircle folder envelope under the root', () => {
+    const state = { synced: makeSynced(), local: makeLocal() };
+    const parsed = {
+      rootFolder: { id: 'root-new', name: 'Imported', auth: undefined },
+      subfolders: [{ id: 'sub-1', name: 'Child', parentId: 'root-new' } as Folder],
+      requests: [makeRequest('imp-r-1', { folderId: 'sub-1', name: 'GET /imp' })],
+      dependencies: {
+        schemas: [
+          {
+            id: 'sch-1',
+            name: 'X',
+            schema: '{}',
+            createdAt: T0,
+            updatedAt: T0,
+          },
+        ],
+        graphql: [],
+        files: [],
+      },
+      sourceFolderName: 'Imported',
+      warnings: [],
+    };
+    const out = applyMutation(
+      state,
+      { kind: 'folder.import_apicircle', parsed, parentFolderId: null },
+      { now: T1 },
+    );
+    expect(out.next.synced.collections.folders['root-new']).toMatchObject({
+      id: 'root-new',
+      name: 'Imported',
+      parentId: null,
+    });
+    expect(out.next.synced.collections.folders['sub-1']).toBeDefined();
+    expect(out.next.synced.collections.requests['imp-r-1']).toBeDefined();
+    expect(out.next.synced.globalAssets.schemas['sch-1']).toMatchObject({ name: 'X' });
+    expect(out.next.synced.meta.updatedAt).toBe(T1);
+    expect(out.changedIds).toEqual(['root-new', 'sub-1', 'imp-r-1']);
+  });
+
+  it('uniquifies the imported root folder name against existing siblings', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [{ kind: 'folder', id: 'existing' }] },
+          requests: {},
+          folders: { existing: { id: 'existing', name: 'Imported', parentId: null } as Folder },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const parsed = {
+      rootFolder: { id: 'root-new', name: 'Imported', auth: undefined },
+      subfolders: [],
+      requests: [],
+      dependencies: { schemas: [], graphql: [], files: [] },
+      sourceFolderName: 'Imported',
+      warnings: [],
+    };
+    const out = applyMutation(
+      state,
+      { kind: 'folder.import_apicircle', parsed, parentFolderId: null },
+      { now: T1 },
+    );
+    expect(out.next.synced.collections.folders['root-new'].name).toBe('Imported (2)');
+  });
+});

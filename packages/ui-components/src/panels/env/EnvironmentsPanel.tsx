@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { KeyRound, Lock, Plus, Trash2, Unlock } from 'lucide-react';
+import { AlertTriangle, KeyRound, Lock, Plus, Trash2, Unlock, X } from 'lucide-react';
 import type { Environment, EnvironmentVariable, SecretEntry } from '@apicircle/shared';
+import { useShallow } from 'zustand/react/shallow';
 import { cn } from '../../primitives/cn';
+import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { LinkedEnvironmentsSection } from './LinkedEnvironmentsSection';
 
@@ -78,6 +80,7 @@ export function EnvironmentsPanel() {
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-6">
+      <DecryptFailureBanner envName={env.name} />
       <header className="flex items-baseline gap-3">
         <span className="text-xs uppercase tracking-wider text-text-dim">Variables in</span>
         <input
@@ -133,6 +136,16 @@ function VariableTable({ env }: VariableTableProps) {
   const bindVariableToSecretKey = useWorkspaceStore((s) => s.bindVariableToSecretKey);
   const unbindVariableSecretKey = useWorkspaceStore((s) => s.unbindVariableSecretKey);
 
+  // Force-unbind confirm state. Set when the soft unbind path returns
+  // `false` because the row's ciphertext can't be decrypted on this device
+  // (missing slot value, value mismatch). Carrying the row index +
+  // variable key in state lets us write a specific confirm body — "this
+  // variable's value will be cleared" beats a generic warning.
+  const [forceUnbind, setForceUnbind] = useState<{
+    index: number;
+    variableKey: string;
+  } | null>(null);
+
   return (
     <div role="group" aria-label={`Variables for ${env.name}`} className="flex flex-col gap-1">
       {env.variables.length === 0 && (
@@ -170,9 +183,21 @@ function VariableTable({ env }: VariableTableProps) {
               );
             }}
             onUnbind={() => {
-              void Promise.resolve(unbindVariableSecretKey(env.name, i)).catch((err) =>
-                reportError('Could not unbind secret key', err),
-              );
+              // Soft unbind first — succeeds when this device can decrypt
+              // the row's ciphertext via its local slot value. If it
+              // returns false the decrypt failed (slot value missing or
+              // value mismatch); promote to the force-confirm dialog so
+              // the user explicitly approves clearing the value.
+              void (async () => {
+                try {
+                  const ok = await unbindVariableSecretKey(env.name, i);
+                  if (!ok) {
+                    setForceUnbind({ index: i, variableKey: v.key });
+                  }
+                } catch (err) {
+                  reportError('Could not unbind secret key', err);
+                }
+              })();
             }}
             onRemove={() => {
               const next = env.variables.filter((_, idx) => idx !== i);
@@ -195,6 +220,49 @@ function VariableTable({ env }: VariableTableProps) {
         via <code>APICIRCLE_SECRET_&lt;id&gt;</code> env vars or{' '}
         <code>--secrets &lt;file&gt;.json</code>.
       </p>
+      <ConfirmDialog
+        open={forceUnbind !== null}
+        title="Unbind anyway?"
+        tone="danger"
+        confirmLabel="Unbind and clear value"
+        cancelLabel="Keep encrypted"
+        description={
+          <>
+            <p>
+              <strong className="text-text-primary">
+                {forceUnbind?.variableKey || 'This variable'}
+              </strong>{' '}
+              can&apos;t be decrypted on this device. The slot value in your Vault either isn&apos;t
+              set or doesn&apos;t match the value used to encrypt this row (different passphrase,
+              different machine, or a re-keyed slot).
+            </p>
+            <p className="mt-2">
+              Unbinding will <strong className="text-text-primary">clear the value to empty</strong>
+              . You can then type a fresh plaintext value, or re-bind to a different Secret Vault
+              key once you&apos;ve restored the right slot value.
+            </p>
+          </>
+        }
+        onCancel={() => setForceUnbind(null)}
+        onConfirm={async () => {
+          if (!forceUnbind) return;
+          try {
+            const ok = await unbindVariableSecretKey(env.name, forceUnbind.index, {
+              force: true,
+            });
+            if (!ok) {
+              reportError(
+                'Could not unbind secret key',
+                new Error('Forced unbind failed — no row at that index.'),
+              );
+            }
+          } catch (err) {
+            reportError('Could not unbind secret key', err);
+          } finally {
+            setForceUnbind(null);
+          }
+        }}
+      />
     </div>
   );
 }
@@ -486,6 +554,85 @@ function SecretKeyPicker({ onClose, onPick }: SecretKeyPickerProps) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Surfaced when the resolver couldn't decrypt one or more encrypted env
+ * vars on the latest pass. Two important things this banner does NOT do:
+ *   - It does not block the panel — the user can still edit other vars.
+ *   - It does not silently re-run anything; the resolver is the source
+ *     of truth and re-runs naturally on the next request execute, which
+ *     either clears or refreshes the list.
+ *
+ * We filter to the rows that are most actionable from the Environments
+ * panel: `decrypt-failed` and `invalid-ciphertext`. `missing-slot-value`
+ * is already covered by the Vault dock's missing-slots gate (and would
+ * be noisy to repeat here); `missing-slot-meta` is a workspace-integrity
+ * issue that surfaces with a different remedy path.
+ *
+ * Scoped to the currently focused env so the user sees the failures
+ * relevant to what they're looking at. Linked-env failures (tagged with
+ * `linked:<id> :: <name>` in the envName) are shown only when the user
+ * is on a local env that has linked failures referencing it — for now
+ * we leave linked-env surfaces to the Link Workspace panel.
+ */
+function DecryptFailureBanner({ envName }: { envName: string }) {
+  const failures = useWorkspaceStore(
+    useShallow((s) =>
+      s.envDecryptFailures.filter(
+        (f) =>
+          f.envName === envName &&
+          (f.reason === 'decrypt-failed' || f.reason === 'invalid-ciphertext'),
+      ),
+    ),
+  );
+  const clear = useWorkspaceStore((s) => s.clearEnvDecryptFailures);
+  if (failures.length === 0) return null;
+
+  return (
+    <div
+      role="alert"
+      aria-label="Decryption failures on encrypted environment variables"
+      className="flex items-start gap-2 rounded-sm border border-danger/40 bg-danger/5 p-3 text-xs text-text-muted"
+    >
+      <AlertTriangle size={14} className="mt-0.5 shrink-0 text-danger" aria-hidden="true" />
+      <div className="flex-1 space-y-1.5">
+        <p className="text-sm text-text-primary">
+          {failures.length === 1
+            ? '1 encrypted variable won’t decrypt on this device'
+            : `${failures.length} encrypted variables won’t decrypt on this device`}
+        </p>
+        <p>
+          The slot value on this device doesn&apos;t produce the same key the row was encrypted
+          with. Open the Vault dock and re-enter the slot value, or use the row&apos;s{' '}
+          <strong className="text-text-primary">Unbind</strong> button to clear the value and type a
+          fresh plaintext.
+        </p>
+        <ul className="ml-3 list-disc space-y-0.5 text-[0.6875rem]">
+          {failures.slice(0, 6).map((f) => (
+            <li key={`${f.envName}:${f.varKey}`}>
+              <code className="text-text-primary">{f.varKey}</code>{' '}
+              <span className="text-text-dim">— slot</span>{' '}
+              <code className="text-text-primary">{f.label}</code>
+              {f.reason === 'invalid-ciphertext' ? (
+                <span className="ml-1 text-text-dim">(not a valid ciphertext)</span>
+              ) : null}
+            </li>
+          ))}
+          {failures.length > 6 && <li className="text-text-dim">+ {failures.length - 6} more…</li>}
+        </ul>
+      </div>
+      <button
+        type="button"
+        onClick={clear}
+        aria-label="Dismiss decryption failures banner"
+        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-text-dim hover:bg-danger/10 hover:text-text-primary"
+        title="Dismiss — failures will rebuild on next request if still present"
+      >
+        <X size={12} aria-hidden="true" />
+      </button>
     </div>
   );
 }

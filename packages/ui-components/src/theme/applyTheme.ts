@@ -106,5 +106,5 @@ export function getStoredThemeId(): ThemeId {
   } catch {
     // ignore
   }
-  return 'command-center';
+  return 'one-dark-pro';
 }

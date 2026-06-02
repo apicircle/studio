@@ -27,7 +27,7 @@ rebuilt around two ideas the others miss:
    branch. Teams collaborate the way they collaborate on code — branches,
    diffs, pull requests, review.
 2. **Your workspace is an AI tool catalog.** A built-in Model Context Protocol
-   server exposes **71 tools**, so Claude, ChatGPT, Cursor, Copilot, and any
+   server exposes **74 tools**, so Claude, ChatGPT, Cursor, Copilot, and any
    other MCP client can read, author, and run requests on your behalf.
 
 No cloud account. No vendor lock-in. Your data stays on your machine and in
@@ -50,10 +50,10 @@ your repo.
 - **Runs everywhere you do.** Desktop, browser, CLI, and embeddable npm
   packages — one engine, one workspace format, one mutation API behind all of
   them.
-- **Comfortable to tune.** Settings ships **60+ themes** (Command Center is
+- **Comfortable to tune.** Settings ships **60+ themes** (One Dark Pro is
   the default; dark, light, and high-contrast variants for VS Code, GitHub,
   Kanagawa, Everforest, Nightfox, Tokyo Night, Solarized, and more) and **50+
-  fonts** (Cascadia Code by default; full mono and sans families from Google
+  fonts** (System Sans by default; full mono and sans families from Google
   Fonts plus a safe macOS system stack). Every theme also recolors the Monaco
   code editor. Click-open Theme and Font Family pickers, one-second hover
   previews with a pending indicator, keyboard previews, and UI text-size
@@ -70,7 +70,9 @@ collection tree, environments, mocks, releases) and `workspace.local.json`
 (per-device history, sessions, UI state). The synced document pushes to a
 GitHub repo on a working branch; teammates pull, branch, and merge it like any
 other file. Per-connection release management supports both private
-collections and a public marketplace.
+collections and a public marketplace. Individual folders + environments can
+also be exchanged out-of-band as portable `.apicircle.json` exports — see
+**Import what you already have** below.
 
 ### AI integration via MCP
 
@@ -78,7 +80,7 @@ The bundled `@apicircle/mcp-server` speaks the open
 [Model Context Protocol](https://modelcontextprotocol.io) over stdio, so it
 works with **Claude Desktop, Claude Code, ChatGPT, GitHub Copilot, Cursor,
 Continue, Cline, Zed, and Windsurf** — or anything else that talks MCP. The
-71-tool catalog covers request and folder CRUD, environment authoring,
+74-tool catalog covers request and folder CRUD, environment authoring,
 assertions, execution plans, history, mock-server lifecycle, codebase
 scanning, imports, code generation, and natural-language authoring.
 
@@ -99,7 +101,13 @@ teammates share them; _runtime_ state stays on the local machine.
   Digest, NTLM, Hawk, and JWT. Signing primitives are verified against the
   relevant RFC and NIST reference vectors.
 - **Import what you already have** — cURL commands, OpenAPI/Swagger, Postman
-  collections, Insomnia exports, and HAR files.
+  collections + environments, Insomnia exports, HAR files, and API Circle
+  folder + environment exports (`.apicircle.json` produced by the folder kebab
+  → **Export as JSON**, with embedded JSON Schema + GraphQL dependencies; the
+  Environments sidebar's **Export as JSON** round-trips env vars including
+  encrypted rows — the importer either matches an existing vault slot by label
+  or pops a **"Provide secret values"** second step to bind them, skippable
+  so the env is usable either way).
 - **Generate client code** from any saved request — cURL, fetch, Node (axios),
   Python (requests), Go, and Rust.
 - **Environments** with priority ordering and cross-workspace variable sources.
@@ -196,6 +204,11 @@ npx @apicircle/cli run "Smoke Tests" --workspace-name Petstore --reporter junit
 
 # Or point at a workspace directory directly (CI / git-cloned, skips the registry)
 npx @apicircle/cli run "Smoke Tests" --workspace-path ./checkout-repo --reporter junit
+
+# Export a folder as a portable .apicircle.json envelope, then re-import it
+# elsewhere — credentials are redacted by default
+npx @apicircle/cli export folder "Payments" --out payments.apicircle.json --list-credentials
+npx @apicircle/cli import apicircle ./payments.apicircle.json --workspace-name Petstore
 
 # Manage the workspace registry from the terminal
 npx @apicircle/cli workspaces list
@@ -305,8 +318,8 @@ packages/
   shared/               Types, generateId, validators, encryption helpers
   git/                  GitHub API client + sync logic
   mock-server-core/     Hono mock-server engine + OpenAPI/Postman/Insomnia parsers
-  mcp-server/           stdio MCP host with the 71-tool catalog
-  cli/                  `apicircle` binary — mock / mcp / import / run subcommands
+  mcp-server/           stdio MCP host with the 74-tool catalog
+  cli/                  `apicircle` binary — mock / mcp / import / export / run / workspaces
 ```
 
 `@apicircle/{shared,core,mock-server-core,mcp-server,cli}` are published to

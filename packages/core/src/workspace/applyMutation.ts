@@ -10,6 +10,11 @@ import type {
 } from '@apicircle/shared';
 import { envPriorityKey, generateId } from '@apicircle/shared';
 import type { WorkspacePatch, WorkspaceState } from './patches';
+import {
+  importApicircleFolderInto,
+  type ImportApicircleFolderResult,
+} from './apicircleFolderImport';
+import type { ParsedApicircleFolderExport } from '../import/apicircleFolder';
 
 // =============================================================================
 // applyMutation — single dispatch over every workspace patch.
@@ -54,6 +59,8 @@ export function applyMutation(
       return applyFolderDelete(state, patch.id, now);
     case 'folder.move':
       return applyFolderMove(state, patch.id, patch.newParentId, now);
+    case 'folder.import_apicircle':
+      return applyFolderImportApicircle(state, patch.parsed, patch.parentFolderId, now);
     case 'environment.upsert':
       return applyEnvUpsert(state, patch.environment, now);
     case 'environment.delete':
@@ -62,6 +69,8 @@ export function applyMutation(
       return applyEnvSetActive(state, patch.name, now);
     case 'environment.setPriority':
       return applyEnvSetPriority(state, patch.order, now);
+    case 'secretKey.upsert':
+      return applySecretKeyUpsert(state, patch.meta, now);
     case 'assertion.upsert':
       return applyAssertionUpsert(state, patch.requestId, patch.assertion, now);
     case 'assertion.delete':
@@ -261,6 +270,38 @@ function applyFolderMove(
   return { next: { ...state, synced }, changedIds: [id] };
 }
 
+/**
+ * Result-shape escape hatch for the `folder.import_apicircle` handler:
+ * the underlying graft helper returns a richer object than the rest of
+ * the reducers. We surface only the root + descendant ids through
+ * `ApplyMutationResult.changedIds`. Clients that need the full counts
+ * or re-attachment list should call `importApicircleFolderInto`
+ * directly — the patch path is intentionally lossy so every reducer
+ * has the same `{ next, changedIds }` shape.
+ */
+function applyFolderImportApicircle(
+  state: WorkspaceState,
+  parsed: ParsedApicircleFolderExport,
+  parentFolderId: string | null,
+  now: string,
+): ApplyMutationResult {
+  const result: ImportApicircleFolderResult = importApicircleFolderInto(
+    state.synced,
+    parsed,
+    parentFolderId,
+  );
+  const synced: WorkspaceSynced = {
+    ...result.synced,
+    meta: { ...result.synced.meta, updatedAt: now },
+  };
+  const changedIds = [
+    result.rootFolderId,
+    ...parsed.subfolders.map((f) => f.id),
+    ...parsed.requests.map((r) => r.id),
+  ];
+  return { next: { ...state, synced }, changedIds };
+}
+
 // ---------------------------------------------------------------------------
 // Environment handlers
 // ---------------------------------------------------------------------------
@@ -369,6 +410,32 @@ function applyEnvSetPriority(
     meta: { ...state.synced.meta, updatedAt: now },
   };
   return { next: { ...state, synced }, changedIds: filtered.map(envPriorityKey) };
+}
+
+// ---------------------------------------------------------------------------
+// Secret-vault slot handlers
+// ---------------------------------------------------------------------------
+
+function applySecretKeyUpsert(
+  state: WorkspaceState,
+  meta: { id: string; label: string; salt: string; createdAt: string },
+  now: string,
+): ApplyMutationResult {
+  // Defensive: an empty id or label would corrupt the slot map. Drop
+  // silently so an MCP client batching multiple slot upserts doesn't
+  // poison the workspace on a single malformed row.
+  if (!meta.id || !meta.label.trim() || !meta.salt) {
+    return { next: state, changedIds: [] };
+  }
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    secretKeys: {
+      ...(state.synced.secretKeys ?? {}),
+      [meta.id]: { ...meta, label: meta.label.trim() },
+    },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  return { next: { ...state, synced }, changedIds: [meta.id] };
 }
 
 // ---------------------------------------------------------------------------

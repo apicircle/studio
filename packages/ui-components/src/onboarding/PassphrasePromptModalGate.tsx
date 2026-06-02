@@ -1,18 +1,18 @@
 // Mounted once at App root. Owns:
-//   1. The lazy "Set passphrase" prompt — fires when secrets actions
-//      need a key but the workspace has no `secretCrypto` blob yet.
-//   2. The "Unlock workspace secrets" prompt — fires when the workspace
-//      DOES have a passphrase set but the in-memory key was cleared
-//      (post-restart or post-idle-lock).
+//   1. The "Set passphrase" prompt — fires when any flow calls
+//      `openPassphraseSetup()` on the store (typically the Vault dock's
+//      Set-passphrase CTA, or the first-secret flow on web).
+//   2. The "Unlock workspace secrets" prompt — fires when any flow calls
+//      `openPassphraseUnlock()` on the store (the Vault dock when the
+//      workspace HAS a passphrase but the in-memory key was cleared).
 //   3. The 15-minute idle-lock timer — clears the in-memory key when
 //      the workspace has been idle, forcing a re-unlock.
 //
-// Lazy semantics (decision 2A): on app load we never prompt
-// preemptively. The user only sees the prompt when something is
-// actively needed — surfaced via the `requestPassphrasePrompt` action
-// when wired into the secret-touching flows.
+// Lazy semantics (decision 2A): the gate never opens a modal preemptively
+// on hydrate. Callers must explicitly request it via the store. This
+// keeps the app boot path silent for users who never touch secrets.
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { PassphrasePromptModal } from './PassphrasePromptModal';
 
@@ -21,41 +21,23 @@ const IDLE_LOCK_MS = 15 * 60 * 1000;
 /** Polling cadence for the idle check — coarse is fine; we check every minute. */
 const IDLE_TICK_MS = 60 * 1000;
 
-interface GateProps {
-  /**
-   * When `true`, force-render the unlock modal even if the user hasn't
-   * triggered a secret action yet. Used by the secret-vault dock when
-   * the user opens it and the workspace is locked.
-   */
-  forceUnlock?: boolean;
-}
-
-export function PassphrasePromptModalGate({ forceUnlock = false }: GateProps) {
-  const secretCrypto = useWorkspaceStore((s) => s.synced?.secretCrypto ?? null);
+export function PassphrasePromptModalGate() {
+  const modal = useWorkspaceStore((s) => s.passphraseModal);
   const workspaceName = useWorkspaceStore((s) => {
     const reg = s.workspaceRegistry;
     if (!reg) return null;
     return reg.workspaces.find((w) => w.id === reg.activeWorkspaceId)?.name ?? null;
   });
   const lockState = useWorkspaceStore((s) => s.secretLockState);
-  const lastActivity = useWorkspaceStore((s) => s.lastSecretActivityAt);
   const setupPassphrase = useWorkspaceStore((s) => s.setupPassphrase);
   const unlockWithPassphrase = useWorkspaceStore((s) => s.unlockWithPassphrase);
   const lockSecrets = useWorkspaceStore((s) => s.lockSecrets);
-
-  // Tracks whether the lazy "set passphrase" prompt is open. Stays
-  // closed by default; some flow (TBD wiring) flips it on when a user
-  // tries to add their first secret.
-  const [setupOpen, setSetupOpen] = useState(false);
-
-  // The unlock modal renders whenever the workspace HAS a passphrase
-  // and the in-memory key is missing. `forceUnlock` lets a feature
-  // (e.g. opening the Secret Vault) demand it explicitly.
-  const unlockOpen = secretCrypto !== null && lockState === 'locked' && forceUnlock;
+  const closeModal = useWorkspaceStore((s) => s.closePassphraseModal);
 
   // 15-minute idle lock. Only meaningful when we're currently
   // unlocked AND the workspace has a passphrase set up. The interval
-  // re-evaluates `lastActivity` on each tick.
+  // re-evaluates `lastSecretActivityAt` on each tick by reading the
+  // freshest value via getState() — keeps the dep list short.
   useEffect(() => {
     if (lockState !== 'unlocked') return;
     const id = window.setInterval(() => {
@@ -67,36 +49,22 @@ export function PassphrasePromptModalGate({ forceUnlock = false }: GateProps) {
     return () => window.clearInterval(id);
   }, [lockState, lockSecrets]);
 
-  // `lastActivity` is wired into the dependency so consumers can call
-  // `noteSecretActivity()` and the timer resets correctly. Strictly the
-  // interval reads getState() so we don't need re-runs, but the
-  // dependency makes the relationship explicit for readers.
-  void lastActivity;
-
-  // Setup mode: lazy. Not fired automatically — exposed for the
-  // "first secret added" flow to call. Kept as a no-op placeholder
-  // surface so the wiring lands cleanly when payload encryption moves
-  // off device-local IDB and onto workspace.json.
   return (
     <>
       <PassphrasePromptModal
-        open={setupOpen}
+        open={modal === 'setup'}
         mode="setup"
         workspaceName={workspaceName ?? undefined}
-        onSubmit={async (p) => {
-          const r = await setupPassphrase(p);
-          if (r.ok) setSetupOpen(false);
-          return r;
-        }}
-        onCancel={() => setSetupOpen(false)}
+        onSubmit={(p) => setupPassphrase(p)}
+        onCancel={closeModal}
       />
       <PassphrasePromptModal
-        open={unlockOpen}
+        open={modal === 'unlock'}
         mode="unlock"
         workspaceName={workspaceName ?? undefined}
-        cancellable={false}
+        cancellable
         onSubmit={(p) => unlockWithPassphrase(p)}
-        onCancel={() => undefined}
+        onCancel={closeModal}
       />
     </>
   );

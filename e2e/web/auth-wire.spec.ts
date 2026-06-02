@@ -24,7 +24,7 @@ function id(key: string): TcId {
 }
 
 // Open the folder-auth modal: each folder row carries an "Editor actions"
-// kebab (`Folder actions for <name>`) whose "Set auth…" item opens
+// kebab (`Folder actions for <name>`) whose "Set auth" item opens
 // FolderAuthModal. Older specs used a dedicated `Edit auth for <name>`
 // button which the kebab refactor removed.
 async function openFolderAuth(app: Page, folderName: string): Promise<void> {
@@ -32,15 +32,15 @@ async function openFolderAuth(app: Page, folderName: string): Promise<void> {
   await app.getByRole('menuitem', { name: /^(Set auth|Edit auth)/ }).click();
 }
 
-// Create a request inside a folder via the folder kebab's "New request
-// inside" item, then commit the name-first inline prompt.
+// Create a request inside a folder via the folder kebab's "New request"
+// item, then commit the name-first inline prompt.
 async function createRequestInFolder(
   app: Page,
   folderName: string,
   requestName: string,
 ): Promise<void> {
   await app.getByRole('button', { name: `Folder actions for ${folderName}`, exact: true }).click();
-  await app.getByRole('menuitem', { name: 'New request inside', exact: true }).click();
+  await app.getByRole('menuitem', { name: 'New request', exact: true }).click();
   const input = app.getByLabel('New request name', { exact: true });
   await input.fill(requestName);
   await input.press('Enter');

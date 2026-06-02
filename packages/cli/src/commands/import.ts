@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import type { Command } from 'commander';
 import kleur from 'kleur';
-import { applyMutation } from '@apicircle/core';
+import { applyMutation, parseApicircleFolderExport } from '@apicircle/core';
 import { saveToFile } from '@apicircle/core/workspace/file-backed';
 import {
   parseInsomniaToEndpoints,
@@ -18,7 +18,7 @@ import { resolveWorkspace, WorkspaceResolutionError } from '../util/resolveWorks
 // request per operation into `<workspace>/workspace.synced.json`.
 // =============================================================================
 
-type ImportType = 'curl' | 'openapi' | 'postman' | 'insomnia';
+type ImportType = 'curl' | 'openapi' | 'postman' | 'insomnia' | 'apicircle';
 
 interface ImportOptions {
   workspaceName?: string;
@@ -30,7 +30,10 @@ export function registerImportCommand(program: Command): void {
   program
     .command('import')
     .description('Import a spec into a workspace folder')
-    .argument('<type>', 'Source type: openapi | postman | insomnia | curl')
+    .argument(
+      '<type>',
+      'Source type: openapi | postman | insomnia | curl | apicircle (the apicircle.folder/v1 envelope produced by `apicircle export folder`)',
+    )
     .argument('<input>', 'Path to a spec file, or `-` to read from stdin')
     .option(
       '--workspace-name <name-or-id>',
@@ -125,6 +128,43 @@ export function registerImportCommand(program: Command): void {
             }),
           );
         }
+      } else if (type === 'apicircle') {
+        // API Circle exchange envelope — graft the folder + subtree +
+        // dependencies via the same applyMutation patch the UI / MCP use.
+        let parsedEnvelope;
+        try {
+          parsedEnvelope = parseApicircleFolderExport(raw);
+        } catch (err) {
+          process.stderr.write(
+            `${kleur.red('error')}: ${err instanceof Error ? err.message : String(err)}\n`,
+          );
+          process.exit(2);
+        }
+        const out = applyMutation(
+          { synced: nextSynced, local: nextLocal },
+          { kind: 'folder.import_apicircle', parsed: parsedEnvelope, parentFolderId: null },
+        );
+        nextSynced = out.next.synced;
+        nextLocal = out.next.local;
+        // `created` only counts requests in the other import branches —
+        // mirror that here so the trailing line stays accurate. Folders
+        // get reported separately below.
+        for (const r of parsedEnvelope.requests) created.push(r.id);
+        for (const w of parsedEnvelope.warnings) {
+          process.stderr.write(`${kleur.yellow('warning')}: ${w}\n`);
+        }
+        await saveToFile(dir, { synced: nextSynced, local: nextLocal });
+        process.stdout.write(
+          `${kleur.green('imported')} folder "${parsedEnvelope.rootFolder.name}" ` +
+            `(${parsedEnvelope.subfolders.length + 1} folders, ${parsedEnvelope.requests.length} requests) into ${dir}\n`,
+        );
+        if (parsedEnvelope.dependencies.files.length > 0) {
+          process.stderr.write(
+            `${kleur.yellow('note')}: ${parsedEnvelope.dependencies.files.length} file asset${parsedEnvelope.dependencies.files.length === 1 ? '' : 's'} ` +
+              `landed without bytes — re-attach them inside Global Assets → Global Files.\n`,
+          );
+        }
+        return;
       } else {
         // The four-branch chain above is exhaustive at the type level, so
         // `type` narrows to `never` here. Cast to string for the error

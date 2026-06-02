@@ -7,6 +7,7 @@ import type {
   Request as ApiRequest,
 } from '@apicircle/shared';
 import { generateId } from '@apicircle/shared';
+import { parseApicircleEnvironmentDoc } from '@apicircle/core';
 import type { AnyToolDef } from './types';
 
 // =============================================================================
@@ -304,20 +305,30 @@ export const environmentSetPriorityTool: AnyToolDef = {
 export const environmentExportTool: AnyToolDef = {
   name: 'environment.export',
   description:
-    'Serialize an environment to a portable JSON string. Encrypted variables drop their value (only `secretKeyId` survives) so the export can be safely pasted elsewhere — re-attach secrets locally on the receiving side.',
+    'Serialize an environment to a portable JSON string (envelope v2). Encrypted variables now carry their ciphertext, slot label, and per-slot salt — the destination decrypts with its local slot value at request-execute time, matching the Git push/pull contract. The plaintext slot value never leaves the device, but the ciphertext does. v1 envelopes (no ciphertext) still parse on import for back-compat.',
   inputSchema: z.object({ name: z.string() }),
   async handler(input, ctx) {
     const state = await ctx.workspace.read();
     const env = state.synced.environments.items[input.name];
     if (!env) return { ok: false as const, error: 'environment not found' as const };
     const payload = {
-      apicircleEnvironment: 1 as const,
+      apicircleEnvironment: 2 as const,
       name: env.name,
-      variables: env.variables.map((v) =>
-        v.encrypted && v.secretKeyId
-          ? { key: v.key, encrypted: true as const, secretKeyId: v.secretKeyId }
-          : { key: v.key, value: v.value, encrypted: false as const },
-      ),
+      variables: env.variables.map((v) => {
+        if (v.encrypted && v.secretKeyId) {
+          const slot = state.synced.secretKeys?.[v.secretKeyId];
+          const label = slot?.label ?? v.key;
+          const value = typeof v.value === 'string' && v.value.startsWith('enc:') ? v.value : '';
+          return {
+            key: v.key,
+            encrypted: true as const,
+            value,
+            secretKeyId: v.secretKeyId,
+            secret: { label, salt: slot?.salt ?? null },
+          };
+        }
+        return { key: v.key, value: v.value, encrypted: false as const };
+      }),
     };
     return { ok: true as const, json: JSON.stringify(payload, null, 2) };
   },
@@ -326,50 +337,125 @@ export const environmentExportTool: AnyToolDef = {
 export const environmentImportTool: AnyToolDef = {
   name: 'environment.import',
   description:
-    'Import an environment from the JSON shape produced by `environment.export`. When a target with the same name exists, pass `overwrite: true` to replace it, otherwise the import is rejected.',
+    "Import an environment from the JSON shape produced by `environment.export`. v2 envelopes carry the row ciphertext + per-slot salt, so the destination decrypts at request-execute time with its local slot value (same model as Git push/pull); when no destination slot matches the source's salt, a new slot is minted via `secretKey.upsert` and surfaced in `mintedSlots` so the caller can provide values via `secret.addLocal`. v1 envelopes carry only metadata, so unmatched rows come back as `pendingBindings` for the caller to prompt-and-bind via `secret.addLocal` + `environment.bindSecret`. Pass `overwrite: true` to replace a same-name destination env.",
   inputSchema: z.object({
     json: z.string().min(1),
     overwrite: z.boolean().default(false),
   }),
   async handler(input, ctx) {
-    let parsed: unknown;
+    let raw: unknown;
     try {
-      parsed = JSON.parse(input.json);
+      raw = JSON.parse(input.json);
     } catch {
       return { ok: false as const, error: 'invalid JSON' as const };
     }
-    const obj = parsed as {
-      apicircleEnvironment?: number;
-      name?: string;
-      variables?: Array<
-        | { key: string; encrypted: true; secretKeyId: string }
-        | { key: string; encrypted: false; value: string }
-      >;
-    };
-    if (
-      obj.apicircleEnvironment !== 1 ||
-      typeof obj.name !== 'string' ||
-      !Array.isArray(obj.variables)
-    ) {
-      return { ok: false as const, error: 'unsupported export shape' as const };
+    let parsed;
+    try {
+      parsed = parseApicircleEnvironmentDoc(raw);
+    } catch (err) {
+      return {
+        ok: false as const,
+        error: err instanceof Error ? err.message : 'unsupported export shape',
+      };
     }
     const state = await ctx.workspace.read();
-    if (state.synced.environments.items[obj.name] && !input.overwrite) {
+    if (state.synced.environments.items[parsed.name] && !input.overwrite) {
       return {
         ok: false as const,
         error: 'environment already exists; pass overwrite:true' as const,
       };
     }
-    const env: Environment = {
-      name: obj.name,
-      variables: obj.variables.map((v) =>
-        v.encrypted
-          ? { key: v.key, value: '', encrypted: true, secretKeyId: v.secretKeyId }
-          : { key: v.key, value: v.value, encrypted: false },
-      ),
-    };
+
+    // Resolve encrypted hints against the destination vault — same logic
+    // as the UI store action so MCP + UI imports stay in lockstep. v2
+    // hints with ciphertext + salt may mint slot metadata via a paired
+    // `secretKey.upsert` so the receiver's missing-slots gate can fire
+    // for the plaintext value. v1 hints fall back to pendingBindings.
+    const destSlots = state.synced.secretKeys ?? {};
+    const labelToSlotId = new Map<string, string>();
+    for (const slot of Object.values(destSlots)) {
+      if (!labelToSlotId.has(slot.label)) labelToSlotId.set(slot.label, slot.id);
+    }
+
+    const resolvedVariables: Environment['variables'] = [];
+    const pendingBindings: Array<{ varKey: string; label: string; labelFromFallback: boolean }> =
+      [];
+    const mintedSlots: Array<{ id: string; label: string; salt: string; createdAt: string }> = [];
+    const knownDestIds = new Set(Object.keys(destSlots));
+    let hintCursor = 0;
+    for (const v of parsed.variables) {
+      if (!v.encrypted) {
+        resolvedVariables.push(v);
+        continue;
+      }
+      const hint = parsed.encryptedBindingHints[hintCursor];
+      hintCursor += 1;
+
+      // v2 path — ciphertext + salt are present.
+      if (hint && hint.ciphertext && hint.salt) {
+        if (hint.originSecretKeyId && destSlots[hint.originSecretKeyId]?.salt === hint.salt) {
+          resolvedVariables.push({ ...v, secretKeyId: hint.originSecretKeyId });
+          continue;
+        }
+        const labelMatch = labelToSlotId.get(hint.label);
+        if (labelMatch && destSlots[labelMatch]?.salt === hint.salt) {
+          resolvedVariables.push({ ...v, secretKeyId: labelMatch });
+          continue;
+        }
+        const mintedId =
+          hint.originSecretKeyId && !knownDestIds.has(hint.originSecretKeyId)
+            ? hint.originSecretKeyId
+            : generateId();
+        knownDestIds.add(mintedId);
+        if (!labelToSlotId.has(hint.label)) labelToSlotId.set(hint.label, mintedId);
+        mintedSlots.push({
+          id: mintedId,
+          label: hint.label,
+          salt: hint.salt,
+          createdAt: new Date().toISOString(),
+        });
+        resolvedVariables.push({ ...v, secretKeyId: mintedId });
+        continue;
+      }
+
+      // v1 path — metadata only.
+      if (hint?.originSecretKeyId && destSlots[hint.originSecretKeyId]) {
+        resolvedVariables.push({ ...v, secretKeyId: hint.originSecretKeyId });
+        continue;
+      }
+      if (hint?.label) {
+        const matchId = labelToSlotId.get(hint.label);
+        if (matchId) {
+          resolvedVariables.push({ ...v, secretKeyId: matchId });
+          continue;
+        }
+      }
+      resolvedVariables.push(v);
+      if (hint) {
+        pendingBindings.push({
+          varKey: hint.varKey,
+          label: hint.label,
+          labelFromFallback: hint.labelFromFallback,
+        });
+      }
+    }
+
+    // Mint slot metadata BEFORE the environment so the row's
+    // secretKeyIds always point at a real slot the resolver knows about.
+    for (const meta of mintedSlots) {
+      await ctx.workspace.apply({ kind: 'secretKey.upsert', meta });
+    }
+
+    const env: Environment = { name: parsed.name, variables: resolvedVariables };
     const out = await ctx.workspace.apply({ kind: 'environment.upsert', environment: env });
-    return { ok: true as const, name: env.name, changedIds: out.changedIds };
+    return {
+      ok: true as const,
+      name: env.name,
+      changedIds: out.changedIds,
+      pendingBindings,
+      mintedSlots: mintedSlots.map((s) => ({ id: s.id, label: s.label })),
+      warnings: parsed.warnings,
+    };
   },
 };
 

@@ -1,5 +1,16 @@
 import { useMemo, useState } from 'react';
-import { Copy, Download, FileDown, GripVertical, Link2, Plus, Search, Trash2 } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  Copy,
+  Download,
+  FileDown,
+  GripVertical,
+  Link2,
+  Plus,
+  Search,
+  Trash2,
+} from 'lucide-react';
 import type { EnvPriorityRef } from '@apicircle/shared';
 import { envPriorityKey, envPriorityRefEqual } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
@@ -377,11 +388,13 @@ export function EnvironmentsSidebar() {
                             {
                               id: 'move-up',
                               label: 'Move up in priority',
+                              icon: <ArrowUp size={12} aria-hidden="true" />,
                               onSelect: () => moveByPosition(key, -1),
                             },
                             {
                               id: 'move-down',
                               label: 'Move down in priority',
+                              icon: <ArrowDown size={12} aria-hidden="true" />,
                               onSelect: () => moveByPosition(key, 1),
                             },
                           ]
@@ -470,7 +483,7 @@ export function EnvironmentsSidebarActions() {
       label: 'Import',
       icon: <Download size={12} aria-hidden="true" />,
       onSelect: openImport,
-      title: 'Import a Postman environment',
+      title: 'Import a Postman or API Circle environment',
     },
   ];
 
