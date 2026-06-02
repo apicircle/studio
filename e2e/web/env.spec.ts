@@ -315,6 +315,7 @@ test.describe('Environments — C8', () => {
     // Open the Import modal via the Environments kebab → paste → Import.
     await app.getByRole('button', { name: 'Environments actions', exact: true }).first().click();
     await app.getByRole('menuitem', { name: 'Import', exact: true }).click();
+    await expect(app.getByLabel('Import source')).toBeVisible();
     await app.evaluate((value) => {
       const t = document.querySelector(
         'textarea[aria-label="Import source"]',
@@ -339,6 +340,12 @@ test.describe('Environments — C8', () => {
     await app.getByLabel(/Secret value for PROD_TOKEN/i).fill('sk_live_e2e_abc');
     await app.getByRole('button', { name: /Bind 1 & finish/i }).click();
 
+    // Wait for the bind modal to actually finish: PBKDF2 + AES-GCM run
+    // off-event-loop, so we can't snapshot `synced` until the bind step
+    // unmounts (which only happens once `bindVariableToSecretKey`
+    // resolves and `closeAndReset` fires). The env's sidebar button
+    // appears at step 1 of the import, so it isn't a meaningful wait.
+    await expect(app.getByText(/1 secret binding for/i)).toBeHidden();
     // Sidebar reflects the imported env.
     await expect(app.getByRole('button', { name: /Edit variables in cross-ws-env/ })).toBeVisible();
 
@@ -409,6 +416,7 @@ test.describe('Environments — C8', () => {
 
     await app.getByRole('button', { name: 'Environments actions', exact: true }).first().click();
     await app.getByRole('menuitem', { name: 'Import', exact: true }).click();
+    await expect(app.getByLabel('Import source')).toBeVisible();
     await app.evaluate((value) => {
       const t = document.querySelector(
         'textarea[aria-label="Import source"]',
@@ -471,6 +479,7 @@ test.describe('Environments — C8', () => {
 
     await app.getByRole('button', { name: 'Environments actions', exact: true }).first().click();
     await app.getByRole('menuitem', { name: 'Import', exact: true }).click();
+    await expect(app.getByLabel('Import source')).toBeVisible();
     await app.evaluate((value) => {
       const t = document.querySelector(
         'textarea[aria-label="Import source"]',

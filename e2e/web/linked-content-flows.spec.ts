@@ -744,6 +744,10 @@ test.describe('A.4 — Update preview flow', () => {
       await dialog.getByRole('button', { name: 'Accept source' }).click();
       await expect(apply).toBeEnabled();
       await apply.click();
+      // applyLinkedUpdateForLink awaits a GitHub contents re-fetch before
+      // it bumps the pin and clears activeLinkedUpdate — wait for the
+      // modal to close so the state read below sees the post-apply slice.
+      await expect(dialog).not.toBeVisible();
 
       // After apply: override dropped, pinnedVersion bumped.
       const stateAfter = await readSyncedSlice(app, (s) => {
@@ -810,6 +814,10 @@ test.describe('A.4 — Update preview flow', () => {
       const dialog = app.getByRole('dialog', { name: /Update Source workspace.*v2\.0\.0/ });
       await dialog.getByRole('button', { name: 'Keep mine' }).click();
       await dialog.getByRole('button', { name: 'Apply update' }).click();
+      // applyLinkedUpdateForLink awaits a GitHub contents re-fetch before
+      // bumping the pin and clearing activeLinkedUpdate. Wait for the
+      // modal to close to avoid reading state mid-apply.
+      await expect(dialog).not.toBeVisible();
 
       const after = await readSyncedSlice(app, (s) => {
         const synced = s.synced as {

@@ -59,15 +59,20 @@ test.describe('Secret Vault', () => {
       await expect(app.getByRole('group', { name: /Set workspace passphrase/ })).toBeVisible();
       await expect(app.getByRole('button', { name: 'New secret' })).toHaveCount(0);
 
-      // Click "Set passphrase" → setup modal opens.
+      // Click "Set passphrase" → setup modal opens. Scope subsequent lookups
+      // to the dialog: `getByLabel('Workspace passphrase')` substring-matches
+      // the gate's group label ("Set workspace passphrase to enable Secret
+      // Vault") and the dialog's own aria-label ("Set workspace passphrase"),
+      // so the bare locator hits 3 elements.
       await app.getByRole('button', { name: /^Set passphrase$/ }).click();
-      const passInput = app.getByLabel('Workspace passphrase');
+      const dialog = app.getByRole('dialog', { name: 'Set workspace passphrase' });
+      await expect(dialog).toBeVisible();
+      const passInput = dialog.getByLabel('Workspace passphrase', { exact: true });
       await expect(passInput).toBeVisible();
       await passInput.fill('e2e-test-passphrase');
-      await app.getByLabel('Confirm passphrase').fill('e2e-test-passphrase');
-      // The submit button's label is also "Set passphrase" — disambiguate
-      // by scoping to the modal dialog role.
-      const dialog = app.getByRole('dialog');
+      await dialog.getByLabel('Confirm passphrase', { exact: true }).fill('e2e-test-passphrase');
+      // The submit button's label is also "Set passphrase" — dialog scope
+      // disambiguates it from the gate CTA.
       await dialog.getByRole('button', { name: /^Set passphrase$/ }).click();
 
       // Modal closes, CTA collapses, New secret returns. Add a secret to
