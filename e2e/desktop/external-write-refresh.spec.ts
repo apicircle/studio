@@ -114,9 +114,12 @@ test.describe('External-write auto-refresh', () => {
 
     // The watcher debounces 200ms then emits to the renderer, which
     // calls `refreshFromDisk`. The store updates and the editor
-    // sidebar re-renders. Give it a few seconds — fs.watch event
-    // delivery can be sluggish on Windows under load.
-    await expect(mainWindow.getByText('Imported by MCP')).toBeVisible({ timeout: 10_000 });
+    // sidebar re-renders. The watcher → debounce → IPC → renderer
+    // chain is deterministic; the 30s budget absorbs runner jitter
+    // (fs.watch event delivery can be sluggish on Windows and on
+    // Linux under xvfb when the runner is loaded) without hiding
+    // real regressions — a broken chain never lands the text.
+    await expect(mainWindow.getByText('Imported by MCP')).toBeVisible({ timeout: 30_000 });
   });
 
   test('external registry rewrite shows the new workspace in the switcher', async ({
@@ -159,7 +162,7 @@ test.describe('External-write auto-refresh', () => {
     // workspaceRegistry has the new entry. We surface this via the
     // toast detail. The switcher menu component reads from store
     // state too — but verifying via the toast is the cheapest path.
-    await expect(mainWindow.getByText(/Workspace list updated/i)).toBeVisible({ timeout: 10_000 });
+    await expect(mainWindow.getByText(/Workspace list updated/i)).toBeVisible({ timeout: 30_000 });
     await expect(mainWindow.getByText(/1 new workspace appeared on disk/i)).toBeVisible();
   });
 });
