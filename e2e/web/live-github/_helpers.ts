@@ -256,7 +256,11 @@ export async function pushAndFetchWorkspaceV2(
     return api.pushWorkspace(commitMessage);
   }, message);
   expect(pushed.commitSha).toMatch(/^[a-f0-9]{40}$/);
-  return (await fetchWorkspaceJson(cfg, branch)).json as Record<string, any>;
+  // Address the read by the immutable commit SHA, not the branch — `?ref=<branch>`
+  // can serve pre-push content for several seconds after `updateRef` succeeds
+  // (see fetchWorkspaceJson docblock for the eventual-consistency rationale).
+  return (await fetchWorkspaceJson(cfg, branch, { expectedCommitSha: pushed.commitSha }))
+    .json as Record<string, any>;
 }
 
 export async function publishSourceVersionV2(

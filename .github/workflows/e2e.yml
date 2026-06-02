@@ -1,15 +1,16 @@
 name: E2E
 
 # Playwright E2E suites — the chromium web run is the gate, with cross-browser
-# smoke + visual-baseline + the desktop Electron suite running alongside on
-# main. The coverage delta script (scripts/e2e_coverage_delta.mjs) gates PRs
-# against the most recent successful main run.
+# smoke + the desktop Electron suite running alongside on main. The visual
+# baseline job is manual-dispatch only (see its block below). The coverage
+# delta script (scripts/e2e_coverage_delta.mjs) gates PRs against the most
+# recent successful main run.
 #
 # Trigger model:
 #   - pull_request → playwright (chromium web) + coverage-delta only.
-#     Cross-browser / visual / desktop don't gate PR merges; they run on main.
-#   - push to main → all jobs.
-#   - workflow_dispatch → all jobs (for manual re-runs).
+#     Cross-browser / desktop don't gate PR merges; they run on main.
+#   - push to main → all jobs except visual-baseline.
+#   - workflow_dispatch → all jobs (use this to (re)generate visual baselines).
 
 on:
   pull_request:
@@ -296,18 +297,16 @@ jobs:
 
   visual-baseline:
     name: Visual baseline (chromium)
-    # Visual-snapshot diffs are sensitive to the runner-vs-local font stack,
-    # so gate them to main + manual only — local devs refresh the baseline
-    # with `--update-snapshots` after intentional visual changes.
-    #
-    # First-run note: this job will report "snapshot doesn't exist" the
-    # first time it runs on Linux because the baselines have not been
-    # committed yet. The job uses `continue-on-error` so this doesn't fail
-    # the workflow; the generated PNGs are uploaded as an artifact so a
-    # maintainer can download, sanity-check, and commit them under
-    # `e2e/web/visual-baseline.spec.ts-snapshots/` to establish the
-    # baseline. Subsequent runs gate on diff.
-    if: github.event_name != 'pull_request'
+    # Manual-dispatch only. Visual-snapshot diffs are sensitive to the
+    # runner-vs-local font stack and the Linux baselines aren't committed
+    # yet, so the job is off by default. Trigger it on demand from the
+    # Actions tab → "Run workflow" when you want to (re)generate the
+    # `-linux.png` baselines; download the
+    # `visual-baseline-snapshots-<run_id>` artifact, sanity-check, and
+    # commit the PNGs under `e2e/web/visual-baseline.spec.ts-snapshots/`.
+    # Local devs refresh the baseline with `--update-snapshots` after
+    # intentional visual changes.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     continue-on-error: true

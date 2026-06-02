@@ -35,9 +35,10 @@ async function newRequestInside(
   requestName: string,
 ): Promise<void> {
   // The folder tree row exposes a "Folder actions for <name>" kebab —
-  // click it then "New request inside".
+  // click it then "New request" (the menuitem creates the request inside
+  // this folder).
   await app.getByLabel(`Folder actions for ${folderName}`).click();
-  await app.getByRole('menuitem', { name: 'New request inside' }).click();
+  await app.getByRole('menuitem', { name: 'New request', exact: true }).click();
   await app.getByLabel('New request name').fill(requestName);
   await app.getByLabel('New request name').press('Enter');
 }

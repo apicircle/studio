@@ -234,7 +234,8 @@ Desktop: `pnpm --filter @apicircle/desktop build` then `… start`.
 - **CI workflows** (`.github/workflows/`):
   - `ci.yml` — lint / typecheck / unit tests (quality gates).
   - `codeql.yml` — security analysis.
-  - `e2e.yml` — Playwright + cross-browser smoke + visual baseline.
+  - `e2e.yml` — Playwright + cross-browser smoke. The visual-baseline
+    job is manual-dispatch only (baselines not yet committed).
   - `release.yml` — changesets-driven npm publish of `@apicircle/*` packages.
   - `desktop-release.yml` — Electron installers + `electron-updater` indexes.
   - `deploy-web.yml` — builds `apps/web` and publishes to GitHub Pages on

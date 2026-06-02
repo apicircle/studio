@@ -25,7 +25,15 @@
 
 ## Unreleased
 
-_Nothing yet._
+### Internals
+
+- **CI: `visual-baseline` job is now manual-dispatch only.** The Linux
+  baseline PNGs are not committed yet, so the job ran every push to main
+  as a no-op (`continue-on-error`) only to upload first-run artifacts.
+  It's now off by default and triggered on demand from the Actions tab
+  when (re)generating baselines. No change to local
+  `pnpm test:e2e:visual`. (`.github/workflows/e2e.yml`,
+  `docs/qa/README.md`, `CLAUDE.md`)
 
 ## 1.0.7 - 2026-06-02
 

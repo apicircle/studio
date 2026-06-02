@@ -44,8 +44,8 @@ The numbers below come from the last `scripts/e2e_coverage_report.py
   (`scripts/e2e_coverage_report.py`).
 - CI integration: `e2e.yml` with a coverage floor + per-PR regression
   delta (see [E2E CI](#e2e-ci) below).
-- Cross-browser smoke (`firefox` + `webkit`) and a visual baseline
-  project.
+- Cross-browser smoke (`firefox` + `webkit`) on main runs. The visual
+  baseline project exists but is manual-dispatch only — see [E2E CI](#e2e-ci).
 - Per-module specs across every workbook module.
 
 ### Pending
@@ -72,15 +72,18 @@ The numbers below come from the last `scripts/e2e_coverage_report.py
 ## E2E CI
 
 The E2E suite runs on every PR and every push to `main`
-([`.github/workflows/e2e.yml`](../../.github/workflows/e2e.yml)). Three
-jobs:
+([`.github/workflows/e2e.yml`](../../.github/workflows/e2e.yml)):
 
 1. **`playwright`** — full chromium run + strict coverage report. Gates
    the build on a coverage floor and a regression delta vs main.
 2. **`cross-browser-smoke`** — `@smoke`-tagged subset run against Firefox
    - WebKit. Informational; does not gate the build.
-3. **`visual-baseline`** — pixel-diff baseline of every primary panel.
-   Fails the build if a screenshot diverges from the committed baseline.
+3. **`visual-baseline`** _(manual dispatch only)_ — pixel-diff baseline of
+   every primary panel. Off by default because the Linux baselines aren't
+   committed yet. Trigger from the Actions tab → "Run workflow" when you
+   want to (re)generate baselines; download the
+   `visual-baseline-snapshots-<run_id>` artifact and commit the PNGs under
+   `e2e/web/visual-baseline.spec.ts-snapshots/` to seed the gate.
 
 ### What the build gates on
 
@@ -89,7 +92,9 @@ jobs:
 | Coverage floor        | strict-live ≥ 20%       | `e2e_coverage_report.py --fail-under 20` |
 | Coverage regression   | delta ≥ −2.0 pp vs main | `scripts/e2e_coverage_delta.mjs`         |
 | Playwright assertions | 0 failures              | `pnpm test:e2e` exit code                |
-| Visual baseline       | 0 unmasked diffs        | `--project=visual-baseline` exit code    |
+
+The visual-baseline project is not a build gate — it's manual-dispatch
+only and currently a baseline-bootstrap surface.
 
 The two cross-engine smoke projects (firefox + webkit) are surfaced as
 artifacts but are _not_ a gate — engine-only drift is informational.
@@ -101,7 +106,8 @@ artifacts but are _not_ a gate — engine-only drift is informational.
   Playwright JSON results (used by the PR delta script).
 - `smoke-report-${run_id}` — HTML report from the firefox + webkit run.
 - `playwright-traces-${run_id}` — traces from failed tests (failure only).
-- `visual-diffs-${run_id}` — diff PNGs when the visual project fails.
+- `visual-baseline-snapshots-${run_id}` / `visual-baseline-diffs-${run_id}` —
+  baseline PNGs and diff PNGs from manual-dispatch visual-baseline runs.
 
 ### PR coverage delta
 
@@ -182,10 +188,10 @@ scatter residue rationales across specs.
 2. **`cross-browser-smoke` failed** — same recipe via
    `smoke-report-${run_id}`. Most engine-only failures trace back to
    Chromium-specific timing assumptions in the spec.
-3. **`visual-baseline` failed** — download `visual-diffs-${run_id}`. If
-   the change is intentional, run
+3. **`visual-baseline` failed** _(manual dispatch only)_ — download
+   `visual-baseline-diffs-${run_id}`. If the change is intentional, run
    `pnpm --filter @apicircle/e2e-web exec playwright test --project=visual-baseline --update-snapshots`,
-   commit the updated `__screenshots__/` files, and push.
+   commit the updated `visual-baseline.spec.ts-snapshots/` files, and push.
 4. **Coverage gate failed** — most often a `test()` got converted to
    `test.fixme()` or deleted. The strict JSON's `gap` array lists every
    TC-ID that lost coverage; cross-reference with the diff.

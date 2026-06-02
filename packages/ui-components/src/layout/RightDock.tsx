@@ -54,8 +54,12 @@ export function RightDock() {
   // part of the layout, not a popover. The rail is excluded so the
   // toggle-tab buttons keep their existing semantics; clicks inside the
   // dock itself (interacting with vault rows, schema editor, etc.) also
-  // shouldn't dismiss. We listen on `pointerdown` so dismissal happens
-  // before any click handlers on the target run.
+  // shouldn't dismiss. We also ignore clicks inside any open modal/dialog
+  // (e.g. the passphrase setup modal launched from the Vault tab's CTA) —
+  // submitting inside the modal would otherwise dismiss the dock behind
+  // it, leaving the user with no Vault to interact with on close.
+  // We listen on `pointerdown` so dismissal happens before any click
+  // handlers on the target run.
   useEffect(() => {
     if (mode !== 'overlay' || tab === null) return;
     const onPointer = (e: PointerEvent) => {
@@ -64,6 +68,7 @@ export function RightDock() {
       if (dockRef.current?.contains(target)) return;
       const rail = document.querySelector('nav[aria-label="Workspace inspector rail"]');
       if (rail?.contains(target)) return;
+      if (target instanceof Element && target.closest('[role="dialog"]')) return;
       closeDock();
     };
     // Defer one tick so the same pointerdown that opened the overlay

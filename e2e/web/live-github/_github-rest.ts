@@ -544,7 +544,25 @@ export interface WorkspaceFile<T = Record<string, unknown>> {
 function isTransientWorkspaceReadFailure(status: number, body: string): boolean {
   if (status === 409) return true;
   if (status !== 404) return false;
-  return body.includes('No commit found for the ref') || body.includes('Git Repository is empty');
+  // GitHub Contents-API propagation race signatures we recover from:
+  //   * "No commit found for the ref" / "Git Repository is empty" — the
+  //     branch HEAD lags the PUT that created it.
+  //   * Generic `{"message":"Not Found"}` from the Contents API — the
+  //     branch HEAD has the new commit but the per-file Contents read
+  //     replica still serves the pre-PUT 404 (observed back-to-back after
+  //     `writeWorkspaceJson` returns 201, e.g. `createV2SourceRepo` →
+  //     immediate `updateWorkspaceJson` in 15-execution-with-linked-assets).
+  // `fetchWorkspaceJson` is only invoked against repos we expect to contain
+  // `workspace.json` (we just seeded or pushed it), so generic 404s are
+  // interpreted as propagation lag rather than "file truly absent". True
+  // absence probes use a bare `fetch(...)` that bypasses this helper (see
+  // `ensureWorkspaceJsonOnMain` and the existence check inside
+  // `writeWorkspaceJson`).
+  return (
+    body.includes('No commit found for the ref') ||
+    body.includes('Git Repository is empty') ||
+    /"message"\s*:\s*"Not Found"/.test(body)
+  );
 }
 
 async function wait(ms: number): Promise<void> {
@@ -581,6 +599,13 @@ export async function fetchWorkspaceJson<T = Record<string, unknown>>(
   const ref = opts.expectedCommitSha ?? branchOrSha;
   let lastStatus = 0;
   let lastText = '<no-body>';
+  // Exponential backoff 500/1000/2000/4000/8000/16000/32000 ms ≈ 63.5s
+  // total, mirroring `getDefaultBranchHeadWithPropagation` above. The
+  // previous 8 × `750 * (attempt + 1)` linear budget (~21s) intermittently
+  // timed out against the Contents-API replica lag observed when
+  // `createV2SourceRepo` is immediately followed by `updateWorkspaceJson`
+  // (15-execution-with-linked-assets). 63s sits comfortably below the
+  // 90s per-test timeout used by the `chromium-live-github` project.
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const res = await fetch(
       `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/workspace.json?ref=${encodeURIComponent(ref)}`,
@@ -609,7 +634,7 @@ export async function fetchWorkspaceJson<T = Record<string, unknown>>(
       isTransientWorkspaceReadFailure(lastStatus, lastText) ||
       (opts.expectedCommitSha !== undefined && lastStatus === 404);
     if (!transient || attempt === 7) break;
-    await wait(750 * (attempt + 1));
+    await wait(500 * 2 ** attempt);
   }
   throw new Error(`fetchWorkspaceJson ${cfg.fullName}@${ref} failed (${lastStatus}): ${lastText}`);
 }
