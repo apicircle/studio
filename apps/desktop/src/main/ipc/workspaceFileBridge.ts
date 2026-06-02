@@ -1,7 +1,8 @@
-import { ipcMain } from 'electron';
+import { ipcMain, type BrowserWindow } from 'electron';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
 import { assertTrustedSender } from '../security/assertTrustedSender';
 import type { WorkspaceFileManager } from '../workspaceFile/workspaceFileManager';
+import { WorkspaceWatcher } from '../workspaceFile/workspaceWatcher';
 import type { WorkspaceRegistry, WorkspaceRegistryEntry } from '@apicircle/core/workspace/registry';
 
 // =============================================================================
@@ -35,7 +36,19 @@ const CHANNEL = {
   registerWorkspace: 'apicircle:workspaceFile:registerWorkspace',
   setActiveWorkspace: 'apicircle:workspaceFile:setActiveWorkspace',
   flush: 'apicircle:workspaceFile:flush',
+  externalChange: 'apicircle:workspaceFile:externalChange',
 } as const;
+
+/**
+ * Payload pushed on the `externalChange` channel when the watcher
+ * detects a write the desktop didn't make. The literal string
+ * `'registry'` is reserved to signal `registry.json` changed; any
+ * other value is a per-workspace id whose `workspace.synced.json`
+ * changed.
+ */
+export interface WorkspaceFileExternalChangePayload {
+  workspaceId: string;
+}
 
 // Hard cap on the JSON payload size the renderer can ship to disk in one
 // write. The workspace doc is a few hundred KB at most under normal use;
@@ -114,6 +127,38 @@ function assertPayloadSize(payload: unknown): void {
       `workspace-file payload (${bytes} bytes) exceeds MAX_PAYLOAD_BYTES (${MAX_PAYLOAD_BYTES})`,
     );
   }
+}
+
+/**
+ * Wire up the file watcher and push `externalChange` events to the
+ * renderer. Call alongside `registerWorkspaceFileBridge` once the main
+ * window exists.
+ *
+ * The watcher's `markSelfWrite` hook is wired into the manager so writes
+ * from the manager (i.e. desktop-side IDB→disk mirror writes) don't
+ * trigger a refresh loop. Returns the watcher so the caller can stop it
+ * on app quit.
+ */
+export function startWorkspaceFileWatcher(
+  manager: WorkspaceFileManager,
+  getMainWindow: () => BrowserWindow | null,
+): WorkspaceWatcher {
+  const watcher = new WorkspaceWatcher(manager);
+  manager.attachWatcher(watcher);
+  watcher.onExternalChange((event) => {
+    const win = getMainWindow();
+    if (!win || win.isDestroyed()) return;
+    const payload: WorkspaceFileExternalChangePayload = { workspaceId: event.workspaceId };
+    try {
+      win.webContents.send(CHANNEL.externalChange, payload);
+    } catch (err) {
+      // Window may have been destroyed between the isDestroyed check
+      // and send — that's harmless, the next change will retry.
+      console.error('[workspaceFileBridge] externalChange send failed', err);
+    }
+  });
+  watcher.start();
+  return watcher;
 }
 
 export function registerWorkspaceFileBridge(manager: WorkspaceFileManager): void {

@@ -453,6 +453,24 @@ const inflightPlanRuns = new Set<string>();
  */
 const inflightAbortControllers = new Map<string, AbortController>();
 
+/**
+ * Surface request / folder / environment counts for refresh-result toasts.
+ * Keeping the helper close to `refreshFromDisk` since that's the only
+ * caller — and the shape is intentionally narrow so it's cheap to compute
+ * on every refresh without touching `synced.local` or attachments.
+ */
+function countsOf(synced: WorkspaceSynced): {
+  requests: number;
+  folders: number;
+  environments: number;
+} {
+  return {
+    requests: Object.keys(synced.collections.requests).length,
+    folders: Object.keys(synced.collections.folders).length,
+    environments: Object.keys(synced.environments.items).length,
+  };
+}
+
 /** Truncate `value` to `RUN_BODY_PREVIEW_LIMIT` UTF-16 code units. */
 function clampPreview(value: string): { preview: string; truncated: boolean } {
   if (value.length <= RUN_BODY_PREVIEW_LIMIT) return { preview: value, truncated: false };
@@ -1237,6 +1255,21 @@ type WorkspaceStore = {
    * describing what happened. No-op (returns 'no-mirror') on web.
    */
   refreshFromDisk: () => Promise<McpRefreshResult>;
+
+  /**
+   * Re-read `<root>/registry.json` from disk and push the result into
+   * `workspaceRegistry`. Used by the file-watcher subscription when an
+   * external writer (apicircle CLI `workspaces create`, MCP server) adds
+   * or renames workspaces — without this the desktop's workspace
+   * switcher would stay stuck on its boot-time snapshot.
+   *
+   * Returns the count of newly-visible workspaces (entries present on
+   * disk that weren't in the in-memory registry), or `null` when the
+   * mirror is unavailable (web build).
+   */
+  refreshRegistryFromDisk: () => Promise<
+    { kind: 'no-mirror' } | { kind: 'updated'; added: number }
+  >;
 
   // --- Linked-content overrides ---------------------------------------
   /**
@@ -2100,11 +2133,15 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       // Boot-time outcomes for the active workspace:
       //
       //   1. No bridge (web)               → no-op.
-      //   2. Disk has the same workspaceId → write through so the MCP
-      //                                      server / CLI see the same doc.
-      //   3. Disk has a different shape    → run the one-time merge
-      //      under the same id (legacy        (IDB wins on collision) and
-      //      migration trail)                 persist the merged result.
+      //   2. Disk has a DIFFERENT workspaceId → one-time merge (legacy
+      //      migration trail; IDB wins on collision).
+      //   3. Disk has the SAME workspaceId AND disk is newer than IDB →
+      //      adopt the disk doc. This is the path that catches MCP / CLI
+      //      writes made while the desktop wasn't running; without this
+      //      branch the boot-time IDB→disk write below would silently
+      //      clobber them.
+      //   4. Disk has the SAME workspaceId AND IDB is newer-or-equal →
+      //      write IDB through to disk so the MCP / CLI see the same doc.
       //
       // Mirror also fans out every OTHER IDB-registered workspace through
       // its own disk write so multi-workspace state lives on disk from
@@ -2112,6 +2149,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       let finalSynced = migrated;
       const finalLocal = local;
       const mirror = getDiskMirror();
+      // Whether the boot-time IDB→disk write below would overwrite a
+      // newer on-disk doc. When true we skip the queued write so the
+      // disk wins; the in-memory store still reflects disk so the user
+      // sees the correct content immediately.
+      let adoptedFromDisk = false;
       if (mirror.isAvailable()) {
         try {
           await mirror.init();
@@ -2132,6 +2174,30 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
             } catch (saveErr) {
               console.error('[workspace.hydrate] disk-merge persist failed', saveErr);
               finalSynced = migrated;
+            }
+          } else if (onDisk && onDisk.synced.workspaceId === migrated.workspaceId) {
+            // Same workspaceId — compare `meta.updatedAt`. If disk is
+            // newer, an external writer (MCP server, CLI) updated the file
+            // while the desktop was closed; adopt it instead of letting
+            // the boot-time IDB→disk write overwrite their changes.
+            const diskUpdatedAt = Date.parse(onDisk.synced.meta.updatedAt);
+            const idbUpdatedAt = Date.parse(migrated.meta.updatedAt);
+            if (Number.isFinite(diskUpdatedAt) && diskUpdatedAt > idbUpdatedAt) {
+              console.warn(
+                `[workspace.hydrate] disk newer than IDB for workspace ${migrated.workspaceId} (disk=${onDisk.synced.meta.updatedAt}, idb=${migrated.meta.updatedAt}) — adopting disk state`,
+              );
+              finalSynced = onDisk.synced;
+              adoptedFromDisk = true;
+              try {
+                // Mirror disk → IDB so the next boot starts from the same
+                // place even if the mirror is later disabled.
+                await saveSynced(onDisk.synced);
+              } catch (saveErr) {
+                console.error(
+                  '[workspace.hydrate] could not persist disk-adopted state to IDB',
+                  saveErr,
+                );
+              }
             }
           }
           // Register every IDB workspace with the on-disk registry so the
@@ -2154,11 +2220,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         }
         // Seed the debounced-persist observer with the full pair so the
         // first mutation (which may only touch one half) still produces a
-        // complete disk-mirror write. Also queue an initial write so the
-        // active workspace's disk file reflects boot-time IDB even with
-        // zero user mutations.
+        // complete disk-mirror write. Skip the initial IDB→disk write
+        // when we just adopted disk's newer content — re-writing it would
+        // be a no-op at best, and a race-with-the-watcher trigger at
+        // worst.
         primeObservedWorkspace(finalSynced, finalLocal);
-        queueSaveBoth(finalSynced, finalLocal);
+        if (!adoptedFromDisk) {
+          queueSaveBoth(finalSynced, finalLocal);
+        }
       } else {
         primeObservedWorkspace(finalSynced, finalLocal);
       }
@@ -2501,7 +2570,22 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       workspaces: registry.workspaces.map((w) => (w.id === activeId ? { ...w, name } : w)),
     };
     set({ workspaceRegistry: optimistic });
-    void updateRegistryEntryNamePersisted(optimistic, activeId, name);
+    // Persist only when the name is a non-empty non-clashing string.
+    // The action fires on every keystroke, so a transient empty input
+    // or a typed-in collision should NOT throw — it should just skip
+    // the IDB write. The optimistic in-memory state above keeps the
+    // input field consistent with what the user typed; the next valid
+    // keystroke will flush.
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const trimmedLower = trimmed.toLowerCase();
+    const clash = optimistic.workspaces.some(
+      (w) => w.id !== activeId && w.name.toLowerCase() === trimmedLower,
+    );
+    if (clash) return;
+    updateRegistryEntryNamePersisted(optimistic, activeId, name).catch((err) => {
+      console.error('[workspace.setWorkspaceName] persist failed', err);
+    });
   },
 
   // Delete a mock definition. Pure data op — the runtime is the Desktop
@@ -3377,14 +3461,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   refreshFromDisk: async () => {
     const mirror = getDiskMirror();
     if (!mirror.isAvailable()) return { kind: 'no-mirror' };
-    // Drain any in-flight write first so the disk reflects whatever the
-    // store just queued (otherwise we'd race ourselves and see stale
-    // bytes). Then read the ACTIVE workspace's per-id pair.
-    try {
-      await flushPendingPersist();
-    } catch {
-      /* the write path logs its own errors; press on with the read */
-    }
+    // Read disk BEFORE flushing pending writes. Flushing first would
+    // race the on-disk file against in-memory state and silently
+    // overwrite any external (MCP / CLI) writes that happened since
+    // the desktop last persisted — exactly the bug this refresh is
+    // meant to surface. Once we've read the file we know whether to
+    // flush (memory is the source of truth) or to hydrate-from-disk
+    // (an external writer is).
     const current = get().synced;
     const targetId = current?.workspaceId;
     if (!targetId) {
@@ -3398,7 +3481,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       if (!onDisk) return { kind: 'no-file' };
       set({ synced: onDisk.synced, local: onDisk.local });
       primeObservedWorkspace(onDisk.synced, onDisk.local);
-      return { kind: 'updated', importedAt: onDisk.synced.meta.updatedAt };
+      return {
+        kind: 'updated',
+        importedAt: onDisk.synced.meta.updatedAt,
+        counts: countsOf(onDisk.synced),
+      };
     }
     let onDisk: { synced: WorkspaceSynced; local: WorkspaceLocal } | null;
     try {
@@ -3420,10 +3507,15 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         primeObservedWorkspace(merged, currentLocal);
         queueSaveBoth(merged, currentLocal);
       }
-      return { kind: 'merged', importedRequestIds, importedFolderIds };
+      return {
+        kind: 'merged',
+        importedRequestIds,
+        importedFolderIds,
+        counts: countsOf(merged),
+      };
     }
     // Same workspaceId — compare timestamps. Disk newer means CLI / MCP
-    // wrote since the desktop last hydrated; pull it in.
+    // wrote since the desktop last persisted; pull it in.
     const diskUpdatedAt = Date.parse(onDisk.synced.meta.updatedAt);
     const memUpdatedAt = Date.parse(current.meta.updatedAt);
     if (Number.isFinite(diskUpdatedAt) && diskUpdatedAt > memUpdatedAt) {
@@ -3431,9 +3523,50 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const nextLocal = currentLocal ?? onDisk.local;
       set({ synced: onDisk.synced, local: nextLocal });
       primeObservedWorkspace(onDisk.synced, nextLocal);
-      return { kind: 'updated', importedAt: onDisk.synced.meta.updatedAt };
+      // Persist the adopted doc to IDB so the next hydrate doesn't
+      // re-do the disk-vs-IDB compare and re-import. Without this,
+      // IDB stays at the pre-refresh state until the user's next
+      // mutation flushes through the debounced persister — a window
+      // where a crash would lose the freshly-adopted content.
+      try {
+        await saveSynced(onDisk.synced);
+      } catch (err) {
+        console.error('[workspace.refreshFromDisk] could not persist adopted state to IDB', err);
+      }
+      return {
+        kind: 'updated',
+        importedAt: onDisk.synced.meta.updatedAt,
+        counts: countsOf(onDisk.synced),
+      };
     }
-    return { kind: 'up-to-date' };
+    // Memory is the source of truth (or matches disk exactly). Drain any
+    // pending writes so the disk file reflects whatever the store just
+    // queued — safe now because we've already verified disk isn't ahead.
+    try {
+      await flushPendingPersist();
+    } catch {
+      /* the write path logs its own errors; press on */
+    }
+    return { kind: 'up-to-date', counts: countsOf(current) };
+  },
+
+  refreshRegistryFromDisk: async () => {
+    const mirror = getDiskMirror();
+    if (!mirror.isAvailable()) return { kind: 'no-mirror' };
+    const fromDisk = await mirror.readRegistry();
+    if (!fromDisk) {
+      // Empty disk is treated as "no new workspaces" — no point in
+      // overwriting the in-memory registry with nothing.
+      return { kind: 'updated', added: 0 };
+    }
+    const current = get().workspaceRegistry;
+    const currentIds = new Set(current?.workspaces.map((w) => w.id) ?? []);
+    let added = 0;
+    for (const w of fromDisk.workspaces) {
+      if (!currentIds.has(w.id)) added++;
+    }
+    set({ workspaceRegistry: fromDisk });
+    return { kind: 'updated', added };
   },
 
   setLinkedRequestOverride: (linkedWorkspaceId, itemId, patch) => {

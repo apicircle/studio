@@ -83,20 +83,26 @@ export function ConnectionSection() {
           });
           break;
         case 'up-to-date':
-          pushToast({ tone: 'success', title: 'Already up to date' });
+          pushToast({
+            tone: 'success',
+            title: 'Already up to date',
+            detail: formatCounts(result.counts),
+          });
           break;
         case 'updated':
           pushToast({
             tone: 'success',
             title: 'Workspace refreshed from disk',
-            detail: `On-disk update at ${formatRelativeTime(result.importedAt)}.`,
+            detail: `${formatCounts(result.counts)} · on-disk update ${formatRelativeTime(
+              result.importedAt,
+            )}.`,
           });
           break;
         case 'merged':
           pushToast({
             tone: 'success',
             title: 'On-disk content merged in',
-            detail: `Imported ${result.importedRequestIds.length} request(s) and ${result.importedFolderIds.length} folder(s).`,
+            detail: `Imported ${result.importedRequestIds.length} request(s) and ${result.importedFolderIds.length} folder(s). Now ${formatCounts(result.counts)}.`,
           });
           break;
         case 'error':
@@ -111,6 +117,23 @@ export function ConnectionSection() {
       setRefreshing(false);
     }
   };
+
+  // Phrase the on-disk counts as a readable sentence fragment. Used as
+  // the toast `detail` so users can spot a missing collection at a glance
+  // — e.g. seeing "1 request" when their MCP client just claimed 21 is
+  // the signal an external write didn't land. Defensive against partial
+  // shapes from older code paths so a stale stub can't crash the toast.
+  function formatCounts(c: { requests?: number; folders?: number; environments?: number }): string {
+    const r = c.requests ?? 0;
+    const f = c.folders ?? 0;
+    const e = c.environments ?? 0;
+    const pieces = [
+      `${r} ${r === 1 ? 'request' : 'requests'}`,
+      `${f} ${f === 1 ? 'folder' : 'folders'}`,
+      `${e} ${e === 1 ? 'environment' : 'environments'}`,
+    ];
+    return pieces.join(' · ');
+  }
 
   const refreshSupported = !!wsFileBridge;
 

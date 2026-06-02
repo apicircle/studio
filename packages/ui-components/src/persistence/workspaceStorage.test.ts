@@ -114,6 +114,18 @@ describe('workspaceStorage — multi-workspace registry actions', () => {
     await expect(createWorkspace(after.registry, 'Unique')).rejects.toThrow(/already exists/);
   });
 
+  it('createWorkspace rejects case-insensitive duplicate names', async () => {
+    // Pre-1.0.8 the desktop's create did an exact-case compare while
+    // the CLI did case-insensitive — so `My Workspace` + `my workspace`
+    // could coexist via the UI. They render identically in the
+    // switcher, leaving the user with no way to disambiguate. The
+    // persistence layer now matches the CLI's case-insensitive guard.
+    const initial = await freshState();
+    const after = await createWorkspace(initial.registry, 'Petstore');
+    await expect(createWorkspace(after.registry, 'PETSTORE')).rejects.toThrow(/already exists/);
+    await expect(createWorkspace(after.registry, '  petstore  ')).rejects.toThrow(/already exists/);
+  });
+
   it('createWorkspace rejects empty name', async () => {
     const initial = await freshState();
     await expect(createWorkspace(initial.registry, '   ')).rejects.toThrow(/required/);
@@ -175,6 +187,32 @@ describe('workspaceStorage — multi-workspace registry actions', () => {
     expect(updated.workspaces[0].name).toBe('Renamed');
     const persisted = await readRegistry();
     expect(persisted?.workspaces[0].name).toBe('Renamed');
+  });
+
+  it('updateRegistryEntryName rejects a rename that would collide with another workspace (case-insensitive)', async () => {
+    // Renaming a workspace to a name already taken by ANOTHER row
+    // would produce two indistinguishable switcher entries. Allow the
+    // no-op same-id rename through; reject any rename that creates a
+    // collision.
+    const initial = await freshState();
+    const { registry: afterCreate, synced: secondSynced } = await createWorkspace(
+      initial.registry,
+      'Beta',
+    );
+    // Rename ws-1 to "Beta" → collides with ws-2 → reject.
+    await expect(updateRegistryEntryName(afterCreate, initial.workspaceId, 'beta')).rejects.toThrow(
+      /already exists/,
+    );
+    // Rename ws-2 to its current name → no-op, no collision → pass.
+    const noop = await updateRegistryEntryName(afterCreate, secondSynced.workspaceId, 'Beta');
+    expect(noop.workspaces.find((w) => w.id === secondSynced.workspaceId)?.name).toBe('Beta');
+  });
+
+  it('updateRegistryEntryName rejects empty names', async () => {
+    const initial = await freshState();
+    await expect(
+      updateRegistryEntryName(initial.registry, initial.workspaceId, '   '),
+    ).rejects.toThrow(/required/);
   });
 });
 

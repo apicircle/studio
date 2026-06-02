@@ -3,6 +3,7 @@ import { AlertTriangle, LifeBuoy } from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { probeWorkspaceRecords } from './persistence/workspaceStorage';
 import { useWorkspaceStore } from './store/workspaceStore';
+import { getDesktopWorkspaceFileBridge } from './desktop/bridge';
 
 /**
  * Re-run `refreshWorkspace` when the user comes back to the app from
@@ -63,6 +64,90 @@ function useFocusRefresh(): void {
     };
   }, [hasBranch, refreshWorkspace]);
 }
+
+/**
+ * Subscribe to file-watcher events from the desktop main process so the
+ * renderer auto-refreshes when an external writer (MCP server, CLI, or
+ * a user editing the JSON by hand) changes `workspace.synced.json` while
+ * the desktop is running.
+ *
+ * Without this hook the desktop only re-reads disk on a manual Refresh
+ * click, and the debounced IDB→disk mirror would silently overwrite the
+ * external write on the next mutation. The watcher in main suppresses
+ * its own write events, so this subscription only fires for truly
+ * external changes.
+ *
+ * Debounced: a burst of external writes (e.g. an MCP `folder.import`
+ * that lands many requests in quick succession) coalesces to one refresh.
+ */
+function useExternalDiskRefresh(): void {
+  const refreshFromDisk = useWorkspaceStore((s) => s.refreshFromDisk);
+  const refreshRegistryFromDisk = useWorkspaceStore((s) => s.refreshRegistryFromDisk);
+  const pushToast = useWorkspaceStore((s) => s.pushToast);
+  const ready = useWorkspaceStore((s) => s.ready);
+  const inFlightRef = useRef(false);
+
+  useEffect(() => {
+    // Wait until hydration completes — refreshFromDisk needs the
+    // current workspaceId to know which on-disk file to read.
+    if (!ready) return;
+    const bridge = getDesktopWorkspaceFileBridge();
+    if (!bridge?.onExternalChange) return;
+    const unsubscribe = bridge.onExternalChange((event) => {
+      // Registry events: an external writer (CLI `workspaces create`,
+      // MCP-side registration, or `setActive` from a sibling process)
+      // touched `registry.json`. Re-read the registry into the store so
+      // the workspace switcher reflects whatever's on disk. We do NOT
+      // also call refreshFromDisk here — the active-workspace pointer
+      // change, if any, doesn't move CONTENT until the user actually
+      // switches workspaces in the UI.
+      if (event.workspaceId === 'registry') {
+        void refreshRegistryFromDisk()
+          .then((result) => {
+            if (result.kind === 'updated' && result.added > 0) {
+              pushToast({
+                tone: 'info',
+                title: 'Workspace list updated',
+                detail: `${result.added} new workspace${result.added === 1 ? '' : 's'} appeared on disk (CLI or MCP).`,
+              });
+            }
+          })
+          .catch(() => {
+            /* readRegistry handles its own errors */
+          });
+        return;
+      }
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
+      refreshFromDisk()
+        .then((result) => {
+          if (result.kind === 'updated') {
+            pushToast({
+              tone: 'info',
+              title: 'Workspace updated from disk',
+              detail: 'An external change (MCP, CLI, or editor) was picked up.',
+            });
+          } else if (result.kind === 'merged') {
+            pushToast({
+              tone: 'info',
+              title: 'On-disk content merged in',
+              detail: `Imported ${result.importedRequestIds.length} request(s) and ${result.importedFolderIds.length} folder(s).`,
+            });
+          }
+          // 'up-to-date' / 'no-file' / 'no-mirror' / 'error' are silent
+          // here so the user isn't spammed when nothing changed.
+        })
+        .catch(() => {
+          /* refreshFromDisk handles its own errors via the result kind */
+        })
+        .finally(() => {
+          inFlightRef.current = false;
+        });
+    });
+    return unsubscribe;
+  }, [ready, refreshFromDisk, refreshRegistryFromDisk, pushToast]);
+}
+
 import { TopBar } from './layout/TopBar';
 import { PanelTabs } from './layout/PanelTabs';
 import { Sidebar } from './layout/Sidebar';
@@ -95,6 +180,7 @@ export function App() {
   }, [hydrate]);
 
   useFocusRefresh();
+  useExternalDiskRefresh();
 
   if (hydrationError) {
     return <HydrationErrorScreen />;

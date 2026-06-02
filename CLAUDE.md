@@ -116,8 +116,12 @@ concretes:
   (disk + `proper-lockfile` advisory lock).
 - **`Workspaces`** — multi-workspace discovery: `list()` / `get(id)` /
   `setActive(id)`. Implementations: `SingleWorkspaceWorkspaces` and
-  `MultiWorkspaceProvider` (registry root on disk; rebuilds the per-id
-  `FileBackedWorkspaceProvider` whenever the active id changes).
+  `MultiWorkspaceProvider`. `MultiWorkspaceProvider.activeProvider()`
+  returns a **lazy wrapper that re-reads `registry.json` on every
+  `read` / `apply` / `write`** so a workspace switch in the desktop
+  reaches a running MCP process without restart. Do NOT cache the
+  per-id provider in tool handlers — always go through
+  `ctx.workspace`.
 - **`MockController`** — `start` / `stop` / `list`. Implementation:
   `InProcessMockController` (wraps `mock-server-core` directly).
 
@@ -141,6 +145,21 @@ can operate on the same source of truth.
 - `resolveWorkspace` in `packages/cli/src/util/resolveWorkspace.ts` gives
   every CLI subcommand the same `--workspace-name` / `--workspace-path`
   addressing model the desktop uses.
+- **Boot-time disk-vs-IDB resolution is timestamp-driven.** `hydrate()`
+  reads both halves at boot and adopts whichever has the newer
+  `meta.updatedAt`. External writers (MCP / CLI) bumping `updatedAt`
+  inside `applyMutation` is what makes their writes survive the next
+  desktop launch. When changing `hydrate`, the IDB→disk write at the
+  end MUST stay gated behind "memory wins" — unconditional re-write
+  silently overwrites external changes.
+- **External-write auto-refresh.** The file watcher in
+  `apps/desktop/src/main/workspaceFile/workspaceWatcher.ts` emits
+  `apicircle:workspaceFile:externalChange` IPC events whenever
+  `<root>/registry.json` or a per-id `workspace.synced.json` changes.
+  `App.tsx`'s `useExternalDiskRefresh` hook subscribes and auto-calls
+  `refreshFromDisk()` so MCP / CLI writes appear without the user
+  clicking Refresh. `WorkspaceFileManager.markSelfWrite` suppresses
+  the desktop's own mirror writes so the loop can't self-trigger.
 
 ### Desktop bridge contract
 

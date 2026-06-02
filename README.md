@@ -84,6 +84,12 @@ Continue, Cline, Zed, and Windsurf** — or anything else that talks MCP. The
 assertions, execution plans, history, mock-server lifecycle, codebase
 scanning, imports, code generation, and natural-language authoring.
 
+The desktop app watches `workspace.synced.json` for external writes, so
+anything the MCP server (or the `apicircle` CLI) writes shows up in the
+editor automatically — no manual refresh needed. The desktop's own
+mirror writes are suppressed via a stat-snapshot check, so the loop
+can't trigger itself.
+
 ### Local mock servers
 
 Point API Circle at an OpenAPI, Swagger, Postman, or Insomnia file and get a

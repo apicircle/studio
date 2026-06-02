@@ -1,3 +1,5 @@
+import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
+import type { WorkspacePatch, WorkspaceState } from '@apicircle/core';
 import {
   loadRegistry,
   loadWorkspaceById,
@@ -22,16 +24,77 @@ import { WorkspaceNotFoundError, type WorkspaceSummary, type Workspaces } from '
 // consume `ctx.workspaces` can drill into any registered workspace.
 // =============================================================================
 
-export class MultiWorkspaceProvider implements Workspaces {
-  private active: WorkspaceProvider | null = null;
-  private activeWorkspaceId: string | null = null;
+/**
+ * Lazy `WorkspaceProvider` that re-resolves the active workspace id from
+ * `registry.json` on every `read` / `apply` / `write` call.
+ *
+ * Why this exists: the desktop owns `registry.json`. The user can switch
+ * active workspaces in the UI at any time while their AI client's MCP
+ * server keeps running. Before this wrapper landed, `MultiWorkspaceProvider`
+ * cached the per-id `FileBackedWorkspaceProvider` at `init()` time, so a
+ * mid-session workspace switch left the MCP writing to the OLD workspace.
+ * Now each call re-reads the registry and routes to whichever id is
+ * currently active.
+ *
+ * Cost: one small JSON file read + a `proper-lockfile` acquire per tool
+ * call. The registry is a few hundred bytes; the cost is negligible
+ * compared to the patch application itself.
+ */
+class LazyActiveWorkspaceProvider implements WorkspaceProvider {
+  constructor(
+    private readonly registryRoot: string,
+    private readonly onActiveResolved: (workspaceId: string) => void,
+  ) {}
 
-  constructor(private readonly registryRoot: string) {}
+  private async resolveActive(): Promise<FileBackedWorkspaceProvider> {
+    const registry = await loadRegistry(this.registryRoot);
+    const activeId = registry?.activeWorkspaceId ?? null;
+    if (!activeId) {
+      throw new Error(
+        'No active workspace. Open the desktop app at least once, or run `apicircle workspaces create <name>`.',
+      );
+    }
+    this.onActiveResolved(activeId);
+    return new FileBackedWorkspaceProvider(workspaceDirFor(this.registryRoot, activeId));
+  }
+
+  async read(): Promise<WorkspaceState> {
+    const provider = await this.resolveActive();
+    return provider.read();
+  }
+
+  async apply(patch: WorkspacePatch): Promise<{ state: WorkspaceState; changedIds: string[] }> {
+    const provider = await this.resolveActive();
+    return provider.apply(patch);
+  }
+
+  async write(next: { synced?: WorkspaceSynced; local?: WorkspaceLocal }): Promise<WorkspaceState> {
+    const provider = await this.resolveActive();
+    return provider.write(next);
+  }
+}
+
+export class MultiWorkspaceProvider implements Workspaces {
+  /** Last-known active workspace id. Refreshed every time the lazy
+   *  provider resolves; reflects what the most recent operation saw on
+   *  disk, not a stale boot-time snapshot. */
+  private activeWorkspaceId: string | null = null;
+  /** The lazy provider tool handlers consume as `ctx.workspace`. Holds a
+   *  reference back to this instance so each call updates
+   *  `activeWorkspaceId` for `activeId()` callers + diagnostic logs. */
+  private readonly lazyProvider: LazyActiveWorkspaceProvider;
+
+  constructor(private readonly registryRoot: string) {
+    this.lazyProvider = new LazyActiveWorkspaceProvider(this.registryRoot, (id) => {
+      this.activeWorkspaceId = id;
+    });
+  }
 
   /**
-   * Hydrate the active provider from disk. Must be called once before the
-   * MCP host boots so `ctx.workspace.read()` doesn't race the first
-   * registry-load. Returns the registry the boot can log.
+   * Read the registry from disk so the host can log a boot banner. Does
+   * NOT cache a per-id provider — each `activeProvider()` call re-reads
+   * the registry, so a workspace switch in the desktop is picked up by
+   * the next tool call without restarting the MCP server.
    */
   async init(): Promise<WorkspaceRegistry> {
     const registry = (await loadRegistry(this.registryRoot)) ?? {
@@ -39,23 +102,19 @@ export class MultiWorkspaceProvider implements Workspaces {
       activeWorkspaceId: null,
       workspaces: [],
     };
-    if (registry.activeWorkspaceId) {
-      this.activeWorkspaceId = registry.activeWorkspaceId;
-      this.active = new FileBackedWorkspaceProvider(
-        workspaceDirFor(this.registryRoot, registry.activeWorkspaceId),
-      );
-    }
+    this.activeWorkspaceId = registry.activeWorkspaceId;
     return registry;
   }
 
-  /** The provider tool handlers see as `ctx.workspace`. */
+  /**
+   * The provider tool handlers see as `ctx.workspace`. Returns a lazy
+   * provider whose `read` / `apply` / `write` calls re-read
+   * `registry.json` so the right active workspace is always targeted
+   * even if the desktop switched workspaces since this MCP process
+   * started.
+   */
   activeProvider(): WorkspaceProvider {
-    if (!this.active) {
-      throw new Error(
-        'No active workspace. Open the desktop app at least once, or run `apicircle workspaces create <name>`.',
-      );
-    }
-    return this.active;
+    return this.lazyProvider;
   }
 
   // ─── Workspaces interface ──────────────────────────────────────────────────
@@ -109,23 +168,21 @@ export class MultiWorkspaceProvider implements Workspaces {
     if (!registry || !registry.workspaces.some((w) => w.id === workspaceId)) {
       throw new WorkspaceNotFoundError(workspaceId);
     }
-    const next = await setActiveWorkspaceOnDisk(this.registryRoot, workspaceId);
-    void next;
+    await setActiveWorkspaceOnDisk(this.registryRoot, workspaceId);
+    // The lazy provider re-reads `registry.json` on its next operation,
+    // so we don't need to construct a new provider here — just update the
+    // cached `activeId()` value so diagnostic callers see the new id
+    // without waiting for the next tool call.
     this.activeWorkspaceId = workspaceId;
-    this.active = new FileBackedWorkspaceProvider(workspaceDirFor(this.registryRoot, workspaceId));
   }
 
   /**
    * Idempotent registry write — used by tests / tools that need to
-   * persist registry updates that didn't go through `setActive`.
+   * persist registry updates that didn't go through `setActive`. The
+   * lazy active provider picks the new id up on its next operation.
    */
   async writeRegistry(registry: WorkspaceRegistry): Promise<void> {
     await saveRegistry(this.registryRoot, registry);
     this.activeWorkspaceId = registry.activeWorkspaceId;
-    if (registry.activeWorkspaceId) {
-      this.active = new FileBackedWorkspaceProvider(
-        workspaceDirFor(this.registryRoot, registry.activeWorkspaceId),
-      );
-    }
   }
 }

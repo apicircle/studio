@@ -55,6 +55,28 @@ export interface DesktopMcpBridge {
 
 // ---------- WorkspaceFile (mirror) surface -------------------------------
 
+/**
+ * Reserved discriminator the watcher uses to signal a `registry.json`
+ * change (vs a per-workspace `workspace.synced.json` change). Exported so
+ * consumers don't hardcode the string literal.
+ */
+export const WORKSPACE_FILE_REGISTRY_CHANGE = 'registry';
+
+/**
+ * Payload of the `externalChange` event the main process emits when the
+ * file watcher detects a write the desktop didn't make (MCP server, CLI,
+ * user editing JSON by hand). The renderer listens and calls
+ * `refreshFromDisk` automatically so external writes appear without the
+ * user clicking Refresh.
+ *
+ * `workspaceId === WORKSPACE_FILE_REGISTRY_CHANGE` (the literal
+ * `'registry'`) means `registry.json` changed; any other value is a
+ * per-workspace id whose `workspace.synced.json` changed.
+ */
+export interface WorkspaceFileExternalChange {
+  workspaceId: string;
+}
+
 export interface DesktopWorkspaceFileBridge {
   status(): Promise<{ workspacesRoot: string }>;
   init(): Promise<{ registry: WorkspaceRegistry; migrated: boolean }>;
@@ -72,6 +94,12 @@ export interface DesktopWorkspaceFileBridge {
   registerWorkspace(entry: WorkspaceRegistryEntry): Promise<WorkspaceRegistry>;
   setActiveWorkspace(workspaceId: string): Promise<WorkspaceRegistry>;
   flush(): Promise<void>;
+  /**
+   * Subscribe to external-write events. Returns an unsubscribe fn.
+   * Optional so older preload builds (without the watcher) don't break
+   * compile-time checks during a staged rollout.
+   */
+  onExternalChange?(listener: (event: WorkspaceFileExternalChange) => void): () => void;
 }
 
 // ---------- Mock-server surface ------------------------------------------

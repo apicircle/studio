@@ -117,7 +117,42 @@ describe('MultiWorkspaceProvider.activeProvider', () => {
   it('throws a helpful error when no active workspace is set', async () => {
     const mwp = new MultiWorkspaceProvider(root);
     await mwp.init();
-    expect(() => mwp.activeProvider()).toThrow(/No active workspace/);
+    // The provider itself constructs fine — the error surfaces on the
+    // first operation when the lazy resolver discovers there's no
+    // active workspace in registry.json to route to.
+    await expect(mwp.activeProvider().read()).rejects.toThrow(/No active workspace/);
+  });
+
+  it('picks up registry-side active-id changes between calls (no MCP restart needed)', async () => {
+    // Regression test for the "MCP cached active workspace at boot"
+    // bug. The desktop owns `registry.json` and the user can switch
+    // active workspaces from the UI at any time. The MCP server must
+    // route each subsequent operation to whichever workspace is
+    // active NOW, not whichever was active when `init()` ran.
+    await seedRegistry([
+      { id: 'ws-a', name: 'Alpha', requests: 1 },
+      { id: 'ws-b', name: 'Beta', requests: 2 },
+    ]);
+    const mwp = new MultiWorkspaceProvider(root);
+    await mwp.init();
+    const provider = mwp.activeProvider();
+
+    // First call routes to ws-a (active at init time).
+    const first = await provider.read();
+    expect(first.synced.workspaceId).toBe('ws-a');
+
+    // Simulate the desktop switching to ws-b WITHOUT touching this
+    // MCP process — write `registry.json` directly (the desktop's
+    // `WorkspaceFileManager.setActiveWorkspace` does the same thing).
+    const { setActiveWorkspace: setActiveWorkspaceOnDisk } =
+      await import('@apicircle/core/workspace/registry');
+    await setActiveWorkspaceOnDisk(root, 'ws-b');
+
+    // The next call MUST route to ws-b — that's the regression.
+    const second = await provider.read();
+    expect(second.synced.workspaceId).toBe('ws-b');
+    // And `activeId()` reflects what the lazy resolve saw.
+    expect(mwp.activeId()).toBe('ws-b');
   });
 });
 

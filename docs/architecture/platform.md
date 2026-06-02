@@ -78,6 +78,32 @@ config snippet so each AI client spawns `apicircle-mcp` as its own child.
 That keeps process lifecycle scoped to the AI client's session and avoids
 a long-lived stdio child of Electron.
 
+## Disk mirror + external-write watcher
+
+The desktop maintains a JSON mirror of the IndexedDB-backed workspace
+under `<userData>/workspaces/<id>/`. The CLI and MCP server read and
+write those files directly under `proper-lockfile`. Three pieces keep
+the IDB ↔ disk relationship coherent:
+
+- **`WorkspaceFileManager`** (`apps/desktop/src/main/workspaceFile/`)
+  owns the per-id queues that drain renderer-side writes to disk. Every
+  write call records a `{ mtimeMs, size }` snapshot with the
+  watcher so its own fs events don't trigger refresh loops.
+- **`WorkspaceWatcher`** (same dir) tails the root + per-id dirs via
+  `fs.watch`, debounces events, and emits an `externalChange` IPC
+  event when the post-event file stat differs from the recorded
+  snapshot — i.e. when an external writer (MCP, CLI, hand-edit)
+  actually changed the bytes.
+- **`hydrate()` and `refreshFromDisk()`** in the renderer's
+  `workspaceStore` compare `meta.updatedAt` between IDB and disk and
+  adopt whichever is newer. Boot-time IDB→disk write is gated on
+  "memory wins" so an external writer that landed while the desktop
+  was closed isn't silently overwritten.
+
+`MultiWorkspaceProvider.activeProvider()` in the MCP server is a lazy
+wrapper that re-reads `registry.json` per call, so the user can switch
+workspaces in the desktop without restarting the MCP process.
+
 ## Mock server — three runtimes, one engine
 
 `@apicircle/mock-server-core` is a Hono app builder. The same factory

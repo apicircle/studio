@@ -18,4 +18,5 @@ export type {
   DesktopMcpBridge,
   DesktopMockBridge,
   DesktopWorkspaceFileBridge,
+  WorkspaceFileExternalChange,
 } from './desktop/bridge';

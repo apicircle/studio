@@ -29,17 +29,29 @@ export const MCP_PANEL_SECTIONS: ReadonlyArray<{
 ];
 
 /**
+ * On-disk content counts surfaced in refresh-result toasts so users can
+ * spot a missing collection at a glance (e.g. "MCP claims 21 requests
+ * but disk only shows 1 — something overwrote it").
+ */
+export interface RefreshDiskCounts {
+  requests: number;
+  folders: number;
+  environments: number;
+}
+
+/**
  * Result of `refreshFromDisk`. The Connection section shows a toast
  * variant matching the kind so the user knows whether anything changed.
  */
 export type McpRefreshResult =
   | { kind: 'no-mirror' } // web build — disk mirror unavailable
   | { kind: 'no-file' } // mirror enabled but no on-disk file yet
-  | { kind: 'up-to-date' } // disk == memory; nothing to do
-  | { kind: 'updated'; importedAt: string } // disk was newer; store was hydrated
+  | { kind: 'up-to-date'; counts: RefreshDiskCounts } // disk == memory; nothing to do
+  | { kind: 'updated'; importedAt: string; counts: RefreshDiskCounts } // disk was newer; store was hydrated
   | {
       kind: 'merged';
       importedRequestIds: string[];
       importedFolderIds: string[];
+      counts: RefreshDiskCounts;
     } // workspaceId mismatch resolved via one-time merge
   | { kind: 'error'; message: string };

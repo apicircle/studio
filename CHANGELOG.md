@@ -25,6 +25,106 @@
 
 ## Unreleased
 
+### Fixed
+
+- **MCP server no longer pins to its boot-time active workspace.**
+  `MultiWorkspaceProvider` used to cache the per-id
+  `FileBackedWorkspaceProvider` resolved at `init()` time. If the user
+  switched workspaces in the desktop while their AI client's MCP server
+  was already running, MCP kept writing to the OLD workspace and the
+  desktop never saw the writes. The active provider is now a lazy
+  wrapper that re-reads `registry.json` on every `read` / `apply` /
+  `write` call — one tiny JSON read per tool call in exchange for
+  always-correct routing.
+  (`packages/mcp-server/src/providers/MultiWorkspaceProvider.ts`,
+  `MultiWorkspaceProvider.test.ts`)
+- **Desktop boot no longer overwrites MCP / CLI writes made while it was
+  closed.** Before this fix, `hydrate()` always queued an IDB→disk write
+  at the end of boot, regardless of which side was newer — so any
+  `apicircle-mcp` or `apicircle` CLI edits to `workspace.synced.json`
+  silently disappeared the next time the desktop opened. Hydrate now
+  compares `meta.updatedAt` between IDB and disk: when disk is newer
+  (an external writer changed the file while the desktop was closed),
+  the store adopts the on-disk doc and the boot-time IDB→disk write is
+  skipped. The pre-existing one-time-merge path (different
+  `workspaceId`s) is unchanged.
+  (`packages/ui-components/src/store/workspaceStore.ts`,
+  `packages/ui-components/src/store/hydrateDiskAdoption.test.ts`)
+- **`refreshFromDisk` no longer flushes pending IDB writes before
+  reading disk.** The MCP-panel Refresh button used to start by draining
+  `flushPendingPersist()`, which could write a stale in-memory snapshot
+  to disk on top of fresh MCP / CLI content. The order is now read →
+  decide → (optionally) flush, so a click on Refresh can never destroy
+  what it's meant to surface.
+  (`packages/ui-components/src/store/workspaceStore.ts`,
+  `refreshFromDisk.test.ts`)
+- **Auto-refresh on external file changes.** The desktop main process
+  now watches `<userData>/workspaces/` and the per-id
+  `workspace.synced.json` files. When MCP / CLI / a hand-edit writes
+  one, the renderer auto-fires `refreshFromDisk` so the editor and
+  Environments panel reflect the change without the user clicking
+  Refresh. Self-writes from the desktop's own mirror are suppressed via
+  a stat-snapshot (`{mtimeMs, size}`) recorded after each manager
+  write — robust against OS event delays and burst writes (an earlier
+  prototype's 1.5s time window had both failure modes).
+  (`apps/desktop/src/main/workspaceFile/workspaceWatcher.ts`,
+  `apps/desktop/src/main/workspaceFile/workspaceFileManager.ts`,
+  `apps/desktop/src/main/ipc/workspaceFileBridge.ts`,
+  `apps/desktop/src/main/preload.ts`, `apps/desktop/src/main/main.ts`,
+  `packages/ui-components/src/desktop/bridge.ts`,
+  `packages/ui-components/src/App.tsx`, `workspaceWatcher.test.ts`)
+- **Registry changes from CLI / MCP appear in the desktop switcher.**
+  The watcher's `'registry'`-event branch used to no-op. It now calls
+  the new `refreshRegistryFromDisk` store action, which re-reads
+  `<root>/registry.json` and pushes it into `workspaceRegistry` so a
+  `apicircle workspaces create` run alongside the desktop surfaces in
+  the switcher without a restart. A toast announces how many new
+  workspaces appeared.
+  (`packages/ui-components/src/store/workspaceStore.ts`,
+  `packages/ui-components/src/App.tsx`,
+  `packages/ui-components/src/store/refreshFromDisk.test.ts`)
+- **Boot ordering: watcher attaches before the renderer window opens.**
+  `startWorkspaceFileWatcher(...)` now runs before
+  `mainWindow = createWindow()` so any boot-time renderer writes go
+  through a `WorkspaceFileManager` that already has self-write
+  suppression wired. Previously a small window existed where the
+  watcher saw the desktop's own initial mirror write as "external" and
+  triggered a needless refresh cycle. (`apps/desktop/src/main/main.ts`)
+- **Refresh toasts now report on-disk counts.** "Already up to date" /
+  "Workspace refreshed from disk" / "Merged in" all include a
+  `1 request · 0 folders · 1 environment` line, so when an AI client
+  claims to have created a 21-request collection but the desktop only
+  sees `httpbin`, the mismatch is visible at a glance instead of hiding
+  behind a generic success toast.
+  (`packages/ui-components/src/panels/mcp/mcpPanelTypes.ts`,
+  `packages/ui-components/src/panels/mcp/ConnectionSection.tsx`)
+- **End-to-end desktop coverage for the auto-refresh path.** New
+  Playwright spec `e2e/desktop/external-write-refresh.spec.ts` boots
+  the Electron app, writes `workspace.synced.json` externally
+  (simulating an MCP / CLI write), and asserts the new request appears
+  in the editor without the user clicking Refresh. A second case
+  appends a workspace to `registry.json` and asserts the switcher /
+  toast picks it up.
+- **Workspace create + rename are now case-insensitive unique.**
+  Previously `My Workspace` and `my workspace` could coexist (the CLI
+  rejected the collision, but the desktop's persistence helper only
+  did a case-sensitive compare). Both `createWorkspace` and
+  `updateRegistryEntryName` in `workspaceStorage.ts` now use a
+  case-insensitive guard, matching the CLI's existing behaviour.
+  (`packages/ui-components/src/persistence/workspaceStorage.ts`)
+- **Workspace switcher disambiguates colliding names.** When two
+  registry entries share a name (case-insensitive) — leftover from
+  pre-1.0.8 builds or a legacy-migration race — the switcher appends
+  a short `#xxxx` id suffix to ONLY the colliding rows so the user
+  can tell them apart. Unique names render unchanged.
+  (`packages/ui-components/src/layout/WorkspaceSwitcher.tsx`)
+- **Refresh-from-disk persists the adopted state to IndexedDB.** When
+  refresh sees a newer disk doc, it now writes that state back to IDB
+  immediately instead of waiting for the next user mutation. Closes a
+  small window where a crash between adoption and the next mutation
+  would lose the freshly-imported content.
+  (`packages/ui-components/src/store/workspaceStore.ts`)
+
 ### Internals
 
 - **CI: `visual-baseline` job is now manual-dispatch only.** The Linux

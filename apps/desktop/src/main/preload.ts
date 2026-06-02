@@ -15,7 +15,11 @@ import type {
   WorkspaceSynced,
 } from '@apicircle/shared';
 import type { WorkspaceRegistry, WorkspaceRegistryEntry } from '@apicircle/core/workspace/registry';
-import type { ConfigSnippetVariants, DesktopBridgeContract } from '@apicircle/ui-components';
+import type {
+  ConfigSnippetVariants,
+  DesktopBridgeContract,
+  WorkspaceFileExternalChange,
+} from '@apicircle/ui-components';
 
 /** Payload emitted on the `apicircle:update:available` IPC channel. */
 export interface UpdateAvailablePayload {
@@ -121,6 +125,13 @@ const bridge = {
       ) as Promise<WorkspaceRegistry>,
     flush: (): Promise<void> =>
       ipcRenderer.invoke('apicircle:workspaceFile:flush') as Promise<void>,
+    onExternalChange: (cb: (event: WorkspaceFileExternalChange) => void): (() => void) => {
+      const handler = (_e: IpcRendererEvent, payload: WorkspaceFileExternalChange) => cb(payload);
+      ipcRenderer.on('apicircle:workspaceFile:externalChange', handler);
+      return () => {
+        ipcRenderer.removeListener('apicircle:workspaceFile:externalChange', handler);
+      };
+    },
   },
 
   // OAuth2 callback bridge — wraps the localhost http server in main.ts.

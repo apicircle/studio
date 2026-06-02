@@ -186,7 +186,13 @@ describe('ConnectionSection — Workspace mirror block', () => {
 
   it('refresh button calls the refreshFromDisk store action', async () => {
     const user = userEvent.setup();
-    const refresh = vi.fn().mockResolvedValue({ kind: 'up-to-date' });
+    // Result must include `counts` — the Connection section's toast
+    // detail interpolates them. Stubbing only `kind` lets the click
+    // through but throws an unhandled error in the toast formatter.
+    const refresh = vi.fn().mockResolvedValue({
+      kind: 'up-to-date',
+      counts: { requests: 0, folders: 0, environments: 0 },
+    });
     useWorkspaceStore.setState({ refreshFromDisk: refresh });
     await renderWithStore(<McpServerPanel />);
     const refreshBtn = await screen.findByRole('button', { name: /Refresh from disk/ });

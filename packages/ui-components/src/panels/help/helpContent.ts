@@ -107,7 +107,16 @@ Most tools (\`request.read\`, \`environment.create\`, etc) default to the active
 
 ## Refreshing without restarting
 
-The MCP panel's **Connection** section has a **Refresh** button. It re-reads the active workspace's \`workspace.synced.json\` from disk and merges any newer changes (e.g. from a \`apicircle import\` invocation or an AI-driven MCP edit) into the in-memory store. No more "quit and reopen the desktop app to see CLI edits".`,
+The MCP panel's **Connection** section has a **Refresh** button. It re-reads the active workspace's \`workspace.synced.json\` from disk and merges any newer changes (e.g. from a \`apicircle import\` invocation or an AI-driven MCP edit) into the in-memory store. No more "quit and reopen the desktop app to see CLI edits".
+
+Since 1.0.8 the desktop also **watches the on-disk files automatically**: when an MCP server or CLI write lands while the app is running, the editor and Environments panel update without you clicking Refresh. The watcher knows the difference between its own mirror writes and an external one, so it never refreshes on top of your own edits.
+
+## "MCP says it created a collection but the editor still shows the old content"
+
+This used to mean the desktop's boot-time write overwrote what MCP had just landed — a bug fixed in 1.0.8. If you still see a mismatch:
+
+- Click **Refresh** in the MCP panel. The toast now reports the on-disk request / folder / environment counts. If the counts match what your AI client claimed, the data is on disk; the editor's selection may just be on a different workspace inside the registry — open the workspace switcher in the top bar.
+- If the counts on the Refresh toast show fewer items than your AI client reports, the write didn't land. Check that your AI client's MCP config points at the same workspace mirror path the panel shows (Settings → MCP → Workspace mirror).`,
     keywords: [
       'multi-workspace',
       'multiple workspaces',

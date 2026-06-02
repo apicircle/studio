@@ -51,6 +51,25 @@ export function WorkspaceSwitcher() {
         : b.lastOpenedAt.localeCompare(a.lastOpenedAt),
   );
 
+  // Pre-launch builds + legacy migrations sometimes produced multiple
+  // registry entries with the same (case-insensitive) display name —
+  // e.g. a legacy single-workspace migration plus a UI "create new"
+  // both defaulting to "My Workspace". The 1.0.8 create / rename
+  // guards block new collisions, but existing rows still render here,
+  // and showing two identical rows leaves the user with no way to
+  // tell them apart. Detect collisions and append a short id suffix
+  // (first 4 hex chars) to ONLY the colliding rows — unique names
+  // stay clean.
+  const nameCounts = new Map<string, number>();
+  for (const w of sorted) {
+    const key = w.name.toLowerCase();
+    nameCounts.set(key, (nameCounts.get(key) ?? 0) + 1);
+  }
+  const disambiguatorFor = (name: string, id: string): string | null => {
+    if ((nameCounts.get(name.toLowerCase()) ?? 0) <= 1) return null;
+    return id.slice(0, 4);
+  };
+
   const onSwitch = async (id: string) => {
     setError(null);
     setOpen(false);
@@ -90,6 +109,10 @@ export function WorkspaceSwitcher() {
         >
           {sorted.map((w) => {
             const isActive = w.id === registry.activeWorkspaceId;
+            const disambiguator = disambiguatorFor(w.name, w.id);
+            const ariaLabel = disambiguator
+              ? `Switch to ${w.name} (id ${disambiguator})`
+              : `Switch to ${w.name}`;
             return (
               <li key={w.id}>
                 <div className="flex items-center gap-1">
@@ -97,7 +120,7 @@ export function WorkspaceSwitcher() {
                     type="button"
                     role="option"
                     aria-selected={isActive}
-                    aria-label={`Switch to ${w.name}`}
+                    aria-label={ariaLabel}
                     onClick={() => void onSwitch(w.id)}
                     className={
                       isActive
@@ -106,6 +129,14 @@ export function WorkspaceSwitcher() {
                     }
                   >
                     <span className="flex-1 truncate">{w.name}</span>
+                    {disambiguator && (
+                      <span
+                        className="font-mono text-[0.625rem] text-text-faint"
+                        aria-hidden="true"
+                      >
+                        #{disambiguator}
+                      </span>
+                    )}
                     {isActive && (
                       <span className="text-[0.625rem] uppercase tracking-wider">active</span>
                     )}
@@ -114,7 +145,11 @@ export function WorkspaceSwitcher() {
                     <button
                       type="button"
                       onClick={() => setConfirmDelete({ id: w.id, name: w.name })}
-                      aria-label={`Delete ${w.name}`}
+                      aria-label={
+                        disambiguator
+                          ? `Delete ${w.name} (id ${disambiguator})`
+                          : `Delete ${w.name}`
+                      }
                       className="inline-flex h-7 w-7 items-center justify-center rounded-sm border border-transparent text-text-faint hover:border-danger/30 hover:bg-danger/5 hover:text-danger"
                     >
                       <Trash2 size={11} aria-hidden="true" />

@@ -670,7 +670,13 @@ export async function createWorkspace(
 }> {
   const trimmed = name.trim();
   if (!trimmed) throw new Error('Workspace name is required');
-  if (registry.workspaces.some((w) => w.name === trimmed)) {
+  // Case-insensitive uniqueness, matching the CLI's
+  // `apicircle workspaces create` guard at packages/cli/src/util/resolveWorkspace.ts.
+  // The desktop's previous case-sensitive check was looser than the CLI
+  // and let `My Workspace` + `my workspace` coexist — both indistinguishable
+  // in the workspace switcher because rendering normalises whitespace.
+  const trimmedLower = trimmed.toLowerCase();
+  if (registry.workspaces.some((w) => w.name.toLowerCase() === trimmedLower)) {
     throw new Error(`A workspace named "${trimmed}" already exists`);
   }
   const fresh = createEmptyWorkspace();
@@ -755,10 +761,24 @@ export async function updateRegistryEntryName(
   workspaceId: string,
   newName: string,
 ): Promise<WorkspaceRegistry> {
+  const trimmed = newName.trim();
+  if (!trimmed) throw new Error('Workspace name is required');
+  // Same case-insensitive uniqueness guard as `createWorkspace` —
+  // renaming "Workspace A" to a name that already exists must error
+  // out, otherwise the switcher ends up with two indistinguishable
+  // rows. Exclude the workspace being renamed so a no-op rename
+  // (same name, same id) is a clean pass.
+  const trimmedLower = trimmed.toLowerCase();
+  const clash = registry.workspaces.some(
+    (w) => w.id !== workspaceId && w.name.toLowerCase() === trimmedLower,
+  );
+  if (clash) {
+    throw new Error(`A workspace named "${trimmed}" already exists`);
+  }
   const next: WorkspaceRegistry = {
     ...registry,
     workspaces: registry.workspaces.map((w) =>
-      w.id === workspaceId ? { ...w, name: newName } : w,
+      w.id === workspaceId ? { ...w, name: trimmed } : w,
     ),
   };
   await writeRegistry(next);
