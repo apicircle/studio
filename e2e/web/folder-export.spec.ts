@@ -63,10 +63,15 @@ test.describe('Folder export (Export as JSON)', () => {
     await newRequestInside(app, 'CredFolder', 'POST login');
 
     // Switch the new request to Bearer auth with a real-looking token.
-    await app.getByRole('button', { name: 'POST login' }).click();
+    // The request name is "POST login" but the method defaults to GET, so
+    // the row button's accessible name is "GET POST login". Match exactly
+    // to disambiguate from the kebab ("Request actions for POST login").
+    await app.getByRole('button', { name: 'GET POST login', exact: true }).click();
     await app.getByRole('button', { name: /^Auth/ }).click();
     await app.getByRole('combobox', { name: /^Auth type$/ }).selectOption('bearer');
-    await app.getByLabel('Bearer token').fill('e2e-bearer-secret');
+    // Scope to the input — `getByLabel` partial-matches both the field and
+    // the "Show Bearer token" reveal toggle, so use exact match.
+    await app.getByLabel('Bearer token', { exact: true }).fill('e2e-bearer-secret');
 
     // Open the export modal.
     await app.getByLabel('Folder actions for CredFolder').click();

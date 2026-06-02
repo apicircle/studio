@@ -64,6 +64,15 @@ async function setupConnectedBranch(app: Page): Promise<void> {
     name: 'main',
     commit: { sha: 'sha-main' },
   });
+  // refreshWorkspace's branch-retirement probe calls getBranchHead against
+  // the WORKING branch. Without a mock here the call falls through to the
+  // real api.github.com in CI, adding seconds of latency to every Refresh
+  // click — enough to bust the test's 15s visibility budget. Answer it
+  // locally so the probe completes instantly with branchExists=true.
+  await fulfillJson(app, 'https://api.github.com/repos/me/api/branches/apicircle%2Fwb-test', 200, {
+    name: 'apicircle/wb-test',
+    commit: { sha: 'sha-main' },
+  });
   // The branch creation endpoint also serves getRef (different paths share a
   // base URL — set up the more specific routes below before connecting).
   await app.route('https://api.github.com/repos/me/api/git/refs', async (route) => {
@@ -80,6 +89,21 @@ async function setupConnectedBranch(app: Page): Promise<void> {
     }
     await route.fallback();
   });
+  // createWorkingBranch's first-pull-prompt probe also calls getContents on
+  // the working branch before the test installs its own route override.
+  // Answer 404 here so the probe is a fast no-op; the test-specific route
+  // (registered after this function returns) takes precedence for the
+  // assertions that actually need a populated remote.
+  await app.route(
+    'https://api.github.com/repos/me/api/contents/workspace.json**',
+    async (route) => {
+      await route.fulfill({
+        status: 404,
+        headers: { 'content-type': 'application/json', ...corsHeaders },
+        body: JSON.stringify({ message: 'Not Found' }),
+      });
+    },
+  );
 
   // Drive the connect flow through the live UI.
   await app.getByRole('button', { name: /Open Secret Vault/ }).click();
