@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { FileUp, X } from 'lucide-react';
 import type { Request as ApiRequest } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { FileAssetStatusPill } from '../../primitives/FileAssetStatusPill';
 
 interface BinaryEditorProps {
   request: ApiRequest;
@@ -59,8 +60,13 @@ export function BinaryEditor({ request }: BinaryEditorProps) {
         <div className="flex items-center gap-3 rounded-sm border border-border bg-card p-3 text-xs">
           <FileUp size={16} className="shrink-0 text-accent" aria-hidden="true" />
           <div className="flex flex-1 flex-col gap-0.5">
-            <span className="truncate font-medium text-text-primary" title={attachment.filename}>
-              {attachment.filename}
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="truncate font-medium text-text-primary" title={attachment.filename}>
+                {attachment.filename}
+              </span>
+              {attachment.globalFileAssetId && (
+                <FileAssetStatusPill assetId={attachment.globalFileAssetId} />
+              )}
             </span>
             <span className="text-text-dim">
               {formatSize(attachment.size ?? 0)}

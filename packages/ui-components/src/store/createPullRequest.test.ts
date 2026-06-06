@@ -41,8 +41,8 @@ async function setupConnectedBranchPushed(): Promise<void> {
       },
       { body: { name: 'main', commit: { sha: 'sha-main' } } },
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
-      // createWorkingBranch's first-pull-prompt probe: GET workspace.json on
-      // the new branch. 404 = no remote content yet (expected for a freshly
+      // createWorkingBranch's first-pull-prompt probe: GET .apicircle/workspace.json
+      // on the new branch. 404 = no remote content yet (expected for a freshly
       // created branch), so the probe is a no-op.
       { status: 404, body: { message: 'Not Found' } },
       // push flow: getRef, getCommit, createTree, createCommit, updateRef

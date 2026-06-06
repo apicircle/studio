@@ -228,6 +228,98 @@ test.describe('Live GitHub - global assets through linked workspaces @live-githu
     );
     expect(Array.from(remoteBytes)).toEqual(Array.from(fileBytes));
 
+    // ----- Provenance state-machine transitions -----------------------
+    //
+    // Right after the push, the consumer asset should be in the
+    // "workingOnly" state — workingBranchRef stamped, baseBranchRef
+    // null. Pin that.
+    const provenanceAfterPush = await app.evaluate(
+      ({ assetId }) => {
+        const api = window.__apicircleStore!.getState() as any;
+        const a = api.synced.globalAssets.files[assetId];
+        return {
+          workingBranchRef: a.workingBranchRef ?? null,
+          baseBranchRef: a.baseBranchRef ?? null,
+        };
+      },
+      { assetId: linked.ids.fileAssetId },
+    );
+    expect(provenanceAfterPush.workingBranchRef?.branchName).toBe(branch);
+    expect(provenanceAfterPush.workingBranchRef?.blobSha).toMatch(/^[a-f0-9]{40}$/);
+    expect(provenanceAfterPush.baseBranchRef).toBeNull();
+
+    // Synthesize a PR merge: write the same workspace.json + the
+    // attachment blob to the host's default (base) branch. The
+    // verifyAssetRefs probe should then detect the file on base and
+    // run the cleanup invariant.
+    const defaultBranch = 'main';
+    await updateWorkspaceJson(
+      host.cfg,
+      defaultBranch,
+      'e2e live: synthetic merge to base',
+      (ws) => {
+        // Replace the base branch's workspace.json with the consumer's
+        // current synced doc so the asset entry exists on base.
+        Object.assign(ws as Record<string, unknown>, remote);
+      },
+    );
+    // Write the attachment blob to base under .apicircle/attachments/<slotId>.
+    {
+      const blobPath = attachmentBlobPathV2(linked.fileAsset.slotId);
+      const probeUrl = `https://api.github.com/repos/${host.cfg.owner}/${host.cfg.name}/contents/${blobPath
+        .split('/')
+        .map(encodeURIComponent)
+        .join('/')}?ref=${encodeURIComponent(defaultBranch)}`;
+      const probe = await fetch(probeUrl, {
+        headers: {
+          Authorization: `Bearer ${host.cfg.token}`,
+          Accept: 'application/vnd.github+json',
+        },
+      });
+      const existing = probe.ok ? ((await probe.json()) as { sha?: string }) : null;
+      const putUrl = `https://api.github.com/repos/${host.cfg.owner}/${host.cfg.name}/contents/${blobPath
+        .split('/')
+        .map(encodeURIComponent)
+        .join('/')}`;
+      const putRes = await fetch(putUrl, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${host.cfg.token}`,
+          Accept: 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: 'e2e live: synthetic merge attachment',
+          content: Buffer.from(fileBytes).toString('base64'),
+          branch: defaultBranch,
+          ...(existing?.sha ? { sha: existing.sha } : {}),
+        }),
+      });
+      expect(putRes.ok).toBe(true);
+    }
+
+    // Refresh in the studio — verifyAssetRefs probes working ref (still
+    // valid, same blob sha) AND opportunistically probes base (which
+    // now has the file). When both refs hold the same blob sha, the
+    // cleanup invariant drops workingBranchRef.
+    const provenanceAfterMerge = await app.evaluate(
+      async ({ assetId }) => {
+        const api = window.__apicircleStore!.getState() as any;
+        await api.refreshWorkspace();
+        const a = window.__apicircleStore!.getState().synced!.globalAssets.files![assetId];
+        return {
+          workingBranchRef: a.workingBranchRef ?? null,
+          baseBranchRef: a.baseBranchRef ?? null,
+        };
+      },
+      { assetId: linked.ids.fileAssetId },
+    );
+    // Base ref is set after the merge.
+    expect(provenanceAfterMerge.baseBranchRef?.branchName).toBe(defaultBranch);
+    expect(provenanceAfterMerge.baseBranchRef?.blobSha).toMatch(/^[a-f0-9]{40}$/);
+    // Cleanup invariant: same blob sha on both refs → working ref dropped.
+    expect(provenanceAfterMerge.workingBranchRef).toBeNull();
+
     const modified = await app.evaluate(
       async ({ ids }) => {
         const api = window.__apicircleStore!.getState() as any;

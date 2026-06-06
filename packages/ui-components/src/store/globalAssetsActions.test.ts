@@ -150,6 +150,52 @@ describe('global file assets', () => {
     expect(next.globalAssets.files?.[file.id]?.slotId).toBe('slot-1');
   });
 
+  it('updateGlobalFileAsset preserves provenance refs through a rename', () => {
+    // Regression guard: the asset-provenance state machine writes
+    // `workingBranchRef` / `baseBranchRef` via the push + refresh flows.
+    // A rename / re-describe must not clobber that — the reducer spreads
+    // `...existing` which already preserves the refs, but pin the
+    // behaviour explicitly so a future patch-shape change can't drop it
+    // silently.
+    const { synced, file } = addGlobalFileAsset(baseSynced(), {
+      name: 'Payload',
+      slotId: 'slot-1',
+      filename: 'payload.json',
+      size: 12,
+      mimeType: 'application/json',
+      sha256: 'abc',
+    });
+    const withRefs: WorkspaceSynced = {
+      ...synced,
+      globalAssets: {
+        ...synced.globalAssets,
+        files: {
+          ...synced.globalAssets.files,
+          [file.id]: {
+            ...file,
+            workingBranchRef: {
+              branchName: 'apicircle/wb-aaa',
+              blobSha: 'blob-w',
+              commitSha: 'commit-w',
+              verifiedAt: '2026-06-06T00:00:00.000Z',
+            },
+            baseBranchRef: {
+              branchName: 'main',
+              blobSha: 'blob-b',
+              commitSha: 'commit-b',
+              verifiedAt: '2026-06-06T00:00:00.000Z',
+            },
+          },
+        },
+      },
+    };
+    const renamed = updateGlobalFileAsset(withRefs, file.id, { name: 'Renamed' });
+    const after = renamed.globalAssets.files![file.id];
+    expect(after.name).toBe('Renamed');
+    expect(after.workingBranchRef?.branchName).toBe('apicircle/wb-aaa');
+    expect(after.baseBranchRef?.branchName).toBe('main');
+  });
+
   it('builds request refs from reusable file metadata', () => {
     const { file } = addGlobalFileAsset(baseSynced(), {
       name: 'Payload',

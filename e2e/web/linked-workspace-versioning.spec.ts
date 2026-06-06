@@ -23,7 +23,7 @@ test.describe('Linked workspace versioning', () => {
         name,
         isPrivate: false,
         topics: ['apicircle-marketplace', 'apicircle'],
-        seedFiles: [{ path: 'workspace.json', content: '{"linked":true}' }],
+        seedFiles: [{ path: '.apicircle/workspace.json', content: '{"linked":true}' }],
       });
       // Direct verification — the mock's /_gh/search/repositories returns
       // the seeded repo with its topics.

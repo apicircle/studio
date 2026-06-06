@@ -3,6 +3,7 @@ import { FileUp, Plus, Trash2, X } from 'lucide-react';
 import type { FormDataRow, GlobalFileAsset, Request as ApiRequest } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
+import { FileAssetStatusPill } from '../../primitives/FileAssetStatusPill';
 import { useRowKeyboardNav } from './useRowKeyboardNav';
 
 interface FormDataEditorProps {
@@ -245,9 +246,12 @@ function FormDataRowView({
                 {row.filename}
               </span>
               {row.globalFileAssetId && (
-                <span className="shrink-0 rounded-sm border border-accent/30 bg-accent/10 px-1 text-[0.625rem] text-accent">
-                  library
-                </span>
+                <>
+                  <span className="shrink-0 rounded-sm border border-accent/30 bg-accent/10 px-1 text-[0.625rem] text-accent">
+                    library
+                  </span>
+                  <FileAssetStatusPill assetId={row.globalFileAssetId} iconOnly />
+                </>
               )}
               <span className="ml-auto shrink-0 text-text-dim">{formatSize(row.size ?? 0)}</span>
               <button

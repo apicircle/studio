@@ -538,7 +538,7 @@ describe('GitHubClient.createTree', () => {
     const result = await client.createTree('tok', 'me', 'api', {
       baseTreeSha: 'base-tree',
       entries: [
-        { path: 'workspace.json', content: '{"x":1}' },
+        { path: '.apicircle/workspace.json', content: '{"x":1}' },
         { path: '.apicircle/attachments/abc', sha: 'blob-abc' },
       ],
     });
@@ -550,7 +550,7 @@ describe('GitHubClient.createTree', () => {
     expect(body).toEqual({
       base_tree: 'base-tree',
       tree: [
-        { path: 'workspace.json', mode: '100644', type: 'blob', content: '{"x":1}' },
+        { path: '.apicircle/workspace.json', mode: '100644', type: 'blob', content: '{"x":1}' },
         {
           path: '.apicircle/attachments/abc',
           mode: '100644',

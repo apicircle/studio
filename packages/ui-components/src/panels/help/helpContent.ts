@@ -34,12 +34,12 @@ export const HELP_SECTIONS: HelpSection[] = [
 
 Every workspace is split into two JSON documents, and knowing which is which explains most of the app's behaviour:
 
-- **Synced** — the team-shared half, pushed to Git as \`workspace.json\`. Requests, folders, environments, mock-server definitions, execution plans, releases, linked workspaces, global assets, and secret metadata.
+- **Synced** — the team-shared half, pushed to Git as \`.apicircle/workspace.json\`. Requests, folders, environments, mock-server definitions, execution plans, releases, linked workspaces, global assets, and secret metadata.
 - **Local** — the per-device half, kept in IndexedDB and never sent anywhere. Run history, your GitHub session, decrypted secret values, workspace snapshots, and UI state.
 
 A quick rule: if a teammate should see it, it is synced; if it is private to this machine, it is local. Example — you build a request and push:
 
-    Synced  -> the request definition travels to GitHub in workspace.json
+    Synced  -> the request definition travels to GitHub in .apicircle/workspace.json
     Local   -> every Send you ran, and the response bodies, stay local
 
 ## Finding your way around
@@ -1328,13 +1328,24 @@ A request with a graphql body that references the definition gets field and argu
 
 ## Files
 
-Upload a file once in Global Assets, then reuse it from binary request bodies, form-data file rows, and mock binary responses. The workspace tracks filename, size, MIME type, checksum, and the requests or mock responses that require the file.
+Every file you drop — into the Global Assets sidebar, a binary request body, a form-data file row, or a mock binary response — becomes a reusable Global Asset entry. The workspace tracks filename, size, MIME type, checksum, and the requests or mock responses that bind to the file.
 
-When a workspace is pushed to GitHub, file bytes are stored as attachment blobs outside \`workspace.json\`. That keeps the JSON small and makes diffs readable. On another machine, linked or synced file assets show as missing until you download them. Sending a request or running a plan that needs missing files opens a download prompt; after the download verifies the checksum, execution continues. The \`apicircle run\` CLI follows the same rule for headless plans.
+Each asset shows a small status pill next to its name. The pill tells you where the bytes live:
+
+- **Uploaded locally** — bytes are in your local IDB; the next push uploads them.
+- **On working branch** — bytes are committed to your current working branch on GitHub.
+- **Merged to base** — the bytes are on both your working branch and the base branch (transient state right after a PR merges).
+- **On main** — the bytes are on the base branch and the working ref has been dropped (steady state after a merge).
+- **Missing** — both refs dropped and no local copy. Re-upload from the same row to restore.
+- **Diverged** — both refs hold different blob shas. Usually means someone force-pushed the base branch with a different file at the same slot — review before pushing.
+
+Each row also shows "Used in N" — clicking through the Global Assets panel shows every request and mock endpoint that binds to the file. Zero-use assets get an "Unused" badge so you can identify and prune orphans deliberately.
+
+When a workspace is pushed to GitHub, file bytes are stored as attachment blobs next to the synced doc under \`.apicircle/attachments/<slotId>\`, separate from \`.apicircle/workspace.json\`. That keeps the JSON small and makes diffs readable. On another machine, linked or synced file assets show as missing until you download them. Sending a request or running a plan that needs missing files opens a download prompt; after the download verifies the checksum, execution continues. The \`apicircle run\` CLI follows the same rule for headless plans.
 
 ## Why one library
 
-A single source of truth: update the "User" asset once and every request that references it moves with it — no copy-pasted schemas drifting apart. Deleting an asset is gated by a confirm dialog because it cascades: any request or mock response that referenced it has its mapping cleared.`,
+A single source of truth: update the "User" asset once and every request that references it moves with it — no copy-pasted schemas drifting apart. Deleting an asset is gated by a confirm dialog because it cascades: the dialog lists every consumer that will be unbound (request bodies and mock responses both), and the cleanup is atomic with the delete.`,
     keywords: [
       'global assets',
       'asset',

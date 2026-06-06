@@ -5,8 +5,8 @@ the studio against the local mock server. Plan §10.1.
 
 ## What's in here
 
-- `workspace.json` — the canonical synced doc, with one folder per
-  request body type plus a fourth folder of assertion-flavor requests
+- `.apicircle/workspace.json` — the canonical synced doc, with one folder
+  per request body type plus a fourth folder of assertion-flavor requests
   (status, header, json-path, duration). One environment `local` whose
   `BASE_URL` points at the Hono mock server's default port (4040).
 - The folder tree mirrors the body-type taxonomy: None, JSON, Text,
@@ -22,9 +22,10 @@ pnpm --filter @apicircle/example-mock-server start
 pnpm dev:web
 ```
 
-Then open the studio in your browser, point it at this `workspace.json`,
-and send any request. The `local` environment is preselected so
-`{{BASE_URL}}` resolves to `http://localhost:4040`.
+Then open the studio in your browser, point it at this
+`.apicircle/workspace.json`, and send any request. The `local`
+environment is preselected so `{{BASE_URL}}` resolves to
+`http://localhost:4040`.
 
 ## Notes on the BEARER_TOKEN
 
@@ -37,8 +38,9 @@ want to exercise the master-key flow end-to-end.
 
 ## CRUD execution plan
 
-Plans live in `WorkspaceLocal` (browser IDB), not in `workspace.json` —
-so the demo plan isn't shipped here. To recreate it:
+Plans live in `WorkspaceLocal` (browser IDB), not in the synced
+`.apicircle/workspace.json` — so the demo plan isn't shipped here.
+To recreate it:
 
 1. Open the Execution panel.
 2. Create a plan named "Users CRUD".
@@ -49,8 +51,8 @@ so the demo plan isn't shipped here. To recreate it:
 
 ## Linked workspace
 
-`examples/linked-pets-api/workspace.json` ships as a sibling that this
-demo can link to. Use the **Link a private workspace** flow with the
+`examples/linked-pets-api/.apicircle/workspace.json` ships as a sibling
+that this demo can link to. Use the **Link a private workspace** flow with the
 `apicircle-studio` repo + the path `examples/linked-pets-api/` — when
 the studio resolves a path-relative link in a future revision, this
 workflow gets one click. Today, push the linked-pets-api fixture to

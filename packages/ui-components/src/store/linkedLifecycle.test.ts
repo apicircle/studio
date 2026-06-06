@@ -51,7 +51,7 @@ function fileContents(json: string, sha = 'sha-1'): ResponseSpec {
   return {
     body: {
       type: 'file',
-      path: 'workspace.json',
+      path: '.apicircle/workspace.json',
       sha,
       size: json.length,
       content,

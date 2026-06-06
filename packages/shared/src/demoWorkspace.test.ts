@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import demoFixture from '../../../examples/demo-workspace/workspace.json' with { type: 'json' };
+import demoFixture from '../../../examples/demo-workspace/.apicircle/workspace.json' with { type: 'json' };
 import type { WorkspaceSynced } from './index';
 
 // Plan §10.1 demo workspace contract: the JSON fixture round-trips
@@ -67,7 +67,7 @@ describe('Demo workspace fixture', () => {
 
 describe('Linked pets-api fixture', () => {
   it('parses as a valid WorkspaceSynced with a multi-version ledger', async () => {
-    const linked = (await import('../../../examples/linked-pets-api/workspace.json', {
+    const linked = (await import('../../../examples/linked-pets-api/.apicircle/workspace.json', {
       with: { type: 'json' },
     })) as unknown as { default: WorkspaceSynced };
     const synced = linked.default;

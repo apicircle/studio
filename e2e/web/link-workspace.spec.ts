@@ -87,7 +87,7 @@ test.describe('Link Workspace (P5.2)', () => {
         { name: 'develop', commit: { sha: 'bbb' } },
       ]);
 
-      // /repos/me/payments-api/contents/workspace.json: probe payload.
+      // /repos/me/payments-api/contents/.apicircle/workspace.json: probe payload.
       const probeJson = JSON.stringify({
         workspaceName: 'Payments API',
         releases: {
@@ -116,14 +116,14 @@ test.describe('Link Workspace (P5.2)', () => {
       });
       const probeBase64 = Buffer.from(probeJson, 'utf-8').toString('base64');
       await app.route(
-        'https://api.github.com/repos/me/payments-api/contents/workspace.json**',
+        'https://api.github.com/repos/me/payments-api/contents/.apicircle/workspace.json**',
         async (route) => {
           await route.fulfill({
             status: 200,
             headers: { 'content-type': 'application/json', ...corsHeaders },
             body: JSON.stringify({
               type: 'file',
-              path: 'workspace.json',
+              path: '.apicircle/workspace.json',
               sha: 's',
               size: probeJson.length,
               content: probeBase64,
@@ -230,14 +230,14 @@ test.describe('Link Workspace (P5.2)', () => {
       });
       const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
       await app.route(
-        'https://api.github.com/repos/org/payments-api/contents/workspace.json**',
+        'https://api.github.com/repos/org/payments-api/contents/.apicircle/workspace.json**',
         async (route) => {
           await route.fulfill({
             status: 200,
             headers: { 'content-type': 'application/json', ...corsHeaders },
             body: JSON.stringify({
               type: 'file',
-              path: 'workspace.json',
+              path: '.apicircle/workspace.json',
               sha: 'remote-sha-1',
               size: remoteJson.length,
               content: base64,
@@ -299,14 +299,14 @@ test.describe('Link Workspace (P5.2)', () => {
       });
       const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
       await app.route(
-        'https://api.github.com/repos/me/api/contents/workspace.json**',
+        'https://api.github.com/repos/me/api/contents/.apicircle/workspace.json**',
         async (route) => {
           await route.fulfill({
             status: 200,
             headers: { 'content-type': 'application/json', ...corsHeaders },
             body: JSON.stringify({
               type: 'file',
-              path: 'workspace.json',
+              path: '.apicircle/workspace.json',
               sha: 's',
               size: remoteJson.length,
               content: base64,
@@ -344,14 +344,14 @@ test.describe('Link Workspace (P5.2)', () => {
       const remoteJson = JSON.stringify({ workspaceName: 'API', releases: { self: null } });
       const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
       await app.route(
-        'https://api.github.com/repos/me/api/contents/workspace.json**',
+        'https://api.github.com/repos/me/api/contents/.apicircle/workspace.json**',
         async (route) => {
           await route.fulfill({
             status: 200,
             headers: { 'content-type': 'application/json', ...corsHeaders },
             body: JSON.stringify({
               type: 'file',
-              path: 'workspace.json',
+              path: '.apicircle/workspace.json',
               sha: 's',
               size: remoteJson.length,
               content: base64,
@@ -527,14 +527,14 @@ test.describe('Link Workspace (P5.2)', () => {
       });
       const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
       await app.route(
-        'https://api.github.com/repos/org/payments-api/contents/workspace.json**',
+        'https://api.github.com/repos/org/payments-api/contents/.apicircle/workspace.json**',
         async (route) => {
           await route.fulfill({
             status: 200,
             headers: { 'content-type': 'application/json', ...corsHeaders },
             body: JSON.stringify({
               type: 'file',
-              path: 'workspace.json',
+              path: '.apicircle/workspace.json',
               sha: 's',
               size: remoteJson.length,
               content: base64,
@@ -600,14 +600,14 @@ test.describe('Link Workspace (P5.2)', () => {
       });
       const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
       await app.route(
-        'https://api.github.com/repos/me/api/contents/workspace.json**',
+        'https://api.github.com/repos/me/api/contents/.apicircle/workspace.json**',
         async (route) => {
           await route.fulfill({
             status: 200,
             headers: { 'content-type': 'application/json', ...corsHeaders },
             body: JSON.stringify({
               type: 'file',
-              path: 'workspace.json',
+              path: '.apicircle/workspace.json',
               sha: 's',
               size: remoteJson.length,
               content: base64,
@@ -646,14 +646,14 @@ test.describe('Link Workspace (P5.2)', () => {
       const remoteJson = JSON.stringify({ workspaceName: 'X', releases: { self: null } });
       const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
       await app.route(
-        'https://api.github.com/repos/me/x/contents/workspace.json**',
+        'https://api.github.com/repos/me/x/contents/.apicircle/workspace.json**',
         async (route) => {
           await route.fulfill({
             status: 200,
             headers: { 'content-type': 'application/json', ...corsHeaders },
             body: JSON.stringify({
               type: 'file',
-              path: 'workspace.json',
+              path: '.apicircle/workspace.json',
               sha: 's',
               size: remoteJson.length,
               content: base64,

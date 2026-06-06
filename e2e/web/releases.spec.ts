@@ -152,14 +152,14 @@ test.describe('Workspace-self releases (P5.1)', () => {
       });
       const mainBase64 = Buffer.from(mainJson, 'utf-8').toString('base64');
       await app.route(
-        'https://api.github.com/repos/me/api/contents/workspace.json**',
+        'https://api.github.com/repos/me/api/contents/.apicircle/workspace.json**',
         async (route) => {
           await route.fulfill({
             status: 200,
             headers: { 'content-type': 'application/json', ...corsHeaders },
             body: JSON.stringify({
               type: 'file',
-              path: 'workspace.json',
+              path: '.apicircle/workspace.json',
               sha: 'main-sha',
               size: mainJson.length,
               content: mainBase64,

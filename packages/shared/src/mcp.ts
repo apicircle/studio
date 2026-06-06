@@ -86,6 +86,13 @@ export type McpToolName =
   | 'prompt.set_endpoint_response_rules'
   | 'prompt.set_endpoint_multipliers'
 
+  // Global file asset library (file uploads bound to request bodies and
+  // mock responses; provenance + reference-count surface)
+  | 'assets.list_files'
+  | 'assets.create_file'
+  | 'assets.update_file'
+  | 'assets.delete_file'
+
   // Mock server lifecycle
   | 'mock.create_from_openapi'
   | 'mock.create_from_postman'
@@ -170,6 +177,10 @@ export const MCP_TOOL_NAMES: ReadonlyArray<McpToolName> = [
   'prompt.set_endpoint_validation_rules',
   'prompt.set_endpoint_response_rules',
   'prompt.set_endpoint_multipliers',
+  'assets.list_files',
+  'assets.create_file',
+  'assets.update_file',
+  'assets.delete_file',
   'mock.create_from_openapi',
   'mock.create_from_postman',
   'mock.create_from_insomnia',

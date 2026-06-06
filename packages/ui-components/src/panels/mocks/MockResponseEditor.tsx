@@ -20,6 +20,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { MonacoBodyEditor } from '../../editors/MonacoBodyEditor';
 import { HeaderKeyAutocomplete, HeaderValueRecommendations } from '../editor/HeaderAutocomplete';
 import { cn } from '../../primitives/cn';
+import { FileAssetStatusPill } from '../../primitives/FileAssetStatusPill';
 import { Select } from '../../primitives/Select';
 
 // Reusable editor for a `MockResponseConfig`. Used by:
@@ -440,7 +441,10 @@ function BinaryBodyEditor({
       <div className="flex items-center gap-2 rounded-sm border border-success/30 bg-success/5 px-3 py-2 text-[0.6875rem]">
         <Paperclip size={12} className="shrink-0 text-success" aria-hidden="true" />
         <div className="flex-1">
-          <div className="font-mono text-text-primary">{a.filename ?? 'unnamed-file'}</div>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-text-primary">{a.filename ?? 'unnamed-file'}</span>
+            {a.globalFileAssetId && <FileAssetStatusPill assetId={a.globalFileAssetId} iconOnly />}
+          </div>
           <div className="text-[0.625rem] text-text-dim">
             {a.mimeType ?? 'application/octet-stream'}
             {a.size !== undefined && (

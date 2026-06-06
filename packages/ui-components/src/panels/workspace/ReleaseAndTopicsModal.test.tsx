@@ -62,7 +62,7 @@ function ledgerFile(versions: Array<{ version: string; notes?: string }>): Respo
       type: 'file',
       content: Buffer.from(json, 'utf8').toString('base64'),
       sha: 'fileSha',
-      path: 'workspace.json',
+      path: '.apicircle/workspace.json',
       size: json.length,
     },
   };
@@ -121,7 +121,7 @@ describe('ReleaseAndTopicsModal', () => {
       'fetch',
       routedFetch([
         {
-          match: /\/contents\/workspace\.json/,
+          match: /\/contents\/\.apicircle\/workspace\.json/,
           responses: [{ body: { message: 'Not Found' }, status: 404 }],
         },
         { match: /\/topics$/, responses: [{ body: { names: ['apicircle'] } }] },
@@ -140,7 +140,7 @@ describe('ReleaseAndTopicsModal', () => {
       'fetch',
       routedFetch([
         {
-          match: /\/contents\/workspace\.json/,
+          match: /\/contents\/\.apicircle\/workspace\.json/,
           responses: [ledgerFile([{ version: '2.3.0', notes: 'released' }])],
         },
         {
@@ -163,7 +163,7 @@ describe('ReleaseAndTopicsModal', () => {
       'fetch',
       routedFetch([
         {
-          match: /\/contents\/workspace\.json/,
+          match: /\/contents\/\.apicircle\/workspace\.json/,
           responses: [
             ledgerFile([
               { version: '1.0.0', notes: 'initial' },
@@ -205,7 +205,7 @@ describe('ReleaseAndTopicsModal', () => {
       'fetch',
       routedFetch([
         {
-          match: /\/contents\/workspace\.json/,
+          match: /\/contents\/\.apicircle\/workspace\.json/,
           responses: [{ body: { message: 'Not Found' }, status: 404 }],
         },
         {
@@ -236,7 +236,7 @@ describe('ReleaseAndTopicsModal', () => {
       'fetch',
       routedFetch([
         {
-          match: /\/contents\/workspace\.json/,
+          match: /\/contents\/\.apicircle\/workspace\.json/,
           responses: [{ body: { message: 'Not Found' }, status: 404 }],
         },
         { match: /\/topics$/, responses: [{ body: { names: ['apicircle', 'payments'] } }] },

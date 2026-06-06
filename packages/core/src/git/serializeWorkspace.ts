@@ -4,8 +4,8 @@ import type { WorkspaceSynced } from '@apicircle/shared';
 // key order so re-pushing the same logical state produces byte-identical
 // JSON, which means GitHub diffs stay minimal across pushes.
 //
-// The plan §2 commits to a single `workspace.json` at the repo root; this
-// function is the only place that decides its on-disk shape.
+// The on-disk path lives in `repoPaths.ts` (`.apicircle/workspace.json`).
+// This function only decides the bytes; callers pick the path.
 
 const INDENT = 2;
 

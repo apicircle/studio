@@ -109,14 +109,15 @@ describe('workspaceStore.pushWorkspace', () => {
     expect(branch.headSha).toBe('commit-new');
     expect(branch.lastPushedSha).toBe('commit-new');
 
-    // Verify the createTree request body carried `workspace.json` inline.
+    // createTree request body: the synced doc lands at `.apicircle/workspace.json`.
     const createTreeCall = fetchMock.mock.calls[2];
     const body = JSON.parse((createTreeCall[1] as RequestInit).body as string) as {
       base_tree: string;
       tree: { path: string; content?: string }[];
     };
     expect(body.base_tree).toBe('tree-old');
-    expect(body.tree[0].path).toBe('workspace.json');
+    expect(body.tree).toHaveLength(1);
+    expect(body.tree[0].path).toBe('.apicircle/workspace.json');
     expect(body.tree[0].content).toContain('"schemaVersion": 1');
   });
 
@@ -217,17 +218,66 @@ describe('workspaceStore.pushWorkspace', () => {
     expect(blobBody.encoding).toBe('base64');
     expect(blobBody.content).toBe(btoa(String.fromCharCode(...bytes)));
 
-    // createTree body has both workspace.json (content) and the attachment (sha).
+    // createTree body has both .apicircle/workspace.json (content) and the attachment (sha).
     const createTreeCall = fetchMock.mock.calls[3];
     const treeBody = JSON.parse((createTreeCall[1] as RequestInit).body as string) as {
       tree: { path: string; content?: string; sha?: string }[];
     };
     expect(treeBody.tree).toHaveLength(2);
-    expect(treeBody.tree[0]).toMatchObject({ path: 'workspace.json' });
+    expect(treeBody.tree[0]).toMatchObject({ path: '.apicircle/workspace.json' });
     expect(treeBody.tree[1]).toMatchObject({
       path: `.apicircle/attachments/${slotId}`,
       sha: 'blob-1',
     });
+  });
+
+  it('stamps workingBranchRef on every Global File Asset whose blob landed in the commit', async () => {
+    // Provenance state machine: after the push, every asset whose bytes
+    // were uploaded should flip from "Uploaded locally" -> "On working
+    // branch" (workingBranchRef populated with the GitHub blob sha + the
+    // commit sha). The corresponding pendingFileUploads entry gets
+    // dropped so the UI status pill flips immediately.
+    await setupConnectedBranch();
+
+    // attachBinaryFile auto-mints a Global Asset, writes the bytes into
+    // IDB, and records pendingFileUploads. This is the unified upload
+    // flow that every drop-a-file UI surface now uses.
+    const reqId = useWorkspaceStore.getState().addRequest(null);
+    const bytes = new Uint8Array([9, 9, 9, 9]);
+    const file = new File([bytes], 'tracked.bin', { type: 'application/octet-stream' });
+    await useWorkspaceStore.getState().attachBinaryFile(reqId, file);
+
+    const preSync = useWorkspaceStore.getState().synced!;
+    const assetId = Object.keys(preSync.globalAssets.files ?? {})[0];
+    expect(assetId).toBeTypeOf('string');
+    const preAsset = preSync.globalAssets.files![assetId];
+    expect(preAsset.workingBranchRef).toBeUndefined();
+    expect(useWorkspaceStore.getState().local!.pendingFileUploads?.[assetId]).toBeDefined();
+
+    const fetchMock = queuedFetch([
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
+      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
+      { body: { sha: 'blob-tracked', size: bytes.length } },
+      { body: { sha: 'tree-new' } },
+      { body: { sha: 'commit-new', message: 'm', tree: { sha: 'tree-new' } } },
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'commit-new' } } },
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await useWorkspaceStore.getState().pushWorkspace();
+
+    const after = useWorkspaceStore.getState();
+    const assetAfter = after.synced!.globalAssets.files![assetId];
+    expect(assetAfter.workingBranchRef).toEqual({
+      branchName: 'apicircle/wb-aaa',
+      blobSha: 'blob-tracked',
+      commitSha: 'commit-new',
+      verifiedAt: expect.any(String),
+    });
+    // baseBranchRef stays untouched — that's the refresh probe's job.
+    expect(assetAfter.baseBranchRef ?? null).toBeNull();
+    // Pending upload was promoted to a stable ref → drop it.
+    expect(after.local!.pendingFileUploads?.[assetId]).toBeUndefined();
   });
 
   it('aborts push when cached attachment bytes fail checksum verification', async () => {
@@ -286,12 +336,12 @@ describe('workspaceStore.pushWorkspace', () => {
     await useWorkspaceStore.getState().pushWorkspace();
 
     expect(fetchMock).toHaveBeenCalledTimes(5);
-    // Tree carries only workspace.json — no attachment entry was added.
+    // Tree carries only .apicircle/workspace.json — no attachment entry was added.
     const treeBody = JSON.parse((fetchMock.mock.calls[2][1] as RequestInit).body as string) as {
       tree: { path: string }[];
     };
     expect(treeBody.tree).toHaveLength(1);
-    expect(treeBody.tree[0].path).toBe('workspace.json');
+    expect(treeBody.tree[0].path).toBe('.apicircle/workspace.json');
   });
 
   it('propagates GitHub errors mid-flow without partial state mutation', async () => {

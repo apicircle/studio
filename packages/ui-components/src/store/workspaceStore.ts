@@ -87,6 +87,7 @@ import {
   generateSlotSalt,
   generateWorkingBranchName,
   collectFolderExport,
+  WORKSPACE_JSON_PATH,
   parseCurl,
   parseSemver,
   previewLinkedUpdate as previewLinkedUpdateCore,
@@ -224,6 +225,7 @@ import {
   setPlanVariables as setPlanVariablesAction,
 } from './planActions';
 import { recomputeUsedIn } from './usedInAggregator';
+import { recomputeAssetUsage } from './assetUsageAggregator';
 import { deleteSecretPayload, getSecretPayload, putSecretPayload } from '../persistence/secrets';
 import { assertSecretsProtected } from '../persistence/platformSecretGate';
 
@@ -1199,6 +1201,20 @@ type WorkspaceStore = {
     patch: Partial<Omit<GlobalFileAsset, 'id' | 'createdAt' | 'slotId' | 'sha256'>>,
   ) => void;
   removeGlobalFileAsset: (id: string) => Promise<void>;
+  /**
+   * Supply (or replace) the bytes for an existing Global File Asset id.
+   * Used by the MCP-claim flow: an AI client calls
+   * `globalAssets.files.create` to register an asset id ahead of time,
+   * then the user picks the file in the Global Assets panel and this
+   * action stores the bytes, refreshes the asset's metadata (size, MIME,
+   * sha256), and queues the upload via `pendingFileUploads`. The asset's
+   * provenance refs are NOT cleared — if the user is replacing bytes
+   * after a push (rare), the next refresh will detect the diverged
+   * blob sha and surface the `diverged` state.
+   *
+   * No-op when `id` is not in the registry.
+   */
+  fillGlobalFileAssetBytes: (id: string, file: File) => Promise<void>;
   setFormRowGlobalFileAsset: (
     requestId: string,
     rowIndex: number,
@@ -2834,6 +2850,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   closeMocksCreateModal: () => set({ mocksCreateModalOpen: false }),
 
   attachMockResponseFile: async (serverId, endpointId, file) => {
+    // Same unified flow — direct upload mints a Global Asset, then we
+    // bind via the existing setMockResponseGlobalFileAsset path. The
+    // return value preserves the old AttachmentRef shape so callers
+    // (e.g. mock editor previews) keep working without code changes.
     enforceAttachmentSize(file);
     const synced = get().synced;
     if (!synced) throw new Error('Workspace not ready');
@@ -2841,31 +2861,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!server) throw new Error(`Mock server ${serverId} not found`);
     const endpoint = server.endpoints.find((e) => e.id === endpointId);
     if (!endpoint) throw new Error(`Endpoint ${endpointId} not found`);
-    const previousSlot =
-      endpoint.defaultResponse.body.type === 'binary' &&
-      !endpoint.defaultResponse.body.attachment?.globalFileAssetId
-        ? (endpoint.defaultResponse.body.attachment?.slotId ?? null)
-        : null;
-    const slotId = generateId();
-    const record = await createAttachmentFromFile(file, slotId);
-    await putAttachment(record);
-    const ref: AttachmentRef = {
-      slotId,
-      filename: record.filename,
-      size: record.size,
-      mimeType: record.mimeType,
-      sha256: record.sha256,
-    };
-    const nextBody: MockResponseBody = {
-      type: 'binary',
-      content: '',
-      attachment: ref,
-    };
-    get().updateMockEndpoint(serverId, endpointId, {
-      defaultResponse: { ...endpoint.defaultResponse, body: nextBody },
-    });
-    if (previousSlot) await deleteAttachment(previousSlot);
-    return ref;
+    const fileAssetId = await get().addGlobalFileAsset(file);
+    await get().setMockResponseGlobalFileAsset(serverId, endpointId, fileAssetId);
+    const asset = get().synced!.globalAssets.files![fileAssetId];
+    return attachmentRefFromGlobalFileAsset(asset);
   },
 
   setMockResponseGlobalFileAsset: async (serverId, endpointId, fileAssetId) => {
@@ -3403,6 +3402,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       sha256: record.sha256,
     });
     commitSynced(set, get, () => result.synced);
+    // Record the pending upload so the push flow knows the bytes need to
+    // be sent up on the next commit. Reads `pendingFileUploads[id]` to
+    // show the "Uploaded locally" status pill across the four UI
+    // surfaces (Global Assets sidebar, form-data row, binary body,
+    // mock-response body).
+    recordPendingFileUpload(set, get, result.file.id);
     return result.file.id;
   },
   updateGlobalFileAsset: (id, patch) =>
@@ -3412,7 +3417,42 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const asset = synced?.globalAssets.files?.[id];
     if (!asset) return;
     commitSynced(set, get, (s) => removeGlobalFileAssetAction(s, id));
+    // Drop the pending-upload entry (if the asset never got pushed) AND
+    // free the IDB bytes. The cascade-unbind on consumers already
+    // happens inside removeGlobalFileAssetAction.
+    dropPendingFileUpload(set, get, id);
     await deleteAttachment(asset.slotId);
+  },
+  fillGlobalFileAssetBytes: async (id, file) => {
+    enforceAttachmentSize(file);
+    const synced = get().synced;
+    const existing = synced?.globalAssets.files?.[id];
+    if (!synced || !existing) return;
+    // Persist the new bytes under the asset's EXISTING slotId so all
+    // request / mock bindings keep pointing at the same record. Refresh
+    // the metadata (size, MIME, sha256) from the picked File since the
+    // user might be filling a slot the MCP claim guessed at.
+    const record = await createAttachmentFromFile(file, existing.slotId);
+    await putAttachment(record);
+    const nextSynced = {
+      ...synced,
+      globalAssets: {
+        ...synced.globalAssets,
+        files: {
+          ...synced.globalAssets.files,
+          [id]: {
+            ...existing,
+            filename: record.filename,
+            size: record.size,
+            mimeType: record.mimeType,
+            sha256: record.sha256,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      },
+    };
+    commitSynced(set, get, () => nextSynced);
+    recordPendingFileUpload(set, get, id);
   },
   setFormRowGlobalFileAsset: async (requestId, rowIndex, fileAssetId) => {
     const synced = get().synced;
@@ -3754,35 +3794,21 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   attachFormFile: async (requestId, rowIndex, file) => {
+    // Unified upload flow: every direct file drop mints a reusable Global
+    // Asset entry, then binds the form-data row to it. Provenance, ref
+    // counts, and the "On working branch / On main" state pill come for
+    // free because the row carries `globalFileAssetId` like any other
+    // Global-Asset binding. Old row data (private slotId) is gone — the
+    // asset registry is the single source of truth for the bytes.
     enforceAttachmentSize(file);
     const synced = get().synced;
     if (!synced) return;
     const existing = synced.collections.requests[requestId];
     if (!existing || existing.body.type !== 'form-data' || !existing.body.formRows) return;
-    const oldRow = existing.body.formRows[rowIndex];
-    if (!oldRow) return;
-    const previousSlot =
-      oldRow.kind === 'file' && oldRow.slotId && !oldRow.globalFileAssetId ? oldRow.slotId : null;
+    if (!existing.body.formRows[rowIndex]) return;
 
-    const slotId = generateId();
-    const record = await createAttachmentFromFile(file, slotId);
-    await putAttachment(record);
-
-    const nextRow: FormDataRow = {
-      kind: 'file',
-      key: oldRow.key,
-      enabled: oldRow.enabled,
-      slotId,
-      filename: record.filename,
-      size: record.size,
-      mimeType: record.mimeType,
-      sha256: record.sha256,
-    };
-    const nextRows = existing.body.formRows.map((r, i) => (i === rowIndex ? nextRow : r));
-    const nextBody: RequestBody = { ...existing.body, formRows: nextRows };
-    commitSynced(set, get, (s) => setRequestBodyAction(s, requestId, nextBody));
-    if (previousSlot && !isGlobalFileSlot(synced, previousSlot))
-      await deleteAttachment(previousSlot);
+    const fileAssetId = await get().addGlobalFileAsset(file);
+    await get().setFormRowGlobalFileAsset(requestId, rowIndex, fileAssetId);
   },
 
   detachFormFile: async (requestId, rowIndex) => {
@@ -3808,31 +3834,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   attachBinaryFile: async (requestId, file) => {
+    // Same unified flow as attachFormFile — see that comment.
     enforceAttachmentSize(file);
     const synced = get().synced;
     if (!synced) return;
-    const existing = synced.collections.requests[requestId];
-    if (!existing) return;
-    const previousSlot =
-      existing.body.type === 'binary' && !existing.body.attachment?.globalFileAssetId
-        ? (existing.body.attachment?.slotId ?? null)
-        : null;
-
-    const slotId = generateId();
-    const record = await createAttachmentFromFile(file, slotId);
-    await putAttachment(record);
-
-    const ref: AttachmentRef = {
-      slotId,
-      filename: record.filename,
-      size: record.size,
-      mimeType: record.mimeType,
-      sha256: record.sha256,
-    };
-    const nextBody: RequestBody = { type: 'binary', content: '', attachment: ref };
-    commitSynced(set, get, (s) => setRequestBodyAction(s, requestId, nextBody));
-    if (previousSlot && !isGlobalFileSlot(synced, previousSlot))
-      await deleteAttachment(previousSlot);
+    if (!synced.collections.requests[requestId]) return;
+    const fileAssetId = await get().addGlobalFileAsset(file);
+    await get().setBinaryGlobalFileAsset(requestId, fileAssetId);
   },
 
   detachBinaryFile: async (requestId) => {
@@ -4570,11 +4578,52 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set({ local: next });
     queueSaveLocal(next);
 
-    // Probe the new branch for an existing `workspace.json`. If it's
-    // there, the repo is pre-populated — the user shouldn't push their
-    // local seed without first reviewing remote content. Surface the
-    // first-pull prompt; the WorkspacePanel banner offers "Pull first"
-    // (refreshWorkspace) vs. "Skip" (acknowledgeFirstPull).
+    // Opportunistic asset-ref inheritance. The new working branch was
+    // forked from `baseBranch`, so any Global File Asset whose bytes
+    // already live on the base branch is also reachable at the same
+    // `.apicircle/attachments/<slotId>` path on the new branch from
+    // commit zero. Stamp `workingBranchRef` from `baseBranchRef` so the
+    // status pill flips to "On working branch" immediately instead of
+    // showing "On main" until the next refresh probe. The probe still
+    // runs and will invalidate if the inheritance assumption ever
+    // breaks (e.g. a retargeted fork point).
+    const syncedNow = get().synced;
+    if (syncedNow && syncedNow.globalAssets.files) {
+      const verifiedAt = new Date().toISOString();
+      const nextFiles: Record<string, (typeof syncedNow.globalAssets.files)[string]> = {
+        ...syncedNow.globalAssets.files,
+      };
+      let touched = false;
+      for (const [id, asset] of Object.entries(syncedNow.globalAssets.files)) {
+        if (!asset.baseBranchRef || asset.workingBranchRef) continue;
+        nextFiles[id] = {
+          ...asset,
+          workingBranchRef: {
+            branchName,
+            blobSha: asset.baseBranchRef.blobSha,
+            commitSha: asset.baseBranchRef.commitSha,
+            verifiedAt,
+          },
+          updatedAt: verifiedAt,
+        };
+        touched = true;
+      }
+      if (touched) {
+        const nextSynced: WorkspaceSynced = {
+          ...syncedNow,
+          globalAssets: { ...syncedNow.globalAssets, files: nextFiles },
+          meta: { ...syncedNow.meta, updatedAt: verifiedAt },
+        };
+        set({ synced: nextSynced });
+        queueSaveSynced(nextSynced);
+      }
+    }
+
+    // Probe the new branch for an existing `.apicircle/workspace.json`.
+    // If it's there, the repo is pre-populated — the user shouldn't push
+    // their local seed without first reviewing remote content. Surface
+    // the first-pull prompt; the WorkspacePanel banner offers "Pull
+    // first" (refreshWorkspace) vs. "Skip" (acknowledgeFirstPull).
     //
     // Exception: if the file's blob sha matches the scaffold we just
     // wrote via `seedInitialCommit`, suppress the prompt — that "remote
@@ -4586,7 +4635,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         token,
         repo.owner,
         repo.name,
-        'workspace.json',
+        WORKSPACE_JSON_PATH,
         branchName,
       );
       const seededSha = next.seededWorkspaceSha;
@@ -4616,18 +4665,19 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const branchName = repo.defaultBranch;
     let scaffoldSha: string | null = null;
 
-    // Idempotent probe: if workspace.json is already on the default branch,
-    // the seed's job is done — listBranches probably just paginated past
-    // existing branches, or a previous attempt partially landed. Skip the
-    // PUT (which would fail with 422 "sha wasn't supplied" anyway) and reuse
-    // the existing blob sha as the "scaffold sha" so createWorkingBranch
-    // can suppress its first-pull prompt for that exact content.
+    // Idempotent probe: if `.apicircle/workspace.json` is already on the
+    // default branch, the seed's job is done — listBranches probably just
+    // paginated past existing branches, or a previous attempt partially
+    // landed. Skip the PUT (which would fail with 422 "sha wasn't
+    // supplied" anyway) and reuse the existing blob sha as the "scaffold
+    // sha" so createWorkingBranch can suppress its first-pull prompt for
+    // that exact content.
     try {
       const existing = await client.getContents(
         token,
         repo.owner,
         repo.name,
-        'workspace.json',
+        WORKSPACE_JSON_PATH,
         branchName,
       );
       if (existing) {
@@ -4669,8 +4719,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       // atomically initializes the repo with a one-file commit on the
       // supplied branch (defaulting to repo.defaultBranch).
       const contentBase64 = bytesToBase64(new TextEncoder().encode(content));
-      const result = await client.putContents(token, repo.owner, repo.name, 'workspace.json', {
-        message: 'chore: initialize workspace.json',
+      const result = await client.putContents(token, repo.owner, repo.name, WORKSPACE_JSON_PATH, {
+        message: 'chore: initialize .apicircle/workspace.json',
         contentBase64,
         branch: branchName,
       });
@@ -4747,6 +4797,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     //    remote entry intact (or absent, on first push).
     const slots = collectAttachmentSlots(synced);
     const attachmentEntries: TreeEntryInput[] = [];
+    // Track which Global File Assets were pushed in this commit so we
+    // can stamp their `workingBranchRef` (provenance state machine) after
+    // updateRef succeeds. Map by slotId → blob sha; the asset lookup is
+    // done at stamp time so a slot that doesn't correspond to a Global
+    // Asset (legacy private-slot entries) is silently skipped.
+    const pushedBySlotId: Record<string, string> = {};
     for (const slot of slots) {
       const record = await getAttachment(slot.slotId);
       if (!record) continue;
@@ -4764,6 +4820,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         path: `.apicircle/attachments/${slot.slotId}`,
         sha: blob.sha,
       });
+      pushedBySlotId[slot.slotId] = blob.sha;
     }
     // 3. Build the new tree, layering workspace.json + attachments over base_tree.
     //    Phase 8 security: redact every secret-bearing field BEFORE
@@ -4779,7 +4836,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     assertNoPlaintextCredentials(content);
     const newTree = await client.createTree(token, owner, name, {
       baseTreeSha: headCommit.treeSha,
-      entries: [{ path: 'workspace.json', content }, ...attachmentEntries],
+      entries: [{ path: WORKSPACE_JSON_PATH, content }, ...attachmentEntries],
     });
     // 4. Create the commit.
     const message = (commitMessage ?? '').trim() || 'chore: sync workspace via API Circle Studio';
@@ -4802,24 +4859,49 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     //    keeps diffing against the stale `lastPulledSnapshot` (often null
     //    on the first push) and reports the same N changes as still
     //    unpushed even though the remote now matches local.
+    //
+    //    Also stamp `workingBranchRef` on every Global File Asset whose
+    //    blob just landed (provenance state machine: 'Uploaded locally'
+    //    -> 'On working branch'), and drop the corresponding
+    //    `pendingFileUploads` entries so the UI status pill flips
+    //    immediately.
+    const verifiedAt = new Date().toISOString();
+    const nextSynced = stampPushedAssetRefs(
+      synced,
+      pushedBySlotId,
+      branch.name,
+      newCommitSha,
+      verifiedAt,
+    );
     const updatedBranch: WorkingBranch = {
       ...branch,
       headSha: newCommitSha,
       lastPushedSha: newCommitSha,
     };
     const currentLocal = get().local!;
+    const trimmedPending = stripPushedFromPending(
+      currentLocal.pendingFileUploads,
+      nextSynced.globalAssets.files,
+      pushedBySlotId,
+    );
     const next: WorkspaceLocal = {
       ...currentLocal,
       workingBranch: updatedBranch,
       sync: {
         ...currentLocal.sync,
-        lastPulledSnapshot: synced,
+        lastPulledSnapshot: nextSynced,
         lastPulledSha: newCommitSha,
-        lastPulledAt: new Date().toISOString(),
+        lastPulledAt: verifiedAt,
         dirtyKeys: [],
       },
+      pendingFileUploads: trimmedPending,
     };
-    set({ local: next });
+    if (nextSynced !== synced) {
+      set({ synced: nextSynced, local: next });
+      queueSaveSynced(nextSynced);
+    } else {
+      set({ local: next });
+    }
     queueSaveLocal(next);
     return { commitSha: newCommitSha };
   },
@@ -4944,7 +5026,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       token,
       repo.owner,
       repo.name,
-      'workspace.json',
+      WORKSPACE_JSON_PATH,
       baseBranch,
     );
     if (!file) return null;
@@ -5037,7 +5119,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       token,
       owner.trim(),
       name.trim(),
-      'workspace.json',
+      WORKSPACE_JSON_PATH,
       branch.trim(),
     );
     if (file === null) return null;
@@ -5082,7 +5164,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // Always fetch HEAD of the source branch — that's the source's
     // currently-published view. (Targeting a specific historical version
     // would need git tags / commit refs, deferred to a follow-on slice.)
-    const file = await client.getContents(token, owner, name, 'workspace.json', link.source.branch);
+    const file = await client.getContents(
+      token,
+      owner,
+      name,
+      WORKSPACE_JSON_PATH,
+      link.source.branch,
+    );
     if (file === null) {
       throw new Error(
         `workspace.json missing on ${link.source.repoFullName}@${link.source.branch}`,
@@ -5145,7 +5233,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const token = await decryptLinkSessionToken(local, link);
     const client = new GitHubClient();
     const [owner, name] = link.source.repoFullName.split('/', 2);
-    const file = await client.getContents(token, owner, name, 'workspace.json', link.source.branch);
+    const file = await client.getContents(
+      token,
+      owner,
+      name,
+      WORKSPACE_JSON_PATH,
+      link.source.branch,
+    );
     if (file === null) {
       throw new Error(
         `workspace.json missing on ${link.source.repoFullName}@${link.source.branch}`,
@@ -5251,7 +5345,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const token = await decryptLinkSessionToken(local, link);
     const client = new GitHubClient();
     const [owner, name] = link.source.repoFullName.split('/', 2);
-    const file = await client.getContents(token, owner, name, 'workspace.json', link.source.branch);
+    const file = await client.getContents(
+      token,
+      owner,
+      name,
+      WORKSPACE_JSON_PATH,
+      link.source.branch,
+    );
     if (file === null) {
       throw new Error(
         `workspace.json missing on ${link.source.repoFullName}@${link.source.branch}`,
@@ -5859,7 +5959,15 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         token: string;
         owner: string;
         name: string;
-        ref: string;
+        /**
+         * Branch refs to try in order. The workspace flow passes the
+         * Global File Asset's provenance chain (workingBranchRef →
+         * baseBranchRef → currently connected working branch) so a
+         * file whose working branch was retired post-merge still
+         * resolves from `main`. Linked-workspace flows pass a single
+         * branch since their ref is fixed at link time.
+         */
+        refs: string[];
         attachmentSource: 'workspace' | 'linked-workspace';
         linkedWorkspaceId?: string;
       },
@@ -5886,14 +5994,24 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         markCached(existing.size);
         return;
       }
+      // Walk the ref chain in order — first 200 wins. A 404 falls
+      // through to the next ref; non-404 errors propagate (network
+      // glitch etc. shouldn't silently skip a slot).
+      let file: Awaited<ReturnType<typeof client.getBinaryContents>> = null;
       try {
-        const file = await client.getBinaryContents(
-          source.token,
-          source.owner,
-          source.name,
-          `.apicircle/attachments/${slot.slotId}`,
-          source.ref,
-        );
+        for (const ref of source.refs) {
+          const probed = await client.getBinaryContents(
+            source.token,
+            source.owner,
+            source.name,
+            `.apicircle/attachments/${slot.slotId}`,
+            ref,
+          );
+          if (probed) {
+            file = probed;
+            break;
+          }
+        }
         if (!file) {
           failed++;
           return;
@@ -5930,12 +6048,29 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (localSlots.length > 0) {
       if (!branch) throw new Error('Create a working branch before syncing workspace attachments');
       if (!workspaceToken) throw new Error('No GitHub session - connect a PAT first');
+      // Build a slotId → asset lookup once so the ref-chain per slot is
+      // cheap to derive.
+      const assetBySlot: Record<string, NonNullable<typeof synced.globalAssets.files>[string]> = {};
+      for (const asset of Object.values(synced.globalAssets.files ?? {})) {
+        assetBySlot[asset.slotId] = asset;
+      }
       for (const slot of localSlots) {
+        const asset = assetBySlot[slot.slotId];
+        // Ref chain: working ref first, base ref second, connected
+        // branch last as a backwards-compat fallback for legacy slots
+        // that pre-date the provenance fields. Deduplicate so we never
+        // probe the same ref twice.
+        const refs = [
+          asset?.workingBranchRef?.branchName,
+          asset?.baseBranchRef?.branchName,
+          branch.name,
+        ].filter((r): r is string => Boolean(r));
+        const dedupedRefs = [...new Set(refs)];
         await syncSlot(slot, {
           token: workspaceToken,
           owner: branch.repoOwner,
           name: branch.repoName,
-          ref: branch.name,
+          refs: dedupedRefs,
           attachmentSource: 'workspace',
         });
       }
@@ -5955,7 +6090,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           token: linkToken,
           owner,
           name,
-          ref: link.source.branch,
+          refs: [link.source.branch],
           attachmentSource: 'linked-workspace',
           linkedWorkspaceId: linkId,
         });
@@ -6012,7 +6147,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       token,
       branch.repoOwner,
       branch.repoName,
-      'workspace.json',
+      WORKSPACE_JSON_PATH,
       branch.name,
     );
     if (file === null) {
@@ -6036,8 +6171,19 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       }
       throw err;
     }
-    const base = local.sync.lastPulledSnapshot;
-    const diff = computeThreeWayDiff(base, synced, remote);
+    // Re-read store state AFTER the awaits. `synced` / `local` were
+    // captured at function entry, but two network round-trips ago
+    // (`probeBranchRetirement` + `getContents`). A user mutation in that
+    // 200ms–2s window — a file upload into a form-data row, a Global
+    // Asset add, anything that flows through `commitSynced` — has
+    // already updated the store. Computing the diff and merge against
+    // the stale closure capture would silently DROP those edits when
+    // the auto-merge below runs `set({ synced: merged })`. Re-reading
+    // here closes the race so the diff sees the freshest local doc.
+    const liveSynced = get().synced ?? synced;
+    const liveLocal = get().local ?? local;
+    const base = liveLocal.sync.lastPulledSnapshot;
+    const diff = computeThreeWayDiff(base, liveSynced, remote);
 
     // Ancestry pre-flight: if we have a `lastPushedSha` baseline AND the
     // probe gave us the current remote HEAD, confirm the remote is a
@@ -6082,7 +6228,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const next: WorkspaceLocal = {
         ...get().local!,
         sync: {
-          ...local.sync,
+          ...liveLocal.sync,
           lastPulledSnapshot: remote,
           lastPulledSha: file.sha,
           lastPulledAt: new Date().toISOString(),
@@ -6090,6 +6236,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       };
       set({ local: next });
       queueSaveLocal(next);
+      // Run the asset-ref verification pass even when the doc is
+      // up-to-date — that's exactly the window where a PR merged on the
+      // base branch but the working-branch JSON hasn't been pushed yet
+      // (no local edits), and we need to detect it to promote
+      // `baseBranchRef`.
+      await verifyAssetRefsAndPatch(set, get, client, token, branch);
       return { status: 'up-to-date' };
     }
 
@@ -6101,8 +6253,16 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         trigger: 'pre-merge',
         note: `Before auto-merge from ${branch.name}`,
       });
-      const merged = applyMerge(synced, remote, diff, {});
+      // Merge from the LIVE synced doc — see the re-read comment above.
+      // Without `liveSynced` here, any mutation that landed during the
+      // GitHub fetch (file upload, Global Asset add, request edit) would
+      // be overwritten when `persistMerged` calls `set({ synced: merged })`.
+      const merged = applyMerge(liveSynced, remote, diff, {});
       await persistMerged(set, get, merged, remote, file.sha);
+      // Run the asset-ref verification pass after every successful merge
+      // so the workingBranchRef + baseBranchRef stay honest. See the
+      // up-to-date branch above for the rationale.
+      await verifyAssetRefsAndPatch(set, get, client, token, branch);
       return { status: 'merged' };
     }
 
@@ -6946,7 +7106,7 @@ async function doLinkWorkspace(
   const client = new GitHubClient();
   let file: { content: string } | null;
   try {
-    file = await client.getContents(token, owner, name, 'workspace.json', trimmedBranch);
+    file = await client.getContents(token, owner, name, WORKSPACE_JSON_PATH, trimmedBranch);
   } catch (err) {
     // If the dedicated path failed, the orphan payload we just stored
     // must be cleaned up so it doesn't leak into the vault on a retry.
@@ -7621,16 +7781,40 @@ function commitSynced(
   };
   set({ synced: next });
   queueSaveSynced(next);
-  // Refresh the secret usedIn map whenever synced state moves; aggregator
-  // is O(refs × secrets) and a no-op when nothing the secrets reference
-  // changed, so this is cheap to do unconditionally.
-  const local = get().local;
-  if (local && Object.keys(local.secretIndex.entries).length > 0) {
-    const updatedLocal = recomputeUsedIn(next, local);
-    if (updatedLocal !== local) {
-      set({ local: updatedLocal });
-      queueSaveLocal(updatedLocal);
+  // Refresh derived local indices in lockstep with the synced commit.
+  // Both aggregators are referentially-stable when their inputs didn't
+  // change in any cell they care about, so we can chain them without
+  // pessimising the no-op path.
+  let local = get().local;
+  if (!local) return;
+  let touchedLocal = false;
+  if (Object.keys(local.secretIndex.entries).length > 0) {
+    const afterSecrets = recomputeUsedIn(next, local);
+    if (afterSecrets !== local) {
+      local = afterSecrets;
+      touchedLocal = true;
     }
+  }
+  // Asset usage map gets rebuilt whenever any file asset is registered —
+  // unlike secrets it's cheap to walk (structured field lookups, no
+  // regex scan) so we keep the gate light.
+  if (next.globalAssets.files && Object.keys(next.globalAssets.files).length > 0) {
+    const afterAssets = recomputeAssetUsage(next, local);
+    if (afterAssets !== local) {
+      local = afterAssets;
+      touchedLocal = true;
+    }
+  } else if (local.assetUsageIndex && Object.keys(local.assetUsageIndex).length > 0) {
+    // Last asset just got removed — drop the stale index in the same tick.
+    const afterAssets = recomputeAssetUsage(next, local);
+    if (afterAssets !== local) {
+      local = afterAssets;
+      touchedLocal = true;
+    }
+  }
+  if (touchedLocal) {
+    set({ local });
+    queueSaveLocal(local);
   }
 }
 
@@ -7638,6 +7822,266 @@ function commitSynced(
 // (plans now travel through Git). Other local-only mutations use raw
 // `set` + `saveLocal` paths — keep this comment as a breadcrumb in
 // case a future feature wants the symmetry helper back.
+
+// ---------------------------------------------------------------------------
+// pendingFileUploads helpers
+// ---------------------------------------------------------------------------
+// The pending-upload index tracks Global File Assets whose bytes are in
+// local IDB but haven't yet been pushed to any Git ref. Written by every
+// upload action (`addGlobalFileAsset` and its three direct-upload
+// wrappers) and dropped by the push flow once the asset has been
+// promoted to `workingBranchRef`.
+
+function recordPendingFileUpload(set: SetState, get: GetState, assetId: string): void {
+  const local = get().local;
+  const synced = get().synced;
+  if (!local || !synced) return;
+  const asset = synced.globalAssets.files?.[assetId];
+  if (!asset) return;
+  const next: WorkspaceLocal = {
+    ...local,
+    pendingFileUploads: {
+      ...(local.pendingFileUploads ?? {}),
+      [assetId]: {
+        slotId: asset.slotId,
+        filename: asset.filename,
+        mimeType: asset.mimeType,
+        sha256: asset.sha256 ?? '',
+        size: asset.size,
+        queuedAt: new Date().toISOString(),
+      },
+    },
+  };
+  set({ local: next });
+  queueSaveLocal(next);
+}
+
+function dropPendingFileUpload(set: SetState, get: GetState, assetId: string): void {
+  const local = get().local;
+  if (!local?.pendingFileUploads || !local.pendingFileUploads[assetId]) return;
+  const nextPending = { ...local.pendingFileUploads };
+  delete nextPending[assetId];
+  const next: WorkspaceLocal = { ...local, pendingFileUploads: nextPending };
+  set({ local: next });
+  queueSaveLocal(next);
+}
+
+// ---------------------------------------------------------------------------
+// Asset-provenance helpers (push side)
+// ---------------------------------------------------------------------------
+// `stampPushedAssetRefs` builds a new synced doc with `workingBranchRef`
+// set on every Global File Asset whose blob was just uploaded. Returns
+// the original synced reference when nothing changed (every pushed slot
+// was either a legacy private-slot upload or unknown). Pure — the push
+// flow swaps the store via its existing `set({ synced })` path.
+//
+// `stripPushedFromPending` mirrors the same set: any asset whose blob is
+// now durable on the remote drops out of `pendingFileUploads`.
+
+function stampPushedAssetRefs(
+  synced: WorkspaceSynced,
+  pushedBySlotId: Record<string, string>,
+  branchName: string,
+  commitSha: string,
+  verifiedAt: string,
+): WorkspaceSynced {
+  const files = synced.globalAssets.files;
+  if (!files || Object.keys(pushedBySlotId).length === 0) return synced;
+  const nextFiles: Record<string, (typeof files)[string]> = {};
+  let touched = false;
+  for (const [id, asset] of Object.entries(files)) {
+    const blobSha = pushedBySlotId[asset.slotId];
+    if (!blobSha) {
+      nextFiles[id] = asset;
+      continue;
+    }
+    nextFiles[id] = {
+      ...asset,
+      workingBranchRef: { branchName, blobSha, commitSha, verifiedAt },
+      updatedAt: verifiedAt,
+    };
+    touched = true;
+  }
+  if (!touched) return synced;
+  return {
+    ...synced,
+    globalAssets: { ...synced.globalAssets, files: nextFiles },
+    meta: { ...synced.meta, updatedAt: verifiedAt },
+  };
+}
+
+function stripPushedFromPending(
+  pending: WorkspaceLocal['pendingFileUploads'],
+  files: WorkspaceSynced['globalAssets']['files'],
+  pushedBySlotId: Record<string, string>,
+): WorkspaceLocal['pendingFileUploads'] {
+  if (!pending || Object.keys(pending).length === 0) return pending;
+  if (!files) return pending;
+  const next = { ...pending };
+  let touched = false;
+  for (const [id, asset] of Object.entries(files)) {
+    if (next[id] && pushedBySlotId[asset.slotId]) {
+      delete next[id];
+      touched = true;
+    }
+  }
+  return touched ? next : pending;
+}
+
+// ---------------------------------------------------------------------------
+// Asset-provenance helpers (refresh side)
+// ---------------------------------------------------------------------------
+// `verifyAssetRefsAndPatch` is the refresh-time verification + cleanup pass.
+// For every Global File Asset it:
+//   1. If `workingBranchRef` is set, probe that branch's attachment slot.
+//      200 → refresh `verifiedAt` + record blob sha; null → drop the ref.
+//   2. If `baseBranchRef` is set, same probe against the base branch.
+//      If `baseBranchRef` is NOT set but the working branch has a base,
+//      also probe it opportunistically — that's how we detect "PR merged."
+//   3. Cleanup invariant: when both refs hold the SAME blob sha, drop
+//      `workingBranchRef`. Base is the single source of truth.
+//
+// Best-effort: per-probe errors are swallowed (a transient blip shouldn't
+// poison the merge result the caller just landed). Mutates the store via
+// a final `set({ synced })` + `queueSaveSynced`.
+
+async function verifyAssetRefsAndPatch(
+  set: SetState,
+  get: GetState,
+  client: GitHubClient,
+  token: string,
+  branch: WorkingBranch,
+): Promise<void> {
+  const synced = get().synced;
+  if (!synced) return;
+  const files = synced.globalAssets.files;
+  if (!files || Object.keys(files).length === 0) return;
+
+  const owner = branch.repoOwner;
+  const repoName = branch.repoName;
+  const baseBranch = branch.baseBranch;
+  const verifiedAt = new Date().toISOString();
+  const nextFiles: Record<string, (typeof files)[string]> = {};
+  let touched = false;
+
+  for (const [id, asset] of Object.entries(files)) {
+    let workingRef = asset.workingBranchRef ?? null;
+    let baseRef = asset.baseBranchRef ?? null;
+    const blobPath = `.apicircle/attachments/${asset.slotId}`;
+
+    // Working-branch probe.
+    if (workingRef) {
+      try {
+        const probed = await client.getContents(
+          token,
+          owner,
+          repoName,
+          blobPath,
+          workingRef.branchName,
+        );
+        if (probed === null) {
+          workingRef = null;
+        } else {
+          workingRef = { ...workingRef, blobSha: probed.sha, verifiedAt };
+        }
+      } catch {
+        // Network / auth blip — preserve the ref and try again next refresh.
+      }
+    }
+
+    // Base-branch probe — verify if set, opportunistically detect if not.
+    if (baseRef) {
+      try {
+        const probed = await client.getContents(
+          token,
+          owner,
+          repoName,
+          blobPath,
+          baseRef.branchName,
+        );
+        if (probed === null) {
+          baseRef = null;
+        } else {
+          baseRef = { ...baseRef, blobSha: probed.sha, verifiedAt };
+        }
+      } catch {
+        /* keep stale ref */
+      }
+    } else if (baseBranch) {
+      try {
+        const probed = await client.getContents(token, owner, repoName, blobPath, baseBranch);
+        if (probed !== null) {
+          baseRef = {
+            branchName: baseBranch,
+            blobSha: probed.sha,
+            verifiedAt,
+          };
+        }
+      } catch {
+        /* base never had it yet; that's fine */
+      }
+    }
+
+    // Cleanup invariant — both refs point at the same blob → drop the
+    // working ref; base is now the canonical source of truth.
+    if (
+      workingRef &&
+      baseRef &&
+      workingRef.blobSha &&
+      baseRef.blobSha &&
+      workingRef.blobSha === baseRef.blobSha
+    ) {
+      workingRef = null;
+    }
+
+    const startedWorking = asset.workingBranchRef ?? null;
+    const startedBase = asset.baseBranchRef ?? null;
+    if (workingRef !== startedWorking || baseRef !== startedBase) {
+      nextFiles[id] = {
+        ...asset,
+        workingBranchRef: workingRef,
+        baseBranchRef: baseRef,
+        updatedAt: verifiedAt,
+      };
+      touched = true;
+    } else {
+      nextFiles[id] = asset;
+    }
+  }
+
+  if (!touched) return;
+  const liveSynced = get().synced;
+  if (!liveSynced) return;
+  // Race-safe merge: a user mutation that landed during the probe loop
+  // (uploading a new file, renaming an existing one, deleting one) has
+  // already updated `liveSynced.globalAssets.files`. If we just write
+  // `nextFiles` over the live map, those in-flight changes get dropped —
+  // exactly the same class of bug the `refreshWorkspace` stale-`synced`
+  // race had. Instead, layer the probe results onto the live map: keep
+  // any new assets, drop any assets the user deleted, and apply probe
+  // updates only for assets that still exist in the live state.
+  const liveFiles = liveSynced.globalAssets.files ?? {};
+  const mergedFiles: Record<string, (typeof liveFiles)[string]> = { ...liveFiles };
+  for (const [id, probed] of Object.entries(nextFiles)) {
+    const current = mergedFiles[id];
+    if (!current) continue; // user deleted this asset mid-probe; honor that.
+    // If the user mutated this asset's metadata (rename, etc.) mid-probe,
+    // honor their fields and overlay only the ref-state slots we probed.
+    mergedFiles[id] = {
+      ...current,
+      workingBranchRef: probed.workingBranchRef,
+      baseBranchRef: probed.baseBranchRef,
+      updatedAt: verifiedAt,
+    };
+  }
+  const nextSynced: WorkspaceSynced = {
+    ...liveSynced,
+    globalAssets: { ...liveSynced.globalAssets, files: mergedFiles },
+    meta: { ...liveSynced.meta, updatedAt: verifiedAt },
+  };
+  set({ synced: nextSynced });
+  queueSaveSynced(nextSynced);
+}
 
 /**
  * Resolve `{{var}}` placeholders inside an auth config's string fields.

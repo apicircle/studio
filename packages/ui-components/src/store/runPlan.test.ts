@@ -121,7 +121,7 @@ describe('workspaceStore.runPlan', () => {
         {
           body: {
             type: 'file',
-            path: 'workspace.json',
+            path: '.apicircle/workspace.json',
             sha: 's',
             size: 10,
             content: btoa(

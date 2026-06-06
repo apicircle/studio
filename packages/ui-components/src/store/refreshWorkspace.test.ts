@@ -57,7 +57,7 @@ function fileContents(synced: WorkspaceSynced, sha = 'remote-blob-sha'): Respons
   return {
     body: {
       type: 'file',
-      path: 'workspace.json',
+      path: '.apicircle/workspace.json',
       sha,
       size: json.length,
       content,
@@ -193,6 +193,263 @@ describe('workspaceStore.refreshWorkspace', () => {
     const summary = summarizeUnpushedChanges(localAfter!.sync.lastPulledSnapshot, syncedAfter!);
     expect(summary.changes.find((c) => c.bucket === 'executionPlan')?.kind).toBe('added');
     expect(summary.total).toBeGreaterThan(0);
+  });
+
+  // Regression: a mutation that lands DURING the GitHub round-trip (e.g.,
+  // the user uploads a file in form-data or via Global Assets while the
+  // cold-launch focus refresh is still fetching workspace.json from
+  // GitHub) MUST survive the auto-merge. The original `refreshWorkspace`
+  // captured `synced` at function entry — and any in-flight edit was
+  // silently dropped when the merge ran against the stale snapshot, then
+  // wrote `set({ synced: merged })`. The fix re-reads `synced` and
+  // `local` after the awaits, immediately before `computeThreeWayDiff`.
+  it('preserves a local-only mutation that lands during the GitHub fetch (the file-upload race)', async () => {
+    await setupConnectedBranch();
+    const startSynced = useWorkspaceStore.getState().synced!;
+    // Seed `lastPulledSnapshot` so the 3-way diff has a non-null base.
+    // Without this, the diff classifier sends every divergent entity to
+    // 'conflict' (line 311 of threeWayDiff.ts) and the test would never
+    // reach the auto-merge path the race lives in.
+    useWorkspaceStore.setState({
+      local: {
+        ...useWorkspaceStore.getState().local!,
+        sync: {
+          ...useWorkspaceStore.getState().local!.sync,
+          lastPulledSnapshot: startSynced,
+          lastPulledSha: 'sha-base',
+          lastPulledAt: '2026-06-06T00:00:00.000Z',
+        },
+      },
+    });
+    // Remote has a remote-only addition so the auto-merge path fires (the
+    // diff is non-empty, conflict-free). Without this, the code would
+    // take the up-to-date path and not exercise the race.
+    const remote: WorkspaceSynced = {
+      ...startSynced,
+      collections: {
+        ...startSynced.collections,
+        requests: {
+          'remote-only': {
+            id: 'remote-only',
+            name: 'From remote',
+            folderId: null,
+            method: 'GET',
+            url: 'https://x',
+            headers: [],
+            query: [],
+            body: { type: 'none', content: '' },
+            auth: { type: 'none' },
+            contextVars: [],
+            extractions: [],
+            assertions: [],
+            createdAt: 't',
+            updatedAt: 't',
+          },
+        },
+      },
+    };
+
+    // Custom fetch: the branch-probe responds synchronously, but the
+    // workspace.json read parks on a deferred so we can inject a
+    // mid-fetch mutation before resolving.
+    let releaseFetch: () => void = () => {};
+    const fetchParked = new Promise<void>((resolve) => {
+      releaseFetch = resolve;
+    });
+    let call = 0;
+    const fetchMock = vi.fn(async () => {
+      call++;
+      if (call === 1) return fakeResponse(branchHeadOk());
+      if (call === 2) {
+        // Wait for the test to mutate state, then return the remote doc.
+        await fetchParked;
+        return fakeResponse(fileContents(remote, 'sha-mid-fetch'));
+      }
+      throw new Error(`unexpected fetch call #${call}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    // Kick off the refresh (don't await).
+    const refreshing = useWorkspaceStore.getState().refreshWorkspace();
+    // Yield once so refreshWorkspace can reach its first awaited fetch.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Mid-fetch mutation: drop a local-only request into synced via the
+    // store's add action. This is the same code path a form-data file
+    // upload or Global Assets add takes — they all funnel through
+    // `commitSynced`, which is what produces the bumped `meta.updatedAt`
+    // and the new synced doc.
+    const newRequestId = useWorkspaceStore.getState().addRequest(null, 'Mid-fetch addition');
+    expect(useWorkspaceStore.getState().synced!.collections.requests[newRequestId]).toBeDefined();
+
+    // Now let the workspace.json fetch resolve. The merge runs after
+    // this point — with the fix, it sees the freshly-mutated synced doc
+    // and keeps the local-only request.
+    releaseFetch();
+    const result = await refreshing;
+    expect(result.status).toBe('merged');
+
+    const afterMerge = useWorkspaceStore.getState().synced!;
+    // The mid-fetch addition survives the auto-merge.
+    expect(afterMerge.collections.requests[newRequestId]).toBeDefined();
+    expect(afterMerge.collections.requests[newRequestId].name).toBe('Mid-fetch addition');
+    // The remote-only addition is also pulled in (the merge does the
+    // right thing in both directions).
+    expect(afterMerge.collections.requests['remote-only']).toBeDefined();
+  });
+
+  // Provenance pass: after the merge, walk every Global File Asset and
+  // verify its workingBranchRef + opportunistically probe the base branch.
+  // When both probes return the SAME blob sha, the cleanup invariant
+  // drops the workingBranchRef so the base ref is the single source of
+  // truth (the "PR merged" detection path).
+  it('runs the asset-ref verification + cleanup invariant after an up-to-date refresh', async () => {
+    await setupConnectedBranch();
+    const startSynced = useWorkspaceStore.getState().synced!;
+    const assetId = 'asset-prov';
+    const slotId = 'slot-prov';
+    const initialSynced: WorkspaceSynced = {
+      ...startSynced,
+      globalAssets: {
+        ...startSynced.globalAssets,
+        files: {
+          [assetId]: {
+            id: assetId,
+            name: 'Reusable payload',
+            slotId,
+            filename: 'payload.bin',
+            size: 4,
+            mimeType: 'application/octet-stream',
+            sha256: 'sha-x',
+            createdAt: '2026-06-06T00:00:00.000Z',
+            updatedAt: '2026-06-06T00:00:00.000Z',
+            workingBranchRef: {
+              branchName: 'apicircle/wb-aaa',
+              blobSha: 'blob-shared',
+              commitSha: 'commit-w',
+              verifiedAt: '2026-06-06T00:00:00.000Z',
+            },
+          },
+        },
+      },
+    };
+    useWorkspaceStore.setState({
+      synced: initialSynced,
+      local: {
+        ...useWorkspaceStore.getState().local!,
+        sync: {
+          ...useWorkspaceStore.getState().local!.sync,
+          lastPulledSnapshot: initialSynced,
+          lastPulledSha: 'sha-base',
+          lastPulledAt: '2026-06-06T00:00:00.000Z',
+        },
+      },
+    });
+
+    // Remote matches local exactly → up-to-date path → verifyAssetRefs runs.
+    function attachmentResponse(): ResponseSpec {
+      return {
+        body: {
+          type: 'file',
+          path: `.apicircle/attachments/${slotId}`,
+          sha: 'blob-shared',
+          size: 4,
+          content: btoa('xxxx'),
+          encoding: 'base64',
+        },
+      };
+    }
+    vi.stubGlobal(
+      'fetch',
+      queuedFetch([
+        branchHeadOk(),
+        // Up-to-date workspace.json
+        fileContents(initialSynced, 'sha-up-to-date'),
+        // verifyAssetRefs — working branch probe (same blob sha)
+        attachmentResponse(),
+        // verifyAssetRefs — opportunistic base branch probe (same blob sha)
+        attachmentResponse(),
+      ]),
+    );
+
+    const result = await useWorkspaceStore.getState().refreshWorkspace();
+    expect(result.status).toBe('up-to-date');
+
+    const assetAfter = useWorkspaceStore.getState().synced!.globalAssets.files![assetId];
+    // Cleanup invariant fired: both refs held the same blob sha, so the
+    // working ref is dropped and base is the single source of truth.
+    expect(assetAfter.workingBranchRef).toBeNull();
+    expect(assetAfter.baseBranchRef).toEqual({
+      branchName: 'main',
+      blobSha: 'blob-shared',
+      verifiedAt: expect.any(String),
+    });
+  });
+
+  it('verifyAssetRefs drops a workingBranchRef when its blob 404s', async () => {
+    // PR merged on GitHub → branch deleted → bytes no longer reachable
+    // via the working ref. The probe returns 404; the ref is dropped.
+    // Base ref stays whatever it was (here: untouched / unset).
+    await setupConnectedBranch();
+    const startSynced = useWorkspaceStore.getState().synced!;
+    const assetId = 'asset-gone';
+    const slotId = 'slot-gone';
+    const initialSynced: WorkspaceSynced = {
+      ...startSynced,
+      globalAssets: {
+        ...startSynced.globalAssets,
+        files: {
+          [assetId]: {
+            id: assetId,
+            name: 'Orphan',
+            slotId,
+            filename: 'orphan.bin',
+            size: 1,
+            mimeType: 'application/octet-stream',
+            sha256: 'sha-y',
+            createdAt: '2026-06-06T00:00:00.000Z',
+            updatedAt: '2026-06-06T00:00:00.000Z',
+            workingBranchRef: {
+              branchName: 'apicircle/wb-aaa',
+              blobSha: 'blob-old',
+              commitSha: 'commit-w',
+              verifiedAt: '2026-06-06T00:00:00.000Z',
+            },
+          },
+        },
+      },
+    };
+    useWorkspaceStore.setState({
+      synced: initialSynced,
+      local: {
+        ...useWorkspaceStore.getState().local!,
+        sync: {
+          ...useWorkspaceStore.getState().local!.sync,
+          lastPulledSnapshot: initialSynced,
+          lastPulledSha: 'sha-base',
+          lastPulledAt: '2026-06-06T00:00:00.000Z',
+        },
+      },
+    });
+
+    vi.stubGlobal(
+      'fetch',
+      queuedFetch([
+        branchHeadOk(),
+        fileContents(initialSynced, 'sha-up-to-date'),
+        // working-branch probe → 404
+        { body: { message: 'Not Found' }, status: 404 },
+        // opportunistic base probe → 404
+        { body: { message: 'Not Found' }, status: 404 },
+      ]),
+    );
+
+    await useWorkspaceStore.getState().refreshWorkspace();
+
+    const assetAfter = useWorkspaceStore.getState().synced!.globalAssets.files![assetId];
+    expect(assetAfter.workingBranchRef).toBeNull();
+    expect(assetAfter.baseBranchRef ?? null).toBeNull();
   });
 
   it('stashes the diff for the resolver when conflicts exist; commitRefresh applies the picks', async () => {

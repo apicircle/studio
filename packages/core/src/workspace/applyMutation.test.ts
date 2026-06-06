@@ -5,6 +5,7 @@ import type {
   WorkspaceLocal,
   WorkspaceSynced,
 } from '@apicircle/shared';
+import { makeDefaultRequestSchema } from '@apicircle/shared';
 import { applyMutation } from './applyMutation';
 
 const T0 = '2026-04-27T00:00:00.000Z';
@@ -679,6 +680,332 @@ describe('applyMutation - mocks', () => {
     };
     const out = applyMutation(state, { kind: 'mock.delete', id: 'm1' });
     expect(out.next.local).toBe(state.local);
+  });
+});
+
+describe('applyMutation - globalAsset.files', () => {
+  const baseAsset = {
+    id: 'asset-1',
+    name: 'Passport',
+    slotId: 'slot-1',
+    filename: 'passport.png',
+    size: 1024,
+    mimeType: 'image/png',
+    sha256: 'sha-1',
+    createdAt: T0,
+    updatedAt: T0,
+  };
+  const refOnWorking = {
+    branchName: 'apicircle/wb-aaa',
+    blobSha: 'blob-w-1',
+    commitSha: 'commit-w-1',
+    verifiedAt: T1,
+  };
+  const refOnBase = {
+    branchName: 'main',
+    blobSha: 'blob-b-1',
+    commitSha: 'commit-b-1',
+    verifiedAt: T1,
+  };
+
+  it('upsertFile creates a new entry and bumps meta.updatedAt', () => {
+    const state = { synced: makeSynced(), local: makeLocal() };
+    const out = applyMutation(
+      state,
+      { kind: 'globalAsset.upsertFile', file: baseAsset },
+      { now: T1 },
+    );
+    const stored = out.next.synced.globalAssets.files?.[baseAsset.id];
+    expect(stored).toBeDefined();
+    expect(stored?.filename).toBe('passport.png');
+    expect(stored?.updatedAt).toBe(T1);
+    expect(out.next.synced.meta.updatedAt).toBe(T1);
+    expect(out.changedIds).toEqual([baseAsset.id]);
+  });
+
+  it('upsertFile preserves prior provenance when caller omits ref fields', () => {
+    // Loaded fixtures (e.g. on rename via the UI) carry the asset without
+    // the ref fields. The handler must NOT erase ref provenance that the
+    // push/refresh flows established.
+    const state = {
+      synced: makeSynced({
+        globalAssets: {
+          schemas: {},
+          graphql: {},
+          files: { [baseAsset.id]: { ...baseAsset, workingBranchRef: refOnWorking } },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(
+      state,
+      { kind: 'globalAsset.upsertFile', file: { ...baseAsset, name: 'Renamed' } },
+      { now: T1 },
+    );
+    const stored = out.next.synced.globalAssets.files![baseAsset.id];
+    expect(stored.name).toBe('Renamed');
+    expect(stored.workingBranchRef).toEqual(refOnWorking);
+  });
+
+  it('removeFile cascades through request bodies and mock responses', () => {
+    const requestId = 'req-1';
+    const reqWithBinary: ApiRequest = {
+      ...makeRequest(requestId),
+      body: {
+        type: 'binary',
+        content: '',
+        attachment: {
+          slotId: baseAsset.slotId,
+          globalFileAssetId: baseAsset.id,
+          filename: baseAsset.filename,
+          size: baseAsset.size,
+          mimeType: baseAsset.mimeType,
+          sha256: baseAsset.sha256,
+        },
+      },
+    };
+    const mockServer = {
+      id: 'm1',
+      name: 'Mock',
+      source: { kind: 'manual' as const, endpoints: [] },
+      endpoints: [
+        {
+          id: 'ep-1',
+          name: 'GET /a',
+          method: 'GET' as const,
+          pathPattern: '/a',
+          requestSchema: makeDefaultRequestSchema(),
+          requestValidation: [],
+          responseRules: [],
+          defaultResponse: {
+            status: 200,
+            headers: [],
+            delayMs: 0,
+            body: {
+              type: 'binary' as const,
+              content: '' as const,
+              attachment: {
+                slotId: baseAsset.slotId,
+                globalFileAssetId: baseAsset.id,
+                filename: baseAsset.filename,
+              },
+            },
+          },
+        },
+      ],
+      defaultPort: null,
+      cors: { enabled: false, origins: [] },
+      createdAt: T0,
+      updatedAt: T0,
+    };
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [{ kind: 'request', id: requestId }] },
+          requests: { [requestId]: reqWithBinary },
+          folders: {},
+        },
+        mockServers: { m1: mockServer },
+        globalAssets: { schemas: {}, graphql: {}, files: { [baseAsset.id]: baseAsset } },
+      }),
+      local: makeLocal({
+        pendingFileUploads: {
+          [baseAsset.id]: {
+            slotId: baseAsset.slotId,
+            filename: baseAsset.filename,
+            mimeType: baseAsset.mimeType,
+            sha256: baseAsset.sha256!,
+            size: baseAsset.size,
+            queuedAt: T0,
+          },
+        },
+        assetUsageIndex: {
+          [baseAsset.id]: {
+            requests: [requestId],
+            mockEndpoints: [{ mockId: 'm1', endpointId: 'ep-1' }],
+            total: 2,
+          },
+        },
+      }),
+    };
+    const out = applyMutation(
+      state,
+      { kind: 'globalAsset.removeFile', id: baseAsset.id },
+      { now: T1 },
+    );
+    // Registry dropped.
+    expect(out.next.synced.globalAssets.files?.[baseAsset.id]).toBeUndefined();
+    // Cascade — request body unbound.
+    const reqAfter = out.next.synced.collections.requests[requestId];
+    expect(reqAfter.body).toEqual({ type: 'binary', content: '' });
+    // Cascade — mock response body unbound.
+    const mockAfter = out.next.synced.mockServers['m1'];
+    expect(mockAfter.endpoints[0].defaultResponse.body).toEqual({ type: 'binary', content: '' });
+    // Local-only buffers cleared so stale "uploading" pills don't survive.
+    expect(out.next.local.pendingFileUploads?.[baseAsset.id]).toBeUndefined();
+    expect(out.next.local.assetUsageIndex?.[baseAsset.id]).toBeUndefined();
+    expect(out.next.synced.meta.updatedAt).toBe(T1);
+  });
+
+  it('removeFile is a no-op when the asset id is unknown', () => {
+    const state = { synced: makeSynced(), local: makeLocal() };
+    const out = applyMutation(state, { kind: 'globalAsset.removeFile', id: 'missing' });
+    expect(out.next).toBe(state);
+    expect(out.changedIds).toEqual([]);
+  });
+
+  it('markPushed sets workingBranchRef without touching baseBranchRef', () => {
+    const state = {
+      synced: makeSynced({
+        globalAssets: {
+          schemas: {},
+          graphql: {},
+          files: { [baseAsset.id]: { ...baseAsset, baseBranchRef: refOnBase } },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(
+      state,
+      { kind: 'globalAsset.markPushed', id: baseAsset.id, ref: refOnWorking },
+      { now: T1 },
+    );
+    const stored = out.next.synced.globalAssets.files![baseAsset.id];
+    expect(stored.workingBranchRef).toEqual(refOnWorking);
+    expect(stored.baseBranchRef).toEqual(refOnBase);
+    expect(stored.updatedAt).toBe(T1);
+  });
+
+  it('markMerged sets baseBranchRef without touching workingBranchRef', () => {
+    const state = {
+      synced: makeSynced({
+        globalAssets: {
+          schemas: {},
+          graphql: {},
+          files: { [baseAsset.id]: { ...baseAsset, workingBranchRef: refOnWorking } },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(
+      state,
+      { kind: 'globalAsset.markMerged', id: baseAsset.id, ref: refOnBase },
+      { now: T1 },
+    );
+    const stored = out.next.synced.globalAssets.files![baseAsset.id];
+    expect(stored.baseBranchRef).toEqual(refOnBase);
+    expect(stored.workingBranchRef).toEqual(refOnWorking);
+  });
+
+  it('cleanupWorkingRef drops workingBranchRef and leaves baseBranchRef', () => {
+    const state = {
+      synced: makeSynced({
+        globalAssets: {
+          schemas: {},
+          graphql: {},
+          files: {
+            [baseAsset.id]: {
+              ...baseAsset,
+              workingBranchRef: refOnWorking,
+              baseBranchRef: refOnBase,
+            },
+          },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(
+      state,
+      { kind: 'globalAsset.cleanupWorkingRef', id: baseAsset.id },
+      { now: T1 },
+    );
+    const stored = out.next.synced.globalAssets.files![baseAsset.id];
+    expect(stored.workingBranchRef).toBeNull();
+    expect(stored.baseBranchRef).toEqual(refOnBase);
+  });
+
+  it('cleanupWorkingRef is a no-op when there is no workingBranchRef', () => {
+    const state = {
+      synced: makeSynced({
+        globalAssets: {
+          schemas: {},
+          graphql: {},
+          files: { [baseAsset.id]: { ...baseAsset, baseBranchRef: refOnBase } },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(state, { kind: 'globalAsset.cleanupWorkingRef', id: baseAsset.id });
+    expect(out.next).toBe(state);
+  });
+
+  it('invalidateRef("working") drops only the working ref', () => {
+    const state = {
+      synced: makeSynced({
+        globalAssets: {
+          schemas: {},
+          graphql: {},
+          files: {
+            [baseAsset.id]: {
+              ...baseAsset,
+              workingBranchRef: refOnWorking,
+              baseBranchRef: refOnBase,
+            },
+          },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(
+      state,
+      { kind: 'globalAsset.invalidateRef', id: baseAsset.id, which: 'working' },
+      { now: T1 },
+    );
+    const stored = out.next.synced.globalAssets.files![baseAsset.id];
+    expect(stored.workingBranchRef).toBeNull();
+    expect(stored.baseBranchRef).toEqual(refOnBase);
+  });
+
+  it('invalidateRef("base") drops only the base ref', () => {
+    const state = {
+      synced: makeSynced({
+        globalAssets: {
+          schemas: {},
+          graphql: {},
+          files: {
+            [baseAsset.id]: {
+              ...baseAsset,
+              workingBranchRef: refOnWorking,
+              baseBranchRef: refOnBase,
+            },
+          },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(state, {
+      kind: 'globalAsset.invalidateRef',
+      id: baseAsset.id,
+      which: 'base',
+    });
+    const stored = out.next.synced.globalAssets.files![baseAsset.id];
+    expect(stored.workingBranchRef).toEqual(refOnWorking);
+    expect(stored.baseBranchRef).toBeNull();
+  });
+
+  it('every globalAsset.* kind is a no-op when the asset id is unknown', () => {
+    const state = { synced: makeSynced(), local: makeLocal() };
+    const ref = refOnWorking;
+    for (const patch of [
+      { kind: 'globalAsset.markPushed' as const, id: 'missing', ref },
+      { kind: 'globalAsset.markMerged' as const, id: 'missing', ref },
+      { kind: 'globalAsset.cleanupWorkingRef' as const, id: 'missing' },
+      { kind: 'globalAsset.invalidateRef' as const, id: 'missing', which: 'working' as const },
+    ]) {
+      const out = applyMutation(state, patch);
+      expect(out.next).toBe(state);
+      expect(out.changedIds).toEqual([]);
+    }
   });
 });
 

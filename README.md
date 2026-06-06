@@ -80,7 +80,7 @@ The bundled `@apicircle/mcp-server` speaks the open
 [Model Context Protocol](https://modelcontextprotocol.io) over stdio, so it
 works with **Claude Desktop, Claude Code, ChatGPT, GitHub Copilot, Cursor,
 Continue, Cline, Zed, and Windsurf** — or anything else that talks MCP. The
-74-tool catalog covers request and folder CRUD, environment authoring,
+78-tool catalog covers request and folder CRUD, environment authoring,
 assertions, execution plans, history, mock-server lifecycle, codebase
 scanning, imports, code generation, and natural-language authoring.
 
@@ -120,7 +120,9 @@ teammates share them; _runtime_ state stays on the local machine.
 - **Global Assets** for reusable JSON Schemas, GraphQL definitions, and file
   assets. Request uploads, linked workspace downloads, execution plans, and
   mock binary responses can all point at the same tracked asset metadata while
-  file bytes travel as Git blobs outside `workspace.json`.
+  file bytes travel as Git blobs alongside the synced doc, both under
+  `.apicircle/` in the repo (`.apicircle/workspace.json` plus
+  `.apicircle/attachments/<slotId>`).
 - **Assertions** and multi-step **execution plans** that chain requests.
 - **Request history** with full headers, body previews, and assertion results.
 
@@ -324,7 +326,7 @@ packages/
   shared/               Types, generateId, validators, encryption helpers
   git/                  GitHub API client + sync logic
   mock-server-core/     Hono mock-server engine + OpenAPI/Postman/Insomnia parsers
-  mcp-server/           stdio MCP host with the 74-tool catalog
+  mcp-server/           stdio MCP host with the 78-tool catalog
   cli/                  `apicircle` binary — mock / mcp / import / export / run / workspaces
 ```
 

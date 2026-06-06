@@ -23,7 +23,126 @@
 > ship. Full per-platform walk-through:
 > [`docs/installing.md`](docs/installing.md).
 
-## Unreleased
+## 1.0.9 - 2026-06-06
+
+### Global File Assets — provenance state machine + unified upload flow
+
+- **All file uploads now mint a reusable Global Asset.** Dropping a file
+  into a form-data row (`attachFormFile`), a binary request body
+  (`attachBinaryFile`), or a mock-server binary response
+  (`attachMockResponseFile`) now creates a `GlobalFileAsset` entry the
+  same way the Global Assets sidebar does. The consumer (row, body, or
+  mock response) carries `globalFileAssetId` instead of a private slot,
+  so every file in the workspace is discoverable from the Global Assets
+  library and gets a cross-cutting reference count. (Behavior change:
+  clearing a row no longer auto-deletes the bytes — the asset becomes
+  "Unused" in the library so the user can prune deliberately.)
+- **Per-asset provenance state machine.** Every Global File Asset gains
+  two optional ref slots — `workingBranchRef` and `baseBranchRef` — and
+  six lifecycle states: `uploading`, `workingOnly`, `merged`, `baseOnly`,
+  `missing`, `diverged`. The push flow stamps `workingBranchRef` with
+  the GitHub blob sha + commit sha after every successful push. The
+  refresh flow runs a verification pass that probes each ref, drops
+  ones that 404, opportunistically promotes the base ref when the PR
+  merges, and runs a cleanup invariant that drops the working ref when
+  both refs hold the same blob (single source of truth = base).
+  (`packages/shared/src/types.ts`,
+  `packages/core/src/workspace/patches.ts`,
+  `packages/core/src/workspace/applyMutation.ts`,
+  `packages/ui-components/src/store/workspaceStore.ts`)
+- **Pre-push buffer + reference index in `WorkspaceLocal`.**
+  `pendingFileUploads` records assets whose bytes are in IDB but not
+  yet on a Git ref so the "Uploaded locally" pill flips immediately on
+  drop. `assetUsageIndex` is a cross-cutting "used in N places" map
+  recomputed by `assetUsageAggregator` on every `commitSynced` (same
+  pattern as `usedInAggregator`). The index walks request bodies AND
+  mock-server response bodies — the legacy per-asset walker only
+  scanned requests.
+- **Status pills + ref-count UX across four surfaces.** New
+  `<FileAssetStatusPill>` primitive shipped, wired into the Global
+  Assets sidebar (list rows + detail editor), form-data row editor,
+  binary body editor, and mock-response binary body editor. Pill
+  reflects the live ref state; hover surfaces the verified branch and
+  consumer count. Removal confirmation now lists every affected
+  request and mock endpoint with a "Delete and unbind N" CTA, gated
+  by `ConfirmDialog`'s typed-confirm path.
+- **Four new MCP tools.** `assets.list_files` (provenance state
+  - usage map per asset), `assets.create_file` (metadata-only —
+    bytes are out-of-band by design since MCP can't carry blobs),
+    `assets.update_file` (rename / re-describe, refs preserved),
+    `assets.delete_file` (cascade with consumer list in the
+    response envelope). 78 MCP tools total now.
+    (`packages/mcp-server/src/tools/globalAssets.ts`)
+- **Test coverage.** 10 new patch tests for the asset state-machine
+  variants, 9 aggregator tests, 13 status-pill tests, 1 push test
+  pinning the post-commit ref stamp, 2 refresh tests pinning the
+  verification probe + cleanup invariant, 9 MCP tool tests, plus the
+  three direct-upload editor tests rewritten for the new "orphan ->
+  Unused" contract.
+
+### Git layout — the synced workspace doc lives under `.apicircle/`
+
+- **`workspace.json` moved from the repo root into `.apicircle/`.** Every
+  Git-backed workspace now lays out as:
+  ```
+  .apicircle/
+  ├── workspace.json
+  └── attachments/<slotId>
+  ```
+  Attachments already lived under `.apicircle/` since 1.0.0 — that's where
+  the dotfolder name came from. Co-locating the synced doc next to its
+  attachments finally consolidates everything API-Circle-managed under a
+  single hidden directory so a workspace repo can host READMEs, CI files,
+  and unrelated tooling at the root without colliding with our payload.
+  This is a hard cutover (no legacy fallback): connect a repo to 1.0.x and
+  re-push so the new push lands `.apicircle/workspace.json`. Existing
+  example repos and template forks need to be re-laid-out by their
+  owners — there is no in-place migration.
+  (`packages/core/src/git/repoPaths.ts`,
+  `packages/core/src/git/repoPaths.test.ts`,
+  `packages/core/src/git/serializeWorkspace.ts`,
+  `packages/ui-components/src/store/workspaceStore.ts`,
+  `packages/ui-components/src/store/pushWorkspace.test.ts`,
+  `e2e/web/live-github/_github-rest.ts`)
+- **GitHub API surface unchanged.** Push still flows getRef → getCommit →
+  optional createBlob (attachments) → createTree → createCommit →
+  updateRef; only the path inside the tree entry changed. Refresh, link
+  probes, linked-update apply/preview, release-ledger reads, and the
+  seed-initial-commit on empty repos all now address
+  `.apicircle/workspace.json` directly.
+
+### Bug fix — file uploads no longer vanish during auto-refresh
+
+- **`refreshWorkspace` race repaired.** A file dropped into a form-data row
+  (`attachFormFile`) or uploaded via the Global Assets sidebar
+  (`addGlobalFileAsset`) while a refresh was in-flight could disappear
+  within two seconds. Root cause: `refreshWorkspace` captured `synced`
+  at function entry, then awaited two GitHub round-trips
+  (`probeBranchRetirement` + `getContents`) before computing the
+  3-way diff. Any mutation that landed during that 200ms–2s window
+  was silently dropped by the auto-merge path because `applyMerge`
+  saw the pre-upload snapshot, and `persistMerged` then wrote the
+  merged-without-the-file doc back via `set({ synced: merged })`.
+  The fix re-reads `synced` / `local` from the store immediately before
+  `computeThreeWayDiff`, so the merge honors any in-flight edits.
+  Trigger surface: `useFocusRefresh` cold-fires `refreshWorkspace()`
+  on workspace mount whenever a working branch is connected, which is
+  how the race became reproducible in seconds.
+  (`packages/ui-components/src/store/workspaceStore.ts`,
+  `packages/ui-components/src/store/refreshWorkspace.test.ts`)
+
+### Test coverage — new live-GitHub spec for file uploads
+
+- **`16-form-data-file-uploads-live.spec.ts`** pins both file-upload
+  paths through a real GitHub push: Global Assets sidebar upload bound
+  to a form-data row + direct file upload via `attachFormFile` on a
+  separate row. Asserts the synced doc carries the right bindings,
+  both blobs land at `.apicircle/attachments/<slotId>` on the remote
+  working branch, and the bytes round-trip unchanged. Also pins the
+  current contract that direct form-data uploads stay private to their
+  row (NOT auto-registered as Global Assets) — that assertion is the
+  canary for any future change that promotes them.
+  (`e2e/web/live-github/16-form-data-file-uploads-live.spec.ts`)
 
 ## 1.0.8 - 2026-06-03
 

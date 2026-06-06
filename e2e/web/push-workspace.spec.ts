@@ -95,7 +95,7 @@ async function setupConnectedBranch(app: Page): Promise<void> {
   // (registered after this function returns) takes precedence for the
   // assertions that actually need a populated remote.
   await app.route(
-    'https://api.github.com/repos/me/api/contents/workspace.json**',
+    'https://api.github.com/repos/me/api/contents/.apicircle/workspace.json**',
     async (route) => {
       await route.fulfill({
         status: 404,
@@ -216,14 +216,14 @@ test.describe('Refresh + 3-way conflict resolver (P4.5)', () => {
       const base64 = Buffer.from(localJson, 'utf-8').toString('base64');
 
       await app.route(
-        'https://api.github.com/repos/me/api/contents/workspace.json**',
+        'https://api.github.com/repos/me/api/contents/.apicircle/workspace.json**',
         async (route) => {
           await route.fulfill({
             status: 200,
             headers: { 'content-type': 'application/json', ...corsHeaders },
             body: JSON.stringify({
               type: 'file',
-              path: 'workspace.json',
+              path: '.apicircle/workspace.json',
               sha: 'remote-sha-1',
               size: localJson.length,
               content: base64,
@@ -280,14 +280,14 @@ test.describe('Refresh + 3-way conflict resolver (P4.5)', () => {
       const base64 = Buffer.from(remoteSynced, 'utf-8').toString('base64');
 
       await app.route(
-        'https://api.github.com/repos/me/api/contents/workspace.json**',
+        'https://api.github.com/repos/me/api/contents/.apicircle/workspace.json**',
         async (route) => {
           await route.fulfill({
             status: 200,
             headers: { 'content-type': 'application/json', ...corsHeaders },
             body: JSON.stringify({
               type: 'file',
-              path: 'workspace.json',
+              path: '.apicircle/workspace.json',
               sha: 'remote-sha-2',
               size: remoteSynced.length,
               content: base64,

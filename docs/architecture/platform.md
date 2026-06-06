@@ -104,6 +104,53 @@ the IDB ↔ disk relationship coherent:
 wrapper that re-reads `registry.json` per call, so the user can switch
 workspaces in the desktop without restarting the MCP process.
 
+## Global File Asset provenance
+
+Every file uploaded into the workspace — through the Global Assets
+sidebar, a form-data row, a binary request body, or a mock-server
+binary response — is a `GlobalFileAsset` entry in the synced doc, with
+bytes living on disk under `.apicircle/attachments/<slotId>` after the
+first push. Three pieces of state describe where the bytes live at any
+moment:
+
+- `synced.globalAssets.files[id]` — the asset entry itself, plus two
+  optional ref slots:
+  - `workingBranchRef` — bytes verified on the consumer's working
+    branch. Populated by the push flow after `updateRef` resolves.
+  - `baseBranchRef` — bytes verified on the base branch (typically
+    `main`). Populated by the refresh-time verification pass when it
+    detects the bytes on base — i.e. after a PR merges.
+- `local.pendingFileUploads[id]` — bytes are in IDB but not on any Git
+  ref yet (the "Uploaded locally" state pill).
+- `local.assetUsageIndex[id]` — cross-cutting reference count per asset
+  recomputed by `assetUsageAggregator` after every `commitSynced`,
+  same pattern as `usedInAggregator` for the Secret Vault.
+
+The state machine driven by push + refresh:
+
+| pendingFileUploads | workingBranchRef | baseBranchRef | UI badge                     |
+| ------------------ | ---------------- | ------------- | ---------------------------- |
+| ✔                  | null             | null          | "Uploaded locally"           |
+| —                  | ✔                | null          | "On working branch"          |
+| —                  | ✔                | ✔ (same blob) | "Merged to base" (transient) |
+| —                  | null             | ✔             | "On main"                    |
+| —                  | ✔                | ✔ (different) | "Diverged"                   |
+| —                  | null             | null          | "Missing — re-upload"        |
+
+**Cleanup invariant.** When both refs resolve and hold the same GitHub
+blob sha, the refresh-time pass drops `workingBranchRef`. The base ref
+is the single source of truth; the working ref was just a transient
+"haven't fast-forwarded yet" marker.
+
+**Read fallback.** Consumers read working → base in order. A 404 on the
+working ref drops it; the next read tries base; if both are missing
+and there's no local copy, the asset enters the `missing` state and
+the UI prompts for re-upload.
+
+All six state transitions flow through `applyMutation` via the new
+`globalAsset.*` patch variants in `@apicircle/core/workspace/patches.ts`,
+so MCP / CLI writers and the UI store apply the same semantics.
+
 ## Mock server — three runtimes, one engine
 
 `@apicircle/mock-server-core` is a Hono app builder. The same factory

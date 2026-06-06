@@ -606,20 +606,23 @@ test.describe('A.4 — Update preview flow', () => {
   ): Promise<void> {
     const remoteJson = JSON.stringify(snapshot);
     const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
-    await app.route('https://api.github.com/repos/a/b/contents/workspace.json**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'application/json', ...corsHeaders },
-        body: JSON.stringify({
-          type: 'file',
-          path: 'workspace.json',
-          sha: 'remote-sha',
-          size: remoteJson.length,
-          content: base64,
-          encoding: 'base64',
-        }),
-      });
-    });
+    await app.route(
+      'https://api.github.com/repos/a/b/contents/.apicircle/workspace.json**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify({
+            type: 'file',
+            path: '.apicircle/workspace.json',
+            sha: 'remote-sha',
+            size: remoteJson.length,
+            content: base64,
+            encoding: 'base64',
+          }),
+        });
+      },
+    );
   }
 
   test(
@@ -1056,23 +1059,28 @@ test.describe('Lifecycle audit — Refresh / Preview / Apply', () => {
   ): Promise<void> {
     const remoteJson = JSON.stringify(snapshot);
     const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
-    await app.unroute('https://api.github.com/repos/a/b/contents/workspace.json**').catch(() => {
-      /* may not be routed yet — fine */
-    });
-    await app.route('https://api.github.com/repos/a/b/contents/workspace.json**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'application/json', ...corsHeaders },
-        body: JSON.stringify({
-          type: 'file',
-          path: 'workspace.json',
-          sha: 'remote-sha',
-          size: remoteJson.length,
-          content: base64,
-          encoding: 'base64',
-        }),
+    await app
+      .unroute('https://api.github.com/repos/a/b/contents/.apicircle/workspace.json**')
+      .catch(() => {
+        /* may not be routed yet — fine */
       });
-    });
+    await app.route(
+      'https://api.github.com/repos/a/b/contents/.apicircle/workspace.json**',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify({
+            type: 'file',
+            path: '.apicircle/workspace.json',
+            sha: 'remote-sha',
+            size: remoteJson.length,
+            content: base64,
+            encoding: 'base64',
+          }),
+        });
+      },
+    );
   }
 
   test(

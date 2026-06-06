@@ -40,7 +40,7 @@ function fileContents(json: string, sha = 'remote-sha'): RspSpec {
   return {
     body: {
       type: 'file',
-      path: 'workspace.json',
+      path: '.apicircle/workspace.json',
       sha,
       size: json.length,
       content,

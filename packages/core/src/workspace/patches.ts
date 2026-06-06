@@ -1,9 +1,11 @@
 import type {
   Assertion,
+  AssetGitRef,
   Environment,
   EnvPriorityRef,
   ExecutionPlan,
   Folder,
+  GlobalFileAsset,
   MockServer,
   Request as ApiRequest,
   SecretKeyMeta,
@@ -65,6 +67,27 @@ export type WorkspacePatch =
   // ----- Mock servers (synced.mockServers) ----------------------------------
   | { kind: 'mock.upsert'; mock: MockServer }
   | { kind: 'mock.delete'; id: string }
+  // ----- Global file assets (synced.globalAssets.files) ---------------------
+  // Asset provenance state machine. `upsertFile` and `removeFile` are the
+  // CRUD primitives; the four `mark*` / `cleanup*` / `invalidateRef` kinds
+  // are the state-machine transitions driven by push + refresh. See
+  // docs/architecture/platform.md for the lifecycle table.
+  | { kind: 'globalAsset.upsertFile'; file: GlobalFileAsset }
+  | { kind: 'globalAsset.removeFile'; id: string }
+  // Push flow: stamp the asset with the working-branch ref after the
+  // commit lands. `ref.blobSha` is what makes the cleanup invariant
+  // possible — without it we can't compare across refs.
+  | { kind: 'globalAsset.markPushed'; id: string; ref: AssetGitRef }
+  // Refresh-time promotion: the verification probe found the asset's
+  // slot on the base branch (typically `main`), so the PR has merged.
+  | { kind: 'globalAsset.markMerged'; id: string; ref: AssetGitRef }
+  // Cleanup invariant: both refs resolved to the same blob → the
+  // working ref is redundant. Drop it so the base ref is the single
+  // source of truth.
+  | { kind: 'globalAsset.cleanupWorkingRef'; id: string }
+  // 404 on a verification probe → the ref no longer points at a real
+  // blob. Drop it so reads stop trying that ref first.
+  | { kind: 'globalAsset.invalidateRef'; id: string; which: 'working' | 'base' }
   // ----- Execution plans (local.executionPlans) -----------------------------
   | { kind: 'plan.upsert'; plan: ExecutionPlan }
   | { kind: 'plan.delete'; id: string }

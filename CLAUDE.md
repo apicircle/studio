@@ -18,7 +18,7 @@ but with:
   source of truth the UI uses, no IPC required.
 - **Local mock servers**: describe an API in OpenAPI / Postman / Insomnia and
   run a Hono-backed mock on `localhost`.
-- An **MCP server**: exposes the workspace as a 74-tool catalog any
+- An **MCP server**: exposes the workspace as a 78-tool catalog any
   Model Context Protocol client (Claude Desktop, ChatGPT, Cursor, Copilot,
   Continue, Cline, Zed, Windsurf) can drive.
 - A **CLI** for headless use
@@ -32,14 +32,18 @@ first public release; 1.0.1 hardened the desktop installer pipeline, 1.0.2
 shipped the disk mirror + multi-workspace addressing, 1.0.3 shipped the MCP
 connect flow and the Settings → Community section; 1.0.4 promoted the
 Global Assets Files library + the live-GitHub test suite; 1.0.5 doubled the
-theme + font catalog and added Monaco-matched themes; 1.0.7 ships the
+theme + font catalog and added Monaco-matched themes; 1.0.7 shipped the
 portable folder + environment exchange envelope (`.apicircle.json` /
 encrypted-row v2), the Secret Vault "Set passphrase" / decrypt-failure
-recovery surfaces, and reverts the default appearance to **One Dark Pro** +
-**System Sans**. There's still no production data and no public API contract
-to preserve. Prefer redesigning a bad shape over patching it — no migration
-shims, no backwards-compat branches. See §10. Release notes:
-[`CHANGELOG.md`](CHANGELOG.md).
+recovery surfaces, and reverted the default appearance to **One Dark Pro**
+
+- **System Sans**. 1.0.9 relocates the Git-tracked workspace document from
+  the repo root into `.apicircle/workspace.json` (alongside the
+  already-nested `.apicircle/attachments/<slotId>`) as a hard cutover — no
+  backwards-compat read of a root `workspace.json`. There's still no
+  production data and no public API contract to preserve. Prefer redesigning
+  a bad shape over patching it — no migration shims, no backwards-compat
+  branches. See §10. Release notes: [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
@@ -60,7 +64,7 @@ studio/
 │   ├── git/               GitHub REST client + typed error taxonomy
 │   ├── ui-components/      ALL React UI + the Zustand store + IndexedDB persistence
 │   ├── mock-server-core/   Hono mock-server engine + OpenAPI/Postman/Insomnia parsers
-│   ├── mcp-server/         stdio MCP host + 74-tool catalog + workspace providers
+│   ├── mcp-server/         stdio MCP host + 78-tool catalog + workspace providers
 │   └── cli/                `apicircle` binary — mock / mcp / import / export / run / workspaces
 ├── examples/              Demo workspaces + a standalone mock-server example
 ├── docs/                  Product + architecture + QA docs (see §9)
@@ -85,7 +89,9 @@ A workspace is split into two JSON documents:
 - **`WorkspaceSynced`** — everything that belongs in Git and is shared with the
   team: the request/folder collection tree, environments, mock-server
   _definitions_, releases, linked workspaces, global assets, secret-crypto
-  metadata.
+  metadata. Lives in the repo as `.apicircle/workspace.json` (alongside the
+  binary attachments under `.apicircle/attachments/<slotId>`). Path
+  constants in `packages/core/src/git/repoPaths.ts`.
 - **`WorkspaceLocal`** — per-device runtime state that never leaves the
   machine: history runs, mock-server _runtime_ state, the GitHub session, plain
   secret material, UI state.

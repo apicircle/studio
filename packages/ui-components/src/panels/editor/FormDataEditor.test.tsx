@@ -82,7 +82,13 @@ describe('FormDataEditor', () => {
     expect(new TextDecoder().decode(stored!.bytes)).toBe('avatar-bytes');
   });
 
-  it('clearing a file detaches it from the row and frees the blob', async () => {
+  // Behavior change (Stage 2 unified-upload rework): direct file drops
+  // now mint a reusable Global Asset entry. Clearing the row unbinds it
+  // BUT preserves the asset's bytes — the asset shows up as "Unused" in
+  // the Global Assets panel where the user can prune it manually. This
+  // matches the user's "let me identify and delete orphans" requirement.
+
+  it('clearing a file unbinds the row but preserves the Global Asset bytes', async () => {
     await renderWithStore(<Harness />);
     const id = await setupFormDataRequest();
     await userEvent.click(await screen.findByRole('button', { name: /Add file/i }));
@@ -92,14 +98,19 @@ describe('FormDataEditor', () => {
     );
     await waitFor(() => expect(fileRow(id).slotId).toBeTruthy());
     const previousSlot = fileRow(id).slotId!;
+    const assetId = fileRow(id).globalFileAssetId!;
+    expect(assetId).toBeTruthy();
 
     await userEvent.click(screen.getByRole('button', { name: /Clear file on form-data row 1/i }));
 
     await waitFor(() => expect(fileRow(id).slotId).toBeNull());
-    expect(await getAttachment(previousSlot)).toBeNull();
+    // Bytes survive — the Global Asset is now "Unused" and can be
+    // pruned through the Global Assets panel confirmation modal.
+    expect(await getAttachment(previousSlot)).not.toBeNull();
+    expect(useWorkspaceStore.getState().synced!.globalAssets.files?.[assetId]).toBeDefined();
   });
 
-  it('replacing a file frees the previous blob', async () => {
+  it('replacing a file mints a new Global Asset and leaves the previous one as Unused', async () => {
     await renderWithStore(<Harness />);
     const id = await setupFormDataRequest();
     await userEvent.click(await screen.findByRole('button', { name: /Add file/i }));
@@ -107,23 +118,29 @@ describe('FormDataEditor', () => {
 
     await userEvent.upload(fileInput, new File(['one'], 'one.txt', { type: 'text/plain' }));
     await waitFor(() => expect(fileRow(id).filename).toBe('one.txt'));
+    const firstAssetId = fileRow(id).globalFileAssetId!;
     const firstSlot = fileRow(id).slotId!;
 
-    // Need to query the input again — after the first upload the row
-    // re-renders the file UI without the hidden input visible until cleared.
-    // The hidden input lives inside the row regardless of state.
     await userEvent.upload(
       screen.getByLabelText('Form-data row 1 file'),
       new File(['two'], 'two.txt', { type: 'text/plain' }),
     );
     await waitFor(() => expect(fileRow(id).filename).toBe('two.txt'));
+    const secondAssetId = fileRow(id).globalFileAssetId!;
     const secondSlot = fileRow(id).slotId!;
+
     expect(secondSlot).not.toBe(firstSlot);
-    expect(await getAttachment(firstSlot)).toBeNull();
+    expect(secondAssetId).not.toBe(firstAssetId);
+    // Both assets exist; the previous one is now Unused (visible in the
+    // Global Assets panel) so the user can decide whether to keep it.
+    const files = useWorkspaceStore.getState().synced!.globalAssets.files!;
+    expect(files[firstAssetId]).toBeDefined();
+    expect(files[secondAssetId]).toBeDefined();
+    expect(await getAttachment(firstSlot)).not.toBeNull();
     expect(await getAttachment(secondSlot)).not.toBeNull();
   });
 
-  it('removing a row deletes the underlying attachment', async () => {
+  it('removing a row leaves the asset orphaned in the library, not deleted', async () => {
     await renderWithStore(<Harness />);
     const id = await setupFormDataRequest();
     await userEvent.click(await screen.findByRole('button', { name: /Add file/i }));
@@ -133,9 +150,12 @@ describe('FormDataEditor', () => {
     );
     await waitFor(() => expect(fileRow(id).slotId).toBeTruthy());
     const slot = fileRow(id).slotId!;
+    const assetId = fileRow(id).globalFileAssetId!;
 
     await userEvent.click(screen.getByRole('button', { name: /Remove form-data row 1/i }));
     await waitFor(() => expect(getRequest(id).body.formRows ?? []).toHaveLength(0));
-    expect(await getAttachment(slot)).toBeNull();
+    // Asset + bytes survive — orphan, surfaced as "Unused" in the panel.
+    expect(await getAttachment(slot)).not.toBeNull();
+    expect(useWorkspaceStore.getState().synced!.globalAssets.files?.[assetId]).toBeDefined();
   });
 });

@@ -35,7 +35,14 @@ describe('BinaryEditor', () => {
     );
   });
 
-  it('picking a file stores it and shows filename + size', async () => {
+  // Behavior change (Stage 2 unified-upload rework): a direct binary
+  // upload now mints a reusable Global Asset entry — the same flow the
+  // Global Assets sidebar uses. The body's attachment carries
+  // `globalFileAssetId`, the asset shows up in the library dropdown,
+  // and clearing or replacing the binding leaves the bytes alone (the
+  // Global Asset is the durability boundary, not the row binding).
+
+  it('picking a file mints a Global Asset, stores the bytes, and binds the body to it', async () => {
     await renderWithStore(<Harness />);
     const id = await setupBinaryRequest();
     const fileInput = await screen.findByLabelText('Binary body file');
@@ -45,16 +52,22 @@ describe('BinaryEditor', () => {
     await waitFor(() => {
       expect(getRequest(id).body.attachment?.slotId).toBeTruthy();
     });
-    expect(screen.getByText('doc.pdf')).toBeInTheDocument();
-    expect(screen.getByText(/application\/pdf/)).toBeInTheDocument();
+    const attachment = getRequest(id).body.attachment!;
+    expect(attachment.globalFileAssetId).toBeTruthy();
+    expect(attachment.filename).toBe('doc.pdf');
+    expect(attachment.mimeType).toBe('application/pdf');
 
-    const slot = getRequest(id).body.attachment!.slotId!;
-    const stored = await getAttachment(slot);
+    const stored = await getAttachment(attachment.slotId!);
     expect(stored?.filename).toBe('doc.pdf');
     expect(new TextDecoder().decode(stored!.bytes)).toBe('contents-12345');
+
+    // The asset shows up in the workspace-wide Global Assets registry.
+    const asset =
+      useWorkspaceStore.getState().synced!.globalAssets.files?.[attachment.globalFileAssetId!];
+    expect(asset?.slotId).toBe(attachment.slotId);
   });
 
-  it('clearing the file detaches it and frees the blob', async () => {
+  it('clearing the binding leaves the Global Asset (and bytes) intact', async () => {
     await renderWithStore(<Harness />);
     const id = await setupBinaryRequest();
     await userEvent.upload(
@@ -62,15 +75,19 @@ describe('BinaryEditor', () => {
       new File(['x'], 'x.bin', { type: 'application/octet-stream' }),
     );
     await waitFor(() => expect(getRequest(id).body.attachment?.slotId).toBeTruthy());
-    const slot = getRequest(id).body.attachment!.slotId!;
+    const attachment = getRequest(id).body.attachment!;
+    const slot = attachment.slotId!;
+    const assetId = attachment.globalFileAssetId!;
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear binary file' }));
 
     await waitFor(() => expect(getRequest(id).body.attachment?.slotId).toBeUndefined());
-    expect(await getAttachment(slot)).toBeNull();
+    // Asset stays — orphan, shown as Unused; user prunes manually.
+    expect(await getAttachment(slot)).not.toBeNull();
+    expect(useWorkspaceStore.getState().synced!.globalAssets.files?.[assetId]).toBeDefined();
   });
 
-  it('replacing the file frees the previous blob and stores the new one', async () => {
+  it('replacing the binding mints a new Global Asset and leaves the previous one orphaned', async () => {
     await renderWithStore(<Harness />);
     const id = await setupBinaryRequest();
     const input = await screen.findByLabelText('Binary body file');
@@ -80,17 +97,22 @@ describe('BinaryEditor', () => {
       new File(['one'], 'one.bin', { type: 'application/octet-stream' }),
     );
     await waitFor(() => expect(getRequest(id).body.attachment?.filename).toBe('one.bin'));
-    const firstSlot = getRequest(id).body.attachment!.slotId!;
+    const firstAttachment = getRequest(id).body.attachment!;
 
     await userEvent.upload(
       input,
       new File(['two'], 'two.bin', { type: 'application/octet-stream' }),
     );
     await waitFor(() => expect(getRequest(id).body.attachment?.filename).toBe('two.bin'));
-    const secondSlot = getRequest(id).body.attachment!.slotId!;
+    const secondAttachment = getRequest(id).body.attachment!;
 
-    expect(secondSlot).not.toBe(firstSlot);
-    expect(await getAttachment(firstSlot)).toBeNull();
-    expect(await getAttachment(secondSlot)).not.toBeNull();
+    expect(secondAttachment.slotId).not.toBe(firstAttachment.slotId);
+    expect(secondAttachment.globalFileAssetId).not.toBe(firstAttachment.globalFileAssetId);
+    // Both Global Assets survive; the previous one is now Unused.
+    const files = useWorkspaceStore.getState().synced!.globalAssets.files!;
+    expect(files[firstAttachment.globalFileAssetId!]).toBeDefined();
+    expect(files[secondAttachment.globalFileAssetId!]).toBeDefined();
+    expect(await getAttachment(firstAttachment.slotId!)).not.toBeNull();
+    expect(await getAttachment(secondAttachment.slotId!)).not.toBeNull();
   });
 });

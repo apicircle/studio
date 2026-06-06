@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, FileArchive, Plus, Trash2, Upload } from 'lucide-react';
 import {
   formatBytes,
+  type AssetUsage,
   type GlobalFileAsset,
   type GlobalGraphQL,
   type GlobalSchema,
@@ -23,6 +24,33 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { MonacoEditorBase } from '../../editors/MonacoEditorBase';
 import { cn } from '../../primitives/cn';
+import { deriveFileAssetState, FileAssetStatusPill } from '../../primitives/FileAssetStatusPill';
+
+interface FileAssetConsumer {
+  kind: 'request' | 'mock';
+  /** Friendly label for the row ("My request", "Petstore · GET /pets"). */
+  label: string;
+  /** Stable id for the list `key`. */
+  id: string;
+}
+
+function consumersFromIndex(
+  usage: AssetUsage | null | undefined,
+  requestNames: Record<string, string>,
+  mockNames: Record<string, { server: string; endpoint: string }>,
+): FileAssetConsumer[] {
+  if (!usage) return [];
+  const out: FileAssetConsumer[] = [];
+  for (const id of usage.requests) {
+    out.push({ kind: 'request', id: `req:${id}`, label: requestNames[id] ?? id });
+  }
+  for (const ref of usage.mockEndpoints) {
+    const meta = mockNames[`${ref.mockId}:${ref.endpointId}`];
+    const label = meta ? `${meta.server} · ${meta.endpoint}` : `${ref.mockId} · ${ref.endpointId}`;
+    out.push({ kind: 'mock', id: `mock:${ref.mockId}:${ref.endpointId}`, label });
+  }
+  return out;
+}
 
 type Tab = 'schemas' | 'graphql' | 'files';
 
@@ -336,7 +364,22 @@ function FileAssetList({
 }) {
   const addFileAsset = useWorkspaceStore((s) => s.addGlobalFileAsset);
   const pushToast = useWorkspaceStore((s) => s.pushToast);
+  const usageIndex = useWorkspaceStore((s) => s.local?.assetUsageIndex ?? {});
   const fileInput = useRef<HTMLInputElement | null>(null);
+  const [filter, setFilter] = useState<'all' | 'unused'>('all');
+
+  // Filter items by usage. Unused = zero-ref AND no pending bytes (we
+  // treat pending uploads as in-flight uses since they're meaningful
+  // state worth surfacing). Zero matches keeps the list rendered with
+  // an empty-state hint so the toggle never silently swallows items.
+  const visible = useMemo(() => {
+    if (filter === 'all') return items;
+    return items.filter((f) => (usageIndex[f.id]?.total ?? 0) === 0);
+  }, [items, usageIndex, filter]);
+  const unusedCount = useMemo(
+    () => items.filter((f) => (usageIndex[f.id]?.total ?? 0) === 0).length,
+    [items, usageIndex],
+  );
 
   const onPick = (file: File) => {
     void addFileAsset(file)
@@ -371,36 +414,105 @@ function FileAssetList({
         <Upload size={12} aria-hidden="true" />
         Add file asset
       </button>
+      {items.length > 0 && (
+        <div
+          className="flex items-center gap-1 text-[0.6875rem]"
+          role="group"
+          aria-label="File asset filter"
+        >
+          <button
+            type="button"
+            onClick={() => setFilter('all')}
+            aria-pressed={filter === 'all'}
+            className={cn(
+              'inline-flex h-6 items-center rounded-sm border px-2',
+              filter === 'all'
+                ? 'border-accent/40 bg-accent/10 text-accent'
+                : 'border-border bg-card text-text-muted hover:border-border-strong',
+            )}
+          >
+            All ({items.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilter('unused')}
+            aria-pressed={filter === 'unused'}
+            disabled={unusedCount === 0}
+            className={cn(
+              'inline-flex h-6 items-center rounded-sm border px-2 disabled:opacity-40',
+              filter === 'unused'
+                ? 'border-warning/40 bg-warning/10 text-warning'
+                : 'border-border bg-card text-text-muted hover:border-border-strong',
+            )}
+          >
+            Unused ({unusedCount})
+          </button>
+        </div>
+      )}
       {items.length === 0 && (
         <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-xs text-text-dim">
           No file assets yet.
         </p>
       )}
+      {items.length > 0 && visible.length === 0 && filter === 'unused' && (
+        <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-xs text-text-dim">
+          No unused assets — every file is wired into at least one request or mock response.
+        </p>
+      )}
       <ul className="flex flex-col gap-1">
-        {items.map((file) => (
-          <li key={file.id}>
-            <button
-              type="button"
-              onClick={() => onSelect(file.id)}
-              className={cn(
-                'w-full truncate rounded-sm border px-2 py-1.5 text-left text-xs',
-                selectedId === file.id
-                  ? 'border-accent/40 bg-accent/10 text-accent'
-                  : 'border-border bg-card text-text-primary hover:border-border-strong',
-              )}
-            >
-              <span className="flex min-w-0 items-center gap-1.5">
-                <FileArchive size={12} className="shrink-0" aria-hidden="true" />
-                <span className="truncate font-medium">{file.name}</span>
-              </span>
-              <span className="block truncate text-[0.6875rem] text-text-dim">
-                {file.filename} · {formatBytes(file.size)}
-              </span>
-            </button>
-          </li>
+        {visible.map((file) => (
+          <FileAssetListRow
+            key={file.id}
+            file={file}
+            selected={selectedId === file.id}
+            onSelect={onSelect}
+          />
         ))}
       </ul>
     </div>
+  );
+}
+
+function FileAssetListRow({
+  file,
+  selected,
+  onSelect,
+}: {
+  file: GlobalFileAsset;
+  selected: boolean;
+  onSelect: (id: string | null) => void;
+}) {
+  // Pull the asset's reference count straight from the local index so the
+  // list row can show "Unused" / "Used in N" inline. Read is O(1).
+  const usage = useWorkspaceStore((s) => s.local?.assetUsageIndex?.[file.id] ?? null);
+  const total = usage?.total ?? 0;
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onSelect(file.id)}
+        className={cn(
+          'w-full truncate rounded-sm border px-2 py-1.5 text-left text-xs',
+          selected
+            ? 'border-accent/40 bg-accent/10 text-accent'
+            : 'border-border bg-card text-text-primary hover:border-border-strong',
+        )}
+      >
+        <span className="flex min-w-0 items-center gap-1.5">
+          <FileArchive size={12} className="shrink-0" aria-hidden="true" />
+          <span className="truncate font-medium">{file.name}</span>
+          <FileAssetStatusPill assetId={file.id} className="ml-auto" iconOnly />
+        </span>
+        <span className="mt-0.5 flex items-center gap-1.5 truncate text-[0.6875rem] text-text-dim">
+          <span className="truncate">
+            {file.filename} · {formatBytes(file.size)}
+          </span>
+          <span className={cn('ml-auto shrink-0', total === 0 ? 'text-warning' : 'text-text-dim')}>
+            {total === 0 ? 'Unused' : `Used in ${total}`}
+          </span>
+        </span>
+      </button>
+    </li>
   );
 }
 
@@ -568,10 +680,52 @@ function GraphQLEditor({ id }: { id: string | null }) {
 
 function FileAssetEditor({ id }: { id: string | null }) {
   const file = useWorkspaceStore((s) => (id ? (s.synced?.globalAssets.files?.[id] ?? null) : null));
-  const usage = useWorkspaceStore((s) => (id ? collectFileAssetUsage(s.synced, id) : []));
+  // Read the shared usage index — same source of truth that powers the
+  // list row + the consumer-aware delete confirmation. Walks both
+  // requests AND mock endpoints (the legacy `collectFileAssetUsage`
+  // helper only walked requests).
+  const usage = useWorkspaceStore((s) => (id ? (s.local?.assetUsageIndex?.[id] ?? null) : null));
+  const requestNames = useWorkspaceStore((s) => {
+    if (!s.synced) return {};
+    const out: Record<string, string> = {};
+    for (const req of Object.values(s.synced.collections.requests)) {
+      out[req.id] = req.name || '(unnamed request)';
+    }
+    return out;
+  });
+  const mockNames = useWorkspaceStore((s) => {
+    if (!s.synced) return {};
+    const out: Record<string, { server: string; endpoint: string }> = {};
+    for (const server of Object.values(s.synced.mockServers)) {
+      for (const ep of server.endpoints) {
+        out[`${server.id}:${ep.id}`] = {
+          server: server.name,
+          endpoint: ep.name || `${ep.method} ${ep.pathPattern}`,
+        };
+      }
+    }
+    return out;
+  });
   const update = useWorkspaceStore((s) => s.updateGlobalFileAsset);
   const remove = useWorkspaceStore((s) => s.removeGlobalFileAsset);
+  const fillBytes = useWorkspaceStore((s) => s.fillGlobalFileAssetBytes);
+  const hasPending = useWorkspaceStore((s) =>
+    id ? Boolean(s.local?.pendingFileUploads?.[id]) : false,
+  );
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const refillInput = useRef<HTMLInputElement | null>(null);
+
+  const consumers = useMemo(
+    () => consumersFromIndex(usage, requestNames, mockNames),
+    [usage, requestNames, mockNames],
+  );
+
+  // "Missing" surface — both refs null and no pending bytes. Most
+  // common cause: an MCP `globalAssets.files.create` call registered
+  // the asset id and the user is filling in the bytes here. Also fires
+  // when both refs got invalidated by 404 probes and the local cache
+  // never had the bytes.
+  const isMissing = file ? deriveFileAssetState(file, hasPending) === 'missing' : false;
 
   if (!file) {
     return (
@@ -583,13 +737,14 @@ function FileAssetEditor({ id }: { id: string | null }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+      <div className="grid grid-cols-[1fr_auto_auto] items-center gap-2">
         <input
           aria-label="File asset name"
           value={file.name}
           onChange={(e) => update(file.id, { name: e.target.value })}
           className={inputClass}
         />
+        <FileAssetStatusPill assetId={file.id} />
         <button
           type="button"
           onClick={() => setConfirmDelete(true)}
@@ -607,6 +762,34 @@ function FileAssetEditor({ id }: { id: string | null }) {
         onChange={(e) => update(file.id, { description: e.target.value })}
         className={inputClass}
       />
+
+      {isMissing && (
+        <div className="flex items-center gap-2 rounded-sm border border-danger/30 bg-danger/5 p-2 text-[0.6875rem] text-danger">
+          <span className="flex-1">
+            Bytes are missing — pick a file to fill this asset. The slot id stays the same so every
+            request and mock that points at it keeps working.
+          </span>
+          <input
+            ref={refillInput}
+            type="file"
+            className="hidden"
+            aria-label={`Fill bytes for ${file.name}`}
+            onChange={(e) => {
+              const picked = e.target.files?.[0];
+              if (picked) void fillBytes(file.id, picked);
+              e.target.value = '';
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => refillInput.current?.click()}
+            className="inline-flex h-6 items-center gap-1 rounded-sm border border-danger/40 bg-danger/10 px-2 text-[0.625rem] text-danger hover:bg-danger/20"
+          >
+            <Upload size={10} aria-hidden="true" />
+            Fill bytes
+          </button>
+        </div>
+      )}
 
       <dl className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-2 rounded-sm border border-border bg-surface p-3 text-xs">
         <dt className="text-text-dim">Filename</dt>
@@ -635,20 +818,22 @@ function FileAssetEditor({ id }: { id: string | null }) {
 
       <div className="min-h-0 flex-1 rounded-sm border border-border bg-card p-3">
         <div className="mb-2 text-xs font-medium text-text-primary">
-          Used by {usage.length} request{usage.length === 1 ? '' : 's'}
+          {consumers.length === 0
+            ? 'No requests or mocks reference this file asset'
+            : `Used in ${consumers.length} place${consumers.length === 1 ? '' : 's'}`}
         </div>
-        {usage.length === 0 ? (
-          <p className="text-xs text-text-dim">No requests reference this file asset yet.</p>
+        {consumers.length === 0 ? (
+          <p className="text-xs text-text-dim">
+            This asset is unreferenced — safe to delete with no consumer impact.
+          </p>
         ) : (
           <ul className="space-y-1 overflow-y-auto text-xs text-text-muted">
-            {usage.map((item) => (
-              <li
-                key={`${item.requestId}:${item.location}`}
-                className="truncate"
-                title={item.location}
-              >
-                <span className="text-text-primary">{item.requestName}</span>
-                <span className="text-text-dim"> · {item.location}</span>
+            {consumers.map((c) => (
+              <li key={c.id} className="truncate" title={c.label}>
+                <span className="mr-1 inline-block rounded-sm border border-border bg-surface px-1 text-[0.625rem] uppercase tracking-wider text-text-dim">
+                  {c.kind}
+                </span>
+                <span className="text-text-primary">{c.label}</span>
               </li>
             ))}
           </ul>
@@ -659,12 +844,29 @@ function FileAssetEditor({ id }: { id: string | null }) {
         open={confirmDelete}
         title={`Delete "${file.name}"`}
         description={
-          <p>
-            This will remove the file asset, clear it from any requests that reference it, and
-            remove the local cached bytes on this machine.
-          </p>
+          <div className="space-y-2">
+            <p>
+              This removes the file asset and the local cached bytes on this machine. Any requests
+              or mock responses that point at it will be unbound.
+            </p>
+            {consumers.length > 0 && (
+              <div className="rounded-sm border border-warning/30 bg-warning/5 p-2">
+                <p className="font-medium text-warning">
+                  {consumers.length} consumer{consumers.length === 1 ? '' : 's'} will be cleared:
+                </p>
+                <ul className="mt-1 max-h-32 space-y-0.5 overflow-y-auto text-text-muted">
+                  {consumers.map((c) => (
+                    <li key={c.id} className="truncate" title={c.label}>
+                      <span className="text-text-dim">{c.kind} · </span>
+                      <span className="text-text-primary">{c.label}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         }
-        confirmLabel="Delete"
+        confirmLabel={consumers.length > 0 ? `Delete and unbind ${consumers.length}` : 'Delete'}
         tone="danger"
         onConfirm={() => {
           void remove(file.id);
@@ -676,27 +878,7 @@ function FileAssetEditor({ id }: { id: string | null }) {
   );
 }
 
-function collectFileAssetUsage(
-  synced: ReturnType<typeof useWorkspaceStore.getState>['synced'],
-  fileAssetId: string,
-): Array<{ requestId: string; requestName: string; location: string }> {
-  if (!synced) return [];
-  const usage: Array<{ requestId: string; requestName: string; location: string }> = [];
-  for (const req of Object.values(synced.collections.requests)) {
-    if (req.body.type === 'binary' && req.body.attachment?.globalFileAssetId === fileAssetId) {
-      usage.push({ requestId: req.id, requestName: req.name, location: 'binary body' });
-    }
-    if (req.body.type === 'form-data') {
-      for (const row of req.body.formRows ?? []) {
-        if (row.kind === 'file' && row.globalFileAssetId === fileAssetId) {
-          usage.push({
-            requestId: req.id,
-            requestName: req.name,
-            location: `form-data ${row.key || 'file'}`,
-          });
-        }
-      }
-    }
-  }
-  return usage;
-}
+// `collectFileAssetUsage` was retired in favor of the cross-cutting
+// `local.assetUsageIndex` aggregator (assetUsageAggregator.ts) — it only
+// scanned requests, not mocks, and recomputed on every render. The new
+// index also powers the form-data / binary / mock-response editor pills.

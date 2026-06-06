@@ -1,6 +1,6 @@
 # MCP tool catalog reference
 
-The `@apicircle/mcp-server` host exposes 74 tools, namespaced by capability area. The full list is canonical in [`packages/shared/src/mcp.ts`](../packages/shared/src/mcp.ts) and registered in [`packages/mcp-server/src/tools/registry.ts`](../packages/mcp-server/src/tools/registry.ts).
+The `@apicircle/mcp-server` host exposes 78 tools, namespaced by capability area. The full list is canonical in [`packages/shared/src/mcp.ts`](../packages/shared/src/mcp.ts) and registered in [`packages/mcp-server/src/tools/registry.ts`](../packages/mcp-server/src/tools/registry.ts).
 
 ## Imports
 
@@ -102,6 +102,26 @@ Local request/plan run buffers — `WorkspaceLocal.history`.
 | `assertion.read`   | `{ requestId, assertionId? }` |
 | `assertion.update` | `{ requestId, assertion }`    |
 | `assertion.delete` | `{ requestId, assertionId }`  |
+
+## Global File Assets
+
+Workspace-wide file library. Every file you drop in the UI (Global Assets sidebar, form-data row, binary body, mock-response body) becomes a `GlobalFileAsset`. These tools expose the catalog over MCP for AI clients that need to enumerate, claim, rename, or delete file slots.
+
+Each `list` entry carries the asset's **provenance state**, derived from `workingBranchRef` + `baseBranchRef` plus the local `pendingFileUploads` buffer:
+
+- `uploading` — bytes are in IDB but not on any Git ref yet.
+- `workingOnly` — pushed to the working branch.
+- `merged` — both refs hold the same blob (transient post-merge state).
+- `baseOnly` — on the base branch only (steady-state after cleanup invariant fires).
+- `missing` — both refs dropped, no local copy.
+- `diverged` — both refs hold different blob shas (audit before pushing).
+
+| Tool                 | Input                                                                                                                                                                                                                                         |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `assets.list_files`  | `{}` → `{ count, files: [{ id, name, filename, size, mimeType, sha256, state, workingBranchRef, baseBranchRef, usage: { requests, mockEndpoints, total } }] }`                                                                                |
+| `assets.create_file` | `{ name, description?, filename, size, mimeType?, sha256? }` — metadata only; MCP cannot carry bytes. Returns `{ id, slotId }`. Asset starts in `missing` state until the desktop / web supplies bytes on the next foreground reconciliation. |
+| `assets.update_file` | `{ id, patch: { name?, description? } }` — rename / re-describe. Provenance refs preserved.                                                                                                                                                   |
+| `assets.delete_file` | `{ id }` — cascade. Returns `{ found, id, filename, unbound: { requests, mockEndpoints, total } }` describing every consumer that was cleared.                                                                                                |
 
 ## Codebase scanning
 

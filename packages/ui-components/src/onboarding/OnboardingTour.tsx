@@ -113,7 +113,7 @@ const STEPS: ReadonlyArray<TourStep> = [
   {
     id: 'dock-assets',
     title: 'Global Assets',
-    body: 'Reusable schemas, GraphQL definitions, and files for requests, mocks, and execution plans. Missing linked files download on demand before a run continues.',
+    body: 'Reusable schemas, GraphQL definitions, and files for requests, mocks, and execution plans. Every file you drop becomes a Global Asset — status pills show where its bytes live (Uploaded locally, On working branch, On main), and "Used in N" surfaces orphans for cleanup.',
     target: 'dock-assets',
   },
   {

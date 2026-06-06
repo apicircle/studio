@@ -66,6 +66,12 @@ import {
   promptSetEndpointMultipliersTool,
 } from './prompt';
 import {
+  globalAssetsFilesCreateTool,
+  globalAssetsFilesDeleteTool,
+  globalAssetsFilesListTool,
+  globalAssetsFilesUpdateTool,
+} from './globalAssets';
+import {
   mockCreateFromOpenApiTool,
   mockCreateFromPostmanTool,
   mockCreateFromInsomniaTool,
@@ -145,6 +151,10 @@ export const TOOL_REGISTRY: AnyToolDef[] = [
   promptSetEndpointValidationRulesTool,
   promptSetEndpointResponseRulesTool,
   promptSetEndpointMultipliersTool,
+  globalAssetsFilesListTool,
+  globalAssetsFilesCreateTool,
+  globalAssetsFilesUpdateTool,
+  globalAssetsFilesDeleteTool,
   mockCreateFromOpenApiTool,
   mockCreateFromPostmanTool,
   mockCreateFromInsomniaTool,

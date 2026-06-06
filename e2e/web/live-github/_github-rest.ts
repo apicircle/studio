@@ -10,6 +10,17 @@ import type { Page } from '@playwright/test';
 const ENABLE_ENV = 'APICIRCLE_E2E_LIVE_GITHUB';
 const TOKEN_ENV = 'APICIRCLE_E2E_GITHUB_PAT';
 
+/** On-disk path for the synced workspace document inside a Git repo. */
+export const WORKSPACE_JSON_PATH = '.apicircle/workspace.json';
+
+function buildContentsUrl(cfg: LiveGithubConfig, path: string, ref?: string): string {
+  const base = `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/${path
+    .split('/')
+    .map(encodeURIComponent)
+    .join('/')}`;
+  return ref ? `${base}?ref=${encodeURIComponent(ref)}` : base;
+}
+
 export interface LiveGithubConfig {
   token: string;
   owner: string;
@@ -501,35 +512,31 @@ const MIN_WORKSPACE_JSON = {
 } as const;
 
 /**
- * Idempotently ensure a valid `workspace.json` exists on the named branch.
- * If absent, seeds it via `PUT /contents/workspace.json`. If present,
- * no-op. Required precondition for `linkPrivateWorkspace` tests against
- * the sandbox repo's default branch.
+ * Idempotently ensure a valid `.apicircle/workspace.json` exists on the
+ * named branch. If absent, seeds it via the Contents API; otherwise no-op.
+ * Required precondition for `linkPrivateWorkspace` tests against the
+ * sandbox repo's default branch.
  */
 export async function ensureWorkspaceJsonOnMain(
   cfg: LiveGithubConfig,
   branch: string,
 ): Promise<void> {
-  const probeRes = await fetch(
-    `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/workspace.json?ref=${encodeURIComponent(branch)}`,
-    { headers: ghHeaders(cfg.token) },
-  );
-  if (probeRes.ok) return; // already present - nothing to do.
+  const probeRes = await fetch(buildContentsUrl(cfg, WORKSPACE_JSON_PATH, branch), {
+    headers: ghHeaders(cfg.token),
+  });
+  if (probeRes.ok) return; // already present — nothing to do.
   if (probeRes.status !== 404) {
     throw new Error(`workspace.json probe on ${cfg.fullName}@${branch} failed: ${probeRes.status}`);
   }
-  const putRes = await fetchWithSecondaryRateLimit(
-    `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/workspace.json`,
-    {
-      method: 'PUT',
-      headers: { ...ghHeaders(cfg.token), 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: 'e2e bootstrap: seed workspace.json',
-        content: Buffer.from(`${JSON.stringify(MIN_WORKSPACE_JSON, null, 2)}\n`).toString('base64'),
-        branch,
-      }),
-    },
-  );
+  const putRes = await fetchWithSecondaryRateLimit(buildContentsUrl(cfg, WORKSPACE_JSON_PATH), {
+    method: 'PUT',
+    headers: { ...ghHeaders(cfg.token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: 'e2e bootstrap: seed .apicircle/workspace.json',
+      content: Buffer.from(`${JSON.stringify(MIN_WORKSPACE_JSON, null, 2)}\n`).toString('base64'),
+      branch,
+    }),
+  });
   if (!putRes.ok) {
     const text = await putRes.text().catch(() => '<no-body>');
     throw new Error(`ensureWorkspaceJsonOnMain: PUT failed (${putRes.status}): ${text}`);
@@ -607,15 +614,9 @@ export async function fetchWorkspaceJson<T = Record<string, unknown>>(
   // (15-execution-with-linked-assets). 63s sits comfortably below the
   // 90s per-test timeout used by the `chromium-live-github` project.
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    const res = await fetch(
-      `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/workspace.json?ref=${encodeURIComponent(ref)}`,
-      {
-        headers: {
-          ...ghHeaders(cfg.token),
-          'Cache-Control': 'no-cache',
-        },
-      },
-    );
+    const res = await fetch(buildContentsUrl(cfg, WORKSPACE_JSON_PATH, ref), {
+      headers: { ...ghHeaders(cfg.token), 'Cache-Control': 'no-cache' },
+    });
     if (res.ok) {
       const body = (await res.json()) as { content: string; encoding: string; sha: string };
       if (body.encoding !== 'base64')
@@ -659,10 +660,9 @@ export async function writeWorkspaceJson(
   let lastStatus = 0;
   let lastText = '<no-body>';
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    const existing = await fetch(
-      `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/workspace.json?ref=${encodeURIComponent(branch)}`,
-      { headers: ghHeaders(cfg.token) },
-    );
+    const existing = await fetch(buildContentsUrl(cfg, WORKSPACE_JSON_PATH, branch), {
+      headers: ghHeaders(cfg.token),
+    });
     let sha: string | undefined;
     if (existing.ok) {
       sha = ((await existing.json()) as { sha: string }).sha;
@@ -674,19 +674,16 @@ export async function writeWorkspaceJson(
       }
       throw new Error(`writeWorkspaceJson probe failed (${existing.status}): ${text}`);
     }
-    const res = await fetchWithSecondaryRateLimit(
-      `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/workspace.json`,
-      {
-        method: 'PUT',
-        headers: { ...ghHeaders(cfg.token), 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message,
-          content: Buffer.from(`${JSON.stringify(workspace, null, 2)}\n`).toString('base64'),
-          branch,
-          ...(sha ? { sha } : {}),
-        }),
-      },
-    );
+    const res = await fetchWithSecondaryRateLimit(buildContentsUrl(cfg, WORKSPACE_JSON_PATH), {
+      method: 'PUT',
+      headers: { ...ghHeaders(cfg.token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        content: Buffer.from(`${JSON.stringify(workspace, null, 2)}\n`).toString('base64'),
+        branch,
+        ...(sha ? { sha } : {}),
+      }),
+    });
     if (res.ok) {
       const body = (await res.json()) as { content?: { sha?: string } };
       return body.content?.sha ?? '';
@@ -1249,8 +1246,9 @@ export async function publishReleaseOnSource(
   patch?: (ws: Record<string, unknown>) => void,
 ): Promise<void> {
   assertBotOwner(cfg.owner, 'publishReleaseOnSource');
-  const url = `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/workspace.json?ref=${encodeURIComponent(branch)}`;
-  const getRes = await fetch(url, { headers: ghHeaders(cfg.token) });
+  const getRes = await fetch(buildContentsUrl(cfg, WORKSPACE_JSON_PATH, branch), {
+    headers: ghHeaders(cfg.token),
+  });
   if (!getRes.ok) throw new Error(`publishReleaseOnSource: read failed (${getRes.status})`);
   const body = (await getRes.json()) as { content: string; sha: string };
   const decoded = JSON.parse(Buffer.from(body.content, 'base64').toString('utf-8')) as Record<
@@ -1273,19 +1271,16 @@ export async function publishReleaseOnSource(
   self.currentVersion = newVersion;
   decoded.releases = { ...releases, self } as unknown as typeof decoded.releases;
   if (patch) patch(decoded);
-  const putRes = await fetch(
-    `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/workspace.json`,
-    {
-      method: 'PUT',
-      headers: { ...ghHeaders(cfg.token), 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: `e2e publish ${newVersion}`,
-        content: Buffer.from(`${JSON.stringify(decoded, null, 2)}\n`).toString('base64'),
-        sha: body.sha,
-        branch,
-      }),
-    },
-  );
+  const putRes = await fetch(buildContentsUrl(cfg, WORKSPACE_JSON_PATH), {
+    method: 'PUT',
+    headers: { ...ghHeaders(cfg.token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: `e2e publish ${newVersion}`,
+      content: Buffer.from(`${JSON.stringify(decoded, null, 2)}\n`).toString('base64'),
+      sha: body.sha,
+      branch,
+    }),
+  });
   if (!putRes.ok) {
     const text = await putRes.text().catch(() => '<no-body>');
     throw new Error(`publishReleaseOnSource: write failed (${putRes.status}): ${text}`);
@@ -1305,8 +1300,9 @@ export async function addLinkedWorkspaceOnSource(
   link: { id: string; repoFullName: string; sourceBranch: string; pinnedVersion?: string | null },
 ): Promise<void> {
   assertBotOwner(cfg.owner, 'addLinkedWorkspaceOnSource');
-  const url = `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/workspace.json?ref=${encodeURIComponent(branch)}`;
-  const getRes = await fetch(url, { headers: ghHeaders(cfg.token) });
+  const getRes = await fetch(buildContentsUrl(cfg, WORKSPACE_JSON_PATH, branch), {
+    headers: ghHeaders(cfg.token),
+  });
   if (!getRes.ok) throw new Error(`addLinkedWorkspaceOnSource: read failed (${getRes.status})`);
   const body = (await getRes.json()) as { content: string; sha: string };
   const decoded = JSON.parse(Buffer.from(body.content, 'base64').toString('utf-8')) as Record<
@@ -1340,19 +1336,16 @@ export async function addLinkedWorkspaceOnSource(
   decoded.linkedWorkspaces = Array.isArray(rawExisting)
     ? [...rawExisting, nextLink]
     : { ...rawExisting, [link.id]: nextLink };
-  const putRes = await fetch(
-    `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/workspace.json`,
-    {
-      method: 'PUT',
-      headers: { ...ghHeaders(cfg.token), 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: `e2e add linked: ${link.repoFullName}`,
-        content: Buffer.from(`${JSON.stringify(decoded, null, 2)}\n`).toString('base64'),
-        sha: body.sha,
-        branch,
-      }),
-    },
-  );
+  const putRes = await fetch(buildContentsUrl(cfg, WORKSPACE_JSON_PATH), {
+    method: 'PUT',
+    headers: { ...ghHeaders(cfg.token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: `e2e add linked: ${link.repoFullName}`,
+      content: Buffer.from(`${JSON.stringify(decoded, null, 2)}\n`).toString('base64'),
+      sha: body.sha,
+      branch,
+    }),
+  });
   if (!putRes.ok) {
     const text = await putRes.text().catch(() => '<no-body>');
     throw new Error(`addLinkedWorkspaceOnSource: write failed (${putRes.status}): ${text}`);

@@ -237,7 +237,7 @@ describe('loadLatestUntaggedRelease', () => {
           type: 'file',
           content: base64,
           sha: 'fileSha',
-          path: 'workspace.json',
+          path: '.apicircle/workspace.json',
           size: ledgerJson.length,
         },
       },
@@ -265,7 +265,7 @@ describe('loadLatestUntaggedRelease', () => {
           type: 'file',
           content: base64,
           sha: 'fileSha',
-          path: 'workspace.json',
+          path: '.apicircle/workspace.json',
           size: ledgerJson.length,
         },
       },
@@ -284,7 +284,7 @@ describe('loadLatestUntaggedRelease', () => {
   it('returns null when main has no workspace.json or no released versions', async () => {
     await connectViaSession([]);
     const { fn } = queuedFetch([
-      // 404 for workspace.json on main
+      // 404 for .apicircle/workspace.json on main
       { body: { message: 'Not Found' }, status: 404 },
     ]);
     vi.stubGlobal('fetch', fn);

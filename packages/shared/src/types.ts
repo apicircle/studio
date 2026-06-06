@@ -379,6 +379,39 @@ export interface GlobalGraphQL {
   updatedAt: string;
 }
 
+/**
+ * Pointer to a verified-good copy of a Global File Asset's bytes on a
+ * specific Git ref. Each asset can carry up to two of these — one for
+ * the consumer's working branch and one for the base branch the working
+ * branch was forked from — and the cleanup invariant drops the working
+ * ref once the base ref holds the same blob (single source of truth).
+ *
+ * Populated lazily — never at upload time. The first push promotes the
+ * pending upload to `workingBranchRef`; the next refresh after the PR
+ * merges promotes to `baseBranchRef`. See
+ * docs/architecture/platform.md for the full state machine.
+ */
+export interface AssetGitRef {
+  /** Branch the asset is known to live on. */
+  branchName: string;
+  /**
+   * GitHub blob SHA at the most recent successful verification. Drives
+   * the cleanup invariant — when both refs return the same `blobSha` the
+   * working ref is redundant and gets dropped. Optional because legacy
+   * entries persisted before this field existed; consumers treat absent
+   * as "not yet verified."
+   */
+  blobSha?: string;
+  /**
+   * Commit SHA the ref was first recorded at. Used for display
+   * ("On main · since v2.3.1") and for the "branch retargeted" detection
+   * path where the same branchName resolves to a different blob.
+   */
+  commitSha?: string;
+  /** ISO timestamp of the last successful read of this ref. */
+  verifiedAt: string;
+}
+
 export interface GlobalFileAsset {
   id: string;
   name: string;
@@ -390,6 +423,54 @@ export interface GlobalFileAsset {
   sha256?: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Provenance pointer to the asset's bytes on the consumer's currently
+   * connected working branch. Set by the push flow after `updateRef`
+   * resolves with the GitHub blob sha. Dropped by the cleanup invariant
+   * when `baseBranchRef` holds the same blob. Optional — pre-1.0.9 docs
+   * and freshly-uploaded-but-unpushed assets leave it `undefined`.
+   */
+  workingBranchRef?: AssetGitRef | null;
+  /**
+   * Provenance pointer to the asset's bytes on the base branch the
+   * working branch was forked from (usually `main`). Set by the refresh
+   * verification probe once the PR merges. Optional — assets that have
+   * never been merged leave it `undefined`.
+   */
+  baseBranchRef?: AssetGitRef | null;
+}
+
+/**
+ * Local-only buffer recording an asset whose bytes are in IDB but have
+ * not yet been pushed to any Git ref. Keyed by `globalFileAssetId` so
+ * the desktop / web can render an "Uploaded locally" state pill and the
+ * push flow knows which slots still need to be uploaded as blobs. Dropped
+ * by the push flow after `globalAsset.markPushed` lands.
+ */
+export interface PendingFileUpload {
+  slotId: string;
+  filename: string;
+  mimeType: string;
+  sha256: string;
+  size: number;
+  /** ISO timestamp the file was dropped into the studio. */
+  queuedAt: string;
+}
+
+/**
+ * Where a Global File Asset is referenced inside the current synced doc.
+ * Recomputed by `assetUsageAggregator` after every `commitSynced`. Used
+ * to surface "Used in N places" in the Global Assets panel, the form-data
+ * row, the binary body, and the mock-response editors, and to flag
+ * zero-use orphans for one-click cleanup.
+ */
+export interface AssetUsage {
+  /** Request ids whose body binds this asset. */
+  requests: string[];
+  /** Mock endpoints whose responses bind this asset. */
+  mockEndpoints: Array<{ mockId: string; endpointId: string }>;
+  /** Total reference count — denormalised for cheap badge rendering. */
+  total: number;
 }
 
 // All 15 auth schemes supported by Studio v2. Mirrors v1's discriminated
@@ -909,6 +990,23 @@ export interface WorkspaceLocal {
    * eviction.
    */
   snapshots: WorkspaceSnapshotLedger;
+  /**
+   * Pre-push buffer for Global File Asset bytes. Each entry mirrors the
+   * IDB attachment record (which stays the authoritative byte store) but
+   * is keyed by `globalFileAssetId` instead of `slotId`, making it easy
+   * for the push flow + the status-pill UI to ask "is this asset still
+   * pending upload?" without scanning IDB. Dropped per-asset after the
+   * push promotes the asset to `workingBranchRef`.
+   */
+  pendingFileUploads?: Record<string, PendingFileUpload>;
+  /**
+   * Cross-cutting reference index for Global File Assets. Recomputed by
+   * `assetUsageAggregator` whenever `commitSynced` runs, mirroring the
+   * `secretIndex.entries[].usedIn` pattern. Local-only because it's pure
+   * cache — the truth lives in `synced.collections.requests` and
+   * `synced.mockServers`.
+   */
+  assetUsageIndex?: Record<string, AssetUsage>;
 }
 
 export interface WorkspaceLocalSettings {

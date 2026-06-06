@@ -1,7 +1,13 @@
 import type {
+  AssetGitRef,
   EnvPriorityRef,
   Folder,
   FolderNode,
+  FormDataRow,
+  GlobalFileAsset,
+  MockResponseBody,
+  MockResponseConfig,
+  RequestBody,
   Request as ApiRequest,
   WorkspaceLocal,
   WorkspaceSnapshot,
@@ -79,6 +85,18 @@ export function applyMutation(
       return applyMockUpsert(state, patch.mock, now);
     case 'mock.delete':
       return applyMockDelete(state, patch.id, now);
+    case 'globalAsset.upsertFile':
+      return applyGlobalAssetUpsertFile(state, patch.file, now);
+    case 'globalAsset.removeFile':
+      return applyGlobalAssetRemoveFile(state, patch.id, now);
+    case 'globalAsset.markPushed':
+      return applyGlobalAssetMarkPushed(state, patch.id, patch.ref, now);
+    case 'globalAsset.markMerged':
+      return applyGlobalAssetMarkMerged(state, patch.id, patch.ref, now);
+    case 'globalAsset.cleanupWorkingRef':
+      return applyGlobalAssetCleanupWorkingRef(state, patch.id, now);
+    case 'globalAsset.invalidateRef':
+      return applyGlobalAssetInvalidateRef(state, patch.id, patch.which, now);
     case 'plan.upsert':
       return applyPlanUpsert(state, patch.plan, now);
     case 'plan.delete':
@@ -522,6 +540,220 @@ function applyMockDelete(state: WorkspaceState, id: string, now: string): ApplyM
       }
     : state.local;
   return { next: { synced, local }, changedIds: [id] };
+}
+
+// ---------------------------------------------------------------------------
+// Global file asset handlers (synced.globalAssets.files)
+//
+// `upsertFile` and `removeFile` are CRUD primitives. The four state-machine
+// transitions (`markPushed`, `markMerged`, `cleanupWorkingRef`,
+// `invalidateRef`) are driven by the push + refresh flows. Each preserves
+// the provenance fields the caller didn't touch — e.g. `markMerged` does
+// not clear `workingBranchRef`; that's the cleanup invariant's job.
+//
+// `removeFile` is the only one that cascades through other slices: every
+// request body + mock-response body that referenced the asset id gets
+// unbound. The helpers below mirror `clearGlobalFileAssetFromBody` and
+// friends from `globalAssetsActions.ts` — kept inline so the core layer
+// has no UI-store dependency.
+// ---------------------------------------------------------------------------
+
+function applyGlobalAssetUpsertFile(
+  state: WorkspaceState,
+  file: GlobalFileAsset,
+  now: string,
+): ApplyMutationResult {
+  const files = state.synced.globalAssets.files ?? {};
+  const existing = files[file.id];
+  // If the caller didn't carry the ref fields, preserve the existing ones.
+  // Stops a generic `upsert` from accidentally erasing provenance the
+  // push/refresh flows worked to establish.
+  const next: GlobalFileAsset = {
+    ...file,
+    workingBranchRef:
+      file.workingBranchRef !== undefined ? file.workingBranchRef : existing?.workingBranchRef,
+    baseBranchRef: file.baseBranchRef !== undefined ? file.baseBranchRef : existing?.baseBranchRef,
+    updatedAt: now,
+  };
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    globalAssets: {
+      ...state.synced.globalAssets,
+      files: { ...files, [file.id]: next },
+    },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  return { next: { ...state, synced }, changedIds: [file.id] };
+}
+
+function applyGlobalAssetRemoveFile(
+  state: WorkspaceState,
+  id: string,
+  now: string,
+): ApplyMutationResult {
+  const files = state.synced.globalAssets.files ?? {};
+  if (!files[id]) {
+    return { next: state, changedIds: [] };
+  }
+  const { [id]: _drop, ...rest } = files;
+  void _drop;
+
+  // Cascade — clear `globalFileAssetId` on every request body + mock
+  // response body that referenced the asset.
+  const requests = { ...state.synced.collections.requests };
+  for (const [reqId, req] of Object.entries(requests)) {
+    const body = clearAssetFromRequestBody(req.body, id);
+    if (body !== req.body) requests[reqId] = { ...req, body, updatedAt: now };
+  }
+
+  const mockServers = { ...state.synced.mockServers };
+  for (const [serverId, server] of Object.entries(mockServers)) {
+    let touchedServer = false;
+    const endpoints = server.endpoints.map((endpoint) => {
+      let touched = false;
+      const defaultResponse = clearAssetFromMockResponse(endpoint.defaultResponse, id);
+      if (defaultResponse !== endpoint.defaultResponse) touched = true;
+      const requestValidation = endpoint.requestValidation.map((rule) => {
+        const failResponse = clearAssetFromMockResponse(rule.failResponse, id);
+        if (failResponse === rule.failResponse) return rule;
+        touched = true;
+        return { ...rule, failResponse };
+      });
+      const responseRules = endpoint.responseRules.map((rule) => {
+        const response = clearAssetFromMockResponse(rule.response, id);
+        if (response === rule.response) return rule;
+        touched = true;
+        return { ...rule, response };
+      });
+      if (!touched) return endpoint;
+      touchedServer = true;
+      return { ...endpoint, defaultResponse, requestValidation, responseRules };
+    });
+    if (touchedServer) {
+      // `source.kind === 'manual'` carries a parallel `endpoints` copy that
+      // the manual-source editor reads from; mirror the same touch there.
+      const source =
+        server.source.kind === 'manual' ? { kind: 'manual' as const, endpoints } : server.source;
+      mockServers[serverId] = { ...server, source, endpoints, updatedAt: now };
+    }
+  }
+
+  // Drop the local-only buffers tied to this asset so reads don't return
+  // stale "Uploaded locally" / "Used by N" entries after the delete.
+  let local = state.local;
+  if (local.pendingFileUploads && local.pendingFileUploads[id]) {
+    const nextPending = { ...local.pendingFileUploads };
+    delete nextPending[id];
+    local = { ...local, pendingFileUploads: nextPending };
+  }
+  if (local.assetUsageIndex && local.assetUsageIndex[id]) {
+    const nextUsage = { ...local.assetUsageIndex };
+    delete nextUsage[id];
+    local = { ...local, assetUsageIndex: nextUsage };
+  }
+
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    collections: { ...state.synced.collections, requests },
+    mockServers,
+    globalAssets: { ...state.synced.globalAssets, files: rest },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  return { next: { synced, local }, changedIds: [id] };
+}
+
+function applyGlobalAssetMarkPushed(
+  state: WorkspaceState,
+  id: string,
+  ref: AssetGitRef,
+  now: string,
+): ApplyMutationResult {
+  return mutateAssetRef(state, id, now, (asset) => ({ ...asset, workingBranchRef: ref }));
+}
+
+function applyGlobalAssetMarkMerged(
+  state: WorkspaceState,
+  id: string,
+  ref: AssetGitRef,
+  now: string,
+): ApplyMutationResult {
+  return mutateAssetRef(state, id, now, (asset) => ({ ...asset, baseBranchRef: ref }));
+}
+
+function applyGlobalAssetCleanupWorkingRef(
+  state: WorkspaceState,
+  id: string,
+  now: string,
+): ApplyMutationResult {
+  return mutateAssetRef(state, id, now, (asset) => {
+    if (!asset.workingBranchRef) return asset;
+    return { ...asset, workingBranchRef: null };
+  });
+}
+
+function applyGlobalAssetInvalidateRef(
+  state: WorkspaceState,
+  id: string,
+  which: 'working' | 'base',
+  now: string,
+): ApplyMutationResult {
+  return mutateAssetRef(state, id, now, (asset) => {
+    if (which === 'working') {
+      if (!asset.workingBranchRef) return asset;
+      return { ...asset, workingBranchRef: null };
+    }
+    if (!asset.baseBranchRef) return asset;
+    return { ...asset, baseBranchRef: null };
+  });
+}
+
+function mutateAssetRef(
+  state: WorkspaceState,
+  id: string,
+  now: string,
+  transform: (asset: GlobalFileAsset) => GlobalFileAsset,
+): ApplyMutationResult {
+  const files = state.synced.globalAssets.files ?? {};
+  const existing = files[id];
+  if (!existing) return { next: state, changedIds: [] };
+  const updated = transform(existing);
+  if (updated === existing) return { next: state, changedIds: [] };
+  const next: GlobalFileAsset = { ...updated, updatedAt: now };
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    globalAssets: {
+      ...state.synced.globalAssets,
+      files: { ...files, [id]: next },
+    },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  return { next: { ...state, synced }, changedIds: [id] };
+}
+
+function clearAssetFromRequestBody(body: RequestBody, id: string): RequestBody {
+  if (body.type === 'binary' && body.attachment?.globalFileAssetId === id) {
+    return { type: 'binary', content: '' };
+  }
+  if (body.type !== 'form-data' || !body.formRows) return body;
+  let touched = false;
+  const formRows = body.formRows.map((row): FormDataRow => {
+    if (row.kind !== 'file' || row.globalFileAssetId !== id) return row;
+    touched = true;
+    return { kind: 'file', key: row.key, enabled: row.enabled, slotId: null };
+  });
+  return touched ? { ...body, formRows } : body;
+}
+
+function clearAssetFromMockResponse(response: MockResponseConfig, id: string): MockResponseConfig {
+  const body = clearAssetFromMockBody(response.body, id);
+  return body === response.body ? response : { ...response, body };
+}
+
+function clearAssetFromMockBody(body: MockResponseBody, id: string): MockResponseBody {
+  if (body.type === 'binary' && body.attachment?.globalFileAssetId === id) {
+    return { type: 'binary', content: '' };
+  }
+  return body;
 }
 
 // ---------------------------------------------------------------------------

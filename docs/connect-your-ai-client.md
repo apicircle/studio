@@ -1,6 +1,6 @@
 # Connect your AI client
 
-API Circle Studio's MCP server exposes 74 tools (request CRUD, environment authoring, plan creation, assertions, history, mock servers, code generation from collections, codebase scanning, imports, **folder export / import as JSON**, prompt-driven authoring) over stdio. Any AI client that speaks the [Model Context Protocol](https://modelcontextprotocol.io) can drive the workspace.
+API Circle Studio's MCP server exposes 78 tools (request CRUD, environment authoring, plan creation, assertions, history, mock servers, code generation from collections, codebase scanning, imports, **folder export / import as JSON**, **Global File Asset library with provenance state**, prompt-driven authoring) over stdio. Any AI client that speaks the [Model Context Protocol](https://modelcontextprotocol.io) can drive the workspace.
 
 > **Open standard.** MCP is not Anthropic-locked. Claude Desktop, ChatGPT, GitHub Copilot, Cursor, Continue, Cline, Zed, and Windsurf all support it. Snippets below cover the major clients; if yours isn't listed, the _Generic stdio_ section is the fallback.
 

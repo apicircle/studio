@@ -203,6 +203,13 @@ export type { BranchNameOptions } from './git/branchNames';
 
 export { serializeWorkspaceForGit } from './git/serializeWorkspace';
 
+export {
+  ATTACHMENTS_DIR,
+  WORKSPACE_DIR,
+  WORKSPACE_JSON_PATH,
+  attachmentPath,
+} from './git/repoPaths';
+
 export { parseWorkspaceJson, RemoteWorkspaceParseError } from './git/parseWorkspaceJson';
 
 export { redactForGit, assertNoPlaintextCredentials } from './git/redactWorkspace';

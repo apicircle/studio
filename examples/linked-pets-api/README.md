@@ -7,8 +7,8 @@ that target.
 
 ## What's in here
 
-- `workspace.json` — a minimal workspace with two requests against an
-  imaginary `/pets` API and an environment pointing at port 4041.
+- `.apicircle/workspace.json` — a minimal workspace with two requests
+  against an imaginary `/pets` API and an environment pointing at port 4041.
 - A `releases.self` ledger with two versions (0.1.0 and 0.2.0) so the
   consumer can exercise pin / switch / changelog viewer flows.
 
