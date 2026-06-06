@@ -253,38 +253,33 @@ test.describe('Live GitHub - global assets through linked workspaces @live-githu
     // verifyAssetRefs probe should then detect the file on base and
     // run the cleanup invariant.
     const defaultBranch = 'main';
-    await updateWorkspaceJson(
-      host.cfg,
-      defaultBranch,
-      'e2e live: synthetic merge to base',
-      (ws) => {
-        // Replace the base branch's workspace.json with the consumer's
-        // current synced doc so the asset entry exists on base.
-        Object.assign(ws as Record<string, unknown>, remote);
-      },
-    );
+    await updateWorkspaceJson(host, defaultBranch, 'e2e live: synthetic merge to base', (ws) => {
+      // Replace the base branch's workspace.json with the consumer's
+      // current synced doc so the asset entry exists on base.
+      Object.assign(ws as Record<string, unknown>, remote);
+    });
     // Write the attachment blob to base under .apicircle/attachments/<slotId>.
     {
       const blobPath = attachmentBlobPathV2(linked.fileAsset.slotId);
-      const probeUrl = `https://api.github.com/repos/${host.cfg.owner}/${host.cfg.name}/contents/${blobPath
+      const probeUrl = `https://api.github.com/repos/${host.owner}/${host.name}/contents/${blobPath
         .split('/')
         .map(encodeURIComponent)
         .join('/')}?ref=${encodeURIComponent(defaultBranch)}`;
       const probe = await fetch(probeUrl, {
         headers: {
-          Authorization: `Bearer ${host.cfg.token}`,
+          Authorization: `Bearer ${host.token}`,
           Accept: 'application/vnd.github+json',
         },
       });
       const existing = probe.ok ? ((await probe.json()) as { sha?: string }) : null;
-      const putUrl = `https://api.github.com/repos/${host.cfg.owner}/${host.cfg.name}/contents/${blobPath
+      const putUrl = `https://api.github.com/repos/${host.owner}/${host.name}/contents/${blobPath
         .split('/')
         .map(encodeURIComponent)
         .join('/')}`;
       const putRes = await fetch(putUrl, {
         method: 'PUT',
         headers: {
-          Authorization: `Bearer ${host.cfg.token}`,
+          Authorization: `Bearer ${host.token}`,
           Accept: 'application/vnd.github+json',
           'Content-Type': 'application/json',
         },
@@ -404,13 +399,13 @@ test.describe('Live GitHub - global assets through linked workspaces @live-githu
     // pendingAttachmentDeletes queue is cleared.
     {
       const blobPath = attachmentBlobPathV2(linked.fileAsset.slotId);
-      const url = `https://api.github.com/repos/${host.cfg.owner}/${host.cfg.name}/contents/${blobPath
+      const url = `https://api.github.com/repos/${host.owner}/${host.name}/contents/${blobPath
         .split('/')
         .map(encodeURIComponent)
         .join('/')}?ref=${encodeURIComponent(branch)}`;
       const res = await fetch(url, {
         headers: {
-          Authorization: `Bearer ${host.cfg.token}`,
+          Authorization: `Bearer ${host.token}`,
           Accept: 'application/vnd.github+json',
         },
       });
@@ -434,7 +429,7 @@ test.describe('Live GitHub - global assets through linked workspaces @live-githu
     {
       // Sync workspace.json onto base — it no longer references the asset.
       await updateWorkspaceJson(
-        host.cfg,
+        host,
         defaultBranch,
         'e2e live: synthetic merge of delete to base',
         (ws) => {
@@ -443,26 +438,26 @@ test.describe('Live GitHub - global assets through linked workspaces @live-githu
       );
       // Delete the attachment blob on base via the Contents API.
       const blobPath = attachmentBlobPathV2(linked.fileAsset.slotId);
-      const probeUrl = `https://api.github.com/repos/${host.cfg.owner}/${host.cfg.name}/contents/${blobPath
+      const probeUrl = `https://api.github.com/repos/${host.owner}/${host.name}/contents/${blobPath
         .split('/')
         .map(encodeURIComponent)
         .join('/')}?ref=${encodeURIComponent(defaultBranch)}`;
       const probe = await fetch(probeUrl, {
         headers: {
-          Authorization: `Bearer ${host.cfg.token}`,
+          Authorization: `Bearer ${host.token}`,
           Accept: 'application/vnd.github+json',
         },
       });
       const sha = probe.ok ? ((await probe.json()) as { sha?: string }).sha : null;
       if (sha) {
-        const deleteUrl = `https://api.github.com/repos/${host.cfg.owner}/${host.cfg.name}/contents/${blobPath
+        const deleteUrl = `https://api.github.com/repos/${host.owner}/${host.name}/contents/${blobPath
           .split('/')
           .map(encodeURIComponent)
           .join('/')}`;
         const delRes = await fetch(deleteUrl, {
           method: 'DELETE',
           headers: {
-            Authorization: `Bearer ${host.cfg.token}`,
+            Authorization: `Bearer ${host.token}`,
             Accept: 'application/vnd.github+json',
             'Content-Type': 'application/json',
           },
@@ -476,13 +471,13 @@ test.describe('Live GitHub - global assets through linked workspaces @live-githu
       }
 
       // Verify the blob is now ALSO gone from the base branch.
-      const checkUrl = `https://api.github.com/repos/${host.cfg.owner}/${host.cfg.name}/contents/${blobPath
+      const checkUrl = `https://api.github.com/repos/${host.owner}/${host.name}/contents/${blobPath
         .split('/')
         .map(encodeURIComponent)
         .join('/')}?ref=${encodeURIComponent(defaultBranch)}`;
       const checkRes = await fetch(checkUrl, {
         headers: {
-          Authorization: `Bearer ${host.cfg.token}`,
+          Authorization: `Bearer ${host.token}`,
           Accept: 'application/vnd.github+json',
         },
       });
