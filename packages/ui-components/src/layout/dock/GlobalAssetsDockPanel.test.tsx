@@ -80,4 +80,54 @@ describe('GlobalAssetsDockPanel', () => {
       'Shared payload',
     );
   });
+
+  // Regression: after deleting the currently-selected file asset, the
+  // editor view used to stay mounted pointing at the now-invalid id and
+  // render its empty state — which the user read as "the screen
+  // broke." A useEffect in the panel now watches the selected id
+  // against the live registries and auto-clears it on disappearance.
+  it('clears the selection when the currently-selected file asset is deleted', async () => {
+    const id = await useWorkspaceStore
+      .getState()
+      .addGlobalFileAsset(new File(['x'], 'doomed.bin', { type: 'application/octet-stream' }), {
+        name: 'Doomed file',
+      });
+    render(<GlobalAssetsDockPanel />);
+    await userEvent.click(screen.getByRole('button', { name: /^Files/ }));
+    // Open the asset's detail view — the editor mounts with the name input.
+    await userEvent.click(screen.getByRole('button', { name: /Doomed file/ }));
+    expect(screen.getByLabelText('File asset name')).toBeInTheDocument();
+
+    // Delete via the store (covers UI delete, MCP `assets.delete_file`,
+    // and external-write paths uniformly — they all funnel through the
+    // synced doc dropping the asset entry).
+    await act(async () => {
+      await useWorkspaceStore.getState().removeGlobalFileAsset(id);
+    });
+
+    // The editor unmounts; the right pane returns to the list / empty
+    // hint instead of being stranded on an invalid id.
+    await waitFor(() => expect(screen.queryByLabelText('File asset name')).not.toBeInTheDocument());
+  });
+
+  it('clears the selection when the currently-selected GraphQL definition is deleted', async () => {
+    // Same auto-clear behaviour for the Schemas + GraphQL tabs since
+    // they share the `selectedId` slot.
+    const id = useWorkspaceStore.getState().addGlobalGraphQL({ name: 'Doomed gql' });
+    render(<GlobalAssetsDockPanel />);
+    await userEvent.click(screen.getByRole('button', { name: /^GraphQL/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Doomed gql/ }));
+    expect(screen.getByLabelText('GraphQL schema name')).toBeInTheDocument();
+
+    // `removeGlobalGraphQL` is synchronous, so the act() callback is
+    // sync — `act(() => {...})` returns void, not a Promise, and
+    // `await void` trips `@typescript-eslint/await-thenable`. No await.
+    act(() => {
+      useWorkspaceStore.getState().removeGlobalGraphQL(id);
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByLabelText('GraphQL schema name')).not.toBeInTheDocument(),
+    );
+  });
 });

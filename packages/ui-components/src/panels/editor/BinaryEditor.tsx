@@ -3,6 +3,7 @@ import { FileUp, X } from 'lucide-react';
 import type { Request as ApiRequest } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { FileAssetStatusPill } from '../../primitives/FileAssetStatusPill';
+import { FilePickerMenu } from '../../primitives/FilePickerMenu';
 
 interface BinaryEditorProps {
   request: ApiRequest;
@@ -15,6 +16,7 @@ const BINARY_SIZE_WARN_BYTES = 100 * 1024 * 1024;
 export function BinaryEditor({ request }: BinaryEditorProps) {
   const attachBinaryFile = useWorkspaceStore((s) => s.attachBinaryFile);
   const detachBinaryFile = useWorkspaceStore((s) => s.detachBinaryFile);
+  const setBinaryGlobalFileAsset = useWorkspaceStore((s) => s.setBinaryGlobalFileAsset);
   const globalFiles = useWorkspaceStore((s) =>
     s.synced ? Object.values(s.synced.globalAssets.files ?? {}) : [],
   );
@@ -91,39 +93,19 @@ export function BinaryEditor({ request }: BinaryEditorProps) {
           </button>
         </div>
       ) : (
-        <div className="flex flex-col gap-2 rounded-sm border border-dashed border-border bg-card p-4">
-          <button
-            type="button"
-            onClick={() => fileInput.current?.click()}
-            className="inline-flex items-center justify-center gap-2 rounded-sm border border-border bg-surface px-4 py-3 text-sm text-text-muted transition-colors hover:border-accent hover:text-text-primary"
-          >
-            <FileUp size={16} />
-            Choose a file to send as binary body
-          </button>
-          {globalFiles.length > 0 && (
-            <label className="flex items-center gap-2 text-xs text-text-muted">
-              <span className="shrink-0">Use library file</span>
-              <BinaryFileAssetSelect
-                requestId={request.id}
-                value={attachment?.globalFileAssetId ?? ''}
-                files={globalFiles}
-                emptyLabel="Select file asset..."
-              />
-            </label>
-          )}
-        </div>
-      )}
-
-      {attachment?.slotId && globalFiles.length > 0 && (
-        <label className="flex items-center gap-2 text-xs text-text-muted">
-          <span className="shrink-0">Library file</span>
-          <BinaryFileAssetSelect
-            requestId={request.id}
-            value={attachment.globalFileAssetId ?? ''}
-            files={globalFiles}
-            emptyLabel="Not from library"
-          />
-        </label>
+        // Single themed picker: "Upload new file..." + library section
+        // in one dropdown. Trigger fills the full body-editor width via
+        // `fullWidth` so the empty state looks like a deliberate field,
+        // not a tiny button drifting in a large card.
+        <FilePickerMenu
+          libraryFiles={globalFiles}
+          onPickLocal={() => fileInput.current?.click()}
+          onPickLibrary={(id) => void setBinaryGlobalFileAsset(request.id, id)}
+          ariaLabel="Pick file for the binary body"
+          triggerLabel="Choose a file to send as binary body"
+          size="md"
+          fullWidth
+        />
       )}
 
       <p className="text-[0.6875rem] text-text-dim">
@@ -144,34 +126,10 @@ export function BinaryEditor({ request }: BinaryEditorProps) {
   );
 }
 
-function BinaryFileAssetSelect({
-  requestId,
-  value,
-  files,
-  emptyLabel,
-}: {
-  requestId: string;
-  value: string;
-  files: Array<{ id: string; name: string }>;
-  emptyLabel: string;
-}) {
-  const setBinaryGlobalFileAsset = useWorkspaceStore((s) => s.setBinaryGlobalFileAsset);
-  return (
-    <select
-      aria-label="Binary body file asset"
-      value={value}
-      onChange={(e) => void setBinaryGlobalFileAsset(requestId, e.target.value || null)}
-      className="h-7 min-w-0 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
-    >
-      <option value="">{emptyLabel}</option>
-      {files.map((file) => (
-        <option key={file.id} value={file.id}>
-          {file.name}
-        </option>
-      ))}
-    </select>
-  );
-}
+// `BinaryFileAssetSelect` was retired when the dual-control upload UI
+// folded into `FilePickerMenu`. Binding to a library file flows through
+// the same menu now — see `setBinaryGlobalFileAsset` on the picker's
+// `onPickLibrary`.
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

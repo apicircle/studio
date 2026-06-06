@@ -273,4 +273,45 @@ describe('globalAssets.files.delete', () => {
     };
     expect(out.found).toBe(false);
   });
+
+  it('queues the slot id for remote deletion when the asset had a workingBranchRef', async () => {
+    // Headless writer (AI client via MCP) deletes an asset that has
+    // already been pushed. The patch handler must queue the slotId in
+    // `pendingAttachmentDeletes` so the next desktop push emits a
+    // `{path: '.apicircle/attachments/<slotId>', sha: null}` tree entry.
+    // Without this queue, AI-driven deletions would orphan blobs on
+    // the remote tree.
+    const a = asset({
+      workingBranchRef: {
+        branchName: 'apicircle/wb',
+        blobSha: 'blob-w',
+        commitSha: 'commit-w',
+        verifiedAt: T0,
+      },
+    });
+    setupCtx(freshState({ [a.id]: a }));
+    await globalAssetsFilesDeleteTool.handler({ id: a.id }, ctx);
+    const state = await ctx.workspace.read();
+    expect(state.local.pendingAttachmentDeletes).toContain(a.slotId);
+  });
+
+  it('queues the slot id when the asset had only a baseBranchRef (post-cleanup-invariant state)', async () => {
+    const a = asset({
+      baseBranchRef: { branchName: 'main', blobSha: 'blob-b', verifiedAt: T0 },
+    });
+    setupCtx(freshState({ [a.id]: a }));
+    await globalAssetsFilesDeleteTool.handler({ id: a.id }, ctx);
+    const state = await ctx.workspace.read();
+    expect(state.local.pendingAttachmentDeletes).toContain(a.slotId);
+  });
+
+  it('does NOT queue a remote delete for a local-only asset (no push refs)', async () => {
+    // The asset was never pushed — there's nothing on the remote to
+    // delete. Queueing would waste a tree entry on the next push.
+    const a = asset(); // no refs
+    setupCtx(freshState({ [a.id]: a }));
+    await globalAssetsFilesDeleteTool.handler({ id: a.id }, ctx);
+    const state = await ctx.workspace.read();
+    expect(state.local.pendingAttachmentDeletes ?? []).not.toContain(a.slotId);
+  });
 });

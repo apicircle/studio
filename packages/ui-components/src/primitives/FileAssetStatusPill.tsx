@@ -34,7 +34,15 @@ export function deriveFileAssetState(
   asset: Pick<GlobalFileAsset, 'workingBranchRef' | 'baseBranchRef'> | null | undefined,
   hasPendingUpload: boolean,
 ): FileAssetState {
-  if (!asset) return 'missing';
+  if (!asset) return hasPendingUpload ? 'uploading' : 'missing';
+  // Pending bytes take priority over stale refs. This matters for the
+  // `fillGlobalFileAssetBytes` flow: when the user replaces bytes on
+  // an already-pushed asset, both `workingBranchRef` (old blob) and
+  // `pendingFileUploads[id]` (new bytes) coexist until the next push
+  // promotes the ref. Showing "On working branch" while the new bytes
+  // are still local-only would be a lie; the truthful state is
+  // "Uploaded locally" until push updates the ref.
+  if (hasPendingUpload) return 'uploading';
   const working = asset.workingBranchRef ?? null;
   const base = asset.baseBranchRef ?? null;
   if (working && base) {
@@ -45,7 +53,6 @@ export function deriveFileAssetState(
   }
   if (working && !base) return 'workingOnly';
   if (!working && base) return 'baseOnly';
-  if (hasPendingUpload) return 'uploading';
   return 'missing';
 }
 

@@ -304,6 +304,75 @@ describe('recomputeAssetUsage', () => {
     expect(out).toBe(local);
   });
 
+  // Regression: pendingAttachmentDeletes entries whose slotId is still
+  // owned by a current asset are GHOSTS — typically from a delete +
+  // snapshot-restore sequence. The push has a safety filter that
+  // drops them before emitting, but without pruning here the queue
+  // would grow unbounded.
+  it('prunes pendingAttachmentDeletes entries whose slotId still belongs to a current asset', () => {
+    const live = makeAsset('a');
+    const local = makeLocal({
+      // Three entries: two real (slot ids that no longer belong to any
+      // asset in the registry — those should stay queued for emission)
+      // and one ghost (slot id that matches the live asset — that
+      // should be pruned).
+      pendingAttachmentDeletes: ['slot-real-1', live.slotId, 'slot-real-2'],
+    });
+    const synced = makeSynced({
+      globalAssets: { schemas: {}, graphql: {}, files: { [live.id]: live } },
+    });
+    const next = recomputeAssetUsage(synced, local);
+    expect(next.pendingAttachmentDeletes).toEqual(['slot-real-1', 'slot-real-2']);
+  });
+
+  it('leaves pendingAttachmentDeletes untouched when every queued slotId is a real delete', () => {
+    const live = makeAsset('a');
+    const local = makeLocal({ pendingAttachmentDeletes: ['slot-gone-1', 'slot-gone-2'] });
+    const synced = makeSynced({
+      globalAssets: { schemas: {}, graphql: {}, files: { [live.id]: live } },
+    });
+    const next = recomputeAssetUsage(synced, local);
+    // Same reference — proves the aggregator short-circuits when
+    // nothing needs healing.
+    expect(next.pendingAttachmentDeletes).toBe(local.pendingAttachmentDeletes);
+  });
+
+  // Regression: pendingFileUploads entries whose asset id is no longer
+  // in synced.globalAssets.files are orphans. Normally
+  // `removeGlobalFileAsset` + the `globalAsset.removeFile` patch both
+  // drop the entry, but a buggy race or a hand-edit of the workspace
+  // doc could leave a stale entry behind. The aggregator self-heals
+  // by pruning them on every commit.
+  it('prunes pendingFileUploads entries whose asset id is missing from the registry', () => {
+    const live = makeAsset('a');
+    const local = makeLocal({
+      pendingFileUploads: {
+        [live.id]: {
+          slotId: live.slotId,
+          filename: live.filename,
+          mimeType: live.mimeType,
+          sha256: live.sha256!,
+          size: live.size,
+          queuedAt: T,
+        },
+        orphan: {
+          slotId: 'slot-orphan',
+          filename: 'orphan.bin',
+          mimeType: 'application/octet-stream',
+          sha256: 'sha-orphan',
+          size: 4,
+          queuedAt: T,
+        },
+      },
+    });
+    const synced = makeSynced({
+      globalAssets: { schemas: {}, graphql: {}, files: { [live.id]: live } },
+    });
+    const next = recomputeAssetUsage(synced, local);
+    expect(next.pendingFileUploads?.[live.id]).toBeDefined();
+    expect(next.pendingFileUploads?.orphan).toBeUndefined();
+  });
+
   it('drops the index entirely when no file assets are registered', () => {
     const local = makeLocal({
       assetUsageIndex: { stale: { requests: [], mockEndpoints: [], total: 0 } },

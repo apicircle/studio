@@ -87,23 +87,73 @@ export function aggregateAssetUsage(synced: WorkspaceSynced): Record<string, Ass
 
 /**
  * Convenience: walk the workspace and return the SAME local doc with
- * `assetUsageIndex` refreshed. Returns the original reference when nothing
- * changed so callers can short-circuit persists. Cleared entries (assets
- * that exist in the registry but have zero references) get an empty record
- * `{ requests: [], mockEndpoints: [], total: 0 }` so the UI can show an
- * "Unused" badge without falling back to "unknown."
+ * `assetUsageIndex` refreshed AND `pendingFileUploads` self-healed.
+ *
+ * Self-healing scope: any `pendingFileUploads` entry whose asset id is
+ * NO LONGER in `synced.globalAssets.files` gets dropped. Orphans
+ * shouldn't normally exist (`removeGlobalFileAsset` and
+ * `globalAsset.removeFile` both drop the pending entry) but a buggy
+ * race or a manual JSON edit could leave a stale entry behind; the
+ * UI would render a permanent "Uploaded locally" pill for a row that
+ * no longer binds to a real asset. The pruning here keeps the local
+ * doc honest without needing a separate sweep job.
+ *
+ * Returns the original reference when nothing changed so callers can
+ * short-circuit persists. Cleared entries (assets that exist in the
+ * registry but have zero references) get an empty record
+ * `{ requests: [], mockEndpoints: [], total: 0 }` so the UI can show
+ * an "Unused" badge without falling back to "unknown."
  */
 export function recomputeAssetUsage(
   synced: WorkspaceSynced,
   local: WorkspaceLocal,
 ): WorkspaceLocal {
   const files = synced.globalAssets.files;
+  let nextLocal = local;
+
+  // Self-heal pendingFileUploads — drop entries whose asset id is gone.
+  if (nextLocal.pendingFileUploads && Object.keys(nextLocal.pendingFileUploads).length > 0) {
+    const fileIds = new Set(Object.keys(files ?? {}));
+    let touched = false;
+    const trimmedPending: NonNullable<WorkspaceLocal['pendingFileUploads']> = {};
+    for (const [id, entry] of Object.entries(nextLocal.pendingFileUploads)) {
+      if (fileIds.has(id)) {
+        trimmedPending[id] = entry;
+      } else {
+        touched = true;
+      }
+    }
+    if (touched) {
+      nextLocal = { ...nextLocal, pendingFileUploads: trimmedPending };
+    }
+  }
+
+  // Self-heal pendingAttachmentDeletes — drop GHOST entries whose slotId
+  // is still owned by a current asset. Ghosts arise from a delete +
+  // snapshot-restore sequence (the user deleted the asset, snapshot
+  // restored it, but the delete queue still has the slotId). Push has
+  // a safety filter that drops ghosts before emitting, but without
+  // pruning here the queue would grow over time and never shrink.
+  if (
+    nextLocal.pendingAttachmentDeletes &&
+    nextLocal.pendingAttachmentDeletes.length > 0 &&
+    files
+  ) {
+    const liveSlots = new Set(Object.values(files).map((a) => a.slotId));
+    const trimmedDeletes = nextLocal.pendingAttachmentDeletes.filter(
+      (slotId) => !liveSlots.has(slotId),
+    );
+    if (trimmedDeletes.length !== nextLocal.pendingAttachmentDeletes.length) {
+      nextLocal = { ...nextLocal, pendingAttachmentDeletes: trimmedDeletes };
+    }
+  }
+
   if (!files || Object.keys(files).length === 0) {
     // No assets — drop any stale index. Cheaper than re-walking everything.
-    if (!local.assetUsageIndex || Object.keys(local.assetUsageIndex).length === 0) {
-      return local;
+    if (!nextLocal.assetUsageIndex || Object.keys(nextLocal.assetUsageIndex).length === 0) {
+      return nextLocal;
     }
-    const next: WorkspaceLocal = { ...local };
+    const next: WorkspaceLocal = { ...nextLocal };
     delete next.assetUsageIndex;
     return next;
   }
@@ -113,8 +163,8 @@ export function recomputeAssetUsage(
   for (const id of Object.keys(files)) {
     next[id] = live[id] ?? { requests: [], mockEndpoints: [], total: 0 };
   }
-  if (sameUsageIndex(local.assetUsageIndex, next)) return local;
-  return { ...local, assetUsageIndex: next };
+  if (sameUsageIndex(nextLocal.assetUsageIndex, next)) return nextLocal;
+  return { ...nextLocal, assetUsageIndex: next };
 }
 
 function sameUsageIndex(

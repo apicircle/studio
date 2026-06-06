@@ -78,6 +78,22 @@ describe('deriveFileAssetState', () => {
       deriveFileAssetState(asset({ workingBranchRef: null, baseBranchRef: null }), false),
     ).toBe('missing');
   });
+
+  // Regression: when bytes are pending AND a stale workingBranchRef is
+  // still set (the `fillGlobalFileAssetBytes` flow on an already-pushed
+  // asset), pending bytes take priority so the pill truthfully shows
+  // "Uploaded locally" instead of "On working branch."
+  it('returns "uploading" when pending bytes coexist with a stale workingBranchRef', () => {
+    expect(deriveFileAssetState(asset({ workingBranchRef: ref('w', 'stale-blob') }), true)).toBe(
+      'uploading',
+    );
+  });
+
+  it('returns "uploading" when pending bytes coexist with a stale baseBranchRef', () => {
+    expect(deriveFileAssetState(asset({ baseBranchRef: ref('main', 'stale-blob') }), true)).toBe(
+      'uploading',
+    );
+  });
 });
 
 function seedStore(synced: WorkspaceSynced, localOverrides: Partial<WorkspaceLocal> = {}): void {

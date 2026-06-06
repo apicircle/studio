@@ -75,6 +75,22 @@ export function GlobalAssetsDockPanel() {
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  // Auto-clear `selectedId` when the selected asset disappears from
+  // any of the three registries. Without this, deleting the currently-
+  // open asset would leave the right-side editor stranded on a
+  // now-invalid id and render its empty state — which the user reads
+  // as a broken screen instead of "you successfully deleted the file."
+  // Covers the UI delete path, the MCP `assets.delete_file` tool, and
+  // any external write that lands via `refreshFromDisk`.
+  useEffect(() => {
+    if (selectedId === null) return;
+    const existsInTab =
+      schemas.some((s) => s.id === selectedId) ||
+      graphql.some((g) => g.id === selectedId) ||
+      files.some((f) => f.id === selectedId);
+    if (!existsInTab) setSelectedId(null);
+  }, [selectedId, schemas, graphql, files]);
+
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   useEffect(() => {

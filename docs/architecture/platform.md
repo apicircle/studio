@@ -125,6 +125,21 @@ moment:
 - `local.assetUsageIndex[id]` — cross-cutting reference count per asset
   recomputed by `assetUsageAggregator` after every `commitSynced`,
   same pattern as `usedInAggregator` for the Secret Vault.
+- `local.pendingAttachmentDeletes` — slotIds whose blob needs to be
+  removed from the working branch on the next push. Queued by
+  `removeGlobalFileAsset` (and the headless `globalAsset.removeFile`
+  patch) when the asset being deleted had any push provenance.
+  Without this queue, removing an asset would drop it from
+  `workspace.json` but leave the orphan blob on the remote tree
+  forever — and the PR merge would carry the orphan into the base
+  branch. The push emits one `{path: '.apicircle/attachments/<slotId>',
+sha: null}` tree entry per queued slot (GitHub treats `sha: null`
+  layered over `base_tree` as a deletion), clears the queue post-
+  `updateRef`, and a pre-emit safety filter drops any slotId that
+  matches a currently-registered asset (defends against snapshot-
+  restore bringing a previously-deleted asset back). The aggregator
+  also self-heals ghost entries on every commit so the queue never
+  grows unbounded.
 
 The state machine driven by push + refresh:
 
@@ -146,6 +161,19 @@ is the single source of truth; the working ref was just a transient
 working ref drops it; the next read tries base; if both are missing
 and there's no local copy, the asset enters the `missing` state and
 the UI prompts for re-upload.
+
+**Verification grace window.** The refresh probe trusts any ref
+stamped within the last 60 seconds without re-probing. GitHub's
+strongly-consistent Git Data API is what the push commits through,
+but the Contents API (which the verification probe uses) is
+eventually consistent and can return 404 for the same blob for
+several seconds after the push lands. Without the grace window, a
+cold-launch refresh that fires right after push would null the
+`workingBranchRef` the push just stamped and the status pill would
+flicker "Missing" until the next probe (or until the PR merged and
+the base-branch probe re-discovered the file). When a ref is null
+AND a branch is connected, the probe also runs opportunistically,
+so a previously-lost ref recovers on the next refresh.
 
 All six state transitions flow through `applyMutation` via the new
 `globalAsset.*` patch variants in `@apicircle/core/workspace/patches.ts`,

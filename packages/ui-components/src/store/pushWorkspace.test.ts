@@ -280,6 +280,192 @@ describe('workspaceStore.pushWorkspace', () => {
     expect(after.local!.pendingFileUploads?.[assetId]).toBeUndefined();
   });
 
+  // Regression: a mutation that lands DURING pushWorkspace's awaits
+  // (e.g., the user uploads another file via attachFormFile between the
+  // function-entry capture of `synced` and the post-updateRef state
+  // transition) MUST survive. The original push action used the
+  // captured `synced` for stampPushedAssetRefs and then did
+  // `set({ synced: nextSynced })` — wiping the mid-push addition.
+  // The fix layers stamps onto `get().synced` (live) and uses
+  // `stampedCaptured` only as the lastPulledSnapshot baseline.
+  it('preserves a Global File Asset that lands during pushWorkspace (race-safe stamping)', async () => {
+    await setupConnectedBranch();
+
+    // Seed an asset whose blob will be pushed this round.
+    const reqId = useWorkspaceStore.getState().addRequest(null);
+    const bytes = new Uint8Array([7, 7, 7]);
+    await useWorkspaceStore
+      .getState()
+      .attachBinaryFile(reqId, new File([bytes], 'a.bin', { type: 'application/octet-stream' }));
+    const initialAssetId = Object.keys(useWorkspaceStore.getState().synced!.globalAssets.files!)[0];
+
+    // Inject the mid-push mutation INSIDE the createTree fetch handler.
+    // By the time createTree fires, the push has already captured `synced`
+    // at function entry — so the setState is guaranteed to land AFTER
+    // the capture, exercising the race the fix is for. Using await
+    // microtasks before the setState would be timing-flaky.
+    let call = 0;
+    const fetchMock = vi.fn(async (..._args: unknown[]) => {
+      void _args;
+      call++;
+      if (call === 1)
+        return fakeResponse({
+          body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } },
+        });
+      if (call === 2)
+        return fakeResponse({
+          body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } },
+        });
+      if (call === 3) return fakeResponse({ body: { sha: 'blob-pushed', size: bytes.length } });
+      if (call === 4) {
+        // Mid-push mutation: a second Global File Asset (simulating any
+        // synced mutation that lands during the push — a rename, another
+        // upload, an editor edit). The captured `synced` in the push
+        // already snapshotted before this setState fires.
+        const midPushSynced = useWorkspaceStore.getState().synced!;
+        useWorkspaceStore.setState({
+          synced: {
+            ...midPushSynced,
+            globalAssets: {
+              ...midPushSynced.globalAssets,
+              files: {
+                ...(midPushSynced.globalAssets.files ?? {}),
+                'mid-push-asset': {
+                  id: 'mid-push-asset',
+                  name: 'Added mid-push',
+                  slotId: 'slot-mid-push',
+                  filename: 'mid.bin',
+                  size: 3,
+                  mimeType: 'application/octet-stream',
+                  sha256: 'sha-mid',
+                  createdAt: '2026-06-06T00:00:00.000Z',
+                  updatedAt: '2026-06-06T00:00:00.000Z',
+                },
+              },
+            },
+          },
+        });
+        return fakeResponse({ body: { sha: 'tree-new' } });
+      }
+      if (call === 5)
+        return fakeResponse({
+          body: { sha: 'commit-new', message: 'm', tree: { sha: 'tree-new' } },
+        });
+      if (call === 6)
+        return fakeResponse({
+          body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'commit-new' } },
+        });
+      throw new Error(`unexpected fetch call #${call}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await useWorkspaceStore.getState().pushWorkspace();
+
+    const after = useWorkspaceStore.getState();
+    // BOTH assets must survive the post-updateRef set.
+    expect(after.synced!.globalAssets.files![initialAssetId]).toBeDefined();
+    expect(after.synced!.globalAssets.files!['mid-push-asset']).toBeDefined();
+    // The pushed asset has its workingBranchRef stamped.
+    expect(after.synced!.globalAssets.files![initialAssetId].workingBranchRef).toMatchObject({
+      branchName: 'apicircle/wb-aaa',
+      blobSha: 'blob-pushed',
+    });
+    // The mid-push asset is unpushed — no ref yet.
+    expect(after.synced!.globalAssets.files!['mid-push-asset'].workingBranchRef ?? null).toBeNull();
+    // The lastPulledSnapshot baseline (what's actually on the remote)
+    // does NOT include the mid-push addition — that asset only exists
+    // locally and the next push will commit it.
+    expect(
+      after.local!.sync.lastPulledSnapshot?.globalAssets.files?.['mid-push-asset'],
+    ).toBeUndefined();
+  });
+
+  it('emits sha:null tree entries for queued attachment deletes and clears the queue', async () => {
+    // Regression for the missing-deletion bug: when the user removes a
+    // Global File Asset that had push provenance,
+    // `pendingAttachmentDeletes` queues its slotId. The next push must
+    // include a `{path: '.apicircle/attachments/<slotId>', sha: null}`
+    // entry in the tree so GitHub deletes the orphan blob from the
+    // working branch (and via PR merge, from the base branch).
+    await setupConnectedBranch();
+
+    // Seed two queued deletes (deleted assets that were on the remote)
+    // plus a "ghost" entry whose slot id MATCHES a current asset — the
+    // safety filter must drop it so we don't accidentally delete a
+    // referenced file. The ghost simulates a snapshot-restore that
+    // brought a previously-deleted asset back.
+    const ghostAssetSlot = 'slot-ghost';
+    const localBefore = useWorkspaceStore.getState().local!;
+    const syncedBefore = useWorkspaceStore.getState().synced!;
+    useWorkspaceStore.setState({
+      synced: {
+        ...syncedBefore,
+        globalAssets: {
+          ...syncedBefore.globalAssets,
+          files: {
+            ...(syncedBefore.globalAssets.files ?? {}),
+            'ghost-asset': {
+              id: 'ghost-asset',
+              name: 'Restored',
+              slotId: ghostAssetSlot,
+              filename: 'ghost.bin',
+              size: 1,
+              mimeType: 'application/octet-stream',
+              sha256: 'sha-ghost',
+              createdAt: '2026-06-06T00:00:00.000Z',
+              updatedAt: '2026-06-06T00:00:00.000Z',
+            },
+          },
+        },
+      },
+      local: {
+        ...localBefore,
+        pendingAttachmentDeletes: ['slot-deleted-1', 'slot-deleted-2', ghostAssetSlot],
+      },
+    });
+
+    const fetchMock = queuedFetch([
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
+      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
+      { body: { sha: 'tree-new' } },
+      { body: { sha: 'commit-new', message: 'm', tree: { sha: 'tree-new' } } },
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'commit-new' } } },
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await useWorkspaceStore.getState().pushWorkspace();
+
+    // createTree body carries the two REAL deletes but NOT the ghost
+    // (safety filter dropped it because a current asset still owns that
+    // slot id).
+    const createTreeCall = fetchMock.mock.calls[2];
+    const treeBody = JSON.parse((createTreeCall[1] as RequestInit).body as string) as {
+      tree: Array<{ path: string; sha?: string | null; mode?: string; type?: string }>;
+    };
+    const deleteEntries = treeBody.tree.filter((e) => e.sha === null);
+    expect(deleteEntries.map((e) => e.path).sort()).toEqual([
+      '.apicircle/attachments/slot-deleted-1',
+      '.apicircle/attachments/slot-deleted-2',
+    ]);
+    // Delete entries carry the standard blob mode/type per GitHub's API.
+    for (const entry of deleteEntries) {
+      expect(entry.mode).toBe('100644');
+      expect(entry.type).toBe('blob');
+      // The `sha: null` field must literally be present (not absent —
+      // GitHub treats missing sha as "no change," not as "delete").
+      const raw = treeBody.tree.find((e) => e.path === entry.path)!;
+      expect(Object.prototype.hasOwnProperty.call(raw, 'sha')).toBe(true);
+      expect(raw.sha).toBeNull();
+    }
+
+    // Post-push: the queue is cleared for the two emitted slots. The
+    // ghost stays because it was filtered out (the user can manually
+    // un-queue it via a follow-up action if needed — typically they
+    // won't, because the restored asset is still bound).
+    const after = useWorkspaceStore.getState();
+    expect(after.local!.pendingAttachmentDeletes).toEqual([ghostAssetSlot]);
+  });
+
   it('aborts push when cached attachment bytes fail checksum verification', async () => {
     await setupConnectedBranch();
 

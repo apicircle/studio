@@ -3387,28 +3387,38 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   removeGlobalGraphQL: (id) => commitSynced(set, get, (s) => removeGlobalGraphQLAction(s, id)),
   addGlobalFileAsset: async (file, init) => {
     enforceAttachmentSize(file);
-    const synced = get().synced;
-    if (!synced) throw new Error('Workspace not ready');
+    if (!get().synced) throw new Error('Workspace not ready');
     const slotId = generateId();
     const record = await createAttachmentFromFile(file, slotId);
     await putAttachment(record);
-    const result = addGlobalFileAssetAction(synced, {
-      name: init?.name ?? record.filename,
-      description: init?.description,
-      slotId,
-      filename: record.filename,
-      size: record.size,
-      mimeType: record.mimeType,
-      sha256: record.sha256,
+    // Race-safe: run the reducer against LIVE state inside commitSynced
+    // so a mid-await mutation (another upload, a rename, a request edit)
+    // is preserved. The previous shape — `commitSynced(() => result.synced)`
+    // — built `result.synced` from a captured pre-await state and wiped
+    // anything that landed during the createAttachmentFromFile +
+    // putAttachment awaits.
+    let createdFileId = '';
+    commitSynced(set, get, (s) => {
+      const out = addGlobalFileAssetAction(s, {
+        name: init?.name ?? record.filename,
+        description: init?.description,
+        slotId,
+        filename: record.filename,
+        size: record.size,
+        mimeType: record.mimeType,
+        sha256: record.sha256,
+      });
+      createdFileId = out.file.id;
+      return out.synced;
     });
-    commitSynced(set, get, () => result.synced);
+    if (!createdFileId) throw new Error('addGlobalFileAsset reducer did not run');
     // Record the pending upload so the push flow knows the bytes need to
     // be sent up on the next commit. Reads `pendingFileUploads[id]` to
     // show the "Uploaded locally" status pill across the four UI
     // surfaces (Global Assets sidebar, form-data row, binary body,
     // mock-response body).
-    recordPendingFileUpload(set, get, result.file.id);
-    return result.file.id;
+    recordPendingFileUpload(set, get, createdFileId);
+    return createdFileId;
   },
   updateGlobalFileAsset: (id, patch) =>
     commitSynced(set, get, (s) => updateGlobalFileAssetAction(s, id, patch)),
@@ -3416,43 +3426,67 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const synced = get().synced;
     const asset = synced?.globalAssets.files?.[id];
     if (!asset) return;
+    // Capture whether the asset had any push provenance BEFORE the
+    // synced mutation drops it from the registry. This is the signal
+    // the push flow needs to emit a `{path, sha: null}` tree entry so
+    // the blob is actually removed from the remote (and through PR
+    // merge, from the base branch too). Without this, the asset would
+    // be removed from `workspace.json` but the orphan blob would
+    // persist on the remote tree forever.
+    const hadRemoteRef = Boolean(asset.workingBranchRef || asset.baseBranchRef);
     commitSynced(set, get, (s) => removeGlobalFileAssetAction(s, id));
     // Drop the pending-upload entry (if the asset never got pushed) AND
     // free the IDB bytes. The cascade-unbind on consumers already
     // happens inside removeGlobalFileAssetAction.
     dropPendingFileUpload(set, get, id);
+    if (hadRemoteRef) {
+      queueAttachmentDelete(set, get, asset.slotId);
+    }
     await deleteAttachment(asset.slotId);
   },
   fillGlobalFileAssetBytes: async (id, file) => {
     enforceAttachmentSize(file);
-    const synced = get().synced;
-    const existing = synced?.globalAssets.files?.[id];
-    if (!synced || !existing) return;
+    // Capture slotId from current state — slotIds never change after
+    // an asset is minted, so this is safe to use across the awaits.
+    const slotId = get().synced?.globalAssets.files?.[id]?.slotId;
+    if (!slotId) return;
     // Persist the new bytes under the asset's EXISTING slotId so all
     // request / mock bindings keep pointing at the same record. Refresh
     // the metadata (size, MIME, sha256) from the picked File since the
     // user might be filling a slot the MCP claim guessed at.
-    const record = await createAttachmentFromFile(file, existing.slotId);
+    const record = await createAttachmentFromFile(file, slotId);
     await putAttachment(record);
-    const nextSynced = {
-      ...synced,
-      globalAssets: {
-        ...synced.globalAssets,
-        files: {
-          ...synced.globalAssets.files,
-          [id]: {
-            ...existing,
-            filename: record.filename,
-            size: record.size,
-            mimeType: record.mimeType,
-            sha256: record.sha256,
-            updatedAt: new Date().toISOString(),
+    // Race-safe: reducer runs against LIVE state. If the user deleted
+    // the asset between our await and now, the reducer no-ops by
+    // returning `s` unchanged. If the user renamed the asset, the
+    // rename is preserved; only metadata derived from the new file
+    // (filename, size, MIME, sha256) is overwritten.
+    commitSynced(set, get, (s) => {
+      const live = s.globalAssets.files?.[id];
+      if (!live) return s;
+      return {
+        ...s,
+        globalAssets: {
+          ...s.globalAssets,
+          files: {
+            ...(s.globalAssets.files ?? {}),
+            [id]: {
+              ...live,
+              filename: record.filename,
+              size: record.size,
+              mimeType: record.mimeType,
+              sha256: record.sha256,
+              updatedAt: new Date().toISOString(),
+            },
           },
         },
-      },
-    };
-    commitSynced(set, get, () => nextSynced);
-    recordPendingFileUpload(set, get, id);
+      };
+    });
+    // If the asset survived the merge, queue the new bytes for the next
+    // push. A no-op when the asset was deleted mid-await.
+    if (get().synced?.globalAssets.files?.[id]) {
+      recordPendingFileUpload(set, get, id);
+    }
   },
   setFormRowGlobalFileAsset: async (requestId, rowIndex, fileAssetId) => {
     const synced = get().synced;
@@ -4803,6 +4837,17 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // done at stamp time so a slot that doesn't correspond to a Global
     // Asset (legacy private-slot entries) is silently skipped.
     const pushedBySlotId: Record<string, string> = {};
+    // Snapshot the attachment-delete queue under a safety filter:
+    // any slotId still referenced by a CURRENT asset is dropped
+    // (defensive against a snapshot-restore that brought a deleted
+    // asset back). Whatever's left is emitted as `{path, sha: null}`
+    // tree entries below.
+    const liveSlotIds = new Set(
+      Object.values(synced.globalAssets.files ?? {}).map((a) => a.slotId),
+    );
+    const deletesToEmit = (local.pendingAttachmentDeletes ?? []).filter(
+      (slotId) => !liveSlotIds.has(slotId),
+    );
     for (const slot of slots) {
       const record = await getAttachment(slot.slotId);
       if (!record) continue;
@@ -4834,9 +4879,18 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const redacted = redactForGit(synced);
     const content = serializeWorkspaceForGit(redacted);
     assertNoPlaintextCredentials(content);
+    // GitHub's git-data tree API treats `{path, sha: null}` over a
+    // `base_tree` as "delete this path." We emit one such entry per
+    // queued attachment delete so the working branch's tree (and via
+    // PR merge, the base branch) drops the orphan blob. Idempotent
+    // when the path already missing.
+    const deleteEntries: TreeEntryInput[] = deletesToEmit.map((slotId) => ({
+      path: `.apicircle/attachments/${slotId}`,
+      sha: null,
+    }));
     const newTree = await client.createTree(token, owner, name, {
       baseTreeSha: headCommit.treeSha,
-      entries: [{ path: WORKSPACE_JSON_PATH, content }, ...attachmentEntries],
+      entries: [{ path: WORKSPACE_JSON_PATH, content }, ...attachmentEntries, ...deleteEntries],
     });
     // 4. Create the commit.
     const message = (commitMessage ?? '').trim() || 'chore: sync workspace via API Circle Studio';
@@ -4866,13 +4920,27 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     //    `pendingFileUploads` entries so the UI status pill flips
     //    immediately.
     const verifiedAt = new Date().toISOString();
-    const nextSynced = stampPushedAssetRefs(
+    // Two synced docs to track:
+    //   - `stampedCaptured` = what we actually pushed. Built from the
+    //     function-entry `synced` (whose bytes formed `content` for
+    //     createTree) with each pushed asset's `workingBranchRef`
+    //     stamped. This is the right baseline for `lastPulledSnapshot`
+    //     because it's literally what's on the remote.
+    //   - `mergedSynced` = the in-memory store after this push. Built
+    //     from the LIVE synced doc (`get().synced`) with the stamps
+    //     overlaid only on assets that still exist. Race-safe: if a
+    //     user added/renamed/deleted an asset DURING the push, those
+    //     mutations are preserved. Same pattern as
+    //     `verifyAssetRefsAndPatch`.
+    const stampedCaptured = stampPushedAssetRefs(
       synced,
       pushedBySlotId,
       branch.name,
       newCommitSha,
       verifiedAt,
     );
+    const liveSyncedAfterPush = get().synced ?? synced;
+    const mergedSynced = mergeStampsIntoLive(liveSyncedAfterPush, stampedCaptured, verifiedAt);
     const updatedBranch: WorkingBranch = {
       ...branch,
       headSha: newCommitSha,
@@ -4881,24 +4949,36 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const currentLocal = get().local!;
     const trimmedPending = stripPushedFromPending(
       currentLocal.pendingFileUploads,
-      nextSynced.globalAssets.files,
+      mergedSynced.globalAssets.files,
       pushedBySlotId,
     );
+    // Clear the delete queue for slots we just deleted. Anything that
+    // got queued AFTER we snapshotted `deletesToEmit` (a delete that
+    // raced the push) stays in the queue for the NEXT push.
+    const emittedDeleteSet = new Set(deletesToEmit);
+    const remainingDeletes = (currentLocal.pendingAttachmentDeletes ?? []).filter(
+      (slotId) => !emittedDeleteSet.has(slotId),
+    );
+    const nextPendingDeletes =
+      remainingDeletes.length === (currentLocal.pendingAttachmentDeletes ?? []).length
+        ? currentLocal.pendingAttachmentDeletes
+        : remainingDeletes;
     const next: WorkspaceLocal = {
       ...currentLocal,
       workingBranch: updatedBranch,
       sync: {
         ...currentLocal.sync,
-        lastPulledSnapshot: nextSynced,
+        lastPulledSnapshot: stampedCaptured,
         lastPulledSha: newCommitSha,
         lastPulledAt: verifiedAt,
         dirtyKeys: [],
       },
       pendingFileUploads: trimmedPending,
+      pendingAttachmentDeletes: nextPendingDeletes,
     };
-    if (nextSynced !== synced) {
-      set({ synced: nextSynced, local: next });
-      queueSaveSynced(nextSynced);
+    if (mergedSynced !== liveSyncedAfterPush) {
+      set({ synced: mergedSynced, local: next });
+      queueSaveSynced(mergedSynced);
     } else {
       set({ local: next });
     }
@@ -7867,6 +7947,25 @@ function dropPendingFileUpload(set: SetState, get: GetState, assetId: string): v
 }
 
 // ---------------------------------------------------------------------------
+// pendingAttachmentDeletes helpers
+// ---------------------------------------------------------------------------
+// Queue of attachment slot ids whose blob needs to be removed from the
+// remote tree on the next push. Populated by `removeGlobalFileAsset`
+// only when the asset had push provenance (working / base ref);
+// cleared by `pushWorkspace` after `updateRef` succeeds. See
+// `WorkspaceLocal.pendingAttachmentDeletes` in `@apicircle/shared`.
+
+function queueAttachmentDelete(set: SetState, get: GetState, slotId: string): void {
+  const local = get().local;
+  if (!local) return;
+  const queue = local.pendingAttachmentDeletes ?? [];
+  if (queue.includes(slotId)) return; // already queued — dedupe.
+  const next: WorkspaceLocal = { ...local, pendingAttachmentDeletes: [...queue, slotId] };
+  set({ local: next });
+  queueSaveLocal(next);
+}
+
+// ---------------------------------------------------------------------------
 // Asset-provenance helpers (push side)
 // ---------------------------------------------------------------------------
 // `stampPushedAssetRefs` builds a new synced doc with `workingBranchRef`
@@ -7910,6 +8009,49 @@ function stampPushedAssetRefs(
   };
 }
 
+/**
+ * Race-safe layer of post-push asset-ref stamps onto the LIVE synced
+ * doc. The push commits `stampedCaptured` (built from function-entry
+ * `synced`) to the remote — that's the snapshot baseline. But the
+ * in-memory store may have advanced during the push (user added a
+ * file, renamed an asset, deleted one), and the post-push set MUST
+ * preserve those mutations.
+ *
+ * Strategy: walk `stampedCaptured.globalAssets.files`. For every asset
+ * whose live counterpart still exists, overlay the new `workingBranchRef`
+ * only. Other fields (name, description, mid-push edits) flow from
+ * `live`. Assets the user deleted mid-push are honored (we don't
+ * resurrect them). Assets the user added mid-push stay as-is in `live`
+ * (no ref to add — they weren't in the commit).
+ */
+function mergeStampsIntoLive(
+  live: WorkspaceSynced,
+  stampedCaptured: WorkspaceSynced,
+  verifiedAt: string,
+): WorkspaceSynced {
+  const liveFiles = live.globalAssets.files ?? {};
+  const stampedFiles = stampedCaptured.globalAssets.files ?? {};
+  let touched = false;
+  const mergedFiles: typeof liveFiles = { ...liveFiles };
+  for (const [id, stampedAsset] of Object.entries(stampedFiles)) {
+    const liveAsset = mergedFiles[id];
+    if (!liveAsset) continue; // deleted mid-push — honor the deletion.
+    const newRef = stampedAsset.workingBranchRef;
+    if (!newRef) continue; // this asset wasn't pushed this round.
+    // Only overlay when the ref actually changed, so referential
+    // equality short-circuits a no-op `set()`.
+    if (liveAsset.workingBranchRef === newRef) continue;
+    mergedFiles[id] = { ...liveAsset, workingBranchRef: newRef, updatedAt: verifiedAt };
+    touched = true;
+  }
+  if (!touched) return live;
+  return {
+    ...live,
+    globalAssets: { ...live.globalAssets, files: mergedFiles },
+    meta: { ...live.meta, updatedAt: verifiedAt },
+  };
+}
+
 function stripPushedFromPending(
   pending: WorkspaceLocal['pendingFileUploads'],
   files: WorkspaceSynced['globalAssets']['files'],
@@ -7933,17 +8075,48 @@ function stripPushedFromPending(
 // ---------------------------------------------------------------------------
 // `verifyAssetRefsAndPatch` is the refresh-time verification + cleanup pass.
 // For every Global File Asset it:
-//   1. If `workingBranchRef` is set, probe that branch's attachment slot.
+//   1. If `workingBranchRef` is set AND its `verifiedAt` is older than
+//      the grace window, probe that branch's attachment slot.
 //      200 → refresh `verifiedAt` + record blob sha; null → drop the ref.
-//   2. If `baseBranchRef` is set, same probe against the base branch.
-//      If `baseBranchRef` is NOT set but the working branch has a base,
-//      also probe it opportunistically — that's how we detect "PR merged."
-//   3. Cleanup invariant: when both refs hold the SAME blob sha, drop
+//      Within the grace window the ref is trusted as-is.
+//   2. If `workingBranchRef` is null AND a working branch is connected,
+//      opportunistically probe it — recovers a ref that an earlier
+//      probe nulled by mistake (rare but possible after the grace
+//      window expires while the Contents API is still catching up).
+//   3. If `baseBranchRef` is set, same probe (with grace) against the
+//      base branch. If `baseBranchRef` is NOT set but the working
+//      branch has a base, also probe it opportunistically — that's
+//      how we detect "PR merged."
+//   4. Cleanup invariant: when both refs hold the SAME blob sha, drop
 //      `workingBranchRef`. Base is the single source of truth.
+//
+// THE GRACE WINDOW exists because of GitHub API consistency staircase:
+// push uses the strongly-consistent Git Data API (createTree +
+// createCommit + updateRef), but this probe uses the Contents API,
+// which is eventually consistent and can return 404 for several seconds
+// after the same blob has been committed via Git Data. Without the
+// grace window, the cold-launch refresh that fires right after a push
+// (via `useFocusRefresh`) would null the `workingBranchRef` the push
+// just stamped, flipping the status pill to "Missing" until the PR
+// merges and the base-branch probe re-discovers the file. Wait time of
+// 60s comfortably covers GitHub's typical propagation envelope.
 //
 // Best-effort: per-probe errors are swallowed (a transient blip shouldn't
 // poison the merge result the caller just landed). Mutates the store via
 // a final `set({ synced })` + `queueSaveSynced`.
+
+/**
+ * How long after stamping a ref we trust it without re-probing. Covers
+ * GitHub's Contents-API propagation lag after a Git-Data-API push.
+ */
+const ASSET_REF_VERIFY_GRACE_MS = 60_000;
+
+function isWithinGrace(verifiedAt: string | undefined, now: number): boolean {
+  if (!verifiedAt) return false;
+  const t = Date.parse(verifiedAt);
+  if (!Number.isFinite(t)) return false;
+  return now - t < ASSET_REF_VERIFY_GRACE_MS;
+}
 
 async function verifyAssetRefsAndPatch(
   set: SetState,
@@ -7959,8 +8132,10 @@ async function verifyAssetRefsAndPatch(
 
   const owner = branch.repoOwner;
   const repoName = branch.repoName;
+  const workingBranch = branch.name;
   const baseBranch = branch.baseBranch;
   const verifiedAt = new Date().toISOString();
+  const now = Date.parse(verifiedAt);
   const nextFiles: Record<string, (typeof files)[string]> = {};
   let touched = false;
 
@@ -7969,43 +8144,66 @@ async function verifyAssetRefsAndPatch(
     let baseRef = asset.baseBranchRef ?? null;
     const blobPath = `.apicircle/attachments/${asset.slotId}`;
 
-    // Working-branch probe.
+    // Working-branch probe — verify (with grace), or opportunistically
+    // re-discover when the ref is null but a working branch is connected.
     if (workingRef) {
+      if (!isWithinGrace(workingRef.verifiedAt, now)) {
+        try {
+          const probed = await client.getContents(
+            token,
+            owner,
+            repoName,
+            blobPath,
+            workingRef.branchName,
+          );
+          if (probed === null) {
+            workingRef = null;
+          } else {
+            workingRef = { ...workingRef, blobSha: probed.sha, verifiedAt };
+          }
+        } catch {
+          // Network / auth blip — preserve the ref and try again next refresh.
+        }
+      }
+    } else if (workingBranch) {
+      // Opportunistic re-discovery: a previous probe may have nulled the
+      // ref (e.g. a 404 during the Contents-API propagation window).
+      // If the blob is actually there now, re-stamp so the pill flips
+      // back to "On working branch" without needing another push.
       try {
-        const probed = await client.getContents(
-          token,
-          owner,
-          repoName,
-          blobPath,
-          workingRef.branchName,
-        );
-        if (probed === null) {
-          workingRef = null;
-        } else {
-          workingRef = { ...workingRef, blobSha: probed.sha, verifiedAt };
+        const probed = await client.getContents(token, owner, repoName, blobPath, workingBranch);
+        if (probed !== null) {
+          workingRef = {
+            branchName: workingBranch,
+            blobSha: probed.sha,
+            verifiedAt,
+          };
         }
       } catch {
-        // Network / auth blip — preserve the ref and try again next refresh.
+        /* nothing to recover from */
       }
     }
 
-    // Base-branch probe — verify if set, opportunistically detect if not.
+    // Base-branch probe — verify if set (with grace), opportunistically
+    // detect if not.
     if (baseRef) {
-      try {
-        const probed = await client.getContents(
-          token,
-          owner,
-          repoName,
-          blobPath,
-          baseRef.branchName,
-        );
-        if (probed === null) {
-          baseRef = null;
-        } else {
-          baseRef = { ...baseRef, blobSha: probed.sha, verifiedAt };
+      if (!isWithinGrace(baseRef.verifiedAt, now)) {
+        try {
+          const probed = await client.getContents(
+            token,
+            owner,
+            repoName,
+            blobPath,
+            baseRef.branchName,
+          );
+          if (probed === null) {
+            baseRef = null;
+          } else {
+            baseRef = { ...baseRef, blobSha: probed.sha, verifiedAt };
+          }
+        } catch {
+          /* keep stale ref */
         }
-      } catch {
-        /* keep stale ref */
       }
     } else if (baseBranch) {
       try {

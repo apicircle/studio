@@ -854,6 +854,86 @@ describe('applyMutation - globalAsset.files', () => {
     expect(out.changedIds).toEqual([]);
   });
 
+  it('removeFile queues the blob for remote deletion when the asset had push refs', () => {
+    // Asset has both refs set → blob exists on working branch AND base
+    // branch → next push must include a `{path, sha: null}` tree entry
+    // to delete it. Without this queue, removing the asset would leave
+    // an orphan blob in the remote tree forever.
+    const state = {
+      synced: makeSynced({
+        globalAssets: {
+          schemas: {},
+          graphql: {},
+          files: {
+            [baseAsset.id]: {
+              ...baseAsset,
+              workingBranchRef: refOnWorking,
+              baseBranchRef: refOnBase,
+            },
+          },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(
+      state,
+      { kind: 'globalAsset.removeFile', id: baseAsset.id },
+      { now: T1 },
+    );
+    expect(out.next.local.pendingAttachmentDeletes).toEqual([baseAsset.slotId]);
+  });
+
+  it('removeFile does NOT queue a remote delete when the asset never had any push refs', () => {
+    // Asset is local-only (uploaded but never pushed) — no remote tree
+    // entry exists, so the queue stays empty. Saves a wasted delete
+    // entry in the next push tree.
+    const state = {
+      synced: makeSynced({
+        globalAssets: {
+          schemas: {},
+          graphql: {},
+          files: { [baseAsset.id]: baseAsset },
+        },
+      }),
+      local: makeLocal({
+        pendingFileUploads: {
+          [baseAsset.id]: {
+            slotId: baseAsset.slotId,
+            filename: baseAsset.filename,
+            mimeType: baseAsset.mimeType,
+            sha256: baseAsset.sha256!,
+            size: baseAsset.size,
+            queuedAt: T0,
+          },
+        },
+      }),
+    };
+    const out = applyMutation(state, { kind: 'globalAsset.removeFile', id: baseAsset.id });
+    expect(out.next.local.pendingAttachmentDeletes ?? []).toEqual([]);
+  });
+
+  it('removeFile dedupes the slot id when a re-delete of the same slot is queued', () => {
+    // Defensive: an external writer (CLI) might run two delete patches
+    // in sequence with state from a partial earlier pass. The queue
+    // should never duplicate.
+    const state = {
+      synced: makeSynced({
+        globalAssets: {
+          schemas: {},
+          graphql: {},
+          files: {
+            [baseAsset.id]: { ...baseAsset, workingBranchRef: refOnWorking },
+          },
+        },
+      }),
+      local: makeLocal({
+        pendingAttachmentDeletes: [baseAsset.slotId],
+      }),
+    };
+    const out = applyMutation(state, { kind: 'globalAsset.removeFile', id: baseAsset.id });
+    expect(out.next.local.pendingAttachmentDeletes).toEqual([baseAsset.slotId]);
+  });
+
   it('markPushed sets workingBranchRef without touching baseBranchRef', () => {
     const state = {
       synced: makeSynced({

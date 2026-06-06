@@ -4,6 +4,7 @@ import type { FormDataRow, GlobalFileAsset, Request as ApiRequest } from '@apici
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 import { FileAssetStatusPill } from '../../primitives/FileAssetStatusPill';
+import { FilePickerMenu } from '../../primitives/FilePickerMenu';
 import { useRowKeyboardNav } from './useRowKeyboardNav';
 
 interface FormDataEditorProps {
@@ -227,7 +228,7 @@ function FormDataRowView({
           className="h-7 flex-[2] rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
         />
       ) : (
-        <div className="flex h-7 flex-[2] items-center gap-2 rounded-sm border border-border bg-card px-2 text-xs">
+        <>
           <input
             ref={fileInput}
             type="file"
@@ -241,7 +242,11 @@ function FormDataRowView({
             }}
           />
           {row.slotId && row.filename ? (
-            <>
+            // Bound state: the row carries a file. Render a bordered
+            // "field" surface that matches the text-row value field's
+            // width (`flex-[2]`) and shows filename + library badge +
+            // status pill + size + clear button.
+            <div className="flex h-7 flex-[2] items-center gap-2 rounded-sm border border-border bg-card px-2 text-xs">
               <span className="truncate text-text-primary" title={row.filename}>
                 {row.filename}
               </span>
@@ -262,33 +267,25 @@ function FormDataRowView({
               >
                 <X size={12} />
               </button>
-            </>
+            </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => fileInput.current?.click()}
-              className="inline-flex items-center gap-1.5 text-text-muted hover:text-text-primary"
-            >
-              <FileUp size={12} />
-              Choose file
-            </button>
+            // Empty state: the picker IS the field. Filling the same
+            // `flex-[2]` column the bound row uses so the row never
+            // jumps width between empty and bound states, and the
+            // chevron sits flush with the column's right edge.
+            <div className="flex h-7 flex-[2] items-center">
+              <FilePickerMenu
+                libraryFiles={globalFiles}
+                onPickLocal={() => fileInput.current?.click()}
+                onPickLibrary={(id) => onUseGlobalFile(id)}
+                ariaLabel={`Pick file for form-data row ${index + 1}`}
+                triggerLabel="Pick file"
+                size="sm"
+                fullWidth
+              />
+            </div>
           )}
-          {globalFiles.length > 0 && (
-            <select
-              aria-label={`Form-data row ${index + 1} file asset`}
-              value={row.globalFileAssetId ?? ''}
-              onChange={(e) => onUseGlobalFile(e.target.value || null)}
-              className="h-5 max-w-[44%] shrink-0 rounded-sm border border-border bg-surface px-1 text-[0.625rem] text-text-muted focus:border-accent focus:outline-none"
-            >
-              <option value="">Library...</option>
-              {globalFiles.map((file) => (
-                <option key={file.id} value={file.id}>
-                  {file.name}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
+        </>
       )}
 
       <button

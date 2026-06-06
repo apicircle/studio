@@ -1007,6 +1007,21 @@ export interface WorkspaceLocal {
    * `synced.mockServers`.
    */
   assetUsageIndex?: Record<string, AssetUsage>;
+  /**
+   * Slot ids whose attachment blob needs to be DELETED from the working
+   * branch on the next push. Queued by `removeGlobalFileAsset` (and the
+   * headless `globalAsset.removeFile` patch) when the asset being
+   * deleted had any push provenance (`workingBranchRef` or
+   * `baseBranchRef`). The push emits `{path: '.apicircle/attachments/<slotId>',
+   * sha: null}` tree entries layered over `base_tree`, which GitHub
+   * treats as deletions. After a successful push, the queue is
+   * cleared — the deletion is durable on the working branch, and the
+   * eventual PR merge propagates it to the base branch.
+   *
+   * Without this queue, the asset would be removed from `workspace.json`
+   * but the orphan blob would persist on the remote tree forever.
+   */
+  pendingAttachmentDeletes?: string[];
 }
 
 export interface WorkspaceLocalSettings {

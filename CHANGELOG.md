@@ -25,6 +25,133 @@
 
 ## 1.0.9 - 2026-06-06
 
+### UX fix — file picker consolidates upload + library into one themed menu
+
+- **`FilePickerMenu` primitive replaces the dual-control pattern** in
+  the form-data row, binary body, and mock-response binary editors.
+  Before: every empty file row showed both a "Choose file" button AND
+  a separate `<select>` dropdown labelled "Library..." — two parallel
+  controls forcing the user to scan + decide between them, and the
+  `<select>`'s dropdown arrow + option list rendered with the browser's
+  default light styling against the dark dock. After: one themed
+  "Pick file ▾" trigger opens a single menu with "Upload new file…"
+  on top and (when present) a "From library" section listing every
+  reusable asset. Keyboard model mirrors `KebabMenu` — Enter/Space/
+  ArrowDown to open, Escape / outside-click to close, ArrowUp/Down to
+  cycle. The trigger supports a `fullWidth` mode so the empty state
+  fills the same column width as the bound state — without it the
+  picker drifted as a small button in a wide field surface, which
+  read as a broken layout. 9 unit tests pin the trigger, menu,
+  callbacks, focus, disabled state, and the full-width layout.
+  (`packages/ui-components/src/primitives/FilePickerMenu.tsx`,
+  `packages/ui-components/src/panels/editor/FormDataEditor.tsx`,
+  `packages/ui-components/src/panels/editor/BinaryEditor.tsx`,
+  `packages/ui-components/src/panels/mocks/MockResponseEditor.tsx`)
+
+### Bug fix — Global Assets panel no longer strands on a deleted asset
+
+- **Auto-clear `selectedId` when the selected asset disappears from
+  any of the three registries.** Previously, deleting the currently-
+  open file / schema / GraphQL definition left the right-side editor
+  mounted pointing at a now-invalid id; the editor rendered its
+  empty state and the user read it as a broken screen. A `useEffect`
+  in `GlobalAssetsDockPanel` now watches `selectedId` against the
+  live registries and resets it to `null` on disappearance. Covers
+  the UI delete path, the MCP `assets.delete_file` tool, and any
+  external write that lands via `refreshFromDisk`. Regression tests
+  pin the file-asset and GraphQL paths.
+  (`packages/ui-components/src/layout/dock/GlobalAssetsDockPanel.tsx`,
+  `packages/ui-components/src/layout/dock/GlobalAssetsDockPanel.test.tsx`)
+
+### Bug fix — deleting an asset now actually removes the blob from the remote
+
+- **`pendingAttachmentDeletes` queue + push-side tree deletion entries.**
+  Removing a Global File Asset that had push provenance
+  (`workingBranchRef` or `baseBranchRef`) used to drop the asset from
+  `workspace.json` but leave the orphan blob at
+  `.apicircle/attachments/<slotId>` on the remote tree forever — the
+  PR merge then carried the orphan into the base branch. The fix
+  queues the slot id at deletion time in a new
+  `WorkspaceLocal.pendingAttachmentDeletes: string[]`, and
+  `pushWorkspace` now emits one `{path: '.apicircle/attachments/<slotId>',
+sha: null}` tree entry per queued slot — the GitHub tree-API
+  delete shape we already used during the 1.0.9 `workspace.json`
+  cutover. After `updateRef` resolves the queue is cleared. The
+  attachment is gone from the working branch immediately; the
+  subsequent PR merge carries the deletion to the base branch
+  (typically `main`).
+  Safety filter: any queued slot id that matches an asset still in
+  `synced.globalAssets.files` is dropped before the push (defends
+  against a snapshot-restore that brought a previously-deleted asset
+  back). The `assetUsageAggregator` also self-heals ghost entries on
+  every `commitSynced` so the queue can't grow unbounded. Both the
+  UI `removeGlobalFileAsset` action and the headless
+  `globalAsset.removeFile` patch (used by the MCP
+  `assets.delete_file` tool) queue deletes, so AI clients get the
+  same behavior. Tests pin every layer — patch handler, MCP tool,
+  UI store action, push emission + post-success queue clear,
+  aggregator ghost prune, and the live-GitHub roundtrip (working
+  branch blob → 404 after delete + push, base-branch blob → 404 after
+  synthetic merge).
+  (`packages/shared/src/types.ts`,
+  `packages/core/src/workspace/applyMutation.ts`,
+  `packages/core/src/workspace/applyMutation.test.ts`,
+  `packages/ui-components/src/store/workspaceStore.ts`,
+  `packages/ui-components/src/store/pushWorkspace.test.ts`)
+
+### Bug fix — stale-state races in three mutation paths
+
+- **`pushWorkspace` post-`updateRef` race.** `stampPushedAssetRefs`
+  was called with the function-entry capture of `synced`, and the
+  final `set({ synced: nextSynced })` wiped any user mutation that
+  landed during the multi-second push (createBlob × N + createTree
+  - createCommit + updateRef). A file dropped into a form-data row
+    during a slow push would simply disappear after the push
+    completed. The fix layers stamps onto `get().synced` (live)
+    via a new `mergeStampsIntoLive` helper and reserves the
+    captured-stamped doc for the `lastPulledSnapshot` baseline (which
+    must reflect what's literally on the remote). New regression test
+    in `pushWorkspace.test.ts` parks the `createTree` fetch, injects a
+    mid-push asset addition, releases the parked fetch, and asserts
+    both assets survive.
+- **`addGlobalFileAsset` race.** Identical pattern: the action
+  awaited `createAttachmentFromFile` + `putAttachment`, then passed
+  a captured-state `result.synced` to `commitSynced(() => obj)` —
+  which ignored live state and wiped concurrent mutations. The fix
+  runs `addGlobalFileAssetAction` inside `commitSynced((s) => …)`
+  so the reducer operates on the live store and the new asset is
+  layered atop whatever else landed during the awaits. The same
+  pattern was applied to `fillGlobalFileAssetBytes`, which also
+  no-ops gracefully if the asset was deleted mid-await.
+  (`packages/ui-components/src/store/workspaceStore.ts`)
+- **Status pill priority order.** `deriveFileAssetState` checked
+  `workingBranchRef` before `pendingFileUploads`, so the
+  fill-bytes-on-an-already-pushed-asset flow showed "On working
+  branch" while the new bytes were still local-only. Pending bytes
+  now take priority, so the pill truthfully reads "Uploaded
+  locally" until the next push promotes the ref. Two regression
+  tests added.
+  (`packages/ui-components/src/primitives/FileAssetStatusPill.tsx`,
+  `packages/ui-components/src/primitives/FileAssetStatusPill.test.tsx`)
+
+### Bug fix — status pill no longer flickers "Missing" right after a push
+
+- **Refresh probe gains a 60-second grace window per ref.** GitHub's
+  Contents API has a propagation lag of several seconds after a Git
+  Data API write — but the asset-ref verification probe used the
+  Contents API to confirm each `workingBranchRef` after every refresh.
+  A cold-launch refresh that fired right after `pushWorkspace` could
+  null the `workingBranchRef` the push had just stamped (Contents API
+  returned 404 for the same blob the push had committed), flipping the
+  status pill to "Missing" until the PR merged and the base-branch
+  probe re-discovered the file. The fix: trust any ref whose
+  `verifiedAt` is within the last 60 seconds without re-probing, plus
+  opportunistic re-probe of the working branch when the ref is null —
+  so a previously-lost ref recovers on the next refresh without
+  needing another push. Regression tests pin both paths.
+  (`packages/ui-components/src/store/workspaceStore.ts`,
+  `packages/ui-components/src/store/refreshWorkspace.test.ts`)
+
 ### Global File Assets — provenance state machine + unified upload flow
 
 - **All file uploads now mint a reusable Global Asset.** Dropping a file

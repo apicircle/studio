@@ -6,7 +6,6 @@ import {
   generateId,
   getAllowedMockResponseBodyTypes,
   makeDefaultMockResponseBody,
-  type GlobalFileAsset,
   type MockMultiplierSourceKind,
   type MockResponseBody,
   type MockResponseBodyType,
@@ -17,6 +16,7 @@ import {
 // import explicit so a future tree-shake doesn't quietly drop it.
 import { applyContentTypeForBodyType } from '@apicircle/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { FilePickerMenu } from '../../primitives/FilePickerMenu';
 import { MonacoBodyEditor } from '../../editors/MonacoBodyEditor';
 import { HeaderKeyAutocomplete, HeaderValueRecommendations } from '../editor/HeaderAutocomplete';
 import { cn } from '../../primitives/cn';
@@ -476,18 +476,32 @@ function BinaryBodyEditor({
     );
   }
 
+  // Single themed picker: "Upload new file..." + library section in
+  // one dropdown. Drag-and-drop onto the dashed dropzone still works
+  // for power users; the picker menu covers everyone else.
   return (
     <div className="space-y-2">
-      <GlobalFileAssetSelect
-        files={globalFiles}
-        value=""
-        onChange={(id) =>
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        onChange={(e) => void onPick(e.target.files?.[0])}
+        aria-hidden="true"
+      />
+      <FilePickerMenu
+        libraryFiles={globalFiles}
+        onPickLocal={() => fileInputRef.current?.click()}
+        onPickLibrary={(id) =>
           void setMockResponseGlobalFileAsset(
             attachmentSlot.serverId,
             attachmentSlot.endpointId,
-            id || null,
+            id,
           )
         }
+        ariaLabel="Pick file for the mock response binary body"
+        triggerLabel="Pick file"
+        size="sm"
+        fullWidth
       />
       <div
         onClick={() => fileInputRef.current?.click()}
@@ -502,56 +516,19 @@ function BinaryBodyEditor({
         className="flex cursor-pointer flex-col items-center gap-1 rounded-sm border-2 border-dashed border-border bg-card px-3 py-6 text-center text-[0.6875rem] text-text-muted hover:border-accent/40 hover:text-accent"
       >
         <Paperclip size={16} aria-hidden="true" />
-        <span>Click or drop a file to attach</span>
+        <span>Or drop a file here</span>
         <span className="text-[0.625rem] text-text-dim">
           Stored as a workspace attachment — survives push to Git.
         </span>
-        <input
-          ref={fileInputRef}
-          type="file"
-          className="hidden"
-          onChange={(e) => void onPick(e.target.files?.[0])}
-          aria-hidden="true"
-        />
       </div>
     </div>
   );
 }
 
-function GlobalFileAssetSelect({
-  files,
-  value,
-  onChange,
-}: {
-  files: GlobalFileAsset[];
-  value: string;
-  onChange: (id: string) => void;
-}) {
-  if (files.length === 0) {
-    return (
-      <p className="rounded-sm border border-border bg-surface px-2 py-1.5 text-[0.625rem] text-text-dim">
-        No reusable files in Global Assets.
-      </p>
-    );
-  }
-  return (
-    <label className="block text-[0.625rem] text-text-dim">
-      Reusable file
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-1 h-7 w-full rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
-      >
-        <option value="">Choose from Global Assets...</option>
-        {files.map((file) => (
-          <option key={file.id} value={file.id}>
-            {file.name} ({file.filename}, {formatBytes(file.size)})
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
+// `GlobalFileAssetSelect` was retired when the dual-control upload UI
+// folded into `FilePickerMenu`. Binding to a library file flows through
+// the same menu now — see `setMockResponseGlobalFileAsset` on the
+// picker's `onPickLibrary`.
 
 function FormDataBodyEditor({
   label,

@@ -392,6 +392,103 @@ test.describe('Live GitHub - global assets through linked workspaces @live-githu
     );
     expect(removedRemoteMockEndpoint.defaultResponse.body).toEqual({ type: 'binary', content: '' });
 
+    // ----- Attachment blob deletion on the remote ---------------------
+    //
+    // The bug this pins: removing a Global File Asset must also remove
+    // the orphan blob from `.apicircle/attachments/<slotId>` on the
+    // working branch. Without the `pendingAttachmentDeletes` queue + the
+    // push-side `{path, sha: null}` tree entries, the blob would
+    // persist on the remote tree forever — the PR merge would then
+    // carry the orphan into the base branch too. After the post-delete
+    // push above, the blob is gone from the working branch; the
+    // pendingAttachmentDeletes queue is cleared.
+    {
+      const blobPath = attachmentBlobPathV2(linked.fileAsset.slotId);
+      const url = `https://api.github.com/repos/${host.cfg.owner}/${host.cfg.name}/contents/${blobPath
+        .split('/')
+        .map(encodeURIComponent)
+        .join('/')}?ref=${encodeURIComponent(branch)}`;
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${host.cfg.token}`,
+          Accept: 'application/vnd.github+json',
+        },
+      });
+      expect(res.status).toBe(404);
+    }
+
+    // Local queue must be empty — the push consumed it.
+    const queueAfterDeletePush = await app.evaluate(
+      () => (window.__apicircleStore!.getState() as any).local.pendingAttachmentDeletes ?? [],
+    );
+    expect(queueAfterDeletePush).toEqual([]);
+
+    // ----- PR-merge propagation to base branch ------------------------
+    //
+    // Simulate the post-delete PR merge: copy the now-clean working
+    // branch's workspace.json onto the base branch AND issue a Contents
+    // API delete for the attachment blob on the base branch (so the
+    // base branch matches the post-merge state). After this, the blob
+    // is gone from both refs — exactly what the user expects when they
+    // delete and the merge lands.
+    {
+      // Sync workspace.json onto base — it no longer references the asset.
+      await updateWorkspaceJson(
+        host.cfg,
+        defaultBranch,
+        'e2e live: synthetic merge of delete to base',
+        (ws) => {
+          Object.assign(ws as Record<string, unknown>, removedRemote);
+        },
+      );
+      // Delete the attachment blob on base via the Contents API.
+      const blobPath = attachmentBlobPathV2(linked.fileAsset.slotId);
+      const probeUrl = `https://api.github.com/repos/${host.cfg.owner}/${host.cfg.name}/contents/${blobPath
+        .split('/')
+        .map(encodeURIComponent)
+        .join('/')}?ref=${encodeURIComponent(defaultBranch)}`;
+      const probe = await fetch(probeUrl, {
+        headers: {
+          Authorization: `Bearer ${host.cfg.token}`,
+          Accept: 'application/vnd.github+json',
+        },
+      });
+      const sha = probe.ok ? ((await probe.json()) as { sha?: string }).sha : null;
+      if (sha) {
+        const deleteUrl = `https://api.github.com/repos/${host.cfg.owner}/${host.cfg.name}/contents/${blobPath
+          .split('/')
+          .map(encodeURIComponent)
+          .join('/')}`;
+        const delRes = await fetch(deleteUrl, {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${host.cfg.token}`,
+            Accept: 'application/vnd.github+json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: 'e2e live: synthetic merge of attachment deletion',
+            sha,
+            branch: defaultBranch,
+          }),
+        });
+        expect(delRes.ok).toBe(true);
+      }
+
+      // Verify the blob is now ALSO gone from the base branch.
+      const checkUrl = `https://api.github.com/repos/${host.cfg.owner}/${host.cfg.name}/contents/${blobPath
+        .split('/')
+        .map(encodeURIComponent)
+        .join('/')}?ref=${encodeURIComponent(defaultBranch)}`;
+      const checkRes = await fetch(checkUrl, {
+        headers: {
+          Authorization: `Bearer ${host.cfg.token}`,
+          Accept: 'application/vnd.github+json',
+        },
+      });
+      expect(checkRes.status).toBe(404);
+    }
+
     const refreshed = await app.evaluate(
       async ({ ids, sourceSchemaId, sourceGraphqlId }) => {
         const api = window.__apicircleStore!.getState() as any;

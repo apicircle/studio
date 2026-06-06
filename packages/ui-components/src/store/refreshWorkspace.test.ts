@@ -452,6 +452,152 @@ describe('workspaceStore.refreshWorkspace', () => {
     expect(assetAfter.baseBranchRef ?? null).toBeNull();
   });
 
+  // Regression: a workingBranchRef stamped within the last 60 seconds is
+  // trusted as-is — verifyAssetRefs does NOT probe it. This is what stops
+  // the post-push "Missing" flicker the user reported: the push commit
+  // lands via the Git Data API (strongly consistent), but GitHub's
+  // Contents API has a propagation window of several seconds during
+  // which it returns 404 for the same path. Before the grace window,
+  // the cold-launch refresh that fires right after `pushWorkspace`
+  // would null the workingBranchRef the push had just stamped.
+  it('trusts a freshly-stamped workingBranchRef without probing (Contents-API propagation grace)', async () => {
+    await setupConnectedBranch();
+    const startSynced = useWorkspaceStore.getState().synced!;
+    const assetId = 'asset-fresh';
+    const slotId = 'slot-fresh';
+    // verifiedAt = NOW so the grace window is active.
+    const justNow = new Date().toISOString();
+    const initialSynced: WorkspaceSynced = {
+      ...startSynced,
+      globalAssets: {
+        ...startSynced.globalAssets,
+        files: {
+          [assetId]: {
+            id: assetId,
+            name: 'Just pushed',
+            slotId,
+            filename: 'fresh.bin',
+            size: 1,
+            mimeType: 'application/octet-stream',
+            sha256: 'sha-fresh',
+            createdAt: '2026-06-06T00:00:00.000Z',
+            updatedAt: justNow,
+            workingBranchRef: {
+              branchName: 'apicircle/wb-aaa',
+              blobSha: 'blob-fresh',
+              commitSha: 'commit-fresh',
+              verifiedAt: justNow,
+            },
+          },
+        },
+      },
+    };
+    useWorkspaceStore.setState({
+      synced: initialSynced,
+      local: {
+        ...useWorkspaceStore.getState().local!,
+        sync: {
+          ...useWorkspaceStore.getState().local!.sync,
+          lastPulledSnapshot: initialSynced,
+          lastPulledSha: 'sha-base',
+          lastPulledAt: '2026-06-06T00:00:00.000Z',
+        },
+      },
+    });
+    // Queue: branchHeadOk, workspace.json (up-to-date), opportunistic base
+    // probe (404 — file isn't on main yet, no PR merged). NO working-branch
+    // probe — the grace window MUST skip it. If a fourth fetch fires the
+    // mock will throw "unexpected fetch call #4", failing the test loudly.
+    vi.stubGlobal(
+      'fetch',
+      queuedFetch([
+        branchHeadOk(),
+        fileContents(initialSynced, 'sha-up-to-date'),
+        { body: { message: 'Not Found' }, status: 404 }, // base probe (opportunistic)
+      ]),
+    );
+    await useWorkspaceStore.getState().refreshWorkspace();
+    const assetAfter = useWorkspaceStore.getState().synced!.globalAssets.files![assetId];
+    expect(assetAfter.workingBranchRef).toMatchObject({
+      branchName: 'apicircle/wb-aaa',
+      blobSha: 'blob-fresh',
+    });
+    expect(assetAfter.baseBranchRef ?? null).toBeNull();
+  });
+
+  // Regression: when workingBranchRef is null AND a working branch is
+  // connected, verifyAssetRefs opportunistically probes the working
+  // branch and re-stamps if the blob is there. Recovers from a previous
+  // probe that mistakenly nulled the ref (e.g. a Contents-API 404 that
+  // landed after the grace window expired but before propagation).
+  it('opportunistically re-discovers a missing workingBranchRef when the blob is reachable', async () => {
+    await setupConnectedBranch();
+    const startSynced = useWorkspaceStore.getState().synced!;
+    const assetId = 'asset-rediscover';
+    const slotId = 'slot-rediscover';
+    const initialSynced: WorkspaceSynced = {
+      ...startSynced,
+      globalAssets: {
+        ...startSynced.globalAssets,
+        files: {
+          [assetId]: {
+            id: assetId,
+            name: 'Recoverable',
+            slotId,
+            filename: 'r.bin',
+            size: 1,
+            mimeType: 'application/octet-stream',
+            sha256: 'sha-r',
+            createdAt: '2026-06-06T00:00:00.000Z',
+            updatedAt: '2026-06-06T00:00:00.000Z',
+            workingBranchRef: null,
+            baseBranchRef: null,
+          },
+        },
+      },
+    };
+    useWorkspaceStore.setState({
+      synced: initialSynced,
+      local: {
+        ...useWorkspaceStore.getState().local!,
+        sync: {
+          ...useWorkspaceStore.getState().local!.sync,
+          lastPulledSnapshot: initialSynced,
+          lastPulledSha: 'sha-base',
+          lastPulledAt: '2026-06-06T00:00:00.000Z',
+        },
+      },
+    });
+    function attachmentResponse(): ResponseSpec {
+      return {
+        body: {
+          type: 'file',
+          path: `.apicircle/attachments/${slotId}`,
+          sha: 'blob-recovered',
+          size: 1,
+          content: btoa('x'),
+          encoding: 'base64',
+        },
+      };
+    }
+    vi.stubGlobal(
+      'fetch',
+      queuedFetch([
+        branchHeadOk(),
+        fileContents(initialSynced, 'sha-up-to-date'),
+        attachmentResponse(), // opportunistic working-branch probe → found
+        { body: { message: 'Not Found' }, status: 404 }, // base probe (opportunistic)
+      ]),
+    );
+    await useWorkspaceStore.getState().refreshWorkspace();
+    const assetAfter = useWorkspaceStore.getState().synced!.globalAssets.files![assetId];
+    expect(assetAfter.workingBranchRef).toMatchObject({
+      branchName: 'apicircle/wb-aaa',
+      blobSha: 'blob-recovered',
+    });
+    expect(assetAfter.baseBranchRef ?? null).toBeNull();
+  });
+
   it('stashes the diff for the resolver when conflicts exist; commitRefresh applies the picks', async () => {
     await setupConnectedBranch();
     const localSynced = useWorkspaceStore.getState().synced!;

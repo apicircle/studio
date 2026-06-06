@@ -57,7 +57,12 @@ describe('FormDataEditor', () => {
     const id = await setupFormDataRequest();
     await userEvent.click(await screen.findByRole('button', { name: /Add file/i }));
     expect(fileRow(id).slotId).toBeNull();
-    expect(screen.getByRole('button', { name: /Choose file/i })).toBeInTheDocument();
+    // The empty file row shows the unified `FilePickerMenu` trigger
+    // (formerly a "Choose file" button — see FilePickerMenu.tsx for
+    // the rationale on consolidating the dual-control UX).
+    expect(
+      screen.getByRole('button', { name: /Pick file for form-data row/i }),
+    ).toBeInTheDocument();
   });
 
   it('picking a file via the input writes the blob to attachments and updates the row', async () => {
