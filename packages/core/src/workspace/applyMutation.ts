@@ -9,6 +9,7 @@ import type {
   MockResponseConfig,
   RequestBody,
   Request as ApiRequest,
+  SecretCryptoMeta,
   WorkspaceLocal,
   WorkspaceSnapshot,
   WorkspaceSnapshotTrigger,
@@ -77,6 +78,10 @@ export function applyMutation(
       return applyEnvSetPriority(state, patch.order, now);
     case 'secretKey.upsert':
       return applySecretKeyUpsert(state, patch.meta, now);
+    case 'secret.crypto.set':
+      return applySecretCryptoSet(state, patch.crypto, now);
+    case 'secret.crypto.clear':
+      return applySecretCryptoClear(state, now);
     case 'assertion.upsert':
       return applyAssertionUpsert(state, patch.requestId, patch.assertion, now);
     case 'assertion.delete':
@@ -454,6 +459,46 @@ function applySecretKeyUpsert(
     meta: { ...state.synced.meta, updatedAt: now },
   };
   return { next: { ...state, synced }, changedIds: [meta.id] };
+}
+
+function applySecretCryptoSet(
+  state: WorkspaceState,
+  crypto: SecretCryptoMeta,
+  now: string,
+): ApplyMutationResult {
+  // Defensive: refuse to persist a malformed blob. The verifier MUST be
+  // populated — without it `unlockSecretCrypto` can't reject a wrong
+  // passphrase and we'd hand back a wrong key to every downstream
+  // decrypt. salt + iterations are equally non-negotiable.
+  if (
+    !crypto ||
+    crypto.kdf !== 'pbkdf2-sha256-v1' ||
+    !crypto.salt ||
+    !crypto.verifier ||
+    !(crypto.iterations >= 1)
+  ) {
+    return { next: state, changedIds: [] };
+  }
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    secretCrypto: { ...crypto },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  return { next: { ...state, synced }, changedIds: ['secret.crypto'] };
+}
+
+function applySecretCryptoClear(state: WorkspaceState, now: string): ApplyMutationResult {
+  // No-op if already cleared. Keeps `updatedAt` stable so repeated calls
+  // don't churn the synced doc.
+  if (!state.synced.secretCrypto) {
+    return { next: state, changedIds: [] };
+  }
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    secretCrypto: null,
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  return { next: { ...state, synced }, changedIds: ['secret.crypto'] };
 }
 
 // ---------------------------------------------------------------------------

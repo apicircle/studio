@@ -1243,3 +1243,100 @@ describe('applyMutation - folder.import_apicircle', () => {
     expect(out.next.synced.collections.folders['root-new'].name).toBe('Imported (2)');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Secret crypto handlers (P4)
+// ---------------------------------------------------------------------------
+
+describe('applyMutation - secret.crypto.set / clear', () => {
+  const goodCrypto = {
+    kdf: 'pbkdf2-sha256-v1' as const,
+    salt: 'AAAAAAAAAAAAAAAAAAAAAA==', // 16 zero bytes — only for tests
+    iterations: 100,
+    verifier: 'verifier-stub-base64',
+  };
+
+  it('secret.crypto.set installs the blob and stamps updatedAt', () => {
+    const state = {
+      synced: makeSynced({ secretCrypto: null }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(
+      state,
+      { kind: 'secret.crypto.set', crypto: goodCrypto },
+      { now: T1 },
+    );
+    expect(out.next.synced.secretCrypto).toEqual(goodCrypto);
+    expect(out.next.synced.meta.updatedAt).toBe(T1);
+    expect(out.changedIds).toEqual(['secret.crypto']);
+  });
+
+  it('secret.crypto.set rejects an unsupported KDF (no mutation)', () => {
+    const state = { synced: makeSynced({ secretCrypto: null }), local: makeLocal() };
+    const out = applyMutation(
+      state,
+      {
+        kind: 'secret.crypto.set',
+        crypto: { ...goodCrypto, kdf: 'argon2-future' as 'pbkdf2-sha256-v1' },
+      },
+      { now: T1 },
+    );
+    expect(out.next.synced.secretCrypto).toBeNull();
+    expect(out.next.synced.meta.updatedAt).toBe(T0); // updatedAt unchanged
+    expect(out.changedIds).toEqual([]);
+  });
+
+  it('secret.crypto.set rejects a missing verifier (no mutation)', () => {
+    const state = { synced: makeSynced({ secretCrypto: null }), local: makeLocal() };
+    const out = applyMutation(
+      state,
+      { kind: 'secret.crypto.set', crypto: { ...goodCrypto, verifier: '' } },
+      { now: T1 },
+    );
+    expect(out.next.synced.secretCrypto).toBeNull();
+    expect(out.changedIds).toEqual([]);
+  });
+
+  it('secret.crypto.set rejects a non-positive iteration count', () => {
+    const state = { synced: makeSynced({ secretCrypto: null }), local: makeLocal() };
+    const out = applyMutation(
+      state,
+      { kind: 'secret.crypto.set', crypto: { ...goodCrypto, iterations: 0 } },
+      { now: T1 },
+    );
+    expect(out.next.synced.secretCrypto).toBeNull();
+    expect(out.changedIds).toEqual([]);
+  });
+
+  it('secret.crypto.set replaces an existing blob (rotation primitive)', () => {
+    const state = {
+      synced: makeSynced({ secretCrypto: goodCrypto }),
+      local: makeLocal(),
+    };
+    const next = { ...goodCrypto, verifier: 'new-verifier', salt: 'BBBBBBBBBBBBBBBBBBBBBA==' };
+    const out = applyMutation(state, { kind: 'secret.crypto.set', crypto: next }, { now: T1 });
+    expect(out.next.synced.secretCrypto).toEqual(next);
+    expect(out.changedIds).toEqual(['secret.crypto']);
+  });
+
+  it('secret.crypto.clear wipes the blob and stamps updatedAt', () => {
+    const state = {
+      synced: makeSynced({ secretCrypto: goodCrypto }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(state, { kind: 'secret.crypto.clear' }, { now: T1 });
+    expect(out.next.synced.secretCrypto).toBeNull();
+    expect(out.next.synced.meta.updatedAt).toBe(T1);
+    expect(out.changedIds).toEqual(['secret.crypto']);
+  });
+
+  it('secret.crypto.clear is a no-op when nothing is set', () => {
+    const state = {
+      synced: makeSynced({ secretCrypto: null }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(state, { kind: 'secret.crypto.clear' }, { now: T1 });
+    expect(out.next.synced.meta.updatedAt).toBe(T0);
+    expect(out.changedIds).toEqual([]);
+  });
+});

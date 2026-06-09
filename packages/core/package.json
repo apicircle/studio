@@ -3,6 +3,7 @@
   "version": "1.0.9",
   "private": false,
   "type": "module",
+  "sideEffects": false,
   "description": "Request execution, environment resolution, auth signing, assertions, spec imports, and the applyMutation workspace engine for API Circle Studio.",
   "keywords": [
     "apicircle",

@@ -3,6 +3,7 @@
   "version": "1.0.9",
   "private": false,
   "type": "module",
+  "sideEffects": false,
   "description": "Model Context Protocol server exposing API Circle Studio's workspace as a tool catalog. Used by Claude Desktop, ChatGPT, Cursor, GitHub Copilot, and any other MCP-compatible AI client.",
   "keywords": [
     "apicircle",

@@ -198,6 +198,9 @@ export {
 } from './secrets/crypto';
 export type { EncryptedPayload } from './secrets/crypto';
 
+export { initSecretCrypto, unlockSecretCrypto } from './secrets/passphraseKey';
+export type { SecretCrypto } from './secrets/passphraseKey';
+
 export { generateWorkingBranchName, slugify, validateBranchName } from './git/branchNames';
 export type { BranchNameOptions } from './git/branchNames';
 

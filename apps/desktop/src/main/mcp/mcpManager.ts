@@ -3,6 +3,11 @@ import * as path from 'path';
 import * as os from 'os';
 import { MCP_TOOL_NAMES, type McpToolName } from '@apicircle/shared';
 import type { ConfigSnippetVariants } from '@apicircle/ui-components';
+import {
+  buildSnippetVariants as sharedBuildSnippetVariants,
+  resolveAiClientConfigPath,
+  type AiClient as SharedAiClient,
+} from '@apicircle/mcp-server';
 
 // =============================================================================
 // McpManager — surfaces config snippets that the user pastes into their AI
@@ -15,17 +20,12 @@ import type { ConfigSnippetVariants } from '@apicircle/ui-components';
 // that calls this through IPC.
 // =============================================================================
 
-export type AiClient =
-  | 'claude-desktop'
-  | 'claude-code'
-  | 'cursor'
-  | 'continue'
-  | 'cline'
-  | 'zed'
-  | 'windsurf'
-  | 'github-copilot'
-  | 'chatgpt'
-  | 'generic';
+/**
+ * AiClient union — re-exported from `@apicircle/mcp-server` (Phase 5
+ * extraction). Both Desktop and VS Code consume the shared definition so a
+ * new client gets a single source of truth.
+ */
+export type AiClient = SharedAiClient;
 
 interface ResolvedPaths {
   binary: string;
@@ -79,62 +79,24 @@ export class McpManager {
    */
   getConfigSnippet(client: AiClient): ConfigSnippetVariants {
     const { binary, workspace } = this.resolvePaths();
-    return buildSnippetVariants(client, binary, workspace);
+    // Phase 5: delegates to the shared builder in @apicircle/mcp-server so
+    // VS Code's MCP manager produces byte-identical snippets for the same
+    // (binary, workspace) tuple.
+    return sharedBuildSnippetVariants(client, binary, workspace);
   }
 
   /**
    * Document the conventional path of the config file for each client so
    * the renderer can surface "Open in Finder / File Explorer" buttons.
+   *
+   * Phase 5: delegates to the shared resolver in `@apicircle/mcp-server` —
+   * Desktop + VS Code share the per-OS path conventions.
    */
   getConfigPath(client: AiClient): string | null {
-    const home = os.homedir();
-    const platform = process.platform;
-    switch (client) {
-      case 'claude-desktop':
-        if (platform === 'darwin') {
-          return path.join(home, 'Library/Application Support/Claude/claude_desktop_config.json');
-        }
-        if (platform === 'win32') {
-          return path.join(
-            process.env.APPDATA ?? path.join(home, 'AppData/Roaming'),
-            'Claude/claude_desktop_config.json',
-          );
-        }
-        return path.join(home, '.config/Claude/claude_desktop_config.json');
-      case 'cursor':
-        return path.join(home, '.cursor/mcp.json');
-      case 'continue':
-        return path.join(home, '.continue/config.json');
-      case 'zed':
-        return path.join(home, '.config/zed/settings.json');
-      default:
-        return null;
-    }
+    return resolveAiClientConfigPath(client, {
+      homedir: os.homedir(),
+      platform: process.platform,
+      appdata: process.env.APPDATA,
+    });
   }
-}
-
-// Centralized snippet builder. Kept outside the class so it's trivially
-// unit-testable without instantiating an Electron-coupled McpManager.
-function buildSnippetVariants(
-  _client: AiClient,
-  binary: string,
-  workspace: string,
-): ConfigSnippetVariants {
-  const forwardWorkspace = workspace.replace(/\\/g, '/');
-  const escaped = renderSnippet(binary, workspace);
-  const forwardSlash = renderSnippet(binary, forwardWorkspace);
-  return {
-    forwardSlash,
-    escaped,
-    identical: forwardSlash === escaped,
-  };
-}
-
-function renderSnippet(binary: string, workspace: string): string {
-  const entry = {
-    command: binary,
-    args: ['--workspace', workspace],
-    env: { APICIRCLE_WORKSPACE: workspace },
-  };
-  return JSON.stringify({ mcpServers: { apicircle: entry } }, null, 2);
 }

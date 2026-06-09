@@ -1,0 +1,125 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://apicircle.dev/schemas/apicircle-request.schema.json",
+  "title": "APICircle Request",
+  "description": "YAML projection of a single APICircle workspace request. The canonical JSON shape lives in .apicircle/workspace.json; this YAML is a UI-only convenience the VS Code extension shows in a real text editor.",
+  "type": "object",
+  "required": ["name", "method", "url"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Display name shown in the TreeView"
+    },
+    "method": {
+      "type": "string",
+      "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+      "description": "HTTP method"
+    },
+    "url": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Full request URL. May contain {{variable}} refs and :pathParam placeholders"
+    },
+    "pathParams": {
+      "type": "object",
+      "description": "Values for :name or {name} placeholders in the URL",
+      "additionalProperties": { "type": "string" }
+    },
+    "query": { "type": "array", "items": { "$ref": "#/definitions/kvRow" } },
+    "headers": { "type": "array", "items": { "$ref": "#/definitions/kvRow" } },
+    "cookies": { "type": "array", "items": { "$ref": "#/definitions/kvRow" } },
+    "auth": { "$ref": "#/definitions/auth" },
+    "body": { "$ref": "#/definitions/body" },
+    "assertions": { "type": "array", "items": { "$ref": "#/definitions/assertion" } },
+    "extractions": { "type": "array", "items": { "$ref": "#/definitions/extraction" } },
+    "contextVars": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key", "value"],
+        "properties": {
+          "key": { "type": "string" },
+          "value": { "type": "string" }
+        }
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "kvRow": {
+      "type": "object",
+      "required": ["key", "value", "enabled"],
+      "properties": {
+        "key": { "type": "string" },
+        "value": { "type": "string" },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "none",
+            "inherit",
+            "bearer",
+            "basic",
+            "api-key",
+            "custom-header",
+            "oauth2-client-credentials",
+            "oauth2-auth-code",
+            "oauth2-pkce",
+            "oauth2-password",
+            "oauth2-implicit",
+            "oauth2-device",
+            "aws-sigv4",
+            "digest",
+            "ntlm",
+            "hawk",
+            "jwt-bearer"
+          ],
+          "description": "Auth scheme. The remaining fields depend on the chosen type."
+        }
+      }
+    },
+    "body": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["none", "json", "text", "form-data", "urlencoded", "binary", "xml", "graphql"]
+        },
+        "content": { "type": "string" }
+      }
+    },
+    "assertion": {
+      "type": "object",
+      "required": ["id", "kind", "op", "expected"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "type": "string", "enum": ["status", "header", "json-path", "duration"] },
+        "op": {
+          "type": "string",
+          "enum": ["equals", "not-equals", "contains", "lt", "gt", "matches"]
+        },
+        "target": { "type": "string" },
+        "expected": { "type": ["string", "number"] }
+      }
+    },
+    "extraction": {
+      "type": "object",
+      "required": ["id", "variable", "source", "path", "enabled"],
+      "properties": {
+        "id": { "type": "string" },
+        "variable": { "type": "string" },
+        "source": { "type": "string", "enum": ["body", "header", "cookie", "status"] },
+        "path": { "type": "string" },
+        "enabled": { "type": "boolean" }
+      }
+    }
+  }
+}

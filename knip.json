@@ -5,7 +5,8 @@
   "workspaces": {
     ".": {
       "entry": ["scripts/**/*.mjs"],
-      "ignoreDependencies": ["png2icons"]
+      "ignoreDependencies": ["png2icons"],
+      "ignore": ["scripts/vscode-bundle-budget.d.mts"]
     },
     "apps/desktop": {
       "entry": ["src/main/main.ts", "src/main/preload.ts", "scripts/*.mjs"],
@@ -17,6 +18,14 @@
     "e2e/desktop": {
       "entry": ["**/*.spec.ts"],
       "ignoreDependencies": ["@apicircle/cli", "electron", "tsx"]
+    },
+    "apps/vscode": {
+      "ignore": ["test/mocks/vscode.ts"],
+      "ignoreDependencies": ["@modelcontextprotocol/sdk", "@hono/node-server", "hono"]
+    },
+    "e2e/vscode": {
+      "entry": ["src/runTest.ts", "src/test/index.ts", "src/test/**/*.test.ts"],
+      "ignoreDependencies": ["vscode", "@apicircle/shared", "@types/glob"]
     }
   }
 }

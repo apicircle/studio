@@ -2,15 +2,22 @@
 
 API Circle ships a local mock server engine that turns OpenAPI / Swagger / Postman / Insomnia files into a running HTTP server on `localhost`. Definitions are workspace-scoped (push to git so teammates share them); runtime state is per-host.
 
-## Three runtimes, one engine
+## Four runtimes, one engine
 
-The same `@apicircle/mock-server-core` Hono app runs in three places:
+The same `@apicircle/mock-server-core` Hono app runs in four places:
 
-| Runtime                    | When to use                            | How to start                             |
-| -------------------------- | -------------------------------------- | ---------------------------------------- |
-| **Desktop App**            | Day-to-day development                 | Open the _Mocks_ panel → click **Start** |
-| **CLI** (`@apicircle/cli`) | CI, terminals, headless agents, Docker | `npx @apicircle/cli mock ./openapi.yaml` |
-| **Hosted** (future)        | Sharing mocks with non-developers      | TBD; engine is runtime-agnostic          |
+| Runtime                    | When to use                            | How to start                                  |
+| -------------------------- | -------------------------------------- | --------------------------------------------- |
+| **Desktop App**            | Day-to-day development                 | Open the _Mocks_ panel → click **Start**      |
+| **VS Code extension**      | Editing the workspace alongside code   | Mock view → ▶ Start, or `apicircle.startMock` |
+| **CLI** (`@apicircle/cli`) | CI, terminals, headless agents, Docker | `npx @apicircle/cli mock ./openapi.yaml`      |
+| **Hosted** (future)        | Sharing mocks with non-developers      | TBD; engine is runtime-agnostic               |
+
+The VS Code extension's `VsCodeMockController` wraps `InProcessMockController`
+(the same controller the CLI uses). It runs in the extension host process —
+no IPC, no sidecar. Server ids are internally namespaced by workspace id so
+multi-root workspaces with shared mock ids stay independent. When VS Code
+closes, every running mock dies; same model as the desktop app.
 
 ## CLI walkthrough
 
@@ -38,7 +45,18 @@ The CLI prints `Mock server listening on http://127.0.0.1:<port> with N endpoint
 3. Click **Start** to bind a free port. The card flips to a green badge with the live port.
 4. Click **Stop** to shut down without removing the definition.
 
-The web build of the app shows the same panel but disables the start/stop buttons. A banner explains: _Running mock servers is available in the Desktop App or CLI._
+The web build of the app shows the same panel but disables the start/stop buttons. A banner explains: _Running mock servers is available in the Desktop App, the VS Code extension, or the CLI._
+
+## VS Code walkthrough (Phase 3 alpha)
+
+1. Open the **Mock view** in the APICircle sidebar.
+2. Servers in `synced.mockServers` show alphabetically with `▶ :port` next to running ones and `◦` next to idle ones. Expand to see endpoints.
+3. Click a mock → opens its `.mock.yaml` virtual document (editable name/defaultPort/cors; source + endpoints read-only).
+4. **▶ Start Mock** above the `name:` line, or the inline ▶ icon in the tree, or the `apicircle.startMock` command.
+5. Once running, **■ Stop** and **↻ Restart** lenses appear in the YAML; the **MockStatusBar** at the bottom-left shows `Mocks: N (:port, …)`.
+6. When VS Code closes — every running mock dies. Same model as the desktop app.
+
+Running mocks survive workspace switches but reconcile on external deletes — pulling a git branch that removes a mock definition will auto-stop the orphaned server.
 
 ## How definitions are stored
 

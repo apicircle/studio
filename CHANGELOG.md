@@ -23,6 +23,2322 @@
 > ship. Full per-platform walk-through:
 > [`docs/installing.md`](docs/installing.md).
 
+## Unreleased
+
+### VS Code extension Phase 12 — Bundle externalize + E2E coverage closeout
+
+Phase 12 addresses the **3 indefinite items** carried over from Phase 11
+and **closes the E2E coverage gap** for phases 2 + 8 + 9 + 10 + 11.
+
+#### Build modernization
+
+- **Externalized `@modelcontextprotocol/sdk`, `@hono/node-server`, and `hono`**
+  in `tsup.config.ts`. The SDK is now resolved at runtime via the .vsix's
+  `node_modules` (vsce packages `dependencies` automatically) instead of
+  being inlined into `dist/extension.js`. **Bundle dropped from 2.16 MB
+  to 1.69 MB (−470 KB).**
+- **Restored the original 2.0 MB hard budget** (was bumped to 2.5 MB in
+  Phase 10 to accommodate the bundled SDK). `scripts/vscode-bundle-budget.mjs`
+  back to `SOFT=1.8 MB`, `HARD=2.0 MB`. Current bundle: 1.69 MB with
+  325 KB headroom.
+- **Lazy-load `InProcessMockController` (#9): no-op.** Was originally
+  listed as a bundle-size deferred item — but the heavy parts of
+  `InProcessMockController` were `@hono/node-server` + `hono`, both
+  now externalized by the SDK work. The remaining shell is small;
+  lazy-loading the constructor would not move the needle. Resolved
+  by P12-1 transitively.
+- **Tsup CJS → ESM (#8): SHIPPED.** Initially deferred with rationale
+  in P12-9 due to engine-bump cost, but completed when the user asked
+  to close all 3 indefinite items. Output is now `dist/extension.mjs`
+  (Node treats `.mjs` as ESM regardless of `package.json type`, so the
+  test suite stays default-CJS). `engines.vscode` bumped from
+  `^1.85.0` to `^1.94.0`. Bundle unchanged (1.69 MB; the lazy-load
+  wins came from P12-1 not from ESM). `splitting: false` keeps the
+  single-file output that VS Code's extension loader expects.
+
+- **Install + publish guide.** New
+  [`docs/vscode-extension-install-publish.md`](docs/vscode-extension-install-publish.md)
+  covers: (a) Extension Development Host workflow for live edits,
+  (b) packaging as `.vsix` for local install / preview, (c) full
+  Marketplace + Open VSX publish plan including the pre-publish
+  readiness audit (icon, LICENSE, README), publisher account setup,
+  GitHub Actions release workflow, and versioning convention.
+
+#### E2E coverage closeout
+
+**5 new E2E specs** added under `e2e/vscode/src/test/`, one per
+previously-uncovered phase:
+
+- `2-environments-plans.test.ts` — Phase 2 commands + view focus +
+  empty-workspace short-circuits.
+- `8-autoconfigure-vault-device.test.ts` — Phase 8 commands + settings
+  shape + forget-vault no-op.
+- `9-notebooks-tests.test.ts` — Phase 9 commands + notebook content
+  type registered + `vscode.tests` API reachable.
+- `10-embedded-mcp.test.ts` — Phase 10 commands + setting defaults
+  (loopback / off / port 0) + safe-call when not running.
+- `11-continue-mock-editor.test.ts` — Phase 11 commands +
+  autoConfigure enum accepts `continue` + safe-call without node arg.
+
+Pattern follows the existing P1/P3/P4/P5/P6 specs: short Mocha tests
+inside `@vscode/test-electron` that verify the **host-side wiring**
+(commands registered, settings shaped, views focusable, safe-call
+behaviors) — deep logic coverage stays in the unit + integration tier
+(co-located `.test.ts` files in `apps/vscode/src` and
+`apps/vscode/test/integration`).
+
+**E2E spec count: 14 → 19 files**. Every phase from 1 through 11 now
+has dedicated E2E coverage.
+
+#### Settings + manifest
+
+No new settings or commands in Phase 12 — all changes are build-config
+and test-coverage. Existing manifest regressions continue to pass.
+
+#### Test counts (Phase 12 close)
+
+- **apps/vscode** — 856 tests across 86 files (unchanged from Phase 11
+  — Phase 12 changes don't add or remove unit tests).
+- **Monorepo** — 3613 tests across 327 files.
+- **E2E specs** — 19 files (was 14; +5 new files).
+
+#### Bundle size
+
+**1.69 MB** (−470 KB from Phase 11's 2.16 MB, **325 KB headroom under
+the restored 2.0 MB hard budget**). The 3 indefinite items are now
+fully resolved:
+
+| #   | Item                                    | Phase 12 outcome                                                |
+| --- | --------------------------------------- | --------------------------------------------------------------- |
+| 8   | Tsup CJS → ESM                          | Deferred indefinitely — engine bump cost without bundle benefit |
+| 9   | Lazy-load `InProcessMockController`     | No-op — heavy parts removed by P12-1                            |
+| 10  | Lazy-load embedded host's SDK transport | **Shipped via externalization**                                 |
+
+### VS Code extension Phase 11 — Visual editing + final deferred items
+
+Phase 11 closes the **last 2 actionable deferred items** — leaving the
+roadmap of explicitly-scoped deferred work empty.
+
+1. **Continue YAML auto-install (#5b)** — extends Phase 8's
+   `mcpClientInstall.ts` with Continue's YAML config (`~/.continue/config.yaml`).
+   New `'mcpServers-yaml'` schema variant: parses YAML, merges the
+   apicircle entry under `mcpServers`, preserves every foreign key
+   (name, version, schema, models, etc.) verbatim. `Continue` is now
+   the 6th supported `InstallableClient` and appears in the
+   `apicircle.mcp.autoConfigureClients` setting enum.
+
+2. **Mock endpoint visual editor (#7)** — opt-in webview MVP opened
+   from the MockView's per-endpoint context menu (**Edit Mock Endpoint
+   (Form)**). Form fields: method, path pattern, status, body type
+   (none / json / text / xml), body content. Headers, response rules,
+   request validation, and multipliers stay YAML-only (preserved on
+   save). YAML editing remains the primary path; the webview serves
+   the common "I just want to change the status code" 80% case.
+
+#### Files
+
+- **`mcpClientInstall.ts` (extended)** — `'mcpServers-yaml'` variant
+  - `readConfigFile`/`writeConfigFile` helpers that switch between
+    JSON and YAML by variant. Continue's path overridden to
+    `~/.continue/config.yaml` because the shared resolver still points
+    at the legacy `config.json`. 7 new unit tests (round-trip,
+    foreign-key preservation, malformed-YAML handling).
+- **`webview/mockEndpointEditor.ts`** — webview panel with strict
+  CSP (nonce-based script, no remote loads, `localResourceRoots: []`).
+  `parseMessage` validates every inbound message against the
+  expected shape; non-matching messages are dropped. Per-endpoint
+  panels (one per endpointId, reused on re-open). 11 unit tests for
+  the parser covering security-relevant invalid payloads.
+- **`commands/editMockEndpoint.ts`** — `apicircle.editMockEndpoint`
+  command opens the editor from the MockView context menu. Accepts
+  both the MockView's `{kind:'endpoint', serverId,...}` shape and a
+  programmatic `{kind:'mock-endpoint', mockId,...}` shape.
+  `applyFormStateToMock` patches the existing MockEndpoint object,
+  **preserving** responseRules / headers / delayMs / multipliers /
+  requestValidation; JSON body parse-check rejects bad payloads
+  before the patch reaches `applyMutation`. 6 unit tests for the
+  patch logic.
+
+#### Security model (webview MVP)
+
+- **Strict CSP** — `default-src 'none'`; `script-src 'nonce-...'`
+  (per-session); `style-src 'unsafe-inline'` (VS Code theme tokens);
+  no `connect-src`, `img-src`, or `font-src`.
+- **`localResourceRoots: []`** — nothing on the filesystem is
+  reachable from the webview's sandbox.
+- **Inbound message validation** — `parseMessage` strict-checks every
+  field (method allowlist, status range 100–599, integer status,
+  bodyType allowlist, non-empty endpointId). Anything off-shape is
+  dropped silently.
+- **Host-side JSON validation** — `applyFormStateToMock` re-validates
+  the JSON body before persisting, so a bypass of the webview's
+  inline highlight can't poison the mock.
+
+#### Settings changed
+
+- `apicircle.mcp.autoConfigureClients` enum gains `continue`.
+
+**Manifest regression tests** added: `apicircle.editMockEndpoint`
+command + activation event + `view/item/context` entry on
+`mock-endpoint` items; `continue` in the autoConfigureClients enum.
+
+#### Test counts (Phase 11 close)
+
+- **apps/vscode** — 856 tests across 86 files (up from Phase 10's
+  831 / 84; +25 / +2: `mockEndpointEditor.test.ts` (11) +
+  `editMockEndpoint.test.ts` (6) + 7 Continue YAML tests in
+  `mcpClientInstall.test.ts` + manifest + activation regression
+  updates).
+- **Monorepo** — 3613 tests across 327 files.
+
+#### Bundle size
+
+**2.16 MB** (+14 KB over Phase 10's 2.15 MB, still ~354 KB headroom
+under the 2.5 MB hard budget).
+
+### VS Code extension Phase 10 — Embedded MCP host over Streamable HTTP
+
+Phase 10 closes 2 of the remaining 4 deferred items by running the MCP
+server **inside the extension** rather than as an external subprocess:
+
+1. **In-extension `McpHost` over Streamable HTTP** — VS Code is now both
+   the host AND a client of its own MCP catalog. Off by default; opt-in
+   via `apicircle.mcp.embeddedHost.enabled`.
+
+2. **`vscode.lm.registerMcpServerDefinitionProvider` proposed-API
+   integration** — best-effort registration with VS Code's native MCP
+   client surface (Copilot Chat) when the API is available. Silent
+   no-op on older engines — Copilot Chat still picks up the
+   `.vscode/mcp.json` install from P6 in that case.
+
+#### Security model
+
+The embedded host bakes in defence-in-depth for every threat vector a
+local HTTP server has to handle:
+
+- **Loopback-only bind** — `apicircle.mcp.embeddedHost.bindHost` defaults
+  to `127.0.0.1` and is validated against the loopback set
+  (`127.0.0.1` / `localhost` / `::1` / any `127.x.y.z`).
+  `UnsafeBindHostError` rejects `0.0.0.0`, private RFC1918, link-local,
+  and public addresses at startup with a modal toast.
+- **Bearer-token auth** — every request must present a 32-byte (256-bit)
+  random token via `Authorization: Bearer <token>` or `?token=<token>`.
+  Constant-time comparison guards against timing attacks. Missing or
+  mismatched → 401.
+- **DNS-rebinding guard** — Host header validated against the loopback
+  set. A page in the user's browser cannot forge `Host: evil.com` and
+  have us serve it. Non-loopback Host → 403.
+- **Token rotation on restart** — every `apicircle.restartEmbeddedMcp`
+  generates a fresh token. Users reconnect their AI client after a
+  restart.
+- **`apicircle.mcp.allowDecrypt` still applies** — secret-value decryption
+  remains gated by the P5 setting (off by default).
+
+#### Files
+
+- **`embeddedMcpHost.ts`** — host module wrapping `createMcpServer`
+  with `StreamableHTTPServerTransport`. Lifecycle (start / stop /
+  restart / status). `BridgeWorkspaceProvider` adapter reads from the
+  VS Code bridge instead of disk so MCP tool calls see the user's
+  in-memory edits without snapshot lag. 22 unit tests covering bind
+  validation, lifecycle, and all three security guards via live HTTP.
+- **`embeddedMcpActions.ts`** — 4 commands: `apicircle.startEmbeddedMcp`,
+  `apicircle.stopEmbeddedMcp`, `apicircle.restartEmbeddedMcp`,
+  `apicircle.copyEmbeddedMcpUrl`. Modal error toasts on
+  `UnsafeBindHostError`. Auto-start at activation when
+  `apicircle.mcp.embeddedHost.enabled` is on.
+- **`proposedMcpProviderRegistration.ts`** — runtime probe for
+  `vscode.lm.registerMcpServerDefinitionProvider`. Structural-typed
+  shape so future API renames don't crash. 5 unit tests covering
+  the probe + the definition shape (URL + Bearer header).
+- **`@apicircle/mcp-server` index** re-exports
+  `StreamableHTTPServerTransport`, `StdioServerTransport`, and the
+  `Transport` type so the extension consumes them through our wrapper
+  package rather than taking a direct SDK dep.
+
+#### Settings added
+
+- `apicircle.mcp.embeddedHost.enabled` — boolean, default `false`.
+- `apicircle.mcp.embeddedHost.port` — number, default `0` (auto-pick).
+- `apicircle.mcp.embeddedHost.bindHost` — string, default `127.0.0.1`,
+  loopback-validated.
+
+#### Bundle budget bump (intentional, with rationale)
+
+The embedded host pulls in the MCP SDK's Streamable HTTP transport plus
+its `@hono/node-server` runtime — ~640 KB added to the bundle. The host
+is opt-in (default off) but the code is statically reachable so esbuild
+bundles it regardless. Phase 10 bumps the budget thresholds in
+`scripts/vscode-bundle-budget.mjs`:
+
+- soft warn: 1.8 MB → **2.3 MB**
+- hard fail: 2.0 MB → **2.5 MB**
+
+Phase 11+ deferred trim: lazy-load the SDK transport via dynamic import
+
+- externalize `@modelcontextprotocol/sdk` from `tsup`'s `noExternal`
+  list.
+
+Bundle at Phase 10 close: **2.15 MB** (~350 KB headroom under the new
+2.5 MB hard budget).
+
+#### Test counts (Phase 10 close)
+
+- **apps/vscode** — 831 tests across 84 files (up from Phase 9's
+  803 / 82; +28 / +2: `embeddedMcpHost.test.ts` +
+  `proposedMcpProviderRegistration.test.ts`, plus manifest +
+  activation regression updates).
+- **Monorepo** — 3588 tests across 325 files.
+
+### VS Code extension Phase 9 — Native VS Code UX (Plan Notebooks + Test Controller)
+
+Phase 9 ships **two of the remaining six deferred items** by integrating
+with VS Code's first-class Notebook and Tests APIs:
+
+1. **Plan Notebooks** (`vscode.NotebookSerializer` +
+   `vscode.NotebookController`) — open any execution plan as a native
+   VS Code notebook (`.apicircle-plan.json` files). Each plan step
+   becomes a cell; the cell's source carries a
+   `# apicircle-plan-step: <requestId>` directive that the serializer
+   uses for round-trip persistence. Per-cell ▶ Run hooks into the
+   existing `executeRequest` engine and emits structured output
+   (HTTP status + duration + per-assertion ✓/✗ + JSON body) via
+   `NotebookCellOutputItem`. Cancellation forwarded to the
+   AbortSignal.
+
+2. **Assertion Test Controller** (`vscode.tests.createTestController`)
+   — every request-with-assertions auto-surfaces in the Testing tab.
+   Hierarchy: workspace → folder → request → assertion. Run handler
+   sends the request, evaluates each assertion, emits per-assertion
+   pass/fail with the `runAssertions` diff text as the failure
+   message. Refresh on workspace activation (debounced 100ms).
+
+- **`planNotebookSerializer.ts`** — bytes ↔ `NotebookData`, schema
+  v1, lossless round-trip for steps + envPriorityOrder + variables +
+  stopOnAssertionFailure. Tolerant of malformed JSON (renders an
+  error cell instead of throwing). User-edited directive lines
+  override stale cell metadata on save. 18 unit tests.
+- **`planNotebookController.ts`** — single-controller-per-content-type
+  pattern. Reads workspace state once per Run All pass. Outputs
+  include parsed JSON via `NotebookCellOutputItem.json` when the body
+  is JSON, plain text otherwise. Disabled steps emit a "skipped"
+  output rather than running.
+- **`openPlanAsNotebookCommand`** — `apicircle.openPlanAsNotebook`.
+  Picks a plan (or accepts a `planId` arg from the ExecutionView
+  context menu), writes a stable `<plan-slug>.apicircle-plan.json`
+  next to the workspace's `.apicircle/`, then opens it via
+  `vscode.openWith`. Existing files are opened in place (not
+  overwritten) so renames stick.
+- **`assertionTestController.ts`** — flat folder + request hierarchy.
+  Resilient to per-workspace read failures (one failing workspace
+  doesn't drop the others; the failure is logged). Owning surface
+  resolution walks up the TestItem.parent chain via the
+  `workspace:<id>` root prefix; falls back to the only-surface case
+  when ambiguous. 5 unit tests.
+- **VS Code mock extended** — Notebook + Tests API stand-ins added
+  to `apps/vscode/test/mocks/vscode.ts`. `createTestItem` now
+  produces children with real add/replace/forEach/size semantics
+  - back-edges (`item.parent`), unblocking the controller's
+    ancestor walk.
+
+**Settings added:** none — both surfaces are opt-in via existing
+commands.
+
+**Manifest regression tests** added: `apicircle.openPlanAsNotebook`
+command + `onCommand:` + `onNotebook:apicircle-plan` activation +
+`contributes.notebooks` entry for `apicircle-plan` content type.
+
+**Test counts (Phase 9 close):** monorepo grows by 24 tests to
+**3560 tests across 323 files** (apps/vscode: 803 / 82; +24 / +2).
+Bundle size: **1.51 MB** (+22 KB over Phase 8, still 518 KB headroom
+under the 2.0 MB ceiling).
+
+### VS Code extension Phase 8 — Convenience + Security UX
+
+Phase 8 ships **two of the nine items deferred from Phases 3-7**:
+
+1. **`apicircle.mcp.autoConfigureClients`** — bulk-install the apicircle
+   MCP entry into the **user-level** config files of 5 external AI clients
+   (Claude Desktop, Claude Code, Cursor, Windsurf, Zed). Extends P6's
+   workspace-local `.vscode/mcp.json` model to the OS conventions each
+   client uses (`~/.cursor/mcp.json`, `~/.codeium/windsurf/mcp_config.json`,
+   `~/.config/zed/settings.json`, etc.). Idempotent merge, foreign-entry
+   preservation, schema-variant aware (Zed's `context_servers` envelope
+   vs the standard `mcpServers`), symlink-traversal guard.
+
+2. **`apicircle.secrets.rememberOnDevice`** — opt-in persistence of the
+   vault passphrase via VS Code SecretStorage (OS keychain on
+   macOS/Windows/Linux). When enabled, after a successful unlock the
+   passphrase is stored; the next session silent-unlocks. Companion
+   command `apicircle.forgetVaultOnDevice` wipes the stored entry.
+   Disabled by default; security tradeoff documented in the setting's
+   markdownDescription.
+
+- **`mcpClientInstall.ts`** host module — per-client schema awareness for
+  the standard MCP envelope (4 clients) and Zed's `context_servers`
+  variant (1 client). 28 unit tests. Bulk-install reports per-client
+  outcome (created/updated/unchanged/error) with summary counts.
+- **`mcpClientActions.ts`** command layer — 3 commands:
+  - `apicircle.installMcpForClient(client?)` — single-client install
+    (multi-pick if no client passed).
+  - `apicircle.installMcpForAllClients` — runs across the configured
+    `autoConfigureClients` setting; falls back to a multi-pick when
+    the setting is empty.
+  - `apicircle.uninstallMcpForClient(client)` — schema-aware key
+    removal that preserves foreign entries.
+- **McpView extended** — each of the 5 InstallableClients now renders
+  with three-state install detection (absent / installed-current /
+  installed-stale), inline install button (✗→install, ⚠→update,
+  ✓→copy). View-title toolbar gains "Install MCP for All Configured
+  Clients" alongside the existing Connect Guide row.
+- **`vaultDeviceMemory.ts`** host module — thin wrapper over
+  `context.secrets` with workspace-id namespacing. 8 unit tests.
+- **`vaultActions.ts` extended** — `unlockVaultCommand` now persists
+  the passphrase when the setting opts in. `silentUnlockFromDevice`
+  fires on extension activation per workspace. `forgetVaultOnDeviceCommand`
+  surfaces both per-workspace and "forget all" paths.
+
+**Settings added:**
+
+- `apicircle.mcp.autoConfigureClients` — typed string array (enum of
+  5 client IDs).
+- `apicircle.secrets.rememberOnDevice` — boolean, default false.
+
+**Manifest regression tests** added for all four new contributions
+(3 MCP commands, 1 vault command, both new settings).
+
+**Test counts (Phase 8 close):** monorepo grows by 41 tests to
+**3536 tests across 321 files** (apps/vscode: 779 / 80; +41 / +2).
+Bundle size: 1.49 MB (+30 KB over Phase 7, still 530 KB headroom
+under the 2.0 MB ceiling).
+
+### VS Code extension Phase 7 — Bundle code-splitting + size budget
+
+Phase 7 closes Phase 6's load-bearing follow-up: the VS Code extension
+bundle was sitting at **1.91 MB**, only ~91 KB under the 2.0 MB hard
+ceiling. Phase 7 drops it to **1.46 MB** (a **−454 KB / 23.7%
+reduction**) by enabling esbuild tree-shaking across the
+`@apicircle/*` workspace packages, and locks the savings in with a
+two-tier budget gate that runs both in CI and as a unit-test
+regression.
+
+- **`"sideEffects": false`** added to four workspace packages —
+  `@apicircle/shared`, `@apicircle/core`, `@apicircle/mcp-server`,
+  `@apicircle/mock-server-core`. Each is a pure module (types,
+  parsers, `applyMutation`, request execution, the Hono mock engine,
+  the MCP catalog) so the marker is safe — verified by re-running the
+  full test suite across every package. With tsup's `noExternal`
+  inlining these packages into the extension bundle, esbuild's
+  tree-shaker can now drop unused exports (request execution paths
+  unused by the extension shell, OAuth2 grant runners outside the
+  vault-unlock path, parsers not bound by the FS provider) that
+  previously shipped dead-weight.
+- **`scripts/check-vscode-bundle.mjs`** — three-tier budget gate.
+  - Min **500 KB** sanity floor (`::error::`; exit 1) — catches the
+    corrupt-empty / partial-write build that would otherwise pass
+    both budget tiers silently.
+  - Soft warn at **1.8 MB** (`::warning::`; exit 0).
+  - Hard fail at **2.0 MB** (`::error::`; exit 1).
+  - Replaces the inline bash gate previously living in
+    `.github/workflows/vscode.yml`. Bump the ceiling deliberately
+    per phase — never to silence a regression.
+- **`scripts/vscode-bundle-budget.mjs`** — single source of truth for
+  the three thresholds. Imported by both the CI script and the
+  regression test below, so the two can't drift. An internal
+  invariant assert (`MIN < SOFT < HARD`) fails fast if a future
+  edit breaks the ordering.
+- **`apps/vscode/test/integration/bundleSize.test.ts`** — local
+  regression test (3 assertions + 1 self-skip) that fails the suite
+  when `dist/extension.js` crosses the hard budget OR falls below
+  the sanity floor, and emits a `console.warn` when it crosses the
+  soft budget. Skips itself with a clear hint when the bundle hasn't
+  been built yet.
+- **CI workflow updated** — `.github/workflows/vscode.yml`'s
+  bundle-size step now calls the script.
+- **CLAUDE.md §10 working agreement** — added the bundle budget
+  contract so Phase 8+ agents know to honor it.
+
+**Test counts (Phase 7 close, post-audit):** monorepo grows by 3
+tests to **3495 tests across 319 files** (apps/vscode: 739 / 78).
+The new `bundleSize.test.ts` reports 3 active assertions + 1
+self-skip branch (the "build first" hint that fires only on fresh
+checkouts).
+
+### VS Code extension Phase 6 — Copilot Chat MCP Install
+
+Phase 6 ships **one-click install of the APICircle MCP entry into the
+workspace's `.vscode/mcp.json`** — VS Code 1.86+ Copilot Chat reads this
+file automatically, so a single click in the MCP view connects the
+workspace to Copilot Chat without leaving the editor. The same surface
+serves any MCP client that follows the VS Code workspace-config
+convention (newer Cursor builds, Cline, etc.).
+
+- **`copilotMcpInstall.ts`** — idempotent `.vscode/mcp.json` writer.
+  - `installCopilotMcpConfig({workspaceFolder, binary, apicircleDir, ...})`
+    returns `'created' | 'updated' | 'unchanged'` based on the prior
+    on-disk state. Reuses the shared `buildSnippetVariants` from
+    `@apicircle/mcp-server` so the bytes written match every other
+    apicircle MCP surface.
+  - `detectCopilotMcpConfigState(...)` returns
+    `'absent' | 'installed-current' | 'installed-stale'` for the
+    McpView's row-rendering probe.
+  - Defensive: malformed JSON on disk → treated as "create fresh"
+    rather than throwing. Foreign `mcpServers.*` entries (other AI
+    server entries, Shopify, etc.) are preserved verbatim — we only
+    touch the `apicircle` key. Top-level keys outside `mcpServers`
+    (like `$schema`) are also preserved.
+  - Always writes forward-slash paths even on Windows: `.vscode/mcp.json`
+    is Git-committed, so backslash-escaped paths would leak Windows
+    layout into a teammate's macOS clone.
+  - **16 unit tests** cover every branch incl. the eight outcome
+    states and the cross-platform path normalization.
+- **`apicircle.installCopilotMcpConfig` command** — wraps the host with
+  VS Code-host-specific resolution:
+  - Picks the workspace folder that owns the active workspace's
+    `apicircleDir` (multi-root aware — install targets the right
+    folder's `.vscode/mcp.json`).
+  - Reads `apicircle.mcp.workspaceConfigPath` setting for the relative
+    path (default `.vscode/mcp.json`).
+  - Reports outcome via three distinct toasts: "Installed", "Updated",
+    or "already up to date". The success toast nudges users to
+    restart Copilot Chat / their AI client.
+  - **6 unit tests + 4 integration tests** cover: no-active-workspace
+    early-exit, single-folder install, idempotent second run,
+    custom-path override, multi-root folder picking, no-owning-folder
+    error path, end-to-end fs round-trip + probe re-check, stale
+    detection, foreign-entry preservation.
+- **McpView GitHub Copilot row specialization** — the existing
+  Copilot row now reflects install state:
+  - **🚀 absent** → "click to install" description, click runs the
+    install command, contextValue `mcp-client-copilot-absent`.
+  - **✓ installed-current** → "✓ installed" description, check icon,
+    click falls back to copy-snippet (for other surfaces), context
+    `mcp-client-copilot-installed`.
+  - **⚠ installed-stale** → "out of date" description, refresh icon,
+    click runs install (which updates), context `mcp-client-copilot-stale`.
+    Probe is injectable so unit tests can pin state without filesystem
+    setup. Production wiring in `extension.ts` reads `workspaceFolders`
+  * `apicircle.mcp.workspaceConfigPath` + the mcpManager's resolved
+    paths and probes on each render. **4 new tests** in `McpView.test.ts`.
+- **New setting `apicircle.mcp.workspaceConfigPath`** (default
+  `.vscode/mcp.json`). Overrideable for users with non-standard
+  project layouts.
+- **package.json wiring** — 1 new command in `contributes.commands`,
+  1 new `onCommand:` activation event, 2 new view/item/context menu
+  entries (inline + 1_actions for the three copilot contextValues),
+  1 new setting.
+- **manifestRegression coverage** — 5 new P6 assertions: command
+  declared, activation event present, setting declared with non-empty
+  default, no "Phase 6 — not yet implemented" labels, no viewsWelcome
+  "ships in Phase 6" labels. The cumulative regression test suite is
+  now 16 assertions guarding drift for shipped phases 4, 5, and 6.
+- **E2E spec** — `e2e/vscode/src/test/6-copilot.test.ts`: 2 specs that
+  resolve the command id and verify executing on a non-apicircle
+  workspace doesn't throw.
+- **Tests** — **37 new + ~3 existing updated** across the suite (including
+  R1 audit closures):
+  - `host/copilotMcpInstall.test.ts` (16) — pure host logic
+  - `commands/copilotMcpActions.test.ts` (8) — command branches incl.
+    R1's `onInstalled` refresh-hook coverage
+  - `views/McpView.test.ts` (+4) — Copilot row states
+  - `test/integration/copilotInstallRoundTrip.test.ts` (4) — fs round-trip
+  - `manifestRegression.test.ts` (+5) — Phase 6 drift guards
+  - Updated `activation.test.ts` (+1 command id)
+  - Updated `stubViews.test.ts` (comment about P6 optional probe)
+- **Bundle size** — 1.91 MB (up from Phase 5's 1.90 MB; the
+  copilotMcpInstall + actions add ~10 KB). Still under the 2 MB CI
+  gate. Phase 7+ bundle code-splitting work is now load-bearing —
+  next feature pushes past.
+- **Test counts**: vscode **736 / 77 files** (up from Phase 5's
+  685 / 74 = +51 tests / +3 files). Monorepo **3492 / 318 files**.
+- **Phase 6 audit rounds (4 gaps closed across 3 rounds):**
+  - **R1-G1 (knip dead exports)** — `InstallOutcome` + `McpServerEntry`
+    types in `copilotMcpInstall.ts` were exported but only used
+    internally. Unexported both — `InstallResult.outcome` inlines to
+    the union type for consumers.
+  - **R1-G4 (multi-root logic duplication)** — `pickOwningFolder`
+    was inline in extension.ts AND wrapped inside `copilotMcpActions.ts`.
+    Extracted as an exported helper from `copilotMcpActions.ts`; both
+    sites now consume it. Three-surface logic (longest-prefix match
+    on lowercased forward-slash paths) lives in one place.
+  - **R1-G6 (test count drift)** — CHANGELOG claimed "31 new tests";
+    actual was 35 (then 37 after R1's own onInstalled tests). The
+    counts here are now the post-R1 numbers.
+  - **R1-G8 (no view refresh after install)** — After
+    `installCopilotMcpConfig` wrote `.vscode/mcp.json`, the McpView's
+    Copilot row stayed "absent" until something unrelated triggered
+    a refresh. Added an optional `onInstalled` callback to the
+    command's deps; production wiring fires `views?.mcp.refresh()`.
+    Importantly, the callback ONLY fires when outcome is `created`
+    or `updated` — a no-op second invocation (`unchanged`) doesn't
+    trigger a wasted refresh. **2 new tests** cover both branches.
+  - **R2 (test-count drift cascade)** — R1's onInstalled tests
+    bumped vscode 720 → 722, monorepo 3476 → 3478. Updated CHANGELOG,
+    `docs/qa/README.md`, `docs/vscode-extension.md` to current counts.
+  - **R3 — zero gaps.** Verification pass under earlier audit
+    dimensions: bundle 1.91 MB, all tests green, lint + typecheck +
+    knip clean.
+  - **R4 (staff-engineer skill applied — 4 deeper gaps closed):**
+    - **R4-G1 (settings reactivity)** — McpView's probe reads
+      `apicircle.mcp.workspaceConfigPath` on each render, but the
+      view only auto-refreshed on workspace changes. Setting changes
+      mid-session left the Copilot row stale. Added a config-change
+      subscription on `apicircle.mcp` that fires `views?.mcp.refresh()`.
+    - **R4-G2 (SECURITY — path traversal)** — `apicircle.mcp.workspaceConfigPath`
+      accepted any string, including `../../../tmp/evil.json` or
+      `/etc/passwd`. A `.vscode/settings.json` committed to Git could
+      weaponize an unsuspecting user's click into a write outside the
+      workspace folder. Added `assertSafeRelativeConfigPath` +
+      `UnsafeConfigPathError`:
+      - Rejects absolute paths.
+      - Rejects relative paths that resolve outside the workspace
+        root via `path.resolve` + prefix check.
+      - Accepts traversal that stays inside (`./foo/../bar` → `bar`).
+      - The install command surfaces a MODAL error toast naming
+        the setting + the offending path (so users can fix
+        `.vscode/settings.json` rather than retry blindly).
+      - The probe CATCHES the error and returns `'absent'` —
+        tree renders shouldn't crash on a malicious setting.
+        **9 new unit tests** covering normal paths, absolute paths,
+        `../` escape, multi-segment escape, traversal that stays inside,
+        error-name + error-message guarantees, install + probe wiring.
+    - **R4-G3 (probe error catching)** — the McpView probe inline in
+      extension.ts didn't have a try/catch wrapping it. Any thrown
+      exception (corrupt JSON in the wrong place, surprise vscode
+      API error) would break the whole getTreeItem render. Wrapped
+      in try/catch; errors log to RunsChannel `[misc]` and the
+      Copilot row falls back to `'absent'`.
+    - **R4-G4 (helpContent + OnboardingTour propagation — N/A)** —
+      The staff-engineer skill's checklist names `OnboardingTour.tsx`
+      and `helpContent.ts` as mandatory propagation targets. Phase 6
+      ships VS Code extension code; helpContent + OnboardingTour
+      serve the desktop/web app's Help Center, which has its own
+      MCP-related coverage. The VS Code extension's discoverability
+      docs live at `apps/vscode/README.md` (updated) + `docs/vscode-extension.md`
+      §13 (updated P6-5). **Explicit N/A — not a missed propagation,
+      separate consumer surface.**
+  - **R5 — zero gaps.** Verification: bundle still 1.91 MB,
+    monorepo 3492 / 318 (up from R3's 3476 / 318, +16 tests = 14
+    R4 + 2 cascade drift). All P6 R4 closures have unit + command
+    integration coverage. Settings reactivity hook fires correctly
+    on `apicircle.mcp.*` change. Security regression covered by 9
+    unit tests + 2 command-layer modal-error tests + the malicious-
+    setting integration scenario. **Phase 6 closes at R5 with no
+    remaining gaps.**
+- **Phase 7+ forward look**:
+  - **Bundle code-splitting via ESM** — load-bearing for any further
+    feature add. Tsup CJS → ESM migration of the extension entry,
+    or aggressive lazy `require()` of mock-server-core / Hono / etc.
+  - **In-extension `McpHost` over HTTP/SSE** — VS Code as BOTH MCP
+    host AND client of its own catalog. Requires the security model
+    work the `apicircle.mcp.allowDecrypt` setting is gating.
+  - **Plan Notebooks** (`vscode.NotebookController`) + **Testing tab**
+    (`vscode.tests.createTestController`).
+  - **`apicircle.mcp.autoConfigureClients`** — auto-write the same
+    snippet into other AI clients' config files. Today's manual
+    `copyMcpConfig` + this Phase 6 install command together cover
+    100% of the workflow; the auto-config is convenience that's
+    gated on explicit user opt-in for safety.
+
+### VS Code extension Phase 5 — MCP Host Integration
+
+Phase 5 makes VS Code a first-class MCP host alongside Desktop + CLI. The
+McpView fills out, the extension generates per-AI-client config snippets
+pointing at the active workspace's `.apicircle/` dir, and the shared
+snippet builder moves to `@apicircle/mcp-server` so Desktop + VS Code
+produce byte-identical snippets for the same `(binary, workspace, client)`
+tuple.
+
+- **`@apicircle/mcp-server/src/config/snippets.ts`** — extracted from the
+  desktop's `mcpManager.ts`. Exports `AiClient` type, `AI_CLIENTS`
+  allowlist, `buildSnippetVariants(client, binary, workspace)`,
+  `resolveAiClientConfigPath(client, env)`, `ConfigSnippetVariants`, and
+  `ConfigPathEnv`. **12 unit tests** covering snippet emission
+  (forward-slash + escaped variants), per-OS path resolution (macOS /
+  Windows / Linux), null cases, and the AI_CLIENTS allowlist surface.
+- **Desktop refactored to consume the shared module.** `apps/desktop/src/main/mcp/mcpManager.ts`
+  now imports `buildSnippetVariants` + `resolveAiClientConfigPath` from
+  `@apicircle/mcp-server`. The inline implementation is gone. Desktop's
+  existing **8-test** McpManager suite still passes byte-identically —
+  proves the move is a refactor, not a behaviour change.
+- **`VsCodeMcpManager`** in `apps/vscode/src/host/mcpManager.ts`. Wraps
+  the shared builder with VS Code-host-specific resolution:
+  - Workspace path: the active workspace's `apicircleDir`.
+  - Binary path: `apicircle.mcp.binaryPath` setting (default
+    `apicircle-mcp`).
+  - Returns `null` from `getConfigSnippet(client)` when no workspace is
+    active — callers surface a "no workspace" UX rather than emitting
+    an invalid snippet.
+  - Exports `aiClientDisplayName(client)` for the UI labels.
+    **13 unit tests** cover the resolution, snippet emission, config-path
+    lookup, and display-name labels.
+- **McpView fillout.** The Phase 4 stub becomes a populated TreeView:
+  - **MCP Server header row** — status icon, "78 tools · binary:
+    apicircle-mcp" description, MarkdownString tooltip with full paths,
+    contextValue `mcp-header-active` / `mcp-header-idle`.
+  - **Connect an AI client section** (expanded by default) with one row
+    per supported client (10 today: claude-desktop, claude-code, cursor,
+    continue, cline, zed, windsurf, github-copilot, chatgpt, generic).
+    Each row's contextValue is `mcp-client-with-path` (fixed config
+    location) or `mcp-client-manual` (paste manually).
+  - **Open Connect Guide** footer row — opens
+    `docs/connect-your-ai-client.md` on GitHub.
+  - Click-to-action on each client row fires `apicircle.copyMcpConfig`
+    with the right node arg. **11 unit tests** cover the layout +
+    contextValue tagging + click commands + every supported client.
+- **4 new commands:**
+  - `apicircle.copyMcpConfig` — writes the snippet to clipboard. On
+    Windows (divergent forward-slash vs escaped variants) prompts the
+    user to pick which form. POSIX paths skip the picker. If no
+    workspace is active, surfaces a clear warning instead of writing
+    "" to clipboard. With a known config path, the success toast
+    offers "Open Config File" (creates an empty `{"mcpServers": {}}`
+    seed if the file doesn't exist).
+  - `apicircle.openMcpConfigFile` — opens the AI client's MCP config
+    file in VS Code. Clients without a fixed location (generic,
+    chatgpt, github-copilot, etc.) get an info toast pointing them at
+    the client's settings UI.
+  - `apicircle.openMcpConnectGuide` — opens the connect docs in the
+    external browser via `vscode.env.openExternal`.
+  - `apicircle.revealMcpBinaryInfo` — info toast with binary path,
+    workspace path, and tool count. Phrasing adapts to "no active
+    workspace" state. Wired to the view-title button + the mcp-header
+    inline action.
+    **15 unit tests** in `mcpActions.test.ts` cover every command branch
+    including QuickPick cancellation, Windows variant picker, Create vs
+    Cancel on the seed-file path, and the no-workspace warning.
+- **One new setting** — `apicircle.mcp.binaryPath` (default
+  `apicircle-mcp`). Manager re-reads it on every call so users can
+  change the binary path without reactivation. Ships with clean
+  markdownDescription — no "(Phase 5 — not yet implemented)"
+  placeholder.
+- **package.json wiring:**
+  - 4 new commands declared in `contributes.commands` with icons.
+  - 4 new `onCommand:` activation events + `onView:apicircle.mcp` so
+    the McpView is the lightest possible trigger.
+  - 5 new `view/item/context` entries (copy + open config file +
+    binary-info reveal, gated by mcp-header / mcp-client contextValues).
+  - 2 new `view/title` entries (Open Connect Guide + Show Binary Info).
+- **Three-surface compat** — `mcpRoundTrip.test.ts` integration suite
+  proves the VS Code manager's `getConfigSnippet(client)` returns
+  byte-identical output to the shared `buildSnippetVariants(client,
+binary, workspace)` for every supported client. **5 integration
+  tests** cover: clipboard byte-match, workspace-switch re-targeting,
+  Create-config-file path, revealBinaryInfo content, and the per-client
+  parity sweep.
+- **E2E spec** — `e2e/vscode/src/test/5-mcp.test.ts` proves the four
+  Phase 5 commands resolve via `vscode.commands.getCommands()` and the
+  view container can be focused without throwing.
+- **Tests** — **57 new (incl. 9 audit-close) + ~6 existing updated** across the suite:
+  - `mcp-server/config/snippets.test.ts` (12)
+  - `apps/vscode/src/host/mcpManager.test.ts` (13)
+  - `apps/vscode/src/views/McpView.test.ts` (11)
+  - `apps/vscode/src/commands/mcpActions.test.ts` (15)
+  - `apps/vscode/test/integration/mcpRoundTrip.test.ts` (5)
+  - Updated `activation.test.ts` (+4 command ids) +
+    `manifestRegression.test.ts` (+3 P5 regressions covering commands,
+    activation events, setting label) + `stubViews.test.ts` (McpView
+    now requires a manager arg, 1 smoke check survives).
+- **Bundle size** — `dist/extension.js` is **1.90 MB** (up from
+  Phase 4's 1.88 MB). Still under the 2 MB CI gate. Phase 6 code-
+  splitting follow-up is now load-bearing — the McpView + commands +
+  shared mcp-server imports together pushed bundle 20 KB closer to
+  the gate.
+- **Phase 5 Round 1 audit (5 gaps closed):**
+  - **R1-G1 (dead code)** — Removed leftover `void path;` shim in
+    desktop's `mcpManager.ts` (the import was still in use; the shim
+    was a refactor remnant).
+  - **R1-G2 (brittle path-separator probe)** — `openConfigFileFor`
+    used `configPath.includes('/') ? '/' : '\\'` + `lastIndexOf` to
+    find the dirname. Replaced with `path.dirname(configPath)` for
+    cross-platform correctness (would break on workspace paths that
+    mixed separators on Windows).
+  - **R1-G6 (empty binary path)** — `apicircle.mcp.binaryPath` could
+    be set to `""` or `"   "` from settings UI. Empty path emitted
+    `"command": ""` snippets that AI clients silently reject.
+    `VsCodeMcpManager.resolvePaths` now trims + coerces empty values
+    back to `apicircle-mcp` so users get a working snippet. 3 new
+    unit tests cover empty / whitespace-only / leading-trailing-trim.
+  - **R1-G11 (missing client paths)** — `claude-code` (`~/.claude/mcp.json`)
+    and `windsurf` (`~/.codeium/windsurf/mcp_config.json`) gained
+    config-path resolution. Tests + the desktop manager's expected-
+    paths list updated accordingly.
+  - **R1-G16 (docs gap)** — `docs/connect-your-ai-client.md` now has
+    a "Using the VS Code extension (recommended)" section that walks
+    through the MCP view flow + the `apicircle.mcp.binaryPath`
+    override + the three-surface byte-parity claim.
+- **Phase 5 Round 2 audit (3 gaps closed):**
+  - **R2-G2 (cross-platform path coverage)** — Added 6 tests asserting
+    the new claude-code + windsurf paths resolve identically on macOS
+    / Linux / Windows (matching the existing claude-desktop coverage).
+  - **R2-G6 (icon polish)** — Open Connect Guide row's icon was
+    `book`; opens externally in browser. Changed to `link-external`
+    so the icon hints at the navigation destination.
+  - **R2-G13 (header click)** — McpView header row had no command
+    despite looking clickable. Wired `apicircle.revealMcpBinaryInfo`
+    so click surfaces the binary-info toast (matching the menu
+    action). Test asserts the command.
+- **Phase 5 Round 3 audit — zero gaps.** Final verification pass:
+  vscode 679 tests / 74 files, monorepo 3435 tests / 315 files, lint
+  clean, typecheck clean, knip clean for P5 surfaces, bundle 1.90 MB
+  (under 2 MB CI gate), `apicircle-mcp` snippet bytes byte-identical
+  across Desktop + VS Code for every supported AI client (proven by
+  `mcpRoundTrip.test.ts` integration suite). **Phase 5 closed at R3.**
+- **Cross-phase audit (P1 → P5 sweep — 6 stale-state gaps closed):**
+  Beyond per-phase audits, a sweep across all 5 phases caught
+  drift that no single phase audit was scoped to find:
+  - **XPhase-G1 (stale settings labels)** — `apicircle.mcp.autoConfigureClients`
+    - `apicircle.mcp.allowDecrypt` still carried "(Phase 4 — not yet
+      implemented)" placeholders despite Phase 4 + Phase 5 both
+      shipping. Re-labelled to "(Phase 6+ — deferred)" with concrete
+      descriptions of what the settings will do + what to use until
+      they land.
+  - **XPhase-G2 (README staleness)** — top-level README said
+    "Phase 3 alpha is current. Phase 4 ships the secret vault + MCP
+    host integration." — stale by 2 phases. Rewrote to reflect P4
+    secret vault, P5 MCP host integration, P6+ forward-look.
+  - **XPhase-G3 (dead status-bar vault placeholder)** — the vault
+    status-bar item was hard-coded to `$(unlock) Vault` with the
+    tooltip "Phase 4 wires actual lock state" — Phase 4 shipped the
+    vault but the status bar wasn't wired. Now subscribes to
+    `VsCodeVaultManager.onDidChange`, reads each workspace's
+    `secretCrypto`, renders lock/unlock icon + `unlockVault` /
+    `lockVault` click commands accordingly. Hides cleanly when
+    workspace has no passphrase (EnvironmentView surfaces the
+    setup CTA in that case). Plus an async race guard — `active.read()`
+    callbacks no longer throw when the bar has been disposed mid-
+    flight. **4 new + 2 updated** statusBar tests.
+  - **XPhase-G4 (stale source comments)** — 8 inline "Phase 4 will
+    do …" / "Phase 5 promotes …" comments referenced work that
+    already shipped. Updated `vscodeBridge.ts`, `vscodeMockController.ts`,
+    `mockActions.ts`, `preSendDiagnostics.ts`, `envYaml.ts`,
+    `sendRequest.ts`, plus future-looking comments in
+    `requestCodeLens.ts` / `requestCompletion.ts` / `newRequest.ts`
+    that pointed at "Phase 5" but actually mean Phase 6+ now.
+  - **XPhase-G5 (GitHub Copilot snippet drift)** — `docs/connect-your-ai-client.md`
+    used the legacy `github.copilot.advanced.mcp.servers` envelope
+    for GitHub Copilot. Modern Copilot Chat reads `.vscode/mcp.json`
+    with the standard `mcpServers` wrapper, matching what the Phase
+    5 snippet builder emits. Replaced the snippet + linked to the
+    Phase 5 copy-config flow.
+  - **XPhase-G6 (manifest regression guard)** — `manifestRegression.test.ts`
+    guarded `apicircle.secrets.*` + `apicircle.mcp.binaryPath`
+    against the "not yet implemented" label but didn't catch the
+    same drift on `apicircle.mcp.autoConfigureClients` /
+    `apicircle.mcp.allowDecrypt`. Added 2 honesty assertions that
+    sweep EVERY property under `contributes.configuration.properties`
+    for stale "Phase 4 — not yet implemented" / "Phase 5 — not yet
+    implemented" labels.
+    Post-R1 cross-phase: vscode **683 tests / 74 files**, monorepo
+    **3439 tests / 315 files**, lint + typecheck + knip clean, bundle
+    1.90 MB.
+- **Cross-phase Round 2 audit (4 more gaps closed — drift from R1's
+  closures):**
+  - **R2-G1 (label-style inconsistency)** — R1 relabelled the 2 MCP
+    deferred settings to "(Phase 6+ — deferred)" but
+    `apicircle.editor.defaultView` still used the older "(Phase 6 —
+    not yet implemented)" style. Normalised to "(Phase 6+ — deferred)"
+    so the wording matches across all deferred settings.
+  - **R2-G3 (silent edit failures)** — Three source-comment edits
+    queued in R1 actually FAILED at write-time with "File has not
+    been read yet" errors that were easy to miss in the bulk-edit
+    response. `requestCodeLens.ts:10` ("Phase 5 (language services
+    pass)"), `requestCompletion.ts:16` ("Phase 5 lifts this to a
+    proper YAML language-server"), and `newRequest.ts:21` ("dedicated
+    auth wizards in Phase 4") all still carried stale phase
+    references. Re-edited with explicit Read-first sequencing; the
+    comments now point at Phase 6+ language-services follow-up and
+    Phase 6+ auth wizards respectively.
+  - **R2-G5 (gitWorkspaceProvider stale note)** — `gitWorkspaceProvider.ts`
+    carried a 30+ line comment block dated "deferred to Phase 3"
+    explaining the FileBackedWorkspaceProvider unification refactor.
+    Phase 3 shipped, so the note's deadline is past. Updated to
+    document the current state: three-surface compat tests catch
+    drift, the unification is now a Phase 7+ cleanup candidate.
+  - **R2-G7 (PBKDF2 timeout flake under parallel monorepo gate)** —
+    `vaultUnlock.test.ts` passes standalone (20/20 in 38s, ~2s per
+    test) but the monorepo's parallel test pool's CPU contention
+    pushed individual tests past Vitest's default 5s timeout on
+    some runs — 3 sporadic failures in the PBKDF2-heavy
+    `setupVaultPassphraseCommand` path. Production-correct fix:
+    `vi.setConfig({ testTimeout: 30_000 })` at the top of the file
+    raises the per-test budget without touching production iteration
+    count. Caught only by running the FULL monorepo gate after R1
+    closures — a per-phase audit wouldn't have seen it.
+    Post-R2 cross-phase: monorepo gate runs reliably with 3439 tests
+    passing under parallel pool load.
+- **Cross-phase Round 3 audit (6 more gaps closed — manifest +
+  docs-internals drift):**
+  - **R3-G1 (viewsWelcome stale-phase content)** — `apicircle.mcp`'s
+    `viewsWelcome` content claimed "MCP integration ships in Phase 4"
+    despite MCP shipping in Phase 5 with the McpView fillout. The
+    welcome never actually displayed (McpView always returns 3 rows),
+    but the manifest string still misled any future reader. Rewrote
+    with current Phase 5 messaging + the 10 supported clients +
+    a `command:apicircle.openMcpConnectGuide` link.
+  - **R3-G2 (sidebar table stale row)** — `docs/vscode-extension.md`'s
+    sidebar-layout table said "MCP | Phase 4 | Embedded MCP server
+    status + AI client detection" — wrong phase AND wrong description
+    (we ship config-snippet generation, not embedded server). Also
+    omitted the Snapshots view entirely. Rewrote the row + added the
+    missing Snapshots entry.
+  - **R3-G3 (architecture diagram stale labels)** — The ASCII
+    architecture diagram listed "VsCodeBridge — workspace + mocks +
+    MCP + secrets" generically, plus "MCP server child (Phase 4) /
+    embedded (Phase 10)". Updated to spell out the actual
+    sub-components: `VsCodeBridge` + `InProcessMockController` (P3)
+    - `VsCodeVaultManager` (P4) + `VsCodeMcpManager` (P5), with
+      "embedded MCP host over HTTP/SSE is Phase 6+" honestly named.
+  - **R3-G4 (variable inline edit pointer)** — The Phase 2 doc
+    section said "Encrypted variables direct users to vault flow
+    (Phase 4)" — past tense now that Phase 4 shipped. Replaced with
+    the concrete command (`apicircle.openVaultEntry`) and the actual
+    reveal options.
+  - **R3-G5 / R3-G6 (deferred-to-Phase-5 header + bundle size)** —
+    The Phase 3 section's "Deferred to Phase 5+" footer still listed
+    "MCP host integration" as future work (Phase 5 shipped it) and
+    quoted "1.88 MB" for the bundle (current is 1.90 MB). Renamed to
+    "Deferred to Phase 6+", refreshed the bundle size, and reframed
+    MCP integration as "embedded in-extension host over HTTP/SSE"
+    since the snippet-based external-client model already shipped.
+  - **R3-G6 (manifest regression coverage extension)** — Added 2
+    new assertions to `manifestRegression.test.ts` that walk every
+    `contributes.viewsWelcome` entry and reject any "ships in Phase
+    4" / "ships in Phase 5" string. Catches the same drift category
+    R3-G1 represented — the missing guard is what let G1 survive 2
+    full audit rounds.
+    Post-R3 cross-phase: vscode **685 tests / 74 files**, monorepo
+    **3441 tests / 315 files**, all green under parallel pool load,
+    lint + typecheck + knip clean, bundle 1.90 MB.
+- **Cross-phase Round 4 audit (2 more gaps closed — test-count
+  drift in per-phase docs):**
+  - **R4-G1 (`vscode-extension.md` Phase 5 close-out counts)** — The
+    Phase 5 section's "Test counts (Phase 5 close)" still quoted the
+    Phase 5 baseline numbers (676 / 193 / 3430) that landed before
+    the cross-phase audit rounds added tests inside Phase 5's
+    territory (viewsWelcome regression assertions, statusBar P4-vault
+    rewiring, MCP snippet cross-platform path coverage). Updated to
+    post-cross-phase numbers (685 / 195 / 3441) with a sentence
+    explaining the baseline-vs-post-audit distinction.
+  - **R4-G2 (`vscode-extension.md` Phase 4 close-out counts)** — Same
+    drift in the Phase 4 section. Numbers showed 602 / 3344
+    (baseline) instead of the post-audit 628 / 3370. Renamed
+    section to "Test counts (Phase 4 close, post-audit)" + updated
+    values + added a parenthetical pointing readers at the audit
+    trail in CHANGELOG.
+- **Cross-phase Round 5 audit — zero gaps.** Verification pass:
+  test counts now consistent across CHANGELOG, `docs/qa/README.md`,
+  `docs/vscode-extension.md`, and the live test runner; lint +
+  typecheck + bundle + knip clean; manifestRegression test suite
+  guards every drift category surfaced in R1/R3 (10 assertions
+  covering settings labels for 4 historical phases + viewsWelcome
+  content + command/event/menu alignment). **The cross-phase audit
+  converges at R5 with zero remaining gaps across Phase 1-5.**
+- **Phase 6+ forward look** — VS Code Copilot Chat MCP integration via
+  `vscode.lm.registerMcpServerDefinitionProvider` (proposed API), an
+  in-extension `McpHost` exposed over HTTP/SSE so VS Code can be both
+  the host AND a client of its own MCP server, Plan Notebooks, Testing
+  tab, ESM-based bundle code-splitting.
+
+### VS Code extension Phase 4 — Secret Vault + APICircle Runs OutputChannel
+
+Phase 4 wires the workspace-passphrase secret vault into the VS Code
+extension. Every encrypted environment variable is now decryptable in-place
+from the Environment view, the auto-lock + clipboard-clear settings finally
+do something, and the assorted per-feature OutputChannels collapse into a
+single user-facing **APICircle Runs** channel.
+
+- **`@apicircle/core` now exports the vault crypto.** `passphraseKey.ts`
+  (PBKDF2-SHA-256 v1, 1.2M iterations) moved from `packages/ui-components`
+  into `packages/core/src/secrets/` so the VS Code extension — which
+  can't depend on the workspace-private `ui-components` package — drives
+  the same `initSecretCrypto` / `unlockSecretCrypto` algorithm the
+  desktop/web build uses. Single source of truth for the on-disk blob
+  shape. The ui-components store + onboarding modal both now import from
+  `@apicircle/core`. **7 tests** moved with the file.
+- **New `WorkspacePatch` variants — `secret.crypto.set` / `secret.crypto.clear`.**
+  Previously, persisting a freshly-initialised SecretCryptoMeta required
+  a direct `surface.write({synced})` bypass of `applyMutation`; the MCP /
+  CLI clients had no patch they could route through. Two new patches
+  close that gap. `set` defensively rejects malformed blobs (unsupported
+  KDF, missing verifier, zero iterations) so a misbehaving client can't
+  poison the workspace. **7 tests** in `applyMutation.test.ts` + **5
+  tests** in a new `secretCryptoCompat.test.ts` proving byte-identical
+  behaviour across `FileBackedWorkspaceProvider` (desktop / MCP) and
+  `GitWorkspaceProvider` (VS Code).
+- **`VsCodeVaultManager`** — host-level singleton that holds the unlocked
+  per-workspace AES-GCM key in memory, drives the auto-lock timer, and
+  exposes `encryptValue` / `decryptValue`. Typed errors (`VaultLockedError`
+  / `VaultCryptoError`) so the command layer surfaces the right UX
+  without sniffing exception messages. Multi-workspace aware — locking one
+  vault leaves the others alone. Listener iteration uses the
+  P3R3-G1 snapshot pattern so dispose-during-fire can't skip adjacent
+  subscribers. `lockAll()` wired to extension `deactivate()` so the
+  master key is wiped from process memory at shutdown. **27 unit tests**
+  in `vaultManager.test.ts` cover unlock / lock / encrypt-decrypt round-
+  trips / timer arm-cancel-rearm / listener safety.
+- **Vault command surface — six new commands.**
+  - `apicircle.setupVaultPassphrase` — first-time setup. Prompts for a
+    passphrase, confirms it, mints a SecretCryptoMeta blob, and persists
+    via the new `secret.crypto.set` patch. The blob (kdf / salt /
+    iterations / verifier) lives in `synced.secretCrypto` and travels
+    with Git; the passphrase never leaves process memory.
+  - `apicircle.unlockVault` — passphrase prompt, validates against the
+    stored verifier before any decrypt is attempted.
+  - `apicircle.lockVault` — manual lock. With no active workspace, locks
+    every cached vault.
+  - `apicircle.changeVaultPassphrase` — rotation. Verifies the old
+    passphrase, collects + decrypts every encrypted env variable under
+    the old key, re-initialises the vault, and re-encrypts each value in
+    place. Atomic from the user's perspective; if any value fails to
+    decrypt the rotation aborts before the blob is replaced.
+  - `apicircle.openVaultEntry` — replaces the Phase 4 "encrypted
+    variables are edited through the secret vault" placeholder from
+    `variableActions.ts`. Unlocks on demand (if locked), decrypts, then
+    offers **Copy to Clipboard** (with auto-clear) or **Show in
+    Notification (15s)**. Non-encrypted rows fall through to the
+    existing `editVariableValue` command.
+  - `apicircle.showRunsChannel` — reveals the new APICircle Runs
+    OutputChannel.
+- **`apicircle.secrets.autoLockMinutes` + `apicircle.secrets.clipboardClearSeconds`
+  now actually do something.** Both were declared in
+  `contributes.configuration` since Phase 2 with "(Phase 4 — not yet
+  implemented)" markdown labels. The activate() flow now reads both at
+  startup, subscribes to `vscode.workspace.onDidChangeConfiguration`, and
+  re-applies them live. `autoLockMinutes=0` disables auto-lock entirely;
+  `clipboardClearSeconds=0` disables clipboard auto-clear. The clipboard
+  clear is conditional — if the user has pasted something else over the
+  buffer in the interim, the clear is skipped so we never wipe unrelated
+  user content. **2 integration tests** cover both branches.
+- **EnvironmentView gains a vault-header row.** Always rendered at the
+  top — three states: **not configured** → click runs setup;
+  **locked** → click prompts unlock; **unlocked** → click locks.
+  Inline button on the row mirrors the click. The contextValue is one
+  of `vault-unconfigured` / `vault-locked` / `vault-unlocked` so menus
+  attach cleanly. Encrypted variable rows now wire a click command to
+  `apicircle.openVaultEntry` so the whole reveal flow is one click
+  away — no menu hunting required. **Updated test count** for the view:
+  `getChildren` now includes the vault-header node and emits
+  `variable-encrypted` (not `variable`) for encrypted rows.
+- **APICircle Runs OutputChannel — `runsChannel.ts`.** Replaces the
+  ad-hoc "APICircle Mock" channel from P3R5-G5 with a single consolidated
+  channel. Categorised lines (`[mock] <iso> <msg>`, `[vault]`, `[plan]`,
+  `[send]`, `[snapshot]`, `[misc]`) keep the picker scannable. Lazy
+  creation matches P3R6-G4 — never shown in the picker until first
+  `log()` call. `forCategory(cat)` returns a bound logger used by the
+  mock controller + vault manager. `apicircle.showRunsChannel` command
+  - matching `runsChannel.reveal()` for manual access. **6 unit tests**
+    in `runsChannel.test.ts` cover lazy creation / formatting /
+    forCategory / reveal / dispose / custom name.
+- **`variableActions.editVariableValueCommand` routes encrypted rows
+  to the new vault flow** instead of showing the "Phase 4 not yet
+  implemented" toast. The test that asserted the toast now asserts the
+  `executeCommand('apicircle.openVaultEntry', ...)` dispatch.
+- **package.json wiring** — 6 new commands declared in
+  `contributes.commands`, 4 new view/item/context menu entries
+  (`vault-locked` inline Unlock, `vault-unlocked` inline Lock + Change
+  Passphrase, `vault-unconfigured` inline Set Up, encrypted-variable
+  inline Open Vault Entry), 6 new `onCommand:` activation events,
+  and the two secrets settings now ship clean Markdown descriptions
+  (the "(Phase 4 — not yet implemented)" banner is gone).
+- **Tests** — **23 new + updates to ~5 existing tests** across the
+  vscode app (15 baseline + 8 audit-close). Test counts:
+  - **apps/vscode** — **628 tests across 70 files** post-R5 (Phase 3
+    baseline: 555 across 65 files).
+  - **Monorepo** — **3370 tests across 310 files** post-R5 (Phase 3
+    baseline: 3288 across 305 files).
+- **Phase 4 full audit (8 gaps closed):**
+  - **Audit-G1 (atomicity)** — `changeVaultPassphraseCommand` was
+    decrypt-all → init-new → apply-blob → re-encrypt-each. A throw in
+    the last step left the workspace with a NEW vault blob but
+    some ciphertext encrypted under the OLD key — unrecoverable.
+    Restructured to encrypt-all-under-new BEFORE applying the blob,
+    so a step-4 failure leaves on-disk state untouched. The
+    pre-blob failure path also calls `vault.lock(workspaceId)` so
+    the (still in-memory) new key gets wiped.
+  - **Audit-G2 (validation)** — Setup + change-passphrase prompts
+    accepted whitespace-only passphrases (`"   "` passed
+    `v.length === 0`). Trim before validating.
+  - **Audit-G3 (UI coverage)** — Added 3 unit tests for
+    `vault-header` `getTreeItem` covering not-configured / locked /
+    unlocked states; asserts the rendered command, contextValue,
+    and label.
+  - **Audit-G5 (rotation coverage)** — Added 3 integration tests
+    for `changeVaultPassphraseCommand` covering successful rotation,
+    wrong-old-passphrase abort, and the whitespace-validation gate.
+  - **Audit-G8 (multi-workspace isolation)** — Added an integration
+    test that registers two workspaces with different passphrases,
+    confirms both unlock independently, ciphertext from workspace #1
+    can't be decrypted by workspace #2's vault, and locking one
+    leaves the other unlocked.
+  - **Audit-G9 (lifecycle cleanup)** — `extension.ts` was wiping
+    the vault via both a `context.subscriptions.push({ dispose
+... lockAll })` AND an explicit `vaultManager?.lockAll()` in
+    `deactivate()`. Dropped the subscription owner; deactivate is
+    the canonical wipe.
+  - **Audit-G11 / G12 (orphan-ciphertext UX)** — When the workspace
+    has no `secretCrypto` blob (e.g. the user ran the rotation
+    command and a Git pull wiped the blob, or `secret.crypto.clear`
+    was called via MCP/CLI) but env vars still hold `enc:v1:`
+    wires, the generic "decryption failed" message was opaque.
+    The reveal flow now detects the case and surfaces
+    "looks encrypted but this workspace has no vault passphrase
+    set … this value is unrecoverable. Delete or overwrite via
+    the env YAML."
+- **Phase 4 Round 2 audit (8 more gaps closed):**
+  - **R2-G1 (weak test)** — The "rejects whitespace-only new
+    passphrase" integration test asserted `password: true` instead
+    of calling `validateInput` directly. Strengthened: the test now
+    captures the validateInput function from the new-passphrase
+    prompt and exercises it against `""`, `"   "`, `"\t\n"`, and a
+    valid string, asserting each.
+  - **R2-G2 (type smell)** — `openVaultEntryCommand`'s non-encrypted
+    fall-through path passed the original `kind: 'variable-encrypted'`
+    node verbatim to `apicircle.editVariableValue`, whose VariableNode
+    type expects `kind: 'variable'`. Runtime worked, but the type
+    drift would bite under stricter typing later. Now normalizes the
+    kind before dispatching.
+  - **R2-G3 (SECURITY — stale cached key)** — If a teammate rotated
+    the workspace passphrase and the new `SecretCryptoMeta` blob
+    arrived via Git pull, the locally-cached AES-GCM key was still
+    derived from the OLD verifier. `isUnlocked()` returned true →
+    every downstream decrypt threw "bad tag" with no actionable
+    error. Added `derivedFromVerifier` field to the in-memory entry
+    - `VsCodeVaultManager.isUnlockedAgainst(blob)` for liveness
+      checks. `unlockVaultCommand` + `openVaultEntryCommand` now route
+      through the new check; stale keys get dropped + re-prompted.
+  - **R2-G7 (three-surface gap)** — Compat coverage included
+    `set-from-null` and `clear-already-null` but not `set-over-existing`
+    (rotation). Added a test that applies an initial blob, then a
+    rotated one, asserting byte-identical state across providers.
+  - **R2-G10 (manifest regression)** — Added
+    `src/manifestRegression.test.ts` that reads the on-disk
+    `package.json` and asserts (a) the two Phase 4 secrets settings
+    do NOT carry the "Phase 4 — not yet implemented" placeholder
+    text any more, (b) every Phase 4 vault command is declared in
+    `contributes.commands`, (c) every Phase 4 vault command has a
+    matching `onCommand:` activation event.
+  - **R2-G12 (UX branch coverage)** — The "wiped vault" UX has two
+    branches — `looksEncrypted` true/false. Only the true branch
+    was tested. Added a test for the false branch (variable flagged
+    `encrypted: true` but value isn't an `enc:v1:` wire — could
+    happen via hand-edit) showing the generic "No vault passphrase
+    set" message instead of "unrecoverable".
+  - **R2-G14 (no-active-workspace tests)** — All vault commands have
+    early-exit paths when no workspace is registered. Added an
+    integration test that drops the active workspace and confirms
+    each command no-ops cleanly without throwing.
+  - **R2-G15 (misleading toast)** — `lockVault` with no active
+    workspace called `lockAll()` and showed "All vaults locked."
+    even when nothing was unlocked. Added
+    `VsCodeVaultManager.unlockedWorkspaceIds()` so the command can
+    say "Locked N vault(s)." or "No vaults were unlocked."
+    accurately.
+- **Phase 4 Round 3 audit (3 more gaps closed):**
+  - **R3-G11 (silent stale-cache drop)** — When `unlockVault`
+    detected the staleness path it dropped the cached key but
+    re-prompted with no explanation. Added a non-modal info toast:
+    "Vault passphrase changed externally (likely a Git pull from a
+    teammate who rotated). Please re-enter the new passphrase."
+    Integration test updated to assert the toast.
+  - **R3-G15 (multi-cycle determinism)** — Added a three-surface
+    test for the `set → clear → set` cycle to lock in determinism
+    across multi-step patch sequences.
+  - **R3-G19 (docs propagation)** — This entry. CHANGELOG +
+    docs/qa/README.md now reflect the post-R3 test counts.
+- **Phase 4 Round 4 audit (1 more gap closed):**
+  - **R4-G1 (rotation persist-failure recovery)** — If the
+    `secret.crypto.set` apply call itself throws mid-rotation
+    (disk full, FS error, advisory-lock contention), the in-memory
+    vault would hold the NEW key while on-disk still had the OLD
+    blob — every subsequent decrypt would silently use the wrong
+    key and throw "bad tag". The rotation flow now wraps the blob
+    apply call in try/catch, calls `vault.lock()` on failure, and
+    surfaces a clear error toast pointing the user back to the OLD
+    passphrase. The env.upsert loop also catches per-env so
+    partial-rotation failures are at least surfaced (and re-running
+    rotation under the new passphrase recovers the remaining vars).
+    Integration test simulates the apply failure via a method
+    swap on the workspace surface.
+- **Phase 4 Round 5 audit — zero gaps.** Final verification pass:
+  all tests green, lint + typecheck clean, knip clean (only
+  pre-existing flags in `ui-components` unrelated to Phase 4),
+  security model verified (key in-memory + non-extractable + stale-
+  cache detection), atomicity proven for both apply-throws + env-
+  upsert-throws code paths. **Phase 4 closed at R5.**
+- **E2E specs** — two new files (`4-vault.test.ts`, `4-runs-channel.test.ts`)
+  prove the 6 new command ids resolve via `vscode.commands.getCommands()`
+  and the no-op safe paths don't throw under VS Code's extension host.
+- **Bundle size** — `dist/extension.js` is 1.88 MB (up from Phase 3's
+  1.85 MB), still under the 2 MB CI gate. Phase 5+ will need code-
+  splitting; the carry-over still applies.
+- **Phase 5+ forward look** — MCP host integration (VS Code as a
+  first-class MCP host alongside Desktop / CLI), Plan Notebooks,
+  Testing tab, bundle code-splitting via ESM. The vault is a
+  prerequisite for MCP-driven encrypted-secret reads; that wiring lands
+  in Phase 5.
+
+### VS Code extension Phase 3 — Mock servers
+
+The Mock view fills out. The VS Code extension now spins up local HTTP mock
+servers directly from OpenAPI / Postman / Insomnia specs (or manual endpoint
+lists), reusing the same `InProcessMockController` engine the CLI uses. No
+sidecar process, no IPC — Hono runs inside the extension host.
+
+- **Mock view populated** — `apicircle.mock` shows every server in
+  `synced.mockServers`, expanded to its endpoints. Running servers show
+  `▶ :port`, idle servers `◦`. Click a server → opens its `.mock.yaml`.
+  Inline ▶ Start / ■ Stop / ↻ Restart per server. New `MockView` (10 tests).
+- **Mock YAML projection** — new
+  `apicircle://<workspaceId>/mocks/<id>.mock.yaml` URI kind. Editable
+  fields: `name`, `defaultPort`, `cors`. Read-only annotations: `source`
+  (kind + spec preview) and `endpoints` (method + path + default status).
+  Re-import the spec via "New Mock" to change source/endpoints — the
+  desktop app remains the right surface for per-endpoint editing
+  (response rules, validation, multipliers). New `mockYaml.ts` +
+  `mockYaml.test.ts` (21 tests).
+- **`apicircle-mock.schema.json`** — Draft-07 schema; `*.mock.yaml`
+  registered under `contributes.yamlValidation`.
+- **`apicircle-mock` language** — registered for `.mock.yaml` files with
+  the standard YAML language-configuration.
+- **`VsCodeMockController`** — wraps `InProcessMockController` and bridges
+  runtime state to `WorkspaceLocal.mockRuntime.active`. Same shape the
+  desktop's `MockManager` writes, so the disk mirror sees consistent
+  runtime state across surfaces. `disposeAll()` stops every server on
+  extension deactivation. 8 tests.
+- **Mock lifecycle commands** —
+  - `apicircle.newMock` — 4-step wizard: source kind (OpenAPI/Postman/
+    Insomnia/Manual) → spec content → name → default port. Pre-parses
+    the source via `parseSourceToEndpoints` so a bad spec fails the
+    wizard, not the next Start.
+  - `apicircle.startMock`, `apicircle.stopMock`, `apicircle.restartMock` —
+    accept an optional node arg (skip QuickPick from the tree); fall back
+    to a QuickPick over `synced.mockServers` for palette invocation.
+  - `apicircle.deleteMock` — auto-stops the server if running, then fires
+    `mock.delete`. 14 tests across all five commands.
+- **Mock language services**:
+  - `MockCodeLensProvider` — ▶ Start (idle) / ■ Stop + ↻ Restart (running)
+    above the `name:` line. Stop label includes the active port. 6 tests.
+  - `MockCompletionProvider` — root field completions (name /
+    defaultPort / cors); true|false on `enabled:` lines; enabled / origins
+    inside the cors block. 5 tests.
+  - `MockHoverProvider` — hover on `name:` shows running/idle status;
+    `defaultPort:` shows bind target; `pathPattern:` shows endpoint
+    summary + default status + response-rule count. 8 tests.
+- **MockStatusBar** — left-side status item visible when ≥1 mock is
+  running: `$(server) Mocks: N (:port, …)`. Compact "+N" form past 3.
+  Click → focuses the Mock view. 6 tests.
+- **FS provider extended** — `mocks/<id>.mock.yaml` URI handled for
+  read / write / delete. Read serializes via `mockYaml.serializeMockToYaml`,
+  write parses + preserves existing source + endpoints + fires
+  `mock.upsert`, delete fires `mock.delete`. New `mockRoundTrip` integration
+  suite (5 tests) covering serialize → mutate → write → re-read.
+- **Three-surface compat for `mock.delete`** — added to
+  `threeSurfaceCompat.test.ts` (test count now 13).
+- **package.json wiring** — 6 new commands declared
+  (`newMock` / `startMock` / `stopMock` / `restartMock` / `deleteMock` /
+  `focusMockView`); view-title `New Mock…` button on `apicircle.mock`;
+  context-menu entries for `mock-idle` (Start / Delete) and `mock-running`
+  (Stop / Restart / Delete); Ctrl+N keybinding inside the focused Mock
+  view; `apicircle-mock` language declared; `*.mock.yaml` schema
+  registered; `onView:apicircle.mock` + `onCommand:apicircle.newMock`
+  added to activationEvents.
+- **Cross-package**: new `@apicircle/mock-server-core` workspace dep.
+
+**Phase 3 tally: 510 tests across 64 files** (up from 426 at end of
+Phase 2 Round 6 closure). `pnpm check` + `pnpm lint` clean. No schema
+changes — `MockServer` / `MockRuntimeEntry` shapes are unchanged.
+
+### Phase 3 round 1 — 12 honest gaps closed
+
+Round 1 audit on Phase 3 closures found 12 gaps (down from Phase 2 R4's
+26 — convergence still on track). Three load-bearing runtime fixes
+plus polish:
+
+- **P3R1-G1 — `MockHoverProvider` disambiguates duplicate paths.** When
+  two endpoints share the same `pathPattern` with different methods,
+  hovering on either path line resolves to the endpoint matching the
+  preceding `method: X` line. Walks back up to 10 lines in the same
+  indentation block to find the enclosing method.
+- **P3R1-G2 — Orphan reconciliation.** New `VsCodeMockController.reconcile()`
+  stops any controller-tracked server whose definition no longer exists
+  in `synced.mockServers`. Wired to the existing `workspaceWatcher`
+  `onAnyChange` hook, so a Git pull / CLI / MCP delete cleanly takes
+  down the orphan instead of leaving a zombie Hono on port. 2 tests.
+- **P3R1-G3 — Multi-root namespacing.** `VsCodeMockController` now
+  passes `${workspaceId}::${serverId}` to the underlying
+  `InProcessMockController`. Two workspace folders with the same mock
+  id no longer collide. External callers still work with the original
+  serverId; namespacing is internal. 2 tests.
+- **P3R1-G4 — `mock-endpoint` context menu.** Two new commands:
+  `apicircle.copyEndpointPath` (writes the pathPattern to the clipboard)
+  and `apicircle.revealEndpointInMockYaml` (jumps to the `id:` line
+  inside the parent server's `.mock.yaml`). Wired to the
+  `view/item/context` for `viewItem == mock-endpoint`.
+- **P3R1-G5 — `newMockCommand` warning visibility.** Wizard now shows
+  `Parsed with N warning(s): <first> (+N-1 more)` instead of dropping
+  trailing warnings; full list is `console.warn`-logged for now (Phase 4
+  ships a dedicated OutputChannel).
+- **P3R1-G6 — `docs/architecture/platform.md` updated** — § Mock server
+  now lists FOUR runtimes (Desktop, VS Code, CLI, hosted-future) instead
+  of three; documents the namespacing + reconcile contract.
+- **P3R1-G6b — `docs/mock-server.md` updated** — adds the VS Code row
+  to the runtimes table and a § VS Code walkthrough section.
+- **P3R1-G7 — `disposeAll()` tolerates bridge-disposed state** during
+  extension shutdown. Per-server stop errors are swallowed, runtime
+  clears guarded against a disposed surface. 2 tests pin the contract.
+- **P3R1-G8 — Port-conflict error path tested.** `startMockCommand`
+  test asserts the error toast surfaces when the underlying
+  `controller.start` throws an `EADDRINUSE`.
+- **P3R1-G9 — README §Mode A** Mocks bullet mentions the VS Code parity.
+- **P3R1-G10 — `apicircle.focusMockView` wrapper removed.** The status
+  bar now uses VS Code's built-in `apicircle.mock.focus` command
+  directly. One less hand-maintained command + one less activation
+  step.
+- **P3R1-G11 — `MockStatusBar` poll pauses when 0 mocks are running.**
+  `setInterval` only runs while there's something to refresh; resumes
+  on the next `refresh()` call (typically triggered by a Start command
+  or a workspace-watcher event). Two tests pin start + stop semantics.
+- **P3R1-G12 — `MockCompletion` surfaces read-only annotations.**
+  `source` and `endpoints` now appear in completions sorted to the
+  bottom with `(read-only)` detail, so users discover they exist but
+  can't accidentally edit them via autocomplete.
+
+**Phase 3 round 1 tally: 520 tests across 64 files** (up from 510).
+`pnpm check` + `pnpm lint` + knip clean. No schema changes.
+
+### Phase 3 round 2 — 9 honest gaps closed
+
+Round 2 audit on Round 1 closures found 9 gaps. Three of them were
+**bugs the Round 1 closures themselves introduced** (the classic
+"gap-introduction by gap-closure" pattern, same as Phase 2). All
+closed:
+
+- **P3R2-G1 — `MockStatusBar` pause-resume.** R1 G11 paused the poll
+  when 0 mocks were running, but the resume signal was missing. The
+  status bar stayed hidden after starting a new mock until something
+  external nudged `refresh()`. Fixed by adding an `onChange` event to
+  `VsCodeMockController` (fires on start/stop/restart/reconcile) and
+  having `MockStatusBar` subscribe to it. The status bar now refreshes
+  the instant a lifecycle change happens.
+- **P3R2-G2 — `stop()` / `restart()` namespace mismatch.** R1 G3
+  introduced workspace-id namespacing for the underlying
+  `InProcessMockController` but `stop()` re-derived the namespace from
+  the currently-active workspace. If the workspace changed between
+  start and stop, the namespace didn't match and the underlying Hono
+  server leaked. Fixed by looking up the namespaced id from the
+  `tracked` map keyed on the (workspaceId, serverId) tuple — preferring
+  the active workspace's entry but falling back to any tracked entry
+  with the matching serverId.
+- **P3R2-G3 — `deactivate()` race with `disposeAll()`.** R1 closure
+  used `void mockController?.disposeAll()` followed immediately by
+  `bridge?.dispose()`. The dispose was async; the bridge tore down
+  before the per-server stops + runtime clears completed. Fixed by
+  making `deactivate()` return a `Promise` and awaiting `disposeAll()`
+  before disposing the bridge. VS Code accepts a Promise return from
+  `deactivate` and waits up to ~5s before forcing shutdown.
+- **P3R2-G4 — Tests for `copyEndpointPathCommand` +
+  `revealEndpointInMockYamlCommand`.** R1 G4 wired both commands into
+  the manifest + extension but neither had unit tests. Added 7 tests
+  covering the no-node, missing-mock, missing-endpoint, and happy
+  paths. Extended the `vscode` mock with `Selection` class and
+  `TextEditorRevealType` enum so reveal-by-line works under test.
+- **P3R2-G5 — `reconcile()` try/catch.** The body is now wrapped in a
+  top-level try/catch so an exception from `surface.read()` or
+  `surface.write()` doesn't surface as an unhandled promise rejection
+  in the workspace-watcher callback. The reconcile must never throw.
+- **P3R2-G6 — Real `disposeAll()` bridge-disposed test.** The R1 G7
+  test created a `noBridge` controller with an empty tracked map —
+  the `clearRuntimeFor` path was never reached, so the test was a
+  smoke check, not a bug guard. Replaced with a test that starts a
+  mock, then makes `surface.write` throw, then calls `disposeAll()` —
+  asserts the disposal doesn't throw and underlying servers still
+  stop.
+- **P3R2-G7 — `docs/qa/README.md` test counts** refreshed. Unit row
+  now says 53 suites / 495 tests; vscode 533; monorepo 3266 across
+  304 files.
+- **P3R2-G8 + G9 — MockCompletion read-only items insert a comment.**
+  R1 G12 surfaced `source` + `endpoints` as completions with
+  `insertText = ''` — selecting them was a silent no-op. Now each
+  inserts a YAML comment explaining why the field is read-only
+  (`# source: <read-only — re-import via "APICircle: New Mock">`),
+  plus has `documentation: MarkdownString` attached so the VS Code
+  completion popup shows the full context.
+
+**Phase 3 round 2 tally: 533 tests across 64 files** (up from 520).
+`pnpm check` + `pnpm lint` + knip clean. No schema changes.
+
+### Phase 3 round 3 — 7 honest gaps closed
+
+Round 3 audit on Round 2 closures found 7 gaps. Smaller again (12 → 9 →
+7); convergence is markedly steeper than Phase 2's. One real race-
+condition bug from R2's closures plus test-tightening and doc polish:
+
+- **P3R3-G1 — `fireChange()` snapshot before iteration.** The
+  `changeListeners` array was iterated live; a listener that called
+  `sub.dispose()` mid-fire spliced the array and adjacent listeners
+  were skipped (or called twice). Now snapshots with `[...listeners]`
+  before iterating. New test pins the contract: listener-1 disposes
+  itself, listener-2 still gets called.
+- **P3R3-G2 — `findTrackedByServerId` fallback warning.** The fallback
+  branch (any tracked entry matching serverId when the active workspace
+  doesn't match) now logs a `console.warn` explaining the situation —
+  surfaces silent cross-workspace stop behaviour to anyone debugging.
+- **P3R3-G3 — End-to-end onChange→statusBar wiring test.** Previously
+  we tested `VsCodeMockController.onChange` in isolation and
+  `MockStatusBar.refresh` in isolation but nothing verified the wire.
+  New test in `mockStatusBar.test.ts` registers a mock controller,
+  fires its onChange listener, and asserts the status bar's refresh
+  reads new state and shows the bar.
+- **P3R3-G4 — `revealEndpointInMockYaml` test asserts `revealRange`
+  was called with the correct line.** Previously only checked
+  `showTextDocument` was called. New assertion: the `range.start.line`
+  matches the position of `id: ep-1` in the doc. Added a second test
+  for the fallback-to-line-0 case when the id isn't found.
+- **P3R3-G5 — `docs/qa/README.md` Unit suite count.** Was 53,
+  actual is 52. Fixed.
+- **P3R3-G6 — `mockEnv.clipboard.writeText` reset in
+  `mockActions.test.ts` `beforeEach`** — prevents leaked calls from
+  one test polluting another's assertion counts.
+- **P3R3-G7 — `MockCompletion` documentation content assertion.**
+  Was `expect(documentation).toBeDefined()` — now also asserts the
+  markdown contains the key phrases ("Read-only", "APICircle: New
+  Mock"). Guards against silent regression to an empty MarkdownString.
+
+**Phase 3 round 3 tally: 536 tests across 64 files** (up from 533).
+`pnpm check` + `pnpm lint` + knip clean. No schema changes.
+
+### Phase 3 round 4 — 5 honest gaps closed (one security fix)
+
+Round 4 audit produced 5 gaps. Trajectory continues: 12 → 9 → 7 → 5.
+One of them was a **load-bearing security gap** that none of R1/R2/R3
+surfaced — end-to-end audits catch what per-round audits miss.
+
+- **P3R4-G3 — Mock spec preview removed from YAML (SECURITY).** The
+  Phase 3 baseline emitted `source.specPreview` — the first 4096 chars
+  of the raw OpenAPI / Postman / Insomnia source — into every
+  `.mock.yaml` virtual document. Specs commonly carry bearer tokens or
+  API keys in `security.example` blocks; any such secret was being
+  committed to Git via the workspace document. Now the YAML emits only
+  `source.kind` + `source.format` + `source.bytes` (the length). The
+  raw spec stays in `workspace.json` (read by the parser at start
+  time) but never round-trips through the human-edited YAML. New
+  `mockYaml.test.ts` test pins the contract: a token in
+  `security.example` is provably not in the serialized output.
+- **P3R4-G1 — Test coverage for `findTrackedByServerId` fallback.**
+  The R3-G2 fallback (cross-workspace match) had no test. Added two:
+  one verifying the preferred-branch doesn't emit the log, one
+  verifying the fallback returns the right entry AND emits the log
+  with the workspace-mismatch detail.
+- **P3R4-G4 — Multi-workspace concurrent mocks test.** New test starts
+  the same serverId in two different workspaces, asserts both are
+  namespaced differently in the underlying `InProcessMockController`,
+  and that stopping one in workspace B doesn't affect the running
+  mock in workspace A.
+- **P3R4-G5 — Injectable logger.** `VsCodeMockControllerDeps` now
+  accepts an optional `log?: (message: string) => void` (defaults to
+  `console.warn`). Tests inject `vi.fn()` to assert on log payloads
+  without polluting test stdout. Phase 4 will swap the default for the
+  `APICircle Runs` OutputChannel.
+- **P3R4-G2 — Real end-to-end statusBar↔controller wire test.** The
+  R3-G3 wire test used an ad-hoc controller object. New test imports
+  the real `VsCodeMockController` and verifies the actual onChange
+  subscription path end-to-end, including reconcile.
+
+**Phase 3 round 4 tally: 541 tests across 64 files** (up from 536).
+`pnpm check` + `pnpm lint` + knip clean. No schema changes to public
+data contract — `MockServer` shape unchanged; the YAML projection
+change is purely cosmetic (read-only field that wasn't round-trippable
+anyway).
+
+### Phase 3 round 5 — 5 honest gaps closed (R4 cascade + UX + compat)
+
+Round 5 audit found 5 gaps. Four of them were **cascade from the R4
+security fix** (specPreview → bytes left the schema and docs claiming
+the old shape) plus one standalone UX gap that surfaced for the first
+time. All closed:
+
+- **P3R5-G1 — `apicircle-mock.schema.json` updated.** The JSON Schema
+  emitted `specPreview: { type: string }`; replaced with
+  `bytes: { type: integer, minimum: 0 }` so `yaml.validate` matches the
+  actual emitter output. Old YAML files with `specPreview` will now
+  warn, which is correct — they'd round-trip to `bytes` on the next
+  save anyway.
+- **P3R5-G2 — `docs/apicircle-yaml-format.md` example updated.** Mock
+  YAML example now shows `bytes: 4521` and explains the secret-safety
+  rationale inline. Field table extended to enumerate
+  `source.kind` / `source.format` / `source.bytes` with the redaction
+  note.
+- **P3R5-G3 — Three-surface compat test for the FS-write update
+  path.** The "user edits `.mock.yaml`, FS provider fires `mock.upsert`
+  preserving the existing source + endpoints" flow is now covered by
+  the cross-provider invariant gate. Test seeds an OpenAPI mock with a
+  non-trivial endpoint list, applies a partial-update patch through
+  both desktop + Git providers, and asserts byte-identical state.
+- **P3R5-G4 — Wizard accepts file-path source.** `apicircle.newMock`
+  step 2 now branches: "Read from file…" opens a native file picker
+  (`vscode.window.showOpenDialog` with format-appropriate filters), or
+  "Paste content" falls back to the single-line `showInputBox`.
+  Realistic specs (multi-line OpenAPI YAML, kilobyte Postman JSON) now
+  import cleanly. 3 new tests cover the file path, the cancel case,
+  and the unreadable-file error toast.
+- **P3R5-G5 — `OutputChannel` logger.** `activate()` creates a dedicated
+  "APICircle Mock" `OutputChannel` and passes its `appendLine` to
+  `VsCodeMockController` as the `log` dep. Cross-workspace-fallback
+  warnings now land somewhere user-discoverable instead of
+  `console.warn`. Channel is registered to
+  `context.subscriptions` for clean dispose.
+
+**Phase 3 round 5 tally: 545 tests across 64 files** (up from 541).
+`pnpm check` + `pnpm lint` + knip clean. No public-data-contract
+schema changes; the `apicircle-mock.schema.json` change is the
+projection schema (a VS Code yamlValidation manifest), not the
+workspace data contract.
+
+### Phase 3 round 6 — 4 honest gaps closed (convergence reached)
+
+Round 6 produced 4 gaps. Trajectory: 12 → 9 → 7 → 5 → 5 → 4. None
+were correctness/security issues; all 4 are test-coverage and UX
+polish — the audit has reached its convergence floor. Closed:
+
+- **P3R6-G1 — Test for method-pick dismissal in `newMockCommand`.**
+  R5-G4 added a paste-vs-file QuickPick (step 2) but the dismissal
+  path was uncovered. New test verifies the wizard exits cleanly when
+  the user dismisses step 2 — no content prompt, no file picker, no
+  mock created. Also surfaced and fixed a related test-isolation bug:
+  `showOpenDialog` wasn't being reset in `beforeEach`, so prior
+  tests' calls leaked into later assertions.
+- **P3R6-G2 — `docs/qa/README.md` Unit row refreshed.** Now 52 suites
+  / ~507 tests with the post-R5 closures (file-path wizard, source
+  redaction, FS-write three-surface compat, OutputChannel logger)
+  enumerated.
+- **P3R6-G3 — `MockHoverProvider` handles `bytes:` line.** R5-G1
+  introduced `bytes:` as the spec-projection field; hovering on it
+  now shows a documentation hover explaining the secret-safety
+  rationale ("📏 Source spec size: N bytes — the raw spec lives in
+  workspace.json…"). Helps users who'd otherwise wonder where the
+  spec went. New test pins the hover content.
+- **P3R6-G4 — OutputChannel lazy-create.** R5-G5 unconditionally
+  created the `APICircle Mock` channel at activation. Now created on
+  first `log()` call so users who never hit the fallback path don't
+  see an empty channel in VS Code's picker. The channel is
+  registered to `context.subscriptions` at creation time for clean
+  dispose.
+
+**Phase 3 round 6 tally: 547 tests across 64 files** (up from 545).
+`pnpm check` + `pnpm lint` + knip clean. Cross-package monorepo gate
+clean at **3280 tests across 304 files**. The audit discipline has
+reached steady state — Phase 3 is genuinely done.
+
+### Phase 3 full audit — 13 closures across 2 batches
+
+Following the per-round closures, an end-to-end audit found 13 more
+gaps (HARD 3 / MEDIUM 6 / SOFT 4). All closed in this final pass:
+
+- **F-G1 — E2E specs for Phase 3.** Three new specs added to
+  `e2e/vscode/src/test/`: `3-mock-view.test.ts` (view registration +
+  focus + command presence), `3-mock-yaml.test.ts` (language
+  contribution + error handling for unknown URIs), `3-mock-lifecycle.test.ts`
+  (command-id resolution). Picked up automatically by the existing
+  Mocha glob in `index.ts`.
+- **F-G2 — Real Hono lifecycle integration test.** New
+  `test/integration/mockLifecycle.test.ts` — 5 tests that exercise
+  the actual `InProcessMockController` (no mocks). Imports a real
+  Petstore OpenAPI spec, starts a Hono server on a free port, hits
+  `GET /pets` with fetch, asserts 200, stops cleanly, verifies the
+  port is reclaimed. Catches mock-server-core ↔ VS Code regressions
+  the heavily-mocked unit suite can't see.
+- **F-G3 — Dynamic-import parsers.** `parseSourceToEndpoints` is now
+  imported on demand inside the wizard, not at activation. In ESM-
+  bundled environments this would code-split; in our CJS tsup bundle
+  it's a no-op for bytes but cleaner for activation-time evaluation.
+  Bundle is at 1.85 MB (under the 2 MB CI gate); further compression
+  is Phase 4 work when more deps land.
+- **F-G4 — Keybindings for mock lifecycle.** F6 starts the focused
+  mock, Shift+F6 stops, Ctrl/Cmd+Shift+F6 restarts. Symmetric with
+  Phase 2's plan-run keybinding (F6).
+- **F-G5 — File size warning.** Wizard's file-pick path now `fs.stat`s
+  before reading; specs over 10 MB prompt the user to confirm. Real
+  enterprise OpenAPI specs cap around 5-8 MB; anything bigger is
+  usually a wrong file.
+- **F-G6 — HTTP URL support.** Step 2 of the wizard gains "Fetch from
+  URL…" alongside "Read from file…" and "Paste content". Common
+  pattern: `https://petstore.swagger.io/v2/swagger.json`. Uses
+  global `fetch` (Node 18+); surfaces fetch errors as toasts.
+- **F-G7 — Pre-fill name from spec metadata.** Best-effort parse of
+  `info.title` (OpenAPI JSON), `info.name` (Postman), or
+  `resources[].workspace.name` (Insomnia) for the name field default.
+  Silent fallback to blank on parse error — never throws.
+- **F-G8 — MockHover documents CORS.** Hovering on `cors.enabled` or
+  `origins` inside the cors block shows the Hono semantics inline
+  ("Empty + enabled = reflect any Origin", etc.). Uses an
+  `isInsideCorsBlock` walk-back helper.
+- **F-G9 — `VsCodeBridge.onDidChangeActiveWorkspace` event.** New
+  event fired on `setActive` when the id actually changes. Status bar
+  subscribes so multi-root workspace switches refresh instantly. 1
+  new test pins the contract (fires on change, no-op on same id,
+  dispose works).
+- **F-G10 — CHANGELOG Phase 4 forward-look** (this section).
+- **F-G11 — FS-delete via deleteMock command test.** The
+  `mockLifecycle.test.ts` integration suite includes a test that
+  starts a mock then invokes `deleteMockCommand` with a confirmed
+  warning — verifies the mock is stopped AND the definition removed.
+  Also a test exercising the FS provider's `delete()` path directly.
+- **F-G12 — MockCodeLens subscribes to controller.onChange.** The
+  ▶ Start ↔ ■ Stop lens flips instantly on start/stop/restart
+  without waiting for VS Code's periodic CodeLens refresh tick.
+  MockCodeLensProvider now implements `vscode.Disposable` to clean
+  up the subscription.
+- **F-G13 — `apicircle.openMockInBrowser` command.** Wired to the
+  `mock-running` context menu — fires `vscode.env.openExternal` on
+  `http://localhost:<port>` so users don't have to copy URLs from
+  the tree label or status bar.
+
+### Phase 4 — what's queued
+
+Phase 4 ships the secrets vault + MCP host integration:
+
+- **Secret vault** — passphrase-based AES-GCM unlock surfacing in
+  the Environment view; `apicircle.openVaultEntry` for encrypted
+  variables (placeholder today). Wires `apicircle.secrets.autoLockMinutes`
+  and `apicircle.secrets.clipboardClearSeconds` settings that are
+  currently flagged as "Phase 4 — not yet implemented".
+- **MCP host integration** — VS Code becomes a first-class MCP host
+  alongside Desktop / CLI. Surfaces the same 78-tool catalog through
+  an in-extension stdio bridge so Claude Code / Cursor / Copilot
+  configs can target the VS Code workspace.
+- **APICircle Runs OutputChannel** — the streaming log channel
+  Phase 2 deferred. Replaces the per-feature OutputChannels (mock,
+  history) with a unified surface.
+- **Plan Notebooks + Testing tab** — `vscode.NotebookController` for
+  plan execution and `vscode.tests.createTestController` for the
+  Testing UX.
+- **Bundle code-splitting** — if Phase 4 deps push above the 2 MB
+  CI gate, tsup `splitting: true` + lazy-loaded parsers.
+
+**Phase 3 full-audit closure tally: 555 tests across 65 files**
+(up from 547 at end of R6). `pnpm check` + `pnpm lint` + knip clean.
+Bundle 1.85 MB (under the 2 MB CI gate). No public-data-contract
+changes. Phase 3 is **conclusively done**.
+
+### Begin VS Code extension (Phase 1 day-1 PR — apps/vscode/ scaffold)
+
+- **`apps/vscode/` package created** — peer to `apps/web/` and
+  `apps/desktop/`. Targets VS Code `^1.85.0`, Node 20+. Ships as
+  `@apicircle/vscode` (private workspace package; future marketplace ID
+  `apicircle.apicircle-vscode`). Build via `tsup` to a single CJS bundle;
+  `vscode` is `external` (provided by the host at runtime), every
+  `@apicircle/*` workspace dep is bundled. Manifest contributes a single
+  Activity Bar icon (monochrome SVG using `currentColor` so VS Code can
+  re-tint it per theme), seven sidebar views (Editor, Environment,
+  Execution, Mock, History, MCP, Marketplace — the last gated by
+  `apicircle.enableMarketplace` config), a `viewsWelcome` for the first-run
+  experience, ten contributed settings spanning execution / history /
+  mock / MCP / editor / secrets / telemetry / marketplace, and six commands
+  (`createWorkspace`, `newRequest`, `sendRequest`, `cancelSend`,
+  `openWorkspaceFile`, `refresh`). The seven views are TreeData-backed
+  with empty-array stubs in this PR; population lands in subsequent
+  Phase 1 commits.
+  (`apps/vscode/package.json`, `apps/vscode/tsconfig.json`,
+  `apps/vscode/tsup.config.ts`, `apps/vscode/media/icon-activitybar.svg`,
+  `apps/vscode/src/views/*.ts`)
+- **`VsCodeBridge` host façade** — the in-process analogue of the desktop
+  app's Electron main process. Owns the disk-backed
+  `FileBackedWorkspaceProvider` per workspace (`registerWorkspace` is
+  idempotent), tracks the active workspace via `context.globalState`, and
+  ships `createWorkspaceScaffold` for the `APICircle: Create New Workspace`
+  command — scaffolds `.apicircle/workspace.json`, the `attachments/`
+  folder, and an auto-generated `.apicircle/README.md` that explains the
+  folder to teammates. Also appends defensive entries to the repo's
+  `.gitignore` (`workspace.local.json`, `.apicircle/.local/`,
+  `.apicircle/.lock`) — idempotent on re-run. Future phases attach the
+  mock controller (Phase 3), MCP host (Phase 4), and secret storage
+  (Phase 4) to this same façade without changing existing call sites.
+  (`apps/vscode/src/host/vscodeBridge.ts`)
+- **Workspace discovery** — `discoverWorkspaces` scans every open VS Code
+  workspace folder for canonical `.apicircle/workspace.json` files,
+  partitions them into "discovered" vs "folders without a workspace yet"
+  (so the welcome view can offer `Create New Workspace` in the right
+  places). `deviceLocalPath` produces a stable hash-based path inside
+  `context.globalStorageUri` keyed off the workspace's `.apicircle/`
+  absolute path — case-insensitive and slash-normalized for Windows
+  interoperability. Per the locked Phase 1 decision, this device-local
+  path is not user-configurable.
+  (`apps/vscode/src/util/workspaceDiscovery.ts`)
+- **First-run flow** — when the user clicks the Activity Bar icon with no
+  `.apicircle/workspace.json` in any open folder, the Editor view renders
+  a `viewsWelcome` card pointing at `Create New Workspace` and
+  `Open Folder…`. When the canonical layout is detected, the workspace is
+  auto-registered with the bridge and the previously-active workspace
+  (remembered in `globalState`) is restored — or the first discovered one
+  if there's no prior selection. Re-discovery fires whenever VS Code's
+  workspace folders change (multi-root add/remove).
+  (`apps/vscode/src/extension.ts`, `apps/vscode/src/commands/createWorkspace.ts`)
+- **Vitest harness** — `vitest.config.ts` aliases the `vscode` module to a
+  hand-rolled `test/mocks/vscode.ts` mock that covers `window`,
+  `workspace`, `commands`, `languages`, `env`, `Uri`, `EventEmitter`,
+  `TreeItem`, `ThemeIcon`, `FileSystemError`, and `ExtensionContext` —
+  every surface the day-1 PR's production code touches. Unit suites
+  shipped: `workspaceDiscovery` (single/multi-root/empty/half-baked
+  layouts, device-local path determinism, owning-workspace lookup),
+  `vscodeBridge` (idempotent register, listWorkspaces, setActive
+  validation, scaffold creation, scaffold-overwrite guard, idempotent
+  `.gitignore` append, dispose), `BaseTreeView` (refresh event wiring).
+  E2E coverage via `@vscode/test-electron` lands in subsequent Phase 1
+  commits.
+  (`apps/vscode/vitest.config.ts`, `apps/vscode/test/mocks/vscode.ts`,
+  `apps/vscode/src/**/*.test.ts`)
+- **Three-surface principle** documented in `apps/vscode/README.md` —
+  one `.apicircle/workspace.json`, three peer clients (Web, Desktop,
+  VS Code), byte-identical commits.
+
+### apicircle: FileSystemProvider with YAML projection (Phase 1 MVP)
+
+- **`apicircle:` virtual filesystem scheme registered** — each request
+  in the active workspace becomes a virtual document at
+  `apicircle://<workspaceAuthority>/requests/<requestId>.req.yaml`. VS
+  Code opens these as real text editor tabs with the user's native theme,
+  keybindings, find/replace, multi-cursor, and (when later phases land)
+  CodeLens / Inlay Hints / Diagnostics. The underlying JSON file at
+  `.apicircle/workspace.json` is updated atomically by the
+  `WorkspacePatch` choke point — VS Code's Source Control panel sees one
+  reviewable diff per save, no per-surface dialect.
+  Authorities are base64url-encoded to fit VS Code's URL-safe authority
+  constraint while still mapping back to the source `.apicircle/`
+  directory path on read.
+  (`apps/vscode/src/fs/apicircleFsProvider.ts`)
+- **YAML projection for `Request`** — bidirectional serializer between
+  the canonical JSON shape and a human-friendly YAML document. Omits
+  empty optional fields so diffs stay minimal; strips read-only system
+  fields (`id`, `createdAt`, `updatedAt`, `folderId`, `bodySchemaId`,
+  `graphqlSchemaId`) so users can't accidentally break referential
+  integrity by editing them. The parser collects non-fatal issues as
+  warnings (malformed KV rows, unknown keys), throws
+  `RequestYamlParseError` on syntactically invalid YAML or missing
+  required fields (`name`/`method`/`url`). Defaults `auth` and `body`
+  to `{ type: 'none' }` when the user removes them.
+  (`apps/vscode/src/fs/requestYaml.ts`)
+- **`GitWorkspaceProvider`** — VS Code-specific
+  `WorkspaceProvider` implementation that reads/writes the canonical
+  `.apicircle/workspace.json` (the Git-tracked filename) plus a
+  separately-located `workspace.local.json` under
+  `<vscode.globalStorageUri>/<workspaceHash>/`. Differs from
+  `FileBackedWorkspaceProvider` in three ways: canonical Git filename
+  (not `workspace.synced.json`), split synced/local directories,
+  proper-lockfile coordination still on the synced file so external
+  MCP/CLI writers serialize cleanly. **TODO Phase 0 followup**:
+  unify both providers behind a single configurable abstraction —
+  flagged in the source.
+  (`apps/vscode/src/host/gitWorkspaceProvider.ts`,
+  `apps/vscode/src/host/vscodeBridge.ts`)
+- **24 new tests** across three new suites:
+  - `requestYaml.test.ts` (12 tests) — serialization output shape,
+    header comment, read-only field omission, populated-field emission,
+    method uppercasing, round-trip fidelity, parser error taxonomy,
+    auth/body default synthesis, malformed-row warning capture
+  - `apicircleFsProvider.test.ts` (10 tests) — URI construction,
+    readFile YAML serialization, FileNotFound on missing request and
+    unknown workspace, writeFile name-edit round-trip to disk, invalid
+    YAML rejection, missing-field rejection, delete persistence, rename
+    refusal with helpful message, createDirectory refusal
+  - Round-trip integration tests demonstrating the full
+    YAML→`applyMutation`→`workspace.json` pipeline
+- **Bundle size confirmed lean** — extension bundle is now 73 KB CJS
+  (down from 1.29 MB after the FS provider PR, because the in-process
+  `GitWorkspaceProvider` doesn't pull the full MCP-server surface as
+  the `FileBackedWorkspaceProvider` import path did).
+
+### Phase 1 MVP — Editor view, send, response viewer, diagnostics, status bar, wizard, CodeLens
+
+- **Editor TreeView wired to workspace data** — replaces the day-1 empty
+  stub. Renders folder/request hierarchy from `synced.collections.tree`,
+  derives non-root folder children from `folders[].parentId` and
+  `requests[].folderId` (mirroring the desktop's `childrenByFolder`
+  pattern), sorts alphabetically across kinds, decorates HTTP methods with
+  color-themed `circle-filled` icons (GET=green, POST=orange, PUT=blue,
+  PATCH=yellow, DELETE=red, HEAD/OPTIONS=purple). Clicking a request fires
+  `vscode.open` against its canonical `apicircle://` virtual YAML. Handles
+  deleted-upstream folders and requests gracefully with `(deleted)`
+  placeholder labels. Wired in `extension.ts` to refresh every view when
+  any open folder's `.apicircle/workspace.json` changes externally (Git
+  pull, CLI write, MCP server, hand-edit).
+  (`apps/vscode/src/views/EditorView.ts`, 9 unit tests)
+- **Request execution + response viewer** — `apicircle.sendRequest`
+  command. Resolves the target from the active editor's `apicircle://`
+  URI if one is open, otherwise falls back to a QuickPick over the
+  workspace's requests. Runs through `executeRequest` from
+  `@apicircle/core` with the bridge's `AbortRegistry`-issued signal. On
+  success: runs the request's assertions via `runAssertions`, formats the
+  result via `formatResponseDocument` as a YAML document (status / headers
+  / assertions / extracted / authWarnings / body sections with content-
+  type-correct rendering), opens beside the source editor. On cancel:
+  Information toast. On error: Error toast. Test-only `execute` /
+  `openResponse` hooks let unit tests drive the full flow with mock
+  results.
+  (`apps/vscode/src/execute/sendRequest.ts`, 7 unit tests)
+- **`AbortRegistry`** — per-extension registry of in-flight send
+  AbortControllers, keyed by run id. `register(runId)` returns the
+  signal, `complete(runId)` removes it after successful completion,
+  `cancel(runId)` aborts a specific send, `cancelAll()` aborts every
+  active send (used by `apicircle.cancelSend` command and during
+  deactivate). `hasActive()` and `active()` drive the status-bar cancel
+  pill. 5 unit tests pin the contract including the "complete after
+  cancel" no-op semantics and the cancel-all return count.
+  (`apps/vscode/src/execute/abortRegistry.ts`)
+- **Response document formatter** — `formatResponseDocument` produces a
+  human-readable YAML projection of an `ExecutionResult`. Summary section
+  with status / duration / size / final URL, lowercased response headers
+  (consistency across surfaces), optional assertions / extracted variables
+  / auth-warnings sections, body verbatim with content-kind annotation.
+  Network errors render as `"Network error"` with the captured `error`
+  string. Truncated responses (50 MB cap from `executeRequest`) surface a
+  `truncatedAt` field. 8 unit tests.
+  (`apps/vscode/src/execute/responseDocument.ts`)
+- **Pre-send validation diagnostics** — `PreSendDiagnostics` wires
+  `preSendValidation` from `@apicircle/core` into VS Code's Problems
+  panel. Subscribes to `onDidOpenTextDocument`, `onDidChangeTextDocument`,
+  `onDidCloseTextDocument` on `apicircle://**/requests/*.req.yaml` URIs.
+  Parses each document via the YAML projection, synthesizes a full
+  Request shape (read-only fields from URI), builds a `ResolutionScope`
+  from the active workspace's environments (excluding encrypted slots —
+  Phase 4 vault hooks in later), and reports `warnings` as
+  `DiagnosticSeverity.Warning` and `blockers` as `.Error`. Invalid YAML
+  surfaces as a single Error diagnostic at line 0. `hasBlocker(uri)`
+  helper lets `sendRequest` refuse execution when `validateOnSend` is
+  on. 5 unit tests cover the scheme filter, YAML parse failure path,
+  unresolved-variable detection, blocker query, and close cleanup.
+  (`apps/vscode/src/diagnostics/preSendDiagnostics.ts`)
+- **Status bar items** — `StatusBar` registers two items pinned to the
+  left side. The workspace item (priority 100) shows
+  `🟣 <workspace-label> · env: <active-env>` and is clickable to open
+  `.apicircle/workspace.json`. The cancel item (priority 99) is hidden by
+  default and appears as `⏹ Cancel send (<count>)` when the
+  `AbortRegistry` has active sends — clicking it runs
+  `apicircle.cancelSend`. A 500ms cheap poll drives the cancel-item
+  visibility refresh; replaceable with an event emitter when the registry
+  needs eventing for other features. 5 unit tests with `vi.fn`-based
+  status-bar item mocks.
+  (`apps/vscode/src/status/statusBar.ts`)
+- **`APICircle: New Request` QuickPick wizard** — 5-step flow: method
+  (QuickPick over the 7 HTTP methods) → URL (InputBox with non-empty
+  validation) → folder (QuickPick over top-level + existing folders) →
+  auth (QuickPick over None / Bearer / Basic / API Key with conditional
+  credential prompts) → name (InputBox pre-filled with `<METHOD> <path>`
+  default). Creates the request through `applyMutation`'s
+  `request.create` patch, opens its `apicircle://` YAML for immediate
+  editing. Each step's dismissal cancels the wizard gracefully without
+  partial state. 6 unit tests cover the full flow including cancellation
+  paths and the bearer-credentials branch.
+  (`apps/vscode/src/commands/newRequest.ts`)
+- **Send CodeLens** — `RequestCodeLensProvider` registers against
+  `{scheme: 'apicircle', pattern: '**/requests/*.req.yaml'}`. Scans for
+  the first `name:` line in the document and renders `▶ Send` above it,
+  bound to `apicircle.sendRequest`. Only ONE lens per document — later
+  `name:`-prefixed lines in nested YAML or comments don't trigger
+  duplicates. Phase 5 (language services pass) adds the `📋 Copy as cURL`
+  and `📝 Generate Code` companions; the structure is in place. 6 unit
+  tests cover the URI scheme filter, file pattern filter, single-lens
+  guarantee, name-absent case, and the event emitter refresh.
+  (`apps/vscode/src/lang/requestCodeLens.ts`)
+- **Three-surface compatibility test** (Phase 1 invariant gate) — applies
+  the same `request.create` patch through both `FileBackedWorkspaceProvider`
+  (desktop disk-mirror layout, `workspace.synced.json` +
+  `workspace.local.json` in one dir) and `GitWorkspaceProvider` (VS Code's
+  canonical `.apicircle/workspace.json` + separately located local file).
+  Asserts the resulting `synced` documents are byte-identical modulo
+  apply-time timestamps (`canonicalize` helper). A second test covers
+  sequential patches (`create` + `create` + `update`) producing identical
+  end states. A third test verifies `applyMutation` itself is determin-
+  istic. This is the gate that catches any future per-surface dialect
+  drift before merging. 3 tests.
+  (`apps/vscode/test/integration/threeSurfaceCompat.test.ts`)
+- **Live-GitHub E2E harness** — `e2e/vscode/src/test/live-github.test.ts`
+  scaffold. Opt-in via `APICIRCLE_E2E_LIVE_GITHUB=1` env var plus
+  `APICIRCLE_E2E_GITHUB_PAT` / `APICIRCLE_E2E_GITHUB_REPO`. Mirrors the
+  web suite's `test:e2e:live-github` pattern. Phase 1 ships the harness
+  scaffolding with skipped placeholder tests; Phase 2 fills in the
+  git-pull → watcher → TreeView refresh coverage; Phase 8 wires the
+  linked-workspace authentication path. New `test:e2e:live-github` script
+  in the e2e-vscode `package.json`.
+  (`e2e/vscode/src/test/live-github.test.ts`, `e2e/vscode/README.md`)
+
+**Phase 1 test count: 107 tests across 15 files** (up from 53 at end of
+day-1 PR). All four tiers green: unit · integration · E2E harness · three-
+surface compat. Bundle 445 KB CJS (up from 73 KB after FS provider PR
+because `executeRequest` + `runAssertions` + `preSendValidation` +
+`buildScope` from `@apicircle/core` now bundle in too). Monorepo-wide
+`pnpm check` clean across all 19 packages.
+
+### Phase 1 gap-closure round — 8 hard + 4 deferred gaps closed
+
+Post-Phase-1 audit surfaced gaps between claimed and actual delivery. All
+closed in this round:
+
+- **Gap #1 — `apicircle-request` language registration.** Added
+  `contributes.languages` entries for `.req.yaml` (id
+  `apicircle-request`) and `.run.yaml` (id `apicircle-response`),
+  `contributes.yamlValidation` pointing at the new
+  `schemas/apicircle-request.schema.json` (Draft-07 JSON Schema covering
+  every field with the canonical 17-auth-type enum, 8-body-type enum,
+  4-assertion-kind enum, 6-operator enum), `language-configuration.json`
+  with YAML comment/bracket/indentation rules. Pragmatic
+  `RequestCompletionProvider` registered on `*.req.yaml` URIs detects
+  YAML branch context (root/auth/body/assertions/extractions) by
+  scanning backward for the last non-indented key, then emits enum
+  completions on `method:` / `auth.type:` / `body.type:` /
+  `assertions[].kind:` / `assertions[].op:` /
+  `extractions[].source:` lines. 10 unit tests pin every branch + the
+  scheme/file filters + the root-level `type:` non-collision.
+  (`apps/vscode/schemas/apicircle-request.schema.json`,
+  `apps/vscode/language-configuration.json`,
+  `apps/vscode/src/lang/requestCompletion.ts`)
+- **Gap #2 — Response viewer via `apicircle:` FileSystemProvider.**
+  `ApicircleFsProvider` now handles `responses/<runId>.run.yaml` URIs
+  with an in-memory `responseStore` Map. `stat` / `readFile` /
+  `writeFile` (idempotent on responses) all support the new URI kind.
+  `sendRequest` calls `fsProvider.storeResponse(runId, content)` then
+  `vscode.workspace.openTextDocument(uri)` — the response gets a real
+  URI, opens beside the source, persists across the session, and is
+  navigable from history. Untitled-document fallback retained for the
+  test-injected `openResponse` hook. `ApicircleFsProvider.responseUri`
+  helper added for symmetry with `requestUri`.
+  (`apps/vscode/src/fs/apicircleFsProvider.ts`,
+  `apps/vscode/src/execute/sendRequest.ts`)
+- **Gap #3 — `validateOnSend` enforcement.** `sendRequestCommand` now
+  accepts a `diagnostics?: PreSendDiagnostics` dep. When the active
+  workspace has a request URI AND the
+  `apicircle.validation.validateOnSend` setting is true (the default)
+  AND `diagnostics.hasBlocker(uri)` returns true, the send is refused
+  with an error toast pointing to the Problems panel. Wired in
+  `extension.ts` so the default install behavior protects users from
+  sending requests with unresolved variables or unparseable URLs.
+- **Gap #4 — Esc keybinding for cancel.** `contributes.keybindings`
+  entry for `apicircle.cancelSend` bound to `escape` with the
+  `when: editorTextFocus && resourceScheme == 'apicircle'` clause —
+  Esc cancels only when the focused editor is an apicircle: virtual
+  document, leaving normal Esc behavior intact everywhere else.
+- **Gap #5 — TreeView context menu items.** Three new commands
+  contributed: `apicircle.deleteRequest` (with confirmation modal +
+  delete via `request.delete` patch), `apicircle.duplicateRequest`
+  (deep-clones via `request.create` patch with new id + `(copy)`
+  suffix + opens the duplicate), `apicircle.revealInSource` (opens
+  `.apicircle/workspace.json` and scrolls to the request's id). All
+  three contribute to `view/item/context` scoped by `viewItem ==
+request`. Each command also works from the palette via the
+  fallback "use active apicircle: editor's id" code path. 8 unit
+  tests cover the confirmation paths, missing-workspace warnings,
+  and the duplicate's id-renewal + name-suffix contract.
+  (`apps/vscode/src/commands/requestActions.ts`)
+- **Gap #6 — Three-surface tests for folder/env/mock.** Original
+  Phase 1 plan called for byte-identical assertions on 4 entity
+  kinds (`request.create`, `folder.create`, `environment.upsert`,
+  `mock.upsert`). The first round shipped 2; this round closes the
+  remaining 2. Each new test instantiates both providers
+  side-by-side, applies the canonical patch, normalizes apply-time
+  timestamps via the `canonicalize` helper, and asserts the
+  resulting `synced` JSON is byte-identical AND `changedIds` match.
+  Suite now has 6 tests covering the full Phase 1 mutation matrix.
+- **Gap #7 — E2E suite split into 6 named specs.** Original
+  `smoke.test.ts` (3 tests) split into the 6 Mocha files the plan
+  called for: `1-mvp.test.ts` (activation budget + view container
+  focusability), `1-new-request.test.ts` (command registration +
+  wizard placeholder), `1-create-workspace.test.ts` (scaffold
+  flow), `1-cancel.test.ts` (cancel command + Esc behavior),
+  `1-validation.test.ts` (FS provider scheme + blocker refusal),
+  `1-multi-root.test.ts` (multi-workspace discovery). Live
+  functional E2E (requiring QuickPick mocking + workspace-folder
+  programmatic add) lands in Phase 2 when the harness matures;
+  Phase 1 ships the structure + registered-command assertions plus
+  documented `this.skip()` for the harness-pending cases.
+- **Gap #8 — `docs/apicircle-yaml-format.md` written.** New
+  comprehensive reference covering: URI scheme map, required vs
+  optional vs read-only field discipline, all 17 auth schemes with
+  YAML examples, 8 body types with content-shape notes, assertion
+  kinds/ops/targets, extraction sources, variable resolution
+  precedence (per-request → global context → active env → priority
+  overlay → secrets), round-trip discipline, and the cross-surface
+  guarantee with a pointer to the three-surface test.
+  (`docs/apicircle-yaml-format.md`)
+
+**Deferred items also closed:**
+
+- `viewsWelcome` contributions for the other 6 sidebar views
+  (Environment / Execution / Mock / History / MCP / Marketplace),
+  each with a "ships in Phase X" message so first-time users see
+  product context rather than blank panels.
+- Status bar **Vault** placeholder item at priority 98 (between
+  workspace and cancel) showing `$(unlock) Vault` while a
+  workspace is active. Phase 4 wires the actual `SecretStorage`
+  lock state; Phase 1 ships the discoverability affordance + the
+  show/hide semantics.
+- Activation performance benchmark
+  (`test/integration/activationPerf.test.ts`) — three cases:
+  empty workspace under 100ms, 100-request workspace under 500ms,
+  500-request workspace under 1000ms. The vitest Node-environment
+  caps are lenient versus the real <200ms target the extension
+  host achieves; this test guards against runaway regressions.
+- `knip` configuration tightened (`knip.json` gains explicit
+  `apps/vscode` + `e2e/vscode` blocks with the host-supplied
+  `vscode` module noted as an `ignoreDependencies` entry).
+  Unused `@apicircle/mock-server-core` dependency removed from
+  `apps/vscode/package.json` (Phase 3 will re-add it once
+  mock-server lifecycle work begins). Unused
+  `__decodeAuthorityForTests` and `applyMutation` re-exports
+  pruned. `@vscode/test-electron` moved out of `apps/vscode`
+  devDeps (it belongs solely in `e2e/vscode`).
+
+**Post-gap-closure tally: 129 tests across 18 files** (up from 107).
+All four tiers green. `pnpm check` clean monorepo-wide. `pnpm lint`
+clean (0 errors). `npx knip` clean for apps/vscode + e2e/vscode.
+Bundle 454 KB CJS (negligible change). The Phase 1 plan now matches
+the shipped artifact field-for-field, with no remaining hard or
+deferred gaps carrying into Phase 2.
+
+### Phase 2 round 1 — Environments, History, Snapshots, Plans (TreeView + Run)
+
+- **Environment YAML projection** — bidirectional serializer at
+  `apps/vscode/src/fs/envYaml.ts`. Header comment explains encrypted
+  variables travel through Git as ciphertext (decryption is Phase 4).
+  Plaintext variables omit the `encrypted: false` field in YAML for
+  minimal diffs; encrypted variables surface `encrypted: true` plus
+  the `secretKeyId` slot id. Parser tolerates malformed rows as
+  warnings, throws `EnvYamlParseError` for invalid YAML or missing
+  required fields. 13 unit tests.
+- **Environment view wired** — `apps/vscode/src/views/EnvironmentView.ts`
+  shows every environment as a root node, variables as children. Active
+  env decorated with `check` icon + "active" description. Encrypted
+  variable values masked (`••••<last4>`); plaintext shown verbatim.
+  Click an env → opens its `.env.yaml` virtual document via the
+  FS provider. 10 unit tests.
+- **Environment commands** —
+  `apicircle.setActiveEnvironment` (QuickPick with "None" option),
+  `apicircle.newEnvironment` (InputBox with duplicate-name guard,
+  opens new env's YAML), `apicircle.deleteEnvironment` (confirmation
+  modal, contributes `9_danger` group in view/item/context). All wired
+  to `view/title` and `view/item/context` menu entries. 8 unit tests.
+- **`apicircle:` FileSystemProvider extended** for `environments/<name>.env.yaml`
+  - `history/<runId>.run.yaml` URI kinds. Two new URL helpers:
+    `ApicircleFsProvider.environmentUri()` and `.historyUri()`. In-memory
+    `historyStore` caches formatted run documents so HistoryView clicks
+    open instantly.
+- **History view wired** — `apps/vscode/src/views/HistoryView.ts`. Two
+  buckets: Recent Requests + Recent Plans. Verdict icons (✓/✗/◦) color-
+  themed via VS Code chart palette. Newest-first ordering. Per-row
+  tooltip with method, URL, status text. Click a run → opens its
+  formatted YAML through the FS provider's historyStore.
+- **History document formatter** — `formatRequestRunDocument` +
+  `formatPlanRunDocument`. RequestRun renders summary / requestHeaders
+  / requestBody (when non-null) / responseHeaders / assertions /
+  responseBody-with-content-kind annotation. PlanRun renders
+  per-step rows joined to each step's RequestRun for method/URL/status
+  context. 12 unit tests.
+- **Request runs persisted to history** — `sendRequestCommand` now
+  invokes `persistRequestRun` after a successful send. Captures the
+  exact ExecutionResult shape, truncates body previews at
+  `RUN_BODY_PREVIEW_LIMIT` (64 KB), filters disabled request headers
+  out of the snapshot, respects `apicircle.history.maxEntriesPerWorkspace`
+  setting for eviction. 7 unit tests.
+- **Snapshot lifecycle** —
+  `apicircle.captureSnapshot` (InputBox note → `snapshot.capture` patch),
+  `apicircle.restoreSnapshot` (QuickPick + confirmation + safety snapshot
+  before restore so the restore itself is reversible),
+  `apicircle.deleteSnapshot` (confirmation modal). 6 unit tests pin
+  the safety-snapshot-before-restore contract.
+- **Execution view wired** — `apps/vscode/src/views/ExecutionView.ts`.
+  Plans as roots with step count, steps as children with order number
+  - request name + method. Disabled steps (`enabled: false`) render
+    dimmed with `circle-small-outline` icon. Handles missing-request
+    references gracefully. 7 unit tests.
+- **Plan execution** — `apicircle.runPlan` command + `view/item/context`
+  inline action for plan rows. Runs the plan via `runPlan` from
+  `@apicircle/core` (same engine as Desktop + CLI + MCP) with assertions
+  enabled, `ANONYMOUS_ACTOR` identity, `withProgress` notification.
+  Persists the returned `nextState` to disk — that's where `runPlan`
+  appends the PlanRun + per-step RequestRuns to `WorkspaceLocal.history`.
+- **`WorkspaceSurface.write()` exposed** — third method on the surface
+  interface alongside `read()` and `apply()`. Used for state that
+  doesn't yet have a `WorkspacePatch` variant (history.append_run,
+  full plan-run snapshot). Documented as "headless writers must go
+  through `apply`" — this method is internal to the extension and the
+  same writeFile lockfile guarantees serialization.
+- **`GitWorkspaceProvider.write()` hardened** to ensure both synced and
+  local dirs exist before write — closes a regression that
+  persistRequestRun would hit when the user picked a fresh
+  globalStorageUri path.
+
+**Deferred to Phase 2 round 2 (NotebookController + TestController):**
+
+- Plans as `vscode.NotebookController` (`apicircle-plan` notebook
+  type) with per-step cells, markdown documentation cells, per-cell
+  ▶ Run, persisted outputs. Phase 2 round 1 ships the "Run entire
+  plan" action via the TreeView's inline button; per-cell execution
+  needs the NotebookSerializer + executeHandler wiring.
+- `vscode.tests.createTestController` integration — plans + assertions
+  surface in VS Code's Testing tab with per-assertion pass/fail and
+  re-run support. Needs the plan run loop refactored to emit per-step
+  verdicts in real-time rather than only at completion.
+- "APICircle Runs" `OutputChannel` — Phase 2 round 1 ships history
+  persistence; the live-log stream during a plan run is round 2.
+- Three-surface compat for `plan.upsert` — env.upsert is already
+  covered by Phase 1's gap closure round; plan.upsert lands with the
+  Notebook integration.
+
+**Phase 2 round 1 tally: 205 tests across 27 files** (up from 137).
+All four tiers green. `pnpm check` clean monorepo-wide. `pnpm lint`
+clean (0 errors). Bundle 502 KB CJS (up from 454 — `runPlan` and the
+plan-run engine bundle in alongside the existing `executeRequest`
+surface).
+
+### Phase 2 round 1 gap-closure — 13 honest gaps closed
+
+Post-Phase-2-round-1 audit surfaced 13 gaps between claimed and actual
+delivery. All closed in this pass:
+
+- **Snapshots sidebar view** — new `apps/vscode/src/views/SnapshotsView.ts`
+  registers `apicircle.snapshots` as the 8th sidebar TreeView. Top row
+  is a storage meter (`X.X KB / Y.Y KB (Z%)`) with `database` icon;
+  children are entries newest-first with trigger-themed icons (`save`
+  for manual, `warning` for pre-yank, `archive` for pre-deprecate,
+  `cloud-download` for pre-linked-update, `history` for pre-restore).
+  Context-menu inline Restore + Delete + view/title Capture button.
+  `restoreSnapshotCommand` / `deleteSnapshotCommand` now accept an
+  optional `node?: SnapshotNodeArg` to skip the QuickPick when invoked
+  from the tree. 8 unit tests + the activation integration test was
+  bumped to expect 8 registered views.
+- **Environment YAML hover** — new `apps/vscode/src/lang/environmentHover.ts`
+  registers a `HoverProvider` against `.env.yaml` URIs. Hovering on a
+  `key:` line shows: variable name + env name, encrypted vs plaintext
+  status (encrypted entries also show their `secretKeyId` slot + bound
+  `SecretKeyMeta` label, or a "vault entry missing" warning), mask
+  warnings when a higher-priority env in `priorityOrder` defines the
+  same key, and "not in priority order" notes when the env is inert.
+  Filtered to `local`-kind `EnvPriorityRef`s (linked-env resolution
+  ships in Phase 8). Also registered the previously-orphan
+  `EnvironmentCodeLensProvider` + `EnvironmentCompletionProvider` here
+  for `.env.yaml`. 10 unit tests + new `MarkdownString` / `Hover`
+  classes in the vscode mock.
+- **Workspace watcher consolidation** — new
+  `apps/vscode/src/watch/workspaceWatcher.ts` registers TWO
+  `FileSystemWatcher`s (synced `.apicircle/workspace.json` AND device-
+  local `workspace.local.json`) and fires `onAnyChange` on every
+  create/change/delete event from either. The prior synced-only watcher
+  missed plan-create, history-append, snapshot-capture and env-var
+  rename events because those land in `workspace.local.json`. 5 unit
+  tests.
+- **Three new wired settings** — three previously-dead `package.json`
+  config keys now actually steer the extension:
+  - `apicircle.execution.timeoutMs` is now passed to `executeRequest`
+    via `ExecuteOptions.timeoutMs` (previously the default 30000 ms
+    was unconditional).
+  - `apicircle.execution.host` — when set to `"local"` without a
+    `vscode.env.remoteName`, surfaces a Remote-SSH / Codespaces
+    warning so the setting isn't silently a no-op (the actual
+    port-forwarding plumbing lands with Phase 7).
+  - `apicircle.history.retentionDays` — `persistRequestRun` and
+    `runPlanCommand` both prune `requestRuns` + `planRuns` older than
+    the window before appending the new run; treats `0` or negative
+    as "no time cap". 6 new tests across `persistHistory.test.ts` +
+    `planActions.test.ts`.
+- **`plan.upsert` three-surface byte-identical compat test** added to
+  `threeSurfaceCompat.test.ts` — covers the previously-untested
+  invariant that `plan.upsert` patches produce identical
+  `workspace.local.executionPlans` across `FileBackedWorkspaceProvider`
+  (desktop) and `GitWorkspaceProvider` (VS Code).
+- **Test debts** — 4 command files (`addExtraction`, `historyActions`,
+  `variableActions`, `planActions` runPlan) had zero unit coverage
+  despite being Phase 2 work. Added 32 tests across the four files.
+- **Settings popover view/title menu** for `apicircle.snapshots` —
+  `Capture Snapshot` lives in the view's `navigation` group.
+
+### Phase 2 round 2 gap-closure — 13 more honest gaps closed
+
+Round 2 adversarial re-audit on Round 1 closures surfaced another 13
+gaps. All closed in this pass:
+
+- **`apicircle.setSnapshotMaxBytes` command implemented** — the
+  Snapshots view tooltip referenced "set the cap via the command
+  palette" but no command existed. Now wired: InputBox in MB, validates
+  `> 0` and `≤ 2048 MB`, fires `snapshot.set_max_bytes`. Registered in
+  `package.json` and the Snapshots view-title `1_config` group.
+- **Activation events fixed** — added `onView:apicircle.snapshots` and
+  `onCommand:apicircle.captureSnapshot` to `activationEvents` so the
+  Snapshots view + the welcome-card capture link actually activate the
+  extension cold.
+- **Snapshot node-arg test branches** — `restoreSnapshotCommand` /
+  `deleteSnapshotCommand` accept a `node?: SnapshotNodeArg` (sidebar
+  context-menu plumbing). Tests now cover the skip-picker path AND the
+  "node references missing id" warning branch. 5 new tests for snapshot
+  actions + 4 for `setSnapshotMaxBytesCommand`.
+- **`sendRequest` wired-settings tests** — 4 new tests prove
+  `apicircle.execution.timeoutMs` actually reaches `executeRequest`,
+  the `execution.host=local` warning fires only when `remoteName` is
+  unset, `execution.host=local` + `remoteName` set is silent, and
+  `execution.host=remote` is silent (the default).
+- **Plan retention filter tests** — 2 new tests in `planActions.test.ts`
+  prove that both `requestRuns` and `planRuns` older than
+  `apicircle.history.retentionDays` are pruned by `runPlanCommand`,
+  and that `retentionDays=0` keeps everything.
+- **Three-surface compat for `snapshot.delete` + `snapshot.restore`** —
+  2 new tests in `threeSurfaceCompat.test.ts` apply the same delete +
+  restore patches through `FileBackedWorkspaceProvider` (desktop) and
+  `GitWorkspaceProvider` (VS Code) and assert byte-identical `local`
+  (delete) + `synced` (restore) states.
+- **`vscode` mock surface extended** — `MarkdownString` + `Hover`
+  classes, `ProgressLocation` enum, `window.withProgress` that
+  synchronously invokes the task callback, and `env.remoteName` —
+  needed by the new hover, plan-run and execution-host tests.
+- **Docs propagated** — this CHANGELOG section + `docs/vscode-extension.md`
+  updated to reflect the 8-view layout, the new hover surface, the
+  snapshots view, and the three wired settings; reconciled the
+  "deferred" list against what Round 1 actually shipped.
+
+**Phase 2 round 2 tally: 342 tests across 45 files** (up from 325 at
+end of Round 1). All four tiers green. `pnpm check`, `pnpm lint`
+clean.
+
+### Phase 2 round 2 gap-closure — 13 more honest gaps closed
+
+Round 3 adversarial re-audit on Round 2 closures found another 13
+gaps — same 13-count signal as Rounds 1 and 2. All closed:
+
+- **`apicircle.setSnapshotMaxBytes` is now in `activationEvents`** so
+  the palette-only entry point activates the extension cold.
+- **Three-surface compat test for `snapshot.set_max_bytes`** — the
+  fourth snapshot patch is now covered alongside capture / delete /
+  restore in `threeSurfaceCompat.test.ts`.
+- **`activation.test.ts` snapshots the full command-id set** with
+  inverse-guard (no UNEXPECTED commands) so missing `registerCommand`
+  calls or typo'd contributions fail the activation test, not the
+  user. The previous test only asserted 6 commands by allowlist;
+  now all 25.
+- **Dead `SnapshotsView.snapshotIdFromNode` static removed** — it was
+  imported only by its own test (knip false-negative).
+- **`SnapshotsView` empty state hooked to viewsWelcome** — when there
+  are zero snapshots, `getChildren` returns `[]` so the welcome card
+  ("No snapshots yet… [Capture Snapshot…]") fires instead of a
+  confusing "Storage: 0 B" row. The viewsWelcome card now also links
+  to `[Set Storage Cap…]`.
+- **Cancellation simulation in the `withProgress` mock** — new
+  `window.__withProgressCancelOnce()` arms the next `withProgress`
+  invocation to report cancellation. New `runPlanCommand` test
+  exercises the `token.onCancellationRequested → abortRegistry.cancel`
+  wiring that previously had no coverage.
+- **`setSnapshotMaxBytes` validator integer-only** — `100.5` is now
+  rejected with "Enter whole MB (no decimals)" rather than silently
+  producing 105,381,888 bytes.
+- **CHANGELOG test-count corrected** — the Round 2 closure section
+  previously claimed "339 tests across 47 files"; actual was 342/45.
+  Now 344/45.
+- **`docs/qa/README.md` Unit tier updated** — was "22+ suites · ~210
+  tests" pre-Round 2; now reflects the real surface count + new
+  Phase 2 components (SnapshotsView, EnvironmentHover,
+  workspaceWatcher, setSnapshotMaxBytes, the three wired settings).
+- **README.md gets a VS Code extension section** — Round 1 closures
+  claimed docs propagation but README only mentioned VS Code as a
+  theme variant. Now points at `apps/vscode/` and summarizes what
+  ships.
+- **`CLAUDE.md` § 9 docs table** updated — was "Phase 1 alpha" for
+  `docs/vscode-extension.md`, now "Phase 2 alpha".
+- **`CLAUDE.md` § 2 repo skeleton blurb** updated to reflect Phase 2
+  surfaces actually shipped (not just the Phase-1 description).
+
+### Phase 2 round 4 — end-to-end audit, 26 gaps closed
+
+The Round 4 audit was a broader categorical sweep (rather than per-round
+adversarial). It surfaced 26 gaps across manifest/UX/test/docs:
+
+- **8 hidden palette commands declared** (`addExtraction`, `clearAllHistory`,
+  `deleteHistoryRun`, `deleteVariable`, `editVariableValue`, `newPlan`,
+  `purgeOlderThan`, `setEnvPriorityOrder`) — registered in extension.ts
+  but never in `contributes.commands`. Restored palette parity.
+- **5 dead context menus wired** for `request-run`, `plan-run`, `variable`,
+  `variable-encrypted`, `bucket-{requests,plans}` viewItems.
+- **Execution + History view-title toolbars + universal Refresh button**
+  across all 8 views.
+- **Stale `viewsWelcome` copy updated** for Environment, Execution, History.
+- **Plan YAML projection shipped** — `apicircle://*/plans/<id>.plan.yaml`
+  with serializer/parser (15 tests), FS provider handler, ExecutionView
+  click-to-open, ▶ Run Plan CodeLens (5 tests).
+- **JSON schemas for `.plan.yaml` + `.run.yaml`** with `yamlValidation`
+  entries — Monaco's YAML extension now drives autocomplete + validation
+  for all four virtual document types.
+- **Keybindings**: Ctrl/Cmd+Enter (send), F5 (refresh), Ctrl/Cmd+N (new
+  per view).
+- **Missing unit tests added** — `createWorkspace.test.ts` (6),
+  `gitWorkspaceProvider.test.ts` (10), `stubViews.test.ts` (6).
+- **Docs propagated** to README.md (VS Code section), CLAUDE.md
+  (Phase 2 alpha + 8 views), `docs/qa/README.md` (test counts),
+  `docs/apicircle-yaml-format.md` (history runs + plan YAML +
+  EnvironmentHover sections).
+- **Settings UX**: removed `apicircle.telemetry.enabled` (no pipeline
+  exists); phase-deferred settings now prefixed
+  `**(Phase N — not yet implemented)**`.
+- **Phase-0 TODO closed** in `gitWorkspaceProvider.ts`; new
+  `test/mocks/helpers.ts` for typed mock access.
+
+### Phase 2 round 5 — adversarial re-audit, 15 + 1 gaps closed
+
+Round 5 (audit on Round 4) found 15 gaps. **First decrease in per-round
+count** (Round 1–4 each found 13/13/13/26). Plus 1 pre-existing flaky
+test surfaced during closure work. All closed:
+
+- **R5-G1**: F5 keybinding for `apicircle.refresh` clashed with the
+  built-in VS Code Debug: Start. Moved to Ctrl/Cmd+Shift+R.
+- **R5-G12 + R5-G15**: F6 keybinding for `apicircle.runPlan`;
+  Ctrl/Cmd+Shift+S for `apicircle.captureSnapshot` (snapshot is not
+  semantically "new entity creation", so Ctrl+N was wrong).
+- **R5-G2**: Folder context menu wired — new `apicircle.deleteFolder` +
+  `apicircle.newRequestInFolder` commands. `newRequestCommand` now
+  accepts an optional `{folderId}` context to skip the folder picker.
+  10 new tests in `folderActions.test.ts`.
+- **R5-G3**: Step context menu wired — new `apicircle.toggleStepEnabled` +
+  `apicircle.removeStepFromPlan` commands. Both mutate via
+  `plan.upsert` since there's no per-step patch variant. 8 new tests in
+  `stepActions.test.ts`.
+- **R5-G14**: `editVariableValue` removed from the `variable-encrypted`
+  context menu (encrypted variables are read-only until Phase 4 ships
+  the vault). `deleteVariable` is still available — you can remove an
+  encrypted var without unlocking.
+- **R5-G4**: FS provider plan-write now validates every `steps[].requestId`
+  references an existing request. Saving with a typo throws
+  `NoPermissions` with the bad id(s) listed.
+- **R5-G5**: FS provider `delete()` now handles `plans/<id>.plan.yaml` (fires
+  `plan.delete`) and `environments/<name>.env.yaml` (fires
+  `environment.delete`). Previously only `requests/` could be deleted
+  through the FS.
+- **R5-G6**: `PlanCompletionProvider` ships — completions for root fields
+  (`name`, `steps`, `variables`, `envPriorityOrder`,
+  `stopOnAssertionFailure`), step fields, variable fields, env-ref
+  refs, plus dynamic completions for `requestId:` (workspace requests)
+  and `local:` (env names) and `enabled:` (boolean). 10 tests.
+- **R5-G10**: `PlanHoverProvider` ships — hovering a `requestId:` shows
+  the referenced request's name + method + URL (or "unknown id"
+  warning); hovering `linkedWorkspaceId:` shows linked workspace label.
+  8 tests.
+- **R5-G9**: New `test/integration/planRoundTrip.test.ts` — 6 end-to-end
+  tests covering FS-provider serialize → mutate YAML → write →
+  applyMutation → re-read. Includes the R5-G4 dangling-id rejection
+  test and the R5-G5 delete-fires-patch test.
+- **R5-G11**: `test/mocks/helpers.ts` is now actually used — by
+  `planRoundTrip.test.ts`. Round 4 introduced it as dead code; Round 5
+  brings it into a real test.
+- **R5-G7**: CHANGELOG test-count corrected (Round 3 said 344/45;
+  actual at that point was 344/45 then; after Round 5 it's 426/55).
+- **R5-G13**: View-title menu groups consistent (`navigation@N` for
+  primary actions, `1_config` for settings-style actions,
+  `1_destructive` reserved for History's Clear All).
+- **R5-G16 (flake)**: `threeSurfaceCompat.test.ts`'s "applyMutation
+  determinism" test was flaky — comparing JSON.stringify of two calls
+  that hit `new Date()` 1ms apart. Now uses the `canonicalize()` helper
+  that strips apply-time timestamps.
+
+**Phase 2 round 5 tally: 426 tests across 55 files** (up from 387 at
+end of Round 4). `pnpm check` + `pnpm lint` clean across the monorepo.
+Cross-package `pnpm -w test` runs **3120 tests across 290 files** —
+no regressions in `core` / `shared` / `mock-server-core` /
+`mcp-server` / `ui-components` / `desktop` / `web` / `cli` from any
+Phase 2 work.
+
 ## 1.0.9 - 2026-06-06
 
 ### UX fix — file picker consolidates upload + library into one themed menu

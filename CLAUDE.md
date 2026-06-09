@@ -55,8 +55,52 @@ Turbo + pnpm monorepo. Node ≥ 20, pnpm ≥ 9.
 studio/
 ├── apps/
 │   ├── web/              Vite + React 18 shell — the browser build (dev port 5174)
-│   └── desktop/          Electron shell — hosts the web UI, OS-keychain secrets,
-│                           mock + MCP IPC bridges (src/main/*)
+│   ├── desktop/          Electron shell — hosts the web UI, OS-keychain secrets,
+│   │                       mock + MCP IPC bridges (src/main/*)
+│   └── vscode/           VS Code extension — Activity Bar icon, 8 sidebar
+│                           TreeViews (Editor, Environment, Execution, Mock,
+│                           History, Snapshots, MCP, Marketplace), `apicircle:`
+│                           virtual FS for requests/envs/plans/mocks/responses/
+│                           history runs, language services (CodeLens +
+│                           Completion + Hover for request/env/plan/mock YAMLs),
+│                           pre-send diagnostics, in-process mock-server
+│                           lifecycle (Phase 3 — wraps `InProcessMockController`),
+│                           **secret vault (Phase 4) — passphrase unlock,
+│                           in-memory AES-GCM key, auto-lock by inactivity,
+│                           clipboard auto-clear, encrypted env-variable
+│                           reveal via `apicircle.openVaultEntry`,
+│                           consolidated `APICircle Runs` OutputChannel**,
+│                           **MCP host integration (Phase 5) — per-AI-client
+│                           config snippets via `apicircle.copyMcpConfig`
+│                           pointing at active workspace's .apicircle/ dir,
+│                           shared snippet builder in `@apicircle/mcp-server`,
+│                           McpView with 10 supported clients + connect
+│                           guide, `apicircle.mcp.binaryPath` setting**,
+│                           **Copilot Chat MCP install (Phase 6) —
+│                           `apicircle.installCopilotMcpConfig` writes
+│                           `.vscode/mcp.json` idempotently for VS Code
+│                           1.86+ Copilot Chat / any workspace-config MCP
+│                           client, GitHub Copilot row shows install state
+│                           (absent/installed/stale), preserves foreign
+│                           mcpServers entries**,
+│                           **bundle code-splitting (Phase 7) — esbuild
+│                           tree-shaking via `"sideEffects": false` on
+│                           all `@apicircle/*` workspace packages drops
+│                           the extension bundle 1.91 MB → 1.46 MB
+│                           (−454 KB / 23.7%); two-tier budget gate
+│                           (`scripts/check-vscode-bundle.mjs` — soft
+│                           warn 1.8 MB / hard fail 2.0 MB) + matching
+│                           regression test
+│                           (`apps/vscode/test/integration/bundleSize
+│                           .test.ts`) wired into the VS Code workflow**,
+│                           three-surface compat with Desktop + Web (12 patch
+│                           kinds covered incl. `mock.delete` +
+│                           `secret.crypto.set` / `secret.crypto.clear`),
+│                           wired settings (execution timeout / Remote-SSH
+│                           host hint / history retention / **secrets.auto
+│                           LockMinutes / secrets.clipboardClearSeconds**).
+│                           All-native (no webview) by default; opt-in
+│                           visual editors land in Phase 6.
 ├── packages/
 │   ├── shared/            Types, generateId, validators, encryption + MCP envelopes
 │   ├── core/              Request execution, env resolution, auth signing, assertions,
@@ -270,18 +314,20 @@ Desktop: `pnpm --filter @apicircle/desktop build` then `… start`.
 
 ## 9. Where the docs live
 
-| Doc                                                                | Purpose                                                          |
-| ------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| [`docs/architecture/platform.md`](docs/architecture/platform.md)   | Platform surfaces design record (MCP, mock engine, CLI, desktop) |
-| [`docs/auth.md`](docs/auth.md)                                     | The 17-auth-type matrix                                          |
-| [`docs/mock-server.md`](docs/mock-server.md)                       | Mock server feature guide                                        |
-| [`docs/mcp-tools-reference.md`](docs/mcp-tools-reference.md)       | MCP tool catalog reference                                       |
-| [`docs/connect-your-ai-client.md`](docs/connect-your-ai-client.md) | Wiring an MCP client                                             |
-| [`docs/installing.md`](docs/installing.md)                         | Install instructions                                             |
-| [`docs/qa/README.md`](docs/qa/README.md)                           | QA status, E2E CI reference, coverage tooling                    |
-| [`docs/context/api-circle.md`](docs/context/api-circle.md)         | Tool-agnostic cold-start brief (for Cursor / Copilot / etc.)     |
-| [`CHANGELOG.md`](CHANGELOG.md)                                     | Release-by-release feature notes (1.0.0 → now)                   |
-| [`e2e/qa/runner/`](e2e/qa/runner/)                                 | Cowork manual-test runner — fixtures, seed script, runner prompt |
+| Doc                                                                                    | Purpose                                                               |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| [`docs/architecture/platform.md`](docs/architecture/platform.md)                       | Platform surfaces design record (MCP, mock engine, CLI, desktop)      |
+| [`docs/vscode-extension.md`](docs/vscode-extension.md)                                 | VS Code extension user + developer guide (Phase 12 alpha)             |
+| [`docs/vscode-extension-install-publish.md`](docs/vscode-extension-install-publish.md) | Local install (dev host, .vsix) + Marketplace + Open VSX publish plan |
+| [`docs/auth.md`](docs/auth.md)                                                         | The 17-auth-type matrix                                               |
+| [`docs/mock-server.md`](docs/mock-server.md)                                           | Mock server feature guide                                             |
+| [`docs/mcp-tools-reference.md`](docs/mcp-tools-reference.md)                           | MCP tool catalog reference                                            |
+| [`docs/connect-your-ai-client.md`](docs/connect-your-ai-client.md)                     | Wiring an MCP client                                                  |
+| [`docs/installing.md`](docs/installing.md)                                             | Install instructions                                                  |
+| [`docs/qa/README.md`](docs/qa/README.md)                                               | QA status, E2E CI reference, coverage tooling                         |
+| [`docs/context/api-circle.md`](docs/context/api-circle.md)                             | Tool-agnostic cold-start brief (for Cursor / Copilot / etc.)          |
+| [`CHANGELOG.md`](CHANGELOG.md)                                                         | Release-by-release feature notes (1.0.0 → now)                        |
+| [`e2e/qa/runner/`](e2e/qa/runner/)                                                     | Cowork manual-test runner — fixtures, seed script, runner prompt      |
 
 ---
 
@@ -300,6 +346,19 @@ Desktop: `pnpm --filter @apicircle/desktop build` then `… start`.
   unused; it has accurate entry-point config for the Electron, Playwright, and
   script entry points.
 - **Don't reach for `any`** or `as unknown as X`. Fix the type.
+- **VS Code extension bundle budget contract.** `apps/vscode/dist/extension.js`
+  is gated by `scripts/check-vscode-bundle.mjs` and the matching
+  `apps/vscode/test/integration/bundleSize.test.ts`. Thresholds live in
+  `scripts/vscode-bundle-budget.mjs` (single source of truth):
+  **min 500 KB sanity floor / soft warn 1.8 MB / hard fail 2.0 MB**. Every
+  phase that lands code in `apps/vscode/` (or anything bundled into it via
+  the `@apicircle/*` graph) SHOULD: (1) run
+  `node scripts/check-vscode-bundle.mjs` and report the new size in the
+  CHANGELOG entry; (2) if the change crosses the soft warn, justify it and
+  either propose a counter-trim or bump the soft warn explicitly (in
+  `scripts/vscode-bundle-budget.mjs`) with rationale; (3) never bump the
+  hard fail to silence a regression. Phase 7 baseline: 1.46 MB. See
+  `docs/vscode-extension.md §14` for the full contract.
 
 ---
 

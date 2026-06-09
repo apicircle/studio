@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://apicircle.studio/schemas/apicircle-mock.schema.json",
+  "title": "APICircle Mock Server",
+  "description": "Schema for `.mock.yaml` documents projected from `WorkspaceSynced.mockServers[id]`. Editable fields: `name`, `defaultPort`, `cors`. `source` + `endpoints` are read-only annotations — re-import to change.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Mock-server display name shown in the Mock view and run notifications."
+    },
+    "defaultPort": {
+      "type": ["integer", "null"],
+      "minimum": 1024,
+      "maximum": 65535,
+      "description": "Default port. null = pick a free port when starting."
+    },
+    "cors": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "origins": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Allowed Origin header values. Empty + enabled=true means \"reflect any origin\"."
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "description": "Read-only — re-import the spec via 'APICircle: New Mock' to change. Spec content is intentionally NOT serialized in this projection (secret-safety) — only `kind`, `format`, and `bytes` are emitted.",
+      "additionalProperties": true,
+      "properties": {
+        "kind": { "type": "string", "enum": ["openapi", "postman", "insomnia", "manual"] },
+        "format": { "type": "string", "enum": ["json", "yaml"] },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Byte length of the raw spec stored in workspace.json. Read-only."
+        }
+      }
+    },
+    "endpoints": {
+      "type": "array",
+      "description": "Read-only — derived from source. Per-endpoint editing lives in the desktop app.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string" },
+          "method": { "type": "string" },
+          "pathPattern": { "type": "string" },
+          "name": { "type": "string" },
+          "defaultStatus": { "type": "integer" }
+        }
+      }
+    }
+  }
+}

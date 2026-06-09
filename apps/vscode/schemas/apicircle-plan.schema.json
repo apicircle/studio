@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://apicircle.studio/schemas/apicircle-plan.schema.json",
+  "title": "APICircle Execution Plan",
+  "description": "Schema for `.plan.yaml` documents projected from `WorkspaceLocal.executionPlans[id]`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "steps"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Plan name shown in the Execution view and run notifications."
+    },
+    "stopOnAssertionFailure": {
+      "type": "boolean",
+      "description": "When true, runPlan halts at the first failed-assertion step. Only consulted when launched `withAssertions`."
+    },
+    "steps": {
+      "type": "array",
+      "description": "Steps run sequentially in this order. `enabled: false` skips a step.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["requestId"],
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "ID of the request to execute. Must exist in `synced.collections.requests`."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "When false, step is skipped at run time. Defaults to true."
+          },
+          "linkedWorkspaceId": {
+            "type": "string",
+            "description": "Optional — execute against a linked workspace's request rather than the local one. Phase 8."
+          }
+        }
+      }
+    },
+    "variables": {
+      "type": "array",
+      "description": "Plan-level variables — resolve between context vars and env priority list.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "value"],
+        "properties": {
+          "key": { "type": "string", "minLength": 1 },
+          "value": { "type": "string" }
+        }
+      }
+    },
+    "envPriorityOrder": {
+      "type": "array",
+      "description": "Plan-scoped env overlay. Empty inherits the workspace order.",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["local"],
+            "properties": {
+              "local": { "type": "string", "minLength": 1 }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["linked"],
+            "properties": {
+              "linked": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["workspaceId", "envName"],
+                "properties": {
+                  "workspaceId": { "type": "string", "minLength": 1 },
+                  "envName": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,112 @@
+name: VS Code extension
+
+# Quality gates for the VS Code extension (`apps/vscode/`) and its E2E
+# harness package (`e2e/vscode/`). Runs on every PR touching either path
+# plus all pushes to main. Mirrors the structure of `ci.yml`'s `quality`
+# job but scopes to the two VS Code packages so the rest of the monorepo
+# isn't reblamed on a VS Code-only change.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/vscode/**'
+      - 'e2e/vscode/**'
+      - 'packages/core/**'
+      - 'packages/mcp-server/**'
+      - 'packages/shared/**'
+      - '.github/workflows/vscode.yml'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+      - 'turbo.json'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/vscode/**'
+      - 'e2e/vscode/**'
+
+concurrency:
+  group: vscode-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Typecheck · lint · test · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck (vscode + e2e-vscode)
+        run: |
+          pnpm --filter @apicircle/vscode check
+          pnpm --filter @apicircle/e2e-vscode check
+
+      - name: Lint
+        run: pnpm --filter @apicircle/vscode lint
+
+      - name: Unit + integration tests
+        run: pnpm --filter @apicircle/vscode test
+
+      - name: Build extension bundle
+        run: pnpm --filter @apicircle/vscode build
+
+      - name: Bundle-size budget (vscode)
+        # Two-tier gate: warn at 1.8 MB, hard fail at 2.0 MB. See
+        # scripts/check-vscode-bundle.mjs and docs/vscode-extension.md §14
+        # for the budget contract.
+        run: node scripts/check-vscode-bundle.mjs
+
+      - name: Dead-code scan (knip)
+        run: pnpm dlx knip --include apps/vscode,e2e/vscode --no-progress
+
+  cross-host-smoke:
+    name: Cross-host E2E smoke (Mocha via @vscode/test-electron)
+    # The E2E suite drives a real VS Code download (~100 MB) and a headless
+    # display. Only runs on main pushes to keep PR cycle fast; PR coverage
+    # is the typecheck-only check on e2e/vscode plus the apps/vscode unit +
+    # integration tier.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        vscode-version: [stable, insiders]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @apicircle/vscode build
+      - run: pnpm --filter @apicircle/e2e-vscode build
+      - name: Run E2E (xvfb for headless)
+        env:
+          VSCODE_TEST_VERSION: ${{ matrix.vscode-version }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          xvfb-run --auto-servernum --server-args='-screen 0 1024x768x24' \
+            pnpm --filter @apicircle/e2e-vscode test:e2e

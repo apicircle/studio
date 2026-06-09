@@ -116,7 +116,7 @@ import {
   putAttachment,
 } from '../persistence/attachments';
 import { getMasterKey } from '../persistence/secretKey';
-import { initSecretCrypto, unlockSecretCrypto } from '../persistence/passphraseKey';
+import { initSecretCrypto, unlockSecretCrypto } from '@apicircle/core';
 import {
   WorkspaceMismatchError,
   type WorkspaceRegistry,

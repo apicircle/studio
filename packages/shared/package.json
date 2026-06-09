@@ -3,6 +3,7 @@
   "version": "1.0.9",
   "private": false,
   "type": "module",
+  "sideEffects": false,
   "description": "Shared types, ID generation, validators, and encryption helpers for API Circle Studio.",
   "keywords": [
     "apicircle",

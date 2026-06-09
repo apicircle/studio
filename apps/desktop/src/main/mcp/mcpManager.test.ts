@@ -77,15 +77,21 @@ describe('McpManager', () => {
   it('returns a config path for known clients on the current platform', () => {
     const m = new McpManager('/ws');
     expect(m.getConfigPath('claude-desktop')).not.toBeNull();
+    expect(m.getConfigPath('claude-code')).not.toBeNull(); // P5R1-G11
     expect(m.getConfigPath('cursor')).not.toBeNull();
     expect(m.getConfigPath('continue')).not.toBeNull();
     expect(m.getConfigPath('zed')).not.toBeNull();
+    expect(m.getConfigPath('windsurf')).not.toBeNull(); // P5R1-G11
   });
 
   it('returns null for clients without a default config path', () => {
     const m = new McpManager('/ws');
     expect(m.getConfigPath('generic')).toBeNull();
     expect(m.getConfigPath('chatgpt')).toBeNull();
+    // cline + github-copilot use VS Code-extension-internal settings and
+    // don't have a fixed user-home path either.
+    expect(m.getConfigPath('cline')).toBeNull();
+    expect(m.getConfigPath('github-copilot')).toBeNull();
   });
 
   it('exposes the full tool catalog from @apicircle/shared', () => {

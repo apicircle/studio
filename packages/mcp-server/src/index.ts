@@ -31,6 +31,17 @@ export { FileBackedWorkspaceProvider } from './providers/FileBackedWorkspaceProv
 export { MultiWorkspaceProvider } from './providers/MultiWorkspaceProvider';
 export { InProcessMockController } from './providers/InProcessMockController';
 
+export { AI_CLIENTS, buildSnippetVariants, resolveAiClientConfigPath } from './config/snippets';
+export type { AiClient, ConfigSnippetVariants, ConfigPathEnv } from './config/snippets';
+
+// Re-export the SDK's transport implementations so embedders (VS Code,
+// desktop, etc.) don't have to take a direct dep on `@modelcontextprotocol/sdk`.
+// We're already the wrapper around the SDK — every consumer of our McpHost
+// pulls these through us.
+export { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+export { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+export type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+
 export interface CreateMcpServerOptions {
   /**
    * Provider for the ACTIVE workspace. Tools that consume `ctx.workspace`

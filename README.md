@@ -128,12 +128,64 @@ teammates share them; _runtime_ state stays on the local machine.
 
 ### Pick your surface
 
-| Surface          | Best for                                         |
-| ---------------- | ------------------------------------------------ |
-| **Desktop app**  | Day-to-day development (Windows / macOS / Linux) |
-| **Web app**      | Quick access, zero install                       |
-| **CLI**          | CI pipelines, terminals, headless agents         |
-| **npm packages** | Embedding the engine in your own tooling         |
+| Surface               | Best for                                                               |
+| --------------------- | ---------------------------------------------------------------------- |
+| **Desktop app**       | Day-to-day development (Windows / macOS / Linux)                       |
+| **Web app**           | Quick access, zero install                                             |
+| **VS Code extension** | Editing the same `.apicircle/workspace.json` from your IDE — see below |
+| **CLI**               | CI pipelines, terminals, headless agents                               |
+| **npm packages**      | Embedding the engine in your own tooling                               |
+
+### VS Code extension (`apps/vscode/`)
+
+The same workspace document the desktop and web apps drive can be edited
+in place from VS Code — no embedded webview, no separate sync. The
+extension contributes:
+
+- **Eight sidebar TreeViews**: Editor (folder/request tree), Environment
+  (with active marker, encrypted-variable mask, hover with mask-warnings
+  - secret-slot binding), Execution Plans, Mock servers, History (recent
+    request + plan runs), **Snapshots** (storage meter + restore/delete
+    inline, capture + cap commands from the title bar), MCP, Marketplace.
+- **`.req.yaml` / `.env.yaml` / `.run.yaml` virtual documents** under
+  the `apicircle:` URI scheme — full Monaco editing with JSON Schema
+  validation, completion for the 17 auth types + body types +
+  assertion kinds, ▶ Send / Set Active / Delete CodeLenses, and live
+  pre-send diagnostics in the Problems panel.
+- **Three-surface byte-identical state** with Desktop and Web — same
+  `applyMutation` chokepoint, same workspace shape, byte-for-byte
+  identical commits. One repo, three surfaces.
+- **Auto-refresh** on external writes — file watchers on both the
+  synced and device-local files so MCP / CLI / hand-edits propagate
+  without manual refresh.
+- **Mock servers** (Phase 3) — the same `InProcessMockController` the
+  CLI uses runs in the extension host. Spin up local HTTP mocks from
+  OpenAPI / Postman / Insomnia specs, hit them with the request editor,
+  see request counts in the status bar.
+- **Secret vault** (Phase 4) — passphrase-unlocked, in-memory AES-GCM
+  key, auto-lock by inactivity, clipboard auto-clear on copy, reveal
+  encrypted environment variables in place, consolidated `APICircle
+Runs` OutputChannel.
+- **MCP host integration** (Phase 5) — built-in MCP view generates
+  per-AI-client config snippets (Claude Desktop, Claude Code, Cursor,
+  Continue, Cline, Zed, Windsurf, GitHub Copilot, ChatGPT, generic
+  stdio) pointing at the active workspace's `.apicircle/` directory.
+  Snippet bytes are byte-identical to what the desktop app emits.
+- **Copilot Chat one-click install** (Phase 6) — the GitHub Copilot
+  row in the MCP view writes `.vscode/mcp.json` idempotently with a
+  single click. VS Code 1.86+ Copilot Chat (and any MCP client that
+  reads the workspace-level config) picks it up automatically.
+  Path-traversal guard rejects malicious `apicircle.mcp.workspaceConfigPath`
+  values committed in `.vscode/settings.json` from a teammate.
+- **Wired settings** for execution timeout, Remote-SSH host hint,
+  history retention, secret vault auto-lock + clipboard-clear, MCP
+  binary path, MCP workspace config path.
+
+Phase 12 alpha is current — bundle externalised the heavy MCP SDK +
+Hono runtime (−470 KB to **1.69 MB** with 325 KB headroom under the
+restored 2.0 MB ceiling). E2E coverage now spans **all 11 feature
+phases** (19 specs in `e2e/vscode/src/test/`). The 12-phase deferred-
+list roadmap is empty. See [`docs/vscode-extension.md`](docs/vscode-extension.md).
 
 ## Two ways to use it
 
@@ -148,7 +200,8 @@ Open the app and a workspace is created automatically in browser storage
 Everything works from inside the app:
 
 - The **Mocks panel** starts and stops local mock servers from your OpenAPI,
-  Postman, or Insomnia specs.
+  Postman, or Insomnia specs. The VS Code extension's Mock view ships
+  the same lifecycle — start mocks from your IDE without switching apps.
 - The **MCP panel** generates a ready-to-paste config snippet for every AI
   client (Claude Desktop, Cursor, Copilot, ChatGPT, …). Copy it, drop it into
   your client's config, restart — the client now drives your workspace.

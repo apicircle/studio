@@ -179,7 +179,7 @@ All six state transitions flow through `applyMutation` via the new
 `globalAsset.*` patch variants in `@apicircle/core/workspace/patches.ts`,
 so MCP / CLI writers and the UI store apply the same semantics.
 
-## Mock server — three runtimes, one engine
+## Mock server — four runtimes, one engine
 
 `@apicircle/mock-server-core` is a Hono app builder. The same factory
 powers:
@@ -187,6 +187,17 @@ powers:
 - The desktop `MockManager` (in-process Hono on the Electron main).
 - The CLI (`apicircle mock <spec>`).
 - The MCP `mock.start` tool (in-process via `InProcessMockController`).
+- The **VS Code extension's `VsCodeMockController`** (Phase 3) — wraps
+  `InProcessMockController` and runs in the extension host. Internally
+  namespaces server ids by workspace (`${workspaceId}::${serverId}`)
+  so multi-root workspaces with shared mock ids don't collide on the
+  shared underlying controller. Runtime state is synced into
+  `WorkspaceLocal.mockRuntime.active` via the same `surface.write({local})`
+  path the desktop's `MockManager` uses, so the disk-mirror view of
+  "which mocks are running" stays consistent across surfaces. On
+  external workspace changes (Git pull / CLI / MCP), a
+  `reconcile()` pass stops any controller-tracked server whose
+  definition vanished.
 
 OpenAPI / Postman / Insomnia parsers live in this package; the MCP
 `import.*` tools reuse them so spec parsing is exactly identical between

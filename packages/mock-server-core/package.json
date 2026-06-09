@@ -3,6 +3,7 @@
   "version": "1.0.9",
   "private": false,
   "type": "module",
+  "sideEffects": false,
   "description": "Hono-based mock server engine for API Circle. Parses OpenAPI/Postman/Insomnia into mock endpoints, serves them on Node/Bun/edge runtimes.",
   "keywords": [
     "apicircle",

@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { initSecretCrypto, unlockSecretCrypto } from './passphraseKey';
 
 // Override the OWASP-floor iteration count down to a tiny value just for
-// these tests — the algorithm path is identical and PBKDF2 at 600k iters
-// under jsdom's WebCrypto polyfill is too slow for the default 5s
-// per-test timeout, especially under parallel-suite contention.
+// these tests — the algorithm path is identical and PBKDF2 at 1.2M iters
+// under WebCrypto is too slow for the default 5s per-test timeout,
+// especially under parallel-suite contention.
 const TEST_ITERATIONS = 100;
 
 describe('passphraseKey', () => {
@@ -65,7 +65,19 @@ describe('passphraseKey', () => {
     if (!result.ok) expect(result.reason).toMatch(/Unsupported KDF/);
   });
 
+  it('unlockSecretCrypto rejects a corrupt salt', async () => {
+    const { crypto: blob } = await initSecretCrypto('p', TEST_ITERATIONS);
+    const tampered = { ...blob, salt: '%%%not-base64%%%' };
+    const result = await unlockSecretCrypto('p', tampered);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/salt is corrupt/i);
+  });
+
   it('initSecretCrypto rejects an empty passphrase', async () => {
     await expect(initSecretCrypto('', TEST_ITERATIONS)).rejects.toThrow(/cannot be empty/);
+  });
+
+  it('initSecretCrypto rejects a non-positive iteration count', async () => {
+    await expect(initSecretCrypto('p', 0)).rejects.toThrow(/iterations must be/);
   });
 });

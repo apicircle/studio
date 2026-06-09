@@ -134,18 +134,29 @@ Restart Cursor. The tools surface in `@`-mention completions.
 
 ## GitHub Copilot
 
-Add to your VS Code settings:
+**One-click install (Phase 6 — recommended)**: open the **MCP** view in
+the APICircle sidebar, click the **GitHub Copilot** row, then restart
+Copilot Chat. The extension writes the apicircle entry into
+`<workspace>/.vscode/mcp.json` (which Copilot Chat auto-reads on VS
+Code 1.86+). The install is idempotent and preserves any other MCP
+server entries you've configured.
+
+If you prefer to edit `.vscode/mcp.json` by hand or commit a specific
+form to Git, the snippet is:
 
 ```jsonc
 {
-  "github.copilot.advanced.mcp.servers": {
+  "mcpServers": {
     "apicircle": {
       "command": "apicircle-mcp",
-      "args": ["--workspace", "${workspaceFolder}"],
+      "args": ["--workspace", "${workspaceFolder}/.apicircle"],
     },
   },
 }
 ```
+
+The legacy `github.copilot.advanced.mcp.servers` settings path is not
+used by current Copilot builds.
 
 ## ChatGPT (Custom Connectors)
 
@@ -154,6 +165,106 @@ ChatGPT's Connectors UI accepts MCP stdio configs. Use:
 - **Command:** `apicircle-mcp`
 - **Args:** `--workspace`, `<your workspace path>`
 - **Env:** `APICIRCLE_WORKSPACE=<your workspace path>`
+
+## Using the VS Code extension (recommended)
+
+The [`@apicircle/vscode`](../apps/vscode/) extension surfaces a built-in
+MCP view that generates per-client config snippets pointing at the
+currently-open workspace's `.apicircle/` directory.
+
+1. Open the **APICircle** activity bar icon → **MCP** view.
+2. The view lists every supported AI client (Claude Desktop, Claude
+   Code, Cursor, Continue, Cline, Zed, Windsurf, GitHub Copilot,
+   ChatGPT, generic stdio).
+3. Click any client row → the JSON snippet is copied to clipboard. For
+   clients with a known config path (Claude Desktop, Claude Code,
+   Cursor, Continue, Zed, Windsurf) the success toast offers **Open
+   Config File**, which seeds an empty `{ "mcpServers": {} }` file if
+   none exists and opens it for editing.
+4. **Override the binary path** via the
+   `apicircle.mcp.binaryPath` setting if `apicircle-mcp` isn't on your
+   `PATH` (defaults to the global pnpm/npm install of
+   `@apicircle/mcp-server`).
+5. Run **APICircle: Show MCP Binary Info** from the command palette to
+   verify the resolved binary + workspace + tool count at any point.
+
+The view's per-client rows also expose **Copy MCP Config Snippet** + **Open
+AI Client MCP Config File** via the context menu. The header row's
+**Show MCP Binary Info** action surfaces the resolved paths the
+snippets reference.
+
+Snippet bytes are byte-identical to what the desktop app emits for the
+same `(binary, workspace, client)` tuple — proven by the
+`mcpRoundTrip.test.ts` integration suite.
+
+### One-click install per client (Phase 8)
+
+The MCP view's rows for Claude Desktop, Claude Code, Cursor, Windsurf,
+and Zed go beyond "copy the snippet" — each row detects whether the
+apicircle entry is already present in that client's user-level config
+file and renders one of three states:
+
+| Row state           | Meaning                                                                              | Click action                                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| 🚀 click to install | Config file missing the apicircle entry.                                             | `apicircle.installMcpForClient` — idempotently writes the entry, preserving any foreign servers in the same file. |
+| ⚠ out of date       | Entry present but `binary` or `workspace` path drifted (e.g. you moved the project). | Re-install with current paths.                                                                                    |
+| ✓ installed         | Entry matches what the snippet would emit.                                           | Falls back to **Copy Config** (in case you want the snippet for a second surface).                                |
+
+**Bulk install:** the view-title toolbar action **Install MCP for All
+Configured Clients** writes to every client listed in the
+`apicircle.mcp.autoConfigureClients` setting in one pass:
+
+```jsonc
+// .vscode/settings.json
+{
+  "apicircle.mcp.autoConfigureClients": ["claude-desktop", "cursor", "zed"],
+}
+```
+
+Default is `[]` — without a configured list, the bulk command opens a
+multi-pick so you can choose interactively (and saves the picks back
+to the setting if you confirm).
+
+**Schema-variant aware:** Zed uses `context_servers` (not `mcpServers`)
+in `~/.config/zed/settings.json`; the installer emits the right
+envelope per client.
+
+**Security:** the per-client path is fixed by client ID (resolved via
+`resolveAiClientConfigPath`), not user-configurable — a malicious
+workspace setting cannot redirect the write. A symlink-traversal
+guard rejects targets whose realpath escapes the user's home
+directory.
+
+**Uninstall:** the same row's context menu surfaces **Remove APICircle
+MCP from AI Client**, which strips just the `apicircle` key + leaves
+foreign servers intact. Empty schema blocks (`mcpServers: {}` after
+removal) are dropped so the file stays tidy.
+
+**Cline + Continue** are intentionally not in the supported list —
+Cline reads workspace-local config (use **Install for Copilot Chat /
+VS Code MCP** instead — it writes `.vscode/mcp.json` which Cline also
+picks up); Continue uses YAML rather than JSON and ships a dedicated
+writer in a later phase.
+
+### Remember vault on this device (Phase 8)
+
+If your workspace uses the **secret vault** (encrypted environment
+variables) and you don't want to re-enter the passphrase each session,
+turn on `apicircle.secrets.rememberOnDevice`. The extension stores the
+passphrase via VS Code's `SecretStorage` (OS keychain on each
+platform — Keychain on macOS, Credential Manager on Windows, libsecret
+on Linux) after the first successful unlock; the next session
+silent-unlocks automatically.
+
+To wipe a stored entry: **APICircle: Forget Vault Credentials on This
+Device** from the command palette. With no active workspace open the
+command offers a "forget all known workspaces" path.
+
+**Security tradeoff:** anyone with access to your OS keychain can read
+the passphrase. Only enable on a trusted, encrypted-at-rest device.
+Off by default. Auto-lock + clipboard-clear timers still apply — they
+operate on the in-memory key, not the stored entry. To get full
+lock-out, either disable the setting or run the Forget command.
 
 ## Continue, Cline, Zed, Windsurf
 

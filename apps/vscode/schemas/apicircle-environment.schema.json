@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://apicircle.dev/schemas/apicircle-environment.schema.json",
+  "title": "APICircle Environment",
+  "description": "YAML projection of a single APICircle environment. Variables travel through Git; encrypted values decrypt at request-send time using the workspace passphrase.",
+  "type": "object",
+  "required": ["name", "variables"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Environment name — must be unique within the workspace"
+    },
+    "variables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key", "value"],
+        "properties": {
+          "key": { "type": "string", "minLength": 1 },
+          "value": { "type": "string" },
+          "encrypted": {
+            "type": "boolean",
+            "description": "When true, value is ciphertext (enc:v1:<iv>:<ct>) decrypted with the workspace passphrase"
+          },
+          "secretKeyId": {
+            "type": "string",
+            "description": "Slot id in WorkspaceSynced.secretKeys — required when encrypted is true"
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}
