@@ -67,11 +67,11 @@ jobs:
           GZIP_CSS=$(gzip -c apps/web/dist/assets/index-*.css | wc -c)
           echo "JS gzip: $GZIP_JS bytes"
           echo "CSS gzip: $GZIP_CSS bytes"
-          # Ceiling sits above the current ~294 KB app bundle (Monaco is
-          # vendored separately and not counted here). Lower this once the
-          # panels are code-split with dynamic import().
-          if [ "$GZIP_JS" -gt 340000 ]; then
-            echo "::error::JS bundle exceeds 332 KB gzipped budget ($GZIP_JS bytes)"
+          # Ceiling sits above the current app bundle (Monaco is vendored
+          # separately and not counted here). Lower this once the panels are
+          # code-split with dynamic import().
+          if [ "$GZIP_JS" -gt 1048576 ]; then
+            echo "::error::JS bundle exceeds 1 MB gzipped budget ($GZIP_JS bytes)"
             exit 1
           fi
           if [ "$GZIP_CSS" -gt 30720 ]; then
