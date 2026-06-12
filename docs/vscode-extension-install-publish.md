@@ -1,6 +1,6 @@
-# APICircle Studio — VS Code Extension Install & Publish Guide
+# API Circle Studio — VS Code Extension Install & Publish Guide
 
-Status: Phase 12 alpha. The extension is feature-complete (78 MCP tools, 9
+Status: Phase 12 alpha. The extension is feature-complete (79 MCP tools, 9
 sidebar views, embedded MCP host, plan notebooks, test controller, mock
 visual editor, secret vault, etc.). This document covers (1) installing
 the unpublished extension locally for testing and (2) publishing it to
@@ -58,12 +58,28 @@ Marketplace serves to end users — and side-loads it.
 1. Build + package:
 
    ```bash
-   pnpm --filter @apicircle/vscode build
+   pnpm --filter apicircle-vscode build
    cd apps/vscode
-   pnpm exec vsce package
+   pnpm exec vsce package --no-dependencies
    ```
 
-   Produces `apicircle-vscode-0.1.0.vsix` in `apps/vscode/`.
+   Produces `apicircle-vscode-0.1.0.vsix` (~1.3 MB compressed) in
+   `apps/vscode/`.
+
+   > **Why `--no-dependencies` is required.** The workspace lives under
+   > pnpm with `workspace:*` deps. `vsce`'s default code path runs
+   > `npm list --production` to enumerate runtime deps for the .vsix —
+   > npm doesn't understand the `workspace:*` protocol and aborts. The
+   > `--no-dependencies` flag skips that walk. Our extension's runtime
+   > deps are all bundled into `dist/extension.mjs` by tsup (every
+   > `@apicircle/*` package + the MCP SDK + Hono runtime are
+   > `noExternal`), so the .vsix doesn't need any of them in
+   > `node_modules` — the bundle is fully self-contained.
+
+   > **If you see** `ERROR Invalid extension "name": "@apicircle/vscode"`:
+   > you're on an older checkout. The workspace package was renamed to
+   > the unscoped `apicircle-vscode` in P13 because vsce rejects
+   > scoped names. Pull latest + re-run `pnpm install`.
 
 2. Install in your everyday VS Code (not the development host):
 
@@ -131,16 +147,16 @@ The following gaps MUST be closed before the first publish. Some are
 required by `vsce` and will block packaging; others are marketplace
 quality signals.
 
-| #       | Gap                                                                | Required for publish? | Action                                                                                                                                                                                                                          |
-| ------- | ------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **0.1** | **PNG icon** (128×128) in `apps/vscode/media/icon-marketplace.png` | **Required**          | Today the icon is `media/icon-activitybar.svg`. Marketplace rejects SVG icons. Convert / render the activity-bar logo to a 128×128 PNG. Add `"icon": "media/icon-marketplace.png"` to the top-level `apps/vscode/package.json`. |
-| **0.2** | **LICENSE file** in `apps/vscode/`                                 | **Required**          | Root has `LICENSE`. Copy it into `apps/vscode/` (or convert `vsce` invocation to point at it). Marketplace also surfaces it on the listing page.                                                                                |
-| **0.3** | **Marketplace README**                                             | **Required**          | `apps/vscode/README.md` exists. Verify it has install-by-marketplace instructions, screenshots, and a feature list — it's the listing page.                                                                                     |
-| **0.4** | **CHANGELOG.md**                                                   | Recommended           | Marketplace shows this on the listing page. Today `apps/vscode/` doesn't have one — root `CHANGELOG.md` covers it. Add `apps/vscode/CHANGELOG.md` (can symlink or be a curated subset).                                         |
-| **0.5** | **Gallery banner color**                                           | Optional              | `package.json → galleryBanner.color` sets the listing-page header background. Pick a brand color (e.g. the `var(--purple)` accent).                                                                                             |
-| **0.6** | **Verified publisher** badge                                       | Optional              | Marketplace tags verified publishers with a check mark. Requires linking a Microsoft account to a custom domain or proof of ownership.                                                                                          |
-| **0.7** | **Code signing / supply chain**                                    | Optional              | The marketplace can sign extensions; not required for publish.                                                                                                                                                                  |
-| **0.8** | **`repository`, `bugs`, `homepage` fields**                        | Recommended           | Already set in `apps/vscode/package.json`. Verify URLs work.                                                                                                                                                                    |
+| #       | Gap                                         | Required for publish? | Action                                                                                                                                                                                                                                |
+| ------- | ------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **0.1** | ~~PNG icon~~ — ✅ **DONE**                  | Required              | `apps/vscode/media/icon-marketplace.png` (128×128 RGBA, 12.81 KB) reuses the desktop app's pre-rendered icon. `"icon": "media/icon-marketplace.png"` + `galleryBanner.color: "#1f1b2e"` (dark) wired into `apps/vscode/package.json`. |
+| **0.2** | ~~LICENSE file~~ — ✅ **DONE**              | Required              | `apps/vscode/LICENSE` copied from root. `vsce` automatically packages it as `LICENSE.txt` inside the .vsix (4.76 KB) — appears on the Marketplace listing page.                                                                       |
+| **0.3** | **Marketplace README**                      | **Required**          | `apps/vscode/README.md` exists. Verify it has install-by-marketplace instructions, screenshots, and a feature list — it's the listing page.                                                                                           |
+| **0.4** | **CHANGELOG.md**                            | Recommended           | Marketplace shows this on the listing page. Today `apps/vscode/` doesn't have one — root `CHANGELOG.md` covers it. Add `apps/vscode/CHANGELOG.md` (can symlink or be a curated subset).                                               |
+| **0.5** | **Gallery banner color**                    | Optional              | `package.json → galleryBanner.color` sets the listing-page header background. Pick a brand color (e.g. the `var(--purple)` accent).                                                                                                   |
+| **0.6** | **Verified publisher** badge                | Optional              | Marketplace tags verified publishers with a check mark. Requires linking a Microsoft account to a custom domain or proof of ownership.                                                                                                |
+| **0.7** | **Code signing / supply chain**             | Optional              | The marketplace can sign extensions; not required for publish.                                                                                                                                                                        |
+| **0.8** | **`repository`, `bugs`, `homepage` fields** | Recommended           | Already set in `apps/vscode/package.json`. Verify URLs work.                                                                                                                                                                          |
 
 ### Step 1 — Publisher account
 
@@ -170,13 +186,13 @@ Before automating, do one publish by hand to catch surprises.
 cd apps/vscode
 
 # 1. Bump version. First publish: keep at 0.1.0. Future: vsce auto-bumps via --patch / --minor / --major.
-pnpm exec vsce package
-#    → produces apicircle-vscode-0.1.0.vsix
+pnpm exec vsce package --no-dependencies
+#    → produces apicircle-vscode-0.1.0.vsix (~1.3 MB compressed)
 #    Verify with: ls -lh *.vsix
 #    Inspect contents with: unzip -l apicircle-vscode-0.1.0.vsix | head -50
 
 # 2. Publish to Marketplace
-pnpm exec vsce publish
+pnpm exec vsce publish --no-dependencies
 #    Output should end with: "Published apicircle.apicircle-vscode v0.1.0"
 #    Listing live at: https://marketplace.visualstudio.com/items?itemName=apicircle.apicircle-vscode
 
@@ -226,13 +242,13 @@ jobs:
 
       - name: Package extension
         working-directory: apps/vscode
-        run: pnpm exec vsce package
+        run: pnpm exec vsce package --no-dependencies
 
       - name: Publish to VS Code Marketplace
         working-directory: apps/vscode
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: pnpm exec vsce publish --pat "$VSCE_PAT"
+        run: pnpm exec vsce publish --no-dependencies --pat "$VSCE_PAT"
 
       - name: Publish to Open VSX
         working-directory: apps/vscode

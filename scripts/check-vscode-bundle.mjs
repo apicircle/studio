@@ -40,7 +40,7 @@ const BUNDLE_PATH = resolve(repoRoot, 'apps/vscode/dist/extension.mjs');
 function main() {
   if (!existsSync(BUNDLE_PATH)) {
     console.error(
-      `[check-vscode-bundle] ${BUNDLE_PATH} does not exist. Run \`pnpm --filter @apicircle/vscode build\` first.`,
+      `[check-vscode-bundle] ${BUNDLE_PATH} does not exist. Run \`pnpm --filter apicircle-vscode build\` first.`,
     );
     process.exit(2);
   }
@@ -56,7 +56,7 @@ function main() {
   if (bytes < MIN_BUNDLE_BYTES) {
     console.error(
       `::error::extension.js is ${formatBytes(bytes)} — below the ${formatBytes(MIN_BUNDLE_BYTES)} sanity floor. ` +
-        `The build likely produced a corrupt or partial output. Re-run \`pnpm --filter @apicircle/vscode build\`.`,
+        `The build likely produced a corrupt or partial output. Re-run \`pnpm --filter apicircle-vscode build\`.`,
     );
     process.exit(1);
   }
@@ -64,7 +64,7 @@ function main() {
   if (bytes > HARD_BUDGET_BYTES) {
     const overshoot = bytes - HARD_BUDGET_BYTES;
     console.error(
-      `::error::extension.js exceeds 2.0 MB hard budget by ${formatBytes(overshoot)}. ` +
+      `::error::extension.js exceeds the ${formatBytes(HARD_BUDGET_BYTES)} hard budget by ${formatBytes(overshoot)}. ` +
         `Investigate the regression before bumping the budget.`,
     );
     process.exit(1);
@@ -73,7 +73,7 @@ function main() {
   if (bytes > SOFT_BUDGET_BYTES) {
     const overshoot = bytes - SOFT_BUDGET_BYTES;
     console.warn(
-      `::warning::extension.js exceeds 1.8 MB soft budget by ${formatBytes(overshoot)}. ` +
+      `::warning::extension.js exceeds the ${formatBytes(SOFT_BUDGET_BYTES)} soft budget by ${formatBytes(overshoot)}. ` +
         `Consider tree-shaking or lazy-loading before the next phase.`,
     );
     process.exit(0);

@@ -1,21 +1,98 @@
 import * as vscode from 'vscode';
 import { VsCodeBridge } from './host/vscodeBridge';
-import { discoverWorkspaces } from './util/workspaceDiscovery';
+import { discoverWorkspaces, workspaceIdForOpenEditor } from './util/workspaceDiscovery';
 import { EditorView } from './views/EditorView';
 import { EnvironmentView } from './views/EnvironmentView';
 import { ExecutionView } from './views/ExecutionView';
 import { MockView } from './views/MockView';
 import { HistoryView } from './views/HistoryView';
 import { McpView } from './views/McpView';
-import { MarketplaceView } from './views/MarketplaceView';
+import { LinkWorkspaceView } from './views/LinkWorkspaceView';
 import { SnapshotsView } from './views/SnapshotsView';
 import { createWorkspaceCommand } from './commands/createWorkspace';
 import { ApicircleFsProvider } from './fs/apicircleFsProvider';
 import { AbortRegistry } from './execute/abortRegistry';
+import { InFlightSendTracker } from './execute/inFlightTracker';
 import { sendRequestCommand } from './execute/sendRequest';
+import { cancelOneSendCommand } from './commands/cancelRequestSend';
 import { PreSendDiagnostics } from './diagnostics/preSendDiagnostics';
 import { StatusBar } from './status/statusBar';
 import { newRequestCommand } from './commands/newRequest';
+import { newRequestFromTemplateCommand } from './commands/newRequestFromTemplate';
+import { addRequestSectionCommand } from './commands/addRequestSection';
+import {
+  switchRequestBodyTypeCommand,
+  switchRequestAuthTypeCommand,
+} from './commands/switchRequestSection';
+import { pickBinaryAttachmentCommand } from './commands/binaryAttachment';
+import {
+  addFormDataRowCommand,
+  switchFormDataRowKindCommand,
+  pickFormDataRowFileCommand,
+} from './commands/formDataRow';
+import { pickHeaderCommand } from './commands/pickHeader';
+import { mapContextVarsFromJsonCommand } from './commands/mapContextVarsFromJson';
+import { fetchOAuth2TokenCommand } from './commands/fetchOAuth2Token';
+import {
+  addQueryRowCommand,
+  addCookieRowCommand,
+  addPathParamRowCommand,
+  addAssertionRowCommand,
+  addExtractionRowCommand,
+} from './commands/addRequestRows';
+import {
+  addMockValidationRuleCommand,
+  setMockValidationKindCommand,
+  setMockValidationTargetCommand,
+  setMockValidationExpectedCommand,
+  addMockMultiplierCommand,
+  switchMockResponseBodyTypeCommand,
+  setMockResponseStatusCommand,
+  addMockResponseRuleCommand,
+  removeMockResponseRuleCommand,
+  removeMockValidationRuleCommand,
+  removeMockMultiplierCommand,
+  toggleMockRuleEnabledCommand,
+  addMockResponseHeaderCommand,
+} from './commands/mockEndpointEdits';
+import {
+  setMockMethodFieldCommand,
+  setMockStatusFieldCommand,
+  setMockBodyTypeFieldCommand,
+  setMockHeaderKeyFieldCommand,
+  setMockHeaderValueFieldCommand,
+  setMockClauseScopeFieldCommand,
+  setMockClauseOpFieldCommand,
+  setMockClauseTargetFieldCommand,
+  setMockClauseValueFieldCommand,
+  toggleMockHeaderEnabledCommand,
+  addMockConditionClauseCommand,
+  setMockMultiplierKindFieldCommand,
+  setMockMultiplierKeyFieldCommand,
+  setMockMultiplierTargetPathFieldCommand,
+  setMockTextFieldCommand,
+  setMockNumberFieldCommand,
+} from './commands/mockFieldEdits';
+import { formatJsonCommand } from './commands/formatJson';
+import {
+  setRequestMethodFieldCommand,
+  setRequestHeaderKeyFieldCommand,
+  setRequestHeaderValueFieldCommand,
+  setRequestTextFieldCommand,
+  setRequestAssertionKindFieldCommand,
+  setRequestAssertionOpFieldCommand,
+  setRequestExtractionSourceFieldCommand,
+} from './commands/requestFieldEdits';
+import {
+  addMockRequestSchemaCommand,
+  addMockRequestSchemaParamCommand,
+  addMockRequestSchemaBodyExampleCommand,
+  setMockParamTypeFieldCommand,
+  setMockHeaderParamNameFieldCommand,
+  type RequestSchemaParamKind,
+} from './commands/mockRequestSchemaEdits';
+import { EndpointCodeLensProvider } from './lang/endpointCodeLens';
+import { registerApicircleDiagnostics } from './lang/diagnostics';
 import { RequestCodeLensProvider } from './lang/requestCodeLens';
 import { RequestCompletionProvider } from './lang/requestCompletion';
 import { EnvironmentCodeLensProvider } from './lang/environmentCodeLens';
@@ -61,11 +138,48 @@ import {
   copyEndpointPathCommand,
   revealEndpointInMockYamlCommand,
   openMockInBrowserCommand,
+  openMockEndpointYamlCommand,
+  setMockPortCommand,
 } from './commands/mockActions';
 import { VsCodeMockController } from './host/vscodeMockController';
 import { MockCodeLensProvider } from './lang/mockCodeLens';
 import { MockCompletionProvider } from './lang/mockCompletion';
 import { MockHoverProvider } from './lang/mockHover';
+import { ReleasesCodeLensProvider } from './lang/releasesCodeLens';
+import {
+  openReleaseHistoryCommand,
+  publishReleaseCommand,
+  deprecateReleaseCommand,
+  withdrawReleaseCommand,
+} from './commands/releaseActions';
+import { LinkCodeLensProvider } from './lang/linkCodeLens';
+import {
+  setLinkNameFieldCommand,
+  setLinkDescriptionFieldCommand,
+  setLinkPinnedVersionFieldCommand,
+  setLinkScopeFieldCommand,
+  setLinkSessionModeFieldCommand,
+  addLinkRequiredKeyCommand,
+  removeLinkRequiredKeyCommand,
+  unlinkWorkspaceCommand,
+  showLinkedChangelogCommand,
+  openLinkYamlCommand,
+  linkWorkspaceCommand,
+  searchMarketplaceCommand,
+  refreshLinkedWorkspaceCommand,
+  reviewLinkedUpdateCommand,
+  setLinkSessionTokenCommand,
+  clearLinkSessionTokenCommand,
+  openLinkedRequestCommand,
+  resetLinkedRequestCommand,
+  discardLinkedModsCommand,
+  provisionLinkedSecretCommand,
+  clearLinkedSecretCommand,
+  setLinkedEnvVarOverrideCommand,
+  type LinkArg,
+} from './commands/linkActions';
+import { LinkedRequestCodeLensProvider } from './lang/linkedRequestCodeLens';
+import { tagReleaseCommand, editRepoTopicsCommand } from './commands/repoActions';
 import { MockStatusBar } from './status/mockStatusBar';
 import { registerWorkspaceWatchers } from './watch/workspaceWatcher';
 import { VsCodeVaultManager } from './host/vaultManager';
@@ -88,7 +202,11 @@ import {
   openMcpConnectGuideCommand,
   revealMcpBinaryInfoCommand,
 } from './commands/mcpActions';
-import { installCopilotMcpConfigCommand, pickOwningFolder } from './commands/copilotMcpActions';
+import {
+  installCopilotMcpConfigCommand,
+  uninstallCopilotMcpConfigCommand,
+  pickOwningFolder,
+} from './commands/copilotMcpActions';
 import { detectCopilotMcpConfigState } from './host/copilotMcpInstall';
 import { PlanNotebookSerializer } from './notebook/planNotebookSerializer';
 import { PlanNotebookController } from './notebook/planNotebookController';
@@ -119,7 +237,7 @@ import {
 } from './host/mcpClientInstall';
 
 // =============================================================================
-// APICircle Studio — VS Code extension entry point.
+// API Circle Studio — VS Code extension entry point.
 //
 // activate() wires up:
 //   • The seven sidebar TreeViews (stubs in day-1; populated in Phase 1+)
@@ -134,6 +252,7 @@ import {
 
 let bridge: VsCodeBridge | null = null;
 let abortRegistry: AbortRegistry | null = null;
+let inFlightTracker: InFlightSendTracker | null = null;
 let mockController: VsCodeMockController | null = null;
 let vaultManager: VsCodeVaultManager | null = null;
 let runsChannel: RunsChannel | null = null;
@@ -149,12 +268,14 @@ let views: {
   history: HistoryView;
   snapshots: SnapshotsView;
   mcp: McpView;
-  marketplace: MarketplaceView;
+  linkWorkspaces: LinkWorkspaceView;
 } | null = null;
 
 export function activate(context: vscode.ExtensionContext): void {
   bridge = new VsCodeBridge(context);
   abortRegistry = new AbortRegistry();
+  inFlightTracker = new InFlightSendTracker();
+  context.subscriptions.push(inFlightTracker);
 
   // P4: a single consolidated "APICircle Runs" OutputChannel replaces the
   // P3 per-feature "APICircle Mock" channel. Lazy — never created until the
@@ -276,7 +397,7 @@ export function activate(context: vscode.ExtensionContext): void {
         }
       },
     ),
-    marketplace: new MarketplaceView(),
+    linkWorkspaces: new LinkWorkspaceView(bridge),
   };
   for (const v of Object.values(views)) {
     v.register(context);
@@ -288,7 +409,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     // Completion provider for the apicircle-request language.
     vscode.languages.registerCompletionItemProvider(
-      { scheme: 'apicircle', pattern: '**/requests/*.req.yaml' },
+      { scheme: 'apicircle', pattern: '**/requests/**/*.req.yaml' },
       new RequestCompletionProvider(),
       ':',
       ' ',
@@ -303,11 +424,14 @@ export function activate(context: vscode.ExtensionContext): void {
   const statusBar = new StatusBar(bridge, abortRegistry, vaultManager);
   context.subscriptions.push(statusBar);
 
-  // CodeLens above the name: line in request YAMLs.
-  const codeLensProvider = new RequestCodeLensProvider();
+  // CodeLens above the name: line in request YAMLs. The provider is wired to
+  // the in-flight tracker so a running send swaps ▶ Send → ⏳ Sending… · ✖ Cancel
+  // automatically — no extra refresh wiring at the call site.
+  const codeLensProvider = new RequestCodeLensProvider(inFlightTracker);
   context.subscriptions.push(
+    codeLensProvider,
     vscode.languages.registerCodeLensProvider(
-      { scheme: 'apicircle', pattern: '**/requests/*.req.yaml' },
+      { scheme: 'apicircle', pattern: '**/requests/**/*.req.yaml' },
       codeLensProvider,
     ),
   );
@@ -365,7 +489,51 @@ export function activate(context: vscode.ExtensionContext): void {
       { scheme: 'apicircle', pattern: '**/mocks/*.mock.yaml' },
       new MockHoverProvider(bridge, mockController),
     ),
+    // Per-endpoint YAML CodeLens — fires for apicircle://<ws>/mocks/<mockId>/<endpointId>.endpoint.yaml
+    (() => {
+      const provider = new EndpointCodeLensProvider();
+      context.subscriptions.push(provider);
+      return vscode.languages.registerCodeLensProvider(
+        { scheme: 'apicircle', pattern: '**/mocks/**/*.endpoint.yaml' },
+        provider,
+      );
+    })(),
+    // Release-ledger CodeLens — ▶ Publish on the currentVersion line and
+    // ⚠ Deprecate / ⛔ Withdraw on each version row in the read-only
+    // releases.yaml view.
+    (() => {
+      const provider = new ReleasesCodeLensProvider();
+      context.subscriptions.push(provider);
+      return vscode.languages.registerCodeLensProvider(
+        { scheme: 'apicircle', pattern: '**/releases/releases.yaml' },
+        provider,
+      );
+    })(),
+    // Linked-workspace CodeLens — ◆ field editors + ⟳ Refresh / 📓 Changelog /
+    // ⊗ Unlink actions on *.link.yaml.
+    (() => {
+      const provider = new LinkCodeLensProvider();
+      context.subscriptions.push(provider);
+      return vscode.languages.registerCodeLensProvider(
+        { scheme: 'apicircle', pattern: '**/links/*.link.yaml' },
+        provider,
+      );
+    })(),
+    // Linked-request CodeLens — ▶ Send / ↺ Reset on /linked/**/*.req.yaml.
+    (() => {
+      const provider = new LinkedRequestCodeLensProvider();
+      context.subscriptions.push(provider);
+      return vscode.languages.registerCodeLensProvider(
+        { scheme: 'apicircle', pattern: '**/linked/**/*.req.yaml' },
+        provider,
+      );
+    })(),
   );
+
+  // Structural diagnostics — surface parse errors (red, save-blocking) +
+  // coercible warnings (yellow) on apicircle:// endpoint / mock / request YAML
+  // before the user saves. Mirrors the FS provider's save-time validation.
+  registerApicircleDiagnostics(context);
 
   // Mock status bar — shows "Mocks: N (:port, …)" when ≥1 server is running.
   // P3R2-G1: subscribes to the controller's onChange so it refreshes on
@@ -508,6 +676,11 @@ export function activate(context: vscode.ExtensionContext): void {
   // P3R1-G2: also reconcile mock runtime — if a Git pull removed a mock
   // definition while it was running, stop the orphan and clear its entry.
   const refreshAll = () => {
+    // The watcher's `**/.apicircle/workspace.json` glob fires on CREATE
+    // events too — re-discover so a workspace.json that appeared after
+    // activation (Git pull, scaffold-via-CLI, hand-mkdir) registers with
+    // the bridge and flips the welcome view.
+    rediscoverAndRegister(context);
     for (const v of Object.values(views ?? {})) v.refresh();
     void mockController?.reconcile();
   };
@@ -519,25 +692,18 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(watcherHandle);
 
   // Initial discovery — register every detected `.apicircle/workspace.json`.
-  const discovery = discoverWorkspaces(vscode.workspace.workspaceFolders);
-  for (const ws of discovery.workspaces) {
-    bridge.registerWorkspace(ws);
-  }
-  if (discovery.workspaces.length > 0) {
-    const previous = context.globalState.get<string>('apicircle.activeWorkspaceId');
-    const toActivate =
-      discovery.workspaces.find((w) => w.id === previous) ?? discovery.workspaces[0];
-    bridge.setActive(toActivate.id);
-  }
+  rediscoverAndRegister(context);
+
+  // Startup: if VS Code restored an editor that belongs to an APICircle
+  // workspace (an apicircle:// virtual YAML or the raw .apicircle/workspace.json),
+  // make that workspace the active one so the sidebar matches what's on screen.
+  adoptActiveWorkspaceFromOpenEditors();
 
   // Re-discover when the user adds/removes folders from the workspace.
   context.subscriptions.push(
     vscode.workspace.onDidChangeWorkspaceFolders(() => {
       if (!bridge) return;
-      const d = discoverWorkspaces(vscode.workspace.workspaceFolders);
-      for (const ws of d.workspaces) {
-        bridge.registerWorkspace(ws);
-      }
+      rediscoverAndRegister(context);
       for (const v of Object.values(views ?? {})) {
         v.refresh();
       }
@@ -551,6 +717,11 @@ export function activate(context: vscode.ExtensionContext): void {
       return createWorkspaceCommand(bridge);
     }),
     vscode.commands.registerCommand('apicircle.refresh', () => {
+      // Re-discover first so a workspace.json created (or a folder added)
+      // after activation is picked up — the prior implementation only
+      // re-fired the tree-data event, making the refresh button feel
+      // broken for that case.
+      rediscoverAndRegister(context);
       for (const v of Object.values(views ?? {})) {
         v.refresh();
       }
@@ -571,9 +742,16 @@ export function activate(context: vscode.ExtensionContext): void {
       return sendRequestCommand({
         bridge,
         abortRegistry,
+        tracker: inFlightTracker ?? undefined,
         fsProvider,
         diagnostics,
+        vault: vaultManager ?? null,
+        secrets: context.secrets,
       });
+    }),
+    vscode.commands.registerCommand('apicircle.cancelOneSend', (uri?: vscode.Uri) => {
+      if (!abortRegistry || !inFlightTracker) return;
+      return cancelOneSendCommand({ abortRegistry, tracker: inFlightTracker }, uri);
     }),
     vscode.commands.registerCommand(
       'apicircle.deleteRequest',
@@ -689,6 +867,233 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!bridge) return;
       return newRequestCommand({ bridge }, ctx);
     }),
+    vscode.commands.registerCommand('apicircle.newRequestFromTemplate', () => {
+      if (!bridge) return;
+      return newRequestFromTemplateCommand({ bridge });
+    }),
+    vscode.commands.registerCommand('apicircle.addRequestSection', (uri?: vscode.Uri) => {
+      return addRequestSectionCommand(uri);
+    }),
+    vscode.commands.registerCommand('apicircle.switchRequestBodyType', (uri?: vscode.Uri) => {
+      return switchRequestBodyTypeCommand(uri);
+    }),
+    vscode.commands.registerCommand('apicircle.switchRequestAuthType', (uri?: vscode.Uri) => {
+      return switchRequestAuthTypeCommand(uri);
+    }),
+    vscode.commands.registerCommand('apicircle.pickBinaryAttachment', (uri?: vscode.Uri) => {
+      if (!bridge) return;
+      return pickBinaryAttachmentCommand({ bridge }, uri);
+    }),
+    vscode.commands.registerCommand(
+      'apicircle.addFormDataRow',
+      (uri?: vscode.Uri, kind?: 'text' | 'file') => {
+        if (!bridge) return;
+        return addFormDataRowCommand({ bridge }, uri, kind === 'file' ? 'file' : 'text');
+      },
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.switchFormDataRowKind',
+      (uri?: vscode.Uri, rowIndex?: number) => {
+        if (!bridge) return;
+        return switchFormDataRowKindCommand({ bridge }, uri, rowIndex);
+      },
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.pickFormDataRowFile',
+      (uri?: vscode.Uri, rowIndex?: number) => {
+        if (!bridge) return;
+        return pickFormDataRowFileCommand({ bridge }, uri, rowIndex);
+      },
+    ),
+    vscode.commands.registerCommand('apicircle.pickHeader', (uri?: vscode.Uri) => {
+      return pickHeaderCommand(uri);
+    }),
+    vscode.commands.registerCommand('apicircle.mapContextVarsFromJson', (uri?: vscode.Uri) => {
+      return mapContextVarsFromJsonCommand(uri);
+    }),
+    vscode.commands.registerCommand('apicircle.fetchOAuth2Token', (uri?: vscode.Uri) => {
+      return fetchOAuth2TokenCommand(uri);
+    }),
+    vscode.commands.registerCommand('apicircle.addQueryRow', (uri?: vscode.Uri) =>
+      addQueryRowCommand(uri),
+    ),
+    vscode.commands.registerCommand('apicircle.addCookieRow', (uri?: vscode.Uri) =>
+      addCookieRowCommand(uri),
+    ),
+    vscode.commands.registerCommand('apicircle.addPathParamRow', (uri?: vscode.Uri) =>
+      addPathParamRowCommand(uri),
+    ),
+    vscode.commands.registerCommand('apicircle.addAssertionRow', (uri?: vscode.Uri) =>
+      addAssertionRowCommand(uri),
+    ),
+    vscode.commands.registerCommand('apicircle.addExtractionRow', (uri?: vscode.Uri) =>
+      addExtractionRowCommand(uri),
+    ),
+    vscode.commands.registerCommand('apicircle.addMockValidationRule', (uri?: vscode.Uri) =>
+      addMockValidationRuleCommand(uri),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockValidationKind',
+      (uri?: vscode.Uri, ruleId?: string) => setMockValidationKindCommand(uri, ruleId),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockValidationTarget',
+      (uri?: vscode.Uri, ruleId?: string) => setMockValidationTargetCommand(uri, ruleId),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockValidationExpected',
+      (uri?: vscode.Uri, ruleId?: string) => setMockValidationExpectedCommand(uri, ruleId),
+    ),
+    vscode.commands.registerCommand('apicircle.addMockMultiplier', (uri?: vscode.Uri) =>
+      addMockMultiplierCommand(uri),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.switchMockResponseBodyType',
+      (uri?: vscode.Uri, ruleId?: string) => switchMockResponseBodyTypeCommand(uri, ruleId),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockResponseStatus',
+      (uri?: vscode.Uri, ruleId?: string) => setMockResponseStatusCommand(uri, ruleId),
+    ),
+    vscode.commands.registerCommand('apicircle.addMockResponseRule', (uri?: vscode.Uri) =>
+      addMockResponseRuleCommand(uri),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.removeMockResponseRule',
+      (uri?: vscode.Uri, ruleId?: string) => removeMockResponseRuleCommand(uri, ruleId),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.removeMockValidationRule',
+      (uri?: vscode.Uri, ruleId?: string) => removeMockValidationRuleCommand(uri, ruleId),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.removeMockMultiplier',
+      (uri?: vscode.Uri, multiplierId?: string) => removeMockMultiplierCommand(uri, multiplierId),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockMethodField',
+      (uri?: vscode.Uri, line?: number) => setMockMethodFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockStatusField',
+      (uri?: vscode.Uri, line?: number) => setMockStatusFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockBodyTypeField',
+      (uri?: vscode.Uri, line?: number) => setMockBodyTypeFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockHeaderKeyField',
+      (uri?: vscode.Uri, line?: number) => setMockHeaderKeyFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockHeaderValueField',
+      (uri?: vscode.Uri, line?: number) => setMockHeaderValueFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockClauseScopeField',
+      (uri?: vscode.Uri, line?: number) => setMockClauseScopeFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockClauseOpField',
+      (uri?: vscode.Uri, line?: number) => setMockClauseOpFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockClauseTargetField',
+      (uri?: vscode.Uri, line?: number) => setMockClauseTargetFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockClauseValueField',
+      (uri?: vscode.Uri, line?: number) => setMockClauseValueFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.toggleMockHeaderEnabled',
+      (uri?: vscode.Uri, line?: number) => toggleMockHeaderEnabledCommand(uri, line),
+    ),
+    vscode.commands.registerCommand('apicircle.formatJson', (uri?: vscode.Uri, line?: number) =>
+      formatJsonCommand(uri, line),
+    ),
+    vscode.commands.registerCommand('apicircle.addMockRequestSchema', (uri?: vscode.Uri) =>
+      addMockRequestSchemaCommand(uri),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.addMockRequestSchemaParam',
+      (uri?: vscode.Uri, kind?: RequestSchemaParamKind) =>
+        addMockRequestSchemaParamCommand(uri, kind),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.addMockRequestSchemaBodyExample',
+      (uri?: vscode.Uri) => addMockRequestSchemaBodyExampleCommand(uri),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockParamTypeField',
+      (uri?: vscode.Uri, line?: number) => setMockParamTypeFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockHeaderParamNameField',
+      (uri?: vscode.Uri, line?: number) => setMockHeaderParamNameFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setRequestMethodField',
+      (uri?: vscode.Uri, line?: number) => setRequestMethodFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setRequestHeaderKeyField',
+      (uri?: vscode.Uri, line?: number) => setRequestHeaderKeyFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setRequestHeaderValueField',
+      (uri?: vscode.Uri, line?: number) => setRequestHeaderValueFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setRequestTextField',
+      (uri?: vscode.Uri, line?: number) => setRequestTextFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setRequestAssertionKindField',
+      (uri?: vscode.Uri, line?: number) => setRequestAssertionKindFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setRequestAssertionOpField',
+      (uri?: vscode.Uri, line?: number) => setRequestAssertionOpFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setRequestExtractionSourceField',
+      (uri?: vscode.Uri, line?: number) => setRequestExtractionSourceFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.addMockConditionClause',
+      (uri?: vscode.Uri, line?: number) => addMockConditionClauseCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockMultiplierKindField',
+      (uri?: vscode.Uri, line?: number) => setMockMultiplierKindFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockMultiplierKeyField',
+      (uri?: vscode.Uri, line?: number) => setMockMultiplierKeyFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockMultiplierTargetPathField',
+      (uri?: vscode.Uri, line?: number) => setMockMultiplierTargetPathFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockTextField',
+      (uri?: vscode.Uri, line?: number) => setMockTextFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockNumberField',
+      (uri?: vscode.Uri, line?: number) => setMockNumberFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.toggleMockRuleEnabled',
+      (uri?: vscode.Uri, kind?: 'response' | 'validation', ruleId?: string) =>
+        toggleMockRuleEnabledCommand(uri, kind, ruleId),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.addMockResponseHeader',
+      (uri?: vscode.Uri, ruleId?: string) => addMockResponseHeaderCommand(uri, ruleId),
+    ),
     vscode.commands.registerCommand(
       'apicircle.deleteFolder',
       (node?: { kind: 'folder'; id: string }) => {
@@ -720,6 +1125,174 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('apicircle.newMock', () => {
       if (!bridge || !mockController) return;
       return newMockCommand({ bridge, controller: mockController });
+    }),
+    // Release-ledger commands — drive the Link Workspaces view + releases.yaml
+    // CodeLens. Each refreshes the views after mutating so the tree's release
+    // list updates without waiting for the next watcher tick.
+    vscode.commands.registerCommand('apicircle.openReleaseHistory', () => {
+      if (!bridge) return;
+      return openReleaseHistoryCommand({ bridge, fsProvider });
+    }),
+    vscode.commands.registerCommand('apicircle.publishRelease', async () => {
+      if (!bridge) return;
+      await publishReleaseCommand({ bridge, fsProvider });
+      for (const v of Object.values(views ?? {})) v.refresh();
+    }),
+    vscode.commands.registerCommand(
+      'apicircle.deprecateRelease',
+      async (arg?: { version?: string }) => {
+        if (!bridge) return;
+        await deprecateReleaseCommand({ bridge, fsProvider }, arg);
+        for (const v of Object.values(views ?? {})) v.refresh();
+      },
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.withdrawRelease',
+      async (arg?: { version?: string }) => {
+        if (!bridge) return;
+        await withdrawReleaseCommand({ bridge, fsProvider }, arg);
+        for (const v of Object.values(views ?? {})) v.refresh();
+      },
+    ),
+    // Linked-workspace commands. Field editors + lifecycle, each refreshing the
+    // views afterward so the Link Workspaces tree reflects the change.
+    vscode.commands.registerCommand('apicircle.linkWorkspace', async () => {
+      if (!bridge) return;
+      await linkWorkspaceCommand({ bridge, fsProvider, secrets: context.secrets });
+      for (const v of Object.values(views ?? {})) v.refresh();
+    }),
+    vscode.commands.registerCommand('apicircle.searchMarketplace', async () => {
+      if (!bridge) return;
+      await searchMarketplaceCommand({ bridge, fsProvider, secrets: context.secrets });
+      for (const v of Object.values(views ?? {})) v.refresh();
+    }),
+    vscode.commands.registerCommand('apicircle.refreshLinkedWorkspace', async (arg?: LinkArg) => {
+      if (!bridge) return;
+      await refreshLinkedWorkspaceCommand({ bridge, fsProvider, secrets: context.secrets }, arg);
+      for (const v of Object.values(views ?? {})) v.refresh();
+    }),
+    vscode.commands.registerCommand('apicircle.reviewLinkedUpdate', async (arg?: LinkArg) => {
+      if (!bridge) return;
+      await reviewLinkedUpdateCommand({ bridge, fsProvider, secrets: context.secrets }, arg);
+      for (const v of Object.values(views ?? {})) v.refresh();
+    }),
+    vscode.commands.registerCommand('apicircle.tagRelease', () => {
+      if (!bridge) return;
+      return tagReleaseCommand({ bridge });
+    }),
+    vscode.commands.registerCommand('apicircle.editRepoTopics', () => {
+      if (!bridge) return;
+      return editRepoTopicsCommand({ bridge });
+    }),
+    vscode.commands.registerCommand('apicircle.unlinkWorkspace', async (arg?: LinkArg) => {
+      if (!bridge) return;
+      await unlinkWorkspaceCommand({ bridge, fsProvider, secrets: context.secrets }, arg);
+      for (const v of Object.values(views ?? {})) v.refresh();
+    }),
+    vscode.commands.registerCommand('apicircle.openLinkYaml', (arg?: LinkArg) => {
+      if (!bridge) return;
+      return openLinkYamlCommand({ bridge, fsProvider, secrets: context.secrets }, arg);
+    }),
+    vscode.commands.registerCommand('apicircle.showLinkedChangelog', (arg?: LinkArg) => {
+      if (!bridge) return;
+      return showLinkedChangelogCommand({ bridge, fsProvider, secrets: context.secrets }, arg);
+    }),
+    vscode.commands.registerCommand('apicircle.setLinkNameField', async (arg?: LinkArg) => {
+      if (!bridge) return;
+      await setLinkNameFieldCommand({ bridge, fsProvider, secrets: context.secrets }, arg);
+      for (const v of Object.values(views ?? {})) v.refresh();
+    }),
+    vscode.commands.registerCommand('apicircle.setLinkDescriptionField', (arg?: LinkArg) => {
+      if (!bridge) return;
+      return setLinkDescriptionFieldCommand({ bridge, fsProvider, secrets: context.secrets }, arg);
+    }),
+    vscode.commands.registerCommand(
+      'apicircle.setLinkPinnedVersionField',
+      async (arg?: LinkArg) => {
+        if (!bridge) return;
+        await setLinkPinnedVersionFieldCommand(
+          { bridge, fsProvider, secrets: context.secrets },
+          arg,
+        );
+        for (const v of Object.values(views ?? {})) v.refresh();
+      },
+    ),
+    vscode.commands.registerCommand('apicircle.setLinkScopeField', (arg?: LinkArg) => {
+      if (!bridge) return;
+      return setLinkScopeFieldCommand({ bridge, fsProvider, secrets: context.secrets }, arg);
+    }),
+    vscode.commands.registerCommand('apicircle.setLinkSessionModeField', (arg?: LinkArg) => {
+      if (!bridge) return;
+      return setLinkSessionModeFieldCommand({ bridge, fsProvider, secrets: context.secrets }, arg);
+    }),
+    vscode.commands.registerCommand('apicircle.addLinkRequiredKey', (arg?: LinkArg) => {
+      if (!bridge) return;
+      return addLinkRequiredKeyCommand({ bridge, fsProvider, secrets: context.secrets }, arg);
+    }),
+    vscode.commands.registerCommand(
+      'apicircle.removeLinkRequiredKey',
+      (arg?: LinkArg, key?: string) => {
+        if (!bridge) return;
+        return removeLinkRequiredKeyCommand(
+          { bridge, fsProvider, secrets: context.secrets },
+          arg,
+          key,
+        );
+      },
+    ),
+    vscode.commands.registerCommand('apicircle.setLinkSessionToken', (arg?: LinkArg) => {
+      if (!bridge) return;
+      return setLinkSessionTokenCommand({ bridge, fsProvider, secrets: context.secrets }, arg);
+    }),
+    vscode.commands.registerCommand(
+      'apicircle.openLinkedRequest',
+      (arg?: { linkId?: string; requestId?: string }) => {
+        if (!bridge) return;
+        return openLinkedRequestCommand({ bridge, fsProvider, secrets: context.secrets }, arg);
+      },
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.resetLinkedRequest',
+      async (arg?: { linkId?: string; requestId?: string }) => {
+        if (!bridge) return;
+        await resetLinkedRequestCommand({ bridge, fsProvider, secrets: context.secrets }, arg);
+        for (const v of Object.values(views ?? {})) v.refresh();
+      },
+    ),
+    vscode.commands.registerCommand('apicircle.discardLinkedMods', async (arg?: LinkArg) => {
+      if (!bridge) return;
+      await discardLinkedModsCommand({ bridge, fsProvider, secrets: context.secrets }, arg);
+      for (const v of Object.values(views ?? {})) v.refresh();
+    }),
+    vscode.commands.registerCommand(
+      'apicircle.provisionLinkedSecret',
+      (arg?: LinkArg, key?: string) => {
+        if (!bridge) return;
+        return provisionLinkedSecretCommand(
+          { bridge, fsProvider, secrets: context.secrets },
+          arg,
+          key,
+        );
+      },
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.clearLinkedSecret',
+      (arg?: LinkArg, key?: string) => {
+        if (!bridge) return;
+        return clearLinkedSecretCommand({ bridge, fsProvider, secrets: context.secrets }, arg, key);
+      },
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setLinkedEnvVarOverride',
+      async (arg?: { linkId?: string; envName?: string; varKey?: string }) => {
+        if (!bridge) return;
+        await setLinkedEnvVarOverrideCommand({ bridge, fsProvider, secrets: context.secrets }, arg);
+        for (const v of Object.values(views ?? {})) v.refresh();
+      },
+    ),
+    vscode.commands.registerCommand('apicircle.clearLinkSessionToken', (arg?: LinkArg) => {
+      if (!bridge) return;
+      return clearLinkSessionTokenCommand({ bridge, fsProvider, secrets: context.secrets }, arg);
     }),
     vscode.commands.registerCommand(
       'apicircle.startMock',
@@ -768,6 +1341,20 @@ export function activate(context: vscode.ExtensionContext): void {
       (node?: { kind: 'server' | 'mock-running' | 'mock-idle'; id: string }) => {
         if (!bridge || !mockController) return;
         return openMockInBrowserCommand({ bridge, controller: mockController }, node);
+      },
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setMockPort',
+      (node?: { kind: 'server' | 'mock-running' | 'mock-idle'; id: string }) => {
+        if (!bridge || !mockController) return;
+        return setMockPortCommand({ bridge, controller: mockController }, node);
+      },
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.openMockEndpointYaml',
+      (node?: { kind: 'endpoint'; serverId: string; endpointId: string }) => {
+        if (!bridge || !mockController) return;
+        return openMockEndpointYamlCommand({ bridge, controller: mockController }, node);
       },
     ),
     // ---- P11 Mock endpoint visual editor ----
@@ -915,6 +1502,18 @@ export function activate(context: vscode.ExtensionContext): void {
         log: runsChannel?.forCategory('misc'),
       });
     }),
+    vscode.commands.registerCommand('apicircle.uninstallCopilotMcpConfig', () => {
+      if (!mcpManager) return;
+      return uninstallCopilotMcpConfigCommand({
+        mcp: mcpManager,
+        getRelativeConfigPath: () =>
+          vscode.workspace
+            .getConfiguration('apicircle.mcp')
+            .get<string>('workspaceConfigPath', '.vscode/mcp.json'),
+        onInstalled: () => views?.mcp.refresh(),
+        log: runsChannel?.forCategory('misc'),
+      });
+    }),
     // ---- P8: multi-AI-client MCP install ----
     vscode.commands.registerCommand(
       'apicircle.installMcpForClient',
@@ -1021,6 +1620,93 @@ export function activate(context: vscode.ExtensionContext): void {
     );
   }
 
+  // ---- Workspace discovery + hasActiveWorkspace context key ----
+  // Re-runs `discoverWorkspaces` for the currently-open VS Code workspace
+  // folders, registers any newly found `.apicircle/workspace.json` with the
+  // bridge, picks an active workspace if none is set yet, and finally
+  // updates the `apicircle.hasActiveWorkspace` context key so the Editor's
+  // viewsWelcome content switches between the no-workspace and
+  // workspace-present copies. Called from activate() initialisation, the
+  // apicircle.refresh command, the workspace-file watcher, and
+  // onDidChangeWorkspaceFolders. Safe to call repeatedly — bridge
+  // registration is idempotent.
+  function rediscoverAndRegister(_ctx: vscode.ExtensionContext): void {
+    if (!bridge) return;
+    const log = runsChannel?.forCategory('misc');
+    const folders = vscode.workspace.workspaceFolders;
+    log?.(
+      `discover: ${folders?.length ?? 0} workspace folder(s) — ${
+        folders?.map((f) => f.uri.fsPath).join(' | ') ?? '<none>'
+      }`,
+    );
+    const discovery = discoverWorkspaces(folders);
+    log?.(
+      `discover: found ${discovery.workspaces.length} workspace(s) — ${
+        discovery.workspaces.map((w) => w.workspaceJsonPath).join(' | ') || '<none>'
+      }`,
+    );
+    if (discovery.foldersWithoutWorkspace.length > 0) {
+      log?.(
+        `discover: ${discovery.foldersWithoutWorkspace.length} folder(s) had no .apicircle/workspace.json — ${discovery.foldersWithoutWorkspace
+          .map((f) => f.uri.fsPath)
+          .join(' | ')}`,
+      );
+    }
+    for (const ws of discovery.workspaces) {
+      bridge.registerWorkspace(ws);
+    }
+    if (!bridge.activeWorkspace() && discovery.workspaces.length > 0) {
+      const previous = _ctx.globalState.get<string>('apicircle.activeWorkspaceId');
+      const toActivate =
+        discovery.workspaces.find((w) => w.id === previous) ?? discovery.workspaces[0];
+      bridge.setActive(toActivate.id);
+    }
+    const hasActive = bridge.activeWorkspace() !== null;
+    log?.(`discover: hasActiveWorkspace=${hasActive}`);
+    void vscode.commands.executeCommand('setContext', 'apicircle.hasActiveWorkspace', hasActive);
+  }
+
+  // ---- Startup: adopt the workspace backing an already-open editor ----
+  // On reload VS Code restores the previous session's editors. If one is an
+  // apicircle:// virtual YAML (request / env / mock / endpoint / …) or the raw
+  // `.apicircle/workspace.json`, switch the active workspace to the one that
+  // editor belongs to — so the TreeViews, status bar and MCP snippets reflect
+  // what the user is already looking at instead of whatever discovery defaulted
+  // to. Best-effort: any malformed URI is skipped, never thrown.
+  function adoptActiveWorkspaceFromOpenEditors(): void {
+    if (!bridge) return;
+    const registered = bridge.listWorkspaces();
+    if (registered.length === 0) return;
+    const log = runsChannel?.forCategory('misc');
+    const lookup = registered.map((w) => ({
+      id: w.workspace.id,
+      workspaceJsonPath: w.workspace.workspaceJsonPath,
+    }));
+
+    // Prefer the focused editor, then any other open document.
+    const ordered: vscode.TextDocument[] = [];
+    const activeDoc = vscode.window.activeTextEditor?.document;
+    if (activeDoc) ordered.push(activeDoc);
+    for (const doc of vscode.workspace.textDocuments) {
+      if (doc !== activeDoc) ordered.push(doc);
+    }
+
+    for (const doc of ordered) {
+      const id = workspaceIdForOpenEditor(
+        { scheme: doc.uri.scheme, authority: doc.uri.authority, fsPath: doc.uri.fsPath },
+        lookup,
+      );
+      if (!id) continue;
+      if (bridge.activeWorkspace()?.workspace.id !== id) {
+        bridge.setActive(id);
+        log?.(`startup: adopted workspace ${id} from open editor ${doc.uri.toString()}`);
+        for (const v of Object.values(views ?? {})) v.refresh();
+        void vscode.commands.executeCommand('setContext', 'apicircle.hasActiveWorkspace', true);
+      }
+      return; // first match wins
+    }
+  }
+
   // ---- P8: silent-unlock pass at activation ----
   // For every registered workspace, attempt to read a stored passphrase and
   // unlock the vault silently. Best-effort; failures roll back to the normal
@@ -1053,6 +1739,8 @@ export function activate(context: vscode.ExtensionContext): void {
 export async function deactivate(): Promise<void> {
   abortRegistry?.cancelAll();
   abortRegistry = null;
+  inFlightTracker?.dispose();
+  inFlightTracker = null;
   // P3R2-G3: await disposeAll so the bridge stays alive while runtime
   // entries are cleared. Without the await, the bridge.dispose() below
   // raced with in-flight surface.write() calls and the mocks didn't

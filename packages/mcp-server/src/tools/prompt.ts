@@ -11,7 +11,12 @@ import type {
   RequestAuth,
   RequestBody,
 } from '@apicircle/shared';
-import { generateId, makeDefaultMockResponse, makeDefaultRequestSchema } from '@apicircle/shared';
+import {
+  generateId,
+  makeDefaultMockResponse,
+  makeDefaultRequestSchema,
+  MAX_RESPONSE_MULTIPLIERS,
+} from '@apicircle/shared';
 import type { AnyToolDef } from './types';
 
 // =============================================================================
@@ -200,7 +205,9 @@ const CONDITION_CLAUSE_NL = z.object({
 const RESPONSE_RULE_NL = z.object({
   name: z.string(),
   enabled: z.boolean().default(true),
-  when: z.array(CONDITION_CLAUSE_NL).default([]),
+  // At least one clause — a no-condition rule is dead (the runtime engine skips
+  // clause-less rules), so it never fires (mirrors the VS Code parser's reject).
+  when: z.array(CONDITION_CLAUSE_NL).min(1),
   response: z
     .object({
       status: z.number().int().min(100).max(599).default(200),
@@ -262,7 +269,7 @@ function buildEndpoint(input: z.infer<typeof ENDPOINT_INPUT>): MockEndpoint {
   // omitted. Treat undefined as empty so the build path never NPEs.
   const validationRules = input.validationRules ?? [];
   const responseRules = input.responseRules ?? [];
-  const multipliers = input.multipliers ?? [];
+  const multipliers = (input.multipliers ?? []).slice(0, MAX_RESPONSE_MULTIPLIERS);
   if (multipliers.length > 0) {
     defaultResponse.multipliers = multipliers.map((m) => ({
       id: generateId(),
@@ -539,10 +546,13 @@ export const promptSetPlanVariablesTool: AnyToolDef = {
 export const promptCreateMockServerTool: AnyToolDef = {
   name: 'prompt.create_mock_server',
   description:
-    'Create a manual-mode mock server with optional inline endpoints from an LLM-shaped JSON envelope. The model produces `{ name, defaultPort?, endpoints: [{ method, pathPattern, name?, response?, validationRules?, responseRules?, multipliers? }] }`; this tool generates ids for the server and every endpoint / rule, then persists in one shot.',
+    'Create a manual-mode mock server with optional inline endpoints from an LLM-shaped JSON envelope. The model produces `{ name, defaultPort?, endpoints: [{ method, pathPattern, name?, response?, validationRules?, responseRules?, multiplier? }] }`; this tool generates ids for the server and every endpoint / rule, then persists in one shot.',
   inputSchema: z.object({
     name: z.string().min(1),
-    defaultPort: z.number().int().positive().nullable().optional(),
+    // Mirrors mock.create_manual / mock.start / mock.set_default_port:
+    // reject out-of-range ports at the tool boundary so a prompt that
+    // returns a stray port (1, 80, 999999) never leaks into the synced doc.
+    defaultPort: z.number().int().min(1024).max(65535).nullable().optional(),
     endpoints: z.array(ENDPOINT_INPUT).default([]),
   }),
   async handler(input, ctx) {
@@ -571,7 +581,7 @@ export const promptCreateMockServerTool: AnyToolDef = {
 export const promptAddMockEndpointTool: AnyToolDef = {
   name: 'prompt.add_mock_endpoint',
   description:
-    'Append a new endpoint (with optional inline validation rules, response rules, and multipliers) to an existing mock server from an LLM-shaped JSON envelope. All ids are auto-generated; the existing endpoints stay in place.',
+    'Append a new endpoint (with optional inline validation rules, response rules, and a single response multiplier) to an existing mock server from an LLM-shaped JSON envelope. All ids are auto-generated; the existing endpoints stay in place.',
   inputSchema: z.object({
     mockId: z.string(),
     method: HTTP_METHOD,
@@ -683,7 +693,7 @@ export const promptSetEndpointResponseRulesTool: AnyToolDef = {
 export const promptSetEndpointMultipliersTool: AnyToolDef = {
   name: 'prompt.set_endpoint_multipliers',
   description:
-    "Replace the response multipliers on an endpoint's defaultResponse with an LLM-shaped list. Multipliers expand an array at `targetJsonPath` to a count derived from a request value. Every multiplier gets a fresh id. Empty array clears all multipliers.",
+    "Replace the response multipliers on an endpoint's defaultResponse with an LLM-shaped list. Multipliers expand an array at `targetJsonPath` to a count derived from a request value. Every multiplier gets a fresh id. Empty array clears all. Capped at MAX_RESPONSE_MULTIPLIERS (1) — extra entries are rejected.",
   inputSchema: z.object({
     mockId: z.string(),
     endpointId: z.string(),
@@ -694,6 +704,9 @@ export const promptSetEndpointMultipliersTool: AnyToolDef = {
     const mock = state.synced.mockServers[input.mockId];
     if (!mock) return { ok: false as const, error: 'mock not found' as const };
     const multipliers: Array<z.infer<typeof MULTIPLIER_NL>> = input.multipliers;
+    if (multipliers.length > MAX_RESPONSE_MULTIPLIERS) {
+      return { ok: false as const, error: 'too many multipliers' as const };
+    }
     const next = patchEndpoint(mock, input.endpointId, (e) => ({
       ...e,
       defaultResponse: {
@@ -710,6 +723,60 @@ export const promptSetEndpointMultipliersTool: AnyToolDef = {
                 min: m.min,
                 max: m.max,
               })),
+      },
+    }));
+    if (!next) return { ok: false as const, error: 'endpoint not found' as const };
+    const out = await ctx.workspace.apply({ kind: 'mock.upsert', mock: next });
+    return { ok: true as const, changedIds: out.changedIds };
+  },
+};
+
+const PARAM_NL = z.object({
+  name: z.string(),
+  typeHint: z.string().optional(),
+  required: z.boolean().optional(),
+  description: z.string().optional(),
+  example: z.string().optional(),
+});
+
+export const promptSetEndpointRequestSchemaTool: AnyToolDef = {
+  name: 'prompt.set_endpoint_request_schema',
+  description:
+    "Declare an endpoint's expected inputs with an LLM-shaped list: path / query / header / cookie params (name + optional typeHint / required / description / example) plus an optional body-shape doc. Every param gets a fresh id; omitted lists are cleared. Documentation-only — it drives the editor UI + OpenAPI export, not runtime gating (use validation rules for that).",
+  inputSchema: z.object({
+    mockId: z.string(),
+    endpointId: z.string(),
+    pathParams: z.array(PARAM_NL).default([]),
+    queryParams: z.array(PARAM_NL).default([]),
+    headers: z.array(PARAM_NL).default([]),
+    cookies: z.array(PARAM_NL).default([]),
+    body: z
+      .object({ description: z.string().optional(), example: z.string().optional() })
+      .optional(),
+  }),
+  async handler(input, ctx) {
+    const state = await ctx.workspace.read();
+    const mock = state.synced.mockServers[input.mockId];
+    if (!mock) return { ok: false as const, error: 'mock not found' as const };
+    const toParams = (list: Array<z.infer<typeof PARAM_NL>>) =>
+      list.map((p) => ({
+        id: generateId(),
+        name: p.name,
+        typeHint: p.typeHint,
+        required: p.required,
+        description: p.description,
+        example: p.example,
+      }));
+    const body =
+      input.body && (input.body.description || input.body.example) ? input.body : undefined;
+    const next = patchEndpoint(mock, input.endpointId, (e) => ({
+      ...e,
+      requestSchema: {
+        pathParams: toParams(input.pathParams),
+        queryParams: toParams(input.queryParams),
+        headers: toParams(input.headers),
+        cookies: toParams(input.cookies),
+        body,
       },
     }));
     if (!next) return { ok: false as const, error: 'endpoint not found' as const };

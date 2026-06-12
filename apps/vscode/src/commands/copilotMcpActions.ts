@@ -1,8 +1,10 @@
 import * as vscode from 'vscode';
 import {
   installCopilotMcpConfig,
+  uninstallCopilotMcpConfig,
   UnsafeConfigPathError,
   type InstallResult,
+  type UninstallResult,
 } from '../host/copilotMcpInstall';
 import type { VsCodeMcpManager } from '../host/mcpManager';
 
@@ -99,6 +101,70 @@ export async function installCopilotMcpConfigCommand(deps: CopilotMcpActionsDeps
   } else {
     await vscode.window.showInformationMessage(
       `APICircle MCP entry at ${relativeForToast} is already up to date.`,
+    );
+  }
+}
+
+/**
+ * Remove the apicircle entry from `.vscode/mcp.json`. Used by the trash
+ * affordance on the GitHub Copilot row once it's in the `installed-current`
+ * or `installed-stale` state. Foreign `mcpServers` entries the user added
+ * by hand are preserved verbatim — we only strip the one key we own.
+ */
+export async function uninstallCopilotMcpConfigCommand(deps: CopilotMcpActionsDeps): Promise<void> {
+  const folders = vscode.workspace.workspaceFolders;
+  const paths = deps.mcp.resolvePaths();
+
+  if (!paths.hasActiveWorkspace || !folders || folders.length === 0) {
+    await vscode.window.showWarningMessage(
+      'No active APICircle workspace. Open a folder containing .apicircle/workspace.json before removing the Copilot MCP config.',
+    );
+    return;
+  }
+
+  const owningFolder = pickOwningFolder(folders, paths.workspace);
+  if (!owningFolder) {
+    await vscode.window.showErrorMessage(
+      `Could not locate which workspace folder owns ${paths.workspace}.`,
+    );
+    return;
+  }
+
+  const relativeConfigPath = deps.getRelativeConfigPath();
+  const confirm = await vscode.window.showWarningMessage(
+    `Remove the apicircle MCP entry from ${relativeConfigPath}? Other server entries in the same file will be preserved.`,
+    { modal: true },
+    'Remove',
+  );
+  if (confirm !== 'Remove') return;
+
+  let result: UninstallResult;
+  try {
+    result = uninstallCopilotMcpConfig({
+      workspaceFolder: owningFolder.uri.fsPath,
+      relativeConfigPath,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    deps.log?.(`uninstallCopilotMcpConfig failed: ${msg}`);
+    if (err instanceof UnsafeConfigPathError) {
+      await vscode.window.showErrorMessage(`Refusing to remove — ${msg}`, { modal: true });
+      return;
+    }
+    await vscode.window.showErrorMessage(`Failed to remove Copilot MCP config: ${msg}`);
+    return;
+  }
+
+  deps.log?.(`Copilot uninstall ${result.outcome} at ${result.path}`);
+  const relativeForToast = vscode.workspace.asRelativePath(result.path);
+  if (result.outcome === 'removed') {
+    deps.onInstalled?.();
+    await vscode.window.showInformationMessage(
+      `Removed APICircle MCP entry from ${relativeForToast}. Restart Copilot Chat / your AI client to pick up the change.`,
+    );
+  } else {
+    await vscode.window.showInformationMessage(
+      `No apicircle entry was present in ${relativeForToast} — nothing to remove.`,
     );
   }
 }

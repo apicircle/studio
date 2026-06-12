@@ -980,8 +980,13 @@ Each endpoint is a method + path pattern, edited as a flow: Endpoint → Validat
 - **Validation rules** — header / query / cookie / body / content-type checks; a failure short-circuits with a fail response.
 - **Response rules** — conditional responses chosen by a query param, path param, header, cookie, or JSON-path body value, tried in declaration order.
 - **Multipliers** — expand an array in a JSON response from a request value. \`GET /items?count=3\` repeats the template at \`$.items\` three times.
+- **Request schema** — on the Endpoint node, declare the inputs the endpoint expects (path / query / header / cookie params + a body-shape doc). It is documentation-only (it drives the OpenAPI export, not runtime gating), and "Derive from path" auto-fills params from the pattern's \`{slot}\` segments. The same schema is editable in the VS Code \`.endpoint.yaml\` — it round-trips through the synced doc, so it stays identical across surfaces.
 
-Validation and response rules can be disabled without deleting them. CORS is off by default — enable it on the server card for cross-origin clients.
+Validation and response rules can be disabled without deleting them; a rule's condition is capped at one clause today. CORS is off by default — enable it on the server card for cross-origin clients.
+
+## Default port
+
+Each server has a **Default port** field on its summary card. Set it to a 1024–65535 integer to always bind that port, or leave blank to let the runtime pick a free port at each Start. The input is disabled while a mock is running — stop it first to change. A busy port surfaces a clear error: \`Port <n> on 127.0.0.1 is already in use. Stop the other process or pick a different port.\` Same field appears in the VS Code \`.mock.yaml\`, the \`apicircle.setMockPort\` command, and the CLI \`--port\` flag.
 
 ## The web limitation, and how to run a mock
 
@@ -1064,7 +1069,7 @@ So mocking a Postman or Insomnia file works fine — just expect to open the end
 
 ## How the mock decides what to answer
 
-For each incoming request the mock checks, in order: validation rules, then response rules top to bottom, then multipliers, and finally the default response if nothing matched. If a mock returns something you did not expect, that order is where to look — a validation rule may be short-circuiting the request, or an earlier response rule may be winning. Path parameters match by position: an endpoint path \`/users/:id\` answers a request to \`/users/42\`.
+For each incoming request the mock checks, in order: validation rules, then response rules top to bottom, then response multipliers, and finally the default response if nothing matched. If a mock returns something you did not expect, that order is where to look — a validation rule may be short-circuiting the request, or an earlier response rule may be winning. Path parameters match by position: an endpoint path \`/users/:id\` answers a request to \`/users/42\`.
 
 ## Common snags
 
@@ -1107,7 +1112,7 @@ The tools cluster into areas:
 - **Read & search** — requests, folders, environments, plans, assertions, history.
 - **Author** — create / update / delete requests, folders, environments, assertions; reshape execution plans.
 - **Import** — pull in OpenAPI, Postman, Insomnia, HAR, or curl as requests.
-- **Mock servers** — create from a spec, edit endpoints, validation rules, response rules, multipliers.
+- **Mock servers** — create from a spec, edit endpoints, validation rules, response rules, response multipliers.
 - **Generate code** — turn a request into runnable client code (\`curl\`, \`fetch\`, \`node-axios\`, \`python-requests\`, \`go\`, \`rust\`).
 
 ## Multi-workspace handling

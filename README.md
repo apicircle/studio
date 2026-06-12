@@ -27,7 +27,7 @@ rebuilt around two ideas the others miss:
    branch. Teams collaborate the way they collaborate on code — branches,
    diffs, pull requests, review.
 2. **Your workspace is an AI tool catalog.** A built-in Model Context Protocol
-   server exposes **74 tools**, so Claude, ChatGPT, Cursor, Copilot, and any
+   server exposes **93 tools**, so Claude, ChatGPT, Cursor, Copilot, and any
    other MCP client can read, author, and run requests on your behalf.
 
 No cloud account. No vendor lock-in. Your data stays on your machine and in
@@ -80,9 +80,11 @@ The bundled `@apicircle/mcp-server` speaks the open
 [Model Context Protocol](https://modelcontextprotocol.io) over stdio, so it
 works with **Claude Desktop, Claude Code, ChatGPT, GitHub Copilot, Cursor,
 Continue, Cline, Zed, and Windsurf** — or anything else that talks MCP. The
-78-tool catalog covers request and folder CRUD, environment authoring,
-assertions, execution plans, history, mock-server lifecycle, codebase
-scanning, imports, code generation, and natural-language authoring.
+93-tool catalog covers request and folder CRUD, environment authoring,
+assertions, execution plans, history, mock-server lifecycle, the release
+ledger (publish / deprecate / withdraw), linked-workspace config (list / pin /
+scope / unlink), codebase scanning, imports, code generation, and
+natural-language authoring.
 
 The desktop app watches `workspace.synced.json` for external writes, so
 anything the MCP server (or the `apicircle` CLI) writes shows up in the
@@ -379,8 +381,8 @@ packages/
   shared/               Types, generateId, validators, encryption helpers
   git/                  GitHub API client + sync logic
   mock-server-core/     Hono mock-server engine + OpenAPI/Postman/Insomnia parsers
-  mcp-server/           stdio MCP host with the 78-tool catalog
-  cli/                  `apicircle` binary — mock / mcp / import / export / run / workspaces
+  mcp-server/           stdio MCP host with the 93-tool catalog
+  cli/                  `apicircle` binary — mock / mocks / mcp / import / export / run / workspaces
 ```
 
 `@apicircle/{shared,core,mock-server-core,mcp-server,cli}` are published to

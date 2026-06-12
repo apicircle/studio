@@ -107,6 +107,45 @@ function hashPath(absolutePath: string): string {
 }
 
 /**
+ * Resolve the registered-workspace id that an already-open editor belongs to —
+ * the pure core of the startup "adopt active workspace from open editors" pass
+ * (see `extension.ts`). Returns the matching workspace id, or null when the
+ * editor isn't an APICircle surface (or its workspace isn't registered).
+ *
+ * Two editor shapes map to a workspace:
+ *   - an `apicircle://<authority>/…` virtual YAML, where the authority is the
+ *     base64url-encoded workspace id (same encoding `ApicircleFsProvider` uses);
+ *   - the raw `<root>/.apicircle/workspace.json` file.
+ *
+ * Any malformed authority is treated as "no match" rather than thrown, so a
+ * stray editor can never crash activation.
+ */
+export function workspaceIdForOpenEditor(
+  editor: { scheme: string; authority: string; fsPath: string },
+  registered: ReadonlyArray<{ id: string; workspaceJsonPath: string }>,
+): string | null {
+  if (editor.scheme === 'apicircle') {
+    if (!editor.authority) return null;
+    let decoded: string;
+    try {
+      decoded = Buffer.from(editor.authority, 'base64url').toString('utf8');
+    } catch {
+      return null;
+    }
+    return registered.find((w) => w.id === decoded)?.id ?? null;
+  }
+  if (editor.scheme === 'file') {
+    const norm = editor.fsPath.replace(/\\/g, '/').toLowerCase();
+    if (!norm.endsWith('/.apicircle/workspace.json')) return null;
+    return (
+      registered.find((w) => w.workspaceJsonPath.replace(/\\/g, '/').toLowerCase() === norm)?.id ??
+      null
+    );
+  }
+  return null;
+}
+
+/**
  * Find a discovered workspace whose `.apicircle/` directory contains the given
  * absolute path. Used by the FileSystemWatcher to translate disk-path changes
  * into workspace-scoped refresh events.

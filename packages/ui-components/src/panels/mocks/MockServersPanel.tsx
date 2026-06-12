@@ -291,9 +291,8 @@ function ServerSummary({
         <dd className="text-text-primary">{server.source.kind}</dd>
         <dt className="text-text-dim">Endpoints</dt>
         <dd className="text-text-primary">{server.endpoints.length}</dd>
-        <dt className="text-text-dim">Default port</dt>
-        <dd className="text-text-primary">{server.defaultPort ?? 'auto'}</dd>
       </dl>
+      <PortSection server={server} runtime={runtime} />
       <CorsSection server={server} />
       <div className="flex items-center gap-2">
         {runtime ? (
@@ -342,6 +341,108 @@ function ServerSummary({
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// Port input — surfaces `MockServer.defaultPort` as an editable field with
+// inline validation against the 1024-65535 window enforced by the store
+// action. Empty input = `null` = "let the runtime pick a free port" — same
+// semantics as the VS Code YAML projection, the `apicircle.setMockPort`
+// command, and the CLI `--port` default.
+//
+// Editing is allowed while the mock is running: `defaultPort` is the port
+// used at the *next* Start, not the live listener's port. We surface an
+// "Applies on next Start" hint when a runtime entry is present so users
+// understand the change won't hot-swap the running listener.
+function PortSection({
+  server,
+  runtime,
+}: {
+  server: MockServer;
+  runtime: MockRuntimeEntry | undefined;
+}) {
+  const setMockServerDefaultPort = useWorkspaceStore((s) => s.setMockServerDefaultPort);
+  const [draft, setDraft] = useState<string>(
+    server.defaultPort === null ? '' : String(server.defaultPort),
+  );
+  const [error, setError] = useState<string | null>(null);
+  // Reset draft when the underlying server (or its port) changes — covers
+  // workspace switches and external writes via the disk-mirror watcher.
+  useEffect(() => {
+    setDraft(server.defaultPort === null ? '' : String(server.defaultPort));
+    setError(null);
+  }, [server.id, server.defaultPort]);
+
+  const isRunning = Boolean(runtime);
+  const commit = (raw: string) => {
+    const trimmed = raw.trim();
+    if (trimmed === '') {
+      setError(null);
+      setMockServerDefaultPort(server.id, null);
+      return;
+    }
+    const n = Number(trimmed);
+    if (!Number.isInteger(n)) {
+      setError('Port must be a whole number.');
+      return;
+    }
+    if (n < 1024 || n > 65535) {
+      setError('Port must be between 1024 and 65535.');
+      return;
+    }
+    setError(null);
+    setMockServerDefaultPort(server.id, n);
+  };
+
+  return (
+    <div className="flex max-w-xl flex-col gap-2 rounded-sm border border-border-subtle bg-card p-3">
+      <div>
+        <p className="text-xs font-medium text-text-primary">Default port</p>
+        <p className="text-[0.6875rem] text-text-dim">
+          The port the mock listens on when started. Leave blank to let the runtime pick a free
+          port. Range: 1024–65535. The runtime will surface a clear error if the port is busy or
+          invalid.
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          id={`mock-default-port-${server.id}`}
+          aria-label="Default port"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          placeholder="auto"
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            // Clear error eagerly on edit so the user isn't stuck on a
+            // stale message after fixing the value.
+            if (error) setError(null);
+          }}
+          onBlur={(e) => commit(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commit((e.target as HTMLInputElement).value);
+            }
+          }}
+          className="h-7 w-32 rounded-sm border border-border bg-surface px-2 font-mono text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+        />
+        {isRunning && runtime ? (
+          <span className="text-[0.6875rem] text-text-muted">
+            Running on port {runtime.port}. New value applies on next Start.
+          </span>
+        ) : (
+          <span className="text-[0.6875rem] text-text-dim">
+            {server.defaultPort === null ? 'auto (free port picked at start)' : ''}
+          </span>
+        )}
+      </div>
+      {error && (
+        <p role="alert" className="text-[0.6875rem] text-danger">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

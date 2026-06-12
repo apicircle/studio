@@ -126,6 +126,11 @@ describe('MockView', () => {
     const view = new MockView(makeBridge({ m1: makeServer() }));
     const item = (await view.getTreeItem({ kind: 'server', id: 'm1' })) as vscode.TreeItem;
     expect(item.command?.command).toBe('vscode.open');
-    expect((item.command?.arguments?.[0] as { path: string }).path).toContain('mocks/m1.mock.yaml');
+    // The mock URI shape now uses the slugified mock name as the basename
+    // (so the tab title is human-readable) with the mock id riding in
+    // `?id=`. "Pet Store" → "Pet-Store" via slugify.
+    const arg = item.command?.arguments?.[0] as { path: string; query: string };
+    expect(arg.path).toBe('/mocks/Pet-Store.mock.yaml');
+    expect(arg.query).toBe('id=m1');
   });
 });

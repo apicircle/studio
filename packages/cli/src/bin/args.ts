@@ -21,6 +21,8 @@ Commands:
   import <source> <workspace>       Import OpenAPI, Postman, Insomnia, or curl.
   run [options] <plan-id>           Run an execution plan.
   workspaces                        Manage local workspace registries.
+  linked <subcommand>               Manage linked workspaces (list/link/refresh/unlink).
+  release <subcommand>              Tag releases / set topics on the workspace's GitHub repo.
 
 Run "apicircle <command> --help" for command-specific help.
 `;

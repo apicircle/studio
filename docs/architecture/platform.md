@@ -47,8 +47,9 @@ commands all funnel through it. As a result:
 save`, so two concurrent CLI / MCP writers can't interleave.
 
 `WorkspacePatch` is a discriminated union over `request.* | folder.* |
-environment.* | assertion.* | mock.* | plan.*`. Adding a new entity type
-is one variant + one switch case + one MCP tool definition.
+environment.* | assertion.* | mock.* | release.* | linkedWorkspace.* |
+linkedOverride.* | plan.*`. Adding a new entity type is one variant + one switch
+case + one MCP tool definition.
 
 ## MCP server — provider abstraction
 

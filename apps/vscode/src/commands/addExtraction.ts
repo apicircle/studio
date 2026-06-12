@@ -35,11 +35,21 @@ export async function addExtractionFromLatestResponseCommand(
   }
 
   // Resolve target request — prefer active editor, fallback to QuickPick.
+  // The canonical apicircle:// request URI now carries the id in the `?id=`
+  // query (the path slug is the human-readable name and changes on rename),
+  // so we consult the query first; the older slug-as-id pattern is kept as
+  // a fallback for tests that mock a bare URI without a query.
   let requestId: string | null = null;
   const editor = vscode.window.activeTextEditor;
   if (editor && editor.document.uri.scheme === 'apicircle') {
-    const m = editor.document.uri.path.match(/\/requests\/([^.]+)/);
-    if (m) requestId = m[1];
+    const query = new URLSearchParams(editor.document.uri.query || '');
+    const idFromQuery = query.get('id');
+    if (idFromQuery) {
+      requestId = idFromQuery;
+    } else {
+      const m = editor.document.uri.path.match(/\/requests\/([^.]+)/);
+      if (m) requestId = m[1];
+    }
   }
   if (!requestId) {
     const picked = await vscode.window.showQuickPick(

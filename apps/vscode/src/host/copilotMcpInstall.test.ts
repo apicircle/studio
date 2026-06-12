@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import {
   installCopilotMcpConfig,
+  uninstallCopilotMcpConfig,
   detectCopilotMcpConfigState,
   assertSafeRelativeConfigPath,
   UnsafeConfigPathError,
@@ -396,6 +397,86 @@ describe('copilotMcpInstall', () => {
       }
       // No file under .vscode/ created.
       expect(fs.existsSync(path.join(tmp2, '.vscode'))).toBe(false);
+    });
+  });
+
+  describe('uninstallCopilotMcpConfig', () => {
+    it('reports "absent" when mcp.json does not exist', () => {
+      const result = uninstallCopilotMcpConfig({ workspaceFolder: tmp });
+      expect(result.outcome).toBe('absent');
+    });
+
+    it('removes only the apicircle entry, preserving foreign servers', () => {
+      installCopilotMcpConfig({
+        workspaceFolder: tmp,
+        binary: 'apicircle-mcp',
+        apicircleDir: path.join(tmp, '.apicircle'),
+      });
+      // Hand-add a foreign server entry that the user might have added.
+      const mcpPath = path.join(tmp, '.vscode', 'mcp.json');
+      const parsed = JSON.parse(fs.readFileSync(mcpPath, 'utf8')) as McpConfigShape;
+      parsed.mcpServers!.other = { command: 'other-mcp', args: ['--foo'] };
+      fs.writeFileSync(mcpPath, JSON.stringify(parsed, null, 2) + '\n');
+
+      const result = uninstallCopilotMcpConfig({ workspaceFolder: tmp });
+      expect(result.outcome).toBe('removed');
+      const after = JSON.parse(fs.readFileSync(mcpPath, 'utf8')) as McpConfigShape;
+      expect(after.mcpServers).toBeDefined();
+      expect(after.mcpServers!.apicircle).toBeUndefined();
+      expect(after.mcpServers!.other).toBeDefined();
+      expect(after.mcpServers!.other.command).toBe('other-mcp');
+    });
+
+    it('strips the mcpServers key entirely when the apicircle entry was the only one', () => {
+      installCopilotMcpConfig({
+        workspaceFolder: tmp,
+        binary: 'apicircle-mcp',
+        apicircleDir: path.join(tmp, '.apicircle'),
+      });
+      const result = uninstallCopilotMcpConfig({ workspaceFolder: tmp });
+      expect(result.outcome).toBe('removed');
+      const after = JSON.parse(fs.readFileSync(result.path, 'utf8')) as McpConfigShape;
+      expect(after.mcpServers).toBeUndefined();
+    });
+
+    it('preserves unrelated top-level keys when stripping the apicircle entry', () => {
+      const mcpPath = path.join(tmp, '.vscode', 'mcp.json');
+      fs.mkdirSync(path.dirname(mcpPath), { recursive: true });
+      fs.writeFileSync(
+        mcpPath,
+        JSON.stringify(
+          { mcpServers: { apicircle: { command: 'apicircle-mcp' } }, inputs: ['x'] },
+          null,
+          2,
+        ),
+      );
+      const result = uninstallCopilotMcpConfig({ workspaceFolder: tmp });
+      expect(result.outcome).toBe('removed');
+      const after = JSON.parse(fs.readFileSync(mcpPath, 'utf8')) as McpConfigShape & {
+        inputs?: string[];
+      };
+      expect(after.inputs).toEqual(['x']);
+      expect(after.mcpServers).toBeUndefined();
+    });
+
+    it('is idempotent — running on an already-clean file is a no-op', () => {
+      installCopilotMcpConfig({
+        workspaceFolder: tmp,
+        binary: 'apicircle-mcp',
+        apicircleDir: path.join(tmp, '.apicircle'),
+      });
+      uninstallCopilotMcpConfig({ workspaceFolder: tmp });
+      const second = uninstallCopilotMcpConfig({ workspaceFolder: tmp });
+      expect(second.outcome).toBe('absent');
+    });
+
+    it('rejects unsafe relative paths via the same path-traversal guard as install', () => {
+      expect(() =>
+        uninstallCopilotMcpConfig({
+          workspaceFolder: tmp,
+          relativeConfigPath: '../../../etc/passwd',
+        }),
+      ).toThrow(UnsafeConfigPathError);
     });
   });
 });

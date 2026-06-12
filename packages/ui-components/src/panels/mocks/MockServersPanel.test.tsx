@@ -198,6 +198,95 @@ describe('MockServersPanel (post-rich-editor redesign)', () => {
     expect(useWorkspaceStore.getState().activeMockEndpointId).toBe(eid);
   });
 
+  it('default port input commits a valid 1024-65535 integer via setMockServerDefaultPort', async () => {
+    await renderWithStore(<MockServersPanel />);
+    useWorkspaceStore.setState((s) => ({
+      ...s,
+      synced: {
+        ...(s.synced ?? ({} as never)),
+        mockServers: { m1: fixtureMock('m1', 'Petstore') },
+      },
+      activeMockServerId: 'm1',
+      activeMockEndpointId: null,
+    }));
+    const user = userEvent.setup();
+    const input = await screen.findByLabelText('Default port');
+    await user.clear(input);
+    await user.type(input, '3000');
+    await user.tab();
+    expect(useWorkspaceStore.getState().synced!.mockServers.m1.defaultPort).toBe(3000);
+  });
+
+  it('default port input rejects values outside 1024-65535 with inline error', async () => {
+    await renderWithStore(<MockServersPanel />);
+    useWorkspaceStore.setState((s) => ({
+      ...s,
+      synced: {
+        ...(s.synced ?? ({} as never)),
+        mockServers: { m1: fixtureMock('m1', 'Petstore') },
+      },
+      activeMockServerId: 'm1',
+      activeMockEndpointId: null,
+    }));
+    const user = userEvent.setup();
+    const input = await screen.findByLabelText('Default port');
+    await user.clear(input);
+    await user.type(input, '80');
+    await user.tab();
+    expect(await screen.findByText('Port must be between 1024 and 65535.')).toBeInTheDocument();
+    // Store unchanged.
+    expect(useWorkspaceStore.getState().synced!.mockServers.m1.defaultPort).toBeNull();
+  });
+
+  it('default port input is editable while the mock is running (applies on next Start)', async () => {
+    // Live runtime is mocked by the bridge.list() call — pre-seed the panel's
+    // running state by stuffing the runtime entry into the in-memory bridge.
+    bridge.list.mockResolvedValue([
+      {
+        serverId: 'm1',
+        runtime: { port: 4040, pid: 1234, startedAt: T0, lastError: null, requestCount: 0 },
+      },
+    ]);
+    await renderWithStore(<MockServersPanel />);
+    useWorkspaceStore.setState((s) => ({
+      ...s,
+      synced: {
+        ...(s.synced ?? ({} as never)),
+        mockServers: { m1: fixtureMock('m1', 'Petstore') },
+      },
+      activeMockServerId: 'm1',
+      activeMockEndpointId: null,
+    }));
+    // Wait for the bridge.list() refresh to populate `running` so the
+    // "applies on next Start" hint can render.
+    await screen.findByText(/applies on next Start/i);
+    const input = await screen.findByLabelText('Default port');
+    expect(input).not.toBeDisabled();
+    const user = userEvent.setup();
+    await user.clear(input);
+    await user.type(input, '5500');
+    await user.tab();
+    expect(useWorkspaceStore.getState().synced!.mockServers.m1.defaultPort).toBe(5500);
+  });
+
+  it('empty default port input clears back to null (auto)', async () => {
+    await renderWithStore(<MockServersPanel />);
+    useWorkspaceStore.setState((s) => ({
+      ...s,
+      synced: {
+        ...(s.synced ?? ({} as never)),
+        mockServers: { m1: { ...fixtureMock('m1', 'Petstore'), defaultPort: 4000 } },
+      },
+      activeMockServerId: 'm1',
+      activeMockEndpointId: null,
+    }));
+    const user = userEvent.setup();
+    const input = await screen.findByLabelText('Default port');
+    await user.clear(input);
+    await user.tab();
+    expect(useWorkspaceStore.getState().synced!.mockServers.m1.defaultPort).toBeNull();
+  });
+
   it('B-fix: updateMockEndpoint patches a single endpoint field while preserving the rest', async () => {
     await renderWithStore(<MockServersPanel />);
     const sid = useWorkspaceStore

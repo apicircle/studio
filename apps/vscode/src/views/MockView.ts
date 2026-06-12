@@ -55,7 +55,7 @@ export class MockView extends BaseTreeView<MockNode> {
       item.command = {
         command: 'vscode.open',
         title: 'Open',
-        arguments: [ApicircleFsProvider.mockUri(active.workspace.id, server.id)],
+        arguments: [ApicircleFsProvider.mockUri(active.workspace.id, server)],
       };
       return item;
     }
@@ -70,9 +70,23 @@ export class MockView extends BaseTreeView<MockNode> {
       vscode.TreeItemCollapsibleState.None,
     );
     item.description = ep.name;
-    item.tooltip = `${ep.method} ${ep.pathPattern}\n${ep.description ?? ''}\nDefault → ${ep.defaultResponse.status}`;
+    item.tooltip = new vscode.MarkdownString(
+      `**${ep.method}** \`${ep.pathPattern}\`` +
+        (ep.description ? `\n\n${ep.description}` : '') +
+        `\n\n**Default response:** \`${ep.defaultResponse.status}\` · body type \`${ep.defaultResponse.body.type}\`` +
+        `\n\n_Click the ✎ pencil to edit method / path / status / body in a form, or open the mock YAML for full control._`,
+    );
     item.iconPath = new vscode.ThemeIcon('symbol-method');
     item.contextValue = 'mock-endpoint';
+    // Click opens the per-endpoint YAML file — same editing experience as
+    // request YAML, driven by CodeLens. The webview form editor stays
+    // reachable via the right-click context menu for users who prefer
+    // the GUI form for quick edits.
+    item.command = {
+      command: 'vscode.open',
+      title: 'Open Endpoint YAML',
+      arguments: [ApicircleFsProvider.endpointUri(active.workspace.id, server, ep)],
+    };
     return item;
   }
 

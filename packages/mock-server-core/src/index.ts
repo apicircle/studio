@@ -18,6 +18,7 @@ import { buildRouter, type BuildRouterOptions } from './handlers/buildRouter';
 import { serveOnNode, type MockServerHandle, type ServeOptions } from './runtime/nodeAdapter';
 
 export type { MockServerHandle, ServeOptions } from './runtime/nodeAdapter';
+export { MockServerStartError } from './runtime/nodeAdapter';
 export type { BuildRouterOptions } from './handlers/buildRouter';
 export { openApiPathToHono } from './handlers/buildRouter';
 export { parseOpenApiToEndpoints } from './parsers/openapi';

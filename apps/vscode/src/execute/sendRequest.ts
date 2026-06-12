@@ -1,13 +1,21 @@
 import * as vscode from 'vscode';
-import { executeRequest, runAssertions } from '@apicircle/core';
+import { executeRequest, runAssertions, mergeRequestOverride } from '@apicircle/core';
 import { generateId } from '@apicircle/shared';
 import type { Request as ApiRequest } from '@apicircle/shared';
-import type { AssertionResult } from '@apicircle/core';
+import type { AssertionResult, ExecutionResult, WorkspaceState } from '@apicircle/core';
 import type { VsCodeBridge } from '../host/vscodeBridge';
+import type { VsCodeVaultManager } from '../host/vaultManager';
+import { buildResolvedRequest, buildLinkedAttachmentResolver } from './buildSendScope';
 import type { AbortRegistry } from './abortRegistry';
-import type { ApicircleFsProvider } from '../fs/apicircleFsProvider';
+import type { InFlightSendTracker } from './inFlightTracker';
+import { ApicircleFsProvider } from '../fs/apicircleFsProvider';
 import type { PreSendDiagnostics } from '../diagnostics/preSendDiagnostics';
-import { formatResponseDocument } from './responseDocument';
+import {
+  formatResponseDocument,
+  formatPendingResponseDocument,
+  formatCancelledResponseDocument,
+  formatFailedResponseDocument,
+} from './responseDocument';
 import { persistRequestRun } from './persistHistory';
 
 // =============================================================================
@@ -17,11 +25,16 @@ import { persistRequestRun } from './persistHistory';
 //   1. Determine the target request — from the active text editor (if it's an
 //      apicircle:// URI) or via a QuickPick over the active workspace.
 //   2. Register an AbortController with the bridge's AbortRegistry.
-//   3. Call executeRequest from @apicircle/core.
-//   4. Open the response as a virtual apicircle://.../responses/<runId>.run.yaml
-//      document beside the source.
-//   5. On cancel: AbortSignal propagates, status bar clears, response viewer
-//      shows the partial result with an error note.
+//   3. Open the response tab BESIDE the request editor with a "Sending…"
+//      placeholder so the user gets immediate visual confirmation of the
+//      click — no more 1-2s of silence between ▶ Send and the response.
+//   4. Call executeRequest from @apicircle/core (wrapped in
+//      `vscode.window.withProgress({ location: Window })` so the status-bar
+//      spinner appears too).
+//   5. On terminal state (success / cancel / error) the placeholder content
+//      is replaced in the FS provider's responseStore and `fireChangedExternal`
+//      tells VS Code to re-read the doc — the already-open tab swaps from
+//      the "Sending…" placeholder to the response without flickering.
 //
 // Pre-send validation runs separately via DiagnosticCollection (Task 14); the
 // send command itself does not duplicate that check — it would block on
@@ -32,14 +45,22 @@ import { persistRequestRun } from './persistHistory';
 export interface SendRequestDeps {
   bridge: VsCodeBridge;
   abortRegistry: AbortRegistry;
+  /** Tracks URI → runId so the request CodeLens can swap to ⏳ Sending… · ✖ Cancel. */
+  tracker?: InFlightSendTracker;
   /** When present, response YAML is stashed here and opened via the FS provider URI. */
   fsProvider?: ApicircleFsProvider;
   /** When present, sendRequest refuses to execute if hasBlocker() is true AND validateOnSend is on. */
   diagnostics?: PreSendDiagnostics;
+  /** When present, decrypts encrypted env-vars before send. Null = no decryption (encrypted vars become "missing"). */
+  vault?: VsCodeVaultManager | null;
+  /** SecretStorage for linked-secret values + dedicated tokens. */
+  secrets?: vscode.SecretStorage;
   /** Test-only override hook for the executor (defaults to core's executeRequest). */
   execute?: typeof executeRequest;
   /** Test-only override hook for the response-viewer open. */
   openResponse?: (uri: vscode.Uri, content: string) => Promise<void>;
+  /** Test-only override hook for the withProgress wrapper. Defaults to vscode.window.withProgress. */
+  withProgress?: typeof vscode.window.withProgress;
 }
 
 export async function sendRequestCommand(deps: SendRequestDeps): Promise<void> {
@@ -52,7 +73,7 @@ export async function sendRequestCommand(deps: SendRequestDeps): Promise<void> {
     return;
   }
 
-  const { request, uri: requestUri } = await resolveRequest(active);
+  const { request, uri: requestUri, fromLinkId } = await resolveRequest(active);
   if (!request) return;
 
   // Gap #3 — enforce validateOnSend setting. If the user has blockers in the
@@ -90,8 +111,103 @@ export async function sendRequestCommand(deps: SendRequestDeps): Promise<void> {
     );
   }
 
+  // Mark the URI as in-flight so the request CodeLens swaps ▶ Send → ⏳ Sending…
+  // The URI is the canonical request URI; we fall back to nothing when the
+  // send was kicked from a QuickPick with no source URI, since there's no
+  // tab to swap a lens on in that case.
+  if (deps.tracker && requestUri) {
+    deps.tracker.start(requestUri, runId, request.name);
+  }
+
+  // Pre-open the response tab beside the request editor so the user sees
+  // immediate visual feedback. The placeholder content is rewritten in
+  // place when the executor resolves (or rejects / cancels). preserveFocus
+  // keeps the cursor in the request YAML so the user can keep editing
+  // while the request runs.
+  const startedAt = new Date().toISOString();
+  const startedAtMs = Date.parse(startedAt);
+  const responseUri = makeResponseUri(active.workspace.id, runId, request.name);
+  if (deps.fsProvider) {
+    const pending = formatPendingResponseDocument({
+      requestName: request.name,
+      request,
+      startedAt,
+    });
+    deps.fsProvider.storeResponse(runId, pending);
+    try {
+      const doc = await vscode.workspace.openTextDocument(responseUri);
+      await vscode.window.showTextDocument(doc, {
+        viewColumn: vscode.ViewColumn.Beside,
+        preserveFocus: true,
+      });
+    } catch {
+      // Best-effort — proceed with the send even if the pre-open hiccups.
+      // The completion path will still stash content + fire a change event
+      // so the user can open the tab manually from the HistoryView.
+    }
+  }
+
+  const withProgress = deps.withProgress ?? vscode.window.withProgress;
+
+  // Send-time variable / secret resolution. Interpolates `{{var}}` placeholders
+  // in url / headers / query / body / auth from environments (local + linked,
+  // with linkedOverrides applied) + provisioned linked secrets. If the
+  // SecretStorage handle is missing (some test setups) we skip resolution and
+  // let the executor see raw placeholders — that's the previous behavior.
+  let resolvedRequest = request;
+  let missingPlaceholders: string[] = [];
+  let stateForExecute: WorkspaceState | null = null;
+  if (deps.secrets) {
+    try {
+      stateForExecute = await active.read();
+      const resolved = await buildResolvedRequest({
+        state: stateForExecute,
+        workspaceId: active.workspace.id,
+        request,
+        vault: deps.vault ?? null,
+        secrets: deps.secrets,
+        fromLinkId,
+      });
+      resolvedRequest = resolved.request;
+      missingPlaceholders = resolved.missing;
+    } catch (e) {
+      void e; // resolution is best-effort; fall back to raw on error
+    }
+  }
+  // Attachment resolver: for linked requests, fetch binary bodies + file rows
+  // from the source repo via GitHub. Owned attachments aren't yet wired here
+  // (the extension has no IDB), so they'd fall through to the canonical
+  // "Attachment X required but not downloaded locally" error.
+  const resolveAttachment =
+    fromLinkId && deps.secrets && stateForExecute
+      ? buildLinkedAttachmentResolver({ state: stateForExecute, secrets: deps.secrets, fromLinkId })
+      : undefined;
+  if (missingPlaceholders.length > 0) {
+    // Non-blocking notice so the user knows why a `{{TOKEN}}` reached the wire.
+    void vscode.window.showWarningMessage(
+      `Unresolved placeholder${missingPlaceholders.length === 1 ? '' : 's'}: ${missingPlaceholders.join(', ')}`,
+    );
+  }
+
   try {
-    const result = await execute(request, { signal, timeoutMs });
+    const result = await withProgress<ExecutionResult>(
+      {
+        location: vscode.ProgressLocation.Window,
+        title: `APICircle · Sending: ${request.name}`,
+        cancellable: true,
+      },
+      async (_progress, token) => {
+        // Bridge VS Code's notification-cancel button into our AbortRegistry
+        // so the user can hit the X on the status-bar progress and have the
+        // executeRequest call see signal.aborted === true.
+        const sub = token.onCancellationRequested(() => abortRegistry.cancel(runId));
+        try {
+          return await execute(resolvedRequest, { signal, timeoutMs, resolveAttachment });
+        } finally {
+          sub.dispose();
+        }
+      },
+    );
     abortRegistry.complete(runId);
 
     let verdicts: AssertionResult[] | undefined;
@@ -117,7 +233,6 @@ export async function sendRequestCommand(deps: SendRequestDeps): Promise<void> {
       void persistErr;
     }
 
-    const uri = makeResponseUri(active.workspace.id, runId);
     const content = formatResponseDocument({
       requestName: request.name,
       result,
@@ -125,33 +240,68 @@ export async function sendRequestCommand(deps: SendRequestDeps): Promise<void> {
     });
 
     if (deps.openResponse) {
-      await deps.openResponse(uri, content);
+      // Test hook — keeps the legacy "called once with the final content"
+      // contract for tests that don't wire up an fsProvider.
+      await deps.openResponse(responseUri, content);
     } else if (deps.fsProvider) {
-      // Gap #2 — open the response THROUGH the FS provider so the URI is
-      // navigable, persists across the session, and is available for the
-      // Phase 6+ transformations follow-up (TOON / YAML / CSV / minify
-      // CodeLens — desktop has these; the extension defers them).
+      // Swap the pre-opened placeholder for the real response in place.
       deps.fsProvider.storeResponse(runId, content);
-      const doc = await vscode.workspace.openTextDocument(uri);
-      await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
+      deps.fsProvider.fireChangedExternal(responseUri);
     } else {
-      await openInUntitledEditor(uri, content);
+      // Final fallback — no FS provider, no openResponse: open an untitled
+      // editor with the response content (kept for unit-test setups that
+      // run the send command in isolation).
+      await openInUntitledEditor(responseUri, content);
     }
   } catch (e) {
     abortRegistry.complete(runId);
+    const durationMs = Number.isFinite(startedAtMs) ? Date.now() - startedAtMs : 0;
     if (signal.aborted) {
+      // Swap the pre-opened placeholder for a cancel notice so the tab is
+      // self-explanatory rather than stuck on "Sending…".
+      if (deps.fsProvider) {
+        deps.fsProvider.storeResponse(
+          runId,
+          formatCancelledResponseDocument({
+            requestName: request.name,
+            request,
+            startedAt,
+            durationMs,
+          }),
+        );
+        deps.fsProvider.fireChangedExternal(responseUri);
+      }
       await vscode.window.showInformationMessage(`Send "${request.name}" was cancelled.`);
       return;
+    }
+    if (deps.fsProvider) {
+      deps.fsProvider.storeResponse(
+        runId,
+        formatFailedResponseDocument({
+          requestName: request.name,
+          request,
+          startedAt,
+          durationMs,
+          error: e instanceof Error ? e.message : String(e),
+        }),
+      );
+      deps.fsProvider.fireChangedExternal(responseUri);
     }
     await vscode.window.showErrorMessage(
       `Send failed: ${e instanceof Error ? e.message : String(e)}`,
     );
+  } finally {
+    // Always release the tracker entry — success / error / cancel all flow
+    // through here, so the CodeLens reverts to ▶ Send in a single place.
+    if (deps.tracker && requestUri) {
+      deps.tracker.end(requestUri);
+    }
   }
 }
 
 async function resolveRequest(surface: {
-  read: () => Promise<{ synced: { collections: { requests: Record<string, ApiRequest> } } }>;
-}): Promise<{ request: ApiRequest | null; uri: vscode.Uri | null }> {
+  read: () => Promise<WorkspaceState>;
+}): Promise<{ request: ApiRequest | null; uri: vscode.Uri | null; fromLinkId?: string }> {
   const editor = vscode.window.activeTextEditor;
   if (editor && editor.document.uri.scheme === 'apicircle') {
     const requestId = extractRequestId(editor.document.uri);
@@ -159,6 +309,18 @@ async function resolveRequest(surface: {
       const state = await surface.read();
       const req = state.synced.collections.requests[requestId];
       if (req) return { request: req, uri: editor.document.uri };
+    }
+    // Linked request: send the EFFECTIVE request (source snapshot + override).
+    const linked = extractLinkedRef(editor.document.uri);
+    if (linked) {
+      const state = await surface.read();
+      const base =
+        state.local.linkedCollections[linked.linkId]?.collections.requests[linked.requestId];
+      if (base) {
+        const ov = state.synced.linkedOverrides.requests[`${linked.linkId}:${linked.requestId}`];
+        const effective = ov ? mergeRequestOverride(base, ov.patch) : base;
+        return { request: effective, uri: editor.document.uri, fromLinkId: linked.linkId };
+      }
     }
   }
 
@@ -181,10 +343,21 @@ async function resolveRequest(surface: {
 }
 
 function extractRequestId(uri: vscode.Uri): string | null {
-  // apicircle://<authority>/requests/<id>.req.yaml
+  // Identity is the `?id=` query — the path slug is display only and changes
+  // when the request is renamed. Anything under /requests/* with an id wins.
   const segments = uri.path.split('/').filter(Boolean);
-  if (segments.length !== 2 || segments[0] !== 'requests') return null;
-  return segments[1].replace(/\.req\.yaml$/, '').replace(/\.yaml$/, '');
+  if (segments.length < 2 || segments[0] !== 'requests') return null;
+  const query = new URLSearchParams(uri.query || '');
+  return query.get('id');
+}
+
+function extractLinkedRef(uri: vscode.Uri): { linkId: string; requestId: string } | null {
+  const segments = uri.path.split('/').filter(Boolean);
+  if (segments[0] !== 'linked' || !uri.path.endsWith('.req.yaml')) return null;
+  const query = new URLSearchParams(uri.query || '');
+  const linkId = query.get('link');
+  const requestId = query.get('id');
+  return linkId && requestId ? { linkId, requestId } : null;
 }
 
 function describePath(url: string): string {
@@ -196,13 +369,10 @@ function describePath(url: string): string {
   }
 }
 
-function makeResponseUri(workspaceId: string, runId: string): vscode.Uri {
-  const authority = Buffer.from(workspaceId, 'utf8').toString('base64url');
-  return vscode.Uri.from({
-    scheme: 'apicircle',
-    authority,
-    path: `/responses/${runId}.run.yaml`,
-  });
+function makeResponseUri(workspaceId: string, runId: string, requestName: string): vscode.Uri {
+  // Defer to the FS provider's canonical builder so the slug + query encoding
+  // stays in one place.
+  return ApicircleFsProvider.responseUri(workspaceId, runId, requestName);
 }
 
 async function openInUntitledEditor(uri: vscode.Uri, content: string): Promise<void> {

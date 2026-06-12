@@ -48,7 +48,12 @@ export class HistoryView extends BaseTreeView<HistoryNode> {
       const label = element.id === 'requests' ? 'Recent Requests' : 'Recent Plans';
       const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.Expanded);
       item.description = `${count}`;
+      item.iconPath = new vscode.ThemeIcon(element.id === 'requests' ? 'history' : 'list-ordered');
       item.contextValue = `bucket-${element.id}`;
+      item.tooltip =
+        element.id === 'requests'
+          ? `${count} recent request run${count === 1 ? '' : 's'}. Use the bucket actions to clear or purge by date.`
+          : `${count} recent plan run${count === 1 ? '' : 's'}. Use the bucket actions to clear or purge by date.`;
       return item;
     }
 
@@ -57,8 +62,9 @@ export class HistoryView extends BaseTreeView<HistoryNode> {
       const run = state.local.history.requestRuns.find((r) => r.id === element.runId);
       if (!run) return new vscode.TreeItem('(deleted run)');
       const verdict = computeVerdict(run.assertions, run.ok);
+      const requestName = state.synced.collections.requests[run.requestId]?.name ?? run.requestId;
       const item = new vscode.TreeItem(
-        truncate(run.requestId, 30),
+        truncate(requestName, 30),
         vscode.TreeItemCollapsibleState.None,
       );
       item.description = `${verdict.glyph} ${run.status ?? 'err'} · ${run.durationMs}ms · ${ago(run.startedAt)}`;
@@ -70,7 +76,7 @@ export class HistoryView extends BaseTreeView<HistoryNode> {
       item.command = {
         command: 'vscode.open',
         title: 'Open',
-        arguments: [ApicircleFsProvider.historyUri(active.workspace.id, run.id)],
+        arguments: [ApicircleFsProvider.historyUri(active.workspace.id, run.id, requestName)],
       };
       return item;
     }
@@ -82,10 +88,8 @@ export class HistoryView extends BaseTreeView<HistoryNode> {
     const verdict = planRun.steps.every((s) => s.passed)
       ? { glyph: '✓', icon: 'check', color: 'charts.green' }
       : { glyph: '✗', icon: 'close', color: 'charts.red' };
-    const item = new vscode.TreeItem(
-      truncate(planRun.planId, 30),
-      vscode.TreeItemCollapsibleState.None,
-    );
+    const planName = state.local.executionPlans[planRun.planId]?.name ?? planRun.planId;
+    const item = new vscode.TreeItem(truncate(planName, 30), vscode.TreeItemCollapsibleState.None);
     item.description = `${verdict.glyph} ${passedSteps}/${planRun.steps.length} steps · ${planRun.durationMs}ms · ${ago(planRun.startedAt)}`;
     item.iconPath = new vscode.ThemeIcon(verdict.icon, new vscode.ThemeColor(verdict.color));
     item.contextValue = 'plan-run';
@@ -96,7 +100,7 @@ export class HistoryView extends BaseTreeView<HistoryNode> {
     item.command = {
       command: 'vscode.open',
       title: 'Open',
-      arguments: [ApicircleFsProvider.historyUri(active.workspace.id, planRun.id)],
+      arguments: [ApicircleFsProvider.historyUri(active.workspace.id, planRun.id, planName)],
     };
     return item;
   }

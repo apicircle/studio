@@ -63,28 +63,45 @@ export function tryRegisterEmbeddedMcpAsLmProvider(
 
   const changeEmitter = new vscode.EventEmitter<void>();
 
-  const disposable = lm.registerMcpServerDefinitionProvider('apicircle-embedded', {
-    onDidChangeMcpServerDefinitions: changeEmitter.event,
-    provideMcpServerDefinitions: () => {
-      const info = host.info();
-      if (!info) return [];
-      // Structural shape — VS Code's API stabilisation may rename
-      // fields. We emit the canonical Streamable-HTTP shape; if the
-      // API evolved, the call returns the closest-matching servers
-      // and unknown fields are dropped.
-      return [
-        {
-          label: 'APICircle (embedded)',
-          name: 'apicircle-embedded',
-          // Streamable-HTTP variant fields:
-          url: info.url,
-          // Some VS Code builds expect headers in a separate
-          // `headers` map instead of a query-string token.
-          headers: { Authorization: `Bearer ${info.token}` },
-        },
-      ];
-    },
-  });
+  // VS Code 1.94+ requires every provider id passed here to be declared
+  // in package.json's `contributes.mcpServerDefinitionProviders`. The
+  // manifest entry for "apicircle-embedded" is pinned by the
+  // manifestRegression test, but we wrap the call defensively anyway —
+  // a future engine bump that tightens the validation further (e.g.
+  // schema-checks the definition shape) shouldn't take activation down.
+  let disposable: vscode.Disposable;
+  try {
+    disposable = lm.registerMcpServerDefinitionProvider('apicircle-embedded', {
+      onDidChangeMcpServerDefinitions: changeEmitter.event,
+      provideMcpServerDefinitions: () => {
+        const info = host.info();
+        if (!info) return [];
+        // Structural shape — VS Code's API stabilisation may rename
+        // fields. We emit the canonical Streamable-HTTP shape; if the
+        // API evolved, the call returns the closest-matching servers
+        // and unknown fields are dropped.
+        return [
+          {
+            label: 'APICircle (embedded)',
+            name: 'apicircle-embedded',
+            // Streamable-HTTP variant fields:
+            url: info.url,
+            // Some VS Code builds expect headers in a separate
+            // `headers` map instead of a query-string token.
+            headers: { Authorization: `Bearer ${info.token}` },
+          },
+        ];
+      },
+    });
+  } catch (err) {
+    changeEmitter.dispose();
+    log?.(
+      `vscode.lm.registerMcpServerDefinitionProvider threw — skipping native registration: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+    return null;
+  }
 
   log?.('registered apicircle-embedded as a vscode.lm MCP server definition provider');
 

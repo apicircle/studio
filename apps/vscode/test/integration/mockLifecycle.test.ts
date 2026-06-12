@@ -243,7 +243,10 @@ describe('mock lifecycle (real Hono integration)', () => {
   it('F-G11: FS provider delete on mocks/<id>.mock.yaml fires mock.delete', async () => {
     activate();
     const fsProvider = new ApicircleFsProvider(bridge);
-    const uri = ApicircleFsProvider.mockUri(apicircleDir, 'mock-petstore');
+    const state = await bridge.activeWorkspace()!.read();
+    const mock = state.synced.mockServers['mock-petstore'];
+    if (!mock) throw new Error('Mock fixture not seeded');
+    const uri = ApicircleFsProvider.mockUri(apicircleDir, mock);
     await fsProvider.delete(uri, { recursive: false });
     const after = await bridge.activeWorkspace()!.read();
     expect(after.synced.mockServers['mock-petstore']).toBeUndefined();

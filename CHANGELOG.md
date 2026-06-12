@@ -25,6 +25,1300 @@
 
 ## Unreleased
 
+### Link Workspaces — final gap closure (resolution, attachments, CLI, live-GH)
+
+Closes every remaining gap so the linked-workspace + send-time pipelines are
+complete across core / MCP / CLI / VS Code.
+
+**Core (`@apicircle/core`)**
+
+- New **`resolveRequestForExecution`** + **`applyLinkedEnvironmentOverrides`** +
+  **`plaintextEnvMap`** in `@apicircle/core/environment`. Send-time
+  `{{variable}}` and secret resolution is now a shared, pure helper layered on
+  the existing `buildScope`/`resolveString`/`resolveInheritedAuth` primitives.
+  Linked envs are first-class via composite priority keys (`{kind:'linked',
+linkedWorkspaceId, envName}`); linkedOverrides are layered before
+  interpolation.
+
+**VS Code extension**
+
+- **Send-time resolution** is wired into `apicircle.sendRequest`. The executor
+  receives a fully-interpolated request — url, headers, query, body, and every
+  auth field — built from local envs + linked envs (with overrides) + the
+  vault-decrypted secret layer + provisioned linked secrets. Unresolved
+  placeholders surface a non-blocking warning rather than reaching the wire.
+- **Linked binary-attachment download.** Linked requests with binary bodies or
+  `file` rows fetch their bytes from the source repo's
+  `.apicircle/attachments/<slotId>` over GitHub at send time (one cache per
+  send). Uses the dedicated PAT when the link's session is dedicated.
+- **Linked env-var override editor.** New `apicircle.setLinkedEnvVarOverride`
+  command (3 modes: replace value, remove from consumer view, inject new var)
+  routes through the `linkedOverride.setEnvVar` / `removeEnvVar` patches.
+- **Linked envs in the priority picker.** `setEnvPriorityOrder` includes every
+  cached linked workspace's envs alongside locals, ordered together. Persists
+  `EnvPriorityRef[]` with both kinds.
+
+**CLI (`@apicircle/cli`)**
+
+- New `apicircle linked` group: `list | link | refresh | unlink`. Uses the
+  bundled `@apicircle/git` client; token from `--token` or `GITHUB_TOKEN`.
+- New `apicircle release` group: `tag <repo> <version>` (optional `--release`
+  for a GitHub Release) and `topics <repo> [--set <list>]` (keeps `apicircle`,
+  validates GitHub's topic rules).
+
+**Tests**
+
+- Live-GitHub integration smoke (read-only) at `apps/vscode/test/integration/
+liveGitHub.test.ts`. Gated on `APICIRCLE_LIVE_GH_TOKEN` +
+  `APICIRCLE_LIVE_GH_REPO` env vars — skipped silently when not set so CI stays
+  green without credentials.
+
+### Link Workspaces — gap closure (consume, merge, secrets, headless networking)
+
+Closes every remaining gap in the linked-workspace feature so it's complete
+across core / MCP / VS Code, not just manageable.
+
+**Core (`@apicircle/core`)**
+
+- **Field-level auto-merge.** `previewLinkedUpdate` now flags `both-changed`
+  entries as `autoMergeable` when the consumer's override touches a disjoint set
+  of fields from the source's change; `applyLinkedUpdate` merges those cleanly
+  with no user decision. Only genuine same-field conflicts need resolving.
+- **`linkedOverride.*` patches** (`setRequest` / `removeRequest` / `setEnvVar` /
+  `removeEnvVar` / `clearForLink`) — consumer edits to a linked workspace's
+  requests / env-vars, as field-level deltas.
+- Shared `mergeRequestOverride` / `computeRequestOverridePatch` /
+  `isEmptyOverridePatch` helpers (`@apicircle/core/linked`) — one implementation
+  for runPlan, the web editor, and the VS Code projection (runPlan's private
+  copy removed).
+
+**MCP — 89 → 93 tools (`@apicircle/mcp-server`)**
+
+- GitHub network ops over stdio: `linked.link`, `linked.refresh`, `release.tag`,
+  `repo.set_topics` — each takes a `token` arg or reads `GITHUB_TOKEN`.
+  `@apicircle/git` is **bundled** into the published package (a devDependency, so
+  it never becomes an unresolvable runtime dep).
+
+**VS Code extension**
+
+- **Linked requests are consumable.** Each linked workspace expands to its cached
+  requests; opening one shows the **effective** request (source + your override)
+  at `apicircle://<ws>/linked/<link>/<name>.req.yaml`. Editing + saving stores a
+  minimal override; **▶ Send** runs it; **↺ Reset to source** / delete drops the
+  override. **Discard all modifications** clears a link's overrides at once.
+- **Per-entry update resolution.** Review-update now offers _Resolve each_ (a
+  decision per conflicting item) alongside the bulk _Accept all source / Keep all
+  mine_ — and auto-mergeable changes apply without prompting.
+- **Dedicated sessions.** `sessionMode: dedicated` links store a per-link PAT in
+  VS Code SecretStorage (🔑 Set / Clear token); fetches use it instead of the
+  built-in GitHub session.
+- **Required-secret provisioning.** 🔑 Provide value on each required key stores
+  an encrypted value in SecretStorage; cleared on unlink.
+- Tagging now reads the repo's declared default branch (`GitHubClient.getRepo`)
+  rather than probing.
+
+> Update: the platform-wide caveat noted in this entry is now CLOSED — see
+> "final gap closure" above. Send-time variable/secret interpolation and
+> linked-attachment download are implemented.
+
+### Link Workspaces — full linking lifecycle in VS Code + MCP config tools
+
+Builds on the release-lifecycle slice below: the **consuming** side of the
+link loop now works end-to-end in the VS Code extension, not just the
+Desktop/Web app, plus four MCP tools for headless link config.
+
+**Core — `applyMutation` linked-workspace variants (`@apicircle/core`)**
+
+- New `linkedWorkspace.upsert` (carries the link record + optional cached
+  ledger + collections/environments snapshot), `linkedWorkspace.remove`
+  (cascades across `releases.perLink`, `linkedOverrides`,
+  `local.linkedCollections`, and the per-link session), and
+  `linkedWorkspace.applyUpdate` (atomic result of a three-way merge) patch
+  variants + reducers. Purely additive.
+- The pure parse + snapshot helpers (`parseLinkedWorkspaceJson`,
+  `buildLinkedSnapshot`, `ledgerFromProbe`) are promoted into
+  `@apicircle/core/linked` as the single source of truth for the UI store,
+  VS Code, and CLI.
+
+**MCP — 85 → 89 tools (`@apicircle/mcp-server`)**
+
+- `linked.list` / `linked.get` / `linked.set_config` / `linked.unlink` expose
+  the pure-data link config to any MCP client. Linking + refresh stay
+  host-driven (they need a GitHub session).
+
+**VS Code — the "Link Workspaces" view gets its second half**
+
+- A **Linked workspaces** group joins the Releases group. **Link a Workspace…**
+  (pick an accessible repo or enter `owner/name`, choose branch + version) and
+  **Search Marketplace…** (public `topic:apicircle` repos) use VS Code's
+  built-in GitHub session (`vscode.authentication`) + `@apicircle/git`'s
+  `GitHubClient`.
+- Each link opens an editable `apicircle://<ws>/links/<name>.link.yaml` with
+  CodeLens field editors (◆ pin version / scope / session mode / required keys)
+  and action lenses **⤓ Review update · ⟳ Refresh ledger · 📓 Changelog ·
+  ⊗ Unlink**. Review runs a three-way `previewLinkedUpdate` /
+  `applyLinkedUpdate` with a streamlined bulk _accept-source / keep-mine_
+  resolution (no webview).
+- **Tag Release on GitHub…** + **Edit Repo Topics…** (`repoActions.ts`) operate
+  on the workspace's own repo (owner/name derived from the folder's `origin`
+  remote), creating `v<x>` tags / GitHub Releases and managing the
+  marketplace-driving topics — closing the gap noted below.
+- Extension bundle: **~2.52 MB → ~2.61 MB** (`@apicircle/git` is a light
+  fetch-based REST client; comfortably under the 3.0 MB soft warn).
+
+### Release lifecycle — VS Code "Link Workspaces" sidebar + MCP tools
+
+The publishing side of the link/release loop is now drivable headlessly and from
+VS Code, not just the Desktop/Web Workspace panel. A workspace's **release
+ledger** (`synced.releases.self`) — the versions linked consumers pin to — gets
+first-class authoring on three surfaces.
+
+**Core — `applyMutation` release variants (`@apicircle/core`)**
+
+- `publishRelease` is split into the async `buildReleaseEntry` (computes the
+  SHA-256 `workspaceSnapshot`) and the pure, synchronous `appendReleaseEntry`,
+  so the snapshot can be built off-thread and the mutation stays pure.
+  `deprecateRelease` / `yankRelease` now take an optional injected `now`
+  (defaults preserved — existing callers unchanged).
+- Three additive `WorkspacePatch` variants — `release.publish` (carries a
+  pre-built `ReleaseVersion`), `release.deprecate`, `release.yank` — with
+  matching `applyMutation` reducers. Headless writers (MCP / CLI / VS Code) now
+  route release writes through the same choke point the UI uses. Purely
+  additive: no migration, existing workspaces load unchanged.
+
+**MCP — 81 → 85 tools (`@apicircle/mcp-server`)**
+
+- New `release.list`, `release.publish`, `release.deprecate`, `release.yank`
+  tools wrap the new patches. Any MCP client (Claude Desktop, Cursor, Copilot,
+  …) can now publish and manage releases. Tagging on GitHub + marketplace
+  topics remain Git operations, not MCP tools. See
+  [`docs/mcp-tools-reference.md`](docs/mcp-tools-reference.md).
+
+**VS Code — "Link Workspaces" sidebar replaces the dormant "Marketplace" stub**
+
+- The empty, off-by-default `apicircle.marketplace` view (and its
+  `apicircle.enableMarketplace` setting) is replaced by an always-on **Link
+  Workspaces** view. Phase 1 surfaces the **Releases** group: the current
+  version, every published version (newest-first) with deprecated / withdrawn
+  status, and a **Publish release** title button.
+- A read-only `apicircle://<ws>/releases/releases.yaml` document with CodeLens
+  actions — **▶ Publish release…** on the `currentVersion` line, **⚠ Deprecate**
+  / **⛔ Withdraw** on each version row (status-aware: an action already in
+  effect isn't offered again). Withdraw requires a typed `WITHDRAW v<x>`
+  confirmation. Publishing offers patch / minor / major bumps off the current
+  version (or a custom semver) plus a notes prompt.
+- Per-version context-menu Deprecate / Withdraw in the tree mirror the CodeLens
+  actions. Extension bundle: **~2.44 MB → ~2.52 MB** (`extension.js`,
+  comfortably under the 3.0 MB soft warn).
+
+### VS Code extension — authoring feedback follow-ups
+
+A second hands-on pass tightening the `apicircle://` authoring surfaces.
+Extension bundle: **~2.44 MB → 2.50 MB** (`extension.js`, comfortably under the
+3.0 MB soft warn) — a net wash, since two commands were removed and a small
+amount of folder-pick logic added.
+
+**Startup**
+
+- **Open editors are processed on activation.** Beyond discovering
+  `.apicircle/workspace.json`, the extension now inspects the editors VS Code
+  restored from the previous session: if one is an `apicircle://` virtual YAML
+  (request / env / mock / endpoint / …) or the raw `.apicircle/workspace.json`,
+  the workspace that editor belongs to becomes the active one — so the sidebar,
+  status bar and MCP snippets match what's already on screen instead of
+  whatever discovery defaulted to.
+
+**Per-endpoint mock YAML (`*.endpoint.yaml`)**
+
+- **`requestSchema` add-lenses moved onto their subsections.** `✚ Path param` /
+  `✚ Query param` / `✚ Header` / `✚ Cookie` now sit directly above their
+  respective `pathParams:` / `queryParams:` / `headers:` / `cookies:` lines (and
+  `✚ Body example` above `body:` when present), instead of all stacking on the
+  `requestSchema:` header.
+- **`◆ Required` lens removed.** `required:` is a boolean flag edited directly in
+  YAML — the toggle lens (and its `apicircle.toggleMockParamRequired` command)
+  are gone.
+- **A response rule with no `when` condition is now a save-blocking error.** An
+  empty `when:` would match every request and shadow the default response — the
+  endpoint parser rejects it (red diagnostic) so you add a condition (the
+  `✚ Add condition` lens) or remove the rule.
+
+**Collection request YAML (`*.req.yaml`)**
+
+- **`APICircle: New Request` is now a single folder pick + direct file creation.**
+  The old 5-step wizard (method → URL → folder → auth → name) is replaced by one
+  prompt — choose an existing folder, the top level, or create a new folder
+  inline — after which a ready-to-edit GET scaffold opens in the editor for you
+  to tweak and send. (Invoked from a folder's context menu, the pick is skipped.)
+- **Form-data `✚ Add text row` / `✚ Add file row` moved onto `formRows:`.** They
+  now anchor on the `formRows:` line inside the body block (reading as "add a row
+  to _this_ list"); the redundant body-level `⇄ Switch row kind…` lens is gone —
+  switching is per-row only (`↻ Switch to text/file` on each entry).
+- **Auth `◆ Edit` / `◆ Pick` field lenses removed.** Auth scalar fields are
+  edited directly in YAML; the `apicircle.setRequestAuthField` command was
+  removed. The `⟳ Format JSON` lens on JSON auth fields (`payload` /
+  `jwtHeaders`) is kept.
+
+### VS Code extension — mock & collection authoring overhaul
+
+A sweep across the `apicircle://` authoring surfaces driven by hands-on feedback.
+Extension bundle: **2.37 MB → 2.44 MB** (`extension.js`, under the 3.0 MB soft
+warn) for the new commands.
+
+**Mock summary (`*.mock.yaml`)**
+
+- **Fixed `↗ Open endpoint` (and Start / Stop / Restart):** the lens read the
+  mock id from the URI **path basename**, which is now the human-readable name
+  slug — so the command received a slug and missed `synced.mockServers[id]`
+  ("Mock no longer exists"). It now reads the id from the `?id=` query.
+
+**Per-endpoint mock YAML (`*.endpoint.yaml`)**
+
+- **Header value suggestions in `when` clauses:** a clause `◆ Value` on a
+  `scope: header` condition now offers the header's curated value catalogue
+  (e.g. Content-Type media types) via the new `apicircle.setMockClauseValueField`
+  command; the lens is hidden entirely for the `present` / `absent` ops (which
+  compare nothing).
+- **`✚ Add header` moved to the headers block:** the response-rule add-header
+  lens now anchors on that rule's `response.headers:` line instead of the rule's
+  `- id:` row, so it reads as "add a header to _this_ list".
+- **One condition per response rule:** a new `MAX_RESPONSE_RULE_CONDITIONS = 1`
+  authoring cap (in `@apicircle/shared`, mirroring `MAX_RESPONSE_MULTIPLIERS`)
+  hides `✚ Add condition` once a rule has a clause — in both the VS Code lenses
+  and the desktop/web rule editor. The `when` array + engine are unchanged, so
+  raising the constant is the only change to allow N.
+- **Per-header enable/disable:** every response/validation header key row gets a
+  `✓ Enable` / `⊘ Disable` toggle (`apicircle.toggleMockHeaderEnabled`).
+- **`requestSchema` authoring:** `✚ Path param · ✚ Query param · ✚ Header ·
+✚ Cookie · ✚ Body example` section lenses (or `✚ Add request schema` when the
+  block is absent) plus per-param `◆ Name / ◆ Type / ◆ Example / ◆ Description`
+  field lenses (the `required` boolean is edited directly in YAML). Path params
+  prefill from the `{slot}` segments in the pattern; headers offer the curated
+  catalogue.
+- **`⟳ Format JSON`** lens on JSON body `content:` rows (endpoint + request YAML)
+  reflows a stringified body into pretty, indented JSON
+  (`apicircle.formatJson`).
+
+**Collection requests (`*.req.yaml`)**
+
+- **Field-editor `◆` lenses** mirroring the mock surface — `◆ Method`, header
+  `◆ Key` / `◆ Value` (catalogue-aware), query / cookie key + value, path-param
+  values, **assertions** (`◆ Kind` / `◆ Op` pickers + `◆ Target` / `◆ Expected`),
+  and **extractions** (`◆ Source` picker + `◆ Variable` / `◆ Path`). Auth scalar
+  fields are edited directly in the YAML (no `◆` field editor).
+- **`⟳ Format JSON`** also lands on a **GraphQL body's `variables:`** and on the
+  JSON **auth `payload:` / `jwtHeaders:`** fields (the reflow helper now matches
+  any JSON-bearing key, with an object/array-only guard so a scalar like
+  `status: 200` is never touched). **Robustness:** an **empty** body / variables
+  scalar (`content: ''` / bare / blank block) is now **silently skipped** instead
+  of raising a "not valid JSON" toast; **multi-line block scalars** reflow
+  correctly (mis-indented JSON is normalized); an already-formatted body makes no
+  edit; and the result is a plain multiline JSON string that round-trips through
+  `parseRequestFromYaml` → the store, so it renders identically in the Web /
+  Desktop Monaco editors.
+- **Sample-input seeding:** a new request opens with method-appropriate starter
+  content — body-bearing methods get a `Content-Type` header + sample JSON body;
+  GET gets an `Accept` header + a `page` query param — instead of an empty shell.
+
+**Structural validation (all three surfaces)**
+
+- An `apicircle` **DiagnosticCollection** surfaces parse problems live before
+  save: a renamed / mistyped key — at the **top level OR inside any nested
+  entry** (a param, validation/response rule, when-clause, header row, response
+  body, or multiplier), e.g. `naem:`/`targett:`/`valuee:`), or a section with
+  the wrong type (e.g. `responseRules: oops`) — is now a **red Error that blocks
+  the save** (previously the field was silently dropped / its id regenerated);
+  coercible value-level issues stay yellow Warnings. Applies to endpoint, mock,
+  and request YAML.
+
+**Web / Desktop (`@apicircle/ui-components`)**
+
+- **`requestSchema` editor** in the mock endpoint editor (the Endpoint node):
+  path / query / header / cookie param tables (name / type / required / example)
+  - a "Derive from path" affordance + body-shape docs. This closes the
+    cross-surface gap — a mock endpoint's declared inputs round-trip through
+    `.apicircle/workspace.json` and are now editable in VS Code **and** the
+    Desktop / Web app (previously only VS Code YAML / OpenAPI import could write
+    them).
+
+**Mock parsers (`@apicircle/mock-server-core`) — imports now populate `requestSchema`**
+
+- Importing an **OpenAPI / Postman / Insomnia** spec now extracts the declared
+  parameters into the endpoint's `requestSchema` instead of leaving it empty:
+  OpenAPI operation **+ path-item** `parameters` (`in: path/query/header/cookie`,
+  with `required` / `description` / `typeHint` from `schema.format ?? type` /
+  `example`); Postman `url.variable` → path, `url.query` → query, `header` →
+  headers (disabled rows skipped); Insomnia `:slot` / `{slot}` URL segments →
+  path, `parameters` → query, `headers` → headers. So the schema editor (VS Code
+  / Web / Desktop) is pre-filled from the spec rather than blank.
+
+**MCP (`@apicircle/mcp-server`) — tool catalog 79 → 81**
+
+- **`mock.set_request_schema`** + **`prompt.set_endpoint_request_schema`** let an
+  AI client author an endpoint's `requestSchema` (path / query / header / cookie
+  params + body docs), completing the tri-surface + AI parity — the field was
+  previously seeded empty by the MCP tools with no way to populate it. Follows
+  the existing `mock.set_*` / `prompt.set_*` setter idiom (mock-variant preserves
+  param ids; prompt-variant re-ids). README / `docs/mcp-tools-reference.md` /
+  `docs/connect-your-ai-client.md` tool counts bumped to **81**.
+
+**CLI:** unaffected — the `apicircle` CLI is a batch runner (import / export /
+run / start / workspaces) with no per-endpoint authoring surface; it writes
+canonical `WorkspaceSynced` JSON directly (never the YAML projections), and its
+`apicircle mcp` subcommand auto-exposes the two new tools with no CLI change.
+
+### Response multipliers — array shape, soft-capped at 1 (extensible to N)
+
+`MockResponseConfig.multipliers` stays a `MockResponseMultiplier[]` **array**,
+and a new `MAX_RESPONSE_MULTIPLIERS = 1` constant (in `@apicircle/shared`) caps
+how many the authoring surfaces let you add today. The cap is a soft
+authoring-UX guardrail — the runtime engine applies every entry it finds, so
+**raising the constant to N is the only change needed to support multiple
+multipliers**: no schema migration, no persisted-data reshape, no engine change.
+
+This supersedes the brief "single object" reshape from earlier in this
+Unreleased window — keeping the array avoids a second migration when N lands.
+The cap is enforced in:
+
+- the desktop/web response editor (Add disabled at the cap, "limit reached" hint);
+- the VS Code `*.endpoint.yaml` lenses (`✱ Add multiplier` hidden at the cap;
+  `✕ Remove multiplier` per entry);
+- the MCP tools `mock.set_multipliers` / `prompt.set_endpoint_multipliers`
+  (array input; reject `length > MAX`; `[]` clears) and the
+  `prompt.create_mock_server` / `prompt.add_mock_endpoint` envelopes
+  (`multipliers?` arrays). Tool names/shapes are unchanged from the original
+  array surface.
+
+### VS Code extension — mock field-editor completeness pass
+
+Closes the gaps left by the field-editor work:
+
+- **Content-Type reconciliation** — `◆ Body type` now updates the same config's
+  `Content-Type` header to match (json → `application/json`, none → drops the
+  row), via a shared `reconcileContentType`.
+- **Indentation derived from the document everywhere** — the palette
+  `switchMockResponseBodyType` / `addMockResponseHeader` commands previously
+  hardcoded `ruleId ? 6 : 4` and mis-indented nested response-rule headers / the
+  default body; they now read the matched line's indent.
+- **Remaining field lenses** — `◆ Value` on when-clause `value:`, and
+  `◆ Count` / `◆ Min` / `◆ Max` / `◆ Name` on the multiplier (via shared
+  `setMockTextField` / `setMockNumberField` commands).
+- **Tests** — a new
+  `apps/vscode/src/commands/mockFieldEdits.integration.test.ts` drives every
+  field command through the real parse → pick → edit → save → re-parse
+  round-trip (the vscode test mock gains a `WorkspaceEdit` + `applyRecordedEdits`
+  helper); `MockResponseEditor` gains a component test for the multiplier
+  Add-cap; the desktop MCP e2e `set_multipliers` happy-paths now run with real
+  args.
+
+### VS Code extension — full field-level CodeLens editing for mock endpoints
+
+The per-endpoint `*.endpoint.yaml` editor gains a ◆ field-editor lens on
+essentially every editable scalar, and the `*.mock.yaml` summary gains
+per-endpoint navigation:
+
+- **`*.mock.yaml`** — each endpoint row gets an **`↗ Open endpoint`** lens that
+  opens its editable `*.endpoint.yaml`.
+- **`*.endpoint.yaml` field editors** (each lens sits on the field row and is
+  line-addressed, so the same code path works at any nesting depth —
+  `defaultResponse`, a `responseRule.response`, or a `validationRule.failResponse`):
+  - **`◆ Method`** on `method:`.
+  - **`◆ Status`** on every `status:` (common-code quick-pick + custom).
+  - **`◆ Key` / `◆ Value`** on each header row — the value picker is
+    header-aware (`getHeaderValues`, the same curated catalogue the Web/Desktop
+    editors use).
+  - **`◆ Body type`** on each body `type:` — rewrites the body subtree, indent
+    derived from the document.
+  - **`◆ Scope` / `◆ Op` / `◆ Target`** on each response-rule `when`-clause, plus
+    **`✚ Add condition`** on `when:`. The target picker offers the endpoint's
+    declared params for the clause's scope.
+  - **`◆ Kind` / `◆ Key` / `◆ Path`** on the multiplier — `◆ Path` discovers the
+    array paths in the default-response JSON body and offers them as a pick.
+- **Multiplier authoring**: `✱ Add multiplier` inserts a prefilled sample with
+  no prompts and hides once the list is at the cap (`MAX_RESPONSE_MULTIPLIERS`,
+  currently 1); `✕ Remove multiplier` removes an entry by id.
+- Status / body-type editors moved off the section-header rows onto the field
+  rows (less duplication). New commands live in
+  `apps/vscode/src/commands/mockFieldEdits.ts` (pure helpers unit-tested);
+  VS Code bundle ~2.44 MB (under the 3.0 MB soft budget).
+
+### VS Code extension — mock validation rules author in-editor via CodeLens
+
+Feedback follow-up on the per-endpoint `*.endpoint.yaml` editor. Adding a
+request-validation gate used to pop a chain of QuickPick / InputBox dialogs
+(kind → target → expected) before anything showed up in the editor. It now
+follows the same insert-then-refine model as the rest of the endpoint edits:
+
+- **`🛡 Add validation rule`** drops a prefilled `header-required` rule into
+  the YAML with no prompts and reveals its `kind:` row.
+- Each validation entry grows three kind-aware per-field CodeLenses:
+  - **`◆ Kind`** — pick from the 9 kinds; the `target:` / `expected:` rows
+    reshape to match (e.g. `body-required` drops both, `content-type-equals`
+    drops the target and seeds a value row, same-family switches keep the
+    target).
+  - **`◆ Target`** — pick from the endpoint's own declared `requestSchema`
+    params first, then — for header kinds — the curated global header
+    catalogue (`HTTP_HEADERS_MAP`, the same map the Web + Desktop header
+    editors surface), plus a `✏ Custom…` entry.
+  - **`◆ Value`** — `content-type-equals` offers the Content-Type catalogue,
+    `header-equals` offers the picked header's known values, and the
+    `*-matches` kinds collect a validated regex.
+
+Implementation notes:
+
+- New `apps/vscode/src/lang/mockValidationKinds.ts` holds the kind table plus
+  the pure reshape / catalogue helpers (`applyValidationKindChange`,
+  `validationTargetCandidates`, `expectedValueCatalogue`), shared by the lens
+  and the commands so they can never disagree about what a kind needs.
+- New commands `apicircle.setMockValidationKind` / `…Target` / `…Expected`
+  parse the endpoint, mutate the single rule, and re-render that entry through
+  the lossless `renderValidationRule` — `failResponse` and every other field
+  round-trip through the parser untouched.
+- `EndpointCodeLensProvider` emits the field lenses; `Add Mock Validation
+Rule` loses its trailing ellipsis since it no longer prompts.
+- Unit + lens + manifest tests added; VS Code bundle ~2.41 MB (well under the
+  3.0 MB soft budget). No schema, store, or MCP surface change.
+
+### VS Code extension — response tab opens instantly with "Sending…" placeholder
+
+Follow-up to the in-flight CodeLens work. Even with the lens row swapping
+to ⏳ Sending… and the status-bar spinner running, the user was still
+staring at an unchanged screen for 1-2 s until the response tab appeared
+on the right. Now the response tab opens **the instant the user clicks
+▶ Send** — beside the request editor, focus preserved on the request
+YAML — pre-filled with a "Sending…" placeholder. When the executor
+resolves the same tab swaps in the real response (or a "Cancelled" /
+"Failed" notice on the cancel / error paths) without flickering: the FS
+provider's `responseStore` is mutated in place and `fireChangedExternal`
+triggers VS Code to re-read the open doc.
+
+Implementation notes:
+
+- New formatters in `responseDocument.ts`:
+  - `formatPendingResponseDocument` — placeholder rendered when the
+    tab first opens: summary block with `status: Sending…`, method,
+    url, startedAt, plus a one-liner pointing the user at ✖ Cancel /
+    Esc to abort.
+  - `formatCancelledResponseDocument` — replaces the placeholder when
+    the AbortSignal fires; carries the same summary block with
+    `status: Cancelled` + durationMs.
+  - `formatFailedResponseDocument` — replaces the placeholder when
+    `executeRequest` rejects without an `AbortSignal.aborted`; carries
+    `status: Failed`, durationMs, and the underlying error string so
+    the tab is self-explanatory without scrolling back to the
+    notification toast.
+- `sendRequestCommand` flow re-ordered: stash placeholder + open tab
+  beside (with `preserveFocus: true` so the cursor stays in the
+  request editor) → run `executeRequest` inside `withProgress` → on
+  every terminal state, rewrite the store entry and fire a
+  `Changed` event on the response URI so the open tab refreshes.
+  Test hook `deps.openResponse` keeps its existing
+  "called-once-with-final-content" contract; production runs always
+  go through the FS provider path.
+- Bundle: 2.38 MB (+3 KB). Well under the 3.0 MB soft warn.
+
+Files: `apps/vscode/src/execute/responseDocument.ts`,
+`apps/vscode/src/execute/sendRequest.ts`, and four new test cases
+covering placeholder open, beside-with-preserve-focus, cancel-path
+replacement, and error-path replacement.
+
+### VS Code extension — in-flight Send feedback + name-first tab titles
+
+Two paper-cuts the user flagged in the feedback sweep:
+
+- **▶ Send swaps to ⏳ Sending… · ✖ Cancel while the request is in flight.**
+  Previously the 1–2 s between clicking ▶ Send and the response tab opening
+  was silent — the user couldn't tell whether the click had landed. The
+  request CodeLens now subscribes to a new `InFlightSendTracker` and
+  replaces the default `▶ Send · ✚ Add section… · ⤵ New from template…`
+  row with `⏳ Sending… (1.2s) · ✖ Cancel` until the executor returns.
+  The elapsed counter ticks every 500 ms while a send is in flight and
+  the interval is cleared the moment the tracker drains, so idle
+  documents pay nothing. The Cancel lens fires `apicircle.cancelOneSend`
+  — a new command that aborts only the in-flight send for the URI it
+  was clicked on (distinct from the existing `apicircle.cancelSend`
+  Esc-bound cancel-all). The send command itself now wraps
+  `executeRequest` in `vscode.window.withProgress({ location: Window })`
+  so the same status-bar spinner shows up for sends kicked from the
+  palette / Ctrl+Enter, and the notification's built-in cancel button
+  wires straight to the AbortRegistry. The tracker entry is cleared in
+  a `finally` so success / error / cancel all revert the CodeLens row
+  in one place.
+
+- **`apicircle:` tab titles now use the request name + folder breadcrumb,
+  never the id.** The previous URI shape was
+  `apicircle://<ws>/requests/<requestId>.req.yaml` so VS Code showed
+  `<requestId>.req.yaml` as the tab label — unreadable when you had
+  three or four tabs open, and the user worried they could edit the
+  visible id by accident. The new shape is
+  `apicircle://<ws>/requests/<folderSlug…>/<nameSlug>.req.yaml?id=<id>`
+  — the basename is the slugified request name, the folder chain
+  mirrors the workspace tree (so the tab tooltip surfaces the
+  breadcrumb), and the id rides in the `?id=` query so identity
+  survives renames and folder moves. The same redesign applies to
+  `planUri` (`.plan.yaml`), `mockUri` (`.mock.yaml`), `endpointUri`
+  (`/<mockSlug>/<endpointSlug>.endpoint.yaml`), `responseUri`
+  (`.run.yaml`), and `historyUri` (`.run.yaml`). Sibling-slug
+  collisions in the same folder suffix the slug with `~<shortId>` so
+  URIs stay unique without the full id leaking into the tab. When
+  the user edits `name:` and saves, the `writeFile` path detects the
+  URI change, reopens the new URI in the same editor column (cursor
+  selection preserved), and closes the stale tab — the tab title
+  follows the rename in a single save action. `extractRequestId` in
+  `sendRequest` and `addExtraction`'s active-editor lookup both read
+  the `?id=` query first; the request CodeLens glob widened from
+  `**/requests/*.req.yaml` to `**/requests/**/*.req.yaml` so deep
+  folder paths still trigger the lens. New `cancelOneSend` command
+  contribution added; the rest of the package.json surface is
+  unchanged.
+
+Bundle size: 2.38 MB (was ~2.37 MB; +~13 KB, well under the 3.0 MB
+soft warn).
+
+Files: `apps/vscode/src/execute/inFlightTracker.ts` (new) +
+`apps/vscode/src/commands/cancelRequestSend.ts` (new),
+`execute/sendRequest.ts`, `lang/requestCodeLens.ts`,
+`fs/apicircleFsProvider.ts`, `views/EditorView.ts`,
+`views/HistoryView.ts`, `views/MockView.ts`,
+`views/ExecutionView.ts`, `commands/requestActions.ts`,
+`commands/newRequest.ts`, `commands/newRequestFromTemplate.ts`,
+`commands/mockActions.ts`, `commands/addExtraction.ts`,
+`extension.ts`, `package.json`, and the matching unit / integration
+tests.
+
+### VS Code extension — more authoring affordances on the YAML surfaces
+
+Round 5 of the feedback sweep — four asks landed in one pass:
+
+- **Auto-format JSON body content in YAML.** Both `requestYaml.ts` and
+  `endpointYaml.ts` now pretty-print `body.content` when
+  `body.type === 'json'` and the content is parseable JSON. The
+  projection emits a readable block scalar
+  (`content: |-\n  {\n    "key": "value"\n  }`) instead of a wall-of-text
+  single-line string. `JSON.parse` ignores the indentation we add, so
+  the round-trip stays byte-identical between projection cycles. Invalid
+  JSON and already-multi-line content pass through unchanged.
+
+- **`requestSchema` is hidden from the endpoint YAML when empty.**
+  Answers the "why is this in every endpoint" question — `requestSchema`
+  is the declarative input spec the desktop UI + OpenAPI export drive
+  off, and 90% of mock endpoints don't populate it. The projection now
+  omits the section entirely when all four param arrays are empty AND
+  `body` is absent. Round-trip preserves any populated schema (the
+  parser still reads the section when present; it just doesn't render
+  an empty one).
+
+- **Content-Type header auto-syncs when switching response body type.**
+  `apicircle.switchMockResponseBodyType` now also reconciles the
+  matching response config's `headers:` block:
+  - `json` → `application/json`
+  - `xml` → `application/xml`
+  - `text` → `text/plain`
+  - `urlencoded` → `application/x-www-form-urlencoded`
+  - `form-data` → `multipart/form-data`
+  - `binary` → `application/octet-stream`
+  - `none` → strips the Content-Type row entirely.
+
+  Existing Content-Type rows are updated in place (preserving
+  `enabled` flags); if absent and the new type needs one, a new row is
+  inserted at the top. All other headers preserved verbatim. Works for
+  both `defaultResponse` and per-rule responses.
+
+- **Enable / disable + add-header CodeLens on the endpoint YAML.** Each
+  `responseRules` and `requestValidation` entry now gets an
+  `⊘ Disable` / `✓ Enable` lens (rendered based on the row's current
+  `enabled:` value). `apicircle.toggleMockRuleEnabled` flips the line
+  in place. Above `defaultResponse.headers:` (and per-rule
+  `response.headers:`), a new `✚ Add header` / `✚ Header` lens fires
+  `apicircle.addMockResponseHeader` — a two-step quick-pick over a
+  curated catalogue of 8 common response headers (Content-Type,
+  Cache-Control, ETag, Location, X-RateLimit-Remaining, X-Request-Id,
+  Access-Control-Allow-Origin, Set-Cookie) with preset values per
+  header.
+
+- **Per-section "+ Add row" lenses on the request YAML** for the
+  remaining sections — `query`, `cookies`, `pathParams`, `assertions`,
+  `extractions`. Each fires a focused input flow:
+  - `query` / `cookies` — key + value input boxes.
+  - `pathParams` — key + value persisted as a YAML map entry (matches
+    the canonical `pathParams: Record<string,string>` shape).
+  - `assertions` — kind (status / header / json-path / response-time)
+    → op (equals / matches / gt / lt / …) → expected → optional name.
+  - `extractions` — source (body JSON path / header / cookie / status)
+    → variable → path.
+
+  Inline-empty section shapes (`query: []`, `pathParams: {}`) are
+  converted to block-form on first insert so the result is well-formed
+  YAML.
+
+Test count rose 945 → 966 (+21). Bundle 2.34 MB → 2.37 MB (+30 KB),
+still well under the 3.0 MB soft warn. Per-command activation events +
+manifest-regression pins added for the 7 new commands (5 request-side,
+2 endpoint-side).
+
+### Mock server — editable default port on every surface
+
+Until now the **Default port** field on a `MockServer` was set only at
+creation time (the VS Code New Mock wizard, the CLI `--port` flag, or a
+hand-edited YAML / MCP write). The Desktop + Web Mocks panel rendered
+`Default port: auto` as a read-only row, and there was no one-click
+"change the port" affordance from the VS Code Mock view either. Three
+parallel changes close the gap:
+
+- **Web + Desktop Mocks panel.** The `ServerSummary` view in
+  `packages/ui-components/src/panels/mocks/MockServersPanel.tsx` now
+  surfaces a dedicated **Default port** section with an editable input,
+  inline validation against 1024–65535, and a "let the runtime pick a
+  free port" empty state. Disabled while the mock is running — stop it
+  first to change. Persists via a new `setMockServerDefaultPort` store
+  action that funnels through the same synced-doc write path as
+  `setMockServerName` / `setMockServerCors`. The same Mocks panel ships
+  in the desktop and the web build, so the affordance is everywhere.
+
+- **VS Code Mock view.** New `apicircle.setMockPort` command + right-
+  click **Set Mock Port…** menu item on the mock row (both `mock-idle`
+  and `mock-running`). Pre-fills with the current port and reuses the
+  same 1024–65535 validator the New Mock wizard uses. Persists via
+  `mock.upsert`; when the mock is running, the prompt warns that the
+  new port only takes effect on next Start. The YAML editor in
+  `<id>.mock.yaml` still works for users who prefer it — this is a
+  one-click alternative.
+
+- **Sharper port-bind errors.** `@apicircle/mock-server-core` now
+  exports a typed `MockServerStartError` carrying `code` (`EADDRINUSE`
+  / `EACCES` / `EADDRNOTAVAIL` / `INVALID_PORT` / `UNKNOWN`), `port`,
+  and `host`. The runtime adapter (`runtime/nodeAdapter.ts`) wraps the
+  raw Node `listen EADDRINUSE …` payload into an actionable message:
+  `Port <n> on 127.0.0.1 is already in use. Stop the other process or
+pick a different port.` Non-integer / out-of-range ports are
+  rejected up-front instead of crashing inside `@hono/node-server`.
+  Every surface (Desktop, Web mocked through the desktop bridge, VS
+  Code, CLI, MCP) inherits the cleaner message automatically.
+
+Schema is unchanged — `MockServer.defaultPort: number | null` already
+existed; the field is now just user-editable on every UI surface
+instead of write-once.
+
+Follow-on gap closures landed in the same pass:
+
+- **MCP — new `mock.set_default_port` tool** (catalog grows 78 → 79).
+  Persists a 1024-65535 port (or `null` for "pick a free port at next
+  start") on an existing mock without restarting it. Documented in
+  [`docs/mcp-tools-reference.md`](docs/mcp-tools-reference.md) and
+  [`docs/connect-your-ai-client.md`](docs/connect-your-ai-client.md).
+  Tool count bumped in CLAUDE.md, README.md, the cold-start brief,
+  the VS Code MCP view label, and the
+  `mcpManager.test.ts` regression test.
+
+- **MCP — tighter `mock.start` schema.** `port` now constrained to
+  `z.number().int().min(1024).max(65535).optional()`; out-of-range
+  values are rejected at the tool boundary instead of escaping into
+  the runtime as `INVALID_PORT`.
+
+- **Web/Desktop — port input editable while running.** Reversed the
+  earlier "disabled while running" decision: `defaultPort` is the
+  port used at _next_ Start, not the live listener's port. The
+  running case now shows `Running on port <n>. New value applies on
+next Start.` so the semantics are honest and consistent with the
+  VS Code `Set Mock Port…` command.
+
+- **CLI — new `apicircle mocks` subcommand group.** Adds `mocks list`
+  (table or `--json`) and `mocks set-port <selector> [port]` for the
+  headless surface. The plural `mocks` group operates on persisted
+  workspace definitions; the existing singular `mock <spec>` keeps
+  its on-the-fly-from-a-file semantics. Selector matches by id or
+  case-insensitive name. Omitting the port arg (or passing
+  `auto`/`null`) clears back to free-port mode.
+
+- **Desktop E2E — port flow Playwright spec.** `e2e/desktop/mock-servers.spec.ts`
+  now drives the real `EADDRINUSE` path: starts two mocks pinned to the
+  same port via the desktop bridge, asserts the second start throws a
+  `MockServerStartError` whose message names the port and includes
+  "already in use". A second test exercises the `PortSection` input
+  end-to-end against the renderer's IDB store. Gates regressions on
+  the user-facing error copy.
+
+VS Code extension bundle: 2.34 MB → **2.37 MB** (+30 KB, well under the
+3.00 MB soft warn / 5.00 MB hard fail). The growth is the
+`setMockPortCommand` + the host-side mock-actions register, plus their
+test coverage doesn't ship.
+
+### VS Code extension — first-week feedback sweep
+
+Seven observations from a real user sharing screen on a fresh sideload —
+each one a five-minute paper-cut individually, but together they made the
+extension feel half-finished. Fixed in one pass:
+
+- **Extension display name: "APICircle Studio" → "API Circle Studio".**
+  Brings the VS Code surface in line with the desktop's `productName` and
+  the macOS install warning copy in this CHANGELOG. The Marketplace
+  listing, the Activity Bar tooltip, the Settings page header, and the
+  Editor welcome card all now read "API Circle Studio" — the brand has
+  one spelling across the three surfaces. Command-palette category stays
+  as `APICircle:` since it's a shorthand prefix only power-users see and
+  renaming all 58 occurrences would inflate the diff without UX value.
+
+- **Activity Bar + Marketplace icons replaced with the official brand
+  mark.** Marketplace icon (`media/icon-marketplace.png`) is the
+  user-supplied black/white 1024×1024 PNG — a filled central disc with
+  the `>` chevron + paired dot, ringed by six satellite nodes on a
+  dashed orbit. The Activity Bar SVG (`media/icon-activitybar.svg`)
+  reproduces the same design but swaps the hardcoded black/white for
+  `currentColor` strokes/fills + an SVG `<mask>` element for the
+  chevron + dot cutouts inside the central disc, because VS Code
+  renders activity-bar icons as a mask using the active theme colour
+  and any non-`currentColor` paint silently drops out. Six satellite
+  rings keep their interior transparent (stroke-only) so the theme
+  background shows through cleanly under both light + dark themes.
+
+- **Snapshots: Restore / Delete now show inline.** The two actions were
+  only reachable from the right-click context menu, so on hover users
+  saw a row with no obvious affordance. Both commands gained an `icon`
+  (`$(history)` / `$(trash)`) and an `inline` menu group on
+  `snapshot-entry` rows — the icons render in the row's gutter the same
+  way mocks' play/stop already do. Context-menu entries retained.
+
+- **MCP: GitHub Copilot install now has a matching uninstall.** The row
+  used to flip from "Install" → "✓ installed" with no way back —
+  `apicircle.uninstallCopilotMcpConfig` was simply never wired. Added a
+  new host helper (`uninstallCopilotMcpConfig` in
+  `host/copilotMcpInstall.ts`) that strips the apicircle key from
+  `.vscode/mcp.json` while preserving foreign `mcpServers` entries the
+  user added by hand, plus the matching command + activation event +
+  inline trash + context-menu entries on the `mcp-client-copilot-installed`
+  and `-stale` rows. Idempotent — runs on an already-clean file resolve
+  as "absent". Six new unit tests in `copilotMcpInstall.test.ts` lock
+  the contract.
+
+- **Sidebar rows now have meaningful tooltips.** `EditorView` folder +
+  request rows, `EnvironmentView` env rows, `HistoryView` bucket rows
+  and global-var rows — none of them set `item.tooltip` before, so the
+  user got "Edit cell" generic OS hover or nothing. Folders now show
+  `<name> · <N> requests, <M> folders`; request rows show
+  `<method> <url>` + auth + body type; env rows show `<name> · <N>
+variables (<K> encrypted)`. The `MockView` endpoint row's tooltip
+  picked up MarkdownString formatting + a hint pointing at the new
+  pencil affordance.
+
+- **Mock endpoints: edit form is now one click away.** The webview
+  endpoint editor (P11) already existed, but it was buried under
+  `1_actions@3` in the context menu — most users never found it. Added
+  `apicircle.editMockEndpoint` as the row's default click action +
+  promoted it to the inline group with the pencil icon. The tooltip
+  now also points users at it explicitly ("Click ✎ to edit
+  method / path / status / body in a form, or open the mock YAML for
+  full control").
+
+- **Request YAML: "+ Add section…" CodeLens + "New from template…".**
+  The request CodeLens row grew from one lens (`▶ Send`) to three:
+  `▶ Send` · `✚ Add section…` · `⤵ New from template…`. The new "Add
+  section…" lens opens a quick-pick listing every optional YAML key
+  (`pathParams`, `query`, `headers`, `cookies`, `auth`, `body`,
+  `contextVars`, `extractions`, `assertions`) — picking a missing
+  section inserts a starter scaffold via `WorkspaceEdit`, picking one
+  that's already present scrolls cursor to it. One smart lens beats
+  seven noisy ones, and every section is discoverable without the user
+  having to know the YAML key names by heart. The new
+  `apicircle.newRequestFromTemplate` command (also surfaced as a
+  `$(file-symlink-file)` view-title button + an entry in the Editor's
+  workspace-present welcome card) picks from six starter shapes —
+  Simple GET, JSON POST, Bearer-protected GET, Paginated GET, GraphQL
+  query, and a five-request REST CRUD scaffold that creates a folder of
+  List / Get / Create / Update / Delete requests for a named resource.
+
+- **Mock endpoint sidebar pencil now opens the YAML, and the mock YAML
+  stops surfacing per-endpoint editing lenses.** Two follow-up issues
+  from the prior round:
+  - The inline pencil on each Mock-sidebar endpoint row still routed
+    to `apicircle.editMockEndpoint` (the legacy webview form),
+    contradicting the row's click action which now opens the YAML.
+    Added `apicircle.openMockEndpointYaml` — builds the endpoint URI
+    from the tree node's `{serverId, endpointId}` and dispatches
+    `vscode.open` — and rewired the inline pencil + the first
+    context-menu entry to it. The form editor is now reachable
+    _only_ via the second context-menu entry for users who still
+    want the GUI form.
+  - The mock YAML CodeLens provider was still emitting the
+    `⇄ Body type · 🔢 Status · ✚ Response rule · 🛡 Validation rule ·
+✱ Multiplier` lenses next to each endpoint summary row inside
+    `mocks/<id>.mock.yaml`. Those lenses fired commands that now
+    require a `.endpoint.yaml` URI — invoking them from the mock
+    YAML triggered the "only runs against endpoint YAML" warning
+    toast. Removed the per-endpoint lens row entirely; the mock YAML
+    is now a pure lifecycle surface again (`▶ Start Mock` /
+    `■ Stop Mock` / `↻ Restart`). Per-endpoint editing lives on
+    the `.endpoint.yaml` opened via the pencil or the row click.
+  - Updated the mock YAML header comment + the
+    `parseMockFromYaml` warning to point users at the per-endpoint
+    YAML instead of the old "edit in the desktop app" copy.
+
+  Two new manifest-regression pins: one asserts the inline pencil's
+  command is `openMockEndpointYaml`; one extends the post-launch
+  command roster so future drops can't lose the command id silently.
+  Test count 945 → 960 (+15 cumulative across this round — the
+  failing-mockCodeLens-test for the removed per-endpoint emission was
+  inverted into a "stays absent" guard).
+
+- **Mock endpoints now edit through a per-endpoint YAML file — same UX
+  as request YAML, driven by CodeLens.** Round 4 fixes two user-reported
+  issues in one sweep:
+  - _Bug:_ the prior round shipped quick-pick / input-box driven
+    `addMockResponseRule` / `addMockValidationRule` / `addMockMultiplier`
+    commands that DID land via `mock.upsert` (verified the write
+    against `workspace.json`), but the mock YAML projection only
+    surfaces top-level mock metadata — `name` / `defaultPort` /
+    `cors` / endpoint summaries — so any rule / multiplier the user
+    added was committed but invisible. That read as "nothing happens
+    after clicking through the wizard".
+  - _Asked-for UX:_ the user wanted each endpoint to open as its own
+    file with CodeLens-driven editing, parallel to request YAML.
+
+  Implemented:
+  - New URI scheme: `apicircle://<ws>/mocks/<mockId>/<endpointId>.endpoint.yaml`.
+    The FS provider (`ApicircleFsProvider`) now recognises the
+    3-segment endpoint path, reads through a new
+    `serializeEndpointToYaml`, and on write parses via
+    `parseEndpointFromYaml` and applies `mock.upsert` with the
+    endpoint slot replaced. `endpointUri(wsId, mockId, endpointId)`
+    builder added next to the other URI builders.
+  - New [`endpointYaml.ts`](apps/vscode/src/fs/endpointYaml.ts)
+    projection rounds-trips the full `MockEndpoint` shape: id (read-
+    only), name, method, pathPattern, description, example,
+    requestSchema (path / query / header / cookie param defs),
+    requestValidation (all 9 kinds with failResponse), responseRules
+    (when + response), defaultResponse (status / headers / body /
+    delayMs / multipliers). 7 fixture-based round-trip tests pin
+    the shape; one asserts unknown validation kinds warn + drop
+    cleanly.
+  - New [`endpointCodeLens.ts`](apps/vscode/src/lang/endpointCodeLens.ts)
+    provider, registered against `**/mocks/**/*.endpoint.yaml`.
+    Emits:
+    - Above `defaultResponse:` — `⇄ Body type` · `🔢 Status` ·
+      `✱ Add multiplier`.
+    - Above `responseRules:` — `✚ Add response rule`. Per existing
+      rule: `⇄ Body type` · `🔢 Status` · `✕ Remove rule`.
+    - Above `requestValidation:` — `🛡 Add validation rule`. Per
+      existing rule: `✕ Remove rule`.
+    - Per multiplier inside `defaultResponse.multipliers:` —
+      `✕ Remove multiplier`.
+      Each command receives `(uri, ruleId?)` so the user goes straight
+      to the row they clicked, no disambiguation step.
+  - Rewrote the five mock-endpoint commands to drive the YAML via
+    `WorkspaceEdit` + `document.save()`. The save kicks the FS
+    provider, which parses + applies `mock.upsert`. Result: the
+    change lands in `workspace.json` AND shows up in the editor
+    immediately, because the YAML the user is looking at IS the
+    projection of the just-mutated MockEndpoint.
+  - Added three new "remove" commands —
+    `apicircle.removeMockResponseRule`, `removeMockValidationRule`,
+    `removeMockMultiplier` — wired to per-row trash lenses on the
+    endpoint YAML.
+  - Inline-empty handling: `responseRules: []` / `requestValidation: []`
+    / `multipliers: []` (the projection's empty-array shape) gets
+    converted to block-form on first insert so adding the first
+    rule produces well-formed YAML, not `responseRules: []` followed
+    by `- id: …` on the next line.
+  - Validates the edited YAML BEFORE saving — if the user (or our
+    edit) leaves the document in a state the parser can't read,
+    the save is skipped and a clear error toast points at the
+    parse error.
+  - MockView per-endpoint click → opens the new endpoint YAML
+    instead of the webview form. The webview form stays reachable
+    via the right-click context menu's `Edit Mock Endpoint (Form)`
+    entry for users who prefer GUI editing.
+  - New language contribution: `apicircle-endpoint` with the
+    `.endoint.yaml` extension, so VS Code highlights and folds the
+    file as YAML.
+  - 14 new tests: 7 round-trip + warning assertions in
+    `endpointYaml.test.ts`, 6 CodeLens emission assertions in
+    `endpointCodeLens.test.ts`, plus 3 new
+    manifest-regression / activation-integration pin updates for
+    the 3 new remove commands.
+
+  Bundle: 2.30 MB → 2.34 MB (+40 KB for the projection + CodeLens
+  provider + remove commands). Well under the 3.0 MB soft warn.
+
+- **Five more authoring affordances around the request + mock YAMLs.**
+  Round 3 of the user's feedback sweep — every one of these reduces a
+  step the user used to do by hand:
+  - **Snapshots view-title:** `apicircle.captureSnapshot` got a
+    `$(device-camera)` icon and `apicircle.setSnapshotMaxBytes` got
+    `$(settings-gear)`. Both now show as inline title-bar buttons next
+    to refresh; previously Capture had no icon at all and Set Storage
+    Cap was buried under the context menu. Pinned by a new
+    `manifestRegression` assertion.
+
+  - **Headers CodeLens:** `✚ Pick header…` rides above the `headers:`
+    section. Two-step picker — choose a header from a curated catalogue
+    of 16 common HTTP request headers (Accept, Authorization,
+    Cache-Control, Content-Type, Cookie, If-Match, Origin, Prefer,
+    Referer, User-Agent, X-API-Key, X-Request-ID, …), then pick a
+    curated value (`application/json`, `Bearer {{auth_token}}`,
+    `no-cache`, …) or type your own. The new row appends to `headers:`
+    or seeds the section if absent. New command:
+    `apicircle.pickHeader`.
+
+  - **contextVars JSON mapper:** `🗺 Map from JSON…` rides above
+    `contextVars:`. The user pastes a JSON object; the helper flattens
+    nested keys to dotted paths (`user.id`, `orders.0.total`) with
+    stringified primitive leaves, then replaces the existing
+    `contextVars:` block (after a confirmation modal when there's
+    existing content to lose). New command:
+    `apicircle.mapContextVarsFromJson`.
+
+  - **OAuth2 Get Token:** when `auth.type` is one of the 6 OAuth2
+    grants, `🔑 Get token` rides above `auth:`. Client Credentials
+    and Resource-Owner Password grants run inline — the command
+    builds the right `grant_type` body, calls the shared
+    [`fetchOAuth2Token`](packages/core/src/auth/oauth2/fetchToken.ts) from `@apicircle/core`, and writes
+    `accessToken` / `refreshToken` / `expiresAt` / `obtainedScope`
+    back into the YAML via `WorkspaceEdit`. Browser-redirect grants
+    (auth-code / PKCE / implicit) need a 127.0.0.1 callback HTTP
+    server — that's the desktop app's existing flow today; the VS Code
+    command surfaces a clear modal pointing the user at the desktop
+    until callback-server support lands on this surface too (tracked
+    follow-up). Device-code polling is similarly deferred. New command:
+    `apicircle.fetchOAuth2Token`.
+
+  - **Mock endpoint editing — five new CodeLens-driven actions per
+    endpoint row in `.mock.yaml`:** `⇄ Body type`, `🔢 Status`,
+    `✚ Response rule`, `🛡 Validation rule`, `✱ Multiplier`. Each
+    lens fires from above the matching endpoint entry in the YAML's
+    `endpoints:` list. The commands route through `mock.upsert`
+    against the shared MockEndpoint shape — they don't touch the
+    YAML projection directly — so every mutation flows through
+    `applyMutation` the same way the desktop / web app surfaces do.
+    Coverage:
+    - **Validation rule** — 9 kinds (header-required / header-equals /
+      header-matches / query-required / query-equals / query-matches /
+      cookie-required / body-required / content-type-equals).
+      Multi-step picker collects target / expected / failure
+      message, scaffolds a 400 JSON failResponse.
+    - **Multiplier** — 4 source kinds (query / pathParam / header /
+      body-JSON-path), targetJsonPath, defaultCount, optional
+      min/max, optional name. Confirms before adding when the
+      default response is not JSON (multipliers only fire for JSON
+      bodies).
+    - **Switch response body type** — quick-pick over the 7
+      MockResponseBodyType variants. Re-seeds the body via
+      `makeDefaultMockResponseBody` so the new shape is well-formed.
+    - **Set response status** — validated 100-599 input box.
+    - **Add response rule** — name, condition scope + target + op +
+      value, response status, body type. Always scaffolds an enabled
+      single-clause rule with Content-Type: application/json.
+      All five commands also surface on the MockView's per-endpoint
+      context menu (so the user can act on an endpoint without
+      opening the YAML) and in the command palette. The webview form
+      editor stays as the third surface for users who prefer GUI editing.
+
+  Test count rose 925 → 945 (+20). New: 6 contextVars-flatten cases,
+  3 header-row + catalogue assertions, 3 OAuth2 auth-block parser
+  cases, 4 request-CodeLens emission assertions (headers /
+  contextVars / OAuth2 grant gating), 1 mock-CodeLens emission
+  assertion covering all 5 per-endpoint lenses + index-bound
+  arguments, plus 3 manifest-regression / activation-integration
+  pin additions for the 8 new commands. Bundle 2.27 MB → 2.30 MB
+  (+30 KB), still well under the 3.0 MB soft warn.
+
+- **Form-data + binary bodies get a Global-Assets-style file picker, and
+  the GraphQL scaffold ships with a real sample variable.** Three
+  follow-up asks from the same user round:
+  - **Form-data:** when `body.type` is form-data, three new lenses ride
+    above `body:` — `✚ Add text row`, `✚ Add file row`,
+    `⇄ Switch row kind…`. Each `- kind: text|file` row inside
+    `formRows:` also gets its own pair of inline lenses: `↻ Switch to
+file/text` and (file rows only) `📎 Pick file…`. Picking a file
+    opens the same quick-pick the desktop / web apps surface — list
+    existing `synced.globalAssets.files` entries, or
+    **📤 Upload a new file…** which:
+    1. opens the native file dialog (`vscode.window.showOpenDialog`),
+    2. reads the bytes, computes `sha256` + extension-based MIME +
+       size,
+    3. copies the file into `<workspaceRoot>/.apicircle/attachments/
+<slotId>` (the same path the desktop / Git push flow writes
+       through),
+    4. applies a `globalAsset.upsertFile` patch so every surface sees
+       the new asset on the next read,
+    5. writes the asset id / slotId / filename / size / mimeType /
+       sha256 into the form-data row's YAML block.
+
+  - **Binary:** when `body.type` is binary, a `📎 Pick attachment
+file…` lens rides above `body:`. Same picker, same upload flow —
+    the result lands in `body.attachment`. The command now rewrites
+    the _whole_ `body:` section (not just the attachment sub-block)
+    when an attachment lands, so the leftover `content: ""` placeholder
+    from the binary scaffold and the outdated "set via desktop/web
+    Asset picker" comment both disappear — the YAML output reads as
+    just `type: binary` + `attachment: { … }`, which is what the
+    runner actually consumes (it reads bytes from
+    `attachment.slotId` for binary bodies, not from `content`). The
+    binary scaffold itself was also trimmed to drop the noise: just
+    `type: binary` now, with the picker lens as the next action. The
+    form-data scaffold lost its `content: ""` line for the same
+    reason (formRows is canonical for form-data; `content` is
+    ignored). `apicircle.pickBinaryAttachment` is also reachable from
+    the command palette for the keyboard-driven path.
+
+  - **GraphQL scaffold:** the body-type switcher's `graphql` scaffold
+    now pre-fills `variables: '{ "userId": "123" }'` and a query that
+    references `$userId`, so the user sees both the query slot AND
+    the variables slot wired up to each other on the first paste —
+    not an empty `"{}"` they have to interpret.
+
+  Three new files: [`fileAssetPicker.ts`](apps/vscode/src/commands/fileAssetPicker.ts)
+  (shared picker + `guessMimeType` MIME map + the
+  `globalAsset.upsertFile` write), [`binaryAttachment.ts`](apps/vscode/src/commands/binaryAttachment.ts)
+  (binary body writer + `findExistingAttachmentRange` /
+  `renderAttachmentBlock` helpers), and [`formDataRow.ts`](apps/vscode/src/commands/formDataRow.ts)
+  (add / switch-kind / pick-file commands + a `parseFormRows`
+  scanner that walks the YAML row-by-row so per-row lenses go to the
+  right line). Four new commands declared + activated:
+  `apicircle.pickBinaryAttachment`, `apicircle.addFormDataRow`,
+  `apicircle.switchFormDataRowKind`, `apicircle.pickFormDataRowFile`.
+
+  Test count rose 886 → 923 (+37). New: 5 binary-attachment helper
+  tests, 8 form-data row tests, 20 MIME-map cases, 4 new
+  CodeLens-emission assertions (binary lens present / absent on JSON,
+  form-data control lenses, per-row index-bound lenses). The
+  `manifestRegression` + integration command-list regression both pin
+  the four new ids. Bundle 2.25 MB → 2.27 MB (+20 KB), well under
+  the 3.0 MB soft warn.
+
+- **Per-section CodeLens above `body:` and `auth:` for type switching.**
+  Follow-up ask from the same user — the type-discriminator unions are
+  wide (8 body types, 17 auth schemes) and most users don't remember
+  which YAML keys each variant needs. Two new lenses ride above the
+  section headers: **`⇄ Switch body type (current: json)…`** above
+  `body:` and **`⇄ Switch auth type (current: bearer)…`** above `auth:`.
+  Each opens a quick-pick listing every variant — the current type is
+  badged with `✓ current` so the user sees what they're switching from.
+  Selecting a different type rewrites the section block via
+  `WorkspaceEdit` with a starter scaffold containing all required fields
+  for that variant (e.g. OAuth2 Client Credentials gets `tokenUrl` +
+  `clientId` + `clientSecret` + `scope` + `clientAuthMethod` + the
+  five `OAuth2TokenState` fields). New commands:
+  `apicircle.switchRequestBodyType` and `apicircle.switchRequestAuthType`,
+  both registered in the command palette so the same flow works without
+  the CodeLens. Catalogue + scaffolds live in
+  `src/commands/switchRequestSection.ts` with a `__testHooks` export so
+  the unit suite pins every BodyType / RequestAuth discriminator stays
+  in sync with `packages/shared/src/types.ts`. New tests: 7 cases for
+  the body / auth scaffold catalogue + range-finding helpers, 4 cases
+  for the CodeLens rendering (current-type embedding, missing-section
+  omission, no-type fallback).
+
+Bundle: 2.21 MB → 2.25 MB (+40 KB for the new commands + body / auth
+scaffold catalogues). Well under the 3.0 MB soft warn / 5.0 MB hard
+fail; budget unchanged. Test count: 886 pass (+30 — six new uninstall
+tests, twelve switch-section tests, four new CodeLens body / auth lens
+assertions, two updated env-row description tests, two updated
+existing CodeLens tests, one updated activation-integration command
+list, one expanded mock-endpoint tooltip assertion, four new
+manifest-regression pins). No schema change; no `WorkspacePatch`
+change; no impact on the three-surface parity contract (every
+operation here is VS Code-only chrome).
+
+### VS Code extension — Editor view UX fixes (first-install report)
+
+First-install feedback flagged three Editor-view paper-cuts that all
+trace back to the same source — the title-bar and welcome view stayed
+generic regardless of workspace state. Fixed in one pass:
+
+- **`apicircle.newRequest` now declares `"icon": "$(add)"`.** It was the
+  only "new X" command without one — every sibling (`newEnvironment` /
+  `newPlan` / `newMock`) already had `$(add)`. Without an icon, VS Code
+  fell back to rendering the title `New Request` as raw text crammed
+  into the Editor view's title bar next to the refresh icon. With the
+  icon declared, **$(add) New Request** now renders as a proper inline
+  action alongside **$(refresh) Refresh**, matching every sibling view.
+  Pinned by a new `manifestRegression` assertion.
+
+- **Editor `viewsWelcome` is now gated by `apicircle.hasActiveWorkspace`.**
+  The previous card always said "Create New Workspace" / "Open Folder…"
+  — even when a `.apicircle/workspace.json` had been discovered and the
+  bridge had adopted it. Users with an empty-but-detected workspace read
+  that as "the extension didn't recognise my `.apicircle/` folder." The
+  manifest now contributes two welcome entries: a `!hasActiveWorkspace`
+  card with the create/open actions, and a `hasActiveWorkspace` card
+  with **Open `workspace.json`** + **New Request** actions. `extension.ts`
+  sets the context key on every discovery pass.
+
+- **`apicircle.refresh` now re-runs `discoverWorkspaces` first.** The
+  previous handler only fired the tree-data change event — so a
+  `.apicircle/workspace.json` scaffolded after VS Code activated the
+  extension (CLI scaffold, `git pull`, hand-mkdir) never registered with
+  the bridge, and the refresh icon felt broken. The new
+  `rediscoverAndRegister` helper is the single choke point for
+  discovery + bridge registration + the `hasActiveWorkspace` context
+  update; it's invoked by activation, refresh, the workspace-file
+  watcher's `onAnyChange` callback (so external file creates also pick
+  up new workspaces), and `onDidChangeWorkspaceFolders`. Idempotent —
+  bridge registration is keyed by id.
+
+No schema change. No three-surface compat impact (welcome view is
+VS Code-only chrome). Tests: `manifestRegression` gained the icon +
+welcome split assertions; the existing `workspaceDiscovery` +
+`workspaceWatcher` suites continue to cover the discovery primitive.
+
+#### First-install activation failure — `proper-lockfile` not bundled
+
+While verifying the UX fixes above against a fresh side-loaded .vsix on
+Windows, the extension failed to activate at all:
+
+```
+Activating extension 'apicircle.apicircle-vscode' failed: Cannot find
+package 'proper-lockfile' imported from .../dist/extension.mjs.
+```
+
+Root cause: `proper-lockfile` was declared in
+`apps/vscode/package.json` runtime deps but missing from
+`tsup.config.ts`'s `noExternal` list. The .vsix is built with
+`vsce package --no-dependencies`, which intentionally ships no
+`node_modules` — so any package the bundler leaves external throws at
+import time. Every command registered as "command 'apicircle.X' not
+found", discovery never ran, and the Editor view stayed on the
+no-workspace welcome card forever.
+
+- **Added `proper-lockfile` to `tsup.config.ts` noExternal.** Now bundled
+  with `proper-lockfile` + `retry` + `signal-exit` (~50 KB).
+- **Added a manifestRegression assertion that the noExternal list
+  covers every runtime dep in `apps/vscode/package.json`** (except
+  `vscode` itself, which the host injects). The drift that bit us
+  here can't recur silently — adding a new dep without bundling it
+  now turns the test red.
+- **Bundle: 2.16 MB → 2.21 MB.** Soft warn bumped 2.30 MB → 2.35 MB in
+  `scripts/vscode-bundle-budget.mjs` with rationale; hard fail
+  unchanged at 2.50 MB (302 KB headroom). Per the CLAUDE.md bundle
+  contract: the budget moves to absorb a legitimate dep we forgot to
+  bundle, not to silence a regression.
+
+Discovery diagnostics added in the same pass: `rediscoverAndRegister`
+now logs `<n> workspace folder(s)`, `found <n> workspace(s)`, and
+`hasActiveWorkspace=<bool>` to the **APICircle Runs** OutputChannel on
+every discovery sweep. Self-troubleshooting hook for future
+first-install reports — users can read the channel and tell us
+whether `vscode.workspace.workspaceFolders` was empty, the path was
+wrong, or the bridge dropped the workspace.
+
+#### Bundle ceiling raised to 5 MB — peer-extension parity
+
+Deliberate policy change, not a regression cover-up. The 2.5 MB cap
+was an aspirational discipline target inherited from when the
+extension was essentially a request runner. With MCP host, Git
+workspace model, 17 auth schemes, embedded mock server, vault, and
+plan notebooks all bundled, that cap was forcing per-dep
+renegotiations on every change.
+
+Peer extensions all sit higher: Thunder Client ~5 MB (closest
+competitor), GitLens ~5–8 MB, ESLint ~6 MB, Copilot ~20 MB. The
+VS Code Marketplace allows .vsix uploads up to ~150 MB; there's no
+platform limit at 2 MB. Our actual UX gate is
+`activationPerf.test.ts`, which asserts `activate()` completes in
+**<500 ms on a 100-request workspace** and **<1000 ms on a 500-request
+workspace**. Bundle size is now an early-warning _proxy_ for cold-start
+parse cost, not the gate itself.
+
+- **`scripts/vscode-bundle-budget.mjs`** — `SOFT_BUDGET_BYTES` raised
+  from 2.35 MB → **3.0 MB**, `HARD_BUDGET_BYTES` raised from 2.5 MB →
+  **5.0 MB**. Min sanity floor (500 KB) unchanged. Rationale block
+  expanded.
+- **`scripts/check-vscode-bundle.mjs`** — hardcoded "2.0 MB" / "1.8 MB"
+  strings replaced with `formatBytes(HARD_BUDGET_BYTES)` /
+  `formatBytes(SOFT_BUDGET_BYTES)` so the warning copy can't drift
+  from the source of truth again.
+- **`apps/vscode/test/integration/bundleSize.test.ts`** — test names
+  and inline strings updated to "5.0 MB hard" / "3.0 MB soft" with
+  formatBytes-driven error messages.
+- **`docs/vscode-extension.md` §14** — added a current-ceiling table
+  - the rationale that bundle is a proxy and activationPerf is the
+    real gate. Historical phase-by-phase callouts left intact.
+- **`CLAUDE.md` §10** — bundle-budget bullet rewritten with the new
+  thresholds + the activationPerf cross-reference.
+- **`.github/workflows/vscode.yml`** — CI step comment updated to
+  match.
+
+The activation perf test continues to assert real behaviour; the
+bundle warning now fires at 3 MB so an unexpected gain still surfaces
+in PR review.
+
+#### Second first-install activation failure — ESM-of-CJS `Dynamic require`
+
+Bundling `proper-lockfile` (per the previous fix) unblocked the
+`Cannot find package` error but exposed a second one:
+
+```
+Activating extension 'apicircle.apicircle-vscode' failed:
+Dynamic require of "path" is not supported.
+```
+
+Root cause: `tsup` outputs ESM (`extension.mjs`, per Phase 12-3), but
+the CJS deps we bundle via `noExternal` — `proper-lockfile`, parts of
+`@modelcontextprotocol/sdk`, `@hono/node-server`, etc. — internally
+call `require('path')` / `require('fs')`. esbuild rewrites those calls
+to a stub that throws **at runtime** because ESM modules don't have a
+`require` in scope. The first time the stub fires (inside
+`proper-lockfile`'s lock-acquire path during workspace discovery),
+activation dies.
+
+- **Added a banner to `tsup.config.ts`** that imports `createRequire`
+  from `node:module` and binds a real `require` into module scope:
+  ```ts
+  banner: {
+    js: "import { createRequire as __apicircleCreateRequire } from 'node:module'; const require = __apicircleCreateRequire(import.meta.url);";
+  }
+  ```
+  Standard ESM-of-CJS interop shim — adds ~130 bytes to the bundle.
+- **Added a `bundleSize.test.ts` assertion that pins the banner.** Reads
+  the first 300 bytes of `extension.mjs` and asserts it contains
+  `createRequire`, `node:module`, and `import.meta.url`. If someone
+  removes the banner in a future tsup config refactor, the test
+  flips red instead of waiting for the next user to file a "extension
+  won't activate" report.
+- Bundle: **2.21 MB → 2.21 MB** (banner is 130 bytes, well below
+  rounding).
+
+#### Third first-install activation failure — undeclared MCP provider
+
+Bundling + the ESM banner unblocked the previous two errors but
+exposed a third:
+
+```
+Activating extension 'apicircle.apicircle-vscode' failed:
+MCP configuration providers must be registered in the
+contributes.mcpServerDefinitionProviders array within your
+package.json, but "apicircle-embedded" was not.
+```
+
+Root cause: VS Code 1.94+ tightened the contract — every id passed to
+`vscode.lm.registerMcpServerDefinitionProvider("<id>", ...)` must
+also appear in `package.json`'s
+`contributes.mcpServerDefinitionProviders`. Phase 10 wired the
+runtime call for `"apicircle-embedded"` but never added the manifest
+entry. The runtime probe in
+[`host/proposedMcpProviderRegistration.ts`](apps/vscode/src/host/proposedMcpProviderRegistration.ts)
+called the API unconditionally (because the embedded host is opt-in
+but the _provider_ registration happens at activation so Copilot Chat
+can list the server), the call threw, and the throw escaped
+`activate()`.
+
+- **Added the manifest contribution.** `package.json` →
+  `contributes.mcpServerDefinitionProviders` now declares
+  `{ id: "apicircle-embedded", label: "APICircle (embedded)" }`.
+- **Wrapped the lm registration call in try/catch.** Defense-in-depth
+  — a future engine bump that tightens validation further (schema
+  checks on the definition shape, e.g.) shouldn't take activation
+  down. The catch falls through to the same `return null` path the
+  "API not present" branch already uses, so behaviour matches the
+  no-op case existing tests cover.
+- **Added a manifestRegression assertion.** Scans `apps/vscode/src/`
+  for every `registerMcpServerDefinitionProvider('<id>', ...)` call
+  and asserts each id appears in
+  `contributes.mcpServerDefinitionProviders`. Adding another provider
+  call in the future without the manifest entry will now turn the
+  suite red.
+
+Bundle unchanged at 2.21 MB.
+
 ### VS Code extension Phase 12 — Bundle externalize + E2E coverage closeout
 
 Phase 12 addresses the **3 indefinite items** carried over from Phase 11
@@ -63,6 +1357,51 @@ and **closes the E2E coverage gap** for phases 2 + 8 + 9 + 10 + 11.
   Marketplace + Open VSX publish plan including the pre-publish
   readiness audit (icon, LICENSE, README), publisher account setup,
   GitHub Actions release workflow, and versioning convention.
+
+### VS Code extension publish-prep — name rename + bundle revert
+
+Two fixes landed during publish-pipeline validation:
+
+- **Workspace package renamed `@apicircle/vscode` → `apicircle-vscode`**.
+  `vsce` rejects scoped npm names for the extension manifest's `name`
+  field (the marketplace extension id is `publisher.name`, which
+  becomes `apicircle.apicircle-vscode`). Touched 13 files: CI workflow,
+  bundle-size script, two E2E specs, both READMEs, docs, and the
+  package itself. All `pnpm --filter @apicircle/vscode <cmd>`
+  invocations are now `pnpm --filter apicircle-vscode <cmd>`.
+
+- **Re-bundled the externalized SDK + Hono deps.** P12-1 had
+  externalized `@modelcontextprotocol/sdk`, `@hono/node-server`, and
+  `hono` to drop the bundle to 1.69 MB, packaging them into the .vsix's
+  `node_modules` at install time. The pnpm `workspace:*` protocol
+  confuses `vsce`'s `npm list --production` dep walker, so the runtime
+  resolver path turned out to be unreliable in practice. Reverting to
+  fully bundled (`noExternal`) restores the simple `vsce package
+--no-dependencies` workflow — every runtime dep is in
+  `dist/extension.mjs`, no node_modules traversal needed. Bundle
+  returns to 2.16 MB; budget bumped back to soft 2.3 MB / hard 2.5 MB.
+  Future possibility: `pnpm deploy --prod` could produce a
+  vsce-compatible deployment dir for externalization to work — tracked
+  as an indefinite optimization but not load-bearing.
+
+- **Verified .vsix packaging** locally: `pnpm exec vsce package
+--no-dependencies` produces `apicircle-vscode-0.1.0.vsix` (1.3 MB
+  compressed / 2.16 MB extension.mjs) under
+  `apps/vscode/`. Ready to side-load via `code --install-extension`.
+
+- **Pre-publish gaps 0.1 + 0.2 closed.**
+  - `apps/vscode/media/icon-marketplace.png` — 128×128 RGBA PNG
+    (12.81 KB) reused from `apps/desktop/build/icons/128.png` (same
+    favicon-derived source the desktop app uses). Wired into
+    `apps/vscode/package.json` as `"icon": "media/icon-marketplace.png"`
+    - `"galleryBanner": { "color": "#1f1b2e", "theme": "dark" }`.
+  - `apps/vscode/LICENSE` — copied from the repo-root `LICENSE` (the
+    custom source-available license, v1.0). `vsce` packages it as
+    `LICENSE.txt` inside the .vsix.
+  - Final .vsix shape: **16 files, 1.29 MB compressed**. Includes
+    LICENSE.txt + icon-marketplace.png + extension.mjs + schemas +
+    readme. Ready for `vsce publish` once a publisher account + PAT
+    exist (only remaining external prerequisite).
 
 #### E2E coverage closeout
 

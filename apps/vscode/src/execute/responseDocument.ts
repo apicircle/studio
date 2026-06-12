@@ -1,6 +1,7 @@
 import * as YAML from 'yaml';
 import type { ExecutionResult } from '@apicircle/core';
 import type { AssertionResult } from '@apicircle/core';
+import type { Request as ApiRequest } from '@apicircle/shared';
 
 // =============================================================================
 // Response document builder — formats an ExecutionResult (plus optional
@@ -106,4 +107,99 @@ function formatSections(name: string, sections: Array<{ title: string; content: 
     out += '\n\n';
   }
   return out.trimEnd() + '\n';
+}
+
+/**
+ * Placeholder content for the response tab while the request is in flight.
+ * The send command opens this tab beside the request editor the instant the
+ * user clicks ▶ Send so the click has immediate visual confirmation, then
+ * swaps in the real response (or a cancel / error notice) when the executor
+ * resolves.
+ */
+export function formatPendingResponseDocument(opts: {
+  requestName: string;
+  request: ApiRequest;
+  startedAt: string;
+}): string {
+  const summary = {
+    request: opts.requestName,
+    status: 'Sending…',
+    method: opts.request.method,
+    url: opts.request.url,
+    startedAt: opts.startedAt,
+  };
+  const sections = [
+    {
+      title: 'summary',
+      content: YAML.stringify(summary, { lineWidth: 0 }).trimEnd(),
+    },
+    {
+      title: 'body',
+      content:
+        '# The response will appear here when the send completes.\n' +
+        '# Click ✖ Cancel on the request CodeLens or press Esc in the request\n' +
+        '# editor to abort the send.',
+    },
+  ];
+  return formatSections(opts.requestName, sections);
+}
+
+/**
+ * Replacement content for the response tab when the user cancels mid-flight.
+ * Shape mirrors the success and pending documents so the swap is jarring-free.
+ */
+export function formatCancelledResponseDocument(opts: {
+  requestName: string;
+  request: ApiRequest;
+  startedAt: string;
+  durationMs: number;
+}): string {
+  const summary = {
+    request: opts.requestName,
+    status: 'Cancelled',
+    method: opts.request.method,
+    url: opts.request.url,
+    startedAt: opts.startedAt,
+    durationMs: opts.durationMs,
+  };
+  const sections = [
+    { title: 'summary', content: YAML.stringify(summary, { lineWidth: 0 }).trimEnd() },
+    {
+      title: 'body',
+      content: '# The send was aborted before a response was received.',
+    },
+  ];
+  return formatSections(opts.requestName, sections);
+}
+
+/**
+ * Replacement content for the response tab when the executor throws before
+ * a response landed (network error, timeout, unreachable host, etc.).
+ */
+export function formatFailedResponseDocument(opts: {
+  requestName: string;
+  request: ApiRequest;
+  startedAt: string;
+  durationMs: number;
+  error: string;
+}): string {
+  const summary = {
+    request: opts.requestName,
+    status: 'Failed',
+    method: opts.request.method,
+    url: opts.request.url,
+    startedAt: opts.startedAt,
+    durationMs: opts.durationMs,
+    error: opts.error,
+  };
+  const sections = [
+    { title: 'summary', content: YAML.stringify(summary, { lineWidth: 0 }).trimEnd() },
+    {
+      title: 'body',
+      content:
+        '# The send failed before a response was received. Check the error\n' +
+        '# field above for the underlying cause (network / DNS / TLS / timeout).',
+    },
+  ];
+  return formatSections(opts.requestName, sections);
 }

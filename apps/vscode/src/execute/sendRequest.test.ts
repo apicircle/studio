@@ -7,6 +7,8 @@ import type { Request as ApiRequest } from '@apicircle/shared';
 import type { ExecutionResult } from '@apicircle/core';
 import { VsCodeBridge } from '../host/vscodeBridge';
 import { AbortRegistry } from './abortRegistry';
+import { InFlightSendTracker } from './inFlightTracker';
+import { ApicircleFsProvider } from '../fs/apicircleFsProvider';
 import { sendRequestCommand } from './sendRequest';
 
 function makeMockContext(globalStoragePath: string) {
@@ -279,6 +281,175 @@ describe('sendRequestCommand', () => {
       openResponse: vi.fn(),
     });
     expect(window.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining('boom'));
+  });
+
+  describe('eager response tab', () => {
+    it('stashes a "Sending…" placeholder in the FS provider before execute runs', async () => {
+      const req = makeRequest('r1');
+      activate([req]);
+      const fsProvider = new ApicircleFsProvider(bridge);
+      let placeholderSeen: string | undefined;
+      const execute = vi.fn().mockImplementationOnce(async () => {
+        // Snapshot what's in the response store the moment execute starts —
+        // this is the content the pre-opened tab is showing right now.
+        const stored = Array.from(
+          (fsProvider as unknown as { responseStore: Map<string, string> }).responseStore.entries(),
+        );
+        placeholderSeen = stored[0]?.[1];
+        return makeResult({ body: '{"final":true}' });
+      });
+      (
+        window.showQuickPick as { mockResolvedValueOnce: (v: unknown) => unknown }
+      ).mockResolvedValueOnce({ label: 'x', request: req });
+
+      await sendRequestCommand({
+        bridge,
+        abortRegistry: registry,
+        fsProvider,
+        execute: execute as never,
+      });
+      expect(placeholderSeen).toBeDefined();
+      expect(placeholderSeen).toContain('Sending…');
+      // After completion the store should hold the real response.
+      const finalStore = (fsProvider as unknown as { responseStore: Map<string, string> })
+        .responseStore;
+      const finalContent = Array.from(finalStore.values())[0];
+      expect(finalContent).toContain('{"final":true}');
+      expect(finalContent).not.toContain('Sending…');
+    });
+
+    it('shows the response tab beside the request editor with preserveFocus', async () => {
+      const req = makeRequest('r1');
+      activate([req]);
+      const fsProvider = new ApicircleFsProvider(bridge);
+      (window.showTextDocument as unknown as { mockClear: () => void }).mockClear();
+      const execute = vi.fn().mockResolvedValueOnce(makeResult());
+      (
+        window.showQuickPick as { mockResolvedValueOnce: (v: unknown) => unknown }
+      ).mockResolvedValueOnce({ label: 'x', request: req });
+
+      await sendRequestCommand({
+        bridge,
+        abortRegistry: registry,
+        fsProvider,
+        execute: execute as never,
+      });
+      // showTextDocument is called for the pre-open. The options object on
+      // call 0 should carry ViewColumn.Beside (= -2 in VS Code's enum) and
+      // preserveFocus: true so the cursor stays in the request editor.
+      const calls = (
+        window.showTextDocument as unknown as {
+          mock: { calls: unknown[][] };
+        }
+      ).mock.calls;
+      expect(calls.length).toBeGreaterThanOrEqual(1);
+      const opts = calls[0][1] as { viewColumn?: number; preserveFocus?: boolean };
+      expect(opts.preserveFocus).toBe(true);
+    });
+
+    it('replaces the placeholder with a cancel notice when the send is aborted', async () => {
+      const req = makeRequest('r1');
+      activate([req]);
+      const fsProvider = new ApicircleFsProvider(bridge);
+      const execute = vi.fn().mockImplementationOnce((_req, opts: { signal: AbortSignal }) => {
+        return new Promise((_resolve, reject) => {
+          opts.signal.addEventListener('abort', () => reject(new Error('aborted')));
+          setImmediate(() => registry.cancelAll());
+        });
+      });
+      (
+        window.showQuickPick as { mockResolvedValueOnce: (v: unknown) => unknown }
+      ).mockResolvedValueOnce({ label: 'x', request: req });
+
+      await sendRequestCommand({
+        bridge,
+        abortRegistry: registry,
+        fsProvider,
+        execute: execute as never,
+      });
+      const stored = Array.from(
+        (fsProvider as unknown as { responseStore: Map<string, string> }).responseStore.values(),
+      );
+      expect(stored).toHaveLength(1);
+      expect(stored[0]).toContain('Cancelled');
+      expect(stored[0]).not.toContain('Sending…');
+    });
+
+    it('replaces the placeholder with a failed notice when execute throws', async () => {
+      const req = makeRequest('r1');
+      activate([req]);
+      const fsProvider = new ApicircleFsProvider(bridge);
+      const execute = vi.fn().mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
+      (
+        window.showQuickPick as { mockResolvedValueOnce: (v: unknown) => unknown }
+      ).mockResolvedValueOnce({ label: 'x', request: req });
+
+      await sendRequestCommand({
+        bridge,
+        abortRegistry: registry,
+        fsProvider,
+        execute: execute as never,
+      });
+      const stored = Array.from(
+        (fsProvider as unknown as { responseStore: Map<string, string> }).responseStore.values(),
+      );
+      expect(stored).toHaveLength(1);
+      expect(stored[0]).toContain('Failed');
+      expect(stored[0]).toContain('connect ECONNREFUSED');
+      expect(stored[0]).not.toContain('Sending…');
+    });
+  });
+
+  describe('in-flight tracker', () => {
+    it('marks the request URI in flight while execute is running, then clears it', async () => {
+      const req = makeRequest('r1');
+      activate([req]);
+      const tracker = new InFlightSendTracker();
+      const requestUri = ApicircleFsProvider.requestUri(apicircleDir, req, {}, { [req.id]: req });
+      (window.activeTextEditor as unknown) = {
+        document: { uri: requestUri },
+        selection: undefined,
+      };
+      let snapshotDuringExecute: ReturnType<InFlightSendTracker['snapshot']> | null = null;
+      const execute = vi.fn().mockImplementationOnce(async () => {
+        snapshotDuringExecute = tracker.snapshot();
+        return makeResult();
+      });
+      await sendRequestCommand({
+        bridge,
+        abortRegistry: registry,
+        tracker,
+        execute: execute as never,
+        openResponse: vi.fn(),
+      });
+      expect(snapshotDuringExecute).not.toBeNull();
+      // Snapshot taken inside execute() should have the URI registered.
+      const inflight = Array.from(snapshotDuringExecute!.values());
+      expect(inflight).toHaveLength(1);
+      expect(inflight[0].requestName).toBe('Test request');
+      // After completion, the tracker should be empty.
+      expect(tracker.hasAny()).toBe(false);
+    });
+
+    it('clears the tracker entry even when execute throws', async () => {
+      const req = makeRequest('r1');
+      activate([req]);
+      const tracker = new InFlightSendTracker();
+      const requestUri = ApicircleFsProvider.requestUri(apicircleDir, req, {}, { [req.id]: req });
+      (window.activeTextEditor as unknown) = {
+        document: { uri: requestUri },
+        selection: undefined,
+      };
+      const execute = vi.fn().mockRejectedValueOnce(new Error('boom'));
+      await sendRequestCommand({
+        bridge,
+        abortRegistry: registry,
+        tracker,
+        execute: execute as never,
+        openResponse: vi.fn(),
+      });
+      expect(tracker.hasAny()).toBe(false);
+    });
   });
 
   describe('wired settings', () => {

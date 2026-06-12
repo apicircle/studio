@@ -2,12 +2,18 @@ import type {
   Assertion,
   AssetGitRef,
   Environment,
+  EnvironmentVariableOverride,
   EnvPriorityRef,
   ExecutionPlan,
   Folder,
   GlobalFileAsset,
+  LinkedSnapshot,
+  LinkedWorkspace,
   MockServer,
   Request as ApiRequest,
+  RequestOverride,
+  ReleaseHistory,
+  ReleaseVersion,
   SecretCryptoMeta,
   SecretKeyMeta,
   WorkspaceLocal,
@@ -82,6 +88,68 @@ export type WorkspacePatch =
   // ----- Mock servers (synced.mockServers) ----------------------------------
   | { kind: 'mock.upsert'; mock: MockServer }
   | { kind: 'mock.delete'; id: string }
+  // ----- Releases (synced.releases.self) ------------------------------------
+  // The workspace-self release ledger that linked consumers pin to.
+  // `publish` carries a fully-built `ReleaseVersion`: the SHA-256
+  // `workspaceSnapshot` is computed asynchronously by the caller via
+  // `buildReleaseEntry`, so the reducer (and `applyMutation`) stay pure +
+  // synchronous. `deprecate` (soft) / `yank` (hard) flip the signal flags on
+  // an existing version. Unlike most reducers these THROW on a bad input
+  // (invalid semver, duplicate, unknown version) rather than no-op silently —
+  // publishing is a deliberate single action, never batched, so surfacing the
+  // error to the command / MCP caller is the right contract.
+  | { kind: 'release.publish'; entry: ReleaseVersion }
+  | { kind: 'release.deprecate'; version: string }
+  | { kind: 'release.yank'; version: string }
+  // ----- Linked workspaces (synced.linkedWorkspaces + releases.perLink +
+  //       local.linkedCollections) ------------------------------------------
+  // A workspace this one consumes (private session-bound or public
+  // marketplace), one level deep. `upsert` carries the full LinkedWorkspace
+  // record plus the OPTIONAL cached release ledger (→ synced.releases.perLink)
+  // and OPTIONAL collections/environments snapshot (→ local.linkedCollections).
+  // The network fetch that produces the ledger + snapshot happens in the
+  // command/host BEFORE this (pure, sync) patch — same split as
+  // `release.publish` + `buildReleaseEntry`. Config-only edits (pin version,
+  // scope, session mode, required keys, marketplace metadata) upsert the link
+  // alone. `remove` cascades: it drops the link, its cached ledger, every
+  // linkedOverride keyed `${id}:…`, the local snapshot, and any per-link
+  // dedicated session entry.
+  | {
+      kind: 'linkedWorkspace.upsert';
+      link: LinkedWorkspace;
+      ledger?: ReleaseHistory;
+      snapshot?: LinkedSnapshot;
+    }
+  | { kind: 'linkedWorkspace.remove'; id: string }
+  // Atomic result of a three-way update (the consumer bumps to a newer source
+  // version). Carries the freshly-resolved snapshot + ledger + the surviving
+  // overrides for the link. Replaces this link's slice of every affected map;
+  // other links are untouched. Produced by `applyLinkedUpdate` in the host.
+  | {
+      kind: 'linkedWorkspace.applyUpdate';
+      id: string;
+      pinnedVersion: string | null;
+      snapshot: LinkedSnapshot;
+      ledger: ReleaseHistory;
+      requestOverrides: RequestOverride[];
+      envVarOverrides: EnvironmentVariableOverride[];
+    }
+  // ----- Linked-content overrides (synced.linkedOverrides) -------------------
+  // Consumer-side edits to a linked workspace's requests / env-vars, stored as
+  // field-level deltas keyed `${linkedWorkspaceId}:${itemId}` (requests) and
+  // `${linkedWorkspaceId}:${envName}:${varKey}` (env-vars). `set*` upserts one
+  // delta; `remove*` drops one (reset to source); `clearForLink` discards all
+  // of a link's mods at once.
+  | { kind: 'linkedOverride.setRequest'; override: RequestOverride }
+  | { kind: 'linkedOverride.removeRequest'; linkedWorkspaceId: string; itemId: string }
+  | { kind: 'linkedOverride.setEnvVar'; override: EnvironmentVariableOverride }
+  | {
+      kind: 'linkedOverride.removeEnvVar';
+      linkedWorkspaceId: string;
+      envName: string;
+      varKey: string;
+    }
+  | { kind: 'linkedOverride.clearForLink'; linkedWorkspaceId: string }
   // ----- Global file assets (synced.globalAssets.files) ---------------------
   // Asset provenance state machine. `upsertFile` and `removeFile` are the
   // CRUD primitives; the four `mark*` / `cleanup*` / `invalidateRef` kinds

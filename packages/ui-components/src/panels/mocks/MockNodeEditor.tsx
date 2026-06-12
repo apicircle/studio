@@ -13,6 +13,7 @@ import {
 import {
   generateId,
   makeDefaultMockResponse,
+  MAX_RESPONSE_RULE_CONDITIONS,
   type MockConditionClause,
   type MockConditionOp,
   type MockConditionScope,
@@ -25,6 +26,7 @@ import {
 } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { MockResponseEditor } from './MockResponseEditor';
+import { MockRequestSchemaEditor } from './MockRequestSchemaEditor';
 import { MockRulePicker } from './MockRulePicker';
 import { Select } from '../../primitives/Select';
 
@@ -154,6 +156,7 @@ function EndpointDetailsEditor({
           className="mt-1 w-full resize-y rounded-sm border border-border bg-card px-2 py-1.5 text-xs text-text-primary focus:border-accent focus:outline-none"
         />
       </div>
+      <MockRequestSchemaEditor endpoint={endpoint} setEndpoint={setEndpoint} />
     </div>
   );
 }
@@ -710,13 +713,16 @@ function ResponseRuleEditor({
     update({ when: next });
   };
   const removeClause = (cIdx: number) => update({ when: rule.when.filter((_, i) => i !== cIdx) });
-  const addClause = () =>
+  const atClauseCap = rule.when.length >= MAX_RESPONSE_RULE_CONDITIONS;
+  const addClause = () => {
+    if (atClauseCap) return;
     update({
       when: [
         ...rule.when,
         { id: generateId(), scope: 'query', target: '', op: 'equals', value: '' },
       ],
     });
+  };
   const removeRule = () => {
     setEndpoint({
       responseRules: endpoint.responseRules.filter((r) => r.id !== rule.id),
@@ -833,14 +839,16 @@ function ResponseRuleEditor({
             );
           })}
         </ul>
-        <button
-          type="button"
-          onClick={addClause}
-          className="mt-1.5 inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary"
-        >
-          <Plus size={9} aria-hidden="true" />
-          Add clause
-        </button>
+        {!atClauseCap && (
+          <button
+            type="button"
+            onClick={addClause}
+            className="mt-1.5 inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary"
+          >
+            <Plus size={9} aria-hidden="true" />
+            Add clause
+          </button>
+        )}
       </div>
 
       <div className="rounded-sm border border-border-subtle bg-card/40 p-3">

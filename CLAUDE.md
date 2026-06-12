@@ -18,11 +18,12 @@ but with:
   source of truth the UI uses, no IPC required.
 - **Local mock servers**: describe an API in OpenAPI / Postman / Insomnia and
   run a Hono-backed mock on `localhost`.
-- An **MCP server**: exposes the workspace as a 78-tool catalog any
+- An **MCP server**: exposes the workspace as a 93-tool catalog any
   Model Context Protocol client (Claude Desktop, ChatGPT, Cursor, Copilot,
   Continue, Cline, Zed, Windsurf) can drive.
 - A **CLI** for headless use
-  (`apicircle mock | mcp | import | export | run | workspaces`).
+  (`apicircle mock | mocks | mcp | import | export | run | workspaces | linked |
+release`).
 
 The web build is continuously deployed to GitHub Pages from `main`
 (custom domain via a checked-in `CNAME`).
@@ -57,13 +58,140 @@ studio/
 │   ├── web/              Vite + React 18 shell — the browser build (dev port 5174)
 │   ├── desktop/          Electron shell — hosts the web UI, OS-keychain secrets,
 │   │                       mock + MCP IPC bridges (src/main/*)
-│   └── vscode/           VS Code extension — Activity Bar icon, 8 sidebar
+│   └── vscode/           VS Code extension ("API Circle Studio" —
+│                           displayName, viewsContainers.title, configuration.title
+│                           all now use the spaced brand) — Activity Bar icon
+│                           (monochrome brand silhouette), 8 sidebar
 │                           TreeViews (Editor, Environment, Execution, Mock,
-│                           History, Snapshots, MCP, Marketplace), `apicircle:`
+│                           History, Snapshots, MCP, Link Workspaces — the
+│                           last replaced the dormant Marketplace stub and
+│                           hosts TWO groups: (1) the workspace-self
+│                           **Releases** group — publish / deprecate /
+│                           withdraw the versions linked consumers pin to,
+│                           via a read-only `releases/releases.yaml` CodeLens
+│                           surface (`releaseActions.ts` +
+│                           `releasesCodeLens.ts`, routed through the
+│                           `release.*` patches) + `▶ Tag release on GitHub`
+│                           / `Edit repo topics` (`repoActions.ts`, owner/name
+│                           derived from the folder's `origin` remote, auth via
+│                           VS Code's built-in GitHub session); and (2) the
+│                           **Linked workspaces** group — link a private repo
+│                           or a marketplace result, then edit every link
+│                           field via `<name>.link.yaml` (◆ pin version /
+│                           scope / session mode / required keys + ⟳ Refresh
+│                           ledger · ⤓ Review update · 📓 Changelog · ⊗ Unlink),
+│                           a three-way `previewLinkedUpdate` / `applyLinkedUpdate`
+│                           review (streamlined bulk accept-source / keep-mine
+│                           — no webview), all in `linkActions.ts` +
+│                           `linkCodeLens.ts` + `linkYaml.ts`, routed through
+│                           the `linkedWorkspace.*` patches; GitHub networking
+│                           uses `@apicircle/git`'s `GitHubClient` + the pure
+│                           `parseLinkedWorkspaceJson` / `buildLinkedSnapshot`
+│                           core helpers)),
+│                           `apicircle:`
 │                           virtual FS for requests/envs/plans/mocks/responses/
-│                           history runs, language services (CodeLens +
-│                           Completion + Hover for request/env/plan/mock YAMLs),
-│                           pre-send diagnostics, in-process mock-server
+│                           history runs — URI shape is
+│                           `apicircle://<ws>/<kind>/<folderSlug…>/<nameSlug>.<ext>?id=<id>`
+│                           so tab labels are the human-readable name, the
+│                           folder breadcrumb surfaces in the tab tooltip,
+│                           and identity (`?id=`) survives rename + folder
+│                           moves; siblings that slugify identically are
+│                           disambiguated with `~<shortId>`; saving a
+│                           renamed entity reopens the new URI in the
+│                           same column and closes the stale tab.
+│                           Language services — request YAML CodeLens
+│                           row is ▶ Send · ✚ Add section… · ⤵ New from template…
+│                           by default, swaps to ⏳ Sending… · ✖ Cancel
+│                           while a send is in flight (driven by
+│                           `InFlightSendTracker` + `apicircle.cancelOneSend`;
+│                           the send itself runs inside
+│                           `withProgress({ location: Window })` so the
+│                           status-bar spinner shows for palette /
+│                           Ctrl+Enter sends too);
+│                           `apicircle.newRequestFromTemplate` ships six starter
+│                           shapes (Simple GET, JSON POST, Bearer GET, Paginated
+│                           GET, GraphQL query, REST CRUD folder); env/plan/mock
+│                           YAMLs keep Completion + Hover,
+│                           pre-send diagnostics; per-endpoint
+│                           `*.endpoint.yaml` mock-validation rules author
+│                           in-editor — `🛡 Add validation rule` inserts a
+│                           prefilled rule (no prompts), then kind-aware
+│                           `◆ Kind · ◆ Target · ◆ Value` field CodeLenses
+│                           reshape the rule and pick from the endpoint's
+│                           declared params + the curated `HTTP_HEADERS_MAP`
+│                           catalogue (shared logic in
+│                           `apps/vscode/src/lang/mockValidationKinds.ts`);
+│                           the `*.endpoint.yaml` editor also carries
+│                           line-addressed `◆` field-editor lenses on every
+│                           editable scalar — method, every `status:`, header
+│                           key/value (header-aware), body `type:` (which also
+│                           reconciles the config's Content-Type), response-rule
+│                           when-clause scope/op/target/value (+ `✚ Add
+│                           condition`), and each response multiplier's source
+│                           kind/key + `◆ Path` + count/min/max/name — all in
+│                           `apps/vscode/src/commands/mockFieldEdits.ts`
+│                           (indent always derived from the document; covered by
+│                           `mockFieldEdits.integration.test.ts`); the `*.mock.yaml`
+│                           summary gives each endpoint an `↗ Open endpoint`
+│                           lens. Note: `MockResponseConfig.multipliers` is an
+│                           array soft-capped at `MAX_RESPONSE_MULTIPLIERS`
+│                           (=1 today) by the authoring surfaces; the engine
+│                           applies all entries, so bumping the constant is the
+│                           only change to allow N (no migration).
+│                           `MockResponseRule.when` is likewise soft-capped at
+│                           `MAX_RESPONSE_RULE_CONDITIONS` (=1) by the lenses +
+│                           the desktop/web rule editor (engine AND-combines all).
+│                           A rule with ZERO `when` clauses is rejected by the
+│                           endpoint parser (`parseEndpointFromYaml`) + the MCP
+│                           `set_response_rules` tools (zod `.min(1)`) as a
+│                           save-blocking error — the runtime engine skips a
+│                           clause-less rule (`evaluateResponseRules`: "a
+│                           clause-less rule never fires"), so it's dead.
+│                           Authoring overhaul (latest): `↗ Open endpoint` +
+│                           lifecycle lenses now read the mock id from the `?id=`
+│                           query (path basename is a name slug); response-rule
+│                           clause `◆ Value` offers the header value catalogue
+│                           (`setMockClauseValueField`) and hides for present/
+│                           absent ops; `✚ Add header` anchors on the rule's
+│                           `response.headers:` block; per-header `✓ Enable /
+│                           ⊘ Disable` (`toggleMockHeaderEnabled`); `requestSchema`
+│                           authoring lenses — each `✚ Path/Query/Header/Cookie
+│                           param` anchors ON its own subsection line
+│                           (`pathParams:` / … ) and `✚ Body example` on `body:`;
+│                           `◆ Name/Type/Example/Description` field editors (the
+│                           boolean `required:` row has NO lens — edited directly
+│                           in YAML),
+│                           `apps/vscode/src/commands/mockRequestSchemaEdits.ts`);
+│                           `⟳ Format JSON` (`apps/vscode/src/commands/formatJson.ts`,
+│                           now any JSON-bearing key — body content, graphql
+│                           `variables`, auth `payload`/`jwtHeaders` — object/
+│                           array-only guard); collection-request `◆` field
+│                           editors (`apps/vscode/src/commands/requestFieldEdits.ts`
+│                           — method/url, header/query/cookie/path-param,
+│                           assertion kind/op, extraction source; auth scalar
+│                           fields have NO field editor — edited directly in YAML,
+│                           only `⟳ Format JSON` on `payload`/`jwtHeaders`
+│                           survives); form-data `✚ Add text/file row` anchors on
+│                           the `formRows:` line (switching is per-row only).
+│                           `APICircle: New Request` is a single folder pick
+│                           (existing / top level / new folder inline) + direct
+│                           GET-scaffold file creation — no step-wise wizard.
+│                           On activation the extension also adopts the workspace
+│                           backing any already-open `apicircle://` editor (or raw
+│                           `.apicircle/workspace.json`) as active. An `apicircle`
+│                           DiagnosticCollection
+│                           (`apps/vscode/src/lang/diagnostics.ts`) blocks saving a
+│                           renamed/mistyped key — top-level OR nested entry —
+│                           or wrong-typed section across endpoint/mock/request
+│                           YAML (structural guards in
+│                           `apps/vscode/src/fs/yamlStructure.ts`). The mock
+│                           endpoint's `requestSchema` is now editable on ALL
+│                           surfaces — VS Code YAML, the Web/Desktop endpoint
+│                           editor (Endpoint node → `MockRequestSchemaEditor.tsx`),
+│                           and via MCP (`mock.set_request_schema` /
+│                           `prompt.set_endpoint_request_schema`) — closing the
+│                           cross-surface gap.
+│                           in-process mock-server
 │                           lifecycle (Phase 3 — wraps `InProcessMockController`),
 │                           **secret vault (Phase 4) — passphrase unlock,
 │                           in-memory AES-GCM key, auto-lock by inactivity,
@@ -108,7 +236,7 @@ studio/
 │   ├── git/               GitHub REST client + typed error taxonomy
 │   ├── ui-components/      ALL React UI + the Zustand store + IndexedDB persistence
 │   ├── mock-server-core/   Hono mock-server engine + OpenAPI/Postman/Insomnia parsers
-│   ├── mcp-server/         stdio MCP host + 78-tool catalog + workspace providers
+│   ├── mcp-server/         stdio MCP host + 93-tool catalog + workspace providers
 │   └── cli/                `apicircle` binary — mock / mcp / import / export / run / workspaces
 ├── examples/              Demo workspaces + a standalone mock-server example
 ├── docs/                  Product + architecture + QA docs (see §9)
@@ -148,8 +276,16 @@ A workspace is split into two JSON documents:
 mutates a workspace. The UI store, MCP tool handlers, and CLI commands all
 funnel through it. `WorkspacePatch` is a discriminated union over
 `request.* | folder.* | folder.import_apicircle | environment.* |
-secretKey.upsert | assertion.* | mock.* | plan.*`. Adding an entity type =
-one union variant + one switch case + one MCP tool.
+secretKey.upsert | assertion.* | mock.* | release.* | linkedWorkspace.* |
+linkedOverride.* | plan.*`. Adding an entity type = one union variant + one
+switch case + one MCP tool. (`release.publish` carries a pre-built `ReleaseVersion` — the async
+SHA-256 snapshot is computed by `buildReleaseEntry` so the reducer stays pure;
+`release.deprecate` / `.yank` flip the soft / hard signal flags.
+`linkedWorkspace.upsert` carries the link record + the OPTIONAL cached ledger +
+collections/environments snapshot produced by the GitHub fetch in the host;
+`.remove` cascades across `releases.perLink` + `linkedOverrides` +
+`local.linkedCollections` + the per-link session; `.applyUpdate` is the atomic
+result of a three-way `previewLinkedUpdate` / `applyLinkedUpdate`.)
 
 > Note: the live UI store (`workspaceStore.ts`) also performs some direct
 > `set({ synced, local })` transitions rather than routing every change through
@@ -346,19 +482,26 @@ Desktop: `pnpm --filter @apicircle/desktop build` then `… start`.
   unused; it has accurate entry-point config for the Electron, Playwright, and
   script entry points.
 - **Don't reach for `any`** or `as unknown as X`. Fix the type.
-- **VS Code extension bundle budget contract.** `apps/vscode/dist/extension.js`
+- **VS Code extension bundle budget contract.** `apps/vscode/dist/extension.mjs`
   is gated by `scripts/check-vscode-bundle.mjs` and the matching
   `apps/vscode/test/integration/bundleSize.test.ts`. Thresholds live in
   `scripts/vscode-bundle-budget.mjs` (single source of truth):
-  **min 500 KB sanity floor / soft warn 1.8 MB / hard fail 2.0 MB**. Every
-  phase that lands code in `apps/vscode/` (or anything bundled into it via
-  the `@apicircle/*` graph) SHOULD: (1) run
-  `node scripts/check-vscode-bundle.mjs` and report the new size in the
-  CHANGELOG entry; (2) if the change crosses the soft warn, justify it and
-  either propose a counter-trim or bump the soft warn explicitly (in
-  `scripts/vscode-bundle-budget.mjs`) with rationale; (3) never bump the
-  hard fail to silence a regression. Phase 7 baseline: 1.46 MB. See
-  `docs/vscode-extension.md §14` for the full contract.
+  **min 500 KB sanity floor / soft warn 3.0 MB / hard fail 5.0 MB**
+  (raised post-1.0 for peer-extension parity — Thunder Client ~5 MB,
+  GitLens ~5–8 MB, ESLint ~6 MB). The actual UX gate is
+  `apps/vscode/test/integration/activationPerf.test.ts` (<500 ms on
+  100 requests, <1000 ms on 500 requests) — bundle size is the
+  early-warning proxy. Every phase that lands code in `apps/vscode/`
+  (or anything bundled into it via the `@apicircle/*` graph) SHOULD:
+  (1) run `node scripts/check-vscode-bundle.mjs` and report the new
+  size in the CHANGELOG entry; (2) if the change crosses the soft
+  warn, justify it and either propose a counter-trim or bump the
+  soft warn explicitly (in `scripts/vscode-bundle-budget.mjs`) with
+  rationale; (3) never bump the hard fail to silence a regression —
+  the hard fail only moves on a deliberate policy change with
+  CHANGELOG rationale. Phase 7 baseline was 1.46 MB; current is
+  ~2.44 MB. See `docs/vscode-extension.md §14` for the full
+  contract.
 
 ---
 

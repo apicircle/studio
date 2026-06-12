@@ -60,6 +60,8 @@ export {
   makeDefaultMockResponseBody,
   makeDefaultMockResponse,
   makeDefaultRequestSchema,
+  MAX_RESPONSE_MULTIPLIERS,
+  MAX_RESPONSE_RULE_CONDITIONS,
 } from './mock';
 export type {
   FontFamilyId,

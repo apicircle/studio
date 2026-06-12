@@ -10,10 +10,13 @@
 import type {
   HttpMethod,
   MockEndpoint,
+  MockParamDef,
+  MockRequestSchema,
   MockResponseBody,
   MockResponseBodyType,
   MockResponseConfig,
 } from '@apicircle/shared';
+import { generateId, makeDefaultRequestSchema } from '@apicircle/shared';
 
 export interface ParsedResponseShape {
   status: number;
@@ -33,6 +36,27 @@ export interface BuildEndpointInput {
   description?: string;
   example?: string;
   response: ParsedResponseShape;
+  /** Declared inputs extracted from the spec (path / query / header / cookie
+   *  params + body docs). Defaults to an empty schema when the source carries
+   *  no parameters. */
+  requestSchema?: MockRequestSchema;
+}
+
+/** Build a `MockParamDef` with a fresh id. Shared by the OpenAPI / Postman /
+ *  Insomnia parsers so an imported endpoint's declared params land in the
+ *  requestSchema editor (VS Code / Web / Desktop / MCP). */
+export function paramDef(
+  name: string,
+  opts?: { typeHint?: string; required?: boolean; description?: string; example?: string },
+): MockParamDef {
+  return {
+    id: generateId(),
+    name,
+    typeHint: opts?.typeHint,
+    required: opts?.required,
+    description: opts?.description,
+    example: opts?.example,
+  };
 }
 
 function bodyTypeForContentType(contentType: string | undefined): MockResponseBodyType {
@@ -80,7 +104,7 @@ export function buildMockEndpoint(input: BuildEndpointInput): MockEndpoint {
     method: input.method,
     pathPattern: input.pathPattern,
     description: input.description,
-    requestSchema: { pathParams: [], queryParams: [], headers: [], cookies: [] },
+    requestSchema: input.requestSchema ?? makeDefaultRequestSchema(),
     requestValidation: [],
     responseRules: [],
     defaultResponse: buildMockResponse(input.response),

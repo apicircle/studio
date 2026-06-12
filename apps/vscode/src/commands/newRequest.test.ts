@@ -59,6 +59,25 @@ function seedWorkspace(apicircleDir: string): void {
   );
 }
 
+interface SyncedShape {
+  collections: {
+    requests: Record<
+      string,
+      {
+        name: string;
+        method: string;
+        url: string;
+        folderId: string | null;
+        auth: { type: string };
+        headers: Array<{ key: string }>;
+        query: Array<{ key: string }>;
+        body: { type: string };
+      }
+    >;
+    folders: Record<string, { id: string; name: string; parentId: string | null }>;
+  };
+}
+
 describe('newRequestCommand', () => {
   let tmp: string;
   let bridge: VsCodeBridge;
@@ -90,95 +109,115 @@ describe('newRequestCommand', () => {
     bridge.setActive(apicircleDir);
   }
 
+  function readSynced(): SyncedShape {
+    return JSON.parse(
+      fs.readFileSync(path.join(apicircleDir, 'workspace.json'), 'utf8'),
+    ) as SyncedShape;
+  }
+
   it('warns when no workspace is active', async () => {
     await newRequestCommand({ bridge });
     expect(window.showWarningMessage).toHaveBeenCalledWith(expect.stringContaining('No active'));
   });
 
-  it('cancels gracefully if user dismisses method picker', async () => {
+  it('cancels gracefully when the folder picker is dismissed', async () => {
     activate();
     (window.showQuickPick as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
     const openCreated = vi.fn();
     await newRequestCommand({ bridge, openCreated });
     expect(openCreated).not.toHaveBeenCalled();
+    expect(Object.keys(readSynced().collections.requests)).toHaveLength(0);
   });
 
-  it('cancels gracefully if user dismisses URL input', async () => {
+  it('creates a GET request at the top level with sensible defaults (no extra prompts)', async () => {
     activate();
-    (window.showQuickPick as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ label: 'GET' });
-    (window.showInputBox as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
-    const openCreated = vi.fn();
-    await newRequestCommand({ bridge, openCreated });
-    expect(openCreated).not.toHaveBeenCalled();
-  });
-
-  it('creates a request with the picked method + URL + None auth', async () => {
-    activate();
-    const qpFn = window.showQuickPick as ReturnType<typeof vi.fn>;
-    const ipFn = window.showInputBox as ReturnType<typeof vi.fn>;
-    qpFn
-      .mockResolvedValueOnce({ label: 'POST' })
-      .mockResolvedValueOnce({ label: '(top level)', folderId: null })
-      .mockResolvedValueOnce({ label: 'None', value: 'none' });
-    ipFn
-      .mockResolvedValueOnce('https://api.example.com/users') // URL
-      .mockResolvedValueOnce('Create user'); // name
-
+    (window.showQuickPick as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      label: '(top level)',
+      folderId: null,
+    });
     const openCreated = vi.fn().mockResolvedValueOnce(undefined);
     await newRequestCommand({ bridge, openCreated });
 
     expect(openCreated).toHaveBeenCalled();
-    // Read disk to verify the request was created
-    const synced = JSON.parse(fs.readFileSync(path.join(apicircleDir, 'workspace.json'), 'utf8'));
-    const requests = Object.values(synced.collections.requests) as Array<{
-      name: string;
-      method: string;
-      url: string;
-      auth: { type: string };
-    }>;
+    // Only the folder picker was shown — no method / URL / auth / name prompts.
+    expect((window.showQuickPick as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+    expect((window.showInputBox as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(0);
+
+    const requests = Object.values(readSynced().collections.requests);
     expect(requests).toHaveLength(1);
-    expect(requests[0].name).toBe('Create user');
-    expect(requests[0].method).toBe('POST');
-    expect(requests[0].url).toBe('https://api.example.com/users');
-    expect(requests[0].auth.type).toBe('none');
+    const req = requests[0];
+    expect(req.name).toBe('New Request');
+    expect(req.method).toBe('GET');
+    expect(req.folderId).toBeNull();
+    expect(req.auth.type).toBe('none');
+    // GET scaffold: Accept header + sample page query + no body.
+    expect(req.headers[0].key).toBe('Accept');
+    expect(req.query[0].key).toBe('page');
+    expect(req.body.type).toBe('none');
   });
 
-  it('handles bearer auth credentials prompt', async () => {
+  it('creates a new folder inline and parents the request to it', async () => {
     activate();
-    const qpFn = window.showQuickPick as ReturnType<typeof vi.fn>;
-    const ipFn = window.showInputBox as ReturnType<typeof vi.fn>;
-    qpFn
-      .mockResolvedValueOnce({ label: 'GET' })
-      .mockResolvedValueOnce({ label: '(top level)', folderId: null })
-      .mockResolvedValueOnce({ label: 'Bearer token', value: 'bearer' });
-    ipFn
-      .mockResolvedValueOnce('https://api.example.com/me')
-      .mockResolvedValueOnce('abc-123-token') // bearer token
-      .mockResolvedValueOnce('Get me');
-
+    (window.showQuickPick as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      label: 'New folder…',
+      folderId: '__new_folder__',
+    });
+    (window.showInputBox as ReturnType<typeof vi.fn>).mockResolvedValueOnce('Smoke tests');
     await newRequestCommand({ bridge, openCreated: vi.fn() });
-    const synced = JSON.parse(fs.readFileSync(path.join(apicircleDir, 'workspace.json'), 'utf8'));
-    const requests = Object.values(synced.collections.requests) as Array<{
-      auth: { type: string; token: string };
-    }>;
-    expect(requests[0].auth.type).toBe('bearer');
-    expect(requests[0].auth.token).toBe('abc-123-token');
+
+    const synced = readSynced();
+    const folders = Object.values(synced.collections.folders);
+    expect(folders).toHaveLength(1);
+    expect(folders[0].name).toBe('Smoke tests');
+    expect(folders[0].parentId).toBeNull();
+    const req = Object.values(synced.collections.requests)[0];
+    expect(req.folderId).toBe(folders[0].id);
   });
 
-  it('rejects empty URL via validateInput', async () => {
+  it('cancels when the new-folder name prompt is dismissed', async () => {
     activate();
-    const qpFn = window.showQuickPick as ReturnType<typeof vi.fn>;
-    qpFn.mockResolvedValueOnce({ label: 'GET' });
-    let capturedValidate: ((s: string) => string | null) | undefined;
-    (window.showInputBox as ReturnType<typeof vi.fn>).mockImplementationOnce(
-      async (opts: { validateInput?: (s: string) => string | null }) => {
-        capturedValidate = opts.validateInput;
-        return undefined;
-      },
+    (window.showQuickPick as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      label: 'New folder…',
+      folderId: '__new_folder__',
+    });
+    (window.showInputBox as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
+    const openCreated = vi.fn();
+    await newRequestCommand({ bridge, openCreated });
+    expect(openCreated).not.toHaveBeenCalled();
+    const synced = readSynced();
+    expect(Object.keys(synced.collections.folders)).toHaveLength(0);
+    expect(Object.keys(synced.collections.requests)).toHaveLength(0);
+  });
+
+  it('skips the folder picker when a folder id is supplied via context', async () => {
+    activate();
+    // Pre-create a folder by running once through the inline-create path.
+    (window.showQuickPick as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      label: 'New folder…',
+      folderId: '__new_folder__',
+    });
+    (window.showInputBox as ReturnType<typeof vi.fn>).mockResolvedValueOnce('Existing');
+    await newRequestCommand({ bridge, openCreated: vi.fn() });
+    const folderId = Object.values(readSynced().collections.folders)[0].id;
+
+    // Now invoke with the folder context — no picker should be shown.
+    (window.showQuickPick as ReturnType<typeof vi.fn>).mockReset();
+    const openCreated = vi.fn().mockResolvedValueOnce(undefined);
+    await newRequestCommand({ bridge, openCreated }, { folderId });
+    expect((window.showQuickPick as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(0);
+    expect(openCreated).toHaveBeenCalled();
+
+    const reqs = Object.values(readSynced().collections.requests);
+    expect(reqs).toHaveLength(2);
+    expect(reqs.every((r) => r.folderId === folderId)).toBe(true);
+  });
+
+  it('warns and aborts when the supplied context folder no longer exists', async () => {
+    activate();
+    await newRequestCommand({ bridge, openCreated: vi.fn() }, { folderId: 'ghost' });
+    expect(window.showWarningMessage).toHaveBeenCalledWith(
+      expect.stringContaining('no longer exists'),
     );
-
-    await newRequestCommand({ bridge, openCreated: vi.fn() });
-    expect(capturedValidate?.('')).toBe('URL is required');
-    expect(capturedValidate?.('https://x.com')).toBeNull();
+    expect(Object.keys(readSynced().collections.requests)).toHaveLength(0);
   });
 });

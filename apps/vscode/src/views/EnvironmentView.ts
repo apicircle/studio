@@ -116,6 +116,7 @@ export class EnvironmentView extends BaseTreeView<EnvironmentNode> {
       );
       item.iconPath = new vscode.ThemeIcon('symbol-variable');
       item.contextValue = 'global-var';
+      item.tooltip = `${element.key} = ${value ?? '(deleted)'}\n\nExtracted from a response via context extraction. Local-only, not pushed to Git.`;
       return item;
     }
 
@@ -127,8 +128,19 @@ export class EnvironmentView extends BaseTreeView<EnvironmentNode> {
         vscode.TreeItemCollapsibleState.Collapsed,
       );
       item.iconPath = new vscode.ThemeIcon(isActive ? 'check' : 'symbol-namespace');
-      item.description = isActive ? 'active' : undefined;
+      const varCount = env?.variables.length ?? 0;
+      const encryptedCount = env?.variables.filter((v) => v.encrypted).length ?? 0;
+      item.description = isActive
+        ? `active · ${varCount} var${varCount === 1 ? '' : 's'}`
+        : `${varCount} var${varCount === 1 ? '' : 's'}`;
       item.contextValue = isActive ? 'env-active' : 'env';
+      if (env) {
+        item.tooltip = new vscode.MarkdownString(
+          `**${env.name}**${isActive ? ' · _active_' : ''}\n\n${varCount} variable${varCount === 1 ? '' : 's'}` +
+            (encryptedCount > 0 ? ` (${encryptedCount} encrypted)` : '') +
+            `\n\n_Click to open the env YAML._`,
+        );
+      }
       item.command = {
         command: 'vscode.open',
         title: 'Open',

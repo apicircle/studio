@@ -1,7 +1,12 @@
-// Response multipliers — read a value from the inbound request, then
-// repeat the array element at `targetJsonPath` inside the response body
-// that many times. Only fires when the response body type is JSON; other
-// body types (text/xml/binary/etc.) are returned unchanged.
+// Response multipliers — read a value from the inbound request, then repeat
+// the array element at `targetJsonPath` inside the response body that many
+// times. Only fires when the response body type is JSON; other body types
+// (text/xml/binary/etc.) are returned unchanged.
+//
+// The config holds an ARRAY of multipliers (`MockResponseConfig.multipliers`).
+// The authoring surfaces currently cap it at MAX_RESPONSE_MULTIPLIERS (1), but
+// the runtime applies every entry it finds — so bumping the cap (or a manual
+// edit) needs no engine change.
 //
 // Fallback rule: when the source value is missing or doesn't coerce to a
 // finite integer, fall back to `defaultCount`. The resolved count is

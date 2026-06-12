@@ -7,6 +7,7 @@ import {
   discoverWorkspaces,
   deviceLocalPath,
   findOwningWorkspace,
+  workspaceIdForOpenEditor,
   type DiscoveredWorkspace,
 } from './workspaceDiscovery';
 
@@ -166,5 +167,58 @@ describe('findOwningWorkspace', () => {
     };
     const result = { workspaces: [ws], foldersWithoutWorkspace: [] };
     expect(findOwningWorkspace(result, '/somewhere/else/file.txt')).toBeUndefined();
+  });
+});
+
+describe('workspaceIdForOpenEditor', () => {
+  const registered = [
+    { id: '/repo-a/.apicircle', workspaceJsonPath: '/repo-a/.apicircle/workspace.json' },
+    { id: 'C:\\repo-b\\.apicircle', workspaceJsonPath: 'C:\\repo-b\\.apicircle\\workspace.json' },
+  ];
+  const authorityFor = (id: string): string => Buffer.from(id, 'utf8').toString('base64url');
+
+  it('resolves an apicircle:// editor via its base64url authority', () => {
+    expect(
+      workspaceIdForOpenEditor(
+        { scheme: 'apicircle', authority: authorityFor('/repo-a/.apicircle'), fsPath: '' },
+        registered,
+      ),
+    ).toBe('/repo-a/.apicircle');
+  });
+
+  it('resolves the raw .apicircle/workspace.json file (slash + case normalized)', () => {
+    expect(
+      workspaceIdForOpenEditor(
+        { scheme: 'file', authority: '', fsPath: 'C:\\repo-b\\.apicircle\\workspace.json' },
+        registered,
+      ),
+    ).toBe('C:\\repo-b\\.apicircle');
+  });
+
+  it('returns null for an apicircle:// authority that maps to no registered workspace', () => {
+    expect(
+      workspaceIdForOpenEditor(
+        { scheme: 'apicircle', authority: authorityFor('/unknown/.apicircle'), fsPath: '' },
+        registered,
+      ),
+    ).toBeNull();
+  });
+
+  it('returns null for a file editor that is not a workspace.json', () => {
+    expect(
+      workspaceIdForOpenEditor(
+        { scheme: 'file', authority: '', fsPath: '/repo-a/src/index.ts' },
+        registered,
+      ),
+    ).toBeNull();
+  });
+
+  it('returns null for an unrelated scheme or an empty authority', () => {
+    expect(
+      workspaceIdForOpenEditor({ scheme: 'untitled', authority: '', fsPath: '' }, registered),
+    ).toBeNull();
+    expect(
+      workspaceIdForOpenEditor({ scheme: 'apicircle', authority: '', fsPath: '' }, registered),
+    ).toBeNull();
   });
 });

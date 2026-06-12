@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
-import { serveOnNode } from './nodeAdapter';
+import { MockServerStartError, serveOnNode } from './nodeAdapter';
 
 describe('serveOnNode', () => {
   it('boots an app on a free port and serves requests', async () => {
@@ -38,6 +38,39 @@ describe('serveOnNode', () => {
     } finally {
       await handle.close();
     }
+  });
+
+  it('throws MockServerStartError with EADDRINUSE when the port is busy', async () => {
+    const app1 = new Hono();
+    const handle = await serveOnNode(app1);
+    try {
+      const err = await serveOnNode(new Hono(), { port: handle.port }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(MockServerStartError);
+      const startErr = err as MockServerStartError;
+      expect(startErr.code).toBe('EADDRINUSE');
+      expect(startErr.port).toBe(handle.port);
+      expect(startErr.host).toBe('127.0.0.1');
+      expect(startErr.message).toContain(`Port ${handle.port}`);
+      expect(startErr.message).toContain('already in use');
+    } finally {
+      await handle.close();
+    }
+  });
+
+  it('rejects invalid port numbers up-front with INVALID_PORT', async () => {
+    const app = new Hono();
+    await expect(serveOnNode(app, { port: -1 })).rejects.toMatchObject({
+      name: 'MockServerStartError',
+      code: 'INVALID_PORT',
+    });
+    await expect(serveOnNode(app, { port: 99999 })).rejects.toMatchObject({
+      name: 'MockServerStartError',
+      code: 'INVALID_PORT',
+    });
+    await expect(serveOnNode(app, { port: 1.5 })).rejects.toMatchObject({
+      name: 'MockServerStartError',
+      code: 'INVALID_PORT',
+    });
   });
 
   it('honors a custom hostname', async () => {

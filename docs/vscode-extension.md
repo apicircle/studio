@@ -1,4 +1,4 @@
-# APICircle Studio — VS Code Extension
+# API Circle Studio — VS Code Extension
 
 > **Status: Phase 1 alpha** — sideload-only (Marketplace listing in Phase 10).
 
@@ -59,22 +59,43 @@ workspace from `globalState`. Otherwise the Editor view renders a
   `.apicircle/.lock`).
 - **Open Folder…** — invokes VS Code's native folder picker.
 
+The Editor view's `viewsWelcome` is gated by the
+`apicircle.hasActiveWorkspace` context key, which the extension sets
+every time `discoverWorkspaces` runs (activate, refresh, the
+`.apicircle/workspace.json` file watcher, and
+`onDidChangeWorkspaceFolders`):
+
+- **When false** (no workspace registered) — the no-workspace card with
+  the **Create New Workspace** / **Open Folder…** actions.
+- **When true** (workspace registered, tree may still be empty) — a
+  workspace-present card with an **Open `workspace.json`** link and a
+  **New Request** action. Stops users with an empty-but-detected
+  workspace from thinking the extension didn't recognise their
+  `.apicircle/` folder.
+
+The Editor view's title bar exposes two icon actions:
+**$(add) New Request** (left, `apicircle.newRequest`, `ctrl+n` when the
+view is focused) and **$(refresh) Refresh** (right, `apicircle.refresh`,
+`ctrl+shift+r`). Refresh re-runs `discoverWorkspaces` first, so a
+`.apicircle/workspace.json` created after activation (via the CLI, a
+sibling `git pull`, or hand-mkdir) is picked up without a window reload.
+
 ---
 
 ## 3. Sidebar layout
 
-The Activity Bar icon opens a view container with seven views:
+The Activity Bar icon opens a view container with eight views:
 
-| View            | Phase wired            | Contents                                                                                                   |
-| --------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------- |
-| **Editor**      | Phase 1                | Folder / request tree from `synced.collections.tree`.                                                      |
-| **Environment** | Phase 2                | Environments + variables + active env marker.                                                              |
-| **Execution**   | Phase 2                | Plans + inline `▶ Run` actions.                                                                            |
-| **Mock**        | Phase 3                | Mock servers + endpoints + status decorations.                                                             |
-| **History**     | Phase 2                | Recent request and plan runs.                                                                              |
-| **Snapshots**   | Phase 2                | Workspace snapshot ledger + restore.                                                                       |
-| **MCP**         | Phase 5                | Per-AI-client config snippets pointing at the active workspace's `.apicircle/` dir (10 supported clients). |
-| **Marketplace** | Phase 10 (placeholder) | Gated by `apicircle.enableMarketplace`.                                                                    |
+| View                | Phase wired                 | Contents                                                                                                                                                                                                                                                                   |
+| ------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Editor**          | Phase 1                     | Folder / request tree from `synced.collections.tree`.                                                                                                                                                                                                                      |
+| **Environment**     | Phase 2                     | Environments + variables + active env marker.                                                                                                                                                                                                                              |
+| **Execution**       | Phase 2                     | Plans + inline `▶ Run` actions.                                                                                                                                                                                                                                            |
+| **Mock**            | Phase 3                     | Mock servers + endpoints + status decorations.                                                                                                                                                                                                                             |
+| **History**         | Phase 2                     | Recent request and plan runs.                                                                                                                                                                                                                                              |
+| **Snapshots**       | Phase 2                     | Workspace snapshot ledger + restore.                                                                                                                                                                                                                                       |
+| **MCP**             | Phase 5                     | Per-AI-client config snippets pointing at the active workspace's `.apicircle/` dir (10 supported clients).                                                                                                                                                                 |
+| **Link Workspaces** | Release lifecycle + linking | Two groups: **Releases** (publish / deprecate / withdraw + tag on GitHub + edit topics) and **Linked workspaces** (link a repo / marketplace result, pin / scope / session / required-keys config, review-update, refresh, unlink). Replaces the dormant Marketplace stub. |
 
 Each view is independently collapsible. The Phase 1 day-1 PR ships every view
 with an empty stub; subsequent phase commits wire them to live data.
@@ -146,11 +167,11 @@ for the canonical list.
 
 ```bash
 pnpm install
-pnpm --filter @apicircle/vscode build      # build extension bundle (tsup)
-pnpm --filter @apicircle/vscode test       # unit + integration tests
-pnpm --filter @apicircle/vscode check      # typecheck
-pnpm --filter @apicircle/vscode lint       # lint
-pnpm --filter @apicircle/vscode package    # produce .vsix
+pnpm --filter apicircle-vscode build       # build extension bundle (tsup)
+pnpm --filter apicircle-vscode test        # unit + integration tests
+pnpm --filter apicircle-vscode check       # typecheck
+pnpm --filter apicircle-vscode lint        # lint
+cd apps/vscode && pnpm exec vsce package --no-dependencies   # produce .vsix
 pnpm --filter @apicircle/e2e-vscode test:e2e   # E2E (real VS Code via @vscode/test-electron)
 ```
 
@@ -187,7 +208,70 @@ in the project root. The TL;DR:
 Phase 2 round 1 + 26 gaps (13 closed in Round 1 follow-up, 13 closed
 in Round 2 adversarial re-audit) shipped these surfaces. The sidebar
 now hosts **eight** TreeViews (Editor, Environment, Execution, Mock,
-History, Snapshots, MCP, Marketplace).
+History, Snapshots, MCP, Link Workspaces).
+
+### Send → eager response tab (post-launch round 7)
+
+The response tab opens **before** `executeRequest` is even called — the
+moment the user clicks ▶ Send the FS provider stashes a "Sending…"
+placeholder under the runId and `showTextDocument` opens it
+`ViewColumn.Beside` with `preserveFocus: true`. When the executor
+resolves, the same store entry is rewritten in place and
+`fireChangedExternal` fires a Changed event on the response URI — the
+already-open tab re-reads the doc and the placeholder swaps for the
+real response in a single frame. Cancel and error paths swap in
+dedicated "Cancelled" / "Failed" notices (see `responseDocument.ts`
+formatters) so the tab is never stranded on "Sending…".
+
+The CodeLens row also swaps to `⏳ Sending… (1.2s) · ✖ Cancel` for the
+duration; the cancel lens fires `apicircle.cancelOneSend`, which calls
+`AbortRegistry.cancel(runId)`. Cancellation from any surface (the
+status-bar spinner X, Esc, or the lens) drives the same single code
+path so the tab content stays consistent with what actually happened.
+
+### `apicircle:` URI shape (post-launch round 6)
+
+Every entity opens as a virtual `apicircle:` URI. The shape encodes the
+human-readable name in the path so VS Code's tab label is readable, with
+the stable identifier riding in the `?id=` query so renames don't break
+identity:
+
+| Entity      | URI                                                                                                  |
+| ----------- | ---------------------------------------------------------------------------------------------------- |
+| Request     | `apicircle://<wsAuth>/requests/<folderSlug…>/<nameSlug>.req.yaml?id=<requestId>`                     |
+| Plan        | `apicircle://<wsAuth>/plans/<nameSlug>.plan.yaml?id=<planId>`                                        |
+| Mock        | `apicircle://<wsAuth>/mocks/<nameSlug>.mock.yaml?id=<mockId>`                                        |
+| Endpoint    | `apicircle://<wsAuth>/mocks/<mockSlug>/<endpointSlug>.endpoint.yaml?mockId=<mockId>&id=<endpointId>` |
+| Response    | `apicircle://<wsAuth>/responses/<nameSlug>.run.yaml?runId=<runId>`                                   |
+| History run | `apicircle://<wsAuth>/history/<labelSlug>.run.yaml?runId=<runId>`                                    |
+| Environment | `apicircle://<wsAuth>/environments/<envName>.env.yaml`                                               |
+
+Properties:
+
+- **Tab label = `<nameSlug>.<ext>`** — readable across multiple open tabs.
+- **Folder breadcrumb in the tab tooltip** — VS Code shows the full URI
+  path on hover, so two `Login.req.yaml` tabs in different folders are
+  immediately distinguishable.
+- **Quick Open (`Ctrl+P`) searches by basename** — the name lookup
+  finally works.
+- **Identity survives renames + folder moves** — the FS provider parser
+  reads `?id=` (or `?runId=`) from the query, never the slug. The
+  in-path slug is display-only.
+- **Sibling collisions disambiguate with `~<shortId>`** — when two
+  requests in the same folder slugify to the same string (e.g. both
+  named `Login`), the one whose URI is being built gets `~<8-char id
+prefix>` appended so URIs stay unique without the full id leaking
+  into the tab title.
+- **Save on a renamed entity follows the URI rename** — the
+  `writeFile` path detects when the post-save URI differs from the
+  pre-save URI, calls `showTextDocument(newUri)` in the same column
+  with the prior `editor.selection`, and closes the stale tab via the
+  Tabs API. The user sees their tab flip from `Login.req.yaml` to
+  `SignIn.req.yaml` on a single Ctrl+S, cursor preserved.
+
+The `id` field is **not** present in the projected YAML body (see
+`requestYaml.ts:25-26`), so it can't be edited by accident, and now
+it isn't visible in the tab label either.
 
 ### Environments
 
@@ -265,8 +349,10 @@ running mock dies; that's the same model as the desktop app.
 
 ### Mock YAML projection
 
-- `apicircle://<workspaceId>/mocks/<id>.mock.yaml` is editable for
-  `name` / `defaultPort` / `cors`. `source` + `endpoints` are read-only.
+- `apicircle://<workspaceId>/mocks/<nameSlug>.mock.yaml?id=<mockId>` is
+  editable for `name` / `defaultPort` / `cors`. `source` + `endpoints`
+  are read-only. (See the URI shape note in §2 — name renames
+  re-anchor the tab to the new URI in the same column.)
 - ▶ Start Mock / ■ Stop Mock / ↻ Restart CodeLens above the `name:` line.
 - HoverProvider on `name:` (status), `defaultPort:` (bind target),
   and endpoint `pathPattern:` (method + default status + rule count).
@@ -282,6 +368,13 @@ running mock dies; that's the same model as the desktop app.
   which delegates to `InProcessMockController` and writes the resulting
   `MockRuntimeEntry` to `WorkspaceLocal.mockRuntime.active[id]`.
 - **`apicircle.stopMock`** / **`apicircle.restartMock`** — symmetric.
+- **`apicircle.setMockPort`** — one-click port setter. Right-click a mock row
+  → **Set Mock Port…**, or invoke from the palette. Pre-fills with the
+  current `defaultPort`; validates 1024–65535 (blank = `null` = "pick a
+  free port at start"). Persists via `mock.upsert` — no runtime side
+  effect. Bind errors at the next Start (busy port / invalid port /
+  permission denied) surface as `MockServerStartError` toasts from
+  `@apicircle/mock-server-core`.
 - **`apicircle.deleteMock`** — auto-stops if running, then fires
   `mock.delete`.
 - **`apicircle.focusMockView`** — focuses the Mock view (status bar click).
@@ -460,7 +553,7 @@ output. The `mcpRoundTrip.test.ts` integration suite proves this.
 ### MCP view layout
 
 ```
-▸ MCP Server            78 tools · binary: apicircle-mcp
+▸ MCP Server            85 tools · binary: apicircle-mcp
 ▾ Connect an AI client
    Claude Desktop       config file detected
    Claude Code          paste manually
@@ -646,7 +739,7 @@ with the regression test below).
 Run locally:
 
 ```
-pnpm --filter @apicircle/vscode build
+pnpm --filter apicircle-vscode build
 node scripts/check-vscode-bundle.mjs
 ```
 
@@ -661,13 +754,14 @@ local check would. The previous inline bash gate is gone.
 Three assertions plus a self-skip branch:
 
 - **Hard-budget assert** — fails the suite when
-  `dist/extension.js > 2.0 MB`.
+  `dist/extension.js > 5.0 MB` (current ceiling — see "Bundle budget
+  contract" below for history).
 - **Sanity-floor assert** — fails the suite when
   `dist/extension.js < 500 KB`. Guards against the
   corrupt-empty-build case where a 0-byte output would otherwise
   silently pass both budget tiers.
 - **Soft-budget warn** — emits `console.warn` (suite still passes)
-  when `1.8 MB < bundle ≤ 2.0 MB`. Surfaces the threshold crossing
+  when `3.0 MB < bundle ≤ 5.0 MB`. Surfaces the threshold crossing
   in PR test output even when CI happens to be green.
 - **Self-skip** — if `dist/extension.js` doesn't exist (fresh
   checkout, no build run), the test logs the "run pnpm build
@@ -685,20 +779,38 @@ Three assertions plus a self-skip branch:
 
 ### Bundle budget contract
 
-The bundle is now a tracked contract, the same way the test floor and
+The bundle is a tracked contract, the same way the test floor and
 the strict-coverage tier are. Every phase that lands here SHOULD:
 
 1. Run `node scripts/check-vscode-bundle.mjs` and report the new size
    in the CHANGELOG entry.
 2. If the change crosses the soft warn, justify why and either
    (a) propose a counter-trim in the same PR, or (b) bump the soft
-   warn explicitly in `check-vscode-bundle.mjs` AND
-   `bundleSize.test.ts` AND this section, with rationale in the
+   warn explicitly in `scripts/vscode-bundle-budget.mjs` (the single
+   source of truth — `bundleSize.test.ts` and
+   `check-vscode-bundle.mjs` import from there) with rationale in the
    CHANGELOG.
 3. Never bump the hard fail to silence a regression. The hard fail
-   only moves when a phase introduces a strictly-required dependency
-   AND the team agrees the marketplace publish + first-activation
-   cost is acceptable.
+   only moves when a deliberate policy change adds room for our
+   product surface (and the activationPerf budget — `<500ms` on a
+   100-request workspace — must continue to hold).
+
+**Current ceilings** (`scripts/vscode-bundle-budget.mjs`):
+
+| Tier         | Threshold | Behaviour                  |
+| ------------ | --------- | -------------------------- |
+| Sanity floor | 500 KB    | Fail — corrupt/empty build |
+| Soft warn    | 3.0 MB    | Pass with `console.warn`   |
+| Hard fail    | 5.0 MB    | Fail the suite             |
+
+The 5 MB ceiling was set post-1.0 for peer-extension parity (Thunder
+Client ~5 MB, GitLens ~5–8 MB, ESLint ~6 MB) once the product surface
+grew to include MCP host + Git workspace + 17 auth schemes +
+embedded mock server. Bundle size is now an early-warning _proxy_;
+the actual UX gate is
+[`apps/vscode/test/integration/activationPerf.test.ts`](../apps/vscode/test/integration/activationPerf.test.ts),
+which asserts `activate()` completes in `<500ms` on a 100-request
+workspace and `<1000ms` on a 500-request workspace.
 
 ### Deferred from Phase 7
 
@@ -1294,6 +1406,329 @@ has dedicated E2E coverage.
 | 10  | Lazy embedded-host SDK                          | P10    | Shipped P12 (externalization)                  |
 
 **10 of 11 items resolved (9 shipped + 1 transitive); 1 deferred indefinitely with rationale.**
+
+## 19a. Post-launch — lens-driven mock validation authoring
+
+Feedback follow-up on the per-endpoint YAML editor (`*.endpoint.yaml`).
+Adding a request-validation gate used to fire a chain of QuickPick /
+InputBox dialogs (kind → target → expected) before the rule appeared.
+That's now replaced with **insert-then-refine**, matching the rest of the
+endpoint-edit UX where the change lands immediately as new YAML:
+
+- **`🛡 Add validation rule`** (above `requestValidation:`) inserts a
+  prefilled `header-required` rule with no prompts and reveals its
+  `kind:` row.
+- Each validation entry then carries three per-field CodeLenses, gated by
+  the rule's kind:
+  - **`◆ Kind`** (on the `kind:` row) — pick from the 9 kinds. The
+    target / value rows **reshape** to match: switching into
+    `body-required` drops both, into `content-type-equals` drops the
+    target and seeds an empty value row, into `header-equals` seeds a
+    value row. Same-family switches keep the existing target.
+  - **`◆ Target`** (on the `target:` row, shown when the kind uses a
+    target) — picks from the endpoint's own declared
+    `requestSchema` params for the kind's family **first**, then for
+    header kinds the curated global header catalogue
+    (`HTTP_HEADERS_MAP` — the same map the Web + Desktop header editors
+    surface), plus a `✏ Custom…` escape hatch.
+  - **`◆ Value`** (on the `expected:` row, shown when the kind compares a
+    value) — `content-type-equals` offers the Content-Type media-type
+    catalogue, `header-equals` offers the picked header's known values
+    (`getHeaderValues(target)`), and the `*-matches` kinds collect a
+    regex through a validated input box.
+
+**Files:** the kind table + the pure reshape / catalogue helpers live in
+`apps/vscode/src/lang/mockValidationKinds.ts` (shared by the lens and the
+commands so they can't disagree on what a kind needs). The commands
+(`setMockValidationKind` / `Target` / `Expected`) parse the endpoint,
+mutate the single rule, and re-render that entry via the lossless
+`renderValidationRule` — `failResponse` and every other field round-trip
+through the parser untouched. The lenses are emitted by
+`EndpointCodeLensProvider` (`apps/vscode/src/lang/endpointCodeLens.ts`).
+
+## 19b. Post-launch — full field-level CodeLens editing + capped multipliers
+
+Extends the lens-driven authoring to the whole mock surface.
+
+**Multipliers — array, soft-capped at 1.**
+`MockResponseConfig.multipliers` stays a `MockResponseMultiplier[]`; a new
+`MAX_RESPONSE_MULTIPLIERS = 1` constant (in `@apicircle/shared`) caps how many
+the authoring surfaces allow today. The cap is a soft guardrail — the engine
+(`applyMultipliers`) applies every entry, so raising the constant to N is the
+only change needed (no migration, no engine change). Enforced in the
+desktop/web editor (Add disabled at cap), the `*.endpoint.yaml` lenses
+(`✱ Add multiplier` hidden at cap; `✕ Remove multiplier` per entry), and the
+MCP tools (`mock.set_multipliers` / `prompt.set_endpoint_multipliers` reject
+`length > MAX`).
+
+**`*.mock.yaml` — per-endpoint open link.** Each endpoint summary row gets an
+`↗ Open endpoint` lens (`MockCodeLensProvider`) that opens the editable
+`*.endpoint.yaml` via `apicircle.openMockEndpointYaml` with the
+`{ kind:'endpoint', serverId, endpointId }` MockView node shape — no
+sidebar round-trip.
+
+**`*.endpoint.yaml` — line-addressed `◆` field editors.** Each lens sits on
+the field row it edits and passes `(uri, lineNumber)`. The command reads that
+exact line, derives indentation from the document (so the **same** code path
+works at any nesting depth — `defaultResponse`, a `responseRule.response`, or a
+`validationRule.failResponse`), pops a kind-aware picker, and rewrites just that
+line's value (or, for body type, the body subtree). All in
+`apps/vscode/src/commands/mockFieldEdits.ts` with unit-tested pure helpers
+(`replaceScalarOnLine`, `buildBodySubtree`, `buildConditionClause`,
+`collectJsonArrayPaths`):
+
+| Row                                          | Lens                          | Picker                                                            |
+| -------------------------------------------- | ----------------------------- | ----------------------------------------------------------------- |
+| `method:`                                    | `◆ Method`                    | the 7 HTTP methods                                                |
+| any `status:`                                | `◆ Status`                    | common codes + custom 100–599                                     |
+| header `- key:`                              | `◆ Key`                       | curated response-header names + custom                            |
+| header `value:`                              | `◆ Value`                     | `getHeaderValues(name)` for the sibling header + custom           |
+| body `type:`                                 | `◆ Body type`                 | the 7 body types (rewrites the subtree)                           |
+| clause `scope:`                              | `◆ Scope`                     | the 5 condition scopes                                            |
+| clause `op:`                                 | `◆ Op`                        | the 9 comparison ops                                              |
+| clause `target:`                             | `◆ Target`                    | endpoint's declared params for the scope + custom                 |
+| clause `value:`                              | `◆ Value`                     | free-text comparison value                                        |
+| `when:`                                      | `✚ Add condition`             | inserts a fresh AND-clause                                        |
+| multiplier `source.kind:`                    | `◆ Kind`                      | query / path / header / body-JSON                                 |
+| multiplier `source.key:`                     | `◆ Key`                       | JSON-path input when kind is body-json-path, else a name          |
+| multiplier `targetJsonPath:`                 | `◆ Path`                      | array paths discovered in the default-response JSON body + custom |
+| multiplier `defaultCount:` / `min:` / `max:` | `◆ Count` / `◆ Min` / `◆ Max` | non-negative integer                                              |
+| multiplier `name:`                           | `◆ Name`                      | free-text label                                                   |
+
+The `◆ Body type` editor also reconciles the same config's `Content-Type`
+header (json → `application/json`, none → drops the row). Generic scalar rows
+route through two shared commands: `setMockTextField` (free-text) and
+`setMockNumberField` (non-negative integer).
+
+The status / body-type editors moved **off** the section-header rows onto the
+field rows (less duplication). The walk that emits these tracks nesting context
+(`headersIndent` / `whenIndent` / `multiplierIndent` / `sourceIndent`) so the
+same `value:` / `key:` / `target:` / `kind:` token is interpreted correctly
+whether it's in a headers list, a when-clause, or a multiplier source.
+
+**Multiplier authoring.** `✱ Add multiplier` inserts a prefilled sample with no
+prompts and hides once one exists; `✕ Remove multiplier` (on the `multiplier:`
+row) clears it.
+
+**Indentation is always derived from the document** — every field editor (and
+the palette `switchMockResponseBodyType` / `addMockResponseHeader`, previously
+mis-indented for nested response-rule headers and the default body) reads the
+leading whitespace of the matched line rather than assuming a depth. Covered by
+`apps/vscode/src/commands/mockFieldEdits.integration.test.ts`, which drives the
+commands through the real parse → pick → edit → save → re-parse round-trip.
+
+## 19c. Post-launch — mock & collection authoring overhaul
+
+A feedback-driven sweep across all three `apicircle://` authoring surfaces.
+Bundle: 2.37 MB → **2.44 MB** (under the 3.0 MB soft warn).
+
+**Bug — `↗ Open endpoint` + lifecycle lenses.** `MockCodeLensProvider` read the
+mock id from the URI **path basename**, which is the human-readable name slug —
+so the command received a slug and missed `synced.mockServers[id]`. It now reads
+the id from the `?id=` query (`new URLSearchParams(uri.query).get('id')`), with
+the legacy path parse as a fallback.
+
+**`*.endpoint.yaml` additions** (all in `endpointCodeLens.ts` +
+`mockFieldEdits.ts` / `mockRequestSchemaEdits.ts`):
+
+| Surface              | What changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| clause `value:`      | now routes to `setMockClauseValueField` — offers the header value catalogue for `scope: header`; the lens is hidden for `present` / `absent` ops                                                                                                                                                                                                                                                                                                                                    |
+| rule `✚ Add header`  | anchored on the rule's `response.headers:` block (was the `- id:` row)                                                                                                                                                                                                                                                                                                                                                                                                              |
+| rule `when`          | capped at `MAX_RESPONSE_RULE_CONDITIONS = 1` — `✚ Add condition` hidden once a clause exists. A rule with **zero** `when` clauses is a **red Error that blocks the save** (`parseEndpointFromYaml` rejects it): an unconditional rule shadows the default response on every request                                                                                                                                                                                                 |
+| header `- key:` rows | gain a `✓ Enable` / `⊘ Disable` toggle (`toggleMockHeaderEnabled`)                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `requestSchema`      | each `✚ Path/Query/Header/Cookie param` lens anchors **on its own subsection line** (`pathParams:` / `queryParams:` / `headers:` / `cookies:`), and `✚ Body example` on `body:` (or all on the `requestSchema:` header when absent / `✚ Add request schema` when the block is missing). Per-param field editors are `◆ Name / ◆ Type / ◆ Example` — the boolean `required:` row has **no** lens (edited directly in YAML). Path params prefill from the pattern's `{slot}` segments |
+| JSON body `content:` | `⟳ Format JSON` reflows a stringified body (`formatJson.ts`)                                                                                                                                                                                                                                                                                                                                                                                                                        |
+
+**`*.req.yaml` — collection-request parity** (`requestFieldEdits.ts` +
+`requestCodeLens.ts`): `◆ Method`, header `◆ Key` / `◆ Value` (catalogue-aware),
+query / cookie key + value, path-param values, assertion kind/op, and extraction
+source — the request-side mirror of the mock field editors. **Auth** scalar
+fields have **no** `◆` field editor (edited directly in YAML); only `⟳ Format
+JSON` on the JSON auth fields (`payload` / `jwtHeaders`) is kept. **Form-data**
+`✚ Add text row` / `✚ Add file row` anchor on the `formRows:` line inside the
+body block; switching a row kind is per-row only (`↻ Switch to text/file`).
+
+**`APICircle: New Request`** (`newRequest.ts`) is a single **folder pick** —
+choose an existing folder, the top level, or create a new folder inline — after
+which a ready-to-edit **GET scaffold** (placeholder URL, `Accept` header, sample
+`page` query, no auth) opens for the user to tweak and send. Invoked from a
+folder's context menu, the pick is skipped. (The earlier 5-step wizard — method →
+URL → folder → auth → name — is gone; everything is edited in the YAML instead.)
+
+**Startup editor adoption** (`extension.ts`): on activation, after discovering
+`.apicircle/workspace.json`, the extension inspects the editors VS Code restored
+and, if one is an `apicircle://` virtual YAML or the raw
+`.apicircle/workspace.json`, makes that editor's workspace the active one — so
+the sidebar / status bar / MCP snippets match what's already on screen.
+
+**Structural validation** (`lang/diagnostics.ts` + `fs/yamlStructure.ts`): an
+`apicircle` `DiagnosticCollection` re-runs the parser on open/change and shows
+the problem before save. A renamed / mistyped **top-level key**, or a section
+with the wrong type (e.g. `responseRules: oops`), is a **red Error that blocks
+the save** (the FS provider's `writeFile` already converts the parser's
+`*ParseError` into `FileSystemError.NoPermissions`) — previously those would
+silently drop the section. Coercible value-level issues stay yellow Warnings.
+Covers endpoint, mock, and request YAML.
+
+**Web / Desktop `requestSchema` editor.** The cross-surface gap is closed:
+`packages/ui-components/src/panels/mocks/MockRequestSchemaEditor.tsx` (mounted in
+the mock endpoint editor's Endpoint node) edits the same `requestSchema` the VS
+Code YAML does — four param tables + "Derive from path" + body-shape docs,
+routed through the existing `updateMockEndpoint` store action. See
+[`docs/mock-server.md`](mock-server.md) §"Request schema across surfaces".
+
+## 19d. Post-launch — Link Workspaces view + release lifecycle
+
+The dormant, off-by-default **Marketplace** stub (`apicircle.marketplace`,
+gated behind `apicircle.enableMarketplace`) is replaced by an always-on **Link
+Workspaces** view (`apicircle.linkWorkspaces`). Phase 1 wires the publishing
+side of the link/release loop — a workspace's **release ledger**
+(`synced.releases.self`), the versions linked consumers pin to.
+
+**Mutation contract.** Three additive `WorkspacePatch` variants land in
+`@apicircle/core`: `release.publish` (carries a pre-built `ReleaseVersion` — the
+async SHA-256 `workspaceSnapshot` is computed by `buildReleaseEntry` so the
+reducer stays pure + synchronous), `release.deprecate`, and `release.yank`. The
+extension is a well-behaved headless writer: every release write routes through
+`surface.apply` → `applyMutation`. The same patches are exposed as four MCP
+tools (`release.list` / `.publish` / `.deprecate` / `.yank`, 81 → 85 catalog).
+
+**Surfaces.**
+
+- **TreeView** (`LinkWorkspaceView`) — a **Releases** group: the current version
+  - every published version newest-first, each with deprecated / withdrawn
+    status and a `tag` / `warning` / `circle-slash` icon. A **Publish release**
+    title button; per-version **Deprecate** / **Withdraw** context-menu actions.
+- **`apicircle://<ws>/releases/releases.yaml`** — a read-only generated document
+  (`releasesYaml.ts`). Writes are blocked: the ledger is action-driven, never
+  edited by hand (publishing needs the async snapshot; deprecate / withdraw are
+  per-version transitions).
+- **CodeLens** (`releasesCodeLens.ts`) — **▶ Publish release…** on the
+  `currentVersion:` line; **⚠ Deprecate** / **⛔ Withdraw** on each `- version:`
+  row, hidden when the action is already in effect (reads the sibling `status:`).
+- **Commands** (`releaseActions.ts`) — `apicircle.openReleaseHistory`,
+  `apicircle.publishRelease` (patch / minor / major QuickPick off the current
+  version, or a custom semver, + notes prompt + confirm), `apicircle.deprecateRelease`
+  (confirm), `apicircle.withdrawRelease` (typed `WITHDRAW v<x>` confirmation).
+
+## 19e. Post-launch — linked-workspace consuming side + GitHub tagging/topics
+
+Completes the link loop in the extension (previously Desktop/Web-only).
+
+**Mutation contract.** Three additive `linkedWorkspace.*` `WorkspacePatch`
+variants in `@apicircle/core`: `upsert` (link record + optional cached ledger +
+collections/environments snapshot), `remove` (cascades across
+`releases.perLink`, `linkedOverrides`, `local.linkedCollections`, and the
+per-link GitHub session), and `applyUpdate` (atomic three-way-merge result).
+The pure `parseLinkedWorkspaceJson` / `buildLinkedSnapshot` / `ledgerFromProbe`
+helpers move into `@apicircle/core/linked` so the store, VS Code, and CLI share
+one implementation. Four MCP tools expose the pure-data config:
+`linked.list` / `linked.get` / `linked.set_config` / `linked.unlink`
+(85 → 89 catalog).
+
+**GitHub auth.** `@apicircle/git`'s `GitHubClient` (token per-call) driven by
+VS Code's built-in `vscode.authentication.getSession('github', ['repo'])`
+(`host/githubAuth.ts`) — no PAT vault. Anonymous-friendly flows (marketplace
+search) pass a silent token when one exists; link / tag flows prompt sign-in.
+
+**Surfaces.**
+
+- **TreeView** — a **Linked workspaces** group (`repo`-icon rows showing
+  `kind · pin`) beside the Releases group. Title actions **Link a Workspace…**
+  - **Search Marketplace…**; per-row context menu **Review update / Refresh /
+    Changelog / Unlink**.
+- **`apicircle://<ws>/links/<name>.link.yaml`** (`linkYaml.ts`) — editable
+  config (name, description, pinnedVersion, scope, sessionMode,
+  requiredSecretKeyIds, marketplace); read-only identity (repoFullName, branch,
+  kind, linkedAt) is preserved on save. `pinnedVersion` is validated against the
+  cached ledger at save time. `delete` unlinks.
+- **CodeLens** (`linkCodeLens.ts`) — ◆ field editors + **⤓ Review update ·
+  ⟳ Refresh ledger · 📓 Changelog · ⊗ Unlink** on the name line; ✚/⊘ on each
+  required-key row.
+- **Commands** (`linkActions.ts`) — `linkWorkspace` (repo/branch/version pick →
+  fetch → `buildLinkedSnapshot` → `linkedWorkspace.upsert`), `searchMarketplace`,
+  `refreshLinkedWorkspace`, `reviewLinkedUpdate` (preview + bulk
+  accept-source/keep-mine → `linkedWorkspace.applyUpdate`), and the pure config
+  field editors / unlink.
+- **Repo-side release ops** (`repoActions.ts`) — `tagRelease` (creates a
+  `v<x>` tag on the default-branch HEAD, optional GitHub Release; replace-on-
+  exists) and `editRepoTopics` (keeps `apicircle`, validates GitHub's topic
+  rules). Owner/name is derived from the folder's `origin` remote, falling back
+  to a prompt.
+
+**Streamlined vs. Desktop.** The native (no-webview) update review offers a
+single **Accept all source / Keep all mine** decision rather than the Desktop
+modal's per-entry conflict picker — the same `previewLinkedUpdate` /
+`applyLinkedUpdate` core engine, a simpler resolution surface. Per-entry
+resolution + dedicated-session credential storage are the remaining deltas.
+
+## 19f. Post-launch — linked-workspace gap closure (consume / merge / secrets)
+
+Completes the consuming side so a linked workspace is usable, not just manageable.
+
+- **Linked requests are runnable.** A linked workspace expands to its cached
+  requests; each opens as the EFFECTIVE request (source + override) at
+  `apicircle://<ws>/linked/<link>/<name>.req.yaml`. Editing + saving stores a
+  minimal override (`computeRequestOverridePatch` diffs against the
+  same-round-tripped source so parser defaults don't register as edits);
+  **▶ Send** runs it via the shared send path; **↺ Reset to source** / delete
+  drops the override; **Discard all modifications** clears a link's overrides.
+- **Per-entry update review.** `reviewLinkedUpdate` offers _Resolve each_
+  (decision per conflict) plus bulk _Accept all source / Keep all mine_.
+  Field-level **auto-merge** (core `previewLinkedUpdate.autoMergeable`) means a
+  conflict only surfaces when the override and the source changed the _same_
+  field — disjoint edits merge silently.
+- **Dedicated sessions.** `sessionMode: dedicated` links keep a per-link PAT in
+  `context.secrets` (🔑 Set / Clear token, or auto-stored when you provide one);
+  fetches use it instead of the built-in GitHub session.
+- **Required-secret provisioning.** 🔑 Provide value on each required-key row
+  stores an OS-encrypted value in `context.secrets`; wiped on unlink.
+- **Override patches** (`linkedOverride.*`) + the shared
+  `mergeRequestOverride` / `computeRequestOverridePatch` core helpers back all
+  of the above.
+
+## 19g. Post-launch — send-time resolution, attachments, CLI
+
+Closes the platform-wide items previously called out under §19f.
+
+**Send-time variable/secret interpolation.** `apicircle.sendRequest` now runs
+the request through a shared core resolver (`resolveRequestForExecution` in
+`@apicircle/core/environment`) before handing it to `executeRequest`. The
+resolver layers, in precedence order:
+
+1. `request.contextVars` (highest)
+2. plan variables / `globalContext` extractions
+3. local + linked envs, ordered by `synced.environments.priorityOrder` —
+   linked envs join the priority list as `{kind:'linked', linkedWorkspaceId,
+envName}` and pass through `applyLinkedEnvironmentOverrides` so the
+   consumer's `linkedOverrides.environmentVars` apply before lookup
+4. secrets (lowest) — provisioned values for every linked workspace's
+   `requiredSecretKeyIds`, keyed by their `SecretKeyMeta.label`
+
+Vault-encrypted env rows are decrypted up-front (`VsCodeVaultManager.decryptValue`).
+Rows the vault can't decrypt (locked / corrupt) are dropped silently and the
+placeholder reports as missing — a non-blocking notification surfaces missing
+names so the user knows why a literal `{{TOKEN}}` reached the wire.
+
+**Linked binary-attachment download.** When a linked request carries a binary
+body or `formRows: [{kind:'file'}]`, the executor's `resolveAttachment` hook
+fetches the bytes from the source repo's `.apicircle/attachments/<slotId>`
+over GitHub (`GitHubClient.getBinaryContents`) at send time. Per-send cache;
+respects the link's `sessionMode` (dedicated PAT first, otherwise the built-in
+GitHub session). Owned-request attachments still surface the canonical
+"Attachment X required but not downloaded locally" error — they need an IDB
+model the extension doesn't have, and aren't a linked-workspace concern.
+
+**Linked env-var override editor.** `apicircle.setLinkedEnvVarOverride` prompts
+for link → env → var (or "add a new variable…" to inject) → mode (replace /
+remove / reset). Routes through the `linkedOverride.setEnvVar` /
+`removeEnvVar` patches.
+
+**Linked envs in the priority picker.** `setEnvPriorityOrder` enumerates local
+envs AND every cached linked workspace's envs in the multi-pick step, and
+persists a heterogeneous `EnvPriorityRef[]` (`local` + `linked` kinds) as the
+resolver expects.
 
 ## 20. See also
 

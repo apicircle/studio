@@ -82,6 +82,7 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@apicircle/git": "workspace:*",
     "@types/node": "^20.0.0",
     "tsup": "^8.3.0",
     "typescript": "^5.4.0",

@@ -120,6 +120,29 @@ describe('parseRequestFromYaml', () => {
     expect(patch.body).toEqual({ type: 'none', content: '' });
   });
 
+  it('rejects an unknown top-level key', () => {
+    expect(() =>
+      parseRequestFromYaml('name: x\nmethod: GET\nurl: https://x.com\nheaderz: []'),
+    ).toThrow(/Unknown field/);
+  });
+
+  it('rejects an unknown key inside a header / query / cookie row', () => {
+    expect(() =>
+      parseRequestFromYaml(
+        'name: x\nmethod: GET\nurl: https://x.com\nheaders:\n  - keyy: Accept\n    value: application/json\n    enabled: true',
+      ),
+    ).toThrow(/unknown field/i);
+  });
+
+  it('rejects a known section with the wrong type', () => {
+    expect(() =>
+      parseRequestFromYaml('name: x\nmethod: GET\nurl: https://x.com\nheaders: nope'),
+    ).toThrow(/headers.*must be a list/);
+    expect(() =>
+      parseRequestFromYaml('name: x\nmethod: GET\nurl: https://x.com\nauth: nope'),
+    ).toThrow(/auth.*must be a mapping/);
+  });
+
   it('warns but does not throw when query/headers row is malformed', () => {
     const { patch, warnings } = parseRequestFromYaml(
       'name: x\nmethod: GET\nurl: https://x.com\nheaders:\n  - junk\n  - {key: A, value: B, enabled: true}',

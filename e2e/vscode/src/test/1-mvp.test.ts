@@ -14,7 +14,7 @@ suite('Phase 1 — 1-mvp: activation + view container', () => {
     this.timeout(10_000);
     const ext =
       vscode.extensions.getExtension('apicircle.apicircle-vscode') ??
-      vscode.extensions.all.find((e) => e.packageJSON.name === '@apicircle/vscode');
+      vscode.extensions.all.find((e) => e.packageJSON.name === 'apicircle-vscode');
     assert.ok(ext, 'APICircle extension is not present');
     const t0 = Date.now();
     await ext!.activate();

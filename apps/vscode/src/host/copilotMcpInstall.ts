@@ -181,6 +181,65 @@ export function installCopilotMcpConfig(opts: InstallOptions): InstallResult {
   };
 }
 
+export interface UninstallOptions {
+  /** Absolute path to the workspace folder (the parent of `.vscode/`). */
+  workspaceFolder: string;
+  /** Path inside the workspace folder where mcp.json lives. */
+  relativeConfigPath?: string;
+  /** Override the entry key name. Defaults to "apicircle". */
+  entryName?: string;
+}
+
+export interface UninstallResult {
+  /** 'removed' when the apicircle entry was present and stripped.
+   *  'absent' when the file or entry didn't exist (idempotent no-op). */
+  outcome: 'removed' | 'absent';
+  /** Absolute path of the file inspected (whether or not it was rewritten). */
+  path: string;
+}
+
+/**
+ * Remove the apicircle entry from `.vscode/mcp.json`. Idempotent — calling it
+ * on an already-clean file is a no-op. Foreign entries (other `mcpServers`
+ * keys the user added by hand) are preserved verbatim. If removing the entry
+ * leaves `mcpServers` empty, the key itself is stripped to keep diffs tidy.
+ */
+export function uninstallCopilotMcpConfig(opts: UninstallOptions): UninstallResult {
+  const relativePath = opts.relativeConfigPath ?? DEFAULT_RELATIVE_PATH;
+  const entryName = opts.entryName ?? DEFAULT_ENTRY_NAME;
+  const fullPath = assertSafeRelativeConfigPath(opts.workspaceFolder, relativePath);
+  if (!fs.existsSync(fullPath)) return { outcome: 'absent', path: fullPath };
+
+  let existing: McpConfigShape;
+  try {
+    const raw = fs.readFileSync(fullPath, 'utf8');
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { outcome: 'absent', path: fullPath };
+    }
+    existing = parsed as McpConfigShape;
+  } catch {
+    return { outcome: 'absent', path: fullPath };
+  }
+
+  const mcpServers = existing.mcpServers;
+  if (!mcpServers || typeof mcpServers !== 'object' || !(entryName in mcpServers)) {
+    return { outcome: 'absent', path: fullPath };
+  }
+  const nextServers = { ...mcpServers };
+  delete nextServers[entryName];
+  let next: McpConfigShape;
+  if (Object.keys(nextServers).length === 0) {
+    const { mcpServers: _omitted, ...rest } = existing;
+    void _omitted;
+    next = rest;
+  } else {
+    next = { ...existing, mcpServers: nextServers };
+  }
+  writeFormattedJson(fullPath, next);
+  return { outcome: 'removed', path: fullPath };
+}
+
 /** Snapshot of the install state for the McpView's "Install / Installed"
  * tagging. Doesn't mutate anything. */
 export function detectCopilotMcpConfigState(opts: {

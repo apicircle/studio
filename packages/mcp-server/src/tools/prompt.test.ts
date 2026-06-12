@@ -582,7 +582,7 @@ describe('prompt.set_endpoint_response_rules', () => {
 });
 
 describe('prompt.set_endpoint_multipliers', () => {
-  it('replaces multipliers and clears them with an empty array', async () => {
+  it('sets the multipliers and clears them with an empty array', async () => {
     const mock = (await promptCreateMockServerTool.handler(
       {
         name: 'm',

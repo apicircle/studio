@@ -15,6 +15,7 @@ import {
   deleteMockCommand,
   copyEndpointPathCommand,
   revealEndpointInMockYamlCommand,
+  setMockPortCommand,
 } from './mockActions';
 
 vi.mock('@apicircle/mcp-server', () => ({
@@ -480,6 +481,70 @@ describe('mockActions', () => {
       const state = await bridge.activeWorkspace()!.read();
       expect(state.synced.mockServers.m1).toBeUndefined();
       expect(state.local.mockRuntime.active.m1).toBeUndefined();
+    });
+  });
+
+  describe('setMockPortCommand', () => {
+    it('persists a valid port via mock.upsert', async () => {
+      seed(apicircleDir, makeMock());
+      (window.showInputBox as Mock).mockResolvedValueOnce('4040');
+      await setMockPortCommand({ bridge, controller }, { kind: 'server', id: 'm1' });
+      const state = await bridge.activeWorkspace()!.read();
+      expect(state.synced.mockServers.m1.defaultPort).toBe(4040);
+    });
+
+    it('clears the port (null) when input is blank', async () => {
+      seed(apicircleDir, makeMock({ defaultPort: 5000 }));
+      (window.showInputBox as Mock).mockResolvedValueOnce('');
+      await setMockPortCommand({ bridge, controller }, { kind: 'server', id: 'm1' });
+      const state = await bridge.activeWorkspace()!.read();
+      expect(state.synced.mockServers.m1.defaultPort).toBeNull();
+    });
+
+    it('rejects out-of-range port via validateInput', async () => {
+      seed(apicircleDir, makeMock());
+      let validator: ((s: string) => string | null) | undefined;
+      (window.showInputBox as Mock).mockImplementationOnce(
+        async (opts: { validateInput?: (s: string) => string | null }) => {
+          validator = opts.validateInput;
+          return undefined;
+        },
+      );
+      await setMockPortCommand({ bridge, controller }, { kind: 'server', id: 'm1' });
+      expect(validator?.('22')).toBe('Port must be 1024-65535');
+      expect(validator?.('abc')).toBe('Enter an integer port number or leave blank');
+      expect(validator?.('3000')).toBeNull();
+      expect(validator?.('')).toBeNull();
+    });
+
+    it('warns when the mock no longer exists', async () => {
+      seed(apicircleDir);
+      await setMockPortCommand({ bridge, controller }, { kind: 'server', id: 'ghost' });
+      // Node arg short-circuits the QuickPick — fall through to the
+      // "Mock no longer exists." branch in setMockPortCommand.
+      expect(window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Mock no longer exists.'),
+      );
+    });
+
+    it('cancels gracefully when the input is dismissed', async () => {
+      seed(apicircleDir, makeMock({ defaultPort: 3030 }));
+      (window.showInputBox as Mock).mockResolvedValueOnce(undefined);
+      await setMockPortCommand({ bridge, controller }, { kind: 'server', id: 'm1' });
+      const state = await bridge.activeWorkspace()!.read();
+      // Unchanged — caller dismissed.
+      expect(state.synced.mockServers.m1.defaultPort).toBe(3030);
+    });
+
+    it('is a no-op when the entered port matches the current port', async () => {
+      seed(apicircleDir, makeMock({ defaultPort: 3030 }));
+      const before = await bridge.activeWorkspace()!.read();
+      const beforeUpdated = before.synced.mockServers.m1.updatedAt;
+      (window.showInputBox as Mock).mockResolvedValueOnce('3030');
+      await setMockPortCommand({ bridge, controller }, { kind: 'server', id: 'm1' });
+      const after = await bridge.activeWorkspace()!.read();
+      expect(after.synced.mockServers.m1.defaultPort).toBe(3030);
+      expect(after.synced.mockServers.m1.updatedAt).toBe(beforeUpdated);
     });
   });
 });

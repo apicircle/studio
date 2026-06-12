@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { EnvPriorityRef } from '@apicircle/shared';
+import { envPriorityKey } from '@apicircle/shared';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 
 // =============================================================================
@@ -14,8 +15,9 @@ import type { VsCodeBridge } from '../host/vscodeBridge';
 //   2. After multi-select, a second QuickPick lets them reorder one-by-one
 //      by repeatedly choosing the next env in priority order.
 //
-// Linked-workspace envs (kind: 'linked') ship in Phase 8; this command only
-// operates on local envs for Phase 2.
+// Linked-workspace envs (kind: 'linked') are first-class — every linked
+// workspace's cached environments appear in the inclusion pick alongside local
+// envs, and the resolver layers them per the user-set order.
 // =============================================================================
 
 export interface SetPriorityDeps {
@@ -30,25 +32,42 @@ export async function setEnvPriorityOrderCommand(deps: SetPriorityDeps): Promise
   }
 
   const state = await active.read();
-  const envs = Object.values(state.synced.environments.items);
-  if (envs.length === 0) {
+
+  // Collect every selectable env across local + every linked workspace.
+  const candidates: Array<{ ref: EnvPriorityRef; label: string; description: string }> = [];
+  for (const e of Object.values(state.synced.environments.items)) {
+    candidates.push({
+      ref: { kind: 'local', name: e.name },
+      label: e.name,
+      description: `local · ${e.variables.length} var(s)`,
+    });
+  }
+  for (const [linkId, snapshot] of Object.entries(state.local.linkedCollections)) {
+    const linkName = state.synced.linkedWorkspaces[linkId]?.name ?? linkId;
+    for (const env of Object.values(snapshot.environments.items)) {
+      candidates.push({
+        ref: { kind: 'linked', linkedWorkspaceId: linkId, envName: env.name },
+        label: `${env.name}  (linked: ${linkName})`,
+        description: `linked · ${env.variables.length} var(s)`,
+      });
+    }
+  }
+  if (candidates.length === 0) {
     await vscode.window.showInformationMessage(
-      'No environments to order. Run "APICircle: New Environment" first.',
+      'No environments to order. Run "APICircle: New Environment" first, or link a workspace.',
     );
     return;
   }
 
-  const currentOrder = state.synced.environments.priorityOrder.filter(
-    (p): p is Extract<EnvPriorityRef, { kind: 'local' }> => p.kind === 'local',
-  );
-  const currentNames = new Set(currentOrder.map((p) => p.name));
+  const currentKeys = new Set(state.synced.environments.priorityOrder.map(envPriorityKey));
+  const byLabel = new Map(candidates.map((c) => [c.label, c.ref]));
 
-  // Step 1: Multi-select which envs to INCLUDE in the priority order
+  // Step 1: Multi-select which envs participate.
   const inclusionPicks = await vscode.window.showQuickPick(
-    envs.map((e) => ({
-      label: e.name,
-      description: `${e.variables.length} var(s)`,
-      picked: currentNames.has(e.name),
+    candidates.map((c) => ({
+      label: c.label,
+      description: c.description,
+      picked: currentKeys.has(envPriorityKey(c.ref)),
     })),
     {
       placeHolder: 'Step 1 of 2 — Pick which environments participate in the priority overlay',
@@ -57,34 +76,34 @@ export async function setEnvPriorityOrderCommand(deps: SetPriorityDeps): Promise
   );
   if (!inclusionPicks) return;
   if (inclusionPicks.length === 0) {
-    // Empty list = no overlay
     await active.apply({ kind: 'environment.setPriority', order: [] });
     await vscode.window.showInformationMessage('Priority order cleared.');
     return;
   }
 
-  // Step 2: Order them by repeatedly asking "What's next?"
-  const remaining = new Set(inclusionPicks.map((p) => p.label));
-  const ordered: string[] = [];
+  // Step 2: order them by repeatedly asking "What's next?"
+  const remaining = new Map(inclusionPicks.map((p) => [p.label, byLabel.get(p.label)!]));
+  const orderedRefs: EnvPriorityRef[] = [];
   while (remaining.size > 0) {
-    const stepNum = ordered.length + 1;
+    const stepNum = orderedRefs.length + 1;
     const total = inclusionPicks.length;
     if (remaining.size === 1) {
-      ordered.push([...remaining][0]);
+      const [label, ref] = [...remaining.entries()][0];
+      orderedRefs.push(ref);
+      remaining.delete(label);
       break;
     }
     const next = await vscode.window.showQuickPick(
-      [...remaining].sort().map((name) => ({ label: name })),
+      [...remaining.keys()].sort().map((label) => ({ label })),
       {
         placeHolder: `Step 2 of 2 — Priority position ${stepNum} of ${total} (highest precedence first)`,
       },
     );
-    if (!next) return; // user cancelled mid-flow — abort without saving
-    ordered.push(next.label);
+    if (!next) return;
+    orderedRefs.push(remaining.get(next.label)!);
     remaining.delete(next.label);
   }
 
-  const order: EnvPriorityRef[] = ordered.map((name) => ({ kind: 'local', name }));
-  await active.apply({ kind: 'environment.setPriority', order });
-  await vscode.window.showInformationMessage(`Priority order set: ${ordered.join(' > ')}`);
+  await active.apply({ kind: 'environment.setPriority', order: orderedRefs });
+  await vscode.window.showInformationMessage(`Priority order set (${orderedRefs.length} entries).`);
 }

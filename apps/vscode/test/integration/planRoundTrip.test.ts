@@ -154,6 +154,17 @@ describe('plan YAML round-trip (FS provider integration)', () => {
   let fsProvider: ApicircleFsProvider;
   let apicircleDir: string;
 
+  // Helper: look up the current plan entity and produce its canonical URI.
+  // Used in place of the old planUri(workspaceId, planId) shape — that
+  // signature was replaced by planUri(workspaceId, plan) so the basename
+  // can carry the slugified name for the tab label.
+  async function planUriFor(id: string) {
+    const state = await bridge.activeWorkspace()!.read();
+    const plan = state.local.executionPlans[id];
+    if (!plan) throw new Error(`Plan ${id} not seeded`);
+    return ApicircleFsProvider.planUri(apicircleDir, plan);
+  }
+
   beforeEach(() => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'plan-rt-'));
     apicircleDir = path.join(tmp, '.apicircle');
@@ -176,7 +187,7 @@ describe('plan YAML round-trip (FS provider integration)', () => {
   });
 
   it('serializes a plan to YAML through the FS provider', async () => {
-    const uri = ApicircleFsProvider.planUri(apicircleDir, 'plan-1');
+    const uri = await planUriFor('plan-1');
     const buf = await fsProvider.readFile(uri);
     const yaml = Buffer.from(buf).toString('utf8');
     expect(yaml).toContain('name: Login flow');
@@ -184,7 +195,7 @@ describe('plan YAML round-trip (FS provider integration)', () => {
   });
 
   it('round-trips: serialize → mutate → write → re-read produces matching shape', async () => {
-    const uri = ApicircleFsProvider.planUri(apicircleDir, 'plan-1');
+    const uri = await planUriFor('plan-1');
     const original = Buffer.from(await fsProvider.readFile(uri)).toString('utf8');
     // Append step req-b to the steps array.
     const mutated = original.replace(
@@ -203,7 +214,7 @@ describe('plan YAML round-trip (FS provider integration)', () => {
   });
 
   it('preserves createdAt on update', async () => {
-    const uri = ApicircleFsProvider.planUri(apicircleDir, 'plan-1');
+    const uri = await planUriFor('plan-1');
     const original = Buffer.from(await fsProvider.readFile(uri)).toString('utf8');
     const mutated = original.replace('name: Login flow', 'name: Login flow (updated)');
     await fsProvider.writeFile(uri, Buffer.from(mutated, 'utf8'), {
@@ -216,7 +227,7 @@ describe('plan YAML round-trip (FS provider integration)', () => {
   });
 
   it('R5-G4: rejects a plan referencing an unknown requestId', async () => {
-    const uri = ApicircleFsProvider.planUri(apicircleDir, 'plan-1');
+    const uri = await planUriFor('plan-1');
     const yaml = 'name: bad\nsteps:\n  - requestId: req-ghost\n';
     await expect(
       fsProvider.writeFile(uri, Buffer.from(yaml, 'utf8'), { create: false, overwrite: true }),
@@ -224,7 +235,7 @@ describe('plan YAML round-trip (FS provider integration)', () => {
   });
 
   it('R5-G5: delete on plans/<id>.plan.yaml fires plan.delete', async () => {
-    const uri = ApicircleFsProvider.planUri(apicircleDir, 'plan-1');
+    const uri = await planUriFor('plan-1');
     await fsProvider.delete(uri, { recursive: false });
     const state = await bridge.activeWorkspace()!.read();
     expect(state.local.executionPlans['plan-1']).toBeUndefined();

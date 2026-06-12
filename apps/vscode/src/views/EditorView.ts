@@ -45,12 +45,22 @@ export class EditorView extends BaseTreeView<EditorNode> {
 
     if (element.kind === 'folder') {
       const folder = state.synced.collections.folders[element.id];
+      const childCount = folder
+        ? countFolderChildren(folder.id, state.synced.collections)
+        : { folders: 0, requests: 0 };
       const item = new vscode.TreeItem(
         folder?.name ?? '(deleted folder)',
         vscode.TreeItemCollapsibleState.Collapsed,
       );
       item.iconPath = new vscode.ThemeIcon('folder');
       item.contextValue = 'folder';
+      if (folder) {
+        const total = childCount.folders + childCount.requests;
+        item.description = total === 0 ? 'empty' : `${total} item${total === 1 ? '' : 's'}`;
+        item.tooltip = new vscode.MarkdownString(
+          `**${folder.name}**\n\n${childCount.requests} request${childCount.requests === 1 ? '' : 's'}, ${childCount.folders} folder${childCount.folders === 1 ? '' : 's'}\n\n_Click the + icon to add a request to this folder._`,
+        );
+      }
       return item;
     }
 
@@ -62,12 +72,24 @@ export class EditorView extends BaseTreeView<EditorNode> {
     item.description = `${request.method} ${describeUrl(request.url)}`;
     item.iconPath = methodIcon(request.method);
     item.contextValue = 'request';
+    item.tooltip = new vscode.MarkdownString(
+      `**${request.name}**\n\n\`${request.method}\` ${request.url}` +
+        (request.auth.type !== 'none' ? `\n\nAuth: \`${request.auth.type}\`` : '') +
+        (request.body.type !== 'none' ? `\n\nBody: \`${request.body.type}\`` : '') +
+        `\n\n_Click ▶ to send, or open to edit._`,
+    );
+    const uri = ApicircleFsProvider.requestUri(
+      active.workspace.id,
+      request,
+      state.synced.collections.folders,
+      state.synced.collections.requests,
+    );
     item.command = {
       command: 'vscode.open',
       title: 'Open',
-      arguments: [ApicircleFsProvider.requestUri(active.workspace.id, request.id)],
+      arguments: [uri],
     };
-    item.resourceUri = ApicircleFsProvider.requestUri(active.workspace.id, request.id);
+    item.resourceUri = uri;
     return item;
   }
 
@@ -92,6 +114,21 @@ export class EditorView extends BaseTreeView<EditorNode> {
     }
     return sortNodes(out, state.synced.collections.folders, state.synced.collections.requests);
   }
+}
+
+function countFolderChildren(
+  folderId: string,
+  collections: { folders: Record<string, Folder>; requests: Record<string, ApiRequest> },
+): { folders: number; requests: number } {
+  let folders = 0;
+  let requests = 0;
+  for (const f of Object.values(collections.folders)) {
+    if (f.parentId === folderId) folders += 1;
+  }
+  for (const r of Object.values(collections.requests)) {
+    if (r.folderId === folderId) requests += 1;
+  }
+  return { folders, requests };
 }
 
 function methodIcon(method: string): vscode.ThemeIcon {

@@ -448,6 +448,58 @@ export class Selection {
   ) {}
 }
 
+/**
+ * Minimal WorkspaceEdit that records replace / insert / delete operations.
+ * Tests apply them to an in-memory document via `applyRecordedEdits` below —
+ * the real host applies them atomically against the original positions.
+ */
+export type RecordedEdit =
+  | { kind: 'replace'; uri: Uri; range: Range; text: string }
+  | { kind: 'insert'; uri: Uri; position: Position; text: string }
+  | { kind: 'delete'; uri: Uri; range: Range };
+
+export class WorkspaceEdit {
+  edits: RecordedEdit[] = [];
+  replace(uri: Uri, range: Range, text: string): void {
+    this.edits.push({ kind: 'replace', uri, range, text });
+  }
+  insert(uri: Uri, position: Position, text: string): void {
+    this.edits.push({ kind: 'insert', uri, position, text });
+  }
+  delete(uri: Uri, range: Range): void {
+    this.edits.push({ kind: 'delete', uri, range });
+  }
+}
+
+/** Absolute character offset of (line, char) in `text` (newline-delimited). */
+function offsetOf(text: string, line: number, char: number): number {
+  const parts = text.split('\n');
+  let off = 0;
+  for (let i = 0; i < line && i < parts.length; i++) off += parts[i].length + 1;
+  return Math.min(off + char, text.length);
+}
+
+/**
+ * Apply recorded WorkspaceEdit operations to `text`, mirroring the host's
+ * atomic application: every edit resolves against the ORIGINAL offsets, then
+ * they're applied last-to-first so earlier offsets don't shift.
+ */
+export function applyRecordedEdits(text: string, edits: RecordedEdit[]): string {
+  const resolved = edits.map((e) => {
+    if (e.kind === 'insert') {
+      const off = offsetOf(text, e.position.line, e.position.character);
+      return { start: off, end: off, text: e.text };
+    }
+    const start = offsetOf(text, e.range.start.line, e.range.start.character);
+    const end = offsetOf(text, e.range.end.line, e.range.end.character);
+    return { start, end, text: e.kind === 'delete' ? '' : e.text };
+  });
+  resolved.sort((a, b) => b.start - a.start);
+  let out = text;
+  for (const r of resolved) out = out.slice(0, r.start) + r.text + out.slice(r.end);
+  return out;
+}
+
 export enum TextEditorRevealType {
   Default = 0,
   InCenter = 1,

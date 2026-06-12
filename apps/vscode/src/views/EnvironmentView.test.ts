@@ -176,20 +176,24 @@ describe('EnvironmentView', () => {
       expect(item.label).toBe('No workspace');
     });
 
-    it('renders an env with active badge', async () => {
+    it('renders an env with active badge + var count', async () => {
       seedWorkspace(apicircleDir, [{ name: 'production', variables: [] }], 'production');
       activate();
       const item = await view.getTreeItem({ kind: 'env', name: 'production' });
       expect(item.label).toBe('production');
-      expect(item.description).toBe('active');
+      // Description now embeds the active marker AND the variable count so
+      // users see at a glance how populated each env is.
+      expect(item.description).toContain('active');
+      expect(item.description).toContain('0 vars');
       expect(item.contextValue).toBe('env-active');
     });
 
-    it('renders an inactive env without active badge', async () => {
+    it('renders an inactive env with var count (no active badge)', async () => {
       seedWorkspace(apicircleDir, [{ name: 'staging', variables: [] }], 'production');
       activate();
       const item = await view.getTreeItem({ kind: 'env', name: 'staging' });
-      expect(item.description).toBeUndefined();
+      expect(item.description).toBe('0 vars');
+      expect(item.description).not.toContain('active');
       expect(item.contextValue).toBe('env');
     });
 

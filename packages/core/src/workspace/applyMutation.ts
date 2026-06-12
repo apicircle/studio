@@ -4,11 +4,17 @@ import type {
   Folder,
   FolderNode,
   FormDataRow,
+  EnvironmentVariableOverride,
   GlobalFileAsset,
+  LinkedSnapshot,
+  LinkedWorkspace,
   MockResponseBody,
   MockResponseConfig,
   RequestBody,
   Request as ApiRequest,
+  RequestOverride,
+  ReleaseHistory,
+  ReleaseVersion,
   SecretCryptoMeta,
   WorkspaceLocal,
   WorkspaceSnapshot,
@@ -21,6 +27,7 @@ import {
   importApicircleFolderInto,
   type ImportApicircleFolderResult,
 } from './apicircleFolderImport';
+import { appendReleaseEntry, deprecateRelease, yankRelease } from '../release/publishRelease';
 import type { ParsedApicircleFolderExport } from '../import/apicircleFolder';
 
 // =============================================================================
@@ -90,6 +97,34 @@ export function applyMutation(
       return applyMockUpsert(state, patch.mock, now);
     case 'mock.delete':
       return applyMockDelete(state, patch.id, now);
+    case 'release.publish':
+      return applyReleasePublish(state, patch.entry, now);
+    case 'release.deprecate':
+      return applyReleaseDeprecate(state, patch.version, now);
+    case 'release.yank':
+      return applyReleaseYank(state, patch.version, now);
+    case 'linkedWorkspace.upsert':
+      return applyLinkedWorkspaceUpsert(state, patch.link, patch.ledger, patch.snapshot, now);
+    case 'linkedWorkspace.remove':
+      return applyLinkedWorkspaceRemove(state, patch.id, now);
+    case 'linkedWorkspace.applyUpdate':
+      return applyLinkedWorkspaceApplyUpdate(state, patch, now);
+    case 'linkedOverride.setRequest':
+      return applyLinkedOverrideSetRequest(state, patch.override, now);
+    case 'linkedOverride.removeRequest':
+      return applyLinkedOverrideRemoveRequest(state, patch.linkedWorkspaceId, patch.itemId, now);
+    case 'linkedOverride.setEnvVar':
+      return applyLinkedOverrideSetEnvVar(state, patch.override, now);
+    case 'linkedOverride.removeEnvVar':
+      return applyLinkedOverrideRemoveEnvVar(
+        state,
+        patch.linkedWorkspaceId,
+        patch.envName,
+        patch.varKey,
+        now,
+      );
+    case 'linkedOverride.clearForLink':
+      return applyLinkedOverrideClearForLink(state, patch.linkedWorkspaceId, now);
     case 'globalAsset.upsertFile':
       return applyGlobalAssetUpsertFile(state, patch.file, now);
     case 'globalAsset.removeFile':
@@ -585,6 +620,294 @@ function applyMockDelete(state: WorkspaceState, id: string, now: string): ApplyM
       }
     : state.local;
   return { next: { synced, local }, changedIds: [id] };
+}
+
+// ---------------------------------------------------------------------------
+// Release handlers (synced.releases.self)
+//
+// The workspace-self release ledger that linked consumers pin to. `publish`
+// appends a pre-built ReleaseVersion (snapshot already computed by the async
+// `buildReleaseEntry`); `deprecate` / `yank` flip the soft / hard signal
+// flags. These reducers delegate to the pure helpers in
+// `../release/publishRelease` and pass the injected `now` so batches stay
+// deterministic. They THROW (rather than no-op) on invalid semver, a
+// duplicate version, or an unknown version — see the patch-union comment.
+// ---------------------------------------------------------------------------
+
+function applyReleasePublish(
+  state: WorkspaceState,
+  entry: ReleaseVersion,
+  now: string,
+): ApplyMutationResult {
+  const synced = appendReleaseEntry(state.synced, entry, now);
+  return { next: { ...state, synced }, changedIds: [entry.version] };
+}
+
+function applyReleaseDeprecate(
+  state: WorkspaceState,
+  version: string,
+  now: string,
+): ApplyMutationResult {
+  const synced = deprecateRelease(state.synced, version, now);
+  return { next: { ...state, synced }, changedIds: [version] };
+}
+
+function applyReleaseYank(
+  state: WorkspaceState,
+  version: string,
+  now: string,
+): ApplyMutationResult {
+  const synced = yankRelease(state.synced, version, now);
+  return { next: { ...state, synced }, changedIds: [version] };
+}
+
+// ---------------------------------------------------------------------------
+// Linked-workspace handlers (synced.linkedWorkspaces + releases.perLink +
+// linkedOverrides; local.linkedCollections + sessions.github.links)
+//
+// `upsert` writes the link record and OPTIONALLY the cached release ledger
+// (synced.releases.perLink) + collections/environments snapshot
+// (local.linkedCollections) produced by the network fetch in the host. The
+// snapshot lands in WorkspaceLocal so the consumer's pushed JSON never carries
+// the source's whole tree. `remove` cascades across every slice the link
+// touched. Both are pure + synchronous.
+// ---------------------------------------------------------------------------
+
+function applyLinkedWorkspaceUpsert(
+  state: WorkspaceState,
+  link: LinkedWorkspace,
+  ledger: ReleaseHistory | undefined,
+  snapshot: LinkedSnapshot | undefined,
+  now: string,
+): ApplyMutationResult {
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    linkedWorkspaces: { ...state.synced.linkedWorkspaces, [link.id]: link },
+    releases: ledger
+      ? {
+          ...state.synced.releases,
+          perLink: { ...state.synced.releases.perLink, [link.id]: ledger },
+        }
+      : state.synced.releases,
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  const local: WorkspaceLocal = snapshot
+    ? {
+        ...state.local,
+        linkedCollections: { ...state.local.linkedCollections, [link.id]: snapshot },
+      }
+    : state.local;
+  return { next: { synced, local }, changedIds: [link.id] };
+}
+
+function applyLinkedWorkspaceRemove(
+  state: WorkspaceState,
+  id: string,
+  now: string,
+): ApplyMutationResult {
+  if (!state.synced.linkedWorkspaces[id]) {
+    return { next: state, changedIds: [] };
+  }
+  const linkedWorkspaces = { ...state.synced.linkedWorkspaces };
+  delete linkedWorkspaces[id];
+  const perLink = { ...state.synced.releases.perLink };
+  delete perLink[id];
+  // Override keys are `${linkedWorkspaceId}:…`; generateId() ids never contain
+  // a colon, so the `${id}:` prefix is an unambiguous match.
+  const prefix = `${id}:`;
+  const dropPrefixed = <T>(map: Record<string, T>): Record<string, T> =>
+    Object.fromEntries(Object.entries(map).filter(([k]) => !k.startsWith(prefix)));
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    linkedWorkspaces,
+    releases: { ...state.synced.releases, perLink },
+    linkedOverrides: {
+      requests: dropPrefixed(state.synced.linkedOverrides.requests),
+      environmentVars: dropPrefixed(state.synced.linkedOverrides.environmentVars),
+    },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  const linkedCollections = { ...state.local.linkedCollections };
+  delete linkedCollections[id];
+  const githubLinks = { ...state.local.sessions.github.links };
+  delete githubLinks[id];
+  const local: WorkspaceLocal = {
+    ...state.local,
+    linkedCollections,
+    sessions: {
+      ...state.local.sessions,
+      github: { ...state.local.sessions.github, links: githubLinks },
+    },
+  };
+  return { next: { synced, local }, changedIds: [id] };
+}
+
+function applyLinkedWorkspaceApplyUpdate(
+  state: WorkspaceState,
+  patch: {
+    id: string;
+    pinnedVersion: string | null;
+    snapshot: LinkedSnapshot;
+    ledger: ReleaseHistory;
+    requestOverrides: RequestOverride[];
+    envVarOverrides: EnvironmentVariableOverride[];
+  },
+  now: string,
+): ApplyMutationResult {
+  const link = state.synced.linkedWorkspaces[patch.id];
+  if (!link) {
+    return { next: state, changedIds: [] };
+  }
+  const prefix = `${patch.id}:`;
+  const otherRequests = Object.fromEntries(
+    Object.entries(state.synced.linkedOverrides.requests).filter(([k]) => !k.startsWith(prefix)),
+  );
+  for (const o of patch.requestOverrides) {
+    otherRequests[`${o.linkedWorkspaceId}:${o.itemId}`] = o;
+  }
+  const otherEnvVars = Object.fromEntries(
+    Object.entries(state.synced.linkedOverrides.environmentVars).filter(
+      ([k]) => !k.startsWith(prefix),
+    ),
+  );
+  for (const o of patch.envVarOverrides) {
+    otherEnvVars[`${o.linkedWorkspaceId}:${o.envName}:${o.varKey}`] = o;
+  }
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    linkedWorkspaces: {
+      ...state.synced.linkedWorkspaces,
+      [patch.id]: { ...link, pinnedVersion: patch.pinnedVersion },
+    },
+    releases: {
+      ...state.synced.releases,
+      perLink: { ...state.synced.releases.perLink, [patch.id]: patch.ledger },
+    },
+    linkedOverrides: { requests: otherRequests, environmentVars: otherEnvVars },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  const local: WorkspaceLocal = {
+    ...state.local,
+    linkedCollections: { ...state.local.linkedCollections, [patch.id]: patch.snapshot },
+  };
+  return { next: { synced, local }, changedIds: [patch.id] };
+}
+
+// ---------------------------------------------------------------------------
+// Linked-content override handlers (synced.linkedOverrides) — consumer edits to
+// a linked workspace's requests / env-vars, stored as field-level deltas.
+// ---------------------------------------------------------------------------
+
+function applyLinkedOverrideSetRequest(
+  state: WorkspaceState,
+  override: RequestOverride,
+  now: string,
+): ApplyMutationResult {
+  const key = `${override.linkedWorkspaceId}:${override.itemId}`;
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    linkedOverrides: {
+      ...state.synced.linkedOverrides,
+      requests: {
+        ...state.synced.linkedOverrides.requests,
+        [key]: { ...override, updatedAt: now },
+      },
+    },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  return { next: { ...state, synced }, changedIds: [key] };
+}
+
+function applyLinkedOverrideRemoveRequest(
+  state: WorkspaceState,
+  linkedWorkspaceId: string,
+  itemId: string,
+  now: string,
+): ApplyMutationResult {
+  const key = `${linkedWorkspaceId}:${itemId}`;
+  if (!state.synced.linkedOverrides.requests[key]) {
+    return { next: state, changedIds: [] };
+  }
+  const requests = { ...state.synced.linkedOverrides.requests };
+  delete requests[key];
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    linkedOverrides: { ...state.synced.linkedOverrides, requests },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  return { next: { ...state, synced }, changedIds: [key] };
+}
+
+function applyLinkedOverrideSetEnvVar(
+  state: WorkspaceState,
+  override: EnvironmentVariableOverride,
+  now: string,
+): ApplyMutationResult {
+  const key = `${override.linkedWorkspaceId}:${override.envName}:${override.varKey}`;
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    linkedOverrides: {
+      ...state.synced.linkedOverrides,
+      environmentVars: {
+        ...state.synced.linkedOverrides.environmentVars,
+        [key]: { ...override, updatedAt: now },
+      },
+    },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  return { next: { ...state, synced }, changedIds: [key] };
+}
+
+function applyLinkedOverrideRemoveEnvVar(
+  state: WorkspaceState,
+  linkedWorkspaceId: string,
+  envName: string,
+  varKey: string,
+  now: string,
+): ApplyMutationResult {
+  const key = `${linkedWorkspaceId}:${envName}:${varKey}`;
+  if (!state.synced.linkedOverrides.environmentVars[key]) {
+    return { next: state, changedIds: [] };
+  }
+  const environmentVars = { ...state.synced.linkedOverrides.environmentVars };
+  delete environmentVars[key];
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    linkedOverrides: { ...state.synced.linkedOverrides, environmentVars },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  return { next: { ...state, synced }, changedIds: [key] };
+}
+
+function applyLinkedOverrideClearForLink(
+  state: WorkspaceState,
+  linkedWorkspaceId: string,
+  now: string,
+): ApplyMutationResult {
+  const prefix = `${linkedWorkspaceId}:`;
+  const requestKeys = Object.keys(state.synced.linkedOverrides.requests).filter((k) =>
+    k.startsWith(prefix),
+  );
+  const envKeys = Object.keys(state.synced.linkedOverrides.environmentVars).filter((k) =>
+    k.startsWith(prefix),
+  );
+  if (requestKeys.length === 0 && envKeys.length === 0) {
+    return { next: state, changedIds: [] };
+  }
+  const requests = Object.fromEntries(
+    Object.entries(state.synced.linkedOverrides.requests).filter(([k]) => !k.startsWith(prefix)),
+  );
+  const environmentVars = Object.fromEntries(
+    Object.entries(state.synced.linkedOverrides.environmentVars).filter(
+      ([k]) => !k.startsWith(prefix),
+    ),
+  );
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    linkedOverrides: { requests, environmentVars },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  return { next: { ...state, synced }, changedIds: [...requestKeys, ...envKeys] };
 }
 
 // ---------------------------------------------------------------------------

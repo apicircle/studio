@@ -35,7 +35,7 @@ function makeMock(over: Partial<MockServer> = {}): MockServer {
 describe('serializeMockToYaml', () => {
   it('emits the header comment', () => {
     const out = serializeMockToYaml(makeMock());
-    expect(out).toContain('APICircle Mock Server');
+    expect(out).toContain('API Circle Mock Server');
   });
 
   it('emits editable fields', () => {
@@ -123,6 +123,14 @@ describe('parseMockFromYaml', () => {
 
   it('throws when name is missing', () => {
     expect(() => parseMockFromYaml('defaultPort: 3000')).toThrow(MockYamlParseError);
+  });
+
+  it('rejects an unknown top-level key (renamed / mistyped field)', () => {
+    expect(() => parseMockFromYaml('name: x\ncores:\n  enabled: true\n')).toThrow(/Unknown field/);
+  });
+
+  it('rejects an unknown key inside cors', () => {
+    expect(() => parseMockFromYaml('name: x\ncors:\n  enableed: true\n')).toThrow(/cors: unknown/);
   });
 
   it('parses name + defaultPort + cors', () => {

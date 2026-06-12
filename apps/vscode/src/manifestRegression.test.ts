@@ -357,4 +357,438 @@ describe('package.json manifest regression', () => {
       );
     }
   });
+
+  // ----- New Request action icon + Editor welcome view gating -----
+  //
+  // Bug-fix follow-up: apicircle.newRequest used to render as raw text in
+  // the Editor view's title bar because it lacked an icon, and the
+  // Editor's welcome view said "Create New Workspace" / "Open Folder…"
+  // even when a workspace was already detected. These tests pin both fixes.
+
+  it('apicircle.newRequest declares an icon so the view-title menu renders as an icon, not text', () => {
+    const pkg = readManifest();
+    const cmd = pkg.contributes.commands.find((c) => c.command === 'apicircle.newRequest');
+    expect(cmd).toBeDefined();
+    expect((cmd as unknown as { icon?: string }).icon).toBe('$(add)');
+  });
+
+  it('post-launch UX: request template + add-section commands + Copilot uninstall are declared & activated', () => {
+    // Three commands added in the first-week feedback sweep — the
+    // template picker, the YAML CodeLens "+ Add section…" handler, and
+    // the Copilot Chat uninstall affordance. All three need the
+    // matching activation event so the lazy-load path triggers from the
+    // CodeLens / TreeView click.
+    const pkg = readManifest();
+    const ids = new Set(pkg.contributes.commands.map((c) => c.command));
+    const events = new Set(pkg.activationEvents);
+    for (const id of [
+      'apicircle.newRequestFromTemplate',
+      'apicircle.addRequestSection',
+      'apicircle.switchRequestBodyType',
+      'apicircle.switchRequestAuthType',
+      'apicircle.pickBinaryAttachment',
+      'apicircle.addFormDataRow',
+      'apicircle.switchFormDataRowKind',
+      'apicircle.pickFormDataRowFile',
+      'apicircle.pickHeader',
+      'apicircle.mapContextVarsFromJson',
+      'apicircle.fetchOAuth2Token',
+      'apicircle.addQueryRow',
+      'apicircle.addCookieRow',
+      'apicircle.addPathParamRow',
+      'apicircle.addAssertionRow',
+      'apicircle.addExtractionRow',
+      'apicircle.addMockValidationRule',
+      'apicircle.addMockMultiplier',
+      'apicircle.switchMockResponseBodyType',
+      'apicircle.setMockResponseStatus',
+      'apicircle.addMockResponseRule',
+      'apicircle.removeMockResponseRule',
+      'apicircle.removeMockValidationRule',
+      'apicircle.removeMockMultiplier',
+      'apicircle.toggleMockRuleEnabled',
+      'apicircle.addMockResponseHeader',
+      'apicircle.openMockEndpointYaml',
+      'apicircle.uninstallCopilotMcpConfig',
+    ]) {
+      expect(ids.has(id), `${id} missing from contributes.commands`).toBe(true);
+      expect(events.has(`onCommand:${id}`), `${id} missing onCommand activation`).toBe(true);
+    }
+  });
+
+  it('per-field mock validation commands are declared & activated', () => {
+    // The ◆ Kind / ◆ Target / ◆ Value CodeLenses on requestValidation entries
+    // drive these three commands; each needs a contributes.commands entry +
+    // an onCommand activation so the lazy-load path fires from the lens click.
+    const pkg = readManifest();
+    const ids = new Set(pkg.contributes.commands.map((c) => c.command));
+    const events = new Set(pkg.activationEvents);
+    for (const id of [
+      'apicircle.setMockValidationKind',
+      'apicircle.setMockValidationTarget',
+      'apicircle.setMockValidationExpected',
+    ]) {
+      expect(ids.has(id), `${id} missing from contributes.commands`).toBe(true);
+      expect(events.has(`onCommand:${id}`), `${id} missing onCommand activation`).toBe(true);
+    }
+  });
+
+  it('collection-request field-editor commands are declared & activated', () => {
+    const pkg = readManifest();
+    const ids = new Set(pkg.contributes.commands.map((c) => c.command));
+    const events = new Set(pkg.activationEvents);
+    for (const id of [
+      'apicircle.setRequestMethodField',
+      'apicircle.setRequestHeaderKeyField',
+      'apicircle.setRequestHeaderValueField',
+      'apicircle.setRequestTextField',
+      'apicircle.setRequestAssertionKindField',
+      'apicircle.setRequestAssertionOpField',
+      'apicircle.setRequestExtractionSourceField',
+    ]) {
+      expect(ids.has(id), `${id} missing from contributes.commands`).toBe(true);
+      expect(events.has(`onCommand:${id}`), `${id} missing onCommand activation`).toBe(true);
+    }
+  });
+
+  it('requestSchema authoring commands are declared & activated', () => {
+    const pkg = readManifest();
+    const ids = new Set(pkg.contributes.commands.map((c) => c.command));
+    const events = new Set(pkg.activationEvents);
+    for (const id of [
+      'apicircle.addMockRequestSchema',
+      'apicircle.addMockRequestSchemaParam',
+      'apicircle.addMockRequestSchemaBodyExample',
+      'apicircle.setMockParamTypeField',
+      'apicircle.setMockHeaderParamNameField',
+    ]) {
+      expect(ids.has(id), `${id} missing from contributes.commands`).toBe(true);
+      expect(events.has(`onCommand:${id}`), `${id} missing onCommand activation`).toBe(true);
+    }
+  });
+
+  it('removed authoring affordances are fully unregistered (no command + no activation)', () => {
+    // The boolean `required:` row (edited directly in YAML) and the per-field
+    // auth editor were removed from the CodeLens surfaces; their commands must
+    // not linger as dangling palette entries.
+    const pkg = readManifest();
+    const ids = new Set(pkg.contributes.commands.map((c) => c.command));
+    const events = new Set(pkg.activationEvents);
+    for (const id of ['apicircle.toggleMockParamRequired', 'apicircle.setRequestAuthField']) {
+      expect(ids.has(id), `${id} should be removed from contributes.commands`).toBe(false);
+      expect(events.has(`onCommand:${id}`), `${id} should be removed from activationEvents`).toBe(
+        false,
+      );
+    }
+  });
+
+  it('Add Mock Validation Rule no longer carries the trailing ellipsis (it no longer prompts)', () => {
+    const pkg = readManifest();
+    const cmd = pkg.contributes.commands.find(
+      (c) => c.command === 'apicircle.addMockValidationRule',
+    );
+    expect(cmd).toBeDefined();
+    expect(cmd!.title).toBe('Add Mock Validation Rule');
+  });
+
+  it('all line-addressed mock field-editor commands are declared & activated', () => {
+    const pkg = readManifest();
+    const ids = new Set(pkg.contributes.commands.map((c) => c.command));
+    const events = new Set(pkg.activationEvents);
+    for (const id of [
+      'apicircle.setMockMethodField',
+      'apicircle.setMockStatusField',
+      'apicircle.setMockBodyTypeField',
+      'apicircle.setMockHeaderKeyField',
+      'apicircle.setMockHeaderValueField',
+      'apicircle.setMockClauseScopeField',
+      'apicircle.setMockClauseOpField',
+      'apicircle.setMockClauseTargetField',
+      'apicircle.setMockClauseValueField',
+      'apicircle.toggleMockHeaderEnabled',
+      'apicircle.addMockConditionClause',
+      'apicircle.setMockMultiplierKindField',
+      'apicircle.setMockMultiplierKeyField',
+      'apicircle.setMockMultiplierTargetPathField',
+      'apicircle.setMockTextField',
+      'apicircle.setMockNumberField',
+      'apicircle.formatJson',
+    ]) {
+      expect(ids.has(id), `${id} missing from contributes.commands`).toBe(true);
+      expect(events.has(`onCommand:${id}`), `${id} missing onCommand activation`).toBe(true);
+    }
+  });
+
+  it('post-launch UX: display name + container title use the spaced "API Circle Studio" brand', () => {
+    const pkg = readManifest() as Manifest & {
+      displayName?: string;
+      contributes: {
+        viewsContainers?: { activitybar?: Array<{ id: string; title?: string }> };
+        configuration: { title?: string };
+      };
+    };
+    expect(pkg.displayName).toBe('API Circle Studio');
+    expect(pkg.contributes.configuration.title).toBe('API Circle Studio');
+    const apicircleContainer = (pkg.contributes.viewsContainers?.activitybar ?? []).find(
+      (c) => c.id === 'apicircle',
+    );
+    expect(apicircleContainer?.title).toBe('API Circle Studio');
+  });
+
+  it('Mock sidebar pencil opens the per-endpoint YAML, not the form webview', () => {
+    // The pencil (inline group, position 1) on mock-endpoint rows must
+    // route to apicircle.openMockEndpointYaml. The legacy
+    // editMockEndpoint (form webview) is kept as a context-menu entry
+    // but no longer occupies the inline slot — the YAML is the
+    // canonical edit surface.
+    const pkg = readManifest() as Manifest & {
+      contributes: {
+        menus?: {
+          'view/item/context'?: Array<{ command?: string; when?: string; group?: string }>;
+        };
+      };
+    };
+    const entries = pkg.contributes.menus?.['view/item/context'] ?? [];
+    const inlinePencil = entries.find(
+      (e) =>
+        (e.when ?? '').includes('viewItem == mock-endpoint') &&
+        (e.group ?? '').startsWith('inline'),
+    );
+    expect(inlinePencil, 'inline mock-endpoint menu entry missing').toBeDefined();
+    expect(inlinePencil!.command).toBe('apicircle.openMockEndpointYaml');
+  });
+
+  it('post-launch UX: snapshot rows expose Restore + Delete inline', () => {
+    // Pre-fix the actions were context-menu-only — users couldn't see
+    // them on hover. The inline-group entries surface the icons in the
+    // row gutter alongside the snapshot label.
+    const pkg = readManifest() as Manifest & {
+      contributes: {
+        menus?: {
+          'view/item/context'?: Array<{ command?: string; when?: string; group?: string }>;
+        };
+      };
+    };
+    const entries = pkg.contributes.menus?.['view/item/context'] ?? [];
+    const restoreInline = entries.find(
+      (e) =>
+        e.command === 'apicircle.restoreSnapshot' &&
+        (e.when ?? '').includes('snapshot-entry') &&
+        (e.group ?? '').startsWith('inline'),
+    );
+    const deleteInline = entries.find(
+      (e) =>
+        e.command === 'apicircle.deleteSnapshot' &&
+        (e.when ?? '').includes('snapshot-entry') &&
+        (e.group ?? '').startsWith('inline'),
+    );
+    expect(restoreInline, 'restoreSnapshot missing inline menu entry').toBeDefined();
+    expect(deleteInline, 'deleteSnapshot missing inline menu entry').toBeDefined();
+  });
+
+  it('every vscode.lm MCP provider id passed at runtime is declared in contributes.mcpServerDefinitionProviders', () => {
+    // Second first-install repro: Phase 10 wired
+    // `vscode.lm.registerMcpServerDefinitionProvider('apicircle-embedded', ...)`
+    // but never declared "apicircle-embedded" in
+    // contributes.mcpServerDefinitionProviders. VS Code 1.94+
+    // throws on registration when the id isn't in the manifest, and
+    // the throw escapes activate() — the whole extension fails to
+    // load. Pin every id that source code passes to
+    // registerMcpServerDefinitionProvider against the manifest.
+    const pkg = readManifest() as Manifest & {
+      contributes: { mcpServerDefinitionProviders?: Array<{ id: string; label?: string }> };
+    };
+    const declaredIds = new Set(
+      (pkg.contributes.mcpServerDefinitionProviders ?? []).map((p) => p.id),
+    );
+
+    // Scan src/ for every registerMcpServerDefinitionProvider call and
+    // pull the first-arg string literal.
+    const srcDir = path.resolve(__dirname);
+    const runtimeIds = new Set<string>();
+    function walk(dir: string): void {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name === 'node_modules' || entry.name === 'dist') continue;
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+        } else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) {
+          const text = fs.readFileSync(full, 'utf8');
+          const re = /registerMcpServerDefinitionProvider\s*\(\s*['"]([^'"]+)['"]/g;
+          let m: RegExpExecArray | null;
+          while ((m = re.exec(text)) !== null) {
+            runtimeIds.add(m[1]);
+          }
+        }
+      }
+    }
+    walk(srcDir);
+
+    const missing = [...runtimeIds].filter((id) => !declaredIds.has(id));
+    expect(
+      missing,
+      `vscode.lm.registerMcpServerDefinitionProvider id(s) NOT declared in package.json contributes.mcpServerDefinitionProviders: ${missing.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  it('every runtime dependency declared in package.json is bundled (noExternal in tsup.config.ts)', () => {
+    // First-install bug repro: `proper-lockfile` was listed in
+    // `apps/vscode/package.json` dependencies but missing from the
+    // `noExternal` list, so tsup left it external. The .vsix is built
+    // with `vsce package --no-dependencies`, which ships no
+    // `node_modules` — so the import threw `Cannot find package
+    // 'proper-lockfile'` at activation, every command registered as
+    // "not found", and discovery never ran. Every runtime dep (other
+    // than `vscode`, which the host injects) must be bundled.
+    const pkg = readManifest() as Manifest & {
+      dependencies?: Record<string, string>;
+    };
+    const tsupConfigPath = path.resolve(__dirname, '..', 'tsup.config.ts');
+    const tsupConfigText = fs.readFileSync(tsupConfigPath, 'utf8');
+    // Extract every quoted string between `noExternal: [` and the matching `]`.
+    const noExternalMatch = tsupConfigText.match(/noExternal\s*:\s*\[([\s\S]*?)\]/);
+    expect(noExternalMatch, 'noExternal array not found in tsup.config.ts').not.toBeNull();
+    const noExternal = new Set(
+      (noExternalMatch![1].match(/['"]([^'"]+)['"]/g) ?? []).map((q) => q.slice(1, -1)),
+    );
+    const runtimeDeps = Object.keys(pkg.dependencies ?? {});
+    const missing = runtimeDeps.filter((d) => d !== 'vscode' && !noExternal.has(d));
+    expect(
+      missing,
+      `package.json runtime deps NOT in tsup noExternal (must be bundled because vsce --no-dependencies ships no node_modules): ${missing.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  it('release-ledger commands are declared & activated', () => {
+    const pkg = readManifest();
+    const ids = new Set(pkg.contributes.commands.map((c) => c.command));
+    const events = new Set(pkg.activationEvents);
+    for (const id of [
+      'apicircle.openReleaseHistory',
+      'apicircle.publishRelease',
+      'apicircle.deprecateRelease',
+      'apicircle.withdrawRelease',
+    ]) {
+      expect(ids.has(id), `${id} missing from contributes.commands`).toBe(true);
+      expect(events.has(`onCommand:${id}`), `${id} missing onCommand activation`).toBe(true);
+    }
+  });
+
+  it('linked-workspace commands are declared & activated', () => {
+    const pkg = readManifest();
+    const ids = new Set(pkg.contributes.commands.map((c) => c.command));
+    const events = new Set(pkg.activationEvents);
+    for (const id of [
+      'apicircle.linkWorkspace',
+      'apicircle.searchMarketplace',
+      'apicircle.refreshLinkedWorkspace',
+      'apicircle.reviewLinkedUpdate',
+      'apicircle.tagRelease',
+      'apicircle.editRepoTopics',
+      'apicircle.unlinkWorkspace',
+      'apicircle.openLinkYaml',
+      'apicircle.showLinkedChangelog',
+      'apicircle.setLinkNameField',
+      'apicircle.setLinkDescriptionField',
+      'apicircle.setLinkPinnedVersionField',
+      'apicircle.setLinkScopeField',
+      'apicircle.setLinkSessionModeField',
+      'apicircle.addLinkRequiredKey',
+      'apicircle.removeLinkRequiredKey',
+      'apicircle.setLinkSessionToken',
+      'apicircle.clearLinkSessionToken',
+      'apicircle.openLinkedRequest',
+      'apicircle.resetLinkedRequest',
+      'apicircle.discardLinkedMods',
+      'apicircle.provisionLinkedSecret',
+      'apicircle.clearLinkedSecret',
+      'apicircle.setLinkedEnvVarOverride',
+    ]) {
+      expect(ids.has(id), `${id} missing from contributes.commands`).toBe(true);
+      expect(events.has(`onCommand:${id}`), `${id} missing onCommand activation`).toBe(true);
+    }
+  });
+
+  it('linked-workspace context menu wires refresh + unlink', () => {
+    const pkg = readManifest() as Manifest & {
+      contributes: { menus?: { 'view/item/context'?: Array<{ command?: string; when?: string }> } };
+    };
+    const entries = pkg.contributes.menus?.['view/item/context'] ?? [];
+    const refresh = entries.find(
+      (e) =>
+        e.command === 'apicircle.refreshLinkedWorkspace' &&
+        (e.when ?? '').includes('apicircleLinkedWorkspace'),
+    );
+    const unlink = entries.find(
+      (e) =>
+        e.command === 'apicircle.unlinkWorkspace' &&
+        (e.when ?? '').includes('apicircleLinkedWorkspace'),
+    );
+    expect(refresh, 'refresh context menu missing').toBeDefined();
+    expect(unlink, 'unlink context menu missing').toBeDefined();
+  });
+
+  it('the Link Workspaces view replaced the Marketplace stub', () => {
+    const pkg = readManifest() as Manifest & {
+      contributes: {
+        views?: { apicircle?: Array<{ id: string; name: string; when?: string }> };
+      };
+    };
+    const views = pkg.contributes.views?.apicircle ?? [];
+    const ids = views.map((v) => v.id);
+    expect(ids).toContain('apicircle.linkWorkspaces');
+    expect(ids).not.toContain('apicircle.marketplace');
+    // The view is always-on now — no enableMarketplace gate.
+    const link = views.find((v) => v.id === 'apicircle.linkWorkspaces');
+    expect(link?.when).toBeUndefined();
+    expect(pkg.contributes.configuration.properties['apicircle.enableMarketplace']).toBeUndefined();
+  });
+
+  it('per-version release context menu wires Deprecate + Withdraw', () => {
+    const pkg = readManifest() as Manifest & {
+      contributes: {
+        menus?: { 'view/item/context'?: Array<{ command?: string; when?: string }> };
+      };
+    };
+    const entries = pkg.contributes.menus?.['view/item/context'] ?? [];
+    const deprecate = entries.find(
+      (e) =>
+        e.command === 'apicircle.deprecateRelease' &&
+        (e.when ?? '').includes('apicircleReleaseVersion'),
+    );
+    const withdraw = entries.find(
+      (e) =>
+        e.command === 'apicircle.withdrawRelease' &&
+        (e.when ?? '').includes('apicircleReleaseVersion'),
+    );
+    expect(deprecate, 'deprecateRelease context menu missing').toBeDefined();
+    expect(withdraw, 'withdrawRelease context menu missing').toBeDefined();
+  });
+
+  it('apicircle.editor viewsWelcome splits on apicircle.hasActiveWorkspace', () => {
+    const pkg = readManifest() as Manifest & {
+      contributes: { viewsWelcome?: ViewWelcomeEntry[] };
+    };
+    const editorEntries = (pkg.contributes.viewsWelcome ?? []).filter(
+      (e) => e.view === 'apicircle.editor',
+    );
+    // Two distinct entries — one for the no-workspace case, one for when
+    // the bridge has already adopted a `.apicircle/workspace.json`.
+    expect(editorEntries.length).toBe(2);
+
+    const noWorkspace = editorEntries.find((e) => e.when === '!apicircle.hasActiveWorkspace');
+    const withWorkspace = editorEntries.find((e) => e.when === 'apicircle.hasActiveWorkspace');
+    expect(noWorkspace).toBeDefined();
+    expect(withWorkspace).toBeDefined();
+
+    // No-workspace copy still surfaces the create + open-folder actions.
+    expect(noWorkspace!.contents ?? '').toContain('command:apicircle.createWorkspace');
+    expect(noWorkspace!.contents ?? '').toContain('command:workbench.action.files.openFolder');
+
+    // Workspace-present copy must NOT shout "Create New Workspace" — that
+    // copy is the exact thing that made users think the .apicircle folder
+    // wasn't detected.
+    expect(withWorkspace!.contents ?? '').not.toContain('command:apicircle.createWorkspace');
+    expect(withWorkspace!.contents ?? '').toContain('command:apicircle.newRequest');
+  });
 });

@@ -186,6 +186,13 @@ export { extractContext } from './environment/extractContext';
 export type { ContextExtractionResult } from './environment/extractContext';
 
 export {
+  resolveRequestForExecution,
+  applyLinkedEnvironmentOverrides,
+  plaintextEnvMap,
+} from './environment/resolveRequest';
+export type { ResolveRequestArgs, ResolvedRequestResult } from './environment/resolveRequest';
+
+export {
   decryptString,
   deriveKeyFromSlotValue,
   encryptString,
@@ -223,8 +230,27 @@ export type { AttachmentSlotRef } from './git/collectAttachments';
 export { compareSemver, isValidSemver, parseSemver, sortVersionsDesc } from './release/semver';
 export type { ParsedVersion } from './release/semver';
 
-export { deprecateRelease, publishRelease, yankRelease } from './release/publishRelease';
+export {
+  appendReleaseEntry,
+  buildReleaseEntry,
+  deprecateRelease,
+  publishRelease,
+  yankRelease,
+} from './release/publishRelease';
 export type { PublishReleaseArgs } from './release/publishRelease';
+
+export {
+  parseLinkedWorkspaceJson,
+  buildLinkedSnapshot,
+  ledgerFromProbe,
+} from './linked/linkedSnapshot';
+export type { LinkedWorkspaceProbe } from './linked/linkedSnapshot';
+
+export {
+  mergeRequestOverride,
+  computeRequestOverridePatch,
+  isEmptyOverridePatch,
+} from './linked/requestOverride';
 
 export {
   getLanguageFromBodyType,

@@ -3,14 +3,13 @@ import type { VsCodeBridge } from '../host/vscodeBridge';
 import type { VsCodeMcpManager } from '../host/mcpManager';
 import { MockView } from './MockView';
 import { McpView } from './McpView';
-import { MarketplaceView } from './MarketplaceView';
 
 const emptyBridge = {
   activeWorkspace: () => undefined,
 } as unknown as VsCodeBridge;
 
 // =============================================================================
-// Stub-view smoke tests — Mock (Phase 3), MCP (Phase 4), Marketplace (v1.0).
+// Stub-view smoke tests — Mock (Phase 3), MCP (Phase 4).
 //
 // These views ship as TreeDataProvider stubs returning empty arrays; the
 // concrete implementations land in their respective phases. The tests below
@@ -53,17 +52,5 @@ describe('McpView (Phase 5 — populated)', () => {
     // Phase 5: header + clients-section + connect-guide.
     expect(kids.length).toBe(3);
     expect(kids[0]).toEqual({ kind: 'header' });
-  });
-});
-
-describe('MarketplaceView (v1.0 stub)', () => {
-  it('viewId matches package.json contribution', () => {
-    expect(new MarketplaceView().viewId).toBe('apicircle.marketplace');
-  });
-
-  it('getChildren returns empty array', () => {
-    const view = new MarketplaceView();
-    const kids = view.getChildren();
-    expect(kids).toEqual([]);
   });
 });

@@ -28,12 +28,81 @@ export interface ServeOptions {
 // is the belt-and-braces fallback if a socket somehow refuses to die.
 const CLOSE_TIMEOUT_MS = 3_000;
 
+/**
+ * Thrown by `serveOnNode` when the requested port is invalid (non-integer,
+ * negative, > 65535) OR the OS refuses to bind it (EADDRINUSE / EACCES /
+ * EADDRNOTAVAIL). Carries `port`, `host`, and an OS-level `code` so the
+ * UI / CLI / VS Code surfaces can render an actionable message instead of
+ * Node's raw `listen EADDRINUSE …` line.
+ *
+ * `code` values you'll see in practice:
+ *   • `EADDRINUSE`    — another process already owns the port
+ *   • `EACCES`        — usually a port below 1024 without privileges
+ *   • `EADDRNOTAVAIL` — host string doesn't resolve to a local interface
+ *   • `INVALID_PORT`  — caller passed something that isn't a 1-65535 integer
+ */
+export class MockServerStartError extends Error {
+  readonly code: string;
+  readonly port: number;
+  readonly host: string;
+  constructor(opts: { code: string; port: number; host: string; message: string }) {
+    super(opts.message);
+    this.name = 'MockServerStartError';
+    this.code = opts.code;
+    this.port = opts.port;
+    this.host = opts.host;
+  }
+}
+
+function explainBindError(code: string, port: number, host: string): string {
+  switch (code) {
+    case 'EADDRINUSE':
+      return `Port ${port} on ${host} is already in use. Stop the other process or pick a different port.`;
+    case 'EACCES':
+      return `Permission denied binding to port ${port} on ${host}. Ports below 1024 usually require elevated privileges — pick a port in 1024–65535.`;
+    case 'EADDRNOTAVAIL':
+      return `Cannot bind to ${host}:${port} — that address is not available on this machine.`;
+    default:
+      return `Failed to bind ${host}:${port} (${code}).`;
+  }
+}
+
 export async function serveOnNode(app: Hono, opts: ServeOptions = {}): Promise<MockServerHandle> {
-  const port = opts.port && opts.port > 0 ? opts.port : await getFreePort();
   const host = opts.host ?? '127.0.0.1';
+  // `port: 0` (or absent) means "OS picks a free port" — we resolve that
+  // up-front via getFreePort so the returned handle can report the actual
+  // bound port. Any explicit port goes through validation first so we
+  // throw a clean MockServerStartError instead of crashing inside
+  // @hono/node-server with a raw RangeError.
+  let port: number;
+  if (opts.port === undefined || opts.port === 0) {
+    port = await getFreePort();
+  } else {
+    if (!Number.isInteger(opts.port) || opts.port < 1 || opts.port > 65535) {
+      throw new MockServerStartError({
+        code: 'INVALID_PORT',
+        port: opts.port,
+        host,
+        message: `Invalid port ${String(opts.port)} — must be an integer between 1 and 65535.`,
+      });
+    }
+    port = opts.port;
+  }
 
   let server: ServerType | null = null;
   await new Promise<void>((resolve, reject) => {
+    const wrapError = (err: unknown) => {
+      const candidate = err && typeof err === 'object' && 'code' in err ? err.code : undefined;
+      const code = typeof candidate === 'string' ? candidate : 'UNKNOWN';
+      reject(
+        new MockServerStartError({
+          code,
+          port,
+          host,
+          message: explainBindError(code, port, host),
+        }),
+      );
+    };
     try {
       server = serve(
         {
@@ -43,9 +112,9 @@ export async function serveOnNode(app: Hono, opts: ServeOptions = {}): Promise<M
         },
         () => resolve(),
       );
-      server.on('error', reject);
+      server.on('error', wrapError);
     } catch (err) {
-      reject(err instanceof Error ? err : new Error(String(err)));
+      wrapError(err);
     }
   });
 

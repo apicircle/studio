@@ -5,12 +5,12 @@ import type {
   PlanRun,
   Request as ApiRequest,
   RequestAuth,
-  RequestOverridePatch,
   RequestRun,
   WorkspaceLocal,
   WorkspaceSynced,
 } from '@apicircle/shared';
 import { envPriorityKey, generateId, RUN_BODY_PREVIEW_LIMIT } from '@apicircle/shared';
+import { mergeRequestOverride } from '../linked/requestOverride';
 import { executeRequest, type ExecutionResult } from '../request/executeRequest';
 import type { AttachmentResolver } from '../request/buildRequest';
 import { runAssertions, type AssertionResult } from '../assertions/runAssertions';
@@ -226,23 +226,6 @@ function lookupPlanStepRequest(
     linkedFolders: snapshot.collections.folders,
     linkedGlobalAssets: snapshot.globalAssets,
   };
-}
-
-function mergeRequestOverride(base: ApiRequest, patch: RequestOverridePatch): ApiRequest {
-  const merged: ApiRequest = { ...base };
-  if (patch.name !== undefined) merged.name = patch.name;
-  if (patch.method !== undefined) merged.method = patch.method;
-  if (patch.url !== undefined) merged.url = patch.url;
-  if (patch.headers !== undefined) merged.headers = patch.headers;
-  if (patch.query !== undefined) merged.query = patch.query;
-  if (patch.pathParams !== undefined) merged.pathParams = patch.pathParams;
-  if (patch.cookies !== undefined) merged.cookies = patch.cookies;
-  if (patch.body !== undefined) merged.body = patch.body;
-  if (patch.auth !== undefined) merged.auth = patch.auth;
-  if (patch.contextVars !== undefined) merged.contextVars = patch.contextVars;
-  if (patch.extractions !== undefined) merged.extractions = patch.extractions;
-  if (patch.assertions !== undefined) merged.assertions = patch.assertions;
-  return merged;
 }
 
 function applyEnvironmentOverrides(

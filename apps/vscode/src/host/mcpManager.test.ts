@@ -69,7 +69,7 @@ describe('VsCodeMcpManager', () => {
     expect(m.resolvePaths().binary).toBe('/usr/local/bin/apicircle-mcp');
   });
 
-  it('toolCatalog returns the canonical 78-tool list from @apicircle/shared', () => {
+  it('toolCatalog returns the canonical 79-tool list from @apicircle/shared', () => {
     const m = new VsCodeMcpManager({
       bridge: makeFakeBridge(null),
       getBinaryPath: () => 'apicircle-mcp',

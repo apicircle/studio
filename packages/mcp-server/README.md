@@ -6,12 +6,12 @@
 
 <p align="center">
   <strong>Give your AI assistant a real API client.</strong><br />
-  A Model Context Protocol server that exposes the API Circle Studio workspace as a <strong>74-tool catalog</strong> — so Claude, ChatGPT, Cursor, Copilot, and every other MCP client can read, author, mock, and run requests for you.
+  A Model Context Protocol server that exposes the API Circle Studio workspace as a <strong>93-tool catalog</strong> — so Claude, ChatGPT, Cursor, Copilot, and every other MCP client can read, author, mock, and run requests for you.
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@apicircle/mcp-server"><img src="https://img.shields.io/npm/v/@apicircle/mcp-server?color=cb3837&logo=npm" alt="npm version" /></a>
-  <img src="https://img.shields.io/badge/MCP%20tools-74-blueviolet" alt="74 MCP tools" />
+  <img src="https://img.shields.io/badge/MCP%20tools-93-blueviolet" alt="93 MCP tools" />
   <img src="https://img.shields.io/badge/transport-stdio-blue" alt="stdio transport" />
   <img src="https://img.shields.io/badge/multi--workspace-yes-success" alt="Multi-workspace" />
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-brightgreen" alt="Node ≥ 20" />
@@ -140,7 +140,7 @@ In multi-workspace mode the assistant gets two extra surfaces:
 Entity tools (`request.read`, `environment.create`, `mock.start`, etc.) all
 default to the active workspace — multi-workspace scoping is opt-in per call.
 
-## The tool catalog (74 tools)
+## The tool catalog (93 tools)
 
 The full list lives at
 [`docs/mcp-tools-reference.md`](https://github.com/apicircle/studio/blob/main/docs/mcp-tools-reference.md).

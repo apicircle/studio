@@ -9,7 +9,9 @@ import {
   mockDeleteEndpointTool,
   mockListEndpointsTool,
   mockUpdateEndpointTool,
+  mockSetRequestSchemaTool,
 } from './mocks';
+import { promptSetEndpointRequestSchemaTool } from './prompt';
 
 const T0 = '2026-04-27T00:00:00.000Z';
 
@@ -186,5 +188,98 @@ describe('mock manual + endpoint MCP tools', () => {
   it('returns ok:false with not found when targeting an unknown mock', async () => {
     const out = await mockListEndpointsTool.handler({ mockId: 'no-such' }, ctx);
     expect(out).toMatchObject({ ok: false, error: 'mock not found' });
+  });
+});
+
+describe('mock.set_request_schema', () => {
+  async function seedEndpoint(): Promise<{ mockId: string; endpointId: string }> {
+    const created = (await mockCreateManualTool.handler({ name: 'API' }, ctx)) as { id: string };
+    const added = (await mockAddEndpointTool.handler(
+      { mockId: created.id, method: 'GET' as const, pathPattern: '/pets/{petId}', name: 'Get pet' },
+      ctx,
+    )) as { ok: true; endpointId: string };
+    return { mockId: created.id, endpointId: added.endpointId };
+  }
+
+  it('replaces requestSchema and fills missing param ids', async () => {
+    const { mockId, endpointId } = await seedEndpoint();
+    const out = (await mockSetRequestSchemaTool.handler(
+      {
+        mockId,
+        endpointId,
+        pathParams: [{ name: 'petId', typeHint: 'uuid', required: true }],
+        queryParams: [{ id: 'q1', name: 'expand', typeHint: 'string' }],
+        headers: [],
+        cookies: [],
+        body: { description: 'Pet body', example: '{}' },
+      },
+      ctx,
+    )) as { ok: boolean };
+    expect(out.ok).toBe(true);
+    const ep = (await ctx.workspace.read()).synced.mockServers[mockId].endpoints.find(
+      (e) => e.id === endpointId,
+    )!;
+    expect(ep.requestSchema.pathParams[0]).toMatchObject({ name: 'petId', required: true });
+    expect(ep.requestSchema.pathParams[0].id).toBeTruthy(); // generated
+    expect(ep.requestSchema.queryParams[0].id).toBe('q1'); // preserved
+    expect(ep.requestSchema.body).toEqual({ description: 'Pet body', example: '{}' });
+  });
+
+  it('drops a blank body doc and clears omitted lists', async () => {
+    const { mockId, endpointId } = await seedEndpoint();
+    await mockSetRequestSchemaTool.handler(
+      {
+        mockId,
+        endpointId,
+        pathParams: [],
+        queryParams: [],
+        headers: [],
+        cookies: [],
+        body: { description: '', example: '' },
+      },
+      ctx,
+    );
+    const ep = (await ctx.workspace.read()).synced.mockServers[mockId].endpoints.find(
+      (e) => e.id === endpointId,
+    )!;
+    expect(ep.requestSchema.body).toBeUndefined();
+    expect(ep.requestSchema.pathParams).toEqual([]);
+  });
+
+  it('returns ok:false for an unknown endpoint', async () => {
+    const created = (await mockCreateManualTool.handler({ name: 'API' }, ctx)) as { id: string };
+    const out = await mockSetRequestSchemaTool.handler(
+      {
+        mockId: created.id,
+        endpointId: 'nope',
+        pathParams: [],
+        queryParams: [],
+        headers: [],
+        cookies: [],
+      },
+      ctx,
+    );
+    expect(out).toMatchObject({ ok: false, error: 'endpoint not found' });
+  });
+
+  it('prompt.set_endpoint_request_schema re-ids every param', async () => {
+    const { mockId, endpointId } = await seedEndpoint();
+    await promptSetEndpointRequestSchemaTool.handler(
+      {
+        mockId,
+        endpointId,
+        pathParams: [{ name: 'petId' }],
+        queryParams: [],
+        headers: [{ name: 'X-Api-Key', required: true }],
+        cookies: [],
+      },
+      ctx,
+    );
+    const ep = (await ctx.workspace.read()).synced.mockServers[mockId].endpoints.find(
+      (e) => e.id === endpointId,
+    )!;
+    expect(ep.requestSchema.pathParams[0]).toMatchObject({ name: 'petId' });
+    expect(ep.requestSchema.pathParams[0].id).toBeTruthy();
+    expect(ep.requestSchema.headers[0]).toMatchObject({ name: 'X-Api-Key', required: true });
   });
 });

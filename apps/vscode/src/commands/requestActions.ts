@@ -80,7 +80,13 @@ export async function duplicateRequestCommand(
   };
 
   await active.apply({ kind: 'request.create', request: copy });
-  const uri = ApicircleFsProvider.requestUri(active.workspace.id, copy.id);
+  const stateAfterCreate = await active.read();
+  const uri = ApicircleFsProvider.requestUri(
+    active.workspace.id,
+    copy,
+    stateAfterCreate.synced.collections.folders,
+    stateAfterCreate.synced.collections.requests,
+  );
   await vscode.commands.executeCommand('vscode.open', uri);
 }
 

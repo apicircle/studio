@@ -4,20 +4,33 @@ import type { ChangeSubscription, VsCodeMockController } from '../host/vscodeMoc
 // =============================================================================
 // CodeLens provider for apicircle-mock YAML documents.
 //
-// Above the `name:` line, renders the lifecycle controls:
-//   • ▶ Start Mock          (when not running)
-//   • ■ Stop Mock ↻ Restart (when running)
+// The mock.yaml file owns top-level mock metadata only — `name`, `defaultPort`,
+// `cors`, plus a read-only endpoint summary list. Per-endpoint editing lives
+// in the per-endpoint YAML (`mocks/<mockId>/<endpointId>.endpoint.yaml`),
+// reachable from the Mock sidebar's pencil icon, the row's click action, or
+// the right-click context menu.
 //
-// Mock id is extracted from the URI path (mocks/<id>.mock.yaml). The
-// commands receive a `{ kind: 'server', id }` arg so they skip the
-// QuickPick that would otherwise prompt for which mock.
+// The lenses on this file are:
 //
-// F-G12: subscribes to the controller's onChange so the lens flips
-// from ▶ Start ↔ ■ Stop instantly when the user starts/stops the mock,
-// without waiting for VS Code's periodic CodeLens refresh tick.
+//   Above `name:`        ▶ Start Mock           (when not running)
+//                        ■ Stop Mock · ↻ Restart (when running)
+//   Above each endpoint  ↗ Open endpoint        (opens the per-endpoint
+//   `- id:` row            `<endpointId>.endpoint.yaml` where method / path /
+//                          rules / multiplier are edited)
+//
+// Mock id is read from the URI query (`?id=<mockId>`) — the path basename is
+// the name slug, not the id. The lifecycle
+// commands receive a `{ kind: 'server', id }` arg so they skip the QuickPick
+// that would otherwise prompt for which mock; the open-endpoint lens passes
+// `{ kind: 'endpoint', serverId, endpointId }` (the MockView node shape).
 // =============================================================================
 
 const NAME_LINE_RE = /^name:\s*(.+)$/;
+const ENDPOINTS_RE = /^endpoints\s*:/;
+// Endpoint summary rows are projected as `  - id: <epId>` directly under the
+// top-level `endpoints:` key (two-space outer indent).
+const ENDPOINT_ID_RE = /^\s+-\s+id:\s*['"]?([A-Za-z0-9_-]+)['"]?/;
+const TOP_LEVEL_KEY_RE = /^[A-Za-z]/;
 
 export class MockCodeLensProvider implements vscode.CodeLensProvider, vscode.Disposable {
   private readonly _onDidChange = new vscode.EventEmitter<void>();
@@ -41,44 +54,72 @@ export class MockCodeLensProvider implements vscode.CodeLensProvider, vscode.Dis
     if (document.uri.scheme !== 'apicircle') return [];
     if (!document.uri.path.endsWith('.mock.yaml')) return [];
 
-    const mockId = extractMockId(document.uri.path);
+    const mockId = extractMockId(document.uri);
     if (!mockId) return [];
 
     const lenses: vscode.CodeLens[] = [];
     for (let line = 0; line < document.lineCount; line++) {
       const text = document.lineAt(line).text;
-      if (NAME_LINE_RE.exec(text)) {
-        const range = new vscode.Range(line, 0, line, text.length);
-        const arg = { kind: 'server' as const, id: mockId };
-        const running = await this.controller.isRunning(mockId);
-        if (running) {
-          const rt = await this.controller.runtime(mockId);
-          lenses.push(
-            new vscode.CodeLens(range, {
-              title: `■ Stop Mock${rt ? ` (:${rt.port})` : ''}`,
-              command: 'apicircle.stopMock',
-              arguments: [arg],
-            }),
-          );
-          lenses.push(
-            new vscode.CodeLens(range, {
-              title: '↻ Restart',
-              command: 'apicircle.restartMock',
-              arguments: [arg],
-            }),
-          );
-        } else {
-          lenses.push(
-            new vscode.CodeLens(range, {
-              title: '▶ Start Mock',
-              command: 'apicircle.startMock',
-              arguments: [arg],
-            }),
-          );
-        }
-        break; // only the first name: line
+      if (!NAME_LINE_RE.exec(text)) continue;
+      const range = new vscode.Range(line, 0, line, text.length);
+      const arg = { kind: 'server' as const, id: mockId };
+      const running = await this.controller.isRunning(mockId);
+      if (running) {
+        const rt = await this.controller.runtime(mockId);
+        lenses.push(
+          new vscode.CodeLens(range, {
+            title: `■ Stop Mock${rt ? ` (:${rt.port})` : ''}`,
+            command: 'apicircle.stopMock',
+            arguments: [arg],
+          }),
+          new vscode.CodeLens(range, {
+            title: '↻ Restart',
+            command: 'apicircle.restartMock',
+            arguments: [arg],
+          }),
+        );
+      } else {
+        lenses.push(
+          new vscode.CodeLens(range, {
+            title: '▶ Start Mock',
+            command: 'apicircle.startMock',
+            arguments: [arg],
+          }),
+        );
+      }
+      break; // only the first name: line
+    }
+
+    // Per-endpoint "Open" links. The endpoints: block is read-only in this
+    // projection, but each row gets a lens that opens the editable
+    // per-endpoint YAML — so users don't have to round-trip through the
+    // sidebar to edit one endpoint they're looking at here.
+    let endpointsLine = -1;
+    for (let line = 0; line < document.lineCount; line++) {
+      if (ENDPOINTS_RE.test(document.lineAt(line).text)) {
+        endpointsLine = line;
+        break;
       }
     }
+    if (endpointsLine !== -1) {
+      for (let line = endpointsLine + 1; line < document.lineCount; line++) {
+        const text = document.lineAt(line).text;
+        if (TOP_LEVEL_KEY_RE.test(text)) break; // next top-level key ends the block
+        const idMatch = ENDPOINT_ID_RE.exec(text);
+        if (!idMatch) continue;
+        const endpointId = idMatch[1];
+        lenses.push(
+          new vscode.CodeLens(new vscode.Range(line, 0, line, text.length), {
+            title: '↗ Open endpoint',
+            tooltip:
+              "Open this endpoint's editable YAML (method, path, request validation, response rules, default response, multiplier).",
+            command: 'apicircle.openMockEndpointYaml',
+            arguments: [{ kind: 'endpoint', serverId: mockId, endpointId }],
+          }),
+        );
+      }
+    }
+
     return lenses;
   }
 
@@ -87,7 +128,14 @@ export class MockCodeLensProvider implements vscode.CodeLensProvider, vscode.Dis
   }
 }
 
-function extractMockId(uriPath: string): string | undefined {
-  const m = /\/mocks\/([^/]+)\.mock\.yaml$/.exec(uriPath);
+// The mock id rides in the URI query (`?id=<mockId>`) — the path basename is
+// the human-readable name slug (`/mocks/<slug>.mock.yaml`), NOT the id, so
+// reading the id from the path would hand lifecycle + open-endpoint commands a
+// slug that misses `synced.mockServers[id]`. Fall back to the legacy path shape
+// only when no query id is present (older URIs).
+function extractMockId(uri: vscode.Uri): string | undefined {
+  const fromQuery = new URLSearchParams(uri.query).get('id');
+  if (fromQuery) return fromQuery;
+  const m = /\/mocks\/([^/]+)\.mock\.yaml$/.exec(uri.path);
   return m ? m[1] : undefined;
 }

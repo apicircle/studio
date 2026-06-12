@@ -243,7 +243,7 @@ export async function newMockCommand(deps: MockActionsDeps): Promise<void> {
     updatedAt: now,
   };
   await active.apply({ kind: 'mock.upsert', mock });
-  const uri = ApicircleFsProvider.mockUri(active.workspace.id, mock.id);
+  const uri = ApicircleFsProvider.mockUri(active.workspace.id, mock);
   await vscode.commands.executeCommand('vscode.open', uri);
   await vscode.window.showInformationMessage(
     `Created mock "${name}" with ${endpoints.length} endpoint${endpoints.length === 1 ? '' : 's'}.`,
@@ -377,6 +377,67 @@ export async function openMockInBrowserCommand(
 }
 
 /**
+ * `apicircle.setMockPort` — one-click way to change a mock's default port
+ * without opening its `.mock.yaml`. Same validation surface as the YAML
+ * parser (1024-65535 integer or blank = `null` for "pick a free port").
+ *
+ * If the mock is currently running, we warn that the new port only takes
+ * effect on next Start — the runtime is the authority on hot port changes
+ * and we don't model a transparent stop/restart here (the user may have
+ * in-flight clients).
+ *
+ * Errors at start-time (port busy, port invalid, permission denied) are
+ * surfaced by `startMockCommand` via the MockServerStartError thrown from
+ * `@apicircle/mock-server-core` — this command only persists the
+ * definition; it does not attempt to bind the port itself.
+ */
+export async function setMockPortCommand(
+  deps: MockActionsDeps,
+  node?: { kind: 'server' | 'mock-running' | 'mock-idle'; id: string },
+): Promise<void> {
+  const id = await resolveMockId(deps, node, 'set port for');
+  if (!id) return;
+  const active = deps.bridge.activeWorkspace();
+  if (!active) return;
+  const state = await active.read();
+  const mock = state.synced.mockServers[id];
+  if (!mock) {
+    await vscode.window.showWarningMessage('Mock no longer exists.');
+    return;
+  }
+  const running = await deps.controller.isRunning(id);
+  const portInput = await vscode.window.showInputBox({
+    prompt: running
+      ? `New default port for "${mock.name}" — leave blank for auto. Takes effect on next Start (mock is currently running).`
+      : `Default port for "${mock.name}" — leave blank to pick a free port`,
+    placeHolder: '3000',
+    value: mock.defaultPort === null ? '' : String(mock.defaultPort),
+    validateInput: (v) => {
+      if (v.trim().length === 0) return null;
+      const n = Number(v);
+      if (!Number.isInteger(n)) return 'Enter an integer port number or leave blank';
+      if (n < 1024 || n > 65535) return 'Port must be 1024-65535';
+      return null;
+    },
+  });
+  if (portInput === undefined) return;
+  const trimmed = portInput.trim();
+  const nextPort = trimmed.length === 0 ? null : Number(trimmed);
+  if (nextPort === mock.defaultPort) return;
+  const updated: MockServer = {
+    ...mock,
+    defaultPort: nextPort,
+    updatedAt: new Date().toISOString(),
+  };
+  await active.apply({ kind: 'mock.upsert', mock: updated });
+  await vscode.window.showInformationMessage(
+    nextPort === null
+      ? `"${mock.name}" will pick a free port at next Start.`
+      : `"${mock.name}" default port set to ${nextPort}.`,
+  );
+}
+
+/**
  * F-G7: best-effort name suggestion. Tries to read the spec's title /
  * collection name before the parser runs. Returns '' on any failure
  * — never throws (the wizard still works without a suggestion).
@@ -443,6 +504,42 @@ export async function copyEndpointPathCommand(
   await vscode.window.showInformationMessage(`Copied: ${ep.pathPattern}`);
 }
 
+/**
+ * `apicircle.openMockEndpointYaml` — opens the per-endpoint YAML for a tree
+ * node. Wired to the inline pencil + the click action on a mock endpoint row.
+ * The legacy `editMockEndpoint` (webview form) is still reachable via the
+ * right-click context menu for users who prefer the GUI form.
+ */
+export async function openMockEndpointYamlCommand(
+  deps: MockActionsDeps,
+  node?: { kind: 'endpoint'; serverId: string; endpointId: string },
+): Promise<void> {
+  if (!node || node.kind !== 'endpoint') {
+    await vscode.window.showWarningMessage(
+      'Right-click an endpoint in the Mock view to open its YAML.',
+    );
+    return;
+  }
+  const active = deps.bridge.activeWorkspace();
+  if (!active) {
+    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    return;
+  }
+  const stateBeforeOpen = await active.read();
+  const serverBeforeOpen = stateBeforeOpen.synced.mockServers[node.serverId];
+  if (!serverBeforeOpen) {
+    await vscode.window.showWarningMessage('Mock no longer exists.');
+    return;
+  }
+  const epBeforeOpen = serverBeforeOpen.endpoints.find((e) => e.id === node.endpointId);
+  if (!epBeforeOpen) {
+    await vscode.window.showWarningMessage('Endpoint no longer exists.');
+    return;
+  }
+  const uri = ApicircleFsProvider.endpointUri(active.workspace.id, serverBeforeOpen, epBeforeOpen);
+  await vscode.commands.executeCommand('vscode.open', uri);
+}
+
 export async function revealEndpointInMockYamlCommand(
   deps: MockActionsDeps,
   node?: { kind: 'endpoint'; serverId: string; endpointId: string },
@@ -466,7 +563,7 @@ export async function revealEndpointInMockYamlCommand(
     await vscode.window.showWarningMessage('Endpoint no longer exists.');
     return;
   }
-  const uri = ApicircleFsProvider.mockUri(active.workspace.id, server.id);
+  const uri = ApicircleFsProvider.mockUri(active.workspace.id, server);
   const doc = await vscode.workspace.openTextDocument(uri);
   // Find the line whose text contains "id: <endpointId>" — robust against
   // ordering and indentation changes.

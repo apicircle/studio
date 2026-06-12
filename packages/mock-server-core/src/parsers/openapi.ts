@@ -16,8 +16,10 @@
 
 import SwaggerParser from '@apidevtools/swagger-parser';
 import yaml from 'js-yaml';
-import type { HttpMethod, MockEndpoint } from '@apicircle/shared';
+import type { HttpMethod, MockEndpoint, MockRequestSchema } from '@apicircle/shared';
+import { makeDefaultRequestSchema } from '@apicircle/shared';
 import { schemaToExample, type JsonSchemaLike } from '../faker/schemaToExample';
+import { paramDef } from './buildEndpoint';
 import { buildMockEndpoint } from './buildEndpoint';
 
 const SUPPORTED_METHODS: ReadonlyArray<HttpMethod> = [
@@ -30,10 +32,22 @@ const SUPPORTED_METHODS: ReadonlyArray<HttpMethod> = [
   'OPTIONS',
 ];
 
+interface OpenApiParameter {
+  name?: string;
+  in?: string; // 'path' | 'query' | 'header' | 'cookie'
+  required?: boolean;
+  description?: string;
+  schema?: JsonSchemaLike;
+  // Swagger 2.0 carries `type` directly on the parameter (no `schema`).
+  type?: string;
+  example?: unknown;
+}
+
 interface OpenApiOperation {
   operationId?: string;
   summary?: string;
   responses?: Record<string, OpenApiResponse>;
+  parameters?: OpenApiParameter[];
   // Swagger 2.0 carries `produces` here; we honor it as a fallback for
   // content-type when `responses[status].content` is absent.
   produces?: string[];
@@ -104,13 +118,24 @@ export async function parseOpenApiToEndpoints(
 
   for (const [path, ops] of Object.entries(paths)) {
     if (!ops || typeof ops !== 'object') continue;
+    // Path-item-level parameters apply to every operation under the path; an
+    // operation's own parameters override them by (name, in).
+    const pathItemParams = (ops as { parameters?: OpenApiParameter[] }).parameters ?? [];
     for (const method of Object.keys(ops)) {
       const upper = method.toUpperCase() as HttpMethod;
       if (!SUPPORTED_METHODS.includes(upper)) continue;
       const op = ops[method];
       if (!op || typeof op !== 'object') continue;
 
-      const built = buildEndpointFromOp(path, upper, op, opts, warnings, endpointId++);
+      const built = buildEndpointFromOp(
+        path,
+        upper,
+        op,
+        pathItemParams,
+        opts,
+        warnings,
+        endpointId++,
+      );
       if (built) endpoints.push(built);
     }
   }
@@ -118,10 +143,61 @@ export async function parseOpenApiToEndpoints(
   return { endpoints, warnings };
 }
 
+/** Merge path-item + operation parameters (operation wins by name+in) and map
+ *  them into a `MockRequestSchema`. Pure. */
+function buildRequestSchema(
+  pathItemParams: OpenApiParameter[],
+  op: OpenApiOperation,
+): MockRequestSchema {
+  const merged = new Map<string, OpenApiParameter>();
+  for (const p of [...pathItemParams, ...(op.parameters ?? [])]) {
+    if (p && typeof p === 'object' && typeof p.name === 'string') {
+      merged.set(`${p.in ?? 'query'}:${p.name}`, p);
+    }
+  }
+  const schema = makeDefaultRequestSchema();
+  for (const p of merged.values()) {
+    const rawType = p.schema?.type ?? p.type;
+    const typeHint = p.schema?.format ?? (Array.isArray(rawType) ? rawType[0] : rawType);
+    const exampleVal = p.example ?? p.schema?.example;
+    const def = paramDef(p.name as string, {
+      typeHint: typeof typeHint === 'string' ? typeHint : undefined,
+      required: typeof p.required === 'boolean' ? p.required : undefined,
+      description: typeof p.description === 'string' ? p.description : undefined,
+      example:
+        exampleVal === undefined
+          ? undefined
+          : typeof exampleVal === 'string'
+            ? exampleVal
+            : JSON.stringify(exampleVal),
+    });
+    switch (p.in) {
+      case 'path':
+        schema.pathParams.push(def);
+        break;
+      case 'query':
+        schema.queryParams.push(def);
+        break;
+      case 'header':
+        schema.headers.push(def);
+        break;
+      case 'cookie':
+        schema.cookies.push(def);
+        break;
+      default:
+        // Swagger 2.0 `in: body` / `in: formData` aren't request-param schema
+        // entries — skip them (the body shape is documented elsewhere).
+        break;
+    }
+  }
+  return schema;
+}
+
 function buildEndpointFromOp(
   path: string,
   method: HttpMethod,
   op: OpenApiOperation,
+  pathItemParams: OpenApiParameter[],
   opts: ParseOpenApiOptions,
   warnings: string[],
   index: number,
@@ -154,6 +230,7 @@ function buildEndpointFromOp(
     method,
     pathPattern: path,
     example: exampleName,
+    requestSchema: buildRequestSchema(pathItemParams, op),
     response: { status, headers, body },
   });
 }

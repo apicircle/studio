@@ -56,22 +56,24 @@ jobs:
 
       - name: Typecheck (vscode + e2e-vscode)
         run: |
-          pnpm --filter @apicircle/vscode check
+          pnpm --filter apicircle-vscode check
           pnpm --filter @apicircle/e2e-vscode check
 
       - name: Lint
-        run: pnpm --filter @apicircle/vscode lint
+        run: pnpm --filter apicircle-vscode lint
 
       - name: Unit + integration tests
-        run: pnpm --filter @apicircle/vscode test
+        run: pnpm --filter apicircle-vscode test
 
       - name: Build extension bundle
-        run: pnpm --filter @apicircle/vscode build
+        run: pnpm --filter apicircle-vscode build
 
       - name: Bundle-size budget (vscode)
-        # Two-tier gate: warn at 1.8 MB, hard fail at 2.0 MB. See
-        # scripts/check-vscode-bundle.mjs and docs/vscode-extension.md §14
-        # for the budget contract.
+        # Two-tier gate: warn at 3.0 MB, hard fail at 5.0 MB (post-1.0
+        # peer-parity bump — Thunder Client / GitLens / ESLint all
+        # ~5-8 MB; activationPerf.test.ts is now the real UX gate).
+        # See scripts/vscode-bundle-budget.mjs (single source of truth)
+        # and docs/vscode-extension.md §14 for the contract.
         run: node scripts/check-vscode-bundle.mjs
 
       - name: Dead-code scan (knip)
@@ -100,7 +102,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @apicircle/vscode build
+      - run: pnpm --filter apicircle-vscode build
       - run: pnpm --filter @apicircle/e2e-vscode build
       - name: Run E2E (xvfb for headless)
         env:

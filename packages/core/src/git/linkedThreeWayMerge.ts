@@ -51,6 +51,14 @@ export interface LinkedUpdateEntry<TBase = unknown, TTarget = unknown, TOverride
   base: TBase | null;
   target: TTarget | null;
   override: TOverride | null;
+  /**
+   * For `both-changed` entries only: `true` when the consumer's override touches
+   * a DISJOINT set of fields from the ones the source changed — so keeping the
+   * override is a clean field-level merge that needs no user decision. `false`
+   * (or undefined) means override + source touched the same field → a real
+   * conflict the user must resolve. Other statuses leave this undefined.
+   */
+  autoMergeable?: boolean;
 }
 
 export interface LinkedUpdatePreview {
@@ -102,6 +110,9 @@ export function previewLinkedUpdate(args: PreviewArgs): LinkedUpdatePreview {
       base,
       target,
       override,
+      ...(status === 'both-changed' && base && target && override
+        ? { autoMergeable: requestOverrideIsDisjoint(base, target, override) }
+        : {}),
     });
   }
 
@@ -194,6 +205,50 @@ function classifyRequest(
   if (!sourceChanged && hasOverride) return 'local-only';
   if (sourceChanged && !hasOverride) return 'source-only';
   return 'both-changed';
+}
+
+// The request fields a consumer can override — must mirror
+// `RequestOverridePatch` in `@apicircle/shared`.
+const OVERRIDABLE_REQUEST_FIELDS = [
+  'name',
+  'method',
+  'url',
+  'headers',
+  'query',
+  'pathParams',
+  'cookies',
+  'body',
+  'auth',
+  'contextVars',
+  'extractions',
+  'assertions',
+] as const;
+
+/**
+ * True when the consumer's override touches a DISJOINT set of fields from the
+ * ones the source changed base→target. In that case keeping the override is a
+ * clean field-level merge (the override re-expresses as a delta vs the new
+ * target on its own fields; the source's other changes flow through inherited).
+ * False when any field appears in both sets — a genuine conflict.
+ */
+function requestOverrideIsDisjoint(
+  base: ApiRequest,
+  target: ApiRequest,
+  override: RequestOverride,
+): boolean {
+  const baseRec: Record<string, unknown> = { ...base };
+  const targetRec: Record<string, unknown> = { ...target };
+  const overriddenFields = Object.keys(override.patch);
+  for (const f of overriddenFields) {
+    if (!OVERRIDABLE_REQUEST_FIELDS.includes(f as (typeof OVERRIDABLE_REQUEST_FIELDS)[number])) {
+      continue;
+    }
+    if (!structurallyEqual(baseRec[f], targetRec[f])) {
+      // The source changed a field the consumer also overrode → conflict.
+      return false;
+    }
+  }
+  return true;
 }
 
 function classifyFolder(base: Folder | null, target: Folder | null): LinkedUpdateStatus {
@@ -296,7 +351,10 @@ export function applyLinkedUpdate(args: ApplyArgs): ApplyResult {
     }
 
     if (entry.status === 'both-changed') {
-      const choice = args.resolutions[id];
+      // Clean (disjoint-field) both-changed entries auto-merge: keeping the
+      // override re-expresses it as a delta on the new target, with the
+      // source's other field changes flowing through. No decision needed.
+      const choice = args.resolutions[id] ?? (entry.autoMergeable ? 'mine' : undefined);
       if (!choice) {
         throw new Error(
           `applyLinkedUpdate: unresolved both-changed entry "${entry.label}" (${id})`,
@@ -307,7 +365,8 @@ export function applyLinkedUpdate(args: ApplyArgs): ApplyResult {
         else if (entry.bucket === 'environment-var') envVarOverridesByKey.delete(entry.key);
         log.push({ entryKey: id, bucket: entry.bucket, action: 'accept-source' });
       } else {
-        log.push({ entryKey: id, bucket: entry.bucket, action: 'keep-mine' });
+        const auto = entry.autoMergeable === true && !args.resolutions[id];
+        log.push({ entryKey: id, bucket: entry.bucket, action: auto ? 'auto-merge' : 'keep-mine' });
       }
     }
   }

@@ -34,7 +34,7 @@ export type ClientInstallState = 'absent' | 'installed-current' | 'installed-sta
 export type ClientInstallProbe = (client: InstallableClient) => ClientInstallState;
 
 // =============================================================================
-// McpView — surfaces the 78-tool MCP catalog + per-AI-client config snippets.
+// McpView — surfaces the 79-tool MCP catalog + per-AI-client config snippets.
 //
 // Layout (Phase 5):
 //   ▸ MCP Server                          (header: status + tool count)

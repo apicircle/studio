@@ -183,7 +183,7 @@ export class VsCodeBridge implements vscode.Disposable {
 
 const README_TEMPLATE = `# .apicircle/
 
-This folder is managed by **APICircle Studio**.
+This folder is managed by **API Circle Studio**.
 
 - \`workspace.json\` — the team-shared workspace (collections, environments, mocks, etc.).
   Edit it in the [Web App](https://studio.apicircle.dev), the [Desktop App](https://github.com/apicircle/studio), or the [VS Code extension](https://github.com/apicircle/studio/tree/main/apps/vscode) — all three produce byte-identical commits.

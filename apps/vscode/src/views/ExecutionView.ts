@@ -51,7 +51,7 @@ export class ExecutionView extends BaseTreeView<ExecutionNode> {
       item.command = {
         command: 'vscode.open',
         title: 'Open',
-        arguments: [ApicircleFsProvider.planUri(active.workspace.id, plan.id)],
+        arguments: [ApicircleFsProvider.planUri(active.workspace.id, plan)],
       };
       return item;
     }

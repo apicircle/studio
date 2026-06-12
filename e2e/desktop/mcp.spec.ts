@@ -1391,7 +1391,9 @@ const CRUD_CASES: ToolCase[] = [
   {
     key: 'prompt :: MCP tool prompt.set_endpoint_multipliers: happy path',
     tool: 'prompt.set_endpoint_multipliers',
-    happy: undefined,
+    // Unknown ids → in-protocol ok:false (a valid JSON-RPC frame); the empty
+    // list is a well-typed payload that exercises the renamed plural tool.
+    happy: { mockId: 'x', endpointId: 'y', multipliers: [] },
   },
   {
     key: 'prompt :: MCP tool prompt.set_endpoint_multipliers: validation',
@@ -1534,7 +1536,8 @@ const CRUD_CASES: ToolCase[] = [
   {
     key: 'mock :: MCP tool mock.set_multipliers: happy path',
     tool: 'mock.set_multipliers',
-    happy: undefined,
+    // Unknown ids → in-protocol ok:false; the empty list exercises the tool.
+    happy: { mockId: 'x', endpointId: 'y', multipliers: [] },
   },
   {
     key: 'mock :: MCP tool mock.set_multipliers: validation',

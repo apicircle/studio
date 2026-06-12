@@ -10,8 +10,9 @@
 // response from each request that has any. When a request has no saved
 // example, we synthesize a 200 with an empty JSON body.
 
-import type { HttpMethod, MockEndpoint } from '@apicircle/shared';
-import { buildMockEndpoint } from './buildEndpoint';
+import type { HttpMethod, MockEndpoint, MockRequestSchema } from '@apicircle/shared';
+import { makeDefaultRequestSchema } from '@apicircle/shared';
+import { buildMockEndpoint, paramDef } from './buildEndpoint';
 
 interface PostmanCollection {
   info?: { name?: string; schema?: string };
@@ -25,11 +26,43 @@ interface PostmanItem {
   response?: PostmanResponse[];
 }
 
+interface PostmanKV {
+  key?: string;
+  value?: string;
+  description?: string;
+  disabled?: boolean;
+}
+
 interface PostmanRequest {
   method?: string;
-  url?: string | { raw?: string; path?: string[] | string };
-  header?: Array<{ key: string; value: string }>;
+  url?:
+    | string
+    | { raw?: string; path?: string[] | string; query?: PostmanKV[]; variable?: PostmanKV[] };
+  header?: Array<{ key: string; value?: string; description?: string; disabled?: boolean }>;
   body?: { raw?: string; mode?: string };
+}
+
+/** Map a Postman request's declared inputs into a `MockRequestSchema`: path
+ *  variables → pathParams, query → queryParams, headers → headers. Disabled
+ *  rows are skipped (they wouldn't be sent). */
+function postmanRequestSchema(req: PostmanRequest): MockRequestSchema {
+  const schema = makeDefaultRequestSchema();
+  const url = req.url;
+  if (url && typeof url === 'object') {
+    for (const v of url.variable ?? []) {
+      if (v?.key)
+        schema.pathParams.push(paramDef(v.key, { example: v.value, description: v.description }));
+    }
+    for (const q of url.query ?? []) {
+      if (q?.key && !q.disabled)
+        schema.queryParams.push(paramDef(q.key, { example: q.value, description: q.description }));
+    }
+  }
+  for (const h of req.header ?? []) {
+    if (h?.key && !h.disabled)
+      schema.headers.push(paramDef(h.key, { example: h.value, description: h.description }));
+  }
+  return schema;
 }
 
 interface PostmanResponse {
@@ -83,6 +116,7 @@ export function parsePostmanToEndpoints(source: string): ParsePostmanResult {
     // First saved response wins. Postman stores examples in
     // `response[]` — a request without saved examples falls through to
     // the synthesized default below.
+    const requestSchema = postmanRequestSchema(item.request);
     const example = item.response?.[0];
     if (example) {
       endpoints.push(
@@ -92,6 +126,7 @@ export function parsePostmanToEndpoints(source: string): ParsePostmanResult {
           method,
           pathPattern: path,
           example: example.name,
+          requestSchema,
           response: {
             // Postman's `code` is the canonical numeric status; `status` is a
             // human-readable label that *sometimes* parses as a number. Try
@@ -111,6 +146,7 @@ export function parsePostmanToEndpoints(source: string): ParsePostmanResult {
           name: item.name,
           method,
           pathPattern: path,
+          requestSchema,
           response: {
             status: 200,
             headers: [{ key: 'Content-Type', value: 'application/json' }],

@@ -148,8 +148,10 @@ describe('historyRoundTrip (send → persist → view → resolve URI)', () => {
     const requestRuns = await view.getChildren({ kind: 'bucket', id: 'requests' });
     expect(requestRuns).toEqual([{ kind: 'request-run', runId: run.id }]);
 
-    // History URI resolves via FS provider — lazily reads from local.history
-    const uri = ApicircleFsProvider.historyUri(apicircleDir, run.id);
+    // History URI resolves via FS provider — lazily reads from local.history.
+    // historyUri now accepts a display label so the tab basename is the
+    // request name; identity is still the `?runId=` query.
+    const uri = ApicircleFsProvider.historyUri(apicircleDir, run.id, 'Login');
     const bytes = await fsProvider.readFile(uri as never);
     const text = Buffer.from(bytes).toString('utf8');
     expect(text).toContain(run.id);

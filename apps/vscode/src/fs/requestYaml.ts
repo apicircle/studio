@@ -6,6 +6,22 @@ import type {
   RequestAuth,
   RequestBody,
 } from '@apicircle/shared';
+import { unknownTopLevelKeys, isPresentNonArray, isPresentNonMapping } from './yamlStructure';
+
+const KNOWN_REQUEST_KEYS = [
+  'name',
+  'method',
+  'url',
+  'pathParams',
+  'query',
+  'headers',
+  'cookies',
+  'auth',
+  'body',
+  'assertions',
+  'extractions',
+  'contextVars',
+] as const;
 
 // =============================================================================
 // Request YAML projection.
@@ -45,6 +61,31 @@ const HEADER_COMMENT = `# APICircle Request — edit fields below and save (Ctrl
 # Folder moves use the TreeView; schema references are managed via the Assets view.
 `;
 
+/**
+ * When body.type is `json` and the content is parseable JSON, pretty-print it
+ * so the YAML projection emits a readable block scalar (`content: |-\n  {\n
+ *  "key": "value"\n}`) instead of a wall-of-text single-line string. JSON
+ * parsing tolerates the indentation we add, so the round-trip is lossless —
+ * the parser reads back the same string regardless of whether it was minified
+ * or pretty-printed before save.
+ *
+ * Invalid JSON (or other body types) passes through unchanged.
+ */
+function projectBody(body: RequestBody): RequestBody {
+  if (body.type !== 'json') return body;
+  const trimmed = body.content.trim();
+  if (trimmed.length === 0) return body;
+  // Skip strings that are already multi-line — assume the user formatted them
+  // intentionally and don't re-flow whitespace.
+  if (body.content.includes('\n')) return body;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return { ...body, content: JSON.stringify(parsed, null, 2) };
+  } catch {
+    return body;
+  }
+}
+
 export function serializeRequestToYaml(req: Request): string {
   const out: RequestYamlOutput = {
     name: req.name,
@@ -57,7 +98,7 @@ export function serializeRequestToYaml(req: Request): string {
   if (req.headers.length > 0) out.headers = req.headers;
   if (req.cookies && req.cookies.length > 0) out.cookies = req.cookies;
   if (req.auth.type !== 'none') out.auth = req.auth;
-  if (req.body.type !== 'none') out.body = req.body;
+  if (req.body.type !== 'none') out.body = projectBody(req.body);
   if (req.assertions.length > 0) out.assertions = Array.from(req.assertions);
   if (req.extractions.length > 0) out.extractions = Array.from(req.extractions);
   if (req.contextVars.length > 0) out.contextVars = Array.from(req.contextVars);
@@ -99,6 +140,30 @@ export function parseRequestFromYaml(text: string): ParsedRequestYaml {
 
   const obj = parsed as Record<string, unknown>;
   const warnings: string[] = [];
+
+  const unknown = unknownTopLevelKeys(obj, KNOWN_REQUEST_KEYS);
+  if (unknown.length > 0) {
+    throw new RequestYamlParseError(
+      `Unknown field(s): ${unknown.join(', ')}. Rename or remove them — saving an unrecognized request structure is blocked to prevent silent data loss.`,
+    );
+  }
+  for (const field of [
+    'query',
+    'headers',
+    'cookies',
+    'assertions',
+    'extractions',
+    'contextVars',
+  ] as const) {
+    if (isPresentNonArray(obj[field])) {
+      throw new RequestYamlParseError(`\`${field}\` must be a list.`);
+    }
+  }
+  for (const field of ['pathParams', 'auth', 'body'] as const) {
+    if (isPresentNonMapping(obj[field])) {
+      throw new RequestYamlParseError(`\`${field}\` must be a mapping.`);
+    }
+  }
 
   const name = stringOrThrow(obj.name, 'name');
   const method = stringOrThrow(obj.method, 'method').toUpperCase();
@@ -151,6 +216,14 @@ function normalizeKVRows(
       return { key: '', value: '', enabled: true };
     }
     const r = row as Record<string, unknown>;
+    // A mistyped row key (e.g. `keyy:`) would silently drop the value on save —
+    // block it like the top-level structural guard.
+    const unknown = unknownTopLevelKeys(r, ['key', 'value', 'enabled']);
+    if (unknown.length > 0) {
+      throw new RequestYamlParseError(
+        `${field}[${i}]: unknown field(s) ${unknown.join(', ')}. Rows are { key, value, enabled }.`,
+      );
+    }
     return {
       key: typeof r.key === 'string' ? r.key : '',
       value: typeof r.value === 'string' ? r.value : '',

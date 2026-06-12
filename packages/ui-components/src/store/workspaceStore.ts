@@ -978,6 +978,15 @@ type WorkspaceStore = {
    * what lets browser-side apps hit the running mock from a different port.
    */
   setMockServerCors: (id: string, cors: { enabled: boolean; origins: string[] }) => void;
+  /**
+   * Set the default port the mock listens on. Pass `null` to fall back to the
+   * "pick a free port at start" behavior. Valid range is 1024–65535 — values
+   * outside that window are dropped (no-op) because they'd either need
+   * elevated privileges (<1024) or be invalid TCP ports (>65535). The
+   * runtime is the authority on collision: a busy port surfaces a
+   * MockServerStartError from `start()`, not from this setter.
+   */
+  setMockServerDefaultPort: (id: string, defaultPort: number | null) => void;
   /** Replace a mock's endpoints (used by manual-mode editor). */
   setMockServerEndpoints: (id: string, endpoints: MockEndpoint[]) => void;
   /** Add a new endpoint to a manual-mode mock server. Returns the new endpoint id. */
@@ -2694,6 +2703,41 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       cors: { enabled: cors.enabled, origins },
       updatedAt: now,
     };
+    const nextSynced: WorkspaceSynced = {
+      ...synced,
+      mockServers: { ...synced.mockServers, [id]: next },
+      meta: { ...synced.meta, updatedAt: now },
+    };
+    set({ synced: nextSynced });
+    queueSaveSynced(nextSynced);
+  },
+
+  setMockServerDefaultPort: (id, defaultPort) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const existing = synced.mockServers[id];
+    if (!existing) return;
+    // Normalize + validate. `null` = "pick a free port at start". Anything
+    // else must be an integer in 1024-65535. Reject outside that window
+    // silently — the UI is responsible for surfacing a validation hint
+    // before getting here, and we don't want a malformed MCP/CLI write to
+    // corrupt the synced doc.
+    let normalized: number | null;
+    if (defaultPort === null) {
+      normalized = null;
+    } else if (
+      typeof defaultPort === 'number' &&
+      Number.isInteger(defaultPort) &&
+      defaultPort >= 1024 &&
+      defaultPort <= 65535
+    ) {
+      normalized = defaultPort;
+    } else {
+      return;
+    }
+    if (existing.defaultPort === normalized) return;
+    const now = new Date().toISOString();
+    const next = { ...existing, defaultPort: normalized, updatedAt: now };
     const nextSynced: WorkspaceSynced = {
       ...synced,
       mockServers: { ...synced.mockServers, [id]: next },

@@ -97,6 +97,16 @@ describe('mock YAML round-trip (FS provider integration)', () => {
   let fsProvider: ApicircleFsProvider;
   let apicircleDir: string;
 
+  // The mockUri builder now takes the MockServer object so it can put the
+  // slugified name in the URI basename. Look the mock up from the bridge so
+  // each call site doesn't need to reach into the seed fixture by hand.
+  async function mockUriFor(id: string) {
+    const state = await bridge.activeWorkspace()!.read();
+    const mock = state.synced.mockServers[id];
+    if (!mock) throw new Error(`Mock ${id} not seeded`);
+    return ApicircleFsProvider.mockUri(apicircleDir, mock);
+  }
+
   beforeEach(() => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mock-rt-'));
     apicircleDir = path.join(tmp, '.apicircle');
@@ -119,7 +129,7 @@ describe('mock YAML round-trip (FS provider integration)', () => {
   });
 
   it('serializes a mock to YAML via the FS provider', async () => {
-    const uri = ApicircleFsProvider.mockUri(apicircleDir, 'm1');
+    const uri = await mockUriFor('m1');
     const buf = await fsProvider.readFile(uri);
     const yaml = Buffer.from(buf).toString('utf8');
     expect(yaml).toContain('name: Pet Store');
@@ -129,7 +139,7 @@ describe('mock YAML round-trip (FS provider integration)', () => {
   });
 
   it('round-trips: serialize → mutate name + port + cors → write → re-read', async () => {
-    const uri = ApicircleFsProvider.mockUri(apicircleDir, 'm1');
+    const uri = await mockUriFor('m1');
     const original = Buffer.from(await fsProvider.readFile(uri)).toString('utf8');
     const mutated = original
       .replace('name: Pet Store', 'name: Pet Store (v2)')
@@ -146,7 +156,7 @@ describe('mock YAML round-trip (FS provider integration)', () => {
   });
 
   it('preserves source + endpoints (read-only) on update', async () => {
-    const uri = ApicircleFsProvider.mockUri(apicircleDir, 'm1');
+    const uri = await mockUriFor('m1');
     const original = Buffer.from(await fsProvider.readFile(uri)).toString('utf8');
     const mutated = original.replace('name: Pet Store', 'name: Renamed');
     await fsProvider.writeFile(uri, Buffer.from(mutated, 'utf8'), {
@@ -160,7 +170,7 @@ describe('mock YAML round-trip (FS provider integration)', () => {
   });
 
   it('throws NoPermissions when YAML port is out of range', async () => {
-    const uri = ApicircleFsProvider.mockUri(apicircleDir, 'm1');
+    const uri = await mockUriFor('m1');
     const original = Buffer.from(await fsProvider.readFile(uri)).toString('utf8');
     const mutated = original.replace('defaultPort: 3000', 'defaultPort: 80');
     await expect(
@@ -169,7 +179,7 @@ describe('mock YAML round-trip (FS provider integration)', () => {
   });
 
   it('delete on mocks/<id>.mock.yaml fires mock.delete', async () => {
-    const uri = ApicircleFsProvider.mockUri(apicircleDir, 'm1');
+    const uri = await mockUriFor('m1');
     await fsProvider.delete(uri, { recursive: false });
     const state = await bridge.activeWorkspace()!.read();
     expect(state.synced.mockServers.m1).toBeUndefined();

@@ -1,5 +1,8 @@
 import * as YAML from 'yaml';
 import type { MockServer, MockServerSource, MockEndpoint } from '@apicircle/shared';
+import { unknownTopLevelKeys } from './yamlStructure';
+
+const KNOWN_MOCK_KEYS = ['name', 'defaultPort', 'cors', 'source', 'endpoints'] as const;
 
 // =============================================================================
 // Mock-server YAML projection.
@@ -49,11 +52,14 @@ interface MockYamlOutput {
   }>;
 }
 
-const HEADER_COMMENT = `# APICircle Mock Server — edit name / defaultPort / cors below and save.
+const HEADER_COMMENT = `# API Circle Mock Server — edit name / defaultPort / cors below and save.
 #
 # Source + endpoints are read-only in this projection. To change them:
 #   • Re-import the spec via 'APICircle: New Mock' (replaces source)
-#   • Per-endpoint response rules + validation: edit in the desktop app
+#   • Per-endpoint behavior — open the per-endpoint YAML from the Mock
+#     sidebar (click the endpoint row or the ✎ pencil) to edit method,
+#     path, request validation, response rules, default response,
+#     headers, multipliers, etc.
 #
 # Note: the raw spec content is intentionally NOT shown in this YAML —
 # specs can contain bearer tokens or API keys that would otherwise be
@@ -126,6 +132,13 @@ export function parseMockFromYaml(text: string): ParsedMockYaml {
   const obj = parsed as Record<string, unknown>;
   const warnings: string[] = [];
 
+  const unknown = unknownTopLevelKeys(obj, KNOWN_MOCK_KEYS);
+  if (unknown.length > 0) {
+    throw new MockYamlParseError(
+      `Unknown field(s): ${unknown.join(', ')}. Rename or remove them — saving an unrecognized mock structure is blocked to prevent silent data loss.`,
+    );
+  }
+
   if (typeof obj.name !== 'string' || obj.name.length === 0) {
     throw new MockYamlParseError('Mock `name` is required and must be a non-empty string.');
   }
@@ -151,7 +164,7 @@ export function parseMockFromYaml(text: string): ParsedMockYaml {
   }
   if (obj.endpoints !== undefined) {
     warnings.push(
-      '`endpoints` is read-only — derived from source. Edit per-endpoint behavior in the desktop app.',
+      '`endpoints` is read-only in mock.yaml — open the per-endpoint `<endpointId>.endpoint.yaml` (from the Mock sidebar) to edit method / path / response rules / validation rules / multipliers.',
     );
   }
 
@@ -170,6 +183,12 @@ function normalizeCors(value: unknown, warnings: string[]): MockServer['cors'] {
     return { enabled: false, origins: [] };
   }
   const r = value as Record<string, unknown>;
+  const unknown = unknownTopLevelKeys(r, ['enabled', 'origins']);
+  if (unknown.length > 0) {
+    throw new MockYamlParseError(
+      `cors: unknown field(s) ${unknown.join(', ')}. Expected { enabled, origins }.`,
+    );
+  }
   const enabled = r.enabled === true;
   let origins: string[] = [];
   if (Array.isArray(r.origins)) {

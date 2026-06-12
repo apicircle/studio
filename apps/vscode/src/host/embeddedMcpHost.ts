@@ -15,7 +15,7 @@ import type { VsCodeBridge, WorkspaceSurface } from './vscodeBridge';
 //
 // VS Code as BOTH host AND client of its own MCP catalog. Closes Phase 5+
 // deferred item: today external AI clients launch the `apicircle-mcp`
-// binary themselves (stdio); this host exposes the SAME 78-tool catalog
+// binary themselves (stdio); this host exposes the SAME 79-tool catalog
 // over a local HTTP endpoint so clients can connect without spawning a
 // subprocess. Same code path as the stdio server — only the transport
 // changes.

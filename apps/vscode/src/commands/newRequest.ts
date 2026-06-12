@@ -1,37 +1,23 @@
 import * as vscode from 'vscode';
 import { generateId } from '@apicircle/shared';
-import type { Request as ApiRequest, HttpMethod, RequestAuth } from '@apicircle/shared';
-import type { VsCodeBridge } from '../host/vscodeBridge';
+import type { Request as ApiRequest, Folder } from '@apicircle/shared';
+import type { VsCodeBridge, WorkspaceSurface } from '../host/vscodeBridge';
 import { ApicircleFsProvider } from '../fs/apicircleFsProvider';
 
 // =============================================================================
-// `APICircle: New Request` — multi-step QuickPick wizard.
+// `APICircle: New Request` — folder-pick + direct file creation.
 //
-// Steps (per the Phase 1 plan):
-//   1. Pick HTTP method (default GET)
-//   2. Enter URL (validated for non-empty)
-//   3. Pick destination folder (top-level or existing)
-//   4. Pick auth type (none / bearer / basic / api-key)
-//   5. If bearer/basic/api-key: collect minimal credentials
+// Earlier this was a 5-step wizard (method → URL → folder → auth → name). The
+// step-wise prompts duplicated what the request YAML already lets you edit, so
+// the flow is now a single decision: WHERE does the request live? Pick an
+// existing folder, the top level, or create a new folder inline. Everything
+// else lands as a ready-to-edit GET scaffold (method, placeholder URL, sample
+// header/query, no auth) that the user tweaks directly in the opened YAML and
+// then sends with ▶ Send / Ctrl+Enter.
 //
-// Result: creates the request via applyMutation, sets workspace.local.ui's
-// activeRequestId, opens its apicircle:// YAML in the editor.
-//
-// More elaborate auth (OAuth2, AWS SigV4, NTLM, etc.) is collected via
-// dedicated auth wizards — deferred to Phase 6+. The simple cases above
-// cover most real-world quick-create flows; for the elaborate auth types
-// the user edits the request YAML directly (auth fields ARE present in
-// the projection — the wizard is convenience, not a gating dependency).
+// Invoked from the folder context menu, the folder id is passed via ctx so the
+// pick step is skipped and the request drops straight into that folder.
 // =============================================================================
-
-const HTTP_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
-
-const SIMPLE_AUTH_OPTIONS = [
-  { label: 'None', value: 'none' as const },
-  { label: 'Bearer token', value: 'bearer' as const },
-  { label: 'Basic auth', value: 'basic' as const },
-  { label: 'API key (header)', value: 'api-key' as const },
-];
 
 export interface NewRequestDeps {
   bridge: VsCodeBridge;
@@ -41,12 +27,14 @@ export interface NewRequestDeps {
 
 /**
  * Optional context-menu argument: when invoked from the Editor view's folder
- * context menu, the folder id is passed so the wizard can skip Step 3
- * (folder picker) and pre-select the chosen folder.
+ * context menu, the folder id is passed so the command skips the folder picker
+ * and drops the request straight into the chosen folder.
  */
 export interface NewRequestContext {
   folderId?: string;
 }
+
+const NEW_FOLDER_PICK = '__new_folder__';
 
 export async function newRequestCommand(
   deps: NewRequestDeps,
@@ -58,76 +46,36 @@ export async function newRequestCommand(
     return;
   }
 
-  // Step 1: Method
-  const methodPick = await vscode.window.showQuickPick(
-    HTTP_METHODS.map((m) => ({ label: m })),
-    { placeHolder: 'HTTP method (step 1 of 5)' },
-  );
-  if (!methodPick) return;
-  const method = methodPick.label;
-
-  // Step 2: URL
-  const url = await vscode.window.showInputBox({
-    prompt: 'URL (step 2 of 5)',
-    placeHolder: 'https://api.example.com/users/:id',
-    validateInput: (v) => (v.trim().length === 0 ? 'URL is required' : null),
-  });
-  if (url === undefined) return;
-
-  // Step 3: Folder — skipped if pre-supplied via context (folder context menu).
   const state = await active.read();
-  let folderPick: { label: string; folderId: string | null } | undefined;
+
+  // Resolve the destination folder. Context-menu invocation pre-supplies it;
+  // otherwise the user picks an existing folder / top level / a new folder.
+  let folderId: string | null;
   if (ctx?.folderId !== undefined) {
     const folder = state.synced.collections.folders[ctx.folderId];
     if (!folder) {
       await vscode.window.showWarningMessage('Selected folder no longer exists.');
       return;
     }
-    folderPick = { label: folder.name, folderId: folder.id };
+    folderId = folder.id;
   } else {
-    const folderOptions = [
-      { label: '(top level)', folderId: null as string | null },
-      ...Object.values(state.synced.collections.folders).map((f) => ({
-        label: f.name,
-        folderId: f.id,
-      })),
-    ];
-    folderPick = await vscode.window.showQuickPick(folderOptions, {
-      placeHolder: 'Destination folder (step 3 of 5)',
-    });
-    if (!folderPick) return;
+    const picked = await pickOrCreateFolder(active, state);
+    if (picked === undefined) return; // user cancelled
+    folderId = picked;
   }
 
-  // Step 4: Auth type
-  const authPick = await vscode.window.showQuickPick(SIMPLE_AUTH_OPTIONS, {
-    placeHolder: 'Auth (step 4 of 5)',
-  });
-  if (!authPick) return;
-
-  // Step 5: Auth credentials (conditional)
-  const auth: RequestAuth = await collectAuth(authPick.value);
-  if (auth === null) return;
-
-  // Suggest a name based on the URL's path
-  const defaultName = `${method} ${extractPath(url)}`;
-  const name = await vscode.window.showInputBox({
-    prompt: 'Request name (step 5 of 5)',
-    value: defaultName,
-    validateInput: (v) => (v.trim().length === 0 ? 'Name is required' : null),
-  });
-  if (name === undefined) return;
-
   const now = new Date().toISOString();
+  const scaffold = getRequestScaffold();
   const request: ApiRequest = {
     id: generateId(),
-    name: name.trim(),
-    folderId: folderPick.folderId,
-    method,
-    url: url.trim(),
-    headers: [],
-    query: [],
-    body: { type: 'none', content: '' },
-    auth,
+    name: 'New Request',
+    folderId,
+    method: 'GET',
+    url: 'https://api.example.com/endpoint',
+    headers: scaffold.headers,
+    query: scaffold.query,
+    body: scaffold.body,
+    auth: { type: 'none' },
     contextVars: [],
     extractions: [],
     assertions: [],
@@ -136,39 +84,90 @@ export async function newRequestCommand(
   };
 
   await active.apply({ kind: 'request.create', request });
-  const uri = ApicircleFsProvider.requestUri(active.workspace.id, request.id);
+  const stateAfterCreate = await active.read();
+  const uri = ApicircleFsProvider.requestUri(
+    active.workspace.id,
+    request,
+    stateAfterCreate.synced.collections.folders,
+    stateAfterCreate.synced.collections.requests,
+  );
   if (deps.openCreated) await deps.openCreated(uri);
   else await vscode.commands.executeCommand('vscode.open', uri);
 }
 
-async function collectAuth(kind: 'none' | 'bearer' | 'basic' | 'api-key'): Promise<RequestAuth> {
-  switch (kind) {
-    case 'none':
-      return { type: 'none' };
-    case 'bearer': {
-      const token = await vscode.window.showInputBox({
-        prompt: 'Bearer token',
-        password: true,
-      });
-      return { type: 'bearer', token: token ?? '' };
-    }
-    case 'basic': {
-      const username = await vscode.window.showInputBox({ prompt: 'Username' });
-      const password = await vscode.window.showInputBox({ prompt: 'Password', password: true });
-      return { type: 'basic', username: username ?? '', password: password ?? '' };
-    }
-    case 'api-key': {
-      const key = await vscode.window.showInputBox({ prompt: 'Header name (e.g. X-API-Key)' });
-      const value = await vscode.window.showInputBox({ prompt: 'API key value', password: true });
-      return { type: 'api-key', key: key ?? '', value: value ?? '', addTo: 'header' };
-    }
+/**
+ * Folder picker for the destination. Returns:
+ *   - a folder id (string) for an existing or newly-created folder,
+ *   - `null` for the top level,
+ *   - `undefined` when the user cancels.
+ * Creating a new folder routes through `applyMutation` (folder.create) so the
+ * new folder is persisted before the request is parented to it.
+ */
+async function pickOrCreateFolder(
+  active: WorkspaceSurface,
+  state: Awaited<ReturnType<WorkspaceSurface['read']>>,
+): Promise<string | null | undefined> {
+  type FolderPick = vscode.QuickPickItem & { folderId: string | null };
+  const folders = state.synced.collections.folders;
+  const options: FolderPick[] = [
+    { label: '$(home) (top level)', folderId: null },
+    ...Object.values(folders).map((f) => ({
+      label: `$(folder) ${folderPath(f, folders)}`,
+      folderId: f.id,
+    })),
+    {
+      label: '$(new-folder) New folder…',
+      description: 'Create a new top-level folder for this request.',
+      folderId: NEW_FOLDER_PICK,
+    },
+  ];
+  const pick = await vscode.window.showQuickPick(options, {
+    title: 'New Request',
+    placeHolder: 'Where should the request live? Pick a folder, top level, or create one.',
+  });
+  if (!pick) return undefined;
+
+  if (pick.folderId === NEW_FOLDER_PICK) {
+    const name = await vscode.window.showInputBox({
+      title: 'New folder',
+      prompt: 'Folder name',
+      validateInput: (v) => (v.trim().length === 0 ? 'Folder name is required' : null),
+    });
+    if (name === undefined) return undefined;
+    const folder: Folder = { id: generateId(), name: name.trim(), parentId: null };
+    await active.apply({ kind: 'folder.create', folder });
+    return folder.id;
   }
+  return pick.folderId;
 }
 
-function extractPath(url: string): string {
-  try {
-    return new URL(url).pathname;
-  } catch {
-    return url;
+/** Build a `Parent / Child` breadcrumb label for a folder so nested folders are
+ *  distinguishable in the picker. Walks up the parent chain. */
+function folderPath(folder: Folder, folders: Record<string, Folder>): string {
+  const segments: string[] = [folder.name];
+  let parentId = folder.parentId;
+  // Guard against cycles with a visited set — corrupted data shouldn't hang.
+  const seen = new Set<string>([folder.id]);
+  while (parentId && !seen.has(parentId)) {
+    const parent = folders[parentId];
+    if (!parent) break;
+    segments.unshift(parent.name);
+    seen.add(parent.id);
+    parentId = parent.parentId;
   }
+  return segments.join(' / ');
+}
+
+/**
+ * Starter content so the new request opens with a usable shape the user edits,
+ * not an empty shell. The request is created as a GET, so the scaffold carries
+ * an Accept header + a sample `page` query param to show the structure; the
+ * user switches method / body / auth directly in the YAML.
+ */
+function getRequestScaffold(): Pick<ApiRequest, 'headers' | 'query' | 'body'> {
+  return {
+    headers: [{ key: 'Accept', value: 'application/json', enabled: true }],
+    query: [{ key: 'page', value: '1', enabled: true }],
+    body: { type: 'none', content: '' },
+  };
 }
