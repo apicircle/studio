@@ -107,7 +107,17 @@ export async function openMcpConfigFileCommand(
 }
 
 async function openConfigFileFor(client: AiClient, configPath: string): Promise<void> {
-  if (!fs.existsSync(configPath)) {
+  // Probe existence via stat → caught ENOENT, NOT existsSync, because we
+  // do an atomic `flag: 'wx'` write on creation so the prompt-then-write
+  // race can't truncate a file the user (or another tool) just created.
+  let exists = true;
+  try {
+    fs.statSync(configPath);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') exists = false;
+    else throw err;
+  }
+  if (!exists) {
     const create = await vscode.window.showWarningMessage(
       `${aiClientDisplayName(client)}'s config file doesn't exist at ${configPath}. Create an empty one?`,
       'Create',
@@ -121,12 +131,16 @@ async function openConfigFileFor(client: AiClient, configPath: string): Promise<
     // workspace path that mixes separators on Windows).
     try {
       fs.mkdirSync(path.dirname(configPath), { recursive: true });
-      fs.writeFileSync(configPath, '{\n  "mcpServers": {}\n}\n');
+      // `wx` — fail if it appeared between the stat above and now.
+      // If it did appear, treat as success and open it.
+      fs.writeFileSync(configPath, '{\n  "mcpServers": {}\n}\n', { flag: 'wx' });
     } catch (err) {
-      await vscode.window.showErrorMessage(
-        `Failed to create ${configPath}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return;
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') {
+        await vscode.window.showErrorMessage(
+          `Failed to create ${configPath}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return;
+      }
     }
   }
   await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(configPath));

@@ -268,7 +268,7 @@ export class PlanNotebookController implements vscode.Disposable {
 function extractBodyText(body: unknown): string | null {
   if (!body) return null;
   if (typeof body === 'string') return body;
-  if (typeof body === 'object' && body !== null && 'text' in body) {
+  if (typeof body === 'object' && 'text' in body) {
     const t = (body as { text?: unknown }).text;
     if (typeof t === 'string') return t;
   }

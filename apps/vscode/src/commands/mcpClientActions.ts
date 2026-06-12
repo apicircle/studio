@@ -245,8 +245,13 @@ function removeApicircleEntry(client: InstallableClient): void {
     appdata: process.env.APPDATA,
   };
   const fullPath = resolveInstallPath(client, env);
-  if (!fs.existsSync(fullPath)) return;
-  const raw = fs.readFileSync(fullPath, 'utf8');
+  let raw: string;
+  try {
+    raw = fs.readFileSync(fullPath, 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw err;
+  }
   let parsed: Record<string, unknown>;
   try {
     parsed = JSON.parse(raw) as Record<string, unknown>;

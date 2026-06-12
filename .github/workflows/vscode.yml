@@ -77,7 +77,7 @@ jobs:
         run: node scripts/check-vscode-bundle.mjs
 
       - name: Dead-code scan (knip)
-        run: pnpm dlx knip --include apps/vscode,e2e/vscode --no-progress
+        run: pnpm dlx knip --workspace apps/vscode --workspace e2e/vscode --no-progress
 
   cross-host-smoke:
     name: Cross-host E2E smoke (Mocha via @vscode/test-electron)

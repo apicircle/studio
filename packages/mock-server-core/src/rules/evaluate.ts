@@ -146,14 +146,11 @@ export function resolveJsonPath(body: unknown, jsonPath: string): unknown {
   if (path === '') return body;
 
   let cursor: unknown = body;
-  // Tokens: alternating between a dotted property name and an optional
-  // [idx]. Use a greedy regex to walk in order.
-  const re = /([^.[\]]+)|\[([^\]]+)\]/g;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(path)) !== null) {
+  // Manual O(n) tokenizer: alternates dotted keys and `[…]` brackets.
+  // Implemented as a state machine instead of a regex to avoid CodeQL's
+  // polynomial-regex detector on user-authored JSON paths from mock rules.
+  for (const key of iterJsonPathTokens(path)) {
     if (cursor === undefined || cursor === null) return undefined;
-    const key = match[1] ?? match[2];
-    if (key === undefined) return undefined;
     if (Array.isArray(cursor)) {
       const idx = Number(key);
       if (!Number.isInteger(idx)) return undefined;
@@ -167,4 +164,31 @@ export function resolveJsonPath(body: unknown, jsonPath: string): unknown {
     return undefined;
   }
   return cursor;
+}
+
+function* iterJsonPathTokens(path: string): Iterable<string> {
+  let i = 0;
+  while (i < path.length) {
+    const ch = path[i];
+    if (ch === '.' || ch === ']') {
+      i++;
+      continue;
+    }
+    if (ch === '[') {
+      const close = path.indexOf(']', i + 1);
+      if (close === -1) return;
+      const inner = path.slice(i + 1, close);
+      if (inner.length > 0) yield inner;
+      i = close + 1;
+      continue;
+    }
+    let j = i + 1;
+    while (j < path.length) {
+      const c = path[j];
+      if (c === '.' || c === '[' || c === ']') break;
+      j++;
+    }
+    yield path.slice(i, j);
+    i = j;
+  }
 }

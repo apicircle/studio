@@ -30,14 +30,13 @@ import * as vscode from 'vscode';
 // `contributes.notebooks`). Files match `**/*.apicircle-plan.json`.
 // =============================================================================
 
-export const PLAN_NOTEBOOK_TYPE = 'apicircle-plan';
 export const PLAN_NOTEBOOK_SCHEMA_VERSION = 1;
 
 /** Subset of ExecutionPlan we persist into the notebook file. Mirrors the
  *  shape in `packages/shared/src/types.ts` ExecutionPlan; we keep the import
  *  loose (typeof-shaped) so the notebook layer doesn't import from
  *  `@apicircle/shared` directly — the bridge already knows that type. */
-export interface PlanNotebookStep {
+interface PlanNotebookStep {
   requestId: string;
   linkedWorkspaceId?: string;
   enabled?: boolean;
@@ -55,7 +54,7 @@ export interface PlanNotebookPayload {
 
 /** Per-cell metadata that survives the notebook → file → notebook round-trip.
  *  Stored on `NotebookCellData.metadata`. */
-export interface PlanCellMetadata {
+interface PlanCellMetadata {
   requestId: string;
   linkedWorkspaceId?: string;
   /** `enabled === false` only — undefined/true persist as just absence. */
@@ -63,7 +62,7 @@ export interface PlanCellMetadata {
 }
 
 /** Notebook-level metadata that rides on `NotebookData.metadata`. */
-export interface PlanNotebookMetadata {
+interface PlanNotebookMetadata {
   planId: string;
   workspaceId: string;
   envPriorityOrder: unknown[];

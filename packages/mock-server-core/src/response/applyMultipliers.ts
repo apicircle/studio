@@ -123,22 +123,42 @@ function parsePathSegments(jsonPath: string): PathSegment[] {
   if (path.startsWith('.')) path = path.slice(1);
   if (path === '') return [];
 
+  // Manual O(n) tokenizer instead of a regex with alternation — avoids
+  // CodeQL's polynomial-regex detector on user-authored multiplier paths.
   const out: PathSegment[] = [];
-  const re = /([^.[\]]+)|\[([^\]]+)\]/g;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(path)) !== null) {
-    if (match[1] !== undefined) {
-      if (FORBIDDEN_KEYS.has(match[1])) return [];
-      out.push({ kind: 'key', name: match[1] });
-    } else if (match[2] !== undefined) {
-      const n = Number(match[2]);
-      if (Number.isInteger(n)) {
-        out.push({ kind: 'index', idx: n });
-      } else {
-        if (FORBIDDEN_KEYS.has(match[2])) return [];
-        out.push({ kind: 'key', name: match[2] });
-      }
+  let i = 0;
+  while (i < path.length) {
+    const ch = path[i];
+    if (ch === '.' || ch === ']') {
+      i++;
+      continue;
     }
+    if (ch === '[') {
+      const close = path.indexOf(']', i + 1);
+      if (close === -1) break;
+      const inner = path.slice(i + 1, close);
+      if (inner.length > 0) {
+        const n = Number(inner);
+        if (Number.isInteger(n)) {
+          out.push({ kind: 'index', idx: n });
+        } else {
+          if (FORBIDDEN_KEYS.has(inner)) return [];
+          out.push({ kind: 'key', name: inner });
+        }
+      }
+      i = close + 1;
+      continue;
+    }
+    let j = i + 1;
+    while (j < path.length) {
+      const c = path[j];
+      if (c === '.' || c === '[' || c === ']') break;
+      j++;
+    }
+    const name = path.slice(i, j);
+    if (FORBIDDEN_KEYS.has(name)) return [];
+    out.push({ kind: 'key', name });
+    i = j;
   }
   return out;
 }

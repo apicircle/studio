@@ -90,13 +90,18 @@ export async function openPlanAsNotebookCommand(
   const fileUri = vscode.Uri.file(fullPath);
 
   // Don't overwrite an existing file — just open it. Lets users rename the
-  // notebook file without it being recreated on every open.
-  if (!fs.existsSync(fullPath)) {
+  // notebook file without it being recreated on every open. `flag: 'wx'`
+  // makes the create atomic (replaces a stat-then-write TOCTOU dance).
+  try {
     const payload = buildPayloadFromPlan(surface.workspace.id, plan);
-    fs.writeFileSync(fullPath, JSON.stringify(payload, null, 2) + '\n');
+    fs.writeFileSync(fullPath, JSON.stringify(payload, null, 2) + '\n', { flag: 'wx' });
     deps.log?.(`wrote ${fullPath} (plan=${planId})`);
-  } else {
-    deps.log?.(`opened existing ${fullPath} (plan=${planId})`);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+      deps.log?.(`opened existing ${fullPath} (plan=${planId})`);
+    } else {
+      throw err;
+    }
   }
 
   // Open as a notebook (VS Code routes via the registered serializer).

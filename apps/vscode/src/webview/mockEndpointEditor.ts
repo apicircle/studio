@@ -52,12 +52,12 @@ export interface MockEndpointFormState {
   bodyContent: string;
 }
 
-export interface SaveMessage {
+interface SaveMessage {
   type: 'save';
   state: MockEndpointFormState;
 }
 
-export interface CancelMessage {
+interface CancelMessage {
   type: 'cancel';
 }
 

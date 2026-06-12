@@ -101,24 +101,31 @@ export async function newMockCommand(deps: MockActionsDeps): Promise<void> {
       if (!picked || picked.length === 0) return;
       // F-G5: size-check before loading into memory. Real enterprise
       // OpenAPI specs cap around 5-8 MB; anything larger usually means
-      // the user picked the wrong file.
+      // the user picked the wrong file. Open the file once and use
+      // `fstat`+`readFile` on the same handle so the size we prompt on is
+      // the size we actually load — no TOCTOU between stat() and read().
+      const pickedPath = picked[0].fsPath;
+      let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
       try {
-        const stat = await fs.stat(picked[0].fsPath);
+        handle = await fs.open(pickedPath, 'r');
+        const stat = await handle.stat();
         if (stat.size > SPEC_SIZE_WARN_BYTES) {
           const mb = (stat.size / (1024 * 1024)).toFixed(1);
           const proceed = await vscode.window.showWarningMessage(
-            `${picked[0].fsPath} is ${mb} MB. Loading large specs blocks the extension host briefly. Continue?`,
+            `${pickedPath} is ${mb} MB. Loading large specs blocks the extension host briefly. Continue?`,
             { modal: true },
             'Continue',
           );
           if (proceed !== 'Continue') return;
         }
-        content = await fs.readFile(picked[0].fsPath, 'utf-8');
+        content = await handle.readFile('utf-8');
       } catch (e) {
         await vscode.window.showErrorMessage(
-          `Failed to read ${picked[0].fsPath}: ${e instanceof Error ? e.message : String(e)}`,
+          `Failed to read ${pickedPath}: ${e instanceof Error ? e.message : String(e)}`,
         );
         return;
+      } finally {
+        await handle?.close();
       }
     } else if (methodPick.value === 'url') {
       // F-G6: fetch spec from HTTP(S) URL — common pattern is

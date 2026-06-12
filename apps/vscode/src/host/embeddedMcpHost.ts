@@ -267,8 +267,12 @@ export class EmbeddedMcpHost {
 
     // 2. Bearer-token auth. Accept both `Authorization: Bearer <token>`
     //    and `?token=<token>` (for clients that can't set headers).
+    //
+    // Manual prefix match instead of `/^Bearer\s+(.+)$/i` so CodeQL doesn't
+    // flag the `\s+` + `.+` pairing as a polynomial regex on a header value
+    // sourced directly from the network.
     const auth = req.headers.authorization ?? '';
-    const bearer = /^Bearer\s+(.+)$/i.exec(auth)?.[1];
+    const bearer = extractBearerToken(auth);
     const url = new URL(req.url ?? '/', `http://${hostHeader || 'localhost'}`);
     const queryToken = url.searchParams.get('token');
     const presented = bearer ?? queryToken ?? '';
@@ -288,6 +292,22 @@ export class EmbeddedMcpHost {
     res.statusCode = 404;
     res.end();
   }
+}
+
+/**
+ * Parse `Authorization: Bearer <token>` without a regex. Trims any
+ * whitespace between `Bearer` and the token, returns `undefined` if the
+ * scheme isn't bearer or the token is empty.
+ */
+function extractBearerToken(auth: string): string | undefined {
+  const prefix = 'bearer';
+  if (auth.length <= prefix.length) return undefined;
+  if (auth.slice(0, prefix.length).toLowerCase() !== prefix) return undefined;
+  const after = auth.slice(prefix.length);
+  // Require at least one whitespace between scheme and token.
+  if (after.length === 0 || !/^\s/.test(after)) return undefined;
+  const token = after.replace(/^\s+/, '');
+  return token.length > 0 ? token : undefined;
 }
 
 /**

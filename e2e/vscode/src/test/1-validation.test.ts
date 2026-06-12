@@ -1,5 +1,4 @@
 import * as assert from 'node:assert';
-import * as vscode from 'vscode';
 
 // =============================================================================
 // Phase 1 / spec 5: Pre-send validation diagnostics.

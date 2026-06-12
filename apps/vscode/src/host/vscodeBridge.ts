@@ -146,22 +146,30 @@ export class VsCodeBridge implements vscode.Disposable {
     const apicircleDir = path.join(folder.uri.fsPath, WORKSPACE_DIR);
     const workspaceJsonPath = path.join(folder.uri.fsPath, WORKSPACE_JSON_PATH);
 
-    if (fs.existsSync(workspaceJsonPath)) {
-      throw new Error(`Workspace already exists at ${workspaceJsonPath}`);
-    }
     await fs.promises.mkdir(apicircleDir, { recursive: true });
     await fs.promises.mkdir(path.join(apicircleDir, 'attachments'), { recursive: true });
 
     // Write workspace.json and workspace.local.json (the local file is written
     // into the device-local globalStorage path by the caller; here we only
-    // scaffold the synced half on disk).
+    // scaffold the synced half on disk). `flag: 'wx'` is the atomic
+    // "create-or-fail" — replaces a stat-then-write TOCTOU dance.
     const synced = JSON.stringify(seedSynced, null, 2);
-    await fs.promises.writeFile(workspaceJsonPath, synced, 'utf8');
+    try {
+      await fs.promises.writeFile(workspaceJsonPath, synced, { encoding: 'utf8', flag: 'wx' });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+        throw new Error(`Workspace already exists at ${workspaceJsonPath}`);
+      }
+      throw err;
+    }
 
     // Auto-generated README explaining the .apicircle/ folder to teammates.
+    // Idempotent: `wx` flag → EEXIST means "already there", which is fine.
     const readmePath = path.join(apicircleDir, 'README.md');
-    if (!fs.existsSync(readmePath)) {
-      await fs.promises.writeFile(readmePath, README_TEMPLATE, 'utf8');
+    try {
+      await fs.promises.writeFile(readmePath, README_TEMPLATE, { encoding: 'utf8', flag: 'wx' });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
     }
 
     // Touch .gitignore at the repo root to ensure workspace.local.json never
@@ -202,8 +210,10 @@ async function ensureGitignore(repoRoot: string): Promise<void> {
     '',
   ];
   let current = '';
-  if (fs.existsSync(gitignorePath)) {
+  try {
     current = await fs.promises.readFile(gitignorePath, 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
   const missing = entries.filter((e) => e && !current.includes(e));
   if (missing.length === 0) return;

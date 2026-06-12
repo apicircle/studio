@@ -25,6 +25,69 @@
 
 ## Unreleased
 
+### CI hardening — CodeQL polynomial regex + TOCTOU sweep
+
+A pass over the CodeQL findings that the `vscode.yml` and `codeql.yml`
+workflows were surfacing. No behaviour change for any of the touched
+helpers — the existing test suites stay green untouched.
+
+**Polynomial regex → manual O(n) scan**
+
+- `@apicircle/mock-server-core` — `resolveJsonPath` (rules) and
+  `parsePathSegments` (multipliers) replace their alternation regex
+  (`/([^.[\]]+)|\[([^\]]+)\]/g`) with a hand-written tokenizer. Same
+  output, no regex backtracking risk on workspace-authored paths.
+- `@apicircle/mock-server-core` — `openApiPathToHono` replaces
+  `path.replace(/\{[^}]+\}/g, ':$1')` with a manual indexOf scan that
+  can't trip the polynomial detector on user-imported OpenAPI specs.
+- `@apicircle/core` — `pemToCryptoKey` extracts the BEGIN/END envelope
+  with `indexOf` instead of a lazy `[\s\S]*?` regex. Behaviour
+  preserved for every PEM shape we accept (RSA / EC / PKCS#8, with or
+  without Bag Attributes between markers).
+- VS Code extension — `embeddedMcpHost.ts` parses
+  `Authorization: Bearer <token>` via `startsWith` + slice instead of
+  `/^Bearer\s+(.+)$/i`. Network-sourced header → no regex.
+
+**File-system race conditions (TOCTOU) → atomic `flag: 'wx'` / try/catch**
+
+- `vscodeBridge.createWorkspaceScaffold` — workspace.json + README
+  writes use `flag: 'wx'` (atomic create-or-fail) instead of
+  `existsSync`-then-`writeFile`. README EEXIST is ignored
+  (idempotent). `ensureGitignore` reads via try/catch on ENOENT.
+- `openPlanAsNotebook` — notebook file is created with `flag: 'wx'`;
+  EEXIST means "open the existing one" without overwriting.
+- `mcpActions.openConfigFileFor` — stat probe is wrapped in
+  try/catch (ENOENT); the seeded `mcpServers` write uses `flag: 'wx'`
+  so a file that appeared mid-prompt isn't truncated.
+- `mcpClientActions.removeApicircleEntry` — try/catch on
+  `readFileSync` instead of `existsSync`-then-read.
+- `mockActions` (spec import) — one `fs.open()` handle for `fstat`
+  - `readFile`, so the size we warn about is the size we actually
+    load. No gap between stat and read.
+
+**Other CodeQL findings**
+
+- `planNotebookController.extractBodyText` — drop the redundant
+  `body !== null` check that CodeQL flagged as comparing an inconvertible
+  type. The preceding `!body` early-return already excludes null.
+
+**Lint / dead-code cleanup**
+
+- `apps/vscode` — un-export four file-internal mock-endpoint render
+  helpers, three unused `planNotebookSerializer` interfaces, the
+  `PLAN_NOTEBOOK_TYPE` constant (was unused), and the
+  `SaveMessage` / `CancelMessage` interfaces (still reachable via the
+  exported `WebviewToHostMessage` union). `knip` now reports zero
+  dead exports for the VS Code workspace.
+- `.github/workflows/vscode.yml` — `knip --include apps/vscode,e2e/vscode`
+  was misusing `--include` (which selects issue types). Replaced with
+  the correct `--workspace apps/vscode --workspace e2e/vscode`.
+- `e2e/vscode/src/test/1-validation.test.ts` — drop unused `vscode`
+  import.
+- Prettier — re-formatted `CHANGELOG.md` and
+  `scripts/live-github/sweep-orphans.mjs` (catches the `Quality gates →
+Format check` job that was failing on style nits).
+
 ### Link Workspaces — final gap closure (resolution, attachments, CLI, live-GH)
 
 Closes every remaining gap so the linked-workspace + send-time pipelines are
@@ -1030,17 +1093,12 @@ variables (<K> encrypted)`. The `MockView` endpoint row's tooltip
 file/text` and (file rows only) `📎 Pick file…`. Picking a file
     opens the same quick-pick the desktop / web apps surface — list
     existing `synced.globalAssets.files` entries, or
-    **📤 Upload a new file…** which:
-    1. opens the native file dialog (`vscode.window.showOpenDialog`),
-    2. reads the bytes, computes `sha256` + extension-based MIME +
-       size,
-    3. copies the file into `<workspaceRoot>/.apicircle/attachments/
+    **📤 Upload a new file…** which: 1. opens the native file dialog (`vscode.window.showOpenDialog`), 2. reads the bytes, computes `sha256` + extension-based MIME +
+    size, 3. copies the file into `<workspaceRoot>/.apicircle/attachments/
 <slotId>` (the same path the desktop / Git push flow writes
-       through),
-    4. applies a `globalAsset.upsertFile` patch so every surface sees
-       the new asset on the next read,
-    5. writes the asset id / slotId / filename / size / mimeType /
-       sha256 into the form-data row's YAML block.
+    through), 4. applies a `globalAsset.upsertFile` patch so every surface sees
+    the new asset on the next read, 5. writes the asset id / slotId / filename / size / mimeType /
+    sha256 into the form-data row's YAML block.
 
   - **Binary:** when `body.type` is binary, a `📎 Pick attachment
 file…` lens rides above `body:`. Same picker, same upload flow —

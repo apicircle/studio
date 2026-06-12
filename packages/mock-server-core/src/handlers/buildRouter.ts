@@ -238,7 +238,27 @@ function defaultContentTypeFor(bodyType: MockResponseConfig['body']['type']): st
  * Translate OpenAPI path templates (`/pets/{id}/items/{itemId}`) to Hono
  * route patterns (`/pets/:id/items/:itemId`). Hono treats `:` as the
  * param prefix; the OpenAPI braces are unsupported.
+ *
+ * Manual O(n) scan instead of `path.replace(/\{[^}]+\}/g, …)` so we don't
+ * trip CodeQL's polynomial-regex detector on user-supplied paths from
+ * imported OpenAPI specs.
  */
 export function openApiPathToHono(path: string): string {
-  return path.replace(/\{([^}]+)\}/g, ':$1');
+  let out = '';
+  let i = 0;
+  while (i < path.length) {
+    if (path[i] === '{') {
+      const close = path.indexOf('}', i + 1);
+      if (close === -1) {
+        out += path.slice(i);
+        break;
+      }
+      out += ':' + path.slice(i + 1, close);
+      i = close + 1;
+    } else {
+      out += path[i];
+      i++;
+    }
+  }
+  return out;
 }

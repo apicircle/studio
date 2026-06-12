@@ -1303,7 +1303,7 @@ async function flashAt(editor: vscode.TextEditor, test: RegExp, uri: vscode.Uri)
 // YAML block renderers
 // ---------------------------------------------------------------------------
 
-export function renderValidationRule(rule: MockValidationRule): string {
+function renderValidationRule(rule: MockValidationRule): string {
   const lines: string[] = [];
   lines.push(`  - id: ${yamlString(rule.id)}`);
   lines.push(`    kind: ${yamlString(rule.kind)}`);
@@ -1320,7 +1320,7 @@ export function renderValidationRule(rule: MockValidationRule): string {
   return lines.join('\n') + '\n';
 }
 
-export function renderResponseRule(rule: MockResponseRule): string {
+function renderResponseRule(rule: MockResponseRule): string {
   const lines: string[] = [];
   lines.push(`  - id: ${yamlString(rule.id)}`);
   lines.push(`    name: ${yamlString(rule.name)}`);
@@ -1339,7 +1339,7 @@ export function renderResponseRule(rule: MockResponseRule): string {
 }
 
 /** Render one multiplier as a `- id:` list entry (two-space dash indent). */
-export function renderMultiplier(m: MockResponseMultiplier): string {
+function renderMultiplier(m: MockResponseMultiplier): string {
   const lines: string[] = [];
   lines.push(`- id: ${yamlString(m.id)}`);
   if (m.name) lines.push(`  name: ${yamlString(m.name)}`);
@@ -1389,7 +1389,7 @@ function renderResponseBodyLines(body: MockResponseConfig['body']): string[] {
   return lines;
 }
 
-export function renderResponseBody(body: MockResponseConfig['body'], baseIndent: number): string {
+function renderResponseBody(body: MockResponseConfig['body'], baseIndent: number): string {
   const lines = [`body:`];
   lines.push(...indent(renderResponseBodyLines(body), 2));
   return indent(lines, baseIndent).join('\n') + '\n';
