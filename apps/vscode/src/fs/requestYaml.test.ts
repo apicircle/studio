@@ -151,3 +151,130 @@ describe('parseRequestFromYaml', () => {
     expect(patch.headers).toHaveLength(2);
   });
 });
+
+describe('parseRequestFromYaml — URL ↔ query / pathParams sync', () => {
+  it("splits ?key=val typed into url: into the query: block and strips '?' from url", () => {
+    const { patch } = parseRequestFromYaml(
+      'name: x\nmethod: GET\nurl: https://x.com/api?page=2&limit=10',
+    );
+    expect(patch.url).toBe('https://x.com/api');
+    expect(patch.query).toEqual([
+      { key: 'page', value: '2', enabled: true },
+      { key: 'limit', value: '10', enabled: true },
+    ]);
+  });
+
+  it('merges URL-typed query params with existing query rows by key (URL wins on enabled rows)', () => {
+    const yaml = [
+      'name: x',
+      'method: GET',
+      'url: https://x.com/api?page=99&fresh=yes',
+      'query:',
+      '  - key: page',
+      "    value: '1'",
+      '    enabled: true',
+      '  - key: filter',
+      '    value: active',
+      '    enabled: true',
+    ].join('\n');
+    const { patch } = parseRequestFromYaml(yaml);
+    expect(patch.url).toBe('https://x.com/api');
+    expect(patch.query).toEqual([
+      { key: 'page', value: '99', enabled: true }, // overwritten by URL
+      { key: 'filter', value: 'active', enabled: true }, // kept
+      { key: 'fresh', value: 'yes', enabled: true }, // appended
+    ]);
+  });
+
+  it('preserves disabled query rows even when the URL bar carries the same key', () => {
+    const yaml = [
+      'name: x',
+      'method: GET',
+      'url: https://x.com/api?page=2',
+      'query:',
+      '  - key: page',
+      "    value: '1'",
+      '    enabled: false',
+    ].join('\n');
+    const { patch } = parseRequestFromYaml(yaml);
+    // Disabled row passes through untouched; the URL-typed value lands as a
+    // separate enabled row so the user doesn't lose the disabled-row's value.
+    expect(patch.query).toEqual([
+      { key: 'page', value: '1', enabled: false },
+      { key: 'page', value: '2', enabled: true },
+    ]);
+  });
+
+  it('drops a trailing #fragment from a typed URL when splitting query rows', () => {
+    const { patch } = parseRequestFromYaml(
+      'name: x\nmethod: GET\nurl: https://x.com/api?page=2#anchor',
+    );
+    expect(patch.url).toBe('https://x.com/api');
+    expect(patch.query).toEqual([{ key: 'page', value: '2', enabled: true }]);
+  });
+
+  it('does not touch the URL or query rows when no ? is present', () => {
+    const yaml = [
+      'name: x',
+      'method: GET',
+      'url: https://x.com/users',
+      'query:',
+      '  - key: page',
+      "    value: '1'",
+      '    enabled: true',
+    ].join('\n');
+    const { patch } = parseRequestFromYaml(yaml);
+    expect(patch.url).toBe('https://x.com/users');
+    expect(patch.query).toEqual([{ key: 'page', value: '1', enabled: true }]);
+  });
+
+  it('adds a pathParams entry for each new {name} / :name placeholder in the URL', () => {
+    const { patch } = parseRequestFromYaml(
+      'name: x\nmethod: GET\nurl: https://x.com/users/{userId}/posts/:postId',
+    );
+    expect(patch.pathParams).toEqual({ userId: '', postId: '' });
+  });
+
+  it('preserves existing pathParams values and only fills in missing placeholders', () => {
+    const yaml = [
+      'name: x',
+      'method: GET',
+      'url: https://x.com/users/{userId}/posts/:postId',
+      'pathParams:',
+      "  userId: '42'",
+    ].join('\n');
+    const { patch } = parseRequestFromYaml(yaml);
+    expect(patch.pathParams).toEqual({ userId: '42', postId: '' });
+  });
+
+  it('keeps stale pathParams keys that no longer match a placeholder (user prunes manually)', () => {
+    const yaml = [
+      'name: x',
+      'method: GET',
+      'url: https://x.com/users/{userId}',
+      'pathParams:',
+      "  userId: '42'",
+      "  legacy: 'old'",
+    ].join('\n');
+    const { patch } = parseRequestFromYaml(yaml);
+    expect(patch.pathParams).toEqual({ userId: '42', legacy: 'old' });
+  });
+
+  it('does NOT treat {{var}} template references in the URL path as path placeholders', () => {
+    const { patch } = parseRequestFromYaml(
+      'name: x\nmethod: GET\nurl: https://x.com/{{TENANT}}/users/{id}',
+    );
+    expect(patch.pathParams).toEqual({ id: '' });
+  });
+
+  it('does NOT extract path placeholders from inside the query string', () => {
+    const { patch } = parseRequestFromYaml(
+      'name: x\nmethod: GET\nurl: https://x.com/api?ref=:notPath&other={alsoNot}',
+    );
+    expect(patch.pathParams).toBeUndefined();
+    expect(patch.query).toEqual([
+      { key: 'ref', value: ':notPath', enabled: true },
+      { key: 'other', value: '{alsoNot}', enabled: true },
+    ]);
+  });
+});

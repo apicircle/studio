@@ -1,6 +1,6 @@
 # API Circle Studio — VS Code Extension
 
-> **Status: Phase 1 alpha** — sideload-only (Marketplace listing in Phase 10).
+> **Status: 1.1.0 — first public release** (lockstep with the rest of the monorepo).
 
 This is the user + developer guide to the VS Code extension that lives at
 [`apps/vscode/`](../apps/vscode/). It complements the [Desktop App](../README.md)
@@ -178,7 +178,7 @@ pnpm --filter @apicircle/e2e-vscode test:e2e   # E2E (real VS Code via @vscode/t
 Sideload the built extension into your VS Code:
 
 1. `Cmd+Shift+P` → `Extensions: Install from VSIX…`
-2. Pick `apps/vscode/apicircle-vscode-0.1.0.vsix`
+2. Pick `apps/vscode/apicircle-vscode-1.1.0.vsix`
 3. Reload window
 
 ---
@@ -1543,11 +1543,18 @@ the legacy path parse as a fallback.
 **`*.req.yaml` — collection-request parity** (`requestFieldEdits.ts` +
 `requestCodeLens.ts`): `◆ Method`, header `◆ Key` / `◆ Value` (catalogue-aware),
 query / cookie key + value, path-param values, assertion kind/op, and extraction
-source — the request-side mirror of the mock field editors. **Auth** scalar
-fields have **no** `◆` field editor (edited directly in YAML); only `⟳ Format
-JSON` on the JSON auth fields (`payload` / `jwtHeaders`) is kept. **Form-data**
-`✚ Add text row` / `✚ Add file row` anchor on the `formRows:` line inside the
-body block; switching a row kind is per-row only (`↻ Switch to text/file`).
+source — the request-side mirror of the mock field editors. The `url:` row
+has **no** `◆` field editor — the URL is edited inline, and on save
+`parseRequestFromYaml` syncs any `?key=val…` typed in the URL into the
+structured `query:` block (URL wins for enabled rows; disabled rows pass
+through; new URL keys append in order; a trailing `#fragment` is dropped) and
+any `{name}` / `:name` placeholders in the path into `pathParams:` (existing
+values preserved; new placeholders get an empty-string slot; stale keys
+aren't auto-pruned). **Auth** scalar fields have **no** `◆` field editor
+(edited directly in YAML); only `⟳ Format JSON` on the JSON auth fields
+(`payload` / `jwtHeaders`) is kept. **Form-data** `✚ Add text row` / `✚ Add
+file row` anchor on the `formRows:` line inside the body block; switching a
+row kind is per-row only (`↻ Switch to text/file`).
 
 **`APICircle: New Request`** (`newRequest.ts`) is a single **folder pick** —
 choose an existing folder, the top level, or create a new folder inline — after

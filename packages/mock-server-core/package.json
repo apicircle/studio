@@ -1,6 +1,6 @@
 {
   "name": "@apicircle/mock-server-core",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "private": false,
   "type": "module",
   "sideEffects": false,

@@ -36,7 +36,7 @@ describe('RequestCodeLensProvider', () => {
     expect(lenses).toEqual([]);
   });
 
-  it('emits ◆ field lenses on method / url / header / query / pathParam rows (#10)', () => {
+  it('emits ◆ field lenses on method / header / query / pathParam rows but NOT on url:', () => {
     const REQ = Uri.parse('apicircle://x/requests/abc.req.yaml');
     const lenses = provider.provideCodeLenses(
       makeDoc(REQ, [
@@ -58,7 +58,10 @@ describe('RequestCodeLensProvider', () => {
     );
     const find = (cmd: string) => lenses.find((l) => l.command?.command === cmd);
     expect(find('apicircle.setRequestMethodField')?.command?.arguments).toEqual([REQ, 1]);
-    expect(find('apicircle.setRequestTextField')?.command?.arguments).toEqual([REQ, 2]); // url:
+    // The url: row gets no field lens — it's edited inline; ?query and {path}
+    // placeholders sync into the query: / pathParams: blocks on save.
+    const onUrlLine = lenses.filter((l) => l.range.start.line === 2);
+    expect(onUrlLine).toEqual([]);
     // header key/value are catalogue-aware commands.
     const headerKey = lenses.find(
       (l) => l.command?.command === 'apicircle.setRequestHeaderKeyField',
@@ -72,6 +75,7 @@ describe('RequestCodeLensProvider', () => {
     const textLines = lenses
       .filter((l) => l.command?.command === 'apicircle.setRequestTextField')
       .map((l) => l.command?.arguments?.[1]);
+    expect(textLines).not.toContain(2); // not on url:
     expect(textLines).toContain(4); // pathParams id value
     expect(textLines).toContain(6); // query - key: page
     expect(textLines).toContain(7); // query value

@@ -34,11 +34,15 @@ API Circle Studio's Web App, Desktop App, and VS Code extension are **peer clien
 
 Edit on any surface → commit → push → pull elsewhere → continue. No translation, no dialect, no per-surface fork. Device-local data (history, secrets, sessions) stays per-machine in each surface's managed storage.
 
-## Installation (alpha sideload)
+## Installation
+
+Once 1.1.0 is published to the Marketplace, install the normal way:
+**Extensions** view → search **API Circle Studio** → **Install**. Until
+then, build the .vsix locally:
 
 1. Clone this repo.
 2. `pnpm install && pnpm --filter apicircle-vscode build`
-3. `cd apps/vscode && pnpm exec vsce package --no-dependencies` produces `apicircle-vscode-0.1.0.vsix`.
+3. `cd apps/vscode && pnpm exec vsce package --no-dependencies` produces `apicircle-vscode-1.1.0.vsix`.
 4. Install via `Extensions: Install from VSIX…` in VS Code's command palette.
 
 For the full guide (Marketplace publish, Open VSX, GitHub Actions

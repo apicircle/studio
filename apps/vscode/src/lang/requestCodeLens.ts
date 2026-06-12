@@ -491,13 +491,12 @@ export class RequestCodeLensProvider implements vscode.CodeLensProvider {
           listIndent = indent;
           continue;
         }
-        // Top-level method / url field editors.
+        // Top-level method field editor. The URL is edited inline — typed
+        // ?query=… and {path} placeholders sync into the query: and pathParams:
+        // blocks on save (parseRequestFromYaml), so a lens on `url:` would
+        // just duplicate the obvious "click here, edit text" affordance.
         if (/^method\s*:/.test(text)) {
           fieldLens(line, '◆ Method', 'apicircle.setRequestMethodField', 'Pick the HTTP method.');
-          continue;
-        }
-        if (/^url\s*:/.test(text)) {
-          fieldLens(line, '◆ URL', 'apicircle.setRequestTextField', 'Edit the request URL.');
           continue;
         }
         // Any other top-level key ends a list context (handled by the dedent above).

@@ -6,6 +6,7 @@ import type {
   RequestAuth,
   RequestBody,
 } from '@apicircle/shared';
+import { findPathPlaceholders, parseUrlQuery } from '@apicircle/core';
 import { unknownTopLevelKeys, isPresentNonArray, isPresentNonMapping } from './yamlStructure';
 
 const KNOWN_REQUEST_KEYS = [
@@ -167,7 +168,7 @@ export function parseRequestFromYaml(text: string): ParsedRequestYaml {
 
   const name = stringOrThrow(obj.name, 'name');
   const method = stringOrThrow(obj.method, 'method').toUpperCase();
-  const url = stringOrThrow(obj.url, 'url');
+  const rawUrl = stringOrThrow(obj.url, 'url');
 
   if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(method)) {
     throw new RequestYamlParseError(
@@ -175,12 +176,36 @@ export function parseRequestFromYaml(text: string): ParsedRequestYaml {
     );
   }
 
+  // URL ↔ query / pathParams sync — mirrors the web/desktop URL bar contract.
+  // A `?key=val…` typed into the url field gets split: the base lands in
+  // `url`, the pairs merge into the existing `query:` rows (by key — existing
+  // values get overwritten with the URL-bar value; disabled rows are
+  // preserved at the tail; new keys append in URL order). `{name}` / `:name`
+  // placeholders in the path surface as `pathParams` entries (existing values
+  // preserved; new placeholders get an empty string so the user sees a slot
+  // to fill). Stale `pathParams` entries that no longer match a placeholder
+  // are kept — the editor surfaces them but doesn't auto-prune (matches the
+  // web/desktop behavior in `setRequestPathParams`).
+  const { base, query: queryFromUrl } = parseUrlQuery(rawUrl);
+  const yamlQuery = normalizeKVRows(obj.query, warnings, 'query');
+  const mergedQuery = mergeQueryFromUrl(yamlQuery, queryFromUrl);
+
+  const yamlPathParams = (obj.pathParams as Record<string, string> | undefined) ?? {};
+  const placeholders = findPathPlaceholders(base);
+  const mergedPathParams: Record<string, string> = { ...yamlPathParams };
+  for (const name of placeholders) {
+    if (!(name in mergedPathParams)) mergedPathParams[name] = '';
+  }
+
   const patch: ParsedRequestYaml['patch'] = {
     name,
     method: method as Request['method'],
-    url,
-    pathParams: obj.pathParams as Record<string, string> | undefined,
-    query: normalizeKVRows(obj.query, warnings, 'query'),
+    url: base,
+    pathParams:
+      Object.keys(mergedPathParams).length > 0 || obj.pathParams !== undefined
+        ? mergedPathParams
+        : undefined,
+    query: mergedQuery,
     headers: normalizeKVRows(obj.headers, warnings, 'headers'),
     cookies: normalizeKVRows(obj.cookies, warnings, 'cookies'),
     auth: (obj.auth as RequestAuth | undefined) ?? { type: 'none' },
@@ -191,6 +216,40 @@ export function parseRequestFromYaml(text: string): ParsedRequestYaml {
   };
 
   return { patch, warnings };
+}
+
+/**
+ * Merge query rows parsed from the url-bar `?…` portion into the rows the user
+ * authored in the YAML `query:` block. Strategy:
+ *   - Walk existing YAML rows in order. If a row's key matches a row from the
+ *     URL, replace the value with the URL's (URL is the source of truth for
+ *     *enabled* rows, mirroring the web/desktop URL bar).
+ *   - Append any URL rows whose key isn't already present, in URL order.
+ *   - Disabled YAML rows pass through with their value untouched — the URL
+ *     bar can only represent enabled rows, so we don't overwrite a row the
+ *     user explicitly disabled with a re-typed URL value.
+ */
+function mergeQueryFromUrl(
+  yamlRows: ReadonlyArray<{ key: string; value: string; enabled: boolean }>,
+  urlRows: ReadonlyArray<{ key: string; value: string; enabled: boolean }>,
+): Array<{ key: string; value: string; enabled: boolean }> {
+  if (urlRows.length === 0) return [...yamlRows];
+  const urlByKey = new Map<string, { value: string; enabled: boolean }>();
+  for (const row of urlRows) urlByKey.set(row.key, { value: row.value, enabled: row.enabled });
+  const consumed = new Set<string>();
+  const merged = yamlRows.map((row) => {
+    if (row.enabled && urlByKey.has(row.key)) {
+      const fromUrl = urlByKey.get(row.key)!;
+      consumed.add(row.key);
+      return { key: row.key, value: fromUrl.value, enabled: true };
+    }
+    return { ...row };
+  });
+  for (const row of urlRows) {
+    if (consumed.has(row.key)) continue;
+    merged.push({ key: row.key, value: row.value, enabled: true });
+  }
+  return merged;
 }
 
 function stringOrThrow(value: unknown, field: string): string {

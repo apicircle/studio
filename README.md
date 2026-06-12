@@ -148,7 +148,14 @@ extension contributes:
   (with active marker, encrypted-variable mask, hover with mask-warnings
   - secret-slot binding), Execution Plans, Mock servers, History (recent
     request + plan runs), **Snapshots** (storage meter + restore/delete
-    inline, capture + cap commands from the title bar), MCP, Marketplace.
+    inline, capture + cap commands from the title bar), MCP, and
+    **Link Workspaces** — the publish side (the workspace's own release
+    ledger: publish / deprecate / withdraw the versions linked consumers
+    pin to, plus ▶ Tag release on GitHub / Edit repo topics) **and** the
+    consume side (link a private repo or a marketplace result, edit every
+    link field via `<name>.link.yaml`, three-way `previewLinkedUpdate` /
+    `applyLinkedUpdate` review with per-entry resolution, dedicated PAT
+    sessions, required-secret provisioning).
 - **`.req.yaml` / `.env.yaml` / `.run.yaml` virtual documents** under
   the `apicircle:` URI scheme — full Monaco editing with JSON Schema
   validation, completion for the 17 auth types + body types +
@@ -183,11 +190,14 @@ Runs` OutputChannel.
   history retention, secret vault auto-lock + clipboard-clear, MCP
   binary path, MCP workspace config path.
 
-Phase 12 alpha is current — bundle externalised the heavy MCP SDK +
-Hono runtime (−470 KB to **1.69 MB** with 325 KB headroom under the
-restored 2.0 MB ceiling). E2E coverage now spans **all 11 feature
-phases** (19 specs in `e2e/vscode/src/test/`). The 12-phase deferred-
-list roadmap is empty. See [`docs/vscode-extension.md`](docs/vscode-extension.md).
+**1.1.0 — first public Marketplace cut** (lockstep with the rest of
+the monorepo). Bundle currently **2.66 MB**, well under the soft 3.0
+MB / hard 5.0 MB budget enforced by [`scripts/check-vscode-bundle.mjs`](scripts/check-vscode-bundle.mjs)
+and [`apps/vscode/test/integration/bundleSize.test.ts`](apps/vscode/test/integration/bundleSize.test.ts).
+E2E coverage spans **all 11 feature phases** (19 specs in
+[`e2e/vscode/src/test/`](e2e/vscode/src/test/)). See [`docs/vscode-extension.md`](docs/vscode-extension.md)
+for the developer guide and [`docs/vscode-extension-install-publish.md`](docs/vscode-extension-install-publish.md)
+for the Marketplace + Open VSX publish path.
 
 ## Two ways to use it
 

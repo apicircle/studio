@@ -167,8 +167,15 @@ studio/
 │                           `variables`, auth `payload`/`jwtHeaders` — object/
 │                           array-only guard); collection-request `◆` field
 │                           editors (`apps/vscode/src/commands/requestFieldEdits.ts`
-│                           — method/url, header/query/cookie/path-param,
-│                           assertion kind/op, extraction source; auth scalar
+│                           — method only on the top-level row; header/query/
+│                           cookie/path-param, assertion kind/op, extraction
+│                           source; `url:` has NO field-editor lens — the URL
+│                           is edited inline and `parseRequestFromYaml` syncs
+│                           any typed `?key=val` + `{name}`/`:name` placeholders
+│                           into the `query:` / `pathParams:` blocks on save
+│                           (URL wins for enabled query rows; disabled rows
+│                           pass through; new path placeholders get an empty-
+│                           string slot, existing values preserved); auth scalar
 │                           fields have NO field editor — edited directly in YAML,
 │                           only `⟳ Format JSON` on `payload`/`jwtHeaders`
 │                           survives); form-data `✚ Add text/file row` anchors on
@@ -453,7 +460,7 @@ Desktop: `pnpm --filter @apicircle/desktop build` then `… start`.
 | Doc                                                                                    | Purpose                                                               |
 | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
 | [`docs/architecture/platform.md`](docs/architecture/platform.md)                       | Platform surfaces design record (MCP, mock engine, CLI, desktop)      |
-| [`docs/vscode-extension.md`](docs/vscode-extension.md)                                 | VS Code extension user + developer guide (Phase 12 alpha)             |
+| [`docs/vscode-extension.md`](docs/vscode-extension.md)                                 | VS Code extension user + developer guide                              |
 | [`docs/vscode-extension-install-publish.md`](docs/vscode-extension-install-publish.md) | Local install (dev host, .vsix) + Marketplace + Open VSX publish plan |
 | [`docs/auth.md`](docs/auth.md)                                                         | The 17-auth-type matrix                                               |
 | [`docs/mock-server.md`](docs/mock-server.md)                                           | Mock server feature guide                                             |

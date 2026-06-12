@@ -25,6 +25,56 @@
 
 ## Unreleased
 
+### VS Code — request URL is the source of truth for query + path params
+
+The `◆ URL` CodeLens above a `url:` row is gone — the URL is edited inline
+like any other scalar, so the field-editor lens was duplicating the obvious
+"click here, type" affordance. To make inline editing carry its weight, the
+YAML save path now syncs the URL into the structured `query:` / `pathParams:`
+blocks the same way the web / desktop URL bar does:
+
+- A `?key=val&…` typed into the `url:` line is split off on save. The base
+  lands back in `url:`; each pair merges into the `query:` block by key —
+  enabled rows take the URL-bar value, the disabled rows the user paused
+  pass through untouched, and any URL key with no matching row appends in
+  URL order. A trailing `#fragment` is dropped (fragments aren't sent on
+  the wire anyway).
+- `{name}` / `:name` placeholders in the URL path surface as `pathParams:`
+  entries. Existing values are preserved; new placeholders get an empty
+  string so the user sees a slot to fill. Stale entries that no longer
+  match a placeholder are kept — the user prunes them deliberately,
+  matching the web / desktop `setRequestPathParams` contract.
+- `{{TENANT}}` template references and `:colons` inside the query string
+  are left alone — only real path placeholders are extracted, matching
+  the `findPathPlaceholders` rules already used by `applyPathParams` at
+  send time.
+
+Files: `apps/vscode/src/lang/requestCodeLens.ts`,
+`apps/vscode/src/fs/requestYaml.ts` (+ matching test updates in
+`requestCodeLens.test.ts` / `requestYaml.test.ts`).
+
+## 1.1.0 - 2026-06-12
+
+The first minor-version cut since 1.0.0 ships the full VS Code extension
+(Activity Bar, 8 sidebar trees, `apicircle://` virtual YAML, mock-server
+lifecycle, secret vault, embedded MCP host, Copilot Chat one-click MCP
+install), the **Link Workspaces** sidebar (publish + consume side of the
+linked-workspace + release loop, including three-way merge + dedicated
+sessions + required-secret provisioning), an end-to-end mock authoring
+overhaul on every surface (per-endpoint `*.endpoint.yaml` with field-level
+CodeLens, editable `requestSchema` everywhere, editable default port, sharper
+port-bind errors, `mock.set_default_port` + `mock.set_request_schema` MCP
+tools, OpenAPI / Postman / Insomnia imports now populate `requestSchema`),
+in-flight Send feedback + name-first tab titles + instant response tabs in
+VS Code, a CodeQL-driven CI hardening pass (polynomial regex → manual
+tokenizers, TOCTOU → `flag: 'wx'`), and a tool catalog grown from **74 → 93**.
+
+All `@apicircle/*` packages — `shared`, `core`, `git`, `ui-components`,
+`mock-server-core`, `mcp-server`, `cli`, plus `apps/web`, `apps/desktop`,
+`apps/vscode`, and the e2e suites — ship at **1.1.0**. No installed users, no
+migration: the `.apicircle/workspace.json` relocation from 1.0.9 stays as a
+hard cutover.
+
 ### CI hardening — CodeQL polynomial regex + TOCTOU sweep
 
 A pass over the CodeQL findings that the `vscode.yml` and `codeql.yml`
