@@ -44,6 +44,14 @@ export type WorkspacePatch =
   | { kind: 'folder.create'; folder: Folder }
   | { kind: 'folder.delete'; id: string }
   | { kind: 'folder.move'; id: string; newParentId: string | null }
+  // Patches editable folder fields (name + folder-level auth). Identity
+  // (`id`, `parentId`) is immutable here — moves go through `folder.move`.
+  // Semantics use key-presence: a key that is NOT in `patch` leaves the
+  // existing field untouched; `auth: undefined` explicitly clears the
+  // folder-level auth (so `inherit` requests fall through to the next
+  // ancestor). Name uniqueness is enforced against siblings under the same
+  // parent — a colliding rename no-ops the patch.
+  | { kind: 'folder.update'; id: string; patch: Partial<Pick<Folder, 'name' | 'auth'>> }
   // Bulk import of a parsed `apicircle.folder/v1` envelope. Wraps every
   // descendant folder/request/dependency in a single atomic mutation so
   // headless writers (CLI / MCP) get the same name-uniquify + dependency

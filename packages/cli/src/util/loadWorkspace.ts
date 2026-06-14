@@ -7,7 +7,7 @@ import { FONT_SIZE_PERCENT_DEFAULT, generateId } from '@apicircle/shared';
 // =============================================================================
 // loadWorkspace — small wrapper around `@apicircle/core`'s file-backed
 // helpers that auto-creates an empty workspace on first run so users don't
-// have to seed a workspace.synced.json by hand before invoking commands.
+// have to seed a workspace.json by hand before invoking commands.
 // =============================================================================
 
 export async function ensureWorkspace(dir: string): Promise<WorkspaceState> {

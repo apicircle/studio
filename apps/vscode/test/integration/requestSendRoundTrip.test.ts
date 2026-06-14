@@ -176,6 +176,7 @@ describe('requestSendRoundTrip (real wire integration)', () => {
       workspaceJsonPath: path.join(apicircleDir, 'workspace.json'),
       workspaceFolder: { uri: Uri.file(tmp), name: 'rt', index: 0 } as never,
       label: 'rt',
+      source: 'git-folder',
     });
     bridge.setActive(apicircleDir);
   }

@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
 // `apicircle.addRequestSection` — driven by the CodeLens above `name:` in
@@ -108,7 +109,7 @@ export async function addRequestSectionCommand(uri?: vscode.Uri): Promise<void> 
     await vscode.window.showWarningMessage('No request YAML is active.');
     return;
   }
-  if (targetUri.scheme !== 'apicircle' || !targetUri.path.endsWith('.req.yaml')) {
+  if (targetUri.scheme !== 'apicircle' || uriEntityKind(targetUri) !== 'request') {
     await vscode.window.showWarningMessage(
       'This command only runs against APICircle request YAML files.',
     );

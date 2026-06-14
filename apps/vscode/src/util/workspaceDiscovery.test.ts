@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { Uri } from '../../test/mocks/vscode';
 import {
+  discoverRegistryWorkspaces,
   discoverWorkspaces,
   deviceLocalPath,
   findOwningWorkspace,
@@ -148,6 +149,7 @@ describe('findOwningWorkspace', () => {
       workspaceJsonPath: '/repo/.apicircle/workspace.json',
       workspaceFolder: { uri: Uri.file('/repo'), name: 'repo', index: 0 } as never,
       label: 'repo',
+      source: 'git-folder',
     };
     const result = {
       workspaces: [ws],
@@ -164,6 +166,7 @@ describe('findOwningWorkspace', () => {
       workspaceJsonPath: '/repo/.apicircle/workspace.json',
       workspaceFolder: { uri: Uri.file('/repo'), name: 'repo', index: 0 } as never,
       label: 'repo',
+      source: 'git-folder',
     };
     const result = { workspaces: [ws], foldersWithoutWorkspace: [] };
     expect(findOwningWorkspace(result, '/somewhere/else/file.txt')).toBeUndefined();
@@ -175,9 +178,9 @@ describe('workspaceIdForOpenEditor', () => {
     { id: '/repo-a/.apicircle', workspaceJsonPath: '/repo-a/.apicircle/workspace.json' },
     { id: 'C:\\repo-b\\.apicircle', workspaceJsonPath: 'C:\\repo-b\\.apicircle\\workspace.json' },
   ];
-  const authorityFor = (id: string): string => Buffer.from(id, 'utf8').toString('base64url');
+  const authorityFor = (id: string): string => Buffer.from(id, 'utf8').toString('hex');
 
-  it('resolves an apicircle:// editor via its base64url authority', () => {
+  it('resolves an apicircle:// editor via its hex authority', () => {
     expect(
       workspaceIdForOpenEditor(
         { scheme: 'apicircle', authority: authorityFor('/repo-a/.apicircle'), fsPath: '' },
@@ -220,5 +223,94 @@ describe('workspaceIdForOpenEditor', () => {
     expect(
       workspaceIdForOpenEditor({ scheme: 'apicircle', authority: '', fsPath: '' }, registered),
     ).toBeNull();
+  });
+});
+
+describe('discoverRegistryWorkspaces', () => {
+  let tmp: string;
+
+  afterEach(() => {
+    if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('returns empty array when registry.json is missing', () => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'apicircle-reg-'));
+    const result = discoverRegistryWorkspaces(tmp);
+    expect(result).toEqual([]);
+  });
+
+  it('returns empty array when registry.json is malformed', () => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'apicircle-reg-'));
+    fs.writeFileSync(path.join(tmp, 'registry.json'), 'not json');
+    const result = discoverRegistryWorkspaces(tmp);
+    expect(result).toEqual([]);
+  });
+
+  it('discovers workspaces from a valid registry.json', () => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'apicircle-reg-'));
+    const wsDir = path.join(tmp, 'workspaces', 'ws-abc');
+    fs.mkdirSync(wsDir, { recursive: true });
+    fs.writeFileSync(path.join(wsDir, 'workspace.json'), '{}');
+
+    const registry = {
+      schemaVersion: 1,
+      activeWorkspaceId: 'ws-abc',
+      workspaces: [
+        { id: 'ws-abc', name: 'My Workspace', createdAt: '2026-01-01', lastOpenedAt: '2026-01-01' },
+      ],
+    };
+    fs.writeFileSync(path.join(tmp, 'registry.json'), JSON.stringify(registry));
+
+    const result = discoverRegistryWorkspaces(tmp);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('ws-abc');
+    expect(result[0].label).toBe('My Workspace');
+    expect(result[0].source).toBe('registry');
+    expect(result[0].workspaceFolder).toBeUndefined();
+    expect(result[0].apicircleDir).toBe(wsDir);
+    expect(result[0].workspaceJsonPath).toBe(path.join(wsDir, 'workspace.json'));
+  });
+
+  it('skips registry entries whose workspace.json does not exist', () => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'apicircle-reg-'));
+    const registry = {
+      schemaVersion: 1,
+      activeWorkspaceId: 'ws-missing',
+      workspaces: [
+        { id: 'ws-missing', name: 'Ghost', createdAt: '2026-01-01', lastOpenedAt: '2026-01-01' },
+      ],
+    };
+    fs.writeFileSync(path.join(tmp, 'registry.json'), JSON.stringify(registry));
+
+    const result = discoverRegistryWorkspaces(tmp);
+    expect(result).toEqual([]);
+  });
+
+  it('discovers multiple workspaces, skipping missing ones', () => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'apicircle-reg-'));
+    // ws-a exists
+    const wsA = path.join(tmp, 'workspaces', 'ws-a');
+    fs.mkdirSync(wsA, { recursive: true });
+    fs.writeFileSync(path.join(wsA, 'workspace.json'), '{}');
+    // ws-b missing (no dir)
+    // ws-c exists
+    const wsC = path.join(tmp, 'workspaces', 'ws-c');
+    fs.mkdirSync(wsC, { recursive: true });
+    fs.writeFileSync(path.join(wsC, 'workspace.json'), '{}');
+
+    const registry = {
+      schemaVersion: 1,
+      activeWorkspaceId: 'ws-a',
+      workspaces: [
+        { id: 'ws-a', name: 'Alpha', createdAt: '2026-01-01', lastOpenedAt: '2026-01-01' },
+        { id: 'ws-b', name: 'Beta', createdAt: '2026-01-01', lastOpenedAt: '2026-01-01' },
+        { id: 'ws-c', name: 'Charlie', createdAt: '2026-01-01', lastOpenedAt: '2026-01-01' },
+      ],
+    };
+    fs.writeFileSync(path.join(tmp, 'registry.json'), JSON.stringify(registry));
+
+    const result = discoverRegistryWorkspaces(tmp);
+    expect(result).toHaveLength(2);
+    expect(result.map((w) => w.id)).toEqual(['ws-a', 'ws-c']);
   });
 });

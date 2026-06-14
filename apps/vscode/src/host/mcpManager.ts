@@ -7,6 +7,7 @@ import {
   type ConfigSnippetVariants,
 } from '@apicircle/mcp-server';
 import { MCP_TOOL_NAMES, type McpToolName } from '@apicircle/shared';
+import { defaultApicircleRoot } from '@apicircle/core/workspace/registry';
 import type { VsCodeBridge } from './vscodeBridge';
 
 // =============================================================================
@@ -62,6 +63,11 @@ export interface ResolvedMcpPaths {
   workspace: string;
   /** `true` when there is an active APICircle workspace registered. */
   hasActiveWorkspace: boolean;
+  /** Whether the active workspace came from `~/.apicircle/registry.json`
+   * (vs a `.apicircle/` dir inside a project folder). Callers use this to
+   * decide fallback behavior — registry workspaces won't match any open
+   * VS Code folder. */
+  isRegistryWorkspace: boolean;
 }
 
 export class VsCodeMcpManager {
@@ -81,15 +87,16 @@ export class VsCodeMcpManager {
     const rawBinary = this.deps.getBinaryPath();
     const binary = rawBinary.trim().length > 0 ? rawBinary.trim() : 'apicircle-mcp';
     if (!active) {
-      return { binary, workspace: '', hasActiveWorkspace: false };
+      return { binary, workspace: '', hasActiveWorkspace: false, isRegistryWorkspace: false };
     }
+    const isRegistry = active.workspace.source === 'registry';
     return {
       binary,
-      // `apicircleDir` is the `.apicircle/` subdir under the workspace
-      // folder — that's the canonical location external MCP clients
-      // point their `--workspace` arg at.
-      workspace: active.workspace.apicircleDir,
+      // Registry workspaces: point at `~/.apicircle/` (multi-workspace root).
+      // Git-folder workspaces: point at the repo's `.apicircle/` dir.
+      workspace: isRegistry ? defaultApicircleRoot() : active.workspace.apicircleDir,
       hasActiveWorkspace: true,
+      isRegistryWorkspace: isRegistry,
     };
   }
 
@@ -137,6 +144,8 @@ export function aiClientDisplayName(client: AiClient): string {
       return 'Claude Desktop';
     case 'claude-code':
       return 'Claude Code';
+    case 'codex':
+      return 'Codex';
     case 'cursor':
       return 'Cursor';
     case 'continue':

@@ -43,10 +43,11 @@ describe('mcpClientInstall — Phase 8 multi-client installer', () => {
   });
 
   describe('static catalog', () => {
-    it('exports 6 installable clients (Phase 8: 5 + Phase 11: Continue)', () => {
-      expect(INSTALLABLE_CLIENTS).toHaveLength(6);
+    it('exports 7 installable clients', () => {
+      expect(INSTALLABLE_CLIENTS).toHaveLength(7);
       expect(INSTALLABLE_CLIENTS).toContain('claude-desktop');
       expect(INSTALLABLE_CLIENTS).toContain('claude-code');
+      expect(INSTALLABLE_CLIENTS).toContain('codex');
       expect(INSTALLABLE_CLIENTS).toContain('cursor');
       expect(INSTALLABLE_CLIENTS).toContain('windsurf');
       expect(INSTALLABLE_CLIENTS).toContain('zed');
@@ -367,6 +368,129 @@ describe('mcpClientInstall — Phase 8 multi-client installer', () => {
     });
   });
 
+  describe('install (single client) — Codex TOML schema', () => {
+    it('writes ~/.codex/config.toml (NOT config.json)', () => {
+      const codexPath = resolveInstallPath('codex', env);
+      expect(codexPath).toBe(path.join(tmp, '.codex/config.toml'));
+    });
+
+    it('creates a TOML file with apicircle under mcp_servers when absent', () => {
+      const result = installClientMcpConfig({
+        client: 'codex',
+        binary: 'apicircle-mcp',
+        apicircleDir: '/ws/.apicircle',
+        env,
+      });
+      expect(result.outcome).toBe('created');
+      const written = fs.readFileSync(result.path, 'utf8');
+      expect(written).toContain('mcp_servers');
+      expect(written).toContain('apicircle');
+      // Must NOT be JSON (would start with `{`).
+      expect(written.trimStart()).not.toMatch(/^\{/);
+    });
+
+    it('uses mcp_servers (snake_case) NOT mcpServers (camelCase)', () => {
+      const result = installClientMcpConfig({
+        client: 'codex',
+        binary: 'apicircle-mcp',
+        apicircleDir: '/ws/.apicircle',
+        env,
+      });
+      const written = fs.readFileSync(result.path, 'utf8');
+      expect(written).toContain('mcp_servers');
+      expect(written).not.toContain('mcpServers');
+    });
+
+    it('preserves Codex foreign keys (model, plugins, projects) on update', () => {
+      const codexPath = resolveInstallPath('codex', env);
+      fs.mkdirSync(path.dirname(codexPath), { recursive: true });
+      fs.writeFileSync(
+        codexPath,
+        [
+          'model = "gpt-5.5"',
+          'model_reasoning_effort = "xhigh"',
+          '',
+          '[windows]',
+          'sandbox = "elevated"',
+          '',
+          '[plugins."github@openai-curated"]',
+          'enabled = true',
+          '',
+        ].join('\n'),
+      );
+      installClientMcpConfig({
+        client: 'codex',
+        binary: 'apicircle-mcp',
+        apicircleDir: '/ws/.apicircle',
+        env,
+      });
+      const written = fs.readFileSync(codexPath, 'utf8');
+      expect(written).toContain('gpt-5.5');
+      expect(written).toContain('xhigh');
+      expect(written).toContain('elevated');
+      expect(written).toContain('apicircle');
+      expect(written).toContain('mcp_servers');
+    });
+
+    it('returns unchanged on a second install with the same paths', () => {
+      const opts = {
+        client: 'codex' as const,
+        binary: 'apicircle-mcp',
+        apicircleDir: '/ws/.apicircle',
+        env,
+      };
+      const first = installClientMcpConfig(opts);
+      expect(first.outcome).toBe('created');
+      const second = installClientMcpConfig(opts);
+      expect(second.outcome).toBe('unchanged');
+    });
+
+    it('returns updated when apicircleDir drifts', () => {
+      installClientMcpConfig({
+        client: 'codex',
+        binary: 'apicircle-mcp',
+        apicircleDir: '/old/.apicircle',
+        env,
+      });
+      const result = installClientMcpConfig({
+        client: 'codex',
+        binary: 'apicircle-mcp',
+        apicircleDir: '/new/.apicircle',
+        env,
+      });
+      expect(result.outcome).toBe('updated');
+    });
+
+    it('detects installed-current for the TOML variant', () => {
+      installClientMcpConfig({
+        client: 'codex',
+        binary: 'apicircle-mcp',
+        apicircleDir: '/ws/.apicircle',
+        env,
+      });
+      const state = detectClientMcpConfigState({
+        client: 'codex',
+        binary: 'apicircle-mcp',
+        apicircleDir: '/ws/.apicircle',
+        env,
+      });
+      expect(state).toBe('installed-current');
+    });
+
+    it('treats malformed TOML as "create fresh" rather than throwing', () => {
+      const codexPath = resolveInstallPath('codex', env);
+      fs.mkdirSync(path.dirname(codexPath), { recursive: true });
+      fs.writeFileSync(codexPath, '= broken\n[unclosed');
+      const result = installClientMcpConfig({
+        client: 'codex',
+        binary: 'apicircle-mcp',
+        apicircleDir: '/ws/.apicircle',
+        env,
+      });
+      expect(result.outcome).toBe('created');
+    });
+  });
+
   describe('install — security guards', () => {
     it('refuses to write when a parent directory is a symlink pointing outside homedir', () => {
       // Skip on Windows where symlink creation needs elevation.
@@ -464,14 +588,14 @@ describe('mcpClientInstall — Phase 8 multi-client installer', () => {
   });
 
   describe('installMcpForClients (bulk)', () => {
-    it('installs into all 6 clients in one call', () => {
+    it('installs into all installable clients in one call', () => {
       const report = installMcpForClients(INSTALLABLE_CLIENTS, {
         binary: 'apicircle-mcp',
         apicircleDir: '/ws/.apicircle',
         env,
       });
-      expect(report.results).toHaveLength(6);
-      expect(report.summary.created).toBe(6);
+      expect(report.results).toHaveLength(INSTALLABLE_CLIENTS.length);
+      expect(report.summary.created).toBe(INSTALLABLE_CLIENTS.length);
       expect(report.summary.error).toBe(0);
       for (const r of report.results) {
         expect(r.outcome).toBe('created');

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { fetchOAuth2Token, OAuth2TokenError } from '@apicircle/core';
 import { findSectionRange, readSectionType } from './switchRequestSection';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
 // `apicircle.fetchOAuth2Token` — driven by the CodeLens above an `auth:`
@@ -41,9 +42,11 @@ export async function fetchOAuth2TokenCommand(uri?: vscode.Uri): Promise<void> {
     await vscode.window.showWarningMessage('No request YAML is active.');
     return;
   }
-  if (targetUri.scheme !== 'apicircle' || !targetUri.path.endsWith('.req.yaml')) {
+  const isReqYaml = uriEntityKind(targetUri) === 'request';
+  const isFolderYaml = uriEntityKind(targetUri) === 'folder';
+  if (targetUri.scheme !== 'apicircle' || (!isReqYaml && !isFolderYaml)) {
     await vscode.window.showWarningMessage(
-      'This command only runs against APICircle request YAML files.',
+      'This command only runs against APICircle request or folder YAML files.',
     );
     return;
   }

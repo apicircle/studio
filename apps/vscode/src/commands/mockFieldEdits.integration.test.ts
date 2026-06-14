@@ -42,7 +42,7 @@ import {
 // re-parse round-trip that the pure-helper tests don't.
 // =============================================================================
 
-const URI = Uri.parse('apicircle://x/mocks/m-1/ep-1.endpoint.yaml');
+const URI = Uri.parse('apicircle://x/mocks/m-1/ep-1.yaml');
 
 function makeEndpoint(): MockEndpoint {
   return {

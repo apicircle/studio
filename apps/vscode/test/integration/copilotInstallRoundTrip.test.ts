@@ -86,6 +86,7 @@ describe('Copilot install round-trip (integration)', () => {
       workspaceJsonPath: path.join(apicircleDir, 'workspace.json'),
       workspaceFolder: { uri: Uri.file(tmp), name: 't', index: 0 } as never,
       label: 't',
+      source: 'git-folder',
     });
     bridge.setActive(apicircleDir);
     mcp = new VsCodeMcpManager({
@@ -120,7 +121,7 @@ describe('Copilot install round-trip (integration)', () => {
     });
     expect(state).toBe('installed-current');
     expect(window.showInformationMessage).toHaveBeenCalledWith(
-      expect.stringMatching(/Installed APICircle MCP/i),
+      expect.stringMatching(/Installed API Circle MCP/i),
     );
   });
 

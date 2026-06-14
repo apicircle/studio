@@ -61,7 +61,7 @@ export function registerExportCommand(program: Command): void {
     )
     .option(
       '-w, --workspace-path <dir>',
-      'Filesystem directory containing workspace.synced.json (skips the registry).',
+      'Filesystem directory containing workspace.json (skips the registry).',
     )
     .action(async (folder: string, opts: ExportFolderOptions) => {
       let dir: string;

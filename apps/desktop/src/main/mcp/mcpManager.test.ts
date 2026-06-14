@@ -1,22 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
-
-// Stub the bits of `electron` we touch in mcpManager. The manager only
-// uses `app.getPath`, so a single fake is enough.
-vi.mock('electron', () => ({
-  app: {
-    getPath: (key: string) => {
-      if (key === 'userData') return '/fake/user-data';
-      throw new Error(`unknown getPath ${key}`);
-    },
-  },
-}));
-
+import { describe, expect, it } from 'vitest';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { McpManager } from './mcpManager';
 
 describe('McpManager', () => {
-  it('defaults workspaceDir to <userData>/workspaces (multi-workspace root)', () => {
+  it('defaults workspaceDir to ~/.apicircle/', () => {
     const m = new McpManager();
-    expect(m.workspaceDir.endsWith('workspaces')).toBe(true);
+    expect(m.workspaceDir).toBe(path.join(os.homedir(), '.apicircle'));
   });
 
   it('honors an explicit workspaceDir', () => {

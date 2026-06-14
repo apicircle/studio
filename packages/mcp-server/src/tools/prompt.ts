@@ -136,7 +136,7 @@ const REQUEST_BODY = z.object({
 // produce from natural language. OAuth2 / AWS / Hawk / NTLM / JWT are token-
 // state heavy and best authored via the dedicated UI, then patched via
 // `request.update`. Callers needing them should use that path.
-const PROMPT_AUTH = z.discriminatedUnion('type', [
+export const PROMPT_AUTH = z.discriminatedUnion('type', [
   z.object({ type: z.literal('none') }),
   z.object({ type: z.literal('inherit') }),
   z.object({ type: z.literal('bearer'), token: z.string().default('') }),

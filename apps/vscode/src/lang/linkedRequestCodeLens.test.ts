@@ -17,7 +17,7 @@ describe('LinkedRequestCodeLensProvider', () => {
     const p = new LinkedRequestCodeLensProvider();
     expect(
       p.provideCodeLenses(
-        makeDoc(Uri.parse('apicircle://x/requests/r.req.yaml?id=1'), ['name: x']),
+        makeDoc(Uri.parse('apicircle://x/requests/r.yaml?id=1'), ['name: x']),
         fakeToken,
       ),
     ).toEqual([]);
@@ -26,7 +26,7 @@ describe('LinkedRequestCodeLensProvider', () => {
   it('offers ▶ Send + ↺ Reset on the name line with link+id args', () => {
     const p = new LinkedRequestCodeLensProvider();
     const lenses = p.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/linked/Payments/List.req.yaml?link=lw1&id=req-1'), [
+      makeDoc(Uri.parse('apicircle://x/linked/Payments/List.yaml?link=lw1&id=req-1'), [
         'name: List pets',
         'method: GET',
       ]),
@@ -46,7 +46,7 @@ describe('LinkedRequestCodeLensProvider', () => {
     const p = new LinkedRequestCodeLensProvider();
     expect(
       p.provideCodeLenses(
-        makeDoc(Uri.parse('apicircle://x/linked/P/L.req.yaml'), ['name: x']),
+        makeDoc(Uri.parse('apicircle://x/linked/P/L.yaml'), ['name: x']),
         fakeToken,
       ),
     ).toEqual([]);

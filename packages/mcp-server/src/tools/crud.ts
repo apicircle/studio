@@ -5,10 +5,20 @@ import type {
   ExecutionPlan,
   Folder,
   Request as ApiRequest,
+  RequestAuth,
 } from '@apicircle/shared';
 import { generateId } from '@apicircle/shared';
 import { parseApicircleEnvironmentDoc } from '@apicircle/core';
 import type { AnyToolDef } from './types';
+
+// Permissive auth schema for CRUD tools (`folder.update`, future
+// `request.update` if we surface a dedicated auth slot). Accepts any of the
+// 17 RequestAuth variants — only `type: string` is enforced; the rest of
+// the discriminated-union shape is validated downstream by the reducer +
+// runtime resolvers. PROMPT_AUTH (in `prompt.ts`) intentionally narrows to
+// the LLM-friendly six, but CRUD tools shouldn't be more restrictive than
+// `request.update`'s `patch: Partial<Request>` accept-anything-typed path.
+const FULL_REQUEST_AUTH = z.object({ type: z.string() }).passthrough();
 
 // =============================================================================
 // CRUD tool definitions for every workspace entity. Reads always go through
@@ -119,16 +129,19 @@ export const requestDeleteTool: AnyToolDef = {
 
 export const folderCreateTool: AnyToolDef = {
   name: 'folder.create',
-  description: 'Create a folder under an optional parent folder.',
+  description:
+    'Create a folder under an optional parent folder. Optionally seed folder-level `auth` so descendants with `auth: inherit` resolve to it immediately — saves a follow-up `folder.update` round-trip.',
   inputSchema: z.object({
     name: z.string().default('New folder'),
     parentId: z.string().nullable().optional(),
+    auth: FULL_REQUEST_AUTH.optional(),
   }),
   async handler(input, ctx) {
     const folder: Folder = {
       id: generateId(),
       name: input.name,
       parentId: input.parentId ?? null,
+      ...(input.auth ? { auth: input.auth as RequestAuth } : {}),
     };
     const out = await ctx.workspace.apply({ kind: 'folder.create', folder });
     return { id: folder.id, changedIds: out.changedIds };
@@ -154,18 +167,42 @@ export const folderReadTool: AnyToolDef = {
 
 export const folderUpdateTool: AnyToolDef = {
   name: 'folder.update',
-  description: 'Move a folder to a new parent (or to root with parentId: null).',
-  inputSchema: z.object({
-    id: z.string(),
-    parentId: z.string().nullable(),
-  }),
+  description:
+    'Update a folder. Supply `parentId` to move it (use `null` for root), `name` to rename, and/or `auth` to set the folder-level auth that descendants inherit when their `auth.type === "inherit"`. Set `clearAuth: true` to remove the folder-level auth entirely (descendants then fall through to the next ancestor). The `auth` field accepts any of the 17 RequestAuth types — same surface as `request.update`. The simple ones (bearer / basic / api-key / custom-header / none / inherit) are easy to author by hand; OAuth2 / AWS SigV4 / Digest / NTLM / Hawk / JWT Bearer require the full canonical shape (see `RequestAuth` in `@apicircle/shared/types.ts`).',
+  inputSchema: z
+    .object({
+      id: z.string(),
+      parentId: z.string().nullable().optional(),
+      name: z.string().optional(),
+      auth: FULL_REQUEST_AUTH.optional(),
+      clearAuth: z.boolean().optional(),
+    })
+    .refine((v) => !(v.auth !== undefined && v.clearAuth === true), {
+      message: 'Pass either `auth` or `clearAuth: true`, not both.',
+    }),
   async handler(input, ctx) {
-    const out = await ctx.workspace.apply({
-      kind: 'folder.move',
-      id: input.id,
-      newParentId: input.parentId,
-    });
-    return { changedIds: out.changedIds };
+    const changedIds: string[] = [];
+    if (input.parentId !== undefined) {
+      const out = await ctx.workspace.apply({
+        kind: 'folder.move',
+        id: input.id,
+        newParentId: input.parentId,
+      });
+      changedIds.push(...out.changedIds);
+    }
+    const updatePatch: Partial<Pick<Folder, 'name' | 'auth'>> = {};
+    if (input.name !== undefined) updatePatch.name = input.name;
+    if (input.auth !== undefined) updatePatch.auth = input.auth as RequestAuth;
+    else if (input.clearAuth === true) updatePatch.auth = undefined;
+    if (input.name !== undefined || input.auth !== undefined || input.clearAuth === true) {
+      const out = await ctx.workspace.apply({
+        kind: 'folder.update',
+        id: input.id,
+        patch: updatePatch,
+      });
+      changedIds.push(...out.changedIds);
+    }
+    return { changedIds: Array.from(new Set(changedIds)) };
   },
 };
 

@@ -105,6 +105,7 @@ export function HowToConnect() {
             )}
             <SnippetBlock
               variants={variants}
+              clientId={activeClientId}
               bridgeAvailable={!!bridge}
               loadError={loadError}
               onCopySuccess={() =>
@@ -238,15 +239,18 @@ function CommandBlock({ command }: { command: string }) {
 
 function SnippetBlock({
   variants,
+  clientId,
   bridgeAvailable,
   loadError,
   onCopySuccess,
 }: {
   variants: ConfigSnippetVariants | null;
+  clientId: string;
   bridgeAvailable: boolean;
   loadError: string | null;
   onCopySuccess: () => void;
 }) {
+  const isToml = clientId === 'codex';
   // The renderer shows ONE snippet — the forward-slash form. It's valid
   // JSON, reads cleanly without `\\` clutter, and Windows / Node / Electron
   // all accept forward-slash paths. The escaped-backslash form is shown as
@@ -275,7 +279,7 @@ function SnippetBlock({
       <div className="overflow-hidden rounded-sm border border-border bg-surface">
         <div className="flex items-center justify-between border-b border-border-subtle px-3 py-1.5">
           <span className="text-[0.625rem] uppercase tracking-wider text-text-dim">
-            JSON snippet
+            {isToml ? 'TOML snippet' : 'JSON snippet'}
           </span>
           <button
             type="button"
@@ -295,7 +299,7 @@ function SnippetBlock({
         {snippet ? (
           <MonacoEditorBase
             value={snippet}
-            language="json"
+            language={isToml ? 'plaintext' : 'json'}
             readOnly
             minHeight={180}
             ariaLabel="MCP config snippet"
@@ -316,7 +320,11 @@ function SnippetBlock({
       </div>
 
       {showEscapedReference && variants && (
-        <EscapedReference escapedSnippet={variants.escaped} onCopySuccess={onCopySuccess} />
+        <EscapedReference
+          escapedSnippet={variants.escaped}
+          isToml={isToml}
+          onCopySuccess={onCopySuccess}
+        />
       )}
     </div>
   );
@@ -328,11 +336,14 @@ function SnippetBlock({
 // slashes in the workspace path.
 function EscapedReference({
   escapedSnippet,
+  isToml,
   onCopySuccess,
 }: {
   escapedSnippet: string;
+  isToml?: boolean;
   onCopySuccess: () => void;
 }) {
+  const formatName = isToml ? 'TOML' : 'JSON';
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
     if (!navigator.clipboard) return;
@@ -354,18 +365,20 @@ function EscapedReference({
           <strong className="font-medium text-text-primary">
             Windows: snippet above uses forward slashes
           </strong>{' '}
-          (e.g. <code className="rounded-sm bg-surface px-1">C:/Users/&hellip;</code>) — valid JSON
+          (e.g. <code className="rounded-sm bg-surface px-1">C:/Users/&hellip;</code>) — valid{' '}
+          {formatName}
           and accepted by Windows, Node, and Electron. If your AI client rejects it, expand for the
           escaped-backslash form.
         </span>
       </summary>
       <div className="border-t border-border-subtle px-3 py-2 text-[0.6875rem] text-text-muted">
         <p className="mb-2">
-          <strong className="font-medium text-text-primary">Why the `\\` escapes?</strong> JSON uses{' '}
-          <code className="rounded-sm bg-surface px-1">\</code> as the string-escape character, so a
-          literal Windows path like <code className="rounded-sm bg-surface px-1">C:\Users\me</code>{' '}
-          must be written as{' '}
-          <code className="rounded-sm bg-surface px-1">{'"C:\\\\Users\\\\me"'}</code> inside a JSON
+          <strong className="font-medium text-text-primary">Why the `\\` escapes?</strong>{' '}
+          {formatName} uses <code className="rounded-sm bg-surface px-1">\</code> as the
+          string-escape character, so a literal Windows path like{' '}
+          <code className="rounded-sm bg-surface px-1">C:\Users\me</code> must be written as{' '}
+          <code className="rounded-sm bg-surface px-1">{'"C:\\\\Users\\\\me"'}</code> inside a{' '}
+          {formatName}
           string. Forward slashes avoid this entirely.
         </p>
         <div className="flex items-center justify-between gap-2 rounded-sm border border-border bg-surface px-2 py-1.5 font-mono text-[0.6875rem] text-text-primary">

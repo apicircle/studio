@@ -164,6 +164,7 @@ describe('ExecutionView', () => {
       workspaceJsonPath: path.join(apicircleDir, 'workspace.json'),
       workspaceFolder: { uri: Uri.file(tmp), name: 't', index: 0 } as never,
       label: 't',
+      source: 'git-folder',
     });
     bridge.setActive(apicircleDir);
   }

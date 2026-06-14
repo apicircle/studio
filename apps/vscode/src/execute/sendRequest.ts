@@ -9,6 +9,7 @@ import { buildResolvedRequest, buildLinkedAttachmentResolver } from './buildSend
 import type { AbortRegistry } from './abortRegistry';
 import type { InFlightSendTracker } from './inFlightTracker';
 import { ApicircleFsProvider } from '../fs/apicircleFsProvider';
+import { uriEntityKind } from '../fs/uriKind';
 import type { PreSendDiagnostics } from '../diagnostics/preSendDiagnostics';
 import {
   formatResponseDocument,
@@ -353,7 +354,7 @@ function extractRequestId(uri: vscode.Uri): string | null {
 
 function extractLinkedRef(uri: vscode.Uri): { linkId: string; requestId: string } | null {
   const segments = uri.path.split('/').filter(Boolean);
-  if (segments[0] !== 'linked' || !uri.path.endsWith('.req.yaml')) return null;
+  if (segments[0] !== 'linked' || uriEntityKind(uri) !== 'request') return null;
   const query = new URLSearchParams(uri.query || '');
   const linkId = query.get('link');
   const requestId = query.get('id');

@@ -11,6 +11,7 @@ import {
   publishReleaseCommand,
   deprecateReleaseCommand,
   withdrawReleaseCommand,
+  openReleaseHistoryCommand,
 } from './releaseActions';
 
 function makeMockContext(globalStoragePath: string) {
@@ -96,6 +97,7 @@ describe('releaseActions', () => {
       workspaceJsonPath: path.join(apicircleDir, 'workspace.json'),
       workspaceFolder: { uri: Uri.file(tmp), name: 't', index: 0 } as never,
       label: 't',
+      source: 'git-folder',
     });
     bridge.setActive(apicircleDir);
     fsProvider = new ApicircleFsProvider(bridge);
@@ -214,6 +216,100 @@ describe('releaseActions', () => {
       await withdrawReleaseCommand(deps(), { version: '1.0.0' });
       const state = await bridge.activeWorkspace()!.read();
       expect(state.synced.releases.self!.versions[0].yanked).toBe(false);
+    });
+  });
+
+  describe('openReleaseHistoryCommand', () => {
+    it('warns when no active workspace', async () => {
+      bridge = new VsCodeBridge(makeMockContext(path.join(tmp, 'globalStorage')));
+      fsProvider = new ApicircleFsProvider(bridge);
+      await openReleaseHistoryCommand(deps());
+      expect(window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringContaining('No active APICircle workspace'),
+      );
+    });
+
+    it('opens the releases.yaml document for the active workspace', async () => {
+      setup(ledgerWith('1.0.0'));
+      await openReleaseHistoryCommand(deps());
+      expect(commands.executeCommand).toHaveBeenCalledWith('vscode.open', expect.any(Object));
+    });
+  });
+
+  describe('publishReleaseCommand additional coverage', () => {
+    it('warns when no active workspace', async () => {
+      bridge = new VsCodeBridge(makeMockContext(path.join(tmp, 'globalStorage')));
+      fsProvider = new ApicircleFsProvider(bridge);
+      await publishReleaseCommand(deps());
+      expect(window.showWarningMessage).toHaveBeenCalled();
+    });
+
+    it('exits silently when version picker is cancelled', async () => {
+      setup(ledgerWith('1.0.0'));
+      (window.showQuickPick as Mock).mockResolvedValueOnce(undefined);
+      await publishReleaseCommand(deps());
+      const state = await bridge.activeWorkspace()!.read();
+      expect(state.synced.releases.self!.versions.length).toBe(1);
+    });
+
+    it('exits silently when notes prompt is cancelled', async () => {
+      setup(ledgerWith('1.0.0'));
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: '1.0.1' });
+      (window.showInputBox as Mock).mockResolvedValueOnce(undefined);
+      await publishReleaseCommand(deps());
+      const state = await bridge.activeWorkspace()!.read();
+      expect(state.synced.releases.self!.versions.length).toBe(1);
+    });
+
+    it('exits silently when publish confirmation modal is dismissed', async () => {
+      setup(ledgerWith('1.0.0'));
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: '1.0.1' });
+      (window.showInputBox as Mock).mockResolvedValueOnce('release notes');
+      (window.showInformationMessage as Mock).mockResolvedValueOnce(undefined);
+      await publishReleaseCommand(deps());
+      const state = await bridge.activeWorkspace()!.read();
+      expect(state.synced.releases.self!.versions.length).toBe(1);
+    });
+  });
+
+  describe('deprecateReleaseCommand additional coverage', () => {
+    it('warns when no active workspace', async () => {
+      bridge = new VsCodeBridge(makeMockContext(path.join(tmp, 'globalStorage')));
+      fsProvider = new ApicircleFsProvider(bridge);
+      await deprecateReleaseCommand(deps(), { version: '1.0.0' });
+      expect(window.showWarningMessage).toHaveBeenCalled();
+    });
+
+    it('exits silently when confirmation modal is dismissed', async () => {
+      setup(ledgerWith('1.0.0'));
+      (window.showWarningMessage as Mock).mockResolvedValueOnce(undefined);
+      await deprecateReleaseCommand(deps(), { version: '1.0.0' });
+      const state = await bridge.activeWorkspace()!.read();
+      expect(state.synced.releases.self!.versions[0].deprecated).toBe(false);
+    });
+  });
+
+  describe('withdrawReleaseCommand additional coverage', () => {
+    it('warns when no active workspace', async () => {
+      bridge = new VsCodeBridge(makeMockContext(path.join(tmp, 'globalStorage')));
+      fsProvider = new ApicircleFsProvider(bridge);
+      await withdrawReleaseCommand(deps(), { version: '1.0.0' });
+      expect(window.showWarningMessage).toHaveBeenCalled();
+    });
+
+    it('exposes a validator on the typed-confirmation input', async () => {
+      setup(ledgerWith('1.0.0'));
+      let captured: ((v: string) => string | null) | undefined;
+      (window.showInputBox as Mock).mockImplementationOnce(
+        async (opts: { validateInput?: (v: string) => string | null }) => {
+          captured = opts.validateInput;
+          return undefined;
+        },
+      );
+      await withdrawReleaseCommand(deps(), { version: '1.0.0' });
+      expect(captured).toBeDefined();
+      expect(captured?.('wrong')).toMatch(/Type exactly/);
+      expect(captured?.('WITHDRAW v1.0.0')).toBeNull();
     });
   });
 });

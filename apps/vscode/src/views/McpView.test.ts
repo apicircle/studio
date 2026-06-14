@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { McpView } from './McpView';
+import { TreeItemCollapsibleState, ThemeIcon, MarkdownString } from '../../test/mocks/vscode';
+import { McpView, type McpNode, type ClientInstallProbe } from './McpView';
 import { VsCodeMcpManager } from '../host/mcpManager';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 import { AI_CLIENTS } from '@apicircle/mcp-server';
@@ -10,13 +11,16 @@ function makeFakeBridge(active: { id: string; apicircleDir: string } | null): Vs
   } as unknown as VsCodeBridge;
 }
 
-function makeView(active: { id: string; apicircleDir: string } | null = null): McpView {
+function makeView(
+  active: { id: string; apicircleDir: string } | null = null,
+  probe?: ClientInstallProbe,
+): McpView {
   const mcp = new VsCodeMcpManager({
     bridge: makeFakeBridge(active),
     getBinaryPath: () => 'apicircle-mcp',
     configPathEnv: () => ({ homedir: '/home/me', platform: 'linux' }),
   });
-  return new McpView(mcp);
+  return new McpView(mcp, probe);
 }
 
 describe('McpView', () => {
@@ -56,7 +60,6 @@ describe('McpView', () => {
       expect(item.description).toContain('tools');
       expect(item.description).toContain('apicircle-mcp');
       expect(item.contextValue).toBe('mcp-header-active');
-      // P5R2-G13: header click fires the binary-info toast.
       expect(item.command?.command).toBe('apicircle.revealMcpBinaryInfo');
     });
 
@@ -74,26 +77,40 @@ describe('McpView', () => {
       expect(item.contextValue).toBe('mcp-clients-section');
     });
 
-    it('client with known config path is tagged "mcp-client-with-path"', () => {
-      const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' });
+    it('client with known config path (absent) fires openMcpConfigFile', () => {
+      const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' }, () => 'absent');
       const item = view.getTreeItem({ kind: 'client', client: 'claude-desktop' });
-      expect(item.contextValue).toBe('mcp-client-with-path');
-      expect(item.description).toContain('detected');
+      expect(item.contextValue).toBe('mcp-client-absent');
+      expect(item.description).toBe('not installed');
+      expect(item.command?.command).toBe('apicircle.openMcpConfigFile');
+      expect(item.command?.arguments).toEqual([{ kind: 'client', client: 'claude-desktop' }]);
     });
 
-    it('client without known config path is tagged "mcp-client-manual"', () => {
+    it('client with known config path (installed) shows installed state', () => {
+      const view = makeView(
+        { id: '/ws', apicircleDir: '/ws/.apicircle' },
+        () => 'installed-current',
+      );
+      const item = view.getTreeItem({ kind: 'client', client: 'claude-desktop' });
+      expect(item.contextValue).toBe('mcp-client-installed');
+      expect(item.description).toBe('installed');
+      expect((item.iconPath as ThemeIcon).id).toBe('check');
+    });
+
+    it('client with known config path (stale) shows update available', () => {
+      const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' }, () => 'installed-stale');
+      const item = view.getTreeItem({ kind: 'client', client: 'cursor' });
+      expect(item.contextValue).toBe('mcp-client-stale');
+      expect(item.description).toBe('update available');
+      expect((item.iconPath as ThemeIcon).id).toBe('warning');
+    });
+
+    it('client without known config path fires openMcpConnectGuide', () => {
       const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' });
       const item = view.getTreeItem({ kind: 'client', client: 'generic' });
       expect(item.contextValue).toBe('mcp-client-manual');
-      expect(item.description).toContain('manually');
-    });
-
-    it('client row click-command fires apicircle.copyMcpConfig with the right arg', () => {
-      const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' });
-      const item = view.getTreeItem({ kind: 'client', client: 'cursor' });
-      expect(item.command).toBeDefined();
-      expect(item.command!.command).toBe('apicircle.copyMcpConfig');
-      expect(item.command!.arguments).toEqual([{ kind: 'client', client: 'cursor' }]);
+      expect(item.description).toBe('manual setup');
+      expect(item.command?.command).toBe('apicircle.openMcpConnectGuide');
     });
 
     it('connect-guide row fires apicircle.openMcpConnectGuide on click', () => {
@@ -111,49 +128,136 @@ describe('McpView', () => {
       }
     });
 
-    // ----- P6: github-copilot row install-state specialisation -----
+    // ----- Icon + collapsible state assertions -----
 
-    function makeViewWithCopilotProbe(
-      state: 'absent' | 'installed-current' | 'installed-stale',
-    ): McpView {
-      const mcp = new VsCodeMcpManager({
-        bridge: makeFakeBridge({ id: '/ws', apicircleDir: '/ws/.apicircle' }),
-        getBinaryPath: () => 'apicircle-mcp',
-        configPathEnv: () => ({ homedir: '/home/me', platform: 'linux' }),
-      });
-      return new McpView(mcp, () => state);
-    }
-
-    it('github-copilot row (absent): "click to install" + apicircle.installCopilotMcpConfig command', () => {
-      const view = makeViewWithCopilotProbe('absent');
-      const item = view.getTreeItem({ kind: 'client', client: 'github-copilot' });
-      expect(item.description).toMatch(/click to install/i);
-      expect(item.contextValue).toBe('mcp-client-copilot-absent');
-      expect(item.command?.command).toBe('apicircle.installCopilotMcpConfig');
-    });
-
-    it('github-copilot row (installed-current): "✓ installed" + copy command fallback', () => {
-      const view = makeViewWithCopilotProbe('installed-current');
-      const item = view.getTreeItem({ kind: 'client', client: 'github-copilot' });
-      expect(item.description).toMatch(/installed/i);
-      expect(item.contextValue).toBe('mcp-client-copilot-installed');
-      // Click on an already-installed row copies snippet for other surfaces.
-      expect(item.command?.command).toBe('apicircle.copyMcpConfig');
-    });
-
-    it('github-copilot row (installed-stale): "out of date" + install command (re-runs to update)', () => {
-      const view = makeViewWithCopilotProbe('installed-stale');
-      const item = view.getTreeItem({ kind: 'client', client: 'github-copilot' });
-      expect(item.description).toMatch(/out of date/i);
-      expect(item.contextValue).toBe('mcp-client-copilot-stale');
-      expect(item.command?.command).toBe('apicircle.installCopilotMcpConfig');
-    });
-
-    it('without a probe, github-copilot falls back to the generic "paste manually" rendering', () => {
+    it('header uses the "plug" ThemeIcon', () => {
       const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' });
-      const item = view.getTreeItem({ kind: 'client', client: 'github-copilot' });
-      // No probe → no specialised contextValue.
+      const item = view.getTreeItem({ kind: 'header' });
+      expect(item.iconPath).toBeInstanceOf(ThemeIcon);
+      expect((item.iconPath as ThemeIcon).id).toBe('plug');
+    });
+
+    it('header collapsibleState is None (leaf row)', () => {
+      const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' });
+      const item = view.getTreeItem({ kind: 'header' });
+      expect(item.collapsibleState).toBe(TreeItemCollapsibleState.None);
+    });
+
+    it('clients-section uses the "extensions" ThemeIcon and Expanded state', () => {
+      const view = makeView();
+      const item = view.getTreeItem({ kind: 'clients-section' });
+      expect(item.iconPath).toBeInstanceOf(ThemeIcon);
+      expect((item.iconPath as ThemeIcon).id).toBe('extensions');
+      expect(item.collapsibleState).toBe(TreeItemCollapsibleState.Expanded);
+    });
+
+    it('connect-guide uses the "link-external" ThemeIcon', () => {
+      const view = makeView();
+      const item = view.getTreeItem({ kind: 'connect-guide' });
+      expect(item.iconPath).toBeInstanceOf(ThemeIcon);
+      expect((item.iconPath as ThemeIcon).id).toBe('link-external');
+      expect(item.collapsibleState).toBe(TreeItemCollapsibleState.None);
+    });
+
+    it('absent client uses "circle-outline" icon', () => {
+      const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' }, () => 'absent');
+      const item = view.getTreeItem({ kind: 'client', client: 'claude-desktop' });
+      expect(item.iconPath).toBeInstanceOf(ThemeIcon);
+      expect((item.iconPath as ThemeIcon).id).toBe('circle-outline');
+    });
+
+    it('client without config path uses "symbol-key" icon', () => {
+      const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' });
+      const item = view.getTreeItem({ kind: 'client', client: 'generic' });
+      expect(item.iconPath).toBeInstanceOf(ThemeIcon);
+      expect((item.iconPath as ThemeIcon).id).toBe('symbol-key');
+    });
+
+    // ----- Tooltip content assertions -----
+
+    it('header (active) tooltip contains the workspace path', () => {
+      const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' });
+      const item = view.getTreeItem({ kind: 'header' });
+      expect(item.tooltip).toBeInstanceOf(MarkdownString);
+      expect((item.tooltip as MarkdownString).value).toContain('/ws/.apicircle');
+    });
+
+    it('header (idle) tooltip mentions .apicircle/workspace.json', () => {
+      const view = makeView(null);
+      const item = view.getTreeItem({ kind: 'header' });
+      expect(item.tooltip).toBeInstanceOf(MarkdownString);
+      expect((item.tooltip as MarkdownString).value).toContain('.apicircle/workspace.json');
+    });
+
+    it('client row with config path includes it in the tooltip', () => {
+      const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' });
+      const item = view.getTreeItem({ kind: 'client', client: 'claude-desktop' });
+      expect((item.tooltip as MarkdownString).value).toContain('Config:');
+    });
+
+    it('client row without config path tooltip mentions Connect Guide', () => {
+      const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' });
+      const item = view.getTreeItem({ kind: 'client', client: 'generic' });
       expect(item.contextValue).toBe('mcp-client-manual');
+      expect((item.tooltip as MarkdownString).value).toContain('Connect Guide');
+    });
+
+    // ----- all clients with known config paths use openMcpConfigFile -----
+
+    it('all clients with known config paths fire openMcpConfigFile on click', () => {
+      const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' }, () => 'absent');
+      for (const client of AI_CLIENTS) {
+        const item = view.getTreeItem({ kind: 'client', client });
+        if (item.contextValue !== 'mcp-client-manual') {
+          expect(item.command?.command).toBe('apicircle.openMcpConfigFile');
+          expect(item.command?.arguments).toEqual([{ kind: 'client', client }]);
+        }
+      }
+    });
+
+    it('github-copilot (no fixed config path) gets manual contextValue', () => {
+      const view = makeView(
+        { id: '/ws', apicircleDir: '/ws/.apicircle' },
+        () => 'installed-current',
+      );
+      const item = view.getTreeItem({ kind: 'client', client: 'github-copilot' });
+      expect(item.contextValue).toBe('mcp-client-manual');
+    });
+  });
+
+  // ----- viewId -----
+
+  describe('viewId', () => {
+    it('matches the package.json contribution id', () => {
+      const view = makeView();
+      expect(view.viewId).toBe('apicircle.mcp');
+    });
+  });
+
+  // ----- refresh / refreshElement -----
+
+  describe('refresh()', () => {
+    it('fires onDidChangeTreeData so the tree re-renders', () => {
+      const view = makeView();
+      let fired = false;
+      view.onDidChangeTreeData(() => {
+        fired = true;
+      });
+      view.refresh();
+      expect(fired).toBe(true);
+    });
+  });
+
+  describe('refreshElement()', () => {
+    it('fires onDidChangeTreeData with the specific element', () => {
+      const view = makeView();
+      let received: McpNode | undefined | void;
+      view.onDidChangeTreeData((e) => {
+        received = e;
+      });
+      const node: McpNode = { kind: 'header' };
+      view.refreshElement(node);
+      expect(received).toEqual(node);
     });
   });
 });

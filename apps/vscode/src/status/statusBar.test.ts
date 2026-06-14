@@ -124,6 +124,7 @@ describe('StatusBar', () => {
       workspaceJsonPath: path.join(dir, 'workspace.json'),
       workspaceFolder: { uri: Uri.file(tmp), name: 'test', index: 0 } as never,
       label: 'test',
+      source: 'git-folder',
     });
     bridge.setActive(dir);
 
@@ -174,6 +175,7 @@ describe('StatusBar', () => {
       workspaceJsonPath: path.join(dir, 'workspace.json'),
       workspaceFolder: { uri: Uri.file(tmp), name: 'test', index: 0 } as never,
       label: 'test',
+      source: 'git-folder',
     });
     bridge.setActive(dir);
     const bar = new StatusBar(bridge, registry);
@@ -228,6 +230,7 @@ describe('StatusBar', () => {
       workspaceJsonPath: path.join(dir, 'workspace.json'),
       workspaceFolder: { uri: Uri.file(tmp), name: 't', index: 0 } as never,
       label: 't',
+      source: 'git-folder',
     });
     bridge.setActive(dir);
     const fakeVault = {
@@ -279,6 +282,7 @@ describe('StatusBar', () => {
       workspaceJsonPath: path.join(dir, 'workspace.json'),
       workspaceFolder: { uri: Uri.file(tmp), name: 't', index: 0 } as never,
       label: 't',
+      source: 'git-folder',
     });
     bridge.setActive(dir);
     const fakeVault = {

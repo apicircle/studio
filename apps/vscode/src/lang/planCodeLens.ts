@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
 // CodeLens provider for apicircle-plan YAML documents.
@@ -21,7 +22,7 @@ export class PlanCodeLensProvider implements vscode.CodeLensProvider {
     _token: vscode.CancellationToken,
   ): vscode.CodeLens[] {
     if (document.uri.scheme !== 'apicircle') return [];
-    if (!document.uri.path.endsWith('.plan.yaml')) return [];
+    if (uriEntityKind(document.uri) !== 'plan') return [];
 
     const planId = extractPlanId(document.uri.path);
     if (!planId) return [];
@@ -50,7 +51,7 @@ export class PlanCodeLensProvider implements vscode.CodeLensProvider {
 }
 
 function extractPlanId(uriPath: string): string | undefined {
-  // /plans/<id>.plan.yaml
-  const m = /\/plans\/([^/]+)\.plan\.yaml$/.exec(uriPath);
+  // /plans/<id>.yaml
+  const m = /\/plans\/([^/]+)\.yaml$/.exec(uriPath);
   return m ? m[1] : undefined;
 }

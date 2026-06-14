@@ -1,25 +1,27 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import * as YAML from 'yaml';
 import type { AiClient } from '@apicircle/mcp-server';
 import { aiClientDisplayName, type VsCodeMcpManager } from '../host/mcpManager';
 
 // =============================================================================
-// MCP commands — copy config snippets / open AI-client config files / open
-// the connect guide.
+// MCP commands — open AI-client config files / open the connect guide.
 //
-// The view's per-client row fires `apicircle.copyMcpConfig` with the node
-// `{ kind: 'client', client: '<id>' }` on click. The command palette can
-// invoke each command without a node — those paths prompt the user via
+// The view's per-client row fires `apicircle.openMcpConfigFile` with the
+// node `{ kind: 'client', client: '<id>' }` on click. The command palette
+// can invoke each command without a node — those paths prompt the user via
 // QuickPick.
 //
-// All commands no-op cleanly when no workspace is active; the snippet
-// copy command surfaces "no active workspace" UX rather than emitting an
-// invalid snippet.
+// When the config file doesn't exist yet it is created with the apicircle
+// MCP snippet pre-populated so the user can review, adjust, and restart
+// their client to activate.
 // =============================================================================
 
 export interface McpActionsDeps {
   mcp: VsCodeMcpManager;
+  /** Refresh the McpView so install-state rows pick up the new state. */
+  onChanged?: () => void;
   log?: (msg: string) => void;
 }
 
@@ -35,59 +37,9 @@ async function pickClient(deps: McpActionsDeps): Promise<AiClient | undefined> {
       description: c,
       client: c,
     })),
-    { placeHolder: 'Choose an AI client to connect to APICircle MCP' },
+    { placeHolder: 'Choose an AI client to connect to API Circle MCP' },
   );
   return picked?.client;
-}
-
-export async function copyMcpConfigCommand(deps: McpActionsDeps, node?: ClientNode): Promise<void> {
-  const client = node?.client ?? (await pickClient(deps));
-  if (!client) return;
-  const snippet = deps.mcp.getConfigSnippet(client);
-  if (!snippet) {
-    await vscode.window.showWarningMessage(
-      'No active APICircle workspace — open a folder containing .apicircle/workspace.json to generate the MCP snippet.',
-    );
-    return;
-  }
-  // On Windows, JSON-escaped paths (`\\`) are technically what JSON.stringify
-  // emits, but most config readers accept forward-slash too and it's far
-  // easier to read. Offer the choice ONLY when the two differ.
-  let toCopy: string;
-  if (snippet.identical) {
-    toCopy = snippet.forwardSlash;
-  } else {
-    const choice = await vscode.window.showQuickPick(
-      [
-        {
-          label: 'Forward-slash paths (recommended)',
-          description: 'C:/Users/... — readable, valid JSON, accepted by every client',
-          variant: 'forward' as const,
-        },
-        {
-          label: 'Escaped paths',
-          description: 'C:\\\\Users\\\\... — what JSON.stringify emits',
-          variant: 'escaped' as const,
-        },
-      ],
-      { placeHolder: 'Which path style for the snippet?' },
-    );
-    if (!choice) return;
-    toCopy = choice.variant === 'forward' ? snippet.forwardSlash : snippet.escaped;
-  }
-  await vscode.env.clipboard.writeText(toCopy);
-  const configPath = deps.mcp.getConfigPath(client);
-  const action = configPath
-    ? await vscode.window.showInformationMessage(
-        `Copied ${aiClientDisplayName(client)} snippet. Paste it into ${configPath}.`,
-        'Open Config File',
-      )
-    : await vscode.window.showInformationMessage(
-        `Copied ${aiClientDisplayName(client)} snippet. Paste it into your client's MCP config.`,
-      );
-  if (action === 'Open Config File' && configPath) {
-    await openConfigFileFor(client, configPath);
-  }
 }
 
 export async function openMcpConfigFileCommand(
@@ -99,17 +51,18 @@ export async function openMcpConfigFileCommand(
   const configPath = deps.mcp.getConfigPath(client);
   if (!configPath) {
     await vscode.window.showInformationMessage(
-      `${aiClientDisplayName(client)} doesn't have a fixed MCP config path — paste the snippet into the client's MCP settings UI.`,
+      `${aiClientDisplayName(client)} doesn't have a fixed MCP config path — refer to the Connect Guide for setup instructions.`,
     );
     return;
   }
-  await openConfigFileFor(client, configPath);
+  await openConfigFileFor(deps, client, configPath);
 }
 
-async function openConfigFileFor(client: AiClient, configPath: string): Promise<void> {
-  // Probe existence via stat → caught ENOENT, NOT existsSync, because we
-  // do an atomic `flag: 'wx'` write on creation so the prompt-then-write
-  // race can't truncate a file the user (or another tool) just created.
+async function openConfigFileFor(
+  deps: McpActionsDeps,
+  client: AiClient,
+  configPath: string,
+): Promise<void> {
   let exists = true;
   try {
     fs.statSync(configPath);
@@ -119,21 +72,32 @@ async function openConfigFileFor(client: AiClient, configPath: string): Promise<
   }
   if (!exists) {
     const create = await vscode.window.showWarningMessage(
-      `${aiClientDisplayName(client)}'s config file doesn't exist at ${configPath}. Create an empty one?`,
+      `${aiClientDisplayName(client)}'s config file doesn't exist at ${configPath}. Create it with the API Circle MCP snippet?`,
       'Create',
       'Cancel',
     );
     if (create !== 'Create') return;
-    // Seed with an empty mcpServers object so the user's paste-after-open
-    // gesture lands somewhere coherent. P5R1-G2: use `path.dirname` for
-    // cross-platform-correct separator handling instead of a brittle
-    // includes('/') probe + lastIndexOf split (would break on a
-    // workspace path that mixes separators on Windows).
+    const snippet = deps.mcp.getConfigSnippet(client);
+    const isYaml = configPath.endsWith('.yaml') || configPath.endsWith('.yml');
+    let content: string;
+    if (snippet) {
+      if (isYaml) {
+        const parsed: unknown = JSON.parse(snippet.forwardSlash);
+        content = YAML.stringify(parsed);
+      } else {
+        content = snippet.forwardSlash;
+      }
+    } else {
+      content = isYaml
+        ? 'mcpServers: {}\n'
+        : configPath.endsWith('.toml')
+          ? ''
+          : '{\n  "mcpServers": {}\n}\n';
+    }
     try {
       fs.mkdirSync(path.dirname(configPath), { recursive: true });
-      // `wx` — fail if it appeared between the stat above and now.
-      // If it did appear, treat as success and open it.
-      fs.writeFileSync(configPath, '{\n  "mcpServers": {}\n}\n', { flag: 'wx' });
+      fs.writeFileSync(configPath, content + '\n', { flag: 'wx' });
+      deps.onChanged?.();
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') {
         await vscode.window.showErrorMessage(
@@ -144,6 +108,10 @@ async function openConfigFileFor(client: AiClient, configPath: string): Promise<
     }
   }
   await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(configPath));
+  const label = aiClientDisplayName(client);
+  await vscode.window.showInformationMessage(
+    `Opened ${label}'s MCP config. Add or verify the "apicircle" entry, then restart ${label} to activate.`,
+  );
 }
 
 export async function openMcpConnectGuideCommand(): Promise<void> {
@@ -163,11 +131,11 @@ export async function revealMcpBinaryInfoCommand(deps: McpActionsDeps): Promise<
   const tools = deps.mcp.toolCatalog();
   if (!hasActiveWorkspace) {
     await vscode.window.showInformationMessage(
-      `APICircle MCP binary: ${binary} (${tools.length} tools). No active workspace — open a folder with .apicircle/workspace.json to use it.`,
+      `API Circle MCP binary: ${binary} (${tools.length} tools). No active workspace — open a folder with .apicircle/workspace.json to use it.`,
     );
     return;
   }
   await vscode.window.showInformationMessage(
-    `APICircle MCP binary: ${binary} · workspace: ${workspace} · ${tools.length} tools exposed.`,
+    `API Circle MCP binary: ${binary} · workspace: ${workspace} · ${tools.length} tools exposed.`,
   );
 }

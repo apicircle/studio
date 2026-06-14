@@ -15,7 +15,7 @@ import { formatRequestRunDocument, formatPlanRunDocument } from '../execute/hist
 //   ▾ Recent Plans
 //      ✗ Signup flow · 2/3 steps passed · 12m ago
 //
-// Click a run → opens its formatted YAML via apicircle://<ws>/history/<id>.run.yaml
+// Click a run → opens its formatted YAML via apicircle://<ws>/history/<id>.yaml
 // =============================================================================
 
 export type HistoryNode =

@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { Command } from 'commander';
-import { loadRegistry } from '@apicircle/core/workspace/registry';
+import { loadRegistry, workspaceDirFor } from '@apicircle/core/workspace/registry';
 import { registerWorkspacesCommand } from './workspaces';
 
 let tmpDir: string;
@@ -133,7 +133,10 @@ describe('apicircle workspaces create', () => {
     const ws = registry?.workspaces[0];
     expect(ws).toBeDefined();
     const synced = JSON.parse(
-      await fs.readFile(path.join(workspacesRoot, ws!.id, 'workspace.synced.json'), 'utf-8'),
+      await fs.readFile(
+        path.join(workspaceDirFor(workspacesRoot, ws!.id), 'workspace.json'),
+        'utf-8',
+      ),
     ) as { collections: { requests: Record<string, unknown> } };
     expect(Object.keys(synced.collections.requests)).toHaveLength(1);
   });
@@ -197,7 +200,7 @@ describe('apicircle workspaces path', () => {
     await run(['workspaces', 'path', 'Alpha']);
     const registry = await loadRegistry(workspacesRoot);
     const id = registry?.workspaces[0].id;
-    expect(out().trim()).toBe(path.join(workspacesRoot, id!));
+    expect(out().trim()).toBe(workspaceDirFor(workspacesRoot, id!));
   });
 
   it('emits a clean error when the selector is unknown', async () => {

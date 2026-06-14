@@ -108,6 +108,7 @@ describe('vault unlock + reveal (integration)', () => {
       workspaceJsonPath: path.join(apicircleDir, 'workspace.json'),
       workspaceFolder: { uri: Uri.file(tmp), name: 't', index: 0 } as never,
       label: 't',
+      source: 'git-folder',
     });
     bridge.setActive(apicircleDir);
     // Reset mocks that other suites might have touched.
@@ -465,6 +466,7 @@ describe('vault unlock + reveal (integration)', () => {
       workspaceJsonPath: path.join(apicircleDir2, 'workspace.json'),
       workspaceFolder: { uri: Uri.file(tmp2), name: 't2', index: 1 } as never,
       label: 't2',
+      source: 'git-folder',
     });
 
     try {

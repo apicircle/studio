@@ -83,6 +83,7 @@ export default defineConfig({
     '@hono/node-server',
     'hono',
     'proper-lockfile',
+    'smol-toml',
     'yaml',
   ],
 });

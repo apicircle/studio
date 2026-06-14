@@ -202,6 +202,44 @@ export const releaseTagTool: AnyToolDef = {
   },
 };
 
+export const marketplaceSearchTool: AnyToolDef = {
+  name: 'marketplace.search',
+  description:
+    'Search the API Circle marketplace for public workspaces tagged with `apicircle` on GitHub. ' +
+    'Returns up to 30 results sorted by relevance (default), stars, or recent updates. ' +
+    'Token is optional — anonymous browsing is supported (lower rate limits); pass a token to lift them. ' +
+    TOKEN_HELP,
+  inputSchema: z.object({
+    query: z
+      .string()
+      .default('')
+      .describe('Search query — matches repo name, description, and topics. Empty = browse all.'),
+    sort: z
+      .enum(['best-match', 'stars', 'updated'])
+      .default('best-match')
+      .describe(
+        'Sort order: best-match (default relevance), stars (most starred first), updated (recently pushed first).',
+      ),
+    token: z.string().optional(),
+  }),
+  async handler(input, _ctx) {
+    const token = resolveToken(input.token) || null;
+    const client = new GitHubClient();
+    try {
+      const repos = await client.searchMarketplaceRepos(token, input.query, {
+        sort: input.sort === 'best-match' ? undefined : input.sort,
+      });
+      return { ok: true, count: repos.length, results: repos };
+    } catch (e) {
+      return {
+        ok: false,
+        error:
+          e instanceof GitHubError ? e.message : e instanceof Error ? e.message : 'search failed',
+      };
+    }
+  },
+};
+
 const TOPIC_RE = /^[a-z0-9][a-z0-9-]*$/;
 
 export const repoSetTopicsTool: AnyToolDef = {

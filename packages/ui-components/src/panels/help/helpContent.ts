@@ -60,22 +60,23 @@ First time here? An onboarding tour runs on first launch — replay it any time 
 ## What "multi-workspace" looks like
 
 - **In the app** — the workspace switcher next to the brand mark cycles between every workspace this install knows about. The active workspace's name shows in the chip.
-- **On disk** — the desktop app mirrors every workspace into a per-id subdirectory under \`userData/workspaces/\` plus a single \`registry.json\` index. CLI and MCP consumers read those files.
+- **On disk** — every workspace lives in a per-id subdirectory under \`~/.apicircle/workspaces/\` plus a single \`~/.apicircle/registry.json\` index. Desktop, CLI, and MCP consumers all read the same files.
 - **In Git** — each workspace can link to its own GitHub repo + branch. Switching workspaces switches which repo the Workspace panel talks to.
 
 ## Disk layout
 
-The desktop app's userData (Windows: \`%APPDATA%\\@apicircle\\desktop\\\`, macOS: \`~/Library/Application Support/@apicircle/desktop/\`, Linux: \`~/.config/@apicircle/desktop/\`) holds:
+All workspace data lives under \`~/.apicircle/\` (the user's home directory on every OS):
 
-    workspaces/
+    ~/.apicircle/
       registry.json                       <- { activeWorkspaceId, workspaces: [...] }
-      <workspace-id-1>/
-        workspace.synced.json             <- the git-tracked half
-        workspace.local.json              <- the device-private half
-      <workspace-id-2>/
-        ...
+      workspaces/
+        <workspace-id-1>/
+          workspace.json                  <- the git-shareable half
+          workspace.local.json            <- the device-private half
+        <workspace-id-2>/
+          ...
 
-The renderer keeps the canonical copy in IndexedDB and mirrors every change to this layout so the CLI, the MCP server, and (Phase 2) external file watchers see the same content.
+The renderer keeps the canonical copy in IndexedDB and mirrors every change to this layout so the CLI, the MCP server, and the file watcher see the same content.
 
 ## Picking a workspace from the CLI
 
@@ -107,7 +108,7 @@ Most tools (\`request.read\`, \`environment.create\`, etc) default to the active
 
 ## Refreshing without restarting
 
-The MCP panel's **Connection** section has a **Refresh** button. It re-reads the active workspace's \`workspace.synced.json\` from disk and merges any newer changes (e.g. from a \`apicircle import\` invocation or an AI-driven MCP edit) into the in-memory store. No more "quit and reopen the desktop app to see CLI edits".
+The MCP panel's **Connection** section has a **Refresh** button. It re-reads the active workspace's \`workspace.json\` from disk and merges any newer changes (e.g. from a \`apicircle import\` invocation or an AI-driven MCP edit) into the in-memory store. No more "quit and reopen the desktop app to see CLI edits".
 
 Since 1.0.8 the desktop also **watches the on-disk files automatically**: when an MCP server or CLI write lands while the app is running, the editor and Environments panel update without you clicking Refresh. The watcher knows the difference between its own mirror writes and an external one, so it never refreshes on top of your own edits.
 
@@ -1117,7 +1118,7 @@ The tools cluster into areas:
 
 ## Multi-workspace handling
 
-The desktop app maintains one **registry** on disk (\`userData/workspaces/registry.json\`) plus a per-workspace subdirectory for each registered workspace. \`apicircle-mcp\` boots against the registry root and exposes every workspace by id; most tools default to the **active** workspace, and ones that need to scope (\`workspace.read\`, \`workspace.write\`) accept an optional \`workspaceId\`.
+The app maintains one **registry** on disk (\`~/.apicircle/registry.json\`) plus a per-workspace subdirectory under \`~/.apicircle/workspaces/\` for each registered workspace. \`apicircle-mcp\` boots against the registry root and exposes every workspace by id; most tools default to the **active** workspace, and ones that need to scope (\`workspace.read\`, \`workspace.write\`) accept an optional \`workspaceId\`.
 
 When an AI asks "show me my requests" and more than one workspace is registered, the response is a structured envelope:
 
@@ -1271,11 +1272,11 @@ The plan is given by name or id. Options: \`--reporter\` (\`text\`/\`json\`/\`ju
 Every workspace-aware subcommand accepts two mutually-exclusive flags:
 
 - \`--workspace-name <name-or-id>\` — registry lookup. Matches case-insensitively against the friendly name first, then by id. Use this whenever the workspace is one the desktop app knows about.
-- \`--workspace-path <dir>\` — a literal filesystem directory containing \`workspace.synced.json\`. Skips the registry entirely. Use this for CI / git-cloned workspace repos that aren't registered locally.
+- \`--workspace-path <dir>\` — a literal filesystem directory containing \`workspace.json\`. Skips the registry entirely. Use this for CI / git-cloned workspace repos that aren't registered locally.
 
 When **neither** flag is passed, the CLI uses the registry's active workspace (or the current directory when no registry exists).
 
-The registry root defaults to the desktop app's userData (\`%APPDATA%\\@apicircle\\desktop\\workspaces\\\` on Windows; equivalent under \`~/Library/Application Support\` or \`~/.config\` elsewhere). Override with \`APICIRCLE_WORKSPACES_ROOT\` for CI / tests.
+The registry root defaults to \`~/.apicircle/\` (user home directory on every OS). Override with \`APICIRCLE_WORKSPACES_ROOT\` for CI / tests.
 
 Manage the registry from the terminal with the \`workspaces\` subcommand:
 

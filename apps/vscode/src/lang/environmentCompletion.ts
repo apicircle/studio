@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { VsCodeBridge } from '../host/vscodeBridge';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
 // CompletionItemProvider for apicircle-environment YAML documents.
@@ -23,7 +24,7 @@ export class EnvironmentCompletionProvider implements vscode.CompletionItemProvi
     _ctx: vscode.CompletionContext,
   ): Promise<vscode.CompletionItem[]> {
     if (document.uri.scheme !== 'apicircle') return [];
-    if (!document.uri.path.endsWith('.env.yaml')) return [];
+    if (uriEntityKind(document.uri) !== 'environment') return [];
 
     const line = document.lineAt(position.line).text;
 

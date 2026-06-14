@@ -59,22 +59,26 @@ export class SingleWorkspaceAdapter implements Workspaces {
 
   async list(): Promise<WorkspaceSummary[]> {
     const state = await this.provider.read();
-    const id = state.synced.workspaceId;
+    const s = state.synced;
+    const id = s.workspaceId ?? this.workspaceId ?? 'unknown';
     this.workspaceId = id;
+    const now = new Date().toISOString();
     return [
       {
         id,
         name: this.displayName,
         isActive: true,
-        createdAt: state.synced.meta.createdAt,
-        lastOpenedAt: state.synced.meta.updatedAt,
-        counts: {
-          requests: Object.keys(state.synced.collections.requests).length,
-          folders: Object.keys(state.synced.collections.folders).length,
-          environments: Object.keys(state.synced.environments.items).length,
-          mockServers: Object.keys(state.synced.mockServers ?? {}).length,
-          plans: Object.keys(state.synced.executionPlans ?? {}).length,
-        },
+        createdAt: s.meta?.createdAt ?? now,
+        lastOpenedAt: s.meta?.updatedAt ?? now,
+        counts: s.collections
+          ? {
+              requests: Object.keys(s.collections.requests ?? {}).length,
+              folders: Object.keys(s.collections.folders ?? {}).length,
+              environments: Object.keys(s.environments?.items ?? {}).length,
+              mockServers: Object.keys(s.mockServers ?? {}).length,
+              plans: Object.keys(s.executionPlans ?? {}).length,
+            }
+          : null,
       },
     ];
   }

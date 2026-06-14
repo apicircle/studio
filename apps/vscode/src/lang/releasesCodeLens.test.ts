@@ -29,7 +29,7 @@ describe('ReleasesCodeLensProvider', () => {
     const p = new ReleasesCodeLensProvider();
     expect(
       p.provideCodeLenses(
-        makeDoc(Uri.parse('apicircle://x/mocks/m.mock.yaml'), ['currentVersion: 1']),
+        makeDoc(Uri.parse('apicircle://x/mocks/m.yaml'), ['currentVersion: 1']),
         fakeToken,
       ),
     ).toEqual([]);

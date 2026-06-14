@@ -12,18 +12,18 @@ but with:
 
 - A **Git-backed workspace**: the workspace is a JSON document pushed to a
   GitHub repo on a working branch; teams collaborate via pull requests.
-- An **on-disk workspace mirror**: the desktop app keeps a plain-JSON mirror
-  per workspace under `userData/workspaces/<id>/` with a sibling
-  `registry.json`. The CLI, MCP server, and external tools all read the same
-  source of truth the UI uses, no IPC required.
+- An **on-disk workspace mirror**: every workspace lives under
+  `~/.apicircle/workspaces/<id>/` with a sibling
+  `~/.apicircle/registry.json`. The CLI, MCP server, and external tools all
+  read the same source of truth the UI uses, no IPC required.
 - **Local mock servers**: describe an API in OpenAPI / Postman / Insomnia and
   run a Hono-backed mock on `localhost`.
-- An **MCP server**: exposes the workspace as a 93-tool catalog any
+- An **MCP server**: exposes the workspace as a 94-tool catalog any
   Model Context Protocol client (Claude Desktop, ChatGPT, Cursor, Copilot,
-  Continue, Cline, Zed, Windsurf) can drive.
+  Codex, Continue, Cline, Zed, Windsurf) can drive.
 - A **CLI** for headless use
   (`apicircle mock | mocks | mcp | import | export | run | workspaces | linked |
-release`).
+release | folder`).
 
 The web build is continuously deployed to GitHub Pages from `main`
 (custom domain via a checked-in `CNAME`).
@@ -61,9 +61,9 @@ studio/
 │   └── vscode/           VS Code extension ("API Circle Studio" —
 │                           displayName, viewsContainers.title, configuration.title
 │                           all now use the spaced brand) — Activity Bar icon
-│                           (monochrome brand silhouette), 8 sidebar
-│                           TreeViews (Editor, Environment, Execution, Mock,
-│                           History, Snapshots, MCP, Link Workspaces — the
+│                           (monochrome brand silhouette), 9 sidebar
+│                           TreeViews (Workspace, Editor, Environment, Execution,
+│                           Mock, History, Snapshots, MCP, Link Workspaces — the
 │                           last replaced the dormant Marketplace stub and
 │                           hosts TWO groups: (1) the workspace-self
 │                           **Releases** group — publish / deprecate /
@@ -89,8 +89,8 @@ studio/
 │                           `parseLinkedWorkspaceJson` / `buildLinkedSnapshot`
 │                           core helpers)),
 │                           `apicircle:`
-│                           virtual FS for requests/envs/plans/mocks/responses/
-│                           history runs — URI shape is
+│                           virtual FS for requests/**folders**/envs/plans/mocks/
+│                           responses/history runs — URI shape is
 │                           `apicircle://<ws>/<kind>/<folderSlug…>/<nameSlug>.<ext>?id=<id>`
 │                           so tab labels are the human-readable name, the
 │                           folder breadcrumb surfaces in the tab tooltip,
@@ -99,6 +99,24 @@ studio/
 │                           disambiguated with `~<shortId>`; saving a
 │                           renamed entity reopens the new URI in the
 │                           same column and closes the stale tab.
+│                           **Folder-wise auth** — clicking a folder in the
+│                           Editor TreeView opens
+│                           `apicircle://<ws>/folders/<…>.folder.yaml?id=<folderId>`
+│                           (serializer / parser in `folderYaml.ts`,
+│                           dispatch via the new `folder.update`
+│                           WorkspacePatch + matching MCP tool). The
+│                           projection edits `name` + folder-level `auth`;
+│                           identity (`id` / `parentId`) stays out of the
+│                           document — moves use the TreeView. The folder
+│                           description carries `auth: <type>` when set,
+│                           and the contextValue swaps between `folder` /
+│                           `folder-with-auth` so the inline 🔑 button
+│                           lights up only when relevant. Request YAML
+│                           gets a `◆ Inherits from <Folder> (<type>)`
+│                           CodeLens above `auth:` whenever the request's
+│                           auth resolves via `inherit` — click jumps to
+│                           the source folder YAML; reads `◆ Inherits →
+│                           none` when no ancestor sets explicit auth.
 │                           Language services — request YAML CodeLens
 │                           row is ▶ Send · ✚ Add section… · ⤵ New from template…
 │                           by default, swaps to ⏳ Sending… · ✖ Cancel
@@ -243,7 +261,7 @@ studio/
 │   ├── git/               GitHub REST client + typed error taxonomy
 │   ├── ui-components/      ALL React UI + the Zustand store + IndexedDB persistence
 │   ├── mock-server-core/   Hono mock-server engine + OpenAPI/Postman/Insomnia parsers
-│   ├── mcp-server/         stdio MCP host + 93-tool catalog + workspace providers
+│   ├── mcp-server/         stdio MCP host + 94-tool catalog + workspace providers
 │   └── cli/                `apicircle` binary — mock / mcp / import / export / run / workspaces
 ├── examples/              Demo workspaces + a standalone mock-server example
 ├── docs/                  Product + architecture + QA docs (see §9)
@@ -306,7 +324,10 @@ concretes:
 
 - **`WorkspaceProvider`** — `read()` / `apply(patch)` / `write({synced?,local?})`.
   Implementations: `InMemoryWorkspaceProvider`, `FileBackedWorkspaceProvider`
-  (disk + `proper-lockfile` advisory lock).
+  (disk + `proper-lockfile` advisory lock), `GitBackedWorkspaceProvider`
+  (reads `workspace.json` from a Git-backed `.apicircle/` directory —
+  delegates to core `loadFromFile`/`saveToFile` with
+  `syncedFilename: 'workspace.json'`).
 - **`Workspaces`** — multi-workspace discovery: `list()` / `get(id)` /
   `setActive(id)`. Implementations: `SingleWorkspaceWorkspaces` and
   `MultiWorkspaceProvider`. `MultiWorkspaceProvider.activeProvider()`
@@ -348,7 +369,7 @@ can operate on the same source of truth.
 - **External-write auto-refresh.** The file watcher in
   `apps/desktop/src/main/workspaceFile/workspaceWatcher.ts` emits
   `apicircle:workspaceFile:externalChange` IPC events whenever
-  `<root>/registry.json` or a per-id `workspace.synced.json` changes.
+  `<root>/registry.json` or a per-id `workspace.json` changes.
   `App.tsx`'s `useExternalDiskRefresh` hook subscribes and auto-calls
   `refreshFromDisk()` so MCP / CLI writes appear without the user
   clicking Refresh. `WorkspaceFileManager.markSelfWrite` suppresses

@@ -36,7 +36,7 @@ function id(key: string): TcId {
 
 let shared: McpClient | undefined;
 
-// Seed `workspace.synced.json` before booting the MCP server.
+// Seed `workspace.json` before booting the MCP server.
 // FileBackedWorkspaceProvider#read() throws when the file is missing,
 // and write() reads-then-merges, so a brand-new dir is bootstrap-
 // hostile. Pre-writing a minimal synced doc unblocks every tool call
@@ -51,7 +51,7 @@ function seedWorkspaceDir(): string {
   // unit tests (FileBackedWorkspaceProvider.test.ts :: emptySynced()).
   const now = '2026-05-30T00:00:00.000Z';
   fs.writeFileSync(
-    path.join(dir, 'workspace.synced.json'),
+    path.join(dir, 'workspace.json'),
     JSON.stringify({
       schemaVersion: 1,
       workspaceId: 'ws-e2e-seed',
@@ -219,7 +219,7 @@ test.describe('MCP — lifecycle', () => {
     ),
     async () => {
       const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-corrupt-'));
-      fs.writeFileSync(path.join(ws, 'workspace.synced.json'), '{not json');
+      fs.writeFileSync(path.join(ws, 'workspace.json'), '{not json');
       const c = await spawnMcpServer({ workspaceDir: ws });
       // The provider currently swallows the parse error during init and
       // surfaces it on the first tool call that touches the workspace.
@@ -265,7 +265,7 @@ test.describe('MCP — lifecycle', () => {
       // Same canonical empty-synced shape as `seedWorkspaceDir` above.
       const now = '2026-05-30T00:00:00.000Z';
       fs.writeFileSync(
-        path.join(ws, 'workspace.synced.json'),
+        path.join(ws, 'workspace.json'),
         JSON.stringify({
           schemaVersion: 1,
           workspaceId: 'ws-x',

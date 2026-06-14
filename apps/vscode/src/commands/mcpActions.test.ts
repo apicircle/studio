@@ -7,7 +7,6 @@ import { window, env, commands } from '../../test/mocks/vscode';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 import { VsCodeMcpManager } from '../host/mcpManager';
 import {
-  copyMcpConfigCommand,
   openMcpConfigFileCommand,
   openMcpConnectGuideCommand,
   revealMcpBinaryInfoCommand,
@@ -42,67 +41,6 @@ describe('mcpActions', () => {
     (commands.executeCommand as Mock).mockReset();
   });
 
-  describe('copyMcpConfigCommand', () => {
-    it('with a client node, writes the snippet to the clipboard', async () => {
-      const mcp = makeMcp({ id: '/ws', apicircleDir: '/ws/.apicircle' });
-      (window.showInformationMessage as Mock).mockResolvedValueOnce(undefined);
-      await copyMcpConfigCommand({ mcp }, { kind: 'client', client: 'cursor' });
-      expect(env.clipboard.writeText).toHaveBeenCalledTimes(1);
-      const written = (env.clipboard.writeText as Mock).mock.calls[0][0] as string;
-      expect(JSON.parse(written).mcpServers.apicircle.command).toBe('apicircle-mcp');
-    });
-
-    it('without a node, prompts via QuickPick + copies the chosen client snippet', async () => {
-      const mcp = makeMcp({ id: '/ws', apicircleDir: '/ws/.apicircle' });
-      (window.showQuickPick as Mock).mockResolvedValueOnce({ client: 'continue' });
-      (window.showInformationMessage as Mock).mockResolvedValueOnce(undefined);
-      await copyMcpConfigCommand({ mcp });
-      expect(env.clipboard.writeText).toHaveBeenCalled();
-    });
-
-    it('cancelled QuickPick (no client chosen) is a no-op', async () => {
-      const mcp = makeMcp({ id: '/ws', apicircleDir: '/ws/.apicircle' });
-      (window.showQuickPick as Mock).mockResolvedValueOnce(undefined);
-      await copyMcpConfigCommand({ mcp });
-      expect(env.clipboard.writeText).not.toHaveBeenCalled();
-    });
-
-    it('no active workspace surfaces a "no workspace" warning + no copy', async () => {
-      const mcp = makeMcp(null);
-      await copyMcpConfigCommand({ mcp }, { kind: 'client', client: 'cursor' });
-      expect(window.showWarningMessage).toHaveBeenCalledWith(
-        expect.stringMatching(/No active APICircle workspace/i),
-      );
-      expect(env.clipboard.writeText).not.toHaveBeenCalled();
-    });
-
-    it('Windows path: prompts the user to pick forward-slash vs escaped', async () => {
-      const mcp = makeMcp({ id: 'C:\\repo', apicircleDir: 'C:\\repo\\.apicircle' });
-      (window.showQuickPick as Mock).mockResolvedValueOnce({ variant: 'forward' });
-      (window.showInformationMessage as Mock).mockResolvedValueOnce(undefined);
-      await copyMcpConfigCommand({ mcp }, { kind: 'client', client: 'claude-desktop' });
-      expect(window.showQuickPick).toHaveBeenCalled();
-      const written = (env.clipboard.writeText as Mock).mock.calls[0][0] as string;
-      expect(written).toContain('C:/repo/.apicircle');
-    });
-
-    it('Windows path: user picks escaped variant → writes the backslash form', async () => {
-      const mcp = makeMcp({ id: 'C:\\repo', apicircleDir: 'C:\\repo\\.apicircle' });
-      (window.showQuickPick as Mock).mockResolvedValueOnce({ variant: 'escaped' });
-      (window.showInformationMessage as Mock).mockResolvedValueOnce(undefined);
-      await copyMcpConfigCommand({ mcp }, { kind: 'client', client: 'claude-desktop' });
-      const written = (env.clipboard.writeText as Mock).mock.calls[0][0] as string;
-      expect(written).toContain('\\\\');
-    });
-
-    it('Windows path: user cancels variant picker → no copy', async () => {
-      const mcp = makeMcp({ id: 'C:\\repo', apicircleDir: 'C:\\repo\\.apicircle' });
-      (window.showQuickPick as Mock).mockResolvedValueOnce(undefined);
-      await copyMcpConfigCommand({ mcp }, { kind: 'client', client: 'claude-desktop' });
-      expect(env.clipboard.writeText).not.toHaveBeenCalled();
-    });
-  });
-
   describe('openMcpConfigFileCommand', () => {
     let tmp: string;
 
@@ -114,7 +52,7 @@ describe('mcpActions', () => {
       fs.rmSync(tmp, { recursive: true, force: true });
     });
 
-    it('client without a known path surfaces the "paste manually" info', async () => {
+    it('client without a known path surfaces the "refer to Connect Guide" info', async () => {
       const mcp = makeMcp(null);
       await openMcpConfigFileCommand({ mcp }, { kind: 'client', client: 'generic' });
       expect(window.showInformationMessage).toHaveBeenCalledWith(
@@ -122,7 +60,7 @@ describe('mcpActions', () => {
       );
     });
 
-    it('config file does not exist: prompts to Create; Cancel → no-op', async () => {
+    it('config file does not exist: prompts to Create; Cancel is a no-op', async () => {
       const mcp = new VsCodeMcpManager({
         bridge: makeFakeBridge(null),
         getBinaryPath: () => 'apicircle-mcp',
@@ -131,26 +69,42 @@ describe('mcpActions', () => {
       (window.showWarningMessage as Mock).mockResolvedValueOnce('Cancel');
       await openMcpConfigFileCommand({ mcp }, { kind: 'client', client: 'cursor' });
       expect(window.showWarningMessage).toHaveBeenCalledWith(
-        expect.stringMatching(/Create an empty one/i),
+        expect.stringMatching(/Create it with the API Circle MCP snippet/i),
         'Create',
         'Cancel',
       );
       expect(commands.executeCommand).not.toHaveBeenCalledWith('vscode.open', expect.anything());
     });
 
-    it('config file does not exist: Create → seeds the file + opens it', async () => {
+    it('config file does not exist + active workspace: Create pre-populates with snippet', async () => {
+      const mcp = new VsCodeMcpManager({
+        bridge: makeFakeBridge({ id: '/ws', apicircleDir: '/ws/.apicircle' }),
+        getBinaryPath: () => 'apicircle-mcp',
+        configPathEnv: () => ({ homedir: tmp, platform: 'linux' }),
+      });
+      (window.showWarningMessage as Mock).mockResolvedValueOnce('Create');
+      (window.showInformationMessage as Mock).mockResolvedValueOnce(undefined);
+      await openMcpConfigFileCommand({ mcp }, { kind: 'client', client: 'cursor' });
+      const cursorPath = path.join(tmp, '.cursor/mcp.json');
+      expect(fs.existsSync(cursorPath)).toBe(true);
+      const content = JSON.parse(fs.readFileSync(cursorPath, 'utf8'));
+      expect(content.mcpServers.apicircle.command).toBe('apicircle-mcp');
+      expect(commands.executeCommand).toHaveBeenCalledWith('vscode.open', expect.anything());
+    });
+
+    it('config file does not exist + no active workspace: Create seeds empty mcpServers', async () => {
       const mcp = new VsCodeMcpManager({
         bridge: makeFakeBridge(null),
         getBinaryPath: () => 'apicircle-mcp',
         configPathEnv: () => ({ homedir: tmp, platform: 'linux' }),
       });
       (window.showWarningMessage as Mock).mockResolvedValueOnce('Create');
+      (window.showInformationMessage as Mock).mockResolvedValueOnce(undefined);
       await openMcpConfigFileCommand({ mcp }, { kind: 'client', client: 'cursor' });
       const cursorPath = path.join(tmp, '.cursor/mcp.json');
       expect(fs.existsSync(cursorPath)).toBe(true);
-      const content = fs.readFileSync(cursorPath, 'utf8');
-      expect(JSON.parse(content)).toEqual({ mcpServers: {} });
-      expect(commands.executeCommand).toHaveBeenCalledWith('vscode.open', expect.anything());
+      const content = JSON.parse(fs.readFileSync(cursorPath, 'utf8'));
+      expect(content).toEqual({ mcpServers: {} });
     });
 
     it('config file exists: opens it directly without warning', async () => {
@@ -161,13 +115,28 @@ describe('mcpActions', () => {
       });
       fs.mkdirSync(path.join(tmp, '.cursor'), { recursive: true });
       fs.writeFileSync(path.join(tmp, '.cursor/mcp.json'), '{}');
+      (window.showInformationMessage as Mock).mockResolvedValueOnce(undefined);
       await openMcpConfigFileCommand({ mcp }, { kind: 'client', client: 'cursor' });
       expect(commands.executeCommand).toHaveBeenCalledWith('vscode.open', expect.anything());
-      // No "Create" prompt fired.
       expect(window.showWarningMessage).not.toHaveBeenCalled();
     });
 
-    it('no node → prompts via QuickPick first', async () => {
+    it('shows guidance toast after opening the file', async () => {
+      const mcp = new VsCodeMcpManager({
+        bridge: makeFakeBridge(null),
+        getBinaryPath: () => 'apicircle-mcp',
+        configPathEnv: () => ({ homedir: tmp, platform: 'linux' }),
+      });
+      fs.mkdirSync(path.join(tmp, '.cursor'), { recursive: true });
+      fs.writeFileSync(path.join(tmp, '.cursor/mcp.json'), '{}');
+      (window.showInformationMessage as Mock).mockResolvedValueOnce(undefined);
+      await openMcpConfigFileCommand({ mcp }, { kind: 'client', client: 'cursor' });
+      expect(window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringMatching(/restart Cursor to activate/i),
+      );
+    });
+
+    it('no node prompts via QuickPick first', async () => {
       const mcp = new VsCodeMcpManager({
         bridge: makeFakeBridge(null),
         getBinaryPath: () => 'apicircle-mcp',
@@ -176,6 +145,7 @@ describe('mcpActions', () => {
       (window.showQuickPick as Mock).mockResolvedValueOnce({ client: 'cursor' });
       fs.mkdirSync(path.join(tmp, '.cursor'), { recursive: true });
       fs.writeFileSync(path.join(tmp, '.cursor/mcp.json'), '{}');
+      (window.showInformationMessage as Mock).mockResolvedValueOnce(undefined);
       await openMcpConfigFileCommand({ mcp });
       expect(window.showQuickPick).toHaveBeenCalled();
     });

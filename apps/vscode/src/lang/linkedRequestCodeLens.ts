@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
-// CodeLens for linked-request documents (`/linked/**/*.req.yaml`).
+// CodeLens for linked-request documents (`/linked/**/*.yaml`).
 //
 // The doc shows the EFFECTIVE request (source + the consumer's override). The
 // lenses on the `name:` line are:
@@ -33,7 +34,7 @@ export class LinkedRequestCodeLensProvider implements vscode.CodeLensProvider, v
     _token: vscode.CancellationToken,
   ): vscode.CodeLens[] {
     if (document.uri.scheme !== 'apicircle') return [];
-    if (!document.uri.path.startsWith('/linked/') || !document.uri.path.endsWith('.req.yaml')) {
+    if (uriEntityKind(document.uri) !== 'request') {
       return [];
     }
     const query = new URLSearchParams(document.uri.query || '');

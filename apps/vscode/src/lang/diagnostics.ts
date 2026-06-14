@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { parseEndpointFromYaml, EndpointYamlParseError } from '../fs/endpointYaml';
 import { parseMockFromYaml, MockYamlParseError } from '../fs/mockYaml';
 import { parseRequestFromYaml, RequestYamlParseError } from '../fs/requestYaml';
+import { parseFolderFromYaml, FolderYamlParseError } from '../fs/folderYaml';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
 // Live diagnostics for apicircle:// YAML documents.
@@ -18,14 +20,13 @@ import { parseRequestFromYaml, RequestYamlParseError } from '../fs/requestYaml';
 // the mock summary YAML, and collection-request YAML.
 // =============================================================================
 
-type DocKind = 'endpoint' | 'mock' | 'request';
+type DocKind = 'endpoint' | 'mock' | 'request' | 'folder';
 
 function classify(uri: vscode.Uri): DocKind | null {
   if (uri.scheme !== 'apicircle') return null;
-  const p = uri.path;
-  if (p.endsWith('.endpoint.yaml')) return 'endpoint';
-  if (p.endsWith('.mock.yaml')) return 'mock';
-  if (p.endsWith('.req.yaml')) return 'request';
+  const kind = uriEntityKind(uri);
+  if (kind === 'endpoint' || kind === 'mock' || kind === 'request' || kind === 'folder')
+    return kind;
   return null;
 }
 
@@ -38,12 +39,14 @@ function runParser(kind: DocKind, text: string): ParseOutcome {
   try {
     if (kind === 'endpoint') return { error: null, warnings: parseEndpointFromYaml(text).warnings };
     if (kind === 'mock') return { error: null, warnings: parseMockFromYaml(text).warnings };
+    if (kind === 'folder') return { error: null, warnings: parseFolderFromYaml(text).warnings };
     return { error: null, warnings: parseRequestFromYaml(text).warnings };
   } catch (e) {
     if (
       e instanceof EndpointYamlParseError ||
       e instanceof MockYamlParseError ||
-      e instanceof RequestYamlParseError
+      e instanceof RequestYamlParseError ||
+      e instanceof FolderYamlParseError
     ) {
       return { error: e.message, warnings: [] };
     }

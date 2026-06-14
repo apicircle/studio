@@ -24,5 +24,9 @@ docs/qa/results/
 __pycache__/
 *.pyc
 
+# Per-device MCP runtime state — written by the MCP server when pointed at a
+# Git-backed .apicircle/ directory. Must not pollute the shared workspace repo.
+.apicircle/workspace.local.json
+
 # Claude Code agent worktrees
 .claude/worktrees/

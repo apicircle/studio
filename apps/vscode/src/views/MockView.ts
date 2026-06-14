@@ -15,7 +15,7 @@ import { ApicircleFsProvider } from '../fs/apicircleFsProvider';
 //      GET /orders
 //      ...
 //
-// Click a server → opens its `.mock.yaml` virtual document.
+// Click a server → opens its `.yaml` virtual document.
 // Click an endpoint → no-op for now (Phase 4 will jump into the
 // per-endpoint editor; Phase 3 ships the read-only tree).
 // =============================================================================

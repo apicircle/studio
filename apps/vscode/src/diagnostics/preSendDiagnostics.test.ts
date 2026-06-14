@@ -106,6 +106,7 @@ describe('PreSendDiagnostics', () => {
       workspaceJsonPath: path.join(apicircleDir, 'workspace.json'),
       workspaceFolder: { uri: Uri.file(tmp), name: 'test', index: 0 } as never,
       label: 'test',
+      source: 'git-folder',
     });
     bridge.setActive(apicircleDir);
 
@@ -148,7 +149,7 @@ describe('PreSendDiagnostics', () => {
 
   it('emits an Error diagnostic for invalid YAML', () => {
     const diag = new PreSendDiagnostics(bridge);
-    const uri = Uri.parse('apicircle://x/requests/abc.req.yaml');
+    const uri = Uri.parse('apicircle://x/requests/abc.yaml');
     diag.lintDocument(makeDoc(uri, '!!! not yaml ::: ['));
     expect(collection.set).toHaveBeenCalled();
     const [, diagnostics] = collection.set.mock.calls.at(-1) as [
@@ -162,7 +163,7 @@ describe('PreSendDiagnostics', () => {
 
   it('emits warning diagnostic for unresolved variable', async () => {
     const diag = new PreSendDiagnostics(bridge);
-    const uri = Uri.parse('apicircle://x/requests/abc.req.yaml');
+    const uri = Uri.parse('apicircle://x/requests/abc.yaml');
     diag.lintDocument(makeDoc(uri, 'name: x\nmethod: GET\nurl: "{{undefined_var}}/path"\n'));
     // Allow the async lint (file read + scope build) to complete
     await new Promise((r) => setTimeout(r, 100));
@@ -178,7 +179,7 @@ describe('PreSendDiagnostics', () => {
 
   it('hasBlocker reads the underlying collection', () => {
     const diag = new PreSendDiagnostics(bridge);
-    const uri = Uri.parse('apicircle://x/requests/abc.req.yaml');
+    const uri = Uri.parse('apicircle://x/requests/abc.yaml');
     collection.get.mockReturnValueOnce([{ severity: 0 }]);
     expect(diag.hasBlocker(uri as never)).toBe(true);
     collection.get.mockReturnValueOnce([{ severity: 1 }]); // Warning only
@@ -192,7 +193,7 @@ describe('PreSendDiagnostics', () => {
     const closeHandler = (workspace.onDidCloseTextDocument as ReturnType<typeof vi.fn>).mock
       .calls[0]?.[0] as ((doc: vscode.TextDocument) => void) | undefined;
     expect(closeHandler).toBeDefined();
-    const uri = Uri.parse('apicircle://x/requests/abc.req.yaml');
+    const uri = Uri.parse('apicircle://x/requests/abc.yaml');
     closeHandler?.(makeDoc(uri, ''));
     expect(collection.delete).toHaveBeenCalledWith(uri);
     diag.dispose();

@@ -8,6 +8,7 @@ import { registerRunCommand } from './commands/run';
 import { registerWorkspacesCommand } from './commands/workspaces';
 import { registerLinkedCommand } from './commands/linked';
 import { registerReleaseCommand } from './commands/release';
+import { registerFolderCommand } from './commands/folder';
 import { CLI_PACKAGE_VERSION } from './packageVersion';
 
 // =============================================================================
@@ -36,6 +37,7 @@ export function buildProgram(): Command {
   registerWorkspacesCommand(program);
   registerLinkedCommand(program);
   registerReleaseCommand(program);
+  registerFolderCommand(program);
 
   return program;
 }

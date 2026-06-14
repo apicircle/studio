@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import type { GlobalFileAsset } from '@apicircle/shared';
 import { findSectionRange, readSectionType } from './switchRequestSection';
 import { pickGlobalFileAsset, type FileAssetPickerDeps } from './fileAssetPicker';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
 // Form-data row affordances. Three commands surface from the CodeLens row
@@ -167,7 +168,7 @@ async function ensureFormDataDocument(
     await vscode.window.showWarningMessage('No request YAML is active.');
     return null;
   }
-  if (targetUri.scheme !== 'apicircle' || !targetUri.path.endsWith('.req.yaml')) {
+  if (targetUri.scheme !== 'apicircle' || uriEntityKind(targetUri) !== 'request') {
     await vscode.window.showWarningMessage(
       'This command only runs against APICircle request YAML files.',
     );

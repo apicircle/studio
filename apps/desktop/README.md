@@ -49,7 +49,7 @@ under `app.getPath('userData')`:
 workspaces/
   registry.json                       <- multi-workspace index
   <workspace-id-1>/
-    workspace.synced.json             <- git-tracked half
+    workspace.json                    <- git-tracked half
     workspace.local.json              <- device-private half
   <workspace-id-2>/
     ...

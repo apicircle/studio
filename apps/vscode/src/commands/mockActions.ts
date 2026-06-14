@@ -36,7 +36,7 @@ export interface MockActionsDeps {
  *   3. Name (auto-suggested from spec title)
  *   4. Default port (number or blank = pick free port)
  *
- * Creates the MockServer via `mock.upsert` and opens its `.mock.yaml`.
+ * Creates the MockServer via `mock.upsert` and opens its `.yaml`.
  */
 export async function newMockCommand(deps: MockActionsDeps): Promise<void> {
   const active = deps.bridge.activeWorkspace();
@@ -385,7 +385,7 @@ export async function openMockInBrowserCommand(
 
 /**
  * `apicircle.setMockPort` — one-click way to change a mock's default port
- * without opening its `.mock.yaml`. Same validation surface as the YAML
+ * without opening its `.yaml`. Same validation surface as the YAML
  * parser (1024-65535 integer or blank = `null` for "pick a free port").
  *
  * If the mock is currently running, we warn that the new port only takes

@@ -16,6 +16,8 @@ import {
   copyEndpointPathCommand,
   revealEndpointInMockYamlCommand,
   setMockPortCommand,
+  openMockEndpointYamlCommand,
+  openMockInBrowserCommand,
 } from './mockActions';
 
 vi.mock('@apicircle/mcp-server', () => ({
@@ -140,6 +142,7 @@ describe('mockActions', () => {
       workspaceJsonPath: path.join(apicircleDir, 'workspace.json'),
       workspaceFolder: { uri: Uri.file(tmp), name: 't', index: 0 } as never,
       label: 't',
+      source: 'git-folder',
     });
     bridge.setActive(apicircleDir);
     controller = new VsCodeMockController({
@@ -545,6 +548,741 @@ describe('mockActions', () => {
       const after = await bridge.activeWorkspace()!.read();
       expect(after.synced.mockServers.m1.defaultPort).toBe(3030);
       expect(after.synced.mockServers.m1.updatedAt).toBe(beforeUpdated);
+    });
+  });
+
+  describe('additional lifecycle coverage', () => {
+    it('newMockCommand exits silently when source-kind picker is cancelled', async () => {
+      seed(path.join(tmp, '.apicircle'));
+      bridge = new VsCodeBridge(makeMockContext(path.join(tmp, 'globalStorage')));
+      bridge.registerWorkspace({
+        id: path.join(tmp, '.apicircle'),
+        apicircleDir: path.join(tmp, '.apicircle'),
+        workspaceJsonPath: path.join(tmp, '.apicircle', 'workspace.json'),
+        workspaceFolder: { uri: Uri.file(tmp), name: 't', index: 0 } as never,
+        label: 't',
+        source: 'git-folder',
+      });
+      bridge.setActive(path.join(tmp, '.apicircle'));
+      controller = new VsCodeMockController({
+        getActiveSurface: () => bridge.activeWorkspace() ?? undefined,
+      });
+      (window.showQuickPick as Mock).mockResolvedValueOnce(undefined);
+      await newMockCommand({ bridge, controller });
+      const state = await bridge.activeWorkspace()!.read();
+      expect(Object.keys(state.synced.mockServers)).toHaveLength(0);
+    });
+  });
+
+  // =========================================================================
+  // New tests — push line coverage above 90%
+  // =========================================================================
+
+  describe('openMockEndpointYamlCommand', () => {
+    it('warns when called without a node', async () => {
+      await openMockEndpointYamlCommand({ bridge, controller });
+      expect(window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Right-click an endpoint'),
+      );
+    });
+
+    it('warns when no active workspace', async () => {
+      bridge.dispose();
+      bridge = new VsCodeBridge(makeMockContext(path.join(tmp, 'globalStorage')));
+      controller = new VsCodeMockController({
+        getActiveSurface: () => bridge.activeWorkspace() ?? undefined,
+      });
+      await openMockEndpointYamlCommand(
+        { bridge, controller },
+        { kind: 'endpoint', serverId: 'm1', endpointId: 'ep-1' },
+      );
+      expect(window.showWarningMessage).toHaveBeenCalledWith(expect.stringContaining('No active'));
+    });
+
+    it('warns when mock no longer exists', async () => {
+      seed(apicircleDir, makeMockWithEndpoint());
+      await openMockEndpointYamlCommand(
+        { bridge, controller },
+        { kind: 'endpoint', serverId: 'ghost', endpointId: 'ep-1' },
+      );
+      expect(window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Mock no longer'),
+      );
+    });
+
+    it('warns when endpoint no longer exists', async () => {
+      seed(apicircleDir, makeMockWithEndpoint());
+      await openMockEndpointYamlCommand(
+        { bridge, controller },
+        { kind: 'endpoint', serverId: 'm1', endpointId: 'ghost-ep' },
+      );
+      expect(window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Endpoint no longer'),
+      );
+    });
+
+    it('opens the endpoint YAML via vscode.open', async () => {
+      seed(apicircleDir, makeMockWithEndpoint());
+      await openMockEndpointYamlCommand(
+        { bridge, controller },
+        { kind: 'endpoint', serverId: 'm1', endpointId: 'ep-1' },
+      );
+      expect(commands.executeCommand).toHaveBeenCalledWith(
+        'vscode.open',
+        expect.objectContaining({ scheme: 'apicircle' }),
+      );
+    });
+  });
+
+  describe('openMockInBrowserCommand', () => {
+    it('warns when mock is not running', async () => {
+      seed(apicircleDir, makeMock());
+      await openMockInBrowserCommand({ bridge, controller }, { kind: 'server', id: 'm1' });
+      expect(window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Start the mock first'),
+      );
+    });
+
+    it('opens the running mock URL in the system browser', async () => {
+      seed(apicircleDir, makeMock());
+      await startMockCommand({ bridge, controller }, { kind: 'server', id: 'm1' });
+      (window.showInformationMessage as Mock).mockReset();
+      await openMockInBrowserCommand({ bridge, controller }, { kind: 'server', id: 'm1' });
+      expect(mockEnv.openExternal).toHaveBeenCalledWith(
+        expect.objectContaining({ scheme: 'http' }),
+      );
+    });
+
+    it('resolves mock id via QuickPick when no node is passed', async () => {
+      seed(apicircleDir, makeMock());
+      await startMockCommand({ bridge, controller }, { kind: 'server', id: 'm1' });
+      (window.showInformationMessage as Mock).mockReset();
+      // Palette path — pick from the mock list
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ label: 'Pet Store', id: 'm1' });
+      await openMockInBrowserCommand({ bridge, controller });
+      expect(mockEnv.openExternal).toHaveBeenCalled();
+    });
+
+    it('exits when resolveMockId returns undefined (no mocks)', async () => {
+      // No mocks seeded
+      await openMockInBrowserCommand({ bridge, controller });
+      expect(window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('No mock servers'),
+      );
+    });
+  });
+
+  describe('newMockCommand — URL flow', () => {
+    it('creates a mock by fetching from a URL', async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        text: async () => '{"openapi":"3.0.0","info":{"title":"URL Mock"}}',
+      }) as unknown as typeof fetch;
+      try {
+        (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'openapi' });
+        (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'url' });
+        (window.showInputBox as Mock).mockResolvedValueOnce('https://example.com/spec.json');
+        (window.showInputBox as Mock).mockResolvedValueOnce('URL Mock'); // name
+        (window.showInputBox as Mock).mockResolvedValueOnce(''); // port
+        await newMockCommand({ bridge, controller });
+        const state = await bridge.activeWorkspace()!.read();
+        const m = Object.values(state.synced.mockServers)[0];
+        expect(m.source.kind).toBe('openapi');
+        if (m.source.kind === 'openapi') {
+          expect(m.source.format).toBe('json');
+        }
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('shows error when fetch returns non-ok status', async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn().mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+      }) as unknown as typeof fetch;
+      try {
+        (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'openapi' });
+        (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'url' });
+        (window.showInputBox as Mock).mockResolvedValueOnce('https://example.com/missing.json');
+        await newMockCommand({ bridge, controller });
+        expect(window.showErrorMessage).toHaveBeenCalledWith(
+          expect.stringContaining('Fetch failed (404'),
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('shows error when fetch throws a network error', async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('ECONNREFUSED')) as unknown as typeof fetch;
+      try {
+        (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'openapi' });
+        (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'url' });
+        (window.showInputBox as Mock).mockResolvedValueOnce('https://example.com/spec.json');
+        await newMockCommand({ bridge, controller });
+        expect(window.showErrorMessage).toHaveBeenCalledWith(
+          expect.stringContaining('Failed to fetch'),
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('cancels when URL input is dismissed', async () => {
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'openapi' });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'url' });
+      (window.showInputBox as Mock).mockResolvedValueOnce(undefined); // URL dismissed
+      await newMockCommand({ bridge, controller });
+      const state = await bridge.activeWorkspace()!.read();
+      expect(Object.keys(state.synced.mockServers)).toEqual([]);
+    });
+
+    it('validates URL input', async () => {
+      let validator: ((s: string) => string | null) | undefined;
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'openapi' });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'url' });
+      (window.showInputBox as Mock).mockImplementationOnce(
+        async (opts: { validateInput?: (s: string) => string | null }) => {
+          validator = opts.validateInput;
+          return undefined;
+        },
+      );
+      await newMockCommand({ bridge, controller });
+      expect(validator?.('')).toBe('URL is required');
+      expect(validator?.('  ')).toBe('URL is required');
+      expect(validator?.('ftp://bad')).toBe('URL must start with http:// or https://');
+      expect(validator?.('https://ok.com')).toBeNull();
+    });
+  });
+
+  describe('newMockCommand — Postman source', () => {
+    it('creates a Postman-sourced mock via paste', async () => {
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'postman' });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'paste' });
+      (window.showInputBox as Mock).mockResolvedValueOnce(
+        '{"info":{"name":"My Postman Collection"}}',
+      );
+      (window.showInputBox as Mock).mockResolvedValueOnce('Postman Mock'); // name
+      (window.showInputBox as Mock).mockResolvedValueOnce(''); // port
+      await newMockCommand({ bridge, controller });
+      const state = await bridge.activeWorkspace()!.read();
+      const m = Object.values(state.synced.mockServers)[0];
+      expect(m.source.kind).toBe('postman');
+      if (m.source.kind === 'postman') {
+        expect(m.source.collection).toContain('My Postman Collection');
+      }
+      expect(m.name).toBe('Postman Mock');
+    });
+  });
+
+  describe('newMockCommand — Insomnia source', () => {
+    it('creates an Insomnia-sourced mock via paste', async () => {
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'insomnia' });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'paste' });
+      (window.showInputBox as Mock).mockResolvedValueOnce(
+        '{"resources":[{"_type":"workspace","name":"Insomnia WS"}]}',
+      );
+      (window.showInputBox as Mock).mockResolvedValueOnce('Insomnia Mock'); // name
+      (window.showInputBox as Mock).mockResolvedValueOnce(''); // port
+      await newMockCommand({ bridge, controller });
+      const state = await bridge.activeWorkspace()!.read();
+      const m = Object.values(state.synced.mockServers)[0];
+      expect(m.source.kind).toBe('insomnia');
+      if (m.source.kind === 'insomnia') {
+        expect(m.source.export).toContain('Insomnia WS');
+      }
+    });
+  });
+
+  describe('newMockCommand — paste cancel and validate', () => {
+    it('cancels when paste input is dismissed', async () => {
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'openapi' });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'paste' });
+      (window.showInputBox as Mock).mockResolvedValueOnce(undefined); // paste dismissed
+      await newMockCommand({ bridge, controller });
+      const state = await bridge.activeWorkspace()!.read();
+      expect(Object.keys(state.synced.mockServers)).toEqual([]);
+    });
+
+    it('validates paste content is non-empty', async () => {
+      let validator: ((s: string) => string | null) | undefined;
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'openapi' });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'paste' });
+      (window.showInputBox as Mock).mockImplementationOnce(
+        async (opts: { validateInput?: (s: string) => string | null }) => {
+          validator = opts.validateInput;
+          return undefined;
+        },
+      );
+      await newMockCommand({ bridge, controller });
+      expect(validator?.('')).toBe('Source content is required');
+      expect(validator?.('   ')).toBe('Source content is required');
+      expect(validator?.('{"ok":true}')).toBeNull();
+    });
+  });
+
+  describe('newMockCommand — name and port cancellation', () => {
+    it('cancels when name input is dismissed (manual flow)', async () => {
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'manual' });
+      (window.showInputBox as Mock).mockResolvedValueOnce(undefined); // name dismissed
+      await newMockCommand({ bridge, controller });
+      const state = await bridge.activeWorkspace()!.read();
+      expect(Object.keys(state.synced.mockServers)).toEqual([]);
+    });
+
+    it('cancels when port input is dismissed (manual flow)', async () => {
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'manual' });
+      (window.showInputBox as Mock).mockResolvedValueOnce('A Mock'); // name
+      (window.showInputBox as Mock).mockResolvedValueOnce(undefined); // port dismissed
+      await newMockCommand({ bridge, controller });
+      const state = await bridge.activeWorkspace()!.read();
+      expect(Object.keys(state.synced.mockServers)).toEqual([]);
+    });
+
+    it('validates name is non-empty', async () => {
+      let validator: ((s: string) => string | null) | undefined;
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'manual' });
+      (window.showInputBox as Mock).mockImplementationOnce(
+        async (opts: { validateInput?: (s: string) => string | null }) => {
+          validator = opts.validateInput;
+          return undefined;
+        },
+      );
+      await newMockCommand({ bridge, controller });
+      expect(validator?.('')).toBe('Name is required');
+      expect(validator?.('  ')).toBe('Name is required');
+      expect(validator?.('Valid Name')).toBeNull();
+    });
+  });
+
+  describe('newMockCommand — parse warnings and errors', () => {
+    it('shows warning toast when parser returns warnings', async () => {
+      const { parseSourceToEndpoints } = await import('@apicircle/mock-server-core');
+      (parseSourceToEndpoints as Mock).mockResolvedValueOnce({
+        endpoints: [],
+        warnings: ['Unknown path type', 'Duplicate operation id'],
+      });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'openapi' });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'paste' });
+      (window.showInputBox as Mock).mockResolvedValueOnce('openapi: 3.0.0');
+      (window.showInputBox as Mock).mockResolvedValueOnce('Warn Mock'); // name
+      (window.showInputBox as Mock).mockResolvedValueOnce(''); // port
+      await newMockCommand({ bridge, controller });
+      expect(window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringContaining('2 warning(s)'),
+      );
+      expect(window.showWarningMessage).toHaveBeenCalledWith(expect.stringContaining('+1 more'));
+    });
+
+    it('shows warning without "+N more" for a single warning', async () => {
+      const { parseSourceToEndpoints } = await import('@apicircle/mock-server-core');
+      (parseSourceToEndpoints as Mock).mockResolvedValueOnce({
+        endpoints: [],
+        warnings: ['Single warning here'],
+      });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'openapi' });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'paste' });
+      (window.showInputBox as Mock).mockResolvedValueOnce('openapi: 3.0.0');
+      (window.showInputBox as Mock).mockResolvedValueOnce('One Warn Mock'); // name
+      (window.showInputBox as Mock).mockResolvedValueOnce(''); // port
+      await newMockCommand({ bridge, controller });
+      expect(window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringContaining('1 warning(s)'),
+      );
+      // Ensure no "+N more" suffix
+      const call = (window.showWarningMessage as Mock).mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('warning(s)'),
+      );
+      expect(call?.[0]).not.toContain('+');
+    });
+
+    it('shows error toast and aborts when parser throws', async () => {
+      const mod = await import('@apicircle/mock-server-core');
+      (mod.parseSourceToEndpoints as Mock).mockRejectedValueOnce(new Error('Invalid YAML'));
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'openapi' });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'paste' });
+      (window.showInputBox as Mock).mockResolvedValueOnce('bad yaml %%%');
+      (window.showInputBox as Mock).mockResolvedValueOnce('Bad Mock'); // name
+      (window.showInputBox as Mock).mockResolvedValueOnce(''); // port
+      await newMockCommand({ bridge, controller });
+      expect(window.showErrorMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to parse openapi source'),
+      );
+      const state = await bridge.activeWorkspace()!.read();
+      expect(Object.keys(state.synced.mockServers)).toEqual([]);
+    });
+  });
+
+  describe('newMockCommand — name suggestion from source', () => {
+    it('suggests name from OpenAPI JSON spec', async () => {
+      let nameValue: string | undefined;
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'openapi' });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'paste' });
+      (window.showInputBox as Mock).mockResolvedValueOnce(
+        '{"openapi":"3.0.0","info":{"title":"My Pet API"}}',
+      );
+      // Capture the value pre-filled in the name input
+      (window.showInputBox as Mock).mockImplementationOnce(async (opts: { value?: string }) => {
+        nameValue = opts.value;
+        return opts.value ?? 'fallback';
+      });
+      (window.showInputBox as Mock).mockResolvedValueOnce(''); // port
+      await newMockCommand({ bridge, controller });
+      expect(nameValue).toBe('My Pet API');
+    });
+
+    it('suggests name from OpenAPI YAML spec via title regex', async () => {
+      let nameValue: string | undefined;
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'openapi' });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'paste' });
+      (window.showInputBox as Mock).mockResolvedValueOnce(
+        'openapi: 3.0.0\ninfo:\n  title: YAML Title Mock',
+      );
+      (window.showInputBox as Mock).mockImplementationOnce(async (opts: { value?: string }) => {
+        nameValue = opts.value;
+        return opts.value ?? 'fallback';
+      });
+      (window.showInputBox as Mock).mockResolvedValueOnce(''); // port
+      await newMockCommand({ bridge, controller });
+      expect(nameValue).toBe('YAML Title Mock');
+    });
+
+    it('suggests name from Postman collection info.name', async () => {
+      let nameValue: string | undefined;
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'postman' });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'paste' });
+      (window.showInputBox as Mock).mockResolvedValueOnce(
+        '{"info":{"name":"Postman Collection Name"}}',
+      );
+      (window.showInputBox as Mock).mockImplementationOnce(async (opts: { value?: string }) => {
+        nameValue = opts.value;
+        return opts.value ?? 'fallback';
+      });
+      (window.showInputBox as Mock).mockResolvedValueOnce(''); // port
+      await newMockCommand({ bridge, controller });
+      expect(nameValue).toBe('Postman Collection Name');
+    });
+
+    it('suggests name from Insomnia export workspace resource', async () => {
+      let nameValue: string | undefined;
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'insomnia' });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'paste' });
+      (window.showInputBox as Mock).mockResolvedValueOnce(
+        '{"resources":[{"_type":"workspace","name":"Insomnia WS Name"}]}',
+      );
+      (window.showInputBox as Mock).mockImplementationOnce(async (opts: { value?: string }) => {
+        nameValue = opts.value;
+        return opts.value ?? 'fallback';
+      });
+      (window.showInputBox as Mock).mockResolvedValueOnce(''); // port
+      await newMockCommand({ bridge, controller });
+      expect(nameValue).toBe('Insomnia WS Name');
+    });
+
+    it('falls back to empty string when JSON source is unparseable', async () => {
+      let nameValue: string | undefined;
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'postman' });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'paste' });
+      (window.showInputBox as Mock).mockResolvedValueOnce('not json at all');
+      (window.showInputBox as Mock).mockImplementationOnce(async (opts: { value?: string }) => {
+        nameValue = opts.value;
+        return opts.value ?? 'fallback';
+      });
+      (window.showInputBox as Mock).mockResolvedValueOnce(''); // port
+      await newMockCommand({ bridge, controller });
+      expect(nameValue).toBe('');
+    });
+
+    it('uses "Manual mock" default name for manual source', async () => {
+      let nameValue: string | undefined;
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'manual' });
+      (window.showInputBox as Mock).mockImplementationOnce(async (opts: { value?: string }) => {
+        nameValue = opts.value;
+        return opts.value ?? 'fallback';
+      });
+      (window.showInputBox as Mock).mockResolvedValueOnce(''); // port
+      await newMockCommand({ bridge, controller });
+      expect(nameValue).toBe('Manual mock');
+    });
+  });
+
+  describe('newMockCommand — large file warning', () => {
+    it('proceeds after user confirms large file warning', async () => {
+      // Write a spec file (we fake the size by actually writing 11 MB)
+      const specPath = path.join(tmp, 'large-spec.json');
+      const content = '{"openapi":"3.0.0","info":{"title":"Big"}}';
+      // Write real content — the file size gate checks stat.size, so pad it.
+      const padding = Buffer.alloc(11 * 1024 * 1024, ' ');
+      fs.writeFileSync(specPath, content + padding.toString());
+
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'openapi' });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'file' });
+      (window.showOpenDialog as Mock).mockResolvedValueOnce([Uri.file(specPath)]);
+      // User confirms "Continue" on the large-file warning
+      (window.showWarningMessage as Mock).mockResolvedValueOnce('Continue');
+      (window.showInputBox as Mock).mockResolvedValueOnce('Big Mock'); // name
+      (window.showInputBox as Mock).mockResolvedValueOnce(''); // port
+      await newMockCommand({ bridge, controller });
+      expect(window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringContaining('MB'),
+        expect.objectContaining({ modal: true }),
+        'Continue',
+      );
+      const state = await bridge.activeWorkspace()!.read();
+      expect(Object.keys(state.synced.mockServers)).toHaveLength(1);
+    });
+
+    it('aborts when user declines large file warning', async () => {
+      const specPath = path.join(tmp, 'large-spec2.json');
+      const padding = Buffer.alloc(11 * 1024 * 1024, ' ');
+      fs.writeFileSync(specPath, '{}' + padding.toString());
+
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'openapi' });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'file' });
+      (window.showOpenDialog as Mock).mockResolvedValueOnce([Uri.file(specPath)]);
+      // User declines
+      (window.showWarningMessage as Mock).mockResolvedValueOnce(undefined);
+      await newMockCommand({ bridge, controller });
+      const state = await bridge.activeWorkspace()!.read();
+      expect(Object.keys(state.synced.mockServers)).toEqual([]);
+    });
+
+    it('cancels when file picker returns empty array', async () => {
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'openapi' });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'file' });
+      (window.showOpenDialog as Mock).mockResolvedValueOnce([]);
+      await newMockCommand({ bridge, controller });
+      const state = await bridge.activeWorkspace()!.read();
+      expect(Object.keys(state.synced.mockServers)).toEqual([]);
+    });
+  });
+
+  describe('startMockCommand — edge cases', () => {
+    it('warns when mock no longer exists', async () => {
+      seed(apicircleDir); // no mocks
+      await startMockCommand({ bridge, controller }, { kind: 'server', id: 'ghost' });
+      expect(window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Mock no longer exists'),
+      );
+    });
+
+    it('resolves via QuickPick when called from palette', async () => {
+      seed(apicircleDir, makeMock());
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ label: 'Pet Store', id: 'm1' });
+      await startMockCommand({ bridge, controller });
+      expect(window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Started'),
+      );
+    });
+
+    it('returns undefined from QuickPick when picker is cancelled', async () => {
+      seed(apicircleDir, makeMock());
+      (window.showQuickPick as Mock).mockResolvedValueOnce(undefined);
+      await startMockCommand({ bridge, controller });
+      // No start or error should have occurred — command just exits.
+      expect(window.showErrorMessage).not.toHaveBeenCalled();
+    });
+
+    it('accepts mock-running node kind', async () => {
+      seed(apicircleDir, makeMock());
+      await startMockCommand({ bridge, controller }, { kind: 'mock-idle', id: 'm1' });
+      expect(window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Started'),
+      );
+    });
+  });
+
+  describe('stopMockCommand — error path', () => {
+    it('shows error toast when controller.stop throws', async () => {
+      seed(apicircleDir, makeMock());
+      await startMockCommand({ bridge, controller }, { kind: 'server', id: 'm1' });
+      const original = controller.stop.bind(controller);
+      controller.stop = async () => {
+        throw new Error('Permission denied');
+      };
+      await stopMockCommand({ bridge, controller }, { kind: 'server', id: 'm1' });
+      expect(window.showErrorMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to stop mock'),
+      );
+      controller.stop = original;
+    });
+  });
+
+  describe('restartMockCommand — edge cases', () => {
+    it('warns when mock no longer exists', async () => {
+      seed(apicircleDir); // no mocks
+      await restartMockCommand({ bridge, controller }, { kind: 'server', id: 'ghost' });
+      expect(window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Mock no longer exists'),
+      );
+    });
+
+    it('shows error toast when controller.restart throws', async () => {
+      seed(apicircleDir, makeMock());
+      const original = controller.restart.bind(controller);
+      controller.restart = async () => {
+        throw new Error('Port busy');
+      };
+      await restartMockCommand({ bridge, controller }, { kind: 'server', id: 'm1' });
+      expect(window.showErrorMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to restart mock'),
+      );
+      controller.restart = original;
+    });
+  });
+
+  describe('deleteMockCommand — edge cases', () => {
+    it('warns when mock no longer exists', async () => {
+      seed(apicircleDir); // no mocks
+      await deleteMockCommand({ bridge, controller }, { kind: 'server', id: 'ghost' });
+      expect(window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Mock no longer exists'),
+      );
+    });
+
+    it('resolves via QuickPick when called from palette', async () => {
+      seed(apicircleDir, makeMock());
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ label: 'Pet Store', id: 'm1' });
+      (window.showWarningMessage as Mock).mockResolvedValueOnce('Delete');
+      await deleteMockCommand({ bridge, controller });
+      const state = await bridge.activeWorkspace()!.read();
+      expect(state.synced.mockServers.m1).toBeUndefined();
+    });
+  });
+
+  describe('setMockPortCommand — additional branches', () => {
+    it('shows running-mock hint in prompt when mock is running', async () => {
+      seed(apicircleDir, makeMock());
+      await startMockCommand({ bridge, controller }, { kind: 'server', id: 'm1' });
+      let promptText: string | undefined;
+      (window.showInputBox as Mock).mockImplementationOnce(async (opts: { prompt?: string }) => {
+        promptText = opts.prompt;
+        return undefined;
+      });
+      await setMockPortCommand({ bridge, controller }, { kind: 'server', id: 'm1' });
+      expect(promptText).toContain('currently running');
+    });
+
+    it('shows free-port message when port is set to null', async () => {
+      seed(apicircleDir, makeMock({ defaultPort: 5000 }));
+      (window.showInputBox as Mock).mockResolvedValueOnce('  '); // blank = null
+      await setMockPortCommand({ bridge, controller }, { kind: 'server', id: 'm1' });
+      expect(window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('pick a free port'),
+      );
+    });
+
+    it('shows specific port in message when port is set to a number', async () => {
+      seed(apicircleDir, makeMock());
+      (window.showInputBox as Mock).mockResolvedValueOnce('8080');
+      await setMockPortCommand({ bridge, controller }, { kind: 'server', id: 'm1' });
+      expect(window.showInformationMessage).toHaveBeenCalledWith(expect.stringContaining('8080'));
+    });
+
+    it('resolves via QuickPick when called from palette', async () => {
+      seed(apicircleDir, makeMock());
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ label: 'Pet Store', id: 'm1' });
+      (window.showInputBox as Mock).mockResolvedValueOnce('9090');
+      await setMockPortCommand({ bridge, controller });
+      const state = await bridge.activeWorkspace()!.read();
+      expect(state.synced.mockServers.m1.defaultPort).toBe(9090);
+    });
+  });
+
+  describe('newMockCommand — endpoint count in success message', () => {
+    it('shows singular "endpoint" for exactly 1 endpoint', async () => {
+      const { parseSourceToEndpoints } = await import('@apicircle/mock-server-core');
+      (parseSourceToEndpoints as Mock).mockResolvedValueOnce({
+        endpoints: [
+          {
+            id: 'e1',
+            method: 'GET',
+            pathPattern: '/test',
+            name: 'test',
+            requestSchema: { pathParams: [], queryParams: [], headers: [], cookies: [] },
+            requestValidation: [],
+            responseRules: [],
+            defaultResponse: { status: 200, headers: [], body: { type: 'json', content: '{}' } },
+          },
+        ],
+        warnings: [],
+      });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'openapi' });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'paste' });
+      (window.showInputBox as Mock).mockResolvedValueOnce('{"openapi":"3.0"}');
+      (window.showInputBox as Mock).mockResolvedValueOnce('One EP Mock');
+      (window.showInputBox as Mock).mockResolvedValueOnce('');
+      await newMockCommand({ bridge, controller });
+      expect(window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('1 endpoint.'),
+      );
+    });
+
+    it('shows plural "endpoints" for 0 endpoints', async () => {
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'manual' });
+      (window.showInputBox as Mock).mockResolvedValueOnce('Empty Mock');
+      (window.showInputBox as Mock).mockResolvedValueOnce('');
+      await newMockCommand({ bridge, controller });
+      expect(window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('0 endpoints'),
+      );
+    });
+  });
+
+  describe('resolveMockId — node kind variations', () => {
+    it('accepts mock-running kind', async () => {
+      seed(apicircleDir, makeMock());
+      await startMockCommand({ bridge, controller }, { kind: 'server', id: 'm1' });
+      (window.showInformationMessage as Mock).mockReset();
+      await stopMockCommand({ bridge, controller }, { kind: 'mock-running', id: 'm1' });
+      expect(window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Mock stopped'),
+      );
+    });
+
+    it('accepts mock-idle kind', async () => {
+      seed(apicircleDir, makeMock());
+      await stopMockCommand({ bridge, controller }, { kind: 'mock-idle', id: 'm1' });
+      expect(window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('not running'),
+      );
+    });
+  });
+
+  describe('newMockCommand — OpenAPI YAML format detection', () => {
+    it('detects JSON format for JSON-opening content', async () => {
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'openapi' });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'paste' });
+      (window.showInputBox as Mock).mockResolvedValueOnce('{"openapi":"3.0.0"}');
+      (window.showInputBox as Mock).mockResolvedValueOnce('JSON Spec');
+      (window.showInputBox as Mock).mockResolvedValueOnce('');
+      await newMockCommand({ bridge, controller });
+      const state = await bridge.activeWorkspace()!.read();
+      const m = Object.values(state.synced.mockServers)[0];
+      if (m.source.kind === 'openapi') {
+        expect(m.source.format).toBe('json');
+      }
+    });
+
+    it('detects YAML format for non-JSON-opening content', async () => {
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'openapi' });
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'paste' });
+      (window.showInputBox as Mock).mockResolvedValueOnce('openapi: 3.0.0\ninfo:\n  title: t');
+      (window.showInputBox as Mock).mockResolvedValueOnce('YAML Spec');
+      (window.showInputBox as Mock).mockResolvedValueOnce('');
+      await newMockCommand({ bridge, controller });
+      const state = await bridge.activeWorkspace()!.read();
+      const m = Object.values(state.synced.mockServers)[0];
+      if (m.source.kind === 'openapi') {
+        expect(m.source.format).toBe('yaml');
+      }
     });
   });
 });

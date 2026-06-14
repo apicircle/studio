@@ -5,7 +5,7 @@ import type { WorkspacePatch, WorkspaceState } from '@apicircle/core';
 // WorkspaceProvider — pluggable backend that lets the same MCP tool handlers
 // drive three different hosts:
 //
-//   • file-backed (CLI, headless MCP) — reads/writes workspace.synced.json and
+//   • file-backed (CLI, headless MCP) — reads/writes workspace.json and
 //     workspace.local.json from disk under a proper-lockfile lock.
 //   • IPC-backed (Electron desktop) — round-trips reads/writes through the
 //     renderer's Zustand store via ipcMain.

@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
 // Quick-pick + WorkspaceEdit scaffolders for the body: and auth: sections of
@@ -401,9 +402,15 @@ async function switchSection(
     await vscode.window.showWarningMessage('No request YAML is active.');
     return;
   }
-  if (targetUri.scheme !== 'apicircle' || !targetUri.path.endsWith('.req.yaml')) {
+  const isReqYaml = uriEntityKind(targetUri) === 'request';
+  const isFolderYaml = uriEntityKind(targetUri) === 'folder';
+  // folder YAML supports only the `auth` switch — body lives on requests.
+  const folderOk = isFolderYaml && sectionKey === 'auth';
+  if (targetUri.scheme !== 'apicircle' || (!isReqYaml && !folderOk)) {
     await vscode.window.showWarningMessage(
-      'This command only runs against APICircle request YAML files.',
+      sectionKey === 'auth'
+        ? 'This command only runs against APICircle request or folder YAML files.'
+        : 'This command only runs against APICircle request YAML files.',
     );
     return;
   }

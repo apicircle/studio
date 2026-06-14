@@ -21,7 +21,7 @@ function bridgeWith(
     local: { linkedCollections },
   } as unknown as WorkspaceState;
   return {
-    activeWorkspace: () => ({ read: async () => state }),
+    activeWorkspace: () => ({ workspace: { id: '/test/.apicircle' }, read: async () => state }),
   } as unknown as VsCodeBridge;
 }
 
@@ -178,5 +178,84 @@ describe('LinkWorkspaceView', () => {
     expect(item.description).toBe('GET · modified');
     expect(item.command?.command).toBe('apicircle.openLinkedRequest');
     expect(item.command?.arguments).toEqual([{ linkId: 'a', requestId: 'req-1' }]);
+  });
+
+  it('surfaces a Folders root above the requests when the linked snapshot has folders', async () => {
+    const snapshot = {
+      pulledAt: 't',
+      ref: 'HEAD@main',
+      collections: {
+        tree: { id: 'r', type: 'root', children: [] },
+        requests: { 'req-1': { id: 'req-1', name: 'List pets', method: 'GET' } },
+        folders: {
+          fA: {
+            id: 'fA',
+            name: 'Authenticated',
+            parentId: null,
+            auth: { type: 'bearer', token: 't' },
+          },
+          fB: { id: 'fB', name: 'Public', parentId: null },
+        },
+      },
+      environments: { items: {}, activeName: null, priorityOrder: [] },
+    };
+    const view = new LinkWorkspaceView(
+      bridgeWith(null, { a: lw('a', { name: 'Alpha' }) }, { a: snapshot }),
+    );
+    const children = await view.getChildren({ kind: 'linkedWorkspace', id: 'a' });
+    // The Folders root comes first, then the request(s).
+    expect(children[0]).toEqual({ kind: 'linkedFoldersRoot', linkId: 'a' });
+    expect(children[children.length - 1]).toMatchObject({
+      kind: 'linkedRequest',
+      requestId: 'req-1',
+    });
+
+    // Folders-root item renders with a count.
+    const rootItem = await view.getTreeItem({ kind: 'linkedFoldersRoot', linkId: 'a' });
+    expect(rootItem.label).toBe('Folders');
+    expect(String(rootItem.description)).toContain('2 folders');
+
+    // The children of the Folders root are the linkedFolder nodes, sorted by name.
+    const folderChildren = await view.getChildren({ kind: 'linkedFoldersRoot', linkId: 'a' });
+    expect(folderChildren).toEqual([
+      { kind: 'linkedFolder', linkId: 'a', folderId: 'fA' },
+      { kind: 'linkedFolder', linkId: 'a', folderId: 'fB' },
+    ]);
+
+    // The auth-carrying folder shows a key icon + auth: <type> description.
+    const authItem = await view.getTreeItem({
+      kind: 'linkedFolder',
+      linkId: 'a',
+      folderId: 'fA',
+    });
+    expect(authItem.label).toBe('Authenticated');
+    expect(String(authItem.description)).toContain('auth: bearer');
+    expect(authItem.command?.command).toBe('vscode.open');
+    const uri = authItem.command?.arguments?.[0] as { scheme: string; path: string };
+    expect(uri.scheme).toBe('apicircle');
+    expect(uri.path).toBe('/linked/Alpha/Authenticated.yaml');
+
+    const plainItem = await view.getTreeItem({
+      kind: 'linkedFolder',
+      linkId: 'a',
+      folderId: 'fB',
+    });
+    expect(String(plainItem.description)).toBe('read-only');
+  });
+
+  it('skips the Folders root when the linked snapshot has no folders', async () => {
+    const snapshot = {
+      pulledAt: 't',
+      ref: 'HEAD@main',
+      collections: {
+        tree: { id: 'r', type: 'root', children: [] },
+        requests: { 'req-1': { id: 'req-1', name: 'X', method: 'GET' } },
+        folders: {},
+      },
+      environments: { items: {}, activeName: null, priorityOrder: [] },
+    };
+    const view = new LinkWorkspaceView(bridgeWith(null, { a: lw('a') }, { a: snapshot }));
+    const children = await view.getChildren({ kind: 'linkedWorkspace', id: 'a' });
+    expect(children.every((c) => c.kind !== 'linkedFoldersRoot')).toBe(true);
   });
 });

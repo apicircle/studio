@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import { generateId } from '@apicircle/shared';
-import { suggestHeaders } from '@apicircle/core';
 import { parseEndpointFromYaml } from '../fs/endpointYaml';
 import {
   ensureEndpointDocument,
@@ -12,7 +11,7 @@ import {
 } from './mockFieldEdits';
 
 // =============================================================================
-// requestSchema authoring for the per-endpoint `*.endpoint.yaml`.
+// requestSchema authoring for the per-endpoint `.yaml`.
 //
 // A mock endpoint's `requestSchema` declares the inputs it expects — path /
 // query / header / cookie params + a body-shape doc. It round-trips through
@@ -321,32 +320,4 @@ export async function setMockParamTypeFieldCommand(uri?: vscode.Uri, line?: numb
   });
   if (!picked) return;
   await commitLineScalar(uri, line, yamlScalar(picked));
-}
-
-/** Header-name quick-pick for the ◆ Name lens on a requestSchema.headers param.
- *  Other kinds fall through to the generic free-text editor. */
-export async function setMockHeaderParamNameFieldCommand(
-  uri?: vscode.Uri,
-  line?: number,
-): Promise<void> {
-  if (!uri || typeof line !== 'number') return;
-  type NamePick = vscode.QuickPickItem & { value: string };
-  const items: NamePick[] = suggestHeaders('', undefined, 'request').map((h) => ({
-    label: h.name,
-    description: h.description,
-    value: h.name,
-  }));
-  items.push({ label: '✏ Custom…', description: 'Type any header name.', value: '__custom__' });
-  const picked = await vscode.window.showQuickPick(items, {
-    title: 'Header name',
-    matchOnDescription: true,
-  });
-  if (!picked) return;
-  let name = picked.value;
-  if (name === '__custom__') {
-    const typed = await vscode.window.showInputBox({ prompt: 'Header name' });
-    if (!typed) return;
-    name = typed.trim();
-  }
-  await commitLineScalar(uri, line, yamlScalar(name));
 }

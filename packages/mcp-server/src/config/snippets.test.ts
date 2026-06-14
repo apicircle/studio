@@ -44,9 +44,32 @@ describe('buildSnippetVariants', () => {
   it('produces a parseable snippet for every supported client', () => {
     for (const client of AI_CLIENTS) {
       const v = buildSnippetVariants(client, 'apicircle-mcp', '/ws');
-      const parsed = JSON.parse(v.forwardSlash);
-      expect(parsed.mcpServers.apicircle.command).toBe('apicircle-mcp');
+      if (client === 'codex') {
+        expect(v.forwardSlash).toContain('[mcp_servers.apicircle]');
+        expect(v.forwardSlash).toContain('command = "apicircle-mcp"');
+      } else {
+        const parsed = JSON.parse(v.forwardSlash);
+        expect(parsed.mcpServers.apicircle.command).toBe('apicircle-mcp');
+      }
     }
+  });
+
+  it('emits TOML with mcp_servers key for codex', () => {
+    const v = buildSnippetVariants('codex', 'apicircle-mcp', '/ws');
+    expect(v.forwardSlash).toContain('[mcp_servers.apicircle]');
+    expect(v.forwardSlash).toContain('command = "apicircle-mcp"');
+    expect(v.forwardSlash).toContain('args = ["--workspace", "/ws"]');
+    expect(v.forwardSlash).toContain('[mcp_servers.apicircle.env]');
+    expect(v.forwardSlash).toContain('APICIRCLE_WORKSPACE = "/ws"');
+    expect(v.forwardSlash).not.toContain('mcpServers');
+  });
+
+  it('escapes backslashes in TOML strings for codex on Windows paths', () => {
+    const v = buildSnippetVariants('codex', 'apicircle-mcp', 'C:\\Users\\me\\ws');
+    expect(v.identical).toBe(false);
+    expect(v.escaped).toContain('C:\\\\Users\\\\me\\\\ws');
+    expect(v.forwardSlash).toContain('C:/Users/me/ws');
+    expect(v.forwardSlash).not.toContain('\\\\');
   });
 });
 
@@ -88,15 +111,16 @@ describe('resolveAiClientConfigPath', () => {
     expect(p).toMatch(sep('.config/Claude/claude_desktop_config.json'));
   });
 
-  it('cursor / continue / zed / claude-code / windsurf have fixed paths under homedir', () => {
+  it('cursor / continue / zed / claude-code / windsurf / codex have fixed paths under homedir', () => {
     expect(resolveAiClientConfigPath('cursor', macOs)).toMatch(sep('.cursor/mcp.json'));
-    expect(resolveAiClientConfigPath('continue', macOs)).toMatch(sep('.continue/config.json'));
+    expect(resolveAiClientConfigPath('continue', macOs)).toMatch(sep('.continue/config.yaml'));
     expect(resolveAiClientConfigPath('zed', macOs)).toMatch(sep('.config/zed/settings.json'));
     // P5R1-G11
     expect(resolveAiClientConfigPath('claude-code', macOs)).toMatch(sep('.claude/mcp.json'));
     expect(resolveAiClientConfigPath('windsurf', macOs)).toMatch(
       sep('.codeium/windsurf/mcp_config.json'),
     );
+    expect(resolveAiClientConfigPath('codex', macOs)).toMatch(sep('.codex/config.toml'));
   });
 
   // P5R2-G2: cross-platform coverage for the new P5R1-G11 paths.
@@ -123,6 +147,7 @@ describe('resolveAiClientConfigPath', () => {
     const fixedClients = new Set<AiClient>([
       'claude-desktop',
       'claude-code',
+      'codex',
       'cursor',
       'continue',
       'zed',
@@ -138,7 +163,8 @@ describe('resolveAiClientConfigPath', () => {
   it('AI_CLIENTS contains every client name documented today', () => {
     expect(AI_CLIENTS).toContain('claude-desktop');
     expect(AI_CLIENTS).toContain('claude-code');
+    expect(AI_CLIENTS).toContain('codex');
     expect(AI_CLIENTS).toContain('generic');
-    expect(AI_CLIENTS.length).toBe(10);
+    expect(AI_CLIENTS.length).toBe(11);
   });
 });

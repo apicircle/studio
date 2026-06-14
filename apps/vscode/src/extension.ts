@@ -1,6 +1,10 @@
 import * as vscode from 'vscode';
 import { VsCodeBridge } from './host/vscodeBridge';
-import { discoverWorkspaces, workspaceIdForOpenEditor } from './util/workspaceDiscovery';
+import {
+  discoverRegistryWorkspaces,
+  discoverWorkspaces,
+  workspaceIdForOpenEditor,
+} from './util/workspaceDiscovery';
 import { EditorView } from './views/EditorView';
 import { EnvironmentView } from './views/EnvironmentView';
 import { ExecutionView } from './views/ExecutionView';
@@ -9,8 +13,11 @@ import { HistoryView } from './views/HistoryView';
 import { McpView } from './views/McpView';
 import { LinkWorkspaceView } from './views/LinkWorkspaceView';
 import { SnapshotsView } from './views/SnapshotsView';
+import { WorkspaceView } from './views/WorkspaceView';
+import { switchWorkspaceCommand } from './commands/switchWorkspace';
 import { createWorkspaceCommand } from './commands/createWorkspace';
 import { ApicircleFsProvider } from './fs/apicircleFsProvider';
+import { uriEntityKind, type UriEntityKind } from './fs/uriKind';
 import { AbortRegistry } from './execute/abortRegistry';
 import { InFlightSendTracker } from './execute/inFlightTracker';
 import { sendRequestCommand } from './execute/sendRequest';
@@ -81,19 +88,27 @@ import {
   setRequestTextFieldCommand,
   setRequestAssertionKindFieldCommand,
   setRequestAssertionOpFieldCommand,
+  setRequestAssertionTargetFieldCommand,
+  setRequestAssertionExpectedFieldCommand,
+  setRequestAuthFieldCommand,
   setRequestExtractionSourceFieldCommand,
+  setRequestFieldEditsBridge,
+  toggleRequestRowEnabledCommand,
 } from './commands/requestFieldEdits';
 import {
   addMockRequestSchemaCommand,
   addMockRequestSchemaParamCommand,
   addMockRequestSchemaBodyExampleCommand,
   setMockParamTypeFieldCommand,
-  setMockHeaderParamNameFieldCommand,
   type RequestSchemaParamKind,
 } from './commands/mockRequestSchemaEdits';
 import { EndpointCodeLensProvider } from './lang/endpointCodeLens';
 import { registerApicircleDiagnostics } from './lang/diagnostics';
 import { RequestCodeLensProvider } from './lang/requestCodeLens';
+import { FolderCodeLensProvider } from './lang/folderCodeLens';
+import { FolderCompletionProvider } from './lang/folderCompletion';
+import { InheritAuthHoverProvider } from './lang/folderHover';
+import { registerRequestSyncOnSave } from './lang/requestSyncOnSave';
 import { RequestCompletionProvider } from './lang/requestCompletion';
 import { EnvironmentCodeLensProvider } from './lang/environmentCodeLens';
 import { EnvironmentCompletionProvider } from './lang/environmentCompletion';
@@ -127,7 +142,12 @@ import {
   deleteHistoryRunCommand,
 } from './commands/historyActions';
 import { editVariableValueCommand, deleteVariableCommand } from './commands/variableActions';
-import { deleteFolderCommand, newRequestInFolderCommand } from './commands/folderActions';
+import {
+  deleteFolderCommand,
+  newFolderCommand,
+  newRequestInFolderCommand,
+  openFolderYamlCommand,
+} from './commands/folderActions';
 import { toggleStepEnabledCommand, removeStepFromPlanCommand } from './commands/stepActions';
 import {
   newMockCommand,
@@ -146,6 +166,7 @@ import { MockCodeLensProvider } from './lang/mockCodeLens';
 import { MockCompletionProvider } from './lang/mockCompletion';
 import { MockHoverProvider } from './lang/mockHover';
 import { ReleasesCodeLensProvider } from './lang/releasesCodeLens';
+import { ResponseCodeLensProvider, formatResponseJsonCommand } from './lang/responseCodeLens';
 import {
   openReleaseHistoryCommand,
   publishReleaseCommand,
@@ -197,7 +218,6 @@ import {
 import { VsCodeMcpManager } from './host/mcpManager';
 import type { AiClient } from '@apicircle/mcp-server';
 import {
-  copyMcpConfigCommand,
   openMcpConfigFileCommand,
   openMcpConnectGuideCommand,
   revealMcpBinaryInfoCommand,
@@ -205,9 +225,7 @@ import {
 import {
   installCopilotMcpConfigCommand,
   uninstallCopilotMcpConfigCommand,
-  pickOwningFolder,
 } from './commands/copilotMcpActions';
-import { detectCopilotMcpConfigState } from './host/copilotMcpInstall';
 import { PlanNotebookSerializer } from './notebook/planNotebookSerializer';
 import { PlanNotebookController } from './notebook/planNotebookController';
 import { openPlanAsNotebookCommand } from './commands/openPlanAsNotebook';
@@ -229,6 +247,7 @@ import {
   installMcpForClientCommand,
   installMcpForAllClientsCommand,
   uninstallMcpForClientCommand,
+  coerceInstallableClientArg,
 } from './commands/mcpClientActions';
 import {
   INSTALLABLE_CLIENTS,
@@ -240,7 +259,7 @@ import {
 // API Circle Studio — VS Code extension entry point.
 //
 // activate() wires up:
-//   • The seven sidebar TreeViews (stubs in day-1; populated in Phase 1+)
+//   • The nine sidebar TreeViews (Workspace, Editor, Environment, etc.)
 //   • The VsCodeBridge singleton (workspace surface + future MCP/mock/secrets)
 //   • The `APICircle: Create New Workspace` command
 //   • Initial workspace discovery — auto-registers and activates the first
@@ -261,6 +280,7 @@ let embeddedMcpHost: EmbeddedMcpHost | null = null;
 let lmMcpRegistration: ProposedMcpRegistration | null = null;
 let mockEndpointEditor: MockEndpointEditor | null = null;
 let views: {
+  workspace: WorkspaceView;
   editor: EditorView;
   environment: EnvironmentView;
   execution: ExecutionView;
@@ -273,6 +293,10 @@ let views: {
 
 export function activate(context: vscode.ExtensionContext): void {
   bridge = new VsCodeBridge(context);
+  // The ◆ Expected / ◆ Target lenses on json-path assertions reach into the
+  // latest response via the bridge. Wire it up here; null in tests / before
+  // activation degrades to free-text input.
+  setRequestFieldEditsBridge(bridge);
   abortRegistry = new AbortRegistry();
   inFlightTracker = new InFlightSendTracker();
   context.subscriptions.push(inFlightTracker);
@@ -337,79 +361,65 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Sidebar views.
   views = {
+    workspace: new WorkspaceView(bridge),
     editor: new EditorView(bridge),
     environment: new EnvironmentView(bridge, vaultManager),
     execution: new ExecutionView(bridge),
     mock: new MockView(bridge),
     history: new HistoryView(bridge, fsProvider),
     snapshots: new SnapshotsView(bridge),
-    mcp: new McpView(
-      mcpManager,
-      () => {
-        // P6: probe `.vscode/mcp.json` for the apicircle entry. Called
-        // every time the view renders the github-copilot row — cheap
-        // (one fs.existsSync + JSON.parse). P6R1-G4: uses the shared
-        // `pickOwningFolder` helper so the multi-root logic stays in
-        // one place. P6R4-G3: catches ANY thrown error so a corrupt
-        // setting or surprise exception doesn't crash the tree render.
-        try {
-          const mgr = mcpManager;
-          const folders = vscode.workspace.workspaceFolders;
-          if (!mgr || !folders || folders.length === 0) return 'absent';
-          const paths = mgr.resolvePaths();
-          if (!paths.hasActiveWorkspace) return 'absent';
-          const owning = pickOwningFolder(folders, paths.workspace);
-          if (!owning) return 'absent';
-          return detectCopilotMcpConfigState({
-            workspaceFolder: owning.uri.fsPath,
-            relativeConfigPath: vscode.workspace
-              .getConfiguration('apicircle.mcp')
-              .get<string>('workspaceConfigPath', '.vscode/mcp.json'),
-            binary: paths.binary,
-            apicircleDir: paths.workspace,
-          });
-        } catch (err) {
-          runsChannel?.forCategory('misc')(
-            `copilot probe threw (treating as absent): ${err instanceof Error ? err.message : String(err)}`,
-          );
-          return 'absent';
-        }
-      },
-      (client: InstallableClient) => {
-        // P8: probe each external AI client's user-level config file for
-        // the apicircle entry. Same defensive pattern as the Copilot
-        // probe — any throw maps to 'absent' so the tree never crashes.
-        try {
-          const mgr = mcpManager;
-          if (!mgr) return 'absent';
-          const paths = mgr.resolvePaths();
-          if (!paths.hasActiveWorkspace) return 'absent';
-          return detectClientMcpConfigState({
-            client,
-            binary: paths.binary,
-            apicircleDir: paths.workspace,
-          });
-        } catch (err) {
-          runsChannel?.forCategory('misc')(
-            `client install probe (${client}) threw (treating as absent): ${err instanceof Error ? err.message : String(err)}`,
-          );
-          return 'absent';
-        }
-      },
-    ),
+    mcp: new McpView(mcpManager, (client) => {
+      const paths = mcpManager!.resolvePaths();
+      if (!paths.hasActiveWorkspace) return 'absent';
+      return detectClientMcpConfigState({
+        client,
+        binary: paths.binary,
+        apicircleDir: paths.workspace,
+      });
+    }),
     linkWorkspaces: new LinkWorkspaceView(bridge),
   };
   for (const v of Object.values(views)) {
     v.register(context);
   }
+
+  // Refresh all views when the active workspace changes (e.g. via switchWorkspace).
+  context.subscriptions.push({
+    dispose: bridge.onDidChangeActiveWorkspace(() => {
+      for (const v of Object.values(views ?? {})) v.refresh();
+    }).dispose,
+  });
   context.subscriptions.push(
     vscode.workspace.registerFileSystemProvider('apicircle', fsProvider, {
       isCaseSensitive: true,
       isReadonly: false,
     }),
+    // Set the custom language mode on apicircle:// documents so the correct
+    // TextMate grammar fires. Without compound extensions (.req.yaml etc.) the
+    // FS provider emits plain .yaml — VS Code defaults to `yaml`, and this
+    // handler overrides based on the URI path prefix.
+    vscode.workspace.onDidOpenTextDocument((doc) => {
+      if (doc.uri.scheme !== 'apicircle') return;
+      const kind = uriEntityKind(doc.uri);
+      const langMap: Record<UriEntityKind, string> = {
+        request: 'apicircle-request',
+        response: 'apicircle-response',
+        environment: 'apicircle-environment',
+        plan: 'apicircle-plan',
+        mock: 'apicircle-mock',
+        endpoint: 'apicircle-endpoint',
+        folder: 'apicircle-folder',
+        link: 'apicircle-link',
+        releases: 'apicircle-releases',
+      };
+      const lang = kind ? langMap[kind] : undefined;
+      if (lang && doc.languageId !== lang) {
+        void vscode.languages.setTextDocumentLanguage(doc, lang);
+      }
+    }),
     // Completion provider for the apicircle-request language.
     vscode.languages.registerCompletionItemProvider(
-      { scheme: 'apicircle', pattern: '**/requests/**/*.req.yaml' },
+      { scheme: 'apicircle', pattern: '**/requests/**/*.yaml' },
       new RequestCompletionProvider(),
       ':',
       ' ',
@@ -427,12 +437,61 @@ export function activate(context: vscode.ExtensionContext): void {
   // CodeLens above the name: line in request YAMLs. The provider is wired to
   // the in-flight tracker so a running send swaps ▶ Send → ⏳ Sending… · ✖ Cancel
   // automatically — no extra refresh wiring at the call site.
-  const codeLensProvider = new RequestCodeLensProvider(inFlightTracker);
+  // The bridge is passed so the provider can resolve `auth: inherit` requests
+  // against the active workspace's folder chain and surface a "◆ Inherits
+  // from <Folder> (<type>)" lens that opens the source folder YAML. The
+  // fsProvider hook fires onDidChangeCodeLenses when a folder YAML changes
+  // so the inherited-auth lens picks up upstream edits without a buffer
+  // touch on the request side.
+  const codeLensProvider = new RequestCodeLensProvider(inFlightTracker, bridge, fsProvider);
   context.subscriptions.push(
     codeLensProvider,
     vscode.languages.registerCodeLensProvider(
-      { scheme: 'apicircle', pattern: '**/requests/**/*.req.yaml' },
+      { scheme: 'apicircle', pattern: '**/requests/**/*.yaml' },
       codeLensProvider,
+    ),
+    // Rewrite the buffer to the canonical projection on save so the URL ↔
+    // query / pathParams sync (parseRequestFromYaml) appears immediately on
+    // Ctrl+S instead of only on doc reopen.
+    registerRequestSyncOnSave(),
+  );
+
+  // CodeLens for folder YAML — ✚ New request in this folder + 🔑 Switch
+  // auth type… (reuses the existing apicircle.switchRequestAuthType command).
+  // The same provider also handles read-only linked folder YAML, where the
+  // auth-switch lens is moot but the OAuth2 Get-token + name-row request
+  // affordances would be meaningless — the provider's regex won't match
+  // anything actionable on a linked snapshot, which is fine.
+  const folderCodeLensProvider = new FolderCodeLensProvider();
+  context.subscriptions.push(
+    folderCodeLensProvider,
+    vscode.languages.registerCodeLensProvider(
+      { scheme: 'apicircle', pattern: '**/folders/**/*.yaml' },
+      folderCodeLensProvider,
+    ),
+    // Also fire the inherited-auth lens on linked request YAMLs so the
+    // consumer can see + jump to the source folder's auth.
+    vscode.languages.registerCodeLensProvider(
+      { scheme: 'apicircle', pattern: '**/linked/**/*.yaml' },
+      codeLensProvider,
+    ),
+    // Completion for `auth: { type: <cursor> }` inside folder YAML — surfaces
+    // all 17 RequestAuth types with their detail strings.
+    vscode.languages.registerCompletionItemProvider(
+      { scheme: 'apicircle', pattern: '**/folders/**/*.yaml' },
+      new FolderCompletionProvider(),
+      ':',
+      ' ',
+    ),
+    // Inherit-aware hover — resolves `auth: inherit` on request YAMLs and
+    // previews descendant resolution on folder YAMLs.
+    vscode.languages.registerHoverProvider(
+      [
+        { scheme: 'apicircle', pattern: '**/folders/**/*.yaml' },
+        { scheme: 'apicircle', pattern: '**/requests/**/*.yaml' },
+        { scheme: 'apicircle', pattern: '**/linked/**/*.yaml' },
+      ],
+      new InheritAuthHoverProvider(bridge),
     ),
   );
 
@@ -441,32 +500,32 @@ export function activate(context: vscode.ExtensionContext): void {
   // resolution source + mask warnings.
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider(
-      { scheme: 'apicircle', pattern: '**/environments/*.env.yaml' },
+      { scheme: 'apicircle', pattern: '**/environments/*.yaml' },
       new EnvironmentCodeLensProvider(),
     ),
     vscode.languages.registerCompletionItemProvider(
-      { scheme: 'apicircle', pattern: '**/environments/*.env.yaml' },
+      { scheme: 'apicircle', pattern: '**/environments/*.yaml' },
       new EnvironmentCompletionProvider(bridge),
       ':',
       ' ',
     ),
     vscode.languages.registerHoverProvider(
-      { scheme: 'apicircle', pattern: '**/environments/*.env.yaml' },
+      { scheme: 'apicircle', pattern: '**/environments/*.yaml' },
       new EnvironmentHoverProvider(bridge),
     ),
     // Plan CodeLens — ▶ Run Plan above the name: line in plan YAMLs.
     vscode.languages.registerCodeLensProvider(
-      { scheme: 'apicircle', pattern: '**/plans/*.plan.yaml' },
+      { scheme: 'apicircle', pattern: '**/plans/*.yaml' },
       new PlanCodeLensProvider(),
     ),
     vscode.languages.registerCompletionItemProvider(
-      { scheme: 'apicircle', pattern: '**/plans/*.plan.yaml' },
+      { scheme: 'apicircle', pattern: '**/plans/*.yaml' },
       new PlanCompletionProvider(bridge),
       ':',
       ' ',
     ),
     vscode.languages.registerHoverProvider(
-      { scheme: 'apicircle', pattern: '**/plans/*.plan.yaml' },
+      { scheme: 'apicircle', pattern: '**/plans/*.yaml' },
       new PlanHoverProvider(bridge),
     ),
     // Mock language services — CodeLens for Start/Stop/Restart, field
@@ -475,26 +534,26 @@ export function activate(context: vscode.ExtensionContext): void {
       const lens = new MockCodeLensProvider(mockController);
       context.subscriptions.push(lens);
       return vscode.languages.registerCodeLensProvider(
-        { scheme: 'apicircle', pattern: '**/mocks/*.mock.yaml' },
+        { scheme: 'apicircle', pattern: '**/mocks/*.yaml' },
         lens,
       );
     })(),
     vscode.languages.registerCompletionItemProvider(
-      { scheme: 'apicircle', pattern: '**/mocks/*.mock.yaml' },
+      { scheme: 'apicircle', pattern: '**/mocks/*.yaml' },
       new MockCompletionProvider(),
       ':',
       ' ',
     ),
     vscode.languages.registerHoverProvider(
-      { scheme: 'apicircle', pattern: '**/mocks/*.mock.yaml' },
+      { scheme: 'apicircle', pattern: '**/mocks/*.yaml' },
       new MockHoverProvider(bridge, mockController),
     ),
-    // Per-endpoint YAML CodeLens — fires for apicircle://<ws>/mocks/<mockId>/<endpointId>.endpoint.yaml
+    // Per-endpoint YAML CodeLens — fires for apicircle://<ws>/mocks/<mockSlug>/<endpointSlug>.yaml
     (() => {
       const provider = new EndpointCodeLensProvider();
       context.subscriptions.push(provider);
       return vscode.languages.registerCodeLensProvider(
-        { scheme: 'apicircle', pattern: '**/mocks/**/*.endpoint.yaml' },
+        { scheme: 'apicircle', pattern: '**/mocks/*/*.yaml' },
         provider,
       );
     })(),
@@ -510,21 +569,30 @@ export function activate(context: vscode.ExtensionContext): void {
       );
     })(),
     // Linked-workspace CodeLens — ◆ field editors + ⟳ Refresh / 📓 Changelog /
-    // ⊗ Unlink actions on *.link.yaml.
+    // ⊗ Unlink actions on link YAML documents.
     (() => {
       const provider = new LinkCodeLensProvider();
       context.subscriptions.push(provider);
       return vscode.languages.registerCodeLensProvider(
-        { scheme: 'apicircle', pattern: '**/links/*.link.yaml' },
+        { scheme: 'apicircle', pattern: '**/links/*.yaml' },
         provider,
       );
     })(),
-    // Linked-request CodeLens — ▶ Send / ↺ Reset on /linked/**/*.req.yaml.
+    // Linked-request CodeLens — ▶ Send / ↺ Reset on /linked/**/*.yaml.
     (() => {
       const provider = new LinkedRequestCodeLensProvider();
       context.subscriptions.push(provider);
       return vscode.languages.registerCodeLensProvider(
-        { scheme: 'apicircle', pattern: '**/linked/**/*.req.yaml' },
+        { scheme: 'apicircle', pattern: '**/linked/**/*.yaml' },
+        provider,
+      );
+    })(),
+    // Response document CodeLens — ⟳ Format JSON on the body section header.
+    (() => {
+      const provider = new ResponseCodeLensProvider();
+      context.subscriptions.push(provider);
+      return vscode.languages.registerCodeLensProvider(
+        { scheme: 'apicircle', pattern: '**/responses/*.yaml' },
         provider,
       );
     })(),
@@ -716,6 +784,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!bridge) return;
       return createWorkspaceCommand(bridge);
     }),
+    switchWorkspaceCommand(bridge),
     vscode.commands.registerCommand('apicircle.refresh', () => {
       // Re-discover first so a workspace.json created (or a folder added)
       // after activation is picked up — the prior implementation only
@@ -1013,6 +1082,10 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('apicircle.formatJson', (uri?: vscode.Uri, line?: number) =>
       formatJsonCommand(uri, line),
     ),
+    vscode.commands.registerCommand(
+      'apicircle.formatResponseJson',
+      (uri?: vscode.Uri, line?: number) => formatResponseJsonCommand(uri, line),
+    ),
     vscode.commands.registerCommand('apicircle.addMockRequestSchema', (uri?: vscode.Uri) =>
       addMockRequestSchemaCommand(uri),
     ),
@@ -1028,10 +1101,6 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand(
       'apicircle.setMockParamTypeField',
       (uri?: vscode.Uri, line?: number) => setMockParamTypeFieldCommand(uri, line),
-    ),
-    vscode.commands.registerCommand(
-      'apicircle.setMockHeaderParamNameField',
-      (uri?: vscode.Uri, line?: number) => setMockHeaderParamNameFieldCommand(uri, line),
     ),
     vscode.commands.registerCommand(
       'apicircle.setRequestMethodField',
@@ -1058,8 +1127,24 @@ export function activate(context: vscode.ExtensionContext): void {
       (uri?: vscode.Uri, line?: number) => setRequestAssertionOpFieldCommand(uri, line),
     ),
     vscode.commands.registerCommand(
+      'apicircle.setRequestAssertionTargetField',
+      (uri?: vscode.Uri, line?: number) => setRequestAssertionTargetFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setRequestAssertionExpectedField',
+      (uri?: vscode.Uri, line?: number) => setRequestAssertionExpectedFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.setRequestAuthField',
+      (uri?: vscode.Uri, line?: number) => setRequestAuthFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
       'apicircle.setRequestExtractionSourceField',
       (uri?: vscode.Uri, line?: number) => setRequestExtractionSourceFieldCommand(uri, line),
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.toggleRequestRowEnabled',
+      (uri?: vscode.Uri, line?: number) => toggleRequestRowEnabledCommand(uri, line),
     ),
     vscode.commands.registerCommand(
       'apicircle.addMockConditionClause',
@@ -1106,6 +1191,31 @@ export function activate(context: vscode.ExtensionContext): void {
       (node?: { kind: 'folder'; id: string }) => {
         if (!bridge) return;
         return newRequestInFolderCommand({ bridge }, node);
+      },
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.openFolderYaml',
+      (node?: { kind: 'folder'; id: string }) => {
+        if (!bridge) return;
+        return openFolderYamlCommand({ bridge }, node);
+      },
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.newFolder',
+      (node?: { kind: 'folder'; id: string }) => {
+        if (!bridge) return;
+        return newFolderCommand({ bridge }, node);
+      },
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.editFolderAuth',
+      (node?: { kind: 'folder'; id: string }) => {
+        if (!bridge) return;
+        // Same projection as openFolderYaml, but focusOnAuth jumps the
+        // cursor to the auth: line on open (and inserts a fresh `auth:
+        // { type: bearer }` scaffold when the folder has no auth section
+        // yet, so the user lands directly in something editable).
+        return openFolderYamlCommand({ bridge }, node, { focusOnAuth: true });
       },
     ),
     vscode.commands.registerCommand(
@@ -1458,21 +1568,15 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     // ---- P5 MCP commands ----
     vscode.commands.registerCommand(
-      'apicircle.copyMcpConfig',
-      (node?: { kind: 'client'; client: AiClient }) => {
-        if (!mcpManager) return;
-        return copyMcpConfigCommand(
-          { mcp: mcpManager, log: runsChannel?.forCategory('misc') },
-          node,
-        );
-      },
-    ),
-    vscode.commands.registerCommand(
       'apicircle.openMcpConfigFile',
       (node?: { kind: 'client'; client: AiClient }) => {
         if (!mcpManager) return;
         return openMcpConfigFileCommand(
-          { mcp: mcpManager, log: runsChannel?.forCategory('misc') },
+          {
+            mcp: mcpManager,
+            onChanged: () => views?.mcp.refresh(),
+            log: runsChannel?.forCategory('misc'),
+          },
           node,
         );
       },
@@ -1517,13 +1621,20 @@ export function activate(context: vscode.ExtensionContext): void {
     // ---- P8: multi-AI-client MCP install ----
     vscode.commands.registerCommand(
       'apicircle.installMcpForClient',
-      (clientArg?: InstallableClient) => {
+      // `arg` arrives as a string client id when the row's
+      // `item.command.arguments = [client]` fires; as an `McpNode`
+      // `{ kind: 'client', client }` from the inline button / context
+      // menu (VS Code passes the tree node). `coerceInstallableClientArg`
+      // normalises both into the bare client id; an unrecognised arg
+      // falls through to the QuickPick.
+      (arg?: unknown) => {
         if (!mcpManager) return;
-        if (!clientArg || !INSTALLABLE_CLIENTS.includes(clientArg)) {
+        const clientArg = coerceInstallableClientArg(arg);
+        if (!clientArg) {
           return vscode.window
             .showQuickPick(
               INSTALLABLE_CLIENTS.map((c) => ({ label: c, value: c })),
-              { title: 'Install APICircle MCP for which client?' },
+              { title: 'Install API Circle MCP for which client?' },
             )
             .then((pick) => {
               if (!pick) return;
@@ -1560,8 +1671,14 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand(
       'apicircle.uninstallMcpForClient',
-      (clientArg?: InstallableClient) => {
-        if (!mcpManager || !clientArg || !INSTALLABLE_CLIENTS.includes(clientArg)) return;
+      // Same arg shapes as `installMcpForClient`. Without the unwrap the
+      // handler returned silently when invoked from the inline trash
+      // button or the row's context menu — the 1.1.0 bug where "Remove
+      // API Circle MCP from AI Client" did nothing.
+      (arg?: unknown) => {
+        if (!mcpManager) return;
+        const clientArg = coerceInstallableClientArg(arg);
+        if (!clientArg) return;
         return uninstallMcpForClientCommand(
           {
             mcp: mcpManager,
@@ -1641,7 +1758,7 @@ export function activate(context: vscode.ExtensionContext): void {
     );
     const discovery = discoverWorkspaces(folders);
     log?.(
-      `discover: found ${discovery.workspaces.length} workspace(s) — ${
+      `discover: found ${discovery.workspaces.length} git-folder workspace(s) — ${
         discovery.workspaces.map((w) => w.workspaceJsonPath).join(' | ') || '<none>'
       }`,
     );
@@ -1652,18 +1769,41 @@ export function activate(context: vscode.ExtensionContext): void {
           .join(' | ')}`,
       );
     }
+
+    // Registry-based discovery: also load workspaces from ~/.apicircle/registry.json
+    const registryWorkspaces = discoverRegistryWorkspaces();
+    if (registryWorkspaces.length > 0) {
+      log?.(
+        `discover: found ${registryWorkspaces.length} registry workspace(s) — ${registryWorkspaces
+          .map((w) => w.label)
+          .join(' | ')}`,
+      );
+    }
+
+    // Register all discovered workspaces (git-folder first, then registry).
+    // Duplicates (same id) are a no-op in bridge.registerWorkspace.
     for (const ws of discovery.workspaces) {
       bridge.registerWorkspace(ws);
     }
-    if (!bridge.activeWorkspace() && discovery.workspaces.length > 0) {
+    for (const ws of registryWorkspaces) {
+      bridge.registerWorkspace(ws);
+    }
+
+    const allWorkspaces = [...discovery.workspaces, ...registryWorkspaces];
+    if (!bridge.activeWorkspace() && allWorkspaces.length > 0) {
       const previous = _ctx.globalState.get<string>('apicircle.activeWorkspaceId');
-      const toActivate =
-        discovery.workspaces.find((w) => w.id === previous) ?? discovery.workspaces[0];
+      const toActivate = allWorkspaces.find((w) => w.id === previous) ?? allWorkspaces[0];
       bridge.setActive(toActivate.id);
     }
     const hasActive = bridge.activeWorkspace() !== null;
-    log?.(`discover: hasActiveWorkspace=${hasActive}`);
+    const hasMultiple = allWorkspaces.length > 1;
+    log?.(`discover: hasActiveWorkspace=${hasActive}, hasMultipleWorkspaces=${hasMultiple}`);
     void vscode.commands.executeCommand('setContext', 'apicircle.hasActiveWorkspace', hasActive);
+    void vscode.commands.executeCommand(
+      'setContext',
+      'apicircle.hasMultipleWorkspaces',
+      hasMultiple,
+    );
   }
 
   // ---- Startup: adopt the workspace backing an already-open editor ----
@@ -1725,15 +1865,9 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   })();
 
-  // Refresh the MCP view when the active workspace changes (the view
-  // surfaces per-workspace `apicircleDir` so a switch alters every
-  // snippet). Tied to the bridge event so workspace changes propagate
-  // without polling.
-  context.subscriptions.push(
-    bridge.onDidChangeActiveWorkspace(() => {
-      views?.mcp.refresh();
-    }),
-  );
+  // The blanket `onDidChangeActiveWorkspace` listener (wired near the view
+  // registration block) already refreshes every view — including MCP — so
+  // no dedicated MCP-only subscription is needed here.
 }
 
 export async function deactivate(): Promise<void> {

@@ -270,7 +270,11 @@ export function EditorPanel() {
   // `PreSendPanel` so the validation runs ONCE per render instead of twice
   // (the panel used to call usePreSendValidation again internally).
   const validateOnSend = useWorkspaceStore((s) => s.local?.settings?.validateOnSend ?? true);
-  const validation = usePreSendValidation(request, scope, validateOnSend);
+  // Pass folders so `auth: inherit` requests get validated against their
+  // resolved (folder-level) auth — a folder bearer with an empty token now
+  // blocks Send instead of slipping through to a wire failure.
+  const folders = useWorkspaceStore((s) => s.synced?.collections.folders ?? {});
+  const validation = usePreSendValidation(request, scope, validateOnSend, folders);
   const sendBlocked = validation.blockers.length > 0;
 
   // The composed URL is read at three sites in this component (the URL

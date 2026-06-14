@@ -24,9 +24,9 @@ describe('EnvironmentCodeLensProvider', () => {
     expect(lenses).toEqual([]);
   });
 
-  it('returns [] for apicircle URIs that are not .env.yaml', () => {
+  it('returns [] for apicircle URIs that are not .yaml', () => {
     const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/requests/r.req.yaml'), ['name: prod']),
+      makeDoc(Uri.parse('apicircle://x/requests/r.yaml'), ['name: prod']),
       fakeToken,
     );
     expect(lenses).toEqual([]);
@@ -34,7 +34,7 @@ describe('EnvironmentCodeLensProvider', () => {
 
   it('emits two lenses (Set Active + Delete) at the name: line', () => {
     const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/environments/prod.env.yaml'), [
+      makeDoc(Uri.parse('apicircle://x/environments/prod.yaml'), [
         '# comment',
         'name: production',
         'variables: []',
@@ -52,7 +52,7 @@ describe('EnvironmentCodeLensProvider', () => {
 
   it('returns [] when no name: line is present', () => {
     const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/environments/x.env.yaml'), ['# no name field']),
+      makeDoc(Uri.parse('apicircle://x/environments/x.yaml'), ['# no name field']),
       fakeToken,
     );
     expect(lenses).toEqual([]);

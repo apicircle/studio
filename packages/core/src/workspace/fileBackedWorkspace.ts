@@ -11,24 +11,28 @@ import type { WorkspaceState } from './patches';
 // MCP writers can't corrupt the document.
 //
 // Layout (relative to the directory passed in):
-//   workspace.synced.json   ← matches WorkspaceSynced exactly, push-to-git target
+//   workspace.json          ← matches WorkspaceSynced exactly
 //   workspace.local.json    ← WorkspaceLocal, host-private (CLI/MCP doesn't push)
 //
-// The lock is held on `workspace.synced.json` because that's the file the
+// The lock is held on `workspace.json` because that's the file the
 // editor races against. Stale locks are released after 30s.
 // =============================================================================
 
-const SYNCED_FILE = 'workspace.synced.json';
+const SYNCED_FILE = 'workspace.json';
 const LOCAL_FILE = 'workspace.local.json';
 
 export interface LoadFromFileOptions {
   /** When true, return `null` instead of throwing if the synced file is missing. */
   allowMissing?: boolean;
+  /** Override the synced filename. Defaults to `workspace.json`. */
+  syncedFilename?: string;
 }
 
 export interface SaveToFileOptions {
   /** Lock timeout (ms). Defaults to 30000. */
   lockTimeoutMs?: number;
+  /** Override the synced filename. Defaults to `workspace.json`. */
+  syncedFilename?: string;
 }
 
 /**
@@ -41,7 +45,7 @@ export async function loadFromFile(
   dir: string,
   options: LoadFromFileOptions = {},
 ): Promise<WorkspaceState | null> {
-  const syncedPath = path.join(dir, SYNCED_FILE);
+  const syncedPath = path.join(dir, options.syncedFilename ?? SYNCED_FILE);
   const localPath = path.join(dir, LOCAL_FILE);
 
   let syncedRaw: string;
@@ -79,7 +83,7 @@ export async function saveToFile(
   options: SaveToFileOptions = {},
 ): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
-  const syncedPath = path.join(dir, SYNCED_FILE);
+  const syncedPath = path.join(dir, options.syncedFilename ?? SYNCED_FILE);
   const localPath = path.join(dir, LOCAL_FILE);
 
   // proper-lockfile requires the target file to exist. Touch it on first save.
@@ -107,7 +111,7 @@ export async function withWorkspace<T>(
   options: SaveToFileOptions = {},
 ): Promise<T | undefined> {
   await fs.mkdir(dir, { recursive: true });
-  const syncedPath = path.join(dir, SYNCED_FILE);
+  const syncedPath = path.join(dir, options.syncedFilename ?? SYNCED_FILE);
   const localPath = path.join(dir, LOCAL_FILE);
   await ensureFile(syncedPath);
 

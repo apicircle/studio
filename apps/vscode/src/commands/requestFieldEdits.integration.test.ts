@@ -26,7 +26,7 @@ import {
 // expected Request patch — the request-side mirror of mockFieldEdits.integration.
 // =============================================================================
 
-const URI = Uri.parse('apicircle://x/requests/get-users.req.yaml?id=req-1');
+const URI = Uri.parse('apicircle://x/requests/get-users.yaml?id=req-1');
 
 function makeRequest(): ApiRequest {
   return {

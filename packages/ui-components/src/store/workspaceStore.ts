@@ -1274,7 +1274,7 @@ type WorkspaceStore = {
   mcpHowToConnectClient: string | null;
   setMcpHowToConnectClient: (value: string | null) => void;
   /**
-   * MCP "Connection" refresh: re-read `workspace.synced.json` from disk
+   * MCP "Connection" refresh: re-read `workspace.json` from disk
    * and, if it's newer than the in-memory copy, hydrate the store with
    * it. Returns a result discriminator so the caller can render a toast
    * describing what happened. No-op (returns 'no-mirror') on web.
@@ -3167,6 +3167,23 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const parentId = pathToFolderId.get(parentKey) ?? rootFolder.id;
       const { synced: next, folder: created } = addFolderAction(cur, parentId, folder.name);
       cur = next;
+      // Propagate folder-level auth captured by the importer (Postman v2.1 +
+      // Insomnia request_group). Without this the auth would be silently
+      // dropped on import and inherit-routed descendants would resolve to
+      // none. We patch the folder in-place rather than calling setFolderAuth
+      // so the meta.updatedAt bump rides with the final import-loop flush.
+      if (folder.auth) {
+        cur = {
+          ...cur,
+          collections: {
+            ...cur.collections,
+            folders: {
+              ...cur.collections.folders,
+              [created.id]: { ...cur.collections.folders[created.id], auth: folder.auth },
+            },
+          },
+        };
+      }
       pathToFolderId.set(folder.pathIds.join('.'), created.id);
     }
 

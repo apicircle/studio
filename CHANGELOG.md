@@ -25,13 +25,296 @@
 
 ## Unreleased
 
+### VS Code — Workspace Details & Switcher
+
+The extension sidebar now has a **Workspace** view at the top that shows:
+
+- **Active workspace name** with a collapsible stats summary (request count,
+  folder count, environment count, mock count, plan count).
+- **Source** (`git-folder` or `registry`) and the `.apicircle/` directory path.
+- **Available workspaces count** when multiple workspaces are discovered.
+
+A new **Switch Workspace** command (`APICircle: Switch Workspace`) opens a
+QuickPick listing all discovered workspaces (from open VS Code folders and
+`~/.apicircle/registry.json`). Selecting one switches the active workspace and
+refreshes all sidebar views instantly. The switch button also appears as an
+inline action on the workspace node and in the view title bar when multiple
+workspaces are available.
+
+New files: `WorkspaceView.ts`, `switchWorkspace.ts` + tests.
+
+### MCP — three-path workspace detection (Git-backed `.apicircle/` support)
+
+The `apicircle-mcp` binary now auto-detects **three** on-disk layouts when
+resolving `--workspace <dir>`:
+
+1. **`registry.json`** → multi-workspace registry root (desktop app).
+2. **`workspace.synced.json`** → desktop disk-mirror single-workspace.
+3. **`workspace.json`** → Git-backed `.apicircle/` directory.
+
+Previously only layouts 1 and 2 were detected. AI clients (Codex, Cursor,
+Claude Code) pointed at a cloned repo's `.apicircle/` directory crashed with
+`Cannot read properties of undefined (reading 'createdAt')` because the
+binary fell through to the "no workspace found" error or read an empty
+`workspace.synced.json`.
+
+- **`GitBackedWorkspaceProvider`** — new provider in `@apicircle/mcp-server`
+  that delegates to core `loadFromFile` / `saveToFile` / `withWorkspace`
+  with `syncedFilename: 'workspace.json'`. Reads the canonical Git-tracked
+  document, writes runtime state to `workspace.local.json` (gitignored),
+  and never creates `workspace.synced.json`.
+- **`syncedFilename` option** — `@apicircle/core` file-backed workspace
+  functions now accept an optional `syncedFilename` override (defaults to
+  `workspace.synced.json`). Enables the git-backed provider without
+  duplicating locking logic.
+- **Defensive null handling** — `SingleWorkspaceAdapter.list()` and
+  `MultiWorkspaceProvider` counts builder now use optional chaining so
+  an empty `{}` synced document returns graceful defaults instead of
+  crashing.
+- **`.gitignore`** — `.apicircle/workspace.local.json` is now ignored so
+  the MCP server's per-device runtime state doesn't pollute Git status.
+- **Help text** — `apicircle-mcp --help` now documents all three valid
+  `--workspace` layouts.
+- **Tests** — 14 new unit/integration tests covering
+  `GitBackedWorkspaceProvider` (8 tests) and boot-detection paths (6 tests).
+
+### VS Code extension — Codex MCP install writes TOML
+
+The "Install MCP for Client → Codex" command now writes
+`~/.codex/config.toml` (TOML format, `mcp_servers` snake_case key)
+instead of `config.json` (JSON, `mcpServers`). Codex CLI reads TOML,
+so the previous JSON write was silently ignored — MCP tools never
+appeared in Codex sessions even after installing from VS Code.
+
+- **TOML format support** — added `smol-toml` (~12 KB, pure ESM, zero
+  deps) as the parser/serializer. Follows the same pattern as the
+  Continue YAML support added in Phase 11.
+- **Snake_case key** — Codex uses `[mcp_servers.apicircle]`, not
+  `mcpServers`. The new `'mcp_servers-toml'` schema variant handles
+  both the key name and the file format.
+- **Uninstall** — "Remove API Circle MCP from AI Client" for Codex
+  now correctly reads/writes TOML and targets the `mcp_servers` key.
+- **Foreign key preservation** — existing Codex settings (`model`,
+  `plugins`, `projects`, etc.) survive install/uninstall round-trips.
+- **Bundle impact** — 2.44 → 2.74 MB (+300 KB); well within the
+  5.0 MB hard budget.
+
+### MCP — 93 → 94 tools: `marketplace.search`
+
+AI clients can now discover workspaces in the API Circle marketplace
+without leaving the MCP session. The new `marketplace.search` tool wraps
+`GitHubClient.searchMarketplaceRepos` with sort support (`best-match` /
+`stars` / `updated`), anonymous browsing (token optional), and the same
+error taxonomy as `linked.link`. Use it to browse public workspaces
+tagged with `apicircle` on GitHub, then pipe a result's `fullName` into
+`linked.link` to wire it up.
+
+- **`marketplace.search`** — `{ query?, sort?, token? }` → up to 30
+  results with `fullName`, `owner`, `name`, `description`, `topics`,
+  `stargazers`, `defaultBranch`.
+- **`searchMarketplaceRepos` sort parameter** — the `@apicircle/git`
+  method now accepts an optional `sort: 'stars' | 'updated'`; omit for
+  GitHub's default best-match relevance.
+- **VS Code welcome view** — the Link Workspaces panel now surfaces
+  "Search Marketplace…" and "Link a Workspace…" CTAs alongside the
+  existing release publish actions.
+
+### VS Code extension — CodeLens authoring tightening
+
+A grab-bag of editor-affordance fixes driven by direct feedback on the
+1.1.0 Marketplace cut. Each one shortens the click-distance from "I want
+to edit X" to "the cursor is on X" and lets the user discover available
+actions without scrolling or memorizing field names.
+
+- **Mock endpoint `requestSchema`** — the **✚ Body example** lens now
+  sits on the `requestSchema:` header line itself (previously buried on
+  the `body:` subsection), and is suppressed once a body block exists
+  so re-adding can't clobber. The ◆ Example and ◆ Description field
+  lenses are no longer emitted inside the body subtree — those slots
+  are free-form documentation text, so a free-text picker buys nothing
+  over inline editing.
+- **Header lens renames** — every "✚ Pick header…" and "✚ Add header"
+  CodeLens is now just **✚ Header**, including the response-rule
+  header lens and the response-headers add-lens.
+- **Send lens highlight** — the request-editor send CTA reads
+  **▶▶ SEND REQUEST (Ctrl/Cmd+Enter)** so first-time users notice it
+  and discover the keyboard shortcut without hunting through the
+  Command Palette.
+- **Query / cookie row toggle** — each `- key:` row in `query:` and
+  `cookies:` gains a **✓ Enable / ⊘ Disable** lens alongside the
+  existing ◆ Key, mirroring the response-header toggle on mock
+  endpoints. Disabled rows stay in the YAML for what-if testing but
+  aren't sent. (PathParams are a map and can't be "off and still
+  send"; no toggle there.) The ◆ Value lens on `query:` value rows is
+  removed — the URL bar's `?key=val` syntax round-trips through the
+  YAML parser on save, so the inline edit is already the canonical
+  path. Cookies keep their ◆ Value lens.
+- **OAuth2 / Hawk / JWT enum pickers** — when an `auth:` block resolves
+  to one of the six OAuth2 grants, Hawk, or JWT Bearer, the enum-valued
+  fields surface a curated picker:
+  - Client Credentials → **◆ Client Auth Method**, **◆ Token Type**
+  - Authorization Code → **◆ Token Type**
+  - PKCE → **◆ Code Challenge Method**, **◆ Token Type**
+  - Password / Implicit / Device → **◆ Token Type**
+  - Hawk → **◆ Algorithm** (SHA-256 / SHA-1)
+  - JWT Bearer → **◆ Algorithm** (HS/RS/PS/ES + EdDSA)
+- **+ Add assertion drops a prefilled block** — the multi-step
+  QuickPick is gone. Clicking **✚ Add assertion** now inserts a
+  `kind: status / op: equals / expected: '200'` scaffold (mirrors
+  the "🛡 Add validation rule" UX) and the user refines via the
+  per-field ◆ lenses below.
+- **Kind-aware assertion ◆ Target and ◆ Expected** — the assertion
+  field lenses now dispatch on the entry's `kind:`:
+  - `status` → ◆ Expected (status code) opens the curated 100–599 list.
+  - `duration` → ◆ Expected (ms) prompts for a non-negative number.
+  - `header` → ◆ Target offers the curated response-header catalogue;
+    ◆ Expected then drives the value picker for that header.
+  - `json-path` → ◆ Target opens the JSON-path picker against the
+    latest response for this request; ◆ Expected resolves the literal
+    value at that path and pre-fills it.
+  - Target slots are HIDDEN for `status` / `duration` (no target
+    semantics).
+
+**Deferred (call out so authors don't expect them):** schema-level
+codelenses for Digest `algorithm` + `qop` and JWT Bearer `headerPrefix`
+were requested but the underlying `DigestAuth` / `JwtBearerAuth` types
+don't carry those fields today. Adding them is an additive schema
+change that ripples through `authDefaults`, the digest signer, the
+OAuth2 token client, `AuthEditor.tsx`, and the OpenAPI export. Out of
+scope for this UX-only pass; will be picked up alongside the next
+auth-schema refresh.
+
+### VS Code extension — MCP view bug fixes
+
+Two issues reported on the 1.1.0 Marketplace cut, both fixed:
+
+- **"Remove API Circle MCP from AI Client" silently did nothing.** The
+  context-menu entry and the inline trash icon on every installed external
+  AI client row (Claude Desktop / Claude Code / Cursor / Windsurf / Zed)
+  invoke `apicircle.uninstallMcpForClient`. The handler was typed to
+  receive a bare client id string, but VS Code passes the `McpNode` tree
+  element `{ kind: 'client', client }` on every `view/item/context`
+  trigger. The mismatch slipped past the `INSTALLABLE_CLIENTS.includes`
+  guard and the command returned without action. Fixed by extracting
+  the unwrap into a new exported helper
+  `coerceInstallableClientArg` (in `apps/vscode/src/commands/
+mcpClientActions.ts`) that normalises both the string and `McpNode`
+  shapes, wired into both `apicircle.installMcpForClient` and
+  `apicircle.uninstallMcpForClient`. Regression coverage in
+  `mcpClientActions.test.ts`.
+- **MCP tooltips, toasts, and the two "Remove …" menu titles read
+  "APICircle" instead of the spaced brand "API Circle".** The
+  displayName / Activity Bar title / configuration title already
+  shipped the spaced brand in 1.0.7 — the MCP user-facing strings
+  drifted away during P5–P8. Updated tooltips in `McpView.ts`, toasts
+  in `mcpClientActions.ts` / `copilotMcpActions.ts` / `mcpActions.ts`,
+  and the two `Remove APICircle MCP from …` command titles in
+  `package.json`. Command ids (`apicircle.*`), the command-palette
+  `category` prefix, the `apicircle` mcpServers key, and the
+  `APICircle Runs` OutputChannel name are unchanged — they are
+  identifiers, not display strings.
+
+### Folder-wise auth — gap-closure follow-up
+
+The first folder-wise-auth pass left genuine gaps; this pass closes them
+all (no deferred items). Adds:
+
+- **`apicircle.newFolder` command** — VS Code now creates folders directly
+  (palette, Editor view title button, and per-folder context menu). The
+  FS provider's stale `createDirectory` rejection text now references this
+  command. validateInput rejects empty + duplicate-sibling names up front;
+  the new folder's YAML opens immediately so the user can set folder-level
+  auth without an extra step.
+- **CLI `apicircle folder` subcommand** — `list`, `create`, `rename`,
+  `set-auth`, `clear-auth`, `move`, `delete`. Every subcommand routes
+  through `applyMutation` (FileBackedWorkspaceProvider) so semantics match
+  every other surface. set-auth covers the LLM-friendly subset (`bearer`,
+  `basic`, `api-key`, `custom-header`, `none`, `inherit`); OAuth2 / AWS /
+  Hawk / NTLM / JWT folder auth still authors via the VS Code YAML or the
+  web/desktop UI (token state needs runtime the CLI doesn't carry).
+- **Linked-workspace folder inspection** — new read-only
+  `apicircle://<ws>/linked/<linkSlug>/<folderSlug>.folder.yaml?link=&id=`
+  URI projects each linked workspace's folder so consumers can see what
+  auth their `auth: inherit` requests resolve to. Writes are rejected (the
+  consumer doesn't get to mutate the source); the inherited-auth CodeLens
+  on linked request YAMLs now reads `◆ Inherits from <Folder> (<type>)
+[linked]` and jumps to the linked folder URI.
+- **Inherited-auth CodeLens refresh** — the request CodeLens provider now
+  subscribes to `bridge.onDidChangeActiveWorkspace` AND the FS provider's
+  `onDidChangeFile` (filtered to `.folder.yaml` changes). A folder rename
+  or auth edit in another tab re-fires the lens immediately, so the
+  surfaced "Inherits from X" text never goes stale.
+- **Duplicate-name folder rename now visibly fails** — `applyMutation`
+  silently no-ops a colliding rename; the VS Code FS provider's writeFile
+  now inspects `changedIds` after `apply` and throws
+  `FileSystemError.NoPermissions("A folder named '<name>' already exists
+under the same parent. Pick a different name.")` when the rename was
+  rejected. Previously the buffer pretended to save.
+- **Folder YAML 🔑 Get token lens** — parity with request YAML. A folder
+  carrying an OAuth2 grant (any of the six) gets the same Get-token lens
+  the request CodeLens emits. The fetch command was extended to accept
+  `.folder.yaml` URIs alongside `.req.yaml`.
+
+Net new tests for this follow-up: **23** (4 collision/rename, 4 newFolder
+command, 8 CLI subcommand, 2 OAuth2 lens, 3 linked-folder URI, 2 CodeLens
+refresh subscriptions).
+
+### VS Code — folder-wise auth surface
+
+Folder-level auth now has a first-class editor in VS Code so descendants
+with `auth: { type: inherit }` resolve to something the user can see and
+edit, not just something the runtime infers. Three layers move together:
+
+- **New `folder.update` `WorkspacePatch`** — `{ kind: 'folder.update'; id;
+patch: Partial<Pick<Folder, 'name' | 'auth'>> }`. Identity (`id` /
+  `parentId`) is immutable here; moves still go through `folder.move`.
+  Key-presence semantics: a key missing from `patch` leaves the field
+  alone, `auth: undefined` explicitly clears the folder-level auth so
+  inheriting requests fall through to the next ancestor. Name uniqueness
+  among siblings under the same parent is enforced — a colliding rename
+  no-ops the patch. Reducer + 8 new tests in
+  [`applyMutation.ts`](packages/core/src/workspace/applyMutation.ts) and
+  [`applyMutation.test.ts`](packages/core/src/workspace/applyMutation.test.ts).
+- **MCP `folder.update` tool extended** — `name` and `auth` (LLM-friendly
+  subset matching `prompt.set_request_*`) and a `clearAuth: true` recovery
+  hatch alongside the existing `parentId`. Passing both `auth` and
+  `clearAuth` is a Zod-refine error.
+- **VS Code FS surface** — new
+  [`folderYaml.ts`](apps/vscode/src/fs/folderYaml.ts) serializer +
+  structural guards, plus a new `apicircle://<ws>/folders/<folderSlug…>
+/<folderSlug>.folder.yaml?id=<folderId>` URI kind in the FS provider
+  (`ApicircleFsProvider.folderUri`). Clicking a folder in the Editor
+  TreeView now opens the YAML; saving dispatches `folder.update`; deleting
+  the URI cascades through `folder.delete` (children reparent). The folder
+  tab tooltip surfaces the breadcrumb, and the description carries `auth:
+<type>` when an explicit folder-level auth is set. Tree contextValue
+  switches between `folder` and `folder-with-auth` so the inline `🔑 Edit
+Folder Auth` action button can light up only where it matters.
+- **Two new commands** — `apicircle.openFolderYaml` (palette + context
+  menu) and `apicircle.editFolderAuth` (alias for discoverability). Both
+  resolve from a TreeView node or fall back to a folder quick-pick when
+  invoked from the palette.
+- **Inherited-auth CodeLens** — when a request YAML carries `auth: { type:
+inherit }`, the request CodeLens provider now resolves the chain via
+  `resolveInheritedAuth` and surfaces `◆ Inherits from <Folder> (<type>)`
+  above the `auth:` line. Click → opens the source folder YAML. When no
+  ancestor sets explicit auth, the lens reads `◆ Inherits → none` and
+  links to the folder picker so the user can fix it.
+- **No migrations** — workspaces with existing `Folder.auth` values keep
+  working; workspaces without any folder-level auth are unaffected.
+- **Bundle impact** — extension bundle is **2.68 MB** (≈+240 KB vs. the
+  prior 2.44 MB baseline). Still under the 3 MB soft warn / 5 MB hard
+  fail in `scripts/vscode-bundle-budget.mjs`.
+
 ### VS Code — request URL is the source of truth for query + path params
 
 The `◆ URL` CodeLens above a `url:` row is gone — the URL is edited inline
 like any other scalar, so the field-editor lens was duplicating the obvious
 "click here, type" affordance. To make inline editing carry its weight, the
 YAML save path now syncs the URL into the structured `query:` / `pathParams:`
-blocks the same way the web / desktop URL bar does:
+blocks the same way the web / desktop URL bar does — and the editor buffer
+reflects the canonical projection immediately on Ctrl+S, so the user sees the
+sync happen instead of having to close and reopen the doc.
 
 - A `?key=val&…` typed into the `url:` line is split off on save. The base
   lands back in `url:`; each pair merges into the `query:` block by key —
@@ -48,10 +331,16 @@ blocks the same way the web / desktop URL bar does:
   are left alone — only real path placeholders are extracted, matching
   the `findPathPlaceholders` rules already used by `applyPathParams` at
   send time.
+- An `onWillSaveTextDocument` hook (`apps/vscode/src/lang/requestSyncOnSave
+.ts`) rewrites the buffer to the canonical projection before `writeFile`
+  runs, so the URL strips, the new query / pathParams rows appear, and the
+  save completes in a single Ctrl+S — no doc reopen required.
 
 Files: `apps/vscode/src/lang/requestCodeLens.ts`,
-`apps/vscode/src/fs/requestYaml.ts` (+ matching test updates in
-`requestCodeLens.test.ts` / `requestYaml.test.ts`).
+`apps/vscode/src/fs/requestYaml.ts` (new `projectRequestYaml` helper),
+`apps/vscode/src/lang/requestSyncOnSave.ts`, `apps/vscode/src/extension.ts`
+(+ matching test updates in `requestCodeLens.test.ts`, `requestYaml.test.ts`,
+and new `requestSyncOnSave.test.ts`).
 
 ## 1.1.0 - 2026-06-12
 

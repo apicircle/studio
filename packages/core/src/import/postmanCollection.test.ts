@@ -93,6 +93,30 @@ describe('parsePostmanCollection', () => {
     expect(parsed.requests[1].folderPathIds).toEqual([1, 0]);
   });
 
+  it('captures folder-level auth (Postman v2.1 `auth` on a folder item)', () => {
+    const doc = JSON.stringify({
+      info: { name: 'Auth', schema: minimalSchema },
+      item: [
+        {
+          name: 'Authenticated',
+          auth: { type: 'bearer', bearer: [{ key: 'token', value: 'FOLDER-TOK' }] },
+          item: [{ name: 'Me', request: { method: 'GET', url: 'https://x/me' } }],
+        },
+        {
+          // Folder with no auth — should land in ImportedFolder without an
+          // auth property so the apply-side doesn't spuriously set Folder.auth.
+          name: 'Public',
+          item: [{ name: 'Health', request: { method: 'GET', url: 'https://x/h' } }],
+        },
+      ],
+    });
+    const parsed = parsePostmanCollection(doc);
+    const authedFolder = parsed.folders.find((f) => f.name === 'Authenticated');
+    expect(authedFolder?.auth).toEqual({ type: 'bearer', token: 'FOLDER-TOK' });
+    const publicFolder = parsed.folders.find((f) => f.name === 'Public');
+    expect(publicFolder?.auth).toBeUndefined();
+  });
+
   it('throws on non-Postman input', () => {
     expect(() => parsePostmanCollection('{}')).toThrow(/Unsupported format/i);
     expect(() => parsePostmanCollection('not-json')).toThrow(/Couldn't parse JSON/i);

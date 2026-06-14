@@ -1,5 +1,10 @@
 import * as vscode from 'vscode';
+import type { Folder } from '@apicircle/shared';
+import { resolveInheritedAuth } from '@apicircle/core';
 import type { InFlightSendTracker } from '../execute/inFlightTracker';
+import type { VsCodeBridge } from '../host/vscodeBridge';
+import { ApicircleFsProvider } from '../fs/apicircleFsProvider';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
 // CodeLens provider for apicircle:// request YAML documents.
@@ -62,12 +67,33 @@ export class RequestCodeLensProvider implements vscode.CodeLensProvider {
   private tickHandle: ReturnType<typeof setInterval> | null = null;
   private readonly trackerSub: vscode.Disposable | null = null;
 
-  constructor(private readonly tracker?: InFlightSendTracker) {
+  private readonly externalSubs: vscode.Disposable[] = [];
+
+  constructor(
+    private readonly tracker?: InFlightSendTracker,
+    private readonly bridge?: VsCodeBridge,
+    private readonly fsProvider?: { onDidChangeFile: vscode.Event<vscode.FileChangeEvent[]> },
+  ) {
     if (tracker) {
       this.trackerSub = tracker.onDidChange(() => {
         this.refresh();
         this.updateTick();
       });
+    }
+    // The inherited-auth lens depends on the folder chain — a folder rename
+    // or auth edit in another tab needs to re-fire onDidChangeCodeLenses or
+    // the lens will display stale state until the request doc is touched.
+    if (bridge) {
+      this.externalSubs.push(bridge.onDidChangeActiveWorkspace(() => this.refresh()));
+    }
+    if (fsProvider) {
+      this.externalSubs.push(
+        fsProvider.onDidChangeFile((events) => {
+          // Only refresh when a folder YAML actually changed — request edits
+          // already drive their own per-document refresh via the buffer.
+          if (events.some((e) => uriEntityKind(e.uri) === 'folder')) this.refresh();
+        }),
+      );
     }
   }
 
@@ -86,12 +112,12 @@ export class RequestCodeLensProvider implements vscode.CodeLensProvider {
     }
   }
 
-  provideCodeLenses(
+  async provideCodeLenses(
     document: vscode.TextDocument,
     _token: vscode.CancellationToken,
-  ): vscode.CodeLens[] {
+  ): Promise<vscode.CodeLens[]> {
     if (document.uri.scheme !== 'apicircle') return [];
-    if (!document.uri.path.endsWith('.req.yaml')) return [];
+    if (uriEntityKind(document.uri) !== 'request') return [];
 
     const lenses: vscode.CodeLens[] = [];
     let nameAnchorLine = -1;
@@ -159,9 +185,15 @@ export class RequestCodeLensProvider implements vscode.CodeLensProvider {
           }),
         );
       } else {
+        // The Send lens is the primary CTA for the request editor — wrap it in
+        // ▶▶ markers so it visually pops above the lighter "✚ Add section…" /
+        // "⤵ New from template…" siblings, and surface the Ctrl/Cmd+Enter
+        // shortcut on the lens itself so first-time users learn it.
         lenses.push(
           new vscode.CodeLens(range, {
-            title: '▶ Send',
+            title: '▶▶ SEND REQUEST  (Ctrl/Cmd+Enter)',
+            tooltip:
+              'Send this request and open the response tab. Keyboard shortcut: Ctrl+Enter (Cmd+Enter on macOS).',
             command: 'apicircle.sendRequest',
             arguments: [document.uri],
           }),
@@ -330,6 +362,10 @@ export class RequestCodeLensProvider implements vscode.CodeLensProvider {
           }),
         );
       }
+      if (authCurrentType === 'inherit') {
+        const inheritedLens = await this.buildInheritedAuthLens(document.uri, range);
+        if (inheritedLens) lenses.push(inheritedLens);
+      }
     }
 
     if (headersAnchorLine !== -1) {
@@ -337,7 +373,7 @@ export class RequestCodeLensProvider implements vscode.CodeLensProvider {
       const range = new vscode.Range(headersAnchorLine, 0, headersAnchorLine, text.length);
       lenses.push(
         new vscode.CodeLens(range, {
-          title: '✚ Pick header…',
+          title: '✚ Header',
           tooltip:
             'Two-step picker: choose a common HTTP header by name (Accept / Authorization / Content-Type / …), then a curated value. New row appends to headers:.',
           command: 'apicircle.pickHeader',
@@ -439,9 +475,20 @@ export class RequestCodeLensProvider implements vscode.CodeLensProvider {
       );
     };
 
-    // 'headers' | 'query' | 'cookies' | 'pathParams' | '' (none)
+    // 'headers' | 'query' | 'cookies' | 'pathParams' | 'auth' | 'assertions' |
+    // 'extractions' | '' (none)
     let listKind = '';
     let listIndent = -1;
+    // The auth `type:` value tells us which OAuth2 grant / Hawk / JWT variant
+    // we're looking at, so the per-field lenses can pick the right enum
+    // (clientAuthMethod / tokenType / codeChallengeMethod / algorithm). Scoped
+    // to the duration of the auth: block.
+    let currentAuthType = '';
+    // The current assertion entry's `kind:` value. Scoped to one assertion
+    // entry — gates the ◆ Target lens (status / duration have no target) and
+    // drives the ◆ Expected picker (JSON path → pickJsonPath, header → value
+    // catalogue, status → status code list).
+    let currentAssertionKind = '';
 
     for (let line = 0; line < document.lineCount; line++) {
       const text = document.lineAt(line).text;
@@ -450,6 +497,8 @@ export class RequestCodeLensProvider implements vscode.CodeLensProvider {
 
       // Leave the current list when we dedent to/below its key.
       if (listKind !== '' && indent <= listIndent) {
+        if (listKind === 'auth') currentAuthType = '';
+        if (listKind === 'assertions') currentAssertionKind = '';
         listKind = '';
         listIndent = -1;
       }
@@ -523,7 +572,23 @@ export class RequestCodeLensProvider implements vscode.CodeLensProvider {
       } else if (listKind === 'query' || listKind === 'cookies') {
         if (/^\s+-\s+key\s*:/.test(text)) {
           fieldLens(line, '◆ Key', 'apicircle.setRequestTextField', 'Edit the name.');
-        } else if (/^\s+value\s*:/.test(text)) {
+          // Per-row ✓ Enable / ⊘ Disable toggle — mirrors the response-header
+          // toggle in the endpoint editor. Disabled rows stay in the YAML for
+          // what-if testing but are skipped at send time.
+          const rowEnabled = readRowEnabled(document, line);
+          fieldLens(
+            line,
+            rowEnabled === false ? '✓ Enable' : '⊘ Disable',
+            'apicircle.toggleRequestRowEnabled',
+            rowEnabled === false
+              ? 'Flip enabled: false → true so this row is sent.'
+              : "Flip enabled: true → false. Disabled rows stay in the YAML but aren't sent.",
+          );
+        } else if (listKind === 'cookies' && /^\s+value\s*:/.test(text)) {
+          // Cookies keep the ◆ Value lens (catalogue-less but useful for
+          // multi-line edits). Query value rows are edited inline — typing
+          // `?key=val` into url: round-trips through the YAML parser anyway,
+          // so a separate value picker buys nothing.
           fieldLens(
             line,
             '◆ Value',
@@ -533,6 +598,9 @@ export class RequestCodeLensProvider implements vscode.CodeLensProvider {
         }
       } else if (listKind === 'pathParams') {
         // pathParams is a `name: value` map — each row's value is editable.
+        // No per-row enable/disable: a placeholder can't be "off" and still
+        // satisfy the URL substitution (the request wouldn't send), so the
+        // enable concept doesn't apply here. We only emit ◆ Value.
         if (/^\s+[A-Za-z0-9_-]+\s*:/.test(text)) {
           fieldLens(
             line,
@@ -542,16 +610,63 @@ export class RequestCodeLensProvider implements vscode.CodeLensProvider {
           );
         }
       } else if (listKind === 'auth') {
-        // Auth scalar fields are edited directly in the YAML — no per-field
-        // ◆ editor lens. The only auth lens kept is ⟳ Format JSON on the JSON
-        // block scalars (payload / jwtHeaders), where a hand-edit would
-        // otherwise have to reflow multi-line JSON by hand.
+        // Most auth scalar fields are edited directly in the YAML — the
+        // exceptions are the few enum-valued fields the user shouldn't have
+        // to memorize: OAuth2 clientAuthMethod / codeChallengeMethod /
+        // tokenType, Hawk + JWT algorithm. Plus ⟳ Format JSON on the JSON
+        // block scalars (payload / jwtHeaders).
         const k = /^\s+([A-Za-z][A-Za-z0-9_]*)\s*:/.exec(text)?.[1];
+        if (k === 'type') {
+          const m = /^\s+type\s*:\s*['"]?([A-Za-z0-9-]+)['"]?/.exec(text);
+          if (m) currentAuthType = m[1];
+        }
         if (k === 'payload' || k === 'jwtHeaders') {
           fieldLens(line, '⟳ Format JSON', 'apicircle.formatJson', 'Reflow this JSON auth field.');
+        } else if (k === 'clientAuthMethod' && currentAuthType === 'oauth2-client-credentials') {
+          fieldLens(
+            line,
+            '◆ Client Auth Method',
+            'apicircle.setRequestAuthField',
+            'Pick where client credentials ride — Authorization header (Basic) or x-www-form-urlencoded body.',
+          );
+        } else if (k === 'codeChallengeMethod' && currentAuthType === 'oauth2-pkce') {
+          fieldLens(
+            line,
+            '◆ Code Challenge Method',
+            'apicircle.setRequestAuthField',
+            'Pick the PKCE challenge method — S256 (preferred) or plain.',
+          );
+        } else if (k === 'tokenType' && OAUTH2_GRANT_TYPES.has(currentAuthType)) {
+          fieldLens(
+            line,
+            '◆ Token Type',
+            'apicircle.setRequestAuthField',
+            'Pick the OAuth2 token type — Bearer (default), MAC, DPoP, or a custom scheme.',
+          );
+        } else if (k === 'algorithm' && currentAuthType === 'hawk') {
+          fieldLens(
+            line,
+            '◆ Algorithm',
+            'apicircle.setRequestAuthField',
+            'Pick the Hawk MAC algorithm — SHA-256 (default) or SHA-1.',
+          );
+        } else if (k === 'algorithm' && currentAuthType === 'jwt-bearer') {
+          fieldLens(
+            line,
+            '◆ Algorithm',
+            'apicircle.setRequestAuthField',
+            'Pick the JWT signing algorithm — HS256 / RS256 / ES256 / EdDSA / …',
+          );
         }
       } else if (listKind === 'assertions') {
+        // A new entry's `- id:` dash resets per-entry tracking so each
+        // assertion's target/expected lens is driven by its own kind.
+        if (/^\s+-\s+id\s*:/.test(text)) {
+          currentAssertionKind = '';
+        }
         if (/^\s+(?:-\s+)?kind\s*:/.test(text)) {
+          const m = /^\s+(?:-\s+)?kind\s*:\s*['"]?([a-z-]+)['"]?/.exec(text);
+          if (m) currentAssertionKind = m[1];
           fieldLens(
             line,
             '◆ Kind',
@@ -566,18 +681,36 @@ export class RequestCodeLensProvider implements vscode.CodeLensProvider {
             'Pick the comparison operator.',
           );
         } else if (/^\s+target\s*:/.test(text)) {
-          fieldLens(
-            line,
-            '◆ Target',
-            'apicircle.setRequestTextField',
-            'Edit the target (header name / JSON path).',
-          );
+          // Only `header` and `json-path` use the target slot. `status` and
+          // `duration` compare against the whole status / latency value —
+          // a target row is dead weight, so don't emit a lens on it.
+          if (currentAssertionKind === 'header' || currentAssertionKind === 'json-path') {
+            fieldLens(
+              line,
+              currentAssertionKind === 'json-path' ? '◆ Target (JSON path)' : '◆ Target (header)',
+              'apicircle.setRequestAssertionTargetField',
+              currentAssertionKind === 'json-path'
+                ? 'Pick a JSON path from the latest response, or type one.'
+                : 'Pick the response header name from the catalogue, or type your own.',
+            );
+          }
         } else if (/^\s+expected\s*:/.test(text)) {
+          // Kind-aware expected: status → code list, header → curated values,
+          // json-path → JSON-path extractor against the latest response,
+          // duration → numeric input. Generic text fallback for unknown kinds.
+          const titles: Record<string, string> = {
+            status: '◆ Expected (status code)',
+            header: '◆ Expected (header value)',
+            'json-path': '◆ Expected (from response body)',
+            duration: '◆ Expected (ms)',
+          };
           fieldLens(
             line,
-            '◆ Expected',
-            'apicircle.setRequestTextField',
-            'Edit the expected value.',
+            titles[currentAssertionKind] ?? '◆ Expected',
+            'apicircle.setRequestAssertionExpectedField',
+            currentAssertionKind === 'json-path'
+              ? 'Pick a value from the latest response body (run the request once first), or type it.'
+              : 'Pick / type the expected value.',
           );
         }
       } else if (listKind === 'extractions') {
@@ -597,6 +730,90 @@ export class RequestCodeLensProvider implements vscode.CodeLensProvider {
     }
   }
 
+  /**
+   * Resolve the auth that an `inherit`-typed request would actually use by
+   * walking up the folder chain via `resolveInheritedAuth`. Returns a lens
+   * that opens the source folder's YAML (or surfaces "→ none" when nothing
+   * up the chain provides explicit auth).
+   *
+   * Returns `null` when the bridge isn't available, the document's request
+   * id can't be located, or the request isn't actually `inherit` after a
+   * fresh read (the YAML buffer can drift between paste + save).
+   */
+  private async buildInheritedAuthLens(
+    uri: vscode.Uri,
+    range: vscode.Range,
+  ): Promise<vscode.CodeLens | null> {
+    if (!this.bridge) return null;
+    const params = new URLSearchParams(uri.query || '');
+    const requestId = params.get('id');
+    if (!requestId) return null;
+    const decodedAuthority = decodeHexSafe(uri.authority);
+    const surface = this.bridge
+      .listWorkspaces()
+      .find((w) => w.workspace.id === decodedAuthority || w.workspace.id === uri.authority);
+    if (!surface) return null;
+    let state;
+    try {
+      state = await surface.read();
+    } catch {
+      return null;
+    }
+
+    // Two code paths: a regular `requests/` URI consults the consumer's own
+    // collections; a `linked/.../<…>.yaml` URI consults the linked
+    // workspace's cached snapshot (which lives in WorkspaceLocal.
+    // linkedCollections). For linked requests the inherited-auth source is a
+    // linked folder, opened via a separate read-only URI.
+    const linkId = params.get('link');
+    let folders: Record<string, Folder>;
+    let requestFolderId: string | null;
+    let isLinked = false;
+    if (linkId) {
+      const snap = state.local.linkedCollections[linkId];
+      const request = snap?.collections.requests[requestId];
+      if (!request) return null;
+      folders = snap.collections.folders;
+      requestFolderId = request.folderId;
+      isLinked = true;
+    } else {
+      const request = state.synced.collections.requests[requestId];
+      if (!request) return null;
+      folders = state.synced.collections.folders;
+      requestFolderId = request.folderId;
+    }
+
+    const resolved = resolveInheritedAuth({
+      requestAuth: { type: 'inherit' },
+      folderId: requestFolderId,
+      folders,
+    });
+    const source = findInheritedAuthSource(requestFolderId, folders);
+    if (resolved.type === 'none' || !source) {
+      return new vscode.CodeLens(range, {
+        title: '◆ Inherits → none (no ancestor folder sets auth)',
+        tooltip:
+          'This request will send with no auth. Open a parent folder and set an `auth:` block to make `inherit` resolve to something.',
+        command: 'apicircle.openFolderYaml',
+        arguments: [],
+      });
+    }
+    let targetUri: vscode.Uri;
+    if (isLinked && linkId) {
+      const link = state.synced.linkedWorkspaces[linkId];
+      if (!link) return null;
+      targetUri = ApicircleFsProvider.linkedFolderUri(surface.workspace.id, link, source);
+    } else {
+      targetUri = ApicircleFsProvider.folderUri(surface.workspace.id, source, folders);
+    }
+    return new vscode.CodeLens(range, {
+      title: `◆ Inherits from ${source.name} (${resolved.type})${isLinked ? ' [linked]' : ''}`,
+      tooltip: `Resolves via resolveInheritedAuth: the closest ancestor folder with an explicit auth is "${source.name}" (auth.type: ${resolved.type})${isLinked ? ' in the linked workspace' : ''}. Click to open the folder YAML.`,
+      command: 'vscode.open',
+      arguments: [targetUri],
+    });
+  }
+
   refresh(): void {
     this._onDidChangeCodeLenses.fire();
   }
@@ -607,6 +824,7 @@ export class RequestCodeLensProvider implements vscode.CodeLensProvider {
       this.tickHandle = null;
     }
     this.trackerSub?.dispose();
+    for (const s of this.externalSubs) s.dispose();
     this._onDidChangeCodeLenses.dispose();
   }
 }
@@ -622,6 +840,63 @@ function formatElapsed(seconds: number): string {
 function lineRange(document: vscode.TextDocument, line: number): vscode.Range {
   const text = document.lineAt(line).text;
   return new vscode.Range(line, 0, line, text.length);
+}
+
+const ROW_ENABLED_RE = /^\s+enabled\s*:\s*(true|false)\b/;
+
+/**
+ * Read a query / cookie entry's `enabled:` value. `keyLine` is the entry's
+ * `- key:` row; the matching `enabled:` field sits deeper in the same entry.
+ * Returns the boolean, or null when no explicit `enabled:` is present
+ * (treated as enabled).
+ */
+function readRowEnabled(document: vscode.TextDocument, keyLine: number): boolean | null {
+  const dashIndent = document.lineAt(keyLine).text.match(/^\s*/)?.[0].length ?? 0;
+  for (let line = keyLine + 1; line < document.lineCount; line++) {
+    const text = document.lineAt(line).text;
+    if (text.trim().length === 0) continue;
+    const leading = text.match(/^\s*/)?.[0].length ?? 0;
+    if (leading <= dashIndent) break; // left this entry
+    const m = ROW_ENABLED_RE.exec(text);
+    if (m) return m[1] === 'true';
+  }
+  return null;
+}
+
+/**
+ * Walk up the folder chain from `folderId` and return the FIRST folder that
+ * carries an explicit auth (anything other than `none` / `inherit`). Mirrors
+ * `resolveInheritedAuth` but returns the SOURCE folder (so the CodeLens can
+ * label and link it). Cycle-safe in the same way.
+ */
+function findInheritedAuthSource(
+  folderId: string | null,
+  folders: Record<string, Folder>,
+): Folder | null {
+  let cursor = folderId;
+  const visited = new Set<string>();
+  while (cursor !== null) {
+    if (visited.has(cursor)) break;
+    visited.add(cursor);
+    const folder = folders[cursor];
+    if (!folder) break;
+    const auth = folder.auth;
+    if (auth && auth.type !== 'inherit' && auth.type !== 'none') return folder;
+    cursor = folder.parentId;
+  }
+  return null;
+}
+
+/**
+ * Decode a hex-encoded authority back to its original string. Tolerates a
+ * non-hex authority (defensive in case a URI was hand-constructed).
+ */
+function decodeHexSafe(authority: string): string {
+  try {
+    return Buffer.from(authority, 'hex').toString('utf8');
+  } catch {
+    return authority;
+  }
 }
 
 /** Read the inner `type:` value of a YAML section whose header is on

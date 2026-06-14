@@ -546,7 +546,7 @@ function writeRunWorkspace(
     executionPlans: opts.plans,
     meta: { createdAt: RUN_NOW, updatedAt: RUN_NOW, appVersion: '0.1.0' },
   };
-  fs.writeFileSync(path.join(dir, 'workspace.synced.json'), JSON.stringify(synced, null, 2));
+  fs.writeFileSync(path.join(dir, 'workspace.json'), JSON.stringify(synced, null, 2));
 }
 
 test.describe('CLI — apicircle run', () => {

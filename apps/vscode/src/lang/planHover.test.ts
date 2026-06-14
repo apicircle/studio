@@ -49,17 +49,17 @@ describe('PlanHoverProvider', () => {
   it('returns undefined for non-apicircle scheme', async () => {
     const p = new PlanHoverProvider(makeBridge(baseState));
     const r = await p.provideHover(
-      makeDoc(Uri.parse('file:///x.plan.yaml'), ['- requestId: req-1']),
+      makeDoc(Uri.parse('file:///x.yaml'), ['- requestId: req-1']),
       pos(0, 14),
       fakeToken,
     );
     expect(r).toBeUndefined();
   });
 
-  it('returns undefined for non-.plan.yaml apicircle URIs', async () => {
+  it('returns undefined for non-.yaml apicircle URIs', async () => {
     const p = new PlanHoverProvider(makeBridge(baseState));
     const r = await p.provideHover(
-      makeDoc(Uri.parse('apicircle://x/requests/r.req.yaml'), ['- requestId: req-1']),
+      makeDoc(Uri.parse('apicircle://x/requests/r.yaml'), ['- requestId: req-1']),
       pos(0, 14),
       fakeToken,
     );
@@ -71,7 +71,7 @@ describe('PlanHoverProvider', () => {
       activeWorkspace: () => undefined,
     } as unknown as VsCodeBridge);
     const r = await p.provideHover(
-      makeDoc(Uri.parse('apicircle://x/plans/p1.plan.yaml'), ['- requestId: req-1']),
+      makeDoc(Uri.parse('apicircle://x/plans/p1.yaml'), ['- requestId: req-1']),
       pos(0, 14),
       fakeToken,
     );
@@ -81,7 +81,7 @@ describe('PlanHoverProvider', () => {
   it('returns undefined when hovering on a non-id line', async () => {
     const p = new PlanHoverProvider(makeBridge(baseState));
     const r = await p.provideHover(
-      makeDoc(Uri.parse('apicircle://x/plans/p1.plan.yaml'), ['name: Smoke']),
+      makeDoc(Uri.parse('apicircle://x/plans/p1.yaml'), ['name: Smoke']),
       pos(0, 4),
       fakeToken,
     );
@@ -91,7 +91,7 @@ describe('PlanHoverProvider', () => {
   it('shows request details on a known requestId', async () => {
     const p = new PlanHoverProvider(makeBridge(baseState));
     const r = await p.provideHover(
-      makeDoc(Uri.parse('apicircle://x/plans/p1.plan.yaml'), ['  - requestId: req-1']),
+      makeDoc(Uri.parse('apicircle://x/plans/p1.yaml'), ['  - requestId: req-1']),
       pos(0, 16),
       fakeToken,
     );
@@ -105,7 +105,7 @@ describe('PlanHoverProvider', () => {
   it('warns on an unknown requestId', async () => {
     const p = new PlanHoverProvider(makeBridge(baseState));
     const r = await p.provideHover(
-      makeDoc(Uri.parse('apicircle://x/plans/p1.plan.yaml'), ['  - requestId: req-ghost']),
+      makeDoc(Uri.parse('apicircle://x/plans/p1.yaml'), ['  - requestId: req-ghost']),
       pos(0, 16),
       fakeToken,
     );
@@ -117,7 +117,7 @@ describe('PlanHoverProvider', () => {
   it('shows linked workspace details on linkedWorkspaceId', async () => {
     const p = new PlanHoverProvider(makeBridge(baseState));
     const r = await p.provideHover(
-      makeDoc(Uri.parse('apicircle://x/plans/p1.plan.yaml'), ['    linkedWorkspaceId: ws-shared']),
+      makeDoc(Uri.parse('apicircle://x/plans/p1.yaml'), ['    linkedWorkspaceId: ws-shared']),
       pos(0, 22),
       fakeToken,
     );
@@ -128,7 +128,7 @@ describe('PlanHoverProvider', () => {
   it('warns on unknown linkedWorkspaceId', async () => {
     const p = new PlanHoverProvider(makeBridge(baseState));
     const r = await p.provideHover(
-      makeDoc(Uri.parse('apicircle://x/plans/p1.plan.yaml'), ['    linkedWorkspaceId: ws-ghost']),
+      makeDoc(Uri.parse('apicircle://x/plans/p1.yaml'), ['    linkedWorkspaceId: ws-ghost']),
       pos(0, 22),
       fakeToken,
     );

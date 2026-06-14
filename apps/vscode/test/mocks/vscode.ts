@@ -29,7 +29,7 @@ export class Uri {
   }): Uri {
     return new Uri(
       parts.scheme,
-      parts.authority ?? '',
+      (parts.authority ?? '').toLowerCase(),
       parts.path ?? '',
       parts.query ?? '',
       parts.fragment ?? '',
@@ -96,6 +96,11 @@ export enum ProgressLocation {
   SourceControl = 1,
   Window = 10,
   Notification = 15,
+}
+
+export enum QuickPickItemKind {
+  Separator = -1,
+  Default = 0,
 }
 
 export class EventEmitter<T> {
@@ -213,6 +218,39 @@ export const window = {
   showTextDocument: vi.fn(),
   activeTextEditor: undefined as unknown,
   visibleTextEditors: [] as unknown[],
+  /**
+   * Minimal webview-panel mock. Tests can inspect / trigger:
+   *   - panel.webview.postMessage (mock fn)
+   *   - panel.webview.onDidReceiveMessage  → captures the listener so tests can fire messages
+   *   - panel.onDidDispose                 → captures the listener so tests can fire disposal
+   *   - panel.reveal, panel.dispose        → spies
+   */
+  createWebviewPanel: vi.fn((_id: string, _title: string, _column: unknown, _options?: unknown) => {
+    const messageListeners: Array<(msg: unknown) => void> = [];
+    const disposeListeners: Array<() => void> = [];
+    const panel = {
+      webview: {
+        html: '',
+        postMessage: vi.fn(),
+        onDidReceiveMessage: vi.fn((cb: (msg: unknown) => void) => {
+          messageListeners.push(cb);
+          return { dispose: vi.fn() };
+        }),
+        _fireMessage(msg: unknown): void {
+          for (const l of messageListeners) l(msg);
+        },
+      },
+      reveal: vi.fn(),
+      onDidDispose: vi.fn((cb: () => void) => {
+        disposeListeners.push(cb);
+        return { dispose: vi.fn() };
+      }),
+      dispose: vi.fn(() => {
+        for (const l of disposeListeners) l();
+      }),
+    };
+    return panel;
+  }),
 };
 
 export const workspace = {
@@ -229,6 +267,7 @@ export const workspace = {
   onDidOpenTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
   onDidCloseTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
   onDidSaveTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
+  onWillSaveTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
   textDocuments: [] as unknown[],
   createFileSystemWatcher: vi.fn(() => ({
     onDidChange: vi.fn(() => ({ dispose: vi.fn() })),
@@ -292,6 +331,16 @@ export const env = {
   },
   openExternal: vi.fn(),
   asExternalUri: vi.fn((uri: Uri) => uri),
+};
+
+/**
+ * Minimal `vscode.authentication` mock. Tests call `authentication.getSession.mockResolvedValue(...)`
+ * to drive the API. Real provider semantics — silent vs createIfNone, scope checks — are not modelled;
+ * the production code uses a small slice of this surface.
+ */
+export const authentication = {
+  getSession: vi.fn(),
+  onDidChangeSessions: vi.fn(() => ({ dispose: vi.fn() })),
 };
 
 export const ExtensionMode = {
@@ -359,6 +408,19 @@ export class Range {
       this.end = args[1] as Position;
     }
   }
+}
+
+export class TextEdit {
+  static replace(range: Range, newText: string): TextEdit {
+    return new TextEdit(range, newText);
+  }
+  static insert(position: Position, newText: string): TextEdit {
+    return new TextEdit(new Range(position, position), newText);
+  }
+  constructor(
+    public readonly range: Range,
+    public readonly newText: string,
+  ) {}
 }
 
 export class CodeLens {

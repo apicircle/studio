@@ -73,6 +73,8 @@ export function applyMutation(
       return applyFolderDelete(state, patch.id, now);
     case 'folder.move':
       return applyFolderMove(state, patch.id, patch.newParentId, now);
+    case 'folder.update':
+      return applyFolderUpdate(state, patch.id, patch.patch, now);
     case 'folder.import_apicircle':
       return applyFolderImportApicircle(state, patch.parsed, patch.parentFolderId, now);
     case 'environment.upsert':
@@ -170,12 +172,15 @@ function applyRequestCreate(
   if (state.synced.collections.requests[request.id]) {
     return { next: state, changedIds: [] };
   }
+  const tree = request.folderId
+    ? state.synced.collections.tree
+    : pushTreeChild(state.synced.collections.tree, { kind: 'request', id: request.id });
   const synced: WorkspaceSynced = {
     ...state.synced,
     collections: {
       ...state.synced.collections,
       requests: { ...state.synced.collections.requests, [request.id]: request },
-      tree: pushTreeChild(state.synced.collections.tree, { kind: 'request', id: request.id }),
+      tree,
     },
     meta: { ...state.synced.meta, updatedAt: now },
   };
@@ -243,12 +248,15 @@ function applyFolderCreate(
   if (state.synced.collections.folders[folder.id]) {
     return { next: state, changedIds: [] };
   }
+  const tree = folder.parentId
+    ? state.synced.collections.tree
+    : pushTreeChild(state.synced.collections.tree, { kind: 'folder', id: folder.id });
   const synced: WorkspaceSynced = {
     ...state.synced,
     collections: {
       ...state.synced.collections,
       folders: { ...state.synced.collections.folders, [folder.id]: folder },
-      tree: pushTreeChild(state.synced.collections.tree, { kind: 'folder', id: folder.id }),
+      tree,
     },
     meta: { ...state.synced.meta, updatedAt: now },
   };
@@ -326,6 +334,76 @@ function applyFolderMove(
     meta: { ...state.synced.meta, updatedAt: now },
   };
   return { next: { ...state, synced }, changedIds: [id] };
+}
+
+function applyFolderUpdate(
+  state: WorkspaceState,
+  id: string,
+  patch: Partial<Pick<Folder, 'name' | 'auth'>>,
+  now: string,
+): ApplyMutationResult {
+  const folder = state.synced.collections.folders[id];
+  if (!folder) {
+    return { next: state, changedIds: [] };
+  }
+  const nameChanging = 'name' in patch && patch.name !== undefined;
+  const authChanging = 'auth' in patch;
+  if (!nameChanging && !authChanging) {
+    return { next: state, changedIds: [] };
+  }
+  let nextName = folder.name;
+  if (nameChanging) {
+    const trimmed = patch.name!.trim();
+    if (!trimmed) {
+      // Empty rename — preserve current. Reducer no-ops on invalid input
+      // (matches request.update semantics: bad fields are dropped, the
+      // patch as a whole still settles).
+    } else if (trimmed === folder.name) {
+      // No change to apply.
+    } else if (!isFolderNameUnique(state, folder.parentId, trimmed, id)) {
+      // Collision under the same parent — no-op rather than silently
+      // accepting a duplicate. Headless writers should pre-uniquify (the
+      // store helper `uniquifyName` does this already).
+      return { next: state, changedIds: [] };
+    } else {
+      nextName = trimmed;
+    }
+  }
+  const nextFolder: Folder = { ...folder, name: nextName };
+  if (authChanging) {
+    if (patch.auth === undefined) {
+      delete nextFolder.auth;
+    } else {
+      nextFolder.auth = patch.auth;
+    }
+  }
+  if (nextFolder.name === folder.name && nextFolder.auth === folder.auth) {
+    return { next: state, changedIds: [] };
+  }
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    collections: {
+      ...state.synced.collections,
+      folders: { ...state.synced.collections.folders, [id]: nextFolder },
+    },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  return { next: { ...state, synced }, changedIds: [id] };
+}
+
+function isFolderNameUnique(
+  state: WorkspaceState,
+  parentId: string | null,
+  trimmedCandidate: string,
+  ignoreId: string,
+): boolean {
+  const target = trimmedCandidate.toLowerCase();
+  for (const f of Object.values(state.synced.collections.folders)) {
+    if (f.id === ignoreId) continue;
+    if (f.parentId !== parentId) continue;
+    if (f.name.trim().toLowerCase() === target) return false;
+  }
+  return true;
 }
 
 /**

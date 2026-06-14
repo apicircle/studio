@@ -20,25 +20,25 @@ const fakeToken = {
 describe('RequestCodeLensProvider', () => {
   const provider = new RequestCodeLensProvider();
 
-  it('returns [] for non-apicircle documents', () => {
-    const lenses = provider.provideCodeLenses(
+  it('returns [] for non-apicircle documents', async () => {
+    const lenses = await provider.provideCodeLenses(
       makeDoc(Uri.parse('file:///foo.yaml'), ['name: x', 'method: GET']),
       fakeToken,
     );
     expect(lenses).toEqual([]);
   });
 
-  it('returns [] for apicircle URIs that are not .req.yaml', () => {
-    const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/responses/r.run.yaml'), ['name: x']),
+  it('returns [] for apicircle URIs that are not .yaml', async () => {
+    const lenses = await provider.provideCodeLenses(
+      makeDoc(Uri.parse('apicircle://x/responses/r.yaml'), ['name: x']),
       fakeToken,
     );
     expect(lenses).toEqual([]);
   });
 
-  it('emits ◆ field lenses on method / header / query / pathParam rows but NOT on url:', () => {
-    const REQ = Uri.parse('apicircle://x/requests/abc.req.yaml');
-    const lenses = provider.provideCodeLenses(
+  it('emits ◆ field lenses on method / header / query / pathParam rows but NOT on url:', async () => {
+    const REQ = Uri.parse('apicircle://x/requests/abc.yaml');
+    const lenses = await provider.provideCodeLenses(
       makeDoc(REQ, [
         'name: List users',
         'method: GET',
@@ -71,19 +71,28 @@ describe('RequestCodeLensProvider', () => {
     );
     expect(headerKey?.command?.arguments).toEqual([REQ, 10]); // - key: Accept
     expect(headerValue?.command?.arguments).toEqual([REQ, 11]); // value: application/json
-    // query key + value + path-param value all route to the generic text editor.
+    // query key + path-param value route to the generic text editor. The
+    // query VALUE row no longer carries a ◆ Value lens (edited inline; the
+    // URL bar's ?key=val syntax round-trips on save). The query KEY row
+    // gains a ✓/⊘ enable toggle alongside ◆ Key.
     const textLines = lenses
       .filter((l) => l.command?.command === 'apicircle.setRequestTextField')
       .map((l) => l.command?.arguments?.[1]);
     expect(textLines).not.toContain(2); // not on url:
     expect(textLines).toContain(4); // pathParams id value
     expect(textLines).toContain(6); // query - key: page
-    expect(textLines).toContain(7); // query value
+    expect(textLines).not.toContain(7); // query value lens removed
+    const toggle = lenses.find(
+      (l) =>
+        l.command?.command === 'apicircle.toggleRequestRowEnabled' &&
+        (l.command?.arguments?.[1] as number) === 6,
+    );
+    expect(toggle).toBeDefined();
   });
 
-  it('emits ◆ editors on auth / assertions / extractions rows + graphql variables format', () => {
-    const REQ = Uri.parse('apicircle://x/requests/abc.req.yaml');
-    const lenses = provider.provideCodeLenses(
+  it('emits ◆ editors on auth / assertions / extractions rows + graphql variables format', async () => {
+    const REQ = Uri.parse('apicircle://x/requests/abc.yaml');
+    const lenses = await provider.provideCodeLenses(
       makeDoc(REQ, [
         'name: R',
         'method: POST',
@@ -124,9 +133,9 @@ describe('RequestCodeLensProvider', () => {
     expect(fmt?.command?.arguments).toEqual([REQ, 22]);
   });
 
-  it('emits Send + Add-section + New-from-template lenses at the name: line', () => {
-    const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), [
+  it('emits Send + Add-section + New-from-template lenses at the name: line', async () => {
+    const lenses = await provider.provideCodeLenses(
+      makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), [
         '# comment',
         'name: Get user',
         'method: GET',
@@ -135,9 +144,11 @@ describe('RequestCodeLensProvider', () => {
       fakeToken,
     );
     // The name-row trio (other lenses are the ◆ method/url field editors).
+    // The Send lens title was upgraded to a more visible CTA so first-time
+    // users notice it and learn the Ctrl/Cmd+Enter shortcut.
     const nameRow = lenses.filter((l) => l.range.start.line === 1);
     expect(nameRow).toHaveLength(3);
-    expect(nameRow[0].command?.title).toBe('▶ Send');
+    expect(nameRow[0].command?.title).toMatch(/^▶▶ SEND REQUEST/);
     expect(nameRow[0].command?.command).toBe('apicircle.sendRequest');
     expect(nameRow[1].command?.title).toBe('✚ Add section…');
     expect(nameRow[1].command?.command).toBe('apicircle.addRequestSection');
@@ -145,9 +156,9 @@ describe('RequestCodeLensProvider', () => {
     expect(nameRow[2].command?.command).toBe('apicircle.newRequestFromTemplate');
   });
 
-  it('only emits one row of lenses even if name: appears in comments or strings later', () => {
-    const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), [
+  it('only emits one row of lenses even if name: appears in comments or strings later', async () => {
+    const lenses = await provider.provideCodeLenses(
+      makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), [
         'name: x',
         'description: "the name: in this comment shouldn\'t fire"',
         'name: nope',
@@ -159,17 +170,17 @@ describe('RequestCodeLensProvider', () => {
     expect(lenses.every((l) => l.range.start.line === 0)).toBe(true);
   });
 
-  it('returns [] when no name: line is present', () => {
-    const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), ['# no name field']),
+  it('returns [] when no name: line is present', async () => {
+    const lenses = await provider.provideCodeLenses(
+      makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), ['# no name field']),
       fakeToken,
     );
     expect(lenses).toEqual([]);
   });
 
-  it('emits a Switch body type lens above body: with the current type in the title', () => {
-    const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), [
+  it('emits a Switch body type lens above body: with the current type in the title', async () => {
+    const lenses = await provider.provideCodeLenses(
+      makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), [
         'name: Post user',
         'method: POST',
         'url: https://x.com',
@@ -189,12 +200,12 @@ describe('RequestCodeLensProvider', () => {
     expect(bodyLens?.range.start.line).toBe(3);
     // ⟳ Format JSON lands on the content: row (index 5).
     const fmt = lenses.find((l) => l.command?.command === 'apicircle.formatJson');
-    expect(fmt?.command?.arguments).toEqual([Uri.parse('apicircle://x/requests/abc.req.yaml'), 5]);
+    expect(fmt?.command?.arguments).toEqual([Uri.parse('apicircle://x/requests/abc.yaml'), 5]);
   });
 
-  it('emits a Switch auth type lens above auth: with the current type in the title', () => {
-    const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), [
+  it('emits a Switch auth type lens above auth: with the current type in the title', async () => {
+    const lenses = await provider.provideCodeLenses(
+      makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), [
         'name: Get me',
         'method: GET',
         'url: https://x.com',
@@ -213,9 +224,9 @@ describe('RequestCodeLensProvider', () => {
     expect(authLens?.range.start.line).toBe(3);
   });
 
-  it('omits the body / auth lenses when those sections are absent', () => {
-    const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), [
+  it('omits the body / auth lenses when those sections are absent', async () => {
+    const lenses = await provider.provideCodeLenses(
+      makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), [
         'name: Get me',
         'method: GET',
         'url: https://x.com',
@@ -230,9 +241,9 @@ describe('RequestCodeLensProvider', () => {
     ).toBeUndefined();
   });
 
-  it('falls back to a bare title when the body section has no type: child', () => {
-    const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), [
+  it('falls back to a bare title when the body section has no type: child', async () => {
+    const lenses = await provider.provideCodeLenses(
+      makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), [
         'name: X',
         'body:',
         '  content: "raw"',
@@ -245,9 +256,9 @@ describe('RequestCodeLensProvider', () => {
     expect(bodyLens?.command?.title).toBe('⇄ Switch body type…');
   });
 
-  it('emits a "Pick attachment file" lens when body.type is binary', () => {
-    const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), [
+  it('emits a "Pick attachment file" lens when body.type is binary', async () => {
+    const lenses = await provider.provideCodeLenses(
+      makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), [
         'name: X',
         'body:',
         '  type: binary',
@@ -260,9 +271,9 @@ describe('RequestCodeLensProvider', () => {
     expect(pick?.command?.title).toContain('Pick attachment file');
   });
 
-  it('does NOT emit the binary-pick lens when body.type is something else', () => {
-    const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), [
+  it('does NOT emit the binary-pick lens when body.type is something else', async () => {
+    const lenses = await provider.provideCodeLenses(
+      makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), [
         'name: X',
         'body:',
         '  type: json',
@@ -275,9 +286,9 @@ describe('RequestCodeLensProvider', () => {
     ).toBeUndefined();
   });
 
-  it('anchors Add text / Add file row lenses on the formRows: line, with no global switch lens', () => {
-    const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), [
+  it('anchors Add text / Add file row lenses on the formRows: line, with no global switch lens', async () => {
+    const lenses = await provider.provideCodeLenses(
+      makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), [
         'name: X', // 0
         'body:', // 1
         '  type: form-data', // 2
@@ -311,9 +322,9 @@ describe('RequestCodeLensProvider', () => {
     expect(globalSwitchKind, 'global Switch row kind lens should be removed').toBeUndefined();
   });
 
-  it('emits per-row lenses inside formRows: with the row index baked in', () => {
-    const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), [
+  it('emits per-row lenses inside formRows: with the row index baked in', async () => {
+    const lenses = await provider.provideCodeLenses(
+      makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), [
         'name: X',
         'body:',
         '  type: form-data',
@@ -357,9 +368,9 @@ describe('RequestCodeLensProvider', () => {
     ).toBeUndefined();
   });
 
-  it('emits a "Pick header" lens above headers:', () => {
-    const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), [
+  it('emits a "Pick header" lens above headers:', async () => {
+    const lenses = await provider.provideCodeLenses(
+      makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), [
         'name: X',
         'headers:',
         '  - key: Accept',
@@ -373,9 +384,9 @@ describe('RequestCodeLensProvider', () => {
     expect(lens?.range.start.line).toBe(1);
   });
 
-  it('emits a "Map from JSON" lens above contextVars:', () => {
-    const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), [
+  it('emits a "Map from JSON" lens above contextVars:', async () => {
+    const lenses = await provider.provideCodeLenses(
+      makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), [
         'name: X',
         'contextVars:',
         '  - key: scope',
@@ -388,9 +399,9 @@ describe('RequestCodeLensProvider', () => {
     expect(lens?.range.start.line).toBe(1);
   });
 
-  it('emits a "Get token" lens above auth: when type is an OAuth2 grant', () => {
-    const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), [
+  it('emits a "Get token" lens above auth: when type is an OAuth2 grant', async () => {
+    const lenses = await provider.provideCodeLenses(
+      makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), [
         'name: X',
         'auth:',
         '  type: oauth2-client-credentials',
@@ -402,9 +413,9 @@ describe('RequestCodeLensProvider', () => {
     expect(lens).toBeDefined();
   });
 
-  it('does NOT emit the "Get token" lens for non-OAuth2 auth types', () => {
-    const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), [
+  it('does NOT emit the "Get token" lens for non-OAuth2 auth types', async () => {
+    const lenses = await provider.provideCodeLenses(
+      makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), [
         'name: X',
         'auth:',
         '  type: bearer',
@@ -415,7 +426,7 @@ describe('RequestCodeLensProvider', () => {
     expect(lenses.find((l) => l.command?.command === 'apicircle.fetchOAuth2Token')).toBeUndefined();
   });
 
-  it('refresh() fires the onDidChangeCodeLenses event', () => {
+  it('refresh() fires the onDidChangeCodeLenses event', async () => {
     const p = new RequestCodeLensProvider();
     let fired = false;
     p.onDidChangeCodeLenses(() => (fired = true));
@@ -424,15 +435,228 @@ describe('RequestCodeLensProvider', () => {
     p.dispose();
   });
 
+  describe('inherited-auth lens', () => {
+    // Minimal bridge stub — we only need listWorkspaces() returning a
+    // surface whose read() yields a state with the requested folder chain.
+    function makeBridgeStub(opts: {
+      workspaceId: string;
+      requestId: string;
+      folderId: string | null;
+      folders: Record<
+        string,
+        { id: string; name: string; parentId: string | null; auth?: unknown }
+      >;
+    }) {
+      const state = {
+        synced: {
+          collections: {
+            requests: {
+              [opts.requestId]: {
+                id: opts.requestId,
+                folderId: opts.folderId,
+              },
+            },
+            folders: opts.folders,
+          },
+        },
+        local: {},
+      } as never;
+      const surface = {
+        workspace: { id: opts.workspaceId },
+        read: async () => state,
+      };
+      return {
+        listWorkspaces: () => [surface],
+        onDidChangeActiveWorkspace: () => ({ dispose: () => undefined }),
+      } as never;
+    }
+
+    function authReqUri(workspaceId: string, requestId: string): unknown {
+      const enc = Buffer.from(workspaceId, 'utf8').toString('hex');
+      return Uri.parse(`apicircle://${enc}/requests/abc.yaml?id=${requestId}`);
+    }
+
+    it('surfaces "Inherits from <Folder> (<type>)" when an ancestor sets auth', async () => {
+      const wsId = '/test/.apicircle';
+      const reqId = 'req_inh_1';
+      const uri = authReqUri(wsId, reqId);
+      const bridge = makeBridgeStub({
+        workspaceId: wsId,
+        requestId: reqId,
+        folderId: 'fChild',
+        folders: {
+          fParent: {
+            id: 'fParent',
+            name: 'Authenticated',
+            parentId: null,
+            auth: { type: 'bearer', token: 'tok' },
+          },
+          fChild: { id: 'fChild', name: 'Users', parentId: 'fParent' },
+        },
+      });
+      const p = new RequestCodeLensProvider(undefined, bridge);
+      const lenses = await p.provideCodeLenses(
+        makeDoc(uri, ['name: X', 'auth:', '  type: inherit']),
+        fakeToken,
+      );
+      const lens = lenses.find((l) => l.command?.title?.startsWith('◆ Inherits from'));
+      expect(lens).toBeDefined();
+      expect(lens?.command?.title).toBe('◆ Inherits from Authenticated (bearer)');
+      expect(lens?.command?.command).toBe('vscode.open');
+      // arguments[0] is the folder URI — base path includes /folders/<name>.yaml
+      const folderUri = lens?.command?.arguments?.[0] as { path: string; query: string };
+      expect(folderUri.path).toBe('/folders/Authenticated.yaml');
+      expect(folderUri.query).toBe('id=fParent');
+      p.dispose();
+    });
+
+    it('surfaces "Inherits → none" when no ancestor sets auth', async () => {
+      const wsId = '/test/.apicircle';
+      const reqId = 'req_inh_2';
+      const uri = authReqUri(wsId, reqId);
+      const bridge = makeBridgeStub({
+        workspaceId: wsId,
+        requestId: reqId,
+        folderId: 'fA',
+        folders: {
+          fA: { id: 'fA', name: 'Root', parentId: null },
+        },
+      });
+      const p = new RequestCodeLensProvider(undefined, bridge);
+      const lenses = await p.provideCodeLenses(
+        makeDoc(uri, ['name: X', 'auth:', '  type: inherit']),
+        fakeToken,
+      );
+      const lens = lenses.find((l) => l.command?.title?.startsWith('◆ Inherits'));
+      expect(lens?.command?.title).toBe('◆ Inherits → none (no ancestor folder sets auth)');
+      p.dispose();
+    });
+
+    it('emits no inherited-auth lens for non-inherit auth types', async () => {
+      const wsId = '/test/.apicircle';
+      const reqId = 'req_inh_3';
+      const uri = authReqUri(wsId, reqId);
+      const bridge = makeBridgeStub({
+        workspaceId: wsId,
+        requestId: reqId,
+        folderId: null,
+        folders: {},
+      });
+      const p = new RequestCodeLensProvider(undefined, bridge);
+      const lenses = await p.provideCodeLenses(
+        makeDoc(uri, ['name: X', 'auth:', '  type: bearer', '  token: ABC']),
+        fakeToken,
+      );
+      expect(lenses.find((l) => l.command?.title?.startsWith('◆ Inherits'))).toBeUndefined();
+      p.dispose();
+    });
+
+    it('refreshes when the fsProvider reports a folder YAML change', () => {
+      const listeners: Array<(events: { uri: { scheme: string; path: string } }[]) => void> = [];
+      const fsProvider = {
+        onDidChangeFile: (
+          listener: (events: { uri: { scheme: string; path: string } }[]) => void,
+        ) => {
+          listeners.push(listener);
+          return { dispose: () => undefined };
+        },
+      };
+      const p = new RequestCodeLensProvider(undefined, undefined, fsProvider as never);
+      let fired = 0;
+      p.onDidChangeCodeLenses(() => (fired += 1));
+      // Folder YAML change → refresh.
+      for (const l of listeners) l([{ uri: { scheme: 'apicircle', path: '/folders/Auth.yaml' } }]);
+      expect(fired).toBe(1);
+      // Non-folder change (e.g. mocks) → no refresh.
+      for (const l of listeners) l([{ uri: { scheme: 'apicircle', path: '/mocks/x.yaml' } }]);
+      expect(fired).toBe(1);
+      p.dispose();
+    });
+
+    it('refreshes when the active workspace changes', () => {
+      const triggers: Array<() => void> = [];
+      const bridge = {
+        listWorkspaces: () => [],
+        onDidChangeActiveWorkspace: (l: () => void) => {
+          triggers.push(l);
+          return { dispose: () => undefined };
+        },
+      } as never;
+      const p = new RequestCodeLensProvider(undefined, bridge);
+      let fired = 0;
+      p.onDidChangeCodeLenses(() => (fired += 1));
+      for (const t of triggers) t();
+      expect(fired).toBe(1);
+      p.dispose();
+    });
+
+    it('resolves against linkedCollections when the URI is a /linked/.../*.yaml', async () => {
+      const wsId = '/test/.apicircle';
+      const reqId = 'lreq_1';
+      const linkId = 'lw1';
+      const enc = Buffer.from(wsId, 'utf8').toString('hex');
+      const uri = Uri.parse(
+        `apicircle://${enc}/linked/Payments/Login.yaml?link=${linkId}&id=${reqId}`,
+      );
+      const sourceFolder = {
+        id: 'lf1',
+        name: 'Linked Auth',
+        parentId: null,
+        auth: { type: 'bearer', token: 'src-tok' },
+      };
+      const state = {
+        synced: {
+          collections: { requests: {}, folders: {} },
+          linkedWorkspaces: { [linkId]: { id: linkId, name: 'Payments' } },
+        },
+        local: {
+          linkedCollections: {
+            [linkId]: {
+              collections: {
+                requests: { [reqId]: { id: reqId, folderId: 'lf1' } },
+                folders: { lf1: sourceFolder },
+              },
+            },
+          },
+        },
+      } as never;
+      const bridge = {
+        listWorkspaces: () => [{ workspace: { id: wsId }, read: async () => state }],
+        onDidChangeActiveWorkspace: () => ({ dispose: () => undefined }),
+      } as never;
+      const p = new RequestCodeLensProvider(undefined, bridge);
+      const lenses = await p.provideCodeLenses(
+        makeDoc(uri, ['name: X', 'auth:', '  type: inherit']),
+        fakeToken,
+      );
+      const lens = lenses.find((l) => l.command?.title?.startsWith('◆ Inherits'));
+      expect(lens?.command?.title).toBe('◆ Inherits from Linked Auth (bearer) [linked]');
+      const target = lens?.command?.arguments?.[0] as { path: string };
+      expect(target.path).toBe('/linked/Payments/Linked-Auth.yaml');
+      p.dispose();
+    });
+
+    it('emits no lens when bridge is omitted (graceful degrade)', async () => {
+      const uri = Uri.parse('apicircle://x/requests/abc.yaml?id=req_1');
+      const p = new RequestCodeLensProvider();
+      const lenses = await p.provideCodeLenses(
+        makeDoc(uri, ['name: X', 'auth:', '  type: inherit']),
+        fakeToken,
+      );
+      expect(lenses.find((l) => l.command?.title?.startsWith('◆ Inherits'))).toBeUndefined();
+      p.dispose();
+    });
+  });
+
   describe('in-flight tracker integration', () => {
-    it('swaps the ▶ Send row for ⏳ Sending… + ✖ Cancel while in flight', () => {
+    it('swaps the ▶ Send row for ⏳ Sending… + ✖ Cancel while in flight', async () => {
       const tracker = new InFlightSendTracker();
       const p = new RequestCodeLensProvider(tracker);
-      const uri = Uri.parse('apicircle://x/requests/Login.req.yaml?id=req_1');
+      const uri = Uri.parse('apicircle://x/requests/Login.yaml?id=req_1');
 
       tracker.start(uri as never, 'run_1', 'Login');
 
-      const lenses = p.provideCodeLenses(
+      const lenses = await p.provideCodeLenses(
         makeDoc(uri, ['name: Login', 'method: GET', 'url: https://x.com']),
         fakeToken,
       );
@@ -447,28 +671,28 @@ describe('RequestCodeLensProvider', () => {
       tracker.dispose();
     });
 
-    it('reverts to the default ▶ Send row once the tracker releases the URI', () => {
+    it('reverts to the default Send row once the tracker releases the URI', async () => {
       const tracker = new InFlightSendTracker();
       const p = new RequestCodeLensProvider(tracker);
-      const uri = Uri.parse('apicircle://x/requests/Login.req.yaml?id=req_1');
+      const uri = Uri.parse('apicircle://x/requests/Login.yaml?id=req_1');
 
       tracker.start(uri as never, 'run_1', 'Login');
       tracker.end(uri as never);
 
-      const lenses = p.provideCodeLenses(makeDoc(uri, ['name: Login']), fakeToken);
-      expect(lenses.find((l) => l.command?.title === '▶ Send')).toBeDefined();
+      const lenses = await p.provideCodeLenses(makeDoc(uri, ['name: Login']), fakeToken);
+      expect(lenses.find((l) => l.command?.title?.startsWith('▶▶ SEND'))).toBeDefined();
       expect(lenses.find((l) => l.command?.title?.startsWith('⏳'))).toBeUndefined();
       p.dispose();
       tracker.dispose();
     });
 
-    it('refreshes lenses when the tracker fires its change event', () => {
+    it('refreshes lenses when the tracker fires its change event', async () => {
       const tracker = new InFlightSendTracker();
       const p = new RequestCodeLensProvider(tracker);
       let fired = 0;
       p.onDidChangeCodeLenses(() => (fired += 1));
-      tracker.start(Uri.parse('apicircle://x/requests/a.req.yaml?id=1') as never, 'r1', 'a');
-      tracker.end(Uri.parse('apicircle://x/requests/a.req.yaml?id=1') as never);
+      tracker.start(Uri.parse('apicircle://x/requests/a.yaml?id=1') as never, 'r1', 'a');
+      tracker.end(Uri.parse('apicircle://x/requests/a.yaml?id=1') as never);
       expect(fired).toBeGreaterThanOrEqual(2);
       p.dispose();
       tracker.dispose();

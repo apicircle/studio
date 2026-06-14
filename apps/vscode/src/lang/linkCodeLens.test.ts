@@ -12,7 +12,7 @@ function makeDoc(uri: unknown, lines: string[]): vscode.TextDocument {
 }
 
 const fakeToken = {} as unknown as vscode.CancellationToken;
-const LINK_URI = Uri.parse('apicircle://x/links/Payments.link.yaml?id=lw1');
+const LINK_URI = Uri.parse('apicircle://x/links/Payments.yaml?id=lw1');
 
 function titles(lenses: vscode.CodeLens[]): string[] {
   return lenses.map((l) => l.command?.title ?? '');
@@ -22,10 +22,7 @@ describe('LinkCodeLensProvider', () => {
   it('returns [] for non-link documents', () => {
     const p = new LinkCodeLensProvider();
     expect(
-      p.provideCodeLenses(
-        makeDoc(Uri.parse('apicircle://x/mocks/m.mock.yaml'), ['name: x']),
-        fakeToken,
-      ),
+      p.provideCodeLenses(makeDoc(Uri.parse('apicircle://x/mocks/m.yaml'), ['name: x']), fakeToken),
     ).toEqual([]);
   });
 

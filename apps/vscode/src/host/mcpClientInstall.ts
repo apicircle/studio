@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as YAML from 'yaml';
+import * as TOML from 'smol-toml';
 import { buildSnippetVariants, resolveAiClientConfigPath } from '@apicircle/mcp-server';
 
 // =============================================================================
@@ -53,6 +54,7 @@ import { buildSnippetVariants, resolveAiClientConfigPath } from '@apicircle/mcp-
 export type InstallableClient =
   | 'claude-desktop'
   | 'claude-code'
+  | 'codex'
   | 'cursor'
   | 'windsurf'
   | 'zed'
@@ -62,6 +64,7 @@ export type InstallableClient =
 export const CLIENT_LABELS: Record<InstallableClient, string> = {
   'claude-desktop': 'Claude Desktop',
   'claude-code': 'Claude Code',
+  codex: 'Codex',
   cursor: 'Cursor',
   windsurf: 'Windsurf',
   zed: 'Zed',
@@ -75,11 +78,12 @@ export const CLIENT_LABELS: Record<InstallableClient, string> = {
  *     `mcpServers` map. Same shape as standard but serialised as YAML so the
  *     rest of Continue's config (models, name, version) is preserved.
  */
-type SchemaVariant = 'mcpServers' | 'context_servers' | 'mcpServers-yaml';
+type SchemaVariant = 'mcpServers' | 'context_servers' | 'mcpServers-yaml' | 'mcp_servers-toml';
 
 const SCHEMA_VARIANTS: Record<InstallableClient, SchemaVariant> = {
   'claude-desktop': 'mcpServers',
   'claude-code': 'mcpServers',
+  codex: 'mcp_servers-toml',
   cursor: 'mcpServers',
   windsurf: 'mcpServers',
   zed: 'context_servers',
@@ -89,6 +93,7 @@ const SCHEMA_VARIANTS: Record<InstallableClient, SchemaVariant> = {
 export const INSTALLABLE_CLIENTS: readonly InstallableClient[] = [
   'claude-desktop',
   'claude-code',
+  'codex',
   'cursor',
   'windsurf',
   'zed',
@@ -161,17 +166,8 @@ function assertContainedInHome(fullPath: string, homedir: string): void {
  * Resolve the config-file path for a given client + env. Returns null if the
  * client has no fixed location (clients listed in `AI_CLIENTS` but not in
  * `INSTALLABLE_CLIENTS`).
- *
- * Phase 11 — Continue override: the shared resolver in `@apicircle/mcp-server`
- * returns `~/.continue/config.json` (its legacy format). Continue migrated to
- * YAML (`config.yaml`). We override here so auto-install writes the right
- * file. The shared resolver stays json-pointed for the snippet-copy code
- * paths in P5 (which the user can still paste-into-yaml manually).
  */
 export function resolveInstallPath(client: InstallableClient, env: ConfigPathEnv): string {
-  if (client === 'continue') {
-    return path.join(env.homedir, '.continue/config.yaml');
-  }
   const resolved = resolveAiClientConfigPath(client, env);
   if (!resolved) {
     throw new Error(
@@ -241,10 +237,12 @@ export function installClientMcpConfig(opts: ClientInstallOptions): ClientInstal
   };
   const entryName = opts.entryName ?? DEFAULT_ENTRY_NAME;
   const variant: SchemaVariant = SCHEMA_VARIANTS[opts.client];
-  // The on-disk key under which we store the apicircle entry. YAML + JSON
-  // standard variants both use `mcpServers`; only Zed differs.
-  const schemaKey: 'mcpServers' | 'context_servers' =
-    variant === 'context_servers' ? 'context_servers' : 'mcpServers';
+  const schemaKey: 'mcpServers' | 'context_servers' | 'mcp_servers' =
+    variant === 'context_servers'
+      ? 'context_servers'
+      : variant === 'mcp_servers-toml'
+        ? 'mcp_servers'
+        : 'mcpServers';
   const fullPath = resolveInstallPath(opts.client, env);
 
   // P8-1a-G1: guard against symlink escapes after we know the target path.
@@ -290,8 +288,12 @@ export function detectClientMcpConfigState(opts: {
   };
   const entryName = opts.entryName ?? DEFAULT_ENTRY_NAME;
   const variant: SchemaVariant = SCHEMA_VARIANTS[opts.client];
-  const schemaKey: 'mcpServers' | 'context_servers' =
-    variant === 'context_servers' ? 'context_servers' : 'mcpServers';
+  const schemaKey: 'mcpServers' | 'context_servers' | 'mcp_servers' =
+    variant === 'context_servers'
+      ? 'context_servers'
+      : variant === 'mcp_servers-toml'
+        ? 'mcp_servers'
+        : 'mcpServers';
   let fullPath: string;
   try {
     fullPath = resolveInstallPath(opts.client, env);
@@ -332,6 +334,17 @@ function readConfigFile(filePath: string, variant: SchemaVariant): Record<string
   } catch {
     return {};
   }
+  if (variant === 'mcp_servers-toml') {
+    try {
+      const parsed: unknown = TOML.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // fall through to empty
+    }
+    return {};
+  }
   if (variant === 'mcpServers-yaml') {
     try {
       const parsed: unknown = YAML.parse(raw);
@@ -362,9 +375,11 @@ function writeConfigFile(
   variant: SchemaVariant,
 ): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  if (variant === 'mcp_servers-toml') {
+    fs.writeFileSync(filePath, TOML.stringify(value));
+    return;
+  }
   if (variant === 'mcpServers-yaml') {
-    // YAML.stringify defaults to block style with 2-space indent — matches
-    // what Continue's own config writer produces.
     fs.writeFileSync(filePath, YAML.stringify(value));
     return;
   }

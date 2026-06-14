@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { findSectionRange } from './switchRequestSection';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
 // Per-section "+ Add row" commands for request YAML editing. Each command
@@ -45,7 +46,7 @@ async function ensureRequestDocument(uri?: vscode.Uri): Promise<vscode.TextDocum
     await vscode.window.showWarningMessage('No request YAML is active.');
     return null;
   }
-  if (targetUri.scheme !== 'apicircle' || !targetUri.path.endsWith('.req.yaml')) {
+  if (targetUri.scheme !== 'apicircle' || uriEntityKind(targetUri) !== 'request') {
     await vscode.window.showWarningMessage(
       'This command only runs against APICircle request YAML files.',
     );
@@ -177,97 +178,17 @@ export const addPathParamRowCommand = (uri?: vscode.Uri) => addKVRow(uri, 'pathP
 // addAssertionRow
 // ---------------------------------------------------------------------------
 
-const ASSERTION_KINDS: ReadonlyArray<{
-  kind: 'status' | 'header' | 'json-path' | 'response-time';
-  label: string;
-  description: string;
-}> = [
-  { kind: 'status', label: 'Status', description: 'Compare the HTTP status code.' },
-  { kind: 'header', label: 'Header', description: 'Compare a response header value.' },
-  {
-    kind: 'json-path',
-    label: 'JSON path',
-    description: 'Compare a JSON-path slice of the response body.',
-  },
-  {
-    kind: 'response-time',
-    label: 'Response time',
-    description: 'Compare wall-clock latency in ms.',
-  },
-];
-
-const ASSERTION_OPS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: 'equals', label: 'equals' },
-  { value: 'not-equals', label: 'not-equals' },
-  { value: 'contains', label: 'contains' },
-  { value: 'matches', label: 'matches (regex)' },
-  { value: 'gt', label: '>' },
-  { value: 'lt', label: '<' },
-  { value: 'gte', label: '>=' },
-  { value: 'lte', label: '<=' },
-];
-
 export async function addAssertionRowCommand(uri?: vscode.Uri): Promise<void> {
   const document = await ensureRequestDocument(uri);
   if (!document) return;
-
-  const kindPick = await vscode.window.showQuickPick(
-    ASSERTION_KINDS.map((k) => ({ label: k.label, description: k.description, value: k.kind })),
-    { title: 'New assertion', placeHolder: 'What is being asserted?' },
-  );
-  if (!kindPick) return;
-
-  let target = '';
-  if (kindPick.value === 'header') {
-    const typed = await vscode.window.showInputBox({
-      prompt: 'Header name',
-      placeHolder: 'Content-Type',
-      validateInput: (v) => (v.trim().length === 0 ? 'Required.' : null),
-    });
-    if (!typed) return;
-    target = typed.trim();
-  } else if (kindPick.value === 'json-path') {
-    const typed = await vscode.window.showInputBox({
-      prompt: 'JSON path',
-      placeHolder: '$.data.token',
-      validateInput: (v) => (v.trim().length === 0 ? 'Required.' : null),
-    });
-    if (!typed) return;
-    target = typed.trim();
-  }
-
-  const opPick = await vscode.window.showQuickPick(
-    ASSERTION_OPS.map((o) => ({ label: o.label, value: o.value })),
-    { title: 'Comparison op' },
-  );
-  if (!opPick) return;
-
-  const expected = await vscode.window.showInputBox({
-    prompt: 'Expected value',
-    placeHolder:
-      kindPick.value === 'status'
-        ? '200'
-        : kindPick.value === 'response-time'
-          ? '500'
-          : 'application/json',
-    validateInput: (v) => (v.trim().length === 0 ? 'Required.' : null),
-  });
-  if (expected === undefined) return;
-
-  const name = await vscode.window.showInputBox({
-    prompt: 'Assertion name (optional)',
-    placeHolder: `e.g. ${kindPick.value} ${opPick.value} ${expected}`,
-  });
-  if (name === undefined) return;
-
+  // Match the mock-server "🛡 Add validation rule" pattern: drop a prefilled
+  // block in (kind: status / op: equals / expected: '200') and rely on the
+  // per-field ◆ lenses (kind / op / target / expected) to refine. No prompts.
   const lines: string[] = [
     `  - id: ${yamlString(generateLocalId('a'))}`,
-    `    name: ${yamlString(name.trim().length > 0 ? name.trim() : `${kindPick.value} ${opPick.value} ${expected}`)}`,
-    `    kind: ${yamlString(kindPick.value)}`,
-    ...(target.length > 0 ? [`    target: ${yamlString(target)}`] : []),
-    `    op: ${yamlString(opPick.value)}`,
-    `    expected: ${yamlString(expected)}`,
-    `    enabled: true`,
+    `    kind: status`,
+    `    op: equals`,
+    `    expected: '200'`,
   ];
   await appendArraySection(document, 'assertions', lines.join('\n') + '\n');
 }

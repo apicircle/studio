@@ -1,5 +1,3 @@
-import { app } from 'electron';
-import * as path from 'path';
 import * as os from 'os';
 import { MCP_TOOL_NAMES, type McpToolName } from '@apicircle/shared';
 import type { ConfigSnippetVariants } from '@apicircle/ui-components';
@@ -8,6 +6,7 @@ import {
   resolveAiClientConfigPath,
   type AiClient as SharedAiClient,
 } from '@apicircle/mcp-server';
+import { defaultApicircleRoot } from '@apicircle/core/workspace/registry';
 
 // =============================================================================
 // McpManager — surfaces config snippets that the user pastes into their AI
@@ -15,9 +14,10 @@ import {
 // client (Claude Desktop, Cursor, etc) spawns it as its own child so the
 // process lifecycle stays scoped to the AI client's session.
 //
-// `getConfigSnippet(client)` returns the exact JSON the user pastes into
-// e.g. `~/.claude/mcp.json`. Renderer surfaces a "Copy to clipboard" button
-// that calls this through IPC.
+// `getConfigSnippet(client)` returns the config snippet the user pastes into
+// their AI client's config file (JSON for most, TOML for Codex, YAML for
+// Continue). Renderer surfaces a "Copy to clipboard" button that calls this
+// through IPC.
 // =============================================================================
 
 /**
@@ -34,15 +34,15 @@ interface ResolvedPaths {
 
 export class McpManager {
   /**
-   * Path the MCP server should bind to. This is the *registry root*
-   * (`userData/workspaces/`), not a single-workspace dir — the server
-   * resolves the active workspace from `registry.json` inside it and
-   * exposes the others via `workspace.list`.
+   * Path the MCP server should bind to. This is the registry root
+   * (`~/.apicircle/`), not a single-workspace dir — the server resolves
+   * the active workspace from `registry.json` inside it and exposes the
+   * others via `workspace.list`.
    */
   readonly workspaceDir: string;
 
   constructor(workspaceDir?: string) {
-    this.workspaceDir = workspaceDir ?? path.join(app.getPath('userData'), 'workspaces');
+    this.workspaceDir = workspaceDir ?? defaultApicircleRoot();
   }
 
   resolvePaths(): ResolvedPaths {
@@ -61,21 +61,17 @@ export class McpManager {
    * Generate the MCP config snippet the user pastes into their AI client's
    * config file. Returns two byte-identical-but-for-path-escaping renderings:
    *
-   *   - `forwardSlash`: the workspace path uses `/` separators on Windows
-   *     (`"C:/Users/.../workspaces"`). This is valid JSON without any
-   *     backslash escapes — easier to read, and accepted by Node.js,
-   *     Electron, and Windows file APIs.
+   *   - `forwardSlash`: the workspace path uses `/` separators on Windows —
+   *     easier to read, and accepted by Node.js, Electron, and Windows APIs.
    *   - `escaped`: the literal OS path, which on Windows means `\\` escapes
-   *     inside JSON strings (`"C:\\Users\\...\\workspaces"`). This is what
-   *     `JSON.stringify` emits by default.
+   *     inside quoted strings (both JSON and TOML use `\` as escape char).
    *
    * On macOS and Linux paths contain no backslashes, so the two strings are
    * byte-identical and `identical` is true — the UI uses that to suppress
    * the picker on those platforms.
    *
-   * All clients share the same outer shape (`mcpServers: { apicircle: ... }`)
-   * today; per-client tailoring of the wrapper lives here in case a future
-   * client (e.g. Zed-style nested key) needs a different envelope.
+   * Format is client-dependent: JSON for most, TOML for Codex, YAML for
+   * Continue. The shared builder in `@apicircle/mcp-server` dispatches.
    */
   getConfigSnippet(client: AiClient): ConfigSnippetVariants {
     const { binary, workspace } = this.resolvePaths();

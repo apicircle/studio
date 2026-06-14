@@ -19,7 +19,7 @@ import type { Request as ApiRequest } from '@apicircle/shared';
 // cross-surface round-trip cases the user reported.
 // =============================================================================
 
-const URI = Uri.parse('apicircle://x/requests/r.req.yaml?id=req-1');
+const URI = Uri.parse('apicircle://x/requests/r.yaml?id=req-1');
 
 function mountDoc(initial: string): { get: () => string } {
   let text = initial;

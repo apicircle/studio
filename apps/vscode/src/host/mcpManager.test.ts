@@ -3,9 +3,12 @@ import type { VsCodeBridge } from './vscodeBridge';
 import { VsCodeMcpManager, aiClientDisplayName } from './mcpManager';
 import { AI_CLIENTS } from '@apicircle/mcp-server';
 
-function makeFakeBridge(active: { id: string; apicircleDir: string } | null): VsCodeBridge {
+function makeFakeBridge(
+  active: { id: string; apicircleDir: string; source?: 'git-folder' | 'registry' } | null,
+): VsCodeBridge {
   return {
-    activeWorkspace: () => (active ? { workspace: active } : null),
+    activeWorkspace: () =>
+      active ? { workspace: { ...active, source: active.source ?? 'git-folder' } } : null,
   } as unknown as VsCodeBridge;
 }
 
@@ -19,6 +22,7 @@ describe('VsCodeMcpManager', () => {
       binary: 'apicircle-mcp',
       workspace: '/ws/.apicircle',
       hasActiveWorkspace: true,
+      isRegistryWorkspace: false,
     });
   });
 
@@ -31,6 +35,7 @@ describe('VsCodeMcpManager', () => {
       binary: 'apicircle-mcp',
       workspace: '',
       hasActiveWorkspace: false,
+      isRegistryWorkspace: false,
     });
   });
 
@@ -69,6 +74,22 @@ describe('VsCodeMcpManager', () => {
     expect(m.resolvePaths().binary).toBe('/usr/local/bin/apicircle-mcp');
   });
 
+  it('resolvePaths returns ~/.apicircle/ root for registry workspaces', () => {
+    const m = new VsCodeMcpManager({
+      bridge: makeFakeBridge({
+        id: 'ws-123',
+        apicircleDir: '/home/user/.apicircle/workspaces/ws-123',
+        source: 'registry',
+      }),
+      getBinaryPath: () => 'apicircle-mcp',
+    });
+    const paths = m.resolvePaths();
+    expect(paths.hasActiveWorkspace).toBe(true);
+    expect(paths.isRegistryWorkspace).toBe(true);
+    // Registry workspaces point at the apicircle root, not the per-workspace dir
+    expect(paths.workspace).not.toContain('workspaces/ws-123');
+  });
+
   it('toolCatalog returns the canonical 79-tool list from @apicircle/shared', () => {
     const m = new VsCodeMcpManager({
       bridge: makeFakeBridge(null),
@@ -86,7 +107,7 @@ describe('VsCodeMcpManager', () => {
       getBinaryPath: () => 'apicircle-mcp',
     });
     expect(m.supportedClients()).toEqual(AI_CLIENTS);
-    expect(m.supportedClients().length).toBe(10);
+    expect(m.supportedClients().length).toBe(11);
   });
 
   it('getConfigSnippet produces a parseable JSON snippet pointing at the active workspace', () => {
@@ -118,7 +139,13 @@ describe('VsCodeMcpManager', () => {
     for (const client of AI_CLIENTS) {
       const v = m.getConfigSnippet(client);
       expect(v).not.toBeNull();
-      expect(() => JSON.parse(v!.forwardSlash)).not.toThrow();
+      if (client === 'codex') {
+        // Codex uses TOML — validate structure instead of JSON.parse
+        expect(v!.forwardSlash).toContain('[mcp_servers.apicircle]');
+        expect(v!.forwardSlash).toContain('command = "apicircle-mcp"');
+      } else {
+        expect(() => JSON.parse(v!.forwardSlash)).not.toThrow();
+      }
     }
   });
 

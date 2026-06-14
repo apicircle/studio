@@ -163,6 +163,7 @@ describe('HistoryView', () => {
       workspaceJsonPath: path.join(apicircleDir, 'workspace.json'),
       workspaceFolder: { uri: Uri.file(tmp), name: 't', index: 0 } as never,
       label: 't',
+      source: 'git-folder',
     });
     bridge.setActive(apicircleDir);
   }
@@ -257,6 +258,58 @@ describe('HistoryView', () => {
   it('renders "No workspace" placeholder', async () => {
     const item = await view.getTreeItem({ kind: 'bucket', id: 'requests' } as HistoryNode);
     expect(item.label).toBe('No workspace');
+  });
+
+  it('renders a plan-run with all-passing steps (✓ glyph)', async () => {
+    activate([], [makePlanRun({ steps: [{ requestRunId: 'r-1', passed: true }] })]);
+    const item = await view.getTreeItem({ kind: 'plan-run', runId: 'pr-1' });
+    expect(item.description).toContain('✓');
+    expect(item.description).toContain('1/1 steps');
+    expect(item.contextValue).toBe('plan-run');
+  });
+
+  it('renders a plan-run with a failing step (✗ glyph)', async () => {
+    activate(
+      [],
+      [
+        makePlanRun({
+          steps: [
+            { requestRunId: 'r-1', passed: true },
+            { requestRunId: 'r-2', passed: false },
+          ],
+        }),
+      ],
+    );
+    const item = await view.getTreeItem({ kind: 'plan-run', runId: 'pr-1' });
+    expect(item.description).toContain('✗');
+    expect(item.description).toContain('1/2 steps');
+  });
+
+  it('handles a deleted plan-run gracefully', async () => {
+    activate([], []);
+    const item = await view.getTreeItem({ kind: 'plan-run', runId: 'gone' });
+    expect(item.label).toBe('(deleted run)');
+  });
+
+  it('renders "Recent Plans" bucket label with count', async () => {
+    activate([], [makePlanRun()]);
+    const item = await view.getTreeItem({ kind: 'bucket', id: 'plans' });
+    expect(item.label).toBe('Recent Plans');
+    expect(item.description).toBe('1');
+  });
+
+  it('renders request-run with "err" status when status is null', async () => {
+    activate([makeRun({ status: null as unknown as number, ok: false, assertions: [] })]);
+    const item = await view.getTreeItem({ kind: 'request-run', runId: 'r-1' });
+    expect(item.description).toContain('err');
+    // ok=false + no assertions → ✗ glyph
+    expect(item.description).toContain('✗');
+  });
+
+  it('returns empty array for leaf node getChildren', async () => {
+    activate([makeRun()]);
+    const result = await view.getChildren({ kind: 'request-run', runId: 'r-1' });
+    expect(result).toEqual([]);
   });
 
   describe('storeHistoryRun race fix (gap #16)', () => {

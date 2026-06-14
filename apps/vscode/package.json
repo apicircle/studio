@@ -82,7 +82,6 @@
     "onCommand:apicircle.changeVaultPassphrase",
     "onCommand:apicircle.openVaultEntry",
     "onCommand:apicircle.showRunsChannel",
-    "onCommand:apicircle.copyMcpConfig",
     "onCommand:apicircle.openMcpConfigFile",
     "onCommand:apicircle.openMcpConnectGuide",
     "onCommand:apicircle.revealMcpBinaryInfo",
@@ -98,8 +97,13 @@
     "onCommand:apicircle.stopEmbeddedMcp",
     "onCommand:apicircle.restartEmbeddedMcp",
     "onCommand:apicircle.copyEmbeddedMcpUrl",
+    "onCommand:apicircle.switchWorkspace",
+    "onView:apicircle.workspace",
     "onCommand:apicircle.editMockEndpoint",
     "onCommand:apicircle.openMockEndpointYaml",
+    "onCommand:apicircle.newFolder",
+    "onCommand:apicircle.openFolderYaml",
+    "onCommand:apicircle.editFolderAuth",
     "onCommand:apicircle.newRequestFromTemplate",
     "onCommand:apicircle.addRequestSection",
     "onCommand:apicircle.switchRequestBodyType",
@@ -132,11 +136,11 @@
     "onCommand:apicircle.setMockClauseValueField",
     "onCommand:apicircle.toggleMockHeaderEnabled",
     "onCommand:apicircle.formatJson",
+    "onCommand:apicircle.formatResponseJson",
     "onCommand:apicircle.addMockRequestSchema",
     "onCommand:apicircle.addMockRequestSchemaParam",
     "onCommand:apicircle.addMockRequestSchemaBodyExample",
     "onCommand:apicircle.setMockParamTypeField",
-    "onCommand:apicircle.setMockHeaderParamNameField",
     "onCommand:apicircle.setRequestMethodField",
     "onCommand:apicircle.setRequestHeaderKeyField",
     "onCommand:apicircle.setRequestHeaderValueField",
@@ -144,6 +148,7 @@
     "onCommand:apicircle.setRequestAssertionKindField",
     "onCommand:apicircle.setRequestAssertionOpField",
     "onCommand:apicircle.setRequestExtractionSourceField",
+    "onCommand:apicircle.toggleRequestRowEnabled",
     "onCommand:apicircle.addMockConditionClause",
     "onCommand:apicircle.setMockMultiplierKindField",
     "onCommand:apicircle.setMockMultiplierKeyField",
@@ -173,6 +178,11 @@
     },
     "views": {
       "apicircle": [
+        {
+          "id": "apicircle.workspace",
+          "name": "Workspace",
+          "visibility": "visible"
+        },
         {
           "id": "apicircle.editor",
           "name": "Editor",
@@ -209,6 +219,11 @@
       ]
     },
     "viewsWelcome": [
+      {
+        "view": "apicircle.workspace",
+        "contents": "No workspace active.\n\nOpen a folder with `.apicircle/workspace.json` or create a new workspace to get started.\n\n[Create New Workspace](command:apicircle.createWorkspace)\n[Open Folder…](command:workbench.action.files.openFolder)",
+        "when": "!apicircle.hasActiveWorkspace"
+      },
       {
         "view": "apicircle.editor",
         "contents": "Welcome to API Circle Studio.\n\nAPI Circle keeps your API workspace in a Git-friendly file at `.apicircle/workspace.json`, so you can edit it here, in the desktop app, or in the web app — all on the same repo.\n\nNo `.apicircle/workspace.json` was found in the open folder. Create one or open a folder that already has one.\n\n[Create New Workspace](command:apicircle.createWorkspace)\n[Open Folder…](command:workbench.action.files.openFolder)",
@@ -250,7 +265,7 @@
       },
       {
         "view": "apicircle.linkWorkspaces",
-        "contents": "No releases published yet.\n\nPublish a version to give linked consumers something to pin to. Each release is fingerprinted with a SHA-256 of the workspace contents.\n\n[Publish release…](command:apicircle.publishRelease)\n[Open release history](command:apicircle.openReleaseHistory)",
+        "contents": "No releases published yet.\n\nPublish a version to give linked consumers something to pin to. Each release is fingerprinted with a SHA-256 of the workspace contents.\n\n[Publish release…](command:apicircle.publishRelease)\n[Open release history](command:apicircle.openReleaseHistory)\n\nOr discover and link workspaces from the marketplace:\n\n[Search Marketplace…](command:apicircle.searchMarketplace)\n[Link a Workspace…](command:apicircle.linkWorkspace)",
         "when": "apicircle.hasActiveWorkspace"
       }
     ],
@@ -260,9 +275,10 @@
         "aliases": [
           "APICircle Request"
         ],
-        "extensions": [
-          ".req.yaml"
-        ],
+        "icon": {
+          "light": "./media/icons/yaml-light.svg",
+          "dark": "./media/icons/yaml-dark.svg"
+        },
         "configuration": "./language-configuration.json"
       },
       {
@@ -270,9 +286,10 @@
         "aliases": [
           "APICircle Response"
         ],
-        "extensions": [
-          ".run.yaml"
-        ],
+        "icon": {
+          "light": "./media/icons/yaml-light.svg",
+          "dark": "./media/icons/yaml-dark.svg"
+        },
         "configuration": "./language-configuration.json"
       },
       {
@@ -280,9 +297,10 @@
         "aliases": [
           "APICircle Environment"
         ],
-        "extensions": [
-          ".env.yaml"
-        ],
+        "icon": {
+          "light": "./media/icons/yaml-light.svg",
+          "dark": "./media/icons/yaml-dark.svg"
+        },
         "configuration": "./language-configuration.json"
       },
       {
@@ -290,9 +308,10 @@
         "aliases": [
           "APICircle Plan"
         ],
-        "extensions": [
-          ".plan.yaml"
-        ],
+        "icon": {
+          "light": "./media/icons/yaml-light.svg",
+          "dark": "./media/icons/yaml-dark.svg"
+        },
         "configuration": "./language-configuration.json"
       },
       {
@@ -300,9 +319,10 @@
         "aliases": [
           "APICircle Mock"
         ],
-        "extensions": [
-          ".mock.yaml"
-        ],
+        "icon": {
+          "light": "./media/icons/yaml-light.svg",
+          "dark": "./media/icons/yaml-dark.svg"
+        },
         "configuration": "./language-configuration.json"
       },
       {
@@ -310,34 +330,94 @@
         "aliases": [
           "APICircle Mock Endpoint"
         ],
-        "extensions": [
-          ".endpoint.yaml"
+        "icon": {
+          "light": "./media/icons/yaml-light.svg",
+          "dark": "./media/icons/yaml-dark.svg"
+        },
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "apicircle-folder",
+        "aliases": [
+          "APICircle Folder"
         ],
+        "icon": {
+          "light": "./media/icons/yaml-light.svg",
+          "dark": "./media/icons/yaml-dark.svg"
+        },
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "apicircle-link",
+        "aliases": [
+          "APICircle Link"
+        ],
+        "icon": {
+          "light": "./media/icons/yaml-light.svg",
+          "dark": "./media/icons/yaml-dark.svg"
+        },
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "apicircle-releases",
+        "aliases": [
+          "APICircle Releases"
+        ],
+        "icon": {
+          "light": "./media/icons/yaml-light.svg",
+          "dark": "./media/icons/yaml-dark.svg"
+        },
         "configuration": "./language-configuration.json"
       }
     ],
-    "yamlValidation": [
+    "grammars": [
       {
-        "fileMatch": "*.req.yaml",
-        "url": "./schemas/apicircle-request.schema.json"
+        "language": "apicircle-request",
+        "scopeName": "source.yaml.apicircle.request",
+        "path": "./syntaxes/yaml-delegate.tmLanguage.json"
       },
       {
-        "fileMatch": "*.env.yaml",
-        "url": "./schemas/apicircle-environment.schema.json"
+        "language": "apicircle-response",
+        "scopeName": "source.yaml.apicircle.response",
+        "path": "./syntaxes/yaml-response.tmLanguage.json"
       },
       {
-        "fileMatch": "*.plan.yaml",
-        "url": "./schemas/apicircle-plan.schema.json"
+        "language": "apicircle-environment",
+        "scopeName": "source.yaml.apicircle.environment",
+        "path": "./syntaxes/yaml-environment.tmLanguage.json"
       },
       {
-        "fileMatch": "*.run.yaml",
-        "url": "./schemas/apicircle-response.schema.json"
+        "language": "apicircle-plan",
+        "scopeName": "source.yaml.apicircle.plan",
+        "path": "./syntaxes/yaml-plan.tmLanguage.json"
       },
       {
-        "fileMatch": "*.mock.yaml",
-        "url": "./schemas/apicircle-mock.schema.json"
+        "language": "apicircle-mock",
+        "scopeName": "source.yaml.apicircle.mock",
+        "path": "./syntaxes/yaml-mock.tmLanguage.json"
+      },
+      {
+        "language": "apicircle-endpoint",
+        "scopeName": "source.yaml.apicircle.endpoint",
+        "path": "./syntaxes/yaml-endpoint.tmLanguage.json"
+      },
+      {
+        "language": "apicircle-folder",
+        "scopeName": "source.yaml.apicircle.folder",
+        "path": "./syntaxes/yaml-folder.tmLanguage.json"
+      },
+      {
+        "language": "apicircle-link",
+        "scopeName": "source.yaml.apicircle.link",
+        "path": "./syntaxes/yaml-link.tmLanguage.json"
+      },
+      {
+        "language": "apicircle-releases",
+        "scopeName": "source.yaml.apicircle.releases",
+        "path": "./syntaxes/yaml-releases.tmLanguage.json"
       }
     ],
+    "yamlValidation": [],
     "keybindings": [
       {
         "command": "apicircle.cancelSend",
@@ -354,7 +434,7 @@
         "command": "apicircle.refresh",
         "key": "ctrl+shift+r",
         "mac": "cmd+shift+r",
-        "when": "focusedView == apicircle.editor || focusedView == apicircle.environment || focusedView == apicircle.execution || focusedView == apicircle.history || focusedView == apicircle.snapshots || focusedView == apicircle.mock || focusedView == apicircle.mcp || focusedView == apicircle.linkWorkspaces"
+        "when": "focusedView == apicircle.workspace || focusedView == apicircle.editor || focusedView == apicircle.environment || focusedView == apicircle.execution || focusedView == apicircle.history || focusedView == apicircle.snapshots || focusedView == apicircle.mock || focusedView == apicircle.mcp || focusedView == apicircle.linkWorkspaces"
       },
       {
         "command": "apicircle.newRequest",
@@ -413,6 +493,12 @@
         "command": "apicircle.createWorkspace",
         "title": "Create New Workspace",
         "category": "APICircle"
+      },
+      {
+        "command": "apicircle.switchWorkspace",
+        "title": "Switch Workspace",
+        "category": "APICircle",
+        "icon": "$(arrow-swap)"
       },
       {
         "command": "apicircle.openReleaseHistory",
@@ -768,6 +854,12 @@
         "icon": "$(json)"
       },
       {
+        "command": "apicircle.formatResponseJson",
+        "title": "Format Response JSON Body",
+        "category": "APICircle",
+        "icon": "$(json)"
+      },
+      {
         "command": "apicircle.addMockRequestSchema",
         "title": "Add Mock Request Schema",
         "category": "APICircle",
@@ -790,12 +882,6 @@
         "title": "Set Mock Parameter Type…",
         "category": "APICircle",
         "icon": "$(symbol-type-parameter)"
-      },
-      {
-        "command": "apicircle.setMockHeaderParamNameField",
-        "title": "Set Mock Header Parameter Name…",
-        "category": "APICircle",
-        "icon": "$(symbol-key)"
       },
       {
         "command": "apicircle.setRequestMethodField",
@@ -838,6 +924,12 @@
         "title": "Set Request Extraction Source…",
         "category": "APICircle",
         "icon": "$(list-selection)"
+      },
+      {
+        "command": "apicircle.toggleRequestRowEnabled",
+        "title": "Toggle Request Row Enabled",
+        "category": "APICircle",
+        "icon": "$(circle-slash)"
       },
       {
         "command": "apicircle.addMockConditionClause",
@@ -1075,6 +1167,24 @@
         "icon": "$(add)"
       },
       {
+        "command": "apicircle.openFolderYaml",
+        "title": "Open Folder YAML",
+        "category": "APICircle",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "apicircle.newFolder",
+        "title": "New Folder",
+        "category": "APICircle",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "apicircle.editFolderAuth",
+        "title": "Edit Folder Auth",
+        "category": "APICircle",
+        "icon": "$(key)"
+      },
+      {
         "command": "apicircle.toggleStepEnabled",
         "title": "Enable / Disable Step",
         "category": "APICircle"
@@ -1173,12 +1283,6 @@
         "icon": "$(output)"
       },
       {
-        "command": "apicircle.copyMcpConfig",
-        "title": "Copy MCP Config Snippet",
-        "category": "APICircle",
-        "icon": "$(clippy)"
-      },
-      {
         "command": "apicircle.openMcpConfigFile",
         "title": "Open AI Client MCP Config File",
         "category": "APICircle",
@@ -1204,15 +1308,15 @@
       },
       {
         "command": "apicircle.uninstallCopilotMcpConfig",
-        "title": "Remove APICircle MCP from Copilot Chat / VS Code MCP",
+        "title": "Remove API Circle MCP from Copilot Chat / VS Code MCP",
         "category": "APICircle",
         "icon": "$(trash)"
       },
       {
         "command": "apicircle.installMcpForClient",
-        "title": "Install MCP for AI Client…",
+        "title": "Install API Circle MCP",
         "category": "APICircle",
-        "icon": "$(rocket)"
+        "icon": "$(add)"
       },
       {
         "command": "apicircle.installMcpForAllClients",
@@ -1222,9 +1326,9 @@
       },
       {
         "command": "apicircle.uninstallMcpForClient",
-        "title": "Remove APICircle MCP from AI Client",
+        "title": "Uninstall API Circle MCP",
         "category": "APICircle",
-        "icon": "$(trash)"
+        "icon": "$(remove)"
       },
       {
         "command": "apicircle.forgetVaultOnDevice",
@@ -1294,6 +1398,16 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "apicircle.switchWorkspace",
+          "when": "view == apicircle.workspace && apicircle.hasMultipleWorkspaces",
+          "group": "navigation@1"
+        },
+        {
+          "command": "apicircle.refresh",
+          "when": "view == apicircle.workspace",
+          "group": "navigation@99"
+        },
         {
           "command": "apicircle.refresh",
           "when": "view == apicircle.editor",
@@ -1370,6 +1484,11 @@
           "group": "navigation@2"
         },
         {
+          "command": "apicircle.newFolder",
+          "when": "view == apicircle.editor && apicircle.hasActiveWorkspace",
+          "group": "navigation@3"
+        },
+        {
           "command": "apicircle.newEnvironment",
           "when": "view == apicircle.environment",
           "group": "navigation@1"
@@ -1418,14 +1537,34 @@
           "command": "apicircle.newMock",
           "when": "view == apicircle.mock",
           "group": "navigation@1"
-        },
-        {
-          "command": "apicircle.installMcpForAllClients",
-          "when": "view == apicircle.mcp",
-          "group": "navigation@2"
         }
       ],
       "view/item/context": [
+        {
+          "command": "apicircle.switchWorkspace",
+          "when": "view == apicircle.workspace && viewItem == workspace-active && apicircle.hasMultipleWorkspaces",
+          "group": "inline@1"
+        },
+        {
+          "command": "apicircle.openWorkspaceFile",
+          "when": "view == apicircle.workspace && viewItem == workspace-active",
+          "group": "inline@2"
+        },
+        {
+          "command": "apicircle.openWorkspaceFile",
+          "when": "view == apicircle.workspace && viewItem == workspace-active",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "apicircle.switchWorkspace",
+          "when": "view == apicircle.workspace && viewItem == workspace-active && apicircle.hasMultipleWorkspaces",
+          "group": "1_actions@2"
+        },
+        {
+          "command": "apicircle.createWorkspace",
+          "when": "view == apicircle.workspace && viewItem == workspace-empty",
+          "group": "inline@1"
+        },
         {
           "command": "apicircle.publishRelease",
           "when": "view == apicircle.linkWorkspaces && viewItem == apicircleReleasesRoot",
@@ -1528,17 +1667,37 @@
         },
         {
           "command": "apicircle.newRequestInFolder",
-          "when": "view == apicircle.editor && viewItem == folder",
+          "when": "view == apicircle.editor && viewItem =~ /^folder/",
           "group": "inline@1"
         },
         {
+          "command": "apicircle.editFolderAuth",
+          "when": "view == apicircle.editor && viewItem =~ /^folder/",
+          "group": "inline@2"
+        },
+        {
           "command": "apicircle.newRequestInFolder",
-          "when": "view == apicircle.editor && viewItem == folder",
+          "when": "view == apicircle.editor && viewItem =~ /^folder/",
           "group": "1_actions@1"
         },
         {
+          "command": "apicircle.newFolder",
+          "when": "view == apicircle.editor && viewItem =~ /^folder/",
+          "group": "1_actions@1a"
+        },
+        {
+          "command": "apicircle.openFolderYaml",
+          "when": "view == apicircle.editor && viewItem =~ /^folder/",
+          "group": "1_actions@2"
+        },
+        {
+          "command": "apicircle.editFolderAuth",
+          "when": "view == apicircle.editor && viewItem =~ /^folder/",
+          "group": "1_actions@3"
+        },
+        {
           "command": "apicircle.deleteFolder",
-          "when": "view == apicircle.editor && viewItem == folder",
+          "when": "view == apicircle.editor && viewItem =~ /^folder/",
           "group": "9_danger@1"
         },
         {
@@ -1602,64 +1761,34 @@
           "group": "inline"
         },
         {
-          "command": "apicircle.copyMcpConfig",
-          "when": "view == apicircle.mcp && viewItem =~ /^mcp-client/",
+          "command": "apicircle.installMcpForClient",
+          "when": "view == apicircle.mcp && viewItem =~ /^mcp-client-(absent|stale)$/",
           "group": "inline"
         },
         {
-          "command": "apicircle.copyMcpConfig",
-          "when": "view == apicircle.mcp && viewItem =~ /^mcp-client/",
+          "command": "apicircle.uninstallMcpForClient",
+          "when": "view == apicircle.mcp && viewItem == mcp-client-installed",
+          "group": "inline"
+        },
+        {
+          "command": "apicircle.installMcpForClient",
+          "when": "view == apicircle.mcp && viewItem =~ /^mcp-client-(absent|stale)$/",
           "group": "1_actions@1"
         },
         {
-          "command": "apicircle.openMcpConfigFile",
-          "when": "view == apicircle.mcp && viewItem == mcp-client-with-path",
+          "command": "apicircle.uninstallMcpForClient",
+          "when": "view == apicircle.mcp && viewItem == mcp-client-installed",
           "group": "1_actions@2"
+        },
+        {
+          "command": "apicircle.openMcpConfigFile",
+          "when": "view == apicircle.mcp && viewItem =~ /^mcp-client-(absent|stale|installed)$/",
+          "group": "1_actions@3"
         },
         {
           "command": "apicircle.revealMcpBinaryInfo",
           "when": "view == apicircle.mcp && viewItem =~ /^mcp-header/",
           "group": "1_actions@1"
-        },
-        {
-          "command": "apicircle.installCopilotMcpConfig",
-          "when": "view == apicircle.mcp && viewItem =~ /^mcp-client-copilot-(absent|stale)/",
-          "group": "inline@1"
-        },
-        {
-          "command": "apicircle.uninstallCopilotMcpConfig",
-          "when": "view == apicircle.mcp && viewItem =~ /^mcp-client-copilot-(installed|stale)/",
-          "group": "inline@2"
-        },
-        {
-          "command": "apicircle.installCopilotMcpConfig",
-          "when": "view == apicircle.mcp && viewItem =~ /^mcp-client-copilot/",
-          "group": "1_actions@1"
-        },
-        {
-          "command": "apicircle.uninstallCopilotMcpConfig",
-          "when": "view == apicircle.mcp && viewItem =~ /^mcp-client-copilot-(installed|stale)/",
-          "group": "9_danger@1"
-        },
-        {
-          "command": "apicircle.installMcpForClient",
-          "when": "view == apicircle.mcp && viewItem =~ /^mcp-client-(claude-desktop|claude-code|cursor|windsurf|zed)-(absent|stale)/",
-          "group": "inline"
-        },
-        {
-          "command": "apicircle.installMcpForClient",
-          "when": "view == apicircle.mcp && viewItem =~ /^mcp-client-(claude-desktop|claude-code|cursor|windsurf|zed)-(absent|stale)/",
-          "group": "1_actions@2"
-        },
-        {
-          "command": "apicircle.uninstallMcpForClient",
-          "when": "view == apicircle.mcp && viewItem =~ /^mcp-client-(claude-desktop|claude-code|cursor|windsurf|zed)-installed/",
-          "group": "inline"
-        },
-        {
-          "command": "apicircle.uninstallMcpForClient",
-          "when": "view == apicircle.mcp && viewItem =~ /^mcp-client-(claude-desktop|claude-code|cursor|windsurf|zed)-installed/",
-          "group": "9_danger@1"
         },
         {
           "command": "apicircle.runPlan",
@@ -1925,6 +2054,7 @@
     "@apicircle/mock-server-core": "workspace:*",
     "@apicircle/shared": "workspace:*",
     "proper-lockfile": "^4.1.2",
+    "smol-toml": "^1.3.0",
     "yaml": "^2.5.0"
   },
   "devDependencies": {

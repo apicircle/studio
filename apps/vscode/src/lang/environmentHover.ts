@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { VsCodeBridge } from '../host/vscodeBridge';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
 // Hover provider for apicircle-environment YAML documents.
@@ -25,7 +26,7 @@ export class EnvironmentHoverProvider implements vscode.HoverProvider {
     _token: vscode.CancellationToken,
   ): Promise<vscode.Hover | undefined> {
     if (document.uri.scheme !== 'apicircle') return undefined;
-    if (!document.uri.path.endsWith('.env.yaml')) return undefined;
+    if (uriEntityKind(document.uri) !== 'environment') return undefined;
 
     const lineText = document.lineAt(position.line).text;
     const m = KEY_LINE_RE.exec(lineText);

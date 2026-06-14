@@ -98,6 +98,7 @@ describe('EnvironmentCompletionProvider', () => {
       workspaceJsonPath: path.join(apicircleDir, 'workspace.json'),
       workspaceFolder: { uri: Uri.file(tmp), name: 't', index: 0 } as never,
       label: 't',
+      source: 'git-folder',
     });
     bridge.setActive(apicircleDir);
   }
@@ -112,9 +113,9 @@ describe('EnvironmentCompletionProvider', () => {
     expect(items).toEqual([]);
   });
 
-  it('returns [] for apicircle: docs that are not .env.yaml', async () => {
+  it('returns [] for apicircle: docs that are not .yaml', async () => {
     const items = await provider.provideCompletionItems(
-      makeDoc(Uri.parse('apicircle://x/requests/r.req.yaml'), ['encrypted: ']),
+      makeDoc(Uri.parse('apicircle://x/requests/r.yaml'), ['encrypted: ']),
       pos(0, 10),
       fakeToken,
       fakeCtx,
@@ -126,7 +127,7 @@ describe('EnvironmentCompletionProvider', () => {
     seedWorkspace(apicircleDir);
     activate();
     const items = await provider.provideCompletionItems(
-      makeDoc(Uri.parse('apicircle://x/environments/prod.env.yaml'), [
+      makeDoc(Uri.parse('apicircle://x/environments/prod.yaml'), [
         'name: prod',
         'variables:',
         '  - key: k',
@@ -146,7 +147,7 @@ describe('EnvironmentCompletionProvider', () => {
     });
     activate();
     const items = await provider.provideCompletionItems(
-      makeDoc(Uri.parse('apicircle://x/environments/prod.env.yaml'), [
+      makeDoc(Uri.parse('apicircle://x/environments/prod.yaml'), [
         'name: prod',
         'variables:',
         '  - key: k',
@@ -163,7 +164,7 @@ describe('EnvironmentCompletionProvider', () => {
 
   it('returns [] when no workspace is active and secretKeyId is being completed', async () => {
     const items = await provider.provideCompletionItems(
-      makeDoc(Uri.parse('apicircle://x/environments/prod.env.yaml'), ['secretKeyId: ']),
+      makeDoc(Uri.parse('apicircle://x/environments/prod.yaml'), ['secretKeyId: ']),
       pos(0, 13),
       fakeToken,
       fakeCtx,
@@ -175,7 +176,7 @@ describe('EnvironmentCompletionProvider', () => {
     seedWorkspace(apicircleDir);
     activate();
     const items = await provider.provideCompletionItems(
-      makeDoc(Uri.parse('apicircle://x/environments/p.env.yaml'), ['name: x']),
+      makeDoc(Uri.parse('apicircle://x/environments/p.yaml'), ['name: x']),
       pos(0, 7),
       fakeToken,
       fakeCtx,

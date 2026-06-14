@@ -2,32 +2,51 @@ import type * as vscode from 'vscode';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { WORKSPACE_DIR, WORKSPACE_JSON_PATH } from '@apicircle/core';
+import {
+  defaultApicircleRoot,
+  REGISTRY_FILE,
+  workspaceDirFor,
+  type WorkspaceRegistry,
+} from '@apicircle/core/workspace/registry';
 
 // =============================================================================
-// Workspace discovery — find canonical `.apicircle/workspace.json` paths inside
-// the user's open VS Code workspace folders.
+// Workspace discovery — two sources:
 //
-// The canonical layout (per Phase 0) is:
+// 1. Git-folder scan: find canonical `.apicircle/workspace.json` paths inside
+//    the user's open VS Code workspace folders.
+// 2. Registry scan: read `~/.apicircle/registry.json` and expose any workspace
+//    registered there (created by Desktop, CLI, or MCP).
 //
-//   <repo-root>/.apicircle/workspace.json   ← discovered here
+// Git-folder layout:
+//   <repo-root>/.apicircle/workspace.json
 //   <repo-root>/.apicircle/attachments/<slotId>
+//
+// Registry layout:
+//   ~/.apicircle/registry.json
+//   ~/.apicircle/workspaces/<id>/workspace.json
 //
 // `globalStorageUri/<workspaceId>/workspace.local.json` for device-local data —
 // resolved separately by deviceLocalPath() below.
 // =============================================================================
 
+export type WorkspaceSource = 'git-folder' | 'registry';
+
 export interface DiscoveredWorkspace {
-  /** Stable identifier — currently the absolute path to the .apicircle/ dir.
-   *  When the workspace is loaded, this is replaced by `WorkspaceSynced.workspaceId`. */
+  /** Stable identifier — currently the absolute path to the .apicircle/ dir
+   *  (git-folder) or the workspace id from the registry. */
   id: string;
-  /** Absolute path to the workspace's `.apicircle/` directory. */
+  /** Absolute path to the workspace's `.apicircle/` directory (git-folder)
+   *  or the per-workspace dir under `~/.apicircle/workspaces/<id>/` (registry). */
   apicircleDir: string;
   /** Absolute path to the workspace's `workspace.json`. */
   workspaceJsonPath: string;
-  /** The VS Code workspace folder this `.apicircle/` lives in. */
-  workspaceFolder: vscode.WorkspaceFolder;
-  /** Human-readable label for the workspace picker (folder name). */
+  /** The VS Code workspace folder this `.apicircle/` lives in.
+   *  `undefined` for registry-discovered workspaces. */
+  workspaceFolder: vscode.WorkspaceFolder | undefined;
+  /** Human-readable label for the workspace picker. */
   label: string;
+  /** How this workspace was discovered. */
+  source: WorkspaceSource;
 }
 
 export interface DiscoveryResult {
@@ -63,6 +82,7 @@ export function discoverWorkspaces(
         workspaceJsonPath,
         workspaceFolder: folder,
         label: folder.name,
+        source: 'git-folder',
       });
     } else {
       foldersWithoutWorkspace.push(folder);
@@ -114,7 +134,7 @@ function hashPath(absolutePath: string): string {
  *
  * Two editor shapes map to a workspace:
  *   - an `apicircle://<authority>/…` virtual YAML, where the authority is the
- *     base64url-encoded workspace id (same encoding `ApicircleFsProvider` uses);
+ *     hex-encoded workspace id (same encoding `ApicircleFsProvider` uses);
  *   - the raw `<root>/.apicircle/workspace.json` file.
  *
  * Any malformed authority is treated as "no match" rather than thrown, so a
@@ -128,7 +148,7 @@ export function workspaceIdForOpenEditor(
     if (!editor.authority) return null;
     let decoded: string;
     try {
-      decoded = Buffer.from(editor.authority, 'base64url').toString('utf8');
+      decoded = Buffer.from(editor.authority, 'hex').toString('utf8');
     } catch {
       return null;
     }
@@ -159,4 +179,51 @@ export function findOwningWorkspace(
     const dir = ws.apicircleDir.replace(/\\/g, '/').toLowerCase();
     return normalized === dir || normalized.startsWith(dir + '/');
   });
+}
+
+/**
+ * Discover workspaces registered in `~/.apicircle/registry.json`. Returns
+ * entries for each workspace whose `workspace.json` actually exists on disk.
+ * Non-throwing — returns an empty array if the registry is missing or
+ * malformed.
+ *
+ * @param root — override for the apicircle root (testing seam). Defaults to
+ * `defaultApicircleRoot()`.
+ */
+export function discoverRegistryWorkspaces(root?: string): DiscoveredWorkspace[] {
+  const apicircleRoot = root ?? defaultApicircleRoot();
+  const registryPath = path.join(apicircleRoot, REGISTRY_FILE);
+
+  let raw: string;
+  try {
+    raw = fs.readFileSync(registryPath, 'utf8');
+  } catch {
+    return [];
+  }
+
+  let registry: WorkspaceRegistry;
+  try {
+    registry = JSON.parse(raw) as WorkspaceRegistry;
+  } catch {
+    return [];
+  }
+
+  if (!registry.workspaces || !Array.isArray(registry.workspaces)) return [];
+
+  const results: DiscoveredWorkspace[] = [];
+  for (const entry of registry.workspaces) {
+    const wsDir = workspaceDirFor(apicircleRoot, entry.id);
+    const wsJsonPath = path.join(wsDir, 'workspace.json');
+    if (fs.existsSync(wsJsonPath)) {
+      results.push({
+        id: entry.id,
+        apicircleDir: wsDir,
+        workspaceJsonPath: wsJsonPath,
+        workspaceFolder: undefined,
+        label: entry.name,
+        source: 'registry',
+      });
+    }
+  }
+  return results;
 }

@@ -843,7 +843,7 @@ export interface ReleaseVersion {
   version: string; // semver
   publishedAt: string;
   notes: string; // markdown
-  // SHA-256 of workspace.synced.json at publish time. Verifiable on the
+  // SHA-256 of workspace.json at publish time. Verifiable on the
   // consumer side to detect tampering.
   workspaceSnapshot: string;
   sha?: string; // optional git commit SHA on the source branch

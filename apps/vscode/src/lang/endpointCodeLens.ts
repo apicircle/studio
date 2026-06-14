@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 import { MAX_RESPONSE_MULTIPLIERS, MAX_RESPONSE_RULE_CONDITIONS } from '@apicircle/shared';
 import { validationKindNeeds } from './mockValidationKinds';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
 // CodeLens provider for apicircle:// per-endpoint YAML documents
-// (URI shape: apicircle://<ws>/mocks/<mockId>/<endpointId>.endpoint.yaml).
+// (URI shape: apicircle://<ws>/mocks/<mockId>/<endpointId>.yaml).
 //
 // Two layers of lenses:
 //
@@ -37,8 +38,6 @@ const REQUEST_VALIDATION_RE = /^requestValidation\s*:/;
 const REQUEST_SCHEMA_RE = /^requestSchema\s*:/;
 const SCHEMA_LIST_RE = /^\s{2}(pathParams|queryParams|headers|cookies|body)\s*:/;
 const TYPE_HINT_RE = /^\s+typeHint\s*:/;
-const EXAMPLE_RE = /^\s+example\s*:/;
-const DESCRIPTION_RE = /^\s+description\s*:/;
 const MULTIPLIERS_RE = /^\s+multipliers\s*:/;
 const HEADERS_RE = /^\s+headers\s*:/;
 const ARRAY_ENTRY_ID_RE = /^\s+-\s+id:\s*['"]?([A-Za-z0-9_-]+)['"]?/;
@@ -59,12 +58,7 @@ const CLAUSE_TARGET_RE = /^\s+target\s*:/;
 const CLAUSE_VALUE_RE = /^\s+value\s*:/;
 const SOURCE_RE = /^\s+source\s*:/;
 const SOURCE_KIND_RE = /^\s+kind\s*:/;
-const SOURCE_KEY_RE = /^\s+key\s*:/;
 const TARGET_PATH_RE = /^\s+targetJsonPath\s*:/;
-const DEFAULT_COUNT_RE = /^\s+defaultCount\s*:/;
-const MIN_RE = /^\s+min\s*:/;
-const MAX_RE = /^\s+max\s*:/;
-const NAME_RE = /^\s+name\s*:/;
 
 export class EndpointCodeLensProvider implements vscode.CodeLensProvider {
   private readonly _onDidChange = new vscode.EventEmitter<void>();
@@ -75,7 +69,7 @@ export class EndpointCodeLensProvider implements vscode.CodeLensProvider {
     _token: vscode.CancellationToken,
   ): vscode.CodeLens[] {
     if (document.uri.scheme !== 'apicircle') return [];
-    if (!document.uri.path.endsWith('.endpoint.yaml')) return [];
+    if (uriEntityKind(document.uri) !== 'endpoint') return [];
 
     const lenses: vscode.CodeLens[] = [];
     let defaultResponseLine = -1;
@@ -141,7 +135,7 @@ export class EndpointCodeLensProvider implements vscode.CodeLensProvider {
         if (HEADERS_RE.test(document.lineAt(line).text)) {
           lenses.push(
             new vscode.CodeLens(lineRange(document, line), {
-              title: '✚ Add header',
+              title: '✚ Header',
               tooltip:
                 'Append a response header — quick-pick over common ones (Content-Type / Cache-Control / ETag / CORS / …) with curated values, or type a custom name.',
               command: 'apicircle.addMockResponseHeader',
@@ -206,7 +200,7 @@ export class EndpointCodeLensProvider implements vscode.CodeLensProvider {
           if (HEADERS_RE.test(document.lineAt(h).text)) {
             lenses.push(
               new vscode.CodeLens(lineRange(document, h), {
-                title: '✚ Add header',
+                title: '✚ Header',
                 tooltip:
                   'Append a response header to this rule — quick-pick over common ones with curated values, or type a custom name.',
                 command: 'apicircle.addMockResponseHeader',
@@ -346,15 +340,20 @@ export class EndpointCodeLensProvider implements vscode.CodeLensProvider {
       addParam('queryParams', '✚ Query param', 'Declare a query param.');
       addParam('headers', '✚ Header', 'Declare an expected request header.');
       addParam('cookies', '✚ Cookie', 'Declare an expected request cookie.');
-      const bodyAnchor = subLine.body ?? requestSchemaLine;
-      lenses.push(
-        new vscode.CodeLens(lineRange(document, bodyAnchor), {
-          title: '✚ Body example',
-          tooltip: 'Document the expected request body shape (description + example).',
-          command: 'apicircle.addMockRequestSchemaBodyExample',
-          arguments: [document.uri],
-        }),
-      );
+      // ✚ Body example anchors on the requestSchema: header itself, not on the
+      // body: subsection. Authors don't have to scroll into the body block to
+      // discover the action, and a body block that's already present hides
+      // the lens (re-adding would clobber).
+      if (subLine.body === undefined) {
+        lenses.push(
+          new vscode.CodeLens(lineRange(document, requestSchemaLine), {
+            title: '✚ Body example',
+            tooltip: 'Document the expected request body shape (description + example).',
+            command: 'apicircle.addMockRequestSchemaBodyExample',
+            arguments: [document.uri],
+          }),
+        );
+      }
       return;
     }
     if (validationLine !== -1) {
@@ -390,7 +389,7 @@ export class EndpointCodeLensProvider implements vscode.CodeLensProvider {
     // requestSchema context — the indent of the `requestSchema:` key (0) while
     // inside it, and which param list (pathParams / headers / …) we're in.
     let schemaIndent = -1;
-    let schemaList = '';
+    let _schemaList = '';
 
     const fieldLens = (line: number, title: string, command: string, tooltip: string): void => {
       lenses.push(
@@ -418,7 +417,7 @@ export class EndpointCodeLensProvider implements vscode.CodeLensProvider {
       if (multiplierIndent !== -1 && indent <= multiplierIndent) multiplierIndent = -1;
       if (schemaIndent !== -1 && indent <= schemaIndent && !REQUEST_SCHEMA_RE.test(text)) {
         schemaIndent = -1;
-        schemaList = '';
+        _schemaList = '';
       }
 
       // A new when-clause dash resets the per-clause op tracking so each
@@ -430,13 +429,14 @@ export class EndpointCodeLensProvider implements vscode.CodeLensProvider {
       // requestSchema context tracking.
       if (REQUEST_SCHEMA_RE.test(text)) {
         schemaIndent = indent;
-        schemaList = '';
+        _schemaList = '';
         continue;
       }
       if (schemaIndent !== -1) {
         const listMatch = SCHEMA_LIST_RE.exec(text);
         if (listMatch) {
-          schemaList = listMatch[1];
+          // _schemaList tracked for future per-row routing; not currently surfaced
+          void listMatch;
           continue;
         }
       }
@@ -497,15 +497,6 @@ export class EndpointCodeLensProvider implements vscode.CodeLensProvider {
           'apicircle.formatJson',
           'Reflow this stringified JSON body into pretty, indented JSON.',
         );
-      } else if (schemaIndent !== -1 && NAME_RE.test(text)) {
-        fieldLens(
-          line,
-          '◆ Name',
-          schemaList === 'headers'
-            ? 'apicircle.setMockHeaderParamNameField'
-            : 'apicircle.setMockTextField',
-          "Set this parameter's name.",
-        );
       } else if (schemaIndent !== -1 && TYPE_HINT_RE.test(text)) {
         fieldLens(
           line,
@@ -513,10 +504,6 @@ export class EndpointCodeLensProvider implements vscode.CodeLensProvider {
           'apicircle.setMockParamTypeField',
           'Pick the type hint (string / integer / boolean / uuid / …). Documentation only.',
         );
-      } else if (schemaIndent !== -1 && EXAMPLE_RE.test(text)) {
-        fieldLens(line, '◆ Example', 'apicircle.setMockTextField', 'Set an example value.');
-      } else if (schemaIndent !== -1 && DESCRIPTION_RE.test(text)) {
-        fieldLens(line, '◆ Description', 'apicircle.setMockTextField', 'Set a description.');
       } else if (headersIndent !== -1 && indent > headersIndent && HEADER_KEY_RE.test(text)) {
         fieldLens(
           line,
@@ -579,47 +566,12 @@ export class EndpointCodeLensProvider implements vscode.CodeLensProvider {
           'apicircle.setMockMultiplierKindField',
           'Pick where the repeat count is read from (query / path / header / body-JSON path).',
         );
-      } else if (sourceIndent !== -1 && SOURCE_KEY_RE.test(text)) {
-        fieldLens(
-          line,
-          '◆ Key',
-          'apicircle.setMockMultiplierKeyField',
-          'Set the source name / JSON path the count is read from.',
-        );
       } else if (multiplierIndent !== -1 && TARGET_PATH_RE.test(text)) {
         fieldLens(
           line,
           '◆ Path',
           'apicircle.setMockMultiplierTargetPathField',
           'Pick the array to repeat — JSON paths discovered in the default-response body, or a custom path.',
-        );
-      } else if (multiplierIndent !== -1 && DEFAULT_COUNT_RE.test(text)) {
-        fieldLens(
-          line,
-          '◆ Count',
-          'apicircle.setMockNumberField',
-          'Default repeat count when the source value is missing or non-numeric.',
-        );
-      } else if (multiplierIndent !== -1 && MIN_RE.test(text)) {
-        fieldLens(
-          line,
-          '◆ Min',
-          'apicircle.setMockNumberField',
-          'Lower bound on the resolved count.',
-        );
-      } else if (multiplierIndent !== -1 && MAX_RE.test(text)) {
-        fieldLens(
-          line,
-          '◆ Max',
-          'apicircle.setMockNumberField',
-          'Upper bound on the resolved count.',
-        );
-      } else if (multiplierIndent !== -1 && NAME_RE.test(text)) {
-        fieldLens(
-          line,
-          '◆ Name',
-          'apicircle.setMockTextField',
-          'Optional label for this multiplier.',
         );
       }
     }

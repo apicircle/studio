@@ -117,7 +117,7 @@ describe('extension activation (integration)', () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
-  it('registers all 8 sidebar views when no folder is open', () => {
+  it('registers all 9 sidebar views when no folder is open', () => {
     const { ctx } = makeMockContext(path.join(tmp, 'globalStorage'));
     activate(ctx);
 
@@ -131,6 +131,7 @@ describe('extension activation (integration)', () => {
         'apicircle.mcp',
         'apicircle.mock',
         'apicircle.snapshots',
+        'apicircle.workspace',
       ].sort(),
     );
   });
@@ -146,6 +147,7 @@ describe('extension activation (integration)', () => {
     // so future contributions can't slip through.
     const expectedCommandIds = [
       'apicircle.createWorkspace',
+      'apicircle.switchWorkspace',
       'apicircle.refresh',
       'apicircle.openWorkspaceFile',
       'apicircle.sendRequest',
@@ -191,7 +193,6 @@ describe('extension activation (integration)', () => {
       'apicircle.openVaultEntry',
       'apicircle.showRunsChannel',
       // ---- P5 MCP host integration ----
-      'apicircle.copyMcpConfig',
       'apicircle.openMcpConfigFile',
       'apicircle.openMcpConnectGuide',
       'apicircle.revealMcpBinaryInfo',
@@ -287,7 +288,6 @@ describe('extension activation (integration)', () => {
       'apicircle.addMockRequestSchemaParam',
       'apicircle.addMockRequestSchemaBodyExample',
       'apicircle.setMockParamTypeField',
-      'apicircle.setMockHeaderParamNameField',
       // ---- collection-request field editors ----
       'apicircle.setRequestMethodField',
       'apicircle.setRequestHeaderKeyField',
@@ -308,6 +308,16 @@ describe('extension activation (integration)', () => {
       'apicircle.uninstallCopilotMcpConfig',
       // ---- Post-launch UX: in-flight CodeLens cancel ----
       'apicircle.cancelOneSend',
+      // ---- Folder-wise auth ----
+      'apicircle.openFolderYaml',
+      'apicircle.editFolderAuth',
+      'apicircle.newFolder',
+      // ---- Post-launch UX: request-side ◆ field editors for auth + assertions ----
+      'apicircle.setRequestAssertionTargetField',
+      'apicircle.setRequestAssertionExpectedField',
+      'apicircle.setRequestAuthField',
+      'apicircle.toggleRequestRowEnabled',
+      'apicircle.formatResponseJson',
     ];
     for (const id of expectedCommandIds) {
       expect(registeredCommandIds).toContain(id);

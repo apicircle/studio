@@ -40,7 +40,7 @@ export function registerMocksCommand(program: Command): void {
     )
     .option(
       '-w, --workspace-path <dir>',
-      'Filesystem directory containing workspace.synced.json (skips the registry).',
+      'Filesystem directory containing workspace.json (skips the registry).',
     )
     .option('--json', 'Emit JSON instead of a formatted table')
     .action(async (opts: MocksCommonOptions & { json?: boolean }) => {
@@ -95,7 +95,7 @@ export function registerMocksCommand(program: Command): void {
     )
     .option(
       '-w, --workspace-path <dir>',
-      'Filesystem directory containing workspace.synced.json (skips the registry).',
+      'Filesystem directory containing workspace.json (skips the registry).',
     )
     .action(async (selector: string, portArg: string | undefined, opts: MocksCommonOptions) => {
       const dir = await resolveDir(opts);

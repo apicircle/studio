@@ -34,7 +34,7 @@ describe('PlanCompletionProvider', () => {
   it('returns [] for non-apicircle scheme', async () => {
     const p = new PlanCompletionProvider(makeBridge(emptyState));
     const items = await p.provideCompletionItems(
-      makeDoc(Uri.parse('file:///x.plan.yaml'), ['name: ']),
+      makeDoc(Uri.parse('file:///x.yaml'), ['name: ']),
       pos(0, 6),
       fakeToken,
       fakeCtx,
@@ -42,10 +42,10 @@ describe('PlanCompletionProvider', () => {
     expect(items).toEqual([]);
   });
 
-  it('returns [] for non-.plan.yaml apicircle URIs', async () => {
+  it('returns [] for non-.yaml apicircle URIs', async () => {
     const p = new PlanCompletionProvider(makeBridge(emptyState));
     const items = await p.provideCompletionItems(
-      makeDoc(Uri.parse('apicircle://x/requests/r.req.yaml'), ['name: ']),
+      makeDoc(Uri.parse('apicircle://x/requests/r.yaml'), ['name: ']),
       pos(0, 6),
       fakeToken,
       fakeCtx,
@@ -56,7 +56,7 @@ describe('PlanCompletionProvider', () => {
   it('suggests root field names at column 0', async () => {
     const p = new PlanCompletionProvider(makeBridge(emptyState));
     const items = await p.provideCompletionItems(
-      makeDoc(Uri.parse('apicircle://x/plans/p1.plan.yaml'), ['']),
+      makeDoc(Uri.parse('apicircle://x/plans/p1.yaml'), ['']),
       pos(0, 0),
       fakeToken,
       fakeCtx,
@@ -72,7 +72,7 @@ describe('PlanCompletionProvider', () => {
   it('suggests step field names when inside steps:', async () => {
     const p = new PlanCompletionProvider(makeBridge(emptyState));
     const items = await p.provideCompletionItems(
-      makeDoc(Uri.parse('apicircle://x/plans/p1.plan.yaml'), ['steps:', '  - ']),
+      makeDoc(Uri.parse('apicircle://x/plans/p1.yaml'), ['steps:', '  - ']),
       pos(1, 4),
       fakeToken,
       fakeCtx,
@@ -86,7 +86,7 @@ describe('PlanCompletionProvider', () => {
   it('suggests key/value fields inside variables:', async () => {
     const p = new PlanCompletionProvider(makeBridge(emptyState));
     const items = await p.provideCompletionItems(
-      makeDoc(Uri.parse('apicircle://x/plans/p1.plan.yaml'), ['variables:', '  - ']),
+      makeDoc(Uri.parse('apicircle://x/plans/p1.yaml'), ['variables:', '  - ']),
       pos(1, 4),
       fakeToken,
       fakeCtx,
@@ -99,7 +99,7 @@ describe('PlanCompletionProvider', () => {
   it('suggests local/linked refs inside envPriorityOrder:', async () => {
     const p = new PlanCompletionProvider(makeBridge(emptyState));
     const items = await p.provideCompletionItems(
-      makeDoc(Uri.parse('apicircle://x/plans/p1.plan.yaml'), ['envPriorityOrder:', '  - ']),
+      makeDoc(Uri.parse('apicircle://x/plans/p1.yaml'), ['envPriorityOrder:', '  - ']),
       pos(1, 4),
       fakeToken,
       fakeCtx,
@@ -112,7 +112,7 @@ describe('PlanCompletionProvider', () => {
   it('suggests true/false on enabled: lines', async () => {
     const p = new PlanCompletionProvider(makeBridge(emptyState));
     const items = await p.provideCompletionItems(
-      makeDoc(Uri.parse('apicircle://x/plans/p1.plan.yaml'), ['  - enabled: ']),
+      makeDoc(Uri.parse('apicircle://x/plans/p1.yaml'), ['  - enabled: ']),
       pos(0, 12),
       fakeToken,
       fakeCtx,
@@ -132,7 +132,7 @@ describe('PlanCompletionProvider', () => {
     });
     const p = new PlanCompletionProvider(bridge);
     const items = await p.provideCompletionItems(
-      makeDoc(Uri.parse('apicircle://x/plans/p1.plan.yaml'), ['  - requestId: ']),
+      makeDoc(Uri.parse('apicircle://x/plans/p1.yaml'), ['  - requestId: ']),
       pos(0, 14),
       fakeToken,
       fakeCtx,
@@ -153,7 +153,7 @@ describe('PlanCompletionProvider', () => {
     });
     const p = new PlanCompletionProvider(bridge);
     const items = await p.provideCompletionItems(
-      makeDoc(Uri.parse('apicircle://x/plans/p1.plan.yaml'), ['  - local: ']),
+      makeDoc(Uri.parse('apicircle://x/plans/p1.yaml'), ['  - local: ']),
       pos(0, 10),
       fakeToken,
       fakeCtx,
@@ -165,7 +165,7 @@ describe('PlanCompletionProvider', () => {
     const bridge = { activeWorkspace: () => undefined } as unknown as VsCodeBridge;
     const p = new PlanCompletionProvider(bridge);
     const items = await p.provideCompletionItems(
-      makeDoc(Uri.parse('apicircle://x/plans/p1.plan.yaml'), ['  - requestId: ']),
+      makeDoc(Uri.parse('apicircle://x/plans/p1.yaml'), ['  - requestId: ']),
       pos(0, 14),
       fakeToken,
       fakeCtx,

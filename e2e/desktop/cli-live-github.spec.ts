@@ -110,7 +110,7 @@ test.describe('CLI — apicircle run against live GitHub', () => {
     const token = process.env[TOKEN_ENV]!.trim();
     const ws = makeTmpDir('cli-run-live-github-');
     fs.writeFileSync(
-      path.join(ws, 'workspace.synced.json'),
+      path.join(ws, 'workspace.json'),
       JSON.stringify(liveGithubWorkspace(), null, 2),
     );
 

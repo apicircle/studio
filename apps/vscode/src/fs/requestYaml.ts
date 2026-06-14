@@ -297,3 +297,51 @@ export class RequestYamlParseError extends Error {
     this.name = 'RequestYamlParseError';
   }
 }
+
+/**
+ * Run the YAML buffer through the parse → serialize round-trip and return the
+ * canonical projection (the same shape the FS provider's `readFile` would
+ * produce after the save has been applied). Used by the on-will-save hook to
+ * reflect the URL ↔ query/pathParams sync in the buffer at save time, so the
+ * user sees `?key=val` typed into `url:` move into the `query:` block, and
+ * `{name}` placeholders surface as `pathParams:` entries — without having to
+ * close and reopen the document.
+ *
+ * Returns `null` when the buffer is already canonical (nothing to rewrite),
+ * or when parsing fails (let `writeFile`'s parser surface the error message
+ * via FileSystemError; the on-will-save hook isn't the right place to block
+ * a save with a popup).
+ */
+export function projectRequestYaml(text: string): string | null {
+  let patch: ParsedRequestYaml['patch'];
+  try {
+    patch = parseRequestFromYaml(text).patch;
+  } catch {
+    return null;
+  }
+  // Synthesize a full Request shape from the patch — `serializeRequestToYaml`
+  // never emits id / createdAt / updatedAt / folderId / *SchemaId, so the
+  // placeholder values here are never observed. Every emitted field comes from
+  // the patch (with the same defaults `parseRequestFromYaml` already filled in
+  // for missing optionals).
+  const projected: Request = {
+    id: 'preview',
+    folderId: null,
+    createdAt: '',
+    updatedAt: '',
+    name: patch.name ?? '',
+    method: patch.method ?? 'GET',
+    url: patch.url ?? '',
+    pathParams: patch.pathParams,
+    query: patch.query ?? [],
+    headers: patch.headers ?? [],
+    cookies: patch.cookies ?? [],
+    auth: patch.auth ?? { type: 'none' },
+    body: patch.body ?? { type: 'none', content: '' },
+    assertions: patch.assertions ?? [],
+    extractions: patch.extractions ?? [],
+    contextVars: patch.contextVars ?? [],
+  };
+  const yaml = serializeRequestToYaml(projected);
+  return yaml === text ? null : yaml;
+}

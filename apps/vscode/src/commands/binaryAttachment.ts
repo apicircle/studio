@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import type { GlobalFileAsset } from '@apicircle/shared';
 import { findSectionRange, readSectionType } from './switchRequestSection';
 import { pickGlobalFileAsset, type FileAssetPickerDeps } from './fileAssetPicker';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
 // `apicircle.pickBinaryAttachment` — driven by the CodeLens above a binary
@@ -31,7 +32,7 @@ export async function pickBinaryAttachmentCommand(
     await vscode.window.showWarningMessage('No request YAML is active.');
     return;
   }
-  if (targetUri.scheme !== 'apicircle' || !targetUri.path.endsWith('.req.yaml')) {
+  if (targetUri.scheme !== 'apicircle' || uriEntityKind(targetUri) !== 'request') {
     await vscode.window.showWarningMessage(
       'This command only runs against APICircle request YAML files.',
     );

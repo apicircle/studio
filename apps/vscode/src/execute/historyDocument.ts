@@ -5,7 +5,7 @@ import type { RequestRun, PlanRun } from '@apicircle/shared';
 // History run-detail formatter.
 //
 // Produces a YAML document for a captured RequestRun or PlanRun, suitable
-// for opening via the ApicircleFsProvider /history/<runId>.run.yaml URI.
+// for opening via the ApicircleFsProvider /history/<runId>.yaml URI.
 // The historyStore in the FS provider caches the formatted output so
 // clicking from the HistoryView opens instantly.
 // =============================================================================

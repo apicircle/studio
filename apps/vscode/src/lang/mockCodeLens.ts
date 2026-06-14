@@ -1,12 +1,13 @@
 import * as vscode from 'vscode';
 import type { ChangeSubscription, VsCodeMockController } from '../host/vscodeMockController';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
 // CodeLens provider for apicircle-mock YAML documents.
 //
 // The mock.yaml file owns top-level mock metadata only — `name`, `defaultPort`,
 // `cors`, plus a read-only endpoint summary list. Per-endpoint editing lives
-// in the per-endpoint YAML (`mocks/<mockId>/<endpointId>.endpoint.yaml`),
+// in the per-endpoint YAML (`mocks/<mockId>/<endpointId>.yaml`),
 // reachable from the Mock sidebar's pencil icon, the row's click action, or
 // the right-click context menu.
 //
@@ -15,7 +16,7 @@ import type { ChangeSubscription, VsCodeMockController } from '../host/vscodeMoc
 //   Above `name:`        ▶ Start Mock           (when not running)
 //                        ■ Stop Mock · ↻ Restart (when running)
 //   Above each endpoint  ↗ Open endpoint        (opens the per-endpoint
-//   `- id:` row            `<endpointId>.endpoint.yaml` where method / path /
+//   `- id:` row            `<endpointId>.yaml` where method / path /
 //                          rules / multiplier are edited)
 //
 // Mock id is read from the URI query (`?id=<mockId>`) — the path basename is
@@ -52,7 +53,7 @@ export class MockCodeLensProvider implements vscode.CodeLensProvider, vscode.Dis
     _token: vscode.CancellationToken,
   ): Promise<vscode.CodeLens[]> {
     if (document.uri.scheme !== 'apicircle') return [];
-    if (!document.uri.path.endsWith('.mock.yaml')) return [];
+    if (uriEntityKind(document.uri) !== 'mock') return [];
 
     const mockId = extractMockId(document.uri);
     if (!mockId) return [];
@@ -129,13 +130,13 @@ export class MockCodeLensProvider implements vscode.CodeLensProvider, vscode.Dis
 }
 
 // The mock id rides in the URI query (`?id=<mockId>`) — the path basename is
-// the human-readable name slug (`/mocks/<slug>.mock.yaml`), NOT the id, so
+// the human-readable name slug (`/mocks/<slug>.yaml`), NOT the id, so
 // reading the id from the path would hand lifecycle + open-endpoint commands a
 // slug that misses `synced.mockServers[id]`. Fall back to the legacy path shape
 // only when no query id is present (older URIs).
 function extractMockId(uri: vscode.Uri): string | undefined {
   const fromQuery = new URLSearchParams(uri.query).get('id');
   if (fromQuery) return fromQuery;
-  const m = /\/mocks\/([^/]+)\.mock\.yaml$/.exec(uri.path);
+  const m = /\/mocks\/([^/]+)\.yaml$/.exec(uri.path);
   return m ? m[1] : undefined;
 }

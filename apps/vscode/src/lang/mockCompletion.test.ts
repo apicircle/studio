@@ -20,7 +20,7 @@ describe('MockCompletionProvider', () => {
 
   it('returns [] for non-apicircle scheme', () => {
     const items = provider.provideCompletionItems(
-      makeDoc(Uri.parse('file:///x.mock.yaml'), ['name: ']),
+      makeDoc(Uri.parse('file:///x.yaml'), ['name: ']),
       pos(0, 6),
       fakeToken,
       fakeCtx,
@@ -28,9 +28,9 @@ describe('MockCompletionProvider', () => {
     expect(items).toEqual([]);
   });
 
-  it('returns [] for apicircle URIs that are not .mock.yaml', () => {
+  it('returns [] for apicircle URIs that are not .yaml', () => {
     const items = provider.provideCompletionItems(
-      makeDoc(Uri.parse('apicircle://x/requests/r.req.yaml'), ['name: ']),
+      makeDoc(Uri.parse('apicircle://x/requests/r.yaml'), ['name: ']),
       pos(0, 6),
       fakeToken,
       fakeCtx,
@@ -40,7 +40,7 @@ describe('MockCompletionProvider', () => {
 
   it('suggests root field names at column 0', () => {
     const items = provider.provideCompletionItems(
-      makeDoc(Uri.parse('apicircle://x/mocks/m1.mock.yaml'), ['']),
+      makeDoc(Uri.parse('apicircle://x/mocks/m1.yaml'), ['']),
       pos(0, 0),
       fakeToken,
       fakeCtx,
@@ -65,7 +65,7 @@ describe('MockCompletionProvider', () => {
 
   it('suggests true/false on enabled: lines', () => {
     const items = provider.provideCompletionItems(
-      makeDoc(Uri.parse('apicircle://x/mocks/m1.mock.yaml'), ['  enabled: ']),
+      makeDoc(Uri.parse('apicircle://x/mocks/m1.yaml'), ['  enabled: ']),
       pos(0, 10),
       fakeToken,
       fakeCtx,
@@ -75,7 +75,7 @@ describe('MockCompletionProvider', () => {
 
   it('suggests enabled/origins inside the cors block', () => {
     const items = provider.provideCompletionItems(
-      makeDoc(Uri.parse('apicircle://x/mocks/m1.mock.yaml'), ['cors:', '  ']),
+      makeDoc(Uri.parse('apicircle://x/mocks/m1.yaml'), ['cors:', '  ']),
       pos(1, 2),
       fakeToken,
       fakeCtx,

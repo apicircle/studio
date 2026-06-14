@@ -119,6 +119,7 @@ describe('EditorView', () => {
       workspaceJsonPath: path.join(apicircleDir, 'workspace.json'),
       workspaceFolder: { uri: Uri.file(tmp), name: 'test', index: 0 } as never,
       label: 'test',
+      source: 'git-folder',
     });
     bridge.setActive(apicircleDir);
   }
@@ -198,6 +199,38 @@ describe('EditorView', () => {
       const item = await view.getTreeItem({ kind: 'folder', id: folderId });
       expect(item.label).toBe('Users');
       expect(item.contextValue).toBe('folder');
+    });
+
+    it('clicking a folder opens its apicircle:// folder YAML', async () => {
+      const folderId = generateId();
+      seedWorkspace(apicircleDir, {
+        rootChildren: [{ kind: 'folder', id: folderId }],
+        folders: [makeFolder(folderId, 'Users')],
+      });
+      registerAndActivate();
+
+      const item = await view.getTreeItem({ kind: 'folder', id: folderId });
+      expect(item.command?.command).toBe('vscode.open');
+      const uri = item.command?.arguments?.[0] as { scheme: string; path: string };
+      expect(uri?.scheme).toBe('apicircle');
+      expect(uri?.path).toBe('/folders/Users.yaml');
+    });
+
+    it('marks folders carrying auth via the folder-with-auth contextValue', async () => {
+      const folderId = generateId();
+      const folder: Folder = {
+        ...makeFolder(folderId, 'Auth'),
+        auth: { type: 'bearer', token: 'abc' },
+      };
+      seedWorkspace(apicircleDir, {
+        rootChildren: [{ kind: 'folder', id: folderId }],
+        folders: [folder],
+      });
+      registerAndActivate();
+
+      const item = await view.getTreeItem({ kind: 'folder', id: folderId });
+      expect(item.contextValue).toBe('folder-with-auth');
+      expect(String(item.description)).toContain('auth: bearer');
     });
 
     it('renders a request with method-color icon + apicircle: command', async () => {

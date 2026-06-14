@@ -155,6 +155,72 @@ stopOnAssertionFailure: true
     expect(plan.stopOnAssertionFailure).toBe(true);
   });
 
+  it('warns when steps is not an array', () => {
+    const { plan, warnings } = parsePlanFromYaml('name: Smoke\nsteps: "not-list"\n');
+    expect(plan.steps).toEqual([]);
+    expect(warnings).toEqual(expect.arrayContaining([expect.stringContaining('steps')]));
+  });
+
+  it('warns and skips non-object step rows', () => {
+    const yaml = 'name: Smoke\nsteps:\n  - "bare string"\n';
+    const { plan, warnings } = parsePlanFromYaml(yaml);
+    expect(plan.steps).toHaveLength(0);
+    expect(warnings.length).toBeGreaterThan(0);
+  });
+
+  it('includes linkedWorkspaceId on steps when present', () => {
+    const yaml = `name: Smoke
+steps:
+  - requestId: r1
+    linkedWorkspaceId: lw-1
+`;
+    const { plan } = parsePlanFromYaml(yaml);
+    expect(plan.steps[0].linkedWorkspaceId).toBe('lw-1');
+  });
+
+  it('warns when envPriorityOrder is not an array', () => {
+    const { warnings } = parsePlanFromYaml('name: Smoke\nsteps: []\nenvPriorityOrder: "nope"\n');
+    expect(warnings).toEqual(expect.arrayContaining([expect.stringContaining('envPriorityOrder')]));
+  });
+
+  it('warns and skips non-object envPriorityOrder rows', () => {
+    const yaml = 'name: Smoke\nsteps: []\nenvPriorityOrder:\n  - 42\n';
+    const { warnings } = parsePlanFromYaml(yaml);
+    expect(warnings.length).toBeGreaterThan(0);
+  });
+
+  it('warns on unrecognized envPriorityOrder shape', () => {
+    const yaml = 'name: Smoke\nsteps: []\nenvPriorityOrder:\n  - neither: local\n';
+    const { warnings } = parsePlanFromYaml(yaml);
+    expect(warnings).toEqual(
+      expect.arrayContaining([expect.stringMatching(/envPriorityOrder\[0\]/)]),
+    );
+  });
+
+  it('warns when variables is not an array', () => {
+    const { plan, warnings } = parsePlanFromYaml('name: Smoke\nsteps: []\nvariables: "nope"\n');
+    expect(plan.variables).toBeUndefined();
+    expect(warnings.length).toBeGreaterThan(0);
+  });
+
+  it('warns on non-object variable rows', () => {
+    const yaml = 'name: Smoke\nsteps: []\nvariables:\n  - "bare"\n';
+    const { warnings } = parsePlanFromYaml(yaml);
+    expect(warnings.length).toBeGreaterThan(0);
+  });
+
+  it('warns on variable without string key', () => {
+    const yaml = 'name: Smoke\nsteps: []\nvariables:\n  - key: 42\n    value: v\n';
+    const { warnings } = parsePlanFromYaml(yaml);
+    expect(warnings.length).toBeGreaterThan(0);
+  });
+
+  it('coerces non-string variable value to empty string', () => {
+    const yaml = 'name: Smoke\nsteps: []\nvariables:\n  - key: k\n    value: 42\n';
+    const { plan } = parsePlanFromYaml(yaml);
+    expect(plan.variables?.[0].value).toBe('');
+  });
+
   it('round-trips through serialize → parse', () => {
     const original = makePlan({
       variables: [{ key: 'k', value: 'v' }],

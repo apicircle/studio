@@ -11,7 +11,7 @@
 //   - JSON Schemas + GraphQL definitions are pure text. We embed the full
 //     entity so the importer can recreate them in the destination
 //     workspace without any extra user action.
-//   - Global file assets carry BYTES outside `workspace.synced.json` (Git
+//   - Global file assets carry BYTES outside `workspace.json` (Git
 //     LFS sidecar under `.apicircle/attachments/<slotId>`). The envelope
 //     therefore captures only metadata (name, filename, size, mimeType,
 //     sha256) so the importer can show the user a clear "re-attach these

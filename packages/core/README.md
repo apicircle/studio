@@ -152,6 +152,7 @@ import { loadFromFile, saveToFile, withWorkspace } from '@apicircle/core/workspa
 
 // Multi-workspace registry (registry.json + per-id subdirectories)
 import {
+  defaultApicircleRoot,
   loadRegistry,
   saveRegistry,
   loadWorkspaceById,
@@ -160,7 +161,6 @@ import {
   setActiveWorkspace,
   deleteWorkspaceById,
   findWorkspaceEntry,
-  migrateLegacyWorkspace,
   workspaceDirFor,
   type WorkspaceRegistry,
 } from '@apicircle/core/workspace/registry';
@@ -169,9 +169,9 @@ import {
 - **`/workspace/file-backed`** — one workspace, one folder. `proper-lockfile`
   advisory locking, so concurrent CLI runs don't corrupt each other.
 - **`/workspace/registry`** — many workspaces, one root. `registry.json` at
-  the top, per-id subdirectories underneath. The desktop app, CLI, and MCP
-  server all read this same shape, so an edit in one is visible to the others
-  on the next read.
+  the top, `workspaces/<id>/` subdirectories underneath. All surfaces
+  (desktop, CLI, MCP, VS Code) default to `~/.apicircle/` via
+  `defaultApicircleRoot()`.
 
 ## Use cases
 

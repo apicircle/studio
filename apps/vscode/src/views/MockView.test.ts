@@ -130,7 +130,7 @@ describe('MockView', () => {
     // (so the tab title is human-readable) with the mock id riding in
     // `?id=`. "Pet Store" → "Pet-Store" via slugify.
     const arg = item.command?.arguments?.[0] as { path: string; query: string };
-    expect(arg.path).toBe('/mocks/Pet-Store.mock.yaml');
+    expect(arg.path).toBe('/mocks/Pet-Store.yaml');
     expect(arg.query).toBe('id=m1');
   });
 });

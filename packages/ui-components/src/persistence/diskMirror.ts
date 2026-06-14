@@ -39,11 +39,10 @@ export interface DiskMirror {
   /** True when the desktop bridge is wired (Electron); false on web. */
   isAvailable(): boolean;
   /**
-   * Init the on-disk store: migrate the legacy single-workspace layout into
-   * per-id subdirectories, then return the registry. No-op on web (returns
-   * `null`).
+   * Init the on-disk store: load the registry (or create an empty one).
+   * No-op on web (returns `null`).
    */
-  init(): Promise<{ registry: DiskWorkspaceRegistry; migrated: boolean } | null>;
+  init(): Promise<{ registry: DiskWorkspaceRegistry } | null>;
   /** Read the registry. `null` on web. */
   readRegistry(): Promise<DiskWorkspaceRegistry | null>;
   /** Persist the registry. No-op on web. */
@@ -77,7 +76,7 @@ class DesktopDiskMirror implements DiskMirror {
     return true;
   }
 
-  async init(): Promise<{ registry: DiskWorkspaceRegistry; migrated: boolean } | null> {
+  async init(): Promise<{ registry: DiskWorkspaceRegistry } | null> {
     try {
       return await this.surface.init();
     } catch (err) {

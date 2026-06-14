@@ -9,9 +9,10 @@ import { getHeaderValues, suggestHeaders } from '@apicircle/core';
 import { parseEndpointFromYaml, EndpointYamlParseError } from '../fs/endpointYaml';
 import { conditionValueCandidates } from '../lang/mockValidationKinds';
 import { reconcileContentType } from './mockEndpointEdits';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
-// Line-addressed field editors for the per-endpoint `*.endpoint.yaml`.
+// Line-addressed field editors for the per-endpoint `.yaml`.
 //
 // Each command is driven by a CodeLens that sits on a specific field row and
 // passes the (uri, lineNumber) it lives on. The command reads that exact line,
@@ -134,9 +135,9 @@ export async function ensureEndpointDocument(
     await vscode.window.showWarningMessage('No endpoint YAML is active.');
     return null;
   }
-  if (targetUri.scheme !== 'apicircle' || !targetUri.path.endsWith('.endpoint.yaml')) {
+  if (targetUri.scheme !== 'apicircle' || uriEntityKind(targetUri) !== 'endpoint') {
     await vscode.window.showWarningMessage(
-      'This command only runs against an endpoint YAML (`*.endpoint.yaml`).',
+      'This command only runs against an APICircle endpoint YAML.',
     );
     return null;
   }

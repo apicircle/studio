@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import { findFreePort, openInBrowser, startCallbackServer } from './oauth2Server';
 
@@ -11,12 +11,33 @@ type HttpServer = Server<typeof IncomingMessage, typeof ServerResponse>;
  * the developer is running.
  */
 
-const TEST_PORT_BASE = 54100;
+// Pick a base port via the OS's ephemeral-port allocator so we never collide
+// with whatever a developer (or CI host) is running locally. Hardcoded ports
+// led to flaky test runs when port 54100 happened to be in use.
+async function pickFreeBase(): Promise<number> {
+  const net = await import('node:net');
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.unref();
+    srv.on('error', reject);
+    srv.listen(0, '127.0.0.1', () => {
+      const addr = srv.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
+      srv.close(() => resolve(port));
+    });
+  });
+}
+
+let TEST_PORT_BASE = 54100;
 
 async function fetchSelf(url: string): Promise<{ status: number; body: string }> {
   const res = await fetch(url);
   return { status: res.status, body: await res.text() };
 }
+
+beforeAll(async () => {
+  TEST_PORT_BASE = await pickFreeBase();
+});
 
 describe('findFreePort', () => {
   it('returns the preferred port when free', async () => {

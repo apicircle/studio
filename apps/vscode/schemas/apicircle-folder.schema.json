@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://apicircle.dev/schemas/apicircle-folder.schema.json",
+  "title": "APICircle Folder",
+  "description": "YAML projection of a single APICircle folder. Edits `name` and the optional folder-level `auth` block that descendant requests with `auth.type: inherit` resolve to. Identity (id / parentId) is intentionally not in the document — folder moves go through the TreeView drag-drop.",
+  "type": "object",
+  "required": ["name"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Folder name. Must be unique among siblings under the same parent — colliding renames are rejected on save."
+    },
+    "auth": {
+      "$ref": "#/definitions/auth",
+      "description": "Optional folder-level auth. Any descendant request with `auth.type: inherit` resolves via `resolveInheritedAuth` (walks up the folder chain and uses the first explicit non-`inherit`, non-`none` auth it finds). Omit this section to leave folder-level auth unset; the inherit walk then continues up the chain."
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "auth": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "none",
+            "inherit",
+            "bearer",
+            "basic",
+            "api-key",
+            "custom-header",
+            "oauth2-client-credentials",
+            "oauth2-auth-code",
+            "oauth2-pkce",
+            "oauth2-password",
+            "oauth2-implicit",
+            "oauth2-device",
+            "aws-sigv4",
+            "digest",
+            "ntlm",
+            "hawk",
+            "jwt-bearer"
+          ],
+          "description": "Auth scheme. The remaining fields depend on the chosen type — see `RequestAuth` in `@apicircle/shared/types.ts` for the full discriminated union."
+        }
+      }
+    }
+  }
+}

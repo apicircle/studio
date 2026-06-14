@@ -53,13 +53,35 @@ export class EditorView extends BaseTreeView<EditorNode> {
         vscode.TreeItemCollapsibleState.Collapsed,
       );
       item.iconPath = new vscode.ThemeIcon('folder');
-      item.contextValue = 'folder';
+      // contextValue carries the auth state so package.json's menu-when
+      // clauses can switch the inline action between "Edit folder auth"
+      // (auth set) and "Add folder auth" (none yet).
+      const hasAuth =
+        folder?.auth !== undefined && folder.auth.type !== 'none' && folder.auth.type !== 'inherit';
+      item.contextValue = hasAuth ? 'folder-with-auth' : 'folder';
       if (folder) {
         const total = childCount.folders + childCount.requests;
-        item.description = total === 0 ? 'empty' : `${total} item${total === 1 ? '' : 's'}`;
+        const countDesc = total === 0 ? 'empty' : `${total} item${total === 1 ? '' : 's'}`;
+        item.description = hasAuth ? `${countDesc} · auth: ${folder.auth!.type}` : countDesc;
+        const authLine = hasAuth
+          ? `\n\nFolder-level auth: \`${folder.auth!.type}\` — descendant requests with \`auth: inherit\` pick this up.`
+          : `\n\n_No folder-level auth set. Descendant requests with \`auth: inherit\` walk further up the chain._`;
         item.tooltip = new vscode.MarkdownString(
-          `**${folder.name}**\n\n${childCount.requests} request${childCount.requests === 1 ? '' : 's'}, ${childCount.folders} folder${childCount.folders === 1 ? '' : 's'}\n\n_Click the + icon to add a request to this folder._`,
+          `**${folder.name}**\n\n${childCount.requests} request${childCount.requests === 1 ? '' : 's'}, ${childCount.folders} folder${childCount.folders === 1 ? '' : 's'}` +
+            authLine +
+            `\n\n_Click to open the folder YAML and edit name + auth._`,
         );
+        const uri = ApicircleFsProvider.folderUri(
+          active.workspace.id,
+          folder,
+          state.synced.collections.folders,
+        );
+        item.command = {
+          command: 'vscode.open',
+          title: 'Open folder YAML',
+          arguments: [uri],
+        };
+        item.resourceUri = uri;
       }
       return item;
     }

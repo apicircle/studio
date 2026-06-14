@@ -15,6 +15,7 @@ import {
 } from '@apicircle/core';
 import type { VsCodeBridge, WorkspaceSurface } from '../host/vscodeBridge';
 import { serializeRequestToYaml, parseRequestFromYaml, RequestYamlParseError } from './requestYaml';
+import { serializeFolderToYaml, parseFolderFromYaml, FolderYamlParseError } from './folderYaml';
 import { serializeEnvironmentToYaml, parseEnvironmentFromYaml, EnvYamlParseError } from './envYaml';
 import { serializePlanToYaml, parsePlanFromYaml, PlanYamlParseError } from './planYaml';
 import { serializeMockToYaml, parseMockFromYaml, MockYamlParseError } from './mockYaml';
@@ -35,16 +36,17 @@ import { formatRequestRunDocument, formatPlanRunDocument } from '../execute/hist
 // label is readable, with the stable identifier in `?id=` so renames don't
 // break identity:
 //
-//   apicircle://<wsAuth>/requests/<folderSlug…>/<nameSlug>.req.yaml?id=<requestId>
-//   apicircle://<wsAuth>/plans/<nameSlug>.plan.yaml?id=<planId>
-//   apicircle://<wsAuth>/mocks/<nameSlug>.mock.yaml?id=<mockId>
-//   apicircle://<wsAuth>/mocks/<mockSlug>/<endpointSlug>.endpoint.yaml?mockId=…&id=…
-//   apicircle://<wsAuth>/responses/<nameSlug>.run.yaml?runId=<runId>
-//   apicircle://<wsAuth>/history/<labelSlug>.run.yaml?runId=<runId>
-//   apicircle://<wsAuth>/environments/<envName>.env.yaml
+//   apicircle://<wsAuth>/requests/<folderSlug…>/<nameSlug>.yaml?id=<requestId>
+//   apicircle://<wsAuth>/folders/<folderSlug…>/<folderSlug>.yaml?id=<folderId>
+//   apicircle://<wsAuth>/plans/<nameSlug>.yaml?id=<planId>
+//   apicircle://<wsAuth>/mocks/<nameSlug>.yaml?id=<mockId>
+//   apicircle://<wsAuth>/mocks/<mockSlug>/<endpointSlug>.yaml?mockId=…&id=…
+//   apicircle://<wsAuth>/responses/<nameSlug>.yaml?runId=<runId>
+//   apicircle://<wsAuth>/history/<labelSlug>.yaml?runId=<runId>
+//   apicircle://<wsAuth>/environments/<envName>.yaml
 //   apicircle://<wsAuth>/releases/releases.yaml   (one per workspace; read-only)
-//   apicircle://<wsAuth>/links/<nameSlug>.link.yaml?id=<linkedWorkspaceId>
-//   apicircle://<wsAuth>/linked/<linkSlug>/<nameSlug>.req.yaml?link=<linkId>&id=<reqId>
+//   apicircle://<wsAuth>/links/<nameSlug>.yaml?id=<linkedWorkspaceId>
+//   apicircle://<wsAuth>/linked/<linkSlug>/<nameSlug>.yaml?link=<linkId>&id=<reqId>
 //
 // On readFile: serializes the entity to YAML.
 // On writeFile: parses YAML → WorkspacePatch → applyMutation through the
@@ -61,6 +63,7 @@ interface ParsedUri {
   workspaceId: string;
   kind:
     | 'requests'
+    | 'folders'
     | 'responses'
     | 'environments'
     | 'history'
@@ -69,11 +72,12 @@ interface ParsedUri {
     | 'endpoints'
     | 'releases'
     | 'links'
-    | 'linkedRequests';
+    | 'linkedRequests'
+    | 'linkedFolders';
   id: string;
   /** When kind is 'endpoints', the parent mock id this endpoint belongs to. */
   parentMockId?: string;
-  /** When kind is 'linkedRequests', the linked workspace id the request lives in. */
+  /** When kind is 'linkedRequests' or 'linkedFolders', the linked workspace id. */
   linkId?: string;
 }
 
@@ -130,6 +134,8 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
     let exists: boolean;
     if (parsed.kind === 'requests') {
       exists = state.synced.collections.requests[parsed.id] !== undefined;
+    } else if (parsed.kind === 'folders') {
+      exists = state.synced.collections.folders[parsed.id] !== undefined;
     } else if (parsed.kind === 'environments') {
       exists = state.synced.environments.items[parsed.id] !== undefined;
     } else if (parsed.kind === 'plans') {
@@ -146,6 +152,10 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
     } else if (parsed.kind === 'linkedRequests') {
       exists =
         state.local.linkedCollections[parsed.linkId ?? '']?.collections.requests[parsed.id] !==
+        undefined;
+    } else if (parsed.kind === 'linkedFolders') {
+      exists =
+        state.local.linkedCollections[parsed.linkId ?? '']?.collections.folders[parsed.id] !==
         undefined;
     } else {
       // mocks
@@ -171,9 +181,10 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
 
   createDirectory(_uri: vscode.Uri): void | Thenable<void> {
     // Folders are conceptual (collections.tree); creating one happens through
-    // `folder.create` patches, not through the FS.
+    // `folder.create` patches, not through the FS. Surface the dedicated
+    // command so the error text matches reality.
     throw vscode.FileSystemError.NoPermissions(
-      'Use the Editor TreeView "New Folder" command to create folders.',
+      'Use the "APICircle: New Folder" command (palette or Editor view title button) to create folders.',
     );
   }
 
@@ -241,6 +252,12 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
       const effective = ov ? mergeRequestOverride(base, ov.patch) : base;
       return Buffer.from(serializeRequestToYaml(effective), 'utf8');
     }
+    if (parsed.kind === 'linkedFolders') {
+      const folder =
+        state.local.linkedCollections[parsed.linkId ?? '']?.collections.folders[parsed.id];
+      if (!folder) throw vscode.FileSystemError.FileNotFound(uri);
+      return Buffer.from(serializeFolderToYaml(folder), 'utf8');
+    }
     if (parsed.kind === 'mocks') {
       const mock = state.synced.mockServers[parsed.id];
       if (!mock) throw vscode.FileSystemError.FileNotFound(uri);
@@ -251,6 +268,11 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
       const endpoint = mock?.endpoints.find((ep) => ep.id === parsed.id);
       if (!endpoint) throw vscode.FileSystemError.FileNotFound(uri);
       return Buffer.from(serializeEndpointToYaml(endpoint), 'utf8');
+    }
+    if (parsed.kind === 'folders') {
+      const folder = state.synced.collections.folders[parsed.id];
+      if (!folder) throw vscode.FileSystemError.FileNotFound(uri);
+      return Buffer.from(serializeFolderToYaml(folder), 'utf8');
     }
     const request = state.synced.collections.requests[parsed.id];
     if (!request) throw vscode.FileSystemError.FileNotFound(uri);
@@ -282,6 +304,14 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
         'Release history is read-only here — use the ▶ Publish release… / ⚠ Deprecate / ⛔ Withdraw CodeLens actions.',
       );
     }
+    if (parsed.kind === 'linkedFolders') {
+      // Linked folders are read-only projections of the source workspace's
+      // folder chain. The consumer doesn't get to mutate the source — folder
+      // edits happen at the source workspace and flow back via Refresh.
+      throw vscode.FileSystemError.NoPermissions(
+        'Linked folders are read-only — they project the source workspace. Edit the source workspace to change folder name / auth.',
+      );
+    }
     const surface = this.requireWorkspace(parsed.workspaceId);
     const text = Buffer.from(content).toString('utf8');
 
@@ -310,6 +340,28 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
         }
         throw e;
       }
+      // Reject duplicate-name renames (mirroring the folder save guard).
+      // The core `request.update` mutation doesn't check name uniqueness,
+      // so the VS Code layer enforces it — consistent with web/desktop.
+      if (parsedYaml.patch.name !== undefined) {
+        const stateBefore = await surface.read();
+        const existing = stateBefore.synced.collections.requests[parsed.id];
+        if (existing && parsedYaml.patch.name !== existing.name) {
+          const trimmed = parsedYaml.patch.name.trim().toLowerCase();
+          const siblings = Object.values(stateBefore.synced.collections.requests);
+          const collision = siblings.some(
+            (r) =>
+              r.id !== parsed.id &&
+              r.folderId === existing.folderId &&
+              r.name.trim().toLowerCase() === trimmed,
+          );
+          if (collision) {
+            throw vscode.FileSystemError.NoPermissions(
+              `A request named "${parsedYaml.patch.name}" already exists in the same folder. Pick a different name.`,
+            );
+          }
+        }
+      }
       await surface.apply({ kind: 'request.update', id: parsed.id, patch: parsedYaml.patch });
       // Follow URI renames: if `name:` changed in the YAML, the canonical
       // request URI (slug-derived basename) now differs from the URI the tab
@@ -323,6 +375,52 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
           requestAfter,
           stateAfterReq.synced.collections.folders,
           stateAfterReq.synced.collections.requests,
+        );
+        void this.followRenameIfChanged(uri, newUri);
+      }
+      this._onDidChangeFile.fire([{ type: vscode.FileChangeType.Changed, uri }]);
+      return;
+    }
+    if (parsed.kind === 'folders') {
+      let parsedYaml: ReturnType<typeof parseFolderFromYaml>;
+      try {
+        parsedYaml = parseFolderFromYaml(text);
+      } catch (e) {
+        if (e instanceof FolderYamlParseError) {
+          throw vscode.FileSystemError.NoPermissions(e.message);
+        }
+        throw e;
+      }
+      const stateBefore = await surface.read();
+      const existing = stateBefore.synced.collections.folders[parsed.id];
+      if (!existing) {
+        throw vscode.FileSystemError.FileNotFound(
+          'Folder no longer exists — it may have been deleted.',
+        );
+      }
+      // applyMutation silently no-ops a duplicate-name rename so headless
+      // writers don't accept silent collisions. Detect that here and surface
+      // a clear save error before the buffer pretends it succeeded.
+      const renameAttempted =
+        parsedYaml.patch.name !== undefined && parsedYaml.patch.name !== existing.name;
+      const result = await surface.apply({
+        kind: 'folder.update',
+        id: parsed.id,
+        patch: parsedYaml.patch,
+      });
+      if (renameAttempted && (result?.changedIds?.length ?? 0) === 0) {
+        throw vscode.FileSystemError.NoPermissions(
+          `A folder named "${parsedYaml.patch.name}" already exists under the same parent. Pick a different name.`,
+        );
+      }
+      // Follow URI rename when `name:` changed (slug-derived basename moves).
+      const stateAfterFolder = await surface.read();
+      const folderAfter = stateAfterFolder.synced.collections.folders[parsed.id];
+      if (folderAfter) {
+        const newUri = ApicircleFsProvider.folderUri(
+          decodeAuthority(parsed.workspaceId),
+          folderAfter,
+          stateAfterFolder.synced.collections.folders,
         );
         void this.followRenameIfChanged(uri, newUri);
       }
@@ -627,27 +725,35 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
         this._onDidChangeFile.fire([{ type: vscode.FileChangeType.Deleted, uri }]);
       });
     }
+    if (parsed.kind === 'folders') {
+      // Cascades to descendants — applyMutation's folder.delete reparents the
+      // direct children to the folder's parent (matching the TreeView's
+      // delete-folder semantics).
+      return surface.apply({ kind: 'folder.delete', id: parsed.id }).then(() => {
+        this._onDidChangeFile.fire([{ type: vscode.FileChangeType.Deleted, uri }]);
+      });
+    }
     if (parsed.kind === 'plans') {
-      // R5-G5: deleting plans/<id>.plan.yaml fires plan.delete so the
+      // R5-G5: deleting plans/<id>.yaml fires plan.delete so the
       // Execution view + on-disk record stay in sync with the FS view.
       return surface.apply({ kind: 'plan.delete', id: parsed.id }).then(() => {
         this._onDidChangeFile.fire([{ type: vscode.FileChangeType.Deleted, uri }]);
       });
     }
     if (parsed.kind === 'environments') {
-      // R5-G5: deleting environments/<name>.env.yaml fires environment.delete.
+      // R5-G5: deleting environments/<name>.yaml fires environment.delete.
       return surface.apply({ kind: 'environment.delete', name: parsed.id }).then(() => {
         this._onDidChangeFile.fire([{ type: vscode.FileChangeType.Deleted, uri }]);
       });
     }
     if (parsed.kind === 'mocks') {
-      // Phase 3: deleting mocks/<id>.mock.yaml fires mock.delete.
+      // Phase 3: deleting mocks/<id>.yaml fires mock.delete.
       return surface.apply({ kind: 'mock.delete', id: parsed.id }).then(() => {
         this._onDidChangeFile.fire([{ type: vscode.FileChangeType.Deleted, uri }]);
       });
     }
     if (parsed.kind === 'links') {
-      // Deleting links/<slug>.link.yaml unlinks the workspace (cascades the
+      // Deleting links/<slug>.yaml unlinks the workspace (cascades the
       // cached ledger, overrides, snapshot, and per-link session).
       return surface.apply({ kind: 'linkedWorkspace.remove', id: parsed.id }).then(() => {
         this._onDidChangeFile.fire([{ type: vscode.FileChangeType.Deleted, uri }]);
@@ -687,7 +793,7 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
   /**
    * Build the canonical URI for a request. The URI shape is
    *
-   *   apicircle://<wsAuth>/requests/<folderSlug>/<nameSlug>.req.yaml?id=<requestId>
+   *   apicircle://<wsAuth>/requests/<folderSlug>/<nameSlug>.yaml?id=<requestId>
    *
    * — the folder slug path mirrors the request's place in the collection tree
    * so the tab tooltip surfaces the folder breadcrumb, the `<nameSlug>` is
@@ -707,12 +813,41 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
     const folderSegments = computeFolderSlugPath(request.folderId, folders);
     const baseSlug = slugify(request.name) || 'untitled';
     const slug = disambiguateRequestSlug(baseSlug, request, siblings);
-    const pathSegments = ['requests', ...folderSegments, `${slug}.req.yaml`];
+    const pathSegments = ['requests', ...folderSegments, `${slug}.yaml`];
     return vscode.Uri.from({
       scheme: SCHEME,
       authority: encodeAuthority(workspaceId),
       path: '/' + pathSegments.join('/'),
       query: `id=${encodeURIComponent(request.id)}`,
+    });
+  }
+
+  /**
+   * Build the canonical URI for a folder. The path mirrors the folder's
+   * place in the collection tree so the tab tooltip surfaces the breadcrumb,
+   * the basename is the folder's slugified name, and identity rides in
+   * `?id=` so renames don't break the tab.
+   *
+   *   apicircle://<wsAuth>/folders/<parentSlugs…>/<folderSlug>.yaml?id=<folderId>
+   *
+   * Collision strategy: a sibling folder with the same slugified name suffixes
+   * the basename with `~<shortId>` so the URIs remain unique without exposing
+   * the full id in the tab label.
+   */
+  static folderUri(
+    workspaceId: string,
+    folder: Folder,
+    folders: Record<string, Folder>,
+  ): vscode.Uri {
+    const parentSegments = computeFolderSlugPath(folder.parentId, folders);
+    const baseSlug = slugify(folder.name) || 'untitled-folder';
+    const slug = disambiguateFolderSlug(baseSlug, folder, folders);
+    const pathSegments = ['folders', ...parentSegments, `${slug}.yaml`];
+    return vscode.Uri.from({
+      scheme: SCHEME,
+      authority: encodeAuthority(workspaceId),
+      path: '/' + pathSegments.join('/'),
+      query: `id=${encodeURIComponent(folder.id)}`,
     });
   }
 
@@ -726,7 +861,7 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
     return vscode.Uri.from({
       scheme: SCHEME,
       authority: encodeAuthority(workspaceId),
-      path: `/responses/${slug}.run.yaml`,
+      path: `/responses/${slug}.yaml`,
       query: `runId=${encodeURIComponent(runId)}`,
     });
   }
@@ -749,13 +884,13 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
     return vscode.Uri.from({
       scheme: SCHEME,
       authority: encodeAuthority(workspaceId),
-      path: `/environments/${encodeURIComponent(envName)}.env.yaml`,
+      path: `/environments/${encodeURIComponent(envName)}.yaml`,
     });
   }
 
   /**
    * Build the canonical URI for a history run-detail document. `label` becomes
-   * the basename so the tab reads "Login.run.yaml" instead of "<runId>.run.yaml"
+   * the basename so the tab reads "Login.yaml" instead of "<runId>.yaml"
    * when the user has the history sidebar collapsed.
    */
   static historyUri(workspaceId: string, runId: string, label?: string): vscode.Uri {
@@ -763,7 +898,7 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
     return vscode.Uri.from({
       scheme: SCHEME,
       authority: encodeAuthority(workspaceId),
-      path: `/history/${slug}.run.yaml`,
+      path: `/history/${slug}.yaml`,
       query: `runId=${encodeURIComponent(runId)}`,
     });
   }
@@ -774,7 +909,7 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
     return vscode.Uri.from({
       scheme: SCHEME,
       authority: encodeAuthority(workspaceId),
-      path: `/plans/${slug}.plan.yaml`,
+      path: `/plans/${slug}.yaml`,
       query: `id=${encodeURIComponent(plan.id)}`,
     });
   }
@@ -789,7 +924,7 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
     return vscode.Uri.from({
       scheme: SCHEME,
       authority: encodeAuthority(workspaceId),
-      path: `/links/${slug}.link.yaml`,
+      path: `/links/${slug}.yaml`,
       query: `id=${encodeURIComponent(link.id)}`,
     });
   }
@@ -809,8 +944,25 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
     return vscode.Uri.from({
       scheme: SCHEME,
       authority: encodeAuthority(workspaceId),
-      path: `/linked/${linkSlug}/${reqSlug}.req.yaml`,
+      path: `/linked/${linkSlug}/${reqSlug}.yaml`,
       query: `link=${encodeURIComponent(link.id)}&id=${encodeURIComponent(request.id)}`,
+    });
+  }
+
+  /**
+   * Build the canonical URI for a linked workspace's folder (read-only). The
+   * consumer can't mutate the source workspace; the URI is purely for
+   * inspecting what auth a linked request would inherit. Path mirrors the
+   * linkedRequest shape.
+   */
+  static linkedFolderUri(workspaceId: string, link: LinkedWorkspace, folder: Folder): vscode.Uri {
+    const linkSlug = slugify(link.name) || 'linked';
+    const folderSlug = slugify(folder.name) || 'folder';
+    return vscode.Uri.from({
+      scheme: SCHEME,
+      authority: encodeAuthority(workspaceId),
+      path: `/linked/${linkSlug}/${folderSlug}.yaml`,
+      query: `link=${encodeURIComponent(link.id)}&id=${encodeURIComponent(folder.id)}&kind=folder`,
     });
   }
 
@@ -820,7 +972,7 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
     return vscode.Uri.from({
       scheme: SCHEME,
       authority: encodeAuthority(workspaceId),
-      path: `/mocks/${slug}.mock.yaml`,
+      path: `/mocks/${slug}.yaml`,
       query: `id=${encodeURIComponent(mock.id)}`,
     });
   }
@@ -836,7 +988,7 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
     return vscode.Uri.from({
       scheme: SCHEME,
       authority: encodeAuthority(workspaceId),
-      path: `/mocks/${mockSlug}/${endpointSlug}.endpoint.yaml`,
+      path: `/mocks/${mockSlug}/${endpointSlug}.yaml`,
       query: `mockId=${encodeURIComponent(mock.id)}&id=${encodeURIComponent(endpoint.id)}`,
     });
   }
@@ -884,16 +1036,19 @@ function parseUri(uri: vscode.Uri): ParsedUri {
     return { workspaceId, kind: 'releases', id: '' };
   }
 
-  // Linked request: /linked/<linkSlug>/<nameSlug>.req.yaml?link=<linkId>&id=<reqId>
+  // Linked entity: /linked/<linkSlug>/<nameSlug>.yaml?link=&id=(&kind=folder)
   if (kind === 'linked') {
     const linkId = query.get('link') ?? '';
-    const reqId = query.get('id') ?? '';
-    if (!linkId || !reqId) {
+    const entityId = query.get('id') ?? '';
+    if (!linkId || !entityId) {
       throw vscode.FileSystemError.FileNotFound(
-        `Linked-request URI is missing ?link= or ?id= — got ${uri.toString()}`,
+        `Linked URI is missing ?link= or ?id= — got ${uri.toString()}`,
       );
     }
-    return { workspaceId, kind: 'linkedRequests', id: reqId, linkId };
+    if (query.get('kind') === 'folder') {
+      return { workspaceId, kind: 'linkedFolders', id: entityId, linkId };
+    }
+    return { workspaceId, kind: 'linkedRequests', id: entityId, linkId };
   }
 
   // Environments still encode the name as the basename — no `?id=` query.
@@ -901,14 +1056,13 @@ function parseUri(uri: vscode.Uri): ParsedUri {
     if (segments.length !== 2) {
       throw vscode.FileSystemError.FileNotFound(`Unsupported environments URI: ${uri.path}`);
     }
-    const rawId = path.basename(segments[1], path.extname(segments[1])).replace(/\.env$/, '');
+    const rawId = path.basename(segments[1], '.yaml');
     return { workspaceId, kind: 'environments', id: decodeURIComponent(rawId) };
   }
 
-  // Endpoints: /mocks/<mockSlug>/<endpointSlug>.endpoint.yaml?mockId=<m>&id=<e>
-  // Identity comes from the query so the slug can change with the endpoint
-  // name without invalidating tabs.
-  if (kind === 'mocks' && segments.length === 3 && segments[2].endsWith('.endpoint.yaml')) {
+  // Endpoints: /mocks/<mockSlug>/<endpointSlug>.yaml?mockId=<m>&id=<e>
+  // Distinguished from mocks by segment count (3+ vs 2).
+  if (kind === 'mocks' && segments.length >= 3) {
     const parentMockId = query.get('mockId') ?? '';
     const endpointId = query.get('id') ?? '';
     if (!parentMockId || !endpointId) {
@@ -921,6 +1075,7 @@ function parseUri(uri: vscode.Uri): ParsedUri {
 
   if (
     kind !== 'requests' &&
+    kind !== 'folders' &&
     kind !== 'responses' &&
     kind !== 'history' &&
     kind !== 'plans' &&
@@ -944,17 +1099,19 @@ function parseUri(uri: vscode.Uri): ParsedUri {
 /**
  * VS Code URI authorities are constrained to URL-safe characters. Workspace
  * ids are absolute filesystem paths (currently the workspace's .apicircle/
- * directory) and contain `\`, `:`, `/` — none URL-safe. Encode to a stable
- * base64url-style representation for the authority slot, decode back when
- * the FS provider needs the original path.
+ * directory) and contain `\`, `:`, `/` — none URL-safe.
+ *
+ * Hex encoding (not base64url) because VS Code lowercases URI authorities
+ * per RFC 3986 §3.2.2 — base64url is case-sensitive and breaks on the
+ * round-trip. Hex uses only `0-9 a-f`, which survives lowercasing.
  */
 function encodeAuthority(workspaceId: string): string {
-  return Buffer.from(workspaceId, 'utf8').toString('base64url');
+  return Buffer.from(workspaceId, 'utf8').toString('hex');
 }
 
 function decodeAuthority(encoded: string): string {
   try {
-    return Buffer.from(encoded, 'base64url').toString('utf8');
+    return Buffer.from(encoded, 'hex').toString('utf8');
   } catch {
     return encoded;
   }
@@ -1022,6 +1179,26 @@ export function disambiguateRequestSlug(
     if ((other.folderId ?? null) !== (request.folderId ?? null)) continue;
     if (slugify(other.name) === baseSlug) {
       return `${baseSlug}~${request.id.slice(0, 8)}`;
+    }
+  }
+  return baseSlug;
+}
+
+/**
+ * Folder-side counterpart to disambiguateRequestSlug — two sibling folders
+ * that slugify identically would collide; suffix one with `~<shortId>` so
+ * URI uniqueness holds.
+ */
+export function disambiguateFolderSlug(
+  baseSlug: string,
+  folder: Folder,
+  folders: Record<string, Folder>,
+): string {
+  for (const other of Object.values(folders)) {
+    if (other.id === folder.id) continue;
+    if ((other.parentId ?? null) !== (folder.parentId ?? null)) continue;
+    if (slugify(other.name) === baseSlug) {
+      return `${baseSlug}~${folder.id.slice(0, 8)}`;
     }
   }
   return baseSlug;

@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { EventEmitter } from 'node:events';
+import { WORKSPACES_SUBDIR } from '@apicircle/core/workspace/registry';
 import type { WorkspaceFileManager } from './workspaceFileManager';
 
 // =============================================================================
@@ -41,13 +42,13 @@ import type { WorkspaceFileManager } from './workspaceFileManager';
 // Cross-platform notes: `fs.watch` works on all three platforms but has
 // known quirks. We watch the registry root non-recursively (catches
 // `registry.json` changes + new workspace dir creation), and each per-id
-// dir individually (catches `workspace.synced.json` writes inside).
+// dir individually (catches `workspace.json` writes inside).
 // `rename` events for the synced file are handled by re-`watch()`-ing the
 // dir, since some platforms invalidate the watcher after an atomic rename.
 // =============================================================================
 
 const REGISTRY_FILENAME = 'registry.json';
-const SYNCED_FILENAME = 'workspace.synced.json';
+const SYNCED_FILENAME = 'workspace.json';
 
 /** Debounce per-id events so a burst of `change` notifications coalesces. */
 const EVENT_DEBOUNCE_MS = 200;
@@ -56,7 +57,7 @@ const EVENT_DEBOUNCE_MS = 200;
 export const REGISTRY_CHANGE = 'registry';
 
 export interface ExternalChangeEvent {
-  /** Workspace id whose `workspace.synced.json` changed, or the literal
+  /** Workspace id whose `workspace.json` changed, or the literal
    *  `'registry'` (also exported as `REGISTRY_CHANGE`) for `registry.json`. */
   workspaceId: string;
 }
@@ -68,6 +69,7 @@ interface StatSnapshot {
 
 export class WorkspaceWatcher extends EventEmitter {
   private rootWatcher: fs.FSWatcher | null = null;
+  private workspacesDirWatcher: fs.FSWatcher | null = null;
   private dirWatchers = new Map<string, fs.FSWatcher>();
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Per-id snapshot of the file's stats immediately after a self-write.
@@ -81,25 +83,33 @@ export class WorkspaceWatcher extends EventEmitter {
     super();
   }
 
+  private get workspacesDir(): string {
+    return path.join(this.manager.workspacesRoot, WORKSPACES_SUBDIR);
+  }
+
   /**
    * Begin watching. Safe to call before the directory exists — we create
    * it (via `mkdirSync({ recursive: true })`) so the root watcher has
    * something to watch. Existing per-id dirs are wired up immediately;
-   * new ones are picked up via the root watcher's `rename` events.
+   * new ones are picked up via the workspaces-dir watcher's `rename` events.
    */
   start(): void {
     if (this.started) return;
     this.started = true;
     const root = this.manager.workspacesRoot;
+    const wsDir = this.workspacesDir;
     try {
-      fs.mkdirSync(root, { recursive: true });
+      fs.mkdirSync(wsDir, { recursive: true });
     } catch (err) {
-      console.error('[workspaceWatcher] could not create root', root, err);
+      console.error('[workspaceWatcher] could not create workspaces dir', wsDir, err);
       return;
     }
+    // Watch root for registry.json changes.
     try {
-      this.rootWatcher = fs.watch(root, { persistent: false }, (eventType, filename) => {
-        this.onRootEvent(eventType, filename);
+      this.rootWatcher = fs.watch(root, { persistent: false }, (_eventType, filename) => {
+        if (filename === REGISTRY_FILENAME) {
+          this.scheduleEmit(REGISTRY_CHANGE);
+        }
       });
       this.rootWatcher.on('error', (err) => {
         console.error('[workspaceWatcher] root watcher error', err);
@@ -108,12 +118,23 @@ export class WorkspaceWatcher extends EventEmitter {
       console.error('[workspaceWatcher] could not watch root', root, err);
       return;
     }
+    // Watch workspaces/ subdir for per-id directory creation/removal.
+    try {
+      this.workspacesDirWatcher = fs.watch(wsDir, { persistent: false }, (eventType, filename) => {
+        this.onWorkspacesDirEvent(eventType, filename);
+      });
+      this.workspacesDirWatcher.on('error', (err) => {
+        console.error('[workspaceWatcher] workspaces-dir watcher error', err);
+      });
+    } catch (err) {
+      console.error('[workspaceWatcher] could not watch workspaces dir', wsDir, err);
+    }
     // Wire up watchers for whatever workspace subdirs already exist.
     let entries: fs.Dirent[] = [];
     try {
-      entries = fs.readdirSync(root, { withFileTypes: true });
+      entries = fs.readdirSync(wsDir, { withFileTypes: true });
     } catch (err) {
-      console.error('[workspaceWatcher] could not enumerate root', err);
+      console.error('[workspaceWatcher] could not enumerate workspaces dir', err);
     }
     for (const entry of entries) {
       if (entry.isDirectory()) {
@@ -132,6 +153,14 @@ export class WorkspaceWatcher extends EventEmitter {
         /* closing a closed watcher throws — ignore */
       }
       this.rootWatcher = null;
+    }
+    if (this.workspacesDirWatcher) {
+      try {
+        this.workspacesDirWatcher.close();
+      } catch {
+        /* same */
+      }
+      this.workspacesDirWatcher = null;
     }
     for (const w of this.dirWatchers.values()) {
       try {
@@ -183,21 +212,15 @@ export class WorkspaceWatcher extends EventEmitter {
     if (workspaceId === REGISTRY_CHANGE) {
       return path.join(this.manager.workspacesRoot, REGISTRY_FILENAME);
     }
-    return path.join(this.manager.workspacesRoot, workspaceId, SYNCED_FILENAME);
+    return path.join(this.workspacesDir, workspaceId, SYNCED_FILENAME);
   }
 
-  private onRootEvent(eventType: string, filename: string | null): void {
+  private onWorkspacesDirEvent(eventType: string, filename: string | null): void {
     if (!filename) return;
-    if (filename === REGISTRY_FILENAME) {
-      this.scheduleEmit(REGISTRY_CHANGE);
-      return;
-    }
     // A new per-id subdirectory may have appeared (or an existing one was
-    // removed). Re-evaluate which dirs we're watching. The watch tree is
-    // small; a full rebuild is simpler and more robust than per-event
-    // delta tracking.
+    // removed). Re-evaluate which dirs we're watching.
     try {
-      const entries = fs.readdirSync(this.manager.workspacesRoot, { withFileTypes: true });
+      const entries = fs.readdirSync(this.workspacesDir, { withFileTypes: true });
       const present = new Set<string>();
       for (const entry of entries) {
         if (entry.isDirectory()) {
@@ -222,13 +245,13 @@ export class WorkspaceWatcher extends EventEmitter {
         }
       }
     } catch (err) {
-      console.error('[workspaceWatcher] root re-scan failed', err);
+      console.error('[workspaceWatcher] workspaces-dir re-scan failed', err);
     }
     void eventType;
   }
 
   private watchWorkspaceDir(workspaceId: string): void {
-    const dir = path.join(this.manager.workspacesRoot, workspaceId);
+    const dir = path.join(this.workspacesDir, workspaceId);
     try {
       const watcher = fs.watch(dir, { persistent: false }, (eventType, filename) => {
         if (filename === SYNCED_FILENAME) {

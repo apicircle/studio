@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import * as YAML from 'yaml';
+import * as TOML from 'smol-toml';
 import {
   installClientMcpConfig,
   installMcpForClients,
@@ -38,6 +40,38 @@ import type { VsCodeMcpManager } from '../host/mcpManager';
 // Copilot install: created / updated / unchanged.
 // =============================================================================
 
+/**
+ * Coerce the argument VS Code hands to `apicircle.installMcpForClient` /
+ * `apicircle.uninstallMcpForClient` into a bare client id.
+ *
+ * The argument arrives in one of two shapes depending on how the command
+ * was triggered:
+ *
+ *  - **Row click** (`item.command.arguments = [client]`) → a string
+ *    `InstallableClient` like `'claude-code'`.
+ *  - **Inline trash icon / context menu** (`view/item/context`) → the
+ *    `McpNode` tree element itself: `{ kind: 'client', client }`. VS
+ *    Code's TreeView passes the underlying element, not the row item.
+ *
+ * Returns `undefined` when the arg doesn't carry a recognisable client id
+ * so the caller can fall back to a QuickPick (install) or bail (uninstall).
+ *
+ * Without this unwrap the uninstall command silently returned on
+ * inline/context-menu triggers — the bug reported on 1.1.0 where
+ * clicking "Remove API Circle MCP from AI Client" did nothing.
+ */
+export function coerceInstallableClientArg(arg: unknown): InstallableClient | undefined {
+  const candidate =
+    typeof arg === 'string'
+      ? arg
+      : arg && typeof arg === 'object' && 'client' in arg && typeof arg.client === 'string'
+        ? arg.client
+        : undefined;
+  return candidate && (INSTALLABLE_CLIENTS as readonly string[]).includes(candidate)
+    ? (candidate as InstallableClient)
+    : undefined;
+}
+
 export interface McpClientActionsDeps {
   mcp: VsCodeMcpManager;
   /** Returns the configured clients list from
@@ -54,7 +88,7 @@ function assertWorkspaceReady(
   const paths = deps.mcp.resolvePaths();
   if (!paths.hasActiveWorkspace) {
     void vscode.window.showWarningMessage(
-      'No active APICircle workspace. Open a folder containing .apicircle/workspace.json before installing MCP for external clients.',
+      'No active API Circle workspace. Open a folder containing .apicircle/workspace.json before installing MCP for external clients.',
     );
     return null;
   }
@@ -103,15 +137,15 @@ export async function installMcpForClientCommand(
   const label = CLIENT_LABELS[client];
   if (result.outcome === 'created') {
     await vscode.window.showInformationMessage(
-      `Installed APICircle MCP for ${label} at ${result.path}. Restart ${label} to pick it up.`,
+      `Installed API Circle MCP for ${label}. Restart ${label} to pick it up.`,
     );
   } else if (result.outcome === 'updated') {
     await vscode.window.showInformationMessage(
-      `Updated APICircle MCP entry for ${label} at ${result.path} (binary or workspace path changed).`,
+      `Updated API Circle MCP entry for ${label}. Restart ${label} to pick up the changes.`,
     );
   } else {
     await vscode.window.showInformationMessage(
-      `APICircle MCP entry for ${label} at ${result.path} is already up to date.`,
+      `API Circle MCP entry for ${label} is already up to date.`,
     );
   }
 }
@@ -133,7 +167,7 @@ export async function installMcpForAllClientsCommand(deps: McpClientActionsDeps)
       INSTALLABLE_CLIENTS.map((c) => ({ label: CLIENT_LABELS[c], description: c, value: c })),
       {
         canPickMany: true,
-        title: 'Install APICircle MCP for which AI clients?',
+        title: 'Install API Circle MCP for which AI clients?',
         placeHolder:
           'Pick one or more. Configure `apicircle.mcp.autoConfigureClients` to skip this prompt next time.',
       },
@@ -172,14 +206,14 @@ export async function installMcpForAllClientsCommand(deps: McpClientActionsDeps)
       .map((r) => CLIENT_LABELS[r.client])
       .join(', ');
     await vscode.window.showWarningMessage(
-      `APICircle MCP bulk install: ${summaryText}. Failed: ${failedClients}. See "APICircle Runs" output channel for details.`,
+      `API Circle MCP bulk install: ${summaryText}. Failed: ${failedClients}. See "APICircle Runs" output channel for details.`,
     );
   } else if (report.summary.created + report.summary.updated > 0) {
     await vscode.window.showInformationMessage(
-      `APICircle MCP bulk install: ${summaryText}. Restart the affected clients to pick up the new servers.`,
+      `API Circle MCP bulk install: ${summaryText}. Restart the affected clients to pick up the new servers.`,
     );
   } else {
-    await vscode.window.showInformationMessage(`APICircle MCP bulk install: ${summaryText}.`);
+    await vscode.window.showInformationMessage(`API Circle MCP bulk install: ${summaryText}.`);
   }
 }
 
@@ -205,13 +239,13 @@ export async function uninstallMcpForClientCommand(
   });
   if (before === 'absent') {
     await vscode.window.showInformationMessage(
-      `APICircle MCP entry is already absent from ${CLIENT_LABELS[client]} — nothing to remove.`,
+      `API Circle MCP entry is already absent from ${CLIENT_LABELS[client]} — nothing to remove.`,
     );
     return;
   }
 
   const confirm = await vscode.window.showWarningMessage(
-    `Remove APICircle MCP entry from ${CLIENT_LABELS[client]}? Other server entries in the same config will be preserved.`,
+    `Remove API Circle MCP entry from ${CLIENT_LABELS[client]}? Other server entries in the same config will be preserved.`,
     { modal: true },
     'Remove',
   );
@@ -223,15 +257,16 @@ export async function uninstallMcpForClientCommand(
     const msg = err instanceof Error ? err.message : String(err);
     deps.log?.(`uninstallMcpForClient(${client}) failed: ${msg}`);
     await vscode.window.showErrorMessage(
-      `Failed to remove APICircle MCP entry from ${CLIENT_LABELS[client]}: ${msg}`,
+      `Failed to remove API Circle MCP entry from ${CLIENT_LABELS[client]}: ${msg}`,
     );
     return;
   }
 
   deps.log?.(`${client} uninstall succeeded`);
   deps.onChanged?.();
+  const uninstallLabel = CLIENT_LABELS[client];
   await vscode.window.showInformationMessage(
-    `Removed APICircle MCP entry from ${CLIENT_LABELS[client]}.`,
+    `Removed API Circle MCP entry from ${uninstallLabel}. Restart ${uninstallLabel} to apply.`,
   );
 }
 
@@ -245,6 +280,8 @@ function removeApicircleEntry(client: InstallableClient): void {
     appdata: process.env.APPDATA,
   };
   const fullPath = resolveInstallPath(client, env);
+  const format: 'json' | 'yaml' | 'toml' =
+    client === 'continue' ? 'yaml' : client === 'codex' ? 'toml' : 'json';
   let raw: string;
   try {
     raw = fs.readFileSync(fullPath, 'utf8');
@@ -254,27 +291,34 @@ function removeApicircleEntry(client: InstallableClient): void {
   }
   let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(raw) as Record<string, unknown>;
+    const result: unknown =
+      format === 'yaml' ? YAML.parse(raw) : format === 'toml' ? TOML.parse(raw) : JSON.parse(raw);
+    if (!result || typeof result !== 'object' || Array.isArray(result)) return;
+    parsed = result as Record<string, unknown>;
   } catch {
-    return; // unparseable — leave it alone
+    return;
   }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
-  const schemaKey = client === 'zed' ? 'context_servers' : 'mcpServers';
+  const schemaKey =
+    client === 'zed' ? 'context_servers' : client === 'codex' ? 'mcp_servers' : 'mcpServers';
   const block = parsed[schemaKey] as Record<string, unknown> | undefined;
   if (!block || typeof block !== 'object') return;
   if (!('apicircle' in block)) return;
   const next = { ...block };
   delete next.apicircle;
-  // If the block is now empty, remove the schemaKey entirely — leaves a
-  // tidier file for the user to hand-edit later.
   let nextParsed: Record<string, unknown>;
   if (Object.keys(next).length === 0) {
     const { [schemaKey]: _, ...rest } = parsed;
-    void _; // satisfy no-unused-vars
+    void _;
     nextParsed = rest;
   } else {
     nextParsed = { ...parsed, [schemaKey]: next };
   }
   fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-  fs.writeFileSync(fullPath, JSON.stringify(nextParsed, null, 2) + '\n');
+  if (format === 'yaml') {
+    fs.writeFileSync(fullPath, YAML.stringify(nextParsed));
+  } else if (format === 'toml') {
+    fs.writeFileSync(fullPath, TOML.stringify(nextParsed));
+  } else {
+    fs.writeFileSync(fullPath, JSON.stringify(nextParsed, null, 2) + '\n');
+  }
 }

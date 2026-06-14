@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { findSectionRange } from './switchRequestSection';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
 // `apicircle.pickHeader` — driven by the CodeLens above `headers:` in a
@@ -144,7 +145,7 @@ export async function pickHeaderCommand(uri?: vscode.Uri): Promise<void> {
     await vscode.window.showWarningMessage('No request YAML is active.');
     return;
   }
-  if (targetUri.scheme !== 'apicircle' || !targetUri.path.endsWith('.req.yaml')) {
+  if (targetUri.scheme !== 'apicircle' || uriEntityKind(targetUri) !== 'request') {
     await vscode.window.showWarningMessage(
       'This command only runs against APICircle request YAML files.',
     );

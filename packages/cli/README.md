@@ -77,11 +77,7 @@ There are two ways the CLI finds a workspace:
 
 The flags are **mutually exclusive** — passing both is an error.
 
-The registry root defaults to the desktop app's userData:
-
-- **Windows** — `%APPDATA%\@apicircle\desktop\workspaces\`
-- **macOS** — `~/Library/Application Support/@apicircle/desktop/workspaces/`
-- **Linux** — `~/.config/@apicircle/desktop/workspaces/`
+The registry root defaults to `~/.apicircle/` (user home directory on every OS).
 
 Override with `APICIRCLE_WORKSPACES_ROOT` for CI / tests.
 

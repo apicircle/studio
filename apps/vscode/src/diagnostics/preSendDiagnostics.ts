@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { preSendValidation, buildScope } from '@apicircle/core';
 import { parseRequestFromYaml } from '../fs/requestYaml';
+import { uriEntityKind } from '../fs/uriKind';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 import type { Request as ApiRequest } from '@apicircle/shared';
 
@@ -47,7 +48,7 @@ export class PreSendDiagnostics implements vscode.Disposable {
   /** Force-relint a specific document. Useful after external state changes. */
   lintDocument(doc: vscode.TextDocument): void {
     if (doc.uri.scheme !== 'apicircle') return;
-    if (!doc.uri.path.endsWith('.req.yaml')) return;
+    if (uriEntityKind(doc.uri) !== 'request') return;
 
     let request: ApiRequest;
     try {
@@ -103,7 +104,14 @@ export class PreSendDiagnostics implements vscode.Disposable {
       priorityOrder,
     });
 
-    const verdicts = preSendValidation({ request, scope });
+    // Pass `folders` so the validator resolves `auth: inherit` against the
+    // folder chain — catches empty-token / empty-key folder auth before send
+    // instead of letting it fail on the wire.
+    const verdicts = preSendValidation({
+      request,
+      scope,
+      folders: state.synced.collections.folders,
+    });
     const diagnostics: vscode.Diagnostic[] = [];
     const range = new vscode.Range(0, 0, 0, 0);
 

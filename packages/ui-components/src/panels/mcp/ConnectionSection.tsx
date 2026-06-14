@@ -163,7 +163,7 @@ export function ConnectionSection() {
             aria-label="Refresh from disk"
             title={
               refreshSupported
-                ? 'Re-read workspace.synced.json from disk and merge any newer changes'
+                ? 'Re-read workspace.json from disk and merge any newer changes'
                 : 'Refresh is only available in the desktop build'
             }
             className="inline-flex shrink-0 items-center gap-1.5 rounded-sm border border-border bg-surface px-2.5 py-1.5 text-[0.6875rem] text-text-primary hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"

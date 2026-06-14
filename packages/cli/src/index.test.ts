@@ -3,11 +3,12 @@ import { buildProgram } from './index';
 import { CLI_PACKAGE_VERSION } from './packageVersion';
 
 describe('CLI program', () => {
-  it('registers the nine top-level commands', () => {
+  it('registers the ten top-level commands', () => {
     const program = buildProgram();
     const names = program.commands.map((c) => c.name()).sort();
     expect(names).toEqual([
       'export',
+      'folder',
       'import',
       'linked',
       'mcp',
@@ -16,6 +17,21 @@ describe('CLI program', () => {
       'release',
       'run',
       'workspaces',
+    ]);
+  });
+
+  it('folder has list/create/rename/set-auth/clear-auth/move/delete subcommands', () => {
+    const program = buildProgram();
+    const folder = program.commands.find((c) => c.name() === 'folder');
+    expect(folder).toBeDefined();
+    expect(folder!.commands.map((c) => c.name()).sort()).toEqual([
+      'clear-auth',
+      'create',
+      'delete',
+      'list',
+      'move',
+      'rename',
+      'set-auth',
     ]);
   });
 

@@ -59,17 +59,17 @@ describe('MockHoverProvider', () => {
   it('returns undefined for non-apicircle scheme', async () => {
     const p = new MockHoverProvider(makeBridge(mockShape), makeController(null));
     const r = await p.provideHover(
-      makeDoc(Uri.parse('file:///x.mock.yaml'), ['name: Pet Store']),
+      makeDoc(Uri.parse('file:///x.yaml'), ['name: Pet Store']),
       pos(0, 5),
       fakeToken,
     );
     expect(r).toBeUndefined();
   });
 
-  it('returns undefined for non-.mock.yaml apicircle URIs', async () => {
+  it('returns undefined for non-.yaml apicircle URIs', async () => {
     const p = new MockHoverProvider(makeBridge(mockShape), makeController(null));
     const r = await p.provideHover(
-      makeDoc(Uri.parse('apicircle://x/requests/r.req.yaml'), ['name: Pet Store']),
+      makeDoc(Uri.parse('apicircle://x/requests/r.yaml'), ['name: Pet Store']),
       pos(0, 5),
       fakeToken,
     );
@@ -79,7 +79,7 @@ describe('MockHoverProvider', () => {
   it('hovers on name: shows idle status', async () => {
     const p = new MockHoverProvider(makeBridge(mockShape), makeController(null));
     const r = await p.provideHover(
-      makeDoc(Uri.parse('apicircle://x/mocks/m1.mock.yaml'), ['name: Pet Store']),
+      makeDoc(Uri.parse('apicircle://x/mocks/m1.yaml'), ['name: Pet Store']),
       pos(0, 5),
       fakeToken,
     );
@@ -94,7 +94,7 @@ describe('MockHoverProvider', () => {
       makeController({ port: 4040, startedAt: '2026-01-01T00:00:00Z' }),
     );
     const r = await p.provideHover(
-      makeDoc(Uri.parse('apicircle://x/mocks/m1.mock.yaml'), ['name: Pet Store']),
+      makeDoc(Uri.parse('apicircle://x/mocks/m1.yaml'), ['name: Pet Store']),
       pos(0, 5),
       fakeToken,
     );
@@ -106,7 +106,7 @@ describe('MockHoverProvider', () => {
   it('F-G8: hovers on cors.enabled documents CORS semantics', async () => {
     const p = new MockHoverProvider(makeBridge(mockShape), makeController(null));
     const r = await p.provideHover(
-      makeDoc(Uri.parse('apicircle://x/mocks/m1.mock.yaml'), ['cors:', '  enabled: true']),
+      makeDoc(Uri.parse('apicircle://x/mocks/m1.yaml'), ['cors:', '  enabled: true']),
       pos(1, 12),
       fakeToken,
     );
@@ -118,7 +118,7 @@ describe('MockHoverProvider', () => {
   it('F-G8: does NOT trigger CORS hover on enabled: outside cors block', async () => {
     const p = new MockHoverProvider(makeBridge(mockShape), makeController(null));
     const r = await p.provideHover(
-      makeDoc(Uri.parse('apicircle://x/mocks/m1.mock.yaml'), ['name: x', '  enabled: true']),
+      makeDoc(Uri.parse('apicircle://x/mocks/m1.yaml'), ['name: x', '  enabled: true']),
       pos(1, 12),
       fakeToken,
     );
@@ -129,7 +129,7 @@ describe('MockHoverProvider', () => {
   it('P3R6-G3: hovers on bytes: explains the secret-safety projection', async () => {
     const p = new MockHoverProvider(makeBridge(mockShape), makeController(null));
     const r = await p.provideHover(
-      makeDoc(Uri.parse('apicircle://x/mocks/m1.mock.yaml'), ['  bytes: 4521']),
+      makeDoc(Uri.parse('apicircle://x/mocks/m1.yaml'), ['  bytes: 4521']),
       pos(0, 9),
       fakeToken,
     );
@@ -143,7 +143,7 @@ describe('MockHoverProvider', () => {
   it('hovers on defaultPort: <n> shows the bind target', async () => {
     const p = new MockHoverProvider(makeBridge(mockShape), makeController(null));
     const r = await p.provideHover(
-      makeDoc(Uri.parse('apicircle://x/mocks/m1.mock.yaml'), ['defaultPort: 3000']),
+      makeDoc(Uri.parse('apicircle://x/mocks/m1.yaml'), ['defaultPort: 3000']),
       pos(0, 14),
       fakeToken,
     );
@@ -154,7 +154,7 @@ describe('MockHoverProvider', () => {
   it('hovers on defaultPort: null explains free-port semantics', async () => {
     const p = new MockHoverProvider(makeBridge(mockShape), makeController(null));
     const r = await p.provideHover(
-      makeDoc(Uri.parse('apicircle://x/mocks/m1.mock.yaml'), ['defaultPort: null']),
+      makeDoc(Uri.parse('apicircle://x/mocks/m1.yaml'), ['defaultPort: null']),
       pos(0, 14),
       fakeToken,
     );
@@ -165,7 +165,7 @@ describe('MockHoverProvider', () => {
   it('hovers on pathPattern: shows endpoint details', async () => {
     const p = new MockHoverProvider(makeBridge(mockShape), makeController(null));
     const r = await p.provideHover(
-      makeDoc(Uri.parse('apicircle://x/mocks/m1.mock.yaml'), [
+      makeDoc(Uri.parse('apicircle://x/mocks/m1.yaml'), [
         '  - id: e1',
         '    method: GET',
         '    pathPattern: /pets',
@@ -212,7 +212,7 @@ describe('MockHoverProvider', () => {
     const p = new MockHoverProvider(makeBridge(dup), makeController(null));
     // Hover on the POST endpoint's pathPattern — should resolve to id 'p' (status 201).
     const r = await p.provideHover(
-      makeDoc(Uri.parse('apicircle://x/mocks/m1.mock.yaml'), [
+      makeDoc(Uri.parse('apicircle://x/mocks/m1.yaml'), [
         '  - id: p',
         '    method: POST',
         '    pathPattern: /pets',
@@ -229,7 +229,7 @@ describe('MockHoverProvider', () => {
   it('returns undefined on unrelated lines', async () => {
     const p = new MockHoverProvider(makeBridge(mockShape), makeController(null));
     const r = await p.provideHover(
-      makeDoc(Uri.parse('apicircle://x/mocks/m1.mock.yaml'), ['# header']),
+      makeDoc(Uri.parse('apicircle://x/mocks/m1.yaml'), ['# header']),
       pos(0, 2),
       fakeToken,
     );

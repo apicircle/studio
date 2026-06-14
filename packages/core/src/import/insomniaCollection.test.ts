@@ -98,4 +98,40 @@ describe('parseInsomniaCollection', () => {
   it('throws on non-Insomnia input', () => {
     expect(() => parseInsomniaCollection('{}')).toThrow(/Unsupported format/i);
   });
+
+  it('captures folder-level auth from request_group `authentication`', () => {
+    const doc = JSON.stringify({
+      _type: 'export',
+      __export_format: 4,
+      resources: [
+        { _type: 'workspace', _id: 'wrk_1', name: 'My App' },
+        {
+          _type: 'request_group',
+          _id: 'fld_authed',
+          name: 'Authenticated',
+          parentId: 'wrk_1',
+          authentication: { type: 'bearer', token: 'FOLDER-TOK' },
+        },
+        {
+          _type: 'request_group',
+          _id: 'fld_plain',
+          name: 'Public',
+          parentId: 'wrk_1',
+        },
+        {
+          _type: 'request',
+          _id: 'req_1',
+          name: 'Me',
+          method: 'GET',
+          url: 'https://x/me',
+          parentId: 'fld_authed',
+        },
+      ],
+    });
+    const parsed = parseInsomniaCollection(doc);
+    const authed = parsed.folders.find((f) => f.name === 'Authenticated');
+    expect(authed?.auth).toEqual({ type: 'bearer', token: 'FOLDER-TOK' });
+    const plain = parsed.folders.find((f) => f.name === 'Public');
+    expect(plain?.auth).toBeUndefined();
+  });
 });

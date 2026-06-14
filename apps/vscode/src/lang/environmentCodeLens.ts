@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
 // CodeLens provider for apicircle-environment YAML documents.
@@ -23,7 +24,7 @@ export class EnvironmentCodeLensProvider implements vscode.CodeLensProvider {
     _token: vscode.CancellationToken,
   ): vscode.CodeLens[] {
     if (document.uri.scheme !== 'apicircle') return [];
-    if (!document.uri.path.endsWith('.env.yaml')) return [];
+    if (uriEntityKind(document.uri) !== 'environment') return [];
 
     const lenses: vscode.CodeLens[] = [];
     for (let line = 0; line < document.lineCount; line++) {

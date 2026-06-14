@@ -16,7 +16,7 @@ const fakeToken = {
   onCancellationRequested: () => ({ dispose: () => undefined }),
 } as unknown as vscode.CancellationToken;
 
-const ENDPOINT_URI = Uri.parse('apicircle://x/mocks/m-1/ep-1.endpoint.yaml');
+const ENDPOINT_URI = Uri.parse('apicircle://x/mocks/m-1/ep-1.yaml');
 
 describe('EndpointCodeLensProvider', () => {
   const provider = new EndpointCodeLensProvider();
@@ -24,7 +24,7 @@ describe('EndpointCodeLensProvider', () => {
   it('returns [] for non-endpoint files', () => {
     expect(
       provider.provideCodeLenses(
-        makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), ['name: x']),
+        makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), ['name: x']),
         fakeToken,
       ),
     ).toEqual([]);
@@ -222,13 +222,16 @@ describe('EndpointCodeLensProvider', () => {
     );
     expect(remove).toBeDefined();
     const kind = lenses.find((l) => l.command?.command === 'apicircle.setMockMultiplierKindField');
-    const key = lenses.find((l) => l.command?.command === 'apicircle.setMockMultiplierKeyField');
     const path = lenses.find(
       (l) => l.command?.command === 'apicircle.setMockMultiplierTargetPathField',
     );
     expect(kind?.command?.arguments).toEqual([ENDPOINT_URI, 12]);
-    expect(key?.command?.arguments).toEqual([ENDPOINT_URI, 13]);
     expect(path?.command?.arguments).toEqual([ENDPOINT_URI, 14]);
+    // source.key, defaultCount, name, min, max fields have no CodeLens —
+    // they are edited directly in YAML.
+    expect(
+      lenses.find((l) => l.command?.command === 'apicircle.setMockMultiplierKeyField'),
+    ).toBeUndefined();
   });
 
   it('emits ✕ Remove validation lenses with the rule id baked in', () => {
@@ -423,25 +426,14 @@ describe('EndpointCodeLensProvider', () => {
       (l) => l.command?.command === 'apicircle.addMockRequestSchemaBodyExample',
     );
     expect((bodyEx?.range as vscode.Range).start.line).toBe(3);
-    // ◆ field lenses: Type / Example, and a header-aware ◆ Name. The boolean
-    // `required:` row no longer carries a lens (edited directly in YAML).
+    // ◆ field lenses: Type only. Name / Example / Description are edited
+    // directly in YAML (no lens). The boolean `required:` row also has no lens.
     expect(cmds).toContain('apicircle.setMockParamTypeField');
     expect(cmds).not.toContain('apicircle.toggleMockParamRequired');
-    // The header param's ◆ Name routes to the header-name quick-pick (line 13).
-    const headerName = lenses.find(
-      (l) => l.command?.command === 'apicircle.setMockHeaderParamNameField',
-    );
-    expect(headerName?.command?.arguments).toEqual([ENDPOINT_URI, 13]);
-    // The path param's ◆ Name routes to the generic text editor (line 6).
-    const pathName = lenses.find(
-      (l) =>
-        l.command?.command === 'apicircle.setMockTextField' &&
-        (l.command?.arguments?.[1] as number) === 6,
-    );
-    expect(pathName).toBeDefined();
+    expect(cmds).not.toContain('apicircle.setMockHeaderParamNameField');
   });
 
-  it('emits ◆ Description on a requestSchema param description row', () => {
+  it('does NOT emit ◆ Name / ◆ Example / ◆ Description on requestSchema param rows', () => {
     const lenses = provider.provideCodeLenses(
       makeDoc(ENDPOINT_URI, [
         'name: X',
@@ -452,6 +444,7 @@ describe('EndpointCodeLensProvider', () => {
         '    - id: p1',
         '      name: petId',
         '      description: The pet id',
+        '      example: abc',
         '  queryParams: []',
         '  headers: []',
         '  cookies: []',
@@ -465,12 +458,10 @@ describe('EndpointCodeLensProvider', () => {
       ]),
       fakeToken,
     );
-    const desc = lenses.find(
-      (l) =>
-        l.command?.command === 'apicircle.setMockTextField' &&
-        (l.command?.title as string) === '◆ Description',
-    );
-    expect(desc?.command?.arguments).toEqual([ENDPOINT_URI, 7]); // description: row
+    const titles = lenses.map((l) => l.command?.title as string);
+    expect(titles).not.toContain('◆ Name');
+    expect(titles).not.toContain('◆ Example');
+    expect(titles).not.toContain('◆ Description');
   });
 
   // ----- #6 ⟳ Format JSON on a json body content row -----

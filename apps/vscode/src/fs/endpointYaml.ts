@@ -32,7 +32,7 @@ const KNOWN_ENDPOINT_KEYS = [
 // Mock endpoint YAML projection.
 //
 // Each MockEndpoint round-trips through its own apicircle:// virtual document
-// (apicircle://<wsId>/mocks/<mockId>/<endpointId>.endpoint.yaml). The
+// (apicircle://<wsId>/mocks/<mockId>/<endpointId>.yaml). The
 // projection mirrors the canonical MockEndpoint shape — every editable field
 // (requestSchema / requestValidation / responseRules / defaultResponse) shows
 // up so a user can hand-edit any of it in YAML, just like the request YAML.

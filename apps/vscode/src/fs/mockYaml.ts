@@ -8,7 +8,7 @@ const KNOWN_MOCK_KEYS = ['name', 'defaultPort', 'cors', 'source', 'endpoints'] a
 // Mock-server YAML projection.
 //
 // Round-trip between the canonical MockServer shape inside
-// workspace.synced.json and the human-friendly YAML the user edits.
+// workspace.json and the human-friendly YAML the user edits.
 //
 // Editable fields:
 //   • name
@@ -164,7 +164,7 @@ export function parseMockFromYaml(text: string): ParsedMockYaml {
   }
   if (obj.endpoints !== undefined) {
     warnings.push(
-      '`endpoints` is read-only in mock.yaml — open the per-endpoint `<endpointId>.endpoint.yaml` (from the Mock sidebar) to edit method / path / response rules / validation rules / multipliers.',
+      '`endpoints` is read-only in mock.yaml — open the per-endpoint `<endpointId>.yaml` (from the Mock sidebar) to edit method / path / response rules / validation rules / multipliers.',
     );
   }
 

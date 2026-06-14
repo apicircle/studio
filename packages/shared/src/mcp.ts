@@ -130,7 +130,10 @@ export type McpToolName =
   | 'linked.link'
   | 'linked.refresh'
   | 'release.tag'
-  | 'repo.set_topics';
+  | 'repo.set_topics'
+
+  // Marketplace discovery (anonymous or token-authenticated)
+  | 'marketplace.search';
 
 export interface McpError {
   code: 'invalid_input' | 'not_found' | 'conflict' | 'unsupported' | 'internal';
@@ -233,4 +236,5 @@ export const MCP_TOOL_NAMES: ReadonlyArray<McpToolName> = [
   'linked.refresh',
   'release.tag',
   'repo.set_topics',
+  'marketplace.search',
 ];

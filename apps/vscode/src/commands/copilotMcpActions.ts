@@ -15,9 +15,9 @@ import type { VsCodeMcpManager } from '../host/mcpManager';
 // running it twice is a no-op.
 //
 // Toast wording is outcome-aware:
-//   • 'created'   → "Installed APICircle MCP for VS Code at <path>."
-//   • 'updated'   → "Updated APICircle MCP entry at <path>."
-//   • 'unchanged' → "APICircle MCP is already up to date at <path>."
+//   • 'created'   → "Installed API Circle MCP for VS Code at <path>."
+//   • 'updated'   → "Updated API Circle MCP entry at <path>."
+//   • 'unchanged' → "API Circle MCP is already up to date at <path>."
 //
 // Failure modes (the inner host already guards malformed-JSON and
 // missing-dir cases by treating them as "create fresh"; we still wrap
@@ -42,17 +42,26 @@ export async function installCopilotMcpConfigCommand(deps: CopilotMcpActionsDeps
   const folders = vscode.workspace.workspaceFolders;
   const paths = deps.mcp.resolvePaths();
 
-  if (!paths.hasActiveWorkspace || !folders || folders.length === 0) {
+  if (!paths.hasActiveWorkspace) {
     await vscode.window.showWarningMessage(
-      'No active APICircle workspace. Open a folder containing .apicircle/workspace.json before installing the Copilot MCP config.',
+      'No active API Circle workspace. Open a folder containing .apicircle/workspace.json or ensure ~/.apicircle/registry.json exists before installing the Copilot MCP config.',
     );
     return;
   }
 
-  // Resolve which folder owns the active workspace. With a single root
-  // it's unambiguous. With multiple roots, the active workspace's
-  // apicircleDir lives under one of them — pick the matching folder.
-  const owningFolder = pickOwningFolder(folders, paths.workspace);
+  if (!folders || folders.length === 0) {
+    await vscode.window.showWarningMessage(
+      'No workspace folder is open. Open a folder in VS Code so the Copilot MCP config can be written to .vscode/mcp.json.',
+    );
+    return;
+  }
+
+  // Resolve which folder hosts the .vscode/mcp.json config. For git-folder
+  // workspaces, pick the folder that contains the .apicircle/ dir. For
+  // registry workspaces (~/.apicircle/), fall back to the first open folder.
+  const owningFolder =
+    pickOwningFolder(folders, paths.workspace) ??
+    (paths.isRegistryWorkspace ? folders[0] : undefined);
   if (!owningFolder) {
     await vscode.window.showErrorMessage(
       `Could not locate which workspace folder owns ${paths.workspace}. The Copilot install needs a folder root to host .vscode/mcp.json.`,
@@ -92,15 +101,15 @@ export async function installCopilotMcpConfigCommand(deps: CopilotMcpActionsDeps
   const relativeForToast = vscode.workspace.asRelativePath(result.path);
   if (result.outcome === 'created') {
     await vscode.window.showInformationMessage(
-      `Installed APICircle MCP for VS Code at ${relativeForToast}. Restart Copilot Chat / your AI client to pick it up.`,
+      `Installed API Circle MCP for VS Code at ${relativeForToast}. Restart Copilot Chat / your AI client to pick it up.`,
     );
   } else if (result.outcome === 'updated') {
     await vscode.window.showInformationMessage(
-      `Updated APICircle MCP entry at ${relativeForToast} (binary or workspace path changed).`,
+      `Updated API Circle MCP entry at ${relativeForToast} (binary or workspace path changed).`,
     );
   } else {
     await vscode.window.showInformationMessage(
-      `APICircle MCP entry at ${relativeForToast} is already up to date.`,
+      `API Circle MCP entry at ${relativeForToast} is already up to date.`,
     );
   }
 }
@@ -117,12 +126,14 @@ export async function uninstallCopilotMcpConfigCommand(deps: CopilotMcpActionsDe
 
   if (!paths.hasActiveWorkspace || !folders || folders.length === 0) {
     await vscode.window.showWarningMessage(
-      'No active APICircle workspace. Open a folder containing .apicircle/workspace.json before removing the Copilot MCP config.',
+      'No active API Circle workspace or no folder open. Cannot locate .vscode/mcp.json to remove the Copilot MCP config.',
     );
     return;
   }
 
-  const owningFolder = pickOwningFolder(folders, paths.workspace);
+  const owningFolder =
+    pickOwningFolder(folders, paths.workspace) ??
+    (paths.isRegistryWorkspace ? folders[0] : undefined);
   if (!owningFolder) {
     await vscode.window.showErrorMessage(
       `Could not locate which workspace folder owns ${paths.workspace}.`,
@@ -160,7 +171,7 @@ export async function uninstallCopilotMcpConfigCommand(deps: CopilotMcpActionsDe
   if (result.outcome === 'removed') {
     deps.onInstalled?.();
     await vscode.window.showInformationMessage(
-      `Removed APICircle MCP entry from ${relativeForToast}. Restart Copilot Chat / your AI client to pick up the change.`,
+      `Removed API Circle MCP entry from ${relativeForToast}. Restart Copilot Chat / your AI client to pick up the change.`,
     );
   } else {
     await vscode.window.showInformationMessage(

@@ -18,6 +18,7 @@ const gh = {
   createTag: vi.fn(),
   createRelease: vi.fn(),
   setRepoTopics: vi.fn(),
+  searchMarketplaceRepos: vi.fn(),
 };
 vi.mock('@apicircle/git', () => ({
   GitHubClient: class {
@@ -29,11 +30,18 @@ vi.mock('@apicircle/git', () => ({
     createTag = gh.createTag;
     createRelease = gh.createRelease;
     setRepoTopics = gh.setRepoTopics;
+    searchMarketplaceRepos = gh.searchMarketplaceRepos;
   },
   GitHubError: class extends Error {},
 }));
 
-import { linkedLinkTool, linkedRefreshTool, releaseTagTool, repoSetTopicsTool } from './githubOps';
+import {
+  linkedLinkTool,
+  linkedRefreshTool,
+  marketplaceSearchTool,
+  releaseTagTool,
+  repoSetTopicsTool,
+} from './githubOps';
 
 const T0 = '2026-06-06T00:00:00.000Z';
 const ledger: ReleaseHistory = {
@@ -318,5 +326,79 @@ describe('repo.set_topics', () => {
     )) as { ok: boolean; error: string };
     expect(out.ok).toBe(false);
     expect(out.error).toMatch(/Invalid topic/);
+  });
+});
+
+describe('marketplace.search', () => {
+  const sampleRepos = [
+    {
+      fullName: 'org/payments-api',
+      owner: 'org',
+      name: 'payments-api',
+      description: 'Payment processing workspace',
+      topics: ['apicircle', 'payments'],
+      stargazers: 42,
+      defaultBranch: 'main',
+    },
+  ];
+
+  it('returns matching repos', async () => {
+    gh.searchMarketplaceRepos.mockResolvedValue(sampleRepos);
+    const out = (await marketplaceSearchTool.handler(
+      { query: 'payments', sort: 'best-match', token: 'tok' },
+      ctx,
+    )) as { ok: boolean; count: number; results: unknown[] };
+    expect(out.ok).toBe(true);
+    expect(out.count).toBe(1);
+    expect(out.results).toEqual(sampleRepos);
+    expect(gh.searchMarketplaceRepos).toHaveBeenCalledWith('tok', 'payments', { sort: undefined });
+  });
+
+  it('works anonymously (no token)', async () => {
+    gh.searchMarketplaceRepos.mockResolvedValue([]);
+    const out = (await marketplaceSearchTool.handler({ query: '', sort: 'best-match' }, ctx)) as {
+      ok: boolean;
+      count: number;
+    };
+    expect(out.ok).toBe(true);
+    expect(out.count).toBe(0);
+    expect(gh.searchMarketplaceRepos).toHaveBeenCalledWith(null, '', { sort: undefined });
+  });
+
+  it('falls back to GITHUB_TOKEN env', async () => {
+    process.env.GITHUB_TOKEN = 'env-tok';
+    gh.searchMarketplaceRepos.mockResolvedValue([]);
+    await marketplaceSearchTool.handler({ query: 'x', sort: 'best-match' }, ctx);
+    expect(gh.searchMarketplaceRepos).toHaveBeenCalledWith('env-tok', 'x', { sort: undefined });
+  });
+
+  it('passes sort parameter through', async () => {
+    gh.searchMarketplaceRepos.mockResolvedValue(sampleRepos);
+    await marketplaceSearchTool.handler({ query: '', sort: 'stars', token: 'tok' }, ctx);
+    expect(gh.searchMarketplaceRepos).toHaveBeenCalledWith('tok', '', { sort: 'stars' });
+
+    await marketplaceSearchTool.handler({ query: '', sort: 'updated', token: 'tok' }, ctx);
+    expect(gh.searchMarketplaceRepos).toHaveBeenCalledWith('tok', '', { sort: 'updated' });
+  });
+
+  it('returns ok:false on GitHub error', async () => {
+    gh.searchMarketplaceRepos.mockRejectedValue(new Error('rate limited'));
+    const out = (await marketplaceSearchTool.handler(
+      { query: 'x', sort: 'best-match', token: 'tok' },
+      ctx,
+    )) as { ok: boolean; error: string };
+    expect(out.ok).toBe(false);
+    expect(out.error).toBe('rate limited');
+  });
+
+  it('returns empty results gracefully', async () => {
+    gh.searchMarketplaceRepos.mockResolvedValue([]);
+    const out = (await marketplaceSearchTool.handler(
+      { query: 'nonexistent', sort: 'best-match', token: 'tok' },
+      ctx,
+    )) as { ok: boolean; count: number; results: unknown[] };
+    expect(out.ok).toBe(true);
+    expect(out.count).toBe(0);
+    expect(out.results).toEqual([]);
   });
 });

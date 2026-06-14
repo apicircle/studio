@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import type { Request } from '@apicircle/shared';
-import { serializeRequestToYaml, parseRequestFromYaml, RequestYamlParseError } from './requestYaml';
+import {
+  serializeRequestToYaml,
+  parseRequestFromYaml,
+  projectRequestYaml,
+  RequestYamlParseError,
+} from './requestYaml';
 
 function makeRequest(over: Partial<Request> = {}): Request {
   return {
@@ -276,5 +281,61 @@ describe('parseRequestFromYaml — URL ↔ query / pathParams sync', () => {
       { key: 'ref', value: ':notPath', enabled: true },
       { key: 'other', value: '{alsoNot}', enabled: true },
     ]);
+  });
+});
+
+describe('projectRequestYaml — canonical projection for on-will-save', () => {
+  it('returns null when the buffer is already canonical (no URL embedded query)', () => {
+    const yaml = serializeRequestToYaml({
+      id: 'req',
+      folderId: null,
+      name: 'x',
+      method: 'GET',
+      url: 'https://x.com/api',
+      headers: [],
+      query: [{ key: 'page', value: '1', enabled: true }],
+      body: { type: 'none', content: '' },
+      auth: { type: 'none' },
+      contextVars: [],
+      extractions: [],
+      assertions: [],
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    });
+    expect(projectRequestYaml(yaml)).toBeNull();
+  });
+
+  it('rewrites a URL with ?key=val into url=base + query: row appended', () => {
+    const buffer = [
+      'name: x',
+      'method: GET',
+      'url: https://x.com/api?page2=15',
+      'query:',
+      '  - key: page',
+      "    value: '1'",
+      '    enabled: true',
+    ].join('\n');
+    const projected = projectRequestYaml(buffer);
+    expect(projected).not.toBeNull();
+    expect(projected).toContain('url: https://x.com/api');
+    expect(projected).not.toContain('?page2=15');
+    expect(projected).toContain('key: page2');
+    expect(projected).toContain('value: "15"');
+    // The pre-existing page=1 row survives.
+    expect(projected).toContain('key: page');
+    expect(projected).toContain('value: "1"');
+  });
+
+  it('rewrites a URL with a {name} placeholder into a pathParams entry', () => {
+    const buffer = ['name: x', 'method: GET', 'url: https://x.com/users/{userId}'].join('\n');
+    const projected = projectRequestYaml(buffer);
+    expect(projected).not.toBeNull();
+    expect(projected).toContain('pathParams:');
+    expect(projected).toContain('userId:');
+  });
+
+  it('returns null when the YAML fails to parse (no rewrite — let writeFile surface the error)', () => {
+    expect(projectRequestYaml('::: not yaml :::')).toBeNull();
+    expect(projectRequestYaml('name: x\nmethod: NOPE\nurl: https://x.com')).toBeNull();
   });
 });

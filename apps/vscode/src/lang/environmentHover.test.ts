@@ -52,17 +52,17 @@ describe('EnvironmentHoverProvider', () => {
   it('returns undefined for non-apicircle scheme', async () => {
     const provider = new EnvironmentHoverProvider(makeBridge({ synced: baseSynced }));
     const r = await provider.provideHover(
-      makeDoc(Uri.parse('file:///x.env.yaml'), ['name: prod', '- key: API_BASE']),
+      makeDoc(Uri.parse('file:///x.yaml'), ['name: prod', '- key: API_BASE']),
       pos(1, 8),
       fakeToken,
     );
     expect(r).toBeUndefined();
   });
 
-  it('returns undefined for apicircle URIs not ending in .env.yaml', async () => {
+  it('returns undefined for apicircle URIs not ending in .yaml', async () => {
     const provider = new EnvironmentHoverProvider(makeBridge({ synced: baseSynced }));
     const r = await provider.provideHover(
-      makeDoc(Uri.parse('apicircle://x/requests/r.req.yaml'), ['- key: API_BASE']),
+      makeDoc(Uri.parse('apicircle://x/requests/r.yaml'), ['- key: API_BASE']),
       pos(0, 8),
       fakeToken,
     );
@@ -72,7 +72,7 @@ describe('EnvironmentHoverProvider', () => {
   it('returns undefined when the line is not a key: line', async () => {
     const provider = new EnvironmentHoverProvider(makeBridge({ synced: baseSynced }));
     const r = await provider.provideHover(
-      makeDoc(Uri.parse('apicircle://x/environments/prod.env.yaml'), ['name: prod', 'variables:']),
+      makeDoc(Uri.parse('apicircle://x/environments/prod.yaml'), ['name: prod', 'variables:']),
       pos(1, 0),
       fakeToken,
     );
@@ -83,10 +83,7 @@ describe('EnvironmentHoverProvider', () => {
     const bridge = { activeWorkspace: () => undefined } as unknown as VsCodeBridge;
     const provider = new EnvironmentHoverProvider(bridge);
     const r = await provider.provideHover(
-      makeDoc(Uri.parse('apicircle://x/environments/prod.env.yaml'), [
-        'name: prod',
-        '- key: API_BASE',
-      ]),
+      makeDoc(Uri.parse('apicircle://x/environments/prod.yaml'), ['name: prod', '- key: API_BASE']),
       pos(1, 8),
       fakeToken,
     );
@@ -96,10 +93,7 @@ describe('EnvironmentHoverProvider', () => {
   it('renders plaintext value + active-resolution for an active env', async () => {
     const provider = new EnvironmentHoverProvider(makeBridge({ synced: baseSynced }));
     const r = await provider.provideHover(
-      makeDoc(Uri.parse('apicircle://x/environments/prod.env.yaml'), [
-        'name: prod',
-        '- key: API_BASE',
-      ]),
+      makeDoc(Uri.parse('apicircle://x/environments/prod.yaml'), ['name: prod', '- key: API_BASE']),
       pos(1, 8),
       fakeToken,
     );
@@ -118,10 +112,7 @@ describe('EnvironmentHoverProvider', () => {
     };
     const provider = new EnvironmentHoverProvider(makeBridge({ synced }));
     const r = await provider.provideHover(
-      makeDoc(Uri.parse('apicircle://x/environments/prod.env.yaml'), [
-        'name: prod',
-        '- key: TOKEN',
-      ]),
+      makeDoc(Uri.parse('apicircle://x/environments/prod.yaml'), ['name: prod', '- key: TOKEN']),
       pos(1, 8),
       fakeToken,
     );
@@ -135,10 +126,7 @@ describe('EnvironmentHoverProvider', () => {
   it('warns when an encrypted variable references a missing slot', async () => {
     const provider = new EnvironmentHoverProvider(makeBridge({ synced: baseSynced }));
     const r = await provider.provideHover(
-      makeDoc(Uri.parse('apicircle://x/environments/prod.env.yaml'), [
-        'name: prod',
-        '- key: TOKEN',
-      ]),
+      makeDoc(Uri.parse('apicircle://x/environments/prod.yaml'), ['name: prod', '- key: TOKEN']),
       pos(1, 8),
       fakeToken,
     );
@@ -160,10 +148,7 @@ describe('EnvironmentHoverProvider', () => {
     };
     const provider = new EnvironmentHoverProvider(makeBridge({ synced }));
     const r = await provider.provideHover(
-      makeDoc(Uri.parse('apicircle://x/environments/prod.env.yaml'), [
-        'name: prod',
-        '- key: API_BASE',
-      ]),
+      makeDoc(Uri.parse('apicircle://x/environments/prod.yaml'), ['name: prod', '- key: API_BASE']),
       pos(1, 8),
       fakeToken,
     );
@@ -179,10 +164,7 @@ describe('EnvironmentHoverProvider', () => {
     };
     const provider = new EnvironmentHoverProvider(makeBridge({ synced }));
     const r = await provider.provideHover(
-      makeDoc(Uri.parse('apicircle://x/environments/prod.env.yaml'), [
-        'name: prod',
-        '- key: API_BASE',
-      ]),
+      makeDoc(Uri.parse('apicircle://x/environments/prod.yaml'), ['name: prod', '- key: API_BASE']),
       pos(1, 8),
       fakeToken,
     );
@@ -203,7 +185,7 @@ describe('EnvironmentHoverProvider', () => {
     };
     const provider = new EnvironmentHoverProvider(makeBridge({ synced }));
     const r = await provider.provideHover(
-      makeDoc(Uri.parse('apicircle://x/environments/prod.env.yaml'), [
+      makeDoc(Uri.parse('apicircle://x/environments/prod.yaml'), [
         'name: prod',
         '- key: NOT_THERE',
       ]),

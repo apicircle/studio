@@ -19,7 +19,6 @@ function installDesktopSurface(): DesktopSurface {
     status: vi.fn().mockResolvedValue({ workspacesRoot: '/fake/workspaces' }),
     init: vi.fn().mockResolvedValue({
       registry: { schemaVersion: 1, activeWorkspaceId: null, workspaces: [] },
-      migrated: false,
     }),
     readRegistry: vi.fn().mockResolvedValue({
       schemaVersion: 1,

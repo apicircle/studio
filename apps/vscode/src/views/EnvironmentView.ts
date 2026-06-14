@@ -16,7 +16,7 @@ import { ApicircleFsProvider } from '../fs/apicircleFsProvider';
 //      ...
 //   ▸ Context Globals
 //
-// Click an environment → opens its .env.yaml virtual document.
+// Click an environment → opens its .yaml virtual document.
 // Click an encrypted variable → fires apicircle.openVaultEntry (unlock prompt
 // if needed, then Copy / Show options).
 // Right-click context menu: Set Active, Rename, Delete (Phase 2 + 4 ship these).

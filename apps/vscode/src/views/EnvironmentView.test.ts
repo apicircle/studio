@@ -102,6 +102,7 @@ describe('EnvironmentView', () => {
       workspaceJsonPath: path.join(apicircleDir, 'workspace.json'),
       workspaceFolder: { uri: Uri.file(tmp), name: 't', index: 0 } as never,
       label: 't',
+      source: 'git-folder',
     });
     bridge.setActive(apicircleDir);
   }
@@ -166,6 +167,37 @@ describe('EnvironmentView', () => {
       seedWorkspace(apicircleDir, [{ name: 'p', variables: [{ key: 'k', value: 'v' }] }]);
       activate();
       const result = await view.getChildren({ kind: 'variable', envName: 'p', key: 'k' });
+      expect(result).toEqual([]);
+    });
+
+    it('returns sorted global-var children for context-globals when globalContext has keys', async () => {
+      seedWorkspace(apicircleDir, []);
+      activate();
+      const active = bridge.activeWorkspace()!;
+      const state = await active.read();
+      (state.local as { globalContext: Record<string, string> }).globalContext = {
+        z_var: 'z',
+        a_var: 'a',
+      };
+      await active.write({ local: state.local });
+      const result = await view.getChildren({ kind: 'context-globals' });
+      expect(result).toEqual([
+        { kind: 'global-var', key: 'a_var' },
+        { kind: 'global-var', key: 'z_var' },
+      ]);
+    });
+
+    it('returns [] for a deleted env', async () => {
+      seedWorkspace(apicircleDir, []);
+      activate();
+      const result = await view.getChildren({ kind: 'env', name: 'nonexistent' });
+      expect(result).toEqual([]);
+    });
+
+    it('returns [] for vault-header (leaf node)', async () => {
+      seedWorkspace(apicircleDir, []);
+      activate();
+      const result = await view.getChildren({ kind: 'vault-header' });
       expect(result).toEqual([]);
     });
   });
@@ -237,6 +269,83 @@ describe('EnvironmentView', () => {
       activate();
       const item = await view.getTreeItem({ kind: 'variable', envName: 'p', key: 'gone' });
       expect(item.label).toBe('(deleted variable)');
+    });
+
+    it('renders context-globals header with count description', async () => {
+      seedWorkspace(apicircleDir, []);
+      activate();
+      const item = await view.getTreeItem({ kind: 'context-globals' });
+      expect(item.label).toBe('Context Globals');
+      expect(item.description).toBe('empty');
+      expect(item.contextValue).toBe('context-globals');
+    });
+
+    it('renders a global-var row with key=value', async () => {
+      // Seed with globalContext in the local state
+      seedWorkspace(apicircleDir, []);
+      activate();
+      // For this test, reach directly into the bridge's workspace to simulate
+      const active = bridge.activeWorkspace()!;
+      const state = await active.read();
+      (state.local as { globalContext: Record<string, string> }).globalContext = {
+        api_token: 'abc123',
+      };
+      await active.write({ local: state.local });
+      const item = await view.getTreeItem({ kind: 'global-var', key: 'api_token' });
+      expect(item.label).toContain('api_token');
+      expect(item.label).toContain('abc123');
+      expect(item.contextValue).toBe('global-var');
+    });
+
+    it('renders env with multiple variables and encrypted count in tooltip', async () => {
+      seedWorkspace(apicircleDir, [
+        {
+          name: 'prod',
+          variables: [
+            { key: 'url', value: 'https://x' },
+            { key: 'secret', value: 'enc:xxx', encrypted: true, secretKeyId: 'k1' },
+          ],
+        },
+      ]);
+      activate();
+      const item = await view.getTreeItem({ kind: 'env', name: 'prod' });
+      expect(item.description).toContain('2 vars');
+    });
+
+    it('masks short encrypted values with just dots', async () => {
+      seedWorkspace(apicircleDir, [
+        {
+          name: 'p',
+          variables: [{ key: 'short', value: 'abcd', encrypted: true, secretKeyId: 'k1' }],
+        },
+      ]);
+      activate();
+      const item = await view.getTreeItem({
+        kind: 'variable-encrypted',
+        envName: 'p',
+        key: 'short',
+      });
+      // Short values (<=8 chars) get full mask
+      expect(item.label).toContain('••••');
+      expect(item.label).not.toContain('abcd');
+    });
+
+    it('encrypted variable row has openVaultEntry click command', async () => {
+      seedWorkspace(apicircleDir, [
+        {
+          name: 'p',
+          variables: [
+            { key: 'api_key', value: 'enc:abcdefghij', encrypted: true, secretKeyId: 'k1' },
+          ],
+        },
+      ]);
+      activate();
+      const item = await view.getTreeItem({
+        kind: 'variable-encrypted',
+        envName: 'p',
+        key: 'api_key',
+      });
+      expect(item.command?.command).toBe('apicircle.openVaultEntry');
     });
 
     // ----- P4 audit-G3: vault-header rendering across the 3 states -----

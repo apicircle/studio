@@ -10,8 +10,8 @@ import { SingleWorkspaceAdapter, type Workspaces } from './providers/Workspaces'
 // The host is intentionally non-opinionated about *where* the workspace and
 // mock runtime live — pass in the right provider for your environment:
 //
-//   • CLI / headless (single workspace)  → FileBackedWorkspaceProvider
-//   • CLI / headless (multi-workspace)   → MultiWorkspaceProvider
+//   • Single workspace (workspace.json)  → FileBackedWorkspaceProvider
+//   • Multi-workspace (~/.apicircle/)    → MultiWorkspaceProvider
 //   • Electron desktop                   → IpcWorkspaceProvider
 //   • Embedded test / demo               → InMemoryWorkspaceProvider
 
@@ -28,6 +28,7 @@ export {
 } from './providers/Workspaces';
 export { InMemoryWorkspaceProvider } from './providers/InMemoryWorkspaceProvider';
 export { FileBackedWorkspaceProvider } from './providers/FileBackedWorkspaceProvider';
+export { GitBackedWorkspaceProvider } from './providers/GitBackedWorkspaceProvider';
 export { MultiWorkspaceProvider } from './providers/MultiWorkspaceProvider';
 export { InProcessMockController } from './providers/InProcessMockController';
 

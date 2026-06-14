@@ -10,7 +10,7 @@
 
 import { useMemo } from 'react';
 import { AlertTriangle, ShieldAlert } from 'lucide-react';
-import type { Request as ApiRequest } from '@apicircle/shared';
+import type { Request as ApiRequest, Folder } from '@apicircle/shared';
 import {
   preSendValidation,
   type PreSendBlocker,
@@ -45,11 +45,12 @@ export function usePreSendValidation(
   request: ApiRequest | null | undefined,
   scope: ResolutionScope,
   enabled: boolean,
+  folders?: Record<string, Folder>,
 ): PreSendValidationResult {
   return useMemo(() => {
     if (!enabled || !request) return { warnings: [], blockers: [] };
-    return preSendValidation({ request, scope });
-  }, [request, scope, enabled]);
+    return preSendValidation({ request, scope, folders });
+  }, [request, scope, enabled, folders]);
 }
 
 const EMPTY_VALIDATION: PreSendValidationResult = { warnings: [], blockers: [] };

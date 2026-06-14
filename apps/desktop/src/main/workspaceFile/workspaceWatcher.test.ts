@@ -1,22 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
 import { saveToFile } from '@apicircle/core/workspace/file-backed';
-
-// `WorkspaceFileManager` reads `app.getPath('userData')` when no explicit
-// path is passed to the constructor — stub Electron so this can run under
-// vitest without dragging in a real Electron runtime.
-vi.mock('electron', () => ({
-  app: {
-    getPath: (key: string) => {
-      if (key === 'userData') return '/fake/user-data';
-      throw new Error(`unknown getPath ${key}`);
-    },
-  },
-}));
-
+import { workspaceDirFor } from '@apicircle/core/workspace/registry';
 import { WorkspaceFileManager } from './workspaceFileManager';
 import { WorkspaceWatcher } from './workspaceWatcher';
 
@@ -87,14 +75,11 @@ let watcher: WorkspaceWatcher;
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'apicircle-watcher-'));
-  workspacesRoot = path.join(tmpDir, 'workspaces');
-  manager = new WorkspaceFileManager({
-    workspacesRoot,
-    legacyDir: path.join(tmpDir, '__legacy_not_used__'),
-  });
+  workspacesRoot = path.join(tmpDir, 'dot-apicircle');
+  manager = new WorkspaceFileManager({ workspacesRoot });
   await manager.init();
   // Seed one workspace dir so the watcher has something to watch.
-  await saveToFile(path.join(workspacesRoot, 'ws-1'), {
+  await saveToFile(workspaceDirFor(workspacesRoot, 'ws-1'), {
     synced: makeSynced('ws-1'),
     local: makeLocal('ws-1'),
   });
@@ -109,7 +94,7 @@ afterEach(async () => {
 });
 
 describe('WorkspaceWatcher', () => {
-  it('emits an externalChange event when an outside writer modifies workspace.synced.json', async () => {
+  it('emits an externalChange event when an outside writer modifies workspace.json', async () => {
     const events: string[] = [];
     watcher.on('externalChange', (e: { workspaceId: string }) => {
       events.push(e.workspaceId);
@@ -120,7 +105,10 @@ describe('WorkspaceWatcher', () => {
     // markSelfWrite first.
     const next = makeSynced('ws-1');
     next.meta = { ...next.meta, updatedAt: '2026-05-23T00:00:00.000Z' };
-    await saveToFile(path.join(workspacesRoot, 'ws-1'), { synced: next, local: makeLocal('ws-1') });
+    await saveToFile(workspaceDirFor(workspacesRoot, 'ws-1'), {
+      synced: next,
+      local: makeLocal('ws-1'),
+    });
 
     await waitFor(() => events.includes('ws-1'));
     expect(events).toContain('ws-1');
@@ -154,7 +142,7 @@ describe('WorkspaceWatcher', () => {
     // Create a brand-new workspace dir outside the manager — the
     // root-watch's rename event should re-scan and attach a per-id
     // watcher in time to see the file write below.
-    await saveToFile(path.join(workspacesRoot, 'ws-2'), {
+    await saveToFile(workspaceDirFor(workspacesRoot, 'ws-2'), {
       synced: makeSynced('ws-2'),
       local: makeLocal('ws-2'),
     });
@@ -164,7 +152,7 @@ describe('WorkspaceWatcher', () => {
     await new Promise((r) => setTimeout(r, 100));
     const next = makeSynced('ws-2');
     next.meta = { ...next.meta, updatedAt: '2026-05-23T00:00:00.000Z' };
-    await saveToFile(path.join(workspacesRoot, 'ws-2'), {
+    await saveToFile(workspaceDirFor(workspacesRoot, 'ws-2'), {
       synced: next,
       local: makeLocal('ws-2'),
     });
@@ -205,7 +193,7 @@ describe('WorkspaceWatcher', () => {
       'r-1': { id: 'r-1', name: 'external' } as never,
       'r-2': { id: 'r-2', name: 'external-2' } as never,
     };
-    await saveToFile(path.join(workspacesRoot, 'ws-1'), {
+    await saveToFile(workspaceDirFor(workspacesRoot, 'ws-1'), {
       synced: theirs,
       local: makeLocal('ws-1'),
     });

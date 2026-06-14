@@ -18,15 +18,15 @@ describe('PlanCodeLensProvider', () => {
 
   it('returns [] for non-apicircle scheme', () => {
     const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('file:///foo.plan.yaml'), ['name: x']),
+      makeDoc(Uri.parse('file:///foo.yaml'), ['name: x']),
       fakeToken,
     );
     expect(lenses).toEqual([]);
   });
 
-  it('returns [] for apicircle URIs not ending in .plan.yaml', () => {
+  it('returns [] for apicircle URIs not ending in .yaml', () => {
     const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/requests/r.req.yaml'), ['name: x']),
+      makeDoc(Uri.parse('apicircle://x/requests/r.yaml'), ['name: x']),
       fakeToken,
     );
     expect(lenses).toEqual([]);
@@ -34,7 +34,7 @@ describe('PlanCodeLensProvider', () => {
 
   it('emits ▶ Run Plan above the name: line with planId arg', () => {
     const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/plans/p-42.plan.yaml'), ['# header', 'name: Smoke']),
+      makeDoc(Uri.parse('apicircle://x/plans/p-42.yaml'), ['# header', 'name: Smoke']),
       fakeToken,
     );
     expect(lenses).toHaveLength(1);
@@ -45,7 +45,7 @@ describe('PlanCodeLensProvider', () => {
 
   it('returns [] when no name: line present', () => {
     const lenses = provider.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/plans/p1.plan.yaml'), ['# nope']),
+      makeDoc(Uri.parse('apicircle://x/plans/p1.yaml'), ['# nope']),
       fakeToken,
     );
     expect(lenses).toEqual([]);

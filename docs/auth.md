@@ -55,6 +55,46 @@ API Circle Studio supports 17 auth schemes spanning shared-secret, signing-based
 
 ---
 
+## Folder-level auth + the `inherit` walk
+
+`Folder.auth?: RequestAuth` (in `packages/shared/src/types.ts`) lets a folder
+define an auth block that descendant requests pick up automatically. The
+resolver is `resolveInheritedAuth` in
+`packages/core/src/request/resolveInheritedAuth.ts`:
+
+1. If the request's `auth.type` is anything other than `'inherit'`, the
+   request's own auth wins — folders are not consulted.
+2. Otherwise the resolver walks up the folder chain. The first ancestor
+   folder whose `auth` is set AND whose `auth.type` is **not** `'none'`
+   AND **not** `'inherit'` provides the effective auth.
+3. If the walk reaches the root without finding an explicit auth, the
+   effective auth is `{ type: 'none' }`.
+
+The walk is invoked by `executeRequest` (`packages/core/src/executor`)
+_before_ `buildRequest`, so the request reaches the wire with a concrete
+auth — `inherit` is never seen by signing primitives.
+
+**Surfaces.** Folder-level auth is editable on every host:
+
+- **Web / Desktop** — `FolderAuthModal.tsx` + `FolderAuthBypassCue.tsx` in
+  `packages/ui-components/src/panels/editor/`, dispatched through the
+  store's `setFolderAuth` action.
+- **VS Code** — click a folder in the Editor TreeView to open
+  `apicircle://<ws>/folders/<…>.folder.yaml?id=<folderId>`. Saving
+  dispatches the `folder.update` `WorkspacePatch`. Request YAMLs grow a
+  `◆ Inherits from <Folder> (<type>)` CodeLens above `auth:` whenever
+  the request's auth resolves via `inherit`. See
+  [`docs/vscode-extension.md`](vscode-extension.md) §"Folder-wise auth".
+- **MCP / CLI** — the `folder.update` tool accepts `name`, `auth`,
+  `clearAuth`, and `parentId` in a single call. See
+  [`docs/mcp-tools-reference.md`](mcp-tools-reference.md).
+
+**Tests.** `packages/core/src/request/resolveInheritedAuth.test.ts` covers
+the walk semantics; the FS-provider + folder YAML parser tests cover the
+round-trip; the request-CodeLens tests cover the inherited-auth lens.
+
+---
+
 ## Token storage
 
 - `accessToken`, `refreshToken`, `expiresAt`, and `obtainedScope` live on the `RequestAuth` payload (one record per request).

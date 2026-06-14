@@ -6,7 +6,11 @@ import * as os from 'node:os';
 import { Uri, window } from '../../test/mocks/vscode';
 import type { Request as ApiRequest } from '@apicircle/shared';
 import { VsCodeBridge } from '../host/vscodeBridge';
-import { deleteRequestCommand, duplicateRequestCommand } from './requestActions';
+import {
+  deleteRequestCommand,
+  duplicateRequestCommand,
+  revealInSourceCommand,
+} from './requestActions';
 
 function makeMockContext(globalStoragePath: string) {
   const state = new Map<string, unknown>();
@@ -110,6 +114,7 @@ describe('request actions', () => {
       workspaceJsonPath: path.join(apicircleDir, 'workspace.json'),
       workspaceFolder: { uri: Uri.file(tmp), name: 't', index: 0 } as never,
       label: 't',
+      source: 'git-folder',
     });
     bridge.setActive(apicircleDir);
   }
@@ -156,6 +161,68 @@ describe('request actions', () => {
       expect(copy!.id).not.toBe('r1');
       expect(copy!.method).toBe('GET');
       expect(copy!.url).toBe('https://x.com');
+    });
+  });
+
+  describe('additional coverage', () => {
+    it('deleteRequestCommand warns when no active workspace', async () => {
+      bridge = new VsCodeBridge(makeMockContext(path.join(tmp, 'globalStorage')));
+      await deleteRequestCommand({ bridge }, { kind: 'request', id: 'r1' });
+      expect(window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringContaining('No active APICircle workspace'),
+      );
+    });
+
+    it('deleteRequestCommand warns when the request id is missing from state', async () => {
+      activate([]);
+      await deleteRequestCommand({ bridge }, { kind: 'request', id: 'r-missing' });
+      expect(window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Request no longer exists'),
+      );
+    });
+
+    it('deleteRequestCommand exits on modal cancel', async () => {
+      const r = makeReq('r1', 'Test');
+      activate([r]);
+      (window.showWarningMessage as Mock).mockResolvedValueOnce(undefined);
+      await deleteRequestCommand({ bridge }, { kind: 'request', id: 'r1' });
+      const synced = JSON.parse(
+        fs.readFileSync(path.join(apicircleDir, 'workspace.json'), 'utf8'),
+      ) as { collections: { requests: Record<string, ApiRequest> } };
+      expect(synced.collections.requests.r1).toBeDefined();
+    });
+
+    it('duplicateRequestCommand warns when no active workspace', async () => {
+      bridge = new VsCodeBridge(makeMockContext(path.join(tmp, 'globalStorage')));
+      await duplicateRequestCommand({ bridge }, { kind: 'request', id: 'r1' });
+      expect(window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringContaining('No active APICircle workspace'),
+      );
+    });
+
+    it('duplicateRequestCommand warns when the source request is gone', async () => {
+      activate([]);
+      await duplicateRequestCommand({ bridge }, { kind: 'request', id: 'r-missing' });
+      expect(window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Request no longer exists'),
+      );
+    });
+
+    it('revealInSourceCommand warns when no active workspace', async () => {
+      bridge = new VsCodeBridge(makeMockContext(path.join(tmp, 'globalStorage')));
+      await revealInSourceCommand({ bridge }, { kind: 'request', id: 'r1' });
+      expect(window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringContaining('No active APICircle workspace'),
+      );
+    });
+
+    it('revealInSourceCommand prompts when no editor + node arg present', async () => {
+      activate([makeReq('r1')]);
+      window.activeTextEditor = undefined as unknown;
+      await revealInSourceCommand({ bridge });
+      expect(window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Open a request'),
+      );
     });
   });
 });

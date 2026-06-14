@@ -3,6 +3,7 @@ import { generateId } from '@apicircle/shared';
 import type { Request as ApiRequest, Folder } from '@apicircle/shared';
 import type { VsCodeBridge, WorkspaceSurface } from '../host/vscodeBridge';
 import { ApicircleFsProvider } from '../fs/apicircleFsProvider';
+import { uniquifyName } from '../util/uniquifyName';
 
 // =============================================================================
 // `APICircle: New Request` — folder-pick + direct file creation.
@@ -66,9 +67,10 @@ export async function newRequestCommand(
 
   const now = new Date().toISOString();
   const scaffold = getRequestScaffold();
+  const name = uniquifyName(state.synced, folderId, 'request', 'New Request');
   const request: ApiRequest = {
     id: generateId(),
-    name: 'New Request',
+    name,
     folderId,
     method: 'GET',
     url: 'https://api.example.com/endpoint',

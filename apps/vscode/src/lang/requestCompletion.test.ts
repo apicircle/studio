@@ -26,13 +26,13 @@ describe('RequestCompletionProvider', () => {
     expect(provider.provideCompletionItems(doc, pos(0, 8), fakeToken, fakeCtx)).toEqual([]);
   });
 
-  it('returns [] for apicircle docs that are not .req.yaml', () => {
-    const doc = makeDoc(Uri.parse('apicircle://x/responses/r.run.yaml'), ['method: ']);
+  it('returns [] for apicircle docs that are not .yaml', () => {
+    const doc = makeDoc(Uri.parse('apicircle://x/responses/r.yaml'), ['method: ']);
     expect(provider.provideCompletionItems(doc, pos(0, 8), fakeToken, fakeCtx)).toEqual([]);
   });
 
   it('completes HTTP methods on `method:` line at root', () => {
-    const doc = makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), ['method: ']);
+    const doc = makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), ['method: ']);
     const items = provider.provideCompletionItems(doc, pos(0, 8), fakeToken, fakeCtx);
     expect(items.map((i) => i.label)).toEqual([
       'GET',
@@ -46,7 +46,7 @@ describe('RequestCompletionProvider', () => {
   });
 
   it('completes auth types on `auth.type:` line', () => {
-    const doc = makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), [
+    const doc = makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), [
       'name: x',
       'method: GET',
       'url: https://x.com',
@@ -61,7 +61,7 @@ describe('RequestCompletionProvider', () => {
   });
 
   it('completes body types on `body.type:` line', () => {
-    const doc = makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), [
+    const doc = makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), [
       'name: x',
       'method: POST',
       'url: https://x.com',
@@ -74,7 +74,7 @@ describe('RequestCompletionProvider', () => {
   });
 
   it('completes assertion kinds in assertions block', () => {
-    const doc = makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), [
+    const doc = makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), [
       'name: x',
       'method: GET',
       'url: https://x.com',
@@ -86,7 +86,7 @@ describe('RequestCompletionProvider', () => {
   });
 
   it('completes assertion ops in assertions block', () => {
-    const doc = makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), [
+    const doc = makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), [
       'name: x',
       'method: GET',
       'url: https://x.com',
@@ -106,7 +106,7 @@ describe('RequestCompletionProvider', () => {
   });
 
   it('completes extraction sources in extractions block', () => {
-    const doc = makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), [
+    const doc = makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), [
       'name: x',
       'method: GET',
       'url: https://x.com',
@@ -118,13 +118,13 @@ describe('RequestCompletionProvider', () => {
   });
 
   it('does NOT complete `type:` at root level (avoid colliding with auth/body)', () => {
-    const doc = makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), ['type: ']);
+    const doc = makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), ['type: ']);
     const items = provider.provideCompletionItems(doc, pos(0, 6), fakeToken, fakeCtx);
     expect(items).toEqual([]);
   });
 
   it('returns [] for lines that do not match any trigger pattern', () => {
-    const doc = makeDoc(Uri.parse('apicircle://x/requests/abc.req.yaml'), ['name: ']);
+    const doc = makeDoc(Uri.parse('apicircle://x/requests/abc.yaml'), ['name: ']);
     expect(provider.provideCompletionItems(doc, pos(0, 6), fakeToken, fakeCtx)).toEqual([]);
   });
 });

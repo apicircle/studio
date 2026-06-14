@@ -44,6 +44,7 @@ function makeWs(dir: string, label = 'ws'): DiscoveredWorkspace {
     workspaceJsonPath: path.join(dir, '.apicircle', 'workspace.json'),
     workspaceFolder: { uri: Uri.file(dir), name: label, index: 0 } as never,
     label,
+    source: 'git-folder',
   };
 }
 

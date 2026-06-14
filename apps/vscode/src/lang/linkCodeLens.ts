@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
-// CodeLens provider for linked-workspace YAML documents (`*.link.yaml`).
+// CodeLens provider for linked-workspace YAML documents (`.yaml`).
 //
 //   Above `name:`                 ⟳ Refresh ledger · 📓 Changelog · ⊗ Unlink
 //                                 ◆ Name
@@ -42,7 +43,7 @@ export class LinkCodeLensProvider implements vscode.CodeLensProvider, vscode.Dis
     _token: vscode.CancellationToken,
   ): vscode.CodeLens[] {
     if (document.uri.scheme !== 'apicircle') return [];
-    if (!document.uri.path.endsWith('.link.yaml')) return [];
+    if (uriEntityKind(document.uri) !== 'link') return [];
     const uri = document.uri;
     const lenses: vscode.CodeLens[] = [];
 

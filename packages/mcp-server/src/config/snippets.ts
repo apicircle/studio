@@ -3,11 +3,12 @@ import * as path from 'node:path';
 // =============================================================================
 // MCP config snippet builder — shared between Desktop and VS Code.
 //
-// External AI clients (Claude Desktop, Cursor, Continue, etc.) launch the
+// External AI clients (Claude Desktop, Cursor, Codex, etc.) launch the
 // `apicircle-mcp` binary themselves as a stdio child process — neither the
 // Desktop app nor the VS Code extension spawns it directly. What both apps
-// DO provide is the exact JSON snippet the user pastes into the client's
-// config file. This module centralises:
+// DO provide is the exact config snippet the user pastes into the client's
+// config file (JSON for most clients, TOML for Codex, YAML for Continue).
+// This module centralises:
 //
 //   • The `AiClient` type + `AI_CLIENTS` runtime allowlist
 //   • `buildSnippetVariants(client, binary, workspace)` — forward-slash +
@@ -23,6 +24,7 @@ import * as path from 'node:path';
 export type AiClient =
   | 'claude-desktop'
   | 'claude-code'
+  | 'codex'
   | 'cursor'
   | 'continue'
   | 'cline'
@@ -35,6 +37,7 @@ export type AiClient =
 export const AI_CLIENTS: readonly AiClient[] = [
   'claude-desktop',
   'claude-code',
+  'codex',
   'cursor',
   'continue',
   'cline',
@@ -52,8 +55,8 @@ export const AI_CLIENTS: readonly AiClient[] = [
  *     (`"C:/Users/.../workspaces"`). No backslash escapes needed — easier
  *     to read, accepted by Node, Electron, and Windows file APIs.
  *   - `escaped`: literal OS path. On Windows that means `\\` escapes
- *     inside JSON strings (`"C:\\Users\\...\\workspaces"`). This is what
- *     `JSON.stringify` emits by default.
+ *     inside quoted strings (JSON and TOML both use `\` as the escape
+ *     character).
  *
  * On POSIX both strings are byte-identical and `identical` is `true` — the
  * UI uses that flag to suppress the variant picker.
@@ -65,19 +68,19 @@ export interface ConfigSnippetVariants {
 }
 
 /**
- * Build the snippet for a given AI client + workspace path. All clients
- * currently share the same envelope (`mcpServers: { apicircle: ... }`);
- * the client arg is reserved for future per-client envelope tailoring
- * (e.g. Zed's nested settings.json shape).
+ * Build the snippet for a given AI client + workspace path. Most clients
+ * use JSON with `mcpServers: { apicircle: ... }`; Codex uses TOML with
+ * `[mcp_servers.apicircle]`. The `client` arg selects the format.
  */
 export function buildSnippetVariants(
-  _client: AiClient,
+  client: AiClient,
   binary: string,
   workspace: string,
 ): ConfigSnippetVariants {
   const forwardWorkspace = workspace.replace(/\\/g, '/');
-  const escaped = renderSnippet(binary, workspace);
-  const forwardSlash = renderSnippet(binary, forwardWorkspace);
+  const render = client === 'codex' ? renderTomlSnippet : renderJsonSnippet;
+  const escaped = render(binary, workspace);
+  const forwardSlash = render(binary, forwardWorkspace);
   return {
     forwardSlash,
     escaped,
@@ -85,13 +88,25 @@ export function buildSnippetVariants(
   };
 }
 
-function renderSnippet(binary: string, workspace: string): string {
+function renderJsonSnippet(binary: string, workspace: string): string {
   const entry = {
     command: binary,
     args: ['--workspace', workspace],
     env: { APICIRCLE_WORKSPACE: workspace },
   };
   return JSON.stringify({ mcpServers: { apicircle: entry } }, null, 2);
+}
+
+function renderTomlSnippet(binary: string, workspace: string): string {
+  const esc = (s: string): string => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return [
+    `[mcp_servers.apicircle]`,
+    `command = "${esc(binary)}"`,
+    `args = ["--workspace", "${esc(workspace)}"]`,
+    ``,
+    `[mcp_servers.apicircle.env]`,
+    `APICIRCLE_WORKSPACE = "${esc(workspace)}"`,
+  ].join('\n');
 }
 
 /**
@@ -134,13 +149,15 @@ export function resolveAiClientConfigPath(client: AiClient, env: ConfigPathEnv):
     case 'cursor':
       return path.join(homedir, '.cursor/mcp.json');
     case 'continue':
-      return path.join(homedir, '.continue/config.json');
+      return path.join(homedir, '.continue/config.yaml');
     case 'zed':
       return path.join(homedir, '.config/zed/settings.json');
     case 'windsurf':
       // Windsurf (Codeium IDE) reads MCP servers from
       // `.codeium/windsurf/mcp_config.json` under the user's home. P5R1-G11.
       return path.join(homedir, '.codeium/windsurf/mcp_config.json');
+    case 'codex':
+      return path.join(homedir, '.codex/config.toml');
     default:
       return null;
   }

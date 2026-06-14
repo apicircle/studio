@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { sortVersionsDesc } from '@apicircle/core';
 import { BaseTreeView } from './BaseTreeView';
 import type { VsCodeBridge } from '../host/vscodeBridge';
+import { ApicircleFsProvider } from '../fs/apicircleFsProvider';
 
 // =============================================================================
 // Link Workspaces view.
@@ -20,6 +21,8 @@ export type LinkWorkspaceNode =
   | { kind: 'release'; version: string; deprecated: boolean; yanked: boolean }
   | { kind: 'linkedRoot' }
   | { kind: 'linkedWorkspace'; id: string }
+  | { kind: 'linkedFoldersRoot'; linkId: string }
+  | { kind: 'linkedFolder'; linkId: string; folderId: string }
   | { kind: 'linkedRequest'; linkId: string; requestId: string };
 
 export class LinkWorkspaceView extends BaseTreeView<LinkWorkspaceNode> {
@@ -61,12 +64,38 @@ export class LinkWorkspaceView extends BaseTreeView<LinkWorkspaceNode> {
       const state = await active.read();
       const snapshot = state.local.linkedCollections[element.id];
       if (!snapshot) return [];
-      // Only the requests the link's scope includes collections for.
+      // Only the requests + folders the link's scope includes collections for.
       const link = state.synced.linkedWorkspaces[element.id];
       if (link && !link.scope.includes('collections')) return [];
-      return Object.values(snapshot.collections.requests)
+      const children: LinkWorkspaceNode[] = [];
+      // Surface the linked folders as a single grouped node when at least one
+      // exists, so the consumer can navigate to read-only folder YAML to
+      // inspect inherited-auth sources without polluting the request list.
+      if (Object.keys(snapshot.collections.folders).length > 0) {
+        children.push({ kind: 'linkedFoldersRoot' as const, linkId: element.id });
+      }
+      children.push(
+        ...Object.values(snapshot.collections.requests)
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((r) => ({
+            kind: 'linkedRequest' as const,
+            linkId: element.id,
+            requestId: r.id,
+          })),
+      );
+      return children;
+    }
+    if (element.kind === 'linkedFoldersRoot') {
+      const state = await active.read();
+      const snapshot = state.local.linkedCollections[element.linkId];
+      if (!snapshot) return [];
+      return Object.values(snapshot.collections.folders)
         .sort((a, b) => a.name.localeCompare(b.name))
-        .map((r) => ({ kind: 'linkedRequest' as const, linkId: element.id, requestId: r.id }));
+        .map((f) => ({
+          kind: 'linkedFolder' as const,
+          linkId: element.linkId,
+          folderId: f.id,
+        }));
     }
     return [];
   }
@@ -100,13 +129,16 @@ export class LinkWorkspaceView extends BaseTreeView<LinkWorkspaceNode> {
       const state = active ? await active.read() : undefined;
       const link = state?.synced.linkedWorkspaces[node.id];
       if (!link) return new vscode.TreeItem('(unlinked)');
-      // Collapsible only when there are cached requests to browse.
-      const hasRequests =
-        link.scope.includes('collections') &&
-        Object.keys(state?.local.linkedCollections[node.id]?.collections.requests ?? {}).length > 0;
+      // Collapsible when there are cached folders OR requests to browse.
+      const snapshot = state?.local.linkedCollections[node.id];
+      const hasContent =
+        !!link.scope.includes('collections') &&
+        !!snapshot &&
+        (Object.keys(snapshot.collections.requests).length > 0 ||
+          Object.keys(snapshot.collections.folders).length > 0);
       const item = new vscode.TreeItem(
         link.name,
-        hasRequests
+        hasContent
           ? vscode.TreeItemCollapsibleState.Collapsed
           : vscode.TreeItemCollapsibleState.None,
       );
@@ -120,6 +152,48 @@ export class LinkWorkspaceView extends BaseTreeView<LinkWorkspaceNode> {
         title: 'Open linked workspace',
         arguments: [{ id: link.id }],
       };
+      return item;
+    }
+    if (node.kind === 'linkedFoldersRoot') {
+      const active = this.bridge.activeWorkspace();
+      const state = active ? await active.read() : undefined;
+      const snapshot = state?.local.linkedCollections[node.linkId];
+      const count = snapshot ? Object.keys(snapshot.collections.folders).length : 0;
+      const item = new vscode.TreeItem('Folders', vscode.TreeItemCollapsibleState.Collapsed);
+      item.iconPath = new vscode.ThemeIcon('folder-library');
+      item.description = `${count} folder${count === 1 ? '' : 's'}`;
+      item.tooltip =
+        "Read-only projections of the linked workspace's folders — inspect what auth requests with `auth: inherit` resolve to.";
+      item.contextValue = 'apicircleLinkedFoldersRoot';
+      return item;
+    }
+    if (node.kind === 'linkedFolder') {
+      const active = this.bridge.activeWorkspace();
+      const state = active ? await active.read() : undefined;
+      const snapshot = state?.local.linkedCollections[node.linkId];
+      const folder = snapshot?.collections.folders[node.folderId];
+      if (!folder) return new vscode.TreeItem('(missing folder)');
+      const item = new vscode.TreeItem(folder.name, vscode.TreeItemCollapsibleState.None);
+      const hasAuth =
+        folder.auth !== undefined && folder.auth.type !== 'none' && folder.auth.type !== 'inherit';
+      item.iconPath = new vscode.ThemeIcon(hasAuth ? 'key' : 'folder');
+      item.description = hasAuth ? `auth: ${folder.auth!.type} (read-only)` : 'read-only';
+      item.tooltip = new vscode.MarkdownString(
+        hasAuth
+          ? `**${folder.name}**\n\nFolder-level auth: \`${folder.auth!.type}\`. Linked requests with \`auth: inherit\` pick this up.\n\n_Linked folders are read-only — edits happen in the source workspace._`
+          : `**${folder.name}**\n\nNo folder-level auth set. The \`inherit\` walk continues up the chain.\n\n_Linked folders are read-only._`,
+      );
+      item.contextValue = 'apicircleLinkedFolder';
+      const link = state?.synced.linkedWorkspaces[node.linkId];
+      if (link && active) {
+        const uri = ApicircleFsProvider.linkedFolderUri(active.workspace.id, link, folder);
+        item.command = {
+          command: 'vscode.open',
+          title: 'Open linked folder',
+          arguments: [uri],
+        };
+        item.resourceUri = uri;
+      }
       return item;
     }
     if (node.kind === 'linkedRequest') {

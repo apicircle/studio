@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
 // CompletionItemProvider for apicircle-request YAML documents.
@@ -59,7 +60,7 @@ export class RequestCompletionProvider implements vscode.CompletionItemProvider 
     _context: vscode.CompletionContext,
   ): vscode.CompletionItem[] {
     if (document.uri.scheme !== 'apicircle') return [];
-    if (!document.uri.path.endsWith('.req.yaml')) return [];
+    if (uriEntityKind(document.uri) !== 'request') return [];
 
     const line = document.lineAt(position.line).text;
     const branch = detectBranch(document, position.line);

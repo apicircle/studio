@@ -169,6 +169,7 @@ describe('addExtractionFromLatestResponseCommand', () => {
       workspaceJsonPath: path.join(apicircleDir, 'workspace.json'),
       workspaceFolder: { uri: Uri.file(tmp), name: 't', index: 0 } as never,
       label: 't',
+      source: 'git-folder',
     });
     bridge.setActive(apicircleDir);
   }
@@ -281,7 +282,7 @@ describe('addExtractionFromLatestResponseCommand', () => {
     seed(apicircleDir, path.join(tmp, 'globalStorage'), { hasRun: true });
     activate();
     (window.activeTextEditor as unknown) = {
-      document: { uri: Uri.parse('apicircle://x/requests/r1.req.yaml') },
+      document: { uri: Uri.parse('apicircle://x/requests/r1.yaml') },
     };
     (window.showQuickPick as Mock).mockResolvedValueOnce({ label: '$.user.id' });
     (window.showInputBox as Mock).mockResolvedValueOnce('uid');

@@ -26,6 +26,8 @@ interface Manifest {
     configuration: {
       properties: Record<string, { markdownDescription?: string; description?: string }>;
     };
+    languages?: Array<{ id: string; icon?: { light: string; dark: string } }>;
+    yamlValidation?: Array<{ fileMatch: string; url: string }>;
   };
   activationEvents: string[];
 }
@@ -88,7 +90,6 @@ describe('package.json manifest regression', () => {
     const pkg = readManifest();
     const ids = new Set(pkg.contributes.commands.map((c) => c.command));
     for (const id of [
-      'apicircle.copyMcpConfig',
       'apicircle.openMcpConfigFile',
       'apicircle.openMcpConnectGuide',
       'apicircle.revealMcpBinaryInfo',
@@ -101,12 +102,71 @@ describe('package.json manifest regression', () => {
     const pkg = readManifest();
     const events = new Set(pkg.activationEvents);
     for (const id of [
-      'apicircle.copyMcpConfig',
       'apicircle.openMcpConfigFile',
       'apicircle.openMcpConnectGuide',
       'apicircle.revealMcpBinaryInfo',
     ]) {
       expect(events.has(`onCommand:${id}`)).toBe(true);
+    }
+  });
+
+  // ----- Folder YAML schema registration -----
+
+  it('yamlValidation is empty (compound extensions removed — language mode set programmatically)', () => {
+    const pkg = readManifest();
+    const entries = pkg.contributes.yamlValidation ?? [];
+    expect(entries).toEqual([]);
+  });
+
+  it('apicircle-folder.schema.json exists on disk and parses as JSON with the expected shape', () => {
+    const schemaPath = path.resolve(__dirname, '..', 'schemas', 'apicircle-folder.schema.json');
+    expect(fs.existsSync(schemaPath)).toBe(true);
+    const raw = fs.readFileSync(schemaPath, 'utf8');
+    const parsed = JSON.parse(raw) as {
+      $schema?: string;
+      required: string[];
+      properties: { name?: { type: string }; auth?: { $ref?: string } };
+      definitions?: { auth?: { properties?: { type?: { enum?: string[] } } } };
+    };
+    expect(parsed.required).toContain('name');
+    expect(parsed.properties.name?.type).toBe('string');
+    expect(parsed.properties.auth?.$ref).toMatch(/#\/definitions\/auth/);
+    const authTypes = parsed.definitions?.auth?.properties?.type?.enum ?? [];
+    // All 17 RequestAuth variants must be enumerated.
+    expect(authTypes).toHaveLength(17);
+    for (const expected of [
+      'none',
+      'inherit',
+      'bearer',
+      'basic',
+      'api-key',
+      'custom-header',
+      'oauth2-client-credentials',
+      'aws-sigv4',
+      'jwt-bearer',
+    ]) {
+      expect(authTypes).toContain(expected);
+    }
+  });
+
+  // ----- Language icon completeness -----
+
+  it('every contributes.languages entry declares a light + dark icon', () => {
+    const pkg = readManifest();
+    const langs = pkg.contributes.languages ?? [];
+    expect(langs.length).toBeGreaterThan(0);
+    for (const lang of langs) {
+      expect(lang.icon, `${lang.id} is missing an icon`).toBeDefined();
+      expect(lang.icon!.light, `${lang.id} icon.light`).toMatch(/\.svg$/);
+      expect(lang.icon!.dark, `${lang.id} icon.dark`).toMatch(/\.svg$/);
+      const lightPath = path.resolve(__dirname, '..', lang.icon!.light);
+      const darkPath = path.resolve(__dirname, '..', lang.icon!.dark);
+      expect(fs.existsSync(lightPath), `${lang.id} light icon missing on disk: ${lightPath}`).toBe(
+        true,
+      );
+      expect(fs.existsSync(darkPath), `${lang.id} dark icon missing on disk: ${darkPath}`).toBe(
+        true,
+      );
     }
   });
 
@@ -460,7 +520,6 @@ describe('package.json manifest regression', () => {
       'apicircle.addMockRequestSchemaParam',
       'apicircle.addMockRequestSchemaBodyExample',
       'apicircle.setMockParamTypeField',
-      'apicircle.setMockHeaderParamNameField',
     ]) {
       expect(ids.has(id), `${id} missing from contributes.commands`).toBe(true);
       expect(events.has(`onCommand:${id}`), `${id} missing onCommand activation`).toBe(true);

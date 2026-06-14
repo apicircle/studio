@@ -28,16 +28,16 @@ describe('MockCodeLensProvider', () => {
   it('returns [] for non-apicircle scheme', async () => {
     const p = new MockCodeLensProvider(makeController(false));
     const lenses = await p.provideCodeLenses(
-      makeDoc(Uri.parse('file:///x.mock.yaml'), ['name: x']),
+      makeDoc(Uri.parse('file:///x.yaml'), ['name: x']),
       fakeToken,
     );
     expect(lenses).toEqual([]);
   });
 
-  it('returns [] for apicircle URIs that are not .mock.yaml', async () => {
+  it('returns [] for apicircle URIs that are not .yaml', async () => {
     const p = new MockCodeLensProvider(makeController(false));
     const lenses = await p.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/requests/r.req.yaml'), ['name: x']),
+      makeDoc(Uri.parse('apicircle://x/requests/r.yaml'), ['name: x']),
       fakeToken,
     );
     expect(lenses).toEqual([]);
@@ -46,7 +46,7 @@ describe('MockCodeLensProvider', () => {
   it('returns ▶ Start when mock is not running', async () => {
     const p = new MockCodeLensProvider(makeController(false));
     const lenses = await p.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/mocks/m-1.mock.yaml'), ['# header', 'name: Pet Store']),
+      makeDoc(Uri.parse('apicircle://x/mocks/m-1.yaml'), ['# header', 'name: Pet Store']),
       fakeToken,
     );
     expect(lenses).toHaveLength(1);
@@ -58,7 +58,7 @@ describe('MockCodeLensProvider', () => {
   it('returns ■ Stop + ↻ Restart when mock is running', async () => {
     const p = new MockCodeLensProvider(makeController(true, 4040));
     const lenses = await p.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/mocks/m-1.mock.yaml'), ['name: Pet Store']),
+      makeDoc(Uri.parse('apicircle://x/mocks/m-1.yaml'), ['name: Pet Store']),
       fakeToken,
     );
     expect(lenses).toHaveLength(2);
@@ -72,7 +72,7 @@ describe('MockCodeLensProvider', () => {
   it('returns [] when no name: line is present', async () => {
     const p = new MockCodeLensProvider(makeController(false));
     const lenses = await p.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/mocks/m-1.mock.yaml'), ['# no name field']),
+      makeDoc(Uri.parse('apicircle://x/mocks/m-1.yaml'), ['# no name field']),
       fakeToken,
     );
     expect(lenses).toEqual([]);
@@ -89,12 +89,12 @@ describe('MockCodeLensProvider', () => {
   it('does NOT emit per-endpoint editing lenses — those belong on the per-endpoint YAML', async () => {
     // After the per-endpoint YAML projection landed, the mock.yaml is back
     // to a pure lifecycle surface. Per-endpoint editing happens via
-    // <endpointId>.endpoint.yaml (opened from the Mock sidebar). Emitting
+    // <endpointId>.yaml (opened from the Mock sidebar). Emitting
     // the editing lenses here would invoke commands that bail with the
     // "only runs against endpoint YAML" toast.
     const p = new MockCodeLensProvider(makeController(false));
     const lenses = await p.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/mocks/m-1.mock.yaml'), [
+      makeDoc(Uri.parse('apicircle://x/mocks/m-1.yaml'), [
         'name: Pet Store',
         'endpoints:',
         '  - id: ep-1',
@@ -124,12 +124,12 @@ describe('MockCodeLensProvider', () => {
   });
 
   it('reads the mock id from the ?id= query, not the name-slug path basename', async () => {
-    // Real URIs are `/mocks/<name-slug>.mock.yaml?id=<mockId>` — the slug is
+    // Real URIs are `/mocks/<name-slug>.yaml?id=<mockId>` — the slug is
     // NOT the id. Earlier the lens parsed the id from the path basename, so the
     // Start/Open commands received the slug and missed synced.mockServers[id].
     const p = new MockCodeLensProvider(makeController(false));
     const lenses = await p.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/mocks/pet-store.mock.yaml?id=m-42'), [
+      makeDoc(Uri.parse('apicircle://x/mocks/pet-store.yaml?id=m-42'), [
         'name: Pet Store',
         'endpoints:',
         '  - id: ep-1',
@@ -147,7 +147,7 @@ describe('MockCodeLensProvider', () => {
   it('emits an ↗ Open endpoint lens per endpoint row, carrying the MockView node shape', async () => {
     const p = new MockCodeLensProvider(makeController(false));
     const lenses = await p.provideCodeLenses(
-      makeDoc(Uri.parse('apicircle://x/mocks/m-1.mock.yaml'), [
+      makeDoc(Uri.parse('apicircle://x/mocks/m-1.yaml'), [
         'name: Pet Store',
         'endpoints:',
         '  - id: ep-1',

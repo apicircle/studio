@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 import type { VsCodeMockController } from '../host/vscodeMockController';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
 // HoverProvider for apicircle-mock YAML documents.
@@ -26,7 +27,7 @@ export class MockHoverProvider implements vscode.HoverProvider {
     _token: vscode.CancellationToken,
   ): Promise<vscode.Hover | undefined> {
     if (document.uri.scheme !== 'apicircle') return undefined;
-    if (!document.uri.path.endsWith('.mock.yaml')) return undefined;
+    if (uriEntityKind(document.uri) !== 'mock') return undefined;
 
     const lineText = document.lineAt(position.line).text;
     const mockId = extractMockId(document.uri.path);
@@ -141,7 +142,7 @@ export class MockHoverProvider implements vscode.HoverProvider {
 }
 
 function extractMockId(uriPath: string): string | undefined {
-  const m = /\/mocks\/([^/]+)\.mock\.yaml$/.exec(uriPath);
+  const m = /\/mocks\/([^/]+)\.yaml$/.exec(uriPath);
   return m ? m[1] : undefined;
 }
 

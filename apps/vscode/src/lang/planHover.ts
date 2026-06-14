@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { VsCodeBridge } from '../host/vscodeBridge';
+import { uriEntityKind } from '../fs/uriKind';
 
 // =============================================================================
 // HoverProvider for apicircle-plan YAML documents.
@@ -26,7 +27,7 @@ export class PlanHoverProvider implements vscode.HoverProvider {
     _token: vscode.CancellationToken,
   ): Promise<vscode.Hover | undefined> {
     if (document.uri.scheme !== 'apicircle') return undefined;
-    if (!document.uri.path.endsWith('.plan.yaml')) return undefined;
+    if (uriEntityKind(document.uri) !== 'plan') return undefined;
 
     const lineText = document.lineAt(position.line).text;
     const surface = this.bridge.activeWorkspace();

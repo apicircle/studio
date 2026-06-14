@@ -12,6 +12,7 @@ import {
 import {
   registerWorkspace,
   saveRegistry,
+  workspaceDirFor,
   type WorkspaceRegistry,
 } from '@apicircle/core/workspace/registry';
 import { saveToFile } from '@apicircle/core/workspace/file-backed';
@@ -43,7 +44,7 @@ async function seedRegistry(
   let active: string | null = null;
   for (const w of workspaces) {
     if (w.active) active = w.id;
-    await saveToFile(path.join(workspacesRoot, w.id), {
+    await saveToFile(workspaceDirFor(workspacesRoot, w.id), {
       synced: {
         schemaVersion: 1,
         workspaceId: w.id,
@@ -117,7 +118,7 @@ describe('resolveWorkspace', () => {
     expect(r.id).toBe('ws-b');
     expect(r.name).toBe('Beta');
     expect(r.fromRegistry).toBe(true);
-    expect(r.dir).toBe(path.join(workspacesRoot, 'ws-b'));
+    expect(r.dir).toBe(workspaceDirFor(workspacesRoot, 'ws-b'));
   });
 
   it('resolves --workspace-name by name (case-insensitive)', async () => {
@@ -190,7 +191,7 @@ describe('createWorkspaceOnDisk', () => {
     expect(registry.activeWorkspaceId).toBe(entry.id);
     expect(registry.workspaces.map((w) => w.id)).toContain(entry.id);
     const onDisk = await fs.readFile(
-      path.join(workspacesRoot, entry.id, 'workspace.synced.json'),
+      path.join(workspaceDirFor(workspacesRoot, entry.id), 'workspace.json'),
       'utf-8',
     );
     expect(JSON.parse(onDisk).workspaceId).toBe(entry.id);

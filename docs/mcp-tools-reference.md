@@ -1,6 +1,6 @@
 # MCP tool catalog reference
 
-The `@apicircle/mcp-server` host exposes 93 tools, namespaced by capability area. The full list is canonical in [`packages/shared/src/mcp.ts`](../packages/shared/src/mcp.ts) and registered in [`packages/mcp-server/src/tools/registry.ts`](../packages/mcp-server/src/tools/registry.ts).
+The `@apicircle/mcp-server` host exposes 94 tools, namespaced by capability area. The full list is canonical in [`packages/shared/src/mcp.ts`](../packages/shared/src/mcp.ts) and registered in [`packages/mcp-server/src/tools/registry.ts`](../packages/mcp-server/src/tools/registry.ts).
 
 ## Imports
 
@@ -36,12 +36,12 @@ The `@apicircle/mcp-server` host exposes 93 tools, namespaced by capability area
 
 ## Folder CRUD
 
-| Tool            | Input                          |
-| --------------- | ------------------------------ |
-| `folder.create` | `{ name?, parentId? }`         |
-| `folder.read`   | `{ id? }`                      |
-| `folder.update` | `{ id, parentId }` (move)      |
-| `folder.delete` | `{ id }` (children reparented) |
+| Tool            | Input                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `folder.create` | `{ name?, parentId? }`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `folder.read`   | `{ id? }`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `folder.update` | `{ id, parentId?, name?, auth?, clearAuth? }` — patch any combination of move (`parentId`), rename (`name`), and folder-level auth (`auth` to set, `clearAuth: true` to unset). `auth` accepts the same LLM-friendly subset as `prompt.create_request` (`none`, `inherit`, `bearer`, `basic`, `api-key`, `custom-header`). Passing both `auth` and `clearAuth` is a Zod-refine error. Folder-level `auth` is what descendant requests with `auth.type === 'inherit'` resolve to via the inherit walk in [`docs/auth.md`](auth.md#folder-level-auth--the-inherit-walk). |
+| `folder.delete` | `{ id }` (children reparented)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 ## Folder exchange (`apicircle.folder/v1`)
 
@@ -224,6 +224,16 @@ same operations use the app's GitHub session; over stdio the token is explicit.)
 | `linked.refresh`  | `{ id, token? }` — re-pulls the cached ledger (+ bootstrap snapshot)                                                                                  |
 | `release.tag`     | `{ owner, name, version, createGitHubRelease?, notes?, overrideExisting?, token? }` — tags `v<version>` on the repo's default branch HEAD             |
 | `repo.set_topics` | `{ owner, name, topics, token? }` — replaces repo topics (keeps `apicircle`, which drives marketplace discovery)                                      |
+
+## Marketplace discovery
+
+Search the API Circle marketplace — public workspaces tagged with `apicircle`
+on GitHub. Token is optional (anonymous browsing supported; token lifts rate
+limits).
+
+| Tool                 | Input                                                                                                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `marketplace.search` | `{ query?, sort?: 'best-match' \| 'stars' \| 'updated', token? }` → `{ ok, count, results: [{ fullName, owner, name, description, topics, stargazers, defaultBranch }] }` |
 
 ## Error handling
 

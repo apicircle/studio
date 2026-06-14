@@ -104,7 +104,13 @@ import {
   linkedSetConfigTool,
   linkedUnlinkTool,
 } from './linkedWorkspaces';
-import { linkedLinkTool, linkedRefreshTool, releaseTagTool, repoSetTopicsTool } from './githubOps';
+import {
+  linkedLinkTool,
+  linkedRefreshTool,
+  marketplaceSearchTool,
+  releaseTagTool,
+  repoSetTopicsTool,
+} from './githubOps';
 
 // Order matches MCP_TOOL_NAMES in `@apicircle/shared/src/mcp.ts`. CI guards
 // drift via the registry test which asserts every catalog entry resolves.
@@ -202,6 +208,7 @@ export const TOOL_REGISTRY: AnyToolDef[] = [
   linkedRefreshTool,
   releaseTagTool,
   repoSetTopicsTool,
+  marketplaceSearchTool,
 ];
 
 export function getTool(name: McpToolName): AnyToolDef | undefined {

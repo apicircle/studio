@@ -48,6 +48,12 @@ async function resolveRepo(deps: RepoActionsDeps): Promise<OwnerName | null> {
     await vscode.window.showWarningMessage('No active APICircle workspace.');
     return null;
   }
+  if (!surface.workspace.workspaceFolder) {
+    await vscode.window.showWarningMessage(
+      'Repo actions require a Git-folder workspace (not a registry workspace).',
+    );
+    return null;
+  }
   const folder = surface.workspace.workspaceFolder.uri.fsPath;
   const fromRemote = await deriveRepo(folder);
   if (fromRemote) return fromRemote;

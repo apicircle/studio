@@ -27,7 +27,7 @@ rebuilt around two ideas the others miss:
    branch. Teams collaborate the way they collaborate on code — branches,
    diffs, pull requests, review.
 2. **Your workspace is an AI tool catalog.** A built-in Model Context Protocol
-   server exposes **93 tools**, so Claude, ChatGPT, Cursor, Copilot, and any
+   server exposes **94 tools**, so Claude, ChatGPT, Cursor, Copilot, and any
    other MCP client can read, author, and run requests on your behalf.
 
 No cloud account. No vendor lock-in. Your data stays on your machine and in
@@ -65,7 +65,7 @@ your repo.
 
 ### Git-backed workspaces
 
-A workspace is two JSON documents — `workspace.synced.json` (the shared
+A workspace is two JSON documents — `workspace.json` (the shared
 collection tree, environments, mocks, releases) and `workspace.local.json`
 (per-device history, sessions, UI state). The synced document pushes to a
 GitHub repo on a working branch; teammates pull, branch, and merge it like any
@@ -80,13 +80,13 @@ The bundled `@apicircle/mcp-server` speaks the open
 [Model Context Protocol](https://modelcontextprotocol.io) over stdio, so it
 works with **Claude Desktop, Claude Code, ChatGPT, GitHub Copilot, Cursor,
 Continue, Cline, Zed, and Windsurf** — or anything else that talks MCP. The
-93-tool catalog covers request and folder CRUD, environment authoring,
+94-tool catalog covers request and folder CRUD, environment authoring,
 assertions, execution plans, history, mock-server lifecycle, the release
 ledger (publish / deprecate / withdraw), linked-workspace config (list / pin /
 scope / unlink), codebase scanning, imports, code generation, and
 natural-language authoring.
 
-The desktop app watches `workspace.synced.json` for external writes, so
+The desktop app watches `workspace.json` for external writes, so
 anything the MCP server (or the `apicircle` CLI) writes shows up in the
 editor automatically — no manual refresh needed. The desktop's own
 mirror writes are suppressed via a stat-snapshot check, so the loop
@@ -107,7 +107,11 @@ teammates share them; _runtime_ state stays on the local machine.
   API key, custom header, the full OAuth2 grant set (client credentials, auth
   code, PKCE, password, implicit, device flow, with auto-refresh), AWS SigV4,
   Digest, NTLM, Hawk, and JWT. Signing primitives are verified against the
-  relevant RFC and NIST reference vectors.
+  relevant RFC and NIST reference vectors. **Folder-level auth** is editable
+  on every surface: set an `auth:` block on a folder and any descendant
+  request with `auth: { type: inherit }` picks it up automatically. In VS
+  Code, click a folder to open its YAML; a `◆ Inherits from <Folder>`
+  CodeLens on each `inherit` request links straight to the source.
 - **Import what you already have** — cURL commands, OpenAPI/Swagger, Postman
   collections + environments, Insomnia exports, HAR files, and API Circle
   folder + environment exports (`.apicircle.json` produced by the folder kebab
@@ -144,18 +148,19 @@ The same workspace document the desktop and web apps drive can be edited
 in place from VS Code — no embedded webview, no separate sync. The
 extension contributes:
 
-- **Eight sidebar TreeViews**: Editor (folder/request tree), Environment
-  (with active marker, encrypted-variable mask, hover with mask-warnings
-  - secret-slot binding), Execution Plans, Mock servers, History (recent
-    request + plan runs), **Snapshots** (storage meter + restore/delete
-    inline, capture + cap commands from the title bar), MCP, and
-    **Link Workspaces** — the publish side (the workspace's own release
-    ledger: publish / deprecate / withdraw the versions linked consumers
-    pin to, plus ▶ Tag release on GitHub / Edit repo topics) **and** the
-    consume side (link a private repo or a marketplace result, edit every
-    link field via `<name>.link.yaml`, three-way `previewLinkedUpdate` /
-    `applyLinkedUpdate` review with per-entry resolution, dedicated PAT
-    sessions, required-secret provisioning).
+- **Nine sidebar TreeViews**: **Workspace** (active workspace details,
+  stats, and Switch Workspace action), Editor (folder/request tree),
+  Environment (with active marker, encrypted-variable mask, hover with
+  mask-warnings - secret-slot binding), Execution Plans, Mock servers,
+  History (recent request + plan runs), **Snapshots** (storage meter +
+  restore/delete inline, capture + cap commands from the title bar),
+  MCP, and **Link Workspaces** — the publish side (the workspace's own release
+  ledger: publish / deprecate / withdraw the versions linked consumers
+  pin to, plus ▶ Tag release on GitHub / Edit repo topics) **and** the
+  consume side (link a private repo or a marketplace result, edit every
+  link field via `<name>.link.yaml`, three-way `previewLinkedUpdate` /
+  `applyLinkedUpdate` review with per-entry resolution, dedicated PAT
+  sessions, required-secret provisioning).
 - **`.req.yaml` / `.env.yaml` / `.run.yaml` virtual documents** under
   the `apicircle:` URI scheme — full Monaco editing with JSON Schema
   validation, completion for the 17 auth types + body types +
@@ -236,7 +241,7 @@ git clone https://github.com/<you>/<your-workspace-repo>
 
 **The cloned directory _is_ the workspace folder.** It contains:
 
-- `workspace.synced.json` — collections, environments, mock definitions
+- `workspace.json` — collections, environments, mock definitions
   (shared with the team)
 - `workspace.local.json` — per-device history, sessions, runtime state
   (kept out of git)
@@ -294,7 +299,7 @@ Two mutually-exclusive flags pick the workspace:
 - `--workspace-name <name-or-id>` — registry lookup. Names are case-insensitive;
   ids survive renames (handy for CI).
 - `--workspace-path <dir>` — literal filesystem directory containing
-  `workspace.synced.json`. Skips the registry; ideal for git-cloned workspace
+  `workspace.json`. Skips the registry; ideal for git-cloned workspace
   repos.
 
 When neither is passed, the CLI uses the registry's active workspace (or the
@@ -391,7 +396,7 @@ packages/
   shared/               Types, generateId, validators, encryption helpers
   git/                  GitHub API client + sync logic
   mock-server-core/     Hono mock-server engine + OpenAPI/Postman/Insomnia parsers
-  mcp-server/           stdio MCP host with the 93-tool catalog
+  mcp-server/           stdio MCP host with the 94-tool catalog
   cli/                  `apicircle` binary — mock / mocks / mcp / import / export / run / workspaces
 ```
 

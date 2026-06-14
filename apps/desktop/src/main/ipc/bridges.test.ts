@@ -208,12 +208,10 @@ function makeLocalFixture(workspaceId = 'ws-test'): WorkspaceLocal {
 describe('workspaceFile IPC bridge (multi-workspace)', () => {
   let tmpDir: string;
   let workspacesRoot: string;
-  let legacyDir: string;
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'apicircle-wfb-'));
     workspacesRoot = path.join(tmpDir, 'workspaces');
-    legacyDir = path.join(tmpDir, 'workspace');
   });
 
   afterEach(async () => {
@@ -221,7 +219,7 @@ describe('workspaceFile IPC bridge (multi-workspace)', () => {
   });
 
   function newMgr() {
-    return new WorkspaceFileManager({ workspacesRoot, legacyDir });
+    return new WorkspaceFileManager({ workspacesRoot });
   }
 
   it('registers handlers for every workspace-file channel', () => {

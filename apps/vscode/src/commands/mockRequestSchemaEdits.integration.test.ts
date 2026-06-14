@@ -15,7 +15,6 @@ import {
   addMockRequestSchemaParamCommand,
   addMockRequestSchemaBodyExampleCommand,
   setMockParamTypeFieldCommand,
-  setMockHeaderParamNameFieldCommand,
   pathSlots,
   buildParamEntry,
   buildRequestSchemaBlock,
@@ -27,7 +26,7 @@ import {
 // MockEndpoint.requestSchema. Exercises the real parse → edit → re-parse loop.
 // =============================================================================
 
-const URI = Uri.parse('apicircle://x/mocks/m-1/get-pet.endpoint.yaml?mockId=m-1&id=ep-1');
+const URI = Uri.parse('apicircle://x/mocks/m-1/get-pet.yaml?mockId=m-1&id=ep-1');
 
 function makeEndpoint(overrides?: Partial<MockEndpoint>): MockEndpoint {
   return {
@@ -215,30 +214,5 @@ describe('param field editors (◆ Type / ◆ Name)', () => {
     (window.showQuickPick as Mock).mockResolvedValueOnce('integer');
     await setMockParamTypeFieldCommand(URI, typeLine);
     expect(parse(h.get()).requestSchema.pathParams[0].typeHint).toBe('integer');
-  });
-
-  it('setMockHeaderParamNameField picks a header name for a header param', async () => {
-    const h = mountDoc(
-      serializeEndpointToYaml(
-        makeEndpoint({
-          requestSchema: {
-            pathParams: [],
-            queryParams: [],
-            headers: [{ id: 'h1', name: 'X-Custom-Header', typeHint: 'string' }],
-            cookies: [],
-          },
-        }),
-      ),
-    );
-    // Locate the header param's name row (after the `headers:` list key).
-    const lines = h.get().split('\n');
-    const headersIdx = lines.findIndex((l) => /^\s{2}headers:/.test(l));
-    const nameLine = lines.findIndex((l, i) => i > headersIdx && /^\s+name:/.test(l));
-    (window.showQuickPick as Mock).mockResolvedValueOnce({
-      label: 'Authorization',
-      value: 'Authorization',
-    });
-    await setMockHeaderParamNameFieldCommand(URI, nameLine);
-    expect(parse(h.get()).requestSchema.headers[0].name).toBe('Authorization');
   });
 });

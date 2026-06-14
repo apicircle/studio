@@ -4,6 +4,7 @@ import type { Folder, Request as ApiRequest, RequestAuth, RequestBody } from '@a
 import type { WorkspacePatch } from '@apicircle/core';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 import { ApicircleFsProvider } from '../fs/apicircleFsProvider';
+import { uniquifyName } from '../util/uniquifyName';
 
 // =============================================================================
 // `APICircle: New Request from Template…` — scaffolds a starter request (or a
@@ -240,12 +241,14 @@ export async function newRequestFromTemplateCommand(
     if (!folderPick) return;
     const now = new Date().toISOString();
     const built = template.build();
+    const reqName = uniquifyName(state.synced, folderPick.folderId, 'request', built.name);
     const request: ApiRequest = {
       id: generateId(),
       folderId: folderPick.folderId,
       createdAt: now,
       updatedAt: now,
       ...built,
+      name: reqName,
     };
     await active.apply({ kind: 'request.create', request });
     const stateSingle = await active.read();
@@ -282,9 +285,15 @@ export async function newRequestFromTemplateCommand(
   if (!parentPick) return;
 
   const now = new Date().toISOString();
+  const folderName = uniquifyName(
+    state.synced,
+    parentPick.folderId,
+    'folder',
+    `${resource} (CRUD)`,
+  );
   const folder: Folder = {
     id: generateId(),
-    name: `${resource} (CRUD)`,
+    name: folderName,
     parentId: parentPick.folderId,
   };
   const requests: ApiRequest[] = template.build(resource.trim()).map((built) => ({

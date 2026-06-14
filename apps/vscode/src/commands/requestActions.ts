@@ -3,6 +3,7 @@ import { generateId } from '@apicircle/shared';
 import type { Request as ApiRequest } from '@apicircle/shared';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 import { ApicircleFsProvider } from '../fs/apicircleFsProvider';
+import { uniquifyName } from '../util/uniquifyName';
 
 // =============================================================================
 // Per-request TreeView context-menu actions:
@@ -71,10 +72,11 @@ export async function duplicateRequestCommand(
   }
 
   const now = new Date().toISOString();
+  const copyName = uniquifyName(state.synced, source.folderId, 'request', `${source.name} (copy)`);
   const copy: ApiRequest = {
     ...source,
     id: generateId(),
-    name: `${source.name} (copy)`,
+    name: copyName,
     createdAt: now,
     updatedAt: now,
   };

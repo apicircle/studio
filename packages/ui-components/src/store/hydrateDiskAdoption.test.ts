@@ -61,7 +61,6 @@ function makeFakeMirror(): DiskMirror & {
     isAvailable: () => true,
     init: vi.fn().mockResolvedValue({
       registry: { schemaVersion: 1, activeWorkspaceId: null, workspaces: [] },
-      migrated: false,
     }),
     readRegistry: vi.fn().mockResolvedValue({
       schemaVersion: 1,

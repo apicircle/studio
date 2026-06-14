@@ -99,6 +99,23 @@ describe('applyMutation - request', () => {
     expect(changedIds).toEqual(['r1']);
   });
 
+  it('does not add a request with a folderId to tree.children', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [{ kind: 'folder', id: 'f1' }] },
+          requests: {},
+          folders: { f1: makeFolder('f1') },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const req = makeRequest('r1', { folderId: 'f1' });
+    const { next } = applyMutation(state, { kind: 'request.create', request: req }, { now: T1 });
+    expect(next.synced.collections.requests['r1']).toEqual(req);
+    expect(next.synced.collections.tree.children).toEqual([{ kind: 'folder', id: 'f1' }]);
+  });
+
   it('skips create when the id already exists', () => {
     const state = {
       synced: makeSynced({
@@ -222,6 +239,23 @@ describe('applyMutation - folder', () => {
     expect(out.next.synced.collections.folders['f1']).toEqual(folder);
     expect(out.next.synced.collections.tree.children).toEqual([{ kind: 'folder', id: 'f1' }]);
     expect(out.next.synced.meta.updatedAt).toBe(T1);
+  });
+
+  it('does not add a subfolder to tree.children', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [{ kind: 'folder', id: 'f1' }] },
+          requests: {},
+          folders: { f1: makeFolder('f1') },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const subfolder = makeFolder('f2', 'f1', 'Sub');
+    const out = applyMutation(state, { kind: 'folder.create', folder: subfolder }, { now: T1 });
+    expect(out.next.synced.collections.folders['f2']).toEqual(subfolder);
+    expect(out.next.synced.collections.tree.children).toEqual([{ kind: 'folder', id: 'f1' }]);
   });
 
   it('skips folder.create when the id already exists', () => {
@@ -354,6 +388,151 @@ describe('applyMutation - folder', () => {
     // Trying to move a under c (which is a's grandchild) would cycle.
     const out = applyMutation(state, { kind: 'folder.move', id: 'a', newParentId: 'c' });
     expect(out.next).toBe(state);
+  });
+
+  it('updates a folder name', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [] },
+          requests: {},
+          folders: { f1: makeFolder('f1', null, 'Old Name') },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(
+      state,
+      { kind: 'folder.update', id: 'f1', patch: { name: 'New Name' } },
+      { now: T1 },
+    );
+    expect(out.next.synced.collections.folders['f1'].name).toBe('New Name');
+    expect(out.next.synced.collections.folders['f1'].auth).toBeUndefined();
+    expect(out.next.synced.meta.updatedAt).toBe(T1);
+    expect(out.changedIds).toEqual(['f1']);
+  });
+
+  it('sets folder auth via folder.update', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [] },
+          requests: {},
+          folders: { f1: makeFolder('f1') },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(
+      state,
+      {
+        kind: 'folder.update',
+        id: 'f1',
+        patch: { auth: { type: 'bearer', token: 'abc' } },
+      },
+      { now: T1 },
+    );
+    expect(out.next.synced.collections.folders['f1'].auth).toEqual({
+      type: 'bearer',
+      token: 'abc',
+    });
+    expect(out.next.synced.collections.folders['f1'].name).toBe('f1');
+  });
+
+  it('clears folder auth when patch.auth is undefined', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [] },
+          requests: {},
+          folders: {
+            f1: { ...makeFolder('f1'), auth: { type: 'bearer', token: 'old' } } as Folder,
+          },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(state, {
+      kind: 'folder.update',
+      id: 'f1',
+      patch: { auth: undefined },
+    });
+    expect(out.next.synced.collections.folders['f1']).not.toHaveProperty('auth');
+  });
+
+  it('folder.update is a no-op for a missing folder', () => {
+    const state = { synced: makeSynced(), local: makeLocal() };
+    const out = applyMutation(state, {
+      kind: 'folder.update',
+      id: 'missing',
+      patch: { name: 'whatever' },
+    });
+    expect(out.next).toBe(state);
+    expect(out.changedIds).toEqual([]);
+  });
+
+  it('folder.update is a no-op with an empty patch', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [] },
+          requests: {},
+          folders: { f1: makeFolder('f1') },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(state, { kind: 'folder.update', id: 'f1', patch: {} });
+    expect(out.next).toBe(state);
+    expect(out.changedIds).toEqual([]);
+  });
+
+  it('folder.update rejects a duplicate sibling name (case-insensitive)', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [] },
+          requests: {},
+          folders: {
+            a: makeFolder('a', null, 'Auth'),
+            b: makeFolder('b', null, 'Other'),
+          },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(state, {
+      kind: 'folder.update',
+      id: 'b',
+      patch: { name: 'auth' },
+    });
+    expect(out.next).toBe(state);
+    expect(out.changedIds).toEqual([]);
+  });
+
+  it('folder.update allows the same name under a different parent', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [] },
+          requests: {},
+          folders: {
+            parent: makeFolder('parent', null, 'Parent'),
+            a: makeFolder('a', null, 'Shared'),
+            b: makeFolder('b', 'parent', 'Other'),
+          },
+        },
+      }),
+      local: makeLocal(),
+    };
+    // Renaming `b` to "Shared" is fine because the existing "Shared" lives
+    // under root, not under `parent`.
+    const out = applyMutation(state, {
+      kind: 'folder.update',
+      id: 'b',
+      patch: { name: 'Shared' },
+    });
+    expect(out.next.synced.collections.folders['b'].name).toBe('Shared');
   });
 });
 
@@ -1218,6 +1397,45 @@ describe('applyMutation - folder.import_apicircle', () => {
     expect(out.next.synced.globalAssets.schemas['sch-1']).toMatchObject({ name: 'X' });
     expect(out.next.synced.meta.updatedAt).toBe(T1);
     expect(out.changedIds).toEqual(['root-new', 'sub-1', 'imp-r-1']);
+  });
+
+  it('preserves folder-level auth on the imported root + subfolders', () => {
+    const state = { synced: makeSynced(), local: makeLocal() };
+    const parsed = {
+      rootFolder: {
+        id: 'root-auth',
+        name: 'Authenticated',
+        auth: { type: 'bearer' as const, token: 'TOK' },
+      },
+      subfolders: [
+        {
+          id: 'sub-auth',
+          name: 'Child',
+          parentId: 'root-auth',
+          auth: { type: 'api-key' as const, key: 'X-K', value: 'V', addTo: 'header' as const },
+        } as Folder,
+        // A subfolder without auth shouldn't get a phantom auth field on import.
+        { id: 'sub-plain', name: 'Plain', parentId: 'root-auth' } as Folder,
+      ],
+      requests: [],
+      dependencies: { schemas: [], graphql: [], files: [] },
+      sourceFolderName: 'Authenticated',
+      warnings: [],
+    };
+    const out = applyMutation(
+      state,
+      { kind: 'folder.import_apicircle', parsed, parentFolderId: null },
+      { now: T1 },
+    );
+    const folders = out.next.synced.collections.folders;
+    expect(folders['root-auth'].auth).toEqual({ type: 'bearer', token: 'TOK' });
+    expect(folders['sub-auth'].auth).toEqual({
+      type: 'api-key',
+      key: 'X-K',
+      value: 'V',
+      addTo: 'header',
+    });
+    expect(folders['sub-plain'].auth).toBeUndefined();
   });
 
   it('uniquifies the imported root folder name against existing siblings', () => {

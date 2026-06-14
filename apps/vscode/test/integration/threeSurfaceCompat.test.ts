@@ -133,7 +133,7 @@ describe('three-surface compatibility (Phase 1)', () => {
     // ---- Desktop layout ----
     const desktopDir = path.join(tmp, 'desktop');
     fs.mkdirSync(desktopDir, { recursive: true });
-    fs.writeFileSync(path.join(desktopDir, 'workspace.synced.json'), JSON.stringify(synced));
+    fs.writeFileSync(path.join(desktopDir, 'workspace.json'), JSON.stringify(synced));
     fs.writeFileSync(path.join(desktopDir, 'workspace.local.json'), JSON.stringify(local));
     const desktopProvider = new FileBackedWorkspaceProvider(desktopDir);
 
@@ -170,7 +170,7 @@ describe('three-surface compatibility (Phase 1)', () => {
 
     const desktopDir = path.join(tmp, 'desktop');
     fs.mkdirSync(desktopDir, { recursive: true });
-    fs.writeFileSync(path.join(desktopDir, 'workspace.synced.json'), JSON.stringify(synced));
+    fs.writeFileSync(path.join(desktopDir, 'workspace.json'), JSON.stringify(synced));
     fs.writeFileSync(path.join(desktopDir, 'workspace.local.json'), JSON.stringify(local));
     const desktopProvider = new FileBackedWorkspaceProvider(desktopDir);
 
@@ -228,7 +228,7 @@ describe('three-surface compatibility (Phase 1)', () => {
 
     const desktopDir = path.join(tmp, 'desktop');
     fs.mkdirSync(desktopDir, { recursive: true });
-    fs.writeFileSync(path.join(desktopDir, 'workspace.synced.json'), JSON.stringify(synced));
+    fs.writeFileSync(path.join(desktopDir, 'workspace.json'), JSON.stringify(synced));
     fs.writeFileSync(path.join(desktopDir, 'workspace.local.json'), JSON.stringify(local));
     const desktopProvider = new FileBackedWorkspaceProvider(desktopDir);
 
@@ -260,7 +260,7 @@ describe('three-surface compatibility (Phase 1)', () => {
 
     const desktopDir = path.join(tmp, 'desktop');
     fs.mkdirSync(desktopDir, { recursive: true });
-    fs.writeFileSync(path.join(desktopDir, 'workspace.synced.json'), JSON.stringify(synced));
+    fs.writeFileSync(path.join(desktopDir, 'workspace.json'), JSON.stringify(synced));
     fs.writeFileSync(path.join(desktopDir, 'workspace.local.json'), JSON.stringify(local));
     const desktopProvider = new FileBackedWorkspaceProvider(desktopDir);
 
@@ -297,7 +297,7 @@ describe('three-surface compatibility (Phase 1)', () => {
 
     const desktopDir = path.join(tmp, 'desktop');
     fs.mkdirSync(desktopDir, { recursive: true });
-    fs.writeFileSync(path.join(desktopDir, 'workspace.synced.json'), JSON.stringify(synced));
+    fs.writeFileSync(path.join(desktopDir, 'workspace.json'), JSON.stringify(synced));
     fs.writeFileSync(path.join(desktopDir, 'workspace.local.json'), JSON.stringify(local));
     const desktopProvider = new FileBackedWorkspaceProvider(desktopDir);
 
@@ -348,7 +348,7 @@ describe('three-surface compatibility (Phase 1)', () => {
 
     const desktopDir = path.join(tmp, 'desktop');
     fs.mkdirSync(desktopDir, { recursive: true });
-    fs.writeFileSync(path.join(desktopDir, 'workspace.synced.json'), JSON.stringify(synced));
+    fs.writeFileSync(path.join(desktopDir, 'workspace.json'), JSON.stringify(synced));
     fs.writeFileSync(path.join(desktopDir, 'workspace.local.json'), JSON.stringify(local));
     const desktopProvider = new FileBackedWorkspaceProvider(desktopDir);
 
@@ -390,7 +390,7 @@ describe('three-surface compatibility (Phase 1)', () => {
 
     const desktopDir = path.join(tmp, 'desktop');
     fs.mkdirSync(desktopDir, { recursive: true });
-    fs.writeFileSync(path.join(desktopDir, 'workspace.synced.json'), JSON.stringify(synced));
+    fs.writeFileSync(path.join(desktopDir, 'workspace.json'), JSON.stringify(synced));
     fs.writeFileSync(path.join(desktopDir, 'workspace.local.json'), JSON.stringify(local));
     const desktopProvider = new FileBackedWorkspaceProvider(desktopDir);
 
@@ -433,7 +433,7 @@ describe('three-surface compatibility (Phase 1)', () => {
 
     const desktopDir = path.join(tmp, 'desktop');
     fs.mkdirSync(desktopDir, { recursive: true });
-    fs.writeFileSync(path.join(desktopDir, 'workspace.synced.json'), JSON.stringify(synced));
+    fs.writeFileSync(path.join(desktopDir, 'workspace.json'), JSON.stringify(synced));
     fs.writeFileSync(path.join(desktopDir, 'workspace.local.json'), JSON.stringify(local));
     const desktopProvider = new FileBackedWorkspaceProvider(desktopDir);
 
@@ -498,7 +498,7 @@ describe('three-surface compatibility (Phase 1)', () => {
 
     const desktopDir = path.join(tmp, 'desktop');
     fs.mkdirSync(desktopDir, { recursive: true });
-    fs.writeFileSync(path.join(desktopDir, 'workspace.synced.json'), JSON.stringify(synced));
+    fs.writeFileSync(path.join(desktopDir, 'workspace.json'), JSON.stringify(synced));
     fs.writeFileSync(path.join(desktopDir, 'workspace.local.json'), JSON.stringify(local));
     const desktopProvider = new FileBackedWorkspaceProvider(desktopDir);
 
@@ -529,7 +529,7 @@ describe('three-surface compatibility (Phase 1)', () => {
 
     const desktopDir = path.join(tmp, 'desktop');
     fs.mkdirSync(desktopDir, { recursive: true });
-    fs.writeFileSync(path.join(desktopDir, 'workspace.synced.json'), JSON.stringify(synced));
+    fs.writeFileSync(path.join(desktopDir, 'workspace.json'), JSON.stringify(synced));
     fs.writeFileSync(path.join(desktopDir, 'workspace.local.json'), JSON.stringify(local));
     const desktopProvider = new FileBackedWorkspaceProvider(desktopDir);
 
@@ -570,7 +570,7 @@ describe('three-surface compatibility (Phase 1)', () => {
 
     const desktopDir = path.join(tmp, 'desktop');
     fs.mkdirSync(desktopDir, { recursive: true });
-    fs.writeFileSync(path.join(desktopDir, 'workspace.synced.json'), JSON.stringify(synced));
+    fs.writeFileSync(path.join(desktopDir, 'workspace.json'), JSON.stringify(synced));
     fs.writeFileSync(path.join(desktopDir, 'workspace.local.json'), JSON.stringify(local));
     const desktopProvider = new FileBackedWorkspaceProvider(desktopDir);
 
@@ -620,7 +620,7 @@ describe('three-surface compatibility (Phase 1)', () => {
 
     const desktopDir = path.join(tmp, 'desktop');
     fs.mkdirSync(desktopDir, { recursive: true });
-    fs.writeFileSync(path.join(desktopDir, 'workspace.synced.json'), JSON.stringify(synced));
+    fs.writeFileSync(path.join(desktopDir, 'workspace.json'), JSON.stringify(synced));
     fs.writeFileSync(path.join(desktopDir, 'workspace.local.json'), JSON.stringify(local));
     const desktopProvider = new FileBackedWorkspaceProvider(desktopDir);
 

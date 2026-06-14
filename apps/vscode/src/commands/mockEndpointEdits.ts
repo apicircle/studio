@@ -11,6 +11,7 @@ import type {
 } from '@apicircle/shared';
 import { makeDefaultMockResponseBody, MAX_RESPONSE_MULTIPLIERS } from '@apicircle/shared';
 import { parseEndpointFromYaml, EndpointYamlParseError } from '../fs/endpointYaml';
+import { uriEntityKind } from '../fs/uriKind';
 import {
   VALIDATION_KINDS,
   applyValidationKindChange,
@@ -47,9 +48,9 @@ async function ensureEndpointDocument(uri?: vscode.Uri): Promise<vscode.TextDocu
     await vscode.window.showWarningMessage('No endpoint YAML is active.');
     return null;
   }
-  if (targetUri.scheme !== 'apicircle' || !targetUri.path.endsWith('.endpoint.yaml')) {
+  if (targetUri.scheme !== 'apicircle' || uriEntityKind(targetUri) !== 'endpoint') {
     await vscode.window.showWarningMessage(
-      'This command only runs against an endpoint YAML (`*.endpoint.yaml`).',
+      'This command only runs against an APICircle endpoint YAML.',
     );
     return null;
   }

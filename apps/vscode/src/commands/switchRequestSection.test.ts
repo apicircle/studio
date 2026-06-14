@@ -137,3 +137,119 @@ describe('auth type catalogue', () => {
     }
   });
 });
+
+import { beforeEach, vi } from 'vitest';
+import type { Mock } from 'vitest';
+import { Uri, window, workspace } from '../../test/mocks/vscode';
+import { switchRequestBodyTypeCommand, switchRequestAuthTypeCommand } from './switchRequestSection';
+
+const reqUri = Uri.parse('apicircle://w/requests/r1.yaml');
+
+function makeWriteDoc(lines: string[]) {
+  return {
+    uri: reqUri,
+    lineCount: lines.length,
+    getText: () => lines.join('\n'),
+    lineAt: (n: number) => ({
+      text: lines[n] ?? '',
+      range: {
+        start: { line: n, character: 0 },
+        end: { line: n, character: (lines[n] ?? '').length },
+      },
+    }),
+  } as unknown;
+}
+
+function arrangeWrite(lines: string[]): void {
+  (workspace.openTextDocument as Mock).mockResolvedValue(makeWriteDoc(lines));
+  (workspace.applyEdit as Mock).mockResolvedValue(true);
+  (window.showTextDocument as Mock).mockResolvedValue({
+    selection: undefined,
+    revealRange: vi.fn(),
+  });
+}
+
+function resetWrite(): void {
+  (window.showQuickPick as Mock).mockReset();
+  (window.showWarningMessage as Mock).mockReset();
+  (window.showInformationMessage as Mock).mockReset();
+  (window.showErrorMessage as Mock).mockReset();
+  (window.showTextDocument as Mock).mockReset();
+  (workspace.openTextDocument as Mock).mockReset();
+  (workspace.applyEdit as Mock).mockReset();
+  window.activeTextEditor = undefined as unknown;
+}
+
+describe('switchRequestBodyTypeCommand', () => {
+  beforeEach(resetWrite);
+
+  it('warns when no URI is in focus', async () => {
+    await switchRequestBodyTypeCommand();
+    expect(window.showWarningMessage).toHaveBeenCalled();
+  });
+
+  it('warns on a non-apicircle URI', async () => {
+    await switchRequestBodyTypeCommand(Uri.parse('file:///x.yaml'));
+    expect(window.showWarningMessage).toHaveBeenCalled();
+  });
+
+  it('exits silently when picker is cancelled', async () => {
+    arrangeWrite(['body:', '  type: json', "  content: ''"]);
+    (window.showQuickPick as Mock).mockResolvedValueOnce(undefined);
+    await switchRequestBodyTypeCommand(reqUri);
+    expect(workspace.applyEdit).not.toHaveBeenCalled();
+  });
+
+  it('rewrites the body section when a new type is picked', async () => {
+    const lines = ['name: r', 'body:', '  type: json', "  content: '{}'"];
+    arrangeWrite(lines);
+    (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'text' });
+    await switchRequestBodyTypeCommand(reqUri);
+    expect(window.showQuickPick).toHaveBeenCalled();
+  });
+
+  it('appends a body block when none exists', async () => {
+    const lines = ['name: r', 'method: GET', 'url: https://x'];
+    arrangeWrite(lines);
+    (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'json' });
+    await switchRequestBodyTypeCommand(reqUri);
+    expect(window.showQuickPick).toHaveBeenCalled();
+  });
+});
+
+describe('switchRequestAuthTypeCommand', () => {
+  beforeEach(resetWrite);
+
+  it('warns when no URI is in focus', async () => {
+    await switchRequestAuthTypeCommand();
+    expect(window.showWarningMessage).toHaveBeenCalled();
+  });
+
+  it('warns on a non-apicircle URI', async () => {
+    await switchRequestAuthTypeCommand(Uri.parse('file:///x.yaml'));
+    expect(window.showWarningMessage).toHaveBeenCalled();
+  });
+
+  it('exits silently when picker is cancelled', async () => {
+    arrangeWrite(['auth:', '  type: bearer', "  token: 'x'"]);
+    (window.showQuickPick as Mock).mockResolvedValueOnce(undefined);
+    await switchRequestAuthTypeCommand(reqUri);
+    expect(workspace.applyEdit).not.toHaveBeenCalled();
+  });
+
+  it('rewrites the auth section when a new type is picked', async () => {
+    const lines = ['name: r', 'auth:', '  type: bearer', "  token: 'x'"];
+    arrangeWrite(lines);
+    (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'api-key' });
+    await switchRequestAuthTypeCommand(reqUri);
+    expect(window.showQuickPick).toHaveBeenCalled();
+  });
+
+  it('appends an auth block when none exists', async () => {
+    const lines = ['name: r', 'method: GET', 'url: https://x'];
+    arrangeWrite(lines);
+    (window.showQuickPick as Mock).mockResolvedValueOnce({ value: 'bearer' });
+    await switchRequestAuthTypeCommand(reqUri);
+    expect(window.showQuickPick).toHaveBeenCalled();
+  });
+});

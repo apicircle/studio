@@ -12,13 +12,16 @@ export function formatHelp(): string {
 Starts the API Circle MCP stdio server for AI clients.
 
 Options:
-  --workspace <dir>  Registry root or single-workspace directory.
-                     Defaults to APICIRCLE_WORKSPACE, then the current directory.
+  --workspace <dir>  Workspace directory. Auto-detected layout:
+                       • registry.json   → multi-workspace registry root
+                       • workspace.json  → single workspace / Git-backed dir
+                     Defaults to APICIRCLE_WORKSPACE env var, then cwd.
   -v, -V, --version  Print the version number.
   -h, --help         Show help.
 
 Examples:
   apicircle-mcp
-  apicircle-mcp --workspace ./api-circle-workspaces
+  apicircle-mcp --workspace ~/.apicircle
+  apicircle-mcp --workspace ./my-repo/.apicircle
 `;
 }

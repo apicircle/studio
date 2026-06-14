@@ -88,6 +88,7 @@ The Activity Bar icon opens a view container with eight views:
 
 | View                | Phase wired                 | Contents                                                                                                                                                                                                                                                                   |
 | ------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Workspace**       | Post-launch                 | Active workspace name, source, path, request/folder/env/mock/plan counts. Switch Workspace action when multiple workspaces are discovered.                                                                                                                                 |
 | **Editor**          | Phase 1                     | Folder / request tree from `synced.collections.tree`.                                                                                                                                                                                                                      |
 | **Environment**     | Phase 2                     | Environments + variables + active env marker.                                                                                                                                                                                                                              |
 | **Execution**       | Phase 2                     | Plans + inline `▶ Run` actions.                                                                                                                                                                                                                                            |
@@ -207,8 +208,8 @@ in the project root. The TL;DR:
 
 Phase 2 round 1 + 26 gaps (13 closed in Round 1 follow-up, 13 closed
 in Round 2 adversarial re-audit) shipped these surfaces. The sidebar
-now hosts **eight** TreeViews (Editor, Environment, Execution, Mock,
-History, Snapshots, MCP, Link Workspaces).
+now hosts **nine** TreeViews (Workspace, Editor, Environment, Execution,
+Mock, History, Snapshots, MCP, Link Workspaces).
 
 ### Send → eager response tab (post-launch round 7)
 
@@ -236,15 +237,17 @@ human-readable name in the path so VS Code's tab label is readable, with
 the stable identifier riding in the `?id=` query so renames don't break
 identity:
 
-| Entity      | URI                                                                                                  |
-| ----------- | ---------------------------------------------------------------------------------------------------- |
-| Request     | `apicircle://<wsAuth>/requests/<folderSlug…>/<nameSlug>.req.yaml?id=<requestId>`                     |
-| Plan        | `apicircle://<wsAuth>/plans/<nameSlug>.plan.yaml?id=<planId>`                                        |
-| Mock        | `apicircle://<wsAuth>/mocks/<nameSlug>.mock.yaml?id=<mockId>`                                        |
-| Endpoint    | `apicircle://<wsAuth>/mocks/<mockSlug>/<endpointSlug>.endpoint.yaml?mockId=<mockId>&id=<endpointId>` |
-| Response    | `apicircle://<wsAuth>/responses/<nameSlug>.run.yaml?runId=<runId>`                                   |
-| History run | `apicircle://<wsAuth>/history/<labelSlug>.run.yaml?runId=<runId>`                                    |
-| Environment | `apicircle://<wsAuth>/environments/<envName>.env.yaml`                                               |
+| Entity        | URI                                                                                                       |
+| ------------- | --------------------------------------------------------------------------------------------------------- |
+| Request       | `apicircle://<wsAuth>/requests/<folderSlug…>/<nameSlug>.req.yaml?id=<requestId>`                          |
+| Folder        | `apicircle://<wsAuth>/folders/<folderSlug…>/<folderSlug>.folder.yaml?id=<folderId>`                       |
+| Linked Folder | `apicircle://<wsAuth>/linked/<linkSlug>/<folderSlug>.folder.yaml?link=<linkId>&id=<folderId>` (read-only) |
+| Plan          | `apicircle://<wsAuth>/plans/<nameSlug>.plan.yaml?id=<planId>`                                             |
+| Mock          | `apicircle://<wsAuth>/mocks/<nameSlug>.mock.yaml?id=<mockId>`                                             |
+| Endpoint      | `apicircle://<wsAuth>/mocks/<mockSlug>/<endpointSlug>.endpoint.yaml?mockId=<mockId>&id=<endpointId>`      |
+| Response      | `apicircle://<wsAuth>/responses/<nameSlug>.run.yaml?runId=<runId>`                                        |
+| History run   | `apicircle://<wsAuth>/history/<labelSlug>.run.yaml?runId=<runId>`                                         |
+| Environment   | `apicircle://<wsAuth>/environments/<envName>.env.yaml`                                                    |
 
 Properties:
 
@@ -621,7 +624,7 @@ config path).
 
 ## 13. Phase 6 — Copilot Chat MCP Install
 
-Phase 6 ships one-click install of the APICircle MCP entry into the
+Phase 6 ships one-click install of the API Circle MCP entry into the
 workspace's `.vscode/mcp.json`. VS Code 1.86+ Copilot Chat reads this
 file automatically — a single click in the MCP view's GitHub Copilot
 row connects the workspace to Copilot Chat (and any other MCP client
@@ -1531,30 +1534,59 @@ the legacy path parse as a fallback.
 **`*.endpoint.yaml` additions** (all in `endpointCodeLens.ts` +
 `mockFieldEdits.ts` / `mockRequestSchemaEdits.ts`):
 
-| Surface              | What changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| clause `value:`      | now routes to `setMockClauseValueField` — offers the header value catalogue for `scope: header`; the lens is hidden for `present` / `absent` ops                                                                                                                                                                                                                                                                                                                                    |
-| rule `✚ Add header`  | anchored on the rule's `response.headers:` block (was the `- id:` row)                                                                                                                                                                                                                                                                                                                                                                                                              |
-| rule `when`          | capped at `MAX_RESPONSE_RULE_CONDITIONS = 1` — `✚ Add condition` hidden once a clause exists. A rule with **zero** `when` clauses is a **red Error that blocks the save** (`parseEndpointFromYaml` rejects it): an unconditional rule shadows the default response on every request                                                                                                                                                                                                 |
-| header `- key:` rows | gain a `✓ Enable` / `⊘ Disable` toggle (`toggleMockHeaderEnabled`)                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `requestSchema`      | each `✚ Path/Query/Header/Cookie param` lens anchors **on its own subsection line** (`pathParams:` / `queryParams:` / `headers:` / `cookies:`), and `✚ Body example` on `body:` (or all on the `requestSchema:` header when absent / `✚ Add request schema` when the block is missing). Per-param field editors are `◆ Name / ◆ Type / ◆ Example` — the boolean `required:` row has **no** lens (edited directly in YAML). Path params prefill from the pattern's `{slot}` segments |
-| JSON body `content:` | `⟳ Format JSON` reflows a stringified body (`formatJson.ts`)                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Surface              | What changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| clause `value:`      | now routes to `setMockClauseValueField` — offers the header value catalogue for `scope: header`; the lens is hidden for `present` / `absent` ops                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| rule `✚ Add header`  | anchored on the rule's `response.headers:` block (was the `- id:` row)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| rule `when`          | capped at `MAX_RESPONSE_RULE_CONDITIONS = 1` — `✚ Add condition` hidden once a clause exists. A rule with **zero** `when` clauses is a **red Error that blocks the save** (`parseEndpointFromYaml` rejects it): an unconditional rule shadows the default response on every request                                                                                                                                                                                                                                                                                                                          |
+| header `- key:` rows | gain a `✓ Enable` / `⊘ Disable` toggle (`toggleMockHeaderEnabled`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `requestSchema`      | each `✚ Path/Query/Header/Cookie param` lens anchors **on its own subsection line** (`pathParams:` / `queryParams:` / `headers:` / `cookies:`). The `✚ Body example` lens sits on the `requestSchema:` header itself (not on the `body:` subsection) and is hidden once a body block exists. Per-param field editors are `◆ Name / ◆ Type / ◆ Example` — the boolean `required:` row has **no** lens (edited directly in YAML). Inside the `body:` subtree the ◆ Example / ◆ Description lenses are also suppressed (documentation-only free text). Path params prefill from the pattern's `{slot}` segments |
+| JSON body `content:` | `⟳ Format JSON` reflows a stringified body (`formatJson.ts`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 **`*.req.yaml` — collection-request parity** (`requestFieldEdits.ts` +
 `requestCodeLens.ts`): `◆ Method`, header `◆ Key` / `◆ Value` (catalogue-aware),
-query / cookie key + value, path-param values, assertion kind/op, and extraction
-source — the request-side mirror of the mock field editors. The `url:` row
-has **no** `◆` field editor — the URL is edited inline, and on save
-`parseRequestFromYaml` syncs any `?key=val…` typed in the URL into the
-structured `query:` block (URL wins for enabled rows; disabled rows pass
+query / cookie key, path-param values, assertion kind/op/target/expected,
+and extraction source — the request-side mirror of the mock field editors.
+The `url:` row has **no** `◆` field editor — the URL is edited inline, and
+on save `parseRequestFromYaml` syncs any `?key=val…` typed in the URL into
+the structured `query:` block (URL wins for enabled rows; disabled rows pass
 through; new URL keys append in order; a trailing `#fragment` is dropped) and
 any `{name}` / `:name` placeholders in the path into `pathParams:` (existing
 values preserved; new placeholders get an empty-string slot; stale keys
-aren't auto-pruned). **Auth** scalar fields have **no** `◆` field editor
-(edited directly in YAML); only `⟳ Format JSON` on the JSON auth fields
-(`payload` / `jwtHeaders`) is kept. **Form-data** `✚ Add text row` / `✚ Add
-file row` anchor on the `formRows:` line inside the body block; switching a
-row kind is per-row only (`↻ Switch to text/file`).
+aren't auto-pruned). The `query:` value row has **no** ◆ Value lens
+either — typing `?key=val` in `url:` round-trips through the YAML parser
+anyway. Cookies keep their `◆ Value`. Each `query:` / `cookies:` row gains
+a `✓ Enable` / `⊘ Disable` toggle on the `- key:` row.
+
+**Auth ◆ field editors** — most auth scalars are edited inline in the YAML;
+the exceptions are the enum-valued fields the user shouldn't have to
+memorize:
+
+- Six OAuth2 grants: `◆ Token Type` (Bearer / MAC / DPoP / custom).
+- Client Credentials: `◆ Client Auth Method` (header / body).
+- PKCE: `◆ Code Challenge Method` (S256 / plain).
+- Hawk: `◆ Algorithm` (sha256 / sha1).
+- JWT Bearer: `◆ Algorithm` (HS / RS / PS / ES + EdDSA).
+- `⟳ Format JSON` on `payload:` / `jwtHeaders:` (JWT Bearer only).
+
+**Send lens** is rendered as `▶▶ SEND REQUEST  (Ctrl/Cmd+Enter)` so the
+primary CTA stands out from the lighter `✚ Add section…` /
+`⤵ New from template…` siblings and the keyboard shortcut is discoverable.
+
+**Assertions** — `✚ Add assertion` no longer prompts; it drops a prefilled
+`kind: status / op: equals / expected: '200'` block (mirrors the mock
+`🛡 Add validation rule` UX) and the user refines via the per-field lenses.
+The `◆ Target` lens is gated on `kind`: emitted only for `header` / `json-path`
+(status / duration have no target slot). The `◆ Expected` lens dispatches
+per-kind: status → curated 100–599 list, duration → numeric input,
+header → curated value catalogue based on the sibling `target:`,
+json-path → the same `pickJsonPath` extractor used by Add Extraction,
+opened against the latest response for this request and pre-resolved to
+the literal value at the path.
+
+**Form-data** `✚ Add text row` / `✚ Add file row` anchor on the `formRows:`
+line inside the body block; switching a row kind is per-row only
+(`↻ Switch to text/file`).
 
 **`APICircle: New Request`** (`newRequest.ts`) is a single **folder pick** —
 choose an existing folder, the top level, or create a new folder inline — after
@@ -1584,6 +1616,69 @@ the mock endpoint editor's Endpoint node) edits the same `requestSchema` the VS
 Code YAML does — four param tables + "Derive from path" + body-shape docs,
 routed through the existing `updateMockEndpoint` store action. See
 [`docs/mock-server.md`](mock-server.md) §"Request schema across surfaces".
+
+**Folder-wise auth.** Folders are now first-class editable entities in VS Code —
+clicking one in the Editor TreeView opens
+`apicircle://<ws>/folders/<folderSlug…>/<folderSlug>.folder.yaml?id=<folderId>`
+in a tab with the breadcrumb in the tooltip. The projection (`folderYaml.ts`)
+exposes two fields:
+
+- `name` — colliding sibling names under the same parent are rejected on save
+  (the reducer mirrors the store's `isNameAvailableInFolder` check).
+- `auth` — optional `RequestAuth` block. Any descendant request whose
+  `auth.type === 'inherit'` resolves to the first ancestor folder that sets an
+  explicit (non-`inherit`, non-`none`) auth via `resolveInheritedAuth`. Omit
+  the section (or save with `auth: undefined`) to clear it and let the
+  inherit walk continue further up.
+
+Mutations route through the new `folder.update` `WorkspacePatch`; the MCP
+`folder.update` tool accepts `name` / `auth` / `clearAuth` alongside `parentId`.
+Folder rename comes free — change `name:` and Ctrl+S; the FS provider rewrites
+the tab URI to the new slug and closes the stale tab.
+
+Visibility cues:
+
+- The folder tree node's description shows `auth: <type>` when explicit auth is
+  set; the `contextValue` switches between `folder` and `folder-with-auth` so
+  the inline 🔑 **Edit Folder Auth** button only lights up where it's relevant.
+- Request YAML grows a `◆ Inherits from <Folder> (<type>)` CodeLens above the
+  `auth:` line whenever the request's auth resolves via `inherit`. Click jumps
+  to the source folder YAML. When no ancestor sets explicit auth, the lens
+  reads `◆ Inherits → none (no ancestor folder sets auth)`.
+
+Four palette commands: **APICircle: New Folder**, **APICircle: Open Folder YAML**,
+**APICircle: Edit Folder Auth** (alias for discoverability — both Open / Edit
+open the same projection), and **APICircle: New Request in Folder**. The Editor
+view title row also surfaces New Folder as an inline button so the empty-state
+flow is one-click. The folder context-menu lists New Folder / New Request in
+Folder / Open Folder YAML / Edit Folder Auth / Delete Folder. Identity (`id` /
+`parentId`) stays out of the YAML — folder moves still happen via TreeView
+drag-drop, which dispatches `folder.move`.
+
+**Read-only linked folders.** A consumer of a linked workspace can inspect each
+folder it pulled by opening the linked-folder URI (above). The projection is
+identical to a local folder YAML; saves are rejected with a clear "Linked
+folders are read-only — they project the source workspace" message. The
+inherited-auth CodeLens on linked request YAML (the
+`/linked/<linkSlug>/<…>.req.yaml` shape) follows the same walk: when a linked
+request has `auth.type: inherit`, the lens reads `◆ Inherits from <Folder>
+(<type>) [linked]` and jumps to the linked-folder URI.
+
+**CodeLens freshness.** The request CodeLens provider subscribes to both
+`bridge.onDidChangeActiveWorkspace` and the FS provider's `onDidChangeFile`
+(filtered to `.folder.yaml` changes), so a folder rename or auth edit in
+another tab re-fires the inherited-auth lens immediately — no need to touch
+the request buffer to refresh.
+
+**Save-time collision guard.** `applyMutation` no-ops a folder rename that
+would collide with a sibling under the same parent. The FS provider's
+writeFile now inspects `changedIds` after `apply` and surfaces a
+`FileSystemError.NoPermissions` ("A folder named '<name>' already exists…")
+when the rename was rejected, so the buffer can't silently appear to save.
+
+**Folder OAuth2 affordance.** A folder carrying an OAuth2 grant gets the same
+`🔑 Get token` CodeLens the request YAML emits. The token applies to every
+descendant `inherit` request, which is the whole point of folder-level auth.
 
 ## 19d. Post-launch — Link Workspaces view + release lifecycle
 

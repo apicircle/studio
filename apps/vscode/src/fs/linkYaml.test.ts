@@ -119,4 +119,73 @@ describe('parseLinkFromYaml', () => {
   it('rejects an empty name', () => {
     expect(() => parseLinkFromYaml('name: "   "\n')).toThrow(/non-empty/);
   });
+
+  it('rejects non-string description', () => {
+    expect(() => parseLinkFromYaml('name: x\ndescription: 42\n')).toThrow(/string/);
+  });
+
+  it('accepts numeric pinnedVersion (coerces to string)', () => {
+    const out = parseLinkFromYaml('name: x\npinnedVersion: 2\n');
+    expect(out.patch.pinnedVersion).toBe('2');
+  });
+
+  it('rejects non-scalar pinnedVersion', () => {
+    expect(() => parseLinkFromYaml('name: x\npinnedVersion:\n  - a\n')).toThrow(/pinnedVersion/);
+  });
+
+  it('rejects non-list requiredSecretKeyIds', () => {
+    expect(() => parseLinkFromYaml('name: x\nrequiredSecretKeyIds: k1\n')).toThrow(
+      /must be a list/,
+    );
+  });
+
+  it('rejects non-string entries in requiredSecretKeyIds', () => {
+    expect(() => parseLinkFromYaml('name: x\nrequiredSecretKeyIds:\n  - 42\n')).toThrow(
+      /must be strings/,
+    );
+  });
+
+  it('rejects non-mapping marketplace', () => {
+    expect(() => parseLinkFromYaml('name: x\nmarketplace: "string"\n')).toThrow(
+      /must be a mapping/,
+    );
+  });
+
+  it('rejects unknown marketplace fields', () => {
+    expect(() => parseLinkFromYaml('name: x\nmarketplace:\n  listedAs: y\n  bogus: z\n')).toThrow(
+      /Unknown marketplace field/,
+    );
+  });
+
+  it('rejects non-list marketplace.tags', () => {
+    expect(() =>
+      parseLinkFromYaml('name: x\nmarketplace:\n  listedAs: y\n  tags: notalist\n'),
+    ).toThrow(/marketplace.*tags.*must be a list/);
+  });
+
+  it('filters non-string marketplace tags', () => {
+    const out = parseLinkFromYaml(
+      'name: x\nmarketplace:\n  listedAs: y\n  tags:\n    - good\n    - 42\n  summary: s\n',
+    );
+    expect(out.patch.marketplace?.tags).toEqual(['good']);
+  });
+
+  it('defaults marketplace listedAs/summary to empty string when missing', () => {
+    const out = parseLinkFromYaml('name: x\nmarketplace:\n  tags: []\n');
+    expect(out.patch.marketplace?.listedAs).toBe('');
+    expect(out.patch.marketplace?.summary).toBe('');
+  });
+
+  it('throws LinkYamlParseError for non-YAML input', () => {
+    expect(() => parseLinkFromYaml(':: !! bad')).toThrow(LinkYamlParseError);
+  });
+
+  it('throws LinkYamlParseError for array root', () => {
+    expect(() => parseLinkFromYaml('- a\n- b\n')).toThrow(LinkYamlParseError);
+  });
+
+  it('accepts description: null as no-op (undefined patch)', () => {
+    const out = parseLinkFromYaml('name: x\ndescription: null\n');
+    expect(out.patch.description).toBeUndefined();
+  });
 });

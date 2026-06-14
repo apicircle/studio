@@ -105,6 +105,7 @@ describe('newRequestCommand', () => {
       workspaceJsonPath: path.join(apicircleDir, 'workspace.json'),
       workspaceFolder: { uri: Uri.file(tmp), name: 'test', index: 0 } as never,
       label: 'test',
+      source: 'git-folder',
     });
     bridge.setActive(apicircleDir);
   }

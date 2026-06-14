@@ -14,7 +14,7 @@ function makeDoc(uri: unknown, text: string): vscode.TextDocument {
 }
 
 const EP = (text: string) =>
-  computeDiagnostics(makeDoc(Uri.parse('apicircle://x/mocks/m/ep.endpoint.yaml'), text));
+  computeDiagnostics(makeDoc(Uri.parse('apicircle://x/mocks/m/ep.yaml'), text));
 
 // The mock's DiagnosticSeverity enum is a distinct type from the one the
 // provider's return type references, so compare via the numeric value.
@@ -74,5 +74,36 @@ describe('computeDiagnostics', () => {
       '    content: ""',
     ].join('\n');
     expect(EP(text)).toEqual([]);
+  });
+
+  describe('folder YAML', () => {
+    const FY = (text: string) =>
+      computeDiagnostics(makeDoc(Uri.parse('apicircle://x/folders/auth.yaml?id=fA'), text));
+
+    it('emits no diagnostics for a valid folder', () => {
+      expect(FY('name: API v2\nauth:\n  type: bearer\n  token: t\n')).toEqual([]);
+    });
+
+    it('flags a missing name as a save-blocking Error', () => {
+      const diags = FY('auth:\n  type: none\n');
+      const error = diags.find((d) => sev(d) === ERROR);
+      expect(error).toBeDefined();
+      expect(error?.message).toMatch(/name/);
+      expect(error?.message).toMatch(/saving is blocked/);
+    });
+
+    it('flags an unknown top-level key (typo guard) on its row', () => {
+      const text = ['name: A', 'nam: B'].join('\n');
+      const diags = FY(text);
+      const error = diags.find((d) => sev(d) === ERROR);
+      expect(error).toBeDefined();
+      expect(error?.message).toMatch(/Unknown field/);
+      expect(error?.range.start.line).toBe(1);
+    });
+
+    it('flags a non-mapping auth section', () => {
+      const diags = FY('name: A\nauth: invalid\n');
+      expect(diags.find((d) => sev(d) === ERROR)?.message).toMatch(/mapping/);
+    });
   });
 });
