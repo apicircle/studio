@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "activeWorkspaceId": "demo-workspace-fixture",
+  "workspaces": [
+    {
+      "id": "demo-workspace-fixture",
+      "name": "Demo Workspace",
+      "createdAt": "2026-04-27T00:00:00.000Z",
+      "lastOpenedAt": "2026-04-27T00:00:00.000Z"
+    }
+  ]
+}

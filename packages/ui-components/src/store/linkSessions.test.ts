@@ -35,18 +35,43 @@ function queuedFetch(queue: RspSpec[]): ReturnType<typeof vi.fn> {
   });
 }
 
-function fileContents(json: string, sha = 'remote-sha'): RspSpec {
+/** ID used for the remote workspace in registry.json mocks. */
+const REMOTE_WS_ID = 'remote-ws';
+
+function registryContents(): RspSpec {
+  const json = JSON.stringify({
+    schemaVersion: 1,
+    activeWorkspaceId: REMOTE_WS_ID,
+    workspaces: [{ id: REMOTE_WS_ID }],
+  });
   const content = btoa(unescape(encodeURIComponent(json)));
   return {
     body: {
       type: 'file',
-      path: '.apicircle/workspace.json',
-      sha,
+      path: '.apicircle/registry.json',
+      sha: 'registry-sha',
       size: json.length,
       content,
       encoding: 'base64',
     },
   };
+}
+
+function fileContents(json: string, sha = 'remote-sha'): RspSpec[] {
+  const content = btoa(unescape(encodeURIComponent(json)));
+  return [
+    registryContents(),
+    {
+      body: {
+        type: 'file',
+        path: `.apicircle/workspace-${REMOTE_WS_ID}/workspace.json`,
+        sha,
+        size: json.length,
+        content,
+        encoding: 'base64',
+      },
+    },
+  ];
 }
 
 const REMOTE_WORKSPACE_JSON = JSON.stringify({
@@ -80,7 +105,7 @@ describe('per-link session model', () => {
 
   it('linkPrivateWorkspace defaults sessionMode=workspace and reuses the workspace session', async () => {
     await connectWorkspaceSession();
-    vi.stubGlobal('fetch', queuedFetch([fileContents(REMOTE_WORKSPACE_JSON)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(REMOTE_WORKSPACE_JSON)]));
     const link = await useWorkspaceStore.getState().linkPrivateWorkspace({
       repoFullName: 'acme/tools',
       branch: 'main',
@@ -97,7 +122,7 @@ describe('per-link session model', () => {
       'fetch',
       queuedFetch([
         { body: { login: 'acme-bot', id: 99 }, headers: { 'x-oauth-scopes': 'repo' } },
-        fileContents(REMOTE_WORKSPACE_JSON),
+        ...fileContents(REMOTE_WORKSPACE_JSON),
       ]),
     );
     const link = await useWorkspaceStore.getState().linkPrivateWorkspace({
@@ -128,7 +153,7 @@ describe('per-link session model', () => {
 
   it('addLinkSession after a workspace-mode link flips the link to dedicated', async () => {
     await connectWorkspaceSession();
-    vi.stubGlobal('fetch', queuedFetch([fileContents(REMOTE_WORKSPACE_JSON)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(REMOTE_WORKSPACE_JSON)]));
     const link = await useWorkspaceStore.getState().linkPrivateWorkspace({
       repoFullName: 'acme/tools',
       branch: 'main',
@@ -154,7 +179,7 @@ describe('per-link session model', () => {
       'fetch',
       queuedFetch([
         { body: { login: 'acme-bot', id: 99 }, headers: { 'x-oauth-scopes': 'repo' } },
-        fileContents(REMOTE_WORKSPACE_JSON),
+        ...fileContents(REMOTE_WORKSPACE_JSON),
       ]),
     );
     const link = await useWorkspaceStore.getState().linkPrivateWorkspace({
@@ -180,7 +205,7 @@ describe('per-link session model', () => {
 
   it('setLinkSessionMode requires a dedicated session before flipping to dedicated', async () => {
     await connectWorkspaceSession();
-    vi.stubGlobal('fetch', queuedFetch([fileContents(REMOTE_WORKSPACE_JSON)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(REMOTE_WORKSPACE_JSON)]));
     const link = await useWorkspaceStore.getState().linkPrivateWorkspace({
       repoFullName: 'acme/tools',
       branch: 'main',
@@ -196,7 +221,7 @@ describe('per-link session model', () => {
       'fetch',
       queuedFetch([
         { body: { login: 'acme-bot', id: 99 }, headers: { 'x-oauth-scopes': 'repo' } },
-        fileContents(REMOTE_WORKSPACE_JSON, 'sha-1'),
+        ...fileContents(REMOTE_WORKSPACE_JSON, 'sha-1'),
       ]),
     );
     const link = await useWorkspaceStore.getState().linkPrivateWorkspace({
@@ -207,15 +232,15 @@ describe('per-link session model', () => {
     });
 
     vi.unstubAllGlobals();
-    const refreshFetch = queuedFetch([fileContents(REMOTE_WORKSPACE_JSON, 'sha-2')]);
+    const refreshFetch = queuedFetch([...fileContents(REMOTE_WORKSPACE_JSON, 'sha-2')]);
     vi.stubGlobal('fetch', refreshFetch);
 
     await useWorkspaceStore.getState().refreshLinkedWorkspace(link.id);
-    expect(refreshFetch).toHaveBeenCalledOnce();
-    // The Authorization header on that fetch must be the dedicated token,
+    expect(refreshFetch).toHaveBeenCalledTimes(2);
+    // The Authorization header on both fetches must be the dedicated token,
     // not the workspace token.
-    const firstCall = refreshFetch.mock.calls[0] as [unknown, RequestInit | undefined];
-    const init = firstCall[1];
+    const secondCall = refreshFetch.mock.calls[1] as [unknown, RequestInit | undefined];
+    const init = secondCall[1];
     const authHeader = (init?.headers as Record<string, string> | undefined)?.['Authorization'];
     expect(authHeader).toBe('Bearer link-tok');
   });
@@ -226,7 +251,7 @@ describe('per-link session model', () => {
       'fetch',
       queuedFetch([
         { body: { login: 'acme-bot', id: 99 }, headers: { 'x-oauth-scopes': 'repo' } },
-        fileContents(REMOTE_WORKSPACE_JSON),
+        ...fileContents(REMOTE_WORKSPACE_JSON),
       ]),
     );
     const link = await useWorkspaceStore.getState().linkPrivateWorkspace({

@@ -113,7 +113,7 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
 
   watch(_uri: vscode.Uri): vscode.Disposable {
     // No-op: we emit events ourselves from writeFile and from the
-    // FileSystemWatcher hooked to `.apicircle/workspace.json` externally.
+    // FileSystemWatcher hooked to `.apicircle/workspace-*/workspace.json` externally.
     return { dispose: () => undefined };
   }
 

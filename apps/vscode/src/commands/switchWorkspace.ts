@@ -6,7 +6,7 @@ export function switchWorkspaceCommand(bridge: VsCodeBridge): vscode.Disposable 
     const all = bridge.listWorkspaces();
     if (all.length === 0) {
       void vscode.window.showInformationMessage(
-        'No workspaces discovered. Open a folder with .apicircle/workspace.json or create one.',
+        'No workspaces discovered. Open a folder with an API Circle workspace or create one.',
       );
       return;
     }

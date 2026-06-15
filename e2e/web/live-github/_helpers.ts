@@ -128,8 +128,8 @@ export function sha256HexV2(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-export function attachmentBlobPathV2(slotId: string): string {
-  return `.apicircle/attachments/${slotId}`;
+export function attachmentBlobPathV2(slotId: string, workspaceId: string): string {
+  return `.apicircle/workspace-${workspaceId}/attachments/${slotId}`;
 }
 
 export async function createV2Repo(
@@ -313,7 +313,7 @@ export async function seedSourceAttachmentRequestV2(
   args: SeedSourceAttachmentRequestArgs,
 ): Promise<{ sha256: string }> {
   const sha256 = sha256HexV2(args.bytes);
-  await updateWorkspaceJson(
+  const updated = await updateWorkspaceJson(
     source.cfg,
     source.branch,
     `e2e live: seed attachment ${args.slotId}`,
@@ -353,10 +353,12 @@ export async function seedSourceAttachmentRequestV2(
       if (args.graphqlSchemaId) req.graphqlSchemaId = args.graphqlSchemaId;
     },
   );
+  const workspaceId = (updated as Record<string, unknown>).workspaceId as string;
+  if (!workspaceId) throw new Error('seedSourceAttachmentRequestV2: workspace missing workspaceId');
   await writeRepoFileV2(
     source.cfg,
     source.branch,
-    attachmentBlobPathV2(args.slotId),
+    attachmentBlobPathV2(args.slotId, workspaceId),
     args.bytes,
     `e2e live: write attachment ${args.slotId}`,
   );

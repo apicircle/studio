@@ -34,12 +34,12 @@ export const HELP_SECTIONS: HelpSection[] = [
 
 Every workspace is split into two JSON documents, and knowing which is which explains most of the app's behaviour:
 
-- **Synced** — the team-shared half, pushed to Git as \`.apicircle/workspace.json\`. Requests, folders, environments, mock-server definitions, execution plans, releases, linked workspaces, global assets, and secret metadata.
+- **Synced** — the team-shared half, pushed to Git under the \`.apicircle/\` directory. Requests, folders, environments, mock-server definitions, execution plans, releases, linked workspaces, global assets, and secret metadata.
 - **Local** — the per-device half, kept in IndexedDB and never sent anywhere. Run history, your GitHub session, decrypted secret values, workspace snapshots, and UI state.
 
 A quick rule: if a teammate should see it, it is synced; if it is private to this machine, it is local. Example — you build a request and push:
 
-    Synced  -> the request definition travels to GitHub in .apicircle/workspace.json
+    Synced  -> the request definition travels to GitHub in .apicircle/workspace-<id>/workspace.json
     Local   -> every Send you ran, and the response bodies, stay local
 
 ## Finding your way around
@@ -1347,7 +1347,7 @@ Each asset shows a small status pill next to its name. The pill tells you where 
 
 Each row also shows "Used in N" — clicking through the Global Assets panel shows every request and mock endpoint that binds to the file. Zero-use assets get an "Unused" badge so you can identify and prune orphans deliberately.
 
-When a workspace is pushed to GitHub, file bytes are stored as attachment blobs next to the synced doc under \`.apicircle/attachments/<slotId>\`, separate from \`.apicircle/workspace.json\`. That keeps the JSON small and makes diffs readable. On another machine, linked or synced file assets show as missing until you download them. Sending a request or running a plan that needs missing files opens a download prompt; after the download verifies the checksum, execution continues. The \`apicircle run\` CLI follows the same rule for headless plans.
+When a workspace is pushed to GitHub, file bytes are stored as attachment blobs next to the synced doc under \`.apicircle/workspace-<id>/attachments/<slotId>\`, separate from the workspace document. That keeps the JSON small and makes diffs readable. On another machine, linked or synced file assets show as missing until you download them. Sending a request or running a plan that needs missing files opens a download prompt; after the download verifies the checksum, execution continues. The \`apicircle run\` CLI follows the same rule for headless plans.
 
 ## Why one library
 

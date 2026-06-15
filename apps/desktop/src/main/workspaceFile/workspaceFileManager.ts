@@ -20,12 +20,11 @@ import {
 //
 //   ~/.apicircle/                            ← `defaultApicircleRoot()`
 //     registry.json
-//     workspaces/
-//       <workspace-id-1>/
-//         workspace.json
-//         workspace.local.json
-//       <workspace-id-2>/
-//         ...
+//     workspace-<workspace-id-1>/
+//       workspace.json
+//       workspace.local.json
+//     workspace-<workspace-id-2>/
+//       ...
 //
 // The desktop renderer writes its state to IndexedDB on every mutation and
 // fans the same state out through the IPC bridge so the on-disk per-workspace

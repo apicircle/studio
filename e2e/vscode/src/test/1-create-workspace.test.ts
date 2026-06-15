@@ -7,7 +7,7 @@ import * as vscode from 'vscode';
 // Verifies:
 //   • Command is registered
 //   • viewsWelcome card is shown when no .apicircle/ exists in any open folder
-//   • Scaffold creates .apicircle/workspace.json + attachments/ + README.md
+//   • Scaffold creates .apicircle/registry.json + workspace-<id>/workspace.json + attachments/ + README.md
 //   • .gitignore is updated with defensive entries
 // =============================================================================
 
@@ -20,7 +20,7 @@ suite('Phase 1 — 1-create-workspace: scaffold flow', () => {
     );
   });
 
-  test('scaffold writes .apicircle/workspace.json + attachments/ + README.md', async function () {
+  test('scaffold writes .apicircle/registry.json + workspace-<id>/workspace.json + attachments/ + README.md', async function () {
     // Live scaffold against a temp folder requires opening a new workspace
     // mid-test. Phase 2 upgrades the harness to support this; for now the
     // unit-test coverage in vscodeBridge.test.ts pins the contract.

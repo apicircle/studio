@@ -192,6 +192,7 @@ describe('buildResolvedRequest', () => {
     const link: LinkedWorkspace = {
       id: 'link-1',
       kind: 'public',
+      sourceWorkspaceId: 'remote-ws-1',
       source: {
         repoFullName: 'owner/repo',
         branch: 'main',

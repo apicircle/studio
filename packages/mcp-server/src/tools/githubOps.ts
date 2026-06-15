@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import {
-  WORKSPACE_JSON_PATH,
+  fetchRemoteWorkspaceJson,
   parseLinkedWorkspaceJson,
   buildLinkedSnapshot,
   ledgerFromProbe,
@@ -28,7 +28,7 @@ const TOKEN_HELP = 'Pass `token`, or set the GITHUB_TOKEN env var on the MCP pro
 export const linkedLinkTool: AnyToolDef = {
   name: 'linked.link',
   description:
-    'Link a workspace by fetching its `.apicircle/workspace.json` from GitHub. Caches the release ledger + a collections/environments snapshot. Needs a token for private repos. ' +
+    'Link a workspace by fetching its `.apicircle/` workspace from GitHub (registry.json → workspace-<id>/workspace.json). Caches the release ledger + a collections/environments snapshot. Needs a token for private repos. ' +
     TOKEN_HELP,
   inputSchema: z.object({
     repoFullName: z.string().describe('owner/name of the source workspace repo.'),
@@ -58,10 +58,12 @@ export const linkedLinkTool: AnyToolDef = {
       return { ok: false, error: `Already linked to ${repoFullName}@${input.branch} (${dup.id})` };
 
     const client = new GitHubClient();
-    let content: string | null;
+    let result: { workspaceId: string; content: string } | { error: string };
     try {
-      const file = await client.getContents(token, owner, name, WORKSPACE_JSON_PATH, input.branch);
-      content = file?.content ?? null;
+      result = await fetchRemoteWorkspaceJson(async (p) => {
+        const f = await client.getContents(token, owner, name, p, input.branch);
+        return f?.content ?? null;
+      });
     } catch (e) {
       return {
         ok: false,
@@ -69,15 +71,16 @@ export const linkedLinkTool: AnyToolDef = {
           e instanceof GitHubError ? e.message : e instanceof Error ? e.message : 'fetch failed',
       };
     }
-    if (content === null)
-      return { ok: false, error: `No workspace.json on ${repoFullName}@${input.branch}` };
+    if ('error' in result)
+      return { ok: false, error: `${repoFullName}@${input.branch}: ${result.error}` };
 
-    const probe = parseLinkedWorkspaceJson(content);
+    const probe = parseLinkedWorkspaceJson(result.content);
     const ledger = ledgerFromProbe(probe);
     const link: LinkedWorkspace = {
       id: generateId(),
       kind: input.kind,
       name: repoFullName,
+      sourceWorkspaceId: result.workspaceId,
       source: { provider: 'github', repoFullName, branch: input.branch, sessionMode: 'workspace' },
       scope: ['collections', 'environments'],
       pinnedVersion: input.pinnedVersion ?? ledger.currentVersion,
@@ -111,25 +114,21 @@ export const linkedRefreshTool: AnyToolDef = {
       return { ok: false, error: `A token is required for private links. ${TOKEN_HELP}` };
     const [owner, name] = link.source.repoFullName.split('/', 2);
     const client = new GitHubClient();
-    let content: string | null;
+    let result: { workspaceId: string; content: string } | { error: string };
     try {
-      const file = await client.getContents(
-        token,
-        owner,
-        name,
-        WORKSPACE_JSON_PATH,
-        link.source.branch,
-      );
-      content = file?.content ?? null;
+      result = await fetchRemoteWorkspaceJson(async (p) => {
+        const f = await client.getContents(token, owner, name, p, link.source.branch);
+        return f?.content ?? null;
+      });
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : 'fetch failed' };
     }
-    if (content === null)
+    if ('error' in result)
       return {
         ok: false,
-        error: `No workspace.json on ${link.source.repoFullName}@${link.source.branch}`,
+        error: `${link.source.repoFullName}@${link.source.branch}: ${result.error}`,
       };
-    const probe = parseLinkedWorkspaceJson(content);
+    const probe = parseLinkedWorkspaceJson(result.content);
     const ledger = ledgerFromProbe(probe);
     const needsSnapshot = !state.local.linkedCollections[input.id];
     const snapshot = needsSnapshot ? (buildLinkedSnapshot(probe, link) ?? undefined) : undefined;

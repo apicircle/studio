@@ -65,7 +65,7 @@ export class McpView extends BaseTreeView<McpNode> {
       } else {
         item.description = 'no active workspace';
         item.tooltip = new vscode.MarkdownString(
-          `Open a folder containing a \`.apicircle/workspace.json\` to surface MCP config snippets.`,
+          `Open a folder containing an API Circle workspace (\`.apicircle/\`) to surface MCP config snippets.`,
         );
       }
       item.contextValue = paths.hasActiveWorkspace ? 'mcp-header-active' : 'mcp-header-idle';
@@ -161,6 +161,7 @@ export class McpView extends BaseTreeView<McpNode> {
 
   getChildren(node?: McpNode): McpNode[] {
     if (!node) {
+      if (!this.mcp.resolvePaths().hasActiveWorkspace) return [];
       return [{ kind: 'header' }, { kind: 'clients-section' }, { kind: 'connect-guide' }];
     }
     if (node.kind === 'clients-section') {

@@ -214,10 +214,13 @@ export type { BranchNameOptions } from './git/branchNames';
 export { serializeWorkspaceForGit } from './git/serializeWorkspace';
 
 export {
-  ATTACHMENTS_DIR,
+  REGISTRY_JSON_PATH,
   WORKSPACE_DIR,
-  WORKSPACE_JSON_PATH,
   attachmentPath,
+  attachmentsDir,
+  fetchRemoteWorkspaceJson,
+  parseRegistryActiveId,
+  workspaceJsonPath,
 } from './git/repoPaths';
 
 export { parseWorkspaceJson, RemoteWorkspaceParseError } from './git/parseWorkspaceJson';

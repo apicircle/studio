@@ -46,18 +46,43 @@ function queuedFetch(queue: ResponseSpec[]): ReturnType<typeof vi.fn> {
   });
 }
 
-function fileContents(json: string, sha = 'sha-1'): ResponseSpec {
+/** ID used for the remote workspace in registry.json mocks. */
+const REMOTE_WS_ID = 'remote-ws';
+
+function registryContents(): ResponseSpec {
+  const json = JSON.stringify({
+    schemaVersion: 1,
+    activeWorkspaceId: REMOTE_WS_ID,
+    workspaces: [{ id: REMOTE_WS_ID }],
+  });
   const content = btoa(unescape(encodeURIComponent(json)));
   return {
     body: {
       type: 'file',
-      path: '.apicircle/workspace.json',
-      sha,
+      path: '.apicircle/registry.json',
+      sha: 'registry-sha',
       size: json.length,
       content,
       encoding: 'base64',
     },
   };
+}
+
+function fileContents(json: string, sha = 'sha-1'): ResponseSpec[] {
+  const content = btoa(unescape(encodeURIComponent(json)));
+  return [
+    registryContents(),
+    {
+      body: {
+        type: 'file',
+        path: `.apicircle/workspace-${REMOTE_WS_ID}/workspace.json`,
+        sha,
+        size: json.length,
+        content,
+        encoding: 'base64',
+      },
+    },
+  ];
 }
 
 async function setupSession(): Promise<void> {
@@ -133,7 +158,7 @@ describe('linked-workspace lifecycle audit', () => {
     vi.stubGlobal(
       'fetch',
       queuedFetch([
-        fileContents(
+        ...fileContents(
           workspaceJson({
             versions: [{ version: '1.0.0', bytes: 'aaa' }],
             currentVersion: '1.0.0',
@@ -156,7 +181,7 @@ describe('linked-workspace lifecycle audit', () => {
     vi.stubGlobal(
       'fetch',
       queuedFetch([
-        fileContents(
+        ...fileContents(
           workspaceJson({
             versions: [
               { version: '1.0.0', bytes: 'aaa' },
@@ -193,7 +218,7 @@ describe('linked-workspace lifecycle audit', () => {
     vi.stubGlobal(
       'fetch',
       queuedFetch([
-        fileContents(
+        ...fileContents(
           workspaceJson({
             versions: [{ version: '1.0.0', bytes: 'aaa' }],
             currentVersion: '1.0.0',
@@ -216,13 +241,13 @@ describe('linked-workspace lifecycle audit', () => {
       requestUrl: 'https://api.example.test/v2',
     });
     vi.unstubAllGlobals();
-    vi.stubGlobal('fetch', queuedFetch([fileContents(v2Json)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(v2Json)]));
     await useWorkspaceStore.getState().refreshLinkedWorkspace(link.id);
 
     // Now Preview — fetches the target again, diffs against the
     // (still-v1) snapshot. Real entries should appear.
     vi.unstubAllGlobals();
-    vi.stubGlobal('fetch', queuedFetch([fileContents(v2Json)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(v2Json)]));
     await useWorkspaceStore.getState().previewLinkedUpdateForLink(link.id);
     const active = useWorkspaceStore.getState().activeLinkedUpdate!;
     expect(active.preview.entries.length).toBeGreaterThan(0);
@@ -235,7 +260,7 @@ describe('linked-workspace lifecycle audit', () => {
     vi.stubGlobal(
       'fetch',
       queuedFetch([
-        fileContents(
+        ...fileContents(
           workspaceJson({
             versions: [{ version: '1.0.0', bytes: 'aaa' }],
             currentVersion: '1.0.0',
@@ -259,18 +284,18 @@ describe('linked-workspace lifecycle audit', () => {
 
     // Refresh (ledger only).
     vi.unstubAllGlobals();
-    vi.stubGlobal('fetch', queuedFetch([fileContents(v2Json)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(v2Json)]));
     await useWorkspaceStore.getState().refreshLinkedWorkspace(link.id);
 
     // Preview (re-fetches target).
     vi.unstubAllGlobals();
-    vi.stubGlobal('fetch', queuedFetch([fileContents(v2Json)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(v2Json)]));
     await useWorkspaceStore.getState().previewLinkedUpdateForLink(link.id);
 
     // Apply (re-fetches target one more time per the action's
     // honesty re-fetch).
     vi.unstubAllGlobals();
-    vi.stubGlobal('fetch', queuedFetch([fileContents(v2Json)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(v2Json)]));
     await useWorkspaceStore.getState().applyLinkedUpdateForLink({});
 
     // Post-apply state: pin AND ledger.currentVersion both at 2.0.0.
@@ -288,7 +313,7 @@ describe('linked-workspace lifecycle audit', () => {
     // pin stays at 2.0.0, ledger stays at 2.0.0, no fake "update
     // available" should be inferable from the resulting state.
     vi.unstubAllGlobals();
-    vi.stubGlobal('fetch', queuedFetch([fileContents(v2Json)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(v2Json)]));
     await useWorkspaceStore.getState().refreshLinkedWorkspace(link.id);
     const finalState = useWorkspaceStore.getState();
     expect(finalState.synced!.linkedWorkspaces[link.id].pinnedVersion).toBe('2.0.0');
@@ -306,7 +331,7 @@ describe('linked-workspace lifecycle audit', () => {
     vi.stubGlobal(
       'fetch',
       queuedFetch([
-        fileContents(
+        ...fileContents(
           workspaceJson({
             versions: [{ version: '1.0.0', bytes: 'aaa' }],
             currentVersion: '1.0.0',
@@ -331,7 +356,7 @@ describe('linked-workspace lifecycle audit', () => {
     vi.unstubAllGlobals();
     vi.stubGlobal(
       'fetch',
-      queuedFetch([fileContents(v2Json), fileContents(v2Json), fileContents(v2Json)]),
+      queuedFetch([...fileContents(v2Json), ...fileContents(v2Json), ...fileContents(v2Json)]),
     );
     await useWorkspaceStore.getState().refreshLinkedWorkspace(link.id);
     await useWorkspaceStore.getState().previewLinkedUpdateForLink(link.id);
@@ -352,7 +377,7 @@ describe('linked-workspace lifecycle audit', () => {
       requestUrl: 'https://api.example.test/v3',
     });
     vi.unstubAllGlobals();
-    vi.stubGlobal('fetch', queuedFetch([fileContents(v3Json)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(v3Json)]));
     await useWorkspaceStore.getState().refreshLinkedWorkspace(link.id);
     const after = useWorkspaceStore.getState();
     expect(after.synced!.linkedWorkspaces[link.id].pinnedVersion).toBe('2.0.0');

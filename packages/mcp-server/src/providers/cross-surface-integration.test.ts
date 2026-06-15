@@ -198,8 +198,8 @@ describe('Cross-surface integration: CLI ↔ MCP ↔ Desktop', () => {
     await mwp.init();
     const list = await mwp.list();
     expect(list).toHaveLength(2);
-    expect(list.find((w) => w.id === ws1)?.counts.requests).toBe(3);
-    expect(list.find((w) => w.id === ws2)?.counts.requests).toBe(1);
+    expect(list.find((w) => w.id === ws1)?.counts?.requests).toBe(3);
+    expect(list.find((w) => w.id === ws2)?.counts?.requests).toBe(1);
 
     // Active workspace resolves to ws1
     const active = mwp.activeProvider();
@@ -224,7 +224,6 @@ describe('Cross-surface integration: CLI ↔ MCP ↔ Desktop', () => {
     const provider = new FileBackedWorkspaceProvider(wsDir);
     await provider.apply({
       kind: 'request.create',
-      folderId: null,
       request: {
         id: 'r-new',
         name: 'POST created-by-mcp',

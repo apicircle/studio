@@ -38,8 +38,8 @@ function makeSurface(
   return {
     workspace: {
       id: 'ws-1',
-      apicircleDir: '/repo/.apicircle',
-      workspaceJsonPath: '/repo/.apicircle/workspace.json',
+      apicircleDir: '/repo/.apicircle/workspace-ws-1',
+      workspaceJsonPath: '/repo/.apicircle/workspace-ws-1/workspace.json',
       workspaceFolder: undefined,
       label,
       source,

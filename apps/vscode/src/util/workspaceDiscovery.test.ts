@@ -52,21 +52,29 @@ describe('discoverWorkspaces', () => {
     expect(r.foldersWithoutWorkspace).toEqual([]);
   });
 
-  it('detects a single folder with canonical .apicircle/workspace.json', () => {
+  it('detects a single folder with canonical .apicircle/registry.json + workspace-<id>/workspace.json', () => {
     const dir = tmpDir();
     cleanup.push(dir);
-    fs.mkdirSync(path.join(dir, '.apicircle'), { recursive: true });
-    fs.writeFileSync(path.join(dir, '.apicircle', 'workspace.json'), '{}');
+    const apicircleRoot = path.join(dir, '.apicircle');
+    const wsDir = path.join(apicircleRoot, 'workspace-ws1');
+    fs.mkdirSync(wsDir, { recursive: true });
+    fs.writeFileSync(path.join(wsDir, 'workspace.json'), '{}');
+    const registry = {
+      schemaVersion: 1,
+      activeWorkspaceId: 'ws1',
+      workspaces: [{ id: 'ws1', name: 'repo-a', createdAt: 't', lastOpenedAt: 't' }],
+    };
+    fs.writeFileSync(path.join(apicircleRoot, 'registry.json'), JSON.stringify(registry));
 
     const r = discoverWorkspaces([makeFolder('repo-a', dir)]);
     expect(r.workspaces).toHaveLength(1);
     expect(r.workspaces[0].label).toBe('repo-a');
-    expect(r.workspaces[0].apicircleDir).toBe(path.join(dir, '.apicircle'));
-    expect(r.workspaces[0].workspaceJsonPath).toBe(path.join(dir, '.apicircle', 'workspace.json'));
+    expect(r.workspaces[0].apicircleDir).toBe(wsDir);
+    expect(r.workspaces[0].workspaceJsonPath).toBe(path.join(wsDir, 'workspace.json'));
     expect(r.foldersWithoutWorkspace).toEqual([]);
   });
 
-  it('flags folders without .apicircle/workspace.json as candidates for "Create"', () => {
+  it('flags folders without .apicircle/registry.json as candidates for "Create"', () => {
     const dir = tmpDir();
     cleanup.push(dir);
     // No .apicircle/ created
@@ -82,10 +90,32 @@ describe('discoverWorkspaces', () => {
     const d2 = tmpDir();
     const d3 = tmpDir();
     cleanup.push(d1, d2, d3);
-    fs.mkdirSync(path.join(d1, '.apicircle'), { recursive: true });
-    fs.writeFileSync(path.join(d1, '.apicircle', 'workspace.json'), '{}');
-    fs.mkdirSync(path.join(d3, '.apicircle'), { recursive: true });
-    fs.writeFileSync(path.join(d3, '.apicircle', 'workspace.json'), '{}');
+
+    const d1Root = path.join(d1, '.apicircle');
+    const d1WsDir = path.join(d1Root, 'workspace-ws1');
+    fs.mkdirSync(d1WsDir, { recursive: true });
+    fs.writeFileSync(path.join(d1WsDir, 'workspace.json'), '{}');
+    fs.writeFileSync(
+      path.join(d1Root, 'registry.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        activeWorkspaceId: 'ws1',
+        workspaces: [{ id: 'ws1', name: 'repo-one', createdAt: 't', lastOpenedAt: 't' }],
+      }),
+    );
+
+    const d3Root = path.join(d3, '.apicircle');
+    const d3WsDir = path.join(d3Root, 'workspace-ws3');
+    fs.mkdirSync(d3WsDir, { recursive: true });
+    fs.writeFileSync(path.join(d3WsDir, 'workspace.json'), '{}');
+    fs.writeFileSync(
+      path.join(d3Root, 'registry.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        activeWorkspaceId: 'ws3',
+        workspaces: [{ id: 'ws3', name: 'repo-two', createdAt: 't', lastOpenedAt: 't' }],
+      }),
+    );
 
     const r = discoverWorkspaces([
       makeFolder('repo-one', d1),
@@ -98,10 +128,10 @@ describe('discoverWorkspaces', () => {
     expect(r.foldersWithoutWorkspace[0].name).toBe('no-workspace');
   });
 
-  it('does NOT pick up a folder named .apicircle that is not the canonical layout', () => {
+  it('does NOT pick up a folder with .apicircle/ but no registry.json', () => {
     const dir = tmpDir();
     cleanup.push(dir);
-    // Create .apicircle/ but no workspace.json inside
+    // Create .apicircle/ but no registry.json inside
     fs.mkdirSync(path.join(dir, '.apicircle'), { recursive: true });
 
     const r = discoverWorkspaces([makeFolder('half-baked', dir)]);
@@ -115,7 +145,7 @@ describe('deviceLocalPath', () => {
     const storageRoot = path.join(os.tmpdir(), 'vscode-storage');
     const globalStorage = Uri.file(storageRoot);
     const ws: Pick<DiscoveredWorkspace, 'apicircleDir'> = {
-      apicircleDir: '/home/user/project/.apicircle',
+      apicircleDir: '/home/user/project/.apicircle/workspace-ws-1',
     };
     const p1 = deviceLocalPath(globalStorage, ws);
     const p2 = deviceLocalPath(globalStorage, ws);
@@ -124,29 +154,35 @@ describe('deviceLocalPath', () => {
     expect(path.dirname(p1)).toBe(storageRoot);
   });
 
-  it('produces different hashes for different .apicircle/ paths', () => {
+  it('produces different hashes for different workspace-<id>/ paths', () => {
     const globalStorage = Uri.file(path.join(os.tmpdir(), 'vscode-storage'));
-    const p1 = deviceLocalPath(globalStorage, { apicircleDir: '/home/user/project-a/.apicircle' });
-    const p2 = deviceLocalPath(globalStorage, { apicircleDir: '/home/user/project-b/.apicircle' });
+    const p1 = deviceLocalPath(globalStorage, {
+      apicircleDir: '/home/user/project-a/.apicircle/workspace-ws-1',
+    });
+    const p2 = deviceLocalPath(globalStorage, {
+      apicircleDir: '/home/user/project-b/.apicircle/workspace-ws-2',
+    });
     expect(p1).not.toBe(p2);
   });
 
   it('is case-insensitive and slash-normalized (Windows interoperability)', () => {
     const globalStorage = Uri.file(path.join(os.tmpdir(), 'vscode-storage'));
     const p1 = deviceLocalPath(globalStorage, {
-      apicircleDir: 'C:\\Users\\dev\\project\\.apicircle',
+      apicircleDir: 'C:\\Users\\dev\\project\\.apicircle\\workspace-ws-1',
     });
-    const p2 = deviceLocalPath(globalStorage, { apicircleDir: 'c:/users/dev/project/.apicircle' });
+    const p2 = deviceLocalPath(globalStorage, {
+      apicircleDir: 'c:/users/dev/project/.apicircle/workspace-ws-1',
+    });
     expect(p1).toBe(p2);
   });
 });
 
 describe('findOwningWorkspace', () => {
-  it('finds the workspace whose .apicircle/ directory contains the file', () => {
+  it('finds the workspace whose workspace-<id>/ directory contains the file', () => {
     const ws: DiscoveredWorkspace = {
-      id: '/repo/.apicircle',
-      apicircleDir: '/repo/.apicircle',
-      workspaceJsonPath: '/repo/.apicircle/workspace.json',
+      id: 'ws-1',
+      apicircleDir: '/repo/.apicircle/workspace-ws-1',
+      workspaceJsonPath: '/repo/.apicircle/workspace-ws-1/workspace.json',
       workspaceFolder: { uri: Uri.file('/repo'), name: 'repo', index: 0 } as never,
       label: 'repo',
       source: 'git-folder',
@@ -155,15 +191,19 @@ describe('findOwningWorkspace', () => {
       workspaces: [ws],
       foldersWithoutWorkspace: [],
     };
-    expect(findOwningWorkspace(result, '/repo/.apicircle/workspace.json')?.label).toBe('repo');
-    expect(findOwningWorkspace(result, '/repo/.apicircle/attachments/abc')?.label).toBe('repo');
+    expect(
+      findOwningWorkspace(result, '/repo/.apicircle/workspace-ws-1/workspace.json')?.label,
+    ).toBe('repo');
+    expect(
+      findOwningWorkspace(result, '/repo/.apicircle/workspace-ws-1/attachments/abc')?.label,
+    ).toBe('repo');
   });
 
   it('returns undefined for paths outside any known workspace', () => {
     const ws: DiscoveredWorkspace = {
-      id: '/repo/.apicircle',
-      apicircleDir: '/repo/.apicircle',
-      workspaceJsonPath: '/repo/.apicircle/workspace.json',
+      id: 'ws-1',
+      apicircleDir: '/repo/.apicircle/workspace-ws-1',
+      workspaceJsonPath: '/repo/.apicircle/workspace-ws-1/workspace.json',
       workspaceFolder: { uri: Uri.file('/repo'), name: 'repo', index: 0 } as never,
       label: 'repo',
       source: 'git-folder',
@@ -175,33 +215,37 @@ describe('findOwningWorkspace', () => {
 
 describe('workspaceIdForOpenEditor', () => {
   const registered = [
-    { id: '/repo-a/.apicircle', workspaceJsonPath: '/repo-a/.apicircle/workspace.json' },
-    { id: 'C:\\repo-b\\.apicircle', workspaceJsonPath: 'C:\\repo-b\\.apicircle\\workspace.json' },
+    { id: 'ws-a', workspaceJsonPath: '/repo-a/.apicircle/workspace-ws-a/workspace.json' },
+    { id: 'ws-b', workspaceJsonPath: 'C:\\repo-b\\.apicircle\\workspace-ws-b\\workspace.json' },
   ];
   const authorityFor = (id: string): string => Buffer.from(id, 'utf8').toString('hex');
 
   it('resolves an apicircle:// editor via its hex authority', () => {
     expect(
       workspaceIdForOpenEditor(
-        { scheme: 'apicircle', authority: authorityFor('/repo-a/.apicircle'), fsPath: '' },
+        { scheme: 'apicircle', authority: authorityFor('ws-a'), fsPath: '' },
         registered,
       ),
-    ).toBe('/repo-a/.apicircle');
+    ).toBe('ws-a');
   });
 
-  it('resolves the raw .apicircle/workspace.json file (slash + case normalized)', () => {
+  it('resolves the raw .apicircle/workspace-<id>/workspace.json file (slash + case normalized)', () => {
     expect(
       workspaceIdForOpenEditor(
-        { scheme: 'file', authority: '', fsPath: 'C:\\repo-b\\.apicircle\\workspace.json' },
+        {
+          scheme: 'file',
+          authority: '',
+          fsPath: 'C:\\repo-b\\.apicircle\\workspace-ws-b\\workspace.json',
+        },
         registered,
       ),
-    ).toBe('C:\\repo-b\\.apicircle');
+    ).toBe('ws-b');
   });
 
   it('returns null for an apicircle:// authority that maps to no registered workspace', () => {
     expect(
       workspaceIdForOpenEditor(
-        { scheme: 'apicircle', authority: authorityFor('/unknown/.apicircle'), fsPath: '' },
+        { scheme: 'apicircle', authority: authorityFor('ws-unknown'), fsPath: '' },
         registered,
       ),
     ).toBeNull();
@@ -248,7 +292,7 @@ describe('discoverRegistryWorkspaces', () => {
 
   it('discovers workspaces from a valid registry.json', () => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'apicircle-reg-'));
-    const wsDir = path.join(tmp, 'workspaces', 'ws-abc');
+    const wsDir = path.join(tmp, 'workspace-ws-abc');
     fs.mkdirSync(wsDir, { recursive: true });
     fs.writeFileSync(path.join(wsDir, 'workspace.json'), '{}');
 
@@ -289,12 +333,12 @@ describe('discoverRegistryWorkspaces', () => {
   it('discovers multiple workspaces, skipping missing ones', () => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'apicircle-reg-'));
     // ws-a exists
-    const wsA = path.join(tmp, 'workspaces', 'ws-a');
+    const wsA = path.join(tmp, 'workspace-ws-a');
     fs.mkdirSync(wsA, { recursive: true });
     fs.writeFileSync(path.join(wsA, 'workspace.json'), '{}');
     // ws-b missing (no dir)
     // ws-c exists
-    const wsC = path.join(tmp, 'workspaces', 'ws-c');
+    const wsC = path.join(tmp, 'workspace-ws-c');
     fs.mkdirSync(wsC, { recursive: true });
     fs.writeFileSync(path.join(wsC, 'workspace.json'), '{}');
 

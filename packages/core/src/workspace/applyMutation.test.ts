@@ -1691,6 +1691,7 @@ describe('applyMutation — linked workspaces', () => {
       id,
       kind: 'public',
       name: 'Payments API',
+      sourceWorkspaceId: 'remote-ws-1',
       source: {
         provider: 'github',
         repoFullName: 'org/payments',

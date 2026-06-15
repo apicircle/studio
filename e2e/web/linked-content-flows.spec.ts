@@ -26,6 +26,16 @@ function id(key: string): TcId {
 // (`window.__apicircleStore`) so they don't require a real GitHub session.
 
 const T0 = '2026-04-27T00:00:00.000Z';
+const MOCK_WS_ID = 'remote-ws-1';
+
+function buildRegistryResponse(): string {
+  return JSON.stringify({
+    schemaVersion: 1,
+    activeWorkspaceId: MOCK_WS_ID,
+    workspaces: [{ id: MOCK_WS_ID, name: 'Remote', createdAt: T0, lastOpenedAt: T0 }],
+  });
+}
+
 const corsHeaders = {
   'access-control-allow-origin': '*',
   'access-control-expose-headers':
@@ -605,24 +615,40 @@ test.describe('A.4 — Update preview flow', () => {
     } & Record<string, unknown>,
   ): Promise<void> {
     const remoteJson = JSON.stringify(snapshot);
-    const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
-    await app.route(
-      'https://api.github.com/repos/a/b/contents/.apicircle/workspace.json**',
-      async (route) => {
+    const registryBase64 = Buffer.from(buildRegistryResponse(), 'utf-8').toString('base64');
+    const workspaceBase64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
+    await app.route('https://api.github.com/repos/a/b/contents/.apicircle/**', async (route) => {
+      const url = route.request().url();
+      if (url.includes('registry.json')) {
         await route.fulfill({
           status: 200,
           headers: { 'content-type': 'application/json', ...corsHeaders },
           body: JSON.stringify({
             type: 'file',
-            path: '.apicircle/workspace.json',
-            sha: 'remote-sha',
-            size: remoteJson.length,
-            content: base64,
+            path: '.apicircle/registry.json',
+            sha: 'registry-sha',
+            size: buildRegistryResponse().length,
+            content: registryBase64,
             encoding: 'base64',
           }),
         });
-      },
-    );
+      } else if (url.includes('workspace.json')) {
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify({
+            type: 'file',
+            path: `.apicircle/workspace-${MOCK_WS_ID}/workspace.json`,
+            sha: 'remote-sha',
+            size: remoteJson.length,
+            content: workspaceBase64,
+            encoding: 'base64',
+          }),
+        });
+      } else {
+        await route.fallback();
+      }
+    });
   }
 
   test(
@@ -1058,29 +1084,43 @@ test.describe('Lifecycle audit — Refresh / Preview / Apply', () => {
     } & Record<string, unknown>,
   ): Promise<void> {
     const remoteJson = JSON.stringify(snapshot);
-    const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
-    await app
-      .unroute('https://api.github.com/repos/a/b/contents/.apicircle/workspace.json**')
-      .catch(() => {
-        /* may not be routed yet — fine */
-      });
-    await app.route(
-      'https://api.github.com/repos/a/b/contents/.apicircle/workspace.json**',
-      async (route) => {
+    const registryBase64 = Buffer.from(buildRegistryResponse(), 'utf-8').toString('base64');
+    const workspaceBase64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
+    await app.unroute('https://api.github.com/repos/a/b/contents/.apicircle/**').catch(() => {
+      /* may not be routed yet — fine */
+    });
+    await app.route('https://api.github.com/repos/a/b/contents/.apicircle/**', async (route) => {
+      const url = route.request().url();
+      if (url.includes('registry.json')) {
         await route.fulfill({
           status: 200,
           headers: { 'content-type': 'application/json', ...corsHeaders },
           body: JSON.stringify({
             type: 'file',
-            path: '.apicircle/workspace.json',
-            sha: 'remote-sha',
-            size: remoteJson.length,
-            content: base64,
+            path: '.apicircle/registry.json',
+            sha: 'registry-sha',
+            size: buildRegistryResponse().length,
+            content: registryBase64,
             encoding: 'base64',
           }),
         });
-      },
-    );
+      } else if (url.includes('workspace.json')) {
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify({
+            type: 'file',
+            path: `.apicircle/workspace-${MOCK_WS_ID}/workspace.json`,
+            sha: 'remote-sha',
+            size: remoteJson.length,
+            content: workspaceBase64,
+            encoding: 'base64',
+          }),
+        });
+      } else {
+        await route.fallback();
+      }
+    });
   }
 
   test(

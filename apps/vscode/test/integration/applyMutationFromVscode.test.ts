@@ -3,7 +3,7 @@
 //
 // Verifies that the `GitWorkspaceProvider` correctly serializes concurrent
 // writes via `proper-lockfile`. Two independent providers pointing at the
-// same `.apicircle/workspace.json` apply different patches simultaneously —
+// same `.apicircle/workspace-<id>/workspace.json` apply different patches simultaneously —
 // the lock must guarantee:
 //
 //   1. Both writes succeed (no rejected promises)

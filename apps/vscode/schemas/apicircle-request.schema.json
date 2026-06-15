@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://apicircle.dev/schemas/apicircle-request.schema.json",
   "title": "APICircle Request",
-  "description": "YAML projection of a single APICircle workspace request. The canonical JSON shape lives in .apicircle/workspace.json; this YAML is a UI-only convenience the VS Code extension shows in a real text editor.",
+  "description": "YAML projection of a single APICircle workspace request. The canonical JSON shape lives in .apicircle/workspace-<id>/workspace.json; this YAML is a UI-only convenience the VS Code extension shows in a real text editor.",
   "type": "object",
   "required": ["name", "method", "url"],
   "properties": {

@@ -44,7 +44,7 @@ export async function installCopilotMcpConfigCommand(deps: CopilotMcpActionsDeps
 
   if (!paths.hasActiveWorkspace) {
     await vscode.window.showWarningMessage(
-      'No active API Circle workspace. Open a folder containing .apicircle/workspace.json or ensure ~/.apicircle/registry.json exists before installing the Copilot MCP config.',
+      'No active API Circle workspace. Open a folder containing an API Circle workspace before installing the Copilot MCP config.',
     );
     return;
   }

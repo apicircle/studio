@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
 import {
   REGISTRY_FILE,
-  WORKSPACES_SUBDIR,
+  WORKSPACE_DIR_PREFIX,
   defaultApicircleRoot,
   deleteWorkspaceById,
   emptyRegistry,
@@ -84,7 +84,7 @@ describe('defaultApicircleRoot', () => {
 
 describe('workspaceDirFor', () => {
   it('joins root + workspaces/ + workspaceId', () => {
-    expect(workspaceDirFor('/r', 'ws-a')).toBe(path.join('/r', WORKSPACES_SUBDIR, 'ws-a'));
+    expect(workspaceDirFor('/r', 'ws-a')).toBe(path.join('/r', `${WORKSPACE_DIR_PREFIX}ws-a`));
   });
 });
 

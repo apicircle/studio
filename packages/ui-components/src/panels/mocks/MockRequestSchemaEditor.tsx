@@ -11,7 +11,7 @@ import { Select } from '../../primitives/Select';
 // Request-schema editor — declares the inputs a mock endpoint expects (path /
 // query / header / cookie params + a body-shape doc). The data lives on
 // MockEndpoint.requestSchema in WorkspaceSynced, so edits here round-trip
-// through .apicircle/workspace.json and stay in sync with the VS Code YAML
+// through .apicircle/workspace-<id>/workspace.json and stays in sync with the VS Code YAML
 // authoring surface + the OpenAPI export. Documentation-only — the runtime
 // validation engine is driven by the separate requestValidation rules.
 // =============================================================================

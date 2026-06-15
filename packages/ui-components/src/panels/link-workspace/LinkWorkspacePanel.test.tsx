@@ -49,6 +49,7 @@ function seedLink(opts: {
     id: opts.id,
     kind: 'private',
     name: opts.name,
+    sourceWorkspaceId: `src-ws-${opts.id}`,
     source: {
       provider: 'github',
       repoFullName: `me/${opts.name}`,
@@ -639,6 +640,7 @@ describe('LinkWorkspacePanel — per-link session UX', () => {
       id: 'lw-orphan',
       kind: 'private',
       name: 'Acme',
+      sourceWorkspaceId: 'src-ws-orphan',
       source: {
         provider: 'github',
         repoFullName: 'acme/tools',
@@ -683,6 +685,7 @@ describe('LinkWorkspacePanel — per-link session UX', () => {
       id: 'lw-orphan-no-ws',
       kind: 'private',
       name: 'Acme',
+      sourceWorkspaceId: 'src-ws-orphan-no-ws',
       source: {
         provider: 'github',
         repoFullName: 'acme/tools',

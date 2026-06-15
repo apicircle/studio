@@ -620,7 +620,7 @@ export async function setRequestAuthFieldCommand(uri?: vscode.Uri, line?: number
   const authType = readAuthTypeFromContext(loaded.document, loaded.line);
 
   let options: ReadonlyArray<string> = [];
-  let title = fieldKey;
+  let title: string;
   let allowCustom = false;
   if (fieldKey === 'clientAuthMethod') {
     options = ['header', 'body'];

@@ -6,12 +6,87 @@
 // never log, never echo them into error messages.
 
 import type { Page } from '@playwright/test';
+import { REGISTRY_JSON_PATH, workspaceJsonPath } from '@apicircle/core';
 
 const ENABLE_ENV = 'APICIRCLE_E2E_LIVE_GITHUB';
 const TOKEN_ENV = 'APICIRCLE_E2E_GITHUB_PAT';
 
-/** On-disk path for the synced workspace document inside a Git repo. */
-export const WORKSPACE_JSON_PATH = '.apicircle/workspace.json';
+/**
+ * Build a minimal `registry.json` payload that points at a single workspace.
+ * Used whenever we seed or write a workspace to a repo — the new per-workspace
+ * directory layout requires a registry so readers can discover the active
+ * workspace ID.
+ */
+function buildRegistryJson(workspaceId: string, name = 'test'): string {
+  const now = new Date().toISOString();
+  return JSON.stringify(
+    {
+      schemaVersion: 1,
+      activeWorkspaceId: workspaceId,
+      workspaces: [{ id: workspaceId, name, lastOpenedAt: now, createdAt: now }],
+    },
+    null,
+    2,
+  );
+}
+
+/**
+ * Read `registry.json` from a branch and return the active workspace ID.
+ * Falls back to the first entry. Throws when the registry is absent or empty.
+ */
+async function resolveWorkspaceId(cfg: LiveGithubConfig, ref: string): Promise<string> {
+  const res = await fetch(buildContentsUrl(cfg, REGISTRY_JSON_PATH, ref), {
+    headers: { ...ghHeaders(cfg.token), 'Cache-Control': 'no-cache' },
+  });
+  if (!res.ok) {
+    throw new Error(
+      `resolveWorkspaceId: registry.json read failed (${res.status}) on ${cfg.fullName}@${ref}`,
+    );
+  }
+  const body = (await res.json()) as { content: string; encoding: string };
+  if (body.encoding !== 'base64')
+    throw new Error(`registry.json unexpected encoding: ${body.encoding}`);
+  const parsed = JSON.parse(Buffer.from(body.content, 'base64').toString('utf-8')) as {
+    activeWorkspaceId?: string | null;
+    workspaces?: Array<{ id: string }>;
+  };
+  const wsId = parsed.activeWorkspaceId ?? parsed.workspaces?.[0]?.id;
+  if (!wsId) throw new Error('resolveWorkspaceId: registry is empty — no workspaces found');
+  return wsId;
+}
+
+/**
+ * Write (create or update) `registry.json` on a branch via the Contents API.
+ */
+async function writeRegistryJson(
+  cfg: LiveGithubConfig,
+  branch: string,
+  registryContent: string,
+  message: string,
+): Promise<void> {
+  // Probe for existing file to get its SHA (needed for updates).
+  const existing = await fetch(buildContentsUrl(cfg, REGISTRY_JSON_PATH, branch), {
+    headers: ghHeaders(cfg.token),
+  });
+  let sha: string | undefined;
+  if (existing.ok) {
+    sha = ((await existing.json()) as { sha: string }).sha;
+  }
+  const res = await fetchWithSecondaryRateLimit(buildContentsUrl(cfg, REGISTRY_JSON_PATH), {
+    method: 'PUT',
+    headers: { ...ghHeaders(cfg.token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message,
+      content: Buffer.from(`${registryContent}\n`).toString('base64'),
+      branch,
+      ...(sha ? { sha } : {}),
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '<no-body>');
+    throw new Error(`writeRegistryJson failed (${res.status}): ${text}`);
+  }
+}
 
 function buildContentsUrl(cfg: LiveGithubConfig, path: string, ref?: string): string {
   const base = `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/${path
@@ -512,27 +587,41 @@ const MIN_WORKSPACE_JSON = {
 } as const;
 
 /**
- * Idempotently ensure a valid `.apicircle/workspace.json` exists on the
- * named branch. If absent, seeds it via the Contents API; otherwise no-op.
- * Required precondition for `linkPrivateWorkspace` tests against the
- * sandbox repo's default branch.
+ * Idempotently ensure a valid workspace exists on the named branch under
+ * the new per-workspace directory layout. Seeds both `registry.json` and
+ * `workspace-<id>/workspace.json` when absent. Required precondition for
+ * `linkPrivateWorkspace` tests against the sandbox repo's default branch.
  */
 export async function ensureWorkspaceJsonOnMain(
   cfg: LiveGithubConfig,
   branch: string,
 ): Promise<void> {
-  const probeRes = await fetch(buildContentsUrl(cfg, WORKSPACE_JSON_PATH, branch), {
+  const wsId = MIN_WORKSPACE_JSON.workspaceId;
+  const wsPath = workspaceJsonPath(wsId);
+
+  // Probe workspace.json first — if present, nothing to do.
+  const probeRes = await fetch(buildContentsUrl(cfg, wsPath, branch), {
     headers: ghHeaders(cfg.token),
   });
   if (probeRes.ok) return; // already present — nothing to do.
   if (probeRes.status !== 404) {
     throw new Error(`workspace.json probe on ${cfg.fullName}@${branch} failed: ${probeRes.status}`);
   }
-  const putRes = await fetchWithSecondaryRateLimit(buildContentsUrl(cfg, WORKSPACE_JSON_PATH), {
+
+  // Seed registry.json (idempotent — writeRegistryJson handles existing).
+  await writeRegistryJson(
+    cfg,
+    branch,
+    buildRegistryJson(wsId, 'e2e-seed'),
+    'e2e bootstrap: seed .apicircle/registry.json',
+  );
+
+  // Seed workspace.json in the per-workspace directory.
+  const putRes = await fetchWithSecondaryRateLimit(buildContentsUrl(cfg, wsPath), {
     method: 'PUT',
     headers: { ...ghHeaders(cfg.token), 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      message: 'e2e bootstrap: seed .apicircle/workspace.json',
+      message: 'e2e bootstrap: seed .apicircle/ workspace',
       content: Buffer.from(`${JSON.stringify(MIN_WORKSPACE_JSON, null, 2)}\n`).toString('base64'),
       branch,
     }),
@@ -606,6 +695,12 @@ export async function fetchWorkspaceJson<T = Record<string, unknown>>(
   const ref = opts.expectedCommitSha ?? branchOrSha;
   let lastStatus = 0;
   let lastText = '<no-body>';
+
+  // Two-step resolution: read registry.json to discover the workspace ID,
+  // then read the per-workspace workspace.json. Both reads retry with
+  // exponential backoff to absorb Contents-API propagation lag.
+  let wsId: string | null = null;
+
   // Exponential backoff 500/1000/2000/4000/8000/16000/32000 ms ≈ 63.5s
   // total, mirroring `getDefaultBranchHeadWithPropagation` above. The
   // previous 8 × `750 * (attempt + 1)` linear budget (~21s) intermittently
@@ -614,7 +709,36 @@ export async function fetchWorkspaceJson<T = Record<string, unknown>>(
   // (15-execution-with-linked-assets). 63s sits comfortably below the
   // 90s per-test timeout used by the `chromium-live-github` project.
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    const res = await fetch(buildContentsUrl(cfg, WORKSPACE_JSON_PATH, ref), {
+    // Step 1: resolve workspace ID from registry.json (only on first success).
+    if (wsId === null) {
+      const regRes = await fetch(buildContentsUrl(cfg, REGISTRY_JSON_PATH, ref), {
+        headers: { ...ghHeaders(cfg.token), 'Cache-Control': 'no-cache' },
+      });
+      if (regRes.ok) {
+        const regBody = (await regRes.json()) as { content: string; encoding: string };
+        const parsed = JSON.parse(Buffer.from(regBody.content, 'base64').toString('utf-8')) as {
+          activeWorkspaceId?: string | null;
+          workspaces?: Array<{ id: string }>;
+        };
+        wsId = parsed.activeWorkspaceId ?? parsed.workspaces?.[0]?.id ?? null;
+      }
+      if (wsId === null) {
+        lastStatus = regRes.ok ? 500 : regRes.status;
+        lastText = regRes.ok
+          ? 'registry.json has no workspace entries'
+          : await regRes.text().catch(() => '<no-body>');
+        const transient =
+          isTransientWorkspaceReadFailure(lastStatus, lastText) ||
+          (opts.expectedCommitSha !== undefined && lastStatus === 404);
+        if (!transient || attempt === 7) break;
+        await wait(500 * 2 ** attempt);
+        continue;
+      }
+    }
+
+    // Step 2: read the per-workspace workspace.json.
+    const wsPath = workspaceJsonPath(wsId);
+    const res = await fetch(buildContentsUrl(cfg, wsPath, ref), {
       headers: { ...ghHeaders(cfg.token), 'Cache-Control': 'no-cache' },
     });
     if (res.ok) {
@@ -641,8 +765,10 @@ export async function fetchWorkspaceJson<T = Record<string, unknown>>(
 }
 
 /**
- * Put a complete `workspace.json` document on a branch. If the file already
- * exists its SHA is supplied, otherwise the PUT creates the file.
+ * Put a complete `workspace.json` document on a branch under the
+ * per-workspace directory layout. Also creates/updates `registry.json`
+ * to point at the workspace. The workspace object must carry a
+ * `workspaceId` field.
  */
 export async function writeWorkspaceJson(
   cfg: LiveGithubConfig,
@@ -650,6 +776,13 @@ export async function writeWorkspaceJson(
   workspace: Record<string, unknown>,
   message = 'e2e: update workspace.json',
 ): Promise<string> {
+  const wsId = workspace.workspaceId as string | undefined;
+  if (!wsId) throw new Error('writeWorkspaceJson: workspace object missing workspaceId');
+  const wsPath = workspaceJsonPath(wsId);
+
+  // Ensure registry.json exists and points at this workspace.
+  await writeRegistryJson(cfg, branch, buildRegistryJson(wsId), `${message} (registry)`);
+
   // Retry budget: 6 attempts × ~0.75-4.5 s backoff covers the GitHub
   // Contents-API propagation window that opens after a recent push or
   // concurrent write. The two transient failure modes we recover from:
@@ -660,7 +793,7 @@ export async function writeWorkspaceJson(
   let lastStatus = 0;
   let lastText = '<no-body>';
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    const existing = await fetch(buildContentsUrl(cfg, WORKSPACE_JSON_PATH, branch), {
+    const existing = await fetch(buildContentsUrl(cfg, wsPath, branch), {
       headers: ghHeaders(cfg.token),
     });
     let sha: string | undefined;
@@ -674,7 +807,7 @@ export async function writeWorkspaceJson(
       }
       throw new Error(`writeWorkspaceJson probe failed (${existing.status}): ${text}`);
     }
-    const res = await fetchWithSecondaryRateLimit(buildContentsUrl(cfg, WORKSPACE_JSON_PATH), {
+    const res = await fetchWithSecondaryRateLimit(buildContentsUrl(cfg, wsPath), {
       method: 'PUT',
       headers: { ...ghHeaders(cfg.token), 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1246,7 +1379,10 @@ export async function publishReleaseOnSource(
   patch?: (ws: Record<string, unknown>) => void,
 ): Promise<void> {
   assertBotOwner(cfg.owner, 'publishReleaseOnSource');
-  const getRes = await fetch(buildContentsUrl(cfg, WORKSPACE_JSON_PATH, branch), {
+  // Resolve workspace ID from registry, then read/write workspace.json.
+  const wsId = await resolveWorkspaceId(cfg, branch);
+  const wsPath = workspaceJsonPath(wsId);
+  const getRes = await fetch(buildContentsUrl(cfg, wsPath, branch), {
     headers: ghHeaders(cfg.token),
   });
   if (!getRes.ok) throw new Error(`publishReleaseOnSource: read failed (${getRes.status})`);
@@ -1271,7 +1407,7 @@ export async function publishReleaseOnSource(
   self.currentVersion = newVersion;
   decoded.releases = { ...releases, self } as unknown as typeof decoded.releases;
   if (patch) patch(decoded);
-  const putRes = await fetch(buildContentsUrl(cfg, WORKSPACE_JSON_PATH), {
+  const putRes = await fetch(buildContentsUrl(cfg, wsPath), {
     method: 'PUT',
     headers: { ...ghHeaders(cfg.token), 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -1300,7 +1436,10 @@ export async function addLinkedWorkspaceOnSource(
   link: { id: string; repoFullName: string; sourceBranch: string; pinnedVersion?: string | null },
 ): Promise<void> {
   assertBotOwner(cfg.owner, 'addLinkedWorkspaceOnSource');
-  const getRes = await fetch(buildContentsUrl(cfg, WORKSPACE_JSON_PATH, branch), {
+  // Resolve workspace ID from registry, then read/write workspace.json.
+  const wsId = await resolveWorkspaceId(cfg, branch);
+  const wsPath = workspaceJsonPath(wsId);
+  const getRes = await fetch(buildContentsUrl(cfg, wsPath, branch), {
     headers: ghHeaders(cfg.token),
   });
   if (!getRes.ok) throw new Error(`addLinkedWorkspaceOnSource: read failed (${getRes.status})`);
@@ -1336,7 +1475,7 @@ export async function addLinkedWorkspaceOnSource(
   decoded.linkedWorkspaces = Array.isArray(rawExisting)
     ? [...rawExisting, nextLink]
     : { ...rawExisting, [link.id]: nextLink };
-  const putRes = await fetch(buildContentsUrl(cfg, WORKSPACE_JSON_PATH), {
+  const putRes = await fetch(buildContentsUrl(cfg, wsPath), {
     method: 'PUT',
     headers: { ...ghHeaders(cfg.token), 'Content-Type': 'application/json' },
     body: JSON.stringify({

@@ -1101,7 +1101,7 @@ function applyGlobalAssetRemoveFile(
   // Queue the attachment blob for deletion on the next push IF the asset
   // ever made it to a remote ref. Otherwise the bytes were only ever in
   // local IDB — there's no remote tree entry to delete, so we skip the
-  // queue. The push flow emits `{path: '.apicircle/attachments/<slotId>',
+  // queue. The push flow emits `{path: '.apicircle/workspace-<id>/attachments/<slotId>',
   // sha: null}` over `base_tree` for every queued slot id, which GitHub
   // treats as a tree-entry deletion. The eventual PR merge then carries
   // the deletion through to the base branch.

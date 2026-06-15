@@ -34,7 +34,7 @@ describe('McpView (Phase 5 — populated)', () => {
   // covers the populated layout in depth. Here we just hold the smoke
   // checks the original stub had so the contract (viewId + non-throwing
   // getChildren) survives whatever the populated implementation does.
-  const fakeMcp = {
+  const fakeMcpNoWorkspace = {
     resolvePaths: () => ({ binary: 'apicircle-mcp', workspace: '', hasActiveWorkspace: false }),
     toolCatalog: () => [] as readonly never[],
     supportedClients: () => [] as readonly never[],
@@ -42,14 +42,32 @@ describe('McpView (Phase 5 — populated)', () => {
     getConfigPath: () => null,
   } as unknown as VsCodeMcpManager;
 
+  const fakeMcpWithWorkspace = {
+    resolvePaths: () => ({
+      binary: 'apicircle-mcp',
+      workspace: '/ws/.apicircle',
+      hasActiveWorkspace: true,
+      isRegistryWorkspace: false,
+    }),
+    toolCatalog: () => [] as readonly never[],
+    supportedClients: () => [] as readonly never[],
+    getConfigSnippet: () => null,
+    getConfigPath: () => null,
+  } as unknown as VsCodeMcpManager;
+
   it('viewId matches package.json contribution', () => {
-    expect(new McpView(fakeMcp).viewId).toBe('apicircle.mcp');
+    expect(new McpView(fakeMcpNoWorkspace).viewId).toBe('apicircle.mcp');
   });
 
-  it('getChildren returns the three top-level rows', () => {
-    const view = new McpView(fakeMcp);
+  it('getChildren returns empty when no workspace is active', () => {
+    const view = new McpView(fakeMcpNoWorkspace);
     const kids = view.getChildren();
-    // Phase 5: header + clients-section + connect-guide.
+    expect(kids).toEqual([]);
+  });
+
+  it('getChildren returns the three top-level rows when workspace is active', () => {
+    const view = new McpView(fakeMcpWithWorkspace);
+    const kids = view.getChildren();
     expect(kids.length).toBe(3);
     expect(kids[0]).toEqual({ kind: 'header' });
   });

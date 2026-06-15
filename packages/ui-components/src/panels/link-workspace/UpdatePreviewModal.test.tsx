@@ -24,6 +24,7 @@ function seedActivePreview(linkedWorkspaceId: string, preview: LinkedUpdatePrevi
           id: linkedWorkspaceId,
           kind: 'private',
           name: 'Acme',
+          sourceWorkspaceId: 'src-ws-acme',
           source: {
             provider: 'github',
             repoFullName: 'acme/tools',

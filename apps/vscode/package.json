@@ -164,7 +164,7 @@
     "onCommand:apicircle.toggleMockRuleEnabled",
     "onCommand:apicircle.addMockResponseHeader",
     "onView:apicircle.mcp",
-    "workspaceContains:**/.apicircle/workspace.json"
+    "workspaceContains:**/.apicircle/registry.json"
   ],
   "contributes": {
     "viewsContainers": {
@@ -221,12 +221,12 @@
     "viewsWelcome": [
       {
         "view": "apicircle.workspace",
-        "contents": "No workspace active.\n\nOpen a folder with `.apicircle/workspace.json` or create a new workspace to get started.\n\n[Create New Workspace](command:apicircle.createWorkspace)\n[Open Folder…](command:workbench.action.files.openFolder)",
+        "contents": "No workspace active.\n\nOpen a folder with an API Circle workspace or create a new one to get started.\n\n[Create New Workspace](command:apicircle.createWorkspace)\n[Open Folder…](command:workbench.action.files.openFolder)",
         "when": "!apicircle.hasActiveWorkspace"
       },
       {
         "view": "apicircle.editor",
-        "contents": "Welcome to API Circle Studio.\n\nAPI Circle keeps your API workspace in a Git-friendly file at `.apicircle/workspace.json`, so you can edit it here, in the desktop app, or in the web app — all on the same repo.\n\nNo `.apicircle/workspace.json` was found in the open folder. Create one or open a folder that already has one.\n\n[Create New Workspace](command:apicircle.createWorkspace)\n[Open Folder…](command:workbench.action.files.openFolder)",
+        "contents": "Welcome to API Circle Studio.\n\nAPI Circle keeps your API workspace in a Git-friendly directory at `.apicircle/`, so you can edit it here, in the desktop app, or in the web app — all on the same repo.\n\nNo API Circle workspace was found in the open folder. Create one or open a folder that already has one.\n\n[Create New Workspace](command:apicircle.createWorkspace)\n[Open Folder…](command:workbench.action.files.openFolder)",
         "when": "!apicircle.hasActiveWorkspace"
       },
       {
@@ -236,31 +236,67 @@
       },
       {
         "view": "apicircle.environment",
-        "contents": "Environments hold variables (`{{base_url}}`, secrets, …) you reference from requests.\n\n[New Environment](command:apicircle.newEnvironment)\n[Set Active Environment](command:apicircle.setActiveEnvironment)\n[Set Priority Order…](command:apicircle.setEnvPriorityOrder)"
+        "contents": "No workspace active.\n\nCreate or open a workspace to start defining environments and variables.\n\n[Create New Workspace](command:apicircle.createWorkspace)\n[Open Folder…](command:workbench.action.files.openFolder)",
+        "when": "!apicircle.hasActiveWorkspace"
+      },
+      {
+        "view": "apicircle.environment",
+        "contents": "Environments hold variables (`{{base_url}}`, secrets, …) you reference from requests.\n\n[New Environment](command:apicircle.newEnvironment)\n[Set Active Environment](command:apicircle.setActiveEnvironment)\n[Set Priority Order…](command:apicircle.setEnvPriorityOrder)",
+        "when": "apicircle.hasActiveWorkspace"
       },
       {
         "view": "apicircle.execution",
-        "contents": "Execution plans chain requests with assertions to validate end-to-end flows.\n\n[New Plan](command:apicircle.newPlan)"
+        "contents": "No workspace active.\n\nCreate or open a workspace to start building execution plans.\n\n[Create New Workspace](command:apicircle.createWorkspace)\n[Open Folder…](command:workbench.action.files.openFolder)",
+        "when": "!apicircle.hasActiveWorkspace"
+      },
+      {
+        "view": "apicircle.execution",
+        "contents": "Execution plans chain requests with assertions to validate end-to-end flows.\n\n[New Plan](command:apicircle.newPlan)",
+        "when": "apicircle.hasActiveWorkspace"
       },
       {
         "view": "apicircle.mock",
-        "contents": "No mock servers yet.\n\nMock servers spin up local HTTP endpoints from OpenAPI / Postman / Insomnia specs (or a manual endpoint list). Start them with ▶ Start, stop with ■ Stop — they live until VS Code closes.\n\n[New Mock…](command:apicircle.newMock)"
+        "contents": "No workspace active.\n\nCreate or open a workspace to start building mock servers.\n\n[Create New Workspace](command:apicircle.createWorkspace)\n[Open Folder…](command:workbench.action.files.openFolder)",
+        "when": "!apicircle.hasActiveWorkspace"
+      },
+      {
+        "view": "apicircle.mock",
+        "contents": "No mock servers yet.\n\nMock servers spin up local HTTP endpoints from OpenAPI / Postman / Insomnia specs (or a manual endpoint list). Start them with ▶ Start, stop with ■ Stop — they live until VS Code closes.\n\n[New Mock…](command:apicircle.newMock)",
+        "when": "apicircle.hasActiveWorkspace"
       },
       {
         "view": "apicircle.history",
-        "contents": "Recent request and plan runs land here as you ▶ Send / Run.\n\nNo runs yet — send a request from the Editor view to populate this list."
+        "contents": "No workspace active.\n\nCreate or open a workspace to start tracking request history.\n\n[Create New Workspace](command:apicircle.createWorkspace)\n[Open Folder…](command:workbench.action.files.openFolder)",
+        "when": "!apicircle.hasActiveWorkspace"
+      },
+      {
+        "view": "apicircle.history",
+        "contents": "Recent request and plan runs land here as you ▶ Send / Run.\n\nNo runs yet — send a request from the Editor view to populate this list.",
+        "when": "apicircle.hasActiveWorkspace"
       },
       {
         "view": "apicircle.snapshots",
-        "contents": "No snapshots yet.\n\nWorkspace snapshots are point-in-time copies of `synced` state. Use them to undo accidental deletes or revert before risky imports — the safety net for Git-tracked workspace changes.\n\n[Capture Snapshot…](command:apicircle.captureSnapshot)\n[Set Storage Cap…](command:apicircle.setSnapshotMaxBytes)"
+        "contents": "No workspace active.\n\nCreate or open a workspace to start capturing snapshots.\n\n[Create New Workspace](command:apicircle.createWorkspace)\n[Open Folder…](command:workbench.action.files.openFolder)",
+        "when": "!apicircle.hasActiveWorkspace"
+      },
+      {
+        "view": "apicircle.snapshots",
+        "contents": "No snapshots yet.\n\nWorkspace snapshots are point-in-time copies of `synced` state. Use them to undo accidental deletes or revert before risky imports — the safety net for Git-tracked workspace changes.\n\n[Capture Snapshot…](command:apicircle.captureSnapshot)\n[Set Storage Cap…](command:apicircle.setSnapshotMaxBytes)",
+        "when": "apicircle.hasActiveWorkspace"
       },
       {
         "view": "apicircle.mcp",
-        "contents": "MCP integration exposes your workspace to Claude Desktop, Claude Code, Cursor, Continue, Cline, Zed, Windsurf, GitHub Copilot, and ChatGPT.\n\nOpen a folder with `.apicircle/workspace.json` to see per-AI-client config snippets you can paste into each client.\n\n[Open Connect Guide](command:apicircle.openMcpConnectGuide)"
+        "contents": "No workspace active.\n\nCreate or open a workspace to configure MCP integration with your AI clients.\n\n[Create New Workspace](command:apicircle.createWorkspace)\n[Open Folder…](command:workbench.action.files.openFolder)",
+        "when": "!apicircle.hasActiveWorkspace"
+      },
+      {
+        "view": "apicircle.mcp",
+        "contents": "MCP integration exposes your workspace to Claude Desktop, Claude Code, Cursor, Continue, Cline, Zed, Windsurf, GitHub Copilot, and ChatGPT.\n\nOpen a folder with an API Circle workspace to see per-AI-client config snippets you can paste into each client.\n\n[Open Connect Guide](command:apicircle.openMcpConnectGuide)",
+        "when": "apicircle.hasActiveWorkspace"
       },
       {
         "view": "apicircle.linkWorkspaces",
-        "contents": "Open a folder with `.apicircle/workspace.json` to manage this workspace's releases — the versions linked consumers pin to.\n\n[Create New Workspace](command:apicircle.createWorkspace)",
+        "contents": "Open a folder with an API Circle workspace to manage this workspace's releases — the versions linked consumers pin to.\n\n[Create New Workspace](command:apicircle.createWorkspace)",
         "when": "!apicircle.hasActiveWorkspace"
       },
       {

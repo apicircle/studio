@@ -7,7 +7,7 @@ import type { LinkedWorkspace } from '@apicircle/shared';
 // PAT-in-vault model. The returned access token is handed per-call to
 // `@apicircle/git`'s GitHubClient (which never stores it).
 //
-// `scopes: ['repo']` covers reading private repos' `.apicircle/workspace.json`
+// `scopes: ['repo']` covers reading private repos' `.apicircle/` workspace files
 // plus creating tags / releases / topic edits on the user's own repos.
 // =============================================================================
 

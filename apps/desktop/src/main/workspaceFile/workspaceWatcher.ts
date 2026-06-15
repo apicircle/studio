@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { EventEmitter } from 'node:events';
-import { WORKSPACES_SUBDIR } from '@apicircle/core/workspace/registry';
+import { WORKSPACE_DIR_PREFIX, workspaceDirFor } from '@apicircle/core/workspace/registry';
 import type { WorkspaceFileManager } from './workspaceFileManager';
 
 // =============================================================================
@@ -69,7 +69,6 @@ interface StatSnapshot {
 
 export class WorkspaceWatcher extends EventEmitter {
   private rootWatcher: fs.FSWatcher | null = null;
-  private workspacesDirWatcher: fs.FSWatcher | null = null;
   private dirWatchers = new Map<string, fs.FSWatcher>();
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Per-id snapshot of the file's stats immediately after a self-write.
@@ -83,10 +82,6 @@ export class WorkspaceWatcher extends EventEmitter {
     super();
   }
 
-  private get workspacesDir(): string {
-    return path.join(this.manager.workspacesRoot, WORKSPACES_SUBDIR);
-  }
-
   /**
    * Begin watching. Safe to call before the directory exists — we create
    * it (via `mkdirSync({ recursive: true })`) so the root watcher has
@@ -97,18 +92,20 @@ export class WorkspaceWatcher extends EventEmitter {
     if (this.started) return;
     this.started = true;
     const root = this.manager.workspacesRoot;
-    const wsDir = this.workspacesDir;
     try {
-      fs.mkdirSync(wsDir, { recursive: true });
+      fs.mkdirSync(root, { recursive: true });
     } catch (err) {
-      console.error('[workspaceWatcher] could not create workspaces dir', wsDir, err);
+      console.error('[workspaceWatcher] could not create workspaces root', root, err);
       return;
     }
-    // Watch root for registry.json changes.
+    // Watch root for registry.json changes AND workspace-* directory creation/removal.
     try {
-      this.rootWatcher = fs.watch(root, { persistent: false }, (_eventType, filename) => {
+      this.rootWatcher = fs.watch(root, { persistent: false }, (eventType, filename) => {
         if (filename === REGISTRY_FILENAME) {
           this.scheduleEmit(REGISTRY_CHANGE);
+        }
+        if (filename && filename.startsWith(WORKSPACE_DIR_PREFIX)) {
+          this.onWorkspacesDirEvent(eventType, filename);
         }
       });
       this.rootWatcher.on('error', (err) => {
@@ -118,27 +115,17 @@ export class WorkspaceWatcher extends EventEmitter {
       console.error('[workspaceWatcher] could not watch root', root, err);
       return;
     }
-    // Watch workspaces/ subdir for per-id directory creation/removal.
-    try {
-      this.workspacesDirWatcher = fs.watch(wsDir, { persistent: false }, (eventType, filename) => {
-        this.onWorkspacesDirEvent(eventType, filename);
-      });
-      this.workspacesDirWatcher.on('error', (err) => {
-        console.error('[workspaceWatcher] workspaces-dir watcher error', err);
-      });
-    } catch (err) {
-      console.error('[workspaceWatcher] could not watch workspaces dir', wsDir, err);
-    }
-    // Wire up watchers for whatever workspace subdirs already exist.
+    // Wire up watchers for whatever workspace-* dirs already exist.
     let entries: fs.Dirent[] = [];
     try {
-      entries = fs.readdirSync(wsDir, { withFileTypes: true });
+      entries = fs.readdirSync(root, { withFileTypes: true });
     } catch (err) {
-      console.error('[workspaceWatcher] could not enumerate workspaces dir', err);
+      console.error('[workspaceWatcher] could not enumerate workspaces root', err);
     }
     for (const entry of entries) {
-      if (entry.isDirectory()) {
-        this.watchWorkspaceDir(entry.name);
+      if (entry.isDirectory() && entry.name.startsWith(WORKSPACE_DIR_PREFIX)) {
+        const id = entry.name.slice(WORKSPACE_DIR_PREFIX.length);
+        this.watchWorkspaceDir(id);
       }
     }
   }
@@ -153,14 +140,6 @@ export class WorkspaceWatcher extends EventEmitter {
         /* closing a closed watcher throws — ignore */
       }
       this.rootWatcher = null;
-    }
-    if (this.workspacesDirWatcher) {
-      try {
-        this.workspacesDirWatcher.close();
-      } catch {
-        /* same */
-      }
-      this.workspacesDirWatcher = null;
     }
     for (const w of this.dirWatchers.values()) {
       try {
@@ -212,21 +191,23 @@ export class WorkspaceWatcher extends EventEmitter {
     if (workspaceId === REGISTRY_CHANGE) {
       return path.join(this.manager.workspacesRoot, REGISTRY_FILENAME);
     }
-    return path.join(this.workspacesDir, workspaceId, SYNCED_FILENAME);
+    return path.join(workspaceDirFor(this.manager.workspacesRoot, workspaceId), SYNCED_FILENAME);
   }
 
   private onWorkspacesDirEvent(eventType: string, filename: string | null): void {
     if (!filename) return;
-    // A new per-id subdirectory may have appeared (or an existing one was
-    // removed). Re-evaluate which dirs we're watching.
+    // A new workspace-<id> directory may have appeared (or an existing one
+    // was removed). Re-evaluate which dirs we're watching.
+    const root = this.manager.workspacesRoot;
     try {
-      const entries = fs.readdirSync(this.workspacesDir, { withFileTypes: true });
+      const entries = fs.readdirSync(root, { withFileTypes: true });
       const present = new Set<string>();
       for (const entry of entries) {
-        if (entry.isDirectory()) {
-          present.add(entry.name);
-          if (!this.dirWatchers.has(entry.name)) {
-            this.watchWorkspaceDir(entry.name);
+        if (entry.isDirectory() && entry.name.startsWith(WORKSPACE_DIR_PREFIX)) {
+          const id = entry.name.slice(WORKSPACE_DIR_PREFIX.length);
+          present.add(id);
+          if (!this.dirWatchers.has(id)) {
+            this.watchWorkspaceDir(id);
           }
         }
       }
@@ -245,13 +226,13 @@ export class WorkspaceWatcher extends EventEmitter {
         }
       }
     } catch (err) {
-      console.error('[workspaceWatcher] workspaces-dir re-scan failed', err);
+      console.error('[workspaceWatcher] workspace-dir re-scan failed', err);
     }
     void eventType;
   }
 
   private watchWorkspaceDir(workspaceId: string): void {
-    const dir = path.join(this.workspacesDir, workspaceId);
+    const dir = workspaceDirFor(this.manager.workspacesRoot, workspaceId);
     try {
       const watcher = fs.watch(dir, { persistent: false }, (eventType, filename) => {
         if (filename === SYNCED_FILENAME) {

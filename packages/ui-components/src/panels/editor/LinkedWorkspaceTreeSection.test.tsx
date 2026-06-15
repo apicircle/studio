@@ -48,6 +48,7 @@ function makeLink(id: string, overrides: Partial<LinkedWorkspace> = {}): LinkedW
     id,
     kind: 'public',
     name: `Link ${id}`,
+    sourceWorkspaceId: `src-ws-${id}`,
     source: {
       provider: 'github',
       repoFullName: `org/${id}`,

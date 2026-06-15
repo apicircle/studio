@@ -88,7 +88,7 @@ function assertWorkspaceReady(
   const paths = deps.mcp.resolvePaths();
   if (!paths.hasActiveWorkspace) {
     void vscode.window.showWarningMessage(
-      'No active API Circle workspace. Open a folder containing .apicircle/workspace.json before installing MCP for external clients.',
+      'No active API Circle workspace. Open a folder containing an API Circle workspace before installing MCP for external clients.',
     );
     return null;
   }

@@ -832,7 +832,7 @@ describe('package.json manifest regression', () => {
       (e) => e.view === 'apicircle.editor',
     );
     // Two distinct entries — one for the no-workspace case, one for when
-    // the bridge has already adopted a `.apicircle/workspace.json`.
+    // the bridge has already adopted a `.apicircle/workspace-<id>/workspace.json`.
     expect(editorEntries.length).toBe(2);
 
     const noWorkspace = editorEntries.find((e) => e.when === '!apicircle.hasActiveWorkspace');

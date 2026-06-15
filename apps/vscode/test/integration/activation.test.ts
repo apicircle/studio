@@ -337,10 +337,20 @@ describe('extension activation (integration)', () => {
 
   it('auto-registers workspaces found via canonical .apicircle/ discovery', () => {
     const folder = path.join(tmp, 'repo');
-    fs.mkdirSync(path.join(folder, '.apicircle'), { recursive: true });
+    const apicircleRoot = path.join(folder, '.apicircle');
+    const wsDir = path.join(apicircleRoot, 'workspace-test-ws');
+    fs.mkdirSync(wsDir, { recursive: true });
     fs.writeFileSync(
-      path.join(folder, '.apicircle', 'workspace.json'),
+      path.join(wsDir, 'workspace.json'),
       JSON.stringify({ schemaVersion: 1, workspaceId: 'test-ws' }),
+    );
+    fs.writeFileSync(
+      path.join(apicircleRoot, 'registry.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        activeWorkspaceId: 'test-ws',
+        workspaces: [{ id: 'test-ws', name: 'repo', createdAt: 't', lastOpenedAt: 't' }],
+      }),
     );
 
     (workspace as { workspaceFolders: unknown }).workspaceFolders = [
@@ -373,15 +383,25 @@ describe('extension activation (integration)', () => {
 
   it('restores previously-active workspace from globalState on subsequent activation', async () => {
     const folder = path.join(tmp, 'repo-a');
-    fs.mkdirSync(path.join(folder, '.apicircle'), { recursive: true });
-    fs.writeFileSync(path.join(folder, '.apicircle', 'workspace.json'), '{}');
+    const apicircleRoot = path.join(folder, '.apicircle');
+    const wsDir = path.join(apicircleRoot, 'workspace-ws-a');
+    fs.mkdirSync(wsDir, { recursive: true });
+    fs.writeFileSync(path.join(wsDir, 'workspace.json'), '{}');
+    fs.writeFileSync(
+      path.join(apicircleRoot, 'registry.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        activeWorkspaceId: 'ws-a',
+        workspaces: [{ id: 'ws-a', name: 'repo-a', createdAt: 't', lastOpenedAt: 't' }],
+      }),
+    );
 
     (workspace as { workspaceFolders: unknown }).workspaceFolders = [
       { uri: Uri.file(folder), name: 'repo-a', index: 0 },
     ];
 
     const { ctx, globalState } = makeMockContext(path.join(tmp, 'globalStorage'));
-    globalState.set('apicircle.activeWorkspaceId', path.join(folder, '.apicircle'));
+    globalState.set('apicircle.activeWorkspaceId', 'ws-a');
     activate(ctx);
 
     const { bridge } = __getInternalsForTests();

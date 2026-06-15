@@ -16,6 +16,7 @@ function makeLink(id: string): LinkedWorkspace {
     id,
     kind: 'private',
     name: `Linked-${id}`,
+    sourceWorkspaceId: `src-ws-${id}`,
     source: {
       provider: 'github',
       repoFullName: `acme/${id}`,

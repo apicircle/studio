@@ -9,7 +9,7 @@ import type {
 // =============================================================================
 // Linked-workspace snapshot helpers — the PURE half of the link/refresh flow.
 //
-// `parseLinkedWorkspaceJson` decodes a remote `.apicircle/workspace.json`
+// `parseLinkedWorkspaceJson` decodes a remote `.apicircle/workspace-<id>/workspace.json`
 // (fetched over the GitHub API by the host) into the slices a consumer needs:
 // the release ledger, the collections + environments tree, the secret-key
 // registry, and the global-asset library. `buildLinkedSnapshot` turns that +
@@ -22,6 +22,7 @@ import type {
 // =============================================================================
 
 export interface LinkedWorkspaceProbe {
+  workspaceId?: string;
   releases?: { self?: ReleaseHistory | null };
   collections?: WorkspaceSynced['collections'];
   environments?: WorkspaceSynced['environments'];
@@ -56,6 +57,7 @@ export function parseLinkedWorkspaceJson(text: string): LinkedWorkspaceProbe {
   const asObject = <T>(v: unknown): T | undefined =>
     typeof v === 'object' && v !== null ? (v as T) : undefined;
   return {
+    workspaceId: typeof obj.workspaceId === 'string' ? obj.workspaceId : undefined,
     releases: asObject<{ self?: ReleaseHistory | null }>(obj.releases),
     collections: asObject<WorkspaceSynced['collections']>(obj.collections),
     environments: asObject<WorkspaceSynced['environments']>(obj.environments),

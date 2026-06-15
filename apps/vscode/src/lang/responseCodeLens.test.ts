@@ -90,7 +90,7 @@ function makeDoc(uri: vscode.Uri, lines: string[]): vscode.TextDocument {
   } as unknown as vscode.TextDocument;
 }
 
-const fakeToken = { isCancellationRequested: false } as vscode.CancellationToken;
+const _fakeToken = { isCancellationRequested: false } as vscode.CancellationToken;
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -111,7 +111,6 @@ describe('ResponseCodeLensProvider', () => {
         '# ── body (json) ──',
         '{"a":1}',
       ]),
-      fakeToken,
     );
     expect(lenses).toHaveLength(1);
     expect(lenses[0].command?.command).toBe('apicircle.formatResponseJson');
@@ -122,7 +121,6 @@ describe('ResponseCodeLensProvider', () => {
   it('emits nothing when body kind is not json', () => {
     const lenses = provider.provideCodeLenses(
       makeDoc(RESPONSE_URI, ['# APICircle Response — GetXml', '', '# ── body (xml) ──', '<root/>']),
-      fakeToken,
     );
     expect(lenses).toHaveLength(0);
   });
@@ -134,10 +132,7 @@ describe('ResponseCodeLensProvider', () => {
       path: '/requests/foo/bar.yaml',
       query: 'id=r-1',
     });
-    const lenses = provider.provideCodeLenses(
-      makeDoc(otherUri, ['# ── body (json) ──', '{}']),
-      fakeToken,
-    );
+    const lenses = provider.provideCodeLenses(makeDoc(otherUri, ['# ── body (json) ──', '{}']));
     expect(lenses).toHaveLength(0);
   });
 
@@ -146,10 +141,7 @@ describe('ResponseCodeLensProvider', () => {
       scheme: 'file',
       path: '/tmp/responses/x.yaml',
     });
-    const lenses = provider.provideCodeLenses(
-      makeDoc(otherUri, ['# ── body (json) ──', '{}']),
-      fakeToken,
-    );
+    const lenses = provider.provideCodeLenses(makeDoc(otherUri, ['# ── body (json) ──', '{}']));
     expect(lenses).toHaveLength(0);
   });
 });

@@ -8,6 +8,7 @@ function link(over: Partial<LinkedWorkspace> = {}): LinkedWorkspace {
     id: 'lw1',
     kind: 'public',
     name: 'Payments API',
+    sourceWorkspaceId: 'src-ws-1',
     source: {
       provider: 'github',
       repoFullName: 'org/payments',

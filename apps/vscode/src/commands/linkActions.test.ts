@@ -88,6 +88,7 @@ function link(id: string, over: Partial<LinkedWorkspace> = {}): LinkedWorkspace 
     id,
     kind: 'public',
     name: 'Payments API',
+    sourceWorkspaceId: 'src-ws-1',
     source: {
       provider: 'github',
       repoFullName: 'org/payments',
@@ -101,6 +102,50 @@ function link(id: string, over: Partial<LinkedWorkspace> = {}): LinkedWorkspace 
     requiredSecretKeyIds: [],
     ...over,
   };
+}
+
+/**
+ * Set up the `gh.getContents` mock to serve both registry.json and
+ * workspace-<id>/workspace.json for a remote workspace. The two-step
+ * `fetchRemoteWorkspaceJson` resolution reads the registry first, then
+ * the workspace JSON.
+ */
+function mockRemoteWorkspace(workspaceContent: unknown): void {
+  const registry = JSON.stringify({
+    schemaVersion: 1,
+    activeWorkspaceId: 'remote-ws',
+    workspaces: [{ id: 'remote-ws', name: 'Remote', createdAt: 't', lastOpenedAt: 't' }],
+  });
+  const wsContent =
+    typeof workspaceContent === 'string' ? workspaceContent : JSON.stringify(workspaceContent);
+  gh.getContents.mockImplementation(
+    async (_token: string, _owner: string, _name: string, filePath: string) => {
+      if (filePath && filePath.endsWith('registry.json')) {
+        return { content: registry, sha: 'r', path: filePath, size: registry.length };
+      }
+      return { content: wsContent, sha: 'blob', path: filePath, size: wsContent.length };
+    },
+  );
+}
+
+/**
+ * Set up `gh.getContents` to serve a registry that points to a missing
+ * workspace.json (returns null content).
+ */
+function mockRemoteWorkspaceMissing(): void {
+  const registry = JSON.stringify({
+    schemaVersion: 1,
+    activeWorkspaceId: 'remote-ws',
+    workspaces: [{ id: 'remote-ws', name: 'Remote', createdAt: 't', lastOpenedAt: 't' }],
+  });
+  gh.getContents.mockImplementation(
+    async (_token: string, _owner: string, _name: string, filePath: string) => {
+      if (filePath && filePath.endsWith('registry.json')) {
+        return { content: registry, sha: 'r', path: filePath, size: registry.length };
+      }
+      return { content: null, sha: 's', path: filePath, size: 0 };
+    },
+  );
 }
 
 const ledger: ReleaseHistory = {
@@ -295,12 +340,7 @@ describe('linkActions', () => {
       );
       secretStore.set('apicircle.linkSession.lw1', 'dedicated-tok');
       auth.getGitHubToken.mockResolvedValue(null); // built-in session would yield nothing
-      gh.getContents.mockResolvedValue({
-        content: JSON.stringify({ releases: { self: ledger } }),
-        sha: 's',
-        path: 'p',
-        size: 1,
-      });
+      mockRemoteWorkspace({ releases: { self: ledger } });
       await refreshLinkedWorkspaceCommand(deps(), linkUri('lw1'));
       // Used the dedicated token, not the (null) built-in session.
       expect(gh.getContents).toHaveBeenCalledWith(
@@ -386,16 +426,11 @@ describe('linkActions', () => {
         },
       ]);
       gh.listBranches.mockResolvedValue([{ name: 'main', commitSha: 'sha' }]);
-      gh.getContents.mockResolvedValue({
-        content: JSON.stringify({
-          releases: { self: ledger },
-          collections: { tree: { id: 'r', type: 'root', children: [] }, requests: {}, folders: {} },
-          environments: { items: {}, activeName: null, priorityOrder: [] },
-          secretKeys: { K: { id: 'K', label: 'Key', salt: 's', createdAt: 't' } },
-        }),
-        sha: 'blob',
-        path: '.apicircle/workspace.json',
-        size: 1,
+      mockRemoteWorkspace({
+        releases: { self: ledger },
+        collections: { tree: { id: 'r', type: 'root', children: [] }, requests: {}, folders: {} },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
+        secretKeys: { K: { id: 'K', label: 'Key', salt: 's', createdAt: 't' } },
       });
       // repo pick → branch pick → version pick
       (window.showQuickPick as Mock)
@@ -437,12 +472,7 @@ describe('linkActions', () => {
         { lw1: { currentVersion: '1.0.0', versions: [ledger.versions[0]] } },
       );
       auth.getGitHubToken.mockResolvedValue('tok');
-      gh.getContents.mockResolvedValue({
-        content: JSON.stringify({ releases: { self: ledger } }),
-        sha: 'blob',
-        path: '.apicircle/workspace.json',
-        size: 1,
-      });
+      mockRemoteWorkspace({ releases: { self: ledger } });
       await refreshLinkedWorkspaceCommand(deps(), linkUri('lw1'));
       const state = await bridge.activeWorkspace()!.read();
       expect(state.synced.releases.perLink.lw1.currentVersion).toBe('1.1.0');
@@ -457,38 +487,33 @@ describe('linkActions', () => {
         { lw1: { currentVersion: '1.0.0', versions: [ledger.versions[0]] } },
       );
       auth.getGitHubToken.mockResolvedValue('tok');
-      gh.getContents.mockResolvedValue({
-        content: JSON.stringify({
-          releases: { self: ledger },
-          collections: {
-            tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'req-1' }] },
-            requests: {
-              'req-1': {
-                id: 'req-1',
-                name: 'List pets',
-                method: 'GET',
-                url: 'https://api/pets',
-                headers: [],
-                query: [],
-                pathParams: [],
-                cookies: [],
-                body: { type: 'none' },
-                auth: { type: 'none' },
-                assertions: [],
-                extractions: [],
-                contextVars: {},
-                folderId: null,
-                createdAt: 't',
-                updatedAt: 't',
-              },
+      mockRemoteWorkspace({
+        releases: { self: ledger },
+        collections: {
+          tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'req-1' }] },
+          requests: {
+            'req-1': {
+              id: 'req-1',
+              name: 'List pets',
+              method: 'GET',
+              url: 'https://api/pets',
+              headers: [],
+              query: [],
+              pathParams: {},
+              cookies: [],
+              body: { type: 'none', content: '' },
+              auth: { type: 'none' },
+              assertions: [],
+              extractions: [],
+              contextVars: [],
+              folderId: null,
+              createdAt: 't',
+              updatedAt: 't',
             },
-            folders: {},
           },
-          environments: { items: {}, activeName: null, priorityOrder: [] },
-        }),
-        sha: 'blob',
-        path: '.apicircle/workspace.json',
-        size: 1,
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
       });
       // Bulk-resolution pick → accept source.
       (window.showQuickPick as Mock).mockResolvedValueOnce({
@@ -955,6 +980,7 @@ describe('linkActions', () => {
           ...state.local,
           linkedCollections: {
             lw1: {
+              pulledAt: 't',
               ref: 'abc',
               collections: {
                 tree: { id: 'root', type: 'root' as const, children: [] },
@@ -966,13 +992,13 @@ describe('linkActions', () => {
                     url: 'https://api/users',
                     headers: [],
                     query: [],
-                    pathParams: [],
+                    pathParams: {},
                     cookies: [],
-                    body: { type: 'none' },
+                    body: { type: 'none', content: '' },
                     auth: { type: 'none' },
                     assertions: [],
                     extractions: [],
-                    contextVars: {},
+                    contextVars: [],
                     folderId: null,
                     createdAt: 't',
                     updatedAt: 't',
@@ -1003,6 +1029,7 @@ describe('linkActions', () => {
           ...state.local,
           linkedCollections: {
             lw1: {
+              pulledAt: 't',
               ref: 'abc',
               collections: {
                 tree: { id: 'root', type: 'root' as const, children: [] },
@@ -1014,13 +1041,13 @@ describe('linkActions', () => {
                     url: 'https://api/users',
                     headers: [],
                     query: [],
-                    pathParams: [],
+                    pathParams: {},
                     cookies: [],
-                    body: { type: 'none' },
+                    body: { type: 'none', content: '' },
                     auth: { type: 'none' },
                     assertions: [],
                     extractions: [],
-                    contextVars: {},
+                    contextVars: [],
                     folderId: null,
                     createdAt: 't',
                     updatedAt: 't',
@@ -1053,6 +1080,7 @@ describe('linkActions', () => {
           ...state.local,
           linkedCollections: {
             lw1: {
+              pulledAt: 't',
               ref: 'abc',
               collections: {
                 tree: { id: 'root', type: 'root' as const, children: [] },
@@ -1062,29 +1090,32 @@ describe('linkActions', () => {
               environments: {
                 items: {
                   Production: {
+                    name: 'Production',
                     variables: [
                       {
                         key: 'API_URL',
                         value: 'https://prod.api',
-                        enabled: true,
                         encrypted: false,
                       },
-                      { key: 'SECRET', value: '', enabled: true, encrypted: true },
+                      { key: 'SECRET', value: '', encrypted: true },
                     ],
                   },
                   Staging: {
+                    name: 'Staging',
                     variables: [
                       {
                         key: 'API_URL',
                         value: 'https://staging.api',
-                        enabled: true,
                         encrypted: false,
                       },
                     ],
                   },
                 },
                 activeName: 'Production',
-                priorityOrder: ['Production', 'Staging'],
+                priorityOrder: [
+                  { kind: 'local', name: 'Production' },
+                  { kind: 'local', name: 'Staging' },
+                ],
               },
             },
           },
@@ -1295,7 +1326,7 @@ describe('linkActions', () => {
               'lw1:req1': {
                 linkedWorkspaceId: 'lw1',
                 itemId: 'req1',
-                request: {} as never,
+                patch: {} as never,
                 updatedAt: 't',
               },
             },
@@ -1333,7 +1364,7 @@ describe('linkActions', () => {
               'lw1:req1': {
                 linkedWorkspaceId: 'lw1',
                 itemId: 'req1',
-                request: {} as never,
+                patch: {} as never,
                 updatedAt: 't',
               },
             },
@@ -1363,19 +1394,14 @@ describe('linkActions', () => {
       auth.getGitHubToken.mockResolvedValue('tok');
       gh.listAccessibleRepos.mockResolvedValue([]);
       gh.listBranches.mockRejectedValue(new Error('not found')); // triggers catch for manual
-      gh.getContents.mockResolvedValue({
-        content: JSON.stringify({
-          releases: { self: null },
-          collections: {
-            tree: { id: 'r', type: 'root', children: [] },
-            requests: {},
-            folders: {},
-          },
-          environments: { items: {}, activeName: null, priorityOrder: [] },
-        }),
-        sha: 'blob',
-        path: '.apicircle/workspace.json',
-        size: 1,
+      mockRemoteWorkspace({
+        releases: { self: null },
+        collections: {
+          tree: { id: 'r', type: 'root', children: [] },
+          requests: {},
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
       });
       // repo pick → manual entry
       (window.showQuickPick as Mock).mockResolvedValueOnce({
@@ -1450,19 +1476,14 @@ describe('linkActions', () => {
       auth.getGitHubToken.mockResolvedValue('tok');
       gh.listAccessibleRepos.mockRejectedValue(new Error('rate limited'));
       gh.listBranches.mockRejectedValue(new Error('not found'));
-      gh.getContents.mockResolvedValue({
-        content: JSON.stringify({
-          releases: { self: null },
-          collections: {
-            tree: { id: 'r', type: 'root', children: [] },
-            requests: {},
-            folders: {},
-          },
-          environments: { items: {}, activeName: null, priorityOrder: [] },
-        }),
-        sha: 'blob',
-        path: '.apicircle/workspace.json',
-        size: 1,
+      mockRemoteWorkspace({
+        releases: { self: null },
+        collections: {
+          tree: { id: 'r', type: 'root', children: [] },
+          requests: {},
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
       });
       (window.showQuickPick as Mock).mockResolvedValueOnce({
         label: '$(edit) Enter owner/name manually…',
@@ -1520,19 +1541,14 @@ describe('linkActions', () => {
           isPrivate: false,
         },
       ]);
-      gh.getContents.mockResolvedValue({
-        content: JSON.stringify({
-          releases: { self: null },
-          collections: {
-            tree: { id: 'r', type: 'root', children: [] },
-            requests: {},
-            folders: {},
-          },
-          environments: { items: {}, activeName: null, priorityOrder: [] },
-        }),
-        sha: 'blob',
-        path: '.apicircle/workspace.json',
-        size: 1,
+      mockRemoteWorkspace({
+        releases: { self: null },
+        collections: {
+          tree: { id: 'r', type: 'root', children: [] },
+          requests: {},
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
       });
       // result pick
       (window.showQuickPick as Mock).mockResolvedValueOnce({
@@ -1590,51 +1606,46 @@ describe('linkActions', () => {
       );
     });
 
-    it('shows error when workspace.json not found', async () => {
+    it('shows error when no workspace found on remote', async () => {
       setup({ lw1: link('lw1', { kind: 'public' }) });
       auth.getGitHubToken.mockResolvedValue('tok');
-      gh.getContents.mockResolvedValue({ content: null, sha: 's', path: 'p', size: 0 });
+      mockRemoteWorkspaceMissing();
       await refreshLinkedWorkspaceCommand(deps(), linkUri('lw1'));
       expect(window.showErrorMessage).toHaveBeenCalledWith(
-        expect.stringContaining('workspace.json not found'),
+        expect.stringContaining('No .apicircle/ workspace found'),
       );
     });
 
     it('bootstraps snapshot when no cached linkedCollections exist', async () => {
       setup({ lw1: link('lw1', { kind: 'public' }) });
       auth.getGitHubToken.mockResolvedValue('tok');
-      gh.getContents.mockResolvedValue({
-        content: JSON.stringify({
-          releases: { self: ledger },
-          collections: {
-            tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'req-1' }] },
-            requests: {
-              'req-1': {
-                id: 'req-1',
-                name: 'Hello',
-                method: 'GET',
-                url: 'https://api/hello',
-                headers: [],
-                query: [],
-                pathParams: [],
-                cookies: [],
-                body: { type: 'none' },
-                auth: { type: 'none' },
-                assertions: [],
-                extractions: [],
-                contextVars: {},
-                folderId: null,
-                createdAt: 't',
-                updatedAt: 't',
-              },
+      mockRemoteWorkspace({
+        releases: { self: ledger },
+        collections: {
+          tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'req-1' }] },
+          requests: {
+            'req-1': {
+              id: 'req-1',
+              name: 'Hello',
+              method: 'GET',
+              url: 'https://api/hello',
+              headers: [],
+              query: [],
+              pathParams: {},
+              cookies: [],
+              body: { type: 'none', content: '' },
+              auth: { type: 'none' },
+              assertions: [],
+              extractions: [],
+              contextVars: [],
+              folderId: null,
+              createdAt: 't',
+              updatedAt: 't',
             },
-            folders: {},
           },
-          environments: { items: {}, activeName: null, priorityOrder: [] },
-        }),
-        sha: 'blob',
-        path: '.apicircle/workspace.json',
-        size: 1,
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
       });
       await refreshLinkedWorkspaceCommand(deps(), linkUri('lw1'));
       const state = await bridge.activeWorkspace()!.read();
@@ -1683,10 +1694,10 @@ describe('linkActions', () => {
     it('shows error when content is null (workspace.json missing)', async () => {
       setup({ lw1: link('lw1', { kind: 'public' }) });
       auth.getGitHubToken.mockResolvedValue('tok');
-      gh.getContents.mockResolvedValue({ content: null, sha: 's', path: 'p', size: 0 });
+      mockRemoteWorkspaceMissing();
       await reviewLinkedUpdateCommand(deps(), linkUri('lw1'));
       expect(window.showErrorMessage).toHaveBeenCalledWith(
-        expect.stringContaining('workspace.json not found'),
+        expect.stringContaining('No .apicircle/ workspace found'),
       );
     });
 
@@ -1696,13 +1707,8 @@ describe('linkActions', () => {
       });
       auth.getGitHubToken.mockResolvedValue('tok');
       // Source with no collections and no environments → buildLinkedSnapshot returns null
-      gh.getContents.mockResolvedValue({
-        content: JSON.stringify({
-          releases: { self: ledger },
-        }),
-        sha: 'blob',
-        path: '.apicircle/workspace.json',
-        size: 1,
+      mockRemoteWorkspace({
+        releases: { self: ledger },
       });
       await reviewLinkedUpdateCommand(deps(), linkUri('lw1'));
       expect(window.showInformationMessage).toHaveBeenCalledWith(
@@ -1734,12 +1740,7 @@ describe('linkActions', () => {
         { lw1: ledger },
       );
       auth.getGitHubToken.mockResolvedValue('tok');
-      gh.getContents.mockResolvedValue({
-        content: sourcePayload,
-        sha: 'blob',
-        path: '.apicircle/workspace.json',
-        size: 1,
-      });
+      mockRemoteWorkspace(sourcePayload);
 
       // First, do one review to populate the snapshot with the correct ref.
       // This path takes the "content-identical — updated pin" branch (since
@@ -1749,12 +1750,7 @@ describe('linkActions', () => {
       // Now the snapshot is stored. Call again — this time base.ref === target.ref
       // and the pin is already 1.1.0.
       (window.showInformationMessage as Mock).mockClear();
-      gh.getContents.mockResolvedValue({
-        content: sourcePayload,
-        sha: 'blob',
-        path: '.apicircle/workspace.json',
-        size: 1,
-      });
+      mockRemoteWorkspace(sourcePayload);
       await reviewLinkedUpdateCommand(deps(), linkUri('lw1'));
       expect(window.showInformationMessage).toHaveBeenCalledWith(
         expect.stringContaining('already up to date'),
@@ -1776,6 +1772,7 @@ describe('linkActions', () => {
           ...state.local,
           linkedCollections: {
             lw1: {
+              pulledAt: 't',
               ref: 'old-ref',
               collections: {
                 tree: { id: 'r', type: 'root' as const, children: [] },
@@ -1787,19 +1784,14 @@ describe('linkActions', () => {
           },
         },
       });
-      gh.getContents.mockResolvedValue({
-        content: JSON.stringify({
-          releases: { self: ledger },
-          collections: {
-            tree: { id: 'r', type: 'root', children: [] },
-            requests: {},
-            folders: {},
-          },
-          environments: { items: {}, activeName: null, priorityOrder: [] },
-        }),
-        sha: 'blob',
-        path: '.apicircle/workspace.json',
-        size: 1,
+      mockRemoteWorkspace({
+        releases: { self: ledger },
+        collections: {
+          tree: { id: 'r', type: 'root', children: [] },
+          requests: {},
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
       });
       await reviewLinkedUpdateCommand(deps(), linkUri('lw1'));
       const updatedState = await bridge.activeWorkspace()!.read();
@@ -1817,42 +1809,37 @@ describe('linkActions', () => {
         { lw1: { currentVersion: '1.0.0', versions: [ledger.versions[0]] } },
       );
       auth.getGitHubToken.mockResolvedValue('tok');
-      gh.getContents.mockResolvedValue({
-        content: JSON.stringify({
-          releases: { self: ledger },
-          collections: {
-            tree: {
-              id: 'r',
-              type: 'root',
-              children: [{ kind: 'request', id: 'req-1' }],
-            },
-            requests: {
-              'req-1': {
-                id: 'req-1',
-                name: 'List pets v2',
-                method: 'POST',
-                url: 'https://api/pets',
-                headers: [],
-                query: [],
-                pathParams: [],
-                cookies: [],
-                body: { type: 'none' },
-                auth: { type: 'none' },
-                assertions: [],
-                extractions: [],
-                contextVars: {},
-                folderId: null,
-                createdAt: 't',
-                updatedAt: 't',
-              },
-            },
-            folders: {},
+      mockRemoteWorkspace({
+        releases: { self: ledger },
+        collections: {
+          tree: {
+            id: 'r',
+            type: 'root',
+            children: [{ kind: 'request', id: 'req-1' }],
           },
-          environments: { items: {}, activeName: null, priorityOrder: [] },
-        }),
-        sha: 'blob',
-        path: '.apicircle/workspace.json',
-        size: 1,
+          requests: {
+            'req-1': {
+              id: 'req-1',
+              name: 'List pets v2',
+              method: 'POST',
+              url: 'https://api/pets',
+              headers: [],
+              query: [],
+              pathParams: {},
+              cookies: [],
+              body: { type: 'none', content: '' },
+              auth: { type: 'none' },
+              assertions: [],
+              extractions: [],
+              contextVars: [],
+              folderId: null,
+              createdAt: 't',
+              updatedAt: 't',
+            },
+          },
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
       });
       // Bulk resolution → keep all mine
       (window.showQuickPick as Mock).mockResolvedValueOnce({
@@ -1889,20 +1876,20 @@ describe('linkActions', () => {
               'lw1:req-1': {
                 linkedWorkspaceId: 'lw1',
                 itemId: 'req-1',
-                request: {
+                patch: {
                   id: 'req-1',
                   name: 'Local edit',
                   method: 'PUT',
                   url: 'https://api/mine',
                   headers: [],
                   query: [],
-                  pathParams: [],
+                  pathParams: {},
                   cookies: [],
-                  body: { type: 'none' },
+                  body: { type: 'none', content: '' },
                   auth: { type: 'none' },
                   assertions: [],
                   extractions: [],
-                  contextVars: {},
+                  contextVars: [],
                   folderId: null,
                   createdAt: 't',
                   updatedAt: 't',
@@ -1917,6 +1904,7 @@ describe('linkActions', () => {
           ...state.local,
           linkedCollections: {
             lw1: {
+              pulledAt: 't',
               ref: 'old-ref',
               collections: {
                 tree: {
@@ -1932,13 +1920,13 @@ describe('linkActions', () => {
                     url: 'https://api/old',
                     headers: [],
                     query: [],
-                    pathParams: [],
+                    pathParams: {},
                     cookies: [],
-                    body: { type: 'none' },
+                    body: { type: 'none', content: '' },
                     auth: { type: 'none' },
                     assertions: [],
                     extractions: [],
-                    contextVars: {},
+                    contextVars: [],
                     folderId: null,
                     createdAt: 't',
                     updatedAt: 't',
@@ -1953,19 +1941,14 @@ describe('linkActions', () => {
       });
 
       // Source removes req-1 entirely → "removed-in-source" conflict
-      gh.getContents.mockResolvedValue({
-        content: JSON.stringify({
-          releases: { self: ledger },
-          collections: {
-            tree: { id: 'r', type: 'root', children: [] },
-            requests: {},
-            folders: {},
-          },
-          environments: { items: {}, activeName: null, priorityOrder: [] },
-        }),
-        sha: 'blob',
-        path: '.apicircle/workspace.json',
-        size: 1,
+      mockRemoteWorkspace({
+        releases: { self: ledger },
+        collections: {
+          tree: { id: 'r', type: 'root', children: [] },
+          requests: {},
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
       });
       // Mode pick cancelled
       (window.showQuickPick as Mock).mockResolvedValueOnce(undefined);
@@ -2023,7 +2006,7 @@ describe('linkActions', () => {
         },
       ]);
       gh.listBranches.mockResolvedValue([{ name: 'main', commitSha: 'sha' }]);
-      gh.getContents.mockResolvedValue({ content: null, sha: 's', path: 'p', size: 0 });
+      mockRemoteWorkspaceMissing();
       (window.showQuickPick as Mock)
         .mockResolvedValueOnce({
           label: 'org/repo',
@@ -2032,7 +2015,7 @@ describe('linkActions', () => {
         .mockResolvedValueOnce({ label: 'main' });
       await linkWorkspaceCommand(deps());
       expect(window.showErrorMessage).toHaveBeenCalledWith(
-        expect.stringContaining('No .apicircle/workspace.json'),
+        expect.stringContaining('No .apicircle/ workspace found'),
       );
     });
 
@@ -2041,19 +2024,14 @@ describe('linkActions', () => {
       auth.getGitHubToken.mockResolvedValue('tok');
       gh.listAccessibleRepos.mockResolvedValue([]);
       gh.listBranches.mockRejectedValue(new Error('nope'));
-      gh.getContents.mockResolvedValue({
-        content: JSON.stringify({
-          releases: { self: null },
-          collections: {
-            tree: { id: 'r', type: 'root', children: [] },
-            requests: {},
-            folders: {},
-          },
-          environments: { items: {}, activeName: null, priorityOrder: [] },
-        }),
-        sha: 'blob',
-        path: '.apicircle/workspace.json',
-        size: 1,
+      mockRemoteWorkspace({
+        releases: { self: null },
+        collections: {
+          tree: { id: 'r', type: 'root', children: [] },
+          requests: {},
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
       });
       (window.showQuickPick as Mock).mockResolvedValueOnce({
         label: '$(edit) Enter owner/name manually…',
@@ -2081,21 +2059,16 @@ describe('linkActions', () => {
         },
       ]);
       gh.listBranches.mockResolvedValue([{ name: 'main', commitSha: 'sha' }]);
-      gh.getContents.mockResolvedValue({
-        content: JSON.stringify({
-          releases: {
-            self: ledger,
-          },
-          collections: {
-            tree: { id: 'r', type: 'root', children: [] },
-            requests: {},
-            folders: {},
-          },
-          environments: { items: {}, activeName: null, priorityOrder: [] },
-        }),
-        sha: 'blob',
-        path: '.apicircle/workspace.json',
-        size: 1,
+      mockRemoteWorkspace({
+        releases: {
+          self: ledger,
+        },
+        collections: {
+          tree: { id: 'r', type: 'root', children: [] },
+          requests: {},
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
       });
       (window.showQuickPick as Mock)
         .mockResolvedValueOnce({
@@ -2244,6 +2217,7 @@ describe('linkActions', () => {
           ...state.local,
           linkedCollections: {
             lw1: {
+              pulledAt: 't',
               ref: 'abc',
               collections: {
                 tree: { id: 'root', type: 'root' as const, children: [] },
@@ -2253,18 +2227,18 @@ describe('linkActions', () => {
               environments: {
                 items: {
                   Dev: {
+                    name: 'Dev',
                     variables: [
                       {
                         key: 'BASE_URL',
                         value: 'http://localhost',
-                        enabled: true,
                         encrypted: false,
                       },
                     ],
                   },
                 },
                 activeName: 'Dev',
-                priorityOrder: ['Dev'],
+                priorityOrder: [{ kind: 'local', name: 'Dev' }],
               },
             },
           },
@@ -2309,20 +2283,20 @@ describe('linkActions', () => {
               'lw1:req-1': {
                 linkedWorkspaceId: 'lw1',
                 itemId: 'req-1',
-                request: {
+                patch: {
                   id: 'req-1',
                   name: 'Locally modified',
                   method: 'PATCH',
                   url: 'https://api/mine',
                   headers: [],
                   query: [],
-                  pathParams: [],
+                  pathParams: {},
                   cookies: [],
-                  body: { type: 'none' },
+                  body: { type: 'none', content: '' },
                   auth: { type: 'none' },
                   assertions: [],
                   extractions: [],
-                  contextVars: {},
+                  contextVars: [],
                   folderId: null,
                   createdAt: 't',
                   updatedAt: 't',
@@ -2337,6 +2311,7 @@ describe('linkActions', () => {
           ...state.local,
           linkedCollections: {
             lw1: {
+              pulledAt: 't',
               ref: 'old-ref',
               collections: {
                 tree: {
@@ -2352,13 +2327,13 @@ describe('linkActions', () => {
                     url: 'https://api/old',
                     headers: [],
                     query: [],
-                    pathParams: [],
+                    pathParams: {},
                     cookies: [],
-                    body: { type: 'none' },
+                    body: { type: 'none', content: '' },
                     auth: { type: 'none' },
                     assertions: [],
                     extractions: [],
-                    contextVars: {},
+                    contextVars: [],
                     folderId: null,
                     createdAt: 't',
                     updatedAt: 't',
@@ -2373,19 +2348,14 @@ describe('linkActions', () => {
       });
 
       // Source removes req-1
-      gh.getContents.mockResolvedValue({
-        content: JSON.stringify({
-          releases: { self: ledger },
-          collections: {
-            tree: { id: 'r', type: 'root', children: [] },
-            requests: {},
-            folders: {},
-          },
-          environments: { items: {}, activeName: null, priorityOrder: [] },
-        }),
-        sha: 'blob',
-        path: '.apicircle/workspace.json',
-        size: 1,
+      mockRemoteWorkspace({
+        releases: { self: ledger },
+        collections: {
+          tree: { id: 'r', type: 'root', children: [] },
+          requests: {},
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
       });
       // Mode pick → "resolve each"
       (window.showQuickPick as Mock)
@@ -2419,20 +2389,20 @@ describe('linkActions', () => {
               'lw1:req-1': {
                 linkedWorkspaceId: 'lw1',
                 itemId: 'req-1',
-                request: {
+                patch: {
                   id: 'req-1',
                   name: 'My version',
                   method: 'DELETE',
                   url: 'https://api/mine',
                   headers: [],
                   query: [],
-                  pathParams: [],
+                  pathParams: {},
                   cookies: [],
-                  body: { type: 'none' },
+                  body: { type: 'none', content: '' },
                   auth: { type: 'none' },
                   assertions: [],
                   extractions: [],
-                  contextVars: {},
+                  contextVars: [],
                   folderId: null,
                   createdAt: 't',
                   updatedAt: 't',
@@ -2447,6 +2417,7 @@ describe('linkActions', () => {
           ...state.local,
           linkedCollections: {
             lw1: {
+              pulledAt: 't',
               ref: 'old-ref',
               collections: {
                 tree: {
@@ -2462,13 +2433,13 @@ describe('linkActions', () => {
                     url: 'https://api/old',
                     headers: [],
                     query: [],
-                    pathParams: [],
+                    pathParams: {},
                     cookies: [],
-                    body: { type: 'none' },
+                    body: { type: 'none', content: '' },
                     auth: { type: 'none' },
                     assertions: [],
                     extractions: [],
-                    contextVars: {},
+                    contextVars: [],
                     folderId: null,
                     createdAt: 't',
                     updatedAt: 't',
@@ -2482,19 +2453,14 @@ describe('linkActions', () => {
         },
       });
 
-      gh.getContents.mockResolvedValue({
-        content: JSON.stringify({
-          releases: { self: ledger },
-          collections: {
-            tree: { id: 'r', type: 'root', children: [] },
-            requests: {},
-            folders: {},
-          },
-          environments: { items: {}, activeName: null, priorityOrder: [] },
-        }),
-        sha: 'blob',
-        path: '.apicircle/workspace.json',
-        size: 1,
+      mockRemoteWorkspace({
+        releases: { self: ledger },
+        collections: {
+          tree: { id: 'r', type: 'root', children: [] },
+          requests: {},
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
       });
       // Mode → "resolve each", then cancel on the first conflict
       (window.showQuickPick as Mock)
@@ -2530,20 +2496,20 @@ describe('linkActions', () => {
               'lw1:req-1': {
                 linkedWorkspaceId: 'lw1',
                 itemId: 'req-1',
-                request: {
+                patch: {
                   id: 'req-1',
                   name: 'Mine',
                   method: 'PUT',
                   url: 'https://api/mine',
                   headers: [],
                   query: [],
-                  pathParams: [],
+                  pathParams: {},
                   cookies: [],
-                  body: { type: 'none' },
+                  body: { type: 'none', content: '' },
                   auth: { type: 'none' },
                   assertions: [],
                   extractions: [],
-                  contextVars: {},
+                  contextVars: [],
                   folderId: null,
                   createdAt: 't',
                   updatedAt: 't',
@@ -2558,6 +2524,7 @@ describe('linkActions', () => {
           ...state.local,
           linkedCollections: {
             lw1: {
+              pulledAt: 't',
               ref: 'old-ref',
               collections: {
                 tree: {
@@ -2573,13 +2540,13 @@ describe('linkActions', () => {
                     url: 'https://api/base',
                     headers: [],
                     query: [],
-                    pathParams: [],
+                    pathParams: {},
                     cookies: [],
-                    body: { type: 'none' },
+                    body: { type: 'none', content: '' },
                     auth: { type: 'none' },
                     assertions: [],
                     extractions: [],
-                    contextVars: {},
+                    contextVars: [],
                     folderId: null,
                     createdAt: 't',
                     updatedAt: 't',
@@ -2594,19 +2561,14 @@ describe('linkActions', () => {
       });
 
       // Source removes req-1
-      gh.getContents.mockResolvedValue({
-        content: JSON.stringify({
-          releases: { self: ledger },
-          collections: {
-            tree: { id: 'r', type: 'root', children: [] },
-            requests: {},
-            folders: {},
-          },
-          environments: { items: {}, activeName: null, priorityOrder: [] },
-        }),
-        sha: 'blob',
-        path: '.apicircle/workspace.json',
-        size: 1,
+      mockRemoteWorkspace({
+        releases: { self: ledger },
+        collections: {
+          tree: { id: 'r', type: 'root', children: [] },
+          requests: {},
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
       });
       // Bulk resolution → accept all source (theirs)
       (window.showQuickPick as Mock).mockResolvedValueOnce({
@@ -2639,33 +2601,28 @@ describe('linkActions', () => {
       ]);
       gh.listBranches.mockResolvedValue([{ name: 'main', commitSha: 'sha' }]);
       // Source has versions but currentVersion is null
-      gh.getContents.mockResolvedValue({
-        content: JSON.stringify({
-          releases: {
-            self: {
-              currentVersion: null,
-              versions: [
-                {
-                  version: '0.1.0',
-                  publishedAt: 't',
-                  notes: '',
-                  workspaceSnapshot: 'a'.repeat(64),
-                  deprecated: false,
-                  yanked: false,
-                },
-              ],
-            },
+      mockRemoteWorkspace({
+        releases: {
+          self: {
+            currentVersion: null,
+            versions: [
+              {
+                version: '0.1.0',
+                publishedAt: 't',
+                notes: '',
+                workspaceSnapshot: 'a'.repeat(64),
+                deprecated: false,
+                yanked: false,
+              },
+            ],
           },
-          collections: {
-            tree: { id: 'r', type: 'root', children: [] },
-            requests: {},
-            folders: {},
-          },
-          environments: { items: {}, activeName: null, priorityOrder: [] },
-        }),
-        sha: 'blob',
-        path: '.apicircle/workspace.json',
-        size: 1,
+        },
+        collections: {
+          tree: { id: 'r', type: 'root', children: [] },
+          requests: {},
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
       });
       (window.showQuickPick as Mock)
         .mockResolvedValueOnce({

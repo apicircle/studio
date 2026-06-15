@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import kleur from 'kleur';
 import {
-  WORKSPACE_JSON_PATH,
+  fetchRemoteWorkspaceJson,
   applyMutation,
   buildLinkedSnapshot,
   ledgerFromProbe,
@@ -132,19 +132,21 @@ export function registerLinkedCommand(program: Command): void {
 
         const [owner, name] = repo.split('/', 2);
         const client = new GitHubClient();
-        const file = await client.getContents(token, owner, name, WORKSPACE_JSON_PATH, opts.branch);
-        if (!file) {
-          process.stderr.write(
-            `${kleur.red('error')}: workspace.json not found on ${repo}@${opts.branch}\n`,
-          );
+        const result = await fetchRemoteWorkspaceJson(async (p) => {
+          const f = await client.getContents(token, owner, name, p, opts.branch);
+          return f?.content ?? null;
+        });
+        if ('error' in result) {
+          process.stderr.write(`${kleur.red('error')}: ${repo}@${opts.branch}: ${result.error}\n`);
           process.exit(2);
         }
-        const probe = parseLinkedWorkspaceJson(file.content);
+        const probe = parseLinkedWorkspaceJson(result.content);
         const ledger = ledgerFromProbe(probe);
         const link: LinkedWorkspace = {
           id: generateId(),
           kind: opts.kind,
           name: repo,
+          sourceWorkspaceId: result.workspaceId,
           source: {
             provider: 'github',
             repoFullName: repo,
@@ -194,20 +196,17 @@ export function registerLinkedCommand(program: Command): void {
       }
       const [owner, name] = link.source.repoFullName.split('/', 2);
       const client = new GitHubClient();
-      const file = await client.getContents(
-        token,
-        owner,
-        name,
-        WORKSPACE_JSON_PATH,
-        link.source.branch,
-      );
-      if (!file) {
+      const result = await fetchRemoteWorkspaceJson(async (p) => {
+        const f = await client.getContents(token, owner, name, p, link.source.branch);
+        return f?.content ?? null;
+      });
+      if ('error' in result) {
         process.stderr.write(
-          `${kleur.red('error')}: workspace.json not found on ${link.source.repoFullName}@${link.source.branch}\n`,
+          `${kleur.red('error')}: ${link.source.repoFullName}@${link.source.branch}: ${result.error}\n`,
         );
         process.exit(2);
       }
-      const probe = parseLinkedWorkspaceJson(file.content);
+      const probe = parseLinkedWorkspaceJson(result.content);
       const ledger = ledgerFromProbe(probe);
       const needsSnapshot = !state.local.linkedCollections[id];
       const snapshot = needsSnapshot ? (buildLinkedSnapshot(probe, link) ?? undefined) : undefined;

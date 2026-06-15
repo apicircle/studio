@@ -114,6 +114,46 @@ describe('workspaceStore.runPlan', () => {
     // Stand up a session, link a workspace whose source carries one
     // request + one environment, and then run a plan that references
     // that linked request.
+    const REMOTE_WS_ID = 'remote-ws';
+    const registryJson = JSON.stringify({
+      schemaVersion: 1,
+      activeWorkspaceId: REMOTE_WS_ID,
+      workspaces: [{ id: REMOTE_WS_ID }],
+    });
+    const workspaceContent = JSON.stringify({
+      workspaceName: 'Linked',
+      collections: {
+        tree: { id: 'r', type: 'root', children: ['linked-req'] },
+        requests: {
+          'linked-req': {
+            id: 'linked-req',
+            name: 'Greet',
+            folderId: null,
+            method: 'GET',
+            url: '{{BASE_URL}}/hello',
+            headers: [],
+            query: [],
+            body: { type: 'none', content: '' },
+            contextVars: [],
+            assertions: [],
+            createdAt: 't',
+            updatedAt: 't',
+          },
+        },
+        folders: {},
+      },
+      environments: {
+        items: {
+          prod: {
+            name: 'prod',
+            variables: [{ key: 'BASE_URL', value: 'https://prod', encrypted: false }],
+          },
+        },
+        activeName: 'prod',
+        priorityOrder: [{ kind: 'local', name: 'prod' }],
+      },
+      releases: { self: null },
+    });
     vi.stubGlobal(
       'fetch',
       queuedFetch([
@@ -121,49 +161,20 @@ describe('workspaceStore.runPlan', () => {
         {
           body: {
             type: 'file',
-            path: '.apicircle/workspace.json',
+            path: '.apicircle/registry.json',
+            sha: 'reg-sha',
+            size: registryJson.length,
+            content: btoa(unescape(encodeURIComponent(registryJson))),
+            encoding: 'base64',
+          },
+        },
+        {
+          body: {
+            type: 'file',
+            path: `.apicircle/workspace-${REMOTE_WS_ID}/workspace.json`,
             sha: 's',
-            size: 10,
-            content: btoa(
-              unescape(
-                encodeURIComponent(
-                  JSON.stringify({
-                    workspaceName: 'Linked',
-                    collections: {
-                      tree: { id: 'r', type: 'root', children: ['linked-req'] },
-                      requests: {
-                        'linked-req': {
-                          id: 'linked-req',
-                          name: 'Greet',
-                          folderId: null,
-                          method: 'GET',
-                          url: '{{BASE_URL}}/hello',
-                          headers: [],
-                          query: [],
-                          body: { type: 'none', content: '' },
-                          contextVars: [],
-                          assertions: [],
-                          createdAt: 't',
-                          updatedAt: 't',
-                        },
-                      },
-                      folders: {},
-                    },
-                    environments: {
-                      items: {
-                        prod: {
-                          name: 'prod',
-                          variables: [{ key: 'BASE_URL', value: 'https://prod', encrypted: false }],
-                        },
-                      },
-                      activeName: 'prod',
-                      priorityOrder: [{ kind: 'local', name: 'prod' }],
-                    },
-                    releases: { self: null },
-                  }),
-                ),
-              ),
-            ),
+            size: workspaceContent.length,
+            content: btoa(unescape(encodeURIComponent(workspaceContent))),
             encoding: 'base64',
           },
         },

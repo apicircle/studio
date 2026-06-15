@@ -6,8 +6,8 @@ import * as vscode from 'vscode';
 //
 // Mirrors the web suite's `test:e2e:live-github` script — exercises the
 // extension against a real GitHub repo to verify:
-//   • workspace.json commits via VS Code's native Git extension show the
-//     same on-disk shape the desktop / web app would commit
+//   • workspace-<id>/workspace.json commits via VS Code's native Git extension
+//     show the same on-disk shape the desktop / web app would commit
 //   • `git pull` propagates as `apicircle://` document refresh
 //   • Linked-workspace fetch (when Phase 8 lands) authenticates correctly
 //     via `vscode.authentication.getSession('github')`
@@ -39,7 +39,7 @@ suite('Live-GitHub E2E (opt-in)', function () {
     assert.strictEqual(ext!.isActive, true);
   });
 
-  test('canonical .apicircle/workspace.json is detected after git pull', async function () {
+  test('canonical .apicircle/registry.json + workspace-<id>/workspace.json is detected after git pull', async function () {
     if (!ENABLED) {
       this.skip();
       return;

@@ -902,7 +902,7 @@ export class GitHubClient {
   /**
    * Same as `getContents` but returns the raw bytes instead of UTF-8
    * decoding the file. Used by the refresh flow to pull
-   * `.apicircle/attachments/<slotId>` blobs into local IDB without
+   * `.apicircle/workspace-<id>/attachments/<slotId>` blobs into local IDB without
    * mangling binary data through TextDecoder.
    */
   async getBinaryContents(

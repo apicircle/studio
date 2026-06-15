@@ -79,8 +79,12 @@ describe('createWorkspaceCommand', () => {
     await createWorkspaceCommand(bridge);
     // QuickPick must NOT be shown for single-folder case
     expect(window.showQuickPick).not.toHaveBeenCalled();
-    // workspace.json now exists
-    expect(fs.existsSync(path.join(folder, '.apicircle', 'workspace.json'))).toBe(true);
+    // workspace.json now exists under .apicircle/workspace-<id>/
+    const apicircleDir = path.join(folder, '.apicircle');
+    expect(fs.existsSync(path.join(apicircleDir, 'registry.json'))).toBe(true);
+    const entries = fs.readdirSync(apicircleDir).filter((f) => f.startsWith('workspace-'));
+    expect(entries).toHaveLength(1);
+    expect(fs.existsSync(path.join(apicircleDir, entries[0], 'workspace.json'))).toBe(true);
   });
 
   it('asks the user to pick which folder when multiple are open', async () => {
@@ -99,8 +103,8 @@ describe('createWorkspaceCommand', () => {
 
     await createWorkspaceCommand(bridge);
     expect(window.showQuickPick).toHaveBeenCalled();
-    expect(fs.existsSync(path.join(folderB, '.apicircle', 'workspace.json'))).toBe(true);
-    expect(fs.existsSync(path.join(folderA, '.apicircle', 'workspace.json'))).toBe(false);
+    expect(fs.existsSync(path.join(folderB, '.apicircle', 'registry.json'))).toBe(true);
+    expect(fs.existsSync(path.join(folderA, '.apicircle', 'registry.json'))).toBe(false);
   });
 
   it('cancels gracefully when user dismisses the folder picker', async () => {
@@ -115,8 +119,8 @@ describe('createWorkspaceCommand', () => {
     (window.showQuickPick as Mock).mockResolvedValueOnce(undefined);
 
     await createWorkspaceCommand(bridge);
-    expect(fs.existsSync(path.join(folderA, '.apicircle'))).toBe(false);
-    expect(fs.existsSync(path.join(folderB, '.apicircle'))).toBe(false);
+    expect(fs.existsSync(path.join(folderA, '.apicircle', 'registry.json'))).toBe(false);
+    expect(fs.existsSync(path.join(folderB, '.apicircle', 'registry.json'))).toBe(false);
   });
 
   it('shows an info message + opens the workspace file on success', async () => {

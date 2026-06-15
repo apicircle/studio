@@ -12,6 +12,7 @@ function makeLink(): LinkedWorkspace {
     id: 'lw-1',
     kind: 'public',
     name: 'Payments',
+    sourceWorkspaceId: 'src-ws-payments',
     source: {
       provider: 'github',
       repoFullName: 'org/payments',

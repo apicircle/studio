@@ -28,10 +28,13 @@ function queuedFetch(queue: ResponseSpec[]): ReturnType<typeof vi.fn> {
 
 function fileResponse(bytes: Uint8Array, sha = 'blob-sha'): ResponseSpec {
   const content = Buffer.from(bytes).toString('base64');
+  // The path in the response body is metadata — the actual routing is by
+  // the fetch URL. Use a per-workspace path to match production.
+  const wsId = useWorkspaceStore.getState().synced?.workspaceId ?? 'ws';
   return {
     body: {
       type: 'file',
-      path: '.apicircle/attachments/x',
+      path: `.apicircle/workspace-${wsId}/attachments/x`,
       sha,
       size: bytes.length,
       content,
@@ -311,6 +314,7 @@ describe('workspaceStore.syncAttachments', () => {
             id: 'publicLink',
             kind: 'public',
             name: 'public/source',
+            sourceWorkspaceId: 'src-ws-public',
             source: {
               provider: 'github',
               repoFullName: 'public/source',

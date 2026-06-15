@@ -282,7 +282,7 @@ The default E2E suite uses the local GitHub mock. Real GitHub credentials are op
 
 `pnpm test:e2e:live-github` now runs the canonical `chromium-live-github` Playwright project. It only picks up specs under [`e2e/web/live-github/`](../../e2e/web/live-github/); the older sandbox suite has been removed so there is one live GitHub contract to maintain.
 
-Each spec creates bot-owned ephemeral private/public repos as needed, seeds deterministic `.apicircle/workspace.json` data, and deletes repos/branches in test cleanup. The main bot PAT needs `repo` + `delete_repo`; the dedicated-link PAT needs `repo` so private linked workspaces can refresh after the active workspace GitHub session is disconnected.
+Each spec creates bot-owned ephemeral private/public repos as needed, seeds deterministic `.apicircle/` workspace data, and deletes repos/branches in test cleanup. The main bot PAT needs `repo` + `delete_repo`; the dedicated-link PAT needs `repo` so private linked workspaces can refresh after the active workspace GitHub session is disconnected.
 
 | Env var                                | Required? | Purpose                                                                              |
 | -------------------------------------- | --------- | ------------------------------------------------------------------------------------ |
@@ -316,7 +316,7 @@ The workflow maps `APICIRCLE_E2E_BOT_PAT` into the runtime `APICIRCLE_E2E_GITHUB
 | Spec                                      | Covers                                                                                                                                       |
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `00-preflight.spec.ts`                    | PAT validity, bot owner guard, private/public repo create/delete, dedicated PAT private-read access.                                         |
-| `01-connect-branch-push.spec.ts`          | Connect private repo, create exact branch, push minimal workspace, fetch remote `.apicircle/workspace.json`, assert branch/commit exist.     |
+| `01-connect-branch-push.spec.ts`          | Connect private repo, create exact branch, push minimal workspace, fetch remote `.apicircle/` workspace data, assert branch/commit exist.    |
 | `02-private-link-workspace.spec.ts`       | Two-repo private linking: source workspace provides requests/env/release notes, host links and materializes them.                            |
 | `03-private-dedicated-pat.spec.ts`        | Private source link bound to a dedicated PAT still refreshes after workspace GitHub session disconnect.                                      |
 | `04-public-link-workspace.spec.ts`        | Public source link materializes without an active workspace GitHub session.                                                                  |

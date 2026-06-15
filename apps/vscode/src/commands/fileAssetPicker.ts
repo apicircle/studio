@@ -18,7 +18,7 @@ import type { VsCodeBridge } from '../host/vscodeBridge';
 //   📤 Upload a new file…
 //
 // On "Upload a new file…" the native file-open dialog opens, the bytes are
-// copied to `<apicircleDir>/attachments/<slotId>`, a sha256 + size + mime
+// copied to `<apicircleDir>/workspace-<id>/attachments/<slotId>`, a sha256 + size + mime
 // triple is computed, and a fresh GlobalFileAsset is registered via the
 // `globalAsset.upsertFile` patch so the shared library shows it on every
 // surface (desktop, web, CLI, MCP) the moment they re-read the workspace.
@@ -75,7 +75,8 @@ export async function pickGlobalFileAsset(
   }
   items.push({
     label: '📤 Upload a new file…',
-    description: 'Native file picker. Copies bytes to .apicircle/attachments/<slotId>.',
+    description:
+      'Native file picker. Copies bytes to .apicircle/workspace-<id>/attachments/<slotId>.',
     value: UPLOAD_VALUE,
   });
 

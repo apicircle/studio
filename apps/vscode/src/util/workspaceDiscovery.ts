@@ -1,7 +1,7 @@
 import type * as vscode from 'vscode';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { WORKSPACE_DIR, WORKSPACE_JSON_PATH } from '@apicircle/core';
+import { WORKSPACE_DIR } from '@apicircle/core';
 import {
   defaultApicircleRoot,
   REGISTRY_FILE,
@@ -12,18 +12,17 @@ import {
 // =============================================================================
 // Workspace discovery — two sources:
 //
-// 1. Git-folder scan: find canonical `.apicircle/workspace.json` paths inside
-//    the user's open VS Code workspace folders.
+// 1. Git-folder scan: find `.apicircle/registry.json` inside the user's open
+//    VS Code workspace folders and read workspace entries from it.
 // 2. Registry scan: read `~/.apicircle/registry.json` and expose any workspace
 //    registered there (created by Desktop, CLI, or MCP).
 //
-// Git-folder layout:
-//   <repo-root>/.apicircle/workspace.json
-//   <repo-root>/.apicircle/attachments/<slotId>
-//
-// Registry layout:
-//   ~/.apicircle/registry.json
-//   ~/.apicircle/workspaces/<id>/workspace.json
+// Both share the same layout:
+//   <root>/.apicircle/
+//     registry.json
+//     workspace-<id>/
+//       workspace.json
+//       attachments/
 //
 // `globalStorageUri/<workspaceId>/workspace.local.json` for device-local data —
 // resolved separately by deviceLocalPath() below.
@@ -32,11 +31,9 @@ import {
 export type WorkspaceSource = 'git-folder' | 'registry';
 
 export interface DiscoveredWorkspace {
-  /** Stable identifier — currently the absolute path to the .apicircle/ dir
-   *  (git-folder) or the workspace id from the registry. */
+  /** Stable identifier — the workspace id from the registry. */
   id: string;
-  /** Absolute path to the workspace's `.apicircle/` directory (git-folder)
-   *  or the per-workspace dir under `~/.apicircle/workspaces/<id>/` (registry). */
+  /** Absolute path to the workspace's `workspace-<id>/` directory. */
   apicircleDir: string;
   /** Absolute path to the workspace's `workspace.json`. */
   workspaceJsonPath: string;
@@ -51,16 +48,16 @@ export interface DiscoveredWorkspace {
 
 export interface DiscoveryResult {
   workspaces: DiscoveredWorkspace[];
-  /** Workspace folders that DON'T yet contain a `.apicircle/` — candidates for
-   *  "Create New Workspace". */
+  /** Workspace folders that DON'T yet contain a `.apicircle/registry.json` —
+   *  candidates for "Create New Workspace". */
   foldersWithoutWorkspace: vscode.WorkspaceFolder[];
 }
 
 /**
- * Synchronously scan the open VS Code workspace folders for canonical
- * `.apicircle/workspace.json` files. Returns the set of discovered workspaces
- * plus the folders that don't yet have one (so the welcome view can offer
- * "Create New Workspace" in the right places).
+ * Synchronously scan the open VS Code workspace folders for
+ * `.apicircle/registry.json` files and read workspace entries from each.
+ * Returns the set of discovered workspaces plus the folders that don't yet
+ * have one (so the welcome view can offer "Create New Workspace").
  */
 export function discoverWorkspaces(
   folders: readonly vscode.WorkspaceFolder[] | undefined,
@@ -73,18 +70,38 @@ export function discoverWorkspaces(
   }
 
   for (const folder of folders) {
-    const apicircleDir = path.join(folder.uri.fsPath, WORKSPACE_DIR);
-    const workspaceJsonPath = path.join(folder.uri.fsPath, WORKSPACE_JSON_PATH);
-    if (fs.existsSync(workspaceJsonPath)) {
-      workspaces.push({
-        id: apicircleDir, // bootstrap id; real workspaceId loaded from file
-        apicircleDir,
-        workspaceJsonPath,
-        workspaceFolder: folder,
-        label: folder.name,
-        source: 'git-folder',
-      });
-    } else {
+    const apicircleRoot = path.join(folder.uri.fsPath, WORKSPACE_DIR);
+    const registryPath = path.join(apicircleRoot, REGISTRY_FILE);
+
+    let registry: WorkspaceRegistry | null = null;
+    try {
+      const raw = fs.readFileSync(registryPath, 'utf8');
+      registry = JSON.parse(raw) as WorkspaceRegistry;
+    } catch {
+      // No registry — candidate for "Create New Workspace"
+    }
+
+    if (!registry || !Array.isArray(registry.workspaces) || registry.workspaces.length === 0) {
+      foldersWithoutWorkspace.push(folder);
+      continue;
+    }
+
+    for (const entry of registry.workspaces) {
+      const wsDir = workspaceDirFor(apicircleRoot, entry.id);
+      const wsJsonPath = path.join(wsDir, 'workspace.json');
+      if (fs.existsSync(wsJsonPath)) {
+        workspaces.push({
+          id: entry.id,
+          apicircleDir: wsDir,
+          workspaceJsonPath: wsJsonPath,
+          workspaceFolder: folder,
+          label: entry.name || folder.name,
+          source: 'git-folder',
+        });
+      }
+    }
+
+    if (!workspaces.some((w) => w.workspaceFolder === folder)) {
       foldersWithoutWorkspace.push(folder);
     }
   }
@@ -97,9 +114,9 @@ export function discoverWorkspaces(
  *
  * Per the locked Phase 1 decision, this is deterministic — no user setting.
  * The path is `<globalStorageUri>/<workspaceHash>/`, where the hash is derived
- * from the workspace's `.apicircle/` absolute path so the same `.apicircle/`
- * folder on two different machines naturally maps to two different local
- * folders (because each machine's `globalStorageUri` is OS-user-scoped).
+ * from the workspace's directory absolute path so the same workspace on two
+ * different machines naturally maps to two different local folders (because
+ * each machine's `globalStorageUri` is OS-user-scoped).
  */
 export function deviceLocalPath(
   globalStorageUri: vscode.Uri,
@@ -120,25 +137,18 @@ function hashPath(absolutePath: string): string {
   for (let i = 0; i < normalized.length; i++) {
     h = ((h << 5) + h + normalized.charCodeAt(i)) | 0;
   }
-  // Unsigned hex, 8 chars — short enough to embed in a path, long enough to
-  // be collision-resistant for the realistic number of workspaces a user
-  // opens (hundreds, not millions).
   return (h >>> 0).toString(16).padStart(8, '0');
 }
 
 /**
- * Resolve the registered-workspace id that an already-open editor belongs to —
- * the pure core of the startup "adopt active workspace from open editors" pass
- * (see `extension.ts`). Returns the matching workspace id, or null when the
- * editor isn't an APICircle surface (or its workspace isn't registered).
+ * Resolve the registered-workspace id that an already-open editor belongs to.
+ * Returns the matching workspace id, or null when the editor isn't an
+ * APICircle surface (or its workspace isn't registered).
  *
  * Two editor shapes map to a workspace:
  *   - an `apicircle://<authority>/…` virtual YAML, where the authority is the
- *     hex-encoded workspace id (same encoding `ApicircleFsProvider` uses);
- *   - the raw `<root>/.apicircle/workspace.json` file.
- *
- * Any malformed authority is treated as "no match" rather than thrown, so a
- * stray editor can never crash activation.
+ *     hex-encoded workspace id;
+ *   - the raw `<root>/.apicircle/workspace-<id>/workspace.json` file.
  */
 export function workspaceIdForOpenEditor(
   editor: { scheme: string; authority: string; fsPath: string },
@@ -156,7 +166,8 @@ export function workspaceIdForOpenEditor(
   }
   if (editor.scheme === 'file') {
     const norm = editor.fsPath.replace(/\\/g, '/').toLowerCase();
-    if (!norm.endsWith('/.apicircle/workspace.json')) return null;
+    // Match paths like /.apicircle/workspace-<id>/workspace.json
+    if (!norm.includes('/.apicircle/workspace-') || !norm.endsWith('/workspace.json')) return null;
     return (
       registered.find((w) => w.workspaceJsonPath.replace(/\\/g, '/').toLowerCase() === norm)?.id ??
       null
@@ -166,9 +177,7 @@ export function workspaceIdForOpenEditor(
 }
 
 /**
- * Find a discovered workspace whose `.apicircle/` directory contains the given
- * absolute path. Used by the FileSystemWatcher to translate disk-path changes
- * into workspace-scoped refresh events.
+ * Find a discovered workspace whose directory contains the given absolute path.
  */
 export function findOwningWorkspace(
   result: DiscoveryResult,

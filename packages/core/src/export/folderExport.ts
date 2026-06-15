@@ -12,7 +12,7 @@
 //     entity so the importer can recreate them in the destination
 //     workspace without any extra user action.
 //   - Global file assets carry BYTES outside `workspace.json` (Git
-//     LFS sidecar under `.apicircle/attachments/<slotId>`). The envelope
+//     LFS sidecar under `.apicircle/workspace-<id>/attachments/<slotId>`). The envelope
 //     therefore captures only metadata (name, filename, size, mimeType,
 //     sha256) so the importer can show the user a clear "re-attach these
 //     files" cue. Bytes never travel through the JSON.
@@ -216,7 +216,8 @@ export function suggestFolderExportFilename(envelope: ApicircleFolderExportV1): 
   const slug = envelope.folder.name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+    .replace(/^-+/, '')
+    .replace(/-+$/, '');
   const base = slug || 'folder';
   return `${base}.apicircle.json`;
 }

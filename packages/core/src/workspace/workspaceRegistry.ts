@@ -10,25 +10,26 @@ import type { WorkspaceState } from './patches';
 // On-disk multi-workspace registry. All surfaces (desktop, CLI, MCP server,
 // VS Code extension) read the same `~/.apicircle/` root.
 //
-// Layout under `<root>/` (= ~/.apicircle):
+// Layout under `<root>/` (= ~/.apicircle or <repo>/.apicircle):
 //
 //   registry.json                       ← this module's source of truth
-//   workspaces/
-//     <workspace-id-1>/
-//       workspace.json
-//       workspace.local.json
-//       attachments/
-//     <workspace-id-2>/
-//       ...
+//   workspace-<id-1>/
+//     workspace.json
+//     workspace.local.json
+//     attachments/
+//   workspace-<id-2>/
+//     ...
 //
-// Each workspace lives in its own subdirectory so concurrent writers (the
-// desktop's mirror + a CLI invocation against a different workspace) can't
-// step on each other. `proper-lockfile` still guards the registry file
-// itself when readers / writers race.
+// Each workspace lives in its own `workspace-<id>` directory so concurrent
+// writers (the desktop's mirror + a CLI invocation against a different
+// workspace) can't step on each other. The flat naming keeps the structure
+// identical whether there's one workspace or ten — no surprise layout
+// changes when multi-workspace is introduced. `proper-lockfile` still
+// guards the registry file itself when readers / writers race.
 // =============================================================================
 
 export const REGISTRY_FILE = 'registry.json';
-export const WORKSPACES_SUBDIR = 'workspaces';
+export const WORKSPACE_DIR_PREFIX = 'workspace-';
 
 /**
  * The universal root for all API Circle workspace data: `~/.apicircle/`.
@@ -62,9 +63,10 @@ export function emptyRegistry(): WorkspaceRegistry {
   return { schemaVersion: 1, activeWorkspaceId: null, workspaces: [] };
 }
 
-/** Compute the directory inside `<root>/workspaces/` that holds a workspace's files. */
+/** Compute the directory inside `<root>/` that holds a workspace's files.
+ *  Layout: `<root>/workspace-<id>/`. */
 export function workspaceDirFor(root: string, workspaceId: string): string {
-  return path.join(root, WORKSPACES_SUBDIR, workspaceId);
+  return path.join(root, `${WORKSPACE_DIR_PREFIX}${workspaceId}`);
 }
 
 /** Load the registry from disk; returns `null` if the file is missing. */

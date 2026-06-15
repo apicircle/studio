@@ -2,7 +2,7 @@
 
 > **Alpha — early development.** Not yet published to the Marketplace.
 
-Edit your API Circle workspace **inside VS Code**. The same `.apicircle/workspace.json` you commit to Git, edit in the [API Circle Desktop App](https://github.com/apicircle/studio), or open in the [API Circle Web App](https://studio.apicircle.dev) — one repo, three surfaces, byte-identical commits.
+Edit your API Circle workspace **inside VS Code**. The same `.apicircle/` workspace directory you commit to Git, edit in the [API Circle Desktop App](https://github.com/apicircle/studio), or open in the [API Circle Web App](https://studio.apicircle.dev) — one repo, three surfaces, byte-identical commits.
 
 ## Why
 
@@ -13,7 +13,7 @@ VS Code is where the same engineers who use APICircle already live with Git. Edi
 - **Activity Bar icon** that opens an API Circle sidebar with Editor / Environment / Execution / Mock / History / Snapshots / MCP views.
 - **Request templates** — six starter shapes (Simple GET, JSON POST, Bearer-protected GET, Paginated GET, GraphQL query, REST CRUD scaffold) via `APICircle: New Request from Template…`.
 - **CodeLens helpers** above each request YAML — `▶ Send`, `✚ Add section…` (insert any optional section via quick-pick), `⤵ New from template…`. While a send is in flight the row swaps to `⏳ Sending… (1.2s) · ✖ Cancel` so you can see the click landed and abort without leaving the editor.
-- **Workspace discovery** — auto-detects `.apicircle/workspace.json` in your open folders.
+- **Workspace discovery** — auto-detects `.apicircle/registry.json` in your open folders.
 - **`apicircle:` virtual filesystem** projecting requests as YAML documents you edit in a real VS Code text editor. Tab titles are the request name (e.g. `Login.req.yaml`), folder path lives in the tab tooltip, and the identifier is hidden in the URI query so renames update the tab automatically.
 - **HTTP request execution** for `none` / `bearer` / `basic` / `api-key` auth plus JSON / text bodies.
 - **Response viewer** as a virtual `.run.yaml` document opened side-by-side. The tab appears the instant you click ▶ Send with a "Sending…" placeholder, then swaps in the real response (or a "Cancelled" / "Failed" notice) in place when the executor resolves — no flicker, focus stays on the request editor.
@@ -29,7 +29,8 @@ More features land each phase. See the [project roadmap](https://github.com/apic
 API Circle Studio's Web App, Desktop App, and VS Code extension are **peer clients of the same canonical format**. The Git-tracked file is always at:
 
 ```
-<your-repo>/.apicircle/workspace.json
+<your-repo>/.apicircle/registry.json          # workspace index
+<your-repo>/.apicircle/workspace-<id>/workspace.json  # per-workspace doc
 ```
 
 Edit on any surface → commit → push → pull elsewhere → continue. No translation, no dialect, no per-surface fork. Device-local data (history, secrets, sessions) stays per-machine in each surface's managed storage.

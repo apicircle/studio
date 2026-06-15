@@ -21,11 +21,69 @@ function id(key: string): TcId {
 // Git Tree API. Each of the 5 GitHub endpoints is mocked at the page
 // route level.
 
+const MOCK_WS_ID = 'remote-ws-1';
+
 const corsHeaders = {
   'access-control-allow-origin': '*',
   'access-control-expose-headers':
     'x-oauth-scopes, x-accepted-oauth-scopes, x-ratelimit-remaining, x-ratelimit-reset',
 };
+
+function buildRegistryResponse(): string {
+  return JSON.stringify({
+    schemaVersion: 1,
+    activeWorkspaceId: MOCK_WS_ID,
+    workspaces: [{ id: MOCK_WS_ID, name: 'Remote', createdAt: 't', lastOpenedAt: 't' }],
+  });
+}
+
+/**
+ * Mock the two-step workspace fetch: registry.json -> workspace-<id>/workspace.json.
+ * Intercepts all requests under `.apicircle/` for the given repo.
+ */
+async function mockWorkspaceFetch(
+  page: Page,
+  repoPattern: string,
+  workspaceJson: string,
+): Promise<void> {
+  const registryBase64 = Buffer.from(buildRegistryResponse(), 'utf-8').toString('base64');
+  const workspaceBase64 = Buffer.from(workspaceJson, 'utf-8').toString('base64');
+  await page.route(
+    `https://api.github.com/repos/${repoPattern}/contents/.apicircle/**`,
+    async (route) => {
+      const url = route.request().url();
+      if (url.includes('registry.json')) {
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify({
+            type: 'file',
+            path: '.apicircle/registry.json',
+            sha: 'registry-sha',
+            size: buildRegistryResponse().length,
+            content: registryBase64,
+            encoding: 'base64',
+          }),
+        });
+      } else if (url.includes('workspace.json')) {
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify({
+            type: 'file',
+            path: `.apicircle/workspace-${MOCK_WS_ID}/workspace.json`,
+            sha: 'ws-sha',
+            size: workspaceJson.length,
+            content: workspaceBase64,
+            encoding: 'base64',
+          }),
+        });
+      } else {
+        await route.fallback();
+      }
+    },
+  );
+}
 
 async function fulfillJson(
   page: Page,
@@ -93,17 +151,15 @@ async function setupConnectedBranch(app: Page): Promise<void> {
   // the working branch before the test installs its own route override.
   // Answer 404 here so the probe is a fast no-op; the test-specific route
   // (registered after this function returns) takes precedence for the
-  // assertions that actually need a populated remote.
-  await app.route(
-    'https://api.github.com/repos/me/api/contents/.apicircle/workspace.json**',
-    async (route) => {
-      await route.fulfill({
-        status: 404,
-        headers: { 'content-type': 'application/json', ...corsHeaders },
-        body: JSON.stringify({ message: 'Not Found' }),
-      });
-    },
-  );
+  // assertions that actually need a populated remote. The production code
+  // fetches registry.json first, so match all .apicircle/** contents.
+  await app.route('https://api.github.com/repos/me/api/contents/.apicircle/**', async (route) => {
+    await route.fulfill({
+      status: 404,
+      headers: { 'content-type': 'application/json', ...corsHeaders },
+      body: JSON.stringify({ message: 'Not Found' }),
+    });
+  });
 
   // Drive the connect flow through the live UI.
   await app.getByRole('button', { name: /Open Secret Vault/ }).click();
@@ -213,25 +269,7 @@ test.describe('Refresh + 3-way conflict resolver (P4.5)', () => {
         };
         return JSON.stringify(w.__apicircleStore!.getState().synced);
       });
-      const base64 = Buffer.from(localJson, 'utf-8').toString('base64');
-
-      await app.route(
-        'https://api.github.com/repos/me/api/contents/.apicircle/workspace.json**',
-        async (route) => {
-          await route.fulfill({
-            status: 200,
-            headers: { 'content-type': 'application/json', ...corsHeaders },
-            body: JSON.stringify({
-              type: 'file',
-              path: '.apicircle/workspace.json',
-              sha: 'remote-sha-1',
-              size: localJson.length,
-              content: base64,
-              encoding: 'base64',
-            }),
-          });
-        },
-      );
+      await mockWorkspaceFetch(app, 'me/api', localJson);
 
       await app.getByRole('button', { name: /^Refresh$/ }).click();
       // The freshly-connected workspace still has unpushed local changes, so
@@ -277,25 +315,7 @@ test.describe('Refresh + 3-way conflict resolver (P4.5)', () => {
           environments: { ...synced.environments, activeName: 'theirs' },
         });
       });
-      const base64 = Buffer.from(remoteSynced, 'utf-8').toString('base64');
-
-      await app.route(
-        'https://api.github.com/repos/me/api/contents/.apicircle/workspace.json**',
-        async (route) => {
-          await route.fulfill({
-            status: 200,
-            headers: { 'content-type': 'application/json', ...corsHeaders },
-            body: JSON.stringify({
-              type: 'file',
-              path: '.apicircle/workspace.json',
-              sha: 'remote-sha-2',
-              size: remoteSynced.length,
-              content: base64,
-              encoding: 'base64',
-            }),
-          });
-        },
-      );
+      await mockWorkspaceFetch(app, 'me/api', remoteSynced);
 
       await app.getByRole('button', { name: /^Refresh$/ }).click();
       // Conflict resolver opens.

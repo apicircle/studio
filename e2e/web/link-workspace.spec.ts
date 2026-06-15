@@ -18,6 +18,64 @@ const corsHeaders = {
     'x-oauth-scopes, x-accepted-oauth-scopes, x-ratelimit-remaining, x-ratelimit-reset',
 };
 
+const MOCK_WS_ID = 'remote-ws-1';
+
+function buildRegistryResponse(): string {
+  return JSON.stringify({
+    schemaVersion: 1,
+    activeWorkspaceId: MOCK_WS_ID,
+    workspaces: [{ id: MOCK_WS_ID, name: 'Remote', createdAt: 't', lastOpenedAt: 't' }],
+  });
+}
+
+/**
+ * Mock the two-step workspace fetch: registry.json -> workspace-<id>/workspace.json.
+ * Intercepts all requests under `.apicircle/` for the given repo.
+ */
+async function mockWorkspaceFetch(
+  page: Page,
+  repoPattern: string,
+  workspaceJson: string,
+): Promise<void> {
+  const registryBase64 = Buffer.from(buildRegistryResponse(), 'utf-8').toString('base64');
+  const workspaceBase64 = Buffer.from(workspaceJson, 'utf-8').toString('base64');
+  await page.route(
+    `https://api.github.com/repos/${repoPattern}/contents/.apicircle/**`,
+    async (route) => {
+      const url = route.request().url();
+      if (url.includes('registry.json')) {
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify({
+            type: 'file',
+            path: '.apicircle/registry.json',
+            sha: 'registry-sha',
+            size: buildRegistryResponse().length,
+            content: registryBase64,
+            encoding: 'base64',
+          }),
+        });
+      } else if (url.includes('workspace.json')) {
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify({
+            type: 'file',
+            path: `.apicircle/workspace-${MOCK_WS_ID}/workspace.json`,
+            sha: 'ws-sha',
+            size: workspaceJson.length,
+            content: workspaceBase64,
+            encoding: 'base64',
+          }),
+        });
+      } else {
+        await route.fallback();
+      }
+    },
+  );
+}
+
 async function fulfillJson(
   page: Page,
   url: string | RegExp,
@@ -87,7 +145,7 @@ test.describe('Link Workspace (P5.2)', () => {
         { name: 'develop', commit: { sha: 'bbb' } },
       ]);
 
-      // /repos/me/payments-api/contents/.apicircle/workspace.json: probe payload.
+      // Mock the two-step workspace fetch for the probe payload.
       const probeJson = JSON.stringify({
         workspaceName: 'Payments API',
         releases: {
@@ -114,24 +172,7 @@ test.describe('Link Workspace (P5.2)', () => {
           },
         },
       });
-      const probeBase64 = Buffer.from(probeJson, 'utf-8').toString('base64');
-      await app.route(
-        'https://api.github.com/repos/me/payments-api/contents/.apicircle/workspace.json**',
-        async (route) => {
-          await route.fulfill({
-            status: 200,
-            headers: { 'content-type': 'application/json', ...corsHeaders },
-            body: JSON.stringify({
-              type: 'file',
-              path: '.apicircle/workspace.json',
-              sha: 's',
-              size: probeJson.length,
-              content: probeBase64,
-              encoding: 'base64',
-            }),
-          });
-        },
-      );
+      await mockWorkspaceFetch(app, 'me/payments-api', probeJson);
 
       await app.getByRole('button', { name: /Link Workspace/ }).click();
       await app.getByRole('button', { name: /Link a private workspace/ }).click();
@@ -228,24 +269,7 @@ test.describe('Link Workspace (P5.2)', () => {
           },
         },
       });
-      const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
-      await app.route(
-        'https://api.github.com/repos/org/payments-api/contents/.apicircle/workspace.json**',
-        async (route) => {
-          await route.fulfill({
-            status: 200,
-            headers: { 'content-type': 'application/json', ...corsHeaders },
-            body: JSON.stringify({
-              type: 'file',
-              path: '.apicircle/workspace.json',
-              sha: 'remote-sha-1',
-              size: remoteJson.length,
-              content: base64,
-              encoding: 'base64',
-            }),
-          });
-        },
-      );
+      await mockWorkspaceFetch(app, 'org/payments-api', remoteJson);
 
       await app.getByRole('button', { name: /Link Workspace/ }).click();
       await app.getByRole('button', { name: /Link a private workspace/ }).click();
@@ -297,24 +321,7 @@ test.describe('Link Workspace (P5.2)', () => {
           },
         },
       });
-      const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
-      await app.route(
-        'https://api.github.com/repos/me/api/contents/.apicircle/workspace.json**',
-        async (route) => {
-          await route.fulfill({
-            status: 200,
-            headers: { 'content-type': 'application/json', ...corsHeaders },
-            body: JSON.stringify({
-              type: 'file',
-              path: '.apicircle/workspace.json',
-              sha: 's',
-              size: remoteJson.length,
-              content: base64,
-              encoding: 'base64',
-            }),
-          });
-        },
-      );
+      await mockWorkspaceFetch(app, 'me/api', remoteJson);
 
       await app.getByRole('button', { name: /Link Workspace/ }).click();
       await app.getByRole('button', { name: /Link a private workspace/ }).click();
@@ -342,24 +349,7 @@ test.describe('Link Workspace (P5.2)', () => {
     async ({ app }) => {
       await setupSession(app);
       const remoteJson = JSON.stringify({ workspaceName: 'API', releases: { self: null } });
-      const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
-      await app.route(
-        'https://api.github.com/repos/me/api/contents/.apicircle/workspace.json**',
-        async (route) => {
-          await route.fulfill({
-            status: 200,
-            headers: { 'content-type': 'application/json', ...corsHeaders },
-            body: JSON.stringify({
-              type: 'file',
-              path: '.apicircle/workspace.json',
-              sha: 's',
-              size: remoteJson.length,
-              content: base64,
-              encoding: 'base64',
-            }),
-          });
-        },
-      );
+      await mockWorkspaceFetch(app, 'me/api', remoteJson);
 
       await app.getByRole('button', { name: /Link Workspace/ }).click();
       await app.getByRole('button', { name: /Link a private workspace/ }).click();
@@ -525,24 +515,7 @@ test.describe('Link Workspace (P5.2)', () => {
         workspaceName: 'Payments API',
         releases: { self: { versions: [], currentVersion: null } },
       });
-      const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
-      await app.route(
-        'https://api.github.com/repos/org/payments-api/contents/.apicircle/workspace.json**',
-        async (route) => {
-          await route.fulfill({
-            status: 200,
-            headers: { 'content-type': 'application/json', ...corsHeaders },
-            body: JSON.stringify({
-              type: 'file',
-              path: '.apicircle/workspace.json',
-              sha: 's',
-              size: remoteJson.length,
-              content: base64,
-              encoding: 'base64',
-            }),
-          });
-        },
-      );
+      await mockWorkspaceFetch(app, 'org/payments-api', remoteJson);
 
       await app.getByRole('button', { name: /Link Workspace/ }).click();
       await app.getByRole('button', { name: /Search marketplace/ }).click();
@@ -598,24 +571,7 @@ test.describe('Link Workspace (P5.2)', () => {
           },
         },
       });
-      const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
-      await app.route(
-        'https://api.github.com/repos/me/api/contents/.apicircle/workspace.json**',
-        async (route) => {
-          await route.fulfill({
-            status: 200,
-            headers: { 'content-type': 'application/json', ...corsHeaders },
-            body: JSON.stringify({
-              type: 'file',
-              path: '.apicircle/workspace.json',
-              sha: 's',
-              size: remoteJson.length,
-              content: base64,
-              encoding: 'base64',
-            }),
-          });
-        },
-      );
+      await mockWorkspaceFetch(app, 'me/api', remoteJson);
 
       await app.getByRole('button', { name: /Link Workspace/ }).click();
       await app.getByRole('button', { name: /Link a private workspace/ }).click();
@@ -644,24 +600,7 @@ test.describe('Link Workspace (P5.2)', () => {
     async ({ app }) => {
       await setupSession(app);
       const remoteJson = JSON.stringify({ workspaceName: 'X', releases: { self: null } });
-      const base64 = Buffer.from(remoteJson, 'utf-8').toString('base64');
-      await app.route(
-        'https://api.github.com/repos/me/x/contents/.apicircle/workspace.json**',
-        async (route) => {
-          await route.fulfill({
-            status: 200,
-            headers: { 'content-type': 'application/json', ...corsHeaders },
-            body: JSON.stringify({
-              type: 'file',
-              path: '.apicircle/workspace.json',
-              sha: 's',
-              size: remoteJson.length,
-              content: base64,
-              encoding: 'base64',
-            }),
-          });
-        },
-      );
+      await mockWorkspaceFetch(app, 'me/x', remoteJson);
 
       await app.getByRole('button', { name: /Link Workspace/ }).click();
       await app.getByRole('button', { name: /Link a private workspace/ }).click();

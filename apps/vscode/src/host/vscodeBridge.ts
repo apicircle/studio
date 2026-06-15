@@ -3,7 +3,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { WorkspaceState, WorkspacePatch, ApplyMutationResult } from '@apicircle/core';
 import type { WorkspaceSynced, WorkspaceLocal } from '@apicircle/shared';
-import { WORKSPACE_DIR, WORKSPACE_JSON_PATH } from '@apicircle/core';
+import { WORKSPACE_DIR } from '@apicircle/core';
+import { registerWorkspace, type WorkspaceRegistryEntry } from '@apicircle/core/workspace/registry';
 import type { DiscoveredWorkspace } from '../util/workspaceDiscovery';
 import { deviceLocalPath } from '../util/workspaceDiscovery';
 import { GitWorkspaceProvider } from './gitWorkspaceProvider';
@@ -134,37 +135,55 @@ export class VsCodeBridge implements vscode.Disposable {
   }
 
   /**
-   * Create a brand-new `.apicircle/workspace.json` inside the given VS Code
-   * workspace folder. Returns the discovered workspace ready to register.
+   * Create a brand-new workspace inside the given VS Code workspace folder
+   * using the registry + `workspace-{id}/` layout:
+   *
+   *   .apicircle/
+   *     registry.json
+   *     workspace-<id>/
+   *       workspace.json
+   *       attachments/
+   *     README.md
+   *
+   * Returns the discovered workspace ready to register with the bridge.
    * Used by `APICircle: Create New Workspace`.
    */
   async createWorkspaceScaffold(
     folder: vscode.WorkspaceFolder,
-    seedSynced: object,
+    seedSynced: WorkspaceSynced,
     seedLocal: object,
   ): Promise<{ apicircleDir: string; workspaceJsonPath: string }> {
     const apicircleDir = path.join(folder.uri.fsPath, WORKSPACE_DIR);
-    const workspaceJsonPath = path.join(folder.uri.fsPath, WORKSPACE_JSON_PATH);
+    const workspaceId = seedSynced.workspaceId;
+    const wsDir = path.join(apicircleDir, `workspace-${workspaceId}`);
+    const wsJsonPath = path.join(wsDir, 'workspace.json');
 
     await fs.promises.mkdir(apicircleDir, { recursive: true });
-    await fs.promises.mkdir(path.join(apicircleDir, 'attachments'), { recursive: true });
+    await fs.promises.mkdir(path.join(wsDir, 'attachments'), { recursive: true });
 
-    // Write workspace.json and workspace.local.json (the local file is written
-    // into the device-local globalStorage path by the caller; here we only
-    // scaffold the synced half on disk). `flag: 'wx'` is the atomic
-    // "create-or-fail" — replaces a stat-then-write TOCTOU dance.
+    // Write workspace.json. `flag: 'wx'` is the atomic "create-or-fail" —
+    // replaces a stat-then-write TOCTOU dance.
     const synced = JSON.stringify(seedSynced, null, 2);
     try {
-      await fs.promises.writeFile(workspaceJsonPath, synced, { encoding: 'utf8', flag: 'wx' });
+      await fs.promises.writeFile(wsJsonPath, synced, { encoding: 'utf8', flag: 'wx' });
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
-        throw new Error(`Workspace already exists at ${workspaceJsonPath}`);
+        throw new Error(`Workspace already exists at ${wsJsonPath}`);
       }
       throw err;
     }
 
+    // Write (or update) the registry so discovery finds this workspace.
+    const now = new Date().toISOString();
+    const entry: WorkspaceRegistryEntry = {
+      id: workspaceId,
+      name: folder.name,
+      lastOpenedAt: now,
+      createdAt: now,
+    };
+    await registerWorkspace(apicircleDir, entry);
+
     // Auto-generated README explaining the .apicircle/ folder to teammates.
-    // Idempotent: `wx` flag → EEXIST means "already there", which is fine.
     const readmePath = path.join(apicircleDir, 'README.md');
     try {
       await fs.promises.writeFile(readmePath, README_TEMPLATE, { encoding: 'utf8', flag: 'wx' });
@@ -173,12 +192,11 @@ export class VsCodeBridge implements vscode.Disposable {
     }
 
     // Touch .gitignore at the repo root to ensure workspace.local.json never
-    // accidentally gets committed if someone moves it here. Idempotent —
-    // skipped if the entry already exists.
+    // accidentally gets committed.
     await ensureGitignore(folder.uri.fsPath);
 
     void seedLocal; // Phase 1: caller writes this to device-local path
-    return { apicircleDir, workspaceJsonPath };
+    return { apicircleDir: wsDir, workspaceJsonPath: wsJsonPath };
   }
 
   dispose(): void {
@@ -193,9 +211,10 @@ const README_TEMPLATE = `# .apicircle/
 
 This folder is managed by **API Circle Studio**.
 
-- \`workspace.json\` — the team-shared workspace (collections, environments, mocks, etc.).
+- \`registry.json\` — tracks which workspaces live in this repo.
+- \`workspace-<id>/workspace.json\` — the team-shared workspace (collections, environments, mocks, etc.).
   Edit it in the [Web App](https://studio.apicircle.dev), the [Desktop App](https://github.com/apicircle/studio), or the [VS Code extension](https://github.com/apicircle/studio/tree/main/apps/vscode) — all three produce byte-identical commits.
-- \`attachments/\` — binary file assets referenced from the workspace.
+- \`workspace-<id>/attachments/\` — binary file assets referenced from the workspace.
 
 **Never commit** \`workspace.local.json\` or any file under \`.apicircle/.local/\` — those contain device-local data including encrypted secrets, tokens, and history. The root \`.gitignore\` should already cover this.
 `;

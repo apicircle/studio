@@ -180,7 +180,7 @@ async function fetchLinkedAttachment(
   // Token: dedicated PAT first, otherwise the built-in GitHub session (if any).
   const token = await getLinkToken(secrets, link);
   const [owner, name] = link.source.repoFullName.split('/', 2);
-  const path = attachmentPath(slotId);
+  const path = attachmentPath(link.sourceWorkspaceId, slotId);
   const client = new GitHubClient();
   try {
     const file = await client.getBinaryContents(token ?? '', owner, name, path, ref);

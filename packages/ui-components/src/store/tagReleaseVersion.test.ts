@@ -219,6 +219,7 @@ describe('listRepoTopics + setRepoTopics', () => {
 describe('loadLatestUntaggedRelease', () => {
   it('returns the highest version on main that has no matching tag yet', async () => {
     await connectViaSession([]);
+    const wsId = useWorkspaceStore.getState().synced!.workspaceId;
     // 1. getContents(workspace.json on main) → ledger with v1.0.0, v1.1.0.
     const ledgerJson = JSON.stringify({
       releases: {
@@ -237,7 +238,7 @@ describe('loadLatestUntaggedRelease', () => {
           type: 'file',
           content: base64,
           sha: 'fileSha',
-          path: '.apicircle/workspace.json',
+          path: `.apicircle/workspace-${wsId}/workspace.json`,
           size: ledgerJson.length,
         },
       },
@@ -255,6 +256,7 @@ describe('loadLatestUntaggedRelease', () => {
 
   it('returns null when every published version on main is already tagged', async () => {
     await connectViaSession([]);
+    const wsId = useWorkspaceStore.getState().synced!.workspaceId;
     const ledgerJson = JSON.stringify({
       releases: { self: { versions: [{ version: '1.0.0', notes: 'initial' }] } },
     });
@@ -265,7 +267,7 @@ describe('loadLatestUntaggedRelease', () => {
           type: 'file',
           content: base64,
           sha: 'fileSha',
-          path: '.apicircle/workspace.json',
+          path: `.apicircle/workspace-${wsId}/workspace.json`,
           size: ledgerJson.length,
         },
       },
@@ -284,7 +286,7 @@ describe('loadLatestUntaggedRelease', () => {
   it('returns null when main has no workspace.json or no released versions', async () => {
     await connectViaSession([]);
     const { fn } = queuedFetch([
-      // 404 for .apicircle/workspace.json on main
+      // 404 for .apicircle/workspace-<id>/workspace.json on main
       { body: { message: 'Not Found' }, status: 404 },
     ]);
     vi.stubGlobal('fetch', fn);

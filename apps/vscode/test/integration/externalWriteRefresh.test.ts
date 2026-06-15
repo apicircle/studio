@@ -2,11 +2,11 @@
 // externalWriteRefresh integration test (gap #14).
 //
 // Verifies the workflow watcher pattern: an external write (CLI, MCP, git
-// pull, or hand-edit) to .apicircle/workspace.json is observable via the
-// provider on next read, and the in-extension state is stale until refreshed.
-// The actual vscode.workspace.createFileSystemWatcher path is tested via E2E
-// (e2e/vscode/1-watcher-after-git-pull.spec.ts) — this integration test
-// verifies the provider layer.
+// pull, or hand-edit) to .apicircle/workspace-<id>/workspace.json is observable
+// via the provider on next read, and the in-extension state is stale until
+// refreshed. The actual vscode.workspace.createFileSystemWatcher path is tested
+// via E2E (e2e/vscode/1-watcher-after-git-pull.spec.ts) — this integration
+// test verifies the provider layer.
 // =============================================================================
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';

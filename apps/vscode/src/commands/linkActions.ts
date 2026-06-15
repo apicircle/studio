@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { generateId, type LinkedWorkspace } from '@apicircle/shared';
 import {
-  WORKSPACE_JSON_PATH,
+  fetchRemoteWorkspaceJson,
   parseLinkedWorkspaceJson,
   buildLinkedSnapshot,
   ledgerFromProbe,
@@ -26,7 +26,8 @@ import {
 //     session mode, required keys, unlink, changelog, open YAML — all route
 //     through the `linkedWorkspace.*` patches.
 //   • Networked: link a repo (or a marketplace result), refresh the cached
-//     ledger / snapshot — fetch the source's `.apicircle/workspace.json` over
+//     ledger / snapshot — fetch the source's `.apicircle/registry.json` +
+//     `workspace-<id>/workspace.json` over
 //     the GitHub API using VS Code's built-in GitHub session, then apply the
 //     pure patch. The pure parse + snapshot build come from `@apicircle/core`.
 // =============================================================================
@@ -39,6 +40,29 @@ export interface LinkActionsDeps {
 }
 
 export type LinkArg = vscode.Uri | { id?: string } | undefined;
+
+/**
+ * Two-step remote workspace.json fetch: reads `.apicircle/registry.json` to
+ * find the active workspace ID, then fetches `workspace-<id>/workspace.json`.
+ *
+ * Returns the workspace content string, or `null` if the registry or
+ * workspace.json is missing. Throws on network errors so callers can catch.
+ */
+async function fetchRemoteWorkspace(
+  client: GitHubClient,
+  token: string,
+  owner: string,
+  name: string,
+  branch: string,
+): Promise<{ content: string; workspaceId: string } | null> {
+  const fetcher = async (repoPath: string): Promise<string | null> => {
+    const file = await client.getContents(token, owner, name, repoPath, branch);
+    return file?.content ?? null;
+  };
+  const result = await fetchRemoteWorkspaceJson(fetcher);
+  if ('error' in result) return null;
+  return result;
+}
 
 function linkIdFromArg(arg: LinkArg): string | undefined {
   if (!arg) return undefined;
@@ -757,29 +781,22 @@ export async function refreshLinkedWorkspaceCommand(
   }
   const client = new GitHubClient();
   const [owner, name] = r.link.source.repoFullName.split('/', 2);
-  let probeText: string | null;
+  let remote: { content: string; workspaceId: string } | null;
   try {
-    const file = await client.getContents(
-      token ?? '',
-      owner,
-      name,
-      WORKSPACE_JSON_PATH,
-      r.link.source.branch,
-    );
-    probeText = file?.content ?? null;
+    remote = await fetchRemoteWorkspace(client, token ?? '', owner, name, r.link.source.branch);
   } catch (e) {
     await vscode.window.showErrorMessage(
       `Refresh failed: ${e instanceof GitHubError ? e.message : e instanceof Error ? e.message : String(e)}`,
     );
     return;
   }
-  if (probeText === null) {
+  if (remote === null) {
     await vscode.window.showErrorMessage(
-      `workspace.json not found on ${r.link.source.repoFullName}@${r.link.source.branch}.`,
+      `No .apicircle/ workspace found on ${r.link.source.repoFullName}@${r.link.source.branch}.`,
     );
     return;
   }
-  const probe = parseLinkedWorkspaceJson(probeText);
+  const probe = parseLinkedWorkspaceJson(remote.content);
   const ledger = ledgerFromProbe(probe);
   // Steady-state refresh updates the ledger only; bootstrap the snapshot if it
   // was never cached (fresh clone).
@@ -812,29 +829,22 @@ export async function reviewLinkedUpdateCommand(
   }
   const client = new GitHubClient();
   const [owner, name] = r.link.source.repoFullName.split('/', 2);
-  let content: string | null;
+  let remote: { content: string; workspaceId: string } | null;
   try {
-    const file = await client.getContents(
-      token ?? '',
-      owner,
-      name,
-      WORKSPACE_JSON_PATH,
-      r.link.source.branch,
-    );
-    content = file?.content ?? null;
+    remote = await fetchRemoteWorkspace(client, token ?? '', owner, name, r.link.source.branch);
   } catch (e) {
     await vscode.window.showErrorMessage(
       `Could not fetch source: ${e instanceof Error ? e.message : String(e)}`,
     );
     return;
   }
-  if (content === null) {
+  if (remote === null) {
     await vscode.window.showErrorMessage(
-      `workspace.json not found on ${r.link.source.repoFullName}@${r.link.source.branch}.`,
+      `No .apicircle/ workspace found on ${r.link.source.repoFullName}@${r.link.source.branch}.`,
     );
     return;
   }
-  const probe = parseLinkedWorkspaceJson(content);
+  const probe = parseLinkedWorkspaceJson(remote.content);
   const target = buildLinkedSnapshot(probe, r.link);
   if (!target) {
     await vscode.window.showInformationMessage(
@@ -988,10 +998,9 @@ async function linkFromRepo(
   },
 ): Promise<void> {
   const [owner, name] = args.repoFullName.split('/', 2);
-  let content: string | null;
+  let remote: { content: string; workspaceId: string } | null;
   try {
-    const file = await client.getContents(token, owner, name, WORKSPACE_JSON_PATH, args.branch);
-    content = file?.content ?? null;
+    remote = await fetchRemoteWorkspace(client, token, owner, name, args.branch);
   } catch (e) {
     await vscode.window.showErrorMessage(
       `Could not read ${args.repoFullName}@${args.branch}: ${
@@ -1000,9 +1009,9 @@ async function linkFromRepo(
     );
     return;
   }
-  if (content === null) {
+  if (remote === null) {
     await vscode.window.showErrorMessage(
-      `No .apicircle/workspace.json on ${args.repoFullName}@${args.branch}.`,
+      `No .apicircle/ workspace found on ${args.repoFullName}@${args.branch}.`,
     );
     return;
   }
@@ -1019,7 +1028,7 @@ async function linkFromRepo(
     return;
   }
 
-  const probe = parseLinkedWorkspaceJson(content);
+  const probe = parseLinkedWorkspaceJson(remote.content);
   const ledger = ledgerFromProbe(probe);
 
   // Version pick.
@@ -1053,6 +1062,7 @@ async function linkFromRepo(
     id: generateId(),
     kind: args.kind,
     name: args.repoFullName,
+    sourceWorkspaceId: remote.workspaceId,
     source: {
       provider: 'github',
       repoFullName: args.repoFullName,

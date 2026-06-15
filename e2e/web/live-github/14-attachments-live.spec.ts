@@ -46,8 +46,9 @@ test.describe('Live GitHub - attachment blob transmission @live-github', () => {
         );
         const state = window.__apicircleStore!.getState() as any;
         const attachment = state.synced.collections.requests[requestId].body.attachment;
+        const workspaceId = state.synced.workspaceId ?? state.synced.id;
         const push = await api.pushWorkspace('e2e live: push host attachment');
-        return { requestId, attachment, commitSha: push.commitSha };
+        return { requestId, attachment, commitSha: push.commitSha, workspaceId };
       },
       { payload: Array.from(bytes) },
     );
@@ -58,7 +59,7 @@ test.describe('Live GitHub - attachment blob transmission @live-github', () => {
     const remoteBytes = await fetchRepoFileBytesV2(
       host,
       branch,
-      attachmentBlobPathV2(pushed.attachment.slotId),
+      attachmentBlobPathV2(pushed.attachment.slotId, pushed.workspaceId),
     );
     expect(Array.from(remoteBytes)).toEqual(Array.from(bytes));
 

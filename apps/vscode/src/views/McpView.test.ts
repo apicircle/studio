@@ -25,8 +25,14 @@ function makeView(
 
 describe('McpView', () => {
   describe('getChildren', () => {
-    it('returns the three top-level rows in order', () => {
+    it('returns empty when no workspace is active', () => {
       const view = makeView();
+      const children = view.getChildren();
+      expect(children).toEqual([]);
+    });
+
+    it('returns the three top-level rows in order when workspace is active', () => {
+      const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' });
       const children = view.getChildren();
       expect(children).toEqual([
         { kind: 'header' },
@@ -36,7 +42,7 @@ describe('McpView', () => {
     });
 
     it('clients-section expands to one row per AI client', () => {
-      const view = makeView();
+      const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' });
       const children = view.getChildren({ kind: 'clients-section' });
       expect(children.length).toBe(AI_CLIENTS.length);
       for (const child of children) {
@@ -45,7 +51,7 @@ describe('McpView', () => {
     });
 
     it('leaf nodes return no children', () => {
-      const view = makeView();
+      const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' });
       expect(view.getChildren({ kind: 'header' })).toEqual([]);
       expect(view.getChildren({ kind: 'connect-guide' })).toEqual([]);
       expect(view.getChildren({ kind: 'client', client: 'claude-desktop' })).toEqual([]);
@@ -182,11 +188,11 @@ describe('McpView', () => {
       expect((item.tooltip as MarkdownString).value).toContain('/ws/.apicircle');
     });
 
-    it('header (idle) tooltip mentions .apicircle/workspace.json', () => {
+    it('header (idle) tooltip mentions .apicircle/', () => {
       const view = makeView(null);
       const item = view.getTreeItem({ kind: 'header' });
       expect(item.tooltip).toBeInstanceOf(MarkdownString);
-      expect((item.tooltip as MarkdownString).value).toContain('.apicircle/workspace.json');
+      expect((item.tooltip as MarkdownString).value).toContain('.apicircle/');
     });
 
     it('client row with config path includes it in the tooltip', () => {

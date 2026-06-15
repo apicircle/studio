@@ -332,6 +332,7 @@ describe('runPlan', () => {
           id: 'lw1',
           kind: 'private',
           name: 'Linked API',
+          sourceWorkspaceId: 'remote-ws-1',
           source: {
             provider: 'github',
             repoFullName: 'acme/linked-api',

@@ -131,7 +131,7 @@ export async function revealMcpBinaryInfoCommand(deps: McpActionsDeps): Promise<
   const tools = deps.mcp.toolCatalog();
   if (!hasActiveWorkspace) {
     await vscode.window.showInformationMessage(
-      `API Circle MCP binary: ${binary} (${tools.length} tools). No active workspace — open a folder with .apicircle/workspace.json to use it.`,
+      `API Circle MCP binary: ${binary} (${tools.length} tools). No active workspace — open a folder with an API Circle workspace to use it.`,
     );
     return;
   }

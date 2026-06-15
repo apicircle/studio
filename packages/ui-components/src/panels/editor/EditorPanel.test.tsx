@@ -164,6 +164,7 @@ describe('EditorPanel', () => {
                 id: linkId,
                 kind: 'private' as const,
                 name: 'Payments',
+                sourceWorkspaceId: 'src-ws-payments',
                 source: {
                   provider: 'github' as const,
                   repoFullName: 'org/payments',
@@ -278,6 +279,7 @@ describe('EditorPanel', () => {
                 id: linkId,
                 kind: 'private' as const,
                 name: 'Payments',
+                sourceWorkspaceId: 'src-ws-payments',
                 source: {
                   provider: 'github' as const,
                   repoFullName: 'org/payments',

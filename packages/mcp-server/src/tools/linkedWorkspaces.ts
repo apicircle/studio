@@ -9,7 +9,7 @@ import type { AnyToolDef } from './types';
 // unlinking all route through `applyMutation`.
 //
 // Linking a NEW workspace and refreshing the cached ledger / snapshot are
-// network operations (fetch the source repo's `.apicircle/workspace.json` over
+// network operations (fetch the source repo's `.apicircle/` workspace files over
 // the GitHub API) — those are host-driven (the VS Code commands + desktop UI),
 // not MCP tools, because the MCP server is headless and has no GitHub session.
 // =============================================================================

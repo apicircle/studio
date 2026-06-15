@@ -1,5 +1,5 @@
 // Helpers for shipping attachment bytes through the GitHub Tree API. Bytes
-// land at `.apicircle/attachments/<slotId>` so the CLI (future package) can
+// land at `.apicircle/workspace-<id>/attachments/<slotId>` so the CLI can
 // read them straight off disk.
 
 const CHUNK = 0x8000; // 32 KiB — small enough to never blow the call stack

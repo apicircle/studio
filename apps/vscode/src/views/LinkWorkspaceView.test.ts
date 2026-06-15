@@ -30,6 +30,7 @@ function lw(id: string, over: Partial<LinkedWorkspace> = {}): LinkedWorkspace {
     id,
     kind: 'public',
     name: id,
+    sourceWorkspaceId: 'src-ws-1',
     source: {
       provider: 'github',
       repoFullName: `org/${id}`,

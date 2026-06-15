@@ -47,6 +47,7 @@ async function setup(): Promise<void> {
           id: 'link-1',
           kind: 'private',
           name: 'Source workspace',
+          sourceWorkspaceId: 'src-ws-link1',
           source: {
             provider: 'github',
             repoFullName: 'a/b',

@@ -12,8 +12,8 @@ function makeSurface(
   return {
     workspace: {
       id,
-      apicircleDir: `/workspaces/${id}/.apicircle`,
-      workspaceJsonPath: `/workspaces/${id}/.apicircle/workspace.json`,
+      apicircleDir: `/workspaces/${id}/.apicircle/workspace-${id}`,
+      workspaceJsonPath: `/workspaces/${id}/.apicircle/workspace-${id}/workspace.json`,
       workspaceFolder: undefined,
       label,
       source,

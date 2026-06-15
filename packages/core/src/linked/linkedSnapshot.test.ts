@@ -7,6 +7,7 @@ function link(over: Partial<LinkedWorkspace> = {}): LinkedWorkspace {
     id: 'lw1',
     kind: 'public',
     name: 'Payments',
+    sourceWorkspaceId: 'remote-ws-1',
     source: { provider: 'github', repoFullName: 'o/r', branch: 'main', sessionMode: 'workspace' },
     scope: ['collections', 'environments'],
     pinnedVersion: null,

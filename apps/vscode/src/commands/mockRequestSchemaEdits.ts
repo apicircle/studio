@@ -15,7 +15,7 @@ import {
 //
 // A mock endpoint's `requestSchema` declares the inputs it expects — path /
 // query / header / cookie params + a body-shape doc. It round-trips through
-// `.apicircle/workspace.json` and is honored by the Web/Desktop apps, the
+// `.apicircle/workspace-<id>/workspace.json` and is honored by the Web/Desktop apps, the
 // OpenAPI export, and the mock-server docs. The projection hides an empty
 // requestSchema, so these commands also CREATE the block on first use.
 //

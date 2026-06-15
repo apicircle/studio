@@ -39,8 +39,9 @@ encrypted-row v2), the Secret Vault "Set passphrase" / decrypt-failure
 recovery surfaces, and reverted the default appearance to **One Dark Pro**
 
 - **System Sans**. 1.0.9 relocates the Git-tracked workspace document from
-  the repo root into `.apicircle/workspace.json` (alongside the
-  already-nested `.apicircle/attachments/<slotId>`) as a hard cutover — no
+  the repo root into `.apicircle/workspace-<id>/workspace.json` (alongside
+  `.apicircle/workspace-<id>/attachments/<slotId>`, indexed by
+  `.apicircle/registry.json`) as a hard cutover — no
   backwards-compat read of a root `workspace.json`. There's still no
   production data and no public API contract to preserve. Prefer redesigning
   a bad shape over patching it — no migration shims, no backwards-compat
@@ -203,7 +204,7 @@ studio/
 │                           GET-scaffold file creation — no step-wise wizard.
 │                           On activation the extension also adopts the workspace
 │                           backing any already-open `apicircle://` editor (or raw
-│                           `.apicircle/workspace.json`) as active. An `apicircle`
+│                           `.apicircle/workspace-<id>/workspace.json`) as active. An `apicircle`
 │                           DiagnosticCollection
 │                           (`apps/vscode/src/lang/diagnostics.ts`) blocks saving a
 │                           renamed/mistyped key — top-level OR nested entry —
@@ -286,9 +287,10 @@ A workspace is split into two JSON documents:
 - **`WorkspaceSynced`** — everything that belongs in Git and is shared with the
   team: the request/folder collection tree, environments, mock-server
   _definitions_, releases, linked workspaces, global assets, secret-crypto
-  metadata. Lives in the repo as `.apicircle/workspace.json` (alongside the
-  binary attachments under `.apicircle/attachments/<slotId>`). Path
-  constants in `packages/core/src/git/repoPaths.ts`.
+  metadata. Lives in the repo as `.apicircle/workspace-<id>/workspace.json`
+  (alongside binary attachments under `.apicircle/workspace-<id>/attachments/<slotId>`,
+  indexed by `.apicircle/registry.json`). Path helpers in
+  `packages/core/src/git/repoPaths.ts`.
 - **`WorkspaceLocal`** — per-device runtime state that never leaves the
   machine: history runs, mock-server _runtime_ state, the GitHub session, plain
   secret material, UI state.

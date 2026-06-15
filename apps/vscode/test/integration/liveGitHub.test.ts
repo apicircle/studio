@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { GitHubClient } from '@apicircle/git';
-import { WORKSPACE_JSON_PATH, parseLinkedWorkspaceJson, ledgerFromProbe } from '@apicircle/core';
+import {
+  fetchRemoteWorkspaceJson,
+  parseLinkedWorkspaceJson,
+  ledgerFromProbe,
+} from '@apicircle/core';
 
 // =============================================================================
 // Live GitHub integration smoke test.
@@ -9,7 +13,7 @@ import { WORKSPACE_JSON_PATH, parseLinkedWorkspaceJson, ledgerFromProbe } from '
 //
 //   APICIRCLE_LIVE_GH_TOKEN   — a GitHub PAT with at least `repo:read` scope.
 //   APICIRCLE_LIVE_GH_REPO    — owner/name of a repo containing
-//                                `.apicircle/workspace.json` (public or
+//                                `.apicircle/registry.json` (public or
 //                                accessible to the token).
 //   APICIRCLE_LIVE_GH_BRANCH  — optional, defaults to `main`.
 //
@@ -33,13 +37,15 @@ describe.skipIf(!enabled)('live GitHub integration (read-only)', () => {
   const [owner, name] = repo.split('/', 2);
   const client = new GitHubClient();
 
-  it('fetches a real .apicircle/workspace.json and parses it into a probe', async () => {
-    const file = await client.getContents(token, owner, name, WORKSPACE_JSON_PATH, branch);
-    expect(file).not.toBeNull();
-    const probe = parseLinkedWorkspaceJson(file!.content);
-    // A workspace doc must at least carry a collections shape.
+  it('fetches a real .apicircle/registry.json + workspace-<id>/workspace.json and parses it into a probe', async () => {
+    const result = await fetchRemoteWorkspaceJson(async (p) => {
+      const f = await client.getContents(token, owner, name, p, branch);
+      return f?.content ?? null;
+    });
+    expect('error' in result).toBe(false);
+    if ('error' in result) return;
+    const probe = parseLinkedWorkspaceJson(result.content);
     expect(probe.collections).toBeDefined();
-    // ledgerFromProbe never throws — it defaults to {versions:[],current:null}.
     const ledger = ledgerFromProbe(probe);
     expect(Array.isArray(ledger.versions)).toBe(true);
   }, 30000);

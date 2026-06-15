@@ -12,11 +12,65 @@ function id(key: string): TcId {
   if (!v) throw new Error(`No TC-LV entry for "${key}"`);
   return v;
 }
+const MOCK_WS_ID = 'remote-ws-1';
+
 const corsHeaders = {
   'access-control-allow-origin': '*',
   'access-control-expose-headers':
     'x-oauth-scopes, x-accepted-oauth-scopes, x-ratelimit-remaining, x-ratelimit-reset',
 };
+
+function buildRegistryResponse(): string {
+  return JSON.stringify({
+    schemaVersion: 1,
+    activeWorkspaceId: MOCK_WS_ID,
+    workspaces: [{ id: MOCK_WS_ID, name: 'Remote', createdAt: 't', lastOpenedAt: 't' }],
+  });
+}
+
+async function mockWorkspaceFetch(
+  page: Page,
+  repoPattern: string,
+  workspaceJson: string,
+): Promise<void> {
+  const registryBase64 = Buffer.from(buildRegistryResponse(), 'utf-8').toString('base64');
+  const workspaceBase64 = Buffer.from(workspaceJson, 'utf-8').toString('base64');
+  await page.route(
+    `https://api.github.com/repos/${repoPattern}/contents/.apicircle/**`,
+    async (route) => {
+      const url = route.request().url();
+      if (url.includes('registry.json')) {
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify({
+            type: 'file',
+            path: '.apicircle/registry.json',
+            sha: 'registry-sha',
+            size: buildRegistryResponse().length,
+            content: registryBase64,
+            encoding: 'base64',
+          }),
+        });
+      } else if (url.includes('workspace.json')) {
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify({
+            type: 'file',
+            path: `.apicircle/workspace-${MOCK_WS_ID}/workspace.json`,
+            sha: 'ws-sha',
+            size: workspaceJson.length,
+            content: workspaceBase64,
+            encoding: 'base64',
+          }),
+        });
+      } else {
+        await route.fallback();
+      }
+    },
+  );
+}
 
 async function fulfillJson(
   page: Page,
@@ -150,24 +204,7 @@ test.describe('Workspace-self releases (P5.1)', () => {
       const mainJson = JSON.stringify({
         releases: { self: { versions: [{ version: '1.0.0', notes: 'first cut' }] } },
       });
-      const mainBase64 = Buffer.from(mainJson, 'utf-8').toString('base64');
-      await app.route(
-        'https://api.github.com/repos/me/api/contents/.apicircle/workspace.json**',
-        async (route) => {
-          await route.fulfill({
-            status: 200,
-            headers: { 'content-type': 'application/json', ...corsHeaders },
-            body: JSON.stringify({
-              type: 'file',
-              path: '.apicircle/workspace.json',
-              sha: 'main-sha',
-              size: mainJson.length,
-              content: mainBase64,
-              encoding: 'base64',
-            }),
-          });
-        },
-      );
+      await mockWorkspaceFetch(app, 'me/api', mainJson);
       // v1.0.0 is not yet tagged — getTagSha 404s.
       await fulfillJson(app, 'https://api.github.com/repos/me/api/git/refs/tags/v1.0.0', 404, {
         message: 'Not Found',

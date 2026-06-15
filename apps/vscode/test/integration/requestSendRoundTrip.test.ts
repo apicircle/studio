@@ -3,7 +3,7 @@
 //
 // Exercises the full Phase 1 user-visible pipe with NO execute-time mocking:
 //
-//   1. Seed a real .apicircle/workspace.json with a Request pointing at a
+//   1. Seed a real .apicircle/workspace-<id>/workspace.json with a Request pointing at a
 //      locally-spawned HTTP server.
 //   2. Register the workspace with VsCodeBridge using the real
 //      GitWorkspaceProvider.

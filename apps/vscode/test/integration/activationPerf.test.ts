@@ -40,7 +40,8 @@ function makeMockContext(globalStoragePath: string) {
 }
 
 function seedLargeWorkspace(apicircleDir: string, requestCount: number): void {
-  fs.mkdirSync(apicircleDir, { recursive: true });
+  const wsDir = path.join(apicircleDir, 'workspace-perf-test');
+  fs.mkdirSync(wsDir, { recursive: true });
   const requests: Record<string, unknown> = {};
   const children: Array<{ kind: 'request'; id: string }> = [];
   for (let i = 0; i < requestCount; i++) {
@@ -64,7 +65,7 @@ function seedLargeWorkspace(apicircleDir: string, requestCount: number): void {
     children.push({ kind: 'request', id });
   }
   fs.writeFileSync(
-    path.join(apicircleDir, 'workspace.json'),
+    path.join(wsDir, 'workspace.json'),
     JSON.stringify({
       schemaVersion: 1,
       workspaceId: 'perf-test',
@@ -83,6 +84,17 @@ function seedLargeWorkspace(apicircleDir: string, requestCount: number): void {
       secretKeys: {},
       secretCrypto: null,
       meta: { createdAt: '2026-01-01', updatedAt: '2026-01-01', appVersion: '0.1.0' },
+    }),
+  );
+  // Write the registry so discovery finds this workspace.
+  fs.writeFileSync(
+    path.join(apicircleDir, 'registry.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      activeWorkspaceId: 'perf-test',
+      workspaces: [
+        { id: 'perf-test', name: 'perf', createdAt: '2026-01-01', lastOpenedAt: '2026-01-01' },
+      ],
     }),
   );
 }

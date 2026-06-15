@@ -86,6 +86,7 @@ describe('serializeWorkspaceForGit', () => {
           id: 'lw-1',
           kind: 'private',
           name: 'Payments',
+          sourceWorkspaceId: 'remote-ws-1',
           source: {
             provider: 'github',
             repoFullName: 'org/payments',

@@ -278,7 +278,7 @@ describe('globalAssets.files.delete', () => {
     // Headless writer (AI client via MCP) deletes an asset that has
     // already been pushed. The patch handler must queue the slotId in
     // `pendingAttachmentDeletes` so the next desktop push emits a
-    // `{path: '.apicircle/attachments/<slotId>', sha: null}` tree entry.
+    // `{path: '.apicircle/workspace-<id>/attachments/<slotId>', sha: null}` tree entry.
     // Without this queue, AI-driven deletions would orphan blobs on
     // the remote tree.
     const a = asset({

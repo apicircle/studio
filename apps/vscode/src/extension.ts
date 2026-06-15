@@ -263,7 +263,7 @@ import {
 //   • The VsCodeBridge singleton (workspace surface + future MCP/mock/secrets)
 //   • The `APICircle: Create New Workspace` command
 //   • Initial workspace discovery — auto-registers and activates the first
-//     `.apicircle/workspace.json` found in the open folders
+//     `.apicircle/` workspace found in the open folders
 //
 // Everything else (FileSystemProvider, language services, response viewer,
 // send command, etc.) lands incrementally in subsequent commits within Phase 1.
@@ -744,26 +744,25 @@ export function activate(context: vscode.ExtensionContext): void {
   // P3R1-G2: also reconcile mock runtime — if a Git pull removed a mock
   // definition while it was running, stop the orphan and clear its entry.
   const refreshAll = () => {
-    // The watcher's `**/.apicircle/workspace.json` glob fires on CREATE
-    // events too — re-discover so a workspace.json that appeared after
-    // activation (Git pull, scaffold-via-CLI, hand-mkdir) registers with
-    // the bridge and flips the welcome view.
+    // The watcher globs fire on CREATE events too — re-discover so a
+    // workspace that appeared after activation (Git pull, scaffold-via-CLI)
+    // registers with the bridge and flips the welcome view.
     rediscoverAndRegister(context);
     for (const v of Object.values(views ?? {})) v.refresh();
     void mockController?.reconcile();
   };
   const watcherHandle = registerWorkspaceWatchers({
-    syncedGlob: '**/.apicircle/workspace.json',
+    syncedGlob: '**/.apicircle/workspace-*/workspace.json',
     localGlob: '**/workspace.local.json',
     onAnyChange: refreshAll,
   });
   context.subscriptions.push(watcherHandle);
 
-  // Initial discovery — register every detected `.apicircle/workspace.json`.
+  // Initial discovery — register every detected `.apicircle/` workspace.
   rediscoverAndRegister(context);
 
   // Startup: if VS Code restored an editor that belongs to an APICircle
-  // workspace (an apicircle:// virtual YAML or the raw .apicircle/workspace.json),
+  // workspace (an apicircle:// virtual YAML or a raw .apicircle/ workspace file),
   // make that workspace the active one so the sidebar matches what's on screen.
   adoptActiveWorkspaceFromOpenEditors();
 
@@ -1739,7 +1738,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // ---- Workspace discovery + hasActiveWorkspace context key ----
   // Re-runs `discoverWorkspaces` for the currently-open VS Code workspace
-  // folders, registers any newly found `.apicircle/workspace.json` with the
+  // folders, registers any newly found `.apicircle/` workspace with the
   // bridge, picks an active workspace if none is set yet, and finally
   // updates the `apicircle.hasActiveWorkspace` context key so the Editor's
   // viewsWelcome content switches between the no-workspace and
@@ -1764,7 +1763,7 @@ export function activate(context: vscode.ExtensionContext): void {
     );
     if (discovery.foldersWithoutWorkspace.length > 0) {
       log?.(
-        `discover: ${discovery.foldersWithoutWorkspace.length} folder(s) had no .apicircle/workspace.json — ${discovery.foldersWithoutWorkspace
+        `discover: ${discovery.foldersWithoutWorkspace.length} folder(s) had no .apicircle/registry.json — ${discovery.foldersWithoutWorkspace
           .map((f) => f.uri.fsPath)
           .join(' | ')}`,
       );
@@ -1808,8 +1807,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // ---- Startup: adopt the workspace backing an already-open editor ----
   // On reload VS Code restores the previous session's editors. If one is an
-  // apicircle:// virtual YAML (request / env / mock / endpoint / …) or the raw
-  // `.apicircle/workspace.json`, switch the active workspace to the one that
+  // apicircle:// virtual YAML (request / env / mock / endpoint / …) or a raw
+  // `.apicircle/` workspace file, switch the active workspace to the one that
   // editor belongs to — so the TreeViews, status bar and MCP snippets reflect
   // what the user is already looking at instead of whatever discovery defaulted
   // to. Best-effort: any malformed URI is skipped, never thrown.

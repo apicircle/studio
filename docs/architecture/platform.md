@@ -110,7 +110,7 @@ workspaces in the desktop without restarting the MCP process.
 Every file uploaded into the workspace — through the Global Assets
 sidebar, a form-data row, a binary request body, or a mock-server
 binary response — is a `GlobalFileAsset` entry in the synced doc, with
-bytes living on disk under `.apicircle/attachments/<slotId>` after the
+bytes living on disk under `.apicircle/workspace-<id>/attachments/<slotId>` after the
 first push. Three pieces of state describe where the bytes live at any
 moment:
 
@@ -133,7 +133,7 @@ moment:
   Without this queue, removing an asset would drop it from
   `workspace.json` but leave the orphan blob on the remote tree
   forever — and the PR merge would carry the orphan into the base
-  branch. The push emits one `{path: '.apicircle/attachments/<slotId>',
+  branch. The push emits one `{path: '.apicircle/workspace-<id>/attachments/<slotId>',
 sha: null}` tree entry per queued slot (GitHub treats `sha: null`
   layered over `base_tree` as a deletion), clears the queue post-
   `updateRef`, and a pre-emit safety filter drops any slotId that

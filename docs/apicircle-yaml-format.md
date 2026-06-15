@@ -1,9 +1,10 @@
 # APICircle YAML Format Reference
 
-The VS Code extension projects each entity in `.apicircle/workspace.json` as a
-**YAML document** opened in a real VS Code text editor. The YAML is a UI-only
-convenience — what hits Git is always the canonical JSON inside
-`.apicircle/workspace.json`. This page documents the YAML shape so power users
+The VS Code extension projects each entity in the workspace's `workspace.json`
+(under `.apicircle/workspace-<id>/`) as a **YAML document** opened in a real
+VS Code text editor. The YAML is a UI-only convenience — what hits Git is
+always the canonical JSON inside the per-workspace `workspace.json`. This page
+documents the YAML shape so power users
 can edit confidently and AI assistants (Copilot, Claude Code, Cursor) can
 generate well-formed content.
 
@@ -286,8 +287,9 @@ appear. On save:
    `parseRequestFromYaml`.
 2. The patch is applied through `applyMutation` against the existing
    request, preserving every read-only field.
-3. The resulting `WorkspaceSynced` is written to `.apicircle/workspace.json`
-   under a `proper-lockfile` advisory lock.
+3. The resulting `WorkspaceSynced` is written to the per-workspace
+   `workspace.json` (under `.apicircle/workspace-<id>/`) with a
+   `proper-lockfile` advisory lock.
 4. VS Code's Git extension surfaces the JSON diff in Source Control.
 
 This means: editing YAML can never accidentally delete an `id`, lose a

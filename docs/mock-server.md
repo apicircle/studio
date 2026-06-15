@@ -75,7 +75,7 @@ Saving a YAML whose **structure** was renamed or mistyped (an unknown top-level 
 
 `MockEndpoint.requestSchema` declares the inputs an endpoint expects — `pathParams` / `queryParams` / `headers` / `cookies` (each a `MockParamDef` with `name` / `typeHint` / `required` / `example`) plus an optional `body` doc. It is **documentation-only** (the runtime validation engine is driven by the separate `requestValidation` rules) and feeds the OpenAPI export.
 
-Because it lives on `WorkspaceSynced.mockServers[id].endpoints[]`, it round-trips through `.apicircle/workspace.json` and is **identical on every surface**. It is editable in the **VS Code** YAML (above), in the **Desktop / Web** app (the mock endpoint editor's Endpoint node → **Request schema** section, with a "Derive from path" affordance), and is populated automatically by an OpenAPI / Postman / Insomnia import. Switching surfaces never loses or rewrites it.
+Because it lives on `WorkspaceSynced.mockServers[id].endpoints[]`, it round-trips through the per-workspace `workspace.json` (under `.apicircle/workspace-<id>/`) and is **identical on every surface**. It is editable in the **VS Code** YAML (above), in the **Desktop / Web** app (the mock endpoint editor's Endpoint node → **Request schema** section, with a "Derive from path" affordance), and is populated automatically by an OpenAPI / Postman / Insomnia import. Switching surfaces never loses or rewrites it.
 
 ## How definitions are stored
 

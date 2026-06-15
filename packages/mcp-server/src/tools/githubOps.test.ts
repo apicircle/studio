@@ -131,18 +131,31 @@ beforeEach(() => {
   setup();
 });
 
+function mockRemoteRepo(workspaceContent: object, wsId = 'remote-ws-1') {
+  const registry = JSON.stringify({
+    schemaVersion: 1,
+    activeWorkspaceId: wsId,
+    workspaces: [{ id: wsId, name: 'Remote', createdAt: 't', lastOpenedAt: 't' }],
+  });
+  const wsJson = JSON.stringify(workspaceContent);
+  gh.getContents.mockImplementation(
+    (_tok: string, _o: string, _n: string, p: string, _b: string) => {
+      if (p.endsWith('registry.json'))
+        return Promise.resolve({ content: registry, sha: 'r', path: p, size: 1 });
+      if (p.endsWith('workspace.json'))
+        return Promise.resolve({ content: wsJson, sha: 'w', path: p, size: 1 });
+      return Promise.resolve(null);
+    },
+  );
+}
+
 describe('linked.link', () => {
   it('links a repo from the fetched workspace.json', async () => {
-    gh.getContents.mockResolvedValue({
-      content: JSON.stringify({
-        releases: { self: ledger },
-        collections: { tree: { id: 'r', type: 'root', children: [] }, requests: {}, folders: {} },
-        environments: { items: {}, activeName: null, priorityOrder: [] },
-        secretKeys: { K: { id: 'K', label: 'Key', salt: 's', createdAt: 't' } },
-      }),
-      sha: 'blob',
-      path: '.apicircle/workspace.json',
-      size: 1,
+    mockRemoteRepo({
+      releases: { self: ledger },
+      collections: { tree: { id: 'r', type: 'root', children: [] }, requests: {}, folders: {} },
+      environments: { items: {}, activeName: null, priorityOrder: [] },
+      secretKeys: { K: { id: 'K', label: 'Key', salt: 's', createdAt: 't' } },
     });
     const out = (await linkedLinkTool.handler(
       { repoFullName: 'org/payments', branch: 'main', kind: 'private', token: 'tok' },
@@ -168,12 +181,7 @@ describe('linked.link', () => {
 
   it('falls back to GITHUB_TOKEN env', async () => {
     process.env.GITHUB_TOKEN = 'env-tok';
-    gh.getContents.mockResolvedValue({
-      content: JSON.stringify({ releases: { self: ledger } }),
-      sha: 's',
-      path: 'p',
-      size: 1,
-    });
+    mockRemoteRepo({ releases: { self: ledger } });
     const out = (await linkedLinkTool.handler(
       { repoFullName: 'o/n', kind: 'private', branch: 'main' },
       ctx,
@@ -188,6 +196,7 @@ describe('linked.link', () => {
         id: 'lw1',
         kind: 'public',
         name: 'x',
+        sourceWorkspaceId: 'remote-ws-1',
         source: {
           provider: 'github',
           repoFullName: 'o/n',
@@ -217,6 +226,7 @@ describe('linked.refresh', () => {
         id: 'lw1',
         kind: 'public',
         name: 'x',
+        sourceWorkspaceId: 'remote-ws-1',
         source: {
           provider: 'github',
           repoFullName: 'o/n',
@@ -230,12 +240,7 @@ describe('linked.refresh', () => {
         requiredSecretKeyIds: [],
       },
     });
-    gh.getContents.mockResolvedValue({
-      content: JSON.stringify({ releases: { self: ledger } }),
-      sha: 's',
-      path: 'p',
-      size: 1,
-    });
+    mockRemoteRepo({ releases: { self: ledger } }, 'remote-ws-1');
     const out = (await linkedRefreshTool.handler({ id: 'lw1' }, ctx)) as {
       ok: boolean;
       currentVersion: string;

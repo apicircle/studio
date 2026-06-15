@@ -344,7 +344,7 @@ class BridgeWorkspaceProvider implements WorkspaceProvider {
     const active = this.bridge.activeWorkspace();
     if (!active) {
       throw new Error(
-        'BridgeWorkspaceProvider: no active workspace. Open a folder containing .apicircle/workspace.json before invoking MCP tools.',
+        'BridgeWorkspaceProvider: no active workspace. Open a folder containing an API Circle workspace before invoking MCP tools.',
       );
     }
     return active;

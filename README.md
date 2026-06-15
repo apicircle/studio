@@ -127,20 +127,20 @@ teammates share them; _runtime_ state stays on the local machine.
   assets. Request uploads, linked workspace downloads, execution plans, and
   mock binary responses can all point at the same tracked asset metadata while
   file bytes travel as Git blobs alongside the synced doc, both under
-  `.apicircle/` in the repo (`.apicircle/workspace.json` plus
-  `.apicircle/attachments/<slotId>`).
+  `.apicircle/` in the repo (`.apicircle/workspace-<id>/workspace.json` plus
+  `.apicircle/workspace-<id>/attachments/<slotId>`).
 - **Assertions** and multi-step **execution plans** that chain requests.
 - **Request history** with full headers, body previews, and assertion results.
 
 ### Pick your surface
 
-| Surface               | Best for                                                               |
-| --------------------- | ---------------------------------------------------------------------- |
-| **Desktop app**       | Day-to-day development (Windows / macOS / Linux)                       |
-| **Web app**           | Quick access, zero install                                             |
-| **VS Code extension** | Editing the same `.apicircle/workspace.json` from your IDE — see below |
-| **CLI**               | CI pipelines, terminals, headless agents                               |
-| **npm packages**      | Embedding the engine in your own tooling                               |
+| Surface               | Best for                                                           |
+| --------------------- | ------------------------------------------------------------------ |
+| **Desktop app**       | Day-to-day development (Windows / macOS / Linux)                   |
+| **Web app**           | Quick access, zero install                                         |
+| **VS Code extension** | Editing the same `.apicircle/` workspace from your IDE — see below |
+| **CLI**               | CI pipelines, terminals, headless agents                           |
+| **npm packages**      | Embedding the engine in your own tooling                           |
 
 ### VS Code extension (`apps/vscode/`)
 

@@ -406,6 +406,7 @@ describe('ApicircleFsProvider', () => {
       id: 'lw1',
       kind: 'public' as const,
       name: 'Payments',
+      sourceWorkspaceId: 'src-ws-1',
       source: {
         provider: 'github' as const,
         repoFullName: 'org/payments',
@@ -808,6 +809,7 @@ describe('ApicircleFsProvider', () => {
         id: 'lw1',
         kind: 'public' as const,
         name: 'Payments',
+        sourceWorkspaceId: 'src-ws-1',
         source: {
           provider: 'github' as const,
           repoFullName: 'org/payments',
@@ -1859,6 +1861,7 @@ describe('ApicircleFsProvider', () => {
       id: 'lw-stat',
       kind: 'public' as const,
       name: 'Stats',
+      sourceWorkspaceId: 'src-ws-1',
       source: {
         provider: 'github' as const,
         repoFullName: 'org/stats',

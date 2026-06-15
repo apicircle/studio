@@ -19,7 +19,7 @@ describe('registerWorkspaceWatchers', () => {
     );
 
     const handle = registerWorkspaceWatchers({
-      syncedGlob: '**/.apicircle/workspace.json',
+      syncedGlob: '**/.apicircle/workspace-*/workspace.json',
       localGlob: '**/workspace.local.json',
       onAnyChange: vi.fn(),
     });
@@ -27,7 +27,7 @@ describe('registerWorkspaceWatchers', () => {
     expect(workspace.createFileSystemWatcher).toHaveBeenCalledTimes(2);
     expect(workspace.createFileSystemWatcher).toHaveBeenNthCalledWith(
       1,
-      '**/.apicircle/workspace.json',
+      '**/.apicircle/workspace-*/workspace.json',
     );
     expect(workspace.createFileSystemWatcher).toHaveBeenNthCalledWith(2, '**/workspace.local.json');
     expect(handle.watchers).toHaveLength(2);

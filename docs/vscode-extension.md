@@ -5,7 +5,7 @@
 This is the user + developer guide to the VS Code extension that lives at
 [`apps/vscode/`](../apps/vscode/). It complements the [Desktop App](../README.md)
 and the [Web App](../apps/web/README.md) as a third peer client of the same
-canonical `.apicircle/workspace.json`.
+canonical `.apicircle/` workspace directory.
 
 ---
 
@@ -15,7 +15,11 @@ The Web App, Desktop App, and VS Code extension are **peer clients of the same
 Git-backed canonical format**. The file lives at:
 
 ```
-<your-repo>/.apicircle/workspace.json
+<your-repo>/.apicircle/
+  registry.json                          ← discovery/index file
+  workspace-<id>/
+    workspace.json                       ← per-workspace synced doc
+    attachments/<slotId>                 ← binary attachments
 ```
 
 Edit in any surface → commit → push → pull elsewhere → continue. No
@@ -42,19 +46,20 @@ automatic and matches typical VS Code extension conventions.
 
 The extension activates when:
 
-- VS Code opens a folder that contains `.apicircle/workspace.json`
-  (`workspaceContains:**/.apicircle/workspace.json`), OR
+- VS Code opens a folder that contains `.apicircle/registry.json`
+  (`workspaceContains:**/.apicircle/registry.json`), OR
 - The user clicks the **APICircle** icon in the Activity Bar
   (`onView:apicircle.editor`), OR
 - The user runs `APICircle: Create New Workspace` (`onCommand`).
 
-If a canonical `.apicircle/workspace.json` exists in any open folder, the
-extension auto-registers it with the bridge and restores the previously-active
+If a canonical `.apicircle/registry.json` exists in any open folder, the
+extension auto-registers the workspace with the bridge and restores the previously-active
 workspace from `globalState`. Otherwise the Editor view renders a
 `viewsWelcome` card pointing at:
 
-- **Create New Workspace** — scaffolds a fresh `.apicircle/workspace.json` +
-  `attachments/` folder + `README.md`, and appends defensive entries to the
+- **Create New Workspace** — scaffolds a fresh `.apicircle/` directory
+  (with `registry.json`, a `workspace-<id>/workspace.json`, and an
+  `attachments/` folder) + `README.md`, and appends defensive entries to the
   repo's `.gitignore` (`workspace.local.json`, `.apicircle/.local/`,
   `.apicircle/.lock`).
 - **Open Folder…** — invokes VS Code's native folder picker.
@@ -62,7 +67,7 @@ workspace from `globalState`. Otherwise the Editor view renders a
 The Editor view's `viewsWelcome` is gated by the
 `apicircle.hasActiveWorkspace` context key, which the extension sets
 every time `discoverWorkspaces` runs (activate, refresh, the
-`.apicircle/workspace.json` file watcher, and
+`.apicircle/registry.json` file watcher, and
 `onDidChangeWorkspaceFolders`):
 
 - **When false** (no workspace registered) — the no-workspace card with
@@ -77,7 +82,7 @@ The Editor view's title bar exposes two icon actions:
 **$(add) New Request** (left, `apicircle.newRequest`, `ctrl+n` when the
 view is focused) and **$(refresh) Refresh** (right, `apicircle.refresh`,
 `ctrl+shift+r`). Refresh re-runs `discoverWorkspaces` first, so a
-`.apicircle/workspace.json` created after activation (via the CLI, a
+`.apicircle/` directory created after activation (via the CLI, a
 sibling `git pull`, or hand-mkdir) is picked up without a window reload.
 
 ---
@@ -148,7 +153,7 @@ for the canonical list.
 │  │  Extension Host (Node.js)                                   │ │
 │  │  • VsCodeBridge — workspace + mocks + vault + MCP surface   │ │
 │  │  • FileBackedWorkspaceProvider — disk-backed under          │ │
-│  │    .apicircle/workspace.json with proper-lockfile           │ │
+│  │    .apicircle/workspace-<id>/workspace.json (proper-lockfile)│ │
 │  │  • apicircle: FileSystemProvider — virtual YAML views       │ │
 │  │  • InProcessMockController (Phase 3)                        │ │
 │  │  • VsCodeVaultManager (Phase 4) — in-memory AES-GCM key     │ │
@@ -158,7 +163,7 @@ for the canonical list.
 └──────────────────────────────────────────────────────────────────┘
                               │
                               ▼
-                  <repo>/.apicircle/workspace.json
+                  <repo>/.apicircle/
                   (Git-tracked, three-surface canonical)
 ```
 
@@ -316,7 +321,7 @@ it isn't visible in the tab label either.
 
 ### Auto-refresh
 
-- **`workspaceWatcher`** registers `FileSystemWatcher`s on BOTH `.apicircle/workspace.json` (synced) and `workspace.local.json` (device-local). Plan-create, history-append, snapshot-capture and env-var-rename writes (which only touch the local file) now auto-refresh every sidebar view.
+- **`workspaceWatcher`** registers `FileSystemWatcher`s on BOTH `.apicircle/registry.json` and per-workspace `workspace.json` files (synced) and `workspace.local.json` (device-local). Plan-create, history-append, snapshot-capture and env-var-rename writes (which only touch the local file) now auto-refresh every sidebar view.
 
 ### Wired settings
 
@@ -414,7 +419,7 @@ secret vault into the Environment view.
 ### Vault model
 
 A workspace's `synced.secretCrypto` blob (PBKDF2-SHA-256 v1, 16-byte salt,
-1.2M iterations, AES-GCM verifier) lives in `.apicircle/workspace.json`
+1.2M iterations, AES-GCM verifier) lives in the per-workspace `workspace.json`
 and travels with Git. Any teammate who knows the passphrase can decrypt
 the encrypted env-variable values; lose the passphrase, lose the
 secrets — there is no recovery path.
@@ -1596,9 +1601,9 @@ folder's context menu, the pick is skipped. (The earlier 5-step wizard — metho
 URL → folder → auth → name — is gone; everything is edited in the YAML instead.)
 
 **Startup editor adoption** (`extension.ts`): on activation, after discovering
-`.apicircle/workspace.json`, the extension inspects the editors VS Code restored
-and, if one is an `apicircle://` virtual YAML or the raw
-`.apicircle/workspace.json`, makes that editor's workspace the active one — so
+`.apicircle/registry.json`, the extension inspects the editors VS Code restored
+and, if one is an `apicircle://` virtual YAML or a raw workspace `.json` under
+`.apicircle/`, makes that editor's workspace the active one — so
 the sidebar / status bar / MCP snippets match what's already on screen.
 
 **Structural validation** (`lang/diagnostics.ts` + `fs/yamlStructure.ts`): an
@@ -1815,7 +1820,7 @@ names so the user knows why a literal `{{TOKEN}}` reached the wire.
 
 **Linked binary-attachment download.** When a linked request carries a binary
 body or `formRows: [{kind:'file'}]`, the executor's `resolveAttachment` hook
-fetches the bytes from the source repo's `.apicircle/attachments/<slotId>`
+fetches the bytes from the source repo's `.apicircle/workspace-<id>/attachments/<slotId>`
 over GitHub (`GitHubClient.getBinaryContents`) at send time. Per-send cache;
 respects the link's `sessionMode` (dedicated PAT first, otherwise the built-in
 GitHub session). Owned-request attachments still surface the canonical

@@ -112,14 +112,22 @@ describe('VsCodeBridge', () => {
     expect(listener).toHaveBeenCalledTimes(2);
   });
 
-  it('createWorkspaceScaffold creates .apicircle/ + workspace.json + attachments/', async () => {
+  it('createWorkspaceScaffold creates .apicircle/ + workspace-<id>/workspace.json + attachments/', async () => {
     const folder = { uri: Uri.file(tmp), name: 'new-repo', index: 0 } as never;
-    const seedSynced = { schemaVersion: 1, workspaceId: 'test', collections: {}, environments: {} };
+    const seedSynced = {
+      schemaVersion: 1,
+      workspaceId: 'test',
+      collections: {},
+      environments: {},
+    } as never;
     const out = await bridge.createWorkspaceScaffold(folder, seedSynced, {});
 
     expect(fs.existsSync(out.workspaceJsonPath)).toBe(true);
     expect(fs.existsSync(path.join(out.apicircleDir, 'attachments'))).toBe(true);
-    expect(fs.existsSync(path.join(out.apicircleDir, 'README.md'))).toBe(true);
+    // README.md lives in the parent .apicircle/ dir, not inside the workspace dir
+    const apicircleRoot = path.join(tmp, '.apicircle');
+    expect(fs.existsSync(path.join(apicircleRoot, 'README.md'))).toBe(true);
+    expect(fs.existsSync(path.join(apicircleRoot, 'registry.json'))).toBe(true);
 
     const content = JSON.parse(fs.readFileSync(out.workspaceJsonPath, 'utf8'));
     expect(content.workspaceId).toBe('test');
@@ -127,15 +135,16 @@ describe('VsCodeBridge', () => {
 
   it('createWorkspaceScaffold refuses to overwrite an existing workspace.json', async () => {
     const folder = { uri: Uri.file(tmp), name: 'r', index: 0 } as never;
-    await bridge.createWorkspaceScaffold(folder, { workspaceId: 'a' }, {});
-    await expect(bridge.createWorkspaceScaffold(folder, { workspaceId: 'b' }, {})).rejects.toThrow(
-      /already exists/,
-    );
+    await bridge.createWorkspaceScaffold(folder, { workspaceId: 'a' } as never, {});
+    // Same workspaceId → same workspace-a/ dir → EEXIST on workspace.json
+    await expect(
+      bridge.createWorkspaceScaffold(folder, { workspaceId: 'a' } as never, {}),
+    ).rejects.toThrow(/already exists/);
   });
 
   it('createWorkspaceScaffold appends defensive entries to .gitignore (idempotent)', async () => {
     const folder = { uri: Uri.file(tmp), name: 'r', index: 0 } as never;
-    await bridge.createWorkspaceScaffold(folder, { workspaceId: 'a' }, {});
+    await bridge.createWorkspaceScaffold(folder, { workspaceId: 'a' } as never, {});
 
     const gitignorePath = path.join(tmp, '.gitignore');
     expect(fs.existsSync(gitignorePath)).toBe(true);
@@ -146,7 +155,7 @@ describe('VsCodeBridge', () => {
 
     // Idempotent re-run on the same folder shouldn't duplicate entries
     fs.rmSync(path.join(tmp, '.apicircle'), { recursive: true });
-    await bridge.createWorkspaceScaffold(folder, { workspaceId: 'a' }, {});
+    await bridge.createWorkspaceScaffold(folder, { workspaceId: 'a' } as never, {});
     const content2 = fs.readFileSync(gitignorePath, 'utf8');
     const matches = content2.match(/workspace\.local\.json/g);
     expect(matches?.length).toBe(1);

@@ -125,7 +125,7 @@ Whichever method you pick, after the extension activates:
       History, Snapshots, MCP, Marketplace, Help
 - [ ] Run `APICircle: Create New Workspace` from the command palette
       (Ctrl/Cmd+Shift+P). Pick a folder. The extension scaffolds
-      `.apicircle/workspace.json` + opens the views.
+      `.apicircle/` workspace directory + opens the views.
 - [ ] Send a request from the Editor view to validate end-to-end.
 
 ---
@@ -311,11 +311,11 @@ first public Marketplace cut; subsequent bumps match the root
 `package.json` version exactly so a single release tag covers every
 surface.
 
-| Version | When                                                                                            |
-| ------- | ----------------------------------------------------------------------------------------------- |
-| `1.1.0` | First public Marketplace release — ships pre-release for ~3-4 cuts while we collect feedback.   |
-| `1.x.y` | Per-cut lockstep bumps with desktop / web / CLI / MCP server.                                   |
-| `2.0.0` | Reserved for a breaking change to the workspace document on disk (`.apicircle/workspace.json`). |
+| Version | When                                                                                                         |
+| ------- | ------------------------------------------------------------------------------------------------------------ |
+| `1.1.0` | First public Marketplace release — ships pre-release for ~3-4 cuts while we collect feedback.                |
+| `1.x.y` | Per-cut lockstep bumps with desktop / web / CLI / MCP server.                                                |
+| `2.0.0` | Reserved for a breaking change to the workspace document layout on disk (`.apicircle/` directory structure). |
 
 ---
 

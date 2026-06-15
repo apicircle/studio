@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 
 // =============================================================================
 // WorkspaceWatcher — registers `vscode.workspace.createFileSystemWatcher`
-// against BOTH `.apicircle/workspace.json` (synced) and any device-local
+// against BOTH `.apicircle/workspace-*/workspace.json` (synced) and any device-local
 // `workspace.local.json` files the bridge knows about, and re-fires the
 // caller's `onAnyChange` callback so every sidebar TreeView can refresh.
 //

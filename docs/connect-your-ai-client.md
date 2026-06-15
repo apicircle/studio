@@ -83,9 +83,9 @@ A single workspace exported by the desktop disk mirror. Contains:
 #### Layout 3 — Git-backed `.apicircle/` directory (VS Code / Codex / CI)
 
 When your workspace lives in a Git repo (created via the Desktop app's
-**Link to Git** feature), the workspace document is at
-`.apicircle/workspace.json`. Point the MCP binary directly at the
-`.apicircle/` subdirectory:
+**Link to Git** feature), the workspace data is under the
+`.apicircle/` directory. Point the MCP binary directly at that
+subdirectory:
 
 ```bash
 git clone https://github.com/<you>/<your-workspace-repo>

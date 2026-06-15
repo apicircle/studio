@@ -11,7 +11,8 @@ import type { WorkspaceProvider } from './WorkspaceProvider';
 // Differs from `FileBackedWorkspaceProvider` (which reads workspace.json
 // from the desktop's disk mirror) in one critical way: the synced file is
 // `workspace.json` — the canonical Git-tracked workspace document that lives
-// at `.apicircle/workspace.json` in a user's repo.
+// at `.apicircle/workspace-<id>/workspace.json` in a user's repo (discovered
+// via `.apicircle/registry.json`).
 //
 // This enables the `apicircle-mcp` binary to operate directly on a cloned repo
 // without requiring the desktop app's disk mirror. External AI clients (Codex,
@@ -38,7 +39,7 @@ export class GitBackedWorkspaceProvider implements WorkspaceProvider {
     });
     if (!out) {
       throw new Error(
-        `No workspace found at ${this.dir}. Expected .apicircle/workspace.json in the repo.`,
+        `No workspace found at ${this.dir}. Expected .apicircle/registry.json and .apicircle/workspace-<id>/workspace.json in the repo.`,
       );
     }
     return out;

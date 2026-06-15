@@ -10,7 +10,7 @@ import type { VsCodeBridge } from '../host/vscodeBridge';
 //   1. If only one folder is open, scaffold inside it.
 //   2. Otherwise, QuickPick over open folders.
 //   3. Generate fresh WorkspaceSynced + WorkspaceLocal seeds.
-//   4. Write `.apicircle/workspace.json` + `attachments/` + README.md via the
+//   4. Write `.apicircle/registry.json` + `workspace-<id>/workspace.json` + `attachments/` + README.md via the
 //      bridge's createWorkspaceScaffold helper.
 //   5. Register the new workspace with the bridge, set it active.
 //   6. Toast + reveal the new file in the editor.

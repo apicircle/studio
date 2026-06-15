@@ -12,8 +12,8 @@ import type { WorkspaceProvider } from '@apicircle/mcp-server';
 // Differs from `FileBackedWorkspaceProvider` (the disk-mirror provider used
 // by the ~/.apicircle/workspaces/<id>/ pattern) in three ways:
 //
-//   1. The synced file is `.apicircle/workspace.json` (the canonical
-//      Git-tracked path), not the legacy `workspace.synced.json`.
+//   1. The synced file is `.apicircle/workspace-<id>/workspace.json` (the
+//      canonical Git-tracked path), not the legacy `workspace.synced.json`.
 //   2. The local file lives in a SEPARATE directory under VS Code's
 //      `globalStorageUri/<workspaceId>/workspace.local.json`, never in the
 //      Git repo.
