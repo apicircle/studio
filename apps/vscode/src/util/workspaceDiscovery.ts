@@ -28,7 +28,7 @@ import {
 // resolved separately by deviceLocalPath() below.
 // =============================================================================
 
-export type WorkspaceSource = 'git-folder' | 'registry';
+type WorkspaceSource = 'git-folder' | 'registry';
 
 export interface DiscoveredWorkspace {
   /** Stable identifier — the workspace id from the registry. */
