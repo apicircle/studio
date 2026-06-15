@@ -152,6 +152,11 @@ export async function fetchOAuth2Token(args: FetchOAuth2TokenArgs): Promise<OAut
     for (const [k, v] of Object.entries(args.extraParams)) body.set(k, v);
   }
 
+  const tokenUrlParsed = new URL(args.tokenUrl);
+  if (tokenUrlParsed.protocol !== 'https:' && tokenUrlParsed.protocol !== 'http:') {
+    throw new Error(`Token URL must use HTTP or HTTPS, got ${tokenUrlParsed.protocol}`);
+  }
+
   const response = await fetchImpl(args.tokenUrl, {
     method: 'POST',
     headers,

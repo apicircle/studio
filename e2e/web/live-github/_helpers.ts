@@ -11,6 +11,7 @@ import {
   makeDeterministicWorkspace,
   mergePullRequest,
   publishReleaseOnSource,
+  seedMultiWorkspaceOnBranch,
   seedRepoIfEmpty,
   setRepoTopics,
   updateWorkspaceJson,
@@ -161,6 +162,25 @@ export async function createV2HostRepo(
 ): Promise<LiveGithubConfig> {
   const cfg = tracker.trackRepo(await createV2Repo(bot, `host-${label}`, visibility));
   await seedRepoIfEmpty(cfg, { workspaceJson: true });
+  return cfg;
+}
+
+/**
+ * Create a repo seeded with multiple workspaces under `.apicircle/`.
+ * Returns the repo config; the default branch carries:
+ *   - `.apicircle/registry.json` listing all workspaces with `activeId` active
+ *   - `.apicircle/workspace-<id>/workspace.json` for each entry
+ */
+export async function createV2MultiWorkspaceHostRepo(
+  tracker: V2Tracker,
+  bot: V2BotConfig,
+  label: string,
+  workspaces: Array<{ id: string; name: string; content: Record<string, unknown> }>,
+  activeId: string,
+): Promise<LiveGithubConfig> {
+  const cfg = tracker.trackRepo(await createV2Repo(bot, `multi-ws-${label}`));
+  const head = await seedRepoIfEmpty(cfg);
+  await seedMultiWorkspaceOnBranch(cfg, head.name, workspaces, activeId);
   return cfg;
 }
 

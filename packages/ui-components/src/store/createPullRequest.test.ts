@@ -176,7 +176,7 @@ describe('workspaceStore.createPullRequest', () => {
     vi.unstubAllGlobals();
 
     await expect(useWorkspaceStore.getState().createPullRequest()).rejects.toThrow(
-      new RegExp(`already open.*${prUrl.replace(/[/.]/g, '\\$&')}`),
+      new RegExp(`already open.*${prUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
     );
   });
 

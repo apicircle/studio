@@ -216,8 +216,8 @@ export function suggestFolderExportFilename(envelope: ApicircleFolderExportV1): 
   const slug = envelope.folder.name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '');
+    .replace(/^-/, '')
+    .replace(/-$/, '');
   const base = slug || 'folder';
   return `${base}.apicircle.json`;
 }

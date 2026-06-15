@@ -8,9 +8,6 @@
 import type { Page } from '@playwright/test';
 import { REGISTRY_JSON_PATH, workspaceJsonPath } from '@apicircle/core';
 
-const ENABLE_ENV = 'APICIRCLE_E2E_LIVE_GITHUB';
-const TOKEN_ENV = 'APICIRCLE_E2E_GITHUB_PAT';
-
 /**
  * Build a minimal `registry.json` payload that points at a single workspace.
  * Used whenever we seed or write a workspace to a repo — the new per-workspace
@@ -24,6 +21,31 @@ function buildRegistryJson(workspaceId: string, name = 'test'): string {
       schemaVersion: 1,
       activeWorkspaceId: workspaceId,
       workspaces: [{ id: workspaceId, name, lastOpenedAt: now, createdAt: now }],
+    },
+    null,
+    2,
+  );
+}
+
+/**
+ * Build a `registry.json` payload with multiple workspaces.
+ * Used by the multi-workspace cross-surface sync tests.
+ */
+function buildMultiWorkspaceRegistryJson(
+  workspaces: Array<{ id: string; name: string }>,
+  activeId: string,
+): string {
+  const now = new Date().toISOString();
+  return JSON.stringify(
+    {
+      schemaVersion: 1,
+      activeWorkspaceId: activeId,
+      workspaces: workspaces.map((ws) => ({
+        id: ws.id,
+        name: ws.name,
+        lastOpenedAt: now,
+        createdAt: now,
+      })),
     },
     null,
     2,
@@ -846,6 +868,189 @@ export async function updateWorkspaceJson<T extends Record<string, unknown>>(
   mutate(file.json);
   await writeWorkspaceJson(cfg, branch, file.json, message);
   return file.json;
+}
+
+// ---------------------------------------------------------------------------
+// Multi-workspace helpers — per-workspace-ID variants that bypass registry
+// resolution and never overwrite a multi-workspace registry.json.
+// Used by the cross-surface sync E2E suite (17-multi-workspace-*).
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch a specific workspace by ID, bypassing registry resolution.
+ * Retries with exponential backoff to absorb Contents-API propagation lag.
+ */
+export async function fetchWorkspaceJsonById<T = Record<string, unknown>>(
+  cfg: LiveGithubConfig,
+  branchOrSha: string,
+  workspaceId: string,
+  opts: { expectedCommitSha?: string } = {},
+): Promise<WorkspaceFile<T>> {
+  const ref = opts.expectedCommitSha ?? branchOrSha;
+  const wsPath = workspaceJsonPath(workspaceId);
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const res = await fetch(buildContentsUrl(cfg, wsPath, ref), {
+      headers: { ...ghHeaders(cfg.token), 'Cache-Control': 'no-cache' },
+    });
+    if (res.ok) {
+      const body = (await res.json()) as { content: string; encoding: string; sha: string };
+      if (body.encoding !== 'base64')
+        throw new Error(`workspace.json had unexpected encoding: ${body.encoding}`);
+      return {
+        json: JSON.parse(Buffer.from(body.content, 'base64').toString('utf-8')) as T,
+        sha: body.sha,
+      };
+    }
+    const status = res.status;
+    const text = await res.text().catch(() => '<no-body>');
+    const transient =
+      isTransientWorkspaceReadFailure(status, text) ||
+      (opts.expectedCommitSha !== undefined && status === 404);
+    if (!transient || attempt === 7) {
+      throw new Error(
+        `fetchWorkspaceJsonById ${cfg.fullName}@${ref} workspace-${workspaceId} failed (${status}): ${text}`,
+      );
+    }
+    await wait(500 * 2 ** attempt);
+  }
+  throw new Error(
+    `fetchWorkspaceJsonById ${cfg.fullName}@${ref} workspace-${workspaceId}: exhausted retries`,
+  );
+}
+
+/**
+ * Write a workspace by ID WITHOUT touching registry.json.
+ * Simulates what VS Code / Desktop would do: commit + push the workspace
+ * file only, leaving the multi-workspace registry intact.
+ */
+export async function writeWorkspaceJsonById(
+  cfg: LiveGithubConfig,
+  branch: string,
+  workspaceId: string,
+  workspace: Record<string, unknown>,
+  message = 'e2e: update workspace.json',
+): Promise<string> {
+  const wsPath = workspaceJsonPath(workspaceId);
+
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const existing = await fetch(buildContentsUrl(cfg, wsPath, branch), {
+      headers: ghHeaders(cfg.token),
+    });
+    let sha: string | undefined;
+    if (existing.ok) {
+      sha = ((await existing.json()) as { sha: string }).sha;
+    } else if (existing.status !== 404) {
+      const text = await existing.text().catch(() => '<no-body>');
+      if (isTransientWorkspaceReadFailure(existing.status, text) && attempt < 5) {
+        await wait(750 * (attempt + 1));
+        continue;
+      }
+      throw new Error(`writeWorkspaceJsonById probe failed (${existing.status}): ${text}`);
+    }
+    const res = await fetchWithSecondaryRateLimit(buildContentsUrl(cfg, wsPath), {
+      method: 'PUT',
+      headers: { ...ghHeaders(cfg.token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        content: Buffer.from(`${JSON.stringify(workspace, null, 2)}\n`).toString('base64'),
+        branch,
+        ...(sha ? { sha } : {}),
+      }),
+    });
+    if (res.ok) {
+      const body = (await res.json()) as { content?: { sha?: string } };
+      return body.content?.sha ?? '';
+    }
+    const lastStatus = res.status;
+    const lastText = await res.text().catch(() => '<no-body>');
+    if ((res.status === 409 || res.status === 422) && attempt < 5) {
+      await wait(750 * (attempt + 1));
+      continue;
+    }
+    throw new Error(
+      `writeWorkspaceJsonById ${cfg.fullName}@${branch} workspace-${workspaceId} failed (${lastStatus}): ${lastText}`,
+    );
+  }
+  throw new Error(
+    `writeWorkspaceJsonById ${cfg.fullName}@${branch} workspace-${workspaceId}: exhausted retries`,
+  );
+}
+
+/**
+ * Read-modify-write a workspace by ID, leaving registry.json untouched.
+ * The `mutate` callback receives the parsed workspace and mutates it in place.
+ */
+export async function updateWorkspaceJsonById<T extends Record<string, unknown>>(
+  cfg: LiveGithubConfig,
+  branch: string,
+  workspaceId: string,
+  message: string,
+  mutate: (workspace: T) => void,
+): Promise<T> {
+  const file = await fetchWorkspaceJsonById<T>(cfg, branch, workspaceId);
+  mutate(file.json);
+  await writeWorkspaceJsonById(cfg, branch, workspaceId, file.json, message);
+  return file.json;
+}
+
+/**
+ * Seed a multi-workspace repo on a branch: writes a multi-workspace
+ * registry.json + N workspace.json files. Each workspace must carry a
+ * `workspaceId` field matching its `id`.
+ */
+export async function seedMultiWorkspaceOnBranch(
+  cfg: LiveGithubConfig,
+  branch: string,
+  workspaces: Array<{ id: string; name: string; content: Record<string, unknown> }>,
+  activeId: string,
+): Promise<void> {
+  await writeRegistryJson(
+    cfg,
+    branch,
+    buildMultiWorkspaceRegistryJson(
+      workspaces.map((ws) => ({ id: ws.id, name: ws.name })),
+      activeId,
+    ),
+    'e2e: seed multi-workspace registry',
+  );
+  for (const ws of workspaces) {
+    await writeWorkspaceJsonById(cfg, branch, ws.id, ws.content, `e2e: seed workspace ${ws.name}`);
+  }
+}
+
+/**
+ * Read `registry.json` from a branch and return the parsed registry.
+ * Used to assert registry integrity after multi-workspace writes.
+ */
+export async function fetchRegistryJson(
+  cfg: LiveGithubConfig,
+  branch: string,
+): Promise<{
+  activeWorkspaceId: string | null;
+  workspaces: Array<{ id: string; name: string }>;
+}> {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const res = await fetch(buildContentsUrl(cfg, REGISTRY_JSON_PATH, branch), {
+      headers: { ...ghHeaders(cfg.token), 'Cache-Control': 'no-cache' },
+    });
+    if (res.ok) {
+      const body = (await res.json()) as { content: string; encoding: string };
+      if (body.encoding !== 'base64')
+        throw new Error(`registry.json unexpected encoding: ${body.encoding}`);
+      return JSON.parse(Buffer.from(body.content, 'base64').toString('utf-8')) as {
+        activeWorkspaceId: string | null;
+        workspaces: Array<{ id: string; name: string }>;
+      };
+    }
+    const status = res.status;
+    const text = await res.text().catch(() => '<no-body>');
+    if (!isTransientWorkspaceReadFailure(status, text) || attempt === 7) {
+      throw new Error(`fetchRegistryJson ${cfg.fullName}@${branch} failed (${status}): ${text}`);
+    }
+    await wait(500 * 2 ** attempt);
+  }
+  throw new Error(`fetchRegistryJson ${cfg.fullName}@${branch}: exhausted retries`);
 }
 
 export interface DeterministicWorkspaceOptions {

@@ -71,6 +71,10 @@ export async function prepareExecutionAttachments(
 
   for (const requirement of requirements) {
     const localPath = path.join(cacheDir, encodeURIComponent(requirement.slotId));
+    const resolvedLocal = path.resolve(localPath);
+    if (!resolvedLocal.startsWith(path.resolve(cacheDir) + path.sep)) {
+      throw new Error(`Attachment path escapes cache directory: ${requirement.slotId}`);
+    }
     const present = await hasExpectedFile(localPath, requirement.sha256);
     if (present) {
       alreadyPresent++;

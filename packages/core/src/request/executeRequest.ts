@@ -190,6 +190,15 @@ export async function executeRequest(
     //   trying to drive the chain ourselves.
     const redirectMode: RequestRedirect = isBrowserRuntime() ? 'follow' : 'manual';
     let currentUrl = builtRequest.url;
+    try {
+      const parsedUrl = new URL(currentUrl);
+      if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+        throw new Error(`Unsupported URL scheme: ${parsedUrl.protocol}`);
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message.startsWith('Unsupported URL scheme')) throw e;
+      throw new Error(`Invalid request URL: ${currentUrl}`);
+    }
     let currentHeaders: Record<string, string> = { ...builtRequest.headers };
     let currentMethod = builtRequest.method;
     let currentBody: BodyInit | null = builtRequest.body;
