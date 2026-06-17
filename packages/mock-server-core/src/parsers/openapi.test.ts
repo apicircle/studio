@@ -98,6 +98,45 @@ describe('parseOpenApiToEndpoints', () => {
     expect(bodyContent(listPets!)).toContain('"name": "Fido"');
   });
 
+  it('populates requestSchema from operation + path-item parameters', async () => {
+    const spec = JSON.stringify({
+      openapi: '3.0.0',
+      info: { title: 'P', version: '1' },
+      paths: {
+        '/pets/{petId}': {
+          parameters: [
+            {
+              name: 'petId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' },
+              description: 'Pet id',
+            },
+          ],
+          get: {
+            operationId: 'getPet',
+            parameters: [
+              { name: 'expand', in: 'query', schema: { type: 'string' }, example: 'owner' },
+              { name: 'X-Api-Key', in: 'header', required: true, schema: { type: 'string' } },
+            ],
+            responses: { '200': { content: { 'application/json': { example: { id: 1 } } } } },
+          },
+        },
+      },
+    });
+    const { endpoints } = await parseOpenApiToEndpoints(spec, 'json');
+    const ep = endpoints.find((e) => e.pathPattern === '/pets/{petId}')!;
+    expect(ep.requestSchema.pathParams.map((p) => p.name)).toEqual(['petId']);
+    expect(ep.requestSchema.pathParams[0].required).toBe(true);
+    expect(ep.requestSchema.pathParams[0].typeHint).toBe('string');
+    expect(ep.requestSchema.pathParams[0].description).toBe('Pet id');
+    expect(ep.requestSchema.queryParams.map((p) => p.name)).toEqual(['expand']);
+    expect(ep.requestSchema.queryParams[0].example).toBe('owner');
+    expect(ep.requestSchema.headers.map((p) => p.name)).toEqual(['X-Api-Key']);
+    // Every param carries a generated id (so the editors can reorder rows).
+    expect(ep.requestSchema.pathParams[0].id).toBeTruthy();
+  });
+
   it('parses YAML spec', async () => {
     const { endpoints, warnings } = await parseOpenApiToEndpoints(PETSTORE_YAML, 'yaml');
     expect(warnings).toEqual([]);

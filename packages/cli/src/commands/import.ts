@@ -15,7 +15,7 @@ import { resolveWorkspace, WorkspaceResolutionError } from '../util/resolveWorks
 
 // =============================================================================
 // `apicircle import <type> <spec>` — read an external spec, persist one
-// request per operation into `<workspace>/workspace.synced.json`.
+// request per operation into `<workspace>/workspace.json`.
 // =============================================================================
 
 type ImportType = 'curl' | 'openapi' | 'postman' | 'insomnia' | 'apicircle';
@@ -41,7 +41,7 @@ export function registerImportCommand(program: Command): void {
     )
     .option(
       '-w, --workspace-path <dir>',
-      'Filesystem directory containing workspace.synced.json (skips the registry).',
+      'Filesystem directory containing workspace.json (skips the registry).',
     )
     .option('-f, --format <format>', 'OpenAPI format: json | yaml', 'json')
     .action(async (type: ImportType, input: string, opts: ImportOptions) => {

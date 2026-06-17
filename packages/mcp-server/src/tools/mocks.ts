@@ -5,7 +5,12 @@ import type {
   MockServer,
   MockServerSource,
 } from '@apicircle/shared';
-import { generateId, makeDefaultMockResponse, makeDefaultRequestSchema } from '@apicircle/shared';
+import {
+  generateId,
+  makeDefaultMockResponse,
+  makeDefaultRequestSchema,
+  MAX_RESPONSE_MULTIPLIERS,
+} from '@apicircle/shared';
 import { parseSourceToEndpoints } from '@apicircle/mock-server-core';
 import type { AnyToolDef } from './types';
 
@@ -146,10 +151,14 @@ export const mockListTool: AnyToolDef = {
 export const mockStartTool: AnyToolDef = {
   name: 'mock.start',
   description:
-    'Start a mock server by id. Returns the bound port. Errors if the mock is already running or the requested port is in use.',
+    'Start a mock server by id. Returns the bound port. Errors if the mock is already running or the requested port is in use. Optional `port` (1024-65535) overrides the saved `defaultPort` for this run only — to persist a new default port, use `mock.set_default_port`.',
   inputSchema: z.object({
     id: z.string(),
-    port: z.number().int().positive().optional(),
+    // Mirrors the UI 1024-65535 window: <1024 needs OS privileges, and
+    // outside that window the runtime would throw INVALID_PORT anyway —
+    // surface the rejection at the tool boundary so the client sees a
+    // schema error instead of a runtime exception.
+    port: z.number().int().min(1024).max(65535).optional(),
   }),
   async handler(input, ctx) {
     const state = await ctx.workspace.read();
@@ -193,6 +202,45 @@ export const mockDeleteTool: AnyToolDef = {
   },
 };
 
+// Persist a new `defaultPort` on an existing mock. Mirrors the
+// `setMockServerDefaultPort` store action: integer 1024-65535 or `null`
+// for "let the runtime pick a free port at next Start". Does NOT
+// restart a running mock — the new port takes effect on the next
+// `mock.start`. Use this when an AI client wants to pin a port that
+// survives across runs; use `mock.start`'s optional `port` arg when
+// the override should apply to a single run only.
+export const mockSetDefaultPortTool: AnyToolDef = {
+  name: 'mock.set_default_port',
+  description:
+    "Persist a new `defaultPort` on an existing mock server. Pass an integer 1024-65535 to pin the port, or `null` for 'pick a free port at next start'. Does NOT restart a running mock — the change takes effect on the next mock.start.",
+  inputSchema: z.object({
+    id: z.string(),
+    defaultPort: z.number().int().min(1024).max(65535).nullable(),
+  }),
+  async handler(input, ctx) {
+    const state = await ctx.workspace.read();
+    const mock = state.synced.mockServers[input.id];
+    if (!mock) return { ok: false, error: 'mock not found' };
+    if (mock.defaultPort === input.defaultPort) {
+      // No-op when the value is unchanged. Keeps updatedAt stable so
+      // repeated AI-driven calls don't churn the synced doc.
+      return { ok: true, defaultPort: mock.defaultPort, changed: false };
+    }
+    const next: MockServer = {
+      ...mock,
+      defaultPort: input.defaultPort,
+      updatedAt: new Date().toISOString(),
+    };
+    const out = await ctx.workspace.apply({ kind: 'mock.upsert', mock: next });
+    return {
+      ok: true,
+      defaultPort: input.defaultPort,
+      changed: true,
+      changedIds: out.changedIds,
+    };
+  },
+};
+
 // =============================================================================
 // Manual mock construction & endpoint-level CRUD
 // -----------------------------------------------------------------------------
@@ -210,7 +258,10 @@ export const mockCreateManualTool: AnyToolDef = {
     'Create an empty manual-mode mock server. Use `mock.add_endpoint` afterward to populate it. CORS defaults to off (same-origin only); enable + list explicit origins via `mock.update_cors` if cross-origin access is needed.',
   inputSchema: z.object({
     name: z.string().min(1),
-    defaultPort: z.number().int().positive().nullable().optional(),
+    // Same 1024-65535 window as mock.start / mock.set_default_port — pin
+    // the validation at the tool boundary so a malformed AI call doesn't
+    // persist a port the runtime will later reject as INVALID_PORT.
+    defaultPort: z.number().int().min(1024).max(65535).nullable().optional(),
   }),
   async handler(input, ctx) {
     const now = new Date().toISOString();
@@ -460,7 +511,10 @@ const RESPONSE_RULE = z.object({
   id: z.string().optional(),
   name: z.string(),
   enabled: z.boolean().default(true),
-  when: z.array(CONDITION_CLAUSE).default([]),
+  // At least one clause — a rule with no `when` is dead (the runtime engine
+  // skips clause-less rules), so it can never fire. The VS Code endpoint parser
+  // rejects the same shape, keeping the surfaces consistent.
+  when: z.array(CONDITION_CLAUSE).min(1),
   response: z
     .object({
       status: z.number().int().min(100).max(599).default(200),
@@ -579,10 +633,74 @@ export const mockSetResponseRulesTool: AnyToolDef = {
   },
 };
 
+const PARAM = z.object({
+  id: z.string().optional(),
+  name: z.string(),
+  typeHint: z.string().optional(),
+  required: z.boolean().optional(),
+  description: z.string().optional(),
+  example: z.string().optional(),
+});
+
+const REQUEST_SCHEMA_BODY = z
+  .object({ description: z.string().optional(), example: z.string().optional() })
+  .optional();
+
+/** Normalize a body-doc input — drop it entirely when both fields are blank so
+ *  the projection stays clean (mirrors the VS Code / web editors). */
+function normalizeSchemaBody(
+  body: z.infer<typeof REQUEST_SCHEMA_BODY>,
+): { description?: string; example?: string } | undefined {
+  if (!body || (!body.description && !body.example)) return undefined;
+  return body;
+}
+
+export const mockSetRequestSchemaTool: AnyToolDef = {
+  name: 'mock.set_request_schema',
+  description:
+    "Replace an endpoint's requestSchema — the declared path / query / header / cookie params plus an optional body-shape doc. Params without an `id` get a fresh one; omitted lists are cleared. Documentation-only (drives the editor UI + OpenAPI export); runtime gating lives in the validation rules.",
+  inputSchema: z.object({
+    mockId: z.string(),
+    endpointId: z.string(),
+    pathParams: z.array(PARAM).default([]),
+    queryParams: z.array(PARAM).default([]),
+    headers: z.array(PARAM).default([]),
+    cookies: z.array(PARAM).default([]),
+    body: REQUEST_SCHEMA_BODY,
+  }),
+  async handler(input, ctx) {
+    const state = await ctx.workspace.read();
+    const mock = state.synced.mockServers[input.mockId];
+    if (!mock) return { ok: false as const, error: 'mock not found' as const };
+    const toParams = (list: Array<z.infer<typeof PARAM>>) =>
+      list.map((p) => ({
+        id: p.id ?? generateId(),
+        name: p.name,
+        typeHint: p.typeHint,
+        required: p.required,
+        description: p.description,
+        example: p.example,
+      }));
+    const next = patchEndpoint(mock, input.endpointId, (e) => ({
+      ...e,
+      requestSchema: {
+        pathParams: toParams(input.pathParams),
+        queryParams: toParams(input.queryParams),
+        headers: toParams(input.headers),
+        cookies: toParams(input.cookies),
+        body: normalizeSchemaBody(input.body),
+      },
+    }));
+    if (!next) return { ok: false as const, error: 'endpoint not found' as const };
+    const out = await ctx.workspace.apply({ kind: 'mock.upsert', mock: next });
+    return { ok: true as const, changedIds: out.changedIds };
+  },
+};
+
 export const mockSetMultipliersTool: AnyToolDef = {
   name: 'mock.set_multipliers',
   description:
-    "Replace the response multipliers on an endpoint's defaultResponse. Multipliers expand an array at `targetJsonPath` to a count derived from a request value. Empty array clears all multipliers.",
+    "Replace the response multipliers on an endpoint's defaultResponse. Multipliers expand an array at `targetJsonPath` to a count derived from a request value. Empty array clears all. The list is currently capped at MAX_RESPONSE_MULTIPLIERS (1) — passing more is rejected.",
   inputSchema: z.object({
     mockId: z.string(),
     endpointId: z.string(),
@@ -593,6 +711,9 @@ export const mockSetMultipliersTool: AnyToolDef = {
     const mock = state.synced.mockServers[input.mockId];
     if (!mock) return { ok: false as const, error: 'mock not found' as const };
     const multipliers: Array<z.infer<typeof MULTIPLIER>> = input.multipliers;
+    if (multipliers.length > MAX_RESPONSE_MULTIPLIERS) {
+      return { ok: false as const, error: 'too many multipliers' as const };
+    }
     const next = patchEndpoint(mock, input.endpointId, (e) => ({
       ...e,
       defaultResponse: {

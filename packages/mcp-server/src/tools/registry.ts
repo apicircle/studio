@@ -64,6 +64,7 @@ import {
   promptSetEndpointValidationRulesTool,
   promptSetEndpointResponseRulesTool,
   promptSetEndpointMultipliersTool,
+  promptSetEndpointRequestSchemaTool,
 } from './prompt';
 import {
   globalAssetsFilesCreateTool,
@@ -87,8 +88,29 @@ import {
   mockSetValidationRulesTool,
   mockSetResponseRulesTool,
   mockSetMultipliersTool,
+  mockSetRequestSchemaTool,
+  mockSetDefaultPortTool,
   mockImportPostmanMockCollectionTool,
 } from './mocks';
+import {
+  releaseListTool,
+  releasePublishTool,
+  releaseDeprecateTool,
+  releaseYankTool,
+} from './releases';
+import {
+  linkedListTool,
+  linkedGetTool,
+  linkedSetConfigTool,
+  linkedUnlinkTool,
+} from './linkedWorkspaces';
+import {
+  linkedLinkTool,
+  linkedRefreshTool,
+  marketplaceSearchTool,
+  releaseTagTool,
+  repoSetTopicsTool,
+} from './githubOps';
 
 // Order matches MCP_TOOL_NAMES in `@apicircle/shared/src/mcp.ts`. CI guards
 // drift via the registry test which asserts every catalog entry resolves.
@@ -151,6 +173,7 @@ export const TOOL_REGISTRY: AnyToolDef[] = [
   promptSetEndpointValidationRulesTool,
   promptSetEndpointResponseRulesTool,
   promptSetEndpointMultipliersTool,
+  promptSetEndpointRequestSchemaTool,
   globalAssetsFilesListTool,
   globalAssetsFilesCreateTool,
   globalAssetsFilesUpdateTool,
@@ -170,7 +193,22 @@ export const TOOL_REGISTRY: AnyToolDef[] = [
   mockSetValidationRulesTool,
   mockSetResponseRulesTool,
   mockSetMultipliersTool,
+  mockSetRequestSchemaTool,
+  mockSetDefaultPortTool,
   mockImportPostmanMockCollectionTool,
+  releaseListTool,
+  releasePublishTool,
+  releaseDeprecateTool,
+  releaseYankTool,
+  linkedListTool,
+  linkedGetTool,
+  linkedSetConfigTool,
+  linkedUnlinkTool,
+  linkedLinkTool,
+  linkedRefreshTool,
+  releaseTagTool,
+  repoSetTopicsTool,
+  marketplaceSearchTool,
 ];
 
 export function getTool(name: McpToolName): AnyToolDef | undefined {

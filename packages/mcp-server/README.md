@@ -6,12 +6,12 @@
 
 <p align="center">
   <strong>Give your AI assistant a real API client.</strong><br />
-  A Model Context Protocol server that exposes the API Circle Studio workspace as a <strong>74-tool catalog</strong> — so Claude, ChatGPT, Cursor, Copilot, and every other MCP client can read, author, mock, and run requests for you.
+  A Model Context Protocol server that exposes the API Circle Studio workspace as a <strong>94-tool catalog</strong> — so Claude, ChatGPT, Cursor, Copilot, and every other MCP client can read, author, mock, and run requests for you.
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@apicircle/mcp-server"><img src="https://img.shields.io/npm/v/@apicircle/mcp-server?color=cb3837&logo=npm" alt="npm version" /></a>
-  <img src="https://img.shields.io/badge/MCP%20tools-74-blueviolet" alt="74 MCP tools" />
+  <img src="https://img.shields.io/badge/MCP%20tools-94-blueviolet" alt="94 MCP tools" />
   <img src="https://img.shields.io/badge/transport-stdio-blue" alt="stdio transport" />
   <img src="https://img.shields.io/badge/multi--workspace-yes-success" alt="Multi-workspace" />
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-brightgreen" alt="Node ≥ 20" />
@@ -58,7 +58,7 @@ npm install @apicircle/mcp-server
 # Multi-workspace mode (default) — exposes every workspace on this machine
 apicircle-mcp
 
-# Single-workspace mode — point at a folder with a workspace.synced.json
+# Single-workspace mode — point at a folder with a workspace.json
 # (CI, a git-cloned workspace repo, etc.)
 apicircle-mcp --workspace /path/to/checkout-repo
 
@@ -107,11 +107,11 @@ Use `--workspace <path>` to scope to one workspace.
 `apicircle-mcp` auto-detects the directory passed via `--workspace <dir>`
 (or `APICIRCLE_WORKSPACE`):
 
-| Contents of the directory    | Mode                                                                                                        |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `registry.json` present      | **Multi-workspace.** Loads the registry, binds the active workspace, exposes the rest via `workspace.list`. |
-| `workspace.synced.json` only | **Single-workspace.** Legacy boot for CI / git-cloned repos.                                                |
-| No flag at all               | Falls back to the current working directory.                                                                |
+| Contents of the directory | Mode                                                                                                        |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `registry.json` present   | **Multi-workspace.** Loads the registry, binds the active workspace, exposes the rest via `workspace.list`. |
+| `workspace.json` only     | **Single-workspace.** Legacy boot for CI / git-cloned repos.                                                |
+| No flag at all            | Falls back to the current working directory.                                                                |
 
 In multi-workspace mode the assistant gets two extra surfaces:
 
@@ -140,7 +140,7 @@ In multi-workspace mode the assistant gets two extra surfaces:
 Entity tools (`request.read`, `environment.create`, `mock.start`, etc.) all
 default to the active workspace — multi-workspace scoping is opt-in per call.
 
-## The tool catalog (74 tools)
+## The tool catalog (94 tools)
 
 The full list lives at
 [`docs/mcp-tools-reference.md`](https://github.com/apicircle/studio/blob/main/docs/mcp-tools-reference.md).

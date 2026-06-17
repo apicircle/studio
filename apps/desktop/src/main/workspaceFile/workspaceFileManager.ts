@@ -1,12 +1,10 @@
-import { app } from 'electron';
-import * as path from 'path';
 import type { WorkspaceState } from '@apicircle/core';
 import {
+  defaultApicircleRoot,
   deleteWorkspaceById,
   emptyRegistry,
   loadRegistry,
   loadWorkspaceById,
-  migrateLegacyWorkspace,
   registerWorkspace,
   saveRegistry,
   saveWorkspaceById,
@@ -20,12 +18,12 @@ import {
 //
 // Layout owned by this manager:
 //
-//   <root>/                                 ← `userData/workspaces`
+//   ~/.apicircle/                            ← `defaultApicircleRoot()`
 //     registry.json
-//     <workspace-id-1>/
-//       workspace.synced.json
+//     workspace-<workspace-id-1>/
+//       workspace.json
 //       workspace.local.json
-//     <workspace-id-2>/
+//     workspace-<workspace-id-2>/
 //       ...
 //
 // The desktop renderer writes its state to IndexedDB on every mutation and
@@ -37,14 +35,7 @@ import {
 // first is on the wire drops the older state — only the latest snapshot
 // for each id needs to land. `flush()` awaits every queued write across
 // every id so callers (app-quit, git push) can be sure disk reflects memory.
-//
-// On first boot we migrate the legacy `userData/workspace/` layout (single
-// workspace next to no registry) into `userData/workspaces/<id>/`.
 // =============================================================================
-
-const WORKSPACES_DIRNAME = 'workspaces';
-const LEGACY_WORKSPACE_DIRNAME = 'workspace';
-const DEFAULT_LEGACY_NAME = 'My Workspace';
 
 interface PendingEntry {
   state: WorkspaceState;
@@ -69,10 +60,8 @@ export interface SelfWriteSink {
 }
 
 export class WorkspaceFileManager {
-  /** Root holding `registry.json` + per-workspace subdirectories. */
+  /** Root holding `registry.json` + `workspaces/` subdirectory. */
   readonly workspacesRoot: string;
-  /** Legacy single-workspace dir to migrate from on first boot. */
-  readonly legacyDir: string;
 
   /** Per-workspaceId queue of {state, resolved-when-landed} entries. */
   private pending = new Map<string, PendingEntry>();
@@ -81,39 +70,23 @@ export class WorkspaceFileManager {
   /** Watcher hook for self-write suppression. Null until `attachWatcher`. */
   private watcher: SelfWriteSink | null = null;
 
-  constructor(opts?: { workspacesRoot?: string; legacyDir?: string }) {
-    const userData = (() => {
-      try {
-        return app.getPath('userData');
-      } catch {
-        // Allow construction outside Electron (unit tests pass explicit
-        // paths). `app.getPath` throws when called before `app.whenReady`.
-        return '';
-      }
-    })();
-    this.workspacesRoot = opts?.workspacesRoot ?? path.join(userData, WORKSPACES_DIRNAME);
-    this.legacyDir = opts?.legacyDir ?? path.join(userData, LEGACY_WORKSPACE_DIRNAME);
+  constructor(opts?: { workspacesRoot?: string }) {
+    this.workspacesRoot = opts?.workspacesRoot ?? defaultApicircleRoot();
   }
 
   /**
-   * One-time init: migrate the legacy single-workspace dir if present, then
-   * load the registry. Returns the resolved registry the desktop UI can
-   * boot from. Safe to call on every app launch — migrations are idempotent
-   * via the `loadRegistry() !== null` short-circuit in
-   * `migrateLegacyWorkspace`.
+   * One-time init: load the registry (or create an empty one). Returns the
+   * resolved registry the desktop UI can boot from.
    */
-  async init(): Promise<{ registry: WorkspaceRegistry; migrated: boolean }> {
-    const { migrated, registry } = await migrateLegacyWorkspace({
-      legacyDir: this.legacyDir,
-      registryRoot: this.workspacesRoot,
-      defaultName: DEFAULT_LEGACY_NAME,
-    });
-    if (migrated || registry.workspaces.length > 0) {
-      return { registry, migrated };
+  async init(): Promise<{ registry: WorkspaceRegistry }> {
+    const existing = await loadRegistry(this.workspacesRoot);
+    if (existing && existing.workspaces.length > 0) {
+      return { registry: existing };
     }
-    // No legacy dir AND no registry yet — start with an empty registry.
+    // No registry yet — start with an empty one.
     // The first desktop hydrate will seed a workspace and call writeWorkspace.
-    return { registry, migrated: false };
+    const registry = existing ?? emptyRegistry();
+    return { registry };
   }
 
   /**
@@ -196,7 +169,7 @@ export class WorkspaceFileManager {
 
   /**
    * Register a workspace (idempotent). Caller must have written
-   * `workspace.synced.json` first via `writeWorkspace`.
+   * `workspace.json` first via `writeWorkspace`.
    */
   async registerWorkspaceEntry(entry: WorkspaceRegistryEntry): Promise<WorkspaceRegistry> {
     const result = await registerWorkspace(this.workspacesRoot, entry);

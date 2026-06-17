@@ -16,9 +16,10 @@
 // distinctly: warnings are yellow + Send-still-allowed, blockers are
 // red + Send-disabled.
 
-import type { Request as ApiRequest } from '@apicircle/shared';
+import type { Folder, Request as ApiRequest } from '@apicircle/shared';
 import { findPathPlaceholders } from './buildRequest';
 import { resolveString, type ResolutionScope } from '../environment/variableResolver';
+import { resolveInheritedAuth } from './resolveInheritedAuth';
 
 export interface PreSendWarning {
   kind:
@@ -43,6 +44,16 @@ export interface PreSendValidationResult {
 export interface PreSendValidationInput {
   request: ApiRequest;
   scope: ResolutionScope;
+  /**
+   * Folder map keyed by id. When provided AND the request's `auth.type` is
+   * `inherit`, the validator resolves the upward chain via
+   * `resolveInheritedAuth` and validates the EFFECTIVE auth's field
+   * completeness — so an empty-token folder bearer doesn't slip past the
+   * pre-send check. Omit for callers that don't have folder context (legacy
+   * tests, ad-hoc plan steps), and the validator falls back to checking the
+   * declared auth as-is.
+   */
+  folders?: Record<string, Folder>;
 }
 
 const TYPED_BODY_CT: Record<string, string[]> = {
@@ -59,6 +70,7 @@ function collectMissing(value: string, scope: ResolutionScope): string[] {
 export function preSendValidation({
   request,
   scope,
+  folders,
 }: PreSendValidationInput): PreSendValidationResult {
   const warnings: PreSendWarning[] = [];
   const blockers: PreSendBlocker[] = [];
@@ -159,30 +171,49 @@ export function preSendValidation({
     }
   }
 
-  // Rule 4: blank auth fields for types that require them.
-  const auth = request.auth;
+  // Rule 4: blank auth fields for types that require them. When the request
+  // declares `auth.type === 'inherit'` AND the caller provided `folders`,
+  // resolve through the inherit chain so a folder-level bearer with an
+  // empty token gets caught here instead of slipping through to fail on the
+  // wire. When `folders` is omitted (legacy callers), we fall back to the
+  // declared auth — same behavior as before.
+  let effectiveAuth = request.auth;
+  let resolvedFromInherit = false;
+  if (folders && effectiveAuth?.type === 'inherit') {
+    effectiveAuth = resolveInheritedAuth({
+      requestAuth: { type: 'inherit' },
+      folderId: request.folderId,
+      folders,
+    });
+    resolvedFromInherit = true;
+  }
+  const auth = effectiveAuth;
+  const inheritedNote = resolvedFromInherit ? ' (resolved from folder-level auth)' : '';
   if (auth) {
     if (auth.type === 'bearer' && !auth.token?.trim()) {
-      blockers.push({ kind: 'auth-fields-missing', message: 'Bearer token is empty.' });
+      blockers.push({
+        kind: 'auth-fields-missing',
+        message: `Bearer token is empty.${inheritedNote}`,
+      });
     } else if (auth.type === 'basic') {
       if (!auth.username?.trim() || !auth.password?.trim()) {
         blockers.push({
           kind: 'auth-fields-missing',
-          message: 'Basic auth requires both username and password.',
+          message: `Basic auth requires both username and password.${inheritedNote}`,
         });
       }
     } else if (auth.type === 'api-key') {
       if (!auth.key?.trim() || !auth.value?.trim()) {
         blockers.push({
           kind: 'auth-fields-missing',
-          message: 'API key auth requires both name and value.',
+          message: `API key auth requires both name and value.${inheritedNote}`,
         });
       }
     } else if (auth.type === 'custom-header') {
       if (!auth.key?.trim()) {
         blockers.push({
           kind: 'auth-fields-missing',
-          message: 'Custom header auth requires a header name.',
+          message: `Custom header auth requires a header name.${inheritedNote}`,
         });
       }
     }

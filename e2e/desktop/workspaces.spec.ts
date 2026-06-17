@@ -175,7 +175,7 @@ test.describe('CLI workspace selector grammar', () => {
       };
       const imports = registry.workspaces.find((w) => w.name === 'Imports');
       expect(imports).toBeDefined();
-      const syncedPath = path.join(ctx.root, imports!.id, 'workspace.synced.json');
+      const syncedPath = path.join(ctx.root, imports!.id, 'workspace.json');
       const synced = JSON.parse(fs.readFileSync(syncedPath, 'utf-8')) as {
         collections: { requests: Record<string, unknown> };
       };
@@ -206,8 +206,8 @@ test.describe('CLI workspace selector grammar', () => {
       expect(r.exitCode).toBe(0);
       // The standalone dir was NOT registered — the registry should still be empty.
       expect(fs.existsSync(path.join(ctx.root, 'registry.json'))).toBe(false);
-      // The workspace.synced.json lives in the standalone dir.
-      expect(fs.existsSync(path.join(wsDir, 'workspace.synced.json'))).toBe(true);
+      // The workspace.json lives in the standalone dir.
+      expect(fs.existsSync(path.join(wsDir, 'workspace.json'))).toBe(true);
     } finally {
       cleanup(ctx.tmpDir);
     }
@@ -263,7 +263,7 @@ test.describe('CLI workspace selector grammar', () => {
       // we expect a successful create since `expectExists: false` is used.
       // Adjust assertion based on actual behavior.
       if (r.exitCode === 0) {
-        expect(fs.existsSync(path.join(dead, 'workspace.synced.json'))).toBe(true);
+        expect(fs.existsSync(path.join(dead, 'workspace.json'))).toBe(true);
       } else {
         expect(r.stderr).toMatch(/not found/);
       }

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "workspaceId": "e2e-fixture-empty",
+  "collections": {
+    "tree": { "id": "root", "type": "root", "children": [] },
+    "requests": {},
+    "folders": {}
+  },
+  "environments": { "items": {}, "activeName": null, "priorityOrder": [] },
+  "linkedWorkspaces": {},
+  "linkedOverrides": { "requests": {}, "environmentVars": {} },
+  "releases": { "self": null, "perLink": {} },
+  "globalAssets": { "schemas": {}, "graphql": {}, "files": {} },
+  "mockServers": {},
+  "executionPlans": {},
+  "secretKeys": {},
+  "secretCrypto": null,
+  "meta": {
+    "createdAt": "2026-06-07T00:00:00Z",
+    "updatedAt": "2026-06-07T00:00:00Z",
+    "appVersion": "0.1.0"
+  }
+}

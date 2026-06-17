@@ -33,7 +33,7 @@ function makeFakeMirror(): DiskMirror & {
   };
   return {
     isAvailable: () => true,
-    init: vi.fn().mockResolvedValue({ registry: emptyRegistry, migrated: false }),
+    init: vi.fn().mockResolvedValue({ registry: emptyRegistry }),
     readRegistry: vi.fn().mockResolvedValue(emptyRegistry),
     writeRegistry: vi.fn().mockResolvedValue(undefined),
     readWorkspace: vi.fn().mockResolvedValue(null),

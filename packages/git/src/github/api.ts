@@ -442,18 +442,21 @@ export class GitHubClient {
    * matches the bare query against repository name, description, and
    * topics, so category words like `payments` narrow the marketplace by
    * topic. An empty query lists every public API Circle workspace. Top
-   * 30 by best-match sort. Token is optional — anonymous browsing is
-   * supported (lower GitHub rate limits apply); pass a PAT when one is
-   * available to lift them.
+   * 30 results. Token is optional — anonymous browsing is supported
+   * (lower GitHub rate limits apply); pass a PAT when one is available
+   * to lift them. `sort` controls ordering: omit for GitHub's
+   * best-match relevance, or pass `'stars'` / `'updated'`.
    */
   async searchMarketplaceRepos(
     token: string | null,
     query: string,
-    opts: CallOptions = {},
+    opts: CallOptions & { sort?: 'stars' | 'updated' } = {},
   ): Promise<MarketplaceRepo[]> {
+    const { sort, ...callOpts } = opts;
     const fullQuery = `${query.trim()} topic:apicircle`.trim();
-    const path = `/search/repositories?q=${encodeURIComponent(fullQuery)}&per_page=30`;
-    const { json } = await this.call<{ items?: RawSearchRepo[] }>(token, path, opts);
+    const sortParam = sort ? `&sort=${sort}&order=desc` : '';
+    const path = `/search/repositories?q=${encodeURIComponent(fullQuery)}&per_page=30${sortParam}`;
+    const { json } = await this.call<{ items?: RawSearchRepo[] }>(token, path, callOpts);
     const items = json.items ?? [];
     return items.map(normalizeMarketplaceRepo);
   }
@@ -899,7 +902,7 @@ export class GitHubClient {
   /**
    * Same as `getContents` but returns the raw bytes instead of UTF-8
    * decoding the file. Used by the refresh flow to pull
-   * `.apicircle/attachments/<slotId>` blobs into local IDB without
+   * `.apicircle/workspace-<id>/attachments/<slotId>` blobs into local IDB without
    * mangling binary data through TextDecoder.
    */
   async getBinaryContents(

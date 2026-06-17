@@ -1,6 +1,6 @@
 # MCP tool catalog reference
 
-The `@apicircle/mcp-server` host exposes 78 tools, namespaced by capability area. The full list is canonical in [`packages/shared/src/mcp.ts`](../packages/shared/src/mcp.ts) and registered in [`packages/mcp-server/src/tools/registry.ts`](../packages/mcp-server/src/tools/registry.ts).
+The `@apicircle/mcp-server` host exposes 94 tools, namespaced by capability area. The full list is canonical in [`packages/shared/src/mcp.ts`](../packages/shared/src/mcp.ts) and registered in [`packages/mcp-server/src/tools/registry.ts`](../packages/mcp-server/src/tools/registry.ts).
 
 ## Imports
 
@@ -36,12 +36,12 @@ The `@apicircle/mcp-server` host exposes 78 tools, namespaced by capability area
 
 ## Folder CRUD
 
-| Tool            | Input                          |
-| --------------- | ------------------------------ |
-| `folder.create` | `{ name?, parentId? }`         |
-| `folder.read`   | `{ id? }`                      |
-| `folder.update` | `{ id, parentId }` (move)      |
-| `folder.delete` | `{ id }` (children reparented) |
+| Tool            | Input                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `folder.create` | `{ name?, parentId? }`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `folder.read`   | `{ id? }`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `folder.update` | `{ id, parentId?, name?, auth?, clearAuth? }` — patch any combination of move (`parentId`), rename (`name`), and folder-level auth (`auth` to set, `clearAuth: true` to unset). `auth` accepts the same LLM-friendly subset as `prompt.create_request` (`none`, `inherit`, `bearer`, `basic`, `api-key`, `custom-header`). Passing both `auth` and `clearAuth` is a Zod-refine error. Folder-level `auth` is what descendant requests with `auth.type === 'inherit'` resolve to via the inherit walk in [`docs/auth.md`](auth.md#folder-level-auth--the-inherit-walk). |
+| `folder.delete` | `{ id }` (children reparented)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 ## Folder exchange (`apicircle.folder/v1`)
 
@@ -116,12 +116,12 @@ Each `list` entry carries the asset's **provenance state**, derived from `workin
 - `missing` — both refs dropped, no local copy.
 - `diverged` — both refs hold different blob shas (audit before pushing).
 
-| Tool                 | Input                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `assets.list_files`  | `{}` → `{ count, files: [{ id, name, filename, size, mimeType, sha256, state, workingBranchRef, baseBranchRef, usage: { requests, mockEndpoints, total } }] }`                                                                                                                                                                                                                                                                                                                                                                        |
-| `assets.create_file` | `{ name, description?, filename, size, mimeType?, sha256? }` — metadata only; MCP cannot carry bytes. Returns `{ id, slotId }`. Asset starts in `missing` state until the desktop / web supplies bytes on the next foreground reconciliation.                                                                                                                                                                                                                                                                                         |
-| `assets.update_file` | `{ id, patch: { name?, description? } }` — rename / re-describe. Provenance refs preserved.                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `assets.delete_file` | `{ id }` — cascade. Returns `{ found, id, filename, unbound: { requests, mockEndpoints, total } }` describing every consumer that was cleared. If the asset had any push provenance (`workingBranchRef` or `baseBranchRef`), the slotId is queued for remote-blob deletion; the next desktop push emits a `{path: '.apicircle/attachments/<slotId>', sha: null}` tree entry so the orphan blob is removed from the working branch and (after PR merge) from the base branch. Local-only assets that were never pushed skip the queue. |
+| Tool                 | Input                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `assets.list_files`  | `{}` → `{ count, files: [{ id, name, filename, size, mimeType, sha256, state, workingBranchRef, baseBranchRef, usage: { requests, mockEndpoints, total } }] }`                                                                                                                                                                                                                                                                                                                                                                                       |
+| `assets.create_file` | `{ name, description?, filename, size, mimeType?, sha256? }` — metadata only; MCP cannot carry bytes. Returns `{ id, slotId }`. Asset starts in `missing` state until the desktop / web supplies bytes on the next foreground reconciliation.                                                                                                                                                                                                                                                                                                        |
+| `assets.update_file` | `{ id, patch: { name?, description? } }` — rename / re-describe. Provenance refs preserved.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `assets.delete_file` | `{ id }` — cascade. Returns `{ found, id, filename, unbound: { requests, mockEndpoints, total } }` describing every consumer that was cleared. If the asset had any push provenance (`workingBranchRef` or `baseBranchRef`), the slotId is queued for remote-blob deletion; the next desktop push emits a `{path: '.apicircle/workspace-<id>/attachments/<slotId>', sha: null}` tree entry so the orphan blob is removed from the working branch and (after PR merge) from the base branch. Local-only assets that were never pushed skip the queue. |
 
 ## Codebase scanning
 
@@ -149,36 +149,91 @@ These tools accept LLM-shaped JSON envelopes — flat, sensible defaults, ids au
 | `prompt.add_mock_endpoint`             | `{ mockId, method, pathPattern, name?, description?, response?, validationRules?, responseRules?, multipliers? }` — appends to an existing mock; all nested ids auto-generated                        |
 | `prompt.set_endpoint_validation_rules` | `{ mockId, endpointId, rules: [{ kind, target, expected?, message?, enabled?, failResponse? }] }` — replaces the endpoint's validation rules; ids regenerated; empty array clears                     |
 | `prompt.set_endpoint_response_rules`   | `{ mockId, endpointId, rules: [{ name, enabled?, when: [...], response }] }` — replaces conditional response rules; ids regenerated; empty array falls back to defaultResponse                        |
-| `prompt.set_endpoint_multipliers`      | `{ mockId, endpointId, multipliers: [{ source, targetJsonPath, defaultCount, min?, max? }] }` — replaces defaultResponse multipliers; empty array clears                                              |
+| `prompt.set_endpoint_multipliers`      | `{ mockId, endpointId, multipliers: [{ source, targetJsonPath, defaultCount, min?, max? }] }` — replaces defaultResponse multipliers; capped at MAX_RESPONSE_MULTIPLIERS (1); empty array clears      |
 
 ## Mock server lifecycle
 
-| Tool                                  | Input                                                                               |
-| ------------------------------------- | ----------------------------------------------------------------------------------- |
-| `mock.create_from_openapi`            | `{ name, spec, format?: 'json' \| 'yaml' }`                                         |
-| `mock.create_from_postman`            | `{ name, collection }`                                                              |
-| `mock.create_from_insomnia`           | `{ name, export }`                                                                  |
-| `mock.create_manual`                  | `{ name, defaultPort? }` — empty manual-mode mock; populate via `mock.add_endpoint` |
-| `mock.import_postman_mock_collection` | `{ name, collection }`                                                              |
-| `mock.list`                           | `{}`                                                                                |
-| `mock.start`                          | `{ id, port? }`                                                                     |
-| `mock.stop`                           | `{ id }`                                                                            |
-| `mock.delete`                         | `{ id }` _(stops first if running)_                                                 |
+| Tool                                  | Input                                                                                                                                                                                          |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mock.create_from_openapi`            | `{ name, spec, format?: 'json' \| 'yaml' }`                                                                                                                                                    |
+| `mock.create_from_postman`            | `{ name, collection }`                                                                                                                                                                         |
+| `mock.create_from_insomnia`           | `{ name, export }`                                                                                                                                                                             |
+| `mock.create_manual`                  | `{ name, defaultPort? }` — empty manual-mode mock; populate via `mock.add_endpoint`                                                                                                            |
+| `mock.import_postman_mock_collection` | `{ name, collection }`                                                                                                                                                                         |
+| `mock.list`                           | `{}`                                                                                                                                                                                           |
+| `mock.start`                          | `{ id, port? }` — `port` 1024-65535 overrides the saved `defaultPort` for this run only                                                                                                        |
+| `mock.stop`                           | `{ id }`                                                                                                                                                                                       |
+| `mock.delete`                         | `{ id }` _(stops first if running)_                                                                                                                                                            |
+| `mock.set_default_port`               | `{ id, defaultPort: number \| null }` — pin a 1024-65535 default port (persists across runs) or pass `null` to fall back to "pick a free port at next start". Does NOT restart a running mock. |
 
 ## Mock endpoints (manual-mode)
 
 Endpoint-level editing for manual-mode mock servers. Validation- and
 response-rule shapes mirror the `prompt.set_endpoint_*` tools above.
 
-| Tool                        | Input                                                                                                                                        |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mock.list_endpoints`       | `{ mockId }` → `[{ id, method, path, name }]`                                                                                                |
-| `mock.add_endpoint`         | `{ mockId, method, pathPattern, name?, description?, response? }` — defaults to a `200` JSON `{}` response                                   |
-| `mock.update_endpoint`      | `{ mockId, endpointId, method?, pathPattern?, name?, description?, ... }` — patches only the supplied fields                                 |
-| `mock.delete_endpoint`      | `{ mockId, endpointId }`                                                                                                                     |
-| `mock.set_validation_rules` | `{ mockId, endpointId, rules: [{ kind, target, expected?, message?, enabled?, failResponse? }] }` — empty array clears                       |
-| `mock.set_response_rules`   | `{ mockId, endpointId, rules: [{ name, enabled?, when: [...], response }] }` — first match wins; empty array falls back to `defaultResponse` |
-| `mock.set_multipliers`      | `{ mockId, endpointId, multipliers: [{ source, targetJsonPath, defaultCount, min?, max? }] }` — empty array clears                           |
+| Tool                        | Input                                                                                                                                                                                                                                                                |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mock.list_endpoints`       | `{ mockId }` → `[{ id, method, path, name }]`                                                                                                                                                                                                                        |
+| `mock.add_endpoint`         | `{ mockId, method, pathPattern, name?, description?, response? }` — defaults to a `200` JSON `{}` response                                                                                                                                                           |
+| `mock.update_endpoint`      | `{ mockId, endpointId, method?, pathPattern?, name?, description?, ... }` — patches only the supplied fields                                                                                                                                                         |
+| `mock.delete_endpoint`      | `{ mockId, endpointId }`                                                                                                                                                                                                                                             |
+| `mock.set_validation_rules` | `{ mockId, endpointId, rules: [{ kind, target, expected?, message?, enabled?, failResponse? }] }` — empty array clears                                                                                                                                               |
+| `mock.set_response_rules`   | `{ mockId, endpointId, rules: [{ name, enabled?, when: [...], response }] }` — first match wins; empty array falls back to `defaultResponse`                                                                                                                         |
+| `mock.set_multipliers`      | `{ mockId, endpointId, multipliers: [{ source, targetJsonPath, defaultCount, min?, max? }] }` — capped at MAX_RESPONSE_MULTIPLIERS (1); empty array clears                                                                                                           |
+| `mock.set_request_schema`   | `{ mockId, endpointId, pathParams?, queryParams?, headers?, cookies?: [{ name, typeHint?, required?, description?, example? }], body?: { description?, example? } }` — declares the endpoint's expected inputs (documentation + OpenAPI export); omitted lists clear |
+
+Prompt-shaped (LLM-friendly, fresh ids) authoring variants live alongside the `prompt.*` tools, including **`prompt.set_endpoint_request_schema`** (same fields, every param re-id'd).
+
+## Release ledger
+
+The workspace-self release ledger (`synced.releases.self`) — the published
+versions that linked consumers pin to. `release.publish` fingerprints the
+release with a SHA-256 of the workspace contents at publish time. Tagging a
+release on GitHub + managing marketplace topics are separate Git operations,
+not MCP tools.
+
+| Tool                | Input                                                                                                                                                                                                 |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `release.list`      | `{}` → `{ currentVersion, count, versions: [{ version, publishedAt, notes, workspaceSnapshot, deprecated, yanked, sha?, tagName? }] }` (newest first)                                                 |
+| `release.publish`   | `{ version, notes?, sha?, tagName? }` — appends a semver version + markdown notes, bumps `currentVersion`. Rejects invalid semver / a duplicate version. Does NOT create a Git tag or GitHub Release. |
+| `release.deprecate` | `{ version }` — soft signal; consumers see a warning but the version stays installable                                                                                                                |
+| `release.yank`      | `{ version }` — hard signal (withdraw); consumers are warned to move off this version. The entry stays in the ledger.                                                                                 |
+
+## Linked workspaces
+
+The workspaces this one consumes, one level deep (`synced.linkedWorkspaces`).
+Config edits route through `applyMutation`; linking + refresh additionally fetch
+the source repo's workspace data (under `.apicircle/`) over the GitHub API.
+
+| Tool                | Input                                                                                                                                                                   |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `linked.list`       | `{}` → `{ count, links: [{ id, name, kind, source, scope, pinnedVersion, requiredSecretKeyIds, marketplace?, cachedCurrentVersion }] }`                                 |
+| `linked.get`        | `{ id }` → `{ ok, link, ledger }` (the cached release ledger to pin against)                                                                                            |
+| `linked.set_config` | `{ id, name?, description?, pinnedVersion?: string \| null, scope?, sessionMode?, requiredSecretKeyIds?, marketplace?: {…} \| null }` — pin must exist in cached ledger |
+| `linked.unlink`     | `{ id }` — drops the link + cached ledger + overrides + local snapshot + per-link session                                                                               |
+
+## GitHub network operations
+
+These reach the GitHub REST API and need a token — pass `token`, or set the
+`GITHUB_TOKEN` env var on the MCP process. (In the Desktop / VS Code hosts the
+same operations use the app's GitHub session; over stdio the token is explicit.)
+
+| Tool              | Input                                                                                                                                                 |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `linked.link`     | `{ repoFullName, branch?, pinnedVersion?, kind?, token? }` — fetches the source workspace.json, caches its ledger + collections/environments snapshot |
+| `linked.refresh`  | `{ id, token? }` — re-pulls the cached ledger (+ bootstrap snapshot)                                                                                  |
+| `release.tag`     | `{ owner, name, version, createGitHubRelease?, notes?, overrideExisting?, token? }` — tags `v<version>` on the repo's default branch HEAD             |
+| `repo.set_topics` | `{ owner, name, topics, token? }` — replaces repo topics (keeps `apicircle`, which drives marketplace discovery)                                      |
+
+## Marketplace discovery
+
+Search the API Circle marketplace — public workspaces tagged with `apicircle`
+on GitHub. Token is optional (anonymous browsing supported; token lifts rate
+limits).
+
+| Tool                 | Input                                                                                                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `marketplace.search` | `{ query?, sort?: 'best-match' \| 'stars' \| 'updated', token? }` → `{ ok, count, results: [{ fullName, owner, name, description, topics, stargazers, defaultBranch }] }` |
 
 ## Error handling
 

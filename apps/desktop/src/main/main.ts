@@ -335,11 +335,9 @@ void app.whenReady().then(() => {
       console.warn('[main] dock.setIcon failed:', err);
     }
   }
-  // McpManager + WorkspaceFileManager are constructed after `app` is ready
-  // because they read `app.getPath('userData')`, which is only valid
-  // post-ready. The file manager owns `userData/workspaces/` (multi-workspace
-  // registry + per-id subdirectories); McpManager points AI clients at the
-  // same root. `init()` runs the legacy-layout migration once.
+  // McpManager + WorkspaceFileManager are constructed after `app` is ready.
+  // The file manager owns `~/.apicircle/` (multi-workspace registry +
+  // per-id subdirectories); McpManager points AI clients at the same root.
   mcpManager = new McpManager();
   workspaceFileManager = new WorkspaceFileManager();
   void workspaceFileManager.init().catch((err) => {

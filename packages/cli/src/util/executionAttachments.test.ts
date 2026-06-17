@@ -102,11 +102,8 @@ describe('prepareExecutionAttachments', () => {
   it('records an existing local attachment path and resolves bytes for execution', async () => {
     const dir = await tmpWorkspace();
     const bytes = new Uint8Array([1, 2, 3]);
-    await fs.mkdir(path.join(dir, '.apicircle', 'attachments'), { recursive: true });
-    await fs.writeFile(
-      path.join(dir, '.apicircle', 'attachments', encodeURIComponent('slot-1')),
-      bytes,
-    );
+    await fs.mkdir(path.join(dir, 'attachments'), { recursive: true });
+    await fs.writeFile(path.join(dir, 'attachments', encodeURIComponent('slot-1')), bytes);
     const request = makeRequest('r1', {
       body: {
         type: 'binary',
@@ -134,7 +131,7 @@ describe('prepareExecutionAttachments', () => {
     const meta = prepared.state.local.attachmentCache?.['slot-1'];
 
     expect(prepared.summary).toMatchObject({ total: 1, alreadyPresent: 1, downloaded: 0 });
-    expect(meta?.localPath).toBe(path.join(dir, '.apicircle', 'attachments', 'slot-1'));
+    expect(meta?.localPath).toBe(path.join(dir, 'attachments', 'slot-1'));
     expect(meta?.requiredBy).toEqual([{ requestId: 'r1', requestName: 'r1' }]);
     const resolved = await prepared.resolveAttachment('slot-1');
     expect(resolved?.filename).toBe('payload.bin');
@@ -183,6 +180,7 @@ describe('prepareExecutionAttachments', () => {
             id: 'lw1',
             kind: 'public',
             name: 'Public source',
+            sourceWorkspaceId: 'remote-ws-1',
             source: {
               provider: 'github',
               repoFullName: 'acme/public-source',
@@ -227,6 +225,11 @@ describe('prepareExecutionAttachments', () => {
       filename: 'linked.txt',
     });
     expect(await fs.readFile(meta!.localPath)).toEqual(Buffer.from(bytes));
+
+    const fetchUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(fetchUrl).toContain('workspace-remote-ws-1');
+    expect(fetchUrl).toContain('attachments');
+    expect(fetchUrl).toContain('linked-slot');
   });
 
   it('fails closed when downloaded bytes do not match the expected sha256', async () => {
@@ -264,6 +267,7 @@ describe('prepareExecutionAttachments', () => {
             id: 'lw1',
             kind: 'public',
             name: 'Public source',
+            sourceWorkspaceId: 'remote-ws-1',
             source: {
               provider: 'github',
               repoFullName: 'acme/public-source',

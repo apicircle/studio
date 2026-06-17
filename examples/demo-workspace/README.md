@@ -5,7 +5,7 @@ the studio against the local mock server. Plan §10.1.
 
 ## What's in here
 
-- `.apicircle/workspace.json` — the canonical synced doc, with one folder
+- `.apicircle/workspace-<id>/workspace.json` — the canonical synced doc, with one folder
   per request body type plus a fourth folder of assertion-flavor requests
   (status, header, json-path, duration). One environment `local` whose
   `BASE_URL` points at the Hono mock server's default port (4040).
@@ -23,7 +23,7 @@ pnpm dev:web
 ```
 
 Then open the studio in your browser, point it at this
-`.apicircle/workspace.json`, and send any request. The `local`
+`.apicircle/` workspace, and send any request. The `local`
 environment is preselected so `{{BASE_URL}}` resolves to
 `http://localhost:4040`.
 
@@ -39,7 +39,7 @@ want to exercise the master-key flow end-to-end.
 ## CRUD execution plan
 
 Plans live in `WorkspaceLocal` (browser IDB), not in the synced
-`.apicircle/workspace.json` — so the demo plan isn't shipped here.
+`.apicircle/` workspace — so the demo plan isn't shipped here.
 To recreate it:
 
 1. Open the Execution panel.
@@ -51,7 +51,7 @@ To recreate it:
 
 ## Linked workspace
 
-`examples/linked-pets-api/.apicircle/workspace.json` ships as a sibling
+`examples/linked-pets-api/.apicircle/` ships as a sibling workspace
 that this demo can link to. Use the **Link a private workspace** flow with the
 `apicircle-studio` repo + the path `examples/linked-pets-api/` — when
 the studio resolves a path-relative link in a future revision, this

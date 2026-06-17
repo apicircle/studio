@@ -164,6 +164,110 @@ describe('folder CRUD tools', () => {
     const out = await folderReadTool.handler({ id: 'missing' }, ctx);
     expect(out).toEqual({ found: false });
   });
+
+  it('folder.update renames a folder', async () => {
+    const created = (await folderCreateTool.handler({ name: 'Old' }, ctx)) as { id: string };
+    await folderUpdateTool.handler({ id: created.id, name: 'New' }, ctx);
+    const state = await ctx.workspace.read();
+    expect(state.synced.collections.folders[created.id].name).toBe('New');
+  });
+
+  it('folder.update sets folder-level auth', async () => {
+    const created = (await folderCreateTool.handler({ name: 'Auth folder' }, ctx)) as {
+      id: string;
+    };
+    await folderUpdateTool.handler({ id: created.id, auth: { type: 'bearer', token: 'abc' } }, ctx);
+    const state = await ctx.workspace.read();
+    expect(state.synced.collections.folders[created.id].auth).toEqual({
+      type: 'bearer',
+      token: 'abc',
+    });
+  });
+
+  it('folder.update clears folder-level auth when clearAuth is true', async () => {
+    const created = (await folderCreateTool.handler({ name: 'Auth folder' }, ctx)) as {
+      id: string;
+    };
+    await folderUpdateTool.handler({ id: created.id, auth: { type: 'bearer', token: 'abc' } }, ctx);
+    await folderUpdateTool.handler({ id: created.id, clearAuth: true }, ctx);
+    const state = await ctx.workspace.read();
+    expect(state.synced.collections.folders[created.id]).not.toHaveProperty('auth');
+  });
+
+  it('folder.create can seed an initial auth in one call (no round-trip)', async () => {
+    const created = (await folderCreateTool.handler(
+      {
+        name: 'Authed',
+        auth: { type: 'bearer', token: 'INIT' },
+      },
+      ctx,
+    )) as { id: string };
+    const state = await ctx.workspace.read();
+    expect(state.synced.collections.folders[created.id].auth).toEqual({
+      type: 'bearer',
+      token: 'INIT',
+    });
+  });
+
+  it('folder.update accepts an OAuth2 auth shape (full RequestAuth surface)', async () => {
+    const created = (await folderCreateTool.handler({ name: 'OAuthFolder' }, ctx)) as {
+      id: string;
+    };
+    const oauth2Auth = {
+      type: 'oauth2-client-credentials',
+      tokenUrl: 'https://idp.example.com/oauth/token',
+      clientId: 'cid',
+      clientSecret: 'cs',
+      scope: 'read',
+      clientAuthMethod: 'client_secret_post',
+      tokenState: {
+        accessToken: '',
+        tokenType: 'Bearer',
+        refreshToken: '',
+        expiresAt: 0,
+        obtainedScope: '',
+      },
+    };
+    await folderUpdateTool.handler({ id: created.id, auth: oauth2Auth }, ctx);
+    const state = await ctx.workspace.read();
+    expect(state.synced.collections.folders[created.id].auth).toMatchObject({
+      type: 'oauth2-client-credentials',
+      clientId: 'cid',
+    });
+  });
+
+  it('folder.update accepts an AWS SigV4 auth shape', async () => {
+    const created = (await folderCreateTool.handler({ name: 'AwsFolder' }, ctx)) as { id: string };
+    await folderUpdateTool.handler(
+      {
+        id: created.id,
+        auth: {
+          type: 'aws-sigv4',
+          accessKey: 'AKID',
+          secretKey: 'SECRET',
+          region: 'us-east-1',
+          service: 's3',
+          sessionToken: '',
+        },
+      },
+      ctx,
+    );
+    const state = await ctx.workspace.read();
+    expect(state.synced.collections.folders[created.id].auth).toMatchObject({
+      type: 'aws-sigv4',
+      region: 'us-east-1',
+    });
+  });
+
+  it('folder.update rejects both auth and clearAuth in the same call', () => {
+    // Zod's refine fires before the handler — validate the schema directly.
+    const parsed = folderUpdateTool.inputSchema.safeParse({
+      id: 'x',
+      auth: { type: 'none' },
+      clearAuth: true,
+    });
+    expect(parsed.success).toBe(false);
+  });
 });
 
 describe('environment CRUD tools', () => {

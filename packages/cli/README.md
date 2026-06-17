@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@apicircle/cli"><img src="https://img.shields.io/npm/v/@apicircle/cli?color=cb3837&logo=npm" alt="npm version" /></a>
-  <img src="https://img.shields.io/badge/subcommands-5-blue" alt="5 subcommands" />
+  <img src="https://img.shields.io/badge/subcommands-9-blue" alt="9 subcommands" />
   <img src="https://img.shields.io/badge/runs-CI%20%C2%B7%20Docker%20%C2%B7%20SSH%20%C2%B7%20local-success" alt="Runs everywhere" />
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-brightgreen" alt="Node ≥ 20" />
 </p>
@@ -77,11 +77,7 @@ There are two ways the CLI finds a workspace:
 
 The flags are **mutually exclusive** — passing both is an error.
 
-The registry root defaults to the desktop app's userData:
-
-- **Windows** — `%APPDATA%\@apicircle\desktop\workspaces\`
-- **macOS** — `~/Library/Application Support/@apicircle/desktop/workspaces/`
-- **Linux** — `~/.config/@apicircle/desktop/workspaces/`
+The registry root defaults to `~/.apicircle/` (user home directory on every OS).
 
 Override with `APICIRCLE_WORKSPACES_ROOT` for CI / tests.
 
@@ -187,6 +183,42 @@ fails closed instead of sending a partial upload.
 **Exit codes:** `0` every step passed, `1` a step failed (or the run was
 aborted), `2` usage error, `3` denied by the authorization gate. Pipelines
 gate on it directly.
+
+### `apicircle linked` — manage linked workspaces
+
+```bash
+# List linked workspaces in the active workspace
+apicircle linked list
+
+# Link a private source repo at a specific version
+apicircle linked link octo-org/payments --branch main --pinned-version 1.2.0 \
+  --token $GITHUB_TOKEN
+
+# Re-pull the cached release ledger (+ snapshot if missing)
+apicircle linked refresh <linkedWorkspaceId>
+
+# Unlink (drops cached ledger + overrides + snapshot)
+apicircle linked unlink <linkedWorkspaceId>
+```
+
+Tokens come from `--token` or `GITHUB_TOKEN`. Public links can fetch
+anonymously; private links require a token.
+
+### `apicircle release` — tag releases / edit topics
+
+```bash
+# Tag v1.2.0 on the repo's default-branch HEAD (optionally create a GitHub Release)
+apicircle release tag octo-org/payments 1.2.0 --release --notes "Hotfix for /charges"
+
+# Replace an existing tag of the same name
+apicircle release tag octo-org/payments 1.2.0 --override
+
+# List topics (the `apicircle` topic drives marketplace discovery)
+apicircle release topics octo-org/payments
+
+# Replace topics (always keeps `apicircle`)
+apicircle release topics octo-org/payments --set "payments,billing"
+```
 
 ## Common workflows
 

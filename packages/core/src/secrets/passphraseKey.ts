@@ -9,25 +9,32 @@
 //   {
 //     kdf:        'pbkdf2-sha256-v1',
 //     salt:       base64(16 random bytes),
-//     iterations: 600_000,        // OWASP 2023 PBKDF2-HMAC-SHA-256 floor
-//     verifier:   base64(HMAC of a fixed sentinel under the derived key)
+//     iterations: 1_200_000,
+//     verifier:   base64(AES-GCM(sentinel, derivedKey, zero-IV))
 //   }
 //
 // The verifier lets us reject a wrong passphrase up front instead of
 // failing every decrypt downstream with an opaque "bad tag" error.
 //
-// The passphrase itself is held only in renderer memory (Zustand store
-// field, NOT serialised to IDB). On app restart the user is prompted
+// The passphrase itself is held only in renderer / process memory
+// (Zustand store on desktop/web; VsCodeVaultManager in the extension).
+// It is NEVER serialised to disk. On app restart the user is prompted
 // to re-enter it before any secret can be touched.
+//
+// Phase 4 promotion (2026-06): moved here from
+// `packages/ui-components/src/persistence/passphraseKey.ts` so the VS
+// Code extension (`apps/vscode`) — which cannot depend on the
+// workspace-private `@apicircle/ui-components` — can drive the same
+// unlock flow from its host process.
 
 const PBKDF2_HASH = 'SHA-256';
-// PBKDF2 iteration count for newly-created workspaces. Bumped from 600k to
-// 1.2M as part of Phase 8: the passphrase verifier ships in the synced doc
-// (so any teammate can validate the passphrase without contacting the
-// owner), which means the verifier — and therefore an offline brute-force
-// oracle — is in every clone of the repo. Doubling the work-factor keeps
-// per-attempt cost above ~1s on commodity GPU hardware. Existing workspaces
-// keep their original iteration count (it's stamped into `SecretCrypto`).
+// PBKDF2 iteration count for newly-created workspaces. The passphrase
+// verifier ships in the synced doc (so any teammate can validate the
+// passphrase without contacting the owner), which means the verifier —
+// and therefore an offline brute-force oracle — is in every clone of
+// the repo. 1.2M keeps per-attempt cost above ~1s on commodity GPU
+// hardware. Existing workspaces keep their original iteration count
+// (it's stamped into `SecretCrypto`).
 const PBKDF2_ITERATIONS = 1_200_000;
 const SALT_BYTES = 16;
 const VERIFIER_SENTINEL = 'apicircle/passphrase-verifier/v1';
@@ -38,7 +45,7 @@ export interface SecretCrypto {
   salt: string;
   /** PBKDF2 iteration count baked at workspace-creation time. */
   iterations: number;
-  /** Base64-encoded HMAC-SHA256(`apicircle/passphrase-verifier/v1`, key). */
+  /** Base64-encoded AES-GCM(sentinel, derivedKey, zero-IV). */
   verifier: string;
 }
 
@@ -61,8 +68,8 @@ function utf8Bytes(s: string): Uint8Array {
 
 /**
  * Derive an AES-GCM key from a passphrase + salt + iteration count. Pure;
- * no caching here — the caller (the store) holds the unlocked key for
- * the session.
+ * no caching here — the caller (the store / VS Code VaultManager) holds
+ * the unlocked key for the session.
  */
 async function deriveKey(
   passphrase: string,

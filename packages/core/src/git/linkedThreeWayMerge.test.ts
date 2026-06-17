@@ -319,6 +319,64 @@ describe('applyLinkedUpdate', () => {
     ).toThrow(/unresolved both-changed/);
   });
 
+  it('flags disjoint-field both-changed as autoMergeable, overlapping as not', () => {
+    const r1Old = makeRequest({ id: 'r1', url: 'https://old/r1' });
+    const r1New = makeRequest({ id: 'r1', url: 'https://new/r1' });
+    // Override touches headers; source changed url → disjoint → auto-mergeable.
+    const disjoint = previewLinkedUpdate({
+      fromVersion: '1.0.0',
+      toVersion: '2.0.0',
+      base: snap({ requests: [r1Old] }),
+      target: snap({ requests: [r1New] }),
+      requestOverrides: [override('r1', { headers: [{ key: 'X', value: '1', enabled: true }] })],
+      envVarOverrides: [],
+    });
+    expect(disjoint.entries[0].status).toBe('both-changed');
+    expect(disjoint.entries[0].autoMergeable).toBe(true);
+
+    // Override touches url; source also changed url → overlap → conflict.
+    const overlap = previewLinkedUpdate({
+      fromVersion: '1.0.0',
+      toVersion: '2.0.0',
+      base: snap({ requests: [r1Old] }),
+      target: snap({ requests: [r1New] }),
+      requestOverrides: [override('r1', { url: 'https://my-fork/r1' })],
+      envVarOverrides: [],
+    });
+    expect(overlap.entries[0].autoMergeable).toBe(false);
+  });
+
+  it('auto-merges a disjoint both-changed entry with NO resolution', () => {
+    const r1Old = makeRequest({ id: 'r1', url: 'https://old/r1' });
+    const r1New = makeRequest({ id: 'r1', url: 'https://new/r1' });
+    const ov = override('r1', { headers: [{ key: 'X', value: '1', enabled: true }] });
+    const base = snap({ requests: [r1Old] });
+    const target = snap({ requests: [r1New] });
+    const preview = previewLinkedUpdate({
+      fromVersion: '1.0.0',
+      toVersion: '2.0.0',
+      base,
+      target,
+      requestOverrides: [ov],
+      envVarOverrides: [],
+    });
+    const result = applyLinkedUpdate({
+      base,
+      target,
+      preview,
+      resolutions: {}, // none — the disjoint override merges cleanly
+      requestOverrides: [ov],
+      envVarOverrides: [],
+    });
+    // Override survives (its header), and it now sits on top of the new url.
+    expect(result.nextRequestOverrides).toHaveLength(1);
+    expect(result.nextRequestOverrides[0].patch.headers).toEqual([
+      { key: 'X', value: '1', enabled: true },
+    ]);
+    expect(result.nextSnapshot.collections.requests.r1.url).toBe('https://new/r1');
+    expect(result.log[0]).toMatchObject({ action: 'auto-merge' });
+  });
+
   it('drops orphan overrides (removed-in-source defaults to "theirs")', () => {
     const r1Old = makeRequest({ id: 'r1' });
     const r2Old = makeRequest({ id: 'r2' });

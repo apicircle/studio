@@ -42,6 +42,30 @@ describe('parseInsomniaToEndpoints', () => {
     expect(endpoints.map((e) => e.method).sort()).toEqual(['GET', 'POST']);
   });
 
+  it('populates requestSchema from url path slots / parameters / headers', () => {
+    const exp = JSON.stringify({
+      resources: [
+        {
+          _id: 'req_1',
+          _type: 'request',
+          name: 'Get pet',
+          method: 'GET',
+          url: 'https://api.example.com/pets/:petId',
+          parameters: [
+            { name: 'expand', value: 'owner' },
+            { name: 'debug', value: 'true', disabled: true },
+          ],
+          headers: [{ name: 'X-Api-Key', value: 'abc' }],
+        },
+      ],
+    });
+    const { endpoints } = parseInsomniaToEndpoints(exp);
+    const ep = endpoints[0];
+    expect(ep.requestSchema.pathParams.map((p) => p.name)).toEqual(['petId']);
+    expect(ep.requestSchema.queryParams.map((p) => p.name)).toEqual(['expand']); // disabled skipped
+    expect(ep.requestSchema.headers.map((p) => p.name)).toEqual(['X-Api-Key']);
+  });
+
   it('synthesizes a 200 + JSON Content-Type for every request', () => {
     const { endpoints } = parseInsomniaToEndpoints(INSOMNIA_EXPORT);
     for (const e of endpoints) {

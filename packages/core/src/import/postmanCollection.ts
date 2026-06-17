@@ -28,6 +28,15 @@ export interface ImportedFolder {
   /** Index path from root (deterministic id assignment is the caller's job). */
   pathIds: number[];
   parentPathIds: number[] | null;
+  /**
+   * Folder-level auth captured from the source. Postman v2.1 folders can
+   * carry an `auth` field that descendant requests inherit; Insomnia
+   * request_group resources expose the same via `authentication`. When
+   * present, the importer maps it to `Folder.auth` and descendant requests
+   * with no explicit auth resolve via `resolveInheritedAuth` instead of
+   * being wired to a duplicate copy.
+   */
+  auth?: RequestAuth;
 }
 
 export interface ParsedPostmanCollection {
@@ -123,10 +132,15 @@ export function parsePostmanCollection(input: string): ParsedPostmanCollection {
       const pathIds = parentPathIds ? [...parentPathIds, idx] : [idx];
       // Item is a folder when it has nested items.
       if (Array.isArray(item.item)) {
+        // Postman v2.1 folder-level auth: when present, it surfaces here as
+        // `item.auth`. Map to Folder.auth so descendant requests can resolve
+        // via `inherit` instead of carrying a per-request copy.
+        const folderAuth = item.auth ? parseAuth(item.auth, warnings, item.name) : undefined;
         folders.push({
           name: (item.name ?? 'Untitled folder').trim() || 'Untitled folder',
           pathIds,
           parentPathIds: parentPathIds,
+          ...(folderAuth && folderAuth.type !== 'none' ? { auth: folderAuth } : {}),
         });
         walk(item.item, pathIds);
         return;

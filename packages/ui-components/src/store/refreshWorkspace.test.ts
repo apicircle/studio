@@ -54,10 +54,11 @@ function fileContents(synced: WorkspaceSynced, sha = 'remote-blob-sha'): Respons
   // GitHub returns base64 with line wraps; emulate the un-wrapped shape, the
   // client strips the wraps either way.
   const content = btoa(unescape(encodeURIComponent(json)));
+  const wsId = synced.workspaceId;
   return {
     body: {
       type: 'file',
-      path: '.apicircle/workspace.json',
+      path: `.apicircle/workspace-${wsId}/workspace.json`,
       sha,
       size: json.length,
       content,
@@ -352,7 +353,7 @@ describe('workspaceStore.refreshWorkspace', () => {
       return {
         body: {
           type: 'file',
-          path: `.apicircle/attachments/${slotId}`,
+          path: `.apicircle/workspace-${useWorkspaceStore.getState().synced!.workspaceId}/attachments/${slotId}`,
           sha: 'blob-shared',
           size: 4,
           content: btoa('xxxx'),
@@ -572,7 +573,7 @@ describe('workspaceStore.refreshWorkspace', () => {
       return {
         body: {
           type: 'file',
-          path: `.apicircle/attachments/${slotId}`,
+          path: `.apicircle/workspace-${useWorkspaceStore.getState().synced!.workspaceId}/attachments/${slotId}`,
           sha: 'blob-recovered',
           size: 1,
           content: btoa('x'),

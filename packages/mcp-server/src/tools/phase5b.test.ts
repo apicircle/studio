@@ -261,7 +261,31 @@ describe('mock rule editing MCP tools', () => {
     expect(ep.responseRules[0].when).toHaveLength(1);
   });
 
-  it('mock.set_multipliers writes + clears multipliers', async () => {
+  it('mock.set_response_rules input schema rejects a rule with no when clauses (parity with VS Code)', () => {
+    // The MCP dispatch (McpHost) parses inputSchema before the handler runs, so
+    // an empty `when` is rejected at the boundary — matching the endpoint YAML
+    // parser, which blocks the same shadow-the-default shape.
+    const bad = mockSetResponseRulesTool.inputSchema.safeParse({
+      mockId: 'm',
+      endpointId: 'e',
+      rules: [{ name: 'catch-all', when: [], response: {} }],
+    });
+    expect(bad.success).toBe(false);
+    const ok = mockSetResponseRulesTool.inputSchema.safeParse({
+      mockId: 'm',
+      endpointId: 'e',
+      rules: [
+        {
+          name: 'ok',
+          when: [{ scope: 'query', target: 'p', op: 'equals', value: '1' }],
+          response: {},
+        },
+      ],
+    });
+    expect(ok.success).toBe(true);
+  });
+
+  it('mock.set_multipliers writes + clears + caps the list at 1', async () => {
     const { mockId, endpointId } = await makeMockWithEndpoint();
     await mockSetMultipliersTool.handler(
       {
@@ -281,6 +305,23 @@ describe('mock rule editing MCP tools', () => {
     expect(state.synced.mockServers[mockId].endpoints[0].defaultResponse.multipliers).toHaveLength(
       1,
     );
+    expect(
+      state.synced.mockServers[mockId].endpoints[0].defaultResponse.multipliers?.[0].source.key,
+    ).toBe('pageSize');
+
+    // A second multiplier is rejected (capped at 1 for now).
+    const tooMany = await mockSetMultipliersTool.handler(
+      {
+        mockId,
+        endpointId,
+        multipliers: [
+          { source: { kind: 'query' as const, key: 'a' }, targetJsonPath: '$.x', defaultCount: 1 },
+          { source: { kind: 'query' as const, key: 'b' }, targetJsonPath: '$.y', defaultCount: 1 },
+        ],
+      },
+      ctx,
+    );
+    expect(tooMany).toMatchObject({ ok: false, error: 'too many multipliers' });
 
     await mockSetMultipliersTool.handler({ mockId, endpointId, multipliers: [] }, ctx);
     state = await ctx.workspace.read();

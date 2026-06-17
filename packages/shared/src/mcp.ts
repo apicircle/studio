@@ -85,6 +85,7 @@ export type McpToolName =
   | 'prompt.set_endpoint_validation_rules'
   | 'prompt.set_endpoint_response_rules'
   | 'prompt.set_endpoint_multipliers'
+  | 'prompt.set_endpoint_request_schema'
 
   // Global file asset library (file uploads bound to request bodies and
   // mock responses; provenance + reference-count surface)
@@ -109,7 +110,30 @@ export type McpToolName =
   | 'mock.set_validation_rules'
   | 'mock.set_response_rules'
   | 'mock.set_multipliers'
-  | 'mock.import_postman_mock_collection';
+  | 'mock.set_request_schema'
+  | 'mock.set_default_port'
+  | 'mock.import_postman_mock_collection'
+
+  // Release ledger (synced.releases.self — the versions linked consumers pin to)
+  | 'release.list'
+  | 'release.publish'
+  | 'release.deprecate'
+  | 'release.yank'
+
+  // Linked workspaces — pure-data config (synced.linkedWorkspaces)
+  | 'linked.list'
+  | 'linked.get'
+  | 'linked.set_config'
+  | 'linked.unlink'
+
+  // GitHub network ops (need a token: `token` arg or `GITHUB_TOKEN` env)
+  | 'linked.link'
+  | 'linked.refresh'
+  | 'release.tag'
+  | 'repo.set_topics'
+
+  // Marketplace discovery (anonymous or token-authenticated)
+  | 'marketplace.search';
 
 export interface McpError {
   code: 'invalid_input' | 'not_found' | 'conflict' | 'unsupported' | 'internal';
@@ -177,6 +201,7 @@ export const MCP_TOOL_NAMES: ReadonlyArray<McpToolName> = [
   'prompt.set_endpoint_validation_rules',
   'prompt.set_endpoint_response_rules',
   'prompt.set_endpoint_multipliers',
+  'prompt.set_endpoint_request_schema',
   'assets.list_files',
   'assets.create_file',
   'assets.update_file',
@@ -196,5 +221,20 @@ export const MCP_TOOL_NAMES: ReadonlyArray<McpToolName> = [
   'mock.set_validation_rules',
   'mock.set_response_rules',
   'mock.set_multipliers',
+  'mock.set_request_schema',
+  'mock.set_default_port',
   'mock.import_postman_mock_collection',
+  'release.list',
+  'release.publish',
+  'release.deprecate',
+  'release.yank',
+  'linked.list',
+  'linked.get',
+  'linked.set_config',
+  'linked.unlink',
+  'linked.link',
+  'linked.refresh',
+  'release.tag',
+  'repo.set_topics',
+  'marketplace.search',
 ];

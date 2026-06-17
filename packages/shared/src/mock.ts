@@ -65,15 +65,27 @@ export interface MockResponseConfig {
   delayMs?: number;
   /**
    * Optional response-shape multipliers. At runtime, each multiplier reads a
-   * value from the request (a query/path/header param or a JSON-path slice
-   * of the request body) and repeats the array element at `targetJsonPath`
-   * inside the response body that many times. Used to drive page-size
-   * aware mock responses without templating the body manually.
+   * value from the request (a query/path/header param or a JSON-path slice of
+   * the request body) and repeats the array element at `targetJsonPath` inside
+   * the response body that many times. Used to drive page-size aware mock
+   * responses without templating the body manually.
    *
-   * Only fires when `body.type === 'json'`; ignored otherwise.
+   * The persisted shape is an array so the feature can grow to N multipliers
+   * without a schema migration. For now the authoring surfaces (editors, MCP
+   * tools) cap the list at {@link MAX_RESPONSE_MULTIPLIERS}; the runtime applies
+   * every entry it finds (so a future cap bump — or a hand-edit — needs no
+   * engine change). Only fires when `body.type === 'json'`; ignored otherwise.
    */
   multipliers?: MockResponseMultiplier[];
 }
+
+/**
+ * How many response multipliers the authoring surfaces (desktop/web editor,
+ * VS Code lenses, MCP tools) allow per response. The persisted shape is an
+ * array, so raising this to N — or removing the gate — is the ONLY change
+ * needed to support multiple multipliers; no data migration, no engine change.
+ */
+export const MAX_RESPONSE_MULTIPLIERS = 1;
 
 // ---------------------------------------------------------------------------
 // Response multipliers — repeat an array element inside the response body
@@ -213,6 +225,15 @@ export interface MockResponseRule {
   when: MockConditionClause[];
   response: MockResponseConfig;
 }
+
+/**
+ * How many `when` clauses the authoring surfaces (VS Code lenses, desktop/web
+ * editor, MCP tools) allow per response rule. The persisted shape is an array
+ * and the runtime AND-combines every clause it finds, so raising this to N — or
+ * removing the gate — is the ONLY change needed to support multi-clause rules;
+ * no data migration, no engine change. Mirrors {@link MAX_RESPONSE_MULTIPLIERS}.
+ */
+export const MAX_RESPONSE_RULE_CONDITIONS = 1;
 
 // ---------------------------------------------------------------------------
 // Endpoints + Servers

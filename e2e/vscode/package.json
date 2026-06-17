@@ -1,0 +1,27 @@
+{
+  "name": "@apicircle/e2e-vscode",
+  "version": "1.1.0",
+  "private": true,
+  "description": "E2E suite for the APICircle Studio VS Code extension. Launches a real VS Code instance via @vscode/test-electron and drives it with Mocha.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test:e2e": "node --experimental-specifier-resolution=node dist/runTest.js",
+    "test:e2e:live-github": "APICIRCLE_E2E_LIVE_GITHUB=1 node --experimental-specifier-resolution=node dist/runTest.js",
+    "clean": "rm -rf dist .vscode-test"
+  },
+  "dependencies": {
+    "@apicircle/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^2.4.0",
+    "glob": "^11.0.0",
+    "mocha": "^10.7.0",
+    "typescript": "^5.4.0"
+  }
+}

@@ -10,6 +10,7 @@ import type { Request as ApiRequest, RequestBody } from '@apicircle/shared';
 import { collectVariableSuggestions, type VariableSuggestion } from '@apicircle/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useActiveVariableScope } from '../../editors/useVariableScope';
+import { safeCopyToClipboard } from '../../primitives/clipboard';
 
 const PLACEHOLDER = /\{\{\s*([A-Za-z_][\w.-]*)\s*\}\}/g;
 
@@ -115,12 +116,16 @@ export function VariablesDockPanel() {
 
   const copy = async (key: string) => {
     const token = `{{${key}}}`;
-    try {
-      await navigator.clipboard.writeText(token);
+    const result = await safeCopyToClipboard(token);
+    if (result.ok) {
       setCopied(key);
       window.setTimeout(() => setCopied((c) => (c === key ? null : c)), 1200);
-    } catch {
-      // Clipboard may be unavailable (insecure context); silently ignore.
+    } else {
+      useWorkspaceStore.getState().pushToast({
+        tone: 'error',
+        title: 'Copy failed',
+        detail: result.reason,
+      });
     }
   };
 

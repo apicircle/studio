@@ -6,9 +6,15 @@ import * as path from 'node:path';
 import { workspaceListTool } from './workspaceList';
 import { workspaceReadTool } from './crud';
 import { MultiWorkspaceProvider } from '../providers/MultiWorkspaceProvider';
+import { InMemoryWorkspaceProvider } from '../providers/InMemoryWorkspaceProvider';
+import { SingleWorkspaceAdapter } from '../providers/Workspaces';
 import { InProcessMockController } from '../providers/InProcessMockController';
 import { saveToFile } from '@apicircle/core/workspace/file-backed';
-import { registerWorkspace, saveRegistry } from '@apicircle/core/workspace/registry';
+import {
+  registerWorkspace,
+  saveRegistry,
+  workspaceDirFor,
+} from '@apicircle/core/workspace/registry';
 import type { WorkspaceState } from '@apicircle/core';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
 
@@ -70,8 +76,8 @@ afterEach(async () => {
 });
 
 async function seedTwoWorkspaces(): Promise<MultiWorkspaceProvider> {
-  await saveToFile(path.join(tmpDir, 'ws-a'), makeState('ws-a'));
-  await saveToFile(path.join(tmpDir, 'ws-b'), makeState('ws-b'));
+  await saveToFile(workspaceDirFor(tmpDir, 'ws-a'), makeState('ws-a'));
+  await saveToFile(workspaceDirFor(tmpDir, 'ws-b'), makeState('ws-b'));
   await registerWorkspace(tmpDir, {
     id: 'ws-a',
     name: 'Alpha',
@@ -121,7 +127,7 @@ describe('workspace.list tool', () => {
   });
 
   it('surfaces a one-workspace hint when only one is registered', async () => {
-    await saveToFile(path.join(tmpDir, 'ws-only'), makeState('ws-only'));
+    await saveToFile(workspaceDirFor(tmpDir, 'ws-only'), makeState('ws-only'));
     await registerWorkspace(tmpDir, {
       id: 'ws-only',
       name: 'Solo',
@@ -137,6 +143,36 @@ describe('workspace.list tool', () => {
     };
     const out = (await workspaceListTool.handler({}, ctx)) as { hint: string };
     expect(out.hint).toMatch(/Only one workspace/i);
+  });
+});
+
+describe('SingleWorkspaceAdapter with empty synced doc', () => {
+  it('does not crash when synced is an empty object', async () => {
+    const emptyState: WorkspaceState = {
+      synced: {} as WorkspaceSynced,
+      local: {} as WorkspaceLocal,
+    };
+    const provider = new InMemoryWorkspaceProvider(emptyState);
+    const adapter = new SingleWorkspaceAdapter(provider, null);
+    const ctx = { workspace: provider, workspaces: adapter, mock: new InProcessMockController() };
+    const out = (await workspaceListTool.handler({}, ctx)) as {
+      workspaceCount: number;
+      workspaces: Array<{ id: string; counts: unknown }>;
+    };
+    expect(out.workspaceCount).toBe(1);
+    expect(out.workspaces[0].counts).toBeNull();
+  });
+
+  it('workspace.read survives an empty synced doc', async () => {
+    const emptyState: WorkspaceState = {
+      synced: {} as WorkspaceSynced,
+      local: {} as WorkspaceLocal,
+    };
+    const provider = new InMemoryWorkspaceProvider(emptyState);
+    const adapter = new SingleWorkspaceAdapter(provider, null);
+    const ctx = { workspace: provider, workspaces: adapter, mock: new InProcessMockController() };
+    const out = (await workspaceReadTool.handler({}, ctx)) as { kind: string };
+    expect(out.kind).toBe('single');
   });
 });
 
@@ -157,7 +193,7 @@ describe('workspace.read multi-workspace envelope', () => {
   });
 
   it('returns a single envelope when no workspaceId + only one workspace', async () => {
-    await saveToFile(path.join(tmpDir, 'ws-only'), makeState('ws-only'));
+    await saveToFile(workspaceDirFor(tmpDir, 'ws-only'), makeState('ws-only'));
     await registerWorkspace(tmpDir, {
       id: 'ws-only',
       name: 'Solo',

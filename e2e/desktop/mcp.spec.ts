@@ -36,7 +36,7 @@ function id(key: string): TcId {
 
 let shared: McpClient | undefined;
 
-// Seed `workspace.synced.json` before booting the MCP server.
+// Seed `workspace.json` before booting the MCP server.
 // FileBackedWorkspaceProvider#read() throws when the file is missing,
 // and write() reads-then-merges, so a brand-new dir is bootstrap-
 // hostile. Pre-writing a minimal synced doc unblocks every tool call
@@ -51,7 +51,7 @@ function seedWorkspaceDir(): string {
   // unit tests (FileBackedWorkspaceProvider.test.ts :: emptySynced()).
   const now = '2026-05-30T00:00:00.000Z';
   fs.writeFileSync(
-    path.join(dir, 'workspace.synced.json'),
+    path.join(dir, 'workspace.json'),
     JSON.stringify({
       schemaVersion: 1,
       workspaceId: 'ws-e2e-seed',
@@ -219,7 +219,7 @@ test.describe('MCP — lifecycle', () => {
     ),
     async () => {
       const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-corrupt-'));
-      fs.writeFileSync(path.join(ws, 'workspace.synced.json'), '{not json');
+      fs.writeFileSync(path.join(ws, 'workspace.json'), '{not json');
       const c = await spawnMcpServer({ workspaceDir: ws });
       // The provider currently swallows the parse error during init and
       // surfaces it on the first tool call that touches the workspace.
@@ -265,7 +265,7 @@ test.describe('MCP — lifecycle', () => {
       // Same canonical empty-synced shape as `seedWorkspaceDir` above.
       const now = '2026-05-30T00:00:00.000Z';
       fs.writeFileSync(
-        path.join(ws, 'workspace.synced.json'),
+        path.join(ws, 'workspace.json'),
         JSON.stringify({
           schemaVersion: 1,
           workspaceId: 'ws-x',
@@ -1391,7 +1391,9 @@ const CRUD_CASES: ToolCase[] = [
   {
     key: 'prompt :: MCP tool prompt.set_endpoint_multipliers: happy path',
     tool: 'prompt.set_endpoint_multipliers',
-    happy: undefined,
+    // Unknown ids → in-protocol ok:false (a valid JSON-RPC frame); the empty
+    // list is a well-typed payload that exercises the renamed plural tool.
+    happy: { mockId: 'x', endpointId: 'y', multipliers: [] },
   },
   {
     key: 'prompt :: MCP tool prompt.set_endpoint_multipliers: validation',
@@ -1534,7 +1536,8 @@ const CRUD_CASES: ToolCase[] = [
   {
     key: 'mock :: MCP tool mock.set_multipliers: happy path',
     tool: 'mock.set_multipliers',
-    happy: undefined,
+    // Unknown ids → in-protocol ok:false; the empty list exercises the tool.
+    happy: { mockId: 'x', endpointId: 'y', multipliers: [] },
   },
   {
     key: 'mock :: MCP tool mock.set_multipliers: validation',

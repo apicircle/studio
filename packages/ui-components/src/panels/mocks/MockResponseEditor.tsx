@@ -6,6 +6,7 @@ import {
   generateId,
   getAllowedMockResponseBodyTypes,
   makeDefaultMockResponseBody,
+  MAX_RESPONSE_MULTIPLIERS,
   type MockMultiplierSourceKind,
   type MockResponseBody,
   type MockResponseBodyType,
@@ -631,17 +632,19 @@ function MultipliersEditor({
   onChange: (next: MockResponseMultiplier[]) => void;
 }) {
   const update = (idx: number, patch: Partial<MockResponseMultiplier>) => {
-    const next = multipliers.map((m, i) => (i === idx ? { ...m, ...patch } : m));
-    onChange(next);
+    onChange(multipliers.map((m, i) => (i === idx ? { ...m, ...patch } : m)));
   };
   const updateSource = (idx: number, patch: Partial<MockResponseMultiplier['source']>) => {
-    const next = multipliers.map((m, i) =>
-      i === idx ? { ...m, source: { ...m.source, ...patch } } : m,
+    onChange(
+      multipliers.map((m, i) => (i === idx ? { ...m, source: { ...m.source, ...patch } } : m)),
     );
-    onChange(next);
   };
   const remove = (idx: number) => onChange(multipliers.filter((_, i) => i !== idx));
+  // The persisted shape is an array; today the list is capped at
+  // MAX_RESPONSE_MULTIPLIERS. Raising that constant is all it takes to allow N.
+  const atCap = multipliers.length >= MAX_RESPONSE_MULTIPLIERS;
   const add = () => {
+    if (atCap) return;
     onChange([
       ...multipliers,
       {
@@ -676,9 +679,7 @@ function MultipliersEditor({
                     size="sm"
                     value={m.source.kind}
                     onChange={(e) =>
-                      updateSource(idx, {
-                        kind: e.target.value as MockMultiplierSourceKind,
-                      })
+                      updateSource(idx, { kind: e.target.value as MockMultiplierSourceKind })
                     }
                     aria-label={`${label} multiplier ${idx + 1} source kind`}
                     wrapperClassName="w-full"
@@ -711,9 +712,7 @@ function MultipliersEditor({
                     min={0}
                     value={m.defaultCount}
                     onChange={(e) =>
-                      update(idx, {
-                        defaultCount: Math.max(0, Number(e.target.value) || 0),
-                      })
+                      update(idx, { defaultCount: Math.max(0, Number(e.target.value) || 0) })
                     }
                     aria-label={`${label} multiplier ${idx + 1} default count`}
                     title="Default count when source is missing or non-numeric"
@@ -738,9 +737,7 @@ function MultipliersEditor({
                     placeholder="—"
                     onChange={(e) => {
                       const raw = e.target.value;
-                      update(idx, {
-                        min: raw === '' ? undefined : Math.max(0, Number(raw) || 0),
-                      });
+                      update(idx, { min: raw === '' ? undefined : Math.max(0, Number(raw) || 0) });
                     }}
                     aria-label={`${label} multiplier ${idx + 1} min`}
                     className="h-6 rounded-sm border border-border bg-card px-1 text-center font-mono text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
@@ -754,9 +751,7 @@ function MultipliersEditor({
                     placeholder="—"
                     onChange={(e) => {
                       const raw = e.target.value;
-                      update(idx, {
-                        max: raw === '' ? undefined : Math.max(0, Number(raw) || 0),
-                      });
+                      update(idx, { max: raw === '' ? undefined : Math.max(0, Number(raw) || 0) });
                     }}
                     aria-label={`${label} multiplier ${idx + 1} max`}
                     className="h-6 rounded-sm border border-border bg-card px-1 text-center font-mono text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
@@ -781,15 +776,23 @@ function MultipliersEditor({
             ))}
           </ul>
         )}
-        <button
-          type="button"
-          onClick={add}
-          aria-label={`Add ${label} multiplier`}
-          className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20"
-        >
-          <Plus size={10} aria-hidden="true" />
-          Add multiplier
-        </button>
+        {atCap ? (
+          multipliers.length > 0 && (
+            <p className="text-[0.625rem] text-text-faint">
+              Limit reached ({MAX_RESPONSE_MULTIPLIERS}). Multiple multipliers are coming soon.
+            </p>
+          )
+        ) : (
+          <button
+            type="button"
+            onClick={add}
+            aria-label={`Add ${label} multiplier`}
+            className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20"
+          >
+            <Plus size={10} aria-hidden="true" />
+            Add multiplier
+          </button>
+        )}
       </div>
     </details>
   );

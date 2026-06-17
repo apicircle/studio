@@ -28,6 +28,7 @@ import {
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { SecretsNotProtectedError } from '../../persistence/platformSecretGate';
 import { cn } from '../../primitives/cn';
+import { safeCopyToClipboard } from '../../primitives/clipboard';
 import { isWebBuild } from './webBuild';
 
 /**
@@ -677,16 +678,14 @@ function SecretRow({ entry }: SecretRowProps) {
 
   const onCopy = async () => {
     if (revealed === null) return;
-    try {
-      await navigator.clipboard.writeText(revealed);
+    const result = await safeCopyToClipboard(revealed);
+    if (result.ok) {
       pushToast({ tone: 'success', title: 'Copied to clipboard', ttlMs: 2000 });
-    } catch {
-      // Insecure-context or permission-denied — surface so the user knows
-      // it didn't actually copy.
+    } else {
       pushToast({
         tone: 'error',
         title: 'Copy failed',
-        detail: 'Clipboard access denied. Try selecting the text manually.',
+        detail: result.reason,
       });
     }
   };
@@ -1119,7 +1118,15 @@ function DeviceFlowCard({
         <button
           type="button"
           onClick={() => {
-            void navigator.clipboard?.writeText(code.userCode);
+            void safeCopyToClipboard(code.userCode).then((r) => {
+              if (!r.ok) {
+                useWorkspaceStore.getState().pushToast({
+                  tone: 'error',
+                  title: 'Copy failed',
+                  detail: r.reason,
+                });
+              }
+            });
           }}
           aria-label="Copy device flow code"
           className="inline-flex h-9 items-center rounded-sm border border-border bg-surface px-3 text-[0.6875rem] text-text-muted hover:border-border-strong hover:text-text-primary"

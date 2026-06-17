@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://apicircle.studio/schemas/apicircle-response.schema.json",
+  "title": "APICircle Response / History Run",
+  "description": "Schema for `.run.yaml` virtual documents (both `responses/<runId>.run.yaml` from Send and `history/<runId>.run.yaml` from the History view).",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "request": { "type": "string" },
+    "method": { "type": "string" },
+    "url": { "type": "string" },
+    "status": { "type": ["number", "null"] },
+    "statusText": { "type": "string" },
+    "ok": { "type": "boolean" },
+    "durationMs": { "type": "number" },
+    "startedAt": { "type": "string" },
+    "error": { "type": "string" },
+    "responseHeaders": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "responseBody": {
+      "description": "Truncated to RUN_BODY_PREVIEW_LIMIT. May be string, object, array, or null."
+    },
+    "responseBodyKind": {
+      "type": "string",
+      "enum": ["json", "text", "binary", "empty"]
+    },
+    "responseTruncated": { "type": "boolean" },
+    "requestHeaders": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "requestBody": {
+      "description": "Truncated request body preview, or null for binary/form bodies."
+    },
+    "assertions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "kind": { "type": "string" },
+          "op": { "type": "string" },
+          "target": { "type": "string" },
+          "expected": {},
+          "passed": { "type": "boolean" },
+          "detail": { "type": "string" }
+        }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "description": "Plan-run only. Per-step summary with method/URL/status."
+    }
+  }
+}

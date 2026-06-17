@@ -18,6 +18,8 @@ import type { WorkspaceRegistry, WorkspaceRegistryEntry } from '@apicircle/core/
 import type {
   ConfigSnippetVariants,
   DesktopBridgeContract,
+  McpInstallResult,
+  McpInstallState,
   WorkspaceFileExternalChange,
 } from '@apicircle/ui-components';
 
@@ -77,19 +79,22 @@ const bridge = {
       ipcRenderer.invoke('apicircle:mcp:getConfigPath', client) as Promise<string | null>,
     toolCatalog: (): Promise<readonly McpToolName[]> =>
       ipcRenderer.invoke('apicircle:mcp:toolCatalog') as Promise<readonly McpToolName[]>,
+    installConfig: (client: string): Promise<McpInstallResult> =>
+      ipcRenderer.invoke('apicircle:mcp:installConfig', client) as Promise<McpInstallResult>,
+    detectInstallState: (client: string): Promise<McpInstallState> =>
+      ipcRenderer.invoke('apicircle:mcp:detectInstallState', client) as Promise<McpInstallState>,
   },
 
   // On-disk multi-workspace mirror. The renderer writes every debounced
   // persistence flush through `writeWorkspace` so each workspace's pair
-  // (`workspace.synced.json` + `workspace.local.json`) stays in sync with
+  // (`workspace.json` + `workspace.local.json`) stays in sync with
   // IndexedDB — that's the pair `apicircle-mcp` and the CLI read.
   workspaceFile: {
     status: (): Promise<{ workspacesRoot: string }> =>
       ipcRenderer.invoke('apicircle:workspaceFile:status') as Promise<{ workspacesRoot: string }>,
-    init: (): Promise<{ registry: WorkspaceRegistry; migrated: boolean }> =>
+    init: (): Promise<{ registry: WorkspaceRegistry }> =>
       ipcRenderer.invoke('apicircle:workspaceFile:init') as Promise<{
         registry: WorkspaceRegistry;
-        migrated: boolean;
       }>,
     readRegistry: (): Promise<WorkspaceRegistry> =>
       ipcRenderer.invoke('apicircle:workspaceFile:readRegistry') as Promise<WorkspaceRegistry>,

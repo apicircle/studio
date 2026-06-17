@@ -34,12 +34,12 @@ export const HELP_SECTIONS: HelpSection[] = [
 
 Every workspace is split into two JSON documents, and knowing which is which explains most of the app's behaviour:
 
-- **Synced** — the team-shared half, pushed to Git as \`.apicircle/workspace.json\`. Requests, folders, environments, mock-server definitions, execution plans, releases, linked workspaces, global assets, and secret metadata.
+- **Synced** — the team-shared half, pushed to Git under the \`.apicircle/\` directory. Requests, folders, environments, mock-server definitions, execution plans, releases, linked workspaces, global assets, and secret metadata.
 - **Local** — the per-device half, kept in IndexedDB and never sent anywhere. Run history, your GitHub session, decrypted secret values, workspace snapshots, and UI state.
 
 A quick rule: if a teammate should see it, it is synced; if it is private to this machine, it is local. Example — you build a request and push:
 
-    Synced  -> the request definition travels to GitHub in .apicircle/workspace.json
+    Synced  -> the request definition travels to GitHub in .apicircle/workspace-<id>/workspace.json
     Local   -> every Send you ran, and the response bodies, stay local
 
 ## Finding your way around
@@ -60,22 +60,23 @@ First time here? An onboarding tour runs on first launch — replay it any time 
 ## What "multi-workspace" looks like
 
 - **In the app** — the workspace switcher next to the brand mark cycles between every workspace this install knows about. The active workspace's name shows in the chip.
-- **On disk** — the desktop app mirrors every workspace into a per-id subdirectory under \`userData/workspaces/\` plus a single \`registry.json\` index. CLI and MCP consumers read those files.
+- **On disk** — every workspace lives in a per-id subdirectory under \`~/.apicircle/workspaces/\` plus a single \`~/.apicircle/registry.json\` index. Desktop, CLI, and MCP consumers all read the same files.
 - **In Git** — each workspace can link to its own GitHub repo + branch. Switching workspaces switches which repo the Workspace panel talks to.
 
 ## Disk layout
 
-The desktop app's userData (Windows: \`%APPDATA%\\@apicircle\\desktop\\\`, macOS: \`~/Library/Application Support/@apicircle/desktop/\`, Linux: \`~/.config/@apicircle/desktop/\`) holds:
+All workspace data lives under \`~/.apicircle/\` (the user's home directory on every OS):
 
-    workspaces/
+    ~/.apicircle/
       registry.json                       <- { activeWorkspaceId, workspaces: [...] }
-      <workspace-id-1>/
-        workspace.synced.json             <- the git-tracked half
-        workspace.local.json              <- the device-private half
-      <workspace-id-2>/
-        ...
+      workspaces/
+        <workspace-id-1>/
+          workspace.json                  <- the git-shareable half
+          workspace.local.json            <- the device-private half
+        <workspace-id-2>/
+          ...
 
-The renderer keeps the canonical copy in IndexedDB and mirrors every change to this layout so the CLI, the MCP server, and (Phase 2) external file watchers see the same content.
+The renderer keeps the canonical copy in IndexedDB and mirrors every change to this layout so the CLI, the MCP server, and the file watcher see the same content.
 
 ## Picking a workspace from the CLI
 
@@ -107,7 +108,7 @@ Most tools (\`request.read\`, \`environment.create\`, etc) default to the active
 
 ## Refreshing without restarting
 
-The MCP panel's **Connection** section has a **Refresh** button. It re-reads the active workspace's \`workspace.synced.json\` from disk and merges any newer changes (e.g. from a \`apicircle import\` invocation or an AI-driven MCP edit) into the in-memory store. No more "quit and reopen the desktop app to see CLI edits".
+The MCP panel's **Connection** section has a **Refresh** button. It re-reads the active workspace's \`workspace.json\` from disk and merges any newer changes (e.g. from a \`apicircle import\` invocation or an AI-driven MCP edit) into the in-memory store. No more "quit and reopen the desktop app to see CLI edits".
 
 Since 1.0.8 the desktop also **watches the on-disk files automatically**: when an MCP server or CLI write lands while the app is running, the editor and Environments panel update without you clicking Refresh. The watcher knows the difference between its own mirror writes and an external one, so it never refreshes on top of your own edits.
 
@@ -980,8 +981,13 @@ Each endpoint is a method + path pattern, edited as a flow: Endpoint → Validat
 - **Validation rules** — header / query / cookie / body / content-type checks; a failure short-circuits with a fail response.
 - **Response rules** — conditional responses chosen by a query param, path param, header, cookie, or JSON-path body value, tried in declaration order.
 - **Multipliers** — expand an array in a JSON response from a request value. \`GET /items?count=3\` repeats the template at \`$.items\` three times.
+- **Request schema** — on the Endpoint node, declare the inputs the endpoint expects (path / query / header / cookie params + a body-shape doc). It is documentation-only (it drives the OpenAPI export, not runtime gating), and "Derive from path" auto-fills params from the pattern's \`{slot}\` segments. The same schema is editable in the VS Code \`.endpoint.yaml\` — it round-trips through the synced doc, so it stays identical across surfaces.
 
-Validation and response rules can be disabled without deleting them. CORS is off by default — enable it on the server card for cross-origin clients.
+Validation and response rules can be disabled without deleting them; a rule's condition is capped at one clause today. CORS is off by default — enable it on the server card for cross-origin clients.
+
+## Default port
+
+Each server has a **Default port** field on its summary card. Set it to a 1024–65535 integer to always bind that port, or leave blank to let the runtime pick a free port at each Start. The input is disabled while a mock is running — stop it first to change. A busy port surfaces a clear error: \`Port <n> on 127.0.0.1 is already in use. Stop the other process or pick a different port.\` Same field appears in the VS Code \`.mock.yaml\`, the \`apicircle.setMockPort\` command, and the CLI \`--port\` flag.
 
 ## The web limitation, and how to run a mock
 
@@ -1064,7 +1070,7 @@ So mocking a Postman or Insomnia file works fine — just expect to open the end
 
 ## How the mock decides what to answer
 
-For each incoming request the mock checks, in order: validation rules, then response rules top to bottom, then multipliers, and finally the default response if nothing matched. If a mock returns something you did not expect, that order is where to look — a validation rule may be short-circuiting the request, or an earlier response rule may be winning. Path parameters match by position: an endpoint path \`/users/:id\` answers a request to \`/users/42\`.
+For each incoming request the mock checks, in order: validation rules, then response rules top to bottom, then response multipliers, and finally the default response if nothing matched. If a mock returns something you did not expect, that order is where to look — a validation rule may be short-circuiting the request, or an earlier response rule may be winning. Path parameters match by position: an endpoint path \`/users/:id\` answers a request to \`/users/42\`.
 
 ## Common snags
 
@@ -1107,12 +1113,12 @@ The tools cluster into areas:
 - **Read & search** — requests, folders, environments, plans, assertions, history.
 - **Author** — create / update / delete requests, folders, environments, assertions; reshape execution plans.
 - **Import** — pull in OpenAPI, Postman, Insomnia, HAR, or curl as requests.
-- **Mock servers** — create from a spec, edit endpoints, validation rules, response rules, multipliers.
+- **Mock servers** — create from a spec, edit endpoints, validation rules, response rules, response multipliers.
 - **Generate code** — turn a request into runnable client code (\`curl\`, \`fetch\`, \`node-axios\`, \`python-requests\`, \`go\`, \`rust\`).
 
 ## Multi-workspace handling
 
-The desktop app maintains one **registry** on disk (\`userData/workspaces/registry.json\`) plus a per-workspace subdirectory for each registered workspace. \`apicircle-mcp\` boots against the registry root and exposes every workspace by id; most tools default to the **active** workspace, and ones that need to scope (\`workspace.read\`, \`workspace.write\`) accept an optional \`workspaceId\`.
+The app maintains one **registry** on disk (\`~/.apicircle/registry.json\`) plus a per-workspace subdirectory under \`~/.apicircle/workspaces/\` for each registered workspace. \`apicircle-mcp\` boots against the registry root and exposes every workspace by id; most tools default to the **active** workspace, and ones that need to scope (\`workspace.read\`, \`workspace.write\`) accept an optional \`workspaceId\`.
 
 When an AI asks "show me my requests" and more than one workspace is registered, the response is a structured envelope:
 
@@ -1266,11 +1272,11 @@ The plan is given by name or id. Options: \`--reporter\` (\`text\`/\`json\`/\`ju
 Every workspace-aware subcommand accepts two mutually-exclusive flags:
 
 - \`--workspace-name <name-or-id>\` — registry lookup. Matches case-insensitively against the friendly name first, then by id. Use this whenever the workspace is one the desktop app knows about.
-- \`--workspace-path <dir>\` — a literal filesystem directory containing \`workspace.synced.json\`. Skips the registry entirely. Use this for CI / git-cloned workspace repos that aren't registered locally.
+- \`--workspace-path <dir>\` — a literal filesystem directory containing \`workspace.json\`. Skips the registry entirely. Use this for CI / git-cloned workspace repos that aren't registered locally.
 
 When **neither** flag is passed, the CLI uses the registry's active workspace (or the current directory when no registry exists).
 
-The registry root defaults to the desktop app's userData (\`%APPDATA%\\@apicircle\\desktop\\workspaces\\\` on Windows; equivalent under \`~/Library/Application Support\` or \`~/.config\` elsewhere). Override with \`APICIRCLE_WORKSPACES_ROOT\` for CI / tests.
+The registry root defaults to \`~/.apicircle/\` (user home directory on every OS). Override with \`APICIRCLE_WORKSPACES_ROOT\` for CI / tests.
 
 Manage the registry from the terminal with the \`workspaces\` subcommand:
 
@@ -1341,7 +1347,7 @@ Each asset shows a small status pill next to its name. The pill tells you where 
 
 Each row also shows "Used in N" — clicking through the Global Assets panel shows every request and mock endpoint that binds to the file. Zero-use assets get an "Unused" badge so you can identify and prune orphans deliberately.
 
-When a workspace is pushed to GitHub, file bytes are stored as attachment blobs next to the synced doc under \`.apicircle/attachments/<slotId>\`, separate from \`.apicircle/workspace.json\`. That keeps the JSON small and makes diffs readable. On another machine, linked or synced file assets show as missing until you download them. Sending a request or running a plan that needs missing files opens a download prompt; after the download verifies the checksum, execution continues. The \`apicircle run\` CLI follows the same rule for headless plans.
+When a workspace is pushed to GitHub, file bytes are stored as attachment blobs next to the synced doc under \`.apicircle/workspace-<id>/attachments/<slotId>\`, separate from the workspace document. That keeps the JSON small and makes diffs readable. On another machine, linked or synced file assets show as missing until you download them. Sending a request or running a plan that needs missing files opens a download prompt; after the download verifies the checksum, execution continues. The \`apicircle run\` CLI follows the same rule for headless plans.
 
 ## Why one library
 

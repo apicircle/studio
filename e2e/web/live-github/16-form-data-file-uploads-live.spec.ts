@@ -25,7 +25,7 @@ import {
 //      promotes the row to a Global Asset would fail loudly here.)
 //
 // Both attachments must round-trip through a real push: the per-row
-// slot bytes land at `.apicircle/attachments/<slotId>` and the synced
+// slot bytes land at `.apicircle/workspace-<id>/attachments/<slotId>` and the synced
 // doc carries the correct form-row bindings (one with
 // `globalFileAssetId`, one slot-only).
 
@@ -195,7 +195,7 @@ test.describe('Live GitHub - form-data + Global Assets file uploads @live-github
 
     // ----- Remote / push assertions -----------------------------------
 
-    // Re-fetch the just-pushed workspace.json from .apicircle/workspace.json
+    // Re-fetch the just-pushed workspace.json from .apicircle/workspace-<id>/workspace.json
     // and verify the bindings landed verbatim.
     const remote = await pushAndFetchWorkspaceV2(
       app,
@@ -254,22 +254,23 @@ test.describe('Live GitHub - form-data + Global Assets file uploads @live-github
       workingBranchRef: expect.objectContaining({ branchName: branch }),
     });
 
-    // Both attachment blobs land at .apicircle/attachments/<slotId> on
-    // the remote and the bytes round-trip unchanged — this is what
+    // Both attachment blobs land at .apicircle/workspace-<id>/attachments/<slotId>
+    // on the remote and the bytes round-trip unchanged — this is what
     // "the file is transmitted along the request" guarantees for any
     // downstream consumer (CLI run, MCP execute, another Studio
     // refreshing the workspace).
+    const hostWorkspaceId = remote.workspaceId as string;
     const remoteGlobalBytes = await fetchRepoFileBytesV2(
       host,
       branch,
-      attachmentBlobPathV2(setup.fileAsset.slotId),
+      attachmentBlobPathV2(setup.fileAsset.slotId, hostWorkspaceId),
     );
     expect(Array.from(remoteGlobalBytes)).toEqual(Array.from(globalBytes));
 
     const remoteDirectBytes = await fetchRepoFileBytesV2(
       host,
       branch,
-      attachmentBlobPathV2(setup.directRow.slotId),
+      attachmentBlobPathV2(setup.directRow.slotId, hostWorkspaceId),
     );
     expect(Array.from(remoteDirectBytes)).toEqual(Array.from(directBytes));
   });

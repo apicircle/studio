@@ -24,6 +24,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { refreshToken as runRefreshToken } from '@apicircle/core';
 import { safeExternalHref } from '@apicircle/shared';
 import { cn } from '../../primitives/cn';
+import { safeCopyToClipboard } from '../../primitives/clipboard';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import type { createOAuth2Bridge } from '../../auth/oauth2Bridge';
 import { acquireToken, type OAuth2Auth } from './acquireOAuth2Token';
@@ -377,22 +378,15 @@ function DeviceCodeHint({
         <button
           type="button"
           onClick={() => {
-            navigator.clipboard
-              .writeText(device.userCode)
-              .then(() =>
-                useWorkspaceStore.getState().pushToast({
-                  tone: 'success',
-                  title: 'Code copied',
-                  ttlMs: 1500,
-                }),
-              )
-              .catch(() =>
-                useWorkspaceStore.getState().pushToast({
-                  tone: 'error',
-                  title: 'Copy failed',
-                  detail: 'Clipboard access denied — copy the code manually.',
-                }),
-              );
+            void safeCopyToClipboard(device.userCode).then((r) => {
+              useWorkspaceStore
+                .getState()
+                .pushToast(
+                  r.ok
+                    ? { tone: 'success', title: 'Code copied', ttlMs: 1500 }
+                    : { tone: 'error', title: 'Copy failed', detail: r.reason },
+                );
+            });
           }}
           aria-label={`Copy device code ${device.userCode}`}
           title="Copy device code"

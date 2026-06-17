@@ -1,8 +1,9 @@
 {
   "name": "@apicircle/mcp-server",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "private": false,
   "type": "module",
+  "sideEffects": false,
   "description": "Model Context Protocol server exposing API Circle Studio's workspace as a tool catalog. Used by Claude Desktop, ChatGPT, Cursor, GitHub Copilot, and any other MCP-compatible AI client.",
   "keywords": [
     "apicircle",
@@ -45,7 +46,8 @@
     "apicircle-mcp": "./dist/bin/mcp-server.cjs"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./prompts": "./src/prompts/mcpPrompts.ts"
   },
   "files": [
     "dist"
@@ -64,6 +66,16 @@
           "types": "./dist/index.d.cts",
           "default": "./dist/index.cjs"
         }
+      },
+      "./prompts": {
+        "import": {
+          "types": "./dist/prompts/mcpPrompts.d.ts",
+          "default": "./dist/prompts/mcpPrompts.js"
+        },
+        "require": {
+          "types": "./dist/prompts/mcpPrompts.d.cts",
+          "default": "./dist/prompts/mcpPrompts.cjs"
+        }
       }
     }
   },
@@ -81,6 +93,7 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@apicircle/git": "workspace:*",
     "@types/node": "^20.0.0",
     "tsup": "^8.3.0",
     "typescript": "^5.4.0",

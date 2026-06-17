@@ -62,7 +62,6 @@ function makeFakeMirror(
     isAvailable: () => available,
     init: vi.fn().mockResolvedValue({
       registry: { schemaVersion: 1, activeWorkspaceId: 'ws-a', workspaces: [] },
-      migrated: false,
     }),
     readRegistry: vi.fn().mockResolvedValue({
       schemaVersion: 1,

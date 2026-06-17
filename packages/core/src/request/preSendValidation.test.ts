@@ -188,6 +188,72 @@ describe('preSendValidation', () => {
     expect(result.blockers.some((b) => b.kind === 'auth-fields-missing')).toBe(true);
   });
 
+  it('resolves auth: inherit through the folder chain and blocks on an empty folder bearer', () => {
+    const folders = {
+      fParent: {
+        id: 'fParent',
+        name: 'Authed',
+        parentId: null,
+        auth: { type: 'bearer' as const, token: '' }, // empty — should block
+      },
+      fChild: { id: 'fChild', name: 'Users', parentId: 'fParent' },
+    };
+    const result = preSendValidation({
+      request: baseReq({ folderId: 'fChild', auth: { type: 'inherit' } }),
+      scope: emptyScope,
+      folders,
+    });
+    const blocker = result.blockers.find((b) => b.kind === 'auth-fields-missing');
+    expect(blocker).toBeDefined();
+    expect(blocker?.message).toContain('Bearer token is empty');
+    expect(blocker?.message).toContain('resolved from folder-level auth');
+  });
+
+  it('does NOT block when the inherited folder bearer has a valid token', () => {
+    const folders = {
+      fParent: {
+        id: 'fParent',
+        name: 'Authed',
+        parentId: null,
+        auth: { type: 'bearer' as const, token: 'VALID' },
+      },
+    };
+    const result = preSendValidation({
+      request: baseReq({ folderId: 'fParent', auth: { type: 'inherit' } }),
+      scope: emptyScope,
+      folders,
+    });
+    expect(result.blockers.some((b) => b.kind === 'auth-fields-missing')).toBe(false);
+  });
+
+  it('does NOT block when auth is inherit but no folders are provided (legacy callers)', () => {
+    const result = preSendValidation({
+      request: baseReq({ folderId: 'fChild', auth: { type: 'inherit' } }),
+      scope: emptyScope,
+      // folders omitted — declared auth used as-is; `inherit` has no fields to block on.
+    });
+    expect(result.blockers.some((b) => b.kind === 'auth-fields-missing')).toBe(false);
+  });
+
+  it('blocks on inherit → folder basic with missing password', () => {
+    const folders = {
+      fA: {
+        id: 'fA',
+        name: 'Authed',
+        parentId: null,
+        auth: { type: 'basic' as const, username: 'user', password: '' },
+      },
+    };
+    const result = preSendValidation({
+      request: baseReq({ folderId: 'fA', auth: { type: 'inherit' } }),
+      scope: emptyScope,
+      folders,
+    });
+    const blocker = result.blockers.find((b) => b.kind === 'auth-fields-missing');
+    expect(blocker?.message).toContain('Basic auth requires');
+    expect(blocker?.message).toContain('resolved from folder-level auth');
+  });
+
   it('disabled rows are not validated for {{var}} references', () => {
     const result = preSendValidation({
       request: baseReq({

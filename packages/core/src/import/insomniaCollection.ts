@@ -113,10 +113,17 @@ export function parseInsomniaCollection(input: string): ParsedPostmanCollection 
     const parentPath = r.parentId ? (folderIndexById.get(r.parentId) ?? null) : null;
     const ourPath = parentPath ? [...parentPath, folderCounter++] : [folderCounter++];
     folderIndexById.set(r._id ?? '', ourPath);
+    // Insomnia request_group resources can carry an `authentication` field
+    // that descendants inherit. Map it to Folder.auth via the same parseAuth
+    // path used for requests; `none`-typed auth (or absent) leaves the
+    // ImportedFolder without an auth property so the apply-side doesn't
+    // spuriously set Folder.auth.
+    const folderAuth = r.authentication ? parseAuth(r.authentication, warnings, r.name) : undefined;
     folders.push({
       name: (r.name ?? 'Untitled folder').trim() || 'Untitled folder',
       pathIds: ourPath,
       parentPathIds: parentPath,
+      ...(folderAuth && folderAuth.type !== 'none' ? { auth: folderAuth } : {}),
     });
   }
 

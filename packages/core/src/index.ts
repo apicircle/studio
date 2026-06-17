@@ -186,6 +186,13 @@ export { extractContext } from './environment/extractContext';
 export type { ContextExtractionResult } from './environment/extractContext';
 
 export {
+  resolveRequestForExecution,
+  applyLinkedEnvironmentOverrides,
+  plaintextEnvMap,
+} from './environment/resolveRequest';
+export type { ResolveRequestArgs, ResolvedRequestResult } from './environment/resolveRequest';
+
+export {
   decryptString,
   deriveKeyFromSlotValue,
   encryptString,
@@ -198,16 +205,22 @@ export {
 } from './secrets/crypto';
 export type { EncryptedPayload } from './secrets/crypto';
 
+export { initSecretCrypto, unlockSecretCrypto } from './secrets/passphraseKey';
+export type { SecretCrypto } from './secrets/passphraseKey';
+
 export { generateWorkingBranchName, slugify, validateBranchName } from './git/branchNames';
 export type { BranchNameOptions } from './git/branchNames';
 
 export { serializeWorkspaceForGit } from './git/serializeWorkspace';
 
 export {
-  ATTACHMENTS_DIR,
+  REGISTRY_JSON_PATH,
   WORKSPACE_DIR,
-  WORKSPACE_JSON_PATH,
   attachmentPath,
+  attachmentsDir,
+  fetchRemoteWorkspaceJson,
+  parseRegistryActiveId,
+  workspaceJsonPath,
 } from './git/repoPaths';
 
 export { parseWorkspaceJson, RemoteWorkspaceParseError } from './git/parseWorkspaceJson';
@@ -220,8 +233,27 @@ export type { AttachmentSlotRef } from './git/collectAttachments';
 export { compareSemver, isValidSemver, parseSemver, sortVersionsDesc } from './release/semver';
 export type { ParsedVersion } from './release/semver';
 
-export { deprecateRelease, publishRelease, yankRelease } from './release/publishRelease';
+export {
+  appendReleaseEntry,
+  buildReleaseEntry,
+  deprecateRelease,
+  publishRelease,
+  yankRelease,
+} from './release/publishRelease';
 export type { PublishReleaseArgs } from './release/publishRelease';
+
+export {
+  parseLinkedWorkspaceJson,
+  buildLinkedSnapshot,
+  ledgerFromProbe,
+} from './linked/linkedSnapshot';
+export type { LinkedWorkspaceProbe } from './linked/linkedSnapshot';
+
+export {
+  mergeRequestOverride,
+  computeRequestOverridePatch,
+  isEmptyOverridePatch,
+} from './linked/requestOverride';
 
 export {
   getLanguageFromBodyType,

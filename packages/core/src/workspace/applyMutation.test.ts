@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type {
   Folder,
+  LinkedSnapshot,
+  LinkedWorkspace,
   Request as ApiRequest,
+  ReleaseHistory,
+  ReleaseVersion,
   WorkspaceLocal,
   WorkspaceSynced,
 } from '@apicircle/shared';
@@ -93,6 +97,23 @@ describe('applyMutation - request', () => {
     expect(next.synced.collections.tree.children).toEqual([{ kind: 'request', id: 'r1' }]);
     expect(next.synced.meta.updatedAt).toBe(T1);
     expect(changedIds).toEqual(['r1']);
+  });
+
+  it('does not add a request with a folderId to tree.children', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [{ kind: 'folder', id: 'f1' }] },
+          requests: {},
+          folders: { f1: makeFolder('f1') },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const req = makeRequest('r1', { folderId: 'f1' });
+    const { next } = applyMutation(state, { kind: 'request.create', request: req }, { now: T1 });
+    expect(next.synced.collections.requests['r1']).toEqual(req);
+    expect(next.synced.collections.tree.children).toEqual([{ kind: 'folder', id: 'f1' }]);
   });
 
   it('skips create when the id already exists', () => {
@@ -218,6 +239,23 @@ describe('applyMutation - folder', () => {
     expect(out.next.synced.collections.folders['f1']).toEqual(folder);
     expect(out.next.synced.collections.tree.children).toEqual([{ kind: 'folder', id: 'f1' }]);
     expect(out.next.synced.meta.updatedAt).toBe(T1);
+  });
+
+  it('does not add a subfolder to tree.children', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [{ kind: 'folder', id: 'f1' }] },
+          requests: {},
+          folders: { f1: makeFolder('f1') },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const subfolder = makeFolder('f2', 'f1', 'Sub');
+    const out = applyMutation(state, { kind: 'folder.create', folder: subfolder }, { now: T1 });
+    expect(out.next.synced.collections.folders['f2']).toEqual(subfolder);
+    expect(out.next.synced.collections.tree.children).toEqual([{ kind: 'folder', id: 'f1' }]);
   });
 
   it('skips folder.create when the id already exists', () => {
@@ -350,6 +388,151 @@ describe('applyMutation - folder', () => {
     // Trying to move a under c (which is a's grandchild) would cycle.
     const out = applyMutation(state, { kind: 'folder.move', id: 'a', newParentId: 'c' });
     expect(out.next).toBe(state);
+  });
+
+  it('updates a folder name', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [] },
+          requests: {},
+          folders: { f1: makeFolder('f1', null, 'Old Name') },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(
+      state,
+      { kind: 'folder.update', id: 'f1', patch: { name: 'New Name' } },
+      { now: T1 },
+    );
+    expect(out.next.synced.collections.folders['f1'].name).toBe('New Name');
+    expect(out.next.synced.collections.folders['f1'].auth).toBeUndefined();
+    expect(out.next.synced.meta.updatedAt).toBe(T1);
+    expect(out.changedIds).toEqual(['f1']);
+  });
+
+  it('sets folder auth via folder.update', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [] },
+          requests: {},
+          folders: { f1: makeFolder('f1') },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(
+      state,
+      {
+        kind: 'folder.update',
+        id: 'f1',
+        patch: { auth: { type: 'bearer', token: 'abc' } },
+      },
+      { now: T1 },
+    );
+    expect(out.next.synced.collections.folders['f1'].auth).toEqual({
+      type: 'bearer',
+      token: 'abc',
+    });
+    expect(out.next.synced.collections.folders['f1'].name).toBe('f1');
+  });
+
+  it('clears folder auth when patch.auth is undefined', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [] },
+          requests: {},
+          folders: {
+            f1: { ...makeFolder('f1'), auth: { type: 'bearer', token: 'old' } } as Folder,
+          },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(state, {
+      kind: 'folder.update',
+      id: 'f1',
+      patch: { auth: undefined },
+    });
+    expect(out.next.synced.collections.folders['f1']).not.toHaveProperty('auth');
+  });
+
+  it('folder.update is a no-op for a missing folder', () => {
+    const state = { synced: makeSynced(), local: makeLocal() };
+    const out = applyMutation(state, {
+      kind: 'folder.update',
+      id: 'missing',
+      patch: { name: 'whatever' },
+    });
+    expect(out.next).toBe(state);
+    expect(out.changedIds).toEqual([]);
+  });
+
+  it('folder.update is a no-op with an empty patch', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [] },
+          requests: {},
+          folders: { f1: makeFolder('f1') },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(state, { kind: 'folder.update', id: 'f1', patch: {} });
+    expect(out.next).toBe(state);
+    expect(out.changedIds).toEqual([]);
+  });
+
+  it('folder.update rejects a duplicate sibling name (case-insensitive)', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [] },
+          requests: {},
+          folders: {
+            a: makeFolder('a', null, 'Auth'),
+            b: makeFolder('b', null, 'Other'),
+          },
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(state, {
+      kind: 'folder.update',
+      id: 'b',
+      patch: { name: 'auth' },
+    });
+    expect(out.next).toBe(state);
+    expect(out.changedIds).toEqual([]);
+  });
+
+  it('folder.update allows the same name under a different parent', () => {
+    const state = {
+      synced: makeSynced({
+        collections: {
+          tree: { id: 'root', type: 'root', children: [] },
+          requests: {},
+          folders: {
+            parent: makeFolder('parent', null, 'Parent'),
+            a: makeFolder('a', null, 'Shared'),
+            b: makeFolder('b', 'parent', 'Other'),
+          },
+        },
+      }),
+      local: makeLocal(),
+    };
+    // Renaming `b` to "Shared" is fine because the existing "Shared" lives
+    // under root, not under `parent`.
+    const out = applyMutation(state, {
+      kind: 'folder.update',
+      id: 'b',
+      patch: { name: 'Shared' },
+    });
+    expect(out.next.synced.collections.folders['b'].name).toBe('Shared');
   });
 });
 
@@ -1216,6 +1399,45 @@ describe('applyMutation - folder.import_apicircle', () => {
     expect(out.changedIds).toEqual(['root-new', 'sub-1', 'imp-r-1']);
   });
 
+  it('preserves folder-level auth on the imported root + subfolders', () => {
+    const state = { synced: makeSynced(), local: makeLocal() };
+    const parsed = {
+      rootFolder: {
+        id: 'root-auth',
+        name: 'Authenticated',
+        auth: { type: 'bearer' as const, token: 'TOK' },
+      },
+      subfolders: [
+        {
+          id: 'sub-auth',
+          name: 'Child',
+          parentId: 'root-auth',
+          auth: { type: 'api-key' as const, key: 'X-K', value: 'V', addTo: 'header' as const },
+        } as Folder,
+        // A subfolder without auth shouldn't get a phantom auth field on import.
+        { id: 'sub-plain', name: 'Plain', parentId: 'root-auth' } as Folder,
+      ],
+      requests: [],
+      dependencies: { schemas: [], graphql: [], files: [] },
+      sourceFolderName: 'Authenticated',
+      warnings: [],
+    };
+    const out = applyMutation(
+      state,
+      { kind: 'folder.import_apicircle', parsed, parentFolderId: null },
+      { now: T1 },
+    );
+    const folders = out.next.synced.collections.folders;
+    expect(folders['root-auth'].auth).toEqual({ type: 'bearer', token: 'TOK' });
+    expect(folders['sub-auth'].auth).toEqual({
+      type: 'api-key',
+      key: 'X-K',
+      value: 'V',
+      addTo: 'header',
+    });
+    expect(folders['sub-plain'].auth).toBeUndefined();
+  });
+
   it('uniquifies the imported root folder name against existing siblings', () => {
     const state = {
       synced: makeSynced({
@@ -1241,5 +1463,507 @@ describe('applyMutation - folder.import_apicircle', () => {
       { now: T1 },
     );
     expect(out.next.synced.collections.folders['root-new'].name).toBe('Imported (2)');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Secret crypto handlers (P4)
+// ---------------------------------------------------------------------------
+
+describe('applyMutation - secret.crypto.set / clear', () => {
+  const goodCrypto = {
+    kdf: 'pbkdf2-sha256-v1' as const,
+    salt: 'AAAAAAAAAAAAAAAAAAAAAA==', // 16 zero bytes — only for tests
+    iterations: 100,
+    verifier: 'verifier-stub-base64',
+  };
+
+  it('secret.crypto.set installs the blob and stamps updatedAt', () => {
+    const state = {
+      synced: makeSynced({ secretCrypto: null }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(
+      state,
+      { kind: 'secret.crypto.set', crypto: goodCrypto },
+      { now: T1 },
+    );
+    expect(out.next.synced.secretCrypto).toEqual(goodCrypto);
+    expect(out.next.synced.meta.updatedAt).toBe(T1);
+    expect(out.changedIds).toEqual(['secret.crypto']);
+  });
+
+  it('secret.crypto.set rejects an unsupported KDF (no mutation)', () => {
+    const state = { synced: makeSynced({ secretCrypto: null }), local: makeLocal() };
+    const out = applyMutation(
+      state,
+      {
+        kind: 'secret.crypto.set',
+        crypto: { ...goodCrypto, kdf: 'argon2-future' as 'pbkdf2-sha256-v1' },
+      },
+      { now: T1 },
+    );
+    expect(out.next.synced.secretCrypto).toBeNull();
+    expect(out.next.synced.meta.updatedAt).toBe(T0); // updatedAt unchanged
+    expect(out.changedIds).toEqual([]);
+  });
+
+  it('secret.crypto.set rejects a missing verifier (no mutation)', () => {
+    const state = { synced: makeSynced({ secretCrypto: null }), local: makeLocal() };
+    const out = applyMutation(
+      state,
+      { kind: 'secret.crypto.set', crypto: { ...goodCrypto, verifier: '' } },
+      { now: T1 },
+    );
+    expect(out.next.synced.secretCrypto).toBeNull();
+    expect(out.changedIds).toEqual([]);
+  });
+
+  it('secret.crypto.set rejects a non-positive iteration count', () => {
+    const state = { synced: makeSynced({ secretCrypto: null }), local: makeLocal() };
+    const out = applyMutation(
+      state,
+      { kind: 'secret.crypto.set', crypto: { ...goodCrypto, iterations: 0 } },
+      { now: T1 },
+    );
+    expect(out.next.synced.secretCrypto).toBeNull();
+    expect(out.changedIds).toEqual([]);
+  });
+
+  it('secret.crypto.set replaces an existing blob (rotation primitive)', () => {
+    const state = {
+      synced: makeSynced({ secretCrypto: goodCrypto }),
+      local: makeLocal(),
+    };
+    const next = { ...goodCrypto, verifier: 'new-verifier', salt: 'BBBBBBBBBBBBBBBBBBBBBA==' };
+    const out = applyMutation(state, { kind: 'secret.crypto.set', crypto: next }, { now: T1 });
+    expect(out.next.synced.secretCrypto).toEqual(next);
+    expect(out.changedIds).toEqual(['secret.crypto']);
+  });
+
+  it('secret.crypto.clear wipes the blob and stamps updatedAt', () => {
+    const state = {
+      synced: makeSynced({ secretCrypto: goodCrypto }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(state, { kind: 'secret.crypto.clear' }, { now: T1 });
+    expect(out.next.synced.secretCrypto).toBeNull();
+    expect(out.next.synced.meta.updatedAt).toBe(T1);
+    expect(out.changedIds).toEqual(['secret.crypto']);
+  });
+
+  it('secret.crypto.clear is a no-op when nothing is set', () => {
+    const state = {
+      synced: makeSynced({ secretCrypto: null }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(state, { kind: 'secret.crypto.clear' }, { now: T1 });
+    expect(out.next.synced.meta.updatedAt).toBe(T0);
+    expect(out.changedIds).toEqual([]);
+  });
+});
+
+describe('applyMutation — releases', () => {
+  function makeEntry(version: string, partial: Partial<ReleaseVersion> = {}): ReleaseVersion {
+    return {
+      version,
+      publishedAt: T0,
+      notes: '',
+      workspaceSnapshot: 'f'.repeat(64),
+      deprecated: false,
+      yanked: false,
+      ...partial,
+    };
+  }
+
+  it('release.publish appends the entry, bumps currentVersion, stamps now', () => {
+    const state = { synced: makeSynced(), local: makeLocal() };
+    const entry = makeEntry('1.0.0', { notes: 'first cut' });
+    const out = applyMutation(state, { kind: 'release.publish', entry }, { now: T1 });
+    expect(out.next.synced.releases.self!.versions).toEqual([entry]);
+    expect(out.next.synced.releases.self!.currentVersion).toBe('1.0.0');
+    expect(out.next.synced.meta.updatedAt).toBe(T1);
+    expect(out.changedIds).toEqual(['1.0.0']);
+  });
+
+  it('release.publish appends onto an existing ledger', () => {
+    const state = {
+      synced: makeSynced({
+        releases: {
+          self: { versions: [makeEntry('1.0.0')], currentVersion: '1.0.0' },
+          perLink: {},
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(
+      state,
+      { kind: 'release.publish', entry: makeEntry('1.1.0') },
+      { now: T1 },
+    );
+    expect(out.next.synced.releases.self!.versions.map((v) => v.version)).toEqual([
+      '1.0.0',
+      '1.1.0',
+    ]);
+    expect(out.next.synced.releases.self!.currentVersion).toBe('1.1.0');
+  });
+
+  it('release.publish throws on a duplicate version', () => {
+    const state = {
+      synced: makeSynced({
+        releases: {
+          self: { versions: [makeEntry('1.0.0')], currentVersion: '1.0.0' },
+          perLink: {},
+        },
+      }),
+      local: makeLocal(),
+    };
+    expect(() =>
+      applyMutation(state, { kind: 'release.publish', entry: makeEntry('1.0.0') }, { now: T1 }),
+    ).toThrow(/already exists/);
+  });
+
+  it('release.publish throws on invalid semver', () => {
+    const state = { synced: makeSynced(), local: makeLocal() };
+    expect(() =>
+      applyMutation(state, { kind: 'release.publish', entry: makeEntry('v1') }, { now: T1 }),
+    ).toThrow(/Invalid semver/);
+  });
+
+  it('release.deprecate flips the flag and stamps now', () => {
+    const state = {
+      synced: makeSynced({
+        releases: {
+          self: { versions: [makeEntry('1.0.0')], currentVersion: '1.0.0' },
+          perLink: {},
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(state, { kind: 'release.deprecate', version: '1.0.0' }, { now: T1 });
+    expect(out.next.synced.releases.self!.versions[0].deprecated).toBe(true);
+    expect(out.next.synced.releases.self!.versions[0].yanked).toBe(false);
+    expect(out.next.synced.meta.updatedAt).toBe(T1);
+    expect(out.changedIds).toEqual(['1.0.0']);
+  });
+
+  it('release.yank flips the flag and stamps now', () => {
+    const state = {
+      synced: makeSynced({
+        releases: {
+          self: { versions: [makeEntry('1.0.0')], currentVersion: '1.0.0' },
+          perLink: {},
+        },
+      }),
+      local: makeLocal(),
+    };
+    const out = applyMutation(state, { kind: 'release.yank', version: '1.0.0' }, { now: T1 });
+    expect(out.next.synced.releases.self!.versions[0].yanked).toBe(true);
+    expect(out.next.synced.meta.updatedAt).toBe(T1);
+  });
+
+  it('release.deprecate throws when the version is unknown', () => {
+    const state = {
+      synced: makeSynced({
+        releases: {
+          self: { versions: [makeEntry('1.0.0')], currentVersion: '1.0.0' },
+          perLink: {},
+        },
+      }),
+      local: makeLocal(),
+    };
+    expect(() =>
+      applyMutation(state, { kind: 'release.deprecate', version: '9.9.9' }, { now: T1 }),
+    ).toThrow(/not found/);
+  });
+
+  it('release.deprecate throws when no ledger exists', () => {
+    const state = { synced: makeSynced(), local: makeLocal() };
+    expect(() =>
+      applyMutation(state, { kind: 'release.deprecate', version: '1.0.0' }, { now: T1 }),
+    ).toThrow(/No releases/);
+  });
+});
+
+describe('applyMutation — linked workspaces', () => {
+  function makeLink(id: string, over: Partial<LinkedWorkspace> = {}): LinkedWorkspace {
+    return {
+      id,
+      kind: 'public',
+      name: 'Payments API',
+      sourceWorkspaceId: 'remote-ws-1',
+      source: {
+        provider: 'github',
+        repoFullName: 'org/payments',
+        branch: 'main',
+        sessionMode: 'workspace',
+      },
+      scope: ['collections', 'environments'],
+      pinnedVersion: null,
+      updatePolicy: 'manual',
+      linkedAt: T0,
+      requiredSecretKeyIds: [],
+      ...over,
+    };
+  }
+  function makeSnapshot(): LinkedSnapshot {
+    return {
+      pulledAt: T0,
+      ref: 'main',
+      collections: { tree: { id: 'r', type: 'root', children: [] }, requests: {}, folders: {} },
+      environments: { items: {}, activeName: null, priorityOrder: [] },
+    };
+  }
+  const ledger: ReleaseHistory = {
+    currentVersion: '1.0.0',
+    versions: [
+      {
+        version: '1.0.0',
+        publishedAt: T0,
+        notes: '',
+        workspaceSnapshot: 'a'.repeat(64),
+        deprecated: false,
+        yanked: false,
+      },
+    ],
+  };
+
+  it('linkedWorkspace.upsert writes the link + cached ledger + local snapshot', () => {
+    const state = { synced: makeSynced(), local: makeLocal() };
+    const link = makeLink('lw1');
+    const out = applyMutation(
+      state,
+      { kind: 'linkedWorkspace.upsert', link, ledger, snapshot: makeSnapshot() },
+      { now: T1 },
+    );
+    expect(out.next.synced.linkedWorkspaces.lw1).toEqual(link);
+    expect(out.next.synced.releases.perLink.lw1).toEqual(ledger);
+    expect(out.next.local.linkedCollections.lw1.ref).toBe('main');
+    expect(out.next.synced.meta.updatedAt).toBe(T1);
+    expect(out.changedIds).toEqual(['lw1']);
+  });
+
+  it('linkedWorkspace.upsert config-only leaves perLink + linkedCollections untouched', () => {
+    const state = { synced: makeSynced(), local: makeLocal() };
+    const out = applyMutation(
+      state,
+      { kind: 'linkedWorkspace.upsert', link: makeLink('lw1', { pinnedVersion: '1.0.0' }) },
+      { now: T1 },
+    );
+    expect(out.next.synced.linkedWorkspaces.lw1.pinnedVersion).toBe('1.0.0');
+    expect(out.next.synced.releases.perLink.lw1).toBeUndefined();
+    expect(out.next.local.linkedCollections.lw1).toBeUndefined();
+  });
+
+  it('linkedWorkspace.remove cascades across every slice the link touched', () => {
+    const synced = makeSynced({
+      linkedWorkspaces: { lw1: makeLink('lw1'), lw2: makeLink('lw2', { name: 'Other' }) },
+      releases: { self: null, perLink: { lw1: ledger, lw2: ledger } },
+      linkedOverrides: {
+        requests: {
+          'lw1:req-1': { linkedWorkspaceId: 'lw1', itemId: 'req-1', patch: {}, updatedAt: T0 },
+          'lw2:req-9': { linkedWorkspaceId: 'lw2', itemId: 'req-9', patch: {}, updatedAt: T0 },
+        },
+        environmentVars: {
+          'lw1:dev:KEY': { linkedWorkspaceId: 'lw1', envName: 'dev', varKey: 'KEY', updatedAt: T0 },
+        },
+      },
+    });
+    const local = makeLocal({
+      linkedCollections: { lw1: makeSnapshot(), lw2: makeSnapshot() },
+      sessions: {
+        github: {
+          workspace: null,
+          links: {
+            lw1: {
+              accountLogin: 'me',
+              tokenSecretId: 's1',
+              grantedScopes: ['repo'],
+              addedAt: T0,
+              lastVerifiedAt: null,
+              canCreatePullRequests: null,
+            },
+          },
+        },
+      },
+    });
+    const out = applyMutation(
+      { synced, local },
+      { kind: 'linkedWorkspace.remove', id: 'lw1' },
+      { now: T1 },
+    );
+
+    expect(out.next.synced.linkedWorkspaces.lw1).toBeUndefined();
+    expect(out.next.synced.linkedWorkspaces.lw2).toBeDefined();
+    expect(out.next.synced.releases.perLink.lw1).toBeUndefined();
+    expect(out.next.synced.releases.perLink.lw2).toBeDefined();
+    // Only lw1's overrides dropped; lw2's survive.
+    expect(out.next.synced.linkedOverrides.requests['lw1:req-1']).toBeUndefined();
+    expect(out.next.synced.linkedOverrides.requests['lw2:req-9']).toBeDefined();
+    expect(out.next.synced.linkedOverrides.environmentVars['lw1:dev:KEY']).toBeUndefined();
+    expect(out.next.local.linkedCollections.lw1).toBeUndefined();
+    expect(out.next.local.linkedCollections.lw2).toBeDefined();
+    expect(out.next.local.sessions.github.links.lw1).toBeUndefined();
+    expect(out.changedIds).toEqual(['lw1']);
+  });
+
+  it('linkedWorkspace.remove is a no-op for an unknown id', () => {
+    const state = { synced: makeSynced(), local: makeLocal() };
+    const out = applyMutation(state, { kind: 'linkedWorkspace.remove', id: 'nope' }, { now: T1 });
+    expect(out.changedIds).toEqual([]);
+    expect(out.next).toBe(state);
+  });
+
+  it('linkedWorkspace.applyUpdate replaces the snapshot/ledger/overrides for one link', () => {
+    const synced = makeSynced({
+      linkedWorkspaces: { lw1: makeLink('lw1', { pinnedVersion: '1.0.0' }) },
+      releases: { self: null, perLink: { lw1: { currentVersion: '1.0.0', versions: [] } } },
+      linkedOverrides: {
+        requests: {
+          'lw1:old': { linkedWorkspaceId: 'lw1', itemId: 'old', patch: {}, updatedAt: T0 },
+          'lw2:keep': { linkedWorkspaceId: 'lw2', itemId: 'keep', patch: {}, updatedAt: T0 },
+        },
+        environmentVars: {},
+      },
+    });
+    const local = makeLocal({ linkedCollections: { lw1: makeSnapshot() } });
+    const newSnapshot = { ...makeSnapshot(), ref: 'v2.0.0' };
+    const out = applyMutation(
+      { synced, local },
+      {
+        kind: 'linkedWorkspace.applyUpdate',
+        id: 'lw1',
+        pinnedVersion: '2.0.0',
+        snapshot: newSnapshot,
+        ledger: { currentVersion: '2.0.0', versions: [] },
+        requestOverrides: [
+          { linkedWorkspaceId: 'lw1', itemId: 'kept', patch: { name: 'mine' }, updatedAt: T1 },
+        ],
+        envVarOverrides: [],
+      },
+      { now: T1 },
+    );
+    expect(out.next.synced.linkedWorkspaces.lw1.pinnedVersion).toBe('2.0.0');
+    expect(out.next.synced.releases.perLink.lw1.currentVersion).toBe('2.0.0');
+    // lw1's old override replaced by the new survivor; lw2's untouched.
+    expect(out.next.synced.linkedOverrides.requests['lw1:old']).toBeUndefined();
+    expect(out.next.synced.linkedOverrides.requests['lw1:kept']).toBeDefined();
+    expect(out.next.synced.linkedOverrides.requests['lw2:keep']).toBeDefined();
+    expect(out.next.local.linkedCollections.lw1.ref).toBe('v2.0.0');
+  });
+
+  it('linkedWorkspace.applyUpdate is a no-op for an unknown id', () => {
+    const state = { synced: makeSynced(), local: makeLocal() };
+    const out = applyMutation(
+      state,
+      {
+        kind: 'linkedWorkspace.applyUpdate',
+        id: 'nope',
+        pinnedVersion: null,
+        snapshot: makeSnapshot(),
+        ledger: { currentVersion: null, versions: [] },
+        requestOverrides: [],
+        envVarOverrides: [],
+      },
+      { now: T1 },
+    );
+    expect(out.changedIds).toEqual([]);
+  });
+});
+
+describe('applyMutation — linked overrides', () => {
+  it('setRequest upserts a request override keyed by link:item', () => {
+    const state = { synced: makeSynced(), local: makeLocal() };
+    const out = applyMutation(
+      state,
+      {
+        kind: 'linkedOverride.setRequest',
+        override: {
+          linkedWorkspaceId: 'lw1',
+          itemId: 'req-1',
+          patch: { name: 'mine' },
+          updatedAt: T0,
+        },
+      },
+      { now: T1 },
+    );
+    expect(out.next.synced.linkedOverrides.requests['lw1:req-1'].patch.name).toBe('mine');
+    expect(out.next.synced.linkedOverrides.requests['lw1:req-1'].updatedAt).toBe(T1);
+    expect(out.changedIds).toEqual(['lw1:req-1']);
+  });
+
+  it('removeRequest drops one override; no-op when absent', () => {
+    const synced = makeSynced({
+      linkedOverrides: {
+        requests: {
+          'lw1:req-1': { linkedWorkspaceId: 'lw1', itemId: 'req-1', patch: {}, updatedAt: T0 },
+        },
+        environmentVars: {},
+      },
+    });
+    const out = applyMutation(
+      { synced, local: makeLocal() },
+      { kind: 'linkedOverride.removeRequest', linkedWorkspaceId: 'lw1', itemId: 'req-1' },
+      { now: T1 },
+    );
+    expect(out.next.synced.linkedOverrides.requests['lw1:req-1']).toBeUndefined();
+    const noop = applyMutation(
+      { synced: makeSynced(), local: makeLocal() },
+      { kind: 'linkedOverride.removeRequest', linkedWorkspaceId: 'lw1', itemId: 'nope' },
+      { now: T1 },
+    );
+    expect(noop.changedIds).toEqual([]);
+  });
+
+  it('setEnvVar / removeEnvVar upsert + drop keyed by link:env:var', () => {
+    const set = applyMutation(
+      { synced: makeSynced(), local: makeLocal() },
+      {
+        kind: 'linkedOverride.setEnvVar',
+        override: {
+          linkedWorkspaceId: 'lw1',
+          envName: 'dev',
+          varKey: 'KEY',
+          value: 'v',
+          updatedAt: T0,
+        },
+      },
+      { now: T1 },
+    );
+    expect(set.next.synced.linkedOverrides.environmentVars['lw1:dev:KEY'].value).toBe('v');
+    const removed = applyMutation(
+      set.next,
+      {
+        kind: 'linkedOverride.removeEnvVar',
+        linkedWorkspaceId: 'lw1',
+        envName: 'dev',
+        varKey: 'KEY',
+      },
+      { now: T1 },
+    );
+    expect(removed.next.synced.linkedOverrides.environmentVars['lw1:dev:KEY']).toBeUndefined();
+  });
+
+  it('clearForLink drops every override for one link, leaving others', () => {
+    const synced = makeSynced({
+      linkedOverrides: {
+        requests: {
+          'lw1:a': { linkedWorkspaceId: 'lw1', itemId: 'a', patch: {}, updatedAt: T0 },
+          'lw2:b': { linkedWorkspaceId: 'lw2', itemId: 'b', patch: {}, updatedAt: T0 },
+        },
+        environmentVars: {
+          'lw1:dev:K': { linkedWorkspaceId: 'lw1', envName: 'dev', varKey: 'K', updatedAt: T0 },
+        },
+      },
+    });
+    const out = applyMutation(
+      { synced, local: makeLocal() },
+      { kind: 'linkedOverride.clearForLink', linkedWorkspaceId: 'lw1' },
+      { now: T1 },
+    );
+    expect(out.next.synced.linkedOverrides.requests['lw1:a']).toBeUndefined();
+    expect(out.next.synced.linkedOverrides.requests['lw2:b']).toBeDefined();
+    expect(out.next.synced.linkedOverrides.environmentVars['lw1:dev:K']).toBeUndefined();
+    expect(out.changedIds.sort()).toEqual(['lw1:a', 'lw1:dev:K']);
   });
 });

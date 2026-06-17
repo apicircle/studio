@@ -54,6 +54,16 @@ describe('evaluateResponseRules', () => {
     expect(evaluateResponseRules(makeEndpoint([]), baseCtx)).toBe(defaultResponse);
   });
 
+  it('skips a clause-less rule (never fires) — returns the default, not the rule', () => {
+    // The authoring layers (VS Code parser + MCP `.min(1)`) reject zero-clause
+    // rules, but the engine must stay defensive for any old / imported data:
+    // an empty `when` is a no-op, NOT a match-all that would shadow the default.
+    const ep = makeEndpoint([
+      { id: 'r1', name: 'empty', enabled: true, when: [], response: ruleResponse('{"rule":true}') },
+    ]);
+    expect(evaluateResponseRules(ep, baseCtx)).toBe(defaultResponse);
+  });
+
   it('skips disabled rules', () => {
     const ep = makeEndpoint([
       {

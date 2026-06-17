@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="API Circle Studio">
+  <!-- API Circle Studio — Activity Bar icon.
+       Mask-tinted monochrome version of the brand mark used in the Marketplace
+       PNG (media/icon-marketplace.png). VS Code renders activity-bar icons as
+       a mask using the active theme colour, so every painted shape uses
+       `currentColor` and the chevron + paired-dot cutouts inside the central
+       disc are produced by an SVG <mask> rather than a contrasting fill. -->
+  <defs>
+    <mask id="diskCuts" maskUnits="userSpaceOnUse">
+      <rect width="1024" height="1024" fill="white" />
+      <!-- Black inside a mask = transparent in the result. -->
+      <path
+        d="M452 418 L584 512 L452 606"
+        fill="none"
+        stroke="black"
+        stroke-width="48"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+      <circle cx="628" cy="512" r="24" fill="black" />
+    </mask>
+  </defs>
+
+  <!-- Outer orbit (dashed) -->
+  <circle cx="512" cy="512" r="386" stroke-width="26" stroke-dasharray="34 54" />
+
+  <!-- Six spokes connecting the central disc to the satellite nodes -->
+  <g stroke-width="30">
+    <path d="M512 333 L512 205" />
+    <path d="M667 422 L777 358" />
+    <path d="M667 602 L777 666" />
+    <path d="M512 691 L512 819" />
+    <path d="M357 602 L247 666" />
+    <path d="M357 422 L247 358" />
+  </g>
+
+  <!-- Central disc — filled in currentColor, chevron + paired dot cut out via mask -->
+  <circle cx="512" cy="512" r="188" fill="currentColor" stroke="none" mask="url(#diskCuts)" />
+
+  <!-- Six satellite nodes: outline ring + horizontal dash inside -->
+  <g stroke-width="32">
+    <circle cx="512" cy="128" r="72" />
+    <circle cx="844" cy="320" r="72" />
+    <circle cx="844" cy="704" r="72" />
+    <circle cx="512" cy="896" r="72" />
+    <circle cx="180" cy="704" r="72" />
+    <circle cx="180" cy="320" r="72" />
+  </g>
+  <g stroke-width="22">
+    <path d="M485 128 H539" />
+    <path d="M817 320 H871" />
+    <path d="M817 704 H871" />
+    <path d="M485 896 H539" />
+    <path d="M153 704 H207" />
+    <path d="M153 320 H207" />
+  </g>
+</svg>

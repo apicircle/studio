@@ -8,11 +8,19 @@
 // synthesized 200 with an empty JSON body. The user can override per-
 // endpoint via the editor.
 
-import type { HttpMethod, MockEndpoint } from '@apicircle/shared';
-import { buildMockEndpoint } from './buildEndpoint';
+import type { HttpMethod, MockEndpoint, MockRequestSchema } from '@apicircle/shared';
+import { makeDefaultRequestSchema } from '@apicircle/shared';
+import { buildMockEndpoint, paramDef } from './buildEndpoint';
 
 interface InsomniaExport {
   resources?: InsomniaResource[];
+}
+
+interface InsomniaKV {
+  name?: string;
+  value?: string;
+  description?: string;
+  disabled?: boolean;
 }
 
 interface InsomniaResource {
@@ -22,6 +30,33 @@ interface InsomniaResource {
   method?: string;
   url?: string;
   parentId?: string;
+  // Insomnia models query params + headers as `{ name, value, ... }` rows;
+  // path params are embedded as `:slot` / `{slot}` in the URL.
+  parameters?: InsomniaKV[];
+  headers?: InsomniaKV[];
+}
+
+/** `:slot` / `{slot}` segment names in a path. */
+function extractPathSlots(path: string): string[] {
+  const out = new Set<string>();
+  for (const m of path.matchAll(/[:{]([A-Za-z0-9_]+)\}?/g)) out.add(m[1]);
+  return [...out];
+}
+
+/** Map an Insomnia request's declared inputs into a `MockRequestSchema`. */
+function insomniaRequestSchema(r: InsomniaResource, path: string): MockRequestSchema {
+  const schema = makeDefaultRequestSchema();
+  for (const slot of extractPathSlots(path))
+    schema.pathParams.push(paramDef(slot, { required: true }));
+  for (const p of r.parameters ?? []) {
+    if (p?.name && !p.disabled)
+      schema.queryParams.push(paramDef(p.name, { example: p.value, description: p.description }));
+  }
+  for (const h of r.headers ?? []) {
+    if (h?.name && !h.disabled)
+      schema.headers.push(paramDef(h.name, { example: h.value, description: h.description }));
+  }
+  return schema;
 }
 
 const SUPPORTED_METHODS: ReadonlyArray<HttpMethod> = [
@@ -69,6 +104,7 @@ export function parseInsomniaToEndpoints(source: string): ParseInsomniaResult {
         name: r.name,
         method,
         pathPattern: path,
+        requestSchema: insomniaRequestSchema(r, path),
         response: {
           status: 200,
           headers: [{ key: 'Content-Type', value: 'application/json' }],

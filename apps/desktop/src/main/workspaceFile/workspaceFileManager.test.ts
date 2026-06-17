@@ -1,22 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
-import { saveToFile } from '@apicircle/core/workspace/file-backed';
-
-// `WorkspaceFileManager` only touches Electron's `app.getPath` when no
-// explicit dir is passed to the constructor. The tests below always pass
-// a dir, so we stub the import to avoid pulling in real Electron under vitest.
-vi.mock('electron', () => ({
-  app: {
-    getPath: (key: string) => {
-      if (key === 'userData') return '/fake/user-data';
-      throw new Error(`unknown getPath ${key}`);
-    },
-  },
-}));
-
 import { WorkspaceFileManager } from './workspaceFileManager';
 
 const T0 = '2026-05-22T00:00:00.000Z';
@@ -66,12 +52,10 @@ function makeLocal(workspaceId = 'ws-1'): WorkspaceLocal {
 
 let tmpDir: string;
 let workspacesRoot: string;
-let legacyDir: string;
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'apicircle-wfm-'));
-  workspacesRoot = path.join(tmpDir, 'workspaces');
-  legacyDir = path.join(tmpDir, 'workspace');
+  workspacesRoot = path.join(tmpDir, 'dot-apicircle');
 });
 
 afterEach(async () => {
@@ -79,33 +63,15 @@ afterEach(async () => {
 });
 
 describe('WorkspaceFileManager (multi-workspace)', () => {
-  it('init() returns an empty registry when there is no legacy dir and no registry yet', async () => {
-    const mgr = new WorkspaceFileManager({ workspacesRoot, legacyDir });
-    const { migrated, registry } = await mgr.init();
-    expect(migrated).toBe(false);
+  it('init() returns an empty registry when no registry exists yet', async () => {
+    const mgr = new WorkspaceFileManager({ workspacesRoot });
+    const { registry } = await mgr.init();
     expect(registry.workspaces).toEqual([]);
     expect(registry.activeWorkspaceId).toBeNull();
   });
 
-  it('init() migrates a legacy single-workspace dir into the registry', async () => {
-    await saveToFile(legacyDir, {
-      synced: makeSynced('ws-legacy'),
-      local: makeLocal('ws-legacy'),
-    });
-    const mgr = new WorkspaceFileManager({ workspacesRoot, legacyDir });
-    const { migrated, registry } = await mgr.init();
-    expect(migrated).toBe(true);
-    expect(registry.activeWorkspaceId).toBe('ws-legacy');
-    expect(registry.workspaces.map((w) => w.id)).toEqual(['ws-legacy']);
-    // Legacy synced.json should have been removed.
-    await expect(fs.access(path.join(legacyDir, 'workspace.synced.json'))).rejects.toBeTruthy();
-    // The state now lives under <root>/<id>/.
-    const loaded = await mgr.readWorkspace('ws-legacy');
-    expect(loaded?.synced.workspaceId).toBe('ws-legacy');
-  });
-
   it('writeWorkspace() round-trips by id', async () => {
-    const mgr = new WorkspaceFileManager({ workspacesRoot, legacyDir });
+    const mgr = new WorkspaceFileManager({ workspacesRoot });
     await mgr.writeWorkspace('ws-rt', {
       synced: makeSynced('ws-rt'),
       local: makeLocal('ws-rt'),
@@ -116,7 +82,7 @@ describe('WorkspaceFileManager (multi-workspace)', () => {
   });
 
   it('writeWorkspace() rejects when the inner workspaceId does not match the arg', async () => {
-    const mgr = new WorkspaceFileManager({ workspacesRoot, legacyDir });
+    const mgr = new WorkspaceFileManager({ workspacesRoot });
     await expect(
       mgr.writeWorkspace('ws-arg', {
         synced: makeSynced('ws-inner'),
@@ -126,7 +92,7 @@ describe('WorkspaceFileManager (multi-workspace)', () => {
   });
 
   it('coalesces overlapping writes for the SAME workspaceId to the latest state', async () => {
-    const mgr = new WorkspaceFileManager({ workspacesRoot, legacyDir });
+    const mgr = new WorkspaceFileManager({ workspacesRoot });
     const s1 = makeSynced('ws-c');
     s1.meta = { ...s1.meta, updatedAt: '2026-05-22T00:00:00.001Z' };
     const s2 = makeSynced('ws-c');
@@ -142,7 +108,7 @@ describe('WorkspaceFileManager (multi-workspace)', () => {
   });
 
   it('writes to different workspaceIds land in parallel without clobbering each other', async () => {
-    const mgr = new WorkspaceFileManager({ workspacesRoot, legacyDir });
+    const mgr = new WorkspaceFileManager({ workspacesRoot });
     await Promise.all([
       mgr.writeWorkspace('ws-a', { synced: makeSynced('ws-a'), local: makeLocal('ws-a') }),
       mgr.writeWorkspace('ws-b', { synced: makeSynced('ws-b'), local: makeLocal('ws-b') }),
@@ -152,7 +118,7 @@ describe('WorkspaceFileManager (multi-workspace)', () => {
   });
 
   it('flush() awaits queued + in-flight writes across every workspaceId', async () => {
-    const mgr = new WorkspaceFileManager({ workspacesRoot, legacyDir });
+    const mgr = new WorkspaceFileManager({ workspacesRoot });
     void mgr.writeWorkspace('ws-flush-a', {
       synced: makeSynced('ws-flush-a'),
       local: makeLocal('ws-flush-a'),
@@ -167,7 +133,7 @@ describe('WorkspaceFileManager (multi-workspace)', () => {
   });
 
   it('registerWorkspaceEntry / setActiveWorkspace update the registry', async () => {
-    const mgr = new WorkspaceFileManager({ workspacesRoot, legacyDir });
+    const mgr = new WorkspaceFileManager({ workspacesRoot });
     await mgr.writeWorkspace('ws-r', {
       synced: makeSynced('ws-r'),
       local: makeLocal('ws-r'),
@@ -195,7 +161,7 @@ describe('WorkspaceFileManager (multi-workspace)', () => {
   });
 
   it('deleteWorkspaceFile() removes the dir + registry entry; picks a fallback active', async () => {
-    const mgr = new WorkspaceFileManager({ workspacesRoot, legacyDir });
+    const mgr = new WorkspaceFileManager({ workspacesRoot });
     await mgr.writeWorkspace('ws-a', {
       synced: makeSynced('ws-a'),
       local: makeLocal('ws-a'),

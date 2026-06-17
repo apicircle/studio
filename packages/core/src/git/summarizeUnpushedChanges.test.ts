@@ -325,6 +325,7 @@ describe('summarizeUnpushedChanges — base != null', () => {
           id: 'lw-1',
           kind: 'public',
           name: 'Linked',
+          sourceWorkspaceId: 'remote-ws-1',
           source: {
             provider: 'github',
             repoFullName: 'a/b',
@@ -461,6 +462,7 @@ describe('summarizeUnpushedChanges — bucket ordering with mockServer + executi
           id: 'lw-1',
           kind: 'public',
           name: 'Linked',
+          sourceWorkspaceId: 'remote-ws-1',
           source: {
             provider: 'github',
             repoFullName: 'a/b',

@@ -139,7 +139,17 @@ test.describe('GitHub integration', () => {
       await mockGithub.seedRepo({
         owner,
         name,
-        seedFiles: [{ path: '.apicircle/workspace.json', content: '{}' }],
+        seedFiles: [
+          {
+            path: '.apicircle/registry.json',
+            content: JSON.stringify({
+              schemaVersion: 1,
+              activeWorkspaceId: 'seed-ws',
+              workspaces: [{ id: 'seed-ws', name: 'Seed', createdAt: 't', lastOpenedAt: 't' }],
+            }),
+          },
+          { path: '.apicircle/workspace-seed-ws/workspace.json', content: '{}' },
+        ],
       });
       await linkAndAuth(appWithGithubMock, owner, name);
       const result = await appWithGithubMock.evaluate(async () => {

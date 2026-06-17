@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkspaceSynced } from '@apicircle/shared';
-import { deprecateRelease, publishRelease, yankRelease } from './publishRelease';
+import {
+  appendReleaseEntry,
+  buildReleaseEntry,
+  deprecateRelease,
+  publishRelease,
+  yankRelease,
+} from './publishRelease';
 
 const empty: WorkspaceSynced = {
   schemaVersion: 1,
@@ -75,6 +81,46 @@ describe('publishRelease', () => {
     expect(a.releases.self!.versions[0].workspaceSnapshot).toBe(
       b.releases.self!.versions[0].workspaceSnapshot,
     );
+  });
+});
+
+describe('buildReleaseEntry + appendReleaseEntry', () => {
+  it('buildReleaseEntry computes a snapshot without mutating the ledger', async () => {
+    const entry = await buildReleaseEntry(empty, { version: '1.0.0', notes: 'hi' });
+    expect(entry.version).toBe('1.0.0');
+    expect(entry.notes).toBe('hi');
+    expect(entry.deprecated).toBe(false);
+    expect(entry.yanked).toBe(false);
+    expect(entry.workspaceSnapshot).toMatch(/^[0-9a-f]{64}$/);
+    // Source doc is untouched.
+    expect(empty.releases.self).toBeNull();
+  });
+
+  it('buildReleaseEntry rejects invalid semver', async () => {
+    await expect(buildReleaseEntry(empty, { version: 'nope', notes: '' })).rejects.toThrow(
+      /Invalid semver/,
+    );
+  });
+
+  it('appendReleaseEntry appends a pre-built entry and bumps currentVersion', async () => {
+    const entry = await buildReleaseEntry(empty, { version: '2.0.0', notes: '' });
+    const next = appendReleaseEntry(empty, entry);
+    expect(next.releases.self!.versions).toEqual([entry]);
+    expect(next.releases.self!.currentVersion).toBe('2.0.0');
+    // Default stamps meta.updatedAt from the entry's publishedAt.
+    expect(next.meta.updatedAt).toBe(entry.publishedAt);
+  });
+
+  it('appendReleaseEntry honours an explicit now override', async () => {
+    const entry = await buildReleaseEntry(empty, { version: '2.0.0', notes: '', publishedAt: 'p' });
+    const next = appendReleaseEntry(empty, entry, 'NOW');
+    expect(next.meta.updatedAt).toBe('NOW');
+  });
+
+  it('appendReleaseEntry rejects a duplicate version', async () => {
+    const v1 = await publishRelease(empty, { version: '1.0.0', notes: '' });
+    const dup = await buildReleaseEntry(empty, { version: '1.0.0', notes: '' });
+    expect(() => appendReleaseEntry(v1, dup)).toThrow(/already exists/);
   });
 });
 

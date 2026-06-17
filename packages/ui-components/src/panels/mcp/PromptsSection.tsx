@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Check, Copy, Search } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
+import { safeCopyToClipboard } from '../../primitives/clipboard';
 import {
   MCP_PROMPTS,
   MCP_PROMPT_CATEGORIES,
@@ -135,40 +136,13 @@ function PromptCard({
 }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
-    const fallbackCopy = (text: string): boolean => {
-      // execCommand('copy') still works in non-secure contexts where
-      // navigator.clipboard is unavailable (HTTP, file://, some embedded
-      // webviews). Keep it as a graceful fallback so the button isn't a
-      // dead end for those users.
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.setAttribute('readonly', '');
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      let ok = false;
-      try {
-        ok = document.execCommand('copy');
-      } catch {
-        ok = false;
-      }
-      document.body.removeChild(ta);
-      return ok;
-    };
-
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(prompt.text);
-      } else if (!fallbackCopy(prompt.text)) {
-        throw new Error('Clipboard API unavailable');
-      }
+    const result = await safeCopyToClipboard(prompt.text);
+    if (result.ok) {
       setCopied(true);
       onCopySuccess();
       setTimeout(() => setCopied(false), 1500);
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : 'Copy failed';
-      onCopyFailure(reason);
+    } else {
+      onCopyFailure(result.reason);
     }
   };
   return (

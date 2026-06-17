@@ -108,6 +108,7 @@ describe('aggregateUsedIn', () => {
           id: 'lw-1',
           kind: 'public',
           name: 'Pets API',
+          sourceWorkspaceId: 'src-ws-pets',
           source: {
             provider: 'github',
             repoFullName: 'me/pets',

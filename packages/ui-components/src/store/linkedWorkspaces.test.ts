@@ -24,18 +24,43 @@ function queuedFetch(queue: ResponseSpec[]): ReturnType<typeof vi.fn> {
   });
 }
 
-function fileContents(json: string, sha = 'remote-sha'): ResponseSpec {
+/** ID used for the remote workspace in registry.json mocks. */
+const REMOTE_WS_ID = 'remote-ws';
+
+function registryContents(): ResponseSpec {
+  const json = JSON.stringify({
+    schemaVersion: 1,
+    activeWorkspaceId: REMOTE_WS_ID,
+    workspaces: [{ id: REMOTE_WS_ID }],
+  });
   const content = btoa(unescape(encodeURIComponent(json)));
   return {
     body: {
       type: 'file',
-      path: '.apicircle/workspace.json',
-      sha,
+      path: '.apicircle/registry.json',
+      sha: 'registry-sha',
       size: json.length,
       content,
       encoding: 'base64',
     },
   };
+}
+
+function fileContents(json: string, sha = 'remote-sha'): ResponseSpec[] {
+  const content = btoa(unescape(encodeURIComponent(json)));
+  return [
+    registryContents(),
+    {
+      body: {
+        type: 'file',
+        path: `.apicircle/workspace-${REMOTE_WS_ID}/workspace.json`,
+        sha,
+        size: json.length,
+        content,
+        encoding: 'base64',
+      },
+    },
+  ];
 }
 
 async function setupSession(): Promise<void> {
@@ -114,7 +139,7 @@ describe('workspaceStore.linkPrivateWorkspace', () => {
       },
       releases: { self: { versions: [], currentVersion: null } },
     });
-    vi.stubGlobal('fetch', queuedFetch([fileContents(remoteJson)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(remoteJson)]));
 
     const link = await useWorkspaceStore
       .getState()
@@ -147,7 +172,7 @@ describe('workspaceStore.linkPrivateWorkspace', () => {
         },
       },
     });
-    vi.stubGlobal('fetch', queuedFetch([fileContents(remoteJson)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(remoteJson)]));
 
     const link = await useWorkspaceStore.getState().linkPrivateWorkspace({
       repoFullName: 'org/payments-api',
@@ -175,7 +200,7 @@ describe('workspaceStore.linkPrivateWorkspace', () => {
   it('defaults to branch=main and pinnedVersion=null when source has no releases', async () => {
     await setupSession();
     const remoteJson = JSON.stringify({ workspaceName: 'Empty', releases: { self: null } });
-    vi.stubGlobal('fetch', queuedFetch([fileContents(remoteJson)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(remoteJson)]));
 
     const link = await useWorkspaceStore
       .getState()
@@ -196,12 +221,12 @@ describe('workspaceStore.linkPrivateWorkspace', () => {
 
   it('rejects remote files that are not valid JSON', async () => {
     await setupSession();
-    vi.stubGlobal('fetch', queuedFetch([fileContents('not-json')]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents('not-json')]));
     await expect(
       useWorkspaceStore.getState().linkPrivateWorkspace({ repoFullName: 'me/bad', branch: 'main' }),
     ).rejects.toThrow(/not valid JSON/);
 
-    vi.stubGlobal('fetch', queuedFetch([fileContents('42')]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents('42')]));
     await expect(
       useWorkspaceStore
         .getState()
@@ -245,7 +270,7 @@ describe('workspaceStore.linkPrivateWorkspace', () => {
         priorityOrder: [{ kind: 'local', name: 'dev' }],
       },
     });
-    vi.stubGlobal('fetch', queuedFetch([fileContents(remoteJson)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(remoteJson)]));
     const link = await useWorkspaceStore
       .getState()
       .linkPrivateWorkspace({ repoFullName: 'me/src', branch: 'main' });
@@ -277,7 +302,7 @@ describe('workspaceStore.linkPrivateWorkspace', () => {
         priorityOrder: [{ kind: 'local', name: 'dev' }],
       },
     });
-    vi.stubGlobal('fetch', queuedFetch([fileContents(remoteJson)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(remoteJson)]));
     const link = await useWorkspaceStore.getState().linkPrivateWorkspace({
       repoFullName: 'me/src',
       branch: 'main',
@@ -320,10 +345,12 @@ describe('workspaceStore.linkPublicWorkspace', () => {
       environments: { items: {}, activeName: null, priorityOrder: [] },
       releases: { self: null },
     });
+    const responses = fileContents(remoteJson);
+    let callIdx = 0;
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       const headers = (init?.headers ?? {}) as Record<string, string>;
       expect(headers.Authorization).toBeUndefined();
-      return fakeResponse(fileContents(remoteJson));
+      return fakeResponse(responses[callIdx++]);
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -335,17 +362,14 @@ describe('workspaceStore.linkPublicWorkspace', () => {
     expect(link.kind).toBe('public');
     expect(link.source.repoFullName).toBe('open/source');
     expect(useWorkspaceStore.getState().synced!.linkedWorkspaces[link.id]).toEqual(link);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('refreshes a public workspace anonymously after the workspace session is absent', async () => {
     const initial = JSON.stringify({
       releases: { self: { versions: [], currentVersion: null } },
     });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => fakeResponse(fileContents(initial))),
-    );
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(initial)]));
     const link = await useWorkspaceStore.getState().linkPublicWorkspace({
       repoFullName: 'open/source',
       branch: 'main',
@@ -368,10 +392,12 @@ describe('workspaceStore.linkPublicWorkspace', () => {
         },
       },
     });
+    const refreshResponses = fileContents(updated);
+    let callIdx = 0;
     const refreshFetch = vi.fn(async (_url: string, init?: RequestInit) => {
       const headers = (init?.headers ?? {}) as Record<string, string>;
       expect(headers.Authorization).toBeUndefined();
-      return fakeResponse(fileContents(updated));
+      return fakeResponse(refreshResponses[callIdx++]);
     });
     vi.stubGlobal('fetch', refreshFetch);
 
@@ -380,7 +406,7 @@ describe('workspaceStore.linkPublicWorkspace', () => {
     expect(useWorkspaceStore.getState().synced!.releases.perLink[link.id].currentVersion).toBe(
       '1.0.0',
     );
-    expect(refreshFetch).toHaveBeenCalledTimes(1);
+    expect(refreshFetch).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -412,7 +438,7 @@ describe('workspaceStore.refreshLinkedWorkspace + unlinkWorkspace', () => {
         },
       },
     });
-    vi.stubGlobal('fetch', queuedFetch([fileContents(initial)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(initial)]));
     const link = await useWorkspaceStore
       .getState()
       .linkPrivateWorkspace({ repoFullName: 'me/api', branch: 'main' });
@@ -443,7 +469,7 @@ describe('workspaceStore.refreshLinkedWorkspace + unlinkWorkspace', () => {
         },
       },
     });
-    vi.stubGlobal('fetch', queuedFetch([fileContents(updated)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(updated)]));
     await useWorkspaceStore.getState().refreshLinkedWorkspace(link.id);
     const ledger = useWorkspaceStore.getState().synced!.releases.perLink[link.id];
     expect(ledger.currentVersion).toBe('0.2.0');
@@ -462,7 +488,7 @@ describe('workspaceStore.refreshLinkedWorkspace + unlinkWorkspace', () => {
       environments: { items: {}, activeName: null, priorityOrder: [] },
       releases: { self: null },
     });
-    vi.stubGlobal('fetch', queuedFetch([fileContents(remoteJson)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(remoteJson)]));
     const link = await useWorkspaceStore
       .getState()
       .linkPrivateWorkspace({ repoFullName: 'me/x', branch: 'main' });
@@ -476,7 +502,9 @@ describe('workspaceStore.refreshLinkedWorkspace + unlinkWorkspace', () => {
     await setupSession();
     vi.stubGlobal(
       'fetch',
-      queuedFetch([fileContents(JSON.stringify({ workspaceName: 'X', releases: { self: null } }))]),
+      queuedFetch([
+        ...fileContents(JSON.stringify({ workspaceName: 'X', releases: { self: null } })),
+      ]),
     );
     const link = await useWorkspaceStore
       .getState()
@@ -507,7 +535,7 @@ describe('workspaceStore required secret keys', () => {
   async function linkOnce(): Promise<string> {
     await setupSession();
     const remoteJson = JSON.stringify({ workspaceName: 'API', releases: { self: null } });
-    vi.stubGlobal('fetch', queuedFetch([fileContents(remoteJson)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(remoteJson)]));
     const link = await useWorkspaceStore
       .getState()
       .linkPrivateWorkspace({ repoFullName: 'me/api', branch: 'main' });
@@ -639,7 +667,7 @@ describe('workspaceStore marketplace flow', () => {
         },
       },
     });
-    vi.stubGlobal('fetch', queuedFetch([fileContents(remoteJson)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(remoteJson)]));
     const link = await useWorkspaceStore.getState().linkPublicWorkspace({
       repoFullName: 'org/public-api',
       branch: 'main',
@@ -691,7 +719,7 @@ describe('workspaceStore.pinLinkedVersion', () => {
         },
       },
     });
-    vi.stubGlobal('fetch', queuedFetch([fileContents(remoteJson)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(remoteJson)]));
     const link = await useWorkspaceStore
       .getState()
       .linkPrivateWorkspace({ repoFullName: 'me/api', branch: 'main' });

@@ -63,7 +63,7 @@ export function registerRunCommand(program: Command): void {
     )
     .option(
       '-w, --workspace-path <dir>',
-      'Filesystem directory containing workspace.synced.json (skips the registry).',
+      'Filesystem directory containing workspace.json (skips the registry).',
     )
     .option('--no-assertions', 'Run requests without evaluating their assertions')
     .option('-s, --secrets <file>', 'JSON file mapping secretKeyId → plaintext value')
@@ -102,7 +102,7 @@ export function registerRunCommand(program: Command): void {
 
       const state = await loadFromFile(dir, { allowMissing: true });
       if (!state) {
-        fail(`no workspace found at ${dir} (expected workspace.synced.json)`);
+        fail(`no workspace found at ${dir} (expected workspace.json)`);
         return;
       }
 

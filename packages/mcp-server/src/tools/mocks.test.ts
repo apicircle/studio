@@ -15,6 +15,7 @@ import {
   mockDeleteTool,
   mockImportPostmanMockCollectionTool,
   mockListTool,
+  mockSetDefaultPortTool,
   mockStartTool,
   mockStopTool,
 } from './mocks';
@@ -266,6 +267,100 @@ describe('mock tools', () => {
       };
       expect(out.ok).toBe(false);
       expect(out.error).toMatch(/Stop failed/);
+    });
+  });
+
+  describe('mock.set_default_port', () => {
+    it('persists a 1024-65535 port on an existing mock', async () => {
+      const created = (await mockCreateFromPostmanTool.handler(
+        {
+          name: 'X',
+          collection: JSON.stringify({
+            info: { name: 'X' },
+            item: [{ name: 'a', request: { method: 'GET', url: 'https://api/x' } }],
+          }),
+        },
+        ctx,
+      )) as { id: string };
+      const out = (await mockSetDefaultPortTool.handler(
+        { id: created.id, defaultPort: 3000 },
+        ctx,
+      )) as { ok: boolean; defaultPort: number | null; changed: boolean };
+      expect(out.ok).toBe(true);
+      expect(out.defaultPort).toBe(3000);
+      expect(out.changed).toBe(true);
+      const state = await ctx.workspace.read();
+      expect(state.synced.mockServers[created.id].defaultPort).toBe(3000);
+    });
+
+    it('accepts null to clear the port back to "pick a free port"', async () => {
+      const created = (await mockCreateFromPostmanTool.handler(
+        {
+          name: 'X',
+          collection: JSON.stringify({
+            info: { name: 'X' },
+            item: [{ name: 'a', request: { method: 'GET', url: 'https://api/x' } }],
+          }),
+        },
+        ctx,
+      )) as { id: string };
+      await mockSetDefaultPortTool.handler({ id: created.id, defaultPort: 5000 }, ctx);
+      await mockSetDefaultPortTool.handler({ id: created.id, defaultPort: null }, ctx);
+      const state = await ctx.workspace.read();
+      expect(state.synced.mockServers[created.id].defaultPort).toBeNull();
+    });
+
+    it('is a no-op when the requested port matches the current port', async () => {
+      const created = (await mockCreateFromPostmanTool.handler(
+        {
+          name: 'X',
+          collection: JSON.stringify({
+            info: { name: 'X' },
+            item: [{ name: 'a', request: { method: 'GET', url: 'https://api/x' } }],
+          }),
+        },
+        ctx,
+      )) as { id: string };
+      await mockSetDefaultPortTool.handler({ id: created.id, defaultPort: 4040 }, ctx);
+      const before = (await ctx.workspace.read()).synced.mockServers[created.id].updatedAt;
+      const out = (await mockSetDefaultPortTool.handler(
+        { id: created.id, defaultPort: 4040 },
+        ctx,
+      )) as { ok: boolean; changed: boolean };
+      expect(out.changed).toBe(false);
+      const after = (await ctx.workspace.read()).synced.mockServers[created.id].updatedAt;
+      expect(after).toBe(before);
+    });
+
+    it('returns ok:false when the mock does not exist', async () => {
+      const out = (await mockSetDefaultPortTool.handler(
+        { id: 'ghost', defaultPort: 3000 },
+        ctx,
+      )) as { ok: boolean; error?: string };
+      expect(out.ok).toBe(false);
+      expect(out.error).toMatch(/not found/i);
+    });
+
+    it('rejects out-of-range ports at the schema boundary', () => {
+      // Schema rejection happens before handler runs — the framework
+      // validates inputs via inputSchema.parse before dispatch.
+      const schema = mockSetDefaultPortTool.inputSchema;
+      expect(schema.safeParse({ id: 'm1', defaultPort: 80 }).success).toBe(false);
+      expect(schema.safeParse({ id: 'm1', defaultPort: 99999 }).success).toBe(false);
+      expect(schema.safeParse({ id: 'm1', defaultPort: 1.5 }).success).toBe(false);
+      expect(schema.safeParse({ id: 'm1', defaultPort: 3000 }).success).toBe(true);
+      expect(schema.safeParse({ id: 'm1', defaultPort: null }).success).toBe(true);
+    });
+  });
+
+  describe('mock.start port schema', () => {
+    it('rejects out-of-range port at the schema boundary', () => {
+      const schema = mockStartTool.inputSchema;
+      expect(schema.safeParse({ id: 'm1', port: 80 }).success).toBe(false);
+      expect(schema.safeParse({ id: 'm1', port: 99999 }).success).toBe(false);
+      expect(schema.safeParse({ id: 'm1', port: 3000 }).success).toBe(true);
+      // Port is optional — schema must still accept the no-port case.
+      expect(schema.safeParse({ id: 'm1' }).success).toBe(true);
     });
   });
 

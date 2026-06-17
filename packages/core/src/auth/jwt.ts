@@ -183,8 +183,11 @@ async function importPkcs8(
   // those markers (Bag Attributes, comments, blank lines) is ignored.
   // If the markers are missing, fall back to "use the whole input"
   // so a user pasting raw base64 still works.
-  const envelope = /-----BEGIN [A-Z ]+-----([\s\S]*?)-----END [A-Z ]+-----/.exec(pem);
-  const body = envelope ? envelope[1] : pem;
+  //
+  // Manual indexOf scan instead of `/-----BEGIN […]-----([\s\S]*?)-----END […]-----/`
+  // so CodeQL's polynomial-regex detector doesn't flag the lazy `[\s\S]*?`
+  // when the PEM contains multiple BEGIN markers.
+  const body = extractPemBody(pem);
   const stripped = body.replace(/\s+/g, '');
   if (!stripped) {
     throw new Error('JWT: PEM key is empty after stripping headers/whitespace');
@@ -204,6 +207,26 @@ async function importPkcs8(
     false,
     ['sign'],
   );
+}
+
+/**
+ * Find the body between the first `-----BEGIN …-----` line and the next
+ * `-----END …-----` line. Falls back to the whole input when either marker
+ * is missing. Hand-written O(n) scan; avoids regex-based extraction so
+ * CodeQL doesn't flag a polynomial pattern.
+ */
+function extractPemBody(pem: string): string {
+  const BEGIN = '-----BEGIN ';
+  const END = '-----END ';
+  const FENCE = '-----';
+  const beginAt = pem.indexOf(BEGIN);
+  if (beginAt === -1) return pem;
+  const beginHeaderEnd = pem.indexOf(FENCE, beginAt + BEGIN.length);
+  if (beginHeaderEnd === -1) return pem;
+  const bodyStart = beginHeaderEnd + FENCE.length;
+  const endAt = pem.indexOf(END, bodyStart);
+  if (endAt === -1) return pem;
+  return pem.slice(bodyStart, endAt);
 }
 
 function base64UrlEncode(bytes: Uint8Array): string {

@@ -221,10 +221,11 @@ test.describe('Live GitHub - global assets through linked workspaces @live-githu
     );
     expect(remoteMockEndpoint.defaultResponse.body.attachment.slotId).toBe(linked.fileAsset.slotId);
     expect(JSON.stringify(remote)).not.toContain('linkedCollections');
+    const hostWorkspaceId = remote.workspaceId as string;
     const remoteBytes = await fetchRepoFileBytesV2(
       host,
       branch,
-      attachmentBlobPathV2(linked.fileAsset.slotId),
+      attachmentBlobPathV2(linked.fileAsset.slotId, hostWorkspaceId),
     );
     expect(Array.from(remoteBytes)).toEqual(Array.from(fileBytes));
 
@@ -258,9 +259,9 @@ test.describe('Live GitHub - global assets through linked workspaces @live-githu
       // current synced doc so the asset entry exists on base.
       Object.assign(ws as Record<string, unknown>, remote);
     });
-    // Write the attachment blob to base under .apicircle/attachments/<slotId>.
+    // Write the attachment blob to base under .apicircle/workspace-<id>/attachments/<slotId>.
     {
-      const blobPath = attachmentBlobPathV2(linked.fileAsset.slotId);
+      const blobPath = attachmentBlobPathV2(linked.fileAsset.slotId, hostWorkspaceId);
       const probeUrl = `https://api.github.com/repos/${host.owner}/${host.name}/contents/${blobPath
         .split('/')
         .map(encodeURIComponent)
@@ -390,7 +391,7 @@ test.describe('Live GitHub - global assets through linked workspaces @live-githu
     // ----- Attachment blob deletion on the remote ---------------------
     //
     // The bug this pins: removing a Global File Asset must also remove
-    // the orphan blob from `.apicircle/attachments/<slotId>` on the
+    // the orphan blob from `.apicircle/workspace-<id>/attachments/<slotId>` on the
     // working branch. Without the `pendingAttachmentDeletes` queue + the
     // push-side `{path, sha: null}` tree entries, the blob would
     // persist on the remote tree forever — the PR merge would then
@@ -398,7 +399,7 @@ test.describe('Live GitHub - global assets through linked workspaces @live-githu
     // push above, the blob is gone from the working branch; the
     // pendingAttachmentDeletes queue is cleared.
     {
-      const blobPath = attachmentBlobPathV2(linked.fileAsset.slotId);
+      const blobPath = attachmentBlobPathV2(linked.fileAsset.slotId, hostWorkspaceId);
       const url = `https://api.github.com/repos/${host.owner}/${host.name}/contents/${blobPath
         .split('/')
         .map(encodeURIComponent)
@@ -437,7 +438,7 @@ test.describe('Live GitHub - global assets through linked workspaces @live-githu
         },
       );
       // Delete the attachment blob on base via the Contents API.
-      const blobPath = attachmentBlobPathV2(linked.fileAsset.slotId);
+      const blobPath = attachmentBlobPathV2(linked.fileAsset.slotId, hostWorkspaceId);
       const probeUrl = `https://api.github.com/repos/${host.owner}/${host.name}/contents/${blobPath
         .split('/')
         .map(encodeURIComponent)

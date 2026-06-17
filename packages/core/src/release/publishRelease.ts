@@ -18,31 +18,31 @@ export interface PublishReleaseArgs {
 }
 
 /**
- * Append a new release to `synced.releases.self.versions` and bump
- * `currentVersion`. Pure — does not touch IDB or Git.
+ * Build a fully-formed `ReleaseVersion` entry for `synced` — computing the
+ * SHA-256 `workspaceSnapshot` of the canonical pre-publish workspace.json.
  *
- * Throws on invalid semver, duplicate version, or invalid notes shape.
+ * This is the async half of publishing, split out so the sync mutation path
+ * (`applyMutation` → `appendReleaseEntry`) stays pure: headless writers
+ * (VS Code / MCP / CLI) call `buildReleaseEntry` first, then route the
+ * resulting entry through the `release.publish` patch.
+ *
+ * Throws on invalid semver.
  */
-export async function publishRelease(
+export async function buildReleaseEntry(
   synced: WorkspaceSynced,
   args: PublishReleaseArgs,
-): Promise<WorkspaceSynced> {
+): Promise<ReleaseVersion> {
   const version = args.version.trim();
   if (!isValidSemver(version)) {
     throw new Error(`Invalid semver: ${args.version}`);
   }
-  const ledger = synced.releases.self ?? emptyLedger();
-  if (ledger.versions.some((v) => v.version === version)) {
-    throw new Error(`Version ${version} already exists in this workspace's release ledger`);
-  }
-
   // The snapshot represents the doc *as of the moment of publishing*: we
   // stamp the SHA before writing the new version entry so it's a stable
   // fingerprint of the workspace data the release is built on.
   const snapshotSource = serializeWorkspaceForGit(synced);
   const workspaceSnapshot = await sha256Hex(snapshotSource);
 
-  const entry: ReleaseVersion = {
+  return {
     version,
     publishedAt: args.publishedAt ?? new Date().toISOString(),
     notes: args.notes,
@@ -52,35 +52,83 @@ export async function publishRelease(
     ...(args.sha ? { sha: args.sha } : {}),
     ...(args.tagName ? { tagName: args.tagName } : {}),
   };
+}
 
+/**
+ * Append a pre-built `ReleaseVersion` to `synced.releases.self.versions` and
+ * bump `currentVersion`. Pure + synchronous — the SHA was already computed by
+ * `buildReleaseEntry`, so this is safe to call from `applyMutation`.
+ *
+ * `now` defaults to the entry's own `publishedAt` so the convenience
+ * `publishRelease` wrapper keeps its original stamping; `applyMutation`
+ * passes its injected timestamp for deterministic batches.
+ *
+ * Throws on invalid semver or a duplicate version.
+ */
+export function appendReleaseEntry(
+  synced: WorkspaceSynced,
+  entry: ReleaseVersion,
+  now: string = entry.publishedAt,
+): WorkspaceSynced {
+  if (!isValidSemver(entry.version)) {
+    throw new Error(`Invalid semver: ${entry.version}`);
+  }
+  const ledger = synced.releases.self ?? emptyLedger();
+  if (ledger.versions.some((v) => v.version === entry.version)) {
+    throw new Error(`Version ${entry.version} already exists in this workspace's release ledger`);
+  }
   const next: ReleaseHistory = {
     versions: [...ledger.versions, entry],
-    currentVersion: version,
+    currentVersion: entry.version,
   };
   return {
     ...synced,
     releases: { ...synced.releases, self: next },
-    meta: { ...synced.meta, updatedAt: entry.publishedAt },
+    meta: { ...synced.meta, updatedAt: now },
   };
 }
 
+/**
+ * Append a new release to `synced.releases.self.versions` and bump
+ * `currentVersion`. Convenience wrapper = `buildReleaseEntry` +
+ * `appendReleaseEntry`. Pure — does not touch IDB or Git.
+ *
+ * Throws on invalid semver, duplicate version, or invalid notes shape.
+ */
+export async function publishRelease(
+  synced: WorkspaceSynced,
+  args: PublishReleaseArgs,
+): Promise<WorkspaceSynced> {
+  const entry = await buildReleaseEntry(synced, args);
+  return appendReleaseEntry(synced, entry);
+}
+
 /** Flip the `deprecated` flag on a version. Soft signal — version is still installable. */
-export function deprecateRelease(synced: WorkspaceSynced, version: string): WorkspaceSynced {
-  return mapReleaseVersion(synced, version, (v) => ({ ...v, deprecated: true }));
+export function deprecateRelease(
+  synced: WorkspaceSynced,
+  version: string,
+  now: string = new Date().toISOString(),
+): WorkspaceSynced {
+  return mapReleaseVersion(synced, version, (v) => ({ ...v, deprecated: true }), now);
 }
 
 /**
  * Flip the `yanked` flag on a version. Hard signal — consumers should
  * be told this version is broken / unsafe and offered a different one.
  */
-export function yankRelease(synced: WorkspaceSynced, version: string): WorkspaceSynced {
-  return mapReleaseVersion(synced, version, (v) => ({ ...v, yanked: true }));
+export function yankRelease(
+  synced: WorkspaceSynced,
+  version: string,
+  now: string = new Date().toISOString(),
+): WorkspaceSynced {
+  return mapReleaseVersion(synced, version, (v) => ({ ...v, yanked: true }), now);
 }
 
 function mapReleaseVersion(
   synced: WorkspaceSynced,
   version: string,
   fn: (v: ReleaseVersion) => ReleaseVersion,
+  now: string,
 ): WorkspaceSynced {
   const ledger = synced.releases.self;
   if (!ledger) throw new Error('No releases to modify');
@@ -91,7 +139,7 @@ function mapReleaseVersion(
   return {
     ...synced,
     releases: { ...synced.releases, self: { ...ledger, versions } },
-    meta: { ...synced.meta, updatedAt: new Date().toISOString() },
+    meta: { ...synced.meta, updatedAt: now },
   };
 }
 

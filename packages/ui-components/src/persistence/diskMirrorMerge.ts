@@ -5,7 +5,7 @@ import type { Folder, Request as ApiRequest, WorkspaceSynced } from '@apicircle/
 //
 // Before this mirror landed, the desktop app's workspace lived in IndexedDB
 // while `apicircle import` / `apicircle-mcp` wrote a separate
-// `workspace.synced.json` on disk. Users who used both surfaces have
+// `workspace.json` on disk. Users who used both surfaces have
 // content in BOTH stores under DIFFERENT workspaceIds (the CLI seeded a
 // fresh workspace via `ensureWorkspace`, the desktop app has its own).
 //

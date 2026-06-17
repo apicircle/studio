@@ -49,21 +49,52 @@ function queuedFetch(queue: ResponseSpec[]): ReturnType<typeof vi.fn> {
   });
 }
 
-function fileContents(json: string): ResponseSpec {
-  // Serializer pipes through git as raw text, but the GitHub Contents
-  // API base64-encodes it — match that wire shape so getContents
-  // decodes correctly.
+/** ID used for the remote workspace in registry.json mocks. */
+const REMOTE_WS_ID = 'remote-ws';
+
+function registryContents(): ResponseSpec {
+  const json = JSON.stringify({
+    schemaVersion: 1,
+    activeWorkspaceId: REMOTE_WS_ID,
+    workspaces: [{ id: REMOTE_WS_ID }],
+  });
   const content = btoa(unescape(encodeURIComponent(json)));
   return {
     body: {
       type: 'file',
-      path: '.apicircle/workspace.json',
+      path: '.apicircle/registry.json',
+      sha: 'registry-sha',
+      size: json.length,
+      content,
+      encoding: 'base64',
+    },
+  };
+}
+
+/**
+ * Single response for a direct getContents call (e.g. refreshWorkspace
+ * which already knows the workspace path).
+ */
+function workspaceFileContents(json: string): ResponseSpec {
+  const content = btoa(unescape(encodeURIComponent(json)));
+  return {
+    body: {
+      type: 'file',
+      path: `.apicircle/workspace-${REMOTE_WS_ID}/workspace.json`,
       sha: 'remote-sha',
       size: json.length,
       content,
       encoding: 'base64',
     },
   };
+}
+
+/**
+ * Two responses for fetchRemoteWorkspaceJson (registry.json + workspace.json).
+ * Used by linked-workspace flows.
+ */
+function fileContents(json: string): ResponseSpec[] {
+  return [registryContents(), workspaceFileContents(json)];
 }
 
 beforeEach(async () => {
@@ -305,6 +336,7 @@ describe('clone scenario — Second workspace pulling First workspace.json', () 
             id: 'lw-1',
             kind: 'private',
             name: 'Payments',
+            sourceWorkspaceId: 'src-ws-payments',
             source: {
               provider: 'github',
               repoFullName: 'org/payments',
@@ -390,6 +422,7 @@ describe('clone scenario — Second workspace pulling First workspace.json', () 
           id: linkId,
           kind: 'private',
           name: 'Payments',
+          sourceWorkspaceId: 'src-ws-payments',
           source: {
             provider: 'github',
             repoFullName: 'org/payments',
@@ -446,8 +479,8 @@ describe('clone scenario — Second workspace pulling First workspace.json', () 
       'fetch',
       queuedFetch([
         { body: { name: 'work', commit: { sha: 'abc' } } },
-        fileContents(JSON.stringify(remoteFirst)),
-        fileContents(sourceJson),
+        workspaceFileContents(JSON.stringify(remoteFirst)),
+        ...fileContents(sourceJson),
       ]),
     );
 
@@ -480,6 +513,7 @@ describe('clone scenario — Second workspace pulling First workspace.json', () 
             id: linkId,
             kind: 'private',
             name: 'API',
+            sourceWorkspaceId: 'src-ws-api',
             source: {
               provider: 'github',
               repoFullName: 'org/api',
@@ -546,7 +580,7 @@ describe('clone scenario — Second workspace pulling First workspace.json', () 
         },
       },
     });
-    vi.stubGlobal('fetch', queuedFetch([fileContents(sourceJson)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(sourceJson)]));
 
     // No snapshot before.
     expect(useWorkspaceStore.getState().local!.linkedCollections[linkId]).toBeUndefined();
@@ -592,6 +626,7 @@ describe('clone scenario — Second workspace pulling First workspace.json', () 
             id: linkId,
             kind: 'private',
             name: 'API',
+            sourceWorkspaceId: 'src-ws-api',
             source: {
               provider: 'github',
               repoFullName: 'org/api',
@@ -663,7 +698,7 @@ describe('clone scenario — Second workspace pulling First workspace.json', () 
         },
       },
     });
-    vi.stubGlobal('fetch', queuedFetch([fileContents(sourceJson)]));
+    vi.stubGlobal('fetch', queuedFetch([...fileContents(sourceJson)]));
 
     await useWorkspaceStore.getState().refreshLinkedWorkspace(linkId);
 

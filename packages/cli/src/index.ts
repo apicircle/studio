@@ -1,10 +1,14 @@
 import { Command } from 'commander';
 import { registerMockCommand } from './commands/mock';
+import { registerMocksCommand } from './commands/mocks';
 import { registerMcpCommand } from './commands/mcp';
 import { registerImportCommand } from './commands/import';
 import { registerExportCommand } from './commands/export';
 import { registerRunCommand } from './commands/run';
 import { registerWorkspacesCommand } from './commands/workspaces';
+import { registerLinkedCommand } from './commands/linked';
+import { registerReleaseCommand } from './commands/release';
+import { registerFolderCommand } from './commands/folder';
 import { CLI_PACKAGE_VERSION } from './packageVersion';
 
 // =============================================================================
@@ -25,11 +29,15 @@ export function buildProgram(): Command {
     .version(CLI_PACKAGE_VERSION);
 
   registerMockCommand(program);
+  registerMocksCommand(program);
   registerMcpCommand(program);
   registerImportCommand(program);
   registerExportCommand(program);
   registerRunCommand(program);
   registerWorkspacesCommand(program);
+  registerLinkedCommand(program);
+  registerReleaseCommand(program);
+  registerFolderCommand(program);
 
   return program;
 }

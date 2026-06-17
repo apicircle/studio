@@ -19,15 +19,15 @@ Insomnia — with a handful of things that set it apart:
 
 - **Git-backed workspace.** A workspace is a JSON document pushed to a
   GitHub repo on a working branch; teams collaborate via pull requests.
-- **On-disk workspace mirror.** The desktop app keeps a plain-JSON
-  mirror of every workspace on disk (a multi-workspace registry under
-  `userData/workspaces/`) so the CLI, the MCP server, and external
-  tools can read or edit the same source of truth the UI uses.
+- **On-disk workspace mirror.** Every workspace lives on disk under
+  `~/.apicircle/workspaces/` (with a `~/.apicircle/registry.json`
+  index) so the CLI, the MCP server, and external tools can read or
+  edit the same source of truth the UI uses.
 - **Local mock servers.** Describe an API in OpenAPI / Postman /
   Insomnia and run a Hono-backed mock on `localhost`.
-- **An MCP server.** The workspace is exposed as a 78-tool catalog any
+- **An MCP server.** The workspace is exposed as a 94-tool catalog any
   Model Context Protocol client (Claude Desktop, ChatGPT, Cursor,
-  GitHub Copilot, Continue, Cline, Zed, Windsurf) can drive.
+  GitHub Copilot, Codex, Continue, Cline, Zed, Windsurf) can drive.
 - **A CLI** (`apicircle mock | mcp | import | run | workspaces`) for
   headless use.
 
@@ -64,7 +64,7 @@ studio/
 │   ├── git/              GitHub REST client + typed error taxonomy
 │   ├── ui-components/    ALL React UI + the Zustand store + IndexedDB persistence
 │   ├── mock-server-core/ Hono mock engine + OpenAPI/Postman/Insomnia parsers
-│   ├── mcp-server/       stdio MCP host + 78-tool catalog + workspace providers
+│   ├── mcp-server/       stdio MCP host + 94-tool catalog + workspace providers
 │   └── cli/              `apicircle` binary — mock / mcp / import / run / workspaces
 ├── examples/             Demo workspaces + a standalone example mock server
 ├── docs/                 Product + architecture + QA docs (see §16)
@@ -99,7 +99,7 @@ A workspace is split into two JSON documents:
 `applyMutation(state, patch)` in `@apicircle/core` is the contract for
 mutating a workspace. The MCP tool handlers and CLI commands all funnel
 through it. `WorkspacePatch` is a discriminated union over
-`request.* | folder.* | environment.* | assertion.* | mock.* | plan.*`.
+`request.* | folder.* | environment.* | assertion.* | mock.* | release.* | linkedWorkspace.* | linkedOverride.* | plan.*`.
 Adding an entity type = one union variant + one switch case + one MCP
 tool.
 
@@ -138,11 +138,12 @@ powers the desktop `MockManager`, the CLI `apicircle mock`, and the MCP
 
 Desktop persistence is two-layer: IndexedDB (canonical for the
 renderer) plus a plain-JSON mirror on disk under
-`userData/workspaces/<id>/{workspace.synced.json,workspace.local.json}`
-with a sibling `registry.json` listing every workspace and its
-`lastOpenedAt`. The mirror exists so external readers (the CLI, the
-MCP server, an editor poking at the JSON, future hosted services) can
-operate on the same source of truth the UI uses, without any IPC.
+`~/.apicircle/workspaces/<id>/{workspace.json,workspace.local.json}`
+with a sibling `~/.apicircle/registry.json` listing every workspace
+and its `lastOpenedAt`. The mirror exists so external readers (the
+CLI, the MCP server, an editor poking at the JSON, future hosted
+services) can operate on the same source of truth the UI uses,
+without any IPC.
 
 - `diskMirror` + `diskMirrorMerge` (`packages/ui-components/src/persistence/`)
   debounce writes and do a three-way merge when refreshing from disk.
@@ -198,12 +199,22 @@ Signing primitives (`digest`, `ntlm`, `hawk`, `awsSigV4`, `jwt`) and the
 OAuth2 token client live in `packages/core/src/auth/*` — all
 browser-safe. `applyAuth` wires auth into outgoing headers and
 auto-refreshes expiring tokens; `executeRequest` drives challenge-
-response retries (Digest 401, NTLM 3-way). Full matrix:
-[`docs/auth.md`](../auth.md).
+response retries (Digest 401, NTLM 3-way).
+
+**Folder-level auth** — `Folder.auth?: RequestAuth` lets a folder
+set an auth block that descendant requests with `auth.type === 'inherit'`
+pick up automatically via `resolveInheritedAuth`, which walks up the
+folder chain and returns the first explicit (non-`inherit`, non-`none`)
+auth. Editable on every host: web/desktop modal, VS Code's
+`apicircle://<ws>/folders/<…>.folder.yaml` projection, and the MCP
+`folder.update` tool (`{ id, name?, auth?, clearAuth?, parentId? }`).
+Mutations route through the `folder.update` WorkspacePatch.
+
+Full matrix: [`docs/auth.md`](../auth.md).
 
 ## 7. MCP server
 
-`@apicircle/mcp-server` exposes **74 tools** over stdio, namespaced by
+`@apicircle/mcp-server` exposes **94 tools** over stdio, namespaced by
 capability: imports, code generation, multi-workspace discovery
 (`workspace.list`), workspace read/write, request / folder /
 environment / plan / assertion CRUD, **folder export / import as JSON**
@@ -302,7 +313,7 @@ promises`, `consistent-type-imports`, `prefer-const`, `eqeqeq` are all
 
 The product surfaces are built and functional: the web + desktop apps,
 the 17 auth types, the mock-server engine across all three runtimes,
-the 78-tool MCP server, the CLI with multi-workspace addressing, the
+the 94-tool MCP server, the CLI with multi-workspace addressing, the
 disk-mirror persistence layer, the MCP **Connection / Prompts** panel
 sections, the Settings → Community surface, and the GitHub Pages web
 deploy. Unit tests are green.
@@ -390,7 +401,7 @@ Because the product is pre-launch with zero users:
 | [`docs/architecture/platform.md`](../architecture/platform.md)   | MCP / mock engine / CLI / desktop design record |
 | [`docs/auth.md`](../auth.md)                                     | The 17-auth-type matrix                         |
 | [`docs/mock-server.md`](../mock-server.md)                       | Mock server feature guide                       |
-| [`docs/mcp-tools-reference.md`](../mcp-tools-reference.md)       | MCP tool catalog reference (78 tools)           |
+| [`docs/mcp-tools-reference.md`](../mcp-tools-reference.md)       | MCP tool catalog reference (94 tools)           |
 | [`docs/connect-your-ai-client.md`](../connect-your-ai-client.md) | Wiring an MCP client                            |
 | [`docs/installing.md`](../installing.md)                         | Install instructions                            |
 | [`docs/qa/README.md`](../qa/README.md)                           | QA status, E2E CI reference, coverage tooling   |

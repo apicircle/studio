@@ -9,6 +9,7 @@ export interface McpClient {
 export const MCP_CLIENTS: ReadonlyArray<McpClient> = [
   { id: 'claude-desktop', label: 'Claude Desktop' },
   { id: 'claude-code', label: 'Claude Code' },
+  { id: 'codex', label: 'Codex' },
   { id: 'cursor', label: 'Cursor' },
   { id: 'github-copilot', label: 'GitHub Copilot' },
   { id: 'chatgpt', label: 'ChatGPT' },

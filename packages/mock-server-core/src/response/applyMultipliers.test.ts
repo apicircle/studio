@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { MockResponseConfig } from '@apicircle/shared';
+import type { MockResponseConfig, MockResponseMultiplier } from '@apicircle/shared';
 import { applyMultipliers } from './applyMultipliers';
 import type { RequestContext } from '../rules/evaluate';
 
@@ -14,26 +14,27 @@ const baseCtx: RequestContext = {
 
 function makeJsonResponse(
   content: unknown,
-  multipliers: MockResponseConfig['multipliers'],
+  multiplier: MockResponseMultiplier,
 ): MockResponseConfig {
   return {
     status: 200,
     headers: [{ key: 'Content-Type', value: 'application/json', enabled: true }],
     body: { type: 'json', content: JSON.stringify(content) },
-    multipliers,
+    multipliers: [multiplier],
   };
 }
 
 describe('applyMultipliers', () => {
   it('repeats the array element at targetJsonPath using a query-source count', () => {
-    const response = makeJsonResponse({ items: [{ id: 1, name: 'X' }] }, [
+    const response = makeJsonResponse(
+      { items: [{ id: 1, name: 'X' }] },
       {
         id: 'm1',
         source: { kind: 'query', key: 'pageSize' },
         targetJsonPath: '$.items',
         defaultCount: 2,
       },
-    ]);
+    );
     const ctx = { ...baseCtx, query: { pageSize: '4' } };
     const result = applyMultipliers(response, ctx);
     if (result.body.type !== 'json') throw new Error('expected json body');
@@ -46,14 +47,15 @@ describe('applyMultipliers', () => {
   });
 
   it('falls back to defaultCount when source is missing', () => {
-    const response = makeJsonResponse({ items: [{ id: 1 }] }, [
+    const response = makeJsonResponse(
+      { items: [{ id: 1 }] },
       {
         id: 'm1',
         source: { kind: 'query', key: 'pageSize' },
         targetJsonPath: '$.items',
         defaultCount: 3,
       },
-    ]);
+    );
     const result = applyMultipliers(response, baseCtx);
     if (result.body.type !== 'json') throw new Error('expected json body');
     const parsed = JSON.parse(result.body.content) as { items: unknown[] };
@@ -61,14 +63,15 @@ describe('applyMultipliers', () => {
   });
 
   it('falls back to defaultCount when source is non-numeric', () => {
-    const response = makeJsonResponse({ items: [{ id: 1 }] }, [
+    const response = makeJsonResponse(
+      { items: [{ id: 1 }] },
       {
         id: 'm1',
         source: { kind: 'query', key: 'pageSize' },
         targetJsonPath: '$.items',
         defaultCount: 2,
       },
-    ]);
+    );
     const ctx = { ...baseCtx, query: { pageSize: 'banana' } };
     const result = applyMultipliers(response, ctx);
     if (result.body.type !== 'json') throw new Error('expected json body');
@@ -77,7 +80,8 @@ describe('applyMultipliers', () => {
   });
 
   it('clamps the count to min/max', () => {
-    const response = makeJsonResponse({ items: [{ id: 1 }] }, [
+    const response = makeJsonResponse(
+      { items: [{ id: 1 }] },
       {
         id: 'm1',
         source: { kind: 'query', key: 'pageSize' },
@@ -86,7 +90,7 @@ describe('applyMultipliers', () => {
         min: 2,
         max: 5,
       },
-    ]);
+    );
     const tooSmall = applyMultipliers(response, { ...baseCtx, query: { pageSize: '1' } });
     const tooLarge = applyMultipliers(response, { ...baseCtx, query: { pageSize: '99' } });
     if (tooSmall.body.type !== 'json' || tooLarge.body.type !== 'json') throw new Error();
@@ -95,22 +99,23 @@ describe('applyMultipliers', () => {
   });
 
   it('reads from path params, headers, and request body json paths', () => {
-    const response = makeJsonResponse({ items: [{ id: 1 }] }, [
+    const response = makeJsonResponse(
+      { items: [{ id: 1 }] },
       {
         id: 'm1',
         source: { kind: 'pathParam', key: 'count' },
         targetJsonPath: '$.items',
         defaultCount: 1,
       },
-    ]);
+    );
     const fromPath = applyMultipliers(response, { ...baseCtx, pathParams: { count: '4' } });
     if (fromPath.body.type !== 'json') throw new Error();
     expect((JSON.parse(fromPath.body.content) as { items: unknown[] }).items).toHaveLength(4);
 
-    const headerResponse = {
+    const headerResponse: MockResponseConfig = {
       ...response,
       multipliers: [
-        { ...response.multipliers![0], source: { kind: 'header' as const, key: 'X-Page-Size' } },
+        { ...response.multipliers![0], source: { kind: 'header', key: 'X-Page-Size' } },
       ],
     };
     const fromHeader = applyMultipliers(headerResponse, {
@@ -120,13 +125,10 @@ describe('applyMultipliers', () => {
     if (fromHeader.body.type !== 'json') throw new Error();
     expect((JSON.parse(fromHeader.body.content) as { items: unknown[] }).items).toHaveLength(5);
 
-    const bodyResponse = {
+    const bodyResponse: MockResponseConfig = {
       ...response,
       multipliers: [
-        {
-          ...response.multipliers![0],
-          source: { kind: 'body-json-path' as const, key: '$.page.size' },
-        },
+        { ...response.multipliers![0], source: { kind: 'body-json-path', key: '$.page.size' } },
       ],
     };
     const fromBody = applyMultipliers(bodyResponse, {
@@ -138,27 +140,29 @@ describe('applyMultipliers', () => {
   });
 
   it('returns the response unchanged when target is not an array', () => {
-    const response = makeJsonResponse({ items: { not: 'an array' } }, [
+    const response = makeJsonResponse(
+      { items: { not: 'an array' } },
       {
         id: 'm1',
         source: { kind: 'query', key: 'pageSize' },
         targetJsonPath: '$.items',
         defaultCount: 2,
       },
-    ]);
+    );
     const result = applyMultipliers(response, { ...baseCtx, query: { pageSize: '5' } });
     expect(result).toBe(response);
   });
 
   it('returns the response unchanged when target array is empty', () => {
-    const response = makeJsonResponse({ items: [] }, [
+    const response = makeJsonResponse(
+      { items: [] },
       {
         id: 'm1',
         source: { kind: 'query', key: 'pageSize' },
         targetJsonPath: '$.items',
         defaultCount: 2,
       },
-    ]);
+    );
     const result = applyMultipliers(response, { ...baseCtx, query: { pageSize: '5' } });
     expect(result).toBe(response);
   });
@@ -199,15 +203,59 @@ describe('applyMultipliers', () => {
     expect(result).toBe(response);
   });
 
+  it('returns the response unchanged when the multipliers list is absent/empty', () => {
+    const response: MockResponseConfig = {
+      status: 200,
+      headers: [],
+      body: { type: 'json', content: '{"items":[{"id":1}]}' },
+    };
+    expect(applyMultipliers(response, { ...baseCtx, query: { pageSize: '5' } })).toBe(response);
+    expect(applyMultipliers({ ...response, multipliers: [] }, baseCtx)).toEqual({
+      ...response,
+      multipliers: [],
+    });
+  });
+
+  it('applies every multiplier in the list (engine is N-capable even though authoring caps at 1)', () => {
+    const response: MockResponseConfig = {
+      status: 200,
+      headers: [],
+      body: { type: 'json', content: JSON.stringify({ items: [{ id: 1 }], tags: [{ t: 'a' }] }) },
+      multipliers: [
+        {
+          id: 'm1',
+          source: { kind: 'query', key: 'items' },
+          targetJsonPath: '$.items',
+          defaultCount: 1,
+        },
+        {
+          id: 'm2',
+          source: { kind: 'query', key: 'tags' },
+          targetJsonPath: '$.tags',
+          defaultCount: 1,
+        },
+      ],
+    };
+    const result = applyMultipliers(response, {
+      ...baseCtx,
+      query: { items: '3', tags: '2' },
+    });
+    if (result.body.type !== 'json') throw new Error();
+    const parsed = JSON.parse(result.body.content) as { items: unknown[]; tags: unknown[] };
+    expect(parsed.items).toHaveLength(3);
+    expect(parsed.tags).toHaveLength(2);
+  });
+
   it('walks nested JSON paths', () => {
-    const response = makeJsonResponse({ data: { page: { items: [{ id: 1 }] } } }, [
+    const response = makeJsonResponse(
+      { data: { page: { items: [{ id: 1 }] } } },
       {
         id: 'm1',
         source: { kind: 'query', key: 'pageSize' },
         targetJsonPath: '$.data.page.items',
         defaultCount: 1,
       },
-    ]);
+    );
     const result = applyMultipliers(response, { ...baseCtx, query: { pageSize: '3' } });
     if (result.body.type !== 'json') throw new Error();
     const parsed = JSON.parse(result.body.content) as { data: { page: { items: unknown[] } } };
@@ -215,14 +263,15 @@ describe('applyMultipliers', () => {
   });
 
   it('treats a count of zero as an empty array', () => {
-    const response = makeJsonResponse({ items: [{ id: 1 }] }, [
+    const response = makeJsonResponse(
+      { items: [{ id: 1 }] },
       {
         id: 'm1',
         source: { kind: 'query', key: 'pageSize' },
         targetJsonPath: '$.items',
         defaultCount: 0,
       },
-    ]);
+    );
     const result = applyMultipliers(response, baseCtx);
     if (result.body.type !== 'json') throw new Error();
     const parsed = JSON.parse(result.body.content) as { items: unknown[] };
@@ -233,42 +282,45 @@ describe('applyMultipliers', () => {
   // resolve through the prototype chain on plain objects and have no place
   // in a JSON multiplier. We treat any such path as a no-op rather than
   // letting it walk into Object.prototype.
-  it('ignores multipliers whose path contains __proto__', () => {
-    const response = makeJsonResponse({ items: [{ id: 1 }] }, [
+  it('ignores a multiplier whose path contains __proto__', () => {
+    const response = makeJsonResponse(
+      { items: [{ id: 1 }] },
       {
         id: 'm1',
         source: { kind: 'query', key: 'pageSize' },
         targetJsonPath: '$.__proto__.items',
         defaultCount: 5,
       },
-    ]);
+    );
     const result = applyMultipliers(response, baseCtx);
     // Path is forbidden → no-op → response unchanged.
     expect(result).toBe(response);
   });
 
-  it('ignores multipliers whose path contains constructor or prototype', () => {
-    const response = makeJsonResponse({ items: [{ id: 1 }] }, [
+  it('ignores a multiplier whose path contains constructor or prototype', () => {
+    const response = makeJsonResponse(
+      { items: [{ id: 1 }] },
       {
         id: 'm1',
         source: { kind: 'query', key: 'pageSize' },
         targetJsonPath: '$.constructor.prototype.items',
         defaultCount: 5,
       },
-    ]);
+    );
     const result = applyMultipliers(response, baseCtx);
     expect(result).toBe(response);
   });
 
   it('ignores forbidden keys when expressed in bracket notation', () => {
-    const response = makeJsonResponse({ items: [{ id: 1 }] }, [
+    const response = makeJsonResponse(
+      { items: [{ id: 1 }] },
       {
         id: 'm1',
         source: { kind: 'query', key: 'pageSize' },
         targetJsonPath: '$["__proto__"].items',
         defaultCount: 5,
       },
-    ]);
+    );
     const result = applyMultipliers(response, baseCtx);
     expect(result).toBe(response);
   });

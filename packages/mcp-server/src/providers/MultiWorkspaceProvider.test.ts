@@ -3,7 +3,11 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { saveToFile } from '@apicircle/core/workspace/file-backed';
-import { registerWorkspace, saveRegistry } from '@apicircle/core/workspace/registry';
+import {
+  registerWorkspace,
+  saveRegistry,
+  workspaceDirFor,
+} from '@apicircle/core/workspace/registry';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
 import { MultiWorkspaceProvider } from './MultiWorkspaceProvider';
 import { WorkspaceNotFoundError } from './Workspaces';
@@ -76,7 +80,7 @@ async function seedRegistry(
   activeId: string | null = entries[0]?.id ?? null,
 ): Promise<void> {
   for (const e of entries) {
-    await saveToFile(path.join(root, e.id), {
+    await saveToFile(workspaceDirFor(root, e.id), {
       synced: makeSynced(e.id, { requests: e.requests ?? 0 }),
       local: makeLocal(e.id),
     });
@@ -177,7 +181,7 @@ describe('MultiWorkspaceProvider.list', () => {
   it('returns null counts for a registered workspace whose dir was deleted out of band', async () => {
     await seedRegistry([{ id: 'ws-a', name: 'Alpha' }]);
     // Remove the per-workspace dir directly, leaving the registry entry.
-    await fs.rm(path.join(root, 'ws-a'), { recursive: true, force: true });
+    await fs.rm(workspaceDirFor(root, 'ws-a'), { recursive: true, force: true });
     const mwp = new MultiWorkspaceProvider(root);
     await mwp.init();
     const summaries = await mwp.list();

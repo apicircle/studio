@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import type { AiClient, McpManager } from '../mcp/mcpManager';
+import { installClientConfig, detectClientInstallState } from '../mcp/mcpInstaller';
 import { assertTrustedSender } from '../security/assertTrustedSender';
 
 // =============================================================================
@@ -12,6 +13,8 @@ const CHANNEL = {
   getConfigSnippet: 'apicircle:mcp:getConfigSnippet',
   getConfigPath: 'apicircle:mcp:getConfigPath',
   toolCatalog: 'apicircle:mcp:toolCatalog',
+  installConfig: 'apicircle:mcp:installConfig',
+  detectInstallState: 'apicircle:mcp:detectInstallState',
 } as const;
 
 // Runtime allowlist that mirrors the AiClient union in mcpManager.ts. We don't
@@ -21,6 +24,7 @@ const CHANNEL = {
 const AI_CLIENTS: ReadonlySet<AiClient> = new Set<AiClient>([
   'claude-desktop',
   'claude-code',
+  'codex',
   'cursor',
   'continue',
   'cline',
@@ -57,6 +61,18 @@ export function registerMcpBridge(manager: McpManager): void {
   ipcMain.handle(CHANNEL.toolCatalog, (event) => {
     assertTrustedSender(event);
     return manager.toolCatalog();
+  });
+  ipcMain.handle(CHANNEL.installConfig, (event, client: unknown) => {
+    assertTrustedSender(event);
+    const validated = assertAiClient(client);
+    const { binary, workspace } = manager.resolvePaths();
+    return installClientConfig(validated, binary, workspace);
+  });
+  ipcMain.handle(CHANNEL.detectInstallState, (event, client: unknown) => {
+    assertTrustedSender(event);
+    const validated = assertAiClient(client);
+    const { binary, workspace } = manager.resolvePaths();
+    return detectClientInstallState(validated, binary, workspace);
   });
 }
 

@@ -74,7 +74,7 @@ describe('fileBackedWorkspace', () => {
 
   it('writes a trailing newline and 2-space indent', async () => {
     await saveToFile(tmpDir, { synced: makeSynced(), local: makeLocal() });
-    const raw = await fs.readFile(path.join(tmpDir, 'workspace.synced.json'), 'utf-8');
+    const raw = await fs.readFile(path.join(tmpDir, 'workspace.json'), 'utf-8');
     expect(raw.endsWith('\n')).toBe(true);
     expect(raw).toContain('  "schemaVersion": 1');
   });
@@ -90,7 +90,7 @@ describe('fileBackedWorkspace', () => {
 
   it('loadFromFile fills a default local when only synced exists on disk', async () => {
     await fs.writeFile(
-      path.join(tmpDir, 'workspace.synced.json'),
+      path.join(tmpDir, 'workspace.json'),
       JSON.stringify(makeSynced(), null, 2),
       'utf-8',
     );
@@ -116,7 +116,7 @@ describe('fileBackedWorkspace', () => {
 
   it('withWorkspace creates a default local when only synced exists', async () => {
     await fs.writeFile(
-      path.join(tmpDir, 'workspace.synced.json'),
+      path.join(tmpDir, 'workspace.json'),
       JSON.stringify(makeSynced(), null, 2),
       'utf-8',
     );

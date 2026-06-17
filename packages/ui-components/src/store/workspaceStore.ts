@@ -87,7 +87,10 @@ import {
   generateSlotSalt,
   generateWorkingBranchName,
   collectFolderExport,
-  WORKSPACE_JSON_PATH,
+  REGISTRY_JSON_PATH,
+  workspaceJsonPath,
+  fetchRemoteWorkspaceJson,
+  attachmentPath,
   parseCurl,
   parseSemver,
   previewLinkedUpdate as previewLinkedUpdateCore,
@@ -116,7 +119,7 @@ import {
   putAttachment,
 } from '../persistence/attachments';
 import { getMasterKey } from '../persistence/secretKey';
-import { initSecretCrypto, unlockSecretCrypto } from '../persistence/passphraseKey';
+import { initSecretCrypto, unlockSecretCrypto } from '@apicircle/core';
 import {
   WorkspaceMismatchError,
   type WorkspaceRegistry,
@@ -978,6 +981,15 @@ type WorkspaceStore = {
    * what lets browser-side apps hit the running mock from a different port.
    */
   setMockServerCors: (id: string, cors: { enabled: boolean; origins: string[] }) => void;
+  /**
+   * Set the default port the mock listens on. Pass `null` to fall back to the
+   * "pick a free port at start" behavior. Valid range is 1024–65535 — values
+   * outside that window are dropped (no-op) because they'd either need
+   * elevated privileges (<1024) or be invalid TCP ports (>65535). The
+   * runtime is the authority on collision: a busy port surfaces a
+   * MockServerStartError from `start()`, not from this setter.
+   */
+  setMockServerDefaultPort: (id: string, defaultPort: number | null) => void;
   /** Replace a mock's endpoints (used by manual-mode editor). */
   setMockServerEndpoints: (id: string, endpoints: MockEndpoint[]) => void;
   /** Add a new endpoint to a manual-mode mock server. Returns the new endpoint id. */
@@ -1265,7 +1277,7 @@ type WorkspaceStore = {
   mcpHowToConnectClient: string | null;
   setMcpHowToConnectClient: (value: string | null) => void;
   /**
-   * MCP "Connection" refresh: re-read `workspace.synced.json` from disk
+   * MCP "Connection" refresh: re-read `workspace.json` from disk
    * and, if it's newer than the in-memory copy, hydrate the store with
    * it. Returns a result discriminator so the caller can render a toast
    * describing what happened. No-op (returns 'no-mirror') on web.
@@ -1580,7 +1592,7 @@ type WorkspaceStore = {
    * attachment as one Git Tree commit on the working branch. Round-trip
    * is: read branch ref → read its tree → upload each new attachment as
    * a blob → create new tree (base_tree + workspace.json inline +
-   * `.apicircle/attachments/<slotId>` per attachment) → create commit →
+   * `.apicircle/workspace-<id>/attachments/<slotId>` per attachment) → create commit →
    * fast-forward the ref. On success, updates `workingBranch.headSha`
    * and `lastPushedSha`. Throws on missing-session, missing-repo,
    * missing-branch, or any GitHub error.
@@ -1611,7 +1623,7 @@ type WorkspaceStore = {
   /**
    * Walk every attachment slot referenced in the synced doc; for each
    * one whose bytes aren't in local IDB (or whose recorded sha256 has
-   * drifted), pull the blob from `.apicircle/attachments/<slotId>` on
+   * drifted), pull the blob from `.apicircle/workspace-<id>/attachments/<slotId>` on
    * the working branch and persist it. Returns counts so the UI can
    * report results (plan §7.6 — refresh attachment download).
    */
@@ -2703,6 +2715,41 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     queueSaveSynced(nextSynced);
   },
 
+  setMockServerDefaultPort: (id, defaultPort) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const existing = synced.mockServers[id];
+    if (!existing) return;
+    // Normalize + validate. `null` = "pick a free port at start". Anything
+    // else must be an integer in 1024-65535. Reject outside that window
+    // silently — the UI is responsible for surfacing a validation hint
+    // before getting here, and we don't want a malformed MCP/CLI write to
+    // corrupt the synced doc.
+    let normalized: number | null;
+    if (defaultPort === null) {
+      normalized = null;
+    } else if (
+      typeof defaultPort === 'number' &&
+      Number.isInteger(defaultPort) &&
+      defaultPort >= 1024 &&
+      defaultPort <= 65535
+    ) {
+      normalized = defaultPort;
+    } else {
+      return;
+    }
+    if (existing.defaultPort === normalized) return;
+    const now = new Date().toISOString();
+    const next = { ...existing, defaultPort: normalized, updatedAt: now };
+    const nextSynced: WorkspaceSynced = {
+      ...synced,
+      mockServers: { ...synced.mockServers, [id]: next },
+      meta: { ...synced.meta, updatedAt: now },
+    };
+    set({ synced: nextSynced });
+    queueSaveSynced(nextSynced);
+  },
+
   setMockServerEndpoints: (id, endpoints) => {
     const synced = get().synced;
     if (!synced) return;
@@ -3123,6 +3170,23 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const parentId = pathToFolderId.get(parentKey) ?? rootFolder.id;
       const { synced: next, folder: created } = addFolderAction(cur, parentId, folder.name);
       cur = next;
+      // Propagate folder-level auth captured by the importer (Postman v2.1 +
+      // Insomnia request_group). Without this the auth would be silently
+      // dropped on import and inherit-routed descendants would resolve to
+      // none. We patch the folder in-place rather than calling setFolderAuth
+      // so the meta.updatedAt bump rides with the final import-loop flush.
+      if (folder.auth) {
+        cur = {
+          ...cur,
+          collections: {
+            ...cur.collections,
+            folders: {
+              ...cur.collections.folders,
+              [created.id]: { ...cur.collections.folders[created.id], auth: folder.auth },
+            },
+          },
+        };
+      }
       pathToFolderId.set(folder.pathIds.join('.'), created.id);
     }
 
@@ -4615,7 +4679,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // Opportunistic asset-ref inheritance. The new working branch was
     // forked from `baseBranch`, so any Global File Asset whose bytes
     // already live on the base branch is also reachable at the same
-    // `.apicircle/attachments/<slotId>` path on the new branch from
+    // `.apicircle/workspace-<id>/attachments/<slotId>` path on the new branch from
     // commit zero. Stamp `workingBranchRef` from `baseBranchRef` so the
     // status pill flips to "On working branch" immediately instead of
     // showing "On main" until the next refresh probe. The probe still
@@ -4653,7 +4717,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       }
     }
 
-    // Probe the new branch for an existing `.apicircle/workspace.json`.
+    // Probe the new branch for an existing `.apicircle/workspace-<id>/workspace.json`.
     // If it's there, the repo is pre-populated — the user shouldn't push
     // their local seed without first reviewing remote content. Surface
     // the first-pull prompt; the WorkspacePanel banner offers "Pull
@@ -4669,7 +4733,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         token,
         repo.owner,
         repo.name,
-        WORKSPACE_JSON_PATH,
+        workspaceJsonPath(get().synced!.workspaceId),
         branchName,
       );
       const seededSha = next.seededWorkspaceSha;
@@ -4699,7 +4763,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const branchName = repo.defaultBranch;
     let scaffoldSha: string | null = null;
 
-    // Idempotent probe: if `.apicircle/workspace.json` is already on the
+    // Idempotent probe: if the workspace document is already on the
     // default branch, the seed's job is done — listBranches probably just
     // paginated past existing branches, or a previous attempt partially
     // landed. Skip the PUT (which would fail with 422 "sha wasn't
@@ -4711,7 +4775,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         token,
         repo.owner,
         repo.name,
-        WORKSPACE_JSON_PATH,
+        workspaceJsonPath(synced.workspaceId),
         branchName,
       );
       if (existing) {
@@ -4753,11 +4817,40 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       // atomically initializes the repo with a one-file commit on the
       // supplied branch (defaulting to repo.defaultBranch).
       const contentBase64 = bytesToBase64(new TextEncoder().encode(content));
-      const result = await client.putContents(token, repo.owner, repo.name, WORKSPACE_JSON_PATH, {
-        message: 'chore: initialize .apicircle/workspace.json',
-        contentBase64,
+      // Write the registry first so the two-step fetch can resolve the workspace path.
+      const registryContent = JSON.stringify(
+        {
+          schemaVersion: 1,
+          activeWorkspaceId: synced.workspaceId,
+          workspaces: [
+            {
+              id: synced.workspaceId,
+              name: 'Workspace',
+              lastOpenedAt: new Date().toISOString(),
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        },
+        null,
+        2,
+      );
+      const registryBase64 = bytesToBase64(new TextEncoder().encode(registryContent));
+      await client.putContents(token, repo.owner, repo.name, REGISTRY_JSON_PATH, {
+        message: 'chore: initialize .apicircle/registry.json',
+        contentBase64: registryBase64,
         branch: branchName,
       });
+      const result = await client.putContents(
+        token,
+        repo.owner,
+        repo.name,
+        workspaceJsonPath(synced.workspaceId),
+        {
+          message: 'chore: initialize API Circle workspace',
+          contentBase64,
+          branch: branchName,
+        },
+      );
       scaffoldSha = result.contentSha;
     }
 
@@ -4862,7 +4955,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         encoding: 'base64',
       });
       attachmentEntries.push({
-        path: `.apicircle/attachments/${slot.slotId}`,
+        path: attachmentPath(synced.workspaceId, slot.slotId),
         sha: blob.sha,
       });
       pushedBySlotId[slot.slotId] = blob.sha;
@@ -4885,12 +4978,33 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // PR merge, the base branch) drops the orphan blob. Idempotent
     // when the path already missing.
     const deleteEntries: TreeEntryInput[] = deletesToEmit.map((slotId) => ({
-      path: `.apicircle/attachments/${slotId}`,
+      path: attachmentPath(synced.workspaceId, slotId),
       sha: null,
     }));
+    const registryContent = JSON.stringify(
+      {
+        schemaVersion: 1,
+        activeWorkspaceId: synced.workspaceId,
+        workspaces: [
+          {
+            id: synced.workspaceId,
+            name: 'Workspace',
+            lastOpenedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      },
+      null,
+      2,
+    );
     const newTree = await client.createTree(token, owner, name, {
       baseTreeSha: headCommit.treeSha,
-      entries: [{ path: WORKSPACE_JSON_PATH, content }, ...attachmentEntries, ...deleteEntries],
+      entries: [
+        { path: REGISTRY_JSON_PATH, content: registryContent },
+        { path: workspaceJsonPath(synced.workspaceId), content },
+        ...attachmentEntries,
+        ...deleteEntries,
+      ],
     });
     // 4. Create the commit.
     const message = (commitMessage ?? '').trim() || 'chore: sync workspace via API Circle Studio';
@@ -5106,7 +5220,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       token,
       repo.owner,
       repo.name,
-      WORKSPACE_JSON_PATH,
+      workspaceJsonPath(get().synced!.workspaceId),
       baseBranch,
     );
     if (!file) return null;
@@ -5195,17 +5309,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!local) throw new Error('Workspace not ready');
     const token = opts?.tokenOverride?.trim() || (await decryptSessionToken(local));
     const client = new GitHubClient();
-    const file = await client.getContents(
-      token,
-      owner.trim(),
-      name.trim(),
-      WORKSPACE_JSON_PATH,
-      branch.trim(),
-    );
-    if (file === null) return null;
+    const result = await fetchRemoteWorkspaceJson(async (p) => {
+      const f = await client.getContents(token, owner.trim(), name.trim(), p, branch.trim());
+      return f?.content ?? null;
+    });
+    if ('error' in result) return null;
     // parseLinkedWorkspaceJson surfaces typed errors for malformed JSON
     // — let those propagate so the modal can render a useful message.
-    const parsed = parseLinkedWorkspaceJson(file.content);
+    const parsed = parseLinkedWorkspaceJson(result.content);
     const ledger = parsed.releases?.self ?? null;
 
     // Surface every slot the source declared in `secretKeys`. We used to
@@ -5244,19 +5355,16 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // Always fetch HEAD of the source branch — that's the source's
     // currently-published view. (Targeting a specific historical version
     // would need git tags / commit refs, deferred to a follow-on slice.)
-    const file = await client.getContents(
-      token,
-      owner,
-      name,
-      WORKSPACE_JSON_PATH,
-      link.source.branch,
-    );
-    if (file === null) {
+    const fetchResult = await fetchRemoteWorkspaceJson(async (p) => {
+      const f = await client.getContents(token, owner, name, p, link.source.branch);
+      return f?.content ?? null;
+    });
+    if ('error' in fetchResult) {
       throw new Error(
         `workspace.json missing on ${link.source.repoFullName}@${link.source.branch}`,
       );
     }
-    const parsed = parseLinkedWorkspaceJson(file.content);
+    const parsed = parseLinkedWorkspaceJson(fetchResult.content);
     const targetSnapshot = buildLinkedSnapshot(parsed, link);
     if (!targetSnapshot) {
       throw new Error(
@@ -5313,19 +5421,16 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const token = await decryptLinkSessionToken(local, link);
     const client = new GitHubClient();
     const [owner, name] = link.source.repoFullName.split('/', 2);
-    const file = await client.getContents(
-      token,
-      owner,
-      name,
-      WORKSPACE_JSON_PATH,
-      link.source.branch,
-    );
-    if (file === null) {
+    const applyFetchResult = await fetchRemoteWorkspaceJson(async (p) => {
+      const f = await client.getContents(token, owner, name, p, link.source.branch);
+      return f?.content ?? null;
+    });
+    if ('error' in applyFetchResult) {
       throw new Error(
         `workspace.json missing on ${link.source.repoFullName}@${link.source.branch}`,
       );
     }
-    const parsed = parseLinkedWorkspaceJson(file.content);
+    const parsed = parseLinkedWorkspaceJson(applyFetchResult.content);
     const targetSnapshot = buildLinkedSnapshot(parsed, link);
     if (!targetSnapshot) {
       throw new Error('Source has no content to apply.');
@@ -5425,19 +5530,16 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const token = await decryptLinkSessionToken(local, link);
     const client = new GitHubClient();
     const [owner, name] = link.source.repoFullName.split('/', 2);
-    const file = await client.getContents(
-      token,
-      owner,
-      name,
-      WORKSPACE_JSON_PATH,
-      link.source.branch,
-    );
-    if (file === null) {
+    const refreshResult = await fetchRemoteWorkspaceJson(async (p) => {
+      const f = await client.getContents(token, owner, name, p, link.source.branch);
+      return f?.content ?? null;
+    });
+    if ('error' in refreshResult) {
       throw new Error(
         `workspace.json missing on ${link.source.repoFullName}@${link.source.branch}`,
       );
     }
-    const parsed = parseLinkedWorkspaceJson(file.content);
+    const parsed = parseLinkedWorkspaceJson(refreshResult.content);
     const cachedLedger: ReleaseHistory = parsed.releases?.self ?? {
       versions: [],
       currentVersion: null,
@@ -6039,6 +6141,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         token: string;
         owner: string;
         name: string;
+        /** The remote workspace's workspaceId — needed to resolve
+         *  per-workspace attachment paths. */
+        sourceWorkspaceId: string;
         /**
          * Branch refs to try in order. The workspace flow passes the
          * Global File Asset's provenance chain (workingBranchRef →
@@ -6084,7 +6189,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
             source.token,
             source.owner,
             source.name,
-            `.apicircle/attachments/${slot.slotId}`,
+            attachmentPath(source.sourceWorkspaceId, slot.slotId),
             ref,
           );
           if (probed) {
@@ -6150,6 +6255,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           token: workspaceToken,
           owner: branch.repoOwner,
           name: branch.repoName,
+          sourceWorkspaceId: synced.workspaceId,
           refs: dedupedRefs,
           attachmentSource: 'workspace',
         });
@@ -6170,6 +6276,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           token: linkToken,
           owner,
           name,
+          sourceWorkspaceId: link.sourceWorkspaceId,
           refs: [link.source.branch],
           attachmentSource: 'linked-workspace',
           linkedWorkspaceId: linkId,
@@ -6227,7 +6334,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       token,
       branch.repoOwner,
       branch.repoName,
-      WORKSPACE_JSON_PATH,
+      workspaceJsonPath(synced.workspaceId),
       branch.name,
     );
     if (file === null) {
@@ -7184,9 +7291,12 @@ async function doLinkWorkspace(
   }
 
   const client = new GitHubClient();
-  let file: { content: string } | null;
+  let linkFetchResult: { workspaceId: string; content: string } | { error: string };
   try {
-    file = await client.getContents(token, owner, name, WORKSPACE_JSON_PATH, trimmedBranch);
+    linkFetchResult = await fetchRemoteWorkspaceJson(async (p) => {
+      const f = await client.getContents(token, owner, name, p, trimmedBranch);
+      return f?.content ?? null;
+    });
   } catch (err) {
     // If the dedicated path failed, the orphan payload we just stored
     // must be cleaned up so it doesn't leak into the vault on a retry.
@@ -7199,7 +7309,7 @@ async function doLinkWorkspace(
     }
     throw err;
   }
-  if (file === null) {
+  if ('error' in linkFetchResult) {
     if (dedicatedTokenSecretId) {
       try {
         await deleteSecretPayload(dedicatedTokenSecretId);
@@ -7209,7 +7319,7 @@ async function doLinkWorkspace(
     }
     throw new Error(`workspace.json not found on ${trimmedRepo}@${trimmedBranch}`);
   }
-  const parsed = parseLinkedWorkspaceJson(file.content);
+  const parsed = parseLinkedWorkspaceJson(linkFetchResult.content);
 
   // Seed `requiredSecretKeyIds` with every slot the source declared.
   // Mirroring the registry directly is more robust than walking env
@@ -7225,6 +7335,7 @@ async function doLinkWorkspace(
     // — names are per-machine. Use the repo path as the link's default
     // display label; the consumer can rename their local entry later.
     name: trimmedRepo,
+    sourceWorkspaceId: linkFetchResult.workspaceId,
     source: {
       provider: 'github',
       repoFullName: trimmedRepo,
@@ -8142,7 +8253,7 @@ async function verifyAssetRefsAndPatch(
   for (const [id, asset] of Object.entries(files)) {
     let workingRef = asset.workingBranchRef ?? null;
     let baseRef = asset.baseBranchRef ?? null;
-    const blobPath = `.apicircle/attachments/${asset.slotId}`;
+    const blobPath = attachmentPath(synced.workspaceId, asset.slotId);
 
     // Working-branch probe — verify (with grace), or opportunistically
     // re-discover when the ref is null but a working branch is connected.

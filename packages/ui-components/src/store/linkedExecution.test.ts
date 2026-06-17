@@ -70,6 +70,7 @@ function seedLink(snapshot: LinkedSnapshot): void {
           id: 'lw-1',
           kind: 'private',
           name: 'Source',
+          sourceWorkspaceId: 'src-ws-lw1',
           source: {
             provider: 'github',
             repoFullName: 'a/b',

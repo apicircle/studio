@@ -4,11 +4,17 @@ How quality is verified in this repo, what is covered today, and what is
 still pending. This single doc replaces the former `CI.md` plus the three
 `E2E-*-PLAN.md` session plans.
 
-QA has two layers:
+QA has three layers:
 
 1. **Automated E2E** — Playwright specs in the `e2e/web/` and
-   `e2e/desktop/` packages, run on every PR.
-2. **Manual test-case workbooks** — `docs/qa/test_cases/web-app-test-cases.xlsx`
+   `e2e/desktop/` packages, plus Mocha + `@vscode/test-electron` specs in
+   `e2e/vscode/`. Run on every PR.
+2. **Cross-package integration tier** — Vitest suites in
+   `apps/vscode/test/integration/` exercise real `executeRequest` against
+   real HTTP servers, concurrent `proper-lockfile`-serialized writes, and
+   the three-surface compatibility invariant. See the dedicated section
+   below.
+3. **Manual test-case workbooks** — `docs/qa/test_cases/web-app-test-cases.xlsx`
    and `desktop-app-test-cases.xlsx`. Every row has a `TC-XX-NNNN` id.
    Automated specs are tracked against these rows via `tcMap*` fixtures
    and `scripts/e2e_coverage_*`.
@@ -69,9 +75,81 @@ The numbers below come from the last `scripts/e2e_coverage_report.py
 
 ---
 
-## E2E CI
+## VS Code E2E tier (Phase 1)
 
-The E2E suite runs on every PR and every push to `main`
+A separate E2E surface lives at [`e2e/vscode/`](../../e2e/vscode/) and
+exercises the VS Code extension at [`apps/vscode/`](../../apps/vscode/).
+Unlike the web and desktop suites which use Playwright, the VS Code suite
+uses **Mocha driven by `@vscode/test-electron`** — the standard tool for
+extension end-to-end testing. It downloads a deterministic VS Code build,
+launches it with the extension installed in a hermetic user-data dir, and
+runs the Mocha specs inside the actual extension host.
+
+### What's covered (Phase 1 + Phase 2 rounds 1–5 + Phase 3 rounds 1–2 + Phase 4)
+
+| Tier                                      | Coverage                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Location                                                                                                                                                                                                                                                 |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Unit**                                  | **59 suites · ~640 tests** · views (Editor, Environment **with P4 vault-header — 3-state getTreeItem coverage**, Execution, History, Snapshots, Mock, **P5 McpView with header + per-client rows + connect-guide footer**), FS provider, YAML projections (request + env + plan + mock **with secret-redacted source projection**), bridge + **VsCodeMockController** + **VsCodeVaultManager** + **RunsChannel** + **VsCodeMcpManager** (13 tests covering snippet emission + workspace resolution + config-path lookup + display labels), language services (request + env completion + env CodeLens, EnvironmentHover, PlanCodeLens, PlanCompletion, PlanHover, MockCodeLens, MockCompletion, MockHover), workspaceWatcher, diagnostics, status bar + MockStatusBar, abort registry, all commands (request, env, env priority, snapshots, plans, history, variables **with P4 vault redirect**, folder, mock, **vault actions**, **mcp actions**, extractions) | `apps/vscode/src/**/*.test.ts`                                                                                                                                                                                                                           |
+| **Integration (cross-package)**           | **15 suites · ~66 tests** — activation pipeline (asserts the full **46-command-id** registration set, async `deactivate()` awaited), three-surface compat (**14 patches**), activation perf benchmark, `requestSendRoundTrip`, `applyMutationFromVscode`, `environmentRoundTrip`, `historyRoundTrip`, `snapshotRoundTrip`, `planRunIntegration`, `planRoundTrip`, `mockRoundTrip`, `externalWriteRefresh`, **`vaultUnlock` (P4)**, **`secretCryptoCompat` (P4)**, **`mcpRoundTrip` (P5) — proves VS Code's snippet bytes match the shared builder for every supported AI client + workspace-switch re-targeting + Create-config-file path**                                                                                                                                                                                                                                                                                                                      | `apps/vscode/test/integration/`                                                                                                                                                                                                                          |
+| **E2E (Mocha + `@vscode/test-electron`)** | 12 named specs (`1-mvp`, `1-new-request`, `1-create-workspace`, `1-cancel`, `1-validation`, `1-multi-root`, `3-mock-view`, `3-mock-yaml`, `3-mock-lifecycle`, `4-vault`, `4-runs-channel`, **`5-mcp` (P5)**).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `e2e/vscode/src/test/*.test.ts`                                                                                                                                                                                                                          |
+| **Live-GitHub (opt-in)**                  | Real-PAT integration. Gated by `APICIRCLE_E2E_LIVE_GITHUB=1` env. Nightly cron against a dedicated test org.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `e2e/vscode/src/test/live-github.test.ts`                                                                                                                                                                                                                |
+| **Three-surface compat (invariant gate)** | `request.create`, `folder.create`, `environment.upsert`, `mock.upsert`, `mock.delete`, `plan.upsert`, `snapshot.capture`, `snapshot.delete`, `snapshot.restore`, `snapshot.set_max_bytes`, **`secret.crypto.set` (P4)**, **`secret.crypto.clear` (P4)** — byte-identical state from Desktop's `FileBackedWorkspaceProvider` and VS Code's `GitWorkspaceProvider` modulo apply-time timestamps. The applyMutation-determinism smoke check canonicalizes before comparing (was flaky against `Date.now()` drift).                                                                                                                                                                                                                                                                                                                                                                                                                                                  | `apps/vscode/test/integration/threeSurfaceCompat.test.ts` + **`secretCryptoCompat.test.ts`**                                                                                                                                                             |
+| **Wired-settings tests**                  | `apicircle.execution.timeoutMs` (propagates to `executeRequest`), `apicircle.execution.host` (Remote-SSH warning gate), `apicircle.history.retentionDays` (prunes request + plan run buckets before max-entries cap), **`apicircle.secrets.autoLockMinutes`** (timer arms/cancels/re-arms), **`apicircle.secrets.clipboardClearSeconds`** (clipboard wipes only if value still matches)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `apps/vscode/src/execute/sendRequest.test.ts`, `apps/vscode/src/commands/planActions.test.ts`, `apps/vscode/src/execute/persistHistory.test.ts`, **`apps/vscode/src/host/vaultManager.test.ts`**, **`apps/vscode/test/integration/vaultUnlock.test.ts`** |
+
+**Cross-package monorepo gate** (`pnpm -w test`): **3613 tests across 327 files** as of Phase 12 closure (bundle externalize + E2E coverage closeout). All packages green: `shared` (130), `git` (66), `core` (925), `mock-server-core` (117), `mcp-server` (195), `ui-components` (1096), `cli` (85), `web` (12), `desktop` (81), `vscode` (**856**), `examples/mock-server` (13), `e2e/mock` (36).
+
+**VS Code E2E specs** (`e2e/vscode/src/test/`): **19 files** as of Phase 12, covering Phases 1 through 11. Run via `@vscode/test-electron` against real VS Code stable + insiders in CI (`.github/workflows/vscode.yml` `cross-host-smoke` job, main pushes only). Phase 12 added 5 specs: `2-environments-plans`, `8-autoconfigure-vault-device`, `9-notebooks-tests`, `10-embedded-mcp`, `11-continue-mock-editor`.
+
+**VS Code bundle-size gate** (`scripts/check-vscode-bundle.mjs`): three thresholds enforced — min 500 KB sanity floor (catches corrupt-empty builds), soft warn at **1.8 MB**, hard fail at **2.0 MB** — on `apps/vscode/dist/extension.js`. Constants live in `scripts/vscode-bundle-budget.mjs` (single source of truth shared with `apps/vscode/test/integration/bundleSize.test.ts`). Phase 7 sits at **1.46 MB** with **~540 KB headroom**. Bump the ceiling deliberately per phase — never to silence a regression. See `docs/vscode-extension.md §14` for the budget contract.
+
+### CI
+
+[`.github/workflows/vscode.yml`](../../.github/workflows/vscode.yml) runs
+on every PR touching `apps/vscode/`, `e2e/vscode/`, or any of the core
+packages the extension depends on (`@apicircle/core`, `@apicircle/shared`,
+`@apicircle/mcp-server`). The `quality` job runs:
+
+1. Typecheck both packages.
+2. Lint `apps/vscode`.
+3. Run the unit + integration suite (`pnpm --filter @apicircle/vscode test`).
+4. Build the bundle (`tsup`).
+5. Bundle-size gate: extension.js < 2 MB.
+6. Knip dead-code scan scoped to `apps/vscode` and `e2e/vscode`.
+
+The `cross-host-smoke` job (push-to-main only) runs the
+`@vscode/test-electron` E2E suite against `stable` and `insiders` VS Code
+under `xvfb`.
+
+### Running locally
+
+```bash
+pnpm --filter @apicircle/vscode test         # unit + integration
+pnpm --filter @apicircle/vscode check        # typecheck
+pnpm --filter @apicircle/vscode lint         # lint
+pnpm --filter @apicircle/vscode build        # bundle via tsup
+pnpm --filter @apicircle/vscode package      # produce .vsix
+pnpm --filter @apicircle/e2e-vscode test:e2e # full E2E (downloads VS Code)
+APICIRCLE_E2E_LIVE_GITHUB=1 \
+  APICIRCLE_E2E_GITHUB_PAT=<repo-scoped PAT> \
+  APICIRCLE_E2E_GITHUB_REPO=apicircle/e2e-test-repo \
+  pnpm --filter @apicircle/e2e-vscode test:e2e:live-github
+```
+
+The first E2E run downloads ~100 MB of VS Code into `.vscode-test/`;
+subsequent runs reuse the cache.
+
+### Cross-host matrix (deferred to Phase 10)
+
+Quarterly cron against `{Cursor, VSCodium, Windsurf}` via Open VSX builds
+lands when the marketplace publication step does (Phase 10). Phase 1
+ships VS Code stable + Insiders coverage; the broader fork coverage is a
+Phase 10 release-gate item.
+
+---
+
+## Web E2E CI
+
+The web E2E suite runs on every PR and every push to `main`
 ([`.github/workflows/e2e.yml`](../../.github/workflows/e2e.yml)):
 
 1. **`playwright`** — full chromium run + strict coverage report. Gates
@@ -204,7 +282,7 @@ The default E2E suite uses the local GitHub mock. Real GitHub credentials are op
 
 `pnpm test:e2e:live-github` now runs the canonical `chromium-live-github` Playwright project. It only picks up specs under [`e2e/web/live-github/`](../../e2e/web/live-github/); the older sandbox suite has been removed so there is one live GitHub contract to maintain.
 
-Each spec creates bot-owned ephemeral private/public repos as needed, seeds deterministic `.apicircle/workspace.json` data, and deletes repos/branches in test cleanup. The main bot PAT needs `repo` + `delete_repo`; the dedicated-link PAT needs `repo` so private linked workspaces can refresh after the active workspace GitHub session is disconnected.
+Each spec creates bot-owned ephemeral private/public repos as needed, seeds deterministic `.apicircle/` workspace data, and deletes repos/branches in test cleanup. The main bot PAT needs `repo` + `delete_repo`; the dedicated-link PAT needs `repo` so private linked workspaces can refresh after the active workspace GitHub session is disconnected.
 
 | Env var                                | Required? | Purpose                                                                              |
 | -------------------------------------- | --------- | ------------------------------------------------------------------------------------ |
@@ -238,7 +316,7 @@ The workflow maps `APICIRCLE_E2E_BOT_PAT` into the runtime `APICIRCLE_E2E_GITHUB
 | Spec                                      | Covers                                                                                                                                       |
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `00-preflight.spec.ts`                    | PAT validity, bot owner guard, private/public repo create/delete, dedicated PAT private-read access.                                         |
-| `01-connect-branch-push.spec.ts`          | Connect private repo, create exact branch, push minimal workspace, fetch remote `.apicircle/workspace.json`, assert branch/commit exist.     |
+| `01-connect-branch-push.spec.ts`          | Connect private repo, create exact branch, push minimal workspace, fetch remote `.apicircle/` workspace data, assert branch/commit exist.    |
 | `02-private-link-workspace.spec.ts`       | Two-repo private linking: source workspace provides requests/env/release notes, host links and materializes them.                            |
 | `03-private-dedicated-pat.spec.ts`        | Private source link bound to a dedicated PAT still refreshes after workspace GitHub session disconnect.                                      |
 | `04-public-link-workspace.spec.ts`        | Public source link materializes without an active workspace GitHub session.                                                                  |

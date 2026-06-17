@@ -101,9 +101,9 @@ test.describe('Global Assets library (P17)', () => {
       await expect(confirm).toBeVisible();
       await confirm.getByRole('button', { name: 'Delete' }).click();
 
-      // Deleting the viewed schema leaves the narrow dock on the detail
-      // pane — step back to the list to confirm it's now empty.
-      await dock.getByRole('button', { name: 'Back to list' }).click();
+      // Deleting the viewed schema auto-snaps the dock back to the list
+      // (panel's useEffect clears selectedId when the asset disappears),
+      // so the empty state is reachable without a manual "Back to list".
       await expect(dock.getByRole('button', { name: /Doomed/ })).not.toBeVisible();
       await expect(dock.getByText('No schemas yet.')).toBeVisible();
     },

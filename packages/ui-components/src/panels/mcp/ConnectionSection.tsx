@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertTriangle, Copy, Folder, RefreshCw, Terminal } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { formatRelativeTime } from '../../primitives/relativeTime';
+import { safeCopyToClipboard } from '../../primitives/clipboard';
 import { DesktopAppLink } from '../../primitives/desktopDownload';
 import { HowToConnect } from './HowToConnect';
 import { getDesktopMcpBridge, getDesktopWorkspaceFileBridge } from '../../desktop/bridge';
@@ -163,7 +164,7 @@ export function ConnectionSection() {
             aria-label="Refresh from disk"
             title={
               refreshSupported
-                ? 'Re-read workspace.synced.json from disk and merge any newer changes'
+                ? 'Re-read workspace.json from disk and merge any newer changes'
                 : 'Refresh is only available in the desktop build'
             }
             className="inline-flex shrink-0 items-center gap-1.5 rounded-sm border border-border bg-surface px-2.5 py-1.5 text-[0.6875rem] text-text-primary hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
@@ -254,8 +255,9 @@ function InfoRow({
 }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
-    if (!value || !navigator.clipboard) return;
-    await navigator.clipboard.writeText(value);
+    if (!value) return;
+    const result = await safeCopyToClipboard(value);
+    if (!result.ok) return;
     setCopied(true);
     onCopy?.();
     setTimeout(() => setCopied(false), 1500);

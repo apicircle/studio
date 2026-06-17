@@ -1,4 +1,5 @@
 import { promises as fs } from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import lockfile from 'proper-lockfile';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
@@ -6,26 +7,37 @@ import { loadFromFile, saveToFile } from './fileBackedWorkspace';
 import type { WorkspaceState } from './patches';
 
 // =============================================================================
-// On-disk multi-workspace registry. Mirrors the IDB-side `WorkspaceRegistry`
-// shape (`packages/ui-components/src/persistence/db.ts`) so the desktop app,
-// the CLI, and the MCP server all read the same JSON file format.
+// On-disk multi-workspace registry. All surfaces (desktop, CLI, MCP server,
+// VS Code extension) read the same `~/.apicircle/` root.
 //
-// Layout under `<root>/`:
+// Layout under `<root>/` (= ~/.apicircle or <repo>/.apicircle):
 //
 //   registry.json                       ← this module's source of truth
-//   <workspace-id-1>/
-//     workspace.synced.json
+//   workspace-<id-1>/
+//     workspace.json
 //     workspace.local.json
-//   <workspace-id-2>/
+//     attachments/
+//   workspace-<id-2>/
 //     ...
 //
-// Each workspace lives in its own subdirectory so concurrent writers (the
-// desktop's mirror + a CLI invocation against a different workspace) can't
-// step on each other. `proper-lockfile` still guards the registry file
-// itself when readers / writers race.
+// Each workspace lives in its own `workspace-<id>` directory so concurrent
+// writers (the desktop's mirror + a CLI invocation against a different
+// workspace) can't step on each other. The flat naming keeps the structure
+// identical whether there's one workspace or ten — no surprise layout
+// changes when multi-workspace is introduced. `proper-lockfile` still
+// guards the registry file itself when readers / writers race.
 // =============================================================================
 
 export const REGISTRY_FILE = 'registry.json';
+export const WORKSPACE_DIR_PREFIX = 'workspace-';
+
+/**
+ * The universal root for all API Circle workspace data: `~/.apicircle/`.
+ * Every consumer (desktop, CLI, MCP, VS Code) uses this as the default.
+ */
+export function defaultApicircleRoot(): string {
+  return path.join(os.homedir(), '.apicircle');
+}
 
 export interface WorkspaceRegistryEntry {
   /** Matches the in-workspace `synced.workspaceId`. */
@@ -51,9 +63,10 @@ export function emptyRegistry(): WorkspaceRegistry {
   return { schemaVersion: 1, activeWorkspaceId: null, workspaces: [] };
 }
 
-/** Compute the directory inside `<root>/` that holds a workspace's JSON pair. */
+/** Compute the directory inside `<root>/` that holds a workspace's files.
+ *  Layout: `<root>/workspace-<id>/`. */
 export function workspaceDirFor(root: string, workspaceId: string): string {
-  return path.join(root, workspaceId);
+  return path.join(root, `${WORKSPACE_DIR_PREFIX}${workspaceId}`);
 }
 
 /** Load the registry from disk; returns `null` if the file is missing. */
@@ -93,8 +106,8 @@ export async function saveRegistry(root: string, registry: WorkspaceRegistry): P
 
 /**
  * Read a workspace's `{synced, local}` pair by id. Returns `null` if the
- * workspace subdirectory is missing OR its `workspace.synced.json` is
- * missing. Used by the CLI / MCP / desktop reader.
+ * workspace subdirectory is missing OR its `workspace.json` is missing.
+ * Used by the CLI / MCP / desktop reader.
  */
 export async function loadWorkspaceById(
   root: string,
@@ -145,7 +158,7 @@ export async function deleteWorkspaceById(
 
 /**
  * Add a workspace to the registry. Caller is responsible for having
- * written `workspace.synced.json` first. Existing entry with the same id
+ * written `workspace.json` first. Existing entry with the same id
  * is replaced (idempotent update). Newly-registered workspaces become
  * the active one when there is no prior active.
  */
@@ -199,52 +212,6 @@ export function findWorkspaceEntry(
   const lower = idOrName.toLowerCase();
   const byName = registry.workspaces.find((w) => w.name.toLowerCase() === lower);
   return byName ?? null;
-}
-
-/**
- * One-time migration from the legacy single-workspace layout
- * (`<root>/workspace.synced.json` written next to the registry root) into
- * per-workspace subdirectories. Runs on first boot after the multi-workspace
- * rollout. No-op when the registry already exists.
- *
- * The legacy layout was: the desktop's userData/workspace/ directly held
- * `workspace.synced.json` + `workspace.local.json`. The new layout puts
- * those under `userData/workspaces/<id>/`. We read the legacy pair, write
- * it under the new layout keyed on its `synced.workspaceId`, then unlink
- * the legacy files so re-migration is impossible.
- */
-export async function migrateLegacyWorkspace(args: {
-  legacyDir: string;
-  registryRoot: string;
-  defaultName?: string;
-}): Promise<{ migrated: boolean; registry: WorkspaceRegistry }> {
-  const { legacyDir, registryRoot, defaultName = 'Workspace' } = args;
-  const existing = await loadRegistry(registryRoot);
-  if (existing) return { migrated: false, registry: existing };
-  const legacyState = await loadFromFile(legacyDir, { allowMissing: true });
-  if (!legacyState) {
-    return { migrated: false, registry: emptyRegistry() };
-  }
-  const id = legacyState.synced.workspaceId;
-  await saveToFile(workspaceDirFor(registryRoot, id), legacyState);
-  const now = new Date().toISOString();
-  const entry: WorkspaceRegistryEntry = {
-    id,
-    name: defaultName,
-    createdAt: legacyState.synced.meta.createdAt ?? now,
-    lastOpenedAt: now,
-  };
-  const registry: WorkspaceRegistry = {
-    schemaVersion: 1,
-    activeWorkspaceId: id,
-    workspaces: [entry],
-  };
-  await saveRegistry(registryRoot, registry);
-  // Remove the legacy files so subsequent boots don't re-migrate (and so
-  // the CLI / MCP don't accidentally read the stale copy).
-  await fs.rm(path.join(legacyDir, 'workspace.synced.json'), { force: true });
-  await fs.rm(path.join(legacyDir, 'workspace.local.json'), { force: true });
-  return { migrated: true, registry };
 }
 
 /** Normalize a parsed registry so downstream code can rely on its shape. */

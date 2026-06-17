@@ -11,6 +11,7 @@ import {
   makeDeterministicWorkspace,
   mergePullRequest,
   publishReleaseOnSource,
+  seedMultiWorkspaceOnBranch,
   seedRepoIfEmpty,
   setRepoTopics,
   updateWorkspaceJson,
@@ -128,8 +129,8 @@ export function sha256HexV2(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-export function attachmentBlobPathV2(slotId: string): string {
-  return `.apicircle/attachments/${slotId}`;
+export function attachmentBlobPathV2(slotId: string, workspaceId: string): string {
+  return `.apicircle/workspace-${workspaceId}/attachments/${slotId}`;
 }
 
 export async function createV2Repo(
@@ -161,6 +162,25 @@ export async function createV2HostRepo(
 ): Promise<LiveGithubConfig> {
   const cfg = tracker.trackRepo(await createV2Repo(bot, `host-${label}`, visibility));
   await seedRepoIfEmpty(cfg, { workspaceJson: true });
+  return cfg;
+}
+
+/**
+ * Create a repo seeded with multiple workspaces under `.apicircle/`.
+ * Returns the repo config; the default branch carries:
+ *   - `.apicircle/registry.json` listing all workspaces with `activeId` active
+ *   - `.apicircle/workspace-<id>/workspace.json` for each entry
+ */
+export async function createV2MultiWorkspaceHostRepo(
+  tracker: V2Tracker,
+  bot: V2BotConfig,
+  label: string,
+  workspaces: Array<{ id: string; name: string; content: Record<string, unknown> }>,
+  activeId: string,
+): Promise<LiveGithubConfig> {
+  const cfg = tracker.trackRepo(await createV2Repo(bot, `multi-ws-${label}`));
+  const head = await seedRepoIfEmpty(cfg);
+  await seedMultiWorkspaceOnBranch(cfg, head.name, workspaces, activeId);
   return cfg;
 }
 
@@ -313,7 +333,7 @@ export async function seedSourceAttachmentRequestV2(
   args: SeedSourceAttachmentRequestArgs,
 ): Promise<{ sha256: string }> {
   const sha256 = sha256HexV2(args.bytes);
-  await updateWorkspaceJson(
+  const updated = await updateWorkspaceJson(
     source.cfg,
     source.branch,
     `e2e live: seed attachment ${args.slotId}`,
@@ -353,10 +373,12 @@ export async function seedSourceAttachmentRequestV2(
       if (args.graphqlSchemaId) req.graphqlSchemaId = args.graphqlSchemaId;
     },
   );
+  const workspaceId = (updated as Record<string, unknown>).workspaceId as string;
+  if (!workspaceId) throw new Error('seedSourceAttachmentRequestV2: workspace missing workspaceId');
   await writeRepoFileV2(
     source.cfg,
     source.branch,
-    attachmentBlobPathV2(args.slotId),
+    attachmentBlobPathV2(args.slotId, workspaceId),
     args.bytes,
     `e2e live: write attachment ${args.slotId}`,
   );

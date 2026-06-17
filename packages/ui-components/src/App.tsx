@@ -68,7 +68,7 @@ function useFocusRefresh(): void {
 /**
  * Subscribe to file-watcher events from the desktop main process so the
  * renderer auto-refreshes when an external writer (MCP server, CLI, or
- * a user editing the JSON by hand) changes `workspace.synced.json` while
+ * a user editing the JSON by hand) changes `workspace.json` while
  * the desktop is running.
  *
  * Without this hook the desktop only re-reads disk on a manual Refresh

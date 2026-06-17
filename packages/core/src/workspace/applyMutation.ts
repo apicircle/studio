@@ -4,11 +4,18 @@ import type {
   Folder,
   FolderNode,
   FormDataRow,
+  EnvironmentVariableOverride,
   GlobalFileAsset,
+  LinkedSnapshot,
+  LinkedWorkspace,
   MockResponseBody,
   MockResponseConfig,
   RequestBody,
   Request as ApiRequest,
+  RequestOverride,
+  ReleaseHistory,
+  ReleaseVersion,
+  SecretCryptoMeta,
   WorkspaceLocal,
   WorkspaceSnapshot,
   WorkspaceSnapshotTrigger,
@@ -20,6 +27,7 @@ import {
   importApicircleFolderInto,
   type ImportApicircleFolderResult,
 } from './apicircleFolderImport';
+import { appendReleaseEntry, deprecateRelease, yankRelease } from '../release/publishRelease';
 import type { ParsedApicircleFolderExport } from '../import/apicircleFolder';
 
 // =============================================================================
@@ -65,6 +73,8 @@ export function applyMutation(
       return applyFolderDelete(state, patch.id, now);
     case 'folder.move':
       return applyFolderMove(state, patch.id, patch.newParentId, now);
+    case 'folder.update':
+      return applyFolderUpdate(state, patch.id, patch.patch, now);
     case 'folder.import_apicircle':
       return applyFolderImportApicircle(state, patch.parsed, patch.parentFolderId, now);
     case 'environment.upsert':
@@ -77,6 +87,10 @@ export function applyMutation(
       return applyEnvSetPriority(state, patch.order, now);
     case 'secretKey.upsert':
       return applySecretKeyUpsert(state, patch.meta, now);
+    case 'secret.crypto.set':
+      return applySecretCryptoSet(state, patch.crypto, now);
+    case 'secret.crypto.clear':
+      return applySecretCryptoClear(state, now);
     case 'assertion.upsert':
       return applyAssertionUpsert(state, patch.requestId, patch.assertion, now);
     case 'assertion.delete':
@@ -85,6 +99,34 @@ export function applyMutation(
       return applyMockUpsert(state, patch.mock, now);
     case 'mock.delete':
       return applyMockDelete(state, patch.id, now);
+    case 'release.publish':
+      return applyReleasePublish(state, patch.entry, now);
+    case 'release.deprecate':
+      return applyReleaseDeprecate(state, patch.version, now);
+    case 'release.yank':
+      return applyReleaseYank(state, patch.version, now);
+    case 'linkedWorkspace.upsert':
+      return applyLinkedWorkspaceUpsert(state, patch.link, patch.ledger, patch.snapshot, now);
+    case 'linkedWorkspace.remove':
+      return applyLinkedWorkspaceRemove(state, patch.id, now);
+    case 'linkedWorkspace.applyUpdate':
+      return applyLinkedWorkspaceApplyUpdate(state, patch, now);
+    case 'linkedOverride.setRequest':
+      return applyLinkedOverrideSetRequest(state, patch.override, now);
+    case 'linkedOverride.removeRequest':
+      return applyLinkedOverrideRemoveRequest(state, patch.linkedWorkspaceId, patch.itemId, now);
+    case 'linkedOverride.setEnvVar':
+      return applyLinkedOverrideSetEnvVar(state, patch.override, now);
+    case 'linkedOverride.removeEnvVar':
+      return applyLinkedOverrideRemoveEnvVar(
+        state,
+        patch.linkedWorkspaceId,
+        patch.envName,
+        patch.varKey,
+        now,
+      );
+    case 'linkedOverride.clearForLink':
+      return applyLinkedOverrideClearForLink(state, patch.linkedWorkspaceId, now);
     case 'globalAsset.upsertFile':
       return applyGlobalAssetUpsertFile(state, patch.file, now);
     case 'globalAsset.removeFile':
@@ -130,12 +172,15 @@ function applyRequestCreate(
   if (state.synced.collections.requests[request.id]) {
     return { next: state, changedIds: [] };
   }
+  const tree = request.folderId
+    ? state.synced.collections.tree
+    : pushTreeChild(state.synced.collections.tree, { kind: 'request', id: request.id });
   const synced: WorkspaceSynced = {
     ...state.synced,
     collections: {
       ...state.synced.collections,
       requests: { ...state.synced.collections.requests, [request.id]: request },
-      tree: pushTreeChild(state.synced.collections.tree, { kind: 'request', id: request.id }),
+      tree,
     },
     meta: { ...state.synced.meta, updatedAt: now },
   };
@@ -203,12 +248,15 @@ function applyFolderCreate(
   if (state.synced.collections.folders[folder.id]) {
     return { next: state, changedIds: [] };
   }
+  const tree = folder.parentId
+    ? state.synced.collections.tree
+    : pushTreeChild(state.synced.collections.tree, { kind: 'folder', id: folder.id });
   const synced: WorkspaceSynced = {
     ...state.synced,
     collections: {
       ...state.synced.collections,
       folders: { ...state.synced.collections.folders, [folder.id]: folder },
-      tree: pushTreeChild(state.synced.collections.tree, { kind: 'folder', id: folder.id }),
+      tree,
     },
     meta: { ...state.synced.meta, updatedAt: now },
   };
@@ -286,6 +334,76 @@ function applyFolderMove(
     meta: { ...state.synced.meta, updatedAt: now },
   };
   return { next: { ...state, synced }, changedIds: [id] };
+}
+
+function applyFolderUpdate(
+  state: WorkspaceState,
+  id: string,
+  patch: Partial<Pick<Folder, 'name' | 'auth'>>,
+  now: string,
+): ApplyMutationResult {
+  const folder = state.synced.collections.folders[id];
+  if (!folder) {
+    return { next: state, changedIds: [] };
+  }
+  const nameChanging = 'name' in patch && patch.name !== undefined;
+  const authChanging = 'auth' in patch;
+  if (!nameChanging && !authChanging) {
+    return { next: state, changedIds: [] };
+  }
+  let nextName = folder.name;
+  if (nameChanging) {
+    const trimmed = patch.name!.trim();
+    if (!trimmed) {
+      // Empty rename — preserve current. Reducer no-ops on invalid input
+      // (matches request.update semantics: bad fields are dropped, the
+      // patch as a whole still settles).
+    } else if (trimmed === folder.name) {
+      // No change to apply.
+    } else if (!isFolderNameUnique(state, folder.parentId, trimmed, id)) {
+      // Collision under the same parent — no-op rather than silently
+      // accepting a duplicate. Headless writers should pre-uniquify (the
+      // store helper `uniquifyName` does this already).
+      return { next: state, changedIds: [] };
+    } else {
+      nextName = trimmed;
+    }
+  }
+  const nextFolder: Folder = { ...folder, name: nextName };
+  if (authChanging) {
+    if (patch.auth === undefined) {
+      delete nextFolder.auth;
+    } else {
+      nextFolder.auth = patch.auth;
+    }
+  }
+  if (nextFolder.name === folder.name && nextFolder.auth === folder.auth) {
+    return { next: state, changedIds: [] };
+  }
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    collections: {
+      ...state.synced.collections,
+      folders: { ...state.synced.collections.folders, [id]: nextFolder },
+    },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  return { next: { ...state, synced }, changedIds: [id] };
+}
+
+function isFolderNameUnique(
+  state: WorkspaceState,
+  parentId: string | null,
+  trimmedCandidate: string,
+  ignoreId: string,
+): boolean {
+  const target = trimmedCandidate.toLowerCase();
+  for (const f of Object.values(state.synced.collections.folders)) {
+    if (f.id === ignoreId) continue;
+    if (f.parentId !== parentId) continue;
+    if (f.name.trim().toLowerCase() === target) return false;
+  }
+  return true;
 }
 
 /**
@@ -456,6 +574,46 @@ function applySecretKeyUpsert(
   return { next: { ...state, synced }, changedIds: [meta.id] };
 }
 
+function applySecretCryptoSet(
+  state: WorkspaceState,
+  crypto: SecretCryptoMeta,
+  now: string,
+): ApplyMutationResult {
+  // Defensive: refuse to persist a malformed blob. The verifier MUST be
+  // populated — without it `unlockSecretCrypto` can't reject a wrong
+  // passphrase and we'd hand back a wrong key to every downstream
+  // decrypt. salt + iterations are equally non-negotiable.
+  if (
+    !crypto ||
+    crypto.kdf !== 'pbkdf2-sha256-v1' ||
+    !crypto.salt ||
+    !crypto.verifier ||
+    !(crypto.iterations >= 1)
+  ) {
+    return { next: state, changedIds: [] };
+  }
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    secretCrypto: { ...crypto },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  return { next: { ...state, synced }, changedIds: ['secret.crypto'] };
+}
+
+function applySecretCryptoClear(state: WorkspaceState, now: string): ApplyMutationResult {
+  // No-op if already cleared. Keeps `updatedAt` stable so repeated calls
+  // don't churn the synced doc.
+  if (!state.synced.secretCrypto) {
+    return { next: state, changedIds: [] };
+  }
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    secretCrypto: null,
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  return { next: { ...state, synced }, changedIds: ['secret.crypto'] };
+}
+
 // ---------------------------------------------------------------------------
 // Assertion handlers
 // ---------------------------------------------------------------------------
@@ -540,6 +698,294 @@ function applyMockDelete(state: WorkspaceState, id: string, now: string): ApplyM
       }
     : state.local;
   return { next: { synced, local }, changedIds: [id] };
+}
+
+// ---------------------------------------------------------------------------
+// Release handlers (synced.releases.self)
+//
+// The workspace-self release ledger that linked consumers pin to. `publish`
+// appends a pre-built ReleaseVersion (snapshot already computed by the async
+// `buildReleaseEntry`); `deprecate` / `yank` flip the soft / hard signal
+// flags. These reducers delegate to the pure helpers in
+// `../release/publishRelease` and pass the injected `now` so batches stay
+// deterministic. They THROW (rather than no-op) on invalid semver, a
+// duplicate version, or an unknown version — see the patch-union comment.
+// ---------------------------------------------------------------------------
+
+function applyReleasePublish(
+  state: WorkspaceState,
+  entry: ReleaseVersion,
+  now: string,
+): ApplyMutationResult {
+  const synced = appendReleaseEntry(state.synced, entry, now);
+  return { next: { ...state, synced }, changedIds: [entry.version] };
+}
+
+function applyReleaseDeprecate(
+  state: WorkspaceState,
+  version: string,
+  now: string,
+): ApplyMutationResult {
+  const synced = deprecateRelease(state.synced, version, now);
+  return { next: { ...state, synced }, changedIds: [version] };
+}
+
+function applyReleaseYank(
+  state: WorkspaceState,
+  version: string,
+  now: string,
+): ApplyMutationResult {
+  const synced = yankRelease(state.synced, version, now);
+  return { next: { ...state, synced }, changedIds: [version] };
+}
+
+// ---------------------------------------------------------------------------
+// Linked-workspace handlers (synced.linkedWorkspaces + releases.perLink +
+// linkedOverrides; local.linkedCollections + sessions.github.links)
+//
+// `upsert` writes the link record and OPTIONALLY the cached release ledger
+// (synced.releases.perLink) + collections/environments snapshot
+// (local.linkedCollections) produced by the network fetch in the host. The
+// snapshot lands in WorkspaceLocal so the consumer's pushed JSON never carries
+// the source's whole tree. `remove` cascades across every slice the link
+// touched. Both are pure + synchronous.
+// ---------------------------------------------------------------------------
+
+function applyLinkedWorkspaceUpsert(
+  state: WorkspaceState,
+  link: LinkedWorkspace,
+  ledger: ReleaseHistory | undefined,
+  snapshot: LinkedSnapshot | undefined,
+  now: string,
+): ApplyMutationResult {
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    linkedWorkspaces: { ...state.synced.linkedWorkspaces, [link.id]: link },
+    releases: ledger
+      ? {
+          ...state.synced.releases,
+          perLink: { ...state.synced.releases.perLink, [link.id]: ledger },
+        }
+      : state.synced.releases,
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  const local: WorkspaceLocal = snapshot
+    ? {
+        ...state.local,
+        linkedCollections: { ...state.local.linkedCollections, [link.id]: snapshot },
+      }
+    : state.local;
+  return { next: { synced, local }, changedIds: [link.id] };
+}
+
+function applyLinkedWorkspaceRemove(
+  state: WorkspaceState,
+  id: string,
+  now: string,
+): ApplyMutationResult {
+  if (!state.synced.linkedWorkspaces[id]) {
+    return { next: state, changedIds: [] };
+  }
+  const linkedWorkspaces = { ...state.synced.linkedWorkspaces };
+  delete linkedWorkspaces[id];
+  const perLink = { ...state.synced.releases.perLink };
+  delete perLink[id];
+  // Override keys are `${linkedWorkspaceId}:…`; generateId() ids never contain
+  // a colon, so the `${id}:` prefix is an unambiguous match.
+  const prefix = `${id}:`;
+  const dropPrefixed = <T>(map: Record<string, T>): Record<string, T> =>
+    Object.fromEntries(Object.entries(map).filter(([k]) => !k.startsWith(prefix)));
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    linkedWorkspaces,
+    releases: { ...state.synced.releases, perLink },
+    linkedOverrides: {
+      requests: dropPrefixed(state.synced.linkedOverrides.requests),
+      environmentVars: dropPrefixed(state.synced.linkedOverrides.environmentVars),
+    },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  const linkedCollections = { ...state.local.linkedCollections };
+  delete linkedCollections[id];
+  const githubLinks = { ...state.local.sessions.github.links };
+  delete githubLinks[id];
+  const local: WorkspaceLocal = {
+    ...state.local,
+    linkedCollections,
+    sessions: {
+      ...state.local.sessions,
+      github: { ...state.local.sessions.github, links: githubLinks },
+    },
+  };
+  return { next: { synced, local }, changedIds: [id] };
+}
+
+function applyLinkedWorkspaceApplyUpdate(
+  state: WorkspaceState,
+  patch: {
+    id: string;
+    pinnedVersion: string | null;
+    snapshot: LinkedSnapshot;
+    ledger: ReleaseHistory;
+    requestOverrides: RequestOverride[];
+    envVarOverrides: EnvironmentVariableOverride[];
+  },
+  now: string,
+): ApplyMutationResult {
+  const link = state.synced.linkedWorkspaces[patch.id];
+  if (!link) {
+    return { next: state, changedIds: [] };
+  }
+  const prefix = `${patch.id}:`;
+  const otherRequests = Object.fromEntries(
+    Object.entries(state.synced.linkedOverrides.requests).filter(([k]) => !k.startsWith(prefix)),
+  );
+  for (const o of patch.requestOverrides) {
+    otherRequests[`${o.linkedWorkspaceId}:${o.itemId}`] = o;
+  }
+  const otherEnvVars = Object.fromEntries(
+    Object.entries(state.synced.linkedOverrides.environmentVars).filter(
+      ([k]) => !k.startsWith(prefix),
+    ),
+  );
+  for (const o of patch.envVarOverrides) {
+    otherEnvVars[`${o.linkedWorkspaceId}:${o.envName}:${o.varKey}`] = o;
+  }
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    linkedWorkspaces: {
+      ...state.synced.linkedWorkspaces,
+      [patch.id]: { ...link, pinnedVersion: patch.pinnedVersion },
+    },
+    releases: {
+      ...state.synced.releases,
+      perLink: { ...state.synced.releases.perLink, [patch.id]: patch.ledger },
+    },
+    linkedOverrides: { requests: otherRequests, environmentVars: otherEnvVars },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  const local: WorkspaceLocal = {
+    ...state.local,
+    linkedCollections: { ...state.local.linkedCollections, [patch.id]: patch.snapshot },
+  };
+  return { next: { synced, local }, changedIds: [patch.id] };
+}
+
+// ---------------------------------------------------------------------------
+// Linked-content override handlers (synced.linkedOverrides) — consumer edits to
+// a linked workspace's requests / env-vars, stored as field-level deltas.
+// ---------------------------------------------------------------------------
+
+function applyLinkedOverrideSetRequest(
+  state: WorkspaceState,
+  override: RequestOverride,
+  now: string,
+): ApplyMutationResult {
+  const key = `${override.linkedWorkspaceId}:${override.itemId}`;
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    linkedOverrides: {
+      ...state.synced.linkedOverrides,
+      requests: {
+        ...state.synced.linkedOverrides.requests,
+        [key]: { ...override, updatedAt: now },
+      },
+    },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  return { next: { ...state, synced }, changedIds: [key] };
+}
+
+function applyLinkedOverrideRemoveRequest(
+  state: WorkspaceState,
+  linkedWorkspaceId: string,
+  itemId: string,
+  now: string,
+): ApplyMutationResult {
+  const key = `${linkedWorkspaceId}:${itemId}`;
+  if (!state.synced.linkedOverrides.requests[key]) {
+    return { next: state, changedIds: [] };
+  }
+  const requests = { ...state.synced.linkedOverrides.requests };
+  delete requests[key];
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    linkedOverrides: { ...state.synced.linkedOverrides, requests },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  return { next: { ...state, synced }, changedIds: [key] };
+}
+
+function applyLinkedOverrideSetEnvVar(
+  state: WorkspaceState,
+  override: EnvironmentVariableOverride,
+  now: string,
+): ApplyMutationResult {
+  const key = `${override.linkedWorkspaceId}:${override.envName}:${override.varKey}`;
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    linkedOverrides: {
+      ...state.synced.linkedOverrides,
+      environmentVars: {
+        ...state.synced.linkedOverrides.environmentVars,
+        [key]: { ...override, updatedAt: now },
+      },
+    },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  return { next: { ...state, synced }, changedIds: [key] };
+}
+
+function applyLinkedOverrideRemoveEnvVar(
+  state: WorkspaceState,
+  linkedWorkspaceId: string,
+  envName: string,
+  varKey: string,
+  now: string,
+): ApplyMutationResult {
+  const key = `${linkedWorkspaceId}:${envName}:${varKey}`;
+  if (!state.synced.linkedOverrides.environmentVars[key]) {
+    return { next: state, changedIds: [] };
+  }
+  const environmentVars = { ...state.synced.linkedOverrides.environmentVars };
+  delete environmentVars[key];
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    linkedOverrides: { ...state.synced.linkedOverrides, environmentVars },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  return { next: { ...state, synced }, changedIds: [key] };
+}
+
+function applyLinkedOverrideClearForLink(
+  state: WorkspaceState,
+  linkedWorkspaceId: string,
+  now: string,
+): ApplyMutationResult {
+  const prefix = `${linkedWorkspaceId}:`;
+  const requestKeys = Object.keys(state.synced.linkedOverrides.requests).filter((k) =>
+    k.startsWith(prefix),
+  );
+  const envKeys = Object.keys(state.synced.linkedOverrides.environmentVars).filter((k) =>
+    k.startsWith(prefix),
+  );
+  if (requestKeys.length === 0 && envKeys.length === 0) {
+    return { next: state, changedIds: [] };
+  }
+  const requests = Object.fromEntries(
+    Object.entries(state.synced.linkedOverrides.requests).filter(([k]) => !k.startsWith(prefix)),
+  );
+  const environmentVars = Object.fromEntries(
+    Object.entries(state.synced.linkedOverrides.environmentVars).filter(
+      ([k]) => !k.startsWith(prefix),
+    ),
+  );
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    linkedOverrides: { requests, environmentVars },
+    meta: { ...state.synced.meta, updatedAt: now },
+  };
+  return { next: { ...state, synced }, changedIds: [...requestKeys, ...envKeys] };
 }
 
 // ---------------------------------------------------------------------------
@@ -655,7 +1101,7 @@ function applyGlobalAssetRemoveFile(
   // Queue the attachment blob for deletion on the next push IF the asset
   // ever made it to a remote ref. Otherwise the bytes were only ever in
   // local IDB — there's no remote tree entry to delete, so we skip the
-  // queue. The push flow emits `{path: '.apicircle/attachments/<slotId>',
+  // queue. The push flow emits `{path: '.apicircle/workspace-<id>/attachments/<slotId>',
   // sha: null}` over `base_tree` for every queued slot id, which GitHub
   // treats as a tree-entry deletion. The eventual PR merge then carries
   // the deletion through to the base branch.

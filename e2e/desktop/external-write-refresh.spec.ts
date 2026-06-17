@@ -3,7 +3,7 @@
 // What this covers:
 //
 //   1. Launch the desktop. It boots with a fresh `My Workspace`.
-//   2. Externally rewrite the workspace's `workspace.synced.json` with a
+//   2. Externally rewrite the workspace's `workspace.json` with a
 //      newer `meta.updatedAt` and an extra request (simulating exactly
 //      what the MCP server's `FileBackedWorkspaceProvider.apply` would
 //      do while the desktop is running).
@@ -21,7 +21,7 @@ import * as path from 'node:path';
 import { expect, test } from './fixtures/electronApp';
 import type { WorkspaceState } from '@apicircle/core';
 
-const SYNCED = 'workspace.synced.json';
+const SYNCED = 'workspace.json';
 const LOCAL = 'workspace.local.json';
 
 function readPair(workspaceDir: string): WorkspaceState {
@@ -44,7 +44,7 @@ function writePair(workspaceDir: string, state: WorkspaceState): void {
 }
 
 test.describe('External-write auto-refresh', () => {
-  test('external write to workspace.synced.json appears in the editor without clicking Refresh', async ({
+  test('external write to workspace.json appears in the editor without clicking Refresh', async ({
     mainWindow,
     userDataDir,
   }) => {

@@ -57,12 +57,13 @@ function routedFetch(
 
 function ledgerFile(versions: Array<{ version: string; notes?: string }>): ResponseSpec {
   const json = JSON.stringify({ releases: { self: { versions } } });
+  const wsId = useWorkspaceStore.getState().synced?.workspaceId ?? 'ws';
   return {
     body: {
       type: 'file',
       content: Buffer.from(json, 'utf8').toString('base64'),
       sha: 'fileSha',
-      path: '.apicircle/workspace.json',
+      path: `.apicircle/workspace-${wsId}/workspace.json`,
       size: json.length,
     },
   };
@@ -121,7 +122,7 @@ describe('ReleaseAndTopicsModal', () => {
       'fetch',
       routedFetch([
         {
-          match: /\/contents\/\.apicircle\/workspace\.json/,
+          match: /\/contents\/\.apicircle\/workspace-[^/]+\/workspace\.json/,
           responses: [{ body: { message: 'Not Found' }, status: 404 }],
         },
         { match: /\/topics$/, responses: [{ body: { names: ['apicircle'] } }] },
@@ -140,7 +141,7 @@ describe('ReleaseAndTopicsModal', () => {
       'fetch',
       routedFetch([
         {
-          match: /\/contents\/\.apicircle\/workspace\.json/,
+          match: /\/contents\/\.apicircle\/workspace-[^/]+\/workspace\.json/,
           responses: [ledgerFile([{ version: '2.3.0', notes: 'released' }])],
         },
         {
@@ -163,7 +164,7 @@ describe('ReleaseAndTopicsModal', () => {
       'fetch',
       routedFetch([
         {
-          match: /\/contents\/\.apicircle\/workspace\.json/,
+          match: /\/contents\/\.apicircle\/workspace-[^/]+\/workspace\.json/,
           responses: [
             ledgerFile([
               { version: '1.0.0', notes: 'initial' },
@@ -205,7 +206,7 @@ describe('ReleaseAndTopicsModal', () => {
       'fetch',
       routedFetch([
         {
-          match: /\/contents\/\.apicircle\/workspace\.json/,
+          match: /\/contents\/\.apicircle\/workspace-[^/]+\/workspace\.json/,
           responses: [{ body: { message: 'Not Found' }, status: 404 }],
         },
         {
@@ -236,7 +237,7 @@ describe('ReleaseAndTopicsModal', () => {
       'fetch',
       routedFetch([
         {
-          match: /\/contents\/\.apicircle\/workspace\.json/,
+          match: /\/contents\/\.apicircle\/workspace-[^/]+\/workspace\.json/,
           responses: [{ body: { message: 'Not Found' }, status: 404 }],
         },
         { match: /\/topics$/, responses: [{ body: { names: ['apicircle', 'payments'] } }] },

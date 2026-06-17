@@ -29,7 +29,7 @@ export function registerMcpCommand(program: Command): void {
     )
     .option(
       '-w, --workspace-path <dir>',
-      'Filesystem directory containing workspace.synced.json (skips the registry).',
+      'Filesystem directory containing workspace.json (skips the registry).',
     )
     .action(async (opts: McpOptions) => {
       let dir: string;

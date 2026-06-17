@@ -43,7 +43,7 @@ const CHANNEL = {
  * Payload pushed on the `externalChange` channel when the watcher
  * detects a write the desktop didn't make. The literal string
  * `'registry'` is reserved to signal `registry.json` changed; any
- * other value is a per-workspace id whose `workspace.synced.json`
+ * other value is a per-workspace id whose `workspace.json`
  * changed.
  */
 export interface WorkspaceFileExternalChangePayload {

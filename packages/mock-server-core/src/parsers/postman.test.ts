@@ -52,6 +52,37 @@ describe('parsePostmanToEndpoints', () => {
     expect(endpoints).toHaveLength(2);
   });
 
+  it('populates requestSchema from url.variable / url.query / headers', () => {
+    const collection = JSON.stringify({
+      info: { name: 'C', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/' },
+      item: [
+        {
+          name: 'Get pet',
+          request: {
+            method: 'GET',
+            url: {
+              raw: 'https://api.example.com/pets/:petId?expand=owner',
+              path: ['pets', ':petId'],
+              variable: [{ key: 'petId', value: '1', description: 'Pet id' }],
+              query: [
+                { key: 'expand', value: 'owner' },
+                { key: 'debug', value: 'true', disabled: true },
+              ],
+            },
+            header: [{ key: 'X-Api-Key', value: 'abc' }],
+          },
+        },
+      ],
+    });
+    const { endpoints } = parsePostmanToEndpoints(collection);
+    const ep = endpoints[0];
+    expect(ep.requestSchema.pathParams.map((p) => p.name)).toEqual(['petId']);
+    expect(ep.requestSchema.pathParams[0].example).toBe('1');
+    // Disabled query rows are skipped.
+    expect(ep.requestSchema.queryParams.map((p) => p.name)).toEqual(['expand']);
+    expect(ep.requestSchema.headers.map((p) => p.name)).toEqual(['X-Api-Key']);
+  });
+
   it('uses the first saved response when present', () => {
     const { endpoints } = parsePostmanToEndpoints(POSTMAN_COLLECTION);
     const list = endpoints.find((e) => e.method === 'GET');

@@ -19,7 +19,7 @@ import { WorkspaceNotFoundError, type WorkspaceSummary, type Workspaces } from '
 // active workspace changes.
 //
 // Used by the MCP server when launched against a registry root (the
-// desktop's `userData/workspaces/`). Tools that consume `ctx.workspace`
+// `~/.apicircle/` root). Tools that consume `ctx.workspace`
 // keep working — they always see the current active workspace; tools that
 // consume `ctx.workspaces` can drill into any registered workspace.
 // =============================================================================
@@ -130,13 +130,14 @@ export class MultiWorkspaceProvider implements Workspaces {
       let counts: WorkspaceSummary['counts'] = null;
       try {
         const state = await loadWorkspaceById(this.registryRoot, entry.id);
-        if (state) {
+        if (state?.synced?.collections) {
+          const s = state.synced;
           counts = {
-            requests: Object.keys(state.synced.collections.requests).length,
-            folders: Object.keys(state.synced.collections.folders).length,
-            environments: Object.keys(state.synced.environments.items).length,
-            mockServers: Object.keys(state.synced.mockServers ?? {}).length,
-            plans: Object.keys(state.synced.executionPlans ?? {}).length,
+            requests: Object.keys(s.collections.requests ?? {}).length,
+            folders: Object.keys(s.collections.folders ?? {}).length,
+            environments: Object.keys(s.environments?.items ?? {}).length,
+            mockServers: Object.keys(s.mockServers ?? {}).length,
+            plans: Object.keys(s.executionPlans ?? {}).length,
           };
         }
       } catch {

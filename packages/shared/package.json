@@ -1,8 +1,9 @@
 {
   "name": "@apicircle/shared",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "private": false,
   "type": "module",
+  "sideEffects": false,
   "description": "Shared types, ID generation, validators, and encryption helpers for API Circle Studio.",
   "keywords": [
     "apicircle",

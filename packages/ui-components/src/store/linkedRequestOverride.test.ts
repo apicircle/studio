@@ -214,6 +214,7 @@ describe('linked request overrides', () => {
             id: 'link-1',
             kind: 'private',
             name: 'Source',
+            sourceWorkspaceId: 'src-ws-link1',
             source: {
               provider: 'github',
               repoFullName: 'a/b',

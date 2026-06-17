@@ -64,6 +64,78 @@ test.describe('Mock Servers (MK)', () => {
     expect(mainWindow).toBeTruthy();
   });
 
+  test(
+    tc(
+      id('Endpoint :: :id and {id} both supported'),
+      'request schema editor derives path params from the pattern + persists',
+    ),
+    async ({ mainWindow }) => {
+      // #9 cross-surface requestSchema editor: seed an endpoint, open its
+      // editor (the Endpoint node renders by default), and drive the new
+      // "Derive from path" affordance. Asserts the declared path param lands
+      // in the synced doc — the same field the VS Code YAML authoring edits.
+      await mainWindow.getByRole('button', { name: /^Mocks$/ }).click();
+      const seeded = await mainWindow.evaluate(() => {
+        type Store = {
+          getState: () => {
+            createMockServer: (args: {
+              name: string;
+              source: { kind: 'manual'; endpoints: never[] };
+            }) => string;
+            addMockEndpoint: (serverId: string) => string;
+            updateMockEndpoint: (
+              serverId: string,
+              endpointId: string,
+              patch: { pathPattern: string },
+            ) => void;
+            setActiveMockEndpoint: (args: { serverId: string; endpointId: string }) => void;
+          };
+        };
+        const w = window as unknown as { __apicircleStore?: Store };
+        if (!w.__apicircleStore) return null;
+        const s = w.__apicircleStore.getState();
+        const serverId = s.createMockServer({
+          name: 'SchemaFlowMock',
+          source: { kind: 'manual', endpoints: [] },
+        });
+        const endpointId = s.addMockEndpoint(serverId);
+        s.updateMockEndpoint(serverId, endpointId, { pathPattern: '/pets/{petId}' });
+        s.setActiveMockEndpoint({ serverId, endpointId });
+        return { serverId, endpointId };
+      });
+      test.skip(!seeded, '__apicircleStore not exposed by this build');
+
+      const derive = mainWindow.getByRole('button', { name: /derive from path/i });
+      await expect(derive).toBeVisible();
+      await derive.click();
+      await mainWindow.waitForTimeout(400);
+
+      const pathParamNames = await mainWindow.evaluate((ctx) => {
+        type Store = {
+          getState: () => {
+            synced: {
+              mockServers: Record<
+                string,
+                {
+                  endpoints: Array<{
+                    id: string;
+                    requestSchema: { pathParams: Array<{ name: string }> };
+                  }>;
+                }
+              >;
+            };
+          };
+        };
+        const w = window as unknown as { __apicircleStore?: Store };
+        const ep = w.__apicircleStore
+          ?.getState()
+          .synced.mockServers[ctx!.serverId].endpoints.find((e) => e.id === ctx!.endpointId);
+        return ep?.requestSchema.pathParams.map((p) => p.name) ?? [];
+      }, seeded);
+      expect(pathParamNames).toContain('petId');
+    },
+  );
+
   test(tc(id('Spec Import'), 'Mocks panel offers import affordance'), async ({ mainWindow }) => {
     await mainWindow.getByRole('button', { name: /^Mocks$/ }).click();
     // Mocks panel exposes import via the global ImportModal (which the
@@ -142,15 +214,136 @@ test.describe('Mock Servers (MK)', () => {
   );
 
   test(
-    tc(id('Runtime :: Port conflict cycles'), 'bridge accepts port conflicts gracefully'),
+    tc(id('Runtime :: Port conflict cycles'), 'EADDRINUSE surfaces the named-port toast'),
     async ({ mainWindow }) => {
-      const hasStart = await mainWindow.evaluate(() => {
-        const w = window as unknown as {
-          apicircleDesktop?: { mock?: Record<string, unknown> };
+      // Drive the bridge directly. We need two mocks both pinned to the
+      // SAME port — the first claims it, the second must hit
+      // `MockServerStartError` with code=EADDRINUSE and surface the
+      // friendly per-port message.
+      type DesktopMock = {
+        start: (
+          server: unknown,
+          opts?: { port?: number },
+        ) => Promise<{ port: number; pid: number; startedAt: string }>;
+        stop: (id: string) => Promise<{ ok: boolean }>;
+      };
+      const PINNED = 4747;
+      const baseMock = {
+        source: { kind: 'manual', endpoints: [] },
+        endpoints: [
+          {
+            id: 'ep1',
+            name: 'GET /health',
+            method: 'GET',
+            pathPattern: '/health',
+            requestSchema: { pathParams: [], queryParams: [], headers: [], cookies: [] },
+            requestValidation: [],
+            responseRules: [],
+            defaultResponse: {
+              status: 200,
+              headers: [{ key: 'Content-Type', value: 'application/json', enabled: true }],
+              body: { type: 'json', content: '{"ok":true}' },
+            },
+          },
+        ],
+        defaultPort: PINNED,
+        cors: { enabled: false, origins: [] },
+        createdAt: '2026-06-10T00:00:00.000Z',
+        updatedAt: '2026-06-10T00:00:00.000Z',
+      };
+      const result = await mainWindow.evaluate(
+        async ({ pinned, base }) => {
+          const w = window as unknown as { apicircleDesktop?: { mock?: DesktopMock } };
+          const bridge = w.apicircleDesktop?.mock;
+          if (!bridge) return { ok: false, reason: 'no-bridge' };
+          const first = { ...base, id: 'mk-port-1', name: 'first' };
+          const second = { ...base, id: 'mk-port-2', name: 'second' };
+          let runningId: string | null = null;
+          try {
+            const r1 = await bridge.start(first, { port: pinned });
+            runningId = first.id;
+            // Second start on the SAME port must throw.
+            let secondErr: { message?: string } | null = null;
+            try {
+              await bridge.start(second, { port: pinned });
+              return {
+                ok: false,
+                reason: 'second-start-unexpectedly-succeeded',
+                firstPort: r1.port,
+              };
+            } catch (e) {
+              secondErr = e as { message?: string };
+            }
+            return {
+              ok: true,
+              firstPort: r1.port,
+              secondErrorMessage: secondErr?.message ?? null,
+            };
+          } finally {
+            if (runningId) {
+              try {
+                await bridge.stop(runningId);
+              } catch {
+                /* best-effort */
+              }
+            }
+          }
+        },
+        { pinned: PINNED, base: baseMock },
+      );
+      expect(result.ok, JSON.stringify(result)).toBe(true);
+      expect(result.firstPort).toBe(PINNED);
+      // Friendly message names the port AND points at next steps.
+      expect(result.secondErrorMessage).toMatch(new RegExp(`Port ${PINNED}`));
+      expect(result.secondErrorMessage).toMatch(/already in use/);
+    },
+  );
+
+  test(
+    tc(id('Definition'), 'PortSection input persists defaultPort to the synced doc'),
+    async ({ mainWindow }) => {
+      // Seed a mock via the renderer's debug store accessor, then drive the
+      // PortSection input. Asserts the round-trip Definition CRUD path that
+      // the unit test in MockServersPanel.test.tsx also covers — here we
+      // exercise the same flow against the real renderer + IDB pipeline.
+      await mainWindow.getByRole('button', { name: /^Mocks$/ }).click();
+      const seeded = await mainWindow.evaluate(() => {
+        type Store = {
+          getState: () => {
+            createMockServer: (args: {
+              name: string;
+              source: { kind: 'manual'; endpoints: never[] };
+            }) => string;
+            setActiveMockEndpoint: (args: { serverId: string; endpointId: null }) => void;
+          };
         };
-        return typeof w.apicircleDesktop?.mock?.start === 'function';
+        const w = window as unknown as { __apicircleStore?: Store };
+        if (!w.__apicircleStore) return null;
+        const id = w.__apicircleStore.getState().createMockServer({
+          name: 'PortFlowMock',
+          source: { kind: 'manual', endpoints: [] },
+        });
+        w.__apicircleStore.getState().setActiveMockEndpoint({ serverId: id, endpointId: null });
+        return id;
       });
-      expect(hasStart).toBe(true);
+      // Skip cleanly when the debug accessor isn't exposed in this build.
+      test.skip(!seeded, '__apicircleStore not exposed by this build');
+      const input = mainWindow.getByLabel('Default port');
+      await expect(input).toBeVisible();
+      await input.fill('4242');
+      await input.blur();
+      // Allow the debounced IDB write to settle.
+      await mainWindow.waitForTimeout(800);
+      const stored = await mainWindow.evaluate((serverId) => {
+        type Store = {
+          getState: () => {
+            synced: { mockServers: Record<string, { defaultPort: number | null }> };
+          };
+        };
+        const w = window as unknown as { __apicircleStore?: Store };
+        return w.__apicircleStore?.getState().synced.mockServers[serverId as string].defaultPort;
+      }, seeded);
+      expect(stored).toBe(4242);
     },
   );
 

@@ -207,7 +207,7 @@ export interface WorkspaceSynced {
   // definitions, and file assets. Requests opt in by setting
   // `bodySchemaId`, `graphqlSchemaId`, or by pointing file body rows at a
   // file asset. File bytes stay outside workspace.json as Git blobs under
-  // `.apicircle/attachments/<slotId>`; only metadata lives here.
+  // `.apicircle/workspace-<id>/attachments/<slotId>`; only metadata lives here.
   globalAssets: {
     schemas: Record<string, GlobalSchema>;
     graphql: Record<string, GlobalGraphQL>;
@@ -648,7 +648,7 @@ export interface JwtBearerAuth {
 //
 // Attachments themselves (the actual blobs + filename/mimeType) live in the
 // local IndexedDB `attachments` store and are uploaded as Git blobs under
-// `.apicircle/attachments/<slotId>` on push. The synced doc carries only the
+// `.apicircle/workspace-<id>/attachments/<slotId>` on push. The synced doc carries only the
 // slotId reference plus minimal display metadata so diffs stay small.
 export interface RequestBody {
   type: BodyType;
@@ -696,7 +696,7 @@ export interface LocalAttachmentCacheEntry {
   /**
    * Local-only path or storage URI where this device can read the bytes for
    * execution. Browser builds use an IndexedDB URI; CLI runs use an absolute
-   * filesystem path under `.apicircle/attachments/`.
+   * filesystem path under `.apicircle/workspace-<id>/attachments/`.
    */
   localPath: string;
   storage: 'indexeddb' | 'filesystem';
@@ -794,6 +794,10 @@ export interface LinkedWorkspace {
   kind: 'private' | 'public';
   name: string;
   description?: string;
+  /** The remote workspace's `workspaceId` (from the source's registry).
+   *  Needed to resolve per-workspace paths (attachments, workspace.json)
+   *  when fetching from the source repo. */
+  sourceWorkspaceId: string;
   source: {
     provider: 'github';
     repoFullName: string;
@@ -843,7 +847,7 @@ export interface ReleaseVersion {
   version: string; // semver
   publishedAt: string;
   notes: string; // markdown
-  // SHA-256 of workspace.synced.json at publish time. Verifiable on the
+  // SHA-256 of workspace.json at publish time. Verifiable on the
   // consumer side to detect tampering.
   workspaceSnapshot: string;
   sha?: string; // optional git commit SHA on the source branch
@@ -1012,11 +1016,12 @@ export interface WorkspaceLocal {
    * branch on the next push. Queued by `removeGlobalFileAsset` (and the
    * headless `globalAsset.removeFile` patch) when the asset being
    * deleted had any push provenance (`workingBranchRef` or
-   * `baseBranchRef`). The push emits `{path: '.apicircle/attachments/<slotId>',
-   * sha: null}` tree entries layered over `base_tree`, which GitHub
-   * treats as deletions. After a successful push, the queue is
-   * cleared — the deletion is durable on the working branch, and the
-   * eventual PR merge propagates it to the base branch.
+   * `baseBranchRef`). The push emits
+   * `{path: '.apicircle/workspace-<id>/attachments/<slotId>', sha: null}`
+   * tree entries layered over `base_tree`, which GitHub treats as
+   * deletions. After a successful push, the queue is cleared — the
+   * deletion is durable on the working branch, and the eventual PR
+   * merge propagates it to the base branch.
    *
    * Without this queue, the asset would be removed from `workspace.json`
    * but the orphan blob would persist on the remote tree forever.

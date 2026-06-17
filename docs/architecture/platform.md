@@ -47,8 +47,9 @@ commands all funnel through it. As a result:
 save`, so two concurrent CLI / MCP writers can't interleave.
 
 `WorkspacePatch` is a discriminated union over `request.* | folder.* |
-environment.* | assertion.* | mock.* | plan.*`. Adding a new entity type
-is one variant + one switch case + one MCP tool definition.
+environment.* | assertion.* | mock.* | release.* | linkedWorkspace.* |
+linkedOverride.* | plan.*`. Adding a new entity type is one variant + one switch
+case + one MCP tool definition.
 
 ## MCP server — provider abstraction
 
@@ -109,7 +110,7 @@ workspaces in the desktop without restarting the MCP process.
 Every file uploaded into the workspace — through the Global Assets
 sidebar, a form-data row, a binary request body, or a mock-server
 binary response — is a `GlobalFileAsset` entry in the synced doc, with
-bytes living on disk under `.apicircle/attachments/<slotId>` after the
+bytes living on disk under `.apicircle/workspace-<id>/attachments/<slotId>` after the
 first push. Three pieces of state describe where the bytes live at any
 moment:
 
@@ -132,7 +133,7 @@ moment:
   Without this queue, removing an asset would drop it from
   `workspace.json` but leave the orphan blob on the remote tree
   forever — and the PR merge would carry the orphan into the base
-  branch. The push emits one `{path: '.apicircle/attachments/<slotId>',
+  branch. The push emits one `{path: '.apicircle/workspace-<id>/attachments/<slotId>',
 sha: null}` tree entry per queued slot (GitHub treats `sha: null`
   layered over `base_tree` as a deletion), clears the queue post-
   `updateRef`, and a pre-emit safety filter drops any slotId that
@@ -179,7 +180,7 @@ All six state transitions flow through `applyMutation` via the new
 `globalAsset.*` patch variants in `@apicircle/core/workspace/patches.ts`,
 so MCP / CLI writers and the UI store apply the same semantics.
 
-## Mock server — three runtimes, one engine
+## Mock server — four runtimes, one engine
 
 `@apicircle/mock-server-core` is a Hono app builder. The same factory
 powers:
@@ -187,6 +188,17 @@ powers:
 - The desktop `MockManager` (in-process Hono on the Electron main).
 - The CLI (`apicircle mock <spec>`).
 - The MCP `mock.start` tool (in-process via `InProcessMockController`).
+- The **VS Code extension's `VsCodeMockController`** (Phase 3) — wraps
+  `InProcessMockController` and runs in the extension host. Internally
+  namespaces server ids by workspace (`${workspaceId}::${serverId}`)
+  so multi-root workspaces with shared mock ids don't collide on the
+  shared underlying controller. Runtime state is synced into
+  `WorkspaceLocal.mockRuntime.active` via the same `surface.write({local})`
+  path the desktop's `MockManager` uses, so the disk-mirror view of
+  "which mocks are running" stays consistent across surfaces. On
+  external workspace changes (Git pull / CLI / MCP), a
+  `reconcile()` pass stops any controller-tracked server whose
+  definition vanished.
 
 OpenAPI / Postman / Insomnia parsers live in this package; the MCP
 `import.*` tools reuse them so spec parsing is exactly identical between

@@ -2,6 +2,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
 import {
+  defaultApicircleRoot,
   findWorkspaceEntry,
   loadRegistry,
   registerWorkspace,
@@ -21,34 +22,25 @@ import type { WorkspaceState } from '@apicircle/core';
 // flags:
 //
 //   --workspace-name <name-or-id>
-//     A logical handle — case-insensitive name match against the desktop
-//     registry, falling back to id match. The common case for humans:
+//     A logical handle — case-insensitive name match against the registry,
+//     falling back to id match. The common case for humans:
 //     `--workspace-name Petstore`. Scripts that need to survive renames
 //     can pass the long-form id here too.
 //
 //   --workspace-path <dir>
-//     A filesystem directory containing `workspace.synced.json`. The
-//     back-compat path for CI / one-off flows that aren't registered
-//     with the desktop app (e.g. a freshly git-cloned workspace repo).
+//     A filesystem directory containing `workspace.json`. For CI / one-off
+//     flows that aren't registered (e.g. a freshly git-cloned workspace).
 //
 // Passing both is an error. When NEITHER is passed:
 //
-//   • A registry exists at userData/workspaces/   → use the active workspace.
-//   • No registry exists                          → fall back to cwd (the
-//                                                   legacy single-workspace
-//                                                   flow CI scripts use).
+//   • A registry exists at ~/.apicircle/   → use the active workspace.
+//   • No registry exists                   → fall back to cwd.
 //
-// The CLI runs outside Electron, so we reproduce Electron's per-OS `userData`
-// convention here. `APICIRCLE_WORKSPACES_ROOT` overrides it for CI / tests.
+// `APICIRCLE_WORKSPACES_ROOT` overrides the root for CI / tests.
 // =============================================================================
 
-const APP_NAME = '@apicircle';
-const APP_SUBDIR = 'desktop';
-const WORKSPACES_DIRNAME = 'workspaces';
-const LEGACY_WORKSPACE_DIRNAME = 'workspace';
-
 export interface ResolvedWorkspace {
-  /** Absolute directory containing workspace.synced.json + workspace.local.json. */
+  /** Absolute directory containing workspace.json + workspace.local.json. */
   dir: string;
   /** Workspace id when resolved via registry; null when resolved by raw path. */
   id: string | null;
@@ -65,48 +57,20 @@ export interface ResolveOptions {
   name?: string;
   /** Raw value from `--workspace-path <dir>`. */
   path?: string;
-  /** Override for the desktop's `userData/workspaces/` (CI / tests). */
+  /** Override for `~/.apicircle/` (CI / tests). */
   workspacesRoot?: string;
-  /** Override for the desktop's legacy `userData/workspace/`. */
-  legacyDir?: string;
   /** When true (the default), missing target dirs raise. Set false for create paths. */
   expectExists?: boolean;
 }
 
 /**
- * Compute the on-disk `workspaces/` root the CLI consults for id / name
- * selectors. Honors `APICIRCLE_WORKSPACES_ROOT` first, then derives from
- * the OS-specific user-data convention used by Electron.
+ * The root directory the CLI consults for registry-based workspace resolution.
+ * Honors `APICIRCLE_WORKSPACES_ROOT` first, then falls back to `~/.apicircle/`.
  */
 export function defaultWorkspacesRoot(): string {
   const override = process.env.APICIRCLE_WORKSPACES_ROOT;
   if (override && override.length > 0) return path.resolve(override);
-  return path.join(electronUserDataDir(), WORKSPACES_DIRNAME);
-}
-
-export function defaultLegacyDir(): string {
-  return path.join(electronUserDataDir(), LEGACY_WORKSPACE_DIRNAME);
-}
-
-function electronUserDataDir(): string {
-  // Match Electron's `app.getPath('userData')` semantics. The desktop
-  // package's name is `@apicircle/desktop` — Electron flattens the scope
-  // into `@apicircle/desktop` on disk.
-  const home = os.homedir();
-  switch (process.platform) {
-    case 'win32': {
-      const appdata = process.env.APPDATA ?? path.join(home, 'AppData', 'Roaming');
-      return path.join(appdata, APP_NAME, APP_SUBDIR);
-    }
-    case 'darwin':
-      return path.join(home, 'Library', 'Application Support', APP_NAME, APP_SUBDIR);
-    default:
-      return path.join(
-        process.env.XDG_CONFIG_HOME ?? path.join(home, '.config'),
-        APP_NAME,
-        APP_SUBDIR,
-      );
-  }
+  return defaultApicircleRoot();
 }
 
 /**

@@ -42,6 +42,7 @@ interface AttachmentRequirement {
   mimeType?: string;
   size?: number;
   source: 'workspace' | 'linked-workspace';
+  sourceWorkspaceId: string;
   linkedWorkspaceId?: string;
   repoFullName?: string;
   branch?: string;
@@ -49,7 +50,7 @@ interface AttachmentRequirement {
   requiredBy: Array<{ requestId: string; requestName: string }>;
 }
 
-const ATTACHMENTS_DIR = path.join('.apicircle', 'attachments');
+const ATTACHMENTS_DIR = 'attachments';
 
 export async function prepareExecutionAttachments(
   workspaceDir: string,
@@ -70,6 +71,10 @@ export async function prepareExecutionAttachments(
 
   for (const requirement of requirements) {
     const localPath = path.join(cacheDir, encodeURIComponent(requirement.slotId));
+    const resolvedLocal = path.resolve(localPath);
+    if (!resolvedLocal.startsWith(path.resolve(cacheDir) + path.sep)) {
+      throw new Error(`Attachment path escapes cache directory: ${requirement.slotId}`);
+    }
     const present = await hasExpectedFile(localPath, requirement.sha256);
     if (present) {
       alreadyPresent++;
@@ -186,6 +191,7 @@ function collectExecutionAttachmentRequirements(
     addRequirement(seen, {
       ...slot,
       source: 'workspace',
+      sourceWorkspaceId: state.synced.workspaceId,
       repoFullName: state.local.connectedRepo?.fullName ?? undefined,
       branch: state.local.workingBranch?.name ?? undefined,
       publicRepo: state.local.connectedRepo ? !state.local.connectedRepo.isPrivate : false,
@@ -220,6 +226,7 @@ function collectExecutionAttachmentRequirements(
       addRequirement(seen, {
         ...slot,
         source: 'linked-workspace',
+        sourceWorkspaceId: link.sourceWorkspaceId,
         linkedWorkspaceId,
         repoFullName: link.source.repoFullName,
         branch: link.source.branch,
@@ -309,7 +316,12 @@ async function downloadAttachment(requirement: AttachmentRequirement): Promise<U
     );
   }
 
-  const apiPath = ['.apicircle', 'attachments', requirement.slotId]
+  const apiPath = [
+    '.apicircle',
+    `workspace-${requirement.sourceWorkspaceId}`,
+    'attachments',
+    requirement.slotId,
+  ]
     .map(encodeURIComponent)
     .join('/');
   const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(

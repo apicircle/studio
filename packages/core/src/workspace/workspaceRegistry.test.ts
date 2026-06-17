@@ -3,15 +3,15 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
-import { saveToFile } from './fileBackedWorkspace';
 import {
   REGISTRY_FILE,
+  WORKSPACE_DIR_PREFIX,
+  defaultApicircleRoot,
   deleteWorkspaceById,
   emptyRegistry,
   findWorkspaceEntry,
   loadRegistry,
   loadWorkspaceById,
-  migrateLegacyWorkspace,
   registerWorkspace,
   saveRegistry,
   saveWorkspaceById,
@@ -76,9 +76,15 @@ afterEach(async () => {
   await fs.rm(root, { recursive: true, force: true });
 });
 
+describe('defaultApicircleRoot', () => {
+  it('returns ~/.apicircle', () => {
+    expect(defaultApicircleRoot()).toBe(path.join(os.homedir(), '.apicircle'));
+  });
+});
+
 describe('workspaceDirFor', () => {
-  it('joins the root + workspaceId', () => {
-    expect(workspaceDirFor('/r', 'ws-a')).toBe(path.join('/r', 'ws-a'));
+  it('joins root + workspaces/ + workspaceId', () => {
+    expect(workspaceDirFor('/r', 'ws-a')).toBe(path.join('/r', `${WORKSPACE_DIR_PREFIX}ws-a`));
   });
 });
 
@@ -286,58 +292,6 @@ describe('findWorkspaceEntry', () => {
       ],
     };
     expect(findWorkspaceEntry(r, 'real-name')?.id).toBe('real-name');
-  });
-});
-
-describe('migrateLegacyWorkspace', () => {
-  let legacyDir: string;
-
-  beforeEach(() => {
-    legacyDir = path.join(root, 'legacy');
-  });
-
-  it('is a no-op when the registry already exists', async () => {
-    await saveRegistry(root, {
-      schemaVersion: 1,
-      activeWorkspaceId: 'ws-1',
-      workspaces: [{ id: 'ws-1', name: 'X', createdAt: T0, lastOpenedAt: T0 }],
-    });
-    const out = await migrateLegacyWorkspace({ legacyDir, registryRoot: root });
-    expect(out.migrated).toBe(false);
-    expect(out.registry.workspaces).toHaveLength(1);
-  });
-
-  it('is a no-op when neither the registry nor the legacy dir exists', async () => {
-    const out = await migrateLegacyWorkspace({ legacyDir, registryRoot: root });
-    expect(out.migrated).toBe(false);
-    expect(out.registry.workspaces).toEqual([]);
-  });
-
-  it('migrates a legacy single-workspace dir into <root>/<id>/ and registers it', async () => {
-    await saveToFile(legacyDir, {
-      synced: makeSynced('ws-legacy'),
-      local: makeLocal('ws-legacy'),
-    });
-    const out = await migrateLegacyWorkspace({
-      legacyDir,
-      registryRoot: root,
-      defaultName: 'My Imported Workspace',
-    });
-    expect(out.migrated).toBe(true);
-    expect(out.registry.activeWorkspaceId).toBe('ws-legacy');
-    expect(out.registry.workspaces[0].name).toBe('My Imported Workspace');
-    expect((await loadWorkspaceById(root, 'ws-legacy'))?.synced.workspaceId).toBe('ws-legacy');
-    // Legacy files should have been removed so re-migration is impossible.
-    await expect(fs.access(path.join(legacyDir, 'workspace.synced.json'))).rejects.toBeTruthy();
-    await expect(fs.access(path.join(legacyDir, 'workspace.local.json'))).rejects.toBeTruthy();
-  });
-
-  it('preserves synced.meta.createdAt when migrating', async () => {
-    const state = { synced: makeSynced('ws-legacy'), local: makeLocal('ws-legacy') };
-    state.synced.meta = { ...state.synced.meta, createdAt: '2024-01-01T00:00:00.000Z' };
-    await saveToFile(legacyDir, state);
-    const out = await migrateLegacyWorkspace({ legacyDir, registryRoot: root });
-    expect(out.registry.workspaces[0].createdAt).toBe('2024-01-01T00:00:00.000Z');
   });
 });
 

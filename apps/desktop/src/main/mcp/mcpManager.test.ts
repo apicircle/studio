@@ -1,22 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
-
-// Stub the bits of `electron` we touch in mcpManager. The manager only
-// uses `app.getPath`, so a single fake is enough.
-vi.mock('electron', () => ({
-  app: {
-    getPath: (key: string) => {
-      if (key === 'userData') return '/fake/user-data';
-      throw new Error(`unknown getPath ${key}`);
-    },
-  },
-}));
-
+import { describe, expect, it } from 'vitest';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { McpManager } from './mcpManager';
 
 describe('McpManager', () => {
-  it('defaults workspaceDir to <userData>/workspaces (multi-workspace root)', () => {
+  it('defaults workspaceDir to ~/.apicircle/', () => {
     const m = new McpManager();
-    expect(m.workspaceDir.endsWith('workspaces')).toBe(true);
+    expect(m.workspaceDir).toBe(path.join(os.homedir(), '.apicircle'));
   });
 
   it('honors an explicit workspaceDir', () => {
@@ -77,15 +67,21 @@ describe('McpManager', () => {
   it('returns a config path for known clients on the current platform', () => {
     const m = new McpManager('/ws');
     expect(m.getConfigPath('claude-desktop')).not.toBeNull();
+    expect(m.getConfigPath('claude-code')).not.toBeNull(); // P5R1-G11
     expect(m.getConfigPath('cursor')).not.toBeNull();
     expect(m.getConfigPath('continue')).not.toBeNull();
     expect(m.getConfigPath('zed')).not.toBeNull();
+    expect(m.getConfigPath('windsurf')).not.toBeNull(); // P5R1-G11
   });
 
   it('returns null for clients without a default config path', () => {
     const m = new McpManager('/ws');
     expect(m.getConfigPath('generic')).toBeNull();
     expect(m.getConfigPath('chatgpt')).toBeNull();
+    // cline + github-copilot use VS Code-extension-internal settings and
+    // don't have a fixed user-home path either.
+    expect(m.getConfigPath('cline')).toBeNull();
+    expect(m.getConfigPath('github-copilot')).toBeNull();
   });
 
   it('exposes the full tool catalog from @apicircle/shared', () => {

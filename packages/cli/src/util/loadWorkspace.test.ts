@@ -20,7 +20,7 @@ describe('ensureWorkspace', () => {
     const state = await ensureWorkspace(dir);
     expect(state.synced.workspaceId).toBe(state.local.workspaceId);
     expect(state.synced.mockServers).toEqual({});
-    const stat = await fs.stat(path.join(dir, 'workspace.synced.json'));
+    const stat = await fs.stat(path.join(dir, 'workspace.json'));
     expect(stat.isFile()).toBe(true);
   });
 

@@ -46,18 +46,29 @@ export interface ConfigSnippetVariants {
   identical: boolean;
 }
 
+export type McpInstallOutcome = 'created' | 'updated' | 'unchanged';
+
+export interface McpInstallResult {
+  outcome: McpInstallOutcome;
+  path: string;
+}
+
+export type McpInstallState = 'absent' | 'installed-current' | 'installed-stale';
+
 export interface DesktopMcpBridge {
   status(): Promise<{ workspaceDir: string; binary: string }>;
   getConfigSnippet(client: string): Promise<ConfigSnippetVariants>;
   getConfigPath(client: string): Promise<string | null>;
   toolCatalog(): Promise<readonly McpToolName[]>;
+  installConfig(client: string): Promise<McpInstallResult>;
+  detectInstallState(client: string): Promise<McpInstallState>;
 }
 
 // ---------- WorkspaceFile (mirror) surface -------------------------------
 
 /**
  * Reserved discriminator the watcher uses to signal a `registry.json`
- * change (vs a per-workspace `workspace.synced.json` change). Exported so
+ * change (vs a per-workspace `workspace.json` change). Exported so
  * consumers don't hardcode the string literal.
  */
 export const WORKSPACE_FILE_REGISTRY_CHANGE = 'registry';
@@ -71,7 +82,7 @@ export const WORKSPACE_FILE_REGISTRY_CHANGE = 'registry';
  *
  * `workspaceId === WORKSPACE_FILE_REGISTRY_CHANGE` (the literal
  * `'registry'`) means `registry.json` changed; any other value is a
- * per-workspace id whose `workspace.synced.json` changed.
+ * per-workspace id whose `workspace.json` changed.
  */
 export interface WorkspaceFileExternalChange {
   workspaceId: string;
@@ -79,7 +90,7 @@ export interface WorkspaceFileExternalChange {
 
 export interface DesktopWorkspaceFileBridge {
   status(): Promise<{ workspacesRoot: string }>;
-  init(): Promise<{ registry: WorkspaceRegistry; migrated: boolean }>;
+  init(): Promise<{ registry: WorkspaceRegistry }>;
   readRegistry(): Promise<WorkspaceRegistry>;
   writeRegistry(registry: WorkspaceRegistry): Promise<void>;
   readWorkspace(

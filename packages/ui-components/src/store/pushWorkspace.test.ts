@@ -109,16 +109,19 @@ describe('workspaceStore.pushWorkspace', () => {
     expect(branch.headSha).toBe('commit-new');
     expect(branch.lastPushedSha).toBe('commit-new');
 
-    // createTree request body: the synced doc lands at `.apicircle/workspace.json`.
+    // createTree request body: the synced doc lands at
+    // `.apicircle/workspace-<id>/workspace.json` alongside a registry entry.
+    const wsId = useWorkspaceStore.getState().synced!.workspaceId;
     const createTreeCall = fetchMock.mock.calls[2];
     const body = JSON.parse((createTreeCall[1] as RequestInit).body as string) as {
       base_tree: string;
       tree: { path: string; content?: string }[];
     };
     expect(body.base_tree).toBe('tree-old');
-    expect(body.tree).toHaveLength(1);
-    expect(body.tree[0].path).toBe('.apicircle/workspace.json');
-    expect(body.tree[0].content).toContain('"schemaVersion": 1');
+    expect(body.tree).toHaveLength(2);
+    expect(body.tree[0].path).toBe('.apicircle/registry.json');
+    expect(body.tree[1].path).toBe(`.apicircle/workspace-${wsId}/workspace.json`);
+    expect(body.tree[1].content).toContain('"schemaVersion": 1');
   });
 
   it('uses the user-supplied commit message when present', async () => {
@@ -218,15 +221,18 @@ describe('workspaceStore.pushWorkspace', () => {
     expect(blobBody.encoding).toBe('base64');
     expect(blobBody.content).toBe(btoa(String.fromCharCode(...bytes)));
 
-    // createTree body has both .apicircle/workspace.json (content) and the attachment (sha).
+    // createTree body has registry.json, workspace-<id>/workspace.json (content),
+    // and the attachment (sha).
+    const wsId = useWorkspaceStore.getState().synced!.workspaceId;
     const createTreeCall = fetchMock.mock.calls[3];
     const treeBody = JSON.parse((createTreeCall[1] as RequestInit).body as string) as {
       tree: { path: string; content?: string; sha?: string }[];
     };
-    expect(treeBody.tree).toHaveLength(2);
-    expect(treeBody.tree[0]).toMatchObject({ path: '.apicircle/workspace.json' });
-    expect(treeBody.tree[1]).toMatchObject({
-      path: `.apicircle/attachments/${slotId}`,
+    expect(treeBody.tree).toHaveLength(3);
+    expect(treeBody.tree[0]).toMatchObject({ path: '.apicircle/registry.json' });
+    expect(treeBody.tree[1]).toMatchObject({ path: `.apicircle/workspace-${wsId}/workspace.json` });
+    expect(treeBody.tree[2]).toMatchObject({
+      path: `.apicircle/workspace-${wsId}/attachments/${slotId}`,
       sha: 'blob-1',
     });
   });
@@ -384,7 +390,7 @@ describe('workspaceStore.pushWorkspace', () => {
     // Regression for the missing-deletion bug: when the user removes a
     // Global File Asset that had push provenance,
     // `pendingAttachmentDeletes` queues its slotId. The next push must
-    // include a `{path: '.apicircle/attachments/<slotId>', sha: null}`
+    // include a `{path: '.apicircle/workspace-<id>/attachments/<slotId>', sha: null}`
     // entry in the tree so GitHub deletes the orphan blob from the
     // working branch (and via PR merge, from the base branch).
     await setupConnectedBranch();
@@ -442,10 +448,11 @@ describe('workspaceStore.pushWorkspace', () => {
     const treeBody = JSON.parse((createTreeCall[1] as RequestInit).body as string) as {
       tree: Array<{ path: string; sha?: string | null; mode?: string; type?: string }>;
     };
+    const wsId = useWorkspaceStore.getState().synced!.workspaceId;
     const deleteEntries = treeBody.tree.filter((e) => e.sha === null);
     expect(deleteEntries.map((e) => e.path).sort()).toEqual([
-      '.apicircle/attachments/slot-deleted-1',
-      '.apicircle/attachments/slot-deleted-2',
+      `.apicircle/workspace-${wsId}/attachments/slot-deleted-1`,
+      `.apicircle/workspace-${wsId}/attachments/slot-deleted-2`,
     ]);
     // Delete entries carry the standard blob mode/type per GitHub's API.
     for (const entry of deleteEntries) {
@@ -522,12 +529,14 @@ describe('workspaceStore.pushWorkspace', () => {
     await useWorkspaceStore.getState().pushWorkspace();
 
     expect(fetchMock).toHaveBeenCalledTimes(5);
-    // Tree carries only .apicircle/workspace.json — no attachment entry was added.
+    // Tree carries registry.json + workspace-<id>/workspace.json — no attachment entry was added.
+    const wsId = useWorkspaceStore.getState().synced!.workspaceId;
     const treeBody = JSON.parse((fetchMock.mock.calls[2][1] as RequestInit).body as string) as {
       tree: { path: string }[];
     };
-    expect(treeBody.tree).toHaveLength(1);
-    expect(treeBody.tree[0].path).toBe('.apicircle/workspace.json');
+    expect(treeBody.tree).toHaveLength(2);
+    expect(treeBody.tree[0].path).toBe('.apicircle/registry.json');
+    expect(treeBody.tree[1].path).toBe(`.apicircle/workspace-${wsId}/workspace.json`);
   });
 
   it('propagates GitHub errors mid-flow without partial state mutation', async () => {

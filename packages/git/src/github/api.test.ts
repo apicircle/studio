@@ -538,8 +538,8 @@ describe('GitHubClient.createTree', () => {
     const result = await client.createTree('tok', 'me', 'api', {
       baseTreeSha: 'base-tree',
       entries: [
-        { path: '.apicircle/workspace.json', content: '{"x":1}' },
-        { path: '.apicircle/attachments/abc', sha: 'blob-abc' },
+        { path: '.apicircle/workspace-ws1/workspace.json', content: '{"x":1}' },
+        { path: '.apicircle/workspace-ws1/attachments/abc', sha: 'blob-abc' },
       ],
     });
     expect(result).toEqual({ sha: 'new-tree' });
@@ -550,9 +550,14 @@ describe('GitHubClient.createTree', () => {
     expect(body).toEqual({
       base_tree: 'base-tree',
       tree: [
-        { path: '.apicircle/workspace.json', mode: '100644', type: 'blob', content: '{"x":1}' },
         {
-          path: '.apicircle/attachments/abc',
+          path: '.apicircle/workspace-ws1/workspace.json',
+          mode: '100644',
+          type: 'blob',
+          content: '{"x":1}',
+        },
+        {
+          path: '.apicircle/workspace-ws1/attachments/abc',
           mode: '100644',
           type: 'blob',
           sha: 'blob-abc',
@@ -673,6 +678,25 @@ describe('GitHubClient.searchMarketplaceRepos', () => {
     const [, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
     const headers = (init as RequestInit).headers as Record<string, string>;
     expect(headers.Authorization).toBe('Bearer tok-secret');
+  });
+
+  it('appends sort and order params when sort is specified', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () => jsonResponse({ items: [] }));
+    const client = new GitHubClient({ fetchImpl });
+    await client.searchMarketplaceRepos('tok', 'payments', { sort: 'stars' });
+    const url = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).toBe(
+      'https://api.github.com/search/repositories?q=payments%20topic%3Aapicircle&per_page=30&sort=stars&order=desc',
+    );
+  });
+
+  it('omits sort params when sort is undefined (best-match default)', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () => jsonResponse({ items: [] }));
+    const client = new GitHubClient({ fetchImpl });
+    await client.searchMarketplaceRepos('tok', 'payments');
+    const url = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).not.toContain('sort=');
+    expect(url).not.toContain('order=');
   });
 });
 
@@ -974,7 +998,7 @@ describe('GitHubClient.getContents', () => {
     const fetchImpl: typeof fetch = vi.fn(async () =>
       jsonResponse({
         type: 'file',
-        path: '.apicircle/attachments/slot a',
+        path: '.apicircle/workspace-ws1/attachments/slot a',
         sha: 'b',
         size: 0,
         content: '',
@@ -982,10 +1006,16 @@ describe('GitHubClient.getContents', () => {
       }),
     );
     const client = new GitHubClient({ fetchImpl });
-    await client.getContents('tok', 'me', 'api', '.apicircle/attachments/slot a', 'main');
+    await client.getContents(
+      'tok',
+      'me',
+      'api',
+      '.apicircle/workspace-ws1/attachments/slot a',
+      'main',
+    );
     const url = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
     expect(url).toBe(
-      'https://api.github.com/repos/me/api/contents/.apicircle/attachments/slot%20a?ref=main',
+      'https://api.github.com/repos/me/api/contents/.apicircle/workspace-ws1/attachments/slot%20a?ref=main',
     );
   });
 });
@@ -1000,7 +1030,7 @@ describe('GitHubClient.getBinaryContents', () => {
     const fetchImpl: typeof fetch = vi.fn(async () =>
       jsonResponse({
         type: 'file',
-        path: '.apicircle/attachments/slot-1',
+        path: '.apicircle/workspace-ws1/attachments/slot-1',
         sha: 'blob-sha',
         size: raw.length,
         content: b64,
@@ -1012,7 +1042,7 @@ describe('GitHubClient.getBinaryContents', () => {
       'tok',
       'me',
       'api',
-      '.apicircle/attachments/slot-1',
+      '.apicircle/workspace-ws1/attachments/slot-1',
       'wb',
     );
     expect(file).not.toBeNull();
@@ -1029,7 +1059,7 @@ describe('GitHubClient.getBinaryContents', () => {
       'tok',
       'me',
       'api',
-      '.apicircle/attachments/missing',
+      '.apicircle/workspace-ws1/attachments/missing',
       'wb',
     );
     expect(file).toBeNull();

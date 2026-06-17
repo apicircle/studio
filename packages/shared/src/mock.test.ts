@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { coerceMockResponseBodyTypeForStatus, getAllowedMockResponseBodyTypes } from './mock';
+import {
+  coerceMockResponseBodyTypeForStatus,
+  getAllowedMockResponseBodyTypes,
+  MAX_RESPONSE_MULTIPLIERS,
+  MAX_RESPONSE_RULE_CONDITIONS,
+} from './mock';
 import type { MockEndpoint, MockServer, MockServerSource, MockRuntime } from './mock';
 
 describe('MockServerSource discriminator', () => {
@@ -136,6 +141,13 @@ describe('coerceMockResponseBodyTypeForStatus (Phase 2)', () => {
       expect(coerceMockResponseBodyTypeForStatus(bodyType, 204)).toBe('none');
       expect(coerceMockResponseBodyTypeForStatus(bodyType, 304)).toBe('none');
     }
+  });
+});
+
+describe('authoring caps', () => {
+  it('caps response multipliers + when-clauses at 1 (engine applies all; cap is authoring-only)', () => {
+    expect(MAX_RESPONSE_MULTIPLIERS).toBe(1);
+    expect(MAX_RESPONSE_RULE_CONDITIONS).toBe(1);
   });
 });
 
