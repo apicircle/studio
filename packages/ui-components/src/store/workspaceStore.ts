@@ -5009,17 +5009,53 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       path: attachmentPath(synced.workspaceId, slotId),
       sha: null,
     }));
+    // Read the existing registry so sibling workspace entries survive
+    // the push. Without this, a multi-workspace repo loses every entry
+    // except the active one.
+    const now = new Date().toISOString();
+    let registryWorkspaces: Array<{
+      id: string;
+      name: string;
+      lastOpenedAt?: string;
+      createdAt?: string;
+    }> = [];
+    try {
+      const existingReg = await client.getContents(
+        token,
+        owner,
+        name,
+        REGISTRY_JSON_PATH,
+        branch.name,
+      );
+      if (existingReg) {
+        const parsed = JSON.parse(existingReg.content) as {
+          workspaces?: Array<{
+            id: string;
+            name: string;
+            lastOpenedAt?: string;
+            createdAt?: string;
+          }>;
+        };
+        registryWorkspaces = parsed.workspaces ?? [];
+      }
+    } catch {
+      // Best-effort: if the registry can't be read, start fresh.
+    }
     const registryContent = JSON.stringify(
       {
         schemaVersion: 1,
         activeWorkspaceId: synced.workspaceId,
         workspaces: [
           {
+            ...(registryWorkspaces.find((w) => w.id === synced.workspaceId) ?? {
+              id: synced.workspaceId,
+              name: 'Workspace',
+              createdAt: now,
+            }),
             id: synced.workspaceId,
-            name: 'Workspace',
-            lastOpenedAt: new Date().toISOString(),
-            createdAt: new Date().toISOString(),
+            lastOpenedAt: now,
           },
+          ...registryWorkspaces.filter((w) => w.id !== synced.workspaceId),
         ],
       },
       null,
@@ -6427,6 +6463,21 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // here closes the race so the diff sees the freshest local doc.
     const liveSynced = get().synced ?? synced;
     const liveLocal = get().local ?? local;
+
+    // Advance headSha so the next pushWorkspace pre-flight sees the real
+    // branch head. Without this, an external write (VS Code / Desktop /
+    // another client) that moved the branch would cause BranchDivergedError
+    // even though we're about to merge that content right now.
+    if (probe.branchHeadSha && liveLocal.workingBranch) {
+      const advancedBranch: WorkingBranch = {
+        ...liveLocal.workingBranch,
+        headSha: probe.branchHeadSha,
+      };
+      const advancedLocal: WorkspaceLocal = { ...liveLocal, workingBranch: advancedBranch };
+      set({ local: advancedLocal });
+      queueSaveLocal(advancedLocal);
+    }
+
     const base = liveLocal.sync.lastPulledSnapshot;
     const diff = computeThreeWayDiff(base, liveSynced, remote);
 
