@@ -161,11 +161,12 @@ quality signals.
 
 ### Step 1 — Publisher account
 
-1. **Microsoft account** — sign in to https://aka.ms/vscode-create-publisher
+1. **Microsoft account** — sign in to https://marketplace.visualstudio.com/manage
 2. **Create a publisher** with id `apicircle` (already declared in
    `package.json → publisher`).
 3. **Generate a Personal Access Token (PAT)** with the
-   **Marketplace → Manage** scope at https://dev.azure.com/[org]/_usersSettings/tokens
+   **Marketplace → Manage** scope at https://dev.azure.com — click your
+   profile icon → **Personal access tokens** → **New Token**.
 4. Login locally:
    ```bash
    pnpm exec vsce login apicircle
