@@ -93,6 +93,8 @@ describe('workspaceStore.pushWorkspace', () => {
           tree: { sha: 'tree-old' },
         },
       },
+      // getContents (registry — 404 on first push)
+      { body: { message: 'Not Found' }, status: 404 },
       // createTree
       { body: { sha: 'tree-new' } },
       // createCommit
@@ -112,7 +114,7 @@ describe('workspaceStore.pushWorkspace', () => {
     // createTree request body: the synced doc lands at
     // `.apicircle/workspace-<id>/workspace.json` alongside a registry entry.
     const wsId = useWorkspaceStore.getState().synced!.workspaceId;
-    const createTreeCall = fetchMock.mock.calls[2];
+    const createTreeCall = fetchMock.mock.calls[3];
     const body = JSON.parse((createTreeCall[1] as RequestInit).body as string) as {
       base_tree: string;
       tree: { path: string; content?: string }[];
@@ -130,6 +132,7 @@ describe('workspaceStore.pushWorkspace', () => {
     const fetchMock = queuedFetch([
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
       { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
+      { body: { message: 'Not Found' }, status: 404 },
       { body: { sha: 'tree-new' } },
       { body: { sha: 'commit-new', message: 'm', tree: { sha: 'tree-new' } } },
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'commit-new' } } },
@@ -138,7 +141,7 @@ describe('workspaceStore.pushWorkspace', () => {
 
     await useWorkspaceStore.getState().pushWorkspace('feat: rename request');
 
-    const createCommitCall = fetchMock.mock.calls[3];
+    const createCommitCall = fetchMock.mock.calls[4];
     const body = JSON.parse((createCommitCall[1] as RequestInit).body as string) as {
       message: string;
     };
@@ -151,6 +154,7 @@ describe('workspaceStore.pushWorkspace', () => {
     const fetchMock = queuedFetch([
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
       { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
+      { body: { message: 'Not Found' }, status: 404 },
       { body: { sha: 'tree-new' } },
       { body: { sha: 'commit-new', message: 'm', tree: { sha: 'tree-new' } } },
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'commit-new' } } },
@@ -158,7 +162,7 @@ describe('workspaceStore.pushWorkspace', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await useWorkspaceStore.getState().pushWorkspace('   ');
-    const body = JSON.parse((fetchMock.mock.calls[3][1] as RequestInit).body as string) as {
+    const body = JSON.parse((fetchMock.mock.calls[4][1] as RequestInit).body as string) as {
       message: string;
     };
     expect(body.message).toBe('chore: sync workspace via API Circle Studio');
@@ -200,6 +204,8 @@ describe('workspaceStore.pushWorkspace', () => {
       { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
       // createBlob (one per referenced attachment)
       { body: { sha: 'blob-1', size: bytes.length } },
+      // getContents (registry — 404 on first push)
+      { body: { message: 'Not Found' }, status: 404 },
       // createTree
       { body: { sha: 'tree-new' } },
       // createCommit
@@ -224,7 +230,7 @@ describe('workspaceStore.pushWorkspace', () => {
     // createTree body has registry.json, workspace-<id>/workspace.json (content),
     // and the attachment (sha).
     const wsId = useWorkspaceStore.getState().synced!.workspaceId;
-    const createTreeCall = fetchMock.mock.calls[3];
+    const createTreeCall = fetchMock.mock.calls[4];
     const treeBody = JSON.parse((createTreeCall[1] as RequestInit).body as string) as {
       tree: { path: string; content?: string; sha?: string }[];
     };
@@ -264,6 +270,7 @@ describe('workspaceStore.pushWorkspace', () => {
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
       { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
       { body: { sha: 'blob-tracked', size: bytes.length } },
+      { body: { message: 'Not Found' }, status: 404 },
       { body: { sha: 'tree-new' } },
       { body: { sha: 'commit-new', message: 'm', tree: { sha: 'tree-new' } } },
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'commit-new' } } },
@@ -323,7 +330,8 @@ describe('workspaceStore.pushWorkspace', () => {
           body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } },
         });
       if (call === 3) return fakeResponse({ body: { sha: 'blob-pushed', size: bytes.length } });
-      if (call === 4) {
+      if (call === 4) return fakeResponse({ body: { message: 'Not Found' }, status: 404 });
+      if (call === 5) {
         // Mid-push mutation: a second Global File Asset (simulating any
         // synced mutation that lands during the push — a rename, another
         // upload, an editor edit). The captured `synced` in the push
@@ -353,11 +361,11 @@ describe('workspaceStore.pushWorkspace', () => {
         });
         return fakeResponse({ body: { sha: 'tree-new' } });
       }
-      if (call === 5)
+      if (call === 6)
         return fakeResponse({
           body: { sha: 'commit-new', message: 'm', tree: { sha: 'tree-new' } },
         });
-      if (call === 6)
+      if (call === 7)
         return fakeResponse({
           body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'commit-new' } },
         });
@@ -433,6 +441,7 @@ describe('workspaceStore.pushWorkspace', () => {
     const fetchMock = queuedFetch([
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
       { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
+      { body: { message: 'Not Found' }, status: 404 },
       { body: { sha: 'tree-new' } },
       { body: { sha: 'commit-new', message: 'm', tree: { sha: 'tree-new' } } },
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'commit-new' } } },
@@ -444,7 +453,7 @@ describe('workspaceStore.pushWorkspace', () => {
     // createTree body carries the two REAL deletes but NOT the ghost
     // (safety filter dropped it because a current asset still owns that
     // slot id).
-    const createTreeCall = fetchMock.mock.calls[2];
+    const createTreeCall = fetchMock.mock.calls[3];
     const treeBody = JSON.parse((createTreeCall[1] as RequestInit).body as string) as {
       tree: Array<{ path: string; sha?: string | null; mode?: string; type?: string }>;
     };
@@ -519,7 +528,8 @@ describe('workspaceStore.pushWorkspace', () => {
     const fetchMock = queuedFetch([
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
       { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
-      // No createBlob — straight to createTree.
+      // No createBlob — getContents (registry 404) then straight to createTree.
+      { body: { message: 'Not Found' }, status: 404 },
       { body: { sha: 'tree-new' } },
       { body: { sha: 'commit-new', message: 'm', tree: { sha: 'tree-new' } } },
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'commit-new' } } },
@@ -528,10 +538,10 @@ describe('workspaceStore.pushWorkspace', () => {
 
     await useWorkspaceStore.getState().pushWorkspace();
 
-    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(fetchMock).toHaveBeenCalledTimes(6);
     // Tree carries registry.json + workspace-<id>/workspace.json — no attachment entry was added.
     const wsId = useWorkspaceStore.getState().synced!.workspaceId;
-    const treeBody = JSON.parse((fetchMock.mock.calls[2][1] as RequestInit).body as string) as {
+    const treeBody = JSON.parse((fetchMock.mock.calls[3][1] as RequestInit).body as string) as {
       tree: { path: string }[];
     };
     expect(treeBody.tree).toHaveLength(2);
@@ -545,6 +555,7 @@ describe('workspaceStore.pushWorkspace', () => {
     const fetchMock = queuedFetch([
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
       { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
+      { body: { message: 'Not Found' }, status: 404 },
       // createTree fails with 422
       { body: { message: 'Tree object not found' }, status: 422 },
     ]);
@@ -567,6 +578,7 @@ describe('workspaceStore.pushWorkspace', () => {
     const fetchMock = queuedFetch([
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
       { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
+      { body: { message: 'Not Found' }, status: 404 },
       { body: { sha: 'tree-new' } },
       { body: { sha: 'commit-orphan', message: 'm', tree: { sha: 'tree-new' } } },
       // updateRef returns 500 — server-side glitch
