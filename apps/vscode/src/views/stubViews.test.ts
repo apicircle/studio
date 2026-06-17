@@ -65,10 +65,11 @@ describe('McpView (Phase 5 — populated)', () => {
     expect(kids).toEqual([]);
   });
 
-  it('getChildren returns the three top-level rows when workspace is active', () => {
+  it('getChildren returns the four top-level rows when workspace is active', () => {
     const view = new McpView(fakeMcpWithWorkspace);
     const kids = view.getChildren();
-    expect(kids.length).toBe(3);
+    expect(kids.length).toBe(4);
     expect(kids[0]).toEqual({ kind: 'header' });
+    expect(kids[2]).toEqual({ kind: 'prompts-section' });
   });
 });

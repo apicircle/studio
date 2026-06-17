@@ -385,6 +385,13 @@ writes its bridge with `satisfies DesktopBridge` so missing or mistyped fields
 fail `pnpm check`. Add a new bridge surface here first; never redeclare an
 ad-hoc interface in the consumer.
 
+`DesktopMcpBridge` exposes: `status`, `getConfigSnippet`, `getConfigPath`,
+`toolCatalog`, `installConfig` (writes the apicircle entry into a client's
+config file — JSON/YAML/TOML), and `detectInstallState` (probes whether the
+entry is absent / installed-current / installed-stale). The install logic
+lives in `apps/desktop/src/main/mcp/mcpInstaller.ts`; IPC wiring in
+`apps/desktop/src/main/ipc/mcpBridge.ts`.
+
 ---
 
 ## 4. State, store & persistence

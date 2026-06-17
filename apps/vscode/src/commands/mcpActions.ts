@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import * as YAML from 'yaml';
-import type { AiClient } from '@apicircle/mcp-server';
+import type { AiClient, McpPrompt } from '@apicircle/mcp-server';
 import { aiClientDisplayName, type VsCodeMcpManager } from '../host/mcpManager';
 
 // =============================================================================
@@ -123,6 +123,13 @@ export async function openMcpConnectGuideCommand(): Promise<void> {
     vscode.Uri.parse(
       'https://github.com/apicircle/studio/blob/main/docs/connect-your-ai-client.md',
     ),
+  );
+}
+
+export async function copyMcpPromptCommand(prompt: McpPrompt): Promise<void> {
+  await vscode.env.clipboard.writeText(prompt.text);
+  await vscode.window.showInformationMessage(
+    `Copied prompt to clipboard: "${prompt.text.slice(0, 60)}${prompt.text.length > 60 ? '...' : ''}"`,
   );
 }
 

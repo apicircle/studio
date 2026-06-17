@@ -573,12 +573,30 @@ output. The `mcpRoundTrip.test.ts` integration suite proves this.
    GitHub Copilot       paste manually
    ChatGPT              paste manually
    Other (Generic)      paste manually
+▾ Prompts
+   ▸ Collections (4)
+   ▸ Environments (3)
+   ▸ Execution (3)
+   ▸ Mocks (3)
+   ▸ Auth (2)
+   ▸ Imports (2)
+   ▸ Workspaces (2)
 ▸ Open Connect Guide
 ```
 
 Click any client row → fires `apicircle.copyMcpConfig`. Context-menu
 exposes "Copy" + "Open Config File" (only for clients with a known
 config path).
+
+The **Prompts** section groups 19 curated starter prompts across 7
+categories. Each prompt teaches the user one MCP-driven workflow they
+can paste into any AI client. Prompts data lives in
+`@apicircle/mcp-server/prompts` (a sub-path export with no Node.js
+transitive deps) and is shared with the Desktop/Web `PromptsSection`.
+Click any prompt row → copies the prompt text to clipboard via
+`apicircle.copyMcpPrompt` and shows a confirmation toast. Expand a
+category to see its individual prompts; each row shows a `Sparkle`
+icon, the prompt description as label, and the full text as tooltip.
 
 ### Commands
 
@@ -587,6 +605,7 @@ config path).
 | `apicircle.copyMcpConfig`       | Write the snippet for a client to clipboard. Prompts via QuickPick if invoked without a node arg. Surfaces a Windows path-style picker (forward-slash vs escaped) when the snippet has divergent variants.       |
 | `apicircle.openMcpConfigFile`   | Open the AI client's MCP config file in VS Code. Offers to seed an empty `{"mcpServers": {}}` file if it doesn't exist yet. Clients without a fixed path get an info toast pointing at the client's settings UI. |
 | `apicircle.openMcpConnectGuide` | Open `docs/connect-your-ai-client.md` on GitHub in the user's browser.                                                                                                                                           |
+| `apicircle.copyMcpPrompt`       | Copy a curated MCP prompt text to clipboard. Fired by clicking a prompt row in the Prompts section; shows a confirmation toast.                                                                                  |
 | `apicircle.revealMcpBinaryInfo` | Info toast with binary path + workspace path + tool count. Reachable from the view-title button.                                                                                                                 |
 
 ### Settings

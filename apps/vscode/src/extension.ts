@@ -217,10 +217,12 @@ import {
 } from './commands/vaultActions';
 import { VsCodeMcpManager } from './host/mcpManager';
 import type { AiClient } from '@apicircle/mcp-server';
+import type { McpPrompt } from '@apicircle/mcp-server';
 import {
   openMcpConfigFileCommand,
   openMcpConnectGuideCommand,
   revealMcpBinaryInfoCommand,
+  copyMcpPromptCommand,
 } from './commands/mcpActions';
 import {
   installCopilotMcpConfigCommand,
@@ -1582,6 +1584,10 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.commands.registerCommand('apicircle.openMcpConnectGuide', () => {
       return openMcpConnectGuideCommand();
+    }),
+    vscode.commands.registerCommand('apicircle.copyMcpPrompt', (prompt: unknown) => {
+      if (!prompt || typeof prompt !== 'object' || !('text' in prompt)) return;
+      return copyMcpPromptCommand(prompt as McpPrompt);
     }),
     vscode.commands.registerCommand('apicircle.revealMcpBinaryInfo', () => {
       if (!mcpManager) return;

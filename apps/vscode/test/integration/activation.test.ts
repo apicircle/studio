@@ -318,6 +318,8 @@ describe('extension activation (integration)', () => {
       'apicircle.setRequestAuthField',
       'apicircle.toggleRequestRowEnabled',
       'apicircle.formatResponseJson',
+      // ---- MCP prompts ----
+      'apicircle.copyMcpPrompt',
     ];
     for (const id of expectedCommandIds) {
       expect(registeredCommandIds).toContain(id);

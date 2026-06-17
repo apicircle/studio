@@ -18,6 +18,8 @@ import type { WorkspaceRegistry, WorkspaceRegistryEntry } from '@apicircle/core/
 import type {
   ConfigSnippetVariants,
   DesktopBridgeContract,
+  McpInstallResult,
+  McpInstallState,
   WorkspaceFileExternalChange,
 } from '@apicircle/ui-components';
 
@@ -77,6 +79,10 @@ const bridge = {
       ipcRenderer.invoke('apicircle:mcp:getConfigPath', client) as Promise<string | null>,
     toolCatalog: (): Promise<readonly McpToolName[]> =>
       ipcRenderer.invoke('apicircle:mcp:toolCatalog') as Promise<readonly McpToolName[]>,
+    installConfig: (client: string): Promise<McpInstallResult> =>
+      ipcRenderer.invoke('apicircle:mcp:installConfig', client) as Promise<McpInstallResult>,
+    detectInstallState: (client: string): Promise<McpInstallState> =>
+      ipcRenderer.invoke('apicircle:mcp:detectInstallState', client) as Promise<McpInstallState>,
   },
 
   // On-disk multi-workspace mirror. The renderer writes every debounced

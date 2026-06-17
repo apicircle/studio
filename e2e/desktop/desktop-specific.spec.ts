@@ -386,17 +386,32 @@ test.describe('Desktop-specific (DS)', () => {
 
   test(
     tc(id('MCP Bridge :: Config snippet copy'), 'MCP config snippet is copyable from the panel'),
-    async ({ mainWindow }) => {
+    async ({ electronApp, mainWindow }) => {
       await mainWindow
         .getByRole('button', { name: /^MCP$/ })
         .click()
         .catch(() => {});
-      // The Help panel exposes a Copy button per snippet (see MCP help
-      // section). We don't assert clipboard contents — the headless
-      // Electron clipboard is unreliable — only that *a* copy control
-      // is present on the MCP panel.
-      const copyButtons = await mainWindow.getByRole('button', { name: /Copy/i }).count();
-      expect(copyButtons).toBeGreaterThanOrEqual(0);
+
+      // Clear the system clipboard so a stale value can't false-positive.
+      await electronApp.evaluate(({ clipboard }) => clipboard.writeText(''));
+
+      // Locate the first Copy button on the MCP panel and click it.
+      const copyButtons = mainWindow.getByRole('button', { name: /Copy/i });
+      const count = await copyButtons.count();
+      if (count === 0) {
+        test.info().annotations.push({
+          type: 'manual-residue',
+          description: 'MCP panel has no Copy buttons in this build — verify via UI walkthrough',
+        });
+        return;
+      }
+      await copyButtons.first().click();
+
+      // Read back system clipboard via Electron's main-process clipboard
+      // module. safeCopyToClipboard uses navigator.clipboard.writeText
+      // which in Electron writes to the same system clipboard.
+      const clipboardText = await electronApp.evaluate(({ clipboard }) => clipboard.readText());
+      expect(clipboardText.length).toBeGreaterThan(0);
     },
   );
 

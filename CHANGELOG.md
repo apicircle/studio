@@ -25,6 +25,37 @@
 
 ## Unreleased
 
+### MCP — Cross-surface install + prompts + clipboard fix
+
+Three improvements to the MCP integration surface across Desktop, Web, and
+VS Code:
+
+- **Desktop direct config install** — the Desktop app now writes MCP config
+  entries directly into each AI client's config file (JSON, YAML, or TOML)
+  via a per-client Install button in the MCP panel. All 7 installable clients
+  supported (Claude Desktop, Claude Code, Codex, Cursor, Windsurf, Zed,
+  Continue) — full parity with the VS Code extension's install command.
+  Includes install-state detection (absent / installed / update available).
+  New bridge methods: `installConfig(client)`, `detectInstallState(client)`.
+
+- **Desktop IPC Codex fix** — selecting Codex in the Desktop MCP panel
+  previously threw `"Unknown MCP client: codex"` because the IPC allowlist
+  was missing the `codex` entry. Fixed.
+
+- **Clipboard error handling** — extracted a shared `safeCopyToClipboard`
+  utility (`packages/ui-components/src/primitives/clipboard.ts`) that wraps
+  `navigator.clipboard.writeText` with try-catch + `document.execCommand`
+  fallback. Replaced 4 bare clipboard writes in `HowToConnect.tsx` and
+  `ConnectionSection.tsx` that silently swallowed rejections and falsely
+  showed "Copied".
+
+- **VS Code MCP Prompts** — the VS Code sidebar's MCP view now includes a
+  collapsible **Prompts** section with 19 curated starter prompts across 7
+  categories (Workspaces, Collections, Environments, Execution, Mocks, Auth,
+  Imports). Click any prompt to copy it to the clipboard. The prompts data
+  lives in `@apicircle/mcp-server` (sub-path export `./prompts`) so both
+  Desktop/Web and VS Code consume the same catalog.
+
 ### VS Code — Workspace Details & Switcher
 
 The extension sidebar now has a **Workspace** view at the top that shows:

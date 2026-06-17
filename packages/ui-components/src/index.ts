@@ -18,5 +18,8 @@ export type {
   DesktopMcpBridge,
   DesktopMockBridge,
   DesktopWorkspaceFileBridge,
+  McpInstallOutcome,
+  McpInstallResult,
+  McpInstallState,
   WorkspaceFileExternalChange,
 } from './desktop/bridge';

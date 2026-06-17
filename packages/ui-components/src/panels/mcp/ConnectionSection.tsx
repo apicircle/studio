@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertTriangle, Copy, Folder, RefreshCw, Terminal } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { formatRelativeTime } from '../../primitives/relativeTime';
+import { safeCopyToClipboard } from '../../primitives/clipboard';
 import { DesktopAppLink } from '../../primitives/desktopDownload';
 import { HowToConnect } from './HowToConnect';
 import { getDesktopMcpBridge, getDesktopWorkspaceFileBridge } from '../../desktop/bridge';
@@ -254,8 +255,9 @@ function InfoRow({
 }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
-    if (!value || !navigator.clipboard) return;
-    await navigator.clipboard.writeText(value);
+    if (!value) return;
+    const result = await safeCopyToClipboard(value);
+    if (!result.ok) return;
     setCopied(true);
     onCopy?.();
     setTimeout(() => setCopied(false), 1500);

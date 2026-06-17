@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Check, Copy, Info } from 'lucide-react';
+import { AlertTriangle, Check, Copy, Download, Info } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
+import { safeCopyToClipboard } from '../../primitives/clipboard';
 import { MCP_CLIENTS } from './clients';
-import { getDesktopMcpBridge, type ConfigSnippetVariants } from '../../desktop/bridge';
+import {
+  getDesktopMcpBridge,
+  type ConfigSnippetVariants,
+  type McpInstallState,
+} from '../../desktop/bridge';
 import { MonacoEditorBase } from '../../editors/MonacoEditorBase';
 
 // =============================================================================
@@ -40,16 +45,20 @@ export function HowToConnect() {
   const [variants, setVariants] = useState<ConfigSnippetVariants | null>(null);
   const [configPath, setConfigPath] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [installState, setInstallState] = useState<McpInstallState | null>(null);
+
+  const canInstall = !!bridge?.installConfig;
 
   useEffect(() => {
     if (!bridge) return;
     let cancelled = false;
     void (async () => {
       try {
-        const [s, p] = await Promise.all([
+        const promises: [Promise<ConfigSnippetVariants>, Promise<string | null>] = [
           bridge.getConfigSnippet(activeClientId),
           bridge.getConfigPath(activeClientId),
-        ]);
+        ];
+        const [s, p] = await Promise.all(promises);
         if (cancelled) return;
         setVariants(normalizeSnippetResponse(s));
         setConfigPath(p);
@@ -65,6 +74,25 @@ export function HowToConnect() {
       cancelled = true;
     };
   }, [bridge, activeClientId, pushToast]);
+
+  useEffect(() => {
+    if (!bridge?.detectInstallState) {
+      setInstallState(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const state = await bridge.detectInstallState(activeClientId);
+        if (!cancelled) setInstallState(state);
+      } catch {
+        if (!cancelled) setInstallState(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [bridge, activeClientId]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -94,14 +122,49 @@ export function HowToConnect() {
 
       <StepCard
         number={2}
-        title="Pick your AI client and copy the snippet"
+        title={
+          canInstall
+            ? 'Pick your AI client and install'
+            : 'Pick your AI client and copy the snippet'
+        }
         body={
           <div className="flex flex-col gap-3">
             <ClientPicker activeClientId={activeClientId} onPick={setPickedClient} />
             {configPath && (
               <p className="text-[0.6875rem] text-text-dim">
-                Paste into: <code className="rounded-sm bg-surface px-1">{configPath}</code>
+                Config file: <code className="rounded-sm bg-surface px-1">{configPath}</code>
               </p>
+            )}
+            {canInstall && (
+              <InstallButton
+                clientId={activeClientId}
+                installState={installState}
+                onInstall={async () => {
+                  if (!bridge) return;
+                  try {
+                    const result = await bridge.installConfig(activeClientId);
+                    setInstallState('installed-current');
+                    if (result.outcome === 'created') {
+                      pushToast({
+                        tone: 'success',
+                        title: 'MCP config installed',
+                        detail: `Created ${result.path}`,
+                      });
+                    } else if (result.outcome === 'updated') {
+                      pushToast({
+                        tone: 'success',
+                        title: 'MCP config updated',
+                        detail: `Updated ${result.path}`,
+                      });
+                    } else {
+                      pushToast({ tone: 'info', title: 'MCP config already up to date' });
+                    }
+                  } catch (err) {
+                    const detail = err instanceof Error ? err.message : String(err);
+                    pushToast({ tone: 'error', title: 'Install failed', detail });
+                  }
+                }}
+              />
             )}
             <SnippetBlock
               variants={variants}
@@ -216,8 +279,8 @@ function ClientPicker({
 function CommandBlock({ command }: { command: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
-    if (!navigator.clipboard) return;
-    await navigator.clipboard.writeText(command);
+    const result = await safeCopyToClipboard(command);
+    if (!result.ok) return;
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -233,6 +296,89 @@ function CommandBlock({ command }: { command: string }) {
         {copied ? <Check size={10} aria-hidden="true" /> : <Copy size={10} aria-hidden="true" />}
         {copied ? 'Copied' : 'Copy'}
       </button>
+    </div>
+  );
+}
+
+const INSTALLABLE_CLIENT_IDS: ReadonlySet<string> = new Set([
+  'claude-desktop',
+  'claude-code',
+  'codex',
+  'cursor',
+  'windsurf',
+  'zed',
+  'continue',
+]);
+
+function InstallButton({
+  clientId,
+  installState,
+  onInstall,
+}: {
+  clientId: string;
+  installState: McpInstallState | null;
+  onInstall: () => Promise<void>;
+}) {
+  const [installing, setInstalling] = useState(false);
+
+  if (!INSTALLABLE_CLIENT_IDS.has(clientId)) {
+    return (
+      <p className="text-[0.6875rem] text-text-dim">
+        This client requires manual setup — copy the snippet below and paste it into the config
+        file.
+      </p>
+    );
+  }
+
+  const handleInstall = async () => {
+    setInstalling(true);
+    try {
+      await onInstall();
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  const isInstalled = installState === 'installed-current';
+  const isStale = installState === 'installed-stale';
+
+  return (
+    <div className="flex items-center gap-3">
+      <button
+        type="button"
+        onClick={() => void handleInstall()}
+        disabled={installing}
+        className={cn(
+          'inline-flex items-center gap-1.5 rounded-sm border px-3 py-1.5 text-xs font-medium transition-colors',
+          isInstalled
+            ? 'border-green-600/40 bg-green-600/10 text-green-500'
+            : isStale
+              ? 'border-warning/40 bg-warning/10 text-warning hover:bg-warning/20'
+              : 'border-accent/40 bg-accent/10 text-accent hover:bg-accent/20',
+          installing && 'opacity-60',
+        )}
+      >
+        {installing ? (
+          <>Installing...</>
+        ) : isInstalled ? (
+          <>
+            <Check size={12} aria-hidden="true" />
+            Installed
+          </>
+        ) : isStale ? (
+          <>
+            <Download size={12} aria-hidden="true" />
+            Update config
+          </>
+        ) : (
+          <>
+            <Download size={12} aria-hidden="true" />
+            Install config
+          </>
+        )}
+      </button>
+      {isInstalled && <span className="text-[0.6875rem] text-text-dim">Config is up to date</span>}
+      {isStale && <span className="text-[0.6875rem] text-warning">Config needs updating</span>}
     </div>
   );
 }
@@ -267,8 +413,9 @@ function SnippetBlock({
       : '(open the desktop build to see the snippet)';
 
   const handleCopy = async () => {
-    if (!navigator.clipboard || !snippet) return;
-    await navigator.clipboard.writeText(snippet);
+    if (!snippet) return;
+    const result = await safeCopyToClipboard(snippet);
+    if (!result.ok) return;
     setCopied(true);
     onCopySuccess();
     setTimeout(() => setCopied(false), 1500);
@@ -346,8 +493,8 @@ function EscapedReference({
   const formatName = isToml ? 'TOML' : 'JSON';
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
-    if (!navigator.clipboard) return;
-    await navigator.clipboard.writeText(escapedSnippet);
+    const result = await safeCopyToClipboard(escapedSnippet);
+    if (!result.ok) return;
     setCopied(true);
     onCopySuccess();
     setTimeout(() => setCopied(false), 1500);

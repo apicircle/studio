@@ -46,11 +46,22 @@ export interface ConfigSnippetVariants {
   identical: boolean;
 }
 
+export type McpInstallOutcome = 'created' | 'updated' | 'unchanged';
+
+export interface McpInstallResult {
+  outcome: McpInstallOutcome;
+  path: string;
+}
+
+export type McpInstallState = 'absent' | 'installed-current' | 'installed-stale';
+
 export interface DesktopMcpBridge {
   status(): Promise<{ workspaceDir: string; binary: string }>;
   getConfigSnippet(client: string): Promise<ConfigSnippetVariants>;
   getConfigPath(client: string): Promise<string | null>;
   toolCatalog(): Promise<readonly McpToolName[]>;
+  installConfig(client: string): Promise<McpInstallResult>;
+  detectInstallState(client: string): Promise<McpInstallState>;
 }
 
 // ---------- WorkspaceFile (mirror) surface -------------------------------
