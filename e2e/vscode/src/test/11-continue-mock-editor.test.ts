@@ -35,7 +35,11 @@ suite('Phase 11 — 11-continue-mock-editor: commands + integration', () => {
     const cfg = vscode.workspace.getConfiguration('apicircle.mcp');
     await cfg.update('autoConfigureClients', ['continue'], vscode.ConfigurationTarget.Global);
     try {
-      const back = cfg.get<readonly string[]>('autoConfigureClients');
+      // Re-fetch the configuration after update — the previous cfg object's
+      // in-memory cache may not have refreshed yet.
+      const back = vscode.workspace
+        .getConfiguration('apicircle.mcp')
+        .get<readonly string[]>('autoConfigureClients');
       assert.ok(back?.includes('continue'));
     } finally {
       // Restore default

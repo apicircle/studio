@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "test:e2e": "node --experimental-specifier-resolution=node dist/runTest.js",
+    "test:e2e:local": "node --experimental-specifier-resolution=node dist/runTestLocal.js",
     "test:e2e:live-github": "APICIRCLE_E2E_LIVE_GITHUB=1 node --experimental-specifier-resolution=node dist/runTest.js",
     "clean": "rm -rf dist .vscode-test"
   },

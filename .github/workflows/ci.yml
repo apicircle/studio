@@ -55,6 +55,7 @@ jobs:
           path: |
             packages/*/coverage
             apps/*/coverage
+          if-no-files-found: ignore
           retention-days: 14
 
       - name: Build

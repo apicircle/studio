@@ -30,6 +30,7 @@ export type FileAssetState =
   | 'missing'
   | 'diverged';
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function deriveFileAssetState(
   asset: Pick<GlobalFileAsset, 'workingBranchRef' | 'baseBranchRef'> | null | undefined,
   hasPendingUpload: boolean,

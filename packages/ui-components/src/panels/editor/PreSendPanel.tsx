@@ -41,6 +41,7 @@ export interface PreSendPanelProps {
  * an empty-state when nothing is selected; React hook rules require us
  * to call the hook unconditionally, so this short-circuits instead.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function usePreSendValidation(
   request: ApiRequest | null | undefined,
   scope: ResolutionScope,

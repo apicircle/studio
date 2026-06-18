@@ -16,6 +16,7 @@ const REPLAY_EVENT = 'apicircle:onboarding-replay';
  * Public re-launch handle — clears the completion marker and tells any
  * mounted OnboardingTour instance to restart from step one.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function replayOnboarding(): void {
   try {
     localStorage.removeItem(STORAGE_KEY);

@@ -48,6 +48,7 @@ export function UrlencodedEditor({ request }: { request: ApiRequest }) {
  * (doing so would double-encode the wire body and hide variables from
  * resolution). Empty input → one empty enabled row to type into.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function parseUrlencoded(content: string): KeyValueRow[] {
   if (!content || content.trim() === '') {
     return [{ key: '', value: '', enabled: true }];
@@ -69,6 +70,7 @@ export function parseUrlencoded(content: string): KeyValueRow[] {
  * (no percent-encoding): `composeBody` encodes the pairs when it builds
  * the wire body. This is the format `buildRequest` expects.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function serializeUrlencoded(rows: ReadonlyArray<KeyValueRow>): string {
   return rows
     .filter((r) => r.enabled && r.key !== '')

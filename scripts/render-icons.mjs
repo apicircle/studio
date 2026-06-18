@@ -163,7 +163,9 @@ async function main() {
     const mktBuf = await mktEl.screenshot({ type: 'png' });
     await mktCtx.close();
     await writeFile(MARKETPLACE_OUT, mktBuf);
-    console.log(`✓ apps/vscode/media/icon-marketplace.png (${MARKETPLACE_SIZE}×${MARKETPLACE_SIZE}, ${mktBuf.byteLength}B)`);
+    console.log(
+      `✓ apps/vscode/media/icon-marketplace.png (${MARKETPLACE_SIZE}×${MARKETPLACE_SIZE}, ${mktBuf.byteLength}B)`,
+    );
   } finally {
     await browser.close();
   }

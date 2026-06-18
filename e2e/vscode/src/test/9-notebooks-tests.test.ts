@@ -16,6 +16,14 @@ import * as vscode from 'vscode';
 suite('Phase 9 — 9-notebooks-tests: notebooks + test controller', () => {
   test('Phase 9 commands all resolve', async function () {
     this.timeout(10_000);
+    // Ensure the extension is activated before checking registered commands.
+    // The test workspace is empty (no .apicircle/), so auto-activation via
+    // workspaceContains doesn't fire. Explicitly activate so the command
+    // handlers are registered regardless of suite load order.
+    const ext =
+      vscode.extensions.getExtension('apicircle.apicircle-vscode') ??
+      vscode.extensions.all.find((e) => e.packageJSON.name === 'apicircle-vscode');
+    if (ext && !ext.isActive) await ext.activate();
     const all = await vscode.commands.getCommands(true);
     assert.ok(all.includes('apicircle.openPlanAsNotebook'));
   });

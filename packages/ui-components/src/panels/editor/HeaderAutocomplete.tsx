@@ -202,7 +202,7 @@ export function HeaderValueRecommendations({
   ariaLabel,
 }: HeaderValueRecommendationsProps) {
   const entry = getHeaderEntry(headerKey);
-  const values = entry?.values ?? [];
+  const values = useMemo(() => entry?.values ?? [], [entry]);
 
   const filtered = useMemo(() => {
     if (values.length === 0) return [];
