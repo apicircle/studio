@@ -92,7 +92,7 @@ describe('fetchOAuth2TokenCommand', () => {
   it('warns on a non-apicircle URI', async () => {
     await fetchOAuth2TokenCommand(Uri.parse('file:///x.yaml'));
     expect(window.showWarningMessage).toHaveBeenCalledWith(
-      expect.stringContaining('only runs against APICircle request or folder YAML files'),
+      expect.stringContaining('only runs against API Circle request or folder YAML files'),
     );
   });
 

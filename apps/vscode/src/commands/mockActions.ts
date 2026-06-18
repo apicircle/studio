@@ -30,7 +30,7 @@ export interface MockActionsDeps {
 }
 
 /**
- * `APICircle: New Mock` — wizard:
+ * `API Circle: New Mock` — wizard:
  *   1. Pick source (OpenAPI URL/file / Postman collection / Insomnia export / Manual)
  *   2. Provide the source content
  *   3. Name (auto-suggested from spec title)
@@ -41,7 +41,7 @@ export interface MockActionsDeps {
 export async function newMockCommand(deps: MockActionsDeps): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
 
@@ -218,7 +218,7 @@ export async function newMockCommand(deps: MockActionsDeps): Promise<void> {
       if (parsed.warnings.length > 0) {
         // P3R1-G5: surface the full warning count + first message so the
         // user knows others exist. Full list goes to the consolidated
-        // `APICircle Runs` OutputChannel (Phase 4 wired this — but mock
+        // `API Circle Runs` OutputChannel (Phase 4 wired this — but mock
         // parsing happens before the controller hands us a logger, so the
         // stopgap console.warn below is fine; it lands in the Extension
         // Host log either way).
@@ -529,7 +529,7 @@ export async function openMockEndpointYamlCommand(
   }
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const stateBeforeOpen = await active.read();

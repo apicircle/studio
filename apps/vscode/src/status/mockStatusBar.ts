@@ -37,7 +37,7 @@ export class MockStatusBar implements vscode.Disposable {
     // Use the built-in `<viewId>.focus` command VS Code auto-creates for
     // every TreeView; no need for an extension-side wrapper command.
     this.item.command = 'apicircle.mock.focus';
-    this.item.tooltip = 'APICircle mock servers — click to open the Mock view';
+    this.item.tooltip = 'API Circle mock servers — click to open the Mock view';
     if (controller) {
       this.controllerSub = controller.onChange(() => {
         void this.refresh();

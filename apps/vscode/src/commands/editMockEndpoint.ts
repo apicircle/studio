@@ -45,12 +45,12 @@ export async function editMockEndpointCommand(
 ): Promise<void> {
   const surface = deps.bridge.activeWorkspace();
   if (!surface) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    void vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const mockId = arg?.mockId ?? arg?.serverId;
   if (!arg || !mockId || !arg.endpointId) {
-    await vscode.window.showWarningMessage(
+    void vscode.window.showWarningMessage(
       'Open this command from a mock endpoint row in the Mock view.',
     );
     return;

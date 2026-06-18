@@ -143,7 +143,7 @@ function hashPath(absolutePath: string): string {
 /**
  * Resolve the registered-workspace id that an already-open editor belongs to.
  * Returns the matching workspace id, or null when the editor isn't an
- * APICircle surface (or its workspace isn't registered).
+ * API Circle surface (or its workspace isn't registered).
  *
  * Two editor shapes map to a workspace:
  *   - an `apicircle://<authority>/…` virtual YAML, where the authority is the

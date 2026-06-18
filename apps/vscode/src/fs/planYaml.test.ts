@@ -20,7 +20,7 @@ function makePlan(over: Partial<ExecutionPlan> = {}): ExecutionPlan {
 describe('serializePlanToYaml', () => {
   it('emits a header comment', () => {
     const out = serializePlanToYaml(makePlan());
-    expect(out).toContain('APICircle Execution Plan');
+    expect(out).toContain('API Circle Execution Plan');
   });
 
   it('emits steps with requestId + enabled when false', () => {

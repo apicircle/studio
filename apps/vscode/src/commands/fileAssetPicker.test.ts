@@ -84,7 +84,7 @@ describe('pickGlobalFileAsset', () => {
     const bridge = { activeWorkspace: () => null } as unknown as VsCodeBridge;
     const out = await pickGlobalFileAsset({ bridge });
     expect(out).toBeUndefined();
-    expect(window.showWarningMessage).toHaveBeenCalledWith('No active APICircle workspace.');
+    expect(window.showWarningMessage).toHaveBeenCalledWith('No active API Circle workspace.');
   });
 
   it('returns undefined when the picker is dismissed', async () => {

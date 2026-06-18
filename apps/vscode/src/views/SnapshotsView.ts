@@ -42,7 +42,7 @@ export class SnapshotsView extends BaseTreeView<SnapshotsNode> {
       item.iconPath = new vscode.ThemeIcon('database');
       item.tooltip = `${snapshots.entries.length} snapshot(s) using ${formatBytes(
         used,
-      )} of ${formatBytes(cap)} cap.\nSet the cap via the Command Palette → "APICircle: Set Snapshot Max Bytes".`;
+      )} of ${formatBytes(cap)} cap.\nSet the cap via the Command Palette → "API Circle: Set Snapshot Max Bytes".`;
       item.contextValue = 'storage-meter';
       return item;
     }

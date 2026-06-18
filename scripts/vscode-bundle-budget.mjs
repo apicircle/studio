@@ -9,8 +9,8 @@
 // means CI and the local test report different floors. This module is the
 // reason that can't happen.
 //
-// Bump the ceilings deliberately per phase, with a CHANGELOG entry and an
-// update to docs/vscode-extension.md §14. Never to silence a regression.
+// Bump the ceilings deliberately, with a CHANGELOG entry explaining the
+// rationale. Never to silence a regression.
 
 // Phase 12 publish-prep RE-BUMP — `vsce` is incompatible with pnpm
 // monorepos' `workspace:*` protocol (its `npm list` dep walker fails on

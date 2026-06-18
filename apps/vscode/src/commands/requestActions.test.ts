@@ -169,7 +169,7 @@ describe('request actions', () => {
       bridge = new VsCodeBridge(makeMockContext(path.join(tmp, 'globalStorage')));
       await deleteRequestCommand({ bridge }, { kind: 'request', id: 'r1' });
       expect(window.showWarningMessage).toHaveBeenCalledWith(
-        expect.stringContaining('No active APICircle workspace'),
+        expect.stringContaining('No active API Circle workspace'),
       );
     });
 
@@ -196,7 +196,7 @@ describe('request actions', () => {
       bridge = new VsCodeBridge(makeMockContext(path.join(tmp, 'globalStorage')));
       await duplicateRequestCommand({ bridge }, { kind: 'request', id: 'r1' });
       expect(window.showWarningMessage).toHaveBeenCalledWith(
-        expect.stringContaining('No active APICircle workspace'),
+        expect.stringContaining('No active API Circle workspace'),
       );
     });
 
@@ -212,7 +212,7 @@ describe('request actions', () => {
       bridge = new VsCodeBridge(makeMockContext(path.join(tmp, 'globalStorage')));
       await revealInSourceCommand({ bridge }, { kind: 'request', id: 'r1' });
       expect(window.showWarningMessage).toHaveBeenCalledWith(
-        expect.stringContaining('No active APICircle workspace'),
+        expect.stringContaining('No active API Circle workspace'),
       );
     });
 

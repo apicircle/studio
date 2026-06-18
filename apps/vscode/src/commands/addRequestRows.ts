@@ -48,7 +48,7 @@ async function ensureRequestDocument(uri?: vscode.Uri): Promise<vscode.TextDocum
   }
   if (targetUri.scheme !== 'apicircle' || uriEntityKind(targetUri) !== 'request') {
     await vscode.window.showWarningMessage(
-      'This command only runs against APICircle request YAML files.',
+      'This command only runs against API Circle request YAML files.',
     );
     return null;
   }

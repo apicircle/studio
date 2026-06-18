@@ -131,7 +131,7 @@ describe('createWorkspaceCommand', () => {
     ];
     await createWorkspaceCommand(bridge);
     expect(window.showInformationMessage).toHaveBeenCalledWith(
-      expect.stringContaining('Created APICircle workspace'),
+      expect.stringContaining('Created API Circle workspace'),
       'Open Workspace File',
     );
     expect(commands.executeCommand).toHaveBeenCalledWith('vscode.open', expect.anything());

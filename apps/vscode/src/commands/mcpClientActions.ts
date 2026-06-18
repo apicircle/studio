@@ -206,7 +206,7 @@ export async function installMcpForAllClientsCommand(deps: McpClientActionsDeps)
       .map((r) => CLIENT_LABELS[r.client])
       .join(', ');
     await vscode.window.showWarningMessage(
-      `API Circle MCP bulk install: ${summaryText}. Failed: ${failedClients}. See "APICircle Runs" output channel for details.`,
+      `API Circle MCP bulk install: ${summaryText}. Failed: ${failedClients}. See "API Circle Runs" output channel for details.`,
     );
   } else if (report.summary.created + report.summary.updated > 0) {
     await vscode.window.showInformationMessage(

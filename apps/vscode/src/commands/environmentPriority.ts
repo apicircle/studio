@@ -4,7 +4,7 @@ import { envPriorityKey } from '@apicircle/shared';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 
 // =============================================================================
-// `APICircle: Set Environment Priority Order` command.
+// `API Circle: Set Environment Priority Order` command.
 //
 // The variable resolver layers environments top-down per
 // `environments.priorityOrder`. This command lets the user reorder that list.
@@ -27,7 +27,7 @@ export interface SetPriorityDeps {
 export async function setEnvPriorityOrderCommand(deps: SetPriorityDeps): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
 
@@ -54,7 +54,7 @@ export async function setEnvPriorityOrderCommand(deps: SetPriorityDeps): Promise
   }
   if (candidates.length === 0) {
     await vscode.window.showInformationMessage(
-      'No environments to order. Run "APICircle: New Environment" first, or link a workspace.',
+      'No environments to order. Run "API Circle: New Environment" first, or link a workspace.',
     );
     return;
   }

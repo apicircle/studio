@@ -6,7 +6,7 @@ import { ApicircleFsProvider } from '../fs/apicircleFsProvider';
 import { uniquifyName } from '../util/uniquifyName';
 
 // =============================================================================
-// `APICircle: New Request` — folder-pick + direct file creation.
+// `API Circle: New Request` — folder-pick + direct file creation.
 //
 // Earlier this was a 5-step wizard (method → URL → folder → auth → name). The
 // step-wise prompts duplicated what the request YAML already lets you edit, so
@@ -43,7 +43,7 @@ export async function newRequestCommand(
 ): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
 

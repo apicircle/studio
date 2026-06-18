@@ -21,7 +21,7 @@ export interface SnapshotActionsDeps {
 export async function captureSnapshotCommand(deps: SnapshotActionsDeps): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
 
@@ -50,7 +50,7 @@ export async function restoreSnapshotCommand(
 ): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const state = await active.read();
@@ -113,7 +113,7 @@ export async function restoreSnapshotCommand(
 export async function setSnapshotMaxBytesCommand(deps: SnapshotActionsDeps): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    void vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const state = await active.read();

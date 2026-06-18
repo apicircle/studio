@@ -17,13 +17,13 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export async function clearAllHistoryCommand(deps: HistoryActionsDeps): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    void vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const state = await active.read();
   const count = state.local.history.requestRuns.length + state.local.history.planRuns.length;
   if (count === 0) {
-    await vscode.window.showInformationMessage('No history to clear.');
+    void vscode.window.showInformationMessage('No history to clear.');
     return;
   }
   const confirm = await vscode.window.showWarningMessage(
@@ -43,7 +43,7 @@ export async function clearAllHistoryCommand(deps: HistoryActionsDeps): Promise<
 export async function purgeOlderThanCommand(deps: HistoryActionsDeps): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    void vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const picked = await vscode.window.showQuickPick(

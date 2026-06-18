@@ -45,7 +45,7 @@ async function deriveRepo(folder: string): Promise<OwnerName | null> {
 async function resolveRepo(deps: RepoActionsDeps): Promise<OwnerName | null> {
   const surface = deps.bridge.activeWorkspace();
   if (!surface) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return null;
   }
   if (!surface.workspace.workspaceFolder) {
@@ -108,7 +108,7 @@ async function resolveDefaultBranchSha(
 export async function tagReleaseCommand(deps: RepoActionsDeps): Promise<void> {
   const surface = deps.bridge.activeWorkspace();
   if (!surface) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const state = await surface.read();

@@ -72,8 +72,8 @@ jobs:
         # Two-tier gate: warn at 3.0 MB, hard fail at 5.0 MB (post-1.0
         # peer-parity bump — Thunder Client / GitLens / ESLint all
         # ~5-8 MB; activationPerf.test.ts is now the real UX gate).
-        # See scripts/vscode-bundle-budget.mjs (single source of truth)
-        # and docs/vscode-extension.md §14 for the contract.
+        # Constants + rationale live in scripts/vscode-bundle-budget.mjs
+        # (single source of truth).
         run: node scripts/check-vscode-bundle.mjs
 
       - name: Dead-code scan (knip)

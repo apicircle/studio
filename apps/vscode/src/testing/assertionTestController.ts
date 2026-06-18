@@ -13,7 +13,7 @@ import type { VsCodeBridge, WorkspaceSurface } from '../host/vscodeBridge';
 //
 // Hierarchy (mirrors the workspace's folder tree):
 //
-//   APICircle / <workspace label>
+//   API Circle / <workspace label>
 //     ▸ <folder name>
 //        ▸ <Request name>             [request-level item]
 //           ✓ status equals 200       [per-assertion item]
@@ -46,7 +46,7 @@ const REFRESH_DEBOUNCE_MS = 100;
 
 export class AssertionTestController implements vscode.Disposable {
   static readonly controllerId = 'apicircle-assertions';
-  static readonly controllerLabel = 'APICircle Assertions';
+  static readonly controllerLabel = 'API Circle Assertions';
 
   private readonly controller: vscode.TestController;
   private readonly bridge: VsCodeBridge;

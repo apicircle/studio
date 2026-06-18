@@ -100,7 +100,7 @@ export function formatResponseDocument(opts: FormatResponseOptions): string {
 }
 
 function formatSections(name: string, sections: Array<{ title: string; content: string }>): string {
-  let out = `# APICircle Response — ${name}\n\n`;
+  let out = `# API Circle Response — ${name}\n\n`;
   for (const s of sections) {
     out += `# ── ${s.title} ──\n`;
     out += s.content;

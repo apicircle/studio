@@ -225,7 +225,7 @@ describe('releaseActions', () => {
       fsProvider = new ApicircleFsProvider(bridge);
       await openReleaseHistoryCommand(deps());
       expect(window.showWarningMessage).toHaveBeenCalledWith(
-        expect.stringContaining('No active APICircle workspace'),
+        expect.stringContaining('No active API Circle workspace'),
       );
     });
 

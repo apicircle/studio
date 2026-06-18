@@ -61,7 +61,7 @@ export interface ResolvedMcpPaths {
    * string when no workspace is active.
    */
   workspace: string;
-  /** `true` when there is an active APICircle workspace registered. */
+  /** `true` when there is an active API Circle workspace registered. */
   hasActiveWorkspace: boolean;
   /** Whether the active workspace came from `~/.apicircle/registry.json`
    * (vs a `.apicircle/` dir inside a project folder). Callers use this to

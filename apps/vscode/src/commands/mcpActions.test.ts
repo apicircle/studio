@@ -162,18 +162,18 @@ describe('mcpActions', () => {
   });
 
   describe('revealMcpBinaryInfoCommand', () => {
-    it('with active workspace: shows binary + workspace + tool count', async () => {
+    it('with active workspace: shows binary + workspace + tool count', () => {
       const mcp = makeMcp({ id: '/ws', apicircleDir: '/ws/.apicircle' });
-      await revealMcpBinaryInfoCommand({ mcp });
+      revealMcpBinaryInfoCommand({ mcp });
       const msg = (window.showInformationMessage as Mock).mock.calls[0][0] as string;
       expect(msg).toContain('apicircle-mcp');
       expect(msg).toContain('/ws/.apicircle');
       expect(msg).toMatch(/\d+ tools/);
     });
 
-    it('without active workspace: surfaces "no active workspace" + tool count', async () => {
+    it('without active workspace: surfaces "no active workspace" + tool count', () => {
       const mcp = makeMcp(null);
-      await revealMcpBinaryInfoCommand({ mcp });
+      revealMcpBinaryInfoCommand({ mcp });
       const msg = (window.showInformationMessage as Mock).mock.calls[0][0] as string;
       expect(msg).toContain('No active workspace');
       expect(msg).toMatch(/\d+ tools/);

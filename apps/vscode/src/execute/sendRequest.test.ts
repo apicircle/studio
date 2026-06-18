@@ -148,7 +148,7 @@ describe('sendRequestCommand', () => {
   it('warns when no workspace is active', async () => {
     await sendRequestCommand({ bridge, abortRegistry: registry });
     expect(window.showWarningMessage).toHaveBeenCalledWith(
-      expect.stringContaining('No active APICircle workspace'),
+      expect.stringContaining('No active API Circle workspace'),
     );
   });
 

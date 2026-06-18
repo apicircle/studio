@@ -22,7 +22,7 @@ function makeResult(over: Partial<ExecutionResult> = {}): ExecutionResult {
 describe('formatResponseDocument', () => {
   it('includes a header naming the request', () => {
     const doc = formatResponseDocument({ requestName: 'Get user', result: makeResult() });
-    expect(doc).toContain('APICircle Response — Get user');
+    expect(doc).toContain('API Circle Response — Get user');
   });
 
   it('includes summary section with status, duration, size, URL', () => {

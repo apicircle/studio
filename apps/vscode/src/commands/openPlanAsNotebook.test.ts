@@ -46,7 +46,7 @@ describe('openPlanAsNotebookCommand', () => {
   it('warns when no active workspace', async () => {
     await openPlanAsNotebookCommand({ bridge: emptyBridge });
     expect(window.showWarningMessage).toHaveBeenCalledWith(
-      expect.stringContaining('No active APICircle workspace'),
+      expect.stringContaining('No active API Circle workspace'),
     );
   });
 

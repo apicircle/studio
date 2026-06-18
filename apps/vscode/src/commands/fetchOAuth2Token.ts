@@ -46,7 +46,7 @@ export async function fetchOAuth2TokenCommand(uri?: vscode.Uri): Promise<void> {
   const isFolderYaml = uriEntityKind(targetUri) === 'folder';
   if (targetUri.scheme !== 'apicircle' || (!isReqYaml && !isFolderYaml)) {
     await vscode.window.showWarningMessage(
-      'This command only runs against APICircle request or folder YAML files.',
+      'This command only runs against API Circle request or folder YAML files.',
     );
     return;
   }

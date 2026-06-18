@@ -42,7 +42,7 @@ export async function pickGlobalFileAsset(
 ): Promise<GlobalFileAsset | undefined> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return undefined;
   }
   const state = await active.read();

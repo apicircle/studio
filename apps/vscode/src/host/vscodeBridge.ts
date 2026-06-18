@@ -146,7 +146,7 @@ export class VsCodeBridge implements vscode.Disposable {
    *     README.md
    *
    * Returns the discovered workspace ready to register with the bridge.
-   * Used by `APICircle: Create New Workspace`.
+   * Used by `API Circle: Create New Workspace`.
    */
   async createWorkspaceScaffold(
     folder: vscode.WorkspaceFolder,
@@ -222,7 +222,7 @@ This folder is managed by **API Circle Studio**.
 async function ensureGitignore(repoRoot: string): Promise<void> {
   const gitignorePath = path.join(repoRoot, '.gitignore');
   const entries = [
-    '# APICircle device-local — never commit',
+    '# API Circle device-local — never commit',
     'workspace.local.json',
     '.apicircle/.local/',
     '.apicircle/.lock',

@@ -4,7 +4,7 @@ import type { WorkspaceSynced, WorkspaceLocal } from '@apicircle/shared';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 
 // =============================================================================
-// `APICircle: Create New Workspace` command.
+// `API Circle: Create New Workspace` command.
 //
 // Flow:
 //   1. If only one folder is open, scaffold inside it.
@@ -20,7 +20,7 @@ export async function createWorkspaceCommand(bridge: VsCodeBridge): Promise<void
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
     const choice = await vscode.window.showWarningMessage(
-      'Open a folder first to create an APICircle workspace.',
+      'Open a folder first to create an API Circle workspace.',
       'Open Folder…',
     );
     if (choice === 'Open Folder…') {
@@ -35,7 +35,7 @@ export async function createWorkspaceCommand(bridge: VsCodeBridge): Promise<void
   } else {
     const picked = await vscode.window.showQuickPick(
       folders.map((f) => ({ label: f.name, description: f.uri.fsPath, folder: f })),
-      { placeHolder: 'Choose a folder to create the APICircle workspace inside' },
+      { placeHolder: 'Choose a folder to create the API Circle workspace inside' },
     );
     target = picked?.folder;
   }
@@ -47,7 +47,7 @@ export async function createWorkspaceCommand(bridge: VsCodeBridge): Promise<void
   try {
     const out = await bridge.createWorkspaceScaffold(target, synced, local);
     await vscode.window.showInformationMessage(
-      `Created APICircle workspace at ${vscode.workspace.asRelativePath(out.workspaceJsonPath)}`,
+      `Created API Circle workspace at ${vscode.workspace.asRelativePath(out.workspaceJsonPath)}`,
       'Open Workspace File',
     );
     const uri = vscode.Uri.file(out.workspaceJsonPath);

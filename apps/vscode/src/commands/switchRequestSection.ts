@@ -409,8 +409,8 @@ async function switchSection(
   if (targetUri.scheme !== 'apicircle' || (!isReqYaml && !folderOk)) {
     await vscode.window.showWarningMessage(
       sectionKey === 'auth'
-        ? 'This command only runs against APICircle request or folder YAML files.'
-        : 'This command only runs against APICircle request YAML files.',
+        ? 'This command only runs against API Circle request or folder YAML files.'
+        : 'This command only runs against API Circle request YAML files.',
     );
     return;
   }

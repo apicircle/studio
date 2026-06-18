@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
 // =============================================================================
-// RunsChannel — the single "APICircle Runs" OutputChannel.
+// RunsChannel — the single "API Circle Runs" OutputChannel.
 //
 // Before P4 the extension carried per-feature ad-hoc OutputChannels (mock log,
 // future plan-runner, future request-sender). They each created their own
@@ -15,7 +15,7 @@ import * as vscode from 'vscode';
 //
 // **Lazy creation:** the underlying channel is NOT created until the first
 // `log()` call. Users who never trigger a diagnostic don't see an empty
-// "APICircle Runs" entry in their channel picker — matching the P3R6-G4
+// "API Circle Runs" entry in their channel picker — matching the P3R6-G4
 // pattern.
 //
 // **Lifecycle:** the channel is disposed via the registered disposable in
@@ -25,7 +25,7 @@ import * as vscode from 'vscode';
 export type RunsChannelCategory = 'mock' | 'vault' | 'plan' | 'send' | 'snapshot' | 'misc';
 
 export interface RunsChannelOptions {
-  /** Override the channel name (default: "APICircle Runs"). Used by tests. */
+  /** Override the channel name (default: "API Circle Runs"). Used by tests. */
   name?: string;
   /**
    * Hook called instead of creating a real channel — lets unit tests
@@ -40,7 +40,7 @@ export class RunsChannel implements vscode.Disposable {
   private readonly sink: ((line: string) => void) | undefined;
 
   constructor(opts: RunsChannelOptions = {}) {
-    this.channelName = opts.name ?? 'APICircle Runs';
+    this.channelName = opts.name ?? 'API Circle Runs';
     this.sink = opts.sink;
   }
 

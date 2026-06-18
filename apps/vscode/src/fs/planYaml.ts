@@ -37,7 +37,7 @@ interface PlanYamlOutput {
   >;
 }
 
-const HEADER_COMMENT = `# APICircle Execution Plan — edit fields below and save to commit.
+const HEADER_COMMENT = `# API Circle Execution Plan — edit fields below and save to commit.
 # Plans chain requests with assertions to validate end-to-end flows.
 # Use the ▶ Run Plan CodeLens above the 'name:' line or right-click the plan
 # in the Execution view to launch it.

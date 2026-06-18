@@ -83,8 +83,7 @@ auth — `inherit` is never seen by signing primitives.
   `apicircle://<ws>/folders/<…>.folder.yaml?id=<folderId>`. Saving
   dispatches the `folder.update` `WorkspacePatch`. Request YAMLs grow a
   `◆ Inherits from <Folder> (<type>)` CodeLens above `auth:` whenever
-  the request's auth resolves via `inherit`. See
-  [`docs/vscode-extension.md`](vscode-extension.md) §"Folder-wise auth".
+  the request's auth resolves via `inherit`.
 - **MCP / CLI** — the `folder.update` tool accepts `name`, `auth`,
   `clearAuth`, and `parentId` in a single call. See
   [`docs/mcp-tools-reference.md`](mcp-tools-reference.md).

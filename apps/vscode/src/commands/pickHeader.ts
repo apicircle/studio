@@ -123,7 +123,7 @@ const HEADERS: HeaderDef[] = [
   {
     name: 'User-Agent',
     description: 'Client identifier.',
-    values: ['APICircle/1.0', 'curl/8.0.0'],
+    values: ['API Circle/1.0', 'curl/8.0.0'],
   },
   {
     name: 'X-API-Key',
@@ -147,7 +147,7 @@ export async function pickHeaderCommand(uri?: vscode.Uri): Promise<void> {
   }
   if (targetUri.scheme !== 'apicircle' || uriEntityKind(targetUri) !== 'request') {
     await vscode.window.showWarningMessage(
-      'This command only runs against APICircle request YAML files.',
+      'This command only runs against API Circle request YAML files.',
     );
     return;
   }

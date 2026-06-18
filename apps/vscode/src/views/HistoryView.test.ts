@@ -319,7 +319,7 @@ describe('HistoryView', () => {
       const uri = ApicircleFsProvider.historyUri(apicircleDir, 'lazy-run');
       const bytes = await fsProvider.readFile(uri as never);
       const text = Buffer.from(bytes).toString('utf8');
-      expect(text).toContain('APICircle Run lazy-run');
+      expect(text).toContain('API Circle Run lazy-run');
     });
 
     it('apicircle: readFile resolves plan-runs the same way', async () => {

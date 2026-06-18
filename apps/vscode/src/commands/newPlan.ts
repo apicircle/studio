@@ -4,7 +4,7 @@ import type { ExecutionPlan, Request as ApiRequest } from '@apicircle/shared';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 
 // =============================================================================
-// `APICircle: New Plan` — multi-step QuickPick wizard.
+// `API Circle: New Plan` — multi-step QuickPick wizard.
 //
 // Steps:
 //   1. InputBox: name (non-empty, no duplicate)
@@ -23,14 +23,14 @@ export interface NewPlanDeps {
 export async function newPlanCommand(deps: NewPlanDeps): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const state = await active.read();
   const allRequests = Object.values(state.synced.collections.requests);
   if (allRequests.length === 0) {
     await vscode.window.showInformationMessage(
-      'No requests in this workspace. Add one via "APICircle: New Request" first.',
+      'No requests in this workspace. Add one via "API Circle: New Request" first.',
     );
     return;
   }

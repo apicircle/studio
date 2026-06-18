@@ -4,7 +4,7 @@ import type { VsCodeBridge } from '../host/vscodeBridge';
 import { pickJsonPath } from '../execute/extractionPicker';
 
 // =============================================================================
-// `APICircle: Add Extraction from Latest Response` command.
+// `API Circle: Add Extraction from Latest Response` command.
 //
 // Flow:
 //   1. QuickPick over the user's requests (or use the active editor's id).
@@ -24,7 +24,7 @@ export async function addExtractionFromLatestResponseCommand(
 ): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const state = await active.read();

@@ -74,10 +74,10 @@ describe('newRequestFromTemplateCommand', () => {
     (window.showWarningMessage as Mock).mockReset();
   });
 
-  it('warns when there is no active APICircle workspace', async () => {
+  it('warns when there is no active API Circle workspace', async () => {
     const bridge = { activeWorkspace: () => null } as unknown as VsCodeBridge;
     await newRequestFromTemplateCommand({ bridge });
-    expect(window.showWarningMessage).toHaveBeenCalledWith('No active APICircle workspace.');
+    expect(window.showWarningMessage).toHaveBeenCalledWith('No active API Circle workspace.');
   });
 
   it('exits silently when the template picker is dismissed', async () => {

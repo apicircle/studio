@@ -487,20 +487,18 @@ Desktop: `pnpm --filter @apicircle/desktop build` then `… start`.
 
 ## 9. Where the docs live
 
-| Doc                                                                                    | Purpose                                                               |
-| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| [`docs/architecture/platform.md`](docs/architecture/platform.md)                       | Platform surfaces design record (MCP, mock engine, CLI, desktop)      |
-| [`docs/vscode-extension.md`](docs/vscode-extension.md)                                 | VS Code extension user + developer guide                              |
-| [`docs/vscode-extension-install-publish.md`](docs/vscode-extension-install-publish.md) | Local install (dev host, .vsix) + Marketplace + Open VSX publish plan |
-| [`docs/auth.md`](docs/auth.md)                                                         | The 17-auth-type matrix                                               |
-| [`docs/mock-server.md`](docs/mock-server.md)                                           | Mock server feature guide                                             |
-| [`docs/mcp-tools-reference.md`](docs/mcp-tools-reference.md)                           | MCP tool catalog reference                                            |
-| [`docs/connect-your-ai-client.md`](docs/connect-your-ai-client.md)                     | Wiring an MCP client                                                  |
-| [`docs/installing.md`](docs/installing.md)                                             | Install instructions                                                  |
-| [`docs/qa/README.md`](docs/qa/README.md)                                               | QA status, E2E CI reference, coverage tooling                         |
-| [`docs/context/api-circle.md`](docs/context/api-circle.md)                             | Tool-agnostic cold-start brief (for Cursor / Copilot / etc.)          |
-| [`CHANGELOG.md`](CHANGELOG.md)                                                         | Release-by-release feature notes (1.0.0 → now)                        |
-| [`e2e/qa/runner/`](e2e/qa/runner/)                                                     | Cowork manual-test runner — fixtures, seed script, runner prompt      |
+| Doc                                                                | Purpose                                                          |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| [`docs/architecture/platform.md`](docs/architecture/platform.md)   | Platform surfaces design record (MCP, mock engine, CLI, desktop) |
+| [`docs/auth.md`](docs/auth.md)                                     | The 17-auth-type matrix                                          |
+| [`docs/mock-server.md`](docs/mock-server.md)                       | Mock server feature guide                                        |
+| [`docs/mcp-tools-reference.md`](docs/mcp-tools-reference.md)       | MCP tool catalog reference                                       |
+| [`docs/connect-your-ai-client.md`](docs/connect-your-ai-client.md) | Wiring an MCP client                                             |
+| [`docs/installing.md`](docs/installing.md)                         | Install instructions                                             |
+| [`docs/qa/README.md`](docs/qa/README.md)                           | QA status, E2E CI reference, coverage tooling                    |
+| [`docs/context/api-circle.md`](docs/context/api-circle.md)         | Tool-agnostic cold-start brief (for Cursor / Copilot / etc.)     |
+| [`CHANGELOG.md`](CHANGELOG.md)                                     | Release-by-release feature notes (1.0.0 → now)                   |
+| [`e2e/qa/runner/`](e2e/qa/runner/)                                 | Cowork manual-test runner — fixtures, seed script, runner prompt |
 
 ---
 
@@ -537,7 +535,8 @@ Desktop: `pnpm --filter @apicircle/desktop build` then `… start`.
   rationale; (3) never bump the hard fail to silence a regression —
   the hard fail only moves on a deliberate policy change with
   CHANGELOG rationale. Phase 7 baseline was 1.46 MB; current is
-  ~2.44 MB. See `docs/vscode-extension.md §14` for the full
+  ~2.44 MB. The budget constants + their rationale comments live in
+  `scripts/vscode-bundle-budget.mjs` itself — that file is the
   contract.
 
 ---

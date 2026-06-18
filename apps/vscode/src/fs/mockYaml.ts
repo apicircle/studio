@@ -55,7 +55,7 @@ interface MockYamlOutput {
 const HEADER_COMMENT = `# API Circle Mock Server — edit name / defaultPort / cors below and save.
 #
 # Source + endpoints are read-only in this projection. To change them:
-#   • Re-import the spec via 'APICircle: New Mock' (replaces source)
+#   • Re-import the spec via 'API Circle: New Mock' (replaces source)
 #   • Per-endpoint behavior — open the per-endpoint YAML from the Mock
 #     sidebar (click the endpoint row or the ✎ pencil) to edit method,
 #     path, request validation, response rules, default response,
@@ -159,7 +159,7 @@ export function parseMockFromYaml(text: string): ParsedMockYaml {
 
   if (obj.source !== undefined) {
     warnings.push(
-      '`source` is read-only — re-import the spec via "APICircle: New Mock" to change it.',
+      '`source` is read-only — re-import the spec via "API Circle: New Mock" to change it.',
     );
   }
   if (obj.endpoints !== undefined) {

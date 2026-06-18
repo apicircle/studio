@@ -75,7 +75,7 @@ describe('setRequestMethodFieldCommand', () => {
   it('warns on a non-apicircle URI', async () => {
     await setRequestMethodFieldCommand(Uri.parse('file:///x.yaml'), 0);
     expect(window.showWarningMessage).toHaveBeenCalledWith(
-      'This command only runs against an APICircle request YAML.',
+      'This command only runs against an API Circle request YAML.',
     );
   });
 
@@ -1687,7 +1687,7 @@ describe('toggleRequestRowEnabledCommand extra branches', () => {
   it('warns on a non-request URI', async () => {
     await toggleRequestRowEnabledCommand(Uri.parse('apicircle://w/mocks/r1.yaml'), 0);
     expect(window.showWarningMessage).toHaveBeenCalledWith(
-      'This command only runs against an APICircle request YAML.',
+      'This command only runs against an API Circle request YAML.',
     );
   });
 });

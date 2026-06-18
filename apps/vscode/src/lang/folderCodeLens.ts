@@ -64,7 +64,7 @@ export class FolderCodeLensProvider implements vscode.CodeLensProvider {
         new vscode.CodeLens(range, {
           title: '✚ New request in this folder',
           tooltip:
-            'Scaffold a new request directly inside this folder (skips the folder-pick step of APICircle: New Request).',
+            'Scaffold a new request directly inside this folder (skips the folder-pick step of API Circle: New Request).',
           command: 'apicircle.newRequestInFolder',
           arguments: [{ kind: 'folder', id: folderId }],
         }),

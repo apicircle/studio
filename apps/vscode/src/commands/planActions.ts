@@ -33,7 +33,7 @@ export async function runPlanCommand(deps: PlanActionsDeps, node?: PlanNode): Pr
   const { bridge, abortRegistry } = deps;
   const active = bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
 
@@ -42,7 +42,7 @@ export async function runPlanCommand(deps: PlanActionsDeps, node?: PlanNode): Pr
   const planList = Object.values(plans);
   if (planList.length === 0) {
     await vscode.window.showInformationMessage(
-      'No execution plans defined. Run "APICircle: New Plan…" first.',
+      'No execution plans defined. Run "API Circle: New Plan…" first.',
     );
     return;
   }

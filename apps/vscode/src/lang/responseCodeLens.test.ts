@@ -102,7 +102,7 @@ describe('ResponseCodeLensProvider', () => {
   it('emits ⟳ Format JSON on a body (json) section header', () => {
     const lenses = provider.provideCodeLenses(
       makeDoc(RESPONSE_URI, [
-        '# APICircle Response — Login',
+        '# API Circle Response — Login',
         '',
         '# ── summary ──',
         'request: Login',
@@ -120,7 +120,12 @@ describe('ResponseCodeLensProvider', () => {
 
   it('emits nothing when body kind is not json', () => {
     const lenses = provider.provideCodeLenses(
-      makeDoc(RESPONSE_URI, ['# APICircle Response — GetXml', '', '# ── body (xml) ──', '<root/>']),
+      makeDoc(RESPONSE_URI, [
+        '# API Circle Response — GetXml',
+        '',
+        '# ── body (xml) ──',
+        '<root/>',
+      ]),
     );
     expect(lenses).toHaveLength(0);
   });
@@ -154,7 +159,7 @@ describe('formatResponseJsonCommand', () => {
     });
     await formatResponseJsonCommand(otherUri, 0);
     expect(vscodeModule.window.showWarningMessage).toHaveBeenCalledWith(
-      'Open an APICircle response document first.',
+      'Open an API Circle response document first.',
     );
   });
 });

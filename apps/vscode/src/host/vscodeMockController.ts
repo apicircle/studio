@@ -48,7 +48,7 @@ interface VsCodeMockControllerDeps {
    * fallback). Defaults to `console.warn`. P3R4-G5: lets tests inject
    * a vi.fn() and assert on the warn payload without polluting test
    * stdout. Phase 4 swapped the production wiring for the consolidated
-   * `APICircle Runs` OutputChannel via `RunsChannel.forCategory('mock')`
+   * `API Circle Runs` OutputChannel via `RunsChannel.forCategory('mock')`
    * (see extension.ts) — the console.warn fallback only fires in tests
    * that don't pass an explicit log.
    */

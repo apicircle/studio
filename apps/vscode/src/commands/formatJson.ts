@@ -122,7 +122,7 @@ export function reformatJsonContentAt(text: string, contentLine: number): JsonRe
 export async function formatJsonCommand(uri?: vscode.Uri, line?: number): Promise<void> {
   const targetUri = uri ?? vscode.window.activeTextEditor?.document.uri;
   if (!targetUri || targetUri.scheme !== 'apicircle') {
-    await vscode.window.showWarningMessage('Open an APICircle YAML document first.');
+    await vscode.window.showWarningMessage('Open an API Circle YAML document first.');
     return;
   }
   const document = await vscode.workspace.openTextDocument(targetUri);

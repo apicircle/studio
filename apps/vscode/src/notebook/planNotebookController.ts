@@ -53,11 +53,11 @@ export class PlanNotebookController implements vscode.Disposable {
     this.controller = vscode.notebooks.createNotebookController(
       PlanNotebookController.controllerId,
       PlanNotebookController.viewType,
-      'APICircle Plan Runner',
+      'API Circle Plan Runner',
     );
     this.controller.supportedLanguages = ['apicircle-plan-step', 'markdown'];
     this.controller.supportsExecutionOrder = true;
-    this.controller.description = 'Sends each cell as the referenced APICircle request.';
+    this.controller.description = 'Sends each cell as the referenced API Circle request.';
     this.controller.executeHandler = (cells, notebook, ctrl) => {
       void this.executeAll(cells, notebook, ctrl);
     };

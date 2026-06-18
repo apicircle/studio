@@ -83,7 +83,7 @@ function lineDiagnostic(
   const text = document.lineAt(Math.min(line, Math.max(0, document.lineCount - 1))).text;
   const range = new vscode.Range(line, 0, line, Math.max(1, text.length));
   const diag = new vscode.Diagnostic(range, message, severity);
-  diag.source = 'APICircle';
+  diag.source = 'API Circle';
   return diag;
 }
 

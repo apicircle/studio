@@ -49,7 +49,7 @@ export async function openPlanAsNotebookCommand(
   const surface = deps.bridge.activeWorkspace();
   if (!surface) {
     await vscode.window.showWarningMessage(
-      'No active APICircle workspace. Open a workspace before opening a plan as a notebook.',
+      'No active API Circle workspace. Open a workspace before opening a plan as a notebook.',
     );
     return;
   }

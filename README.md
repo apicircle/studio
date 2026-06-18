@@ -197,12 +197,12 @@ Runs` OutputChannel.
 
 **1.1.0 — first public Marketplace cut** (lockstep with the rest of
 the monorepo). Bundle currently **2.66 MB**, well under the soft 3.0
-MB / hard 5.0 MB budget enforced by [`scripts/check-vscode-bundle.mjs`](scripts/check-vscode-bundle.mjs)
-and [`apps/vscode/test/integration/bundleSize.test.ts`](apps/vscode/test/integration/bundleSize.test.ts).
-E2E coverage spans **all 11 feature phases** (19 specs in
-[`e2e/vscode/src/test/`](e2e/vscode/src/test/)). See [`docs/vscode-extension.md`](docs/vscode-extension.md)
-for the developer guide and [`docs/vscode-extension-install-publish.md`](docs/vscode-extension-install-publish.md)
-for the Marketplace + Open VSX publish path.
+MB / hard 5.0 MB budget defined in
+[`scripts/vscode-bundle-budget.mjs`](scripts/vscode-bundle-budget.mjs)
+and enforced by [`scripts/check-vscode-bundle.mjs`](scripts/check-vscode-bundle.mjs)
+
+- [`apps/vscode/test/integration/bundleSize.test.ts`](apps/vscode/test/integration/bundleSize.test.ts).
+  E2E coverage in [`e2e/vscode/src/test/`](e2e/vscode/src/test/).
 
 ## Two ways to use it
 

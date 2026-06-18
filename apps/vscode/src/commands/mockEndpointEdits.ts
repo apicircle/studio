@@ -50,7 +50,7 @@ async function ensureEndpointDocument(uri?: vscode.Uri): Promise<vscode.TextDocu
   }
   if (targetUri.scheme !== 'apicircle' || uriEntityKind(targetUri) !== 'endpoint') {
     await vscode.window.showWarningMessage(
-      'This command only runs against an APICircle endpoint YAML.',
+      'This command only runs against an API Circle endpoint YAML.',
     );
     return null;
   }

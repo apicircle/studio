@@ -20,7 +20,7 @@ import {
 import { persistRequestRun } from './persistHistory';
 
 // =============================================================================
-// `APICircle: Send Request` command.
+// `API Circle: Send Request` command.
 //
 // Flow:
 //   1. Determine the target request — from the active text editor (if it's an
@@ -70,7 +70,7 @@ export async function sendRequestCommand(deps: SendRequestDeps): Promise<void> {
 
   const active = bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
 
@@ -194,7 +194,7 @@ export async function sendRequestCommand(deps: SendRequestDeps): Promise<void> {
     const result = await withProgress<ExecutionResult>(
       {
         location: vscode.ProgressLocation.Window,
-        title: `APICircle · Sending: ${request.name}`,
+        title: `API Circle · Sending: ${request.name}`,
         cancellable: true,
       },
       async (_progress, token) => {

@@ -188,7 +188,7 @@ describe('editMockEndpointCommand', () => {
       bridge: makeBridge({}, false),
       editor: makeEditor(),
     });
-    expect(window.showWarningMessage).toHaveBeenCalledWith('No active APICircle workspace.');
+    expect(window.showWarningMessage).toHaveBeenCalledWith('No active API Circle workspace.');
   });
 
   it('warns when called with no arguments', async () => {

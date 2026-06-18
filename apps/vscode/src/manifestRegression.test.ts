@@ -92,6 +92,7 @@ describe('package.json manifest regression', () => {
     for (const id of [
       'apicircle.openMcpConfigFile',
       'apicircle.openMcpConnectGuide',
+      'apicircle.copyMcpConfig',
       'apicircle.revealMcpBinaryInfo',
     ]) {
       expect(ids.has(id)).toBe(true);
@@ -104,6 +105,7 @@ describe('package.json manifest regression', () => {
     for (const id of [
       'apicircle.openMcpConfigFile',
       'apicircle.openMcpConnectGuide',
+      'apicircle.copyMcpConfig',
       'apicircle.revealMcpBinaryInfo',
     ]) {
       expect(events.has(`onCommand:${id}`)).toBe(true);

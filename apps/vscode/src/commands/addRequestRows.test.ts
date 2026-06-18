@@ -65,7 +65,7 @@ describe('addQueryRowCommand', () => {
   it('warns when the URI is not an apicircle request YAML', async () => {
     await addQueryRowCommand(Uri.parse('file:///foo.txt'));
     expect(window.showWarningMessage).toHaveBeenCalledWith(
-      'This command only runs against APICircle request YAML files.',
+      'This command only runs against API Circle request YAML files.',
     );
   });
 

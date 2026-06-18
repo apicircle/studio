@@ -52,7 +52,7 @@ import {
 export class VaultLockedError extends Error {
   constructor(workspaceId: string) {
     super(
-      `Secret vault for workspace "${workspaceId}" is locked. Run "APICircle: Unlock Vault" first.`,
+      `Secret vault for workspace "${workspaceId}" is locked. Run "API Circle: Unlock Vault" first.`,
     );
     this.name = 'VaultLockedError';
   }

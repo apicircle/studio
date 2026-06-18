@@ -60,7 +60,7 @@ describe('MockCompletionProvider', () => {
     expect(sourceItem?.documentation).toBeDefined();
     const docValue = (sourceItem?.documentation as { value: string }).value;
     expect(docValue).toContain('Read-only');
-    expect(docValue).toContain('APICircle: New Mock');
+    expect(docValue).toContain('API Circle: New Mock');
   });
 
   it('suggests true/false on enabled: lines', () => {

@@ -222,6 +222,7 @@ import {
   openMcpConfigFileCommand,
   openMcpConnectGuideCommand,
   revealMcpBinaryInfoCommand,
+  copyMcpConfigCommand,
   copyMcpPromptCommand,
 } from './commands/mcpActions';
 import {
@@ -263,7 +264,7 @@ import {
 // activate() wires up:
 //   • The nine sidebar TreeViews (Workspace, Editor, Environment, etc.)
 //   • The VsCodeBridge singleton (workspace surface + future MCP/mock/secrets)
-//   • The `APICircle: Create New Workspace` command
+//   • The `API Circle: Create New Workspace` command
 //   • Initial workspace discovery — auto-registers and activates the first
 //     `.apicircle/` workspace found in the open folders
 //
@@ -303,8 +304,8 @@ export function activate(context: vscode.ExtensionContext): void {
   inFlightTracker = new InFlightSendTracker();
   context.subscriptions.push(inFlightTracker);
 
-  // P4: a single consolidated "APICircle Runs" OutputChannel replaces the
-  // P3 per-feature "APICircle Mock" channel. Lazy — never created until the
+  // P4: a single consolidated "API Circle Runs" OutputChannel replaces the
+  // P3 per-feature "API Circle Mock" channel. Lazy — never created until the
   // first log() call (matches P3R6-G4). Mock controller + vault manager
   // route their diagnostics here under category prefixes so the picker
   // stays scannable.
@@ -763,7 +764,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // Initial discovery — register every detected `.apicircle/` workspace.
   rediscoverAndRegister(context);
 
-  // Startup: if VS Code restored an editor that belongs to an APICircle
+  // Startup: if VS Code restored an editor that belongs to an API Circle
   // workspace (an apicircle:// virtual YAML or a raw .apicircle/ workspace file),
   // make that workspace the active one so the sidebar matches what's on screen.
   adoptActiveWorkspaceFromOpenEditors();
@@ -800,7 +801,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const active = bridge?.activeWorkspace();
       if (!active) {
         await vscode.window.showInformationMessage(
-          'No active APICircle workspace. Run "APICircle: Create New Workspace" first.',
+          'No active API Circle workspace. Run "API Circle: Create New Workspace" first.',
         );
         return;
       }
@@ -1589,6 +1590,20 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!prompt || typeof prompt !== 'object' || !('text' in prompt)) return;
       return copyMcpPromptCommand(prompt as McpPrompt);
     }),
+    vscode.commands.registerCommand(
+      'apicircle.copyMcpConfig',
+      (node?: { kind: 'client'; client: AiClient }) => {
+        if (!mcpManager) return;
+        return copyMcpConfigCommand(
+          {
+            mcp: mcpManager,
+            onChanged: () => views?.mcp.refresh(),
+            log: runsChannel?.forCategory('misc'),
+          },
+          node,
+        );
+      },
+    ),
     vscode.commands.registerCommand('apicircle.revealMcpBinaryInfo', () => {
       if (!mcpManager) return;
       return revealMcpBinaryInfoCommand({

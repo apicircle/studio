@@ -149,7 +149,7 @@ describe('ensureEndpointDocument URI guards', () => {
   it('addMockValidationRuleCommand warns when called on the wrong file kind', async () => {
     await addMockValidationRuleCommand(Uri.parse('apicircle://w/requests/r.yaml'));
     expect(window.showWarningMessage).toHaveBeenCalledWith(
-      'This command only runs against an APICircle endpoint YAML.',
+      'This command only runs against an API Circle endpoint YAML.',
     );
   });
 

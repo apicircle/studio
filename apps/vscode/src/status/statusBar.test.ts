@@ -110,7 +110,7 @@ describe('StatusBar', () => {
 
   it('shows a "no workspace" placeholder when nothing is active', () => {
     const bar = new StatusBar(bridge, registry);
-    expect(workspaceItem.text).toContain('APICircle');
+    expect(workspaceItem.text).toContain('API Circle');
     expect(workspaceItem.show).toHaveBeenCalled();
     bar.dispose();
   });

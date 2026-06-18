@@ -57,7 +57,7 @@ interface RequestYamlOutput {
   contextVars?: Array<{ key: string; value: string }>;
 }
 
-const HEADER_COMMENT = `# APICircle Request — edit fields below and save (Ctrl+S) to commit.
+const HEADER_COMMENT = `# API Circle Request — edit fields below and save (Ctrl+S) to commit.
 # Read-only system fields are intentionally not present in this projection.
 # Folder moves use the TreeView; schema references are managed via the Assets view.
 `;

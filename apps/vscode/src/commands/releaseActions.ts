@@ -31,7 +31,7 @@ export interface ReleaseActionsDeps {
 export async function openReleaseHistoryCommand(deps: ReleaseActionsDeps): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const uri = ApicircleFsProvider.releasesUri(active.workspace.id);
@@ -42,7 +42,7 @@ export async function openReleaseHistoryCommand(deps: ReleaseActionsDeps): Promi
 export async function publishReleaseCommand(deps: ReleaseActionsDeps): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const state = await active.read();
@@ -98,7 +98,7 @@ export async function deprecateReleaseCommand(
 ): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const version =
@@ -132,7 +132,7 @@ export async function withdrawReleaseCommand(
 ): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const version =

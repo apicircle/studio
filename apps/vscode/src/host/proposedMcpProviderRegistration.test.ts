@@ -85,7 +85,7 @@ describe('tryRegisterEmbeddedMcpAsLmProvider', () => {
       headers: Record<string, string>;
     }>;
     expect(defs).toHaveLength(1);
-    expect(defs[0].label).toBe('APICircle (embedded)');
+    expect(defs[0].label).toBe('API Circle (embedded)');
     expect(defs[0].url).toBe('http://127.0.0.1:9/mcp?token=secret');
     expect(defs[0].headers.Authorization).toBe('Bearer secret');
   });

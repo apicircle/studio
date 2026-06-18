@@ -42,7 +42,7 @@ describe('RunsChannel', () => {
     expect(ch.isCreated()).toBe(false);
     ch.reveal();
     expect(ch.isCreated()).toBe(true);
-    expect(vscodeMock.window.createOutputChannel).toHaveBeenCalledWith('APICircle Runs');
+    expect(vscodeMock.window.createOutputChannel).toHaveBeenCalledWith('API Circle Runs');
   });
 
   it('dispose() resets isCreated', async () => {
@@ -56,8 +56,8 @@ describe('RunsChannel', () => {
   it('honours a custom name', async () => {
     const vscodeMock = await import('../../test/mocks/vscode');
     (vscodeMock.window.createOutputChannel as ReturnType<typeof vi.fn>).mockClear();
-    const ch = new RunsChannel({ name: 'APICircle Runs (Test)' });
+    const ch = new RunsChannel({ name: 'API Circle Runs (Test)' });
     ch.log('misc', 'x');
-    expect(vscodeMock.window.createOutputChannel).toHaveBeenCalledWith('APICircle Runs (Test)');
+    expect(vscodeMock.window.createOutputChannel).toHaveBeenCalledWith('API Circle Runs (Test)');
   });
 });

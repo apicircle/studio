@@ -19,6 +19,9 @@ coverage
 # CI publishes them as build artifacts, so they are not committed.
 docs/qa/results/
 
+# Vite/Vitest temp files (created during dev server, break ESLint if cached)
+*.timestamp-*.mjs
+
 # Tool caches
 .eslintcache
 __pycache__/

@@ -60,7 +60,7 @@ export async function unlockVaultCommand(deps: VaultActionsDeps): Promise<void> 
   const active = deps.bridge.activeWorkspace();
   if (!active) {
     await vscode.window.showInformationMessage(
-      'No active APICircle workspace. Open a workspace to unlock its vault.',
+      'No active API Circle workspace. Open a workspace to unlock its vault.',
     );
     return;
   }
@@ -174,7 +174,7 @@ export async function silentUnlockFromDevice(
  */
 export async function forgetVaultOnDeviceCommand(deps: VaultActionsDeps): Promise<void> {
   if (!deps.secrets) {
-    await vscode.window.showWarningMessage(
+    void vscode.window.showWarningMessage(
       'Remember-on-device storage is not available in this VS Code build (no SecretStorage).',
     );
     return;
@@ -186,8 +186,8 @@ export async function forgetVaultOnDeviceCommand(deps: VaultActionsDeps): Promis
     // enumerate all workspaces via the bridge.
     const all = deps.bridge.listWorkspaces();
     if (all.length === 0) {
-      await vscode.window.showInformationMessage(
-        'No APICircle workspaces are known to this VS Code session — nothing to forget.',
+      void vscode.window.showInformationMessage(
+        'No API Circle workspaces are known to this VS Code session — nothing to forget.',
       );
       return;
     }
@@ -276,7 +276,7 @@ export async function setupVaultPassphraseCommand(deps: VaultActionsDeps): Promi
   const active = deps.bridge.activeWorkspace();
   if (!active) {
     await vscode.window.showInformationMessage(
-      'No active APICircle workspace. Open a workspace to set up its vault.',
+      'No active API Circle workspace. Open a workspace to set up its vault.',
     );
     return;
   }
@@ -328,7 +328,7 @@ export async function changeVaultPassphraseCommand(deps: VaultActionsDeps): Prom
   const blob = state.synced.secretCrypto;
   if (!blob) {
     await vscode.window.showInformationMessage(
-      'No vault to rotate — run "APICircle: Set Up Vault Passphrase" first.',
+      'No vault to rotate — run "API Circle: Set Up Vault Passphrase" first.',
     );
     return;
   }
@@ -527,7 +527,7 @@ export async function openVaultEntryCommand(
       const looksEncrypted = variable.value.startsWith('enc:v1:');
       const message = looksEncrypted
         ? `"${variable.key}" looks encrypted but this workspace has no vault passphrase set. The blob was likely cleared via "Change Passphrase" or an external write — this value is unrecoverable. Delete the variable or overwrite it via the env YAML.`
-        : 'No vault passphrase set for this workspace. Use "APICircle: Set Up Vault Passphrase" first.';
+        : 'No vault passphrase set for this workspace. Use "API Circle: Set Up Vault Passphrase" first.';
       await vscode.window.showWarningMessage(message);
       return;
     }

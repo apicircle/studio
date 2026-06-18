@@ -100,7 +100,7 @@ export function formatPlanRunDocument(
 }
 
 function formatSections(name: string, sections: Array<{ title: string; content: string }>): string {
-  let out = `# APICircle ${name}\n\n`;
+  let out = `# API Circle ${name}\n\n`;
   for (const s of sections) {
     out += `# ── ${s.title} ──\n`;
     out += s.content;

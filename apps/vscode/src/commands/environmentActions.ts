@@ -25,14 +25,14 @@ export async function setActiveEnvironmentCommand(
 ): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const state = await active.read();
   const envs = Object.values(state.synced.environments.items);
   if (envs.length === 0) {
     await vscode.window.showInformationMessage(
-      'No environments yet. Run "APICircle: New Environment" first.',
+      'No environments yet. Run "API Circle: New Environment" first.',
     );
     return;
   }
@@ -76,7 +76,7 @@ export async function setActiveEnvironmentCommand(
 export async function newEnvironmentCommand(deps: EnvironmentActionsDeps): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const state = await active.read();
@@ -111,7 +111,7 @@ export async function deleteEnvironmentCommand(
 ): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const name = node?.name ?? (await pickEnvName(deps, 'Delete environment'));

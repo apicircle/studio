@@ -51,7 +51,7 @@ export async function startEmbeddedMcpCommand(deps: EmbeddedMcpActionsDeps): Pro
 
 export async function stopEmbeddedMcpCommand(deps: EmbeddedMcpActionsDeps): Promise<void> {
   if (!deps.host.isRunning()) {
-    await vscode.window.showInformationMessage('Embedded MCP host is not running.');
+    void vscode.window.showInformationMessage('Embedded MCP host is not running.');
     return;
   }
   await deps.host.stop();
@@ -83,8 +83,8 @@ export async function restartEmbeddedMcpCommand(deps: EmbeddedMcpActionsDeps): P
 export async function copyEmbeddedMcpUrlCommand(deps: EmbeddedMcpActionsDeps): Promise<void> {
   const info = deps.host.info();
   if (!info) {
-    await vscode.window.showInformationMessage(
-      'Embedded MCP host is not running. Start it first via **APICircle: Start Embedded MCP Host**.',
+    void vscode.window.showInformationMessage(
+      'Embedded MCP host is not running. Start it first via **API Circle: Start Embedded MCP Host**.',
     );
     return;
   }

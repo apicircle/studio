@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
 // =============================================================================
-// BaseTreeView — shared abstract base for every APICircle sidebar TreeView.
+// BaseTreeView — shared abstract base for every API Circle sidebar TreeView.
 //
 // Provides:
 //   • A typed onDidChangeTreeData event emitter

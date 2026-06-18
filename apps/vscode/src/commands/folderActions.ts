@@ -28,7 +28,7 @@ export async function newFolderCommand(
 ): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const state = await active.read();
@@ -108,7 +108,7 @@ export async function deleteFolderCommand(
 ): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   if (!node || node.kind !== 'folder') {
@@ -166,7 +166,7 @@ export async function openFolderYamlCommand(
 ): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const state = await active.read();
@@ -177,7 +177,7 @@ export async function openFolderYamlCommand(
     const entries = Object.values(folders);
     if (entries.length === 0) {
       await vscode.window.showInformationMessage(
-        'This workspace has no folders yet — create one via "APICircle: New Folder" or right-click in the Editor view.',
+        'This workspace has no folders yet — create one via "API Circle: New Folder" or right-click in the Editor view.',
       );
       return;
     }

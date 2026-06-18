@@ -320,6 +320,8 @@ describe('extension activation (integration)', () => {
       'apicircle.formatResponseJson',
       // ---- MCP prompts ----
       'apicircle.copyMcpPrompt',
+      // ---- P5: copy MCP config snippet ----
+      'apicircle.copyMcpConfig',
     ];
     for (const id of expectedCommandIds) {
       expect(registeredCommandIds).toContain(id);

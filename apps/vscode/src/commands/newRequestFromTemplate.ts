@@ -7,7 +7,7 @@ import { ApicircleFsProvider } from '../fs/apicircleFsProvider';
 import { uniquifyName } from '../util/uniquifyName';
 
 // =============================================================================
-// `APICircle: New Request from Template…` — scaffolds a starter request (or a
+// `API Circle: New Request from Template…` — scaffolds a starter request (or a
 // folder of starter requests) from a curated list of common API shapes. Lets a
 // user skip the New-Request wizard's auth/url drilldown when they already know
 // the shape they want.
@@ -210,7 +210,7 @@ export async function newRequestFromTemplateCommand(
 ): Promise<void> {
   const active = deps.bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
 

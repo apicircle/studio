@@ -43,14 +43,14 @@ export async function installCopilotMcpConfigCommand(deps: CopilotMcpActionsDeps
   const paths = deps.mcp.resolvePaths();
 
   if (!paths.hasActiveWorkspace) {
-    await vscode.window.showWarningMessage(
+    void vscode.window.showWarningMessage(
       'No active API Circle workspace. Open a folder containing an API Circle workspace before installing the Copilot MCP config.',
     );
     return;
   }
 
   if (!folders || folders.length === 0) {
-    await vscode.window.showWarningMessage(
+    void vscode.window.showWarningMessage(
       'No workspace folder is open. Open a folder in VS Code so the Copilot MCP config can be written to .vscode/mcp.json.',
     );
     return;

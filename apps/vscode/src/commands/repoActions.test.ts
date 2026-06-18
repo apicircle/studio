@@ -119,7 +119,7 @@ describe('tagReleaseCommand', () => {
 
   it('warns when no active workspace', async () => {
     await tagReleaseCommand({ bridge: makeBridge(null) });
-    expect(window.showWarningMessage).toHaveBeenCalledWith('No active APICircle workspace.');
+    expect(window.showWarningMessage).toHaveBeenCalledWith('No active API Circle workspace.');
   });
 
   it('reports nothing-to-tag when releases ledger is empty', async () => {

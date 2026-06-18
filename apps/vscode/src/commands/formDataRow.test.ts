@@ -207,7 +207,7 @@ describe('addFormDataRowCommand', () => {
   it('warns on a non-apicircle URI', async () => {
     await addFormDataRowCommand({ bridge: fakeBridge }, Uri.parse('file:///r.yaml'), 'text');
     expect(window.showWarningMessage).toHaveBeenCalledWith(
-      expect.stringContaining('only runs against APICircle request YAML files'),
+      expect.stringContaining('only runs against API Circle request YAML files'),
     );
   });
 

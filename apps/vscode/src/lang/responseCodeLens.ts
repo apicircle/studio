@@ -57,7 +57,7 @@ export async function formatResponseJsonCommand(
 ): Promise<void> {
   const targetUri = uri ?? vscode.window.activeTextEditor?.document.uri;
   if (!targetUri || targetUri.scheme !== 'apicircle' || uriEntityKind(targetUri) !== 'response') {
-    await vscode.window.showWarningMessage('Open an APICircle response document first.');
+    await vscode.window.showWarningMessage('Open an API Circle response document first.');
     return;
   }
   const document = await vscode.workspace.openTextDocument(targetUri);

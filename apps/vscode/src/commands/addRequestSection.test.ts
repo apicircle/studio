@@ -58,7 +58,7 @@ describe('addRequestSectionCommand', () => {
   it('warns when invoked on a non-apicircle URI', async () => {
     await addRequestSectionCommand(Uri.parse('file:///foo.yaml'));
     expect(window.showWarningMessage).toHaveBeenCalledWith(
-      'This command only runs against APICircle request YAML files.',
+      'This command only runs against API Circle request YAML files.',
     );
   });
 

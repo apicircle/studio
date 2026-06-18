@@ -118,8 +118,8 @@ describe('MCP commands round-trip (integration)', () => {
     expect(commands.executeCommand).toHaveBeenCalledWith('vscode.open', expect.anything());
   });
 
-  it('revealMcpBinaryInfo names the active workspace in its info message', async () => {
-    await revealMcpBinaryInfoCommand({ mcp });
+  it('revealMcpBinaryInfo names the active workspace in its info message', () => {
+    revealMcpBinaryInfoCommand({ mcp });
     const msg = (window.showInformationMessage as Mock).mock.calls[0][0] as string;
     expect(msg).toContain(apicircleDir);
     expect(msg).toContain('apicircle-mcp');

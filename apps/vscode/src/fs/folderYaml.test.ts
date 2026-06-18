@@ -30,7 +30,7 @@ describe('serializeFolderToYaml', () => {
 
   it('includes the header comment explaining inherit semantics', () => {
     const yaml = serializeFolderToYaml(folder());
-    expect(yaml).toMatch(/APICircle Folder/);
+    expect(yaml).toMatch(/API Circle Folder/);
     expect(yaml).toMatch(/inherit/);
   });
 });

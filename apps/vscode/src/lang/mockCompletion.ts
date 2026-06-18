@@ -37,10 +37,10 @@ const READONLY_FIELDS: Array<{
 }> = [
   {
     label: 'source',
-    detail: '(read-only) Re-import the spec via "APICircle: New Mock"',
-    commentInsert: '# source: <read-only — re-import via "APICircle: New Mock" to change>',
+    detail: '(read-only) Re-import the spec via "API Circle: New Mock"',
+    commentInsert: '# source: <read-only — re-import via "API Circle: New Mock" to change>',
     documentation:
-      "**Read-only field.**\n\nThe mock's spec source (OpenAPI / Postman / Insomnia / manual).\nChanging this here has no effect on save — the YAML projection drops the field with a warning.\n\nTo change the source, run **APICircle: New Mock** to re-import — this replaces the existing mock's source + endpoints in place while keeping its id.",
+      "**Read-only field.**\n\nThe mock's spec source (OpenAPI / Postman / Insomnia / manual).\nChanging this here has no effect on save — the YAML projection drops the field with a warning.\n\nTo change the source, run **API Circle: New Mock** to re-import — this replaces the existing mock's source + endpoints in place while keeping its id.",
   },
   {
     label: 'endpoints',

@@ -40,7 +40,7 @@ describe('serializeRequestToYaml', () => {
 
   it('includes the read-only header comment', () => {
     const yaml = serializeRequestToYaml(makeRequest());
-    expect(yaml).toMatch(/APICircle Request/);
+    expect(yaml).toMatch(/API Circle Request/);
     expect(yaml).toMatch(/Read-only system fields/);
   });
 

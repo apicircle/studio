@@ -22,7 +22,7 @@ import { unknownTopLevelKeys, isPresentNonMapping } from './yamlStructure';
 
 const KNOWN_FOLDER_KEYS = ['name', 'auth'] as const;
 
-const HEADER_COMMENT = `# APICircle Folder — edit fields below and save (Ctrl+S) to commit.
+const HEADER_COMMENT = `# API Circle Folder — edit fields below and save (Ctrl+S) to commit.
 #
 # name: must be unique among siblings under the same parent. Colliding
 #   renames are rejected on save.

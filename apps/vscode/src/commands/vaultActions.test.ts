@@ -70,7 +70,7 @@ describe('unlockVaultCommand', () => {
     const { bridge } = makeBridge(emptyState(), { hasActive: false });
     await unlockVaultCommand({ bridge, vault: makeVault() });
     expect(window.showInformationMessage).toHaveBeenCalledWith(
-      expect.stringContaining('No active APICircle workspace'),
+      expect.stringContaining('No active API Circle workspace'),
     );
   });
 
@@ -129,7 +129,7 @@ describe('setupVaultPassphraseCommand', () => {
     const { bridge } = makeBridge(emptyState(), { hasActive: false });
     await setupVaultPassphraseCommand({ bridge, vault: makeVault() });
     expect(window.showInformationMessage).toHaveBeenCalledWith(
-      expect.stringContaining('No active APICircle workspace'),
+      expect.stringContaining('No active API Circle workspace'),
     );
   });
 

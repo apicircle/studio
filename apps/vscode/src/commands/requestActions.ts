@@ -27,7 +27,7 @@ export async function deleteRequestCommand(
   const { bridge } = deps;
   const active = bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
 
@@ -58,7 +58,7 @@ export async function duplicateRequestCommand(
   const { bridge } = deps;
   const active = bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const requestId = await resolveRequestId(node);
@@ -99,7 +99,7 @@ export async function revealInSourceCommand(
   const { bridge } = deps;
   const active = bridge.activeWorkspace();
   if (!active) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const requestId = await resolveRequestId(node);

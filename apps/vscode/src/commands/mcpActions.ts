@@ -133,16 +133,32 @@ export async function copyMcpPromptCommand(prompt: McpPrompt): Promise<void> {
   );
 }
 
-export async function revealMcpBinaryInfoCommand(deps: McpActionsDeps): Promise<void> {
+export async function copyMcpConfigCommand(deps: McpActionsDeps, node?: ClientNode): Promise<void> {
+  const client = node?.client ?? (await pickClient(deps));
+  if (!client) return;
+  const snippet = deps.mcp.getConfigSnippet(client);
+  if (!snippet) {
+    void vscode.window.showWarningMessage(
+      'No active API Circle workspace. Open a folder with an API Circle workspace first.',
+    );
+    return;
+  }
+  await vscode.env.clipboard.writeText(snippet.forwardSlash);
+  void vscode.window.showInformationMessage(
+    `Copied ${aiClientDisplayName(client)} MCP config snippet to clipboard.`,
+  );
+}
+
+export function revealMcpBinaryInfoCommand(deps: McpActionsDeps): void {
   const { binary, workspace, hasActiveWorkspace } = deps.mcp.resolvePaths();
   const tools = deps.mcp.toolCatalog();
   if (!hasActiveWorkspace) {
-    await vscode.window.showInformationMessage(
+    void vscode.window.showInformationMessage(
       `API Circle MCP binary: ${binary} (${tools.length} tools). No active workspace — open a folder with an API Circle workspace to use it.`,
     );
     return;
   }
-  await vscode.window.showInformationMessage(
+  void vscode.window.showInformationMessage(
     `API Circle MCP binary: ${binary} · workspace: ${workspace} · ${tools.length} tools exposed.`,
   );
 }

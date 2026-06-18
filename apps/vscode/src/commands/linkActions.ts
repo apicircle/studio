@@ -82,7 +82,7 @@ interface ResolvedLink {
 async function resolveLink(deps: LinkActionsDeps, arg: LinkArg): Promise<ResolvedLink | null> {
   const surface = deps.bridge.activeWorkspace();
   if (!surface) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return null;
   }
   const id = linkIdFromArg(arg);
@@ -439,7 +439,7 @@ export async function openLinkedRequestCommand(
 ): Promise<void> {
   const surface = deps.bridge.activeWorkspace();
   if (!surface) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   if (!arg?.linkId || !arg?.requestId) return;
@@ -642,7 +642,7 @@ export async function discardLinkedModsCommand(deps: LinkActionsDeps, arg: LinkA
 export async function linkWorkspaceCommand(deps: LinkActionsDeps): Promise<void> {
   const surface = deps.bridge.activeWorkspace();
   if (!surface) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const token = await getGitHubToken(true);
@@ -720,7 +720,7 @@ export async function linkWorkspaceCommand(deps: LinkActionsDeps): Promise<void>
 export async function searchMarketplaceCommand(deps: LinkActionsDeps): Promise<void> {
   const surface = deps.bridge.activeWorkspace();
   if (!surface) {
-    await vscode.window.showWarningMessage('No active APICircle workspace.');
+    await vscode.window.showWarningMessage('No active API Circle workspace.');
     return;
   }
   const query = await vscode.window.showInputBox({

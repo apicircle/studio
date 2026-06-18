@@ -28,7 +28,7 @@ describe('serializeEnvironmentToYaml', () => {
 
   it('includes the header comment explaining encrypted vars', () => {
     const yaml = serializeEnvironmentToYaml(env());
-    expect(yaml).toMatch(/APICircle Environment/);
+    expect(yaml).toMatch(/API Circle Environment/);
     expect(yaml).toMatch(/Encrypted variables/);
   });
 

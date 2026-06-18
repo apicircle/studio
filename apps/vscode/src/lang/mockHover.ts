@@ -87,7 +87,7 @@ export class MockHoverProvider implements vscode.HoverProvider {
       md.appendMarkdown(
         `The raw spec lives in \`workspace.json\` under \`mockServers.source\` and is read by the mock-server runtime directly. It is **deliberately omitted** from this YAML projection because OpenAPI / Postman / Insomnia specs can contain bearer tokens or API keys in \`security.example\` blocks — emitting them here would leak secrets into Git.\n\n`,
       );
-      md.appendMarkdown(`To change the spec, re-import via **APICircle: New Mock**.`);
+      md.appendMarkdown(`To change the spec, re-import via **API Circle: New Mock**.`);
       return new vscode.Hover(md, document.lineAt(position.line).range);
     }
 

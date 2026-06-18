@@ -27,11 +27,11 @@ interface EnvYamlOutput {
   }>;
 }
 
-const HEADER_COMMENT = `# APICircle Environment — edit fields below and save to commit.
+const HEADER_COMMENT = `# API Circle Environment — edit fields below and save to commit.
 # Encrypted variables carry 'encrypted: true' + 'secretKeyId' — the ciphertext
 # value is shared via Git; decryption happens at request-send time using the
 # workspace passphrase via the Phase 4 vault — reveal a value with
-# 'APICircle: Open Vault Entry' or click the lock icon in the Environment view.
+# 'API Circle: Open Vault Entry' or click the lock icon in the Environment view.
 `;
 
 export function serializeEnvironmentToYaml(env: Environment): string {

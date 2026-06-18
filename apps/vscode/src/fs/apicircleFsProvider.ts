@@ -184,7 +184,7 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
     // `folder.create` patches, not through the FS. Surface the dedicated
     // command so the error text matches reality.
     throw vscode.FileSystemError.NoPermissions(
-      'Use the "APICircle: New Folder" command (palette or Editor view title button) to create folders.',
+      'Use the "API Circle: New Folder" command (palette or Editor view title button) to create folders.',
     );
   }
 
@@ -547,7 +547,7 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
       const existing = state.synced.mockServers[parsed.id];
       if (!existing) {
         throw vscode.FileSystemError.FileNotFound(
-          'Mock no longer exists — re-create it via "APICircle: New Mock".',
+          'Mock no longer exists — re-create it via "API Circle: New Mock".',
         );
       }
       // Editable fields only — source + endpoints stay as the existing

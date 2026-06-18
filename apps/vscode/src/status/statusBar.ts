@@ -38,7 +38,7 @@ export class StatusBar implements vscode.Disposable {
     this.cancelItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
     this.cancelItem.text = '$(debug-stop) Cancel send';
     this.cancelItem.command = 'apicircle.cancelSend';
-    this.cancelItem.tooltip = 'Cancel the active APICircle send';
+    this.cancelItem.tooltip = 'Cancel the active API Circle send';
 
     // P4 wired: vault state reflects the real VsCodeVaultManager. When the
     // active workspace has no `secretCrypto` blob the item is HIDDEN to
@@ -68,7 +68,7 @@ export class StatusBar implements vscode.Disposable {
   refresh(): void {
     const active = this.bridge.activeWorkspace();
     if (!active) {
-      this.workspaceItem.text = '$(circle-large-outline) APICircle';
+      this.workspaceItem.text = '$(circle-large-outline) API Circle';
       this.workspaceItem.tooltip = 'No active workspace — create or open one';
       this.workspaceItem.show();
       this.vaultItem.hide();
@@ -86,7 +86,7 @@ export class StatusBar implements vscode.Disposable {
       if (!state?.synced?.environments) return;
       const envName = state.synced.environments.activeName ?? '—';
       this.workspaceItem.text = `$(circle-filled) ${active.workspace.label} · env: ${envName}`;
-      this.workspaceItem.tooltip = `APICircle workspace ${active.workspace.label}\nActive environment: ${envName}\nClick to open workspace.json`;
+      this.workspaceItem.tooltip = `API Circle workspace ${active.workspace.label}\nActive environment: ${envName}\nClick to open workspace.json`;
       this.workspaceItem.show();
       this.refreshVaultItem(active.workspace.id, state.synced.secretCrypto);
     });

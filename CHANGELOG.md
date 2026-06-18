@@ -25,6 +25,66 @@
 
 ## Unreleased
 
+### VS Code — Marketplace README polish
+
+Follow-up to the 1.1.1 Marketplace README rewrite, addressing one issue that
+only surfaces when the README is rendered standalone on the Marketplace / Open
+VSX (relative repo paths don't resolve there):
+
+- **Broken `LICENSE` link** — the "See repo-root LICENSE" link used a relative
+  `../../LICENSE` path which resolved on GitHub but 404'd on both the Visual
+  Studio Marketplace and Open VSX detail pages. Swapped for the absolute
+  `https://github.com/apicircle/studio/blob/main/LICENSE`.
+
+### Docs — Phase-process artifacts retired
+
+Now that the VS Code extension has shipped and is published to the
+Marketplace + Open VSX, the multi-phase development chronicle and the
+one-shot publication runbook are no longer load-bearing. Both are removed
+in favour of cleaner, evergreen references; the live reference surfaces
+(root [`README.md`](README.md), [`apps/vscode/README.md`](apps/vscode/README.md),
+[`CLAUDE.md`](CLAUDE.md), [`apps/vscode/package.json`](apps/vscode/package.json),
+[`scripts/vscode-bundle-budget.mjs`](scripts/vscode-bundle-budget.mjs))
+already cover what users and contributors need.
+
+- **`docs/vscode-extension.md` deleted** (1865 lines). The doc was organised
+  as a Phase 1 → Phase 12 + Post-launch a–g development chronicle (36 Phase
+  headings); §§1–7 (three-surface principle, sidebar layout, commands,
+  settings, architecture, dev workflow) duplicated material that already
+  lives in the root README, the extension README, CLAUDE.md, and
+  `apps/vscode/package.json`. The §14 bundle-budget contract was a
+  pointer; the actual contract lives in `scripts/vscode-bundle-budget.mjs`
+  itself (with its rationale comments) and is referenced from CLAUDE.md
+  §6, the QA README, the VS Code CI workflow, and the budget script — all
+  updated.
+
+- **`docs/vscode-extension-install-publish.md` deleted** (340 lines).
+  Maintainer-only runbook for the one-shot 1.1.0 → 1.1.1 Marketplace +
+  Open VSX publication, now complete and automated by
+  `.github/workflows/vscode.yml`. Contained stale facts (93 tools where
+  current is 94, 8 sidebar views where current is 9, 1.1.0 status where
+  current is 1.1.1).
+
+- **`docs/apicircle-yaml-format.md` deleted** (508 lines). Power-user YAML
+  reference that was never wired into CLAUDE.md §9's doc index, the root
+  README, the extension README, or any in-product surface; the YAML shape
+  is now self-evident from VS Code's live completion / hover / diagnostics
+  - the registered JSON Schema
+    (`apps/vscode/schemas/apicircle-request.schema.json`).
+
+- **Live references swept** — CLAUDE.md §9 doc index, root README's VS Code
+  section trailer, `docs/auth.md` folder-wise-auth cross-reference,
+  `docs/qa/README.md` bundle-gate section, `.github/workflows/vscode.yml`
+  bundle-budget step comment, and `scripts/vscode-bundle-budget.mjs`
+  header comment all updated to drop pointers to the deleted docs. The
+  qa README's bundle-threshold numbers were also corrected (`1.8 MB` /
+  `2.0 MB` → `3.0 MB` / `5.0 MB`, matching the actual constants in
+  `vscode-bundle-budget.mjs`).
+
+- **Historical CHANGELOG mentions preserved** — earlier release-note
+  bodies that mentioned the deleted docs by path are left intact as
+  archival facts; rewriting them would falsify shipped history.
+
 ## 1.1.1 - 2026-06-18
 
 ### VS Code — Marketplace presentation

@@ -14,12 +14,12 @@ VS Code is where the same engineers who use API Circle already live with Git. Ed
 
 - **Activity Bar icon** opens the API Circle sidebar with 9 views: Workspace, Editor, Environment, Execution, Mock, History, Snapshots, MCP, and Link Workspaces.
 - **Workspace discovery** auto-detects `.apicircle/registry.json` in your open folders and Git-backed `.apicircle/` directories.
-- **Workspace switcher** — switch between discovered workspaces via the sidebar or `APICircle: Switch Workspace`.
+- **Workspace switcher** — switch between discovered workspaces via the sidebar or `API Circle: Switch Workspace`.
 - **`apicircle:` virtual filesystem** — requests, environments, plans, mocks, folders, and responses project as YAML documents in real VS Code text editors. Human-readable tab titles, folder paths in tooltips, identity preserved across renames and moves.
 
 ### Request authoring & execution
 
-- **Request templates** — six starter shapes via `APICircle: New Request from Template…` (Simple GET, JSON POST, Bearer-protected GET, Paginated GET, GraphQL query, REST CRUD scaffold).
+- **Request templates** — six starter shapes via `API Circle: New Request from Template…` (Simple GET, JSON POST, Bearer-protected GET, Paginated GET, GraphQL query, REST CRUD scaffold).
 - **CodeLens helpers** — `▶ Send`, `✚ Add section…`, `⤵ New from template…` above each request YAML. In-flight requests swap to `⏳ Sending… · ✖ Cancel`.
 - **All 17 auth types** — none, bearer, basic, api-key, digest, NTLM, Hawk, AWS Signature v4, JWT bearer, and all OAuth 2.0 grants (Authorization Code, PKCE, Client Credentials, Password, Implicit, Device Code, private_key_jwt, token refresh).
 - **Folder-wise auth** — set auth on a folder; child requests inherit via `◆ Inherits from <Folder>` CodeLens.
@@ -78,8 +78,6 @@ Or build the `.vsix` locally:
 3. `cd apps/vscode && pnpm exec vsce package --no-dependencies`
 4. Install via **Extensions: Install from VSIX…** in the command palette.
 
-See [`docs/vscode-extension-install-publish.md`](../../docs/vscode-extension-install-publish.md) for the full guide.
-
 ## License
 
-See repo-root [LICENSE](../../LICENSE).
+See repo-root [LICENSE](https://github.com/apicircle/studio/blob/main/LICENSE).

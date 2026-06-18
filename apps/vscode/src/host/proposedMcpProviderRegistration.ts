@@ -82,7 +82,7 @@ export function tryRegisterEmbeddedMcpAsLmProvider(
         // and unknown fields are dropped.
         return [
           {
-            label: 'APICircle (embedded)',
+            label: 'API Circle (embedded)',
             name: 'apicircle-embedded',
             // Streamable-HTTP variant fields:
             url: info.url,
