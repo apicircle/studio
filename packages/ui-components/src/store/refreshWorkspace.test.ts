@@ -77,6 +77,25 @@ function branchHeadOk(branchName = 'apicircle/wb-aaa'): ResponseSpec {
   return { body: { name: branchName, commit: { sha: 'sha-head' } } };
 }
 
+function registryContents(activeId: string): ResponseSpec {
+  const json = JSON.stringify({
+    schemaVersion: 1,
+    activeWorkspaceId: activeId,
+    workspaces: [{ id: activeId, name: 'Workspace' }],
+  });
+  const content = btoa(unescape(encodeURIComponent(json)));
+  return {
+    body: {
+      type: 'file',
+      path: '.apicircle/registry.json',
+      sha: 'registry-sha',
+      size: json.length,
+      content,
+      encoding: 'base64',
+    },
+  };
+}
+
 describe('workspaceStore.refreshWorkspace', () => {
   beforeEach(async () => {
     await act(async () => {
@@ -104,6 +123,32 @@ describe('workspaceStore.refreshWorkspace', () => {
     expect(result.status).toBe('no-remote');
     // Snapshot is unchanged.
     expect(useWorkspaceStore.getState().local!.sync.lastPulledSha).toBeNull();
+  });
+
+  it('adopts the remote workspace ID via registry.json fallback when local ID differs', async () => {
+    await setupConnectedBranch();
+    const localSynced = useWorkspaceStore.getState().synced!;
+    const remoteId = 'remote-ws-id-adopted';
+    const remoteSynced: WorkspaceSynced = { ...localSynced, workspaceId: remoteId };
+
+    vi.stubGlobal(
+      'fetch',
+      queuedFetch([
+        branchHeadOk(),
+        // workspace.json at local ID path → 404
+        { body: { message: 'Not Found' }, status: 404 },
+        // registry.json → points to remoteId
+        registryContents(remoteId),
+        // workspace.json at remote ID path → found
+        fileContents(remoteSynced, 'adopted-sha-1'),
+      ]),
+    );
+
+    const result = await useWorkspaceStore.getState().refreshWorkspace();
+    expect(result.status).toBe('up-to-date');
+    expect(useWorkspaceStore.getState().synced!.workspaceId).toBe(remoteId);
+    const sync = useWorkspaceStore.getState().local!.sync;
+    expect(sync.lastPulledSha).toBe('adopted-sha-1');
   });
 
   it('returns up-to-date and refreshes the snapshot when local + remote match', async () => {

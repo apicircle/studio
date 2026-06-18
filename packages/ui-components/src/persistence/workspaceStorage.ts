@@ -785,6 +785,20 @@ export async function updateRegistryEntryName(
   return next;
 }
 
+export async function migrateWorkspaceId(
+  registry: WorkspaceRegistry,
+  oldId: string,
+  newId: string,
+): Promise<WorkspaceRegistry> {
+  const next: WorkspaceRegistry = {
+    ...registry,
+    activeWorkspaceId: registry.activeWorkspaceId === oldId ? newId : registry.activeWorkspaceId,
+    workspaces: registry.workspaces.map((w) => (w.id === oldId ? { ...w, id: newId } : w)),
+  };
+  await writeRegistry(next);
+  return next;
+}
+
 export async function resetWorkspace(): Promise<{
   synced: WorkspaceSynced;
   local: WorkspaceLocal;

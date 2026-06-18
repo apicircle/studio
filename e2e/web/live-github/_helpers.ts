@@ -424,18 +424,44 @@ export async function fetchBranchRefV2(
   branch: string,
 ): Promise<{ ref: string; sha: string }> {
   const refPath = branch.split('/').map(encodeURIComponent).join('/');
-  const res = await fetch(
-    `https://api.github.com/repos/${cfg.owner}/${cfg.name}/git/ref/heads/${refPath}`,
-    {
-      headers: ghNodeHeaders(cfg.token),
-    },
-  );
-  if (!res.ok) {
-    const text = await res.text().catch(() => '<no-body>');
-    throw new Error(`fetchBranchRefV2 ${cfg.fullName}@${branch} failed (${res.status}): ${text}`);
+
+  // Retry with backoff: GitHub's `/git/ref/` endpoint can transiently return
+  // 200 with a malformed body (missing `object.sha`) during ref propagation.
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const res = await fetch(
+      `https://api.github.com/repos/${cfg.owner}/${cfg.name}/git/ref/heads/${refPath}`,
+      {
+        headers: ghNodeHeaders(cfg.token),
+      },
+    );
+    if (!res.ok) {
+      const text = await res.text().catch(() => '<no-body>');
+      throw new Error(`fetchBranchRefV2 ${cfg.fullName}@${branch} failed (${res.status}): ${text}`);
+    }
+    const body = (await res.json()) as
+      | { ref?: string; object?: { sha: string } }
+      | Array<{ ref?: string; object?: { sha: string } }>;
+
+    const entry = Array.isArray(body)
+      ? (body.find((r) => r.ref === `refs/heads/${branch}`) ?? body[0])
+      : body;
+
+    if (entry?.object?.sha) {
+      return { ref: entry.ref ?? `refs/heads/${branch}`, sha: entry.object.sha };
+    }
+
+    // Malformed 200 — retry after backoff
+    if (attempt < 5) {
+      console.warn(
+        `[live-github] fetchBranchRefV2: ${cfg.fullName}@${branch} got 200 but no object.sha` +
+          ` (attempt ${attempt + 1}/6) — retrying`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+    }
   }
-  const body = (await res.json()) as { ref: string; object: { sha: string } };
-  return { ref: body.ref, sha: body.object.sha };
+  throw new Error(
+    `fetchBranchRefV2 ${cfg.fullName}@${branch}: exhausted retries — ref endpoint returned 200 but never provided object.sha`,
+  );
 }
 
 export async function writeRepoFileV2(

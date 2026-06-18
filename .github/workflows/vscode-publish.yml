@@ -1,0 +1,89 @@
+name: Publish VS Code extension
+
+# Publishes the VS Code extension to the Visual Studio Marketplace (and
+# optionally Open VSX) whenever a push to main touches the extension or
+# its upstream packages. Runs quality gates first, then packages + publishes.
+#
+# Required GitHub repo secrets:
+#   VSCE_PAT  — Azure DevOps PAT with Marketplace > Manage scope
+#   OVSX_PAT  — Open VSX access token (optional — publish step skips if unset)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/vscode/**'
+      - 'packages/core/**'
+      - 'packages/mcp-server/**'
+      - 'packages/shared/**'
+      - 'packages/mock-server-core/**'
+      - '.github/workflows/vscode-publish.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: vscode-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build · verify · publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm --filter apicircle-vscode check
+
+      - name: Lint
+        run: pnpm --filter apicircle-vscode lint
+
+      - name: Unit tests
+        run: pnpm --filter apicircle-vscode test
+
+      - name: Build extension
+        run: pnpm --filter apicircle-vscode build
+
+      - name: Bundle-size budget
+        run: node scripts/check-vscode-bundle.mjs
+
+      - name: Package .vsix
+        working-directory: apps/vscode
+        run: pnpm exec vsce package --no-dependencies
+
+      - name: Publish to VS Code Marketplace
+        working-directory: apps/vscode
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: pnpm exec vsce publish --no-dependencies --pat "$VSCE_PAT"
+
+      - name: Publish to Open VSX
+        if: ${{ secrets.OVSX_PAT != '' }}
+        working-directory: apps/vscode
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: pnpm exec ovsx publish *.vsix --pat "$OVSX_PAT"
+
+      - name: Upload .vsix artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: apicircle-vscode-${{ github.sha }}
+          path: apps/vscode/*.vsix
+          retention-days: 30

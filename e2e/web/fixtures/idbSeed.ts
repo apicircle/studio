@@ -155,8 +155,6 @@ function makeMockServer(o: Partial<MockServer> & Pick<MockServer, 'id' | 'name'>
   const endpoints: MockServer['endpoints'] =
     o.endpoints ?? (source.kind === 'manual' ? source.endpoints : []);
   return {
-    source: source.kind === 'manual' ? { ...source, endpoints } : source,
-    endpoints,
     defaultPort: null,
     cors: { enabled: false, origins: [] },
     createdAt: NOW,

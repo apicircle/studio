@@ -470,8 +470,26 @@ export async function getDefaultBranchHead(cfg: LiveGithubConfig): Promise<Defau
   if (!refRes.ok) {
     throw new Error(`getRef on ${cfg.fullName}@${branch} failed: ${refRes.status}`);
   }
-  const refBody = (await refRes.json()) as { object: { sha: string } };
-  return { name: branch, sha: refBody.object.sha };
+  const refBody = (await refRes.json()) as
+    | { ref?: string; object?: { sha: string } }
+    | Array<{ ref?: string; object?: { sha: string } }>;
+
+  // GitHub returns an array when the branch name is a prefix of multiple refs
+  const refEntry = Array.isArray(refBody)
+    ? (refBody.find((r) => r.ref === `refs/heads/${branch}`) ?? refBody[0])
+    : refBody;
+
+  if (!refEntry?.object?.sha) {
+    // Propagation race: 200 but body not yet fully formed — treat as empty
+    // so callers' retry loops poll again instead of crashing.
+    console.warn(
+      `[live-github] getDefaultBranchHead: ${cfg.fullName}@${branch} returned 200 but ref body` +
+        ` had no object.sha (array=${Array.isArray(refBody)}, keys=${JSON.stringify(Object.keys(refEntry ?? {}))})` +
+        ` — treating as sha=null for retry`,
+    );
+    return { name: branch, sha: null };
+  }
+  return { name: branch, sha: refEntry.object.sha };
 }
 
 export interface SeedRepoOptions {
@@ -547,7 +565,14 @@ export async function seedRepoIfEmpty(
         }),
       },
     );
-    if (!putRes.ok) {
+    if (putRes.status === 422) {
+      // 422 means README already exists — the ref endpoint lied (returned
+      // malformed 200 that we interpreted as sha=null). The repo IS seeded;
+      // fall through to the polling loop to resolve the real sha.
+      console.warn(
+        `[live-github] seedRepoIfEmpty: README PUT 422 on ${cfg.fullName} — repo already seeded, polling for sha`,
+      );
+    } else if (!putRes.ok) {
       const text = await putRes.text().catch(() => '<no-body>');
       throw new Error(`seedRepoIfEmpty: README seed failed (${putRes.status}): ${text}`);
     }

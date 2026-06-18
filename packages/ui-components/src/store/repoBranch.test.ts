@@ -110,6 +110,8 @@ describe('workspaceStore — repo + working branch (P4.2)', () => {
           // first-pull-prompt probe in createWorkingBranch — 404 = no remote
           // workspace.json on this fresh branch.
           { status: 404, body: { message: 'Not Found' } },
+          // registry.json fallback probe — also 404 on a fresh branch.
+          { status: 404, body: { message: 'Not Found' } },
           repoResponse({ owner: 'me', name: 'second' }),
         ]),
       );
@@ -132,6 +134,8 @@ describe('workspaceStore — repo + working branch (P4.2)', () => {
           { body: { name: 'main', commit: { sha: 'sha1' } } },
           { body: { ref: 'refs/heads/apicircle/wb-abc', object: { sha: 'sha1' } } },
           // first-pull-prompt probe — empty branch
+          { status: 404, body: { message: 'Not Found' } },
+          // registry.json fallback probe — also 404 on a fresh branch.
           { status: 404, body: { message: 'Not Found' } },
           repoResponse({ owner: 'me', name: 'api' }),
         ]),

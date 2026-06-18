@@ -89,6 +89,7 @@ import {
   collectFolderExport,
   REGISTRY_JSON_PATH,
   workspaceJsonPath,
+  parseRegistryActiveId,
   fetchRemoteWorkspaceJson,
   attachmentPath,
   parseCurl,
@@ -127,12 +128,14 @@ import {
   deleteWorkspace as deleteWorkspacePersisted,
   loadWorkspace,
   loadWorkspaceById,
+  migrateWorkspaceId,
   recoverPartialWorkspace,
   setActiveWorkspace as setActiveWorkspacePersisted,
   updateRegistryEntryName as updateRegistryEntryNamePersisted,
   resetWorkspace as resetWorkspaceStorage,
   saveSynced,
 } from '../persistence/workspaceStorage';
+import { deleteWorkspaceRecords } from '../persistence/db';
 // Hot-path persistence is coalesced through a 250ms debounce — `commitSynced`
 // and the per-keystroke editor actions queue here instead of writing the
 // whole workspace doc to IndexedDB on every keystroke. Sensitive transitions
@@ -651,6 +654,10 @@ interface PendingRefresh {
    * rather than auto-merging.
    */
   historyRewritten?: boolean;
+  /** Set when the remote workspace was found under a different ID via
+   *  registry.json fallback. `commitRefresh` stamps this onto the merged
+   *  doc so subsequent pushes target the correct repo path. */
+  adoptedRemoteId?: string | null;
 }
 
 /**
@@ -4729,13 +4736,36 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // to review. Clear the stash either way so a later legitimate
     // pre-populated branch surfaces normally.
     try {
-      const file = await client.getContents(
+      let file = await client.getContents(
         token,
         repo.owner,
         repo.name,
         workspaceJsonPath(get().synced!.workspaceId),
         branchName,
       );
+      // Registry fallback: the branch may carry a workspace under a
+      // different ID (fresh workspace connecting to pre-populated repo).
+      if (file === null) {
+        const registryFile = await client.getContents(
+          token,
+          repo.owner,
+          repo.name,
+          REGISTRY_JSON_PATH,
+          branchName,
+        );
+        if (registryFile !== null) {
+          const remoteWsId = parseRegistryActiveId(registryFile.content);
+          if (remoteWsId && remoteWsId !== get().synced!.workspaceId) {
+            file = await client.getContents(
+              token,
+              repo.owner,
+              repo.name,
+              workspaceJsonPath(remoteWsId),
+              branchName,
+            );
+          }
+        }
+      }
       const seededSha = next.seededWorkspaceSha;
       if (file !== null && file.sha !== seededSha) {
         set({ firstPullPrompt: { branchName, remoteSha: file.sha } });
@@ -4981,17 +5011,53 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       path: attachmentPath(synced.workspaceId, slotId),
       sha: null,
     }));
+    // Read the existing registry so sibling workspace entries survive
+    // the push. Without this, a multi-workspace repo loses every entry
+    // except the active one.
+    const now = new Date().toISOString();
+    let registryWorkspaces: Array<{
+      id: string;
+      name: string;
+      lastOpenedAt?: string;
+      createdAt?: string;
+    }> = [];
+    try {
+      const existingReg = await client.getContents(
+        token,
+        owner,
+        name,
+        REGISTRY_JSON_PATH,
+        branch.name,
+      );
+      if (existingReg) {
+        const parsed = JSON.parse(existingReg.content) as {
+          workspaces?: Array<{
+            id: string;
+            name: string;
+            lastOpenedAt?: string;
+            createdAt?: string;
+          }>;
+        };
+        registryWorkspaces = parsed.workspaces ?? [];
+      }
+    } catch {
+      // Best-effort: if the registry can't be read, start fresh.
+    }
     const registryContent = JSON.stringify(
       {
         schemaVersion: 1,
         activeWorkspaceId: synced.workspaceId,
         workspaces: [
           {
+            ...(registryWorkspaces.find((w) => w.id === synced.workspaceId) ?? {
+              id: synced.workspaceId,
+              name: 'Workspace',
+              createdAt: now,
+            }),
             id: synced.workspaceId,
-            name: 'Workspace',
-            lastOpenedAt: new Date().toISOString(),
-            createdAt: new Date().toISOString(),
+            lastOpenedAt: now,
           },
+          ...registryWorkspaces.filter((w) => w.id !== synced.workspaceId),
         ],
       },
       null,
@@ -6330,15 +6396,45 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return { status: 'retired', retired };
     }
 
-    const file = await client.getContents(
+    let file = await client.getContents(
       token,
       branch.repoOwner,
       branch.repoName,
       workspaceJsonPath(synced.workspaceId),
       branch.name,
     );
+    // Registry-based fallback: the branch may carry a workspace under a
+    // different ID (fresh local workspace connecting to a repo with
+    // existing data). Read registry.json to discover the canonical ID.
+    let adoptedRemoteId: string | null = null;
     if (file === null) {
-      // Branch has no workspace.json yet — first push hasn't happened.
+      try {
+        const registryFile = await client.getContents(
+          token,
+          branch.repoOwner,
+          branch.repoName,
+          REGISTRY_JSON_PATH,
+          branch.name,
+        );
+        if (registryFile !== null) {
+          const remoteWsId = parseRegistryActiveId(registryFile.content);
+          if (remoteWsId && remoteWsId !== synced.workspaceId) {
+            file = await client.getContents(
+              token,
+              branch.repoOwner,
+              branch.repoName,
+              workspaceJsonPath(remoteWsId),
+              branch.name,
+            );
+            if (file !== null) adoptedRemoteId = remoteWsId;
+          }
+        }
+      } catch {
+        // Registry probe is best-effort — network/auth blips fall through
+        // to the standard no-remote return below.
+      }
+    }
+    if (file === null) {
       return { status: 'no-remote' };
     }
 
@@ -6369,6 +6465,21 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // here closes the race so the diff sees the freshest local doc.
     const liveSynced = get().synced ?? synced;
     const liveLocal = get().local ?? local;
+
+    // Advance headSha so the next pushWorkspace pre-flight sees the real
+    // branch head. Without this, an external write (VS Code / Desktop /
+    // another client) that moved the branch would cause BranchDivergedError
+    // even though we're about to merge that content right now.
+    if (probe.branchHeadSha && liveLocal.workingBranch) {
+      const advancedBranch: WorkingBranch = {
+        ...liveLocal.workingBranch,
+        headSha: probe.branchHeadSha,
+      };
+      const advancedLocal: WorkspaceLocal = { ...liveLocal, workingBranch: advancedBranch };
+      set({ local: advancedLocal });
+      queueSaveLocal(advancedLocal);
+    }
+
     const base = liveLocal.sync.lastPulledSnapshot;
     const diff = computeThreeWayDiff(base, liveSynced, remote);
 
@@ -6406,28 +6517,37 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (historyRewritten) {
       // Never auto-merge across a rewrite. Surface a dedicated path so the
       // user can review the diff explicitly before adopting either side.
-      set({ pendingRefresh: { diff, remote, remoteSha: file.sha, historyRewritten: true } });
+      set({
+        pendingRefresh: {
+          diff,
+          remote,
+          remoteSha: file.sha,
+          historyRewritten: true,
+          adoptedRemoteId,
+        },
+      });
       return { status: 'history-rewritten', diff };
     }
 
     if (diff.entries.length === 0) {
       // Local + remote agree — nothing to merge, just refresh the snapshot.
-      const next: WorkspaceLocal = {
-        ...get().local!,
-        sync: {
-          ...liveLocal.sync,
-          lastPulledSnapshot: remote,
-          lastPulledSha: file.sha,
-          lastPulledAt: new Date().toISOString(),
-        },
-      };
-      set({ local: next });
-      queueSaveLocal(next);
-      // Run the asset-ref verification pass even when the doc is
-      // up-to-date — that's exactly the window where a PR merged on the
-      // base branch but the working-branch JSON hasn't been pushed yet
-      // (no local edits), and we need to detect it to promote
-      // `baseBranchRef`.
+      if (adoptedRemoteId) {
+        const currentSynced = get().synced!;
+        const snapshotSynced = { ...currentSynced, workspaceId: adoptedRemoteId };
+        await persistMerged(set, get, snapshotSynced, remote, file.sha);
+      } else {
+        const next: WorkspaceLocal = {
+          ...get().local!,
+          sync: {
+            ...liveLocal.sync,
+            lastPulledSnapshot: remote,
+            lastPulledSha: file.sha,
+            lastPulledAt: new Date().toISOString(),
+          },
+        };
+        set({ local: next });
+        queueSaveLocal(next);
+      }
       await verifyAssetRefsAndPatch(set, get, client, token, branch);
       return { status: 'up-to-date' };
     }
@@ -6444,7 +6564,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       // Without `liveSynced` here, any mutation that landed during the
       // GitHub fetch (file upload, Global Asset add, request edit) would
       // be overwritten when `persistMerged` calls `set({ synced: merged })`.
-      const merged = applyMerge(liveSynced, remote, diff, {});
+      let merged = applyMerge(liveSynced, remote, diff, {});
+      if (adoptedRemoteId) merged = { ...merged, workspaceId: adoptedRemoteId };
       await persistMerged(set, get, merged, remote, file.sha);
       // Run the asset-ref verification pass after every successful merge
       // so the workingBranchRef + baseBranchRef stay honest. See the
@@ -6454,7 +6575,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
 
     // Conflicts — stash the diff and let the modal drive commitRefresh.
-    set({ pendingRefresh: { diff, remote, remoteSha: file.sha } });
+    set({ pendingRefresh: { diff, remote, remoteSha: file.sha, adoptedRemoteId } });
     return { status: 'conflicts', diff };
   },
 
@@ -6469,7 +6590,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       trigger: 'pre-merge',
       note: 'Before conflict-resolved merge',
     });
-    const merged = applyMerge(synced, pending.remote, pending.diff, resolutions);
+    let merged = applyMerge(synced, pending.remote, pending.diff, resolutions);
+    if (pending.adoptedRemoteId) merged = { ...merged, workspaceId: pending.adoptedRemoteId };
     await persistMerged(set, get, merged, pending.remote, pending.remoteSha);
     set({ pendingRefresh: null });
   },
@@ -7159,8 +7281,11 @@ async function persistMerged(
   // empty, even though the remote didn't have those local picks yet.
   // Using `remote` keeps the next `summarizeUnpushedChanges` honest: it
   // surfaces every divergence the next push needs to send.
+  const oldId = local.workspaceId;
+  const adopted = merged.workspaceId !== oldId;
   const nextLocal: WorkspaceLocal = {
     ...local,
+    ...(adopted ? { workspaceId: merged.workspaceId } : {}),
     sync: {
       ...local.sync,
       lastPulledSnapshot: remote,
@@ -7168,6 +7293,13 @@ async function persistMerged(
       lastPulledAt: new Date().toISOString(),
     },
   };
+  if (adopted) {
+    const registry = get().workspaceRegistry;
+    if (registry) {
+      const updatedRegistry = await migrateWorkspaceId(registry, oldId, merged.workspaceId);
+      set({ workspaceRegistry: updatedRegistry });
+    }
+  }
   set({ synced: merged, local: nextLocal });
   // Route through the debounce queue (then immediately flush) instead of
   // writing direct. If a prior action — e.g. restoreSnapshot before a
@@ -7178,6 +7310,10 @@ async function persistMerged(
   // with the merged one so the subsequent flush writes the correct state.
   queueSaveBoth(merged, nextLocal);
   await flushPendingPersist();
+  if (adopted) {
+    await deleteWorkspaceRecords(oldId);
+    await getDiskMirror().setActiveWorkspace(merged.workspaceId);
+  }
 
   // Bootstrap snapshots for any linkedWorkspaces that just arrived via
   // pull but have no local cached snapshot yet. Fixes the fresh-clone

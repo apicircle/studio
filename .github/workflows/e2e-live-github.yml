@@ -2,8 +2,8 @@
 # ephemeral repos per test against real api.github.com; the workflow
 # keeps an orphan sweep as an outer safety net for crashed runs.
 #
-# Schedule: main pushes + nightly + workflow_dispatch. Never on PR push:
-# real GitHub calls are rate-limited and should only gate trusted code paths.
+# Schedule: PRs + main pushes + nightly + workflow_dispatch. PR runs
+# gate merges so live-GitHub regressions are caught before landing.
 #
 # Sharding: one matrix job per `e2e/web/live-github/*.spec.ts` file, run
 # sequentially (`max-parallel: 1`). Per-spec isolation means one failing
@@ -26,6 +26,8 @@
 name: e2e-live-github
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches:
       - main
@@ -37,10 +39,11 @@ on:
 permissions:
   contents: read
 
-# Single-instance: real GitHub state and rate limits are shared across runs.
+# Per-ref concurrency: PR runs cancel stale pushes on the same branch;
+# main/schedule runs share a single queue so rate-limit budget is predictable.
 concurrency:
-  group: e2e-live-github
-  cancel-in-progress: false
+  group: e2e-live-github-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   discover:

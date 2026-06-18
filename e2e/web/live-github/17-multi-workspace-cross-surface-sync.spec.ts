@@ -13,6 +13,7 @@
 // mutates one workspace on one surface, and asserts the change is visible
 // from the other surfaces — and that the sibling workspace is untouched.
 
+import { type Page } from '@playwright/test';
 import { expect, test } from '../fixtures/app';
 import {
   connectAndBranchV2,
@@ -68,6 +69,49 @@ function multiWorkspaceSeeds(): Array<{
 }
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Remove the sample request that `createEmptyWorkspace` seeds on first boot.
+ * Without this, the three-way merge (null base) classifies the sample as a
+ * `local-only` addition that survives every "adopt remote" refresh — inflating
+ * request counts and polluting pushed workspaces.
+ */
+async function clearInitialSampleRequest(app: Page): Promise<void> {
+  await app.evaluate(() => {
+    const api = window.__apicircleStore!.getState() as any;
+    const requests = Object.keys(api.synced?.collections?.requests ?? {});
+    for (const id of requests) api.removeRequest(id);
+  });
+}
+
+/**
+ * Refresh the web app's workspace, auto-resolving any conflicts as "theirs".
+ *
+ * On the first refresh against a pre-populated branch, `lastPulledSnapshot`
+ * is null so every differing entity becomes a conflict. This helper mirrors
+ * the "Pull first → accept remote" user flow by resolving all conflicts
+ * in favor of the remote side. After this call the store has a valid
+ * `lastPulledSnapshot` baseline, so subsequent refreshes auto-merge cleanly.
+ */
+async function refreshAndAdoptRemote(app: Page): Promise<string> {
+  return app.evaluate(async () => {
+    const api = window.__apicircleStore!.getState() as any;
+    const refresh = await api.refreshWorkspace();
+    if (refresh.status === 'conflicts') {
+      const pending = (window.__apicircleStore!.getState() as any).pendingRefresh;
+      const resolutions: Record<string, string> = {};
+      for (const entry of pending.diff.conflicts)
+        resolutions[`${entry.bucket}:${entry.key}`] = 'theirs';
+      await api.commitRefresh(resolutions);
+      return 'conflicts-resolved';
+    }
+    return refresh.status;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -93,8 +137,15 @@ test.describe('Live GitHub - multi-workspace cross-surface sync @live-github', (
     );
     const branch = makeV2BranchName(test.info().workerIndex, 'vsc-to-web');
 
+    // Clear the sample request seeded by createEmptyWorkspace on first boot.
+    await clearInitialSampleRequest(app);
+
     // Web App connects and creates working branch (inherits both workspaces from main).
     await connectAndBranchV2(app, host, branch, tracker);
+
+    // Initial pull: adopt the remote workspace content so lastPulledSnapshot
+    // is established before the VS Code write.
+    await refreshAndAdoptRemote(app);
 
     // Simulate VS Code: edit workspace-alpha (add a new request) and push to the branch.
     await updateWorkspaceJsonById(
@@ -127,11 +178,7 @@ test.describe('Live GitHub - multi-workspace cross-surface sync @live-github', (
     );
 
     // Web App refreshes (pulls from the working branch).
-    const refreshResult = await app.evaluate(async () => {
-      const api = window.__apicircleStore!.getState() as any;
-      return api.refreshWorkspace();
-    });
-    expect(refreshResult.status).toBeTruthy();
+    await refreshAndAdoptRemote(app);
 
     // Assert the VS Code change is visible in the Web App.
     const webState = await app.evaluate(() => {
@@ -169,7 +216,12 @@ test.describe('Live GitHub - multi-workspace cross-surface sync @live-github', (
     );
     const branch = makeV2BranchName(test.info().workerIndex, 'web-to-others');
 
+    await clearInitialSampleRequest(app);
     await connectAndBranchV2(app, host, branch, tracker);
+
+    // Initial pull: adopt the remote workspace so the web app operates on
+    // the alpha workspace content (not its local scaffold).
+    await refreshAndAdoptRemote(app);
 
     // Web App: add a request to workspace-alpha.
     await app.evaluate(() => {
@@ -224,7 +276,11 @@ test.describe('Live GitHub - multi-workspace cross-surface sync @live-github', (
     );
     const branch = makeV2BranchName(test.info().workerIndex, 'desk-to-web');
 
+    await clearInitialSampleRequest(app);
     await connectAndBranchV2(app, host, branch, tracker);
+
+    // Initial pull: adopt the remote workspace content.
+    await refreshAndAdoptRemote(app);
 
     // Simulate Desktop: edit workspace-alpha (add a request) and push.
     await updateWorkspaceJsonById(
@@ -257,10 +313,7 @@ test.describe('Live GitHub - multi-workspace cross-surface sync @live-github', (
     );
 
     // Web App refreshes to pull Desktop changes.
-    await app.evaluate(async () => {
-      const api = window.__apicircleStore!.getState() as any;
-      await api.refreshWorkspace();
-    });
+    await refreshAndAdoptRemote(app);
 
     // Assert the Desktop change is visible in the Web App.
     const webState = await app.evaluate(() => {
@@ -289,9 +342,14 @@ test.describe('Live GitHub - multi-workspace cross-surface sync @live-github', (
     );
     const branch = makeV2BranchName(test.info().workerIndex, 'beta-iso');
 
+    await clearInitialSampleRequest(app);
+
     // Create the branch via the web app (even though we're testing beta,
     // we need a branch to write to).
     await connectAndBranchV2(app, host, branch, tracker);
+
+    // Initial pull: adopt the remote workspace content.
+    await refreshAndAdoptRemote(app);
 
     // Simulate VS Code: edit workspace-beta (add an environment variable).
     await updateWorkspaceJsonById(
@@ -336,7 +394,11 @@ test.describe('Live GitHub - multi-workspace cross-surface sync @live-github', (
     );
     const branch = makeV2BranchName(test.info().workerIndex, 'round-trip');
 
+    await clearInitialSampleRequest(app);
     await connectAndBranchV2(app, host, branch, tracker);
+
+    // Initial pull: adopt the remote workspace content.
+    await refreshAndAdoptRemote(app);
 
     // Step 1: VS Code adds request-1.
     await updateWorkspaceJsonById(
@@ -368,10 +430,7 @@ test.describe('Live GitHub - multi-workspace cross-surface sync @live-github', (
     );
 
     // Step 2: Web App refreshes, sees request-1, adds request-2, pushes.
-    await app.evaluate(async () => {
-      const api = window.__apicircleStore!.getState() as any;
-      await api.refreshWorkspace();
-    });
+    await refreshAndAdoptRemote(app);
 
     const afterVscodeWrite = await app.evaluate(() => {
       const state = window.__apicircleStore!.getState() as any;
@@ -433,10 +492,7 @@ test.describe('Live GitHub - multi-workspace cross-surface sync @live-github', (
     );
 
     // Step 5: Web App refreshes — should see all three requests.
-    await app.evaluate(async () => {
-      const api = window.__apicircleStore!.getState() as any;
-      await api.refreshWorkspace();
-    });
+    await refreshAndAdoptRemote(app);
 
     const finalWebState = await app.evaluate(() => {
       const state = window.__apicircleStore!.getState() as any;
@@ -474,7 +530,11 @@ test.describe('Live GitHub - multi-workspace cross-surface sync @live-github', (
     );
     const branch = makeV2BranchName(test.info().workerIndex, 'reg-integrity');
 
+    await clearInitialSampleRequest(app);
     await connectAndBranchV2(app, host, branch, tracker);
+
+    // Initial pull: adopt the remote workspace content.
+    await refreshAndAdoptRemote(app);
 
     // VS Code writes to workspace-alpha.
     await updateWorkspaceJsonById(
@@ -498,11 +558,8 @@ test.describe('Live GitHub - multi-workspace cross-surface sync @live-github', (
       },
     );
 
-    // Web App pushes workspace-alpha.
-    await app.evaluate(async () => {
-      const api = window.__apicircleStore!.getState() as any;
-      await api.refreshWorkspace();
-    });
+    // Web App refreshes to pick up VS Code + Desktop changes, then pushes.
+    await refreshAndAdoptRemote(app);
     await app.evaluate(() => {
       const api = window.__apicircleStore!.getState() as any;
       api.addRequest(null, 'Registry Integrity Request');
