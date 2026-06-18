@@ -128,12 +128,14 @@ import {
   deleteWorkspace as deleteWorkspacePersisted,
   loadWorkspace,
   loadWorkspaceById,
+  migrateWorkspaceId,
   recoverPartialWorkspace,
   setActiveWorkspace as setActiveWorkspacePersisted,
   updateRegistryEntryName as updateRegistryEntryNamePersisted,
   resetWorkspace as resetWorkspaceStorage,
   saveSynced,
 } from '../persistence/workspaceStorage';
+import { deleteWorkspaceRecords } from '../persistence/db';
 // Hot-path persistence is coalesced through a 250ms debounce — `commitSynced`
 // and the per-keystroke editor actions queue here instead of writing the
 // whole workspace doc to IndexedDB on every keystroke. Sensitive transitions
@@ -6529,24 +6531,20 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
     if (diff.entries.length === 0) {
       // Local + remote agree — nothing to merge, just refresh the snapshot.
-      const currentSynced = get().synced!;
-      const snapshotSynced = adoptedRemoteId
-        ? { ...currentSynced, workspaceId: adoptedRemoteId }
-        : currentSynced;
-      const next: WorkspaceLocal = {
-        ...get().local!,
-        sync: {
-          ...liveLocal.sync,
-          lastPulledSnapshot: remote,
-          lastPulledSha: file.sha,
-          lastPulledAt: new Date().toISOString(),
-        },
-      };
       if (adoptedRemoteId) {
-        set({ synced: snapshotSynced, local: next });
-        queueSaveBoth(snapshotSynced, next);
-        await flushPendingPersist();
+        const currentSynced = get().synced!;
+        const snapshotSynced = { ...currentSynced, workspaceId: adoptedRemoteId };
+        await persistMerged(set, get, snapshotSynced, remote, file.sha);
       } else {
+        const next: WorkspaceLocal = {
+          ...get().local!,
+          sync: {
+            ...liveLocal.sync,
+            lastPulledSnapshot: remote,
+            lastPulledSha: file.sha,
+            lastPulledAt: new Date().toISOString(),
+          },
+        };
         set({ local: next });
         queueSaveLocal(next);
       }
@@ -7283,8 +7281,11 @@ async function persistMerged(
   // empty, even though the remote didn't have those local picks yet.
   // Using `remote` keeps the next `summarizeUnpushedChanges` honest: it
   // surfaces every divergence the next push needs to send.
+  const oldId = local.workspaceId;
+  const adopted = merged.workspaceId !== oldId;
   const nextLocal: WorkspaceLocal = {
     ...local,
+    ...(adopted ? { workspaceId: merged.workspaceId } : {}),
     sync: {
       ...local.sync,
       lastPulledSnapshot: remote,
@@ -7292,6 +7293,13 @@ async function persistMerged(
       lastPulledAt: new Date().toISOString(),
     },
   };
+  if (adopted) {
+    const registry = get().workspaceRegistry;
+    if (registry) {
+      const updatedRegistry = await migrateWorkspaceId(registry, oldId, merged.workspaceId);
+      set({ workspaceRegistry: updatedRegistry });
+    }
+  }
   set({ synced: merged, local: nextLocal });
   // Route through the debounce queue (then immediately flush) instead of
   // writing direct. If a prior action — e.g. restoreSnapshot before a
@@ -7302,6 +7310,10 @@ async function persistMerged(
   // with the merged one so the subsequent flush writes the correct state.
   queueSaveBoth(merged, nextLocal);
   await flushPendingPersist();
+  if (adopted) {
+    await deleteWorkspaceRecords(oldId);
+    await getDiskMirror().setActiveWorkspace(merged.workspaceId);
+  }
 
   // Bootstrap snapshots for any linkedWorkspaces that just arrived via
   // pull but have no local cached snapshot yet. Fixes the fresh-clone

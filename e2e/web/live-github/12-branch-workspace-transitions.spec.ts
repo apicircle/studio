@@ -108,6 +108,7 @@ test.describe('Live GitHub - branch and workspace transitions @live-github', () 
           refresh = { status: 'conflicts-applied' };
         }
         const afterPull = window.__apicircleStore!.getState() as any;
+        const adoptedFreshId = afterPull.synced.workspaceId;
         const snapshotId = afterPull.local.snapshots.entries[0]?.id ?? null;
         const namesAfterPull = Object.values(afterPull.synced.collections.requests).map(
           (r: any) => r.name,
@@ -137,7 +138,7 @@ test.describe('Live GitHub - branch and workspace transitions @live-github', () 
         const originalNames = Object.values(original.synced.collections.requests).map(
           (r: any) => r.name,
         );
-        await api.switchWorkspace(freshId);
+        await api.switchWorkspace(adoptedFreshId);
         const switchedBack = window.__apicircleStore!.getState() as any;
         const freshNames = Object.values(switchedBack.synced.collections.requests).map(
           (r: any) => r.name,
