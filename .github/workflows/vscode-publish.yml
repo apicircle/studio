@@ -75,15 +75,15 @@ jobs:
         run: pnpm exec vsce publish --no-dependencies --pat "$VSCE_PAT"
 
       - name: Create Open VSX namespace (idempotent)
-        if: ${{ secrets.OVSX_PAT != '' }}
-        working-directory: apps/vscode
+        if: env.OVSX_PAT != ''
         continue-on-error: true
+        working-directory: apps/vscode
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: pnpm exec ovsx create-namespace apicircle --pat "$OVSX_PAT"
 
       - name: Publish to Open VSX
-        if: ${{ secrets.OVSX_PAT != '' }}
+        if: env.OVSX_PAT != ''
         working-directory: apps/vscode
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
