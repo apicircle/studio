@@ -25,6 +25,26 @@
 
 ## Unreleased
 
+## 1.1.1 - 2026-06-18
+
+### VS Code — Marketplace presentation
+
+- **Marketplace icon** — replaced the black monochrome-on-white icon with
+  the colorful brand mark (purple center disc, colored satellite nodes) on
+  the dark `#1f1b2e` galleryBanner background. Visible on both light and
+  dark Marketplace themes; file size dropped from 1.3 MB to 18 KB.
+
+- **Marketplace README** — rewrote the extension README from the "Alpha —
+  early development / v0.1" placeholder to the full 1.1.0 feature set:
+  workspace discovery + switcher, all 17 auth types, folder-wise auth,
+  URL-as-source-of-truth, mock endpoint authoring, 94-tool MCP catalog,
+  secret vault, and Link Workspaces. Installation now links to the
+  Marketplace and Open VSX as primary install paths.
+
+- **`render-icons.mjs`** — the icon generation script now also produces the
+  VS Code Marketplace icon from `favicon.svg`, and resolves Playwright from
+  `e2e/web` as a fallback when `apps/web` doesn't have it.
+
 ## 1.1.0 - 2026-06-17
 
 The first minor-version cut since 1.0.0. Ships the full **VS Code extension**

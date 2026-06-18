@@ -1,5 +1,5 @@
 // Single source of truth: apps/web/public/favicon.svg → every icon the
-// desktop bundle, OS launchers, and dev BrowserWindow need.
+// desktop bundle, OS launchers, VS Code Marketplace, and dev BrowserWindow need.
 //
 // Outputs:
 //   apps/desktop/build/icon.png            1024×1024 transparent PNG (Linux + electron-builder default)
@@ -8,6 +8,7 @@
 //   apps/desktop/build/icon.icns           multi-resolution macOS .icns (16/32/64/128/256/512/1024 + @2x)
 //   apps/desktop/build/icons/<size>.png    per-size PNGs (16, 24, 32, 48, 64, 128, 256, 512, 1024)
 //                                          consumed by BrowserWindow.icon in dev + by Linux desktop entries
+//   apps/vscode/media/icon-marketplace.png 256×256 colorful brand on dark galleryBanner background
 //
 // Run:  pnpm icons    (re-runs on every release)
 
@@ -22,26 +23,32 @@ const ROOT = resolve(__dirname, '..');
 // @playwright/test is only present in the dev tree (hoisted from the e2e
 // packages that depend on it). CI release runners install with strict pnpm
 // isolation and a frozen lockfile, where the renderer can't see it. The
-// rendered icons are committed in apps/desktop/build/, so a missing
-// Playwright is treated as "skip the refresh, use the committed assets"
-// rather than a hard failure. If you genuinely want to re-render, run
-// `pnpm icons` locally where the e2e workspace has installed Playwright.
-const requireFromWeb = createRequire(resolve(ROOT, 'apps/web/package.json'));
+// rendered icons are committed in apps/desktop/build/ and
+// apps/vscode/media/, so a missing Playwright is treated as "skip the
+// refresh, use the committed assets" rather than a hard failure. If you
+// genuinely want to re-render, run `pnpm icons` locally where the e2e
+// workspace has installed Playwright.
+const RESOLVE_ROOTS = [
+  resolve(ROOT, 'apps/web/package.json'),
+  resolve(ROOT, 'e2e/web/package.json'),
+];
 let chromium;
-try {
-  const pw = requireFromWeb('@playwright/test');
-  chromium = pw.chromium ?? pw.default?.chromium;
-  if (!chromium) throw new Error('chromium not exported from @playwright/test');
-} catch (err) {
-  if (err && err.code === 'MODULE_NOT_FOUND') {
-    console.warn(
-      '[render-icons] @playwright/test not resolvable from apps/web — ' +
-        'skipping icon rasterisation. The committed apps/desktop/build/icon.* ' +
-        'assets will be used as-is.',
-    );
-    process.exit(0);
+for (const root of RESOLVE_ROOTS) {
+  try {
+    const pw = createRequire(root)('@playwright/test');
+    chromium = pw.chromium ?? pw.default?.chromium;
+    if (chromium) break;
+  } catch {
+    // try next root
   }
-  throw err;
+}
+if (!chromium) {
+  console.warn(
+    '[render-icons] @playwright/test not resolvable — ' +
+      'skipping icon rasterisation. The committed apps/desktop/build/icon.* ' +
+      'and apps/vscode/media/icon-marketplace.png assets will be used as-is.',
+  );
+  process.exit(0);
 }
 
 const requireFromRoot = createRequire(resolve(ROOT, 'package.json'));
@@ -129,6 +136,34 @@ async function main() {
     console.log(`✓ build/icon.png        (1024×1024)`);
     console.log(`✓ build/icon.ico        (${ico.byteLength}B, multi-res)`);
     console.log(`✓ build/icon.icns       (${icns.byteLength}B, multi-res)`);
+
+    // VS Code Marketplace icon — colorful brand on the dark galleryBanner
+    // background (#1f1b2e) so the icon pops on both light and dark themes
+    // instead of the old black-on-white monochrome variant.
+    const MARKETPLACE_SIZE = 256;
+    const MARKETPLACE_BG = '#1f1b2e';
+    const MARKETPLACE_OUT = resolve(ROOT, 'apps/vscode/media/icon-marketplace.png');
+
+    const mktHtml = `<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  html,body{margin:0;padding:0;background:${MARKETPLACE_BG};}
+  #wrap{width:${MARKETPLACE_SIZE}px;height:${MARKETPLACE_SIZE}px;
+        display:flex;align-items:center;justify-content:center;}
+  #wrap>svg{width:80%;height:80%;display:block;}
+</style></head>
+<body><div id="wrap">${svg}</div></body></html>`;
+
+    const mktCtx = await browser.newContext({
+      viewport: { width: MARKETPLACE_SIZE, height: MARKETPLACE_SIZE },
+      deviceScaleFactor: 1,
+    });
+    const mktPage = await mktCtx.newPage();
+    await mktPage.setContent(mktHtml, { waitUntil: 'load' });
+    const mktEl = await mktPage.$('#wrap');
+    const mktBuf = await mktEl.screenshot({ type: 'png' });
+    await mktCtx.close();
+    await writeFile(MARKETPLACE_OUT, mktBuf);
+    console.log(`✓ apps/vscode/media/icon-marketplace.png (${MARKETPLACE_SIZE}×${MARKETPLACE_SIZE}, ${mktBuf.byteLength}B)`);
   } finally {
     await browser.close();
   }

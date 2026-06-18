@@ -72,7 +72,14 @@ jobs:
         working-directory: apps/vscode
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: pnpm exec vsce publish --no-dependencies --pat "$VSCE_PAT"
+        run: |
+          OUTPUT=$(pnpm exec vsce publish --no-dependencies --pat "$VSCE_PAT" 2>&1) && exit 0
+          if echo "$OUTPUT" | grep -q "already exists"; then
+            echo "::notice::Version already published to VS Code Marketplace — skipping."
+          else
+            echo "$OUTPUT"
+            exit 1
+          fi
 
       - name: Create Open VSX namespace (idempotent)
         if: env.OVSX_PAT != ''
@@ -87,7 +94,14 @@ jobs:
         working-directory: apps/vscode
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
-        run: pnpm exec ovsx publish *.vsix --pat "$OVSX_PAT"
+        run: |
+          OUTPUT=$(pnpm exec ovsx publish *.vsix --pat "$OVSX_PAT" 2>&1) && exit 0
+          if echo "$OUTPUT" | grep -qi "already exists"; then
+            echo "::notice::Version already published to Open VSX — skipping."
+          else
+            echo "$OUTPUT"
+            exit 1
+          fi
 
       - name: Upload .vsix artifact
         uses: actions/upload-artifact@v4
