@@ -72,11 +72,15 @@ function seedWorkspaceDir(): string {
   return dir;
 }
 
+// The first tsx invocation on a cold CI runner transpiles the entire
+// @apicircle/* dependency tree (~94 tools + transitive deps). This can
+// take 20-40s. Give beforeAll a generous budget so the tsx module cache
+// is warm before any individual lifecycle test spawns its own server.
 test.beforeAll(async () => {
   const seededDir = seedWorkspaceDir();
   shared = await spawnMcpServer({ workspaceDir: seededDir });
   await shared.init();
-});
+}, 60_000);
 
 test.afterAll(async () => {
   if (shared) await shared.shutdown();

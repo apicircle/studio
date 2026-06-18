@@ -131,6 +131,52 @@ All `@apicircle/*` packages — `shared`, `core`, `git`, `ui-components`,
 migration: the `.apicircle/workspace.json` relocation from 1.0.9 stays as a
 hard cutover.
 
+### Git layout — per-workspace subdirectories + registry
+
+- **Second workspace storage relocation.** The synced workspace document
+  moved again — from `.apicircle/workspace.json` (the 1.0.9 flat layout)
+  into a per-id subdirectory `.apicircle/workspace-<id>/workspace.json`.
+  Attachments moved alongside, from `.apicircle/attachments/<slotId>` into
+  `.apicircle/workspace-<id>/attachments/<slotId>`. A new
+  `.apicircle/registry.json` indexes all workspaces in the repo and tracks
+  the active workspace id.
+
+  Current layout (1.1.0+):
+
+  ```
+  .apicircle/
+  ├── registry.json                        # workspace index
+  └── workspace-<id>/
+      ├── workspace.json                   # synced workspace doc
+      └── attachments/<slotId>             # binary file attachments
+  ```
+
+  This is a **hard cutover** — 1.1.0 does not read the 1.0.9 flat layout
+  (`.apicircle/workspace.json` at the dotfolder root). The desktop app,
+  CLI, MCP server, and VS Code extension all resolve workspace paths via
+  `registry.json` → `workspace-<id>/workspace.json`.
+
+  **How to migrate from the 1.0.9 flat layout:**
+  - **Re-push (easiest):** open the workspace in the Desktop app (1.1.0+),
+    push — the per-id layout lands automatically. Then delete the stale
+    `.apicircle/workspace.json` from the dotfolder root.
+  - **Manual move:** create the subdirectory and relocate:
+    ```bash
+    WSID=$(jq -r '.workspaceId' .apicircle/workspace.json)
+    mkdir -p ".apicircle/workspace-$WSID/attachments"
+    mv .apicircle/workspace.json ".apicircle/workspace-$WSID/workspace.json"
+    mv .apicircle/attachments/* ".apicircle/workspace-$WSID/attachments/" 2>/dev/null
+    rmdir .apicircle/attachments 2>/dev/null
+    echo "{\"activeWorkspaceId\":\"$WSID\",\"workspaces\":[{\"id\":\"$WSID\"}]}" \
+      > .apicircle/registry.json
+    git add .apicircle && git commit -m "chore: migrate to per-id workspace layout (1.1.0)"
+    ```
+  - **Export → re-import:** same as the 1.0.9 path — see
+    [`docs/migration.md`](docs/migration.md).
+
+  (`packages/core/src/git/repoPaths.ts`,
+  `packages/core/src/git/repoPaths.test.ts`)
+
 ### MCP — Cross-surface install + prompts + clipboard fix
 
 Three improvements to the MCP integration surface across Desktop, Web, and
@@ -4378,11 +4424,13 @@ sha: null}` tree entry per queued slot — the GitHub tree-API
 
 - **`workspace.json` moved from the repo root into `.apicircle/`.** Every
   Git-backed workspace now lays out as:
+
   ```
   .apicircle/
   ├── workspace.json
   └── attachments/<slotId>
   ```
+
   Attachments already lived under `.apicircle/` since 1.0.0 — that's where
   the dotfolder name came from. Co-locating the synced doc next to its
   attachments finally consolidates everything API-Circle-managed under a
@@ -4392,12 +4440,19 @@ sha: null}` tree entry per queued slot — the GitHub tree-API
   re-push so the new push lands `.apicircle/workspace.json`. Existing
   example repos and template forks need to be re-laid-out by their
   owners — there is no in-place migration.
+
+  **Note:** 1.1.0 relocated the workspace document again — into per-id
+  subdirectories (`.apicircle/workspace-<id>/workspace.json` + a sibling
+  `registry.json`). If you are migrating from a pre-1.0.9 root layout,
+  skip straight to the current 1.1.0 layout.
+  Full step-by-step: [`docs/migration.md`](docs/migration.md).
   (`packages/core/src/git/repoPaths.ts`,
   `packages/core/src/git/repoPaths.test.ts`,
   `packages/core/src/git/serializeWorkspace.ts`,
   `packages/ui-components/src/store/workspaceStore.ts`,
   `packages/ui-components/src/store/pushWorkspace.test.ts`,
   `e2e/web/live-github/_github-rest.ts`)
+
 - **GitHub API surface unchanged.** Push still flows getRef → getCommit →
   optional createBlob (attachments) → createTree → createCommit →
   updateRef; only the path inside the tree entry changed. Refresh, link

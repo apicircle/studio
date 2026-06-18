@@ -58,43 +58,38 @@ The `--workspace <dir>` argument (or `APICIRCLE_WORKSPACE` env var) accepts
 any directory matching one of these three layouts. Detection is automatic —
 the binary checks for sentinel files in priority order:
 
-| Priority | Sentinel file    | Mode                 | Use case                                  |
-| -------- | ---------------- | -------------------- | ----------------------------------------- |
-| 1        | `registry.json`  | Multi-workspace      | `~/.apicircle/` root                      |
-| 2        | `workspace.json` | Single (disk mirror) | One workspace exported by the desktop app |
-| 3        | `workspace.json` | Single (Git-backed)  | A cloned repo's `.apicircle/` directory   |
+| Priority | Sentinel file    | Mode                 | Use case                                           |
+| -------- | ---------------- | -------------------- | -------------------------------------------------- |
+| 1        | `registry.json`  | Multi-workspace      | `~/.apicircle/` root or a repo's `.apicircle/` dir |
+| 2        | `workspace.json` | Single (disk mirror) | One workspace exported by the desktop disk mirror  |
 
-#### Layout 1 — Desktop disk-mirror (most common)
+#### Layout 1 — Registry root (most common)
 
-The Desktop app writes all open workspaces under a registry root. Point the
-MCP binary at that root and it exposes every workspace via `workspace.list`:
+Both the Desktop app's on-disk mirror (`~/.apicircle/`) and Git-backed
+repos (`.apicircle/` inside a cloned repo) use this layout. A
+`registry.json` indexes one or more `workspace-<id>/` subdirectories,
+each containing `workspace.json` + optional `attachments/`. Point the
+MCP binary at the registry root and it exposes every workspace via
+`workspace.list`:
 
 ```bash
-apicircle-mcp --workspace ~/Library/Application\ Support/apicircle/workspaces
+# Desktop disk-mirror root
+apicircle-mcp --workspace ~/.apicircle
+
+# Git-cloned repo — point at the .apicircle/ directory
+apicircle-mcp --workspace ./your-workspace-repo/.apicircle
 ```
 
-#### Layout 2 — Single workspace.json
+#### Layout 2 — Single workspace.json (legacy / exported)
 
 A single workspace exported by the desktop disk mirror. Contains:
 
 - `workspace.json` — collections, environments, mock definitions
 - `workspace.local.json` — per-device runtime state (kept out of git)
 
-#### Layout 3 — Git-backed `.apicircle/` directory (VS Code / Codex / CI)
-
-When your workspace lives in a Git repo (created via the Desktop app's
-**Link to Git** feature), the workspace data is under the
-`.apicircle/` directory. Point the MCP binary directly at that
-subdirectory:
-
-```bash
-git clone https://github.com/<you>/<your-workspace-repo>
-apicircle-mcp --workspace ./your-workspace-repo/.apicircle
-```
-
-The MCP server reads `workspace.json` (Git-tracked, shared with
-collaborators) and writes runtime state to `workspace.local.json` (which is
-gitignored).
+This layout is primarily for backwards compatibility with single-file
+exports. For Git-backed repos and the desktop mirror, Layout 1
+(registry + per-id subdirectories) is the current format.
 
 > **Tip for VS Code / Codex users:** if your project already has an
 > `.apicircle/` directory, set `--workspace` to that path in your MCP

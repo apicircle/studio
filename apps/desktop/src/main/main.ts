@@ -303,10 +303,21 @@ ipcMain.handle(
 void app.whenReady().then(() => {
   // Lock down the default session before any window opens. We deny every
   // optional permission (notifications, camera, microphone, geolocation,
-  // clipboard-read, etc.) because Studio is a developer tools app and
-  // genuinely needs none of them. Electron's defaults grant some silently.
-  session.defaultSession.setPermissionRequestHandler((_wc, _permission, cb) => cb(false));
-  session.defaultSession.setPermissionCheckHandler(() => false);
+  // etc.) because Studio is a developer tools app and genuinely needs none
+  // of them. Electron's defaults grant some silently.
+  // Clipboard read/write are exempted — safeCopyToClipboard and paste flows
+  // need them, and they carry no security risk in a local-first dev tool.
+  const clipboardPermissions = new Set([
+    'clipboard-read',
+    'clipboard-write',
+    'clipboard-sanitized-write',
+  ]);
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) =>
+    cb(clipboardPermissions.has(permission)),
+  );
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) =>
+    clipboardPermissions.has(permission),
+  );
   // Inject CSP + X-Frame-Options into every response served to the renderer.
   // For file:// loads the meta tag in index.html is the primary mechanism;
   // this header-injection path is what protects us if Studio is ever served
@@ -339,7 +350,9 @@ void app.whenReady().then(() => {
   // The file manager owns `~/.apicircle/` (multi-workspace registry +
   // per-id subdirectories); McpManager points AI clients at the same root.
   mcpManager = new McpManager();
-  workspaceFileManager = new WorkspaceFileManager();
+  workspaceFileManager = new WorkspaceFileManager({
+    workspacesRoot: process.env.APICIRCLE_WORKSPACES_ROOT || undefined,
+  });
   void workspaceFileManager.init().catch((err) => {
     console.error('[main] workspace file manager init failed:', err);
   });

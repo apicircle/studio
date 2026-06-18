@@ -298,9 +298,10 @@ Two mutually-exclusive flags pick the workspace:
 
 - `--workspace-name <name-or-id>` — registry lookup. Names are case-insensitive;
   ids survive renames (handy for CI).
-- `--workspace-path <dir>` — literal filesystem directory containing
-  `workspace.json`. Skips the registry; ideal for git-cloned workspace
-  repos.
+- `--workspace-path <dir>` — literal filesystem directory containing a
+  workspace layout (registry root, disk-mirror export, or a repo's
+  `.apicircle/` directory). Skips the registry; ideal for git-cloned
+  workspace repos.
 
 When neither is passed, the CLI uses the registry's active workspace (or the
 current directory when no registry exists yet).
@@ -374,6 +375,32 @@ launch triggers a one-time OS security prompt —
 produced in the open by this repo's GitHub Actions. Issues and feedback are
 very welcome: [github.com/apicircle/studio/issues](https://github.com/apicircle/studio/issues).
 
+## Workspace storage layout
+
+Every Git-backed workspace lives under a single `.apicircle/` hidden
+directory. Since **1.1.0**, each workspace gets its own per-id subdirectory,
+indexed by a `registry.json`:
+
+```
+your-repo/
+└── .apicircle/
+    ├── registry.json                      # workspace index
+    └── workspace-<id>/
+        ├── workspace.json                 # the synced workspace document
+        └── attachments/<slotId>           # binary file attachments
+```
+
+This layout has gone through two hard cutovers:
+
+- **1.0.9** moved `workspace.json` from the repo root into `.apicircle/`.
+- **1.1.0** moved it again into per-id subdirectories
+  (`.apicircle/workspace-<id>/workspace.json`) and added `registry.json`.
+
+Neither old layout is read by current versions. If you have a repo on an
+older layout, the easiest fix is to re-push from the desktop app — it writes
+the current layout automatically. For manual migration steps or an
+export → re-import workflow, see [`docs/migration.md`](docs/migration.md).
+
 ## Documentation
 
 - [Connect your AI client](docs/connect-your-ai-client.md)
@@ -382,6 +409,7 @@ very welcome: [github.com/apicircle/studio/issues](https://github.com/apicircle/
 - [Authentication — the 17-scheme matrix](docs/auth.md)
 - [Platform architecture (MCP, mock engine, CLI, desktop)](docs/architecture/platform.md)
 - [Installing the desktop app](docs/installing.md)
+- [Migration guide — workspace storage relocation](docs/migration.md)
 - [QA — coverage status and E2E CI](docs/qa/README.md)
 
 ## Repository layout

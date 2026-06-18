@@ -24,7 +24,12 @@
       "ignoreDependencies": ["@modelcontextprotocol/sdk", "@hono/node-server", "hono"]
     },
     "e2e/vscode": {
-      "entry": ["src/runTest.ts", "src/test/index.ts", "src/test/**/*.test.ts"],
+      "entry": [
+        "src/runTest.ts",
+        "src/runTestLocal.ts",
+        "src/test/index.ts",
+        "src/test/**/*.test.ts"
+      ],
       "ignoreDependencies": ["vscode", "@apicircle/shared", "@types/glob"]
     }
   }

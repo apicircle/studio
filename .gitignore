@@ -9,6 +9,7 @@ coverage
 .env.local
 .vscode
 .vscode-test
+graphify-out
 .idea
 # Playwright
 **/playwright-report
@@ -32,5 +33,9 @@ __pycache__/
 # Git-backed .apicircle/ directory. Must not pollute the shared workspace repo.
 .apicircle/workspace.local.json
 
-# Claude Code agent worktrees
+# Claude Code agent worktrees + local settings
 .claude/worktrees/
+.claude/settings.json
+
+# Codex hooks
+.codex/hooks.json

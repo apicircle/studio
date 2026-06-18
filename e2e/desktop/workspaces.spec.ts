@@ -107,7 +107,7 @@ test.describe('CLI workspaces — registry lifecycle', () => {
       // 5. `workspaces path` prints the on-disk path for one workspace.
       const p = await runCli({ args: ['workspaces', 'path', 'Beta'], env: ctx.env });
       expect(p.exitCode).toBe(0);
-      expect(p.stdout.trim()).toBe(path.join(ctx.root, beta!.id));
+      expect(p.stdout.trim()).toBe(path.join(ctx.root, `workspace-${beta!.id}`));
 
       // 6. `workspaces path` with no arg prints the registry root.
       const pRoot = await runCli({ args: ['workspaces', 'path'], env: ctx.env });
@@ -175,7 +175,7 @@ test.describe('CLI workspace selector grammar', () => {
       };
       const imports = registry.workspaces.find((w) => w.name === 'Imports');
       expect(imports).toBeDefined();
-      const syncedPath = path.join(ctx.root, imports!.id, 'workspace.json');
+      const syncedPath = path.join(ctx.root, `workspace-${imports!.id}`, 'workspace.json');
       const synced = JSON.parse(fs.readFileSync(syncedPath, 'utf-8')) as {
         collections: { requests: Record<string, unknown> };
       };

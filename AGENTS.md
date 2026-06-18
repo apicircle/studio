@@ -1,4 +1,4 @@
-# CLAUDE.md — API Circle Studio
+# AGENTS.md — API Circle Studio
 
 Single-source context for anyone (human or AI) picking up this repo cold. Read
 this first; it links out to the deeper docs in [`docs/`](docs/).
@@ -19,7 +19,7 @@ but with:
 - **Local mock servers**: describe an API in OpenAPI / Postman / Insomnia and
   run a Hono-backed mock on `localhost`.
 - An **MCP server**: exposes the workspace as a 94-tool catalog any
-  Model Context Protocol client (Claude Desktop, ChatGPT, Cursor, Copilot,
+  Model Context Protocol client (Codex Desktop, ChatGPT, Cursor, Copilot,
   Codex, Continue, Cline, Zed, Windsurf) can drive.
 - A **CLI** for headless use
   (`apicircle mock | mocks | mcp | import | export | run | workspaces | linked |
@@ -495,7 +495,6 @@ Desktop: `pnpm --filter @apicircle/desktop build` then `… start`.
 | [`docs/mcp-tools-reference.md`](docs/mcp-tools-reference.md)       | MCP tool catalog reference                                       |
 | [`docs/connect-your-ai-client.md`](docs/connect-your-ai-client.md) | Wiring an MCP client                                             |
 | [`docs/installing.md`](docs/installing.md)                         | Install instructions                                             |
-| [`docs/migration.md`](docs/migration.md)                           | Workspace storage relocation guide (pre-1.0.9 → 1.0.9+)          |
 | [`docs/qa/README.md`](docs/qa/README.md)                           | QA status, E2E CI reference, coverage tooling                    |
 | [`docs/context/api-circle.md`](docs/context/api-circle.md)         | Tool-agnostic cold-start brief (for Cursor / Copilot / etc.)     |
 | [`CHANGELOG.md`](CHANGELOG.md)                                     | Release-by-release feature notes (1.0.0 → now)                   |
@@ -585,9 +584,12 @@ under `docs/architecture/`) once the work begins.
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
 
+When the user types `/graphify`, invoke the `skill` tool with `skill: "graphify"` before doing anything else.
+
 Rules:
 
 - For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

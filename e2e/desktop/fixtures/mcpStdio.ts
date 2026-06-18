@@ -14,13 +14,16 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 // the Playwright runner.
 
 const REPO_ROOT = path.resolve(__dirname, '../../../');
-// Spawn the TS source via `tsx` rather than the compiled `dist/bin/mcp-
-// server.cjs`. The compiled bin marks workspace siblings (@apicircle/
-// shared, @apicircle/core, @apicircle/mock-server-core) as `external`
-// so node-side `require()` would resolve to .ts source files — which
-// raw Node can't load. tsx handles the TS transpilation on the fly.
-// Production binaries are shipped as bundled artifacts by
-// `scripts/release/buildBinaries.mjs` and don't go through this path.
+// The MCP server is spawned via tsx (TypeScript executor) because the
+// workspace sibling packages (@apicircle/shared, etc.) export TS source
+// as their main entry. The compiled dist/bin/mcp-server.cjs marks them
+// as `external`, so plain `node` would crash on `require()` of .ts files.
+// tsx handles the transpilation on the fly.
+//
+// On a cold CI runner, tsx's first boot can take 15-25s while it compiles
+// the full @apicircle/* tree. The init() timeout is set to 30s to absorb
+// this. Subsequent spawns in the same runner hit tsx's module cache and
+// start in <2s.
 const DEFAULT_BIN = path.resolve(REPO_ROOT, 'packages/mcp-server/src/bin/mcp-server.ts');
 const TSX_BIN = path.resolve(
   REPO_ROOT,
@@ -129,8 +132,17 @@ export async function spawnMcpServer(opts: SpawnMcpOptions = {}): Promise<McpCli
   const stdoutLines: string[] = [];
   const stderrChunks: string[] = [];
   let stdoutBuffer = '';
+  let spawnError: Error | null = null;
   const pendingByLine: Array<(line: string) => void> = [];
   const pendingByResponse = new Map<number | string, (resp: JsonRpcResponse) => void>();
+
+  proc.on('error', (err) => {
+    spawnError = err;
+    for (const [id, cb] of pendingByResponse) {
+      pendingByResponse.delete(id);
+      cb({ jsonrpc: '2.0', id, error: { code: -32603, message: `spawn error: ${err.message}` } });
+    }
+  });
 
   proc.stdout.on('data', (chunk: Buffer) => {
     stdoutBuffer += chunk.toString('utf8');
@@ -184,7 +196,13 @@ export async function spawnMcpServer(opts: SpawnMcpOptions = {}): Promise<McpCli
     return new Promise<JsonRpcResponse<T>>((resolve, reject) => {
       const t = setTimeout(() => {
         pendingByResponse.delete(id);
-        reject(new Error(`MCP call timed out: ${method} (id=${id})`));
+        const stderr = stderrChunks.join('').slice(-500);
+        const detail = spawnError
+          ? `spawn error: ${spawnError.message}`
+          : stderr
+            ? `stderr: ${stderr}`
+            : 'no stderr output';
+        reject(new Error(`MCP call timed out: ${method} (id=${id})\n${detail}`));
       }, timeoutMs);
       pendingByResponse.set(id, (resp) => {
         clearTimeout(t);

@@ -20,9 +20,9 @@ Insomnia — with a handful of things that set it apart:
 - **Git-backed workspace.** A workspace is a JSON document pushed to a
   GitHub repo on a working branch; teams collaborate via pull requests.
 - **On-disk workspace mirror.** Every workspace lives on disk under
-  `~/.apicircle/workspaces/` (with a `~/.apicircle/registry.json`
-  index) so the CLI, the MCP server, and external tools can read or
-  edit the same source of truth the UI uses.
+  `~/.apicircle/workspace-<id>/` (indexed by
+  `~/.apicircle/registry.json`) so the CLI, the MCP server, and
+  external tools can read or edit the same source of truth the UI uses.
 - **Local mock servers.** Describe an API in OpenAPI / Postman /
   Insomnia and run a Hono-backed mock on `localhost`.
 - **An MCP server.** The workspace is exposed as a 94-tool catalog any
@@ -138,7 +138,7 @@ powers the desktop `MockManager`, the CLI `apicircle mock`, and the MCP
 
 Desktop persistence is two-layer: IndexedDB (canonical for the
 renderer) plus a plain-JSON mirror on disk under
-`~/.apicircle/workspaces/<id>/{workspace.json,workspace.local.json}`
+`~/.apicircle/workspace-<id>/{workspace.json,workspace.local.json}`
 with a sibling `~/.apicircle/registry.json` listing every workspace
 and its `lastOpenedAt`. The mirror exists so external readers (the
 CLI, the MCP server, an editor poking at the JSON, future hosted

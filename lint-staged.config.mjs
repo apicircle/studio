@@ -12,9 +12,7 @@ export default (stagedFiles) => {
     // Lint only the staged TS/TSX files. The type-aware rules still load
     // the full project graph, but limiting the file list cuts the working
     // set enough to avoid OOM on machines with ≤8 GB available heap.
-    tasks.push(
-      `pnpm exec eslint --cache --fix ${tsFiles.map((f) => JSON.stringify(f)).join(' ')}`,
-    );
+    tasks.push(`pnpm exec eslint --cache --fix ${tsFiles.map((f) => JSON.stringify(f)).join(' ')}`);
   }
 
   const prettierFiles = stagedFiles.filter((f) => /\.(ts|tsx|json|md|css|yml|yaml)$/.test(f));

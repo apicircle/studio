@@ -11,6 +11,12 @@ export async function safeCopyToClipboard(
       await navigator.clipboard.writeText(text);
       return { ok: true };
     }
+  } catch {
+    // writeText can throw when clipboard-write permission is denied
+    // (e.g. blanket Electron permission lockdown) — fall through to
+    // the execCommand fallback below.
+  }
+  try {
     if (fallbackCopy(text)) {
       return { ok: true };
     }

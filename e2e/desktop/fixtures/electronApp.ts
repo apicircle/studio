@@ -57,6 +57,7 @@ export async function launchElectron(opts: LaunchOpts = {}): Promise<{
     );
   }
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'apicircle-e2e-'));
+  const workspacesRoot = path.join(userDataDir, 'workspaces');
   const app = await electron.launch({
     args: [DESKTOP_MAIN, `--user-data-dir=${userDataDir}`, ...(opts.extraArgs ?? [])],
     env: {
@@ -64,6 +65,9 @@ export async function launchElectron(opts: LaunchOpts = {}): Promise<{
       // Skip the auto-updater network probe on launch (the test would
       // otherwise hang on a real network roundtrip).
       APICIRCLE_DISABLE_AUTOUPDATE: '1',
+      // Redirect disk mirror to the temp dir so tests can inspect/modify
+      // workspace files without touching the real ~/.apicircle/.
+      APICIRCLE_WORKSPACES_ROOT: workspacesRoot,
       ...opts.env,
     },
     timeout: 30_000,

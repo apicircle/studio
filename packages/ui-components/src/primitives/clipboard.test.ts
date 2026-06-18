@@ -11,12 +11,15 @@ describe('safeCopyToClipboard', () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('hello');
   });
 
-  it('returns ok:false with reason when writeText rejects', async () => {
+  it('falls through to execCommand fallback when writeText rejects', async () => {
     Object.assign(navigator, {
       clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
     });
+    // jsdom doesn't implement execCommand, so the fallback also fails —
+    // but the important behavior is that we TRY the fallback rather than
+    // returning the writeText error directly.
     const result = await safeCopyToClipboard('hello');
-    expect(result).toEqual({ ok: false, reason: 'denied' });
+    expect(result).toEqual({ ok: false, reason: 'Clipboard API unavailable' });
   });
 
   it('returns ok:false when clipboard API is absent and fallback fails', async () => {
