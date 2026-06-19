@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -6,7 +6,7 @@ import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
 import { saveToFile } from '@apicircle/core/workspace/file-backed';
 import { workspaceDirFor } from '@apicircle/core/workspace/registry';
 import { WorkspaceFileManager } from './workspaceFileManager';
-import { WorkspaceWatcher } from './workspaceWatcher';
+import { REGISTRY_CHANGE, WorkspaceWatcher } from './workspaceWatcher';
 
 const T0 = '2026-05-22T00:00:00.000Z';
 
@@ -90,6 +90,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   watcher.stop();
+  vi.restoreAllMocks();
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
@@ -223,5 +224,82 @@ describe('WorkspaceWatcher', () => {
     );
 
     await waitFor(() => events.includes('registry'));
+  });
+});
+
+describe('WorkspaceWatcher — null-filename inotify events (loaded Linux CI)', () => {
+  // On heavily-loaded Linux CI runners (xvfb + overlayfs), `fs.watch` regularly
+  // fires its callback with `filename === null` — "something changed, name
+  // unknown". The watcher must treat that as "the watched target may have
+  // changed" rather than dropping the event; otherwise an external MCP/CLI
+  // write to `workspace.json` (or `registry.json`) never reaches the renderer.
+  // That drop is exactly what made the desktop e2e
+  // `external-write-refresh.spec.ts` time out (30s) on
+  // `getByText('Imported by MCP')`.
+  //
+  // The OS can't be forced to omit the filename on demand, so we drive the
+  // extracted event handlers directly and assert an emit was scheduled.
+  // `scheduleEmit` is spied so the check is synchronous and independent of the
+  // debounce + stat pipeline (exercised end-to-end by the tests above). No fs
+  // writes happen here, so the live watchers armed in `beforeEach` stay quiet
+  // and the only `scheduleEmit` calls are the ones under test.
+
+  interface WatcherInternals {
+    handleDirEvent(
+      workspaceId: string,
+      eventType: 'rename' | 'change',
+      filename: string | null,
+    ): void;
+    handleRootEvent(filename: string | null): void;
+    scheduleEmit(target: string): void;
+    rescanWorkspaceDirs(): void;
+  }
+
+  function internalsOf(w: WorkspaceWatcher): WatcherInternals {
+    return w as unknown as WatcherInternals;
+  }
+
+  it('per-dir handler schedules an emit when inotify omits the filename', () => {
+    const internals = internalsOf(watcher);
+    const scheduled: string[] = [];
+    vi.spyOn(internals, 'scheduleEmit').mockImplementation((t) => {
+      scheduled.push(t);
+    });
+
+    // A `change` event whose filename inotify dropped to null. Before the fix
+    // this matched neither emit guard and was silently ignored.
+    internals.handleDirEvent('ws-1', 'change', null);
+
+    expect(scheduled).toContain('ws-1');
+  });
+
+  it('per-dir handler still ignores a named write to a non-synced sibling', () => {
+    const internals = internalsOf(watcher);
+    const scheduled: string[] = [];
+    vi.spyOn(internals, 'scheduleEmit').mockImplementation((t) => {
+      scheduled.push(t);
+    });
+
+    // A named event for `workspace.local.json` must NOT emit — only a
+    // `workspace.json` change (or a name-less event) is interesting. This
+    // guards against the null-filename fix over-firing on every sibling write.
+    internals.handleDirEvent('ws-1', 'change', 'workspace.local.json');
+
+    expect(scheduled).not.toContain('ws-1');
+  });
+
+  it('root handler schedules a registry emit when inotify omits the filename', () => {
+    const internals = internalsOf(watcher);
+    const scheduled: string[] = [];
+    vi.spyOn(internals, 'scheduleEmit').mockImplementation((t) => {
+      scheduled.push(t);
+    });
+    // Stub the dir rescan so the null-filename branch doesn't arm real
+    // watchers as a side effect.
+    vi.spyOn(internals, 'rescanWorkspaceDirs').mockImplementation(() => {});
+
+    internals.handleRootEvent(null);
+
+    expect(scheduled).toContain(REGISTRY_CHANGE);
   });
 });

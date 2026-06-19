@@ -45,6 +45,14 @@ import type { WorkspaceFileManager } from './workspaceFileManager';
 // dir individually (catches `workspace.json` writes inside).
 // `rename` events for the synced file are handled by re-`watch()`-ing the
 // dir, since some platforms invalidate the watcher after an atomic rename.
+// On loaded Linux CI (xvfb + overlayfs) inotify frequently delivers events
+// with `filename === null` — "something changed, name unknown". Both the
+// root and per-id handlers treat a null filename as "the watched target may
+// have changed" and schedule an emit; the stat-based suppression in
+// `emitIfExternal` filters out the ones where the target file is actually
+// unchanged, so this never produces a false external-change or a refresh
+// loop. Dropping null-filename events instead (the prior behavior) was what
+// made the desktop external-write-refresh e2e flake on Ubuntu.
 // =============================================================================
 
 const REGISTRY_FILENAME = 'registry.json';
@@ -101,16 +109,7 @@ export class WorkspaceWatcher extends EventEmitter {
     // Watch root for registry.json changes AND workspace-* directory creation/removal.
     try {
       this.rootWatcher = fs.watch(root, { persistent: false }, (_eventType, filename) => {
-        if (filename === REGISTRY_FILENAME) {
-          this.scheduleEmit(REGISTRY_CHANGE);
-        }
-        // Rescan workspace dirs when filename matches the workspace-dir prefix
-        // OR when filename is null — on some Linux CI environments inotify
-        // delivers events without a filename, so we always rescan to avoid
-        // missing new workspace-* directory creation.
-        if (!filename || filename.startsWith(WORKSPACE_DIR_PREFIX)) {
-          this.rescanWorkspaceDirs();
-        }
+        this.handleRootEvent(filename);
       });
       this.rootWatcher.on('error', (err) => {
         console.error('[workspaceWatcher] root watcher error', err);
@@ -250,27 +249,7 @@ export class WorkspaceWatcher extends EventEmitter {
     const dir = workspaceDirFor(this.manager.workspacesRoot, workspaceId);
     try {
       const watcher = fs.watch(dir, { persistent: false }, (eventType, filename) => {
-        if (filename === SYNCED_FILENAME) {
-          this.scheduleEmit(workspaceId);
-        }
-        // `rename` on the synced file (atomic write via tmpfile + rename)
-        // can invalidate the watcher on some platforms — re-arm.
-        if (eventType === 'rename' && filename === SYNCED_FILENAME) {
-          // Re-watch the dir after a tick to pick up the new inode.
-          setTimeout(() => {
-            if (!this.dirWatchers.has(workspaceId)) return;
-            const old = this.dirWatchers.get(workspaceId);
-            if (old) {
-              try {
-                old.close();
-              } catch {
-                /* ignore */
-              }
-            }
-            this.dirWatchers.delete(workspaceId);
-            this.watchWorkspaceDir(workspaceId);
-          }, 50);
-        }
+        this.handleDirEvent(workspaceId, eventType, filename);
       });
       watcher.on('error', (err) => {
         console.error(`[workspaceWatcher] dir watcher error for ${workspaceId}`, err);
@@ -278,6 +257,79 @@ export class WorkspaceWatcher extends EventEmitter {
       this.dirWatchers.set(workspaceId, watcher);
     } catch (err) {
       console.error(`[workspaceWatcher] could not watch dir for ${workspaceId}`, err);
+    }
+  }
+
+  /**
+   * Decide what to do with a raw `fs.watch` event for the workspaces root.
+   * Extracted from the watch callback so the null-filename branch can be
+   * unit-tested deterministically — the OS can't be made to omit the name on
+   * demand.
+   *
+   * A null filename means inotify reported "something under root changed" but
+   * not what — common on loaded Linux CI runners (xvfb + overlayfs). We can't
+   * tell a `registry.json` write apart from a `workspace-*` dir mutation, so
+   * we do both: schedule a registry emit (the stat-based filter in
+   * `emitIfExternal` discards it if `registry.json` is byte-for-byte
+   * unchanged) AND rescan the workspace dirs.
+   */
+  private handleRootEvent(filename: string | null): void {
+    if (!filename || filename === REGISTRY_FILENAME) {
+      this.scheduleEmit(REGISTRY_CHANGE);
+    }
+    // Rescan workspace dirs when filename matches the workspace-dir prefix
+    // OR when filename is null — on some Linux CI environments inotify
+    // delivers events without a filename, so we always rescan to avoid
+    // missing new workspace-* directory creation.
+    if (!filename || filename.startsWith(WORKSPACE_DIR_PREFIX)) {
+      this.rescanWorkspaceDirs();
+    }
+  }
+
+  /**
+   * Decide what to do with a raw `fs.watch` event for a per-id workspace dir.
+   * Extracted for the same null-filename testability reason as
+   * `handleRootEvent`.
+   *
+   * Emit on a matching filename OR a null filename. On loaded Linux CI
+   * `fs.watch` fires with `filename === null`, so a `workspace.json` content
+   * change can't be matched by name; we re-check it unconditionally. The
+   * stat-based filter in `emitIfExternal` discards the event when the synced
+   * file still matches our last self-write, so a null event for a sibling
+   * file (`workspace.local.json`, `attachments/`) costs one stat and emits
+   * nothing — it cannot trigger a self-write refresh loop. This is the fix
+   * for the desktop e2e external-write-refresh timeout: before it, a
+   * null-filename `workspace.json` write was silently dropped here and the
+   * renderer never refreshed.
+   */
+  private handleDirEvent(
+    workspaceId: string,
+    eventType: fs.WatchEventType,
+    filename: string | null,
+  ): void {
+    if (!filename || filename === SYNCED_FILENAME) {
+      this.scheduleEmit(workspaceId);
+    }
+    // `rename` on the synced file (atomic write via tmpfile + rename) can
+    // invalidate the watcher on some platforms — re-arm. Kept scoped to the
+    // *named* rename: we watch the directory (which survives child renames),
+    // so a missed re-arm is harmless, whereas re-arming on every null event
+    // would churn the watcher and open avoidable blind gaps.
+    if (eventType === 'rename' && filename === SYNCED_FILENAME) {
+      // Re-watch the dir after a tick to pick up the new inode.
+      setTimeout(() => {
+        if (!this.dirWatchers.has(workspaceId)) return;
+        const old = this.dirWatchers.get(workspaceId);
+        if (old) {
+          try {
+            old.close();
+          } catch {
+            /* ignore */
+          }
+        }
+        this.dirWatchers.delete(workspaceId);
+        this.watchWorkspaceDir(workspaceId);
+      }, 50);
     }
   }
 
