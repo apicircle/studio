@@ -74,11 +74,11 @@ test.describe('External-write auto-refresh', () => {
       .toBe(true);
     if (!workspaceDir) throw new Error('workspace dir not found');
 
-    // Give the WorkspaceWatcher's root-watcher event time to be processed
-    // so the per-workspace-dir watcher is set up before we write. Without
-    // this pause, the test write can race the inotify callback on loaded CI
-    // runners and the debounced emit never fires (matching the 500ms wait
-    // the registry-rewrite test already uses for the same reason).
+    // The per-workspace-dir watcher is armed inside `markSelfWrite`, which
+    // is called after `workspace.local.json` is written — a few ms after
+    // `workspace.json` appears (which is what the poll above detects).
+    // Wait here to absorb that gap so the watcher is definitely active
+    // before our external write lands.
     await mainWindow.waitForTimeout(500);
 
     // Read the freshly-written pair and inject a new request +

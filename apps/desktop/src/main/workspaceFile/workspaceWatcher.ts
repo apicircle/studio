@@ -100,7 +100,7 @@ export class WorkspaceWatcher extends EventEmitter {
     }
     // Watch root for registry.json changes AND workspace-* directory creation/removal.
     try {
-      this.rootWatcher = fs.watch(root, { persistent: false }, (eventType, filename) => {
+      this.rootWatcher = fs.watch(root, { persistent: false }, (_eventType, filename) => {
         if (filename === REGISTRY_FILENAME) {
           this.scheduleEmit(REGISTRY_CHANGE);
         }
@@ -163,8 +163,20 @@ export class WorkspaceWatcher extends EventEmitter {
    * stat read reflects what was just written. Pass `REGISTRY_CHANGE`
    * (`'registry'`) for registry writes; any other value is treated as a
    * workspace id. Async because we need to stat the file.
+   *
+   * Also ensures the per-workspace-dir watcher is active for the given id.
+   * On Linux CI (overlayfs / GitHub Actions), inotify subdirectory-creation
+   * events are sometimes not delivered to the root watcher, meaning
+   * `rescanWorkspaceDirs()` may never run for a newly created workspace dir.
+   * By wiring the per-dir watcher here — directly after the workspace dir
+   * exists on disk — we guarantee coverage without relying on the root
+   * watcher's directory event delivery.
    */
   async markSelfWrite(workspaceId: string): Promise<void> {
+    // Arm the per-dir watcher eagerly on the first self-write for this id.
+    if (this.started && workspaceId !== REGISTRY_CHANGE && !this.dirWatchers.has(workspaceId)) {
+      this.watchWorkspaceDir(workspaceId);
+    }
     const filePath = this.targetPath(workspaceId);
     try {
       const stat = await fs.promises.stat(filePath);
