@@ -195,9 +195,9 @@ Runs` OutputChannel.
   history retention, secret vault auto-lock + clipboard-clear, MCP
   binary path, MCP workspace config path.
 
-**1.1.0 — first public Marketplace cut** (lockstep with the rest of
-the monorepo). Bundle currently **2.66 MB**, well under the soft 3.0
-MB / hard 5.0 MB budget defined in
+**First public Marketplace cut at 1.1.0; now 1.1.2**, back in lockstep
+with the rest of the monorepo. Bundle currently **2.76 MB**, well under the
+soft 3.0 MB / hard 5.0 MB budget defined in
 [`scripts/vscode-bundle-budget.mjs`](scripts/vscode-bundle-budget.mjs)
 and enforced by [`scripts/check-vscode-bundle.mjs`](scripts/check-vscode-bundle.mjs)
 
@@ -365,12 +365,12 @@ the same workspace format back all four surfaces. See
 [`docs/architecture/platform.md`](docs/architecture/platform.md) for the full
 design record.
 
-## Project status — Early Access
+## Project status
 
-API Circle Studio is **pre-launch and self-funded.** Expect rough edges and
-occasional breaking changes before v1.0. The desktop builds are currently
-**unsigned** (code-signing certificates are not yet funded), so the first
-launch triggers a one-time OS security prompt —
+API Circle Studio is **self-funded and actively developed in the open.**
+Expect occasional rough edges as the 1.1.x line matures. The desktop builds
+are currently **unsigned** (code-signing certificates are not yet funded), so
+the first launch triggers a one-time OS security prompt —
 [`docs/installing.md`](docs/installing.md) walks through it. Builds are
 produced in the open by this repo's GitHub Actions. Issues and feedback are
 very welcome: [github.com/apicircle/studio/issues](https://github.com/apicircle/studio/issues).

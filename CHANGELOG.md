@@ -23,7 +23,63 @@
 > ship. Full per-platform walk-through:
 > [`docs/installing.md`](docs/installing.md).
 
-## Unreleased
+## 1.1.2 - 2026-06-19
+
+Version-alignment release. The 1.1.1 bump only touched the VS Code extension
+(`apicircle-vscode`); all other `@apicircle/*` packages stayed at 1.1.0. This
+release brings every package in the monorepo to a single consistent **1.1.2**
+so that version numbers are uniform across the board going forward. It also
+folds in the desktop external-write auto-refresh watcher hardening and the
+accompanying E2E reliability fixes landed since 1.1.0.
+
+### Version alignment
+
+All `@apicircle/*` packages — `shared`, `core`, `git`, `ui-components`,
+`mock-server-core`, `mcp-server`, `cli`, plus `apps/web`, `apps/desktop`,
+`apps/vscode`, and the e2e suites — now ship at **1.1.2**.
+
+### Fixed
+
+- **Desktop external-write auto-refresh — watcher robustness on edge-case
+  filesystems** — the workspace file watcher
+  (`apps/desktop/src/main/workspaceFile/workspaceWatcher.ts`) now treats
+  `fs.watch` events whose filename the OS omits (`filename === null`, seen on
+  some Linux filesystems under load) as "the watched target may have changed,"
+  for both the per-directory `workspace.json` and the root `registry.json` emit
+  branches, instead of dropping them. The existing stat-based self-write
+  suppression still discards events where the file is byte-for-byte unchanged, so
+  there's no false external-change or refresh loop. This hardens the MCP/CLI →
+  desktop live-refresh path on overlayfs / heavily-loaded hosts.
+
+### Tests
+
+- **Desktop `external-write-refresh` E2E fixture corrected (orphan request)** —
+  the regression test simulated an external MCP/CLI write by adding a top-level
+  request to `collections.requests` only. A real write goes through
+  `applyMutation` → `applyRequestCreate`, which also appends the request to
+  `collections.tree.children` (the editor sidebar renders top-level entries from
+  the tree, so a request present only in the map is an orphan that renders
+  nowhere → a deterministic `getByText('Imported by MCP')` timeout, confirmed by
+  running the pre-fix fixture in isolation: 6/6 fail). The fixture now mirrors
+  `applyRequestCreate` exactly. Not a product bug — the app writes the tree
+  entry correctly on every real external write.
+
+- **Desktop `external-write-refresh` E2E hardened against a boot-churn write
+  race** — even with the request in the tree, the test still performed its
+  external `workspace.json` write after a fixed `waitForTimeout(500)`. The
+  desktop fixture suppresses onboarding by reloading the window, which kicks off
+  a second hydrate whose debounced IDB→disk mirror writes can still be draining
+  at the 500 ms mark under load. A late mirror write then atomically overwrites
+  the test's external write back to boot content; the watcher's stat-based
+  self-write suppression matches the post-clobber bytes and (correctly) emits no
+  `externalChange`, so the renderer never refreshes — a flaky 30 s timeout on
+  Windows under full-suite I/O load (reproduced 8/8 by forcing the write to fire
+  during boot churn). The test now waits for `workspace.json` and
+  `registry.json` to reach genuine on-disk quiescence (size+mtime stable, JSON
+  parseable) before writing, encoding the test's real premise: an idle,
+  fully-booted desktop. The underlying clobber window exists only during the
+  sub-second boot/reload settle, before which no external client is driving the
+  workspace, so no product change was warranted.
 
 ### VS Code — Marketplace README polish
 
