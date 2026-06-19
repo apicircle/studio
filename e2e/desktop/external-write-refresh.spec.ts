@@ -74,6 +74,13 @@ test.describe('External-write auto-refresh', () => {
       .toBe(true);
     if (!workspaceDir) throw new Error('workspace dir not found');
 
+    // Give the WorkspaceWatcher's root-watcher event time to be processed
+    // so the per-workspace-dir watcher is set up before we write. Without
+    // this pause, the test write can race the inotify callback on loaded CI
+    // runners and the debounced emit never fires (matching the 500ms wait
+    // the registry-rewrite test already uses for the same reason).
+    await mainWindow.waitForTimeout(500);
+
     // Read the freshly-written pair and inject a new request +
     // bump `meta.updatedAt` so the hydrate / refresh disk-vs-IDB
     // compare picks disk as the winner. This is exactly the shape

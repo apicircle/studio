@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { formatHelp, hasHelpFlag, hasVersionFlag } from './args';
 import { MCP_PACKAGE_VERSION } from '../packageVersion';
 
@@ -106,15 +107,30 @@ async function main(): Promise<void> {
     return;
   }
 
-  // No recognized layout.
-  process.stderr.write(
-    `apicircle-mcp: no workspace found at ${dir}.\n` +
-      'Expected one of:\n' +
-      '  • registry.json   (multi-workspace registry root, e.g. ~/.apicircle/)\n' +
-      '  • workspace.json  (single workspace or Git-backed .apicircle/ directory)\n' +
-      'Point --workspace at the correct directory, or set APICIRCLE_WORKSPACE.\n',
-  );
-  process.exit(1);
+  // Path 3: empty or new directory — auto-initialise a fresh single workspace
+  // so `apicircle-mcp --workspace /new/dir` boots cleanly, matching the
+  // behaviour tests expect ("boot survived", not "dir materialised").
+  await fs.mkdir(dir, { recursive: true });
+  const now = new Date().toISOString();
+  const workspaceId = `ws-${randomBytes(4).toString('hex')}`;
+  const emptySynced = {
+    schemaVersion: 1,
+    workspaceId,
+    collections: { tree: { id: 'root', type: 'root', children: [] }, requests: {}, folders: {} },
+    environments: { items: {}, activeName: null, priorityOrder: [] },
+    linkedWorkspaces: {},
+    linkedOverrides: { requests: {}, environmentVars: {} },
+    releases: { self: null, perLink: {} },
+    globalAssets: { schemas: {}, graphql: {} },
+    mockServers: {},
+    meta: { createdAt: now, updatedAt: now, appVersion: MCP_PACKAGE_VERSION },
+  };
+  await fs.writeFile(path.join(dir, 'workspace.json'), JSON.stringify(emptySynced, null, 2) + '\n');
+  const workspace = new FileBackedWorkspaceProvider(dir);
+  const workspaces = new SingleWorkspaceAdapter(workspace, null);
+  const host = createMcpServer({ workspace, workspaces, mock });
+  process.stderr.write(`apicircle-mcp: init new workspace · ${dir}\n`);
+  await host.connect();
 }
 
 main().catch((err) => {

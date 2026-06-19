@@ -104,8 +104,12 @@ export class WorkspaceWatcher extends EventEmitter {
         if (filename === REGISTRY_FILENAME) {
           this.scheduleEmit(REGISTRY_CHANGE);
         }
-        if (filename && filename.startsWith(WORKSPACE_DIR_PREFIX)) {
-          this.onWorkspacesDirEvent(eventType, filename);
+        // Rescan workspace dirs when filename matches the workspace-dir prefix
+        // OR when filename is null — on some Linux CI environments inotify
+        // delivers events without a filename, so we always rescan to avoid
+        // missing new workspace-* directory creation.
+        if (!filename || filename.startsWith(WORKSPACE_DIR_PREFIX)) {
+          this.rescanWorkspaceDirs();
         }
       });
       this.rootWatcher.on('error', (err) => {
@@ -194,10 +198,10 @@ export class WorkspaceWatcher extends EventEmitter {
     return path.join(workspaceDirFor(this.manager.workspacesRoot, workspaceId), SYNCED_FILENAME);
   }
 
-  private onWorkspacesDirEvent(eventType: string, filename: string | null): void {
-    if (!filename) return;
-    // A new workspace-<id> directory may have appeared (or an existing one
-    // was removed). Re-evaluate which dirs we're watching.
+  /** Full rescan of the workspace-* dirs under root. Called whenever the
+   *  root watcher sees a relevant event (including null-filename events on
+   *  Linux CI where inotify omits the changed name). */
+  private rescanWorkspaceDirs(): void {
     const root = this.manager.workspacesRoot;
     try {
       const entries = fs.readdirSync(root, { withFileTypes: true });
@@ -228,7 +232,6 @@ export class WorkspaceWatcher extends EventEmitter {
     } catch (err) {
       console.error('[workspaceWatcher] workspace-dir re-scan failed', err);
     }
-    void eventType;
   }
 
   private watchWorkspaceDir(workspaceId: string): void {

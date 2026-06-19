@@ -304,7 +304,7 @@ describe('PromptsSection', () => {
     });
     expect(
       useWorkspaceStore.getState().toasts.find((t) => /Copy failed/.test(t.title))?.detail,
-    ).toBe('Permission denied');
+    ).toBe('Clipboard API unavailable');
   });
 
   it('renames the singular workspace category to Collections', async () => {
