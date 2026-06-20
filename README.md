@@ -199,7 +199,7 @@ Runs` OutputChannel.
   history retention, secret vault auto-lock + clipboard-clear, MCP
   binary path, MCP workspace config path.
 
-**First public Marketplace cut at 1.1.0; now 1.1.2**, back in lockstep
+**First public Marketplace cut at 1.1.0; now 1.1.3**, back in lockstep
 with the rest of the monorepo. Bundle currently **2.76 MB**, well under the
 soft 3.0 MB / hard 5.0 MB budget defined in
 [`scripts/vscode-bundle-budget.mjs`](scripts/vscode-bundle-budget.mjs)

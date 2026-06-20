@@ -25,6 +25,25 @@
 
 ## Unreleased
 
+_No unreleased changes yet. Add entries under `### Added`, `### Changed`,
+`### Fixed`, `### Tests`, or `### Docs` as work lands; this section is cut into
+the next dated release when a version is published._
+
+## 1.1.3 - 2026-06-20
+
+Patch release. Rolls every package in the monorepo from 1.1.2 to a single
+consistent **1.1.3** and cuts the accumulated Unreleased work — the VS Code
+**MCP prompt catalog** editor view and the Desktop MCP one-click **"Remove
+config"** button, plus the VS Code publish-workflow and
+`APICIRCLE_WORKSPACES_ROOT` resolution fixes — into a dated release.
+
+### Version alignment
+
+All `@apicircle/*` packages — `shared`, `core`, `git`, `ui-components`,
+`mock-server-core`, `mcp-server`, `cli`, plus `apps/web`, `apps/desktop`,
+`apps/vscode`, the e2e suites, and the `examples/mock-server` fixture (which
+had lagged at 1.1.0) — now ship at **1.1.3**.
+
 ### Added
 
 - **VS Code — MCP prompt categories open as a readable catalog in the editor.**
@@ -80,6 +99,20 @@
     and UI flow tests in `McpServerPanel.test.tsx`.
 
 ### Fixed
+
+- **VS Code publish workflow no longer fails when the version is already
+  published to Open VSX (or the VS Code Marketplace).** The `Publish to Open
+VSX` step captured `ovsx publish` output and grepped it for `"already
+exists"`, but `ovsx` actually reports `"<id> <version> is already
+published."` — so a re-run on an unchanged version fell through to the
+  failure branch and exited 1, turning the whole `vscode-publish.yml`
+  workflow red. Both publish steps now use each tool's native
+  `--skip-duplicate` flag (`vsce publish --skip-duplicate` /
+  `ovsx publish --skip-duplicate`), which exits 0 with a "Skipping publish."
+  log when the exact version already exists while still failing loudly on
+  real errors (auth, packaging, network). This removes the fragile
+  output-string matching that caused the mismatch. CI/release-only change —
+  no extension code, workspace-data, or schema change.
 
 - **VS Code — registry discovery and the MCP config snippet now honor
   `APICIRCLE_WORKSPACES_ROOT`, matching the CLI and desktop.** The extension's
