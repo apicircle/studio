@@ -86,7 +86,10 @@ test.describe('Live GitHub - branch and workspace transitions @live-github', () 
     });
     expect(mergeB.merged).toBe(true);
 
-    const main = (await fetchWorkspaceJson(host, 'main')).json as Record<string, any>;
+    // Read main at the merge commit, not the branch ref — the Contents API can
+    // serve the pre-merge main tree for a beat after the merge PUT returns.
+    const main = (await fetchWorkspaceJson(host, 'main', { expectedCommitSha: mergeB.sha }))
+      .json as Record<string, any>;
     const mainRequestNames = Object.values(main.collections.requests).map((r: any) => r.name);
     expect(mainRequestNames).toContain('v2 transition request A');
     expect(mainRequestNames).toContain('v2 transition request B');

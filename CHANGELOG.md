@@ -39,8 +39,12 @@
     Contents-API writers already had (it was the one writer that threw on the
     first SHA conflict).
   - Post-push assertions read the remote by the immutable commit SHA
-    (`fetchWorkspaceJson(cfg, branch, { expectedCommitSha })`) instead of the
-    branch ref. Spec `16`'s second push (which persists each asset's
+    (`fetchWorkspaceJson(cfg, ref, { expectedCommitSha })`) instead of the
+    branch ref — specs `02`/`08`/`10`/`12`/`15` (spec `12` reads `main` at the
+    PR merge commit). `?ref=<sha>` is immutable, so it can't serve the pre-push
+    snapshot the branch-ref replica still caches for a few seconds (the spec
+    `02` failure where `linkedWorkspaces[linkId]` came back `undefined` across
+    all retries under 2-worker load). Spec `16`'s second push (which persists each asset's
     `workingBranchRef` provenance to the remote) is now gated by a new
     `waitForBranchHeadV2` ref barrier so its divergence pre-flight can't race
     the `git/refs` read replica into a spurious `BranchDivergedError`.

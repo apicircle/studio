@@ -10,6 +10,21 @@ const E2E_MOCK_BASE_URL = `http://localhost:${E2E_MOCK_PORT}`;
 // keeps a clean storageState so IndexedDB / localStorage from one spec
 // can't bleed into the next.
 
+// Playwright resolves `workers` only at the top level — a per-project `workers`
+// is silently ignored. The live-GitHub suite must stay serial by default: its
+// specs share one bot PAT, so concurrent workers amplify GitHub's per-token
+// secondary rate limit AND the Contents-API eventual-consistency races. So
+// detect when that project is the target and default it to 1, while letting
+// LIVE_GH_WORKERS opt into parallelism. Other projects keep the CI default.
+const liveGithubTargeted = process.argv.some((arg) => arg.includes('chromium-live-github'));
+const resolvedWorkers = process.env.LIVE_GH_WORKERS
+  ? Number(process.env.LIVE_GH_WORKERS)
+  : liveGithubTargeted
+    ? 1
+    : process.env.CI
+      ? 2
+      : undefined;
+
 export default defineConfig({
   testDir: '.',
   testMatch: /.*\.spec\.ts$/,
@@ -23,7 +38,7 @@ export default defineConfig({
   // Fail loud in CI when someone leaves a `test.only` behind.
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  workers: resolvedWorkers,
   reporter: process.env.CI
     ? [
         ['github'],
@@ -95,7 +110,9 @@ export default defineConfig({
       // 2-3 workers is the realistic ceiling on a single PAT; going wider
       // needs a per-worker token pool. CI sets neither var, so it stays 1×1.
       fullyParallel: process.env.LIVE_GH_PARALLEL === '1',
-      workers: process.env.LIVE_GH_WORKERS ? Number(process.env.LIVE_GH_WORKERS) : 1,
+      // `workers` is resolved at the top level (`resolvedWorkers`) — Playwright
+      // ignores a per-project `workers`. This project defaults to 1 there;
+      // LIVE_GH_WORKERS opts into parallelism.
     },
     {
       name: 'chromium-oauth2-popup',
