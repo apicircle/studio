@@ -74,13 +74,22 @@ test.describe('Live GitHub - dependency diff buckets @live-github', () => {
 
     const afterPush = await app.evaluate(async () => {
       const api = window.__apicircleStore!.getState() as any;
-      await api.pushWorkspace('e2e live: dependency diff');
+      const push = await api.pushWorkspace('e2e live: dependency diff');
       const state = window.__apicircleStore!.getState() as any;
-      return { base: state.local.sync.lastPulledSnapshot ?? null, current: state.synced };
+      return {
+        commitSha: push.commitSha as string,
+        base: state.local.sync.lastPulledSnapshot ?? null,
+        current: state.synced,
+      };
     });
     expect(diff(afterPush).total).toBe(0);
 
-    const remote = (await fetchWorkspaceJson(host, branch)).json as Record<string, any>;
+    // Read by the immutable push commit SHA, not the branch ref: `?ref=<branch>`
+    // can serve the pre-push snapshot for several seconds after updateRef
+    // (Contents-API propagation), which left `linkedWorkspaces[id]` undefined.
+    const remote = (
+      await fetchWorkspaceJson(host, branch, { expectedCommitSha: afterPush.commitSha })
+    ).json as Record<string, any>;
     assertRemoteWorkspaceHasNoLocalOnlyData(remote);
     expect(remote.linkedWorkspaces[beforePush.ids.linkId]).toBeDefined();
     expect(

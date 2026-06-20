@@ -86,28 +86,49 @@ async function writeRegistryJson(
   registryContent: string,
   message: string,
 ): Promise<void> {
-  // Probe for existing file to get its SHA (needed for updates).
-  const existing = await fetch(buildContentsUrl(cfg, REGISTRY_JSON_PATH, branch), {
-    headers: ghHeaders(cfg.token),
-  });
-  let sha: string | undefined;
-  if (existing.ok) {
-    sha = ((await existing.json()) as { sha: string }).sha;
+  // Same probe→PUT→retry contract as writeWorkspaceJson: the Contents API can
+  // hand back a stale blob `sha` on the probe (read-replica lag), or another
+  // writer can move registry.json between our probe and PUT — both surface as
+  // a 409/422 "does not match <sha>". Re-probe with the fresh sha and retry.
+  // registry.json was previously the ONE writer without this loop, so it threw
+  // on the first SHA conflict (the `09-refresh-conflict` 409 flake).
+  let lastStatus = 0;
+  let lastText = '<no-body>';
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const existing = await fetch(buildContentsUrl(cfg, REGISTRY_JSON_PATH, branch), {
+      headers: ghHeaders(cfg.token),
+    });
+    let sha: string | undefined;
+    if (existing.ok) {
+      sha = ((await existing.json()) as { sha: string }).sha;
+    } else if (existing.status !== 404) {
+      const text = await existing.text().catch(() => '<no-body>');
+      if (isTransientWorkspaceReadFailure(existing.status, text) && attempt < 5) {
+        await wait(750 * (attempt + 1));
+        continue;
+      }
+      throw new Error(`writeRegistryJson probe failed (${existing.status}): ${text}`);
+    }
+    const res = await fetchWithSecondaryRateLimit(buildContentsUrl(cfg, REGISTRY_JSON_PATH), {
+      method: 'PUT',
+      headers: { ...ghHeaders(cfg.token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        content: Buffer.from(`${registryContent}\n`).toString('base64'),
+        branch,
+        ...(sha ? { sha } : {}),
+      }),
+    });
+    if (res.ok) return;
+    lastStatus = res.status;
+    lastText = await res.text().catch(() => '<no-body>');
+    if ((res.status === 409 || res.status === 422) && attempt < 5) {
+      await wait(750 * (attempt + 1));
+      continue;
+    }
+    throw new Error(`writeRegistryJson failed (${res.status}): ${lastText}`);
   }
-  const res = await fetchWithSecondaryRateLimit(buildContentsUrl(cfg, REGISTRY_JSON_PATH), {
-    method: 'PUT',
-    headers: { ...ghHeaders(cfg.token), 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      message,
-      content: Buffer.from(`${registryContent}\n`).toString('base64'),
-      branch,
-      ...(sha ? { sha } : {}),
-    }),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '<no-body>');
-    throw new Error(`writeRegistryJson failed (${res.status}): ${text}`);
-  }
+  throw new Error(`writeRegistryJson exhausted retries (last ${lastStatus}): ${lastText}`);
 }
 
 function buildContentsUrl(cfg: LiveGithubConfig, path: string, ref?: string): string {
@@ -391,47 +412,80 @@ function ghHeaders(token: string): Record<string, string> {
 }
 
 /**
- * Wrap `fetch` with retry-on-secondary-rate-limit. GitHub returns 403
- * with a body containing "secondary rate limit" (or 429) when the bot
- * PAT exceeds the per-minute content-creation budget — common when a
- * single live-github run creates 40+ repos in ~80 s. The response
- * carries a `Retry-After` header (seconds) that says when to retry;
- * we honor it, capping each wait at 75 s and the total attempt count
- * at 3. All other responses (including non-secondary 403s such as a
- * missing scope) pass through unchanged so caller error messages stay
- * specific.
+ * Wrap `fetch` with retry-on-secondary-rate-limit AND retry-on-transient-5xx.
+ *
+ * Secondary rate limit: GitHub returns 403 with a body containing "secondary
+ * rate limit" (or 429) when the bot PAT exceeds the per-minute
+ * content-creation budget — common when a single live-github run creates 40+
+ * repos in ~80 s. The response carries a `Retry-After` header (seconds) that
+ * says when to retry; we honor it, capping each wait at 75 s.
+ *
+ * Transient 5xx: the Contents / git-data write endpoints intermittently 500
+ * (carrying no Retry-After), so we additionally back off exponentially and
+ * retry 5xx unless `retryServerErrors: false` is passed (see below).
+ *
+ * Total attempt count is capped at 3. Non-secondary 403s (e.g. a missing
+ * scope) and any other non-OK status pass through unchanged so caller error
+ * messages stay specific.
  */
 async function fetchWithSecondaryRateLimit(
   url: string,
   init: RequestInit,
-  opts: { maxAttempts?: number; defaultRetryAfterSeconds?: number } = {},
+  opts: {
+    maxAttempts?: number;
+    defaultRetryAfterSeconds?: number;
+    retryServerErrors?: boolean;
+  } = {},
 ): Promise<Response> {
   const maxAttempts = opts.maxAttempts ?? 3;
   const defaultWaitSeconds = opts.defaultRetryAfterSeconds ?? 60;
+  // GitHub's Contents / git-data write endpoints intermittently 5xx — most
+  // often a PUT /contents immediately after `POST /user/repos`, before the
+  // new repo's storage is fully provisioned (the `04`/`17` "README/workspace
+  // seed failed (500)" flakes). These are transient and carry no Retry-After,
+  // so we back off exponentially and retry. Defaults ON: every PUT /contents
+  // writer in this module is idempotent (creates tolerate 422 "already
+  // exists"; updates re-probe their blob sha on 409/422), so a redundant
+  // retry is harmless. Callers opt OUT for non-idempotent POSTs (createRepo),
+  // where a 5xx that actually applied server-side would create a duplicate.
+  const retryServerErrors = opts.retryServerErrors ?? true;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const res = await fetch(url, init);
     if (res.ok || attempt === maxAttempts) return res;
-    if (res.status !== 403 && res.status !== 429) return res;
-    // Body must be inspected to distinguish secondary-rate-limit from
-    // (e.g.) scope errors. `res.text()` consumes the body, so clone first
-    // — failed-but-non-rate-limit responses still need their body for the
-    // caller's error message.
-    const bodyText = await res
-      .clone()
-      .text()
-      .catch(() => '');
-    const isSecondary =
-      res.status === 429 ||
-      /secondary rate limit|abuse detection|too many requests/i.test(bodyText);
-    if (!isSecondary) return res;
-    const retryAfterHeader = res.headers.get('retry-after');
-    const retryAfter = Number(retryAfterHeader);
-    const waitSeconds =
-      Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 75) : defaultWaitSeconds;
-    // Small jitter so concurrent callers don't unblock at the exact same
-    // instant and re-trigger the secondary limit.
-    const jitterMs = Math.floor(((attempt * 31) % 17) * 50);
-    await wait(waitSeconds * 1000 + jitterMs);
+    if (res.status === 403 || res.status === 429) {
+      // Body must be inspected to distinguish secondary-rate-limit from
+      // (e.g.) scope errors. `res.text()` consumes the body, so clone first
+      // — failed-but-non-rate-limit responses still need their body for the
+      // caller's error message.
+      const bodyText = await res
+        .clone()
+        .text()
+        .catch(() => '');
+      const isSecondary =
+        res.status === 429 ||
+        /secondary rate limit|abuse detection|too many requests/i.test(bodyText);
+      if (!isSecondary) return res;
+      const retryAfterHeader = res.headers.get('retry-after');
+      const retryAfter = Number(retryAfterHeader);
+      const waitSeconds =
+        Number.isFinite(retryAfter) && retryAfter > 0
+          ? Math.min(retryAfter, 75)
+          : defaultWaitSeconds;
+      // Small jitter so concurrent callers don't unblock at the exact same
+      // instant and re-trigger the secondary limit.
+      const jitterMs = Math.floor(((attempt * 31) % 17) * 50);
+      await wait(waitSeconds * 1000 + jitterMs);
+      continue;
+    }
+    if (retryServerErrors && res.status >= 500 && res.status <= 599) {
+      // Transient server error — exponential backoff 1/2/4s (capped) + jitter.
+      const backoffMs = Math.min(1000 * 2 ** (attempt - 1), 8000);
+      const jitterMs = Math.floor(((attempt * 17) % 13) * 40);
+      await wait(backoffMs + jitterMs);
+      continue;
+    }
+    // Any other non-OK status: hand back to the caller's specific handling.
+    return res;
   }
   // Unreachable: the final attempt returns above.
   throw new Error('fetchWithSecondaryRateLimit: loop exhausted without returning');
@@ -673,6 +727,14 @@ export async function ensureWorkspaceJsonOnMain(
       branch,
     }),
   });
+  if (putRes.status === 422) {
+    // 422 = workspace.json already exists on this branch. Happens when a
+    // prior create PUT 5xx'd AFTER committing server-side and the 5xx-retry
+    // re-sent the create (no `sha`). The file IS present — which is all this
+    // seeder guarantees — so treat it as success; the probe above will
+    // short-circuit the next call.
+    return;
+  }
   if (!putRes.ok) {
     const text = await putRes.text().catch(() => '<no-body>');
     throw new Error(`ensureWorkspaceJsonOnMain: PUT failed (${putRes.status}): ${text}`);
@@ -812,6 +874,41 @@ export async function fetchWorkspaceJson<T = Record<string, unknown>>(
 }
 
 /**
+ * Block until a `?ref=<branch>` read of workspace.json satisfies `predicate`.
+ *
+ * Use this as a propagation barrier after a STORE push (`api.pushWorkspace`)
+ * and before any branch-ref read-modify-write (`updateWorkspaceJson`) or
+ * product read that depends on the pushed data. The Contents-API read replica
+ * can keep serving the pre-push snapshot for several seconds after
+ * `updateRef` returns, so a RMW that reads HEAD too soon either crashes on
+ * missing data (`09-refresh-conflict`: `linkedWorkspaces[id]` undefined) or —
+ * worse — mutates the stale seed and writes the WHOLE doc back, clobbering the
+ * just-pushed link. Polling by branch ref (not commit SHA) is deliberate: it
+ * confirms the exact replica the RMW will hit has converged.
+ *
+ * Exponential backoff 0.5/1/2/4/8/16/32 s ≈ 63.5 s ceiling, matching the other
+ * propagation-aware readers in this module and sitting below the 240 s
+ * per-test budget.
+ */
+export async function waitForRemoteWorkspace<T extends Record<string, unknown>>(
+  cfg: LiveGithubConfig,
+  branch: string,
+  predicate: (file: WorkspaceFile<T>) => boolean,
+  opts: { attempts?: number } = {},
+): Promise<WorkspaceFile<T>> {
+  const attempts = opts.attempts ?? 8;
+  let last: WorkspaceFile<T> | null = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    last = await fetchWorkspaceJson<T>(cfg, branch);
+    if (predicate(last)) return last;
+    if (attempt < attempts - 1) await wait(500 * 2 ** attempt);
+  }
+  throw new Error(
+    `waitForRemoteWorkspace ${cfg.fullName}@${branch}: predicate never satisfied in ${attempts} attempts (Contents-API propagation lag)`,
+  );
+}
+
+/**
  * Put a complete `workspace.json` document on a branch under the
  * per-workspace directory layout. Also creates/updates `registry.json`
  * to point at the workspace. The workspace object must carry a
@@ -891,7 +988,17 @@ export async function updateWorkspaceJson<T extends Record<string, unknown>>(
 ): Promise<T> {
   const file = await fetchWorkspaceJson<T>(cfg, branch);
   mutate(file.json);
-  await writeWorkspaceJson(cfg, branch, file.json, message);
+  const newSha = await writeWorkspaceJson(cfg, branch, file.json, message);
+  // Read-back barrier: block until a `?ref=<branch>` read serves the doc we
+  // just wrote, so the product code that reads this branch next (the
+  // consumer's `refreshWorkspace` / `linkPrivateWorkspace`, both `?ref=<branch>`)
+  // doesn't race the propagation window and observe the pre-write snapshot.
+  // That race caused `15`'s `schemaPresent === false` and `09`'s "No pending
+  // refresh to commit" (the refresh saw no remote change because the write
+  // hadn't propagated yet).
+  if (newSha) {
+    await waitForRemoteWorkspace<T>(cfg, branch, (f) => f.sha === newSha);
+  }
   return file.json;
 }
 
@@ -941,6 +1048,32 @@ export async function fetchWorkspaceJsonById<T = Record<string, unknown>>(
   }
   throw new Error(
     `fetchWorkspaceJsonById ${cfg.fullName}@${ref} workspace-${workspaceId}: exhausted retries`,
+  );
+}
+
+/**
+ * By-ID twin of {@link waitForRemoteWorkspace} — polls a specific workspace's
+ * `?ref=<branch>` read (bypassing registry resolution) until `predicate`
+ * holds. Used by the multi-workspace cross-surface sync suite so a
+ * read-modify-write or product read doesn't race the Contents-API
+ * propagation window after a sibling write to the same branch.
+ */
+export async function waitForRemoteWorkspaceById<T extends Record<string, unknown>>(
+  cfg: LiveGithubConfig,
+  branch: string,
+  workspaceId: string,
+  predicate: (file: WorkspaceFile<T>) => boolean,
+  opts: { attempts?: number } = {},
+): Promise<WorkspaceFile<T>> {
+  const attempts = opts.attempts ?? 8;
+  let last: WorkspaceFile<T> | null = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    last = await fetchWorkspaceJsonById<T>(cfg, branch, workspaceId);
+    if (predicate(last)) return last;
+    if (attempt < attempts - 1) await wait(500 * 2 ** attempt);
+  }
+  throw new Error(
+    `waitForRemoteWorkspaceById ${cfg.fullName}@${branch} workspace-${workspaceId}: predicate never satisfied in ${attempts} attempts (Contents-API propagation lag)`,
   );
 }
 
@@ -1015,7 +1148,13 @@ export async function updateWorkspaceJsonById<T extends Record<string, unknown>>
 ): Promise<T> {
   const file = await fetchWorkspaceJsonById<T>(cfg, branch, workspaceId);
   mutate(file.json);
-  await writeWorkspaceJsonById(cfg, branch, workspaceId, file.json, message);
+  const newSha = await writeWorkspaceJsonById(cfg, branch, workspaceId, file.json, message);
+  // Read-back barrier (see updateWorkspaceJson): block until the branch-ref
+  // read serves what we just wrote, so a subsequent product/REST read of this
+  // workspace doesn't observe the pre-write snapshot.
+  if (newSha) {
+    await waitForRemoteWorkspaceById<T>(cfg, branch, workspaceId, (f) => f.sha === newSha);
+  }
   return file.json;
 }
 
@@ -1291,17 +1430,24 @@ export async function createRepo(token: string, args: CreateRepoArgs): Promise<C
   const url = args.isOrg
     ? `https://api.github.com/orgs/${args.owner}/repos`
     : `https://api.github.com/user/repos`;
-  const res = await fetchWithSecondaryRateLimit(url, {
-    method: 'POST',
-    headers: { ...ghHeaders(token), 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name: args.name,
-      private: args.visibility === 'private',
-      visibility: args.visibility,
-      description: args.description ?? 'APICircle e2e ephemeral auto-managed repository',
-      auto_init: false,
-    }),
-  });
+  const res = await fetchWithSecondaryRateLimit(
+    url,
+    {
+      method: 'POST',
+      headers: { ...ghHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: args.name,
+        private: args.visibility === 'private',
+        visibility: args.visibility,
+        description: args.description ?? 'APICircle e2e ephemeral auto-managed repository',
+        auto_init: false,
+      }),
+    },
+    // Non-idempotent: a 5xx that actually created the repo would make the
+    // retry collide on the (fixed) name. Keep the secondary-rate-limit retry,
+    // drop the 5xx retry.
+    { retryServerErrors: false },
+  );
   if (!res.ok) {
     const text = await res.text().catch(() => '<no-body>');
     throw new Error(`createRepo ${args.owner}/${args.name} failed (${res.status}): ${text}`);

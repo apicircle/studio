@@ -86,8 +86,16 @@ export default defineConfig({
       // intermittently 403s a single call, the wrapper waits + retries,
       // and the test still needs room to finish.
       timeout: 240_000,
-      fullyParallel: false,
-      workers: 1,
+      // Serial by default: GitHub's secondary (content-creation) rate limit
+      // is PER-TOKEN and the whole suite shares one bot PAT, so concurrent
+      // workers mostly trade wall-clock for rate-limit backoff AND amplify the
+      // Contents-API eventual-consistency races the helpers retry around. For
+      // a local run against your own PAT you can opt into parallelism:
+      //   LIVE_GH_WORKERS=3 LIVE_GH_PARALLEL=1 pnpm test:e2e:live-github
+      // 2-3 workers is the realistic ceiling on a single PAT; going wider
+      // needs a per-worker token pool. CI sets neither var, so it stays 1×1.
+      fullyParallel: process.env.LIVE_GH_PARALLEL === '1',
+      workers: process.env.LIVE_GH_WORKERS ? Number(process.env.LIVE_GH_WORKERS) : 1,
     },
     {
       name: 'chromium-oauth2-popup',

@@ -302,7 +302,7 @@ pnpm test:e2e:live-github
 
 ### Live-GitHub CI pipeline
 
-The [`.github/workflows/e2e-live-github.yml`](../../.github/workflows/e2e-live-github.yml) workflow runs on pushes to `main`, nightly, and manual dispatch. It validates the required secret/variable set, sweeps orphaned bot repos older than 12 hours, and then runs `pnpm test:e2e:live-github` single worker with Playwright traces/video retained only on failure.
+The [`.github/workflows/e2e-live-github.yml`](../../.github/workflows/e2e-live-github.yml) workflow runs **nightly and on manual dispatch only** — it does **not** run on PRs/pushes and does **not** gate merges, because it hits real `api.github.com` (slow, rate-limited, and subject to Contents-API eventual consistency). It validates the required secret/variable set, sweeps orphaned bot repos older than 12 hours, and then runs `pnpm test:e2e:live-github` single worker with Playwright traces/video retained only on failure. Run it locally before risky GitHub-sync changes with `node scripts/ci-local/run-ci.mjs --only live-github`.
 
 Configure GitHub Actions like this:
 
@@ -310,6 +310,39 @@ Configure GitHub Actions like this:
 - Repository secrets: `APICIRCLE_E2E_BOT_PAT`, `APICIRCLE_E2E_BOT_PAT_LINK_DEDICATED`
 
 The workflow maps `APICIRCLE_E2E_BOT_PAT` into the runtime `APICIRCLE_E2E_GITHUB_PAT` env var because that is what the Playwright helpers consume.
+
+### Eventual-consistency handling (read before chasing a flake)
+
+These specs hit the real Contents / git-data APIs, which are **eventually
+consistent**: a `?ref=<branch>` read can keep serving the pre-write snapshot for
+several seconds after a push/PUT returns, and the `git/refs` read replica can
+lag a just-completed `updateRef`. The Node-side helpers in
+[`_github-rest.ts`](../../e2e/web/live-github/_github-rest.ts) absorb this so
+specs stay deterministic — reach for one of these before adding a bare sleep:
+
+- **Writes retry transient failures.** `fetchWithSecondaryRateLimit` retries
+  secondary-rate-limit 403/429 **and** transient 5xx (opt-out via
+  `retryServerErrors: false` for the non-idempotent `createRepo` POST). Every
+  `PUT /contents` writer (`writeRegistryJson`, `writeWorkspaceJson`,
+  `writeWorkspaceJsonById`) re-probes its blob sha and retries 409/422 SHA
+  conflicts.
+- **Reads prefer the immutable commit SHA.** After a store push, read the remote
+  with `fetchWorkspaceJson(cfg, branch, { expectedCommitSha })` rather than by
+  branch ref — `?ref=<sha>` bypasses the branch-ref propagation window. Don't add
+  a second back-to-back store push just to fetch; when a second push is genuinely
+  needed (e.g. to persist post-push `workingBranchRef` provenance), gate it with
+  `waitForBranchHeadV2(cfg, branch, firstPushSha)` so its divergence pre-flight
+  doesn't race the `git/refs` replica into a spurious `BranchDivergedError`.
+- **Read-modify-write across a push is barriered.** `updateWorkspaceJson` /
+  `updateWorkspaceJsonById` block (read-back) until the branch ref serves the doc
+  they just wrote, and `waitForRemoteWorkspace` / `waitForRemoteWorkspaceById`
+  block until a pushed change is visible before a downstream RMW or product read
+  depends on it — including an RMW that follows an app push (otherwise the RMW
+  reads a pre-push snapshot and clobbers it).
+- **Blob reads tolerate branch-ref lag too.** `fetchRepoFileBytesV2` retries
+  transient `404`/`429`/`5xx` (a just-pushed attachment can 404 for a beat on the
+  branch-ref tree), and `waitForRepoFileAbsentV2(cfg, branch, path)` polls until a
+  path reports `404` for post-delete absence assertions.
 
 ### Current live specs
 

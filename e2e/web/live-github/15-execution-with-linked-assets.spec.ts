@@ -189,7 +189,11 @@ test.describe('Live GitHub - execution plans with linked assets @live-github', (
       ).toBe(true);
     }
 
-    const remote = (await fetchWorkspaceJson(host, branch)).json as Record<string, any>;
+    // Read by the immutable push commit SHA, not the branch ref, so the
+    // assertion can't race the Contents-API propagation window (which left
+    // `executionPlans[planId]` undefined on retry).
+    const remote = (await fetchWorkspaceJson(host, branch, { expectedCommitSha: result.commitSha }))
+      .json as Record<string, any>;
     assertRemoteWorkspaceHasNoLocalOnlyData(remote);
     const step = remote.executionPlans[setup.planId].steps[0];
     expect(step.requestId).toBe(setup.linkedRequestId);

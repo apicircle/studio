@@ -66,7 +66,12 @@ test.describe('Live GitHub - private workspace link @live-github', () => {
     });
     expect(pushed.commitSha).toMatch(/^[a-f0-9]{40}$/);
 
-    const remote = (await fetchWorkspaceJson(host, branch)).json as Record<string, any>;
+    // Read by the immutable commit SHA, not the branch ref: `?ref=<branch>` can
+    // serve the pre-push snapshot (link absent) for seconds after the push, and
+    // under load that window stays open across all retries — the observed
+    // consistent failure where `linkedWorkspaces[linkId]` came back undefined.
+    const remote = (await fetchWorkspaceJson(host, branch, { expectedCommitSha: pushed.commitSha }))
+      .json as Record<string, any>;
     assertRemoteWorkspaceHasNoLocalOnlyData(remote);
     const linked = remote.linkedWorkspaces?.[result.linkId];
     expect(linked?.source?.repoFullName?.toLowerCase()).toBe(source.cfg.fullName.toLowerCase());

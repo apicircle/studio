@@ -29,6 +29,7 @@ import {
   fetchWorkspaceJsonById,
   makeDeterministicWorkspace,
   updateWorkspaceJsonById,
+  waitForRemoteWorkspaceById,
 } from './_github-rest';
 
 // ---------------------------------------------------------------------------
@@ -439,11 +440,12 @@ test.describe('Live GitHub - multi-workspace cross-surface sync @live-github', (
     expect(afterVscodeWrite).toContain('Round Trip Request 1 (VS Code)');
 
     // Web App adds request-2.
-    await app.evaluate(() => {
+    const req2Id = await app.evaluate(() => {
       const api = window.__apicircleStore!.getState() as any;
       const id = api.addRequest(null, 'Round Trip Request 2 (Web)');
       api.setRequestMethod(id, 'POST');
       api.setRequestUrl(id, 'https://roundtrip.example.test/2');
+      return id as string;
     });
 
     const pushed = await app.evaluate(async () => {
@@ -461,6 +463,19 @@ test.describe('Live GitHub - multi-workspace cross-surface sync @live-github', (
     ).map((r: any) => r.name);
     expect(desktopRequestNames).toContain('Round Trip Request 1 (VS Code)');
     expect(desktopRequestNames).toContain('Round Trip Request 2 (Web)');
+
+    // Desktop's edit below is a `?ref=<branch>` read-modify-write. Block until
+    // the branch-ref read replica reflects request-2 (just pushed by the Web
+    // app) before Desktop reads — otherwise Desktop can read the pre-push
+    // snapshot (request-1 only), add request-3, and write {req1, req3} back,
+    // silently clobbering request-2 (the observed flake: final state had 1 + 3
+    // but not 2).
+    await waitForRemoteWorkspaceById(
+      host,
+      branch,
+      ALPHA_ID,
+      (f) => (f.json as Record<string, any>).collections?.requests?.[req2Id] != null,
+    );
 
     // Step 4: Desktop adds request-3.
     await updateWorkspaceJsonById(

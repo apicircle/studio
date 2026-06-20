@@ -11,6 +11,7 @@ import {
   sha256HexV2,
   v2Bytes,
   v2SkipReason,
+  waitForBranchHeadV2,
 } from './_helpers';
 
 // Live GitHub coverage for the two file-upload flows in the Workspace
@@ -195,8 +196,18 @@ test.describe('Live GitHub - form-data + Global Assets file uploads @live-github
 
     // ----- Remote / push assertions -----------------------------------
 
-    // Re-fetch the just-pushed workspace.json from .apicircle/workspace-<id>/workspace.json
-    // and verify the bindings landed verbatim.
+    // Push a SECOND time, then read the result back. The first push
+    // (`setup.commitSha`) committed the workspace doc + both blobs, but the
+    // provenance state machine stamps each pushed asset's `workingBranchRef`
+    // onto LOCAL state only AFTER that commit — it is persisted to the remote
+    // on the NEXT push. So this second push is what writes `workingBranchRef`
+    // to the remote, which the `workingBranchRef` assertion below requires.
+    //
+    // Barrier first: a back-to-back push races GitHub's git/refs read replica,
+    // which can keep serving the pre-push ref for a beat after updateRef and
+    // make push #2's divergence pre-flight throw a spurious BranchDivergedError.
+    // Wait until the ref reflects push #1's commit before pushing again.
+    await waitForBranchHeadV2(host, branch, setup.commitSha);
     const remote = await pushAndFetchWorkspaceV2(
       app,
       host,
@@ -260,16 +271,19 @@ test.describe('Live GitHub - form-data + Global Assets file uploads @live-github
     // downstream consumer (CLI run, MCP execute, another Studio
     // refreshing the workspace).
     const hostWorkspaceId = remote.workspaceId as string;
+    // Read blobs by the same immutable commit SHA (the Contents API `?ref=`
+    // accepts a SHA; blobs are content-addressed) so the byte round-trip can't
+    // race branch-ref propagation either.
     const remoteGlobalBytes = await fetchRepoFileBytesV2(
       host,
-      branch,
+      setup.commitSha,
       attachmentBlobPathV2(setup.fileAsset.slotId, hostWorkspaceId),
     );
     expect(Array.from(remoteGlobalBytes)).toEqual(Array.from(globalBytes));
 
     const remoteDirectBytes = await fetchRepoFileBytesV2(
       host,
-      branch,
+      setup.commitSha,
       attachmentBlobPathV2(setup.directRow.slotId, hostWorkspaceId),
     );
     expect(Array.from(remoteDirectBytes)).toEqual(Array.from(directBytes));

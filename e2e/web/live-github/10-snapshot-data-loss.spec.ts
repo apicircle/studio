@@ -9,6 +9,7 @@ import {
   makeV2BranchName,
   updateWorkspaceJson,
   v2SkipReason,
+  waitForRemoteWorkspace,
 } from './_helpers';
 
 const SNAPSHOT_BEARER = 'V2_SNAPSHOT_BEARER_SHOULD_RESTORE';
@@ -78,6 +79,18 @@ test.describe('Live GitHub - snapshots and data-loss guards @live-github', () =>
       await fetchWorkspaceJson(host, branch, { expectedCommitSha: setup.pushedCommitSha })
     ).json as Record<string, any>;
     expect(remote.collections.requests[setup.requestId].auth.token).toBe('');
+
+    // `updateWorkspaceJson` below reads workspace.json by `?ref=<branch>` to
+    // rename the linked workspace. The baseline push in `setup` is what created
+    // that link, so block until the branch-ref read replica reflects it —
+    // otherwise this read can land on a pre-push snapshot where
+    // `linkedWorkspaces[linkId]` is absent and the mutation throws
+    // "Cannot set properties of undefined (setting 'name')".
+    await waitForRemoteWorkspace(
+      host,
+      branch,
+      (f) => (f.json as Record<string, any>).linkedWorkspaces?.[setup.linkId] != null,
+    );
 
     await updateWorkspaceJson(host, branch, 'e2e live: remote snapshot merge', (ws) => {
       const typed = ws as Record<string, any>;

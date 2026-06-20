@@ -16,6 +16,7 @@ import {
   updateWorkspaceJson,
   v2Bytes,
   v2SkipReason,
+  waitForRepoFileAbsentV2,
 } from './_helpers';
 
 const SOURCE_SCHEMA_ID = 'v2-source-json-schema';
@@ -400,17 +401,11 @@ test.describe('Live GitHub - global assets through linked workspaces @live-githu
     // pendingAttachmentDeletes queue is cleared.
     {
       const blobPath = attachmentBlobPathV2(linked.fileAsset.slotId, hostWorkspaceId);
-      const url = `https://api.github.com/repos/${host.owner}/${host.name}/contents/${blobPath
-        .split('/')
-        .map(encodeURIComponent)
-        .join('/')}?ref=${encodeURIComponent(branch)}`;
-      const res = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${host.token}`,
-          Accept: 'application/vnd.github+json',
-        },
-      });
-      expect(res.status).toBe(404);
+      // Poll until the blob is gone from the branch-ref tree. The delete push
+      // above fetched workspace.json by commit SHA, so the branch-ref replica
+      // can still serve the pre-delete tree (blob 200) for a beat — a bare
+      // `expect(status).toBe(404)` would race that window.
+      await waitForRepoFileAbsentV2(host, branch, blobPath);
     }
 
     // Local queue must be empty — the push consumed it.

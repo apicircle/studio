@@ -58,6 +58,7 @@ export interface SeedSourceAttachmentRequestArgs {
 export { assertRemoteWorkspaceHasNoLocalOnlyData, fetchWorkspaceJson, updateWorkspaceJson };
 export { createPullRequest, mergePullRequest };
 export { seedRepoIfEmpty };
+export { waitForRemoteWorkspace } from './_github-rest';
 
 export function v2SkipReason(): string | null {
   if (process.env[ENABLE_ENV] !== '1') return `Set ${ENABLE_ENV}=1 to run Live GitHub tests.`;
@@ -479,6 +480,34 @@ export async function fetchBranchRefV2(
   );
 }
 
+/**
+ * Poll a branch ref until it reports `expectedSha`. Use as a propagation
+ * barrier between two store pushes on the same branch: GitHub's `git/refs`
+ * read replica can keep serving the pre-push ref for a beat after `updateRef`
+ * returns, so a second push's divergence pre-flight (`getRef` vs the locally
+ * recorded head) can throw a spurious `BranchDivergedError`. Waiting until the
+ * ref reflects the first push's commit closes that window. Exponential backoff
+ * 0.5/1/2/4/8/16/32 s ≈ 63.5 s ceiling, below the 240 s per-test budget.
+ */
+export async function waitForBranchHeadV2(
+  cfg: LiveGithubConfig,
+  branch: string,
+  expectedSha: string,
+  opts: { attempts?: number } = {},
+): Promise<void> {
+  const attempts = opts.attempts ?? 8;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const ref = await fetchBranchRefV2(cfg, branch);
+    if (ref.sha === expectedSha) return;
+    if (attempt < attempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+    }
+  }
+  throw new Error(
+    `waitForBranchHeadV2 ${cfg.fullName}@${branch}: ref never reached ${expectedSha} within ${attempts} attempts (git/refs propagation lag)`,
+  );
+}
+
 export async function writeRepoFileV2(
   cfg: LiveGithubConfig,
   branch: string,
@@ -515,23 +544,76 @@ export async function fetchRepoFileBytesV2(
   cfg: LiveGithubConfig,
   branch: string,
   path: string,
+  opts: { attempts?: number } = {},
 ): Promise<Uint8Array> {
-  const res = await fetch(
-    `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/${path
-      .split('/')
-      .map(encodeURIComponent)
-      .join('/')}?ref=${encodeURIComponent(branch)}`,
-    { headers: ghNodeHeaders(cfg.token) },
-  );
-  if (!res.ok) {
-    const text = await res.text().catch(() => '<no-body>');
-    throw new Error(
-      `fetchRepoFileBytesV2 ${cfg.fullName}@${branch}:${path} failed (${res.status}): ${text}`,
-    );
+  // `branch` is passed straight to `?ref=`, so a caller may also hand us an
+  // immutable commit SHA for a race-free read. When reading by branch ref right
+  // after a push, the Contents-API tree replica for that ref can lag — a blob
+  // committed moments ago can 404 for a beat. Retry transient failures (404 =
+  // not-yet-propagated, 429 = secondary rate limit, 5xx = transient) with
+  // exponential backoff (~63 s ceiling, under the 240 s per-test budget); 401/
+  // 403 and a malformed body are terminal.
+  const attempts = opts.attempts ?? 8;
+  const url = `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/${path
+    .split('/')
+    .map(encodeURIComponent)
+    .join('/')}?ref=${encodeURIComponent(branch)}`;
+  let lastStatus = 0;
+  let lastText = '<no-body>';
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const res = await fetch(url, { headers: ghNodeHeaders(cfg.token) });
+    if (res.ok) {
+      const body = (await res.json()) as { content: string; encoding: string };
+      if (body.encoding !== 'base64') throw new Error(`Expected base64 file content for ${path}`);
+      return new Uint8Array(Buffer.from(body.content.replace(/\n/g, ''), 'base64'));
+    }
+    lastStatus = res.status;
+    lastText = await res.text().catch(() => '<no-body>');
+    const transient = res.status === 404 || res.status === 429 || res.status >= 500;
+    if (!transient || attempt === attempts - 1) break;
+    await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
   }
-  const body = (await res.json()) as { content: string; encoding: string };
-  if (body.encoding !== 'base64') throw new Error(`Expected base64 file content for ${path}`);
-  return new Uint8Array(Buffer.from(body.content.replace(/\n/g, ''), 'base64'));
+  throw new Error(
+    `fetchRepoFileBytesV2 ${cfg.fullName}@${branch}:${path} failed (${lastStatus}): ${lastText}`,
+  );
+}
+
+/**
+ * Poll a repo file path until the Contents API reports it ABSENT (404) on the
+ * given ref. The mirror of the presence reads: right after a delete push, the
+ * branch-ref tree replica can keep serving the pre-delete tree (the blob still
+ * 200) for a beat, so a bare `expect(status).toBe(404)` can race. 404 = gone,
+ * 2xx = still present (retry), other statuses are terminal.
+ */
+export async function waitForRepoFileAbsentV2(
+  cfg: LiveGithubConfig,
+  branch: string,
+  path: string,
+  opts: { attempts?: number } = {},
+): Promise<void> {
+  const attempts = opts.attempts ?? 8;
+  const url = `https://api.github.com/repos/${cfg.owner}/${cfg.name}/contents/${path
+    .split('/')
+    .map(encodeURIComponent)
+    .join('/')}?ref=${encodeURIComponent(branch)}`;
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const res = await fetch(url, { headers: ghNodeHeaders(cfg.token) });
+    await res.text().catch(() => undefined); // drain so the socket is reusable
+    if (res.status === 404) return;
+    lastStatus = res.status;
+    if (res.status !== 200 && res.status !== 429 && res.status < 500) {
+      throw new Error(
+        `waitForRepoFileAbsentV2 ${cfg.fullName}@${branch}:${path}: unexpected status ${res.status}`,
+      );
+    }
+    if (attempt < attempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+    }
+  }
+  throw new Error(
+    `waitForRepoFileAbsentV2 ${cfg.fullName}@${branch}:${path}: still present (last status ${lastStatus}) after ${attempts} attempts`,
+  );
 }
 
 export async function assertRepoReadableWithTokenV2(

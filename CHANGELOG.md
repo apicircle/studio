@@ -25,9 +25,41 @@
 
 ## Unreleased
 
-_No unreleased changes yet. Add entries under `### Added`, `### Changed`,
-`### Fixed`, `### Tests`, or `### Docs` as work lands; this section is cut into
-the next dated release when a version is published._
+### Tests
+
+- **Live-GitHub E2E flakiness hardening.** Removed the recurring GitHub
+  eventual-consistency flakes in the `chromium-live-github` suite (specs
+  `04` / `08` / `09` / `15` / `16` / `17`). Test-harness only — no product code
+  changed:
+  - `fetchWithSecondaryRateLimit` now retries transient 5xx (in addition to
+    secondary-rate-limit 403/429), with an opt-out for the non-idempotent
+    `createRepo` POST. Fixes the `seedRepoIfEmpty` / `ensureWorkspaceJsonOnMain`
+    "PUT failed (500)" flakes.
+  - `writeRegistryJson` gained the 409/422 re-probe-and-retry loop the other
+    Contents-API writers already had (it was the one writer that threw on the
+    first SHA conflict).
+  - Post-push assertions read the remote by the immutable commit SHA
+    (`fetchWorkspaceJson(cfg, branch, { expectedCommitSha })`) instead of the
+    branch ref. Spec `16`'s second push (which persists each asset's
+    `workingBranchRef` provenance to the remote) is now gated by a new
+    `waitForBranchHeadV2` ref barrier so its divergence pre-flight can't race
+    the `git/refs` read replica into a spurious `BranchDivergedError`.
+  - New `waitForRemoteWorkspace` / `waitForRemoteWorkspaceById` barriers plus a
+    read-back barrier in `updateWorkspaceJson` / `updateWorkspaceJsonById` block
+    read-modify-writes until pushed data has propagated to the branch-ref read
+    replica — used both after a REST write (so a later app refresh sees it) and
+    before a REST read-modify-write that follows an app push (specs `09`/`10`/
+    `17`), so the RMW can't read a pre-push snapshot and clobber it.
+  - Attachment blob reads tolerate the same branch-ref lag: `fetchRepoFileBytesV2`
+    retries transient `404`/`429`/`5xx` with backoff (specs `13`/`14`/`16`), and a
+    new `waitForRepoFileAbsentV2` polls a path until it reports `404` (spec `13`'s
+    post-delete blob-absence check).
+
+### Docs
+
+- `docs/qa/README.md`: documented the live-GitHub eventual-consistency handling
+  playbook and corrected the workflow trigger description (nightly + manual
+  dispatch; no longer PR/push-gated).
 
 ## 1.1.3 - 2026-06-20
 

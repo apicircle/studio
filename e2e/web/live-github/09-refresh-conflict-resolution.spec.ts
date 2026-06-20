@@ -9,6 +9,7 @@ import {
   makeV2BranchName,
   updateWorkspaceJson,
   v2SkipReason,
+  waitForRemoteWorkspace,
 } from './_helpers';
 
 function diff(pair: { base: any; current: any }) {
@@ -76,6 +77,16 @@ test.describe('Live GitHub - refresh conflict resolution @live-github', () => {
         };
       },
       { repoFullName: source.cfg.fullName, sourceBranch: source.branch },
+    );
+    // The link was just pushed to `host`. Block until a host branch-ref read
+    // reflects it before any test runs `updateWorkspaceJson(host, …)`: that
+    // RMW reads HEAD by `?ref=<branch>`, so against the pre-push seed (link
+    // absent) it would either crash on `linkedWorkspaces[id].name` or write
+    // the whole doc back and clobber the pushed link.
+    await waitForRemoteWorkspace(
+      host,
+      branch,
+      (f) => (f.json as Record<string, any>).linkedWorkspaces?.[setup.linkId] != null,
     );
     return { host, branch, setup };
   }
