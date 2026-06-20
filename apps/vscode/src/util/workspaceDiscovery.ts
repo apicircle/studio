@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { WORKSPACE_DIR } from '@apicircle/core';
 import {
-  defaultApicircleRoot,
+  resolveApicircleRoot,
   REGISTRY_FILE,
   workspaceDirFor,
   type WorkspaceRegistry,
@@ -197,10 +197,11 @@ export function findOwningWorkspace(
  * malformed.
  *
  * @param root — override for the apicircle root (testing seam). Defaults to
- * `defaultApicircleRoot()`.
+ * `resolveApicircleRoot()`, which honors the `APICIRCLE_WORKSPACES_ROOT`
+ * environment override the CLI and desktop already respect.
  */
 export function discoverRegistryWorkspaces(root?: string): DiscoveredWorkspace[] {
-  const apicircleRoot = root ?? defaultApicircleRoot();
+  const apicircleRoot = root ?? resolveApicircleRoot();
   const registryPath = path.join(apicircleRoot, REGISTRY_FILE);
 
   let raw: string;

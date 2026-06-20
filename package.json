@@ -21,6 +21,7 @@
     "e2e:coverage": "python scripts/e2e_coverage_report.py",
     "e2e:coverage:strict": "python scripts/e2e_coverage_report.py --strict --json",
     "e2e:tc-maps": "python scripts/build_tc_maps.py",
+    "ci:local": "node scripts/ci-local/run-ci.mjs",
     "check": "turbo check",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

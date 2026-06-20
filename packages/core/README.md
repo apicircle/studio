@@ -153,6 +153,7 @@ import { loadFromFile, saveToFile, withWorkspace } from '@apicircle/core/workspa
 // Multi-workspace registry (registry.json + per-id subdirectories)
 import {
   defaultApicircleRoot,
+  resolveApicircleRoot,
   loadRegistry,
   saveRegistry,
   loadWorkspaceById,
@@ -170,8 +171,10 @@ import {
   advisory locking, so concurrent CLI runs don't corrupt each other.
 - **`/workspace/registry`** — many workspaces, one root. `registry.json` at
   the top, `workspaces/<id>/` subdirectories underneath. All surfaces
-  (desktop, CLI, MCP, VS Code) default to `~/.apicircle/` via
-  `defaultApicircleRoot()`.
+  (desktop, CLI, MCP, VS Code) default to `~/.apicircle/`. Use
+  `resolveApicircleRoot()` to honor the `APICIRCLE_WORKSPACES_ROOT` override
+  (CI / tests / relocated stores); `defaultApicircleRoot()` is the raw
+  `~/.apicircle/` fallback it builds on.
 
 ## Use cases
 

@@ -7,6 +7,7 @@ import {
   REGISTRY_FILE,
   WORKSPACE_DIR_PREFIX,
   defaultApicircleRoot,
+  resolveApicircleRoot,
   deleteWorkspaceById,
   emptyRegistry,
   findWorkspaceEntry,
@@ -79,6 +80,32 @@ afterEach(async () => {
 describe('defaultApicircleRoot', () => {
   it('returns ~/.apicircle', () => {
     expect(defaultApicircleRoot()).toBe(path.join(os.homedir(), '.apicircle'));
+  });
+});
+
+describe('resolveApicircleRoot', () => {
+  let prev: string | undefined;
+  beforeEach(() => {
+    prev = process.env.APICIRCLE_WORKSPACES_ROOT;
+  });
+  afterEach(() => {
+    if (prev === undefined) delete process.env.APICIRCLE_WORKSPACES_ROOT;
+    else process.env.APICIRCLE_WORKSPACES_ROOT = prev;
+  });
+
+  it('falls back to defaultApicircleRoot when APICIRCLE_WORKSPACES_ROOT is unset', () => {
+    delete process.env.APICIRCLE_WORKSPACES_ROOT;
+    expect(resolveApicircleRoot()).toBe(defaultApicircleRoot());
+  });
+
+  it('honors APICIRCLE_WORKSPACES_ROOT when set, resolved to an absolute path', () => {
+    process.env.APICIRCLE_WORKSPACES_ROOT = path.join(os.tmpdir(), 'apicircle-test-home');
+    expect(resolveApicircleRoot()).toBe(path.resolve(process.env.APICIRCLE_WORKSPACES_ROOT));
+  });
+
+  it('treats an empty APICIRCLE_WORKSPACES_ROOT as unset', () => {
+    process.env.APICIRCLE_WORKSPACES_ROOT = '';
+    expect(resolveApicircleRoot()).toBe(defaultApicircleRoot());
   });
 });
 

@@ -369,6 +369,15 @@ can operate on the same source of truth.
 - `workspaceRegistry` in `packages/core/src/workspace/workspaceRegistry.ts`
   owns the on-disk registry shape. The IDB-side `WorkspaceRegistry` type in
   `packages/ui-components/src/persistence/db.ts` mirrors it exactly.
+- **`resolveApicircleRoot()`** (same module) centralizes apicircle-root
+  resolution: it honors the `APICIRCLE_WORKSPACES_ROOT` env override before
+  falling back to `~/.apicircle/` (`defaultApicircleRoot()`). The CLI's
+  `defaultWorkspacesRoot()` and the VS Code extension's registry discovery +
+  MCP snippet path delegate to it; the desktop reaches the same root by
+  injecting `APICIRCLE_WORKSPACES_ROOT` into its workspace-file / MCP managers
+  at boot (`apps/desktop/src/main/main.ts`). Prefer `resolveApicircleRoot()`
+  over calling `defaultApicircleRoot()` directly in new headless code so a
+  relocated store stays consistent across surfaces.
 - `resolveWorkspace` in `packages/cli/src/util/resolveWorkspace.ts` gives
   every CLI subcommand the same `--workspace-name` / `--workspace-path`
   addressing model the desktop uses.
@@ -475,6 +484,7 @@ pnpm lint                 # eslint .
 pnpm test                 # vitest run (unit, all packages)
 pnpm test:e2e             # Playwright E2E (web, chromium)
 npx knip                  # dead-code / unused-dependency scan (config: knip.json)
+pnpm ci:local -- --list   # local CI runner — mirror all workflows (scripts/ci-local)
 ```
 
 Desktop: `pnpm --filter @apicircle/desktop build` then `… start`.
@@ -498,6 +508,14 @@ Desktop: `pnpm --filter @apicircle/desktop build` then `… start`.
   - `desktop-release.yml` — Electron installers + `electron-updater` indexes.
   - `deploy-web.yml` — builds `apps/web` and publishes to GitHub Pages on
     every push to `main`.
+- **Local CI runner** (`scripts/ci-local/run-ci.mjs`, `pnpm ci:local`) — a
+  cross-platform Node orchestrator that reproduces the `ci`, `vscode`, `e2e`,
+  `codeql`, and `e2e-live-github` workflows locally, stage by stage, after
+  `pnpm install` + `pnpm build`. Reads `scripts/ci-local/.test.env`
+  (git-ignored) for the GitHub bot creds + a `CI_PLATFORM=windows|mac|ubuntu`
+  switch that gates the platform-dependent desktop/VS Code E2E suites (xvfb on
+  Linux). Heavy/destructive suites are opt-in. See
+  [`scripts/ci-local/README.md`](scripts/ci-local/README.md).
 
 ---
 

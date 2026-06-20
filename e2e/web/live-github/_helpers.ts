@@ -312,20 +312,33 @@ export async function publishSourceVersionV2(
           v.key === 'BASE_URL' ? { ...v, value: `https://env.example.test/${safe}/${version}` } : v,
         );
       }
+      // Fold the deprecated/yanked flags into this SAME publish commit. An
+      // earlier version flagged the release in a second `updateWorkspaceJson`
+      // commit, which raced the consumer's branch-ref read two ways:
+      //   1. The consumer could observe the publish commit (currentVersion
+      //      advanced, flags still false) before the flag commit propagated —
+      //      `expect(flagged.deprecated).toBe(true)` flaked false.
+      //   2. The flag commit's own read-modify-write could read the
+      //      pre-publish snapshot during the Contents-API propagation window,
+      //      find no just-published version to flag, then write that stale doc
+      //      back over the now-converged ref — reverting currentVersion to the
+      //      prior release so the consumer's ledger never reached the new
+      //      version at all (`waitForLinkedLedgerVersionV2` timed out at
+      //      `last=<prior>`).
+      // One atomic commit removes both races: when currentVersion advances,
+      // the flags are already present in the same snapshot.
+      if (opts.deprecated || opts.yanked) {
+        const versions = ((ws.releases as any)?.self?.versions ?? []) as Array<
+          Record<string, unknown>
+        >;
+        const target = versions.find((v) => v.version === version);
+        if (target) {
+          if (opts.deprecated) target.deprecated = true;
+          if (opts.yanked) target.yanked = true;
+        }
+      }
     },
   );
-  if (opts.deprecated || opts.yanked) {
-    await updateWorkspaceJson(source.cfg, source.branch, `e2e live: flag ${version}`, (ws) => {
-      const versions = ((ws.releases as any)?.self?.versions ?? []) as Array<
-        Record<string, unknown>
-      >;
-      const target = versions.find((v) => v.version === version);
-      if (target) {
-        if (opts.deprecated) target.deprecated = true;
-        if (opts.yanked) target.yanked = true;
-      }
-    });
-  }
 }
 
 export async function seedSourceAttachmentRequestV2(
@@ -387,14 +400,16 @@ export async function seedSourceAttachmentRequestV2(
 
 // Budget: 30 attempts × 2s ≈ 60s wall time (plus per-attempt Contents API
 // latency). The previous 12 × 1s = ~12s budget intermittently timed out
-// against the GitHub Contents API propagation window after back-to-back
-// writes — e.g. `publishSourceVersionV2(..., { deprecated, yanked })` does
-// a publish commit followed by a flag-update commit, and the consumer's
-// `refreshLinkedWorkspace` can see the older snapshot for several seconds
-// after the second PUT returns. 60s sits well below the live-github
-// project's 90s per-test timeout (see `chromium-live-github` in
-// `playwright.config.ts`) and mirrors the propagation-aware ceiling used
-// by `getDefaultBranchHeadWithPropagation` in `_github-rest.ts`.
+// against the GitHub Contents API propagation window: the consumer's
+// `refreshLinkedWorkspace` reads the source `workspace.json` by branch ref
+// (`?ref=<branch>`, `cache: 'no-store'`), and that read replica can keep
+// serving the pre-publish snapshot for several seconds after the publish
+// commit's PUT returns. (`publishSourceVersionV2` now publishes in a single
+// atomic commit, so the consumer never observes a half-applied flag state —
+// see its docblock.) 60s sits well below the live-github project's 90s
+// per-test timeout (see `chromium-live-github` in `playwright.config.ts`)
+// and mirrors the propagation-aware ceiling used by
+// `getDefaultBranchHeadWithPropagation` in `_github-rest.ts`.
 export async function waitForLinkedLedgerVersionV2(
   page: Page,
   linkedWorkspaceId: string,

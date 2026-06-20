@@ -2,7 +2,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
 import {
-  defaultApicircleRoot,
+  resolveApicircleRoot,
   findWorkspaceEntry,
   loadRegistry,
   registerWorkspace,
@@ -66,11 +66,10 @@ export interface ResolveOptions {
 /**
  * The root directory the CLI consults for registry-based workspace resolution.
  * Honors `APICIRCLE_WORKSPACES_ROOT` first, then falls back to `~/.apicircle/`.
+ * Delegates to the shared core resolver so every surface agrees on the root.
  */
 export function defaultWorkspacesRoot(): string {
-  const override = process.env.APICIRCLE_WORKSPACES_ROOT;
-  if (override && override.length > 0) return path.resolve(override);
-  return defaultApicircleRoot();
+  return resolveApicircleRoot();
 }
 
 /**

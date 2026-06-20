@@ -7,3 +7,6 @@ pnpm-lock.yaml
 # QA test fixtures — intentionally malformed JSON, fixed encodings,
 # and an auto-generated catalog; never reformat.
 e2e/qa/runner/fixtures
+
+# Local CI runner — git-ignored runtime artifacts (reports + scratch env).
+scripts/ci-local/results

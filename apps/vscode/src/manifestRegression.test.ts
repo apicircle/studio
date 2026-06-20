@@ -528,16 +528,23 @@ describe('package.json manifest regression', () => {
     }
   });
 
-  it('removed authoring affordances are fully unregistered (no command + no activation)', () => {
-    // The boolean `required:` row (edited directly in YAML) and the per-field
-    // auth editor were removed from the CodeLens surfaces; their commands must
-    // not linger as dangling palette entries.
+  it('palette-excluded authoring commands are absent from the manifest (no command + no activation)', () => {
+    // Two distinct reasons a command stays out of contributes.commands /
+    // activationEvents — neither may appear as a dangling palette entry:
+    //   • apicircle.toggleMockParamRequired — fully removed; the boolean
+    //     `required:` row is edited directly in the YAML, so no command exists.
+    //   • apicircle.setRequestAuthField — CodeLens-only: it IS registered at
+    //     runtime and driven by the request-YAML auth ◆ lens (OAuth2 / Hawk /
+    //     JWT enum fields, `lang/requestCodeLens.ts`), but is deliberately kept
+    //     out of the palette because an arg-less invocation is meaningless. It's
+    //     accounted for by the CODELENS_ONLY allowlist in
+    //     test/integration/activation.test.ts.
     const pkg = readManifest();
     const ids = new Set(pkg.contributes.commands.map((c) => c.command));
     const events = new Set(pkg.activationEvents);
     for (const id of ['apicircle.toggleMockParamRequired', 'apicircle.setRequestAuthField']) {
-      expect(ids.has(id), `${id} should be removed from contributes.commands`).toBe(false);
-      expect(events.has(`onCommand:${id}`), `${id} should be removed from activationEvents`).toBe(
+      expect(ids.has(id), `${id} must not appear in contributes.commands`).toBe(false);
+      expect(events.has(`onCommand:${id}`), `${id} must not appear in activationEvents`).toBe(
         false,
       );
     }

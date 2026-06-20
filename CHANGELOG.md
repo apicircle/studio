@@ -81,6 +81,29 @@
 
 ### Fixed
 
+- **VS Code — registry discovery and the MCP config snippet now honor
+  `APICIRCLE_WORKSPACES_ROOT`, matching the CLI and desktop.** The extension's
+  `discoverRegistryWorkspaces()` and the MCP config snippet's workspace path
+  resolved `~/.apicircle/` via `defaultApicircleRoot()` directly, ignoring the
+  `APICIRCLE_WORKSPACES_ROOT` override the CLI and desktop already respect — so a
+  relocated workspace store (CI, tests, or a power user who moved their store) was
+  discovered inconsistently across surfaces. Root resolution is now centralized in
+  a shared `resolveApicircleRoot()` (`@apicircle/core/workspace/registry`) that
+  honors the override before falling back to `~/.apicircle/`; the CLI's
+  `defaultWorkspacesRoot()` and the VS Code extension (registry discovery + MCP
+  snippet path) delegate to it, matching the override the desktop already injects
+  at boot. The activation integration test is now hermetic — it pins
+  `APICIRCLE_WORKSPACES_ROOT` to an empty dir so a dev machine's real
+  `~/.apicircle/` can't leak into its workspace-count assertions — and validates
+  the registered command set against `package.json`'s `contributes.commands`
+  (plus an explicit allowlist of the request-YAML CodeLens-only field editors)
+  instead of a hand-maintained list, so a contributed-but-unregistered command
+  (palette "command not found") or an unexpected dangling registration can no
+  longer silently drift past the test. Covered by new `resolveApicircleRoot` unit
+  tests (`workspaceRegistry.test.ts`) and the updated activation suite. No
+  workspace-data or schema change. VS Code extension bundle: **2.77 MB** (soft
+  budget 3.00 MB / hard 5.00 MB).
+
 - **"Sign in with GitHub" no longer offers a one-click button that can't
   work on the hosted web app or the desktop build.** The button uses
   GitHub's OAuth **device flow**, which a browser can only start through a
@@ -102,6 +125,24 @@
   end-to-end device-flow tests that drive the button through to a connected
   session in a real browser (`e2e/web/sessions.spec.ts`). No workspace-data
   or schema change.
+
+- **Live-GitHub `06-release-update-flow` E2E no longer flakes on a two-commit
+  publish race.** The `publishSourceVersionV2` test helper published a new
+  release version in one Contents-API commit and then set its `deprecated` /
+  `yanked` flags in a **second** commit. The consumer reads the source
+  `workspace.json` by branch ref (`?ref=<branch>`, `cache: 'no-store'`), which
+  GitHub's Contents API serves with an eventual-consistency lag, so the second
+  commit raced that read two ways: the consumer could observe the first commit
+  (version advanced, flags still `false`) before the flag commit propagated —
+  failing `expect(flagged.deprecated).toBe(true)`; or the flag commit's own
+  read-modify-write could read the pre-publish snapshot, find no just-published
+  version to flag, and write that stale doc back over the now-converged ref —
+  reverting `currentVersion` to the prior release so the consumer's ledger never
+  reached the new version (`waitForLinkedLedgerVersionV2` timed out at
+  `last=<prior>`). The helper now folds the flags into the single publish
+  commit, so when `currentVersion` advances the flags are already present in the
+  same atomic snapshot. Test-infrastructure only — no product, schema, or API
+  change (`e2e/web/live-github/_helpers.ts`).
 
 ## 1.1.2 - 2026-06-19
 

@@ -7,7 +7,7 @@ import {
   type ConfigSnippetVariants,
 } from '@apicircle/mcp-server';
 import { MCP_TOOL_NAMES, type McpToolName } from '@apicircle/shared';
-import { defaultApicircleRoot } from '@apicircle/core/workspace/registry';
+import { resolveApicircleRoot } from '@apicircle/core/workspace/registry';
 import type { VsCodeBridge } from './vscodeBridge';
 
 // =============================================================================
@@ -92,9 +92,12 @@ export class VsCodeMcpManager {
     const isRegistry = active.workspace.source === 'registry';
     return {
       binary,
-      // Registry workspaces: point at `~/.apicircle/` (multi-workspace root).
+      // Registry workspaces: point at the multi-workspace root
+      // (`~/.apicircle/`, or the `APICIRCLE_WORKSPACES_ROOT` override — kept in
+      // step with discovery so the MCP snippet targets the same root the
+      // extension actually reads).
       // Git-folder workspaces: point at the repo's `.apicircle/` dir.
-      workspace: isRegistry ? defaultApicircleRoot() : active.workspace.apicircleDir,
+      workspace: isRegistry ? resolveApicircleRoot() : active.workspace.apicircleDir,
       hasActiveWorkspace: true,
       isRegistryWorkspace: isRegistry,
     };

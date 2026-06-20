@@ -7,6 +7,13 @@ coverage
 .DS_Store
 .env
 .env.local
+# Local CI runner (scripts/ci-local) — env files may hold tokens; results are throwaway
+.test.env
+.secrets.env
+scripts/ci-local/.test.env
+scripts/ci-local/.secrets.env
+scripts/ci-local/results/
+e2e/web/test-results.json
 .vscode
 .vscode-test
 graphify-out

@@ -39,6 +39,22 @@ export function defaultApicircleRoot(): string {
   return path.join(os.homedir(), '.apicircle');
 }
 
+/**
+ * The apicircle root every surface should actually consult — honors the
+ * `APICIRCLE_WORKSPACES_ROOT` override (CI, tests, and power users who relocate
+ * their workspace store) before falling back to `~/.apicircle/`.
+ *
+ * Desktop, CLI, MCP, and the VS Code extension all resolve through here so a
+ * relocated root stays consistent across surfaces. Prefer this over calling
+ * `defaultApicircleRoot()` directly unless you specifically want to ignore the
+ * override.
+ */
+export function resolveApicircleRoot(): string {
+  const override = process.env.APICIRCLE_WORKSPACES_ROOT;
+  if (override && override.length > 0) return path.resolve(override);
+  return defaultApicircleRoot();
+}
+
 export interface WorkspaceRegistryEntry {
   /** Matches the in-workspace `synced.workspaceId`. */
   id: string;

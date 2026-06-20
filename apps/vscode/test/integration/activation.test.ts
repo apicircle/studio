@@ -15,6 +15,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { fileURLToPath } from 'node:url';
 import type * as vscode from 'vscode';
 import { Uri, window, workspace, commands } from '../mocks/vscode';
 import { activate, deactivate, __getInternalsForTests } from '../../src/extension';
@@ -60,11 +61,22 @@ describe('extension activation (integration)', () => {
   let tmp: string;
   let registeredCommandIds: string[] = [];
   let registeredTreeViewIds: string[] = [];
+  let prevWorkspacesRoot: string | undefined;
 
   beforeEach(() => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vscode-activation-'));
     registeredCommandIds = [];
     registeredTreeViewIds = [];
+
+    // Make registry discovery hermetic. activate() → rediscoverAndRegister →
+    // discoverRegistryWorkspaces() resolves the apicircle root via
+    // APICIRCLE_WORKSPACES_ROOT (falling back to ~/.apicircle). Point it at an
+    // empty dir so the dev machine's real ~/.apicircle/ workspaces can't leak
+    // into the workspace-count assertions below. Restored in afterEach.
+    prevWorkspacesRoot = process.env.APICIRCLE_WORKSPACES_ROOT;
+    const apicircleHome = path.join(tmp, 'apicircle-home');
+    fs.mkdirSync(apicircleHome, { recursive: true });
+    process.env.APICIRCLE_WORKSPACES_ROOT = apicircleHome;
 
     (
       commands.registerCommand as unknown as {
@@ -115,6 +127,8 @@ describe('extension activation (integration)', () => {
       /* ignore */
     }
     fs.rmSync(tmp, { recursive: true, force: true });
+    if (prevWorkspacesRoot === undefined) delete process.env.APICIRCLE_WORKSPACES_ROOT;
+    else process.env.APICIRCLE_WORKSPACES_ROOT = prevWorkspacesRoot;
   });
 
   it('registers all 9 sidebar views when no folder is open', () => {
@@ -140,197 +154,55 @@ describe('extension activation (integration)', () => {
     const { ctx } = makeMockContext(path.join(tmp, 'globalStorage'));
     activate(ctx);
 
-    // Every command contributed in package.json's `contributes.commands`
-    // must also have a runtime `vscode.commands.registerCommand` — otherwise
-    // selecting it from the palette throws "command 'apicircle.x' not found".
-    // R3-G1: snapshot the full registered set instead of a small allowlist
-    // so future contributions can't slip through.
-    const expectedCommandIds = [
-      'apicircle.createWorkspace',
-      'apicircle.switchWorkspace',
-      'apicircle.refresh',
-      'apicircle.openWorkspaceFile',
-      'apicircle.sendRequest',
-      'apicircle.cancelSend',
-      'apicircle.newRequest',
-      'apicircle.deleteRequest',
-      'apicircle.duplicateRequest',
-      'apicircle.revealInSource',
-      'apicircle.setActiveEnvironment',
-      'apicircle.newEnvironment',
-      'apicircle.deleteEnvironment',
-      'apicircle.captureSnapshot',
-      'apicircle.restoreSnapshot',
-      'apicircle.deleteSnapshot',
-      'apicircle.setSnapshotMaxBytes',
-      'apicircle.runPlan',
-      'apicircle.newPlan',
-      'apicircle.setEnvPriorityOrder',
-      'apicircle.addExtraction',
-      'apicircle.clearAllHistory',
-      'apicircle.purgeOlderThan',
-      'apicircle.deleteHistoryRun',
-      'apicircle.editVariableValue',
-      'apicircle.deleteVariable',
-      'apicircle.deleteFolder',
-      'apicircle.newRequestInFolder',
-      'apicircle.toggleStepEnabled',
-      'apicircle.removeStepFromPlan',
-      'apicircle.newMock',
-      'apicircle.startMock',
-      'apicircle.stopMock',
-      'apicircle.restartMock',
-      'apicircle.deleteMock',
-      'apicircle.copyEndpointPath',
-      'apicircle.revealEndpointInMockYaml',
-      'apicircle.openMockInBrowser',
-      'apicircle.setMockPort',
-      // ---- P4 vault + runs channel ----
-      'apicircle.unlockVault',
-      'apicircle.lockVault',
-      'apicircle.setupVaultPassphrase',
-      'apicircle.changeVaultPassphrase',
-      'apicircle.openVaultEntry',
-      'apicircle.showRunsChannel',
-      // ---- P5 MCP host integration ----
-      'apicircle.openMcpConfigFile',
-      'apicircle.openMcpConnectGuide',
-      'apicircle.revealMcpBinaryInfo',
-      // ---- P6 Copilot Chat / VS Code MCP install ----
-      'apicircle.installCopilotMcpConfig',
-      // ---- P8 multi-AI-client MCP install ----
-      'apicircle.installMcpForClient',
-      'apicircle.installMcpForAllClients',
-      'apicircle.uninstallMcpForClient',
-      // ---- P8 vault remember-on-device ----
-      'apicircle.forgetVaultOnDevice',
-      // ---- P9 Plan Notebook ----
-      'apicircle.openPlanAsNotebook',
-      // ---- Link Workspaces: release ledger ----
-      'apicircle.openReleaseHistory',
-      'apicircle.publishRelease',
-      'apicircle.deprecateRelease',
-      'apicircle.withdrawRelease',
-      // ---- Link Workspaces: linked-workspace config + networking ----
-      'apicircle.linkWorkspace',
-      'apicircle.searchMarketplace',
-      'apicircle.refreshLinkedWorkspace',
-      'apicircle.reviewLinkedUpdate',
-      'apicircle.tagRelease',
-      'apicircle.editRepoTopics',
-      'apicircle.unlinkWorkspace',
-      'apicircle.openLinkYaml',
-      'apicircle.showLinkedChangelog',
-      'apicircle.setLinkNameField',
-      'apicircle.setLinkDescriptionField',
-      'apicircle.setLinkPinnedVersionField',
-      'apicircle.setLinkScopeField',
-      'apicircle.setLinkSessionModeField',
-      'apicircle.addLinkRequiredKey',
-      'apicircle.removeLinkRequiredKey',
-      'apicircle.setLinkSessionToken',
-      'apicircle.clearLinkSessionToken',
-      'apicircle.openLinkedRequest',
-      'apicircle.resetLinkedRequest',
-      'apicircle.discardLinkedMods',
-      'apicircle.provisionLinkedSecret',
-      'apicircle.clearLinkedSecret',
-      'apicircle.setLinkedEnvVarOverride',
-      // ---- P10 Embedded MCP host ----
-      'apicircle.startEmbeddedMcp',
-      'apicircle.stopEmbeddedMcp',
-      'apicircle.restartEmbeddedMcp',
-      'apicircle.copyEmbeddedMcpUrl',
-      // ---- P11 Mock endpoint visual editor ----
-      'apicircle.editMockEndpoint',
-      'apicircle.openMockEndpointYaml',
-      // ---- Post-launch UX: request templates + section CodeLens ----
-      'apicircle.newRequestFromTemplate',
-      'apicircle.addRequestSection',
-      'apicircle.switchRequestBodyType',
-      'apicircle.switchRequestAuthType',
-      'apicircle.pickBinaryAttachment',
-      'apicircle.addFormDataRow',
-      'apicircle.switchFormDataRowKind',
-      'apicircle.pickFormDataRowFile',
-      'apicircle.pickHeader',
-      'apicircle.mapContextVarsFromJson',
-      'apicircle.fetchOAuth2Token',
-      'apicircle.addQueryRow',
-      'apicircle.addCookieRow',
-      'apicircle.addPathParamRow',
-      'apicircle.addAssertionRow',
-      'apicircle.addExtractionRow',
-      'apicircle.addMockValidationRule',
-      'apicircle.setMockValidationKind',
-      'apicircle.setMockValidationTarget',
-      'apicircle.setMockValidationExpected',
-      'apicircle.addMockMultiplier',
-      'apicircle.setMockMethodField',
-      'apicircle.setMockStatusField',
-      'apicircle.setMockBodyTypeField',
-      'apicircle.setMockHeaderKeyField',
-      'apicircle.setMockHeaderValueField',
-      'apicircle.setMockClauseScopeField',
-      'apicircle.setMockClauseOpField',
-      'apicircle.setMockClauseTargetField',
-      'apicircle.setMockClauseValueField',
-      'apicircle.toggleMockHeaderEnabled',
-      'apicircle.formatJson',
-      'apicircle.addMockConditionClause',
-      'apicircle.setMockMultiplierKindField',
-      'apicircle.setMockMultiplierKeyField',
-      'apicircle.setMockMultiplierTargetPathField',
-      'apicircle.setMockTextField',
-      'apicircle.setMockNumberField',
-      // ---- requestSchema authoring ----
-      'apicircle.addMockRequestSchema',
-      'apicircle.addMockRequestSchemaParam',
-      'apicircle.addMockRequestSchemaBodyExample',
-      'apicircle.setMockParamTypeField',
-      // ---- collection-request field editors ----
-      'apicircle.setRequestMethodField',
-      'apicircle.setRequestHeaderKeyField',
-      'apicircle.setRequestHeaderValueField',
-      'apicircle.setRequestTextField',
-      'apicircle.setRequestAssertionKindField',
-      'apicircle.setRequestAssertionOpField',
-      'apicircle.setRequestExtractionSourceField',
-      'apicircle.switchMockResponseBodyType',
-      'apicircle.setMockResponseStatus',
-      'apicircle.addMockResponseRule',
-      'apicircle.removeMockResponseRule',
-      'apicircle.removeMockValidationRule',
-      'apicircle.removeMockMultiplier',
-      'apicircle.toggleMockRuleEnabled',
-      'apicircle.addMockResponseHeader',
-      // ---- Post-launch UX: Copilot Chat uninstall affordance ----
-      'apicircle.uninstallCopilotMcpConfig',
-      // ---- Post-launch UX: in-flight CodeLens cancel ----
-      'apicircle.cancelOneSend',
-      // ---- Folder-wise auth ----
-      'apicircle.openFolderYaml',
-      'apicircle.editFolderAuth',
-      'apicircle.newFolder',
-      // ---- Post-launch UX: request-side ◆ field editors for auth + assertions ----
+    // The runtime-registered command set is validated against package.json's
+    // `contributes.commands` (read fresh from disk) rather than a
+    // hand-maintained allowlist, so new contributions can't silently drift out
+    // of sync with this test. Two invariants:
+    //   1. Every command CONTRIBUTED in package.json must be REGISTERED at
+    //      runtime — otherwise selecting it from the palette throws
+    //      "command 'apicircle.x' not found".
+    //   2. Every command REGISTERED at runtime must be either contributed OR a
+    //      known CodeLens-only command. CodeLens-only commands are invoked with
+    //      (uri, line) args from a request-YAML ◆ field-editor lens and are
+    //      deliberately kept out of the palette (an arg-less palette invocation
+    //      is a no-op / meaningless), so they're registered WITHOUT a
+    //      package.json contribution. `manifestRegression.test.ts` pins
+    //      `setRequestAuthField` OUT of the manifest — this allowlist is the
+    //      seam that keeps such commands accounted for instead of flagged.
+    const pkg = JSON.parse(
+      fs.readFileSync(fileURLToPath(new URL('../../package.json', import.meta.url)), 'utf8'),
+    ) as { contributes: { commands: { command: string }[] } };
+    const contributed = pkg.contributes.commands.map((c) => c.command);
+
+    // Registered at runtime but intentionally NOT contributed to the palette —
+    // driven only by the request-YAML ◆ field-editor CodeLenses
+    // (`lang/requestCodeLens.ts`).
+    const CODELENS_ONLY = [
       'apicircle.setRequestAssertionTargetField',
       'apicircle.setRequestAssertionExpectedField',
       'apicircle.setRequestAuthField',
-      'apicircle.toggleRequestRowEnabled',
-      'apicircle.formatResponseJson',
-      // ---- MCP prompts ----
-      'apicircle.copyMcpPrompt',
-      // ---- P5: copy MCP config snippet ----
-      'apicircle.copyMcpConfig',
     ];
-    for (const id of expectedCommandIds) {
-      expect(registeredCommandIds).toContain(id);
-    }
-    // Inverse guard: no UNEXPECTED commands either — catches typos and
-    // dangling registrations that don't have a package.json contribution.
-    for (const id of registeredCommandIds) {
-      expect(expectedCommandIds).toContain(id);
-    }
+
+    const notRegistered = contributed.filter((id) => !registeredCommandIds.includes(id));
+    expect(
+      notRegistered,
+      `contributed in package.json but never registered (palette would throw "command not found"): ${notRegistered.join(', ')}`,
+    ).toEqual([]);
+
+    const allowed = new Set([...contributed, ...CODELENS_ONLY]);
+    const unexpected = registeredCommandIds.filter((id) => !allowed.has(id));
+    expect(
+      unexpected,
+      `registered at runtime but neither contributed in package.json nor a known CodeLens-only command: ${unexpected.join(', ')}`,
+    ).toEqual([]);
+
+    // Keep the CodeLens-only allowlist honest: a stale entry (no longer
+    // registered) would mask a real removal, so require each to still register.
+    const staleAllowlist = CODELENS_ONLY.filter((id) => !registeredCommandIds.includes(id));
+    expect(
+      staleAllowlist,
+      `CODELENS_ONLY lists command(s) no longer registered — remove them: ${staleAllowlist.join(', ')}`,
+    ).toEqual([]);
   });
 
   it('subscribes to workspace folder changes for re-discovery', () => {
