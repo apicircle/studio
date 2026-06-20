@@ -27,6 +27,17 @@ config-file editing, the Desktop app has a one-click flow described below.
 4. Paste it into the client's config file (the block shows you exactly which
    file to open), restart the client, and you're done.
 
+For the seven clients with a fixed config location (Claude Desktop, Claude
+Code, Codex, Cursor, Windsurf, Zed, Continue) the Desktop app skips the
+copy-paste entirely: it shows a one-click **Install config** button that
+writes the `apicircle` entry straight into that client's config file
+(preserving any other MCP servers already there). Once installed it tracks
+state — the button reads **Installed** when current, **Update config** when
+the workspace path has drifted — and a **Remove** button (with a confirmation
+prompt) appears alongside it to strip the `apicircle` entry back out when you
+no longer want this client wired up. Removal leaves every other entry in the
+file untouched. Restart the client after installing or removing.
+
 Handshake state itself lives inside each AI client (Claude Desktop's connector
 menu, Cursor's MCP indicator, etc.) — the desktop app can't observe child
 processes spawned by other clients, so rely on your client's own indicator

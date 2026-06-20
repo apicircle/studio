@@ -23,6 +23,86 @@
 > ship. Full per-platform walk-through:
 > [`docs/installing.md`](docs/installing.md).
 
+## Unreleased
+
+### Added
+
+- **VS Code — MCP prompt categories open as a readable catalog in the editor.**
+  In the MCP view's **Prompts** section, clicking a category row (Workspaces,
+  Collections, Environments, Execution, Mocks, Auth, Imports) used to expand it
+  inline into a flat list of one-line prompt rows. It now opens a read-only
+  Markdown document for that category in the editor — each prompt gets a
+  numbered heading, the full prompt text in a copy-ready code block, a **What
+  it does** description, a per-category explanation blurb, and the **MCP tools
+  it drives**. Per-prompt one-click copy survives the change as a **⧉ Copy
+  prompt** CodeLens above each entry (re-using the existing
+  `apicircle.copyMcpPrompt` command), and a **↗ Open rendered preview** lens on
+  the title opens VS Code's formatted Markdown preview beside the source. The
+  category rows are now leaves (the `book` icon signals "opens a document"),
+  and a new **API Circle: Browse MCP Prompts** palette command opens any
+  category via a QuickPick.
+
+  New surfaces: the `apicircle-prompts:` read-only `TextDocumentContentProvider`
+  - Markdown builder + URI helpers (`apps/vscode/src/fs/promptCatalog.ts`), the
+    `PromptCatalogCodeLensProvider` (`apps/vscode/src/lang/promptCatalogCodeLens.ts`),
+    `openMcpPromptCategoryCommand` (`apps/vscode/src/commands/mcpActions.ts`), and
+    the `apicircle.openMcpPromptCategory` command. The shared
+    `@apicircle/mcp-server` prompt catalog (`MCP_PROMPTS` /
+    `MCP_PROMPT_CATEGORIES`) is unchanged — Desktop/Web's MCP → Prompts surface is
+    untouched. Covered by new unit tests (`promptCatalog.test.ts`,
+    `promptCatalogCodeLens.test.ts`) plus updated `McpView.test.ts` /
+    `mcpActions.test.ts`. VS Code extension bundle: **2.77 MB** (soft budget
+    3.00 MB / hard 5.00 MB).
+
+- **Desktop MCP panel — one-click "Remove" for an installed client config.**
+  The **Set up your AI client** block (MCP → Connection) already offered a
+  one-click **Install config** / **Update config** button that writes the
+  `apicircle` entry into the selected AI client's config file. It had no
+  inverse — once installed, the only way to undo it was to hand-edit the
+  file. This release adds a **Remove** button that appears whenever an
+  `apicircle` entry is present (whether the config is current _or_ stale).
+  It's gated behind a danger-toned confirmation dialog that names the exact
+  config file being edited. Removal is keyed on the entry name, so a stale
+  entry pointing at an old workspace path is removed just the same; foreign
+  MCP servers and unrelated settings in the file are preserved verbatim, and
+  the now-empty `mcpServers` / `context_servers` / `mcp_servers` block is
+  stripped to keep the diff tidy. The operation is idempotent and works
+  across all seven directly-installable clients (Claude Desktop, Claude Code,
+  Codex, Cursor, Windsurf, Zed, Continue) and their JSON / YAML / TOML
+  schemas. A malformed config file is left untouched rather than rewritten.
+
+  New surfaces: `uninstallClientConfig` in
+  `apps/desktop/src/main/mcp/mcpInstaller.ts`, the
+  `apicircle:mcp:uninstallConfig` IPC channel
+  (`apps/desktop/src/main/ipc/mcpBridge.ts`), and `uninstallConfig` on the
+  `DesktopMcpBridge` contract (`packages/ui-components/src/desktop/bridge.ts`)
+  - the preload bridge. Covered by new unit tests in `mcpInstaller.test.ts`
+    and UI flow tests in `McpServerPanel.test.tsx`.
+
+### Fixed
+
+- **"Sign in with GitHub" no longer offers a one-click button that can't
+  work on the hosted web app or the desktop build.** The button uses
+  GitHub's OAuth **device flow**, which a browser can only start through a
+  same-origin `/_gh-oauth` relay — GitHub sends no CORS headers on its
+  `login/*` endpoints, so a page can't POST to them directly. That relay
+  exists **only in the Vite dev server**; the static GitHub Pages deploy
+  (studio.apicircle.dev) returned **HTTP 405** for the POST and the packaged
+  desktop app (renderer served over `file://`) failed with **"Failed to
+  fetch."** The button is now gated to builds where the relay is present via
+  a new `isGitHubDeviceFlowAvailable()` check
+  (`packages/ui-components/src/layout/dock/githubDeviceFlow.ts`). On the
+  hosted web app and desktop, the Secret Vault → Sessions tab now leads with
+  the **personal-access-token** path, which calls `api.github.com` directly
+  (CORS-allowed) and works everywhere. Forks that stand up their own relay
+  can force the button on with `VITE_GH_DEVICE_FLOW=1`. Help Center
+  "Sessions" copy updated to match. Covered by new unit tests
+  (`githubDeviceFlow.test.ts`), extended panel tests
+  (`SecretVaultDockPanel.test.tsx` — button shown vs. hidden), and new
+  end-to-end device-flow tests that drive the button through to a connected
+  session in a real browser (`e2e/web/sessions.spec.ts`). No workspace-data
+  or schema change.
+
 ## 1.1.2 - 2026-06-19
 
 Version-alignment release. The 1.1.1 bump only touched the VS Code extension

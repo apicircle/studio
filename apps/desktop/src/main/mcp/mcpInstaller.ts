@@ -52,6 +52,13 @@ interface InstallResult {
   path: string;
 }
 
+type UninstallOutcome = 'removed' | 'absent';
+
+interface UninstallResult {
+  outcome: UninstallOutcome;
+  path: string;
+}
+
 interface ConfigPathEnv {
   homedir: string;
   platform: NodeJS.Platform;
@@ -226,6 +233,56 @@ export function installClientConfig(
   const next = { ...existing, [key]: { ...block, [ENTRY_NAME]: desired } };
   writeConfigFile(fullPath, next, variant);
   return { outcome: current === undefined ? 'created' : 'updated', path: fullPath };
+}
+
+/**
+ * Remove the apicircle entry from a client's config file. The inverse of
+ * {@link installClientConfig}. Idempotent — removing an absent entry is a
+ * no-op that returns `'absent'`. Removal is keyed on the entry NAME, not its
+ * contents, so a stale entry (pointing at an old workspace path) is removed
+ * just the same. Foreign entries the user added by hand are preserved
+ * verbatim; if stripping apicircle leaves the schema block empty, the block
+ * key itself is dropped so the diff the user sees stays tidy. A malformed
+ * config file is left untouched (returns `'absent'`) rather than rewritten —
+ * we never destroy data we couldn't parse.
+ */
+export function uninstallClientConfig(
+  client: string,
+  envOverride?: ConfigPathEnv,
+): UninstallResult {
+  if (!isInstallable(client)) {
+    throw new Error(`Client "${client}" does not support direct config installation.`);
+  }
+  const env = envOverride ?? resolveEnv();
+  const variant = SCHEMA_VARIANTS[client];
+  const key = schemaKey(variant);
+  const fullPath = resolveAiClientConfigPath(client, env);
+  if (!fullPath) {
+    throw new Error(`No fixed config path for client "${client}".`);
+  }
+  assertContainedInHome(fullPath, env.homedir);
+
+  if (!fs.existsSync(fullPath)) {
+    return { outcome: 'absent', path: fullPath };
+  }
+
+  const existing = readConfigFile(fullPath, variant);
+  const block = existing[key] as Record<string, McpEntry> | undefined;
+  if (!block || typeof block !== 'object' || !(ENTRY_NAME in block)) {
+    return { outcome: 'absent', path: fullPath };
+  }
+
+  const nextBlock = { ...block };
+  delete nextBlock[ENTRY_NAME];
+
+  const next: Record<string, unknown> = { ...existing };
+  if (Object.keys(nextBlock).length === 0) {
+    delete next[key];
+  } else {
+    next[key] = nextBlock;
+  }
+  writeConfigFile(fullPath, next, variant);
+  return { outcome: 'removed', path: fullPath };
 }
 
 export function detectClientInstallState(

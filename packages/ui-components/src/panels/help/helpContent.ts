@@ -139,7 +139,7 @@ This used to mean the desktop's boot-time write overwrote what MCP had just land
 
 ## Connecting
 
-- Open Secret Vault → Sessions and sign in (device flow) or paste a personal access token. A token needs the \`repo\` scope to read and push, and \`pull_request\` to open PRs.
+- Open Secret Vault → Sessions and paste a personal access token (or use the one-click "Sign in with GitHub" button, which appears when you run the app from a local dev server). A token needs the \`repo\` scope to read and push, and \`pull_request\` to open PRs.
 - Point the workspace at a repository. The status chip moves "Local Workspace" → "Repo connected" → "Branch ready".
 - Create a working branch — every push targets it, never the default branch directly.
 
@@ -790,10 +790,9 @@ The **Unbind** button on an encrypted row tries to decrypt back to plaintext usi
 
 ## Signing in
 
-Two ways:
+**Paste a personal access token** — a classic \`ghp_...\` or fine-grained \`github_pat_...\` token. This is the supported way to connect on the hosted web app (studio.apicircle.dev) and the desktop app, and it works everywhere: the token goes straight to GitHub's API, which the browser is allowed to call.
 
-- **Device flow** — the app shows a short code; you enter it on \`github.com/login/device\`. No token to copy.
-- **Paste a token** — a personal access token (classic \`ghp_...\` or fine-grained \`github_pat_...\`).
+**One-click "Sign in with GitHub"** (device flow — the app shows a short code you enter on \`github.com/login/device\`, no token to copy) appears only when you run the app from a local dev server. GitHub blocks browsers from calling its login endpoints directly, and only the dev server can relay that request — so the hosted and desktop builds use the token path instead.
 
 Either way the token is verified with a \`GET /user\` call before it is accepted. The tab then shows the account, the granted scopes, and the last-verified time:
 
@@ -1138,6 +1137,8 @@ The AI client uses that hint to either ask the user which workspace they meant o
 ## Connecting a client
 
 The **Set up your AI client** block on the **Connection** tab walks through it in four steps — install \`@apicircle/mcp-server\` globally, pick your client (Claude Desktop / Claude Code / Cursor / Codex / etc), paste the snippet into the right config file, restart the client. The block sits below the workspace-mirror status and shows the exact config-file path for each supported client.
+
+On the Desktop app, the seven clients with a fixed config location (Claude Desktop, Claude Code, Codex, Cursor, Windsurf, Zed, Continue) skip the copy-paste: a one-click **Install config** button writes the \`apicircle\` entry straight into that client's config file (leaving any other MCP servers in place). The button then tracks state — **Installed** when current, **Update config** when the workspace path drifts — and a **Remove** button (behind a confirmation prompt) strips the entry back out when you no longer want that client wired up. Restart the client after installing or removing.
 
 MCP runs over stdio, so it needs the [Desktop App](https://github.com/apicircle/studio/releases/latest) open or the \`apicircle mcp\` CLI subcommand. The web build cannot expose a stdio server. Note MCP returns code as text — your assistant writes it to a file; MCP itself does not touch the filesystem.
 

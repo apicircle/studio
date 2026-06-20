@@ -144,6 +144,10 @@ teammates share them; _runtime_ state stays on the local machine.
 
 ### VS Code extension (`apps/vscode/`)
 
+**Install:** [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=apicircle.apicircle-vscode)
+· [Open VSX](https://open-vsx.org/extension/apicircle/apicircle-vscode) — or
+search **API Circle Studio** in the Extensions view (`Ctrl`/`Cmd`+`Shift`+`X`).
+
 The same workspace document the desktop and web apps drive can be edited
 in place from VS Code — no embedded webview, no separate sync. The
 extension contributes:

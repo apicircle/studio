@@ -1,12 +1,7 @@
 import * as vscode from 'vscode';
 import { BaseTreeView } from './BaseTreeView';
 import type { AiClient } from '@apicircle/mcp-server';
-import {
-  MCP_PROMPTS,
-  MCP_PROMPT_CATEGORIES,
-  type McpPrompt,
-  type McpPromptCategory,
-} from '@apicircle/mcp-server';
+import { MCP_PROMPTS, MCP_PROMPT_CATEGORIES, type McpPromptCategory } from '@apicircle/mcp-server';
 import { aiClientDisplayName, type VsCodeMcpManager } from '../host/mcpManager';
 import { INSTALLABLE_CLIENTS, type InstallableClient } from '../host/mcpClientInstall';
 
@@ -29,21 +24,21 @@ import { INSTALLABLE_CLIENTS, type InstallableClient } from '../host/mcpClientIn
 //     ChatGPT                 (manual setup)
 //     Other (Generic stdio)   (manual setup)
 //   ▸ Prompts
-//     ▸ Collections (4)
-//       List every request...              ← click = copy to clipboard
-//       ...
-//     ▸ Environments (3)
-//     ▸ Execution (3)
-//     ▸ Mocks (3)
-//     ▸ Auth (2)
-//     ▸ Imports (2)
-//     ▸ Workspaces (3)
+//       Workspaces (3)                     ← click = open catalog in editor
+//       Collections (4)
+//       Environments (3)
+//       Execution (3)
+//       Mocks (3)
+//       Auth (2)
+//       Imports (2)
 //   ▸ Open Connect Guide                  (footer command row)
 //
 // Clicking a client row opens its config file directly (creating it with
 // the apicircle snippet pre-populated when the file doesn't exist yet).
 // Inline icons show Install (when absent/stale) or Uninstall (when installed).
-// Clicking a prompt row copies its text to the clipboard.
+// Clicking a prompt category opens a read-only Markdown document listing every
+// prompt in that category with its description, an explanation, and the MCP
+// tools it drives — copy any single prompt via the ⧉ Copy prompt CodeLens.
 // =============================================================================
 
 export type McpNode =
@@ -52,7 +47,6 @@ export type McpNode =
   | { kind: 'client'; client: AiClient }
   | { kind: 'prompts-section' }
   | { kind: 'prompt-category'; category: McpPromptCategory; label: string }
-  | { kind: 'prompt'; prompt: McpPrompt }
   | { kind: 'connect-guide' };
 
 /** Probe callback that returns the install state for an installable client. */
@@ -123,27 +117,20 @@ export class McpView extends BaseTreeView<McpNode> {
 
     if (node.kind === 'prompt-category') {
       const count = MCP_PROMPTS.filter((p) => p.category === node.category).length;
-      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Collapsed);
+      // Leaf row: clicking opens the category's prompts as a read-only Markdown
+      // document instead of expanding inline — the document carries each
+      // prompt's description, an explanation, and per-prompt copy lenses.
+      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
       item.description = `${count}`;
-      item.iconPath = new vscode.ThemeIcon('symbol-folder');
+      item.iconPath = new vscode.ThemeIcon('book');
       item.contextValue = 'mcp-prompt-category';
-      return item;
-    }
-
-    if (node.kind === 'prompt') {
-      const text = node.prompt.text;
-      const label = text.length > 60 ? text.slice(0, 57) + '...' : text;
-      const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
-      item.description = node.prompt.tools.join(', ');
-      item.iconPath = new vscode.ThemeIcon('copy');
-      item.contextValue = 'mcp-prompt';
       item.tooltip = new vscode.MarkdownString(
-        `**${node.prompt.text}**\n\n${node.prompt.description}\n\nTools: ${node.prompt.tools.map((t) => `\`${t}\``).join(', ')}\n\n*Click to copy to clipboard.*`,
+        `Open the **${node.label}** starter prompts in the editor — ${count} prompt${count === 1 ? '' : 's'} with descriptions you can copy into any MCP-connected AI client.`,
       );
       item.command = {
-        command: 'apicircle.copyMcpPrompt',
-        title: 'Copy Prompt',
-        arguments: [node.prompt],
+        command: 'apicircle.openMcpPromptCategory',
+        title: 'Open Prompts',
+        arguments: [{ category: node.category, label: node.label }],
       };
       return item;
     }
@@ -236,12 +223,8 @@ export class McpView extends BaseTreeView<McpNode> {
         label: c.label,
       }));
     }
-    if (node.kind === 'prompt-category') {
-      return MCP_PROMPTS.filter((p) => p.category === node.category).map((p) => ({
-        kind: 'prompt' as const,
-        prompt: p,
-      }));
-    }
+    // prompt-category rows are leaves now — clicking opens the catalog document
+    // (apicircle.openMcpPromptCategory) rather than expanding inline.
     return [];
   }
 }

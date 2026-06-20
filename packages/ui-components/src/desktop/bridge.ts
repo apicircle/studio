@@ -55,6 +55,13 @@ export interface McpInstallResult {
 
 export type McpInstallState = 'absent' | 'installed-current' | 'installed-stale';
 
+export type McpUninstallOutcome = 'removed' | 'absent';
+
+export interface McpUninstallResult {
+  outcome: McpUninstallOutcome;
+  path: string;
+}
+
 export interface DesktopMcpBridge {
   status(): Promise<{ workspaceDir: string; binary: string }>;
   getConfigSnippet(client: string): Promise<ConfigSnippetVariants>;
@@ -62,6 +69,7 @@ export interface DesktopMcpBridge {
   toolCatalog(): Promise<readonly McpToolName[]>;
   installConfig(client: string): Promise<McpInstallResult>;
   detectInstallState(client: string): Promise<McpInstallState>;
+  uninstallConfig(client: string): Promise<McpUninstallResult>;
 }
 
 // ---------- WorkspaceFile (mirror) surface -------------------------------

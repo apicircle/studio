@@ -30,6 +30,7 @@ import { SecretsNotProtectedError } from '../../persistence/platformSecretGate';
 import { cn } from '../../primitives/cn';
 import { safeCopyToClipboard } from '../../primitives/clipboard';
 import { isWebBuild } from './webBuild';
+import { isGitHubDeviceFlowAvailable } from './githubDeviceFlow';
 
 /**
  * Secret Vault tab content for the right-side dock. Two sub-tabs:
@@ -989,37 +990,52 @@ function ConnectForm() {
     setOauthBusy(false);
   };
 
+  // The one-click device flow only works where the same-origin `/_gh-oauth`
+  // relay exists (the Vite dev server). On the static web deploy and the
+  // packaged desktop app it can't reach GitHub, so we hide the button there
+  // and lead with the personal-access-token path. See `githubDeviceFlow.ts`.
+  const deviceFlowAvailable = isGitHubDeviceFlowAvailable();
+
   return (
     <div className="space-y-3">
-      <div className="space-y-2 rounded-sm border border-accent/30 bg-accent/5 p-3">
-        {code ? (
-          <DeviceFlowCard code={code} busy={oauthBusy} onCancel={cancelOauth} error={oauthError} />
-        ) : (
-          <button
-            type="button"
-            onClick={() => void startOauth()}
-            disabled={oauthBusy}
-            className="inline-flex h-8 w-full items-center justify-center gap-2 rounded-sm border border-accent/40 bg-accent/10 px-3 text-sm text-accent hover:bg-accent/20 disabled:opacity-50"
-            aria-label="Sign in with GitHub"
-          >
-            <ShieldCheck size={14} aria-hidden="true" />
-            Sign in with GitHub
-          </button>
-        )}
-        {oauthError && !code && (
-          <p className="text-[0.6875rem] text-danger" role="alert">
-            {oauthError}
+      {deviceFlowAvailable && (
+        <div className="space-y-2 rounded-sm border border-accent/30 bg-accent/5 p-3">
+          {code ? (
+            <DeviceFlowCard
+              code={code}
+              busy={oauthBusy}
+              onCancel={cancelOauth}
+              error={oauthError}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => void startOauth()}
+              disabled={oauthBusy}
+              className="inline-flex h-8 w-full items-center justify-center gap-2 rounded-sm border border-accent/40 bg-accent/10 px-3 text-sm text-accent hover:bg-accent/20 disabled:opacity-50"
+              aria-label="Sign in with GitHub"
+            >
+              <ShieldCheck size={14} aria-hidden="true" />
+              Sign in with GitHub
+            </button>
+          )}
+          {oauthError && !code && (
+            <p className="text-[0.6875rem] text-danger" role="alert">
+              {oauthError}
+            </p>
+          )}
+          <p className="text-[0.625rem] text-text-dim">
+            OAuth uses GitHub's device flow — no client secret stays in the browser. You'll be
+            prompted on github.com/login/device to authorize API Circle Studio.
           </p>
-        )}
-        <p className="text-[0.625rem] text-text-dim">
-          OAuth uses GitHub's device flow — no client secret stays in the browser. You'll be
-          prompted on github.com/login/device to authorize API Circle Studio.
-        </p>
-      </div>
+        </div>
+      )}
 
       <div className="space-y-2 rounded-sm border border-border bg-surface p-3">
         <p className="text-[0.6875rem] font-medium uppercase tracking-wider text-text-dim">
-          Or — paste a personal access token
+          {deviceFlowAvailable
+            ? 'Or — paste a personal access token'
+            : 'Connect with a personal access token'}
         </p>
         <label htmlFor="pat-input" className="block text-xs text-text-muted">
           Personal access token

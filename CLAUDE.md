@@ -229,7 +229,18 @@ studio/
 │                           pointing at active workspace's .apicircle/ dir,
 │                           shared snippet builder in `@apicircle/mcp-server`,
 │                           McpView with 10 supported clients + connect
-│                           guide, `apicircle.mcp.binaryPath` setting**,
+│                           guide, `apicircle.mcp.binaryPath` setting; the
+│                           Prompts section's category rows (Workspaces /
+│                           Collections / …) are leaves that open a read-only
+│                           `apicircle-prompts://catalog/<Label>.md?category=<id>`
+│                           Markdown catalog in the editor — each prompt with
+│                           its text, description, an explanation blurb + the
+│                           MCP tools it drives, a per-prompt `⧉ Copy prompt`
+│                           CodeLens (reuses `apicircle.copyMcpPrompt`) + a
+│                           `↗ Open rendered preview` lens (provider +
+│                           builder in `fs/promptCatalog.ts`, lenses in
+│                           `lang/promptCatalogCodeLens.ts`, opened via
+│                           `apicircle.openMcpPromptCategory`)**,
 │                           **Copilot Chat MCP install (Phase 6) —
 │                           `apicircle.installCopilotMcpConfig` writes
 │                           `.vscode/mcp.json` idempotently for VS Code
@@ -387,10 +398,15 @@ ad-hoc interface in the consumer.
 
 `DesktopMcpBridge` exposes: `status`, `getConfigSnippet`, `getConfigPath`,
 `toolCatalog`, `installConfig` (writes the apicircle entry into a client's
-config file — JSON/YAML/TOML), and `detectInstallState` (probes whether the
-entry is absent / installed-current / installed-stale). The install logic
-lives in `apps/desktop/src/main/mcp/mcpInstaller.ts`; IPC wiring in
-`apps/desktop/src/main/ipc/mcpBridge.ts`.
+config file — JSON/YAML/TOML), `detectInstallState` (probes whether the
+entry is absent / installed-current / installed-stale), and `uninstallConfig`
+(removes the apicircle entry — keyed on entry name so a stale entry is removed
+too; preserves foreign entries, strips the now-empty schema block, idempotent).
+The install/uninstall logic lives in
+`apps/desktop/src/main/mcp/mcpInstaller.ts`; IPC wiring in
+`apps/desktop/src/main/ipc/mcpBridge.ts`. The renderer's **Remove** button
+(gated behind a confirm dialog) lives in the MCP Connection panel's
+`HowToConnect.tsx`.
 
 ---
 

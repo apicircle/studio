@@ -244,7 +244,7 @@ describe('McpView', () => {
       expect(item.contextValue).toBe('mcp-prompts-section');
     });
 
-    it('prompt-category shows category label, count, and symbol-folder icon', () => {
+    it('prompt-category is a leaf that opens the catalog with a book icon', () => {
       const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' });
       const collectionsCount = MCP_PROMPTS.filter((p) => p.category === 'collections').length;
       const item = view.getTreeItem({
@@ -255,50 +255,22 @@ describe('McpView', () => {
       expect(item.label).toBe('Collections');
       expect(item.description).toBe(`${collectionsCount}`);
       expect(item.iconPath).toBeInstanceOf(ThemeIcon);
-      expect((item.iconPath as ThemeIcon).id).toBe('symbol-folder');
-      expect(item.collapsibleState).toBe(TreeItemCollapsibleState.Collapsed);
-      expect(item.contextValue).toBe('mcp-prompt-category');
-    });
-
-    it('prompt row shows copy icon, fires copyMcpPrompt, and passes prompt as arg', () => {
-      const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' });
-      const prompt = MCP_PROMPTS[0]!;
-      const item = view.getTreeItem({ kind: 'prompt', prompt });
-      expect(item.iconPath).toBeInstanceOf(ThemeIcon);
-      expect((item.iconPath as ThemeIcon).id).toBe('copy');
+      expect((item.iconPath as ThemeIcon).id).toBe('book');
       expect(item.collapsibleState).toBe(TreeItemCollapsibleState.None);
-      expect(item.contextValue).toBe('mcp-prompt');
-      expect(item.command?.command).toBe('apicircle.copyMcpPrompt');
-      expect(item.command?.arguments).toEqual([prompt]);
+      expect(item.contextValue).toBe('mcp-prompt-category');
+      expect(item.command?.command).toBe('apicircle.openMcpPromptCategory');
+      expect(item.command?.arguments).toEqual([{ category: 'collections', label: 'Collections' }]);
     });
 
-    it('long prompt text is truncated to ~60 chars in label', () => {
+    it('prompt-category tooltip names the category and prompt count', () => {
       const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' });
-      const longPrompt = MCP_PROMPTS.find((p) => p.text.length > 60);
-      if (!longPrompt) return; // skip if no long prompts exist
-      const item = view.getTreeItem({ kind: 'prompt', prompt: longPrompt });
-      expect((item.label as string).length).toBeLessThanOrEqual(60);
-      expect((item.label as string).endsWith('...')).toBe(true);
-    });
-
-    it('prompt tooltip includes full text, description, and tools', () => {
-      const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' });
-      const prompt = MCP_PROMPTS[0]!;
-      const item = view.getTreeItem({ kind: 'prompt', prompt });
+      const item = view.getTreeItem({
+        kind: 'prompt-category',
+        category: 'collections',
+        label: 'Collections',
+      });
       expect(item.tooltip).toBeInstanceOf(MarkdownString);
-      const md = (item.tooltip as MarkdownString).value;
-      expect(md).toContain(prompt.text);
-      expect(md).toContain(prompt.description);
-      for (const tool of prompt.tools) {
-        expect(md).toContain(tool);
-      }
-    });
-
-    it('prompt description shows tool names joined by comma', () => {
-      const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' });
-      const prompt = MCP_PROMPTS[0]!;
-      const item = view.getTreeItem({ kind: 'prompt', prompt });
-      expect(item.description).toBe(prompt.tools.join(', '));
+      expect((item.tooltip as MarkdownString).value).toContain('Collections');
     });
   });
 
@@ -312,27 +284,14 @@ describe('McpView', () => {
       }
     });
 
-    it('prompt-category expands to its prompts only', () => {
+    it('prompt-category is a leaf — no inline children (opens the catalog instead)', () => {
       const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' });
-      const expected = MCP_PROMPTS.filter((p) => p.category === 'collections');
       const children = view.getChildren({
         kind: 'prompt-category',
         category: 'collections',
         label: 'Collections',
       });
-      expect(children.length).toBe(expected.length);
-      for (const child of children) {
-        expect(child.kind).toBe('prompt');
-        if (child.kind === 'prompt') {
-          expect(child.prompt.category).toBe('collections');
-        }
-      }
-    });
-
-    it('prompt node is a leaf (no children)', () => {
-      const view = makeView({ id: '/ws', apicircleDir: '/ws/.apicircle' });
-      const prompt = MCP_PROMPTS[0]!;
-      expect(view.getChildren({ kind: 'prompt', prompt })).toEqual([]);
+      expect(children).toEqual([]);
     });
   });
 

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SecretVaultDockPanel } from './SecretVaultDockPanel';
 import { __setWebBuildForTests } from './webBuild';
+import { __setGitHubDeviceFlowAvailableForTests } from './githubDeviceFlow';
 import { renderWithStore } from '../../../test/renderWithStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 
@@ -357,6 +358,39 @@ describe('SecretVaultDockPanel', () => {
       await waitFor(() =>
         expect(useWorkspaceStore.getState().local!.sessions.github.workspace).toBeNull(),
       );
+    });
+  });
+
+  describe('Sessions tab — one-click sign-in availability (honest UI)', () => {
+    afterEach(() => {
+      __setGitHubDeviceFlowAvailableForTests(null);
+    });
+
+    it('shows the "Sign in with GitHub" button where the device-flow relay exists', async () => {
+      __setGitHubDeviceFlowAvailableForTests(true);
+      await renderWithStore(<SecretVaultDockPanel />);
+      await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+
+      expect(screen.getByRole('button', { name: 'Sign in with GitHub' })).toBeInTheDocument();
+      // The token box is the secondary option here ("Or — …").
+      expect(screen.getByText(/paste a personal access token/i)).toBeInTheDocument();
+      expect(screen.getByLabelText('GitHub PAT')).toBeInTheDocument();
+    });
+
+    it('hides the button and promotes the token path where the relay is absent', async () => {
+      __setGitHubDeviceFlowAvailableForTests(false);
+      await renderWithStore(<SecretVaultDockPanel />);
+      await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+
+      // No broken one-click button on the static web deploy / desktop build…
+      expect(screen.queryByRole('button', { name: 'Sign in with GitHub' })).toBeNull();
+      // …and the device-flow blurb is gone with it.
+      expect(screen.queryByText(/no client secret stays in the browser/i)).toBeNull();
+      // The token path becomes the primary connect method and still works
+      // (it calls api.github.com directly, which the browser is allowed to hit).
+      expect(screen.getByText(/Connect with a personal access token/i)).toBeInTheDocument();
+      expect(screen.getByLabelText('GitHub PAT')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Connect' })).toBeInTheDocument();
     });
   });
 

@@ -2,8 +2,14 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import * as YAML from 'yaml';
-import type { AiClient, McpPrompt } from '@apicircle/mcp-server';
+import {
+  MCP_PROMPT_CATEGORIES,
+  type AiClient,
+  type McpPrompt,
+  type McpPromptCategory,
+} from '@apicircle/mcp-server';
 import { aiClientDisplayName, type VsCodeMcpManager } from '../host/mcpManager';
+import { promptCategoryUri, promptsForCategory } from '../fs/promptCatalog';
 
 // =============================================================================
 // MCP commands — open AI-client config files / open the connect guide.
@@ -131,6 +137,43 @@ export async function copyMcpPromptCommand(prompt: McpPrompt): Promise<void> {
   await vscode.window.showInformationMessage(
     `Copied prompt to clipboard: "${prompt.text.slice(0, 60)}${prompt.text.length > 60 ? '...' : ''}"`,
   );
+}
+
+/**
+ * Open a category of starter MCP prompts as a read-only Markdown document in
+ * the editor. Fired by the MCP view's prompt-category rows (which pass
+ * `{ category, label }`) and from the command palette (no argument → a
+ * QuickPick of every category).
+ */
+export async function openMcpPromptCategoryCommand(
+  arg?: { category?: McpPromptCategory; label?: string } | McpPromptCategory,
+): Promise<void> {
+  let category: McpPromptCategory | undefined = typeof arg === 'string' ? arg : arg?.category;
+
+  if (!category) {
+    const picked = await vscode.window.showQuickPick(
+      MCP_PROMPT_CATEGORIES.map((c) => ({
+        label: c.label,
+        description: `${promptsForCategory(c.id).length} prompt${
+          promptsForCategory(c.id).length === 1 ? '' : 's'
+        }`,
+        category: c.id,
+      })),
+      { placeHolder: 'Open a category of starter MCP prompts in the editor' },
+    );
+    if (!picked) return;
+    category = picked.category;
+  }
+
+  const meta = MCP_PROMPT_CATEGORIES.find((c) => c.id === category);
+  if (!meta) {
+    await vscode.window.showWarningMessage(`Unknown MCP prompt category: ${String(category)}`);
+    return;
+  }
+
+  const uri = promptCategoryUri(meta.id, meta.label);
+  const doc = await vscode.workspace.openTextDocument(uri);
+  await vscode.window.showTextDocument(doc, { preview: true });
 }
 
 export async function copyMcpConfigCommand(deps: McpActionsDeps, node?: ClientNode): Promise<void> {

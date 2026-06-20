@@ -224,7 +224,10 @@ import {
   revealMcpBinaryInfoCommand,
   copyMcpConfigCommand,
   copyMcpPromptCommand,
+  openMcpPromptCategoryCommand,
 } from './commands/mcpActions';
+import { PromptCatalogContentProvider, PROMPT_CATALOG_SCHEME } from './fs/promptCatalog';
+import { PromptCatalogCodeLensProvider } from './lang/promptCatalogCodeLens';
 import {
   installCopilotMcpConfigCommand,
   uninstallCopilotMcpConfigCommand,
@@ -426,6 +429,22 @@ export function activate(context: vscode.ExtensionContext): void {
       new RequestCompletionProvider(),
       ':',
       ' ',
+    ),
+  );
+
+  // Read-only prompt-catalog documents (apicircle-prompts:) — the MCP view's
+  // prompt-category rows open one of these per category. The CodeLens provider
+  // adds a per-prompt ⧉ Copy lens + a ↗ Open preview lens on the title.
+  const promptCatalogCodeLens = new PromptCatalogCodeLensProvider();
+  context.subscriptions.push(
+    promptCatalogCodeLens,
+    vscode.workspace.registerTextDocumentContentProvider(
+      PROMPT_CATALOG_SCHEME,
+      new PromptCatalogContentProvider(),
+    ),
+    vscode.languages.registerCodeLensProvider(
+      { scheme: PROMPT_CATALOG_SCHEME },
+      promptCatalogCodeLens,
     ),
   );
 
@@ -1589,6 +1608,11 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('apicircle.copyMcpPrompt', (prompt: unknown) => {
       if (!prompt || typeof prompt !== 'object' || !('text' in prompt)) return;
       return copyMcpPromptCommand(prompt as McpPrompt);
+    }),
+    vscode.commands.registerCommand('apicircle.openMcpPromptCategory', (arg?: unknown) => {
+      return openMcpPromptCategoryCommand(
+        arg as Parameters<typeof openMcpPromptCategoryCommand>[0],
+      );
     }),
     vscode.commands.registerCommand(
       'apicircle.copyMcpConfig',

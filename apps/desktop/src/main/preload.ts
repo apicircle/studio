@@ -20,6 +20,7 @@ import type {
   DesktopBridgeContract,
   McpInstallResult,
   McpInstallState,
+  McpUninstallResult,
   WorkspaceFileExternalChange,
 } from '@apicircle/ui-components';
 
@@ -83,6 +84,8 @@ const bridge = {
       ipcRenderer.invoke('apicircle:mcp:installConfig', client) as Promise<McpInstallResult>,
     detectInstallState: (client: string): Promise<McpInstallState> =>
       ipcRenderer.invoke('apicircle:mcp:detectInstallState', client) as Promise<McpInstallState>,
+    uninstallConfig: (client: string): Promise<McpUninstallResult> =>
+      ipcRenderer.invoke('apicircle:mcp:uninstallConfig', client) as Promise<McpUninstallResult>,
   },
 
   // On-disk multi-workspace mirror. The renderer writes every debounced

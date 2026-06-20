@@ -1,6 +1,10 @@
 import { ipcMain } from 'electron';
 import type { AiClient, McpManager } from '../mcp/mcpManager';
-import { installClientConfig, detectClientInstallState } from '../mcp/mcpInstaller';
+import {
+  installClientConfig,
+  detectClientInstallState,
+  uninstallClientConfig,
+} from '../mcp/mcpInstaller';
 import { assertTrustedSender } from '../security/assertTrustedSender';
 
 // =============================================================================
@@ -15,6 +19,7 @@ const CHANNEL = {
   toolCatalog: 'apicircle:mcp:toolCatalog',
   installConfig: 'apicircle:mcp:installConfig',
   detectInstallState: 'apicircle:mcp:detectInstallState',
+  uninstallConfig: 'apicircle:mcp:uninstallConfig',
 } as const;
 
 // Runtime allowlist that mirrors the AiClient union in mcpManager.ts. We don't
@@ -73,6 +78,12 @@ export function registerMcpBridge(manager: McpManager): void {
     const validated = assertAiClient(client);
     const { binary, workspace } = manager.resolvePaths();
     return detectClientInstallState(validated, binary, workspace);
+  });
+  ipcMain.handle(CHANNEL.uninstallConfig, (event, client: unknown) => {
+    assertTrustedSender(event);
+    // Removal is keyed on the entry name alone — no binary/workspace paths
+    // needed, so even a stale entry pointing at an old workspace is removed.
+    return uninstallClientConfig(assertAiClient(client));
   });
 }
 

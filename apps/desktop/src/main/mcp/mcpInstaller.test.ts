@@ -2,7 +2,12 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { installClientConfig, detectClientInstallState, INSTALLABLE_CLIENTS } from './mcpInstaller';
+import {
+  installClientConfig,
+  detectClientInstallState,
+  uninstallClientConfig,
+  INSTALLABLE_CLIENTS,
+} from './mcpInstaller';
 import { resolveAiClientConfigPath } from '@apicircle/mcp-server';
 
 function makeVirtualHome(platform: NodeJS.Platform = 'linux'): {
@@ -331,6 +336,166 @@ describe('mcpInstaller', () => {
       fs.writeFileSync(configPath, 'garbage');
       const state = detectClientInstallState('cursor', 'apicircle-mcp', '/ws/.apicircle', env);
       expect(state).toBe('absent');
+    });
+  });
+
+  // ==========================================================================
+  // uninstallClientConfig
+  // ==========================================================================
+
+  describe('uninstallClientConfig', () => {
+    it('removes the apicircle entry and strips the now-empty mcpServers key', () => {
+      installClientConfig('cursor', 'apicircle-mcp', '/ws/.apicircle', env);
+      const result = uninstallClientConfig('cursor', env);
+      expect(result.outcome).toBe('removed');
+      const parsed = JSON.parse(fs.readFileSync(result.path, 'utf8')) as Record<string, unknown>;
+      // Sole entry removed → the mcpServers block itself is dropped.
+      expect(parsed.mcpServers).toBeUndefined();
+    });
+
+    it('preserves foreign entries and keeps the block when others remain', () => {
+      const configPath = resolveAiClientConfigPath('cursor', env)!;
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.writeFileSync(
+        configPath,
+        JSON.stringify(
+          {
+            mcpServers: {
+              shopify: { command: '/usr/local/bin/shopify-mcp', args: ['--token', 'abc'] },
+            },
+            extraTopLevel: 'keep me',
+          },
+          null,
+          2,
+        ),
+      );
+      installClientConfig('cursor', 'apicircle-mcp', '/ws/.apicircle', env);
+
+      const result = uninstallClientConfig('cursor', env);
+      expect(result.outcome).toBe('removed');
+      const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8')) as {
+        mcpServers: Record<string, { command: string }>;
+        extraTopLevel: string;
+      };
+      expect(parsed.mcpServers.apicircle).toBeUndefined();
+      expect(parsed.mcpServers.shopify.command).toBe('/usr/local/bin/shopify-mcp');
+      expect(parsed.extraTopLevel).toBe('keep me');
+    });
+
+    it('returns absent when the config file does not exist', () => {
+      const result = uninstallClientConfig('cursor', env);
+      expect(result.outcome).toBe('absent');
+    });
+
+    it('returns absent when the file exists but has no apicircle entry', () => {
+      const configPath = resolveAiClientConfigPath('cursor', env)!;
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.writeFileSync(configPath, JSON.stringify({ mcpServers: { other: { command: 'other' } } }));
+      const result = uninstallClientConfig('cursor', env);
+      expect(result.outcome).toBe('absent');
+      // Foreign entry untouched.
+      const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8')) as {
+        mcpServers: Record<string, unknown>;
+      };
+      expect(parsed.mcpServers.other).toBeDefined();
+    });
+
+    it('is idempotent — a second uninstall is a no-op', () => {
+      installClientConfig('cursor', 'apicircle-mcp', '/ws/.apicircle', env);
+      expect(uninstallClientConfig('cursor', env).outcome).toBe('removed');
+      expect(uninstallClientConfig('cursor', env).outcome).toBe('absent');
+    });
+
+    it('removes a STALE entry (keyed on name, not contents)', () => {
+      installClientConfig('cursor', 'apicircle-mcp', '/old/.apicircle', env);
+      // Detect against a different dir → stale, but uninstall still removes it.
+      expect(detectClientInstallState('cursor', 'apicircle-mcp', '/new/.apicircle', env)).toBe(
+        'installed-stale',
+      );
+      const result = uninstallClientConfig('cursor', env);
+      expect(result.outcome).toBe('removed');
+      expect(detectClientInstallState('cursor', 'apicircle-mcp', '/new/.apicircle', env)).toBe(
+        'absent',
+      );
+    });
+
+    it('detectClientInstallState reports absent after uninstall', () => {
+      installClientConfig('cursor', 'apicircle-mcp', '/ws/.apicircle', env);
+      expect(detectClientInstallState('cursor', 'apicircle-mcp', '/ws/.apicircle', env)).toBe(
+        'installed-current',
+      );
+      uninstallClientConfig('cursor', env);
+      expect(detectClientInstallState('cursor', 'apicircle-mcp', '/ws/.apicircle', env)).toBe(
+        'absent',
+      );
+    });
+
+    it('removes from Continue YAML', () => {
+      installClientConfig('continue', 'apicircle-mcp', '/ws/.apicircle', env);
+      const result = uninstallClientConfig('continue', env);
+      expect(result.outcome).toBe('removed');
+      const written = fs.readFileSync(result.path, 'utf8');
+      expect(written).not.toContain('apicircle');
+    });
+
+    it('removes from Codex TOML', () => {
+      installClientConfig('codex', 'apicircle-mcp', '/ws/.apicircle', env);
+      const result = uninstallClientConfig('codex', env);
+      expect(result.outcome).toBe('removed');
+      const written = fs.readFileSync(result.path, 'utf8');
+      expect(written).not.toContain('apicircle');
+    });
+
+    it('removes from Zed context_servers', () => {
+      installClientConfig('zed', 'apicircle-mcp', '/ws/.apicircle', env);
+      const result = uninstallClientConfig('zed', env);
+      expect(result.outcome).toBe('removed');
+      const parsed = JSON.parse(fs.readFileSync(result.path, 'utf8')) as Record<string, unknown>;
+      expect(parsed.context_servers).toBeUndefined();
+    });
+
+    it('preserves Codex foreign keys on removal', () => {
+      const codexPath = resolveAiClientConfigPath('codex', env)!;
+      fs.mkdirSync(path.dirname(codexPath), { recursive: true });
+      fs.writeFileSync(codexPath, ['model = "gpt-5.5"', ''].join('\n'));
+      installClientConfig('codex', 'apicircle-mcp', '/ws/.apicircle', env);
+      const result = uninstallClientConfig('codex', env);
+      expect(result.outcome).toBe('removed');
+      const written = fs.readFileSync(result.path, 'utf8');
+      expect(written).toContain('gpt-5.5');
+      expect(written).not.toContain('apicircle');
+    });
+
+    it('leaves a malformed config untouched and returns absent', () => {
+      const configPath = resolveAiClientConfigPath('cursor', env)!;
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.writeFileSync(configPath, 'not json at all');
+      const result = uninstallClientConfig('cursor', env);
+      expect(result.outcome).toBe('absent');
+      // We never rewrite a file we couldn't parse.
+      expect(fs.readFileSync(configPath, 'utf8')).toBe('not json at all');
+    });
+
+    it('throws for non-installable clients', () => {
+      expect(() => uninstallClientConfig('chatgpt', env)).toThrow(
+        /does not support direct config installation/,
+      );
+    });
+
+    it('throws for unknown client ids', () => {
+      expect(() => uninstallClientConfig('nonexistent', env)).toThrow();
+    });
+
+    it('refuses symlink-based escape from homedir', () => {
+      if (process.platform === 'win32') return;
+      const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'outside-'));
+      try {
+        const cursorDir = path.join(tmp, '.cursor');
+        fs.symlinkSync(outsideDir, cursorDir);
+        expect(() => uninstallClientConfig('cursor', env)).toThrow(/outside home/);
+      } finally {
+        fs.rmSync(outsideDir, { recursive: true, force: true });
+      }
     });
   });
 

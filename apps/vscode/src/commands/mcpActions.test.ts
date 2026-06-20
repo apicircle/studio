@@ -3,12 +3,14 @@ import type { Mock } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { window, env, commands } from '../../test/mocks/vscode';
+import { window, env, commands, workspace } from '../../test/mocks/vscode';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 import { VsCodeMcpManager } from '../host/mcpManager';
+import { PROMPT_CATALOG_SCHEME } from '../fs/promptCatalog';
 import {
   openMcpConfigFileCommand,
   openMcpConnectGuideCommand,
+  openMcpPromptCategoryCommand,
   revealMcpBinaryInfoCommand,
 } from './mcpActions';
 
@@ -39,6 +41,8 @@ describe('mcpActions', () => {
     (env.clipboard.writeText as Mock).mockReset();
     (env.openExternal as Mock).mockReset();
     (commands.executeCommand as Mock).mockReset();
+    (workspace.openTextDocument as Mock).mockReset();
+    (window.showTextDocument as Mock).mockReset();
   });
 
   describe('openMcpConfigFileCommand', () => {
@@ -158,6 +162,48 @@ describe('mcpActions', () => {
       const uri = (env.openExternal as Mock).mock.calls[0][0];
       const asString = typeof uri.toString === 'function' ? uri.toString() : '';
       expect(asString).toContain('connect-your-ai-client.md');
+    });
+  });
+
+  describe('openMcpPromptCategoryCommand', () => {
+    it('opens the catalog document for a category arg (no QuickPick)', async () => {
+      (workspace.openTextDocument as Mock).mockResolvedValueOnce({});
+      await openMcpPromptCategoryCommand({ category: 'collections', label: 'Collections' });
+      expect(window.showQuickPick).not.toHaveBeenCalled();
+      const uri = (workspace.openTextDocument as Mock).mock.calls[0][0];
+      expect(uri.scheme).toBe(PROMPT_CATALOG_SCHEME);
+      expect(uri.query).toContain('category=collections');
+      expect(window.showTextDocument).toHaveBeenCalled();
+    });
+
+    it('accepts a bare category id', async () => {
+      (workspace.openTextDocument as Mock).mockResolvedValueOnce({});
+      await openMcpPromptCategoryCommand('mocks');
+      const uri = (workspace.openTextDocument as Mock).mock.calls[0][0];
+      expect(uri.query).toContain('category=mocks');
+    });
+
+    it('prompts via QuickPick when no arg is supplied', async () => {
+      (window.showQuickPick as Mock).mockResolvedValueOnce({ category: 'auth' });
+      (workspace.openTextDocument as Mock).mockResolvedValueOnce({});
+      await openMcpPromptCategoryCommand();
+      expect(window.showQuickPick).toHaveBeenCalled();
+      const uri = (workspace.openTextDocument as Mock).mock.calls[0][0];
+      expect(uri.query).toContain('category=auth');
+    });
+
+    it('cancelling the QuickPick is a no-op', async () => {
+      (window.showQuickPick as Mock).mockResolvedValueOnce(undefined);
+      await openMcpPromptCategoryCommand();
+      expect(workspace.openTextDocument).not.toHaveBeenCalled();
+    });
+
+    it('warns on an unknown category', async () => {
+      await openMcpPromptCategoryCommand('not-a-category' as never);
+      expect(window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringMatching(/Unknown MCP prompt category/),
+      );
+      expect(workspace.openTextDocument).not.toHaveBeenCalled();
     });
   });
 

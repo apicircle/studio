@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Check, Copy, Download, Info } from 'lucide-react';
+import { AlertTriangle, Check, Copy, Download, Info, Trash2 } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 import { safeCopyToClipboard } from '../../primitives/clipboard';
+import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { MCP_CLIENTS } from './clients';
 import {
   getDesktopMcpBridge,
@@ -48,6 +49,7 @@ export function HowToConnect() {
   const [installState, setInstallState] = useState<McpInstallState | null>(null);
 
   const canInstall = !!bridge?.installConfig;
+  const canUninstall = !!bridge?.uninstallConfig;
 
   useEffect(() => {
     if (!bridge) return;
@@ -139,6 +141,8 @@ export function HowToConnect() {
               <InstallButton
                 clientId={activeClientId}
                 installState={installState}
+                configPath={configPath}
+                canRemove={canUninstall}
                 onInstall={async () => {
                   if (!bridge) return;
                   try {
@@ -162,6 +166,25 @@ export function HowToConnect() {
                   } catch (err) {
                     const detail = err instanceof Error ? err.message : String(err);
                     pushToast({ tone: 'error', title: 'Install failed', detail });
+                  }
+                }}
+                onRemove={async () => {
+                  if (!bridge?.uninstallConfig) return;
+                  try {
+                    const result = await bridge.uninstallConfig(activeClientId);
+                    setInstallState('absent');
+                    if (result.outcome === 'removed') {
+                      pushToast({
+                        tone: 'success',
+                        title: 'MCP config removed',
+                        detail: `Updated ${result.path}`,
+                      });
+                    } else {
+                      pushToast({ tone: 'info', title: 'No MCP config to remove' });
+                    }
+                  } catch (err) {
+                    const detail = err instanceof Error ? err.message : String(err);
+                    pushToast({ tone: 'error', title: 'Remove failed', detail });
                   }
                 }}
               />
@@ -313,13 +336,20 @@ const INSTALLABLE_CLIENT_IDS: ReadonlySet<string> = new Set([
 function InstallButton({
   clientId,
   installState,
+  configPath,
+  canRemove,
   onInstall,
+  onRemove,
 }: {
   clientId: string;
   installState: McpInstallState | null;
+  configPath: string | null;
+  canRemove: boolean;
   onInstall: () => Promise<void>;
+  onRemove: () => Promise<void>;
 }) {
   const [installing, setInstalling] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   if (!INSTALLABLE_CLIENT_IDS.has(clientId)) {
     return (
@@ -339,11 +369,22 @@ function InstallButton({
     }
   };
 
+  const handleRemove = async () => {
+    try {
+      await onRemove();
+    } finally {
+      setConfirmOpen(false);
+    }
+  };
+
   const isInstalled = installState === 'installed-current';
   const isStale = installState === 'installed-stale';
+  // Show Remove whenever an apicircle entry is present (current OR stale) and
+  // the host can actually perform the removal.
+  const showRemove = canRemove && (isInstalled || isStale);
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex flex-wrap items-center gap-3">
       <button
         type="button"
         onClick={() => void handleInstall()}
@@ -377,8 +418,43 @@ function InstallButton({
           </>
         )}
       </button>
+      {showRemove && (
+        <button
+          type="button"
+          onClick={() => setConfirmOpen(true)}
+          disabled={installing}
+          className="inline-flex items-center gap-1.5 rounded-sm border border-border px-2.5 py-1.5 text-xs text-text-muted transition-colors hover:border-danger/50 hover:bg-danger/10 hover:text-danger disabled:opacity-60"
+        >
+          <Trash2 size={12} aria-hidden="true" />
+          Remove
+        </button>
+      )}
       {isInstalled && <span className="text-[0.6875rem] text-text-dim">Config is up to date</span>}
       {isStale && <span className="text-[0.6875rem] text-warning">Config needs updating</span>}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Remove MCP config?"
+        tone="danger"
+        confirmLabel="Remove"
+        description={
+          <>
+            This removes the <code className="text-text-primary">apicircle</code> MCP server entry
+            {configPath ? (
+              <>
+                {' '}
+                from <code className="break-all text-text-primary">{configPath}</code>
+              </>
+            ) : (
+              <> from this client&rsquo;s config file</>
+            )}
+            . Any other entries in the file are left untouched, and you can re-install it any time.
+            Restart the AI client afterward for the change to take effect.
+          </>
+        }
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={handleRemove}
+      />
     </div>
   );
 }

@@ -86,6 +86,7 @@
     "onCommand:apicircle.openMcpConnectGuide",
     "onCommand:apicircle.copyMcpConfig",
     "onCommand:apicircle.copyMcpPrompt",
+    "onCommand:apicircle.openMcpPromptCategory",
     "onCommand:apicircle.revealMcpBinaryInfo",
     "onCommand:apicircle.installCopilotMcpConfig",
     "onCommand:apicircle.uninstallCopilotMcpConfig",
@@ -1337,6 +1338,12 @@
         "title": "Copy MCP Prompt",
         "category": "API Circle",
         "icon": "$(copy)"
+      },
+      {
+        "command": "apicircle.openMcpPromptCategory",
+        "title": "Browse MCP Prompts",
+        "category": "API Circle",
+        "icon": "$(book)"
       },
       {
         "command": "apicircle.copyMcpConfig",

@@ -170,6 +170,105 @@ describe('HowToConnect (setup block in Connection)', () => {
   });
 });
 
+describe('HowToConnect — Install / Remove config flow (desktop bridge)', () => {
+  let installConfig: ReturnType<typeof vi.fn>;
+  let detectInstallState: ReturnType<typeof vi.fn>;
+  let uninstallConfig: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    // The base mcpBridge mock omits the install surface (so the rest of the
+    // suite exercises the copy-snippet path). Layer it on here so the
+    // InstallButton renders and we can drive the install/remove flow.
+    installConfig = vi.fn().mockResolvedValue({ outcome: 'created', path: '/cfg/claude.json' });
+    detectInstallState = vi.fn().mockResolvedValue('installed-current');
+    uninstallConfig = vi.fn().mockResolvedValue({ outcome: 'removed', path: '/cfg/claude.json' });
+    (window as unknown as { apicircleDesktop?: unknown }).apicircleDesktop = {
+      mcp: { ...mcpBridge, installConfig, detectInstallState, uninstallConfig },
+      workspaceFile: workspaceFileBridge,
+    };
+  });
+
+  it('shows Installed + Remove when an apicircle entry is present', async () => {
+    await renderWithStore(<McpServerPanel />);
+    expect(await screen.findByRole('button', { name: /^Installed$/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Remove$/ })).toBeInTheDocument();
+  });
+
+  it('offers Remove for a stale entry too', async () => {
+    detectInstallState.mockResolvedValue('installed-stale');
+    await renderWithStore(<McpServerPanel />);
+    expect(await screen.findByRole('button', { name: /Update config/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Remove$/ })).toBeInTheDocument();
+  });
+
+  it('does not show Remove when the entry is absent', async () => {
+    detectInstallState.mockResolvedValue('absent');
+    await renderWithStore(<McpServerPanel />);
+    expect(await screen.findByRole('button', { name: /Install config/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Remove$/ })).not.toBeInTheDocument();
+  });
+
+  it('hides Remove when the bridge cannot uninstall (older preload)', async () => {
+    (window as unknown as { apicircleDesktop?: unknown }).apicircleDesktop = {
+      // installConfig present, uninstallConfig missing → Install shows, Remove hidden.
+      mcp: { ...mcpBridge, installConfig, detectInstallState },
+      workspaceFile: workspaceFileBridge,
+    };
+    await renderWithStore(<McpServerPanel />);
+    expect(await screen.findByRole('button', { name: /^Installed$/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Remove$/ })).not.toBeInTheDocument();
+  });
+
+  it('confirms, removes the config, and flips state back to absent', async () => {
+    const user = userEvent.setup();
+    await renderWithStore(<McpServerPanel />);
+    await user.click(await screen.findByRole('button', { name: /^Remove$/ }));
+
+    // The danger confirm dialog appears and names the config path resolved
+    // from getConfigPath (NOT the uninstall result path).
+    expect(await screen.findByText('Remove MCP config?')).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog');
+    expect(
+      within(dialog).getByText('/Users/me/.claude/claude_desktop_config.json'),
+    ).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Remove' }));
+    expect(uninstallConfig).toHaveBeenCalledWith('claude-desktop');
+
+    // State flips: Install config returns, Remove disappears, dialog closes.
+    expect(await screen.findByRole('button', { name: /Install config/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Remove$/ })).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        useWorkspaceStore.getState().toasts.some((t) => /MCP config removed/.test(t.title)),
+      ).toBe(true);
+    });
+  });
+
+  it('cancel in the confirm dialog leaves the config installed', async () => {
+    const user = userEvent.setup();
+    await renderWithStore(<McpServerPanel />);
+    await user.click(await screen.findByRole('button', { name: /^Remove$/ }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(uninstallConfig).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /^Installed$/ })).toBeInTheDocument();
+  });
+
+  it('surfaces an error toast when removal fails', async () => {
+    const user = userEvent.setup();
+    uninstallConfig.mockRejectedValue(new Error('EACCES: permission denied'));
+    await renderWithStore(<McpServerPanel />);
+    await user.click(await screen.findByRole('button', { name: /^Remove$/ }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Remove' }));
+    await waitFor(() => {
+      const toasts = useWorkspaceStore.getState().toasts;
+      expect(toasts.some((t) => t.tone === 'error' && /Remove failed/.test(t.title))).toBe(true);
+    });
+  });
+});
+
 describe('ConnectionSection — Workspace mirror block', () => {
   it('renders the workspace mirror path + binary name', async () => {
     await renderWithStore(<McpServerPanel />);

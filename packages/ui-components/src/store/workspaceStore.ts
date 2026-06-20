@@ -4509,10 +4509,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const clientId = readOAuthClientId();
     const local = get().local;
     if (!local) throw new Error('Workspace not ready');
-    // GitHub doesn't send CORS headers on `github.com/login/*`, so a
-    // browser can't POST there directly. The renderer routes through a
-    // same-origin proxy (Vite dev server + Electron's main-process proxy
-    // in production). Non-browser callers keep the direct origin.
+    // GitHub doesn't send CORS headers on `github.com/login/*`, so a browser
+    // can't POST there directly. The renderer routes through a same-origin
+    // `/_gh-oauth` proxy that ONLY the Vite dev server provides — the static
+    // web deploy and the packaged desktop app have none, which is why the
+    // one-click button is gated to dev via `isGitHubDeviceFlowAvailable()`
+    // and the PAT path is the supported route everywhere else. Non-browser
+    // callers keep the direct origin.
     const client = new GitHubClient({ loginBaseUrl: resolveGitHubLoginBaseUrl() });
     // Classic OAuth apps don't accept `pull_request` as a scope — `repo`
     // already grants PR read/write. Requesting it surfaces as
@@ -7921,10 +7924,15 @@ async function decryptLinkSessionToken(
 const DEFAULT_GITHUB_OAUTH_CLIENT_ID = 'Ov23lidibDgD8hoGFB67';
 
 /**
- * Path that the dev server / Electron main proxies to `https://github.com`.
- * Browsers can't POST to `github.com/login/*` directly because GitHub
- * doesn't send CORS headers there; the proxy hop makes the request
- * same-origin and bypasses the preflight.
+ * Same-origin path the Vite dev server proxies to `https://github.com` (see
+ * `apps/web/vite.config.ts`). Browsers can't POST to `github.com/login/*`
+ * directly because GitHub doesn't send CORS headers there; the proxy hop
+ * makes the request same-origin and bypasses the preflight.
+ *
+ * NOTE: only the dev server provides this proxy. The static web deploy and
+ * the packaged desktop app have none, so the one-click device-flow button is
+ * gated to builds where it works via `isGitHubDeviceFlowAvailable()`
+ * (`layout/dock/githubDeviceFlow.ts`); everywhere else the PAT path is used.
  */
 const BROWSER_GITHUB_LOGIN_PROXY = '/_gh-oauth';
 
