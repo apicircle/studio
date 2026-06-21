@@ -1,0 +1,1223 @@
+openapi: 3.0.3
+info:
+  title: User Onboarding Service
+  version: 1.0.0
+  description:
+    Full-fledged user onboarding, authentication, verification, consents, user profile, invitations, and audit
+    APIs for testing.
+servers:
+  - url: http://localhost:4011/v1
+    description: Local mock server
+  - url: https://api.example.com/user-onboarding-service/v1
+    description: Example cloud server
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+    description: Registration, login, token, and password flows.
+  - name: Verification
+    description: Email and phone verification flows.
+  - name: Onboarding
+    description: Profile setup, KYC documents, consent, and progress.
+  - name: Users
+    description: Current user and admin-visible user profile APIs.
+  - name: Invitations
+    description: Invite users into an organization or tenant.
+  - name: Audit
+    description: User onboarding audit trail.
+paths:
+  /auth/register:
+    post:
+      tags:
+        - Auth
+      operationId: registerUser
+      summary: Register a new user
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+        - $ref: ./common-components.yaml#/components/parameters/IdempotencyKey
+      responses:
+        '201':
+          description: User registered and authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+        '409':
+          $ref: ./common-components.yaml#/components/responses/Conflict
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      security: []
+  /auth/login:
+    post:
+      tags:
+        - Auth
+      operationId: loginUser
+      summary: Login with email and password
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      security: []
+  /auth/refresh:
+    post:
+      tags:
+        - Auth
+      operationId: refreshToken
+      summary: Refresh access token
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      security: []
+  /auth/logout:
+    post:
+      tags:
+        - Auth
+      operationId: logoutUser
+      summary: Logout current session
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+      responses:
+        '204':
+          description: Session logged out.
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+  /auth/password/forgot:
+    post:
+      tags:
+        - Auth
+      operationId: forgotPassword
+      summary: Start password reset flow
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+      responses:
+        '202':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: ./common-components.yaml#/components/schemas/AsyncJob
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      security: []
+  /auth/password/reset:
+    post:
+      tags:
+        - Auth
+      operationId: resetPassword
+      summary: Complete password reset flow
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+      responses:
+        '202':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: ./common-components.yaml#/components/schemas/AsyncJob
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      security: []
+  /verification/email/send:
+    post:
+      tags:
+        - Verification
+      operationId: sendEmailVerification
+      summary: Send email verification code
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+      responses:
+        '202':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: ./common-components.yaml#/components/schemas/AsyncJob
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationSendRequest'
+      security: []
+  /verification/email/confirm:
+    post:
+      tags:
+        - Verification
+      operationId: confirmEmailVerification
+      summary: Confirm email verification code
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationStatus'
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationConfirmRequest'
+      security: []
+  /verification/phone/send:
+    post:
+      tags:
+        - Verification
+      operationId: sendPhoneVerification
+      summary: Send phone verification code
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+      responses:
+        '202':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: ./common-components.yaml#/components/schemas/AsyncJob
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationSendRequest'
+  /verification/phone/confirm:
+    post:
+      tags:
+        - Verification
+      operationId: confirmPhoneVerification
+      summary: Confirm phone verification code
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationStatus'
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationConfirmRequest'
+  /onboarding/status:
+    get:
+      tags:
+        - Onboarding
+      operationId: getOnboardingStatus
+      summary: Get onboarding progress for current user
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingStatus'
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+  /onboarding/profile:
+    patch:
+      tags:
+        - Onboarding
+      operationId: updateOnboardingProfile
+      summary: Update profile during onboarding
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+  /onboarding/documents:
+    post:
+      tags:
+        - Onboarding
+      operationId: uploadOnboardingDocument
+      summary: Upload KYC/onboarding document
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+        - $ref: ./common-components.yaml#/components/parameters/IdempotencyKey
+      responses:
+        '201':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentUploadResponse'
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                documentType:
+                  type: string
+                  enum:
+                    - AADHAAR
+                    - PAN
+                    - PASSPORT
+                    - DRIVING_LICENSE
+                    - OTHER
+                file:
+                  type: string
+                  format: binary
+              required:
+                - documentType
+                - file
+  /onboarding/documents/{documentId}:
+    get:
+      tags:
+        - Onboarding
+      operationId: getOnboardingDocument
+      summary: Get uploaded onboarding document metadata
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+        - name: documentId
+          in: path
+          required: true
+          description: Document identifier.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentUploadResponse'
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+  /onboarding/consents:
+    post:
+      tags:
+        - Onboarding
+      operationId: submitOnboardingConsents
+      summary: Submit onboarding consents
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingStatus'
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsentSubmitRequest'
+  /users/me:
+    get:
+      tags:
+        - Users
+      operationId: getCurrentUser
+      summary: Get current user profile
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+    patch:
+      tags:
+        - Users
+      operationId: updateCurrentUser
+      summary: Update current user profile
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+  /users:
+    get:
+      tags:
+        - Users
+      operationId: listUsers
+      summary: List users in current tenant
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+        - $ref: ./common-components.yaml#/components/parameters/Page
+        - $ref: ./common-components.yaml#/components/parameters/PageSize
+        - $ref: ./common-components.yaml#/components/parameters/Sort
+        - name: status
+          in: query
+          required: false
+          description: Filter by user status.
+          schema:
+            type: string
+            enum:
+              - INVITED
+              - PENDING_VERIFICATION
+              - ACTIVE
+              - SUSPENDED
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedUsers'
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+  /users/{userId}:
+    get:
+      tags:
+        - Users
+      operationId: getUserById
+      summary: Get user by id
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+        - name: userId
+          in: path
+          required: true
+          description: User identifier.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+  /invitations:
+    post:
+      tags:
+        - Invitations
+      operationId: createInvitation
+      summary: Invite user into current tenant
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+        - $ref: ./common-components.yaml#/components/parameters/IdempotencyKey
+      responses:
+        '201':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+        '409':
+          $ref: ./common-components.yaml#/components/responses/Conflict
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationRequest'
+  /audit-events:
+    get:
+      tags:
+        - Audit
+      operationId: listAuditEvents
+      summary: List onboarding audit events
+      parameters:
+        - $ref: ./common-components.yaml#/components/parameters/XRequestId
+        - $ref: ./common-components.yaml#/components/parameters/Page
+        - $ref: ./common-components.yaml#/components/parameters/PageSize
+        - $ref: ./common-components.yaml#/components/parameters/Sort
+        - name: action
+          in: query
+          required: false
+          description: Filter by audit action.
+          schema:
+            type: string
+            example: USER_REGISTERED
+        - name: from
+          in: query
+          required: false
+          description: From date.
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: false
+          description: To date.
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedAuditEvents'
+        '400':
+          $ref: ./common-components.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./common-components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./common-components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./common-components.yaml#/components/responses/NotFound
+        '422':
+          $ref: ./common-components.yaml#/components/responses/ValidationError
+        '429':
+          $ref: ./common-components.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./common-components.yaml#/components/responses/InternalError
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: ./common-components.yaml#/components/securitySchemes/bearerAuth
+    apiKeyAuth:
+      $ref: ./common-components.yaml#/components/securitySchemes/apiKeyAuth
+  schemas:
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - password
+        - firstName
+        - lastName
+        - tenantCode
+      properties:
+        email:
+          type: string
+          format: email
+          example: deva@example.com
+        password:
+          type: string
+          format: password
+          minLength: 8
+          example: Passw0rd!
+        firstName:
+          type: string
+          example: Deva
+        lastName:
+          type: string
+          example: Prakash
+        phone:
+          type: string
+          example: '+919876543210'
+        tenantCode:
+          type: string
+          example: APICIRCLE
+        referralCode:
+          type: string
+          nullable: true
+          example: INVITE-2026
+        acceptedConsents:
+          type: array
+          items:
+            $ref: ./common-components.yaml#/components/schemas/Consent
+    AuthResponse:
+      type: object
+      required:
+        - accessToken
+        - refreshToken
+        - expiresIn
+        - user
+      properties:
+        accessToken:
+          type: string
+          example: eyJhbGciOi...
+        refreshToken:
+          type: string
+          example: rt_01J...
+        tokenType:
+          type: string
+          example: Bearer
+        expiresIn:
+          type: integer
+          example: 3600
+        user:
+          $ref: '#/components/schemas/UserProfile'
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: deva@example.com
+        password:
+          type: string
+          format: password
+          example: Passw0rd!
+        mfaCode:
+          type: string
+          nullable: true
+          example: '123456'
+        rememberDevice:
+          type: boolean
+          default: false
+    RefreshTokenRequest:
+      type: object
+      required:
+        - refreshToken
+      properties:
+        refreshToken:
+          type: string
+          example: rt_01J...
+    ForgotPasswordRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          example: deva@example.com
+    ResetPasswordRequest:
+      type: object
+      required:
+        - resetToken
+        - newPassword
+      properties:
+        resetToken:
+          type: string
+          example: reset_01J...
+        newPassword:
+          type: string
+          format: password
+          minLength: 8
+          example: NewPassw0rd!
+    VerificationSendRequest:
+      type: object
+      required:
+        - destination
+      properties:
+        destination:
+          type: string
+          example: deva@example.com
+        purpose:
+          type: string
+          enum:
+            - SIGNUP
+            - LOGIN
+            - PASSWORD_RESET
+            - PROFILE_UPDATE
+          example: SIGNUP
+    VerificationConfirmRequest:
+      type: object
+      required:
+        - destination
+        - code
+      properties:
+        destination:
+          type: string
+          example: deva@example.com
+        code:
+          type: string
+          minLength: 4
+          maxLength: 8
+          example: '123456'
+    VerificationStatus:
+      type: object
+      required:
+        - destination
+        - verified
+        - verifiedAt
+      properties:
+        destination:
+          type: string
+          example: deva@example.com
+        verified:
+          type: boolean
+          example: true
+        verifiedAt:
+          $ref: ./common-components.yaml#/components/schemas/ISODateTime
+    UserProfile:
+      allOf:
+        - $ref: ./common-components.yaml#/components/schemas/BaseResource
+        - type: object
+          required:
+            - email
+            - firstName
+            - lastName
+            - status
+          properties:
+            email:
+              type: string
+              format: email
+              example: deva@example.com
+            firstName:
+              type: string
+              example: Deva
+            lastName:
+              type: string
+              example: Prakash
+            phone:
+              type: string
+              example: '+919876543210'
+            status:
+              type: string
+              enum:
+                - INVITED
+                - PENDING_VERIFICATION
+                - ACTIVE
+                - SUSPENDED
+              example: ACTIVE
+            roles:
+              type: array
+              items:
+                type: string
+              example:
+                - TENANT_ADMIN
+            contact:
+              $ref: ./common-components.yaml#/components/schemas/ContactPoint
+            address:
+              $ref: ./common-components.yaml#/components/schemas/Address
+            preferences:
+              $ref: '#/components/schemas/UserPreferences'
+            audit:
+              $ref: ./common-components.yaml#/components/schemas/AuditInfo
+    UpdateProfileRequest:
+      type: object
+      properties:
+        firstName:
+          type: string
+          example: Deva
+        lastName:
+          type: string
+          example: Prakash
+        phone:
+          type: string
+          example: '+919876543210'
+        address:
+          $ref: ./common-components.yaml#/components/schemas/Address
+        preferences:
+          $ref: '#/components/schemas/UserPreferences'
+    UserPreferences:
+      type: object
+      properties:
+        language:
+          type: string
+          example: en-IN
+        timezone:
+          type: string
+          example: Asia/Kolkata
+        notificationChannels:
+          type: array
+          items:
+            type: string
+            enum:
+              - EMAIL
+              - SMS
+              - WHATSAPP
+              - PUSH
+          example:
+            - EMAIL
+            - PUSH
+    OnboardingStep:
+      type: object
+      required:
+        - code
+        - status
+      properties:
+        code:
+          type: string
+          example: EMAIL_VERIFICATION
+        title:
+          type: string
+          example: Verify email address
+        status:
+          type: string
+          enum:
+            - NOT_STARTED
+            - IN_PROGRESS
+            - COMPLETED
+            - FAILED
+          example: COMPLETED
+        completedAt:
+          $ref: ./common-components.yaml#/components/schemas/ISODateTime
+    OnboardingStatus:
+      type: object
+      required:
+        - userId
+        - overallStatus
+        - steps
+      properties:
+        userId:
+          $ref: ./common-components.yaml#/components/schemas/UUID
+        overallStatus:
+          type: string
+          enum:
+            - PENDING
+            - COMPLETED
+            - REJECTED
+          example: PENDING
+        completionPercentage:
+          type: integer
+          minimum: 0
+          maximum: 100
+          example: 75
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/OnboardingStep'
+        nextAction:
+          type: string
+          example: UPLOAD_ID_PROOF
+    DocumentUploadResponse:
+      allOf:
+        - $ref: ./common-components.yaml#/components/schemas/Attachment
+        - type: object
+          properties:
+            documentType:
+              type: string
+              enum:
+                - AADHAAR
+                - PAN
+                - PASSPORT
+                - DRIVING_LICENSE
+                - OTHER
+              example: PAN
+            verificationStatus:
+              type: string
+              enum:
+                - PENDING
+                - APPROVED
+                - REJECTED
+              example: PENDING
+    ConsentSubmitRequest:
+      type: object
+      required:
+        - consents
+      properties:
+        consents:
+          type: array
+          minItems: 1
+          items:
+            $ref: ./common-components.yaml#/components/schemas/Consent
+    InvitationRequest:
+      type: object
+      required:
+        - email
+        - role
+      properties:
+        email:
+          type: string
+          format: email
+          example: member@example.com
+        role:
+          type: string
+          example: DEVELOPER
+        expiresInDays:
+          type: integer
+          minimum: 1
+          maximum: 30
+          default: 7
+    Invitation:
+      allOf:
+        - $ref: ./common-components.yaml#/components/schemas/BaseResource
+        - type: object
+          properties:
+            email:
+              type: string
+              format: email
+              example: member@example.com
+            role:
+              type: string
+              example: DEVELOPER
+            status:
+              type: string
+              enum:
+                - PENDING
+                - ACCEPTED
+                - EXPIRED
+                - REVOKED
+              example: PENDING
+            expiresAt:
+              $ref: ./common-components.yaml#/components/schemas/ISODateTime
+    AuditEvent:
+      allOf:
+        - $ref: ./common-components.yaml#/components/schemas/BaseResource
+        - type: object
+          required:
+            - actorId
+            - action
+            - entityType
+            - entityId
+          properties:
+            actorId:
+              $ref: ./common-components.yaml#/components/schemas/UUID
+            action:
+              type: string
+              example: USER_REGISTERED
+            entityType:
+              type: string
+              example: USER
+            entityId:
+              $ref: ./common-components.yaml#/components/schemas/UUID
+            metadata:
+              type: object
+              additionalProperties: true
+            audit:
+              $ref: ./common-components.yaml#/components/schemas/AuditInfo
+    PagedUsers:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserProfile'
+        meta:
+          $ref: ./common-components.yaml#/components/schemas/PaginationMeta
+    PagedAuditEvents:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEvent'
+        meta:
+          $ref: ./common-components.yaml#/components/schemas/PaginationMeta
+  responses: {}
+  parameters: {}
+x-apicircle-test-scenarios:
+  - name: Happy path onboarding
+    steps:
+      - POST /auth/register
+      - POST /verification/email/confirm
+      - PATCH /onboarding/profile
+      - POST /onboarding/documents
+      - POST /onboarding/consents
+      - GET /onboarding/status
+  - name: Negative validation checks
+    steps:
+      - POST /auth/register with invalid email should return 422
+      - POST /auth/login with wrong password should return 401
+      - GET /users/{userId} with random id should return 404

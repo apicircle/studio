@@ -95,20 +95,28 @@ test.describe('Live GitHub - refresh conflict resolution @live-github', () => {
     app,
   }) => {
     const { host, branch, setup } = await setupLinkedBaseline(app, 'auto-merge');
-    await updateWorkspaceJson(host, branch, 'e2e live: remote dep and core', (ws) => {
-      const typed = ws as Record<string, any>;
-      typed.linkedWorkspaces[setup.linkId].name = 'remote dependency name';
-      typed.releases.perLink[setup.linkId].versions.push({
-        version: '1.0.1',
-        notes: 'remote dependency ledger',
-        publishedAt: '2026-01-01T00:00:00.000Z',
-        workspaceSnapshot: 'remote-ledger',
-        deprecated: false,
-        yanked: false,
-      });
-      typed.releases.perLink[setup.linkId].currentVersion = '1.0.1';
-      addRemoteRequest(typed, 'v2-remote-core-request');
-    });
+    await updateWorkspaceJson(
+      host,
+      branch,
+      'e2e live: remote dep and core',
+      (ws) => {
+        const typed = ws as Record<string, any>;
+        typed.linkedWorkspaces[setup.linkId].name = 'remote dependency name';
+        typed.releases.perLink[setup.linkId].versions.push({
+          version: '1.0.1',
+          notes: 'remote dependency ledger',
+          publishedAt: '2026-01-01T00:00:00.000Z',
+          workspaceSnapshot: 'remote-ledger',
+          deprecated: false,
+          yanked: false,
+        });
+        typed.releases.perLink[setup.linkId].currentVersion = '1.0.1';
+        addRemoteRequest(typed, 'v2-remote-core-request');
+      },
+      {
+        precondition: (ws) => (ws as Record<string, any>).linkedWorkspaces?.[setup.linkId] != null,
+      },
+    );
     const result = await app.evaluate(async ({ linkId, envName, varKey }) => {
       const api = window.__apicircleStore!.getState() as any;
       api.setLinkedEnvVarOverride(linkId, envName, varKey, { value: 'local dependency override' });
@@ -141,15 +149,24 @@ test.describe('Live GitHub - refresh conflict resolution @live-github', () => {
     app,
   }) => {
     const mine = await setupLinkedBaseline(app, 'conflict-mine');
-    await updateWorkspaceJson(mine.host, mine.branch, 'e2e live: remote mine conflict', (ws) => {
-      const typed = ws as Record<string, any>;
-      typed.linkedOverrides.requests[mine.setup.key] = {
-        linkedWorkspaceId: mine.setup.linkId,
-        itemId: mine.setup.reqId,
-        patch: { url: 'https://remote.example.test/mine' },
-        updatedAt: '2026-01-01T00:00:00.000Z',
-      };
-    });
+    await updateWorkspaceJson(
+      mine.host,
+      mine.branch,
+      'e2e live: remote mine conflict',
+      (ws) => {
+        const typed = ws as Record<string, any>;
+        typed.linkedOverrides.requests[mine.setup.key] = {
+          linkedWorkspaceId: mine.setup.linkId,
+          itemId: mine.setup.reqId,
+          patch: { url: 'https://remote.example.test/mine' },
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        };
+      },
+      {
+        precondition: (ws) =>
+          (ws as Record<string, any>).linkedWorkspaces?.[mine.setup.linkId] != null,
+      },
+    );
     const mineResult = await app.evaluate(async ({ linkId, reqId, key }) => {
       const api = window.__apicircleStore!.getState() as any;
       api.setLinkedRequestOverride(linkId, reqId, { url: 'https://local.example.test/mine' });
@@ -191,6 +208,10 @@ test.describe('Live GitHub - refresh conflict resolution @live-github', () => {
           patch: { url: 'https://remote.example.test/theirs' },
           updatedAt: '2026-01-01T00:00:00.000Z',
         };
+      },
+      {
+        precondition: (ws) =>
+          (ws as Record<string, any>).linkedWorkspaces?.[theirs.setup.linkId] != null,
       },
     );
     const theirsResult = await app.evaluate(async ({ linkId, reqId, key }) => {

@@ -9,7 +9,6 @@ import {
   makeV2BranchName,
   updateWorkspaceJson,
   v2SkipReason,
-  waitForRemoteWorkspace,
 } from './_helpers';
 
 const SNAPSHOT_BEARER = 'V2_SNAPSHOT_BEARER_SHOULD_RESTORE';
@@ -80,22 +79,23 @@ test.describe('Live GitHub - snapshots and data-loss guards @live-github', () =>
     ).json as Record<string, any>;
     expect(remote.collections.requests[setup.requestId].auth.token).toBe('');
 
-    // `updateWorkspaceJson` below reads workspace.json by `?ref=<branch>` to
-    // rename the linked workspace. The baseline push in `setup` is what created
-    // that link, so block until the branch-ref read replica reflects it —
-    // otherwise this read can land on a pre-push snapshot where
-    // `linkedWorkspaces[linkId]` is absent and the mutation throws
+    // `updateWorkspaceJson` reads workspace.json by `?ref=<branch>` to rename
+    // the linked workspace the baseline push created. The `precondition` makes
+    // its OWN read retry until the link is visible — a pre-push snapshot where
+    // `linkedWorkspaces[linkId]` is absent would otherwise throw
     // "Cannot set properties of undefined (setting 'name')".
-    await waitForRemoteWorkspace(
+    await updateWorkspaceJson(
       host,
       branch,
-      (f) => (f.json as Record<string, any>).linkedWorkspaces?.[setup.linkId] != null,
+      'e2e live: remote snapshot merge',
+      (ws) => {
+        const typed = ws as Record<string, any>;
+        typed.linkedWorkspaces[setup.linkId].name = 'snapshot remote link name';
+      },
+      {
+        precondition: (ws) => (ws as Record<string, any>).linkedWorkspaces?.[setup.linkId] != null,
+      },
     );
-
-    await updateWorkspaceJson(host, branch, 'e2e live: remote snapshot merge', (ws) => {
-      const typed = ws as Record<string, any>;
-      typed.linkedWorkspaces[setup.linkId].name = 'snapshot remote link name';
-    });
 
     const merge = await app.evaluate(async ({ linkId }) => {
       const api = window.__apicircleStore!.getState() as any;

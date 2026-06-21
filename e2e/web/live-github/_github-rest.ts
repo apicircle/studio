@@ -985,8 +985,26 @@ export async function updateWorkspaceJson<T extends Record<string, unknown>>(
   branch: string,
   message: string,
   mutate: (workspace: T) => void,
+  opts: { precondition?: (workspace: T) => boolean; preconditionAttempts?: number } = {},
 ): Promise<T> {
-  const file = await fetchWorkspaceJson<T>(cfg, branch);
+  let file = await fetchWorkspaceJson<T>(cfg, branch);
+  // Read-side barrier (see updateWorkspaceJsonById): when the mutation depends
+  // on data a prior push just added, retry THIS read until it's visible. A
+  // separate pre-flight barrier isn't enough — Contents replicas aren't
+  // monotonic under load, so the read feeding the write can still hit a staler
+  // replica and either crash on the missing key or clobber it on write-back.
+  if (opts.precondition) {
+    const attempts = opts.preconditionAttempts ?? 8;
+    for (let attempt = 0; !opts.precondition(file.json); attempt += 1) {
+      if (attempt >= attempts - 1) {
+        throw new Error(
+          `updateWorkspaceJson ${cfg.fullName}@${branch}: precondition not satisfied after ${attempts} reads (branch-ref replica lag)`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+      file = await fetchWorkspaceJson<T>(cfg, branch);
+    }
+  }
   mutate(file.json);
   const newSha = await writeWorkspaceJson(cfg, branch, file.json, message);
   // Read-back barrier: block until a `?ref=<branch>` read serves the doc we
@@ -1058,7 +1076,7 @@ export async function fetchWorkspaceJsonById<T = Record<string, unknown>>(
  * read-modify-write or product read doesn't race the Contents-API
  * propagation window after a sibling write to the same branch.
  */
-export async function waitForRemoteWorkspaceById<T extends Record<string, unknown>>(
+async function waitForRemoteWorkspaceById<T extends Record<string, unknown>>(
   cfg: LiveGithubConfig,
   branch: string,
   workspaceId: string,
@@ -1145,8 +1163,28 @@ export async function updateWorkspaceJsonById<T extends Record<string, unknown>>
   workspaceId: string,
   message: string,
   mutate: (workspace: T) => void,
+  opts: { precondition?: (workspace: T) => boolean; preconditionAttempts?: number } = {},
 ): Promise<T> {
-  const file = await fetchWorkspaceJsonById<T>(cfg, branch, workspaceId);
+  let file = await fetchWorkspaceJsonById<T>(cfg, branch, workspaceId);
+  // Read-side barrier: when the mutation depends on data a prior push just
+  // added (e.g. a request another surface pushed), retry THIS read until that
+  // data is visible. A separate pre-flight barrier isn't enough — GitHub's
+  // Contents replicas aren't monotonic under load, so the read that feeds the
+  // write can still hit a staler replica and silently clobber the missing data
+  // when it writes the whole doc back. Validating on the same read that feeds
+  // the write is what closes the gap.
+  if (opts.precondition) {
+    const attempts = opts.preconditionAttempts ?? 8;
+    for (let attempt = 0; !opts.precondition(file.json); attempt += 1) {
+      if (attempt >= attempts - 1) {
+        throw new Error(
+          `updateWorkspaceJsonById ${cfg.fullName}@${branch} [${workspaceId}]: precondition not satisfied after ${attempts} reads (branch-ref replica lag)`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+      file = await fetchWorkspaceJsonById<T>(cfg, branch, workspaceId);
+    }
+  }
   mutate(file.json);
   const newSha = await writeWorkspaceJsonById(cfg, branch, workspaceId, file.json, message);
   // Read-back barrier (see updateWorkspaceJson): block until the branch-ref
