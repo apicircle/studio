@@ -860,3 +860,36 @@ describe('package.json manifest regression', () => {
     expect(withWorkspace!.contents ?? '').toContain('command:apicircle.newRequest');
   });
 });
+
+describe('marketplace changelog', () => {
+  // The VS Code Marketplace and Open VSX render the extension's own
+  // CHANGELOG.md in their "Changes" tab. It must live in the extension root
+  // (apps/vscode/CHANGELOG.md) so `vsce package` ships it inside the .vsix —
+  // the root monorepo CHANGELOG is NOT packaged. Regression guard: the file
+  // went missing entirely once, leaving the Changes tab permanently empty.
+  const changelogPath = path.resolve(__dirname, '..', 'CHANGELOG.md');
+
+  it('apps/vscode/CHANGELOG.md exists and has content', () => {
+    expect(fs.existsSync(changelogPath), 'apps/vscode/CHANGELOG.md is missing').toBe(true);
+    const text = fs.readFileSync(changelogPath, 'utf8');
+    expect(text.trim().length).toBeGreaterThan(0);
+    expect(text).toContain('# Changelog');
+  });
+
+  it('.vscodeignore does not exclude CHANGELOG.md from the .vsix', () => {
+    const ignorePath = path.resolve(__dirname, '..', '.vscodeignore');
+    if (!fs.existsSync(ignorePath)) return; // no ignore file → nothing excluded
+    const patterns = fs
+      .readFileSync(ignorePath, 'utf8')
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && !l.startsWith('#') && !l.startsWith('!'));
+    // None of the include-stripping globs may match CHANGELOG.md.
+    const excludesChangelog = patterns.some(
+      (p) => p === 'CHANGELOG.md' || p === '*.md' || p === '**/*.md',
+    );
+    expect(excludesChangelog, '.vscodeignore would strip CHANGELOG.md from the package').toBe(
+      false,
+    );
+  });
+});

@@ -30,7 +30,7 @@ export async function toggleStepEnabledCommand(
     return;
   }
   const state = await active.read();
-  const plan = state.local.executionPlans[node.planId];
+  const plan = (state.synced.executionPlans ?? {})[node.planId];
   if (!plan) {
     await vscode.window.showWarningMessage('Plan no longer exists.');
     return;
@@ -70,7 +70,7 @@ export async function removeStepFromPlanCommand(
     return;
   }
   const state = await active.read();
-  const plan = state.local.executionPlans[node.planId];
+  const plan = (state.synced.executionPlans ?? {})[node.planId];
   if (!plan) {
     await vscode.window.showWarningMessage('Plan no longer exists.');
     return;

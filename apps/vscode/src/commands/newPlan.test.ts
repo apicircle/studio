@@ -5,7 +5,6 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { Uri, window } from '../../test/mocks/vscode';
 import { VsCodeBridge } from '../host/vscodeBridge';
-import { deviceLocalPath } from '../util/workspaceDiscovery';
 import { newPlanCommand } from './newPlan';
 
 function makeMockContext(globalStoragePath: string) {
@@ -39,7 +38,6 @@ function seedWorkspace(
   apicircleDir: string,
   requestIds: string[],
   existingPlans: string[] = [],
-  globalStorageRoot?: string,
 ): void {
   fs.mkdirSync(apicircleDir, { recursive: true });
   const requests = Object.fromEntries(
@@ -88,47 +86,12 @@ function seedWorkspace(
       releases: { self: null, perLink: {} },
       globalAssets: { schemas: {}, graphql: {}, files: {} },
       mockServers: {},
-      executionPlans: {},
+      executionPlans,
       secretKeys: {},
       secretCrypto: null,
       meta: { createdAt: '2026-01-01', updatedAt: '2026-01-01', appVersion: '0.1.0' },
     }),
   );
-  // Plans live in local.executionPlans. If the bridge will read local via
-  // the device-local storage path, seed it there.
-  if (globalStorageRoot && Object.keys(executionPlans).length > 0) {
-    const localDir = deviceLocalPath(Uri.file(globalStorageRoot), { apicircleDir });
-    fs.mkdirSync(localDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(localDir, 'workspace.local.json'),
-      JSON.stringify({
-        schemaVersion: 1,
-        workspaceId: 'test-ws',
-        executionPlans,
-        history: { requestRuns: [], planRuns: [] },
-        secretIndex: { entries: {} },
-        sessions: { github: { workspace: null, links: {} } },
-        connectedRepo: null,
-        workingBranch: null,
-        seededWorkspaceSha: null,
-        retiredBranch: null,
-        sync: { lastPulledSnapshot: null, lastPulledSha: null, lastPulledAt: null, dirtyKeys: [] },
-        linkedCollections: {},
-        attachmentCache: {},
-        globalContext: {},
-        mockRuntime: { active: {} },
-        ui: {
-          activeRequestId: null,
-          sidebarExpandedSections: [],
-          themeId: 'one-dark-pro',
-          fontId: 'system-mono',
-          fontSizePercent: 100,
-        },
-        settings: { validateOnSend: true, monacoConsumesWheel: false },
-        snapshots: { entries: [], maxBytes: 50 * 1024 * 1024 },
-      }),
-    );
-  }
 }
 
 describe('newPlanCommand', () => {
@@ -183,11 +146,11 @@ describe('newPlanCommand', () => {
     (window.showInputBox as Mock).mockResolvedValueOnce(undefined);
     await newPlanCommand({ bridge });
     const state = await bridge.activeWorkspace()!.read();
-    expect(Object.keys(state.local.executionPlans ?? {})).toEqual([]);
+    expect(Object.keys(state.synced.executionPlans ?? {})).toEqual([]);
   });
 
   it('rejects duplicate plan names via validateInput', async () => {
-    seedWorkspace(apicircleDir, ['r1'], ['Smoke'], path.join(tmp, 'globalStorage'));
+    seedWorkspace(apicircleDir, ['r1'], ['Smoke']);
     activate();
     let validate: ((s: string) => string | null) | undefined;
     (window.showInputBox as Mock).mockImplementationOnce(
@@ -212,7 +175,7 @@ describe('newPlanCommand', () => {
 
     await newPlanCommand({ bridge });
     const state = await bridge.activeWorkspace()!.read();
-    const plans = Object.values(state.local.executionPlans ?? {}) as Array<{
+    const plans = Object.values(state.synced.executionPlans ?? {}) as Array<{
       name: string;
       steps: Array<{ requestId: string }>;
     }>;
@@ -239,7 +202,7 @@ describe('newPlanCommand', () => {
 
     await newPlanCommand({ bridge });
     const state = await bridge.activeWorkspace()!.read();
-    const plan = Object.values(state.local.executionPlans ?? {})[0] as {
+    const plan = Object.values(state.synced.executionPlans ?? {})[0] as {
       steps: Array<{ requestId: string }>;
     };
     expect(plan.steps.map((s) => s.requestId)).toEqual(['r3', 'r1', 'r2']);
@@ -256,7 +219,7 @@ describe('newPlanCommand', () => {
 
     await newPlanCommand({ bridge });
     const state = await bridge.activeWorkspace()!.read();
-    const plan = Object.values(state.local.executionPlans ?? {})[0] as {
+    const plan = Object.values(state.synced.executionPlans ?? {})[0] as {
       stopOnAssertionFailure: boolean;
     };
     expect(plan.stopOnAssertionFailure).toBe(true);

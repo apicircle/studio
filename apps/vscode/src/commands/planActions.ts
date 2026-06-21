@@ -14,9 +14,8 @@ import type { AbortRegistry } from '../execute/abortRegistry';
 //   • PlanRun history capped via setting (gap #8).
 //   • Optional env override via QuickPick (gap #20).
 //
-// Plans live in `WorkspaceLocal.executionPlans` and are lifted to
-// `synced.executionPlans` at hydration. For the runPlan call we manually
-// shape that lift inline.
+// Plans live in `WorkspaceSynced.executionPlans` (shared via git); `runPlan`
+// reads them straight off `state.synced`, so no lifting is needed here.
 // =============================================================================
 
 export interface PlanActionsDeps {
@@ -38,7 +37,7 @@ export async function runPlanCommand(deps: PlanActionsDeps, node?: PlanNode): Pr
   }
 
   const state = await active.read();
-  const plans = state.local.executionPlans ?? {};
+  const plans = state.synced.executionPlans ?? {};
   const planList = Object.values(plans);
   if (planList.length === 0) {
     await vscode.window.showInformationMessage(
@@ -94,13 +93,7 @@ export async function runPlanCommand(deps: PlanActionsDeps, node?: PlanNode): Pr
       async (_progress, token) => {
         token.onCancellationRequested(() => abortRegistry.cancel(runId));
 
-        // Lift plans to synced for runPlan
-        const liftedState = {
-          synced: { ...state.synced, executionPlans: state.local.executionPlans },
-          local: state.local,
-        };
-
-        const result = await runPlan(liftedState, plan.id, {
+        const result = await runPlan(state, plan.id, {
           withAssertions: true,
           actor: ANONYMOUS_ACTOR,
           signal,

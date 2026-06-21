@@ -144,7 +144,24 @@ describe('prompt tools', () => {
     )) as { ok: boolean; id: string };
     expect(out.ok).toBe(true);
     const state = await ctx.workspace.read();
-    expect(state.local.executionPlans[out.id].steps).toHaveLength(2);
+    expect(state.synced.executionPlans?.[out.id]?.steps).toHaveLength(2);
+  });
+
+  it('prompt.create_plan normalizes envPriorityOrder strings + linked refs', async () => {
+    const out = (await promptCreatePlanTool.handler(
+      {
+        name: 'Env',
+        stepRequestIds: [],
+        envPriorityOrder: ['prod', { kind: 'linked', linkedWorkspaceId: 'w', envName: 'e' }],
+      },
+      ctx,
+    )) as { ok: boolean; id: string };
+    expect(out.ok).toBe(true);
+    const state = await ctx.workspace.read();
+    expect(state.synced.executionPlans?.[out.id]?.envPriorityOrder).toEqual([
+      { kind: 'local', name: 'prod' },
+      { kind: 'linked', linkedWorkspaceId: 'w', envName: 'e' },
+    ]);
   });
 });
 
@@ -346,7 +363,7 @@ describe('prompt.add_plan_steps', () => {
     )) as { id: string };
     await promptAddPlanStepsTool.handler({ planId: plan.id, requestIds: [r2.id, r3.id] }, ctx);
     const state = await ctx.workspace.read();
-    expect(state.local.executionPlans[plan.id].steps.map((s) => s.requestId)).toEqual([
+    expect(state.synced.executionPlans?.[plan.id]?.steps.map((s) => s.requestId)).toEqual([
       r1.id,
       r2.id,
       r3.id,
@@ -374,10 +391,10 @@ describe('prompt.set_plan_variables', () => {
       ctx,
     );
     let state = await ctx.workspace.read();
-    expect(state.local.executionPlans[plan.id].variables).toEqual([{ key: 'k', value: 'v' }]);
+    expect(state.synced.executionPlans?.[plan.id]?.variables).toEqual([{ key: 'k', value: 'v' }]);
     await promptSetPlanVariablesTool.handler({ planId: plan.id, variables: [] }, ctx);
     state = await ctx.workspace.read();
-    expect(state.local.executionPlans[plan.id].variables).toEqual([]);
+    expect(state.synced.executionPlans?.[plan.id]?.variables).toEqual([]);
   });
 });
 

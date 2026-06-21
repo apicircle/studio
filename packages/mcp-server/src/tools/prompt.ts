@@ -18,6 +18,7 @@ import {
   MAX_RESPONSE_MULTIPLIERS,
 } from '@apicircle/shared';
 import type { AnyToolDef } from './types';
+import { ENV_PRIORITY_REF_INPUT, normalizeEnvPriorityOrder } from './crud';
 
 // =============================================================================
 // Prompt-driven authoring tools. The AI client converts the user's natural-
@@ -81,7 +82,8 @@ export const promptCreatePlanTool: AnyToolDef = {
   inputSchema: z.object({
     name: z.string(),
     stepRequestIds: z.array(z.string()).default([]),
-    envPriorityOrder: z.array(z.string()).default([]),
+    // Bare strings = local env names; objects target local/linked envs.
+    envPriorityOrder: z.array(ENV_PRIORITY_REF_INPUT).default([]),
   }),
   async handler(input, ctx) {
     const state = await ctx.workspace.read();
@@ -102,7 +104,7 @@ export const promptCreatePlanTool: AnyToolDef = {
       id,
       name: input.name,
       steps: input.stepRequestIds.map((requestId: string) => ({ requestId })),
-      envPriorityOrder: input.envPriorityOrder,
+      envPriorityOrder: normalizeEnvPriorityOrder(input.envPriorityOrder),
       createdAt: now,
       updatedAt: now,
     };
@@ -495,7 +497,7 @@ export const promptAddPlanStepsTool: AnyToolDef = {
   }),
   async handler(input, ctx) {
     const state = await ctx.workspace.read();
-    const plan = state.local.executionPlans[input.planId];
+    const plan = (state.synced.executionPlans ?? {})[input.planId];
     if (!plan) return { ok: false as const, error: 'plan not found' as const };
     const requestIds: string[] = input.requestIds;
     const missing = requestIds.filter((rid) => !state.synced.collections.requests[rid]);
@@ -529,7 +531,7 @@ export const promptSetPlanVariablesTool: AnyToolDef = {
   }),
   async handler(input, ctx) {
     const state = await ctx.workspace.read();
-    const plan = state.local.executionPlans[input.planId];
+    const plan = (state.synced.executionPlans ?? {})[input.planId];
     if (!plan) return { ok: false as const, error: 'plan not found' as const };
     const out = await ctx.workspace.apply({
       kind: 'plan.upsert',

@@ -119,6 +119,50 @@ describe('GitWorkspaceProvider', () => {
       const state = await provider.read();
       expect(state.local.attachmentCache).toEqual({});
     });
+
+    it('lifts legacy plans from local.executionPlans onto synced (pre-1.1.4 migration)', async () => {
+      // Pre-1.1.4 the VS Code/MCP write path stored plans in local; ensure
+      // read() surfaces them on synced so they don't vanish after upgrade.
+      fs.writeFileSync(path.join(syncedDir, 'workspace.json'), JSON.stringify(makeEmptySynced()));
+      const plan = {
+        id: 'p1',
+        name: 'Legacy plan',
+        steps: [],
+        envPriorityOrder: [],
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01',
+      };
+      const localSeed = {
+        schemaVersion: 1,
+        workspaceId: 'gwp-test',
+        executionPlans: { p1: plan },
+        history: { requestRuns: [], planRuns: [] },
+        secretIndex: { entries: {} },
+        sessions: { github: { workspace: null, links: {} } },
+        connectedRepo: null,
+        workingBranch: null,
+        seededWorkspaceSha: null,
+        retiredBranch: null,
+        sync: { lastPulledSnapshot: null, lastPulledSha: null, lastPulledAt: null, dirtyKeys: [] },
+        linkedCollections: {},
+        attachmentCache: {},
+        globalContext: {},
+        mockRuntime: { active: {} },
+        ui: {
+          activeRequestId: null,
+          sidebarExpandedSections: [],
+          themeId: 'one-dark-pro',
+          fontId: 'system-mono',
+          fontSizePercent: 100,
+        },
+        settings: { validateOnSend: true, monacoConsumesWheel: false },
+        snapshots: { entries: [], maxBytes: 50 * 1024 * 1024 },
+      };
+      fs.writeFileSync(path.join(localDir, 'workspace.local.json'), JSON.stringify(localSeed));
+      const state = await provider.read();
+      expect(state.synced.executionPlans?.p1).toEqual(plan);
+      expect(state.local.executionPlans).toEqual({});
+    });
   });
 
   describe('apply()', () => {

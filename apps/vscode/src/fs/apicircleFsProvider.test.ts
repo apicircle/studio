@@ -1193,8 +1193,8 @@ describe('ApicircleFsProvider', () => {
 
   describe('plans/', () => {
     async function seedPlan(plan: ExecutionPlan): Promise<void> {
-      // Plans live in workspace.local — use surface.apply to seed them
-      // through the canonical mutation path.
+      // Plans live in workspace.synced (shared via git) — use surface.apply
+      // to seed them through the canonical mutation path.
       const surface = bridge.activeWorkspace()!;
       await surface.apply({ kind: 'plan.upsert', plan });
     }
@@ -1261,7 +1261,7 @@ describe('ApicircleFsProvider', () => {
       });
       const surface = bridge.activeWorkspace()!;
       const state = await surface.read();
-      expect(state.local.executionPlans['plan-1'].name).toBe('Renamed plan');
+      expect(state.synced.executionPlans?.['plan-1']?.name).toBe('Renamed plan');
     });
 
     it('writeFile rejects a plan with dangling request references', async () => {
@@ -1296,7 +1296,7 @@ describe('ApicircleFsProvider', () => {
       await provider.delete(uri as never, { recursive: false });
       const surface = bridge.activeWorkspace()!;
       const state = await surface.read();
-      expect(state.local.executionPlans['plan-1']).toBeUndefined();
+      expect(state.synced.executionPlans?.['plan-1']).toBeUndefined();
       expect(events.length).toBe(1);
     });
   });

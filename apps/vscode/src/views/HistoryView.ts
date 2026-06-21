@@ -88,7 +88,7 @@ export class HistoryView extends BaseTreeView<HistoryNode> {
     const verdict = planRun.steps.every((s) => s.passed)
       ? { glyph: '✓', icon: 'check', color: 'charts.green' }
       : { glyph: '✗', icon: 'close', color: 'charts.red' };
-    const planName = state.local.executionPlans[planRun.planId]?.name ?? planRun.planId;
+    const planName = (state.synced.executionPlans ?? {})[planRun.planId]?.name ?? planRun.planId;
     const item = new vscode.TreeItem(truncate(planName, 30), vscode.TreeItemCollapsibleState.None);
     item.description = `${verdict.glyph} ${passedSteps}/${planRun.steps.length} steps · ${planRun.durationMs}ms · ${ago(planRun.startedAt)}`;
     item.iconPath = new vscode.ThemeIcon(verdict.icon, new vscode.ThemeColor(verdict.color));

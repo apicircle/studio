@@ -179,7 +179,7 @@ export type WorkspacePatch =
   // 404 on a verification probe → the ref no longer points at a real
   // blob. Drop it so reads stop trying that ref first.
   | { kind: 'globalAsset.invalidateRef'; id: string; which: 'working' | 'base' }
-  // ----- Execution plans (local.executionPlans) -----------------------------
+  // ----- Execution plans (synced.executionPlans — shared via git) -----------
   | { kind: 'plan.upsert'; plan: ExecutionPlan }
   | { kind: 'plan.delete'; id: string }
   // ----- History (local.history.requestRuns + planRuns) ---------------------

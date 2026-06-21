@@ -21,6 +21,36 @@ import type { WorkspaceState } from './patches';
 const SYNCED_FILE = 'workspace.json';
 const LOCAL_FILE = 'workspace.local.json';
 
+/**
+ * Forward-only migration for headless readers (CLI, MCP providers, VS Code).
+ *
+ * Execution-plan definitions now live in `synced.executionPlans`, but the
+ * pre-1.1.4 headless write path (`applyMutation`, the MCP plan tools, and the
+ * VS Code extension) stored newly-created plans in `local.executionPlans`. The
+ * desktop/web store lifts those on load (`liftLegacyExecutionPlansToSynced`),
+ * but the headless read paths did not — so a workspace whose only plans were
+ * authored via the old CLI / MCP / VS Code surfaces would surface zero plans
+ * after upgrading.
+ *
+ * This lifts any legacy `local.executionPlans` into `synced.executionPlans`
+ * (and clears the local copy so the next write persists the corrected shape).
+ * It mirrors the desktop normalizer's contract exactly:
+ *   - fires only when `synced.executionPlans` is empty/absent, so a workspace
+ *     already on the new shape (synced wins) passes through untouched;
+ *   - pure + idempotent — safe to call on every read.
+ */
+export function liftLegacyExecutionPlans(state: WorkspaceState): WorkspaceState {
+  const localPlans = state.local.executionPlans;
+  const syncedPlans = state.synced.executionPlans;
+  const syncedHasPlans = !!syncedPlans && Object.keys(syncedPlans).length > 0;
+  const localHasPlans = !!localPlans && Object.keys(localPlans).length > 0;
+  if (syncedHasPlans || !localHasPlans) return state;
+  return {
+    synced: { ...state.synced, executionPlans: { ...localPlans } },
+    local: { ...state.local, executionPlans: {} },
+  };
+}
+
 export interface LoadFromFileOptions {
   /** When true, return `null` instead of throwing if the synced file is missing. */
   allowMissing?: boolean;
@@ -66,7 +96,7 @@ export async function loadFromFile(
     local = createEmptyLocalForSynced(synced);
   }
 
-  return { synced, local };
+  return liftLegacyExecutionPlans({ synced, local });
 }
 
 /**
@@ -130,7 +160,7 @@ export async function withWorkspace<T>(
       if (!isENOENT(err)) throw err;
       local = createEmptyLocalForSynced(synced);
     }
-    const out = await fn({ synced, local });
+    const out = await fn(liftLegacyExecutionPlans({ synced, local }));
     await writeJsonAtomic(syncedPath, out.next.synced);
     await writeJsonAtomic(localPath, out.next.local);
     return out.result;

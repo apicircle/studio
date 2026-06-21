@@ -134,6 +134,7 @@ import {
 } from './commands/snapshotActions';
 import { runPlanCommand } from './commands/planActions';
 import { setEnvPriorityOrderCommand } from './commands/environmentPriority';
+import { setPlanEnvPriorityCommand } from './commands/planEnvPriority';
 import { newPlanCommand } from './commands/newPlan';
 import { addExtractionFromLatestResponseCommand } from './commands/addExtraction';
 import {
@@ -909,6 +910,13 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!bridge) return;
       return newPlanCommand({ bridge });
     }),
+    vscode.commands.registerCommand(
+      'apicircle.setPlanEnvPriority',
+      (node?: { kind: 'plan'; id: string }) => {
+        if (!bridge) return;
+        return setPlanEnvPriorityCommand({ bridge }, node);
+      },
+    ),
     vscode.commands.registerCommand('apicircle.setEnvPriorityOrder', () => {
       if (!bridge) return;
       return setEnvPriorityOrderCommand({ bridge });

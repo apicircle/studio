@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type {
   Assertion,
   Environment,
+  EnvPriorityRef,
   ExecutionPlan,
   Folder,
   Request as ApiRequest,
@@ -10,6 +11,36 @@ import type {
 import { generateId } from '@apicircle/shared';
 import { parseApicircleEnvironmentDoc } from '@apicircle/core';
 import type { AnyToolDef } from './types';
+
+// ---------------------------------------------------------------------------
+// Shared environment-priority input shape (used by `environment.set_priority`,
+// `plan.create`, `plan.update`, and `prompt.create_plan`).
+//
+// Bare strings are convenience syntax for LOCAL env names — the dominant case
+// for MCP callers — so we keep accepting them rather than forcing every caller
+// to spell out `{ kind: 'local', ... }`. Linked envs require the explicit
+// object form. `normalizeEnvPriorityOrder` collapses the heterogeneous input
+// into the canonical `EnvPriorityRef[]` the workspace document stores.
+// ---------------------------------------------------------------------------
+export const ENV_PRIORITY_REF_INPUT = z.union([
+  z.string(),
+  z.object({ kind: z.literal('local'), name: z.string() }),
+  z.object({
+    kind: z.literal('linked'),
+    linkedWorkspaceId: z.string(),
+    envName: z.string(),
+  }),
+]);
+
+type EnvPriorityRefInput = z.infer<typeof ENV_PRIORITY_REF_INPUT>;
+
+export function normalizeEnvPriorityOrder(
+  order: ReadonlyArray<EnvPriorityRefInput>,
+): EnvPriorityRef[] {
+  return order.map((entry) =>
+    typeof entry === 'string' ? { kind: 'local' as const, name: entry } : entry,
+  );
+}
 
 // Permissive auth schema for CRUD tools (`folder.update`, future
 // `request.update` if we surface a dedicated auth slot). Accepts any of the
@@ -304,36 +335,12 @@ export const environmentSetPriorityTool: AnyToolDef = {
   description:
     'Replace the global environment priority order (highest priority first). Strings are interpreted as local env names. To target a linked env, pass `{ kind: "linked", linkedWorkspaceId, envName }` instead.',
   inputSchema: z.object({
-    order: z.array(
-      z.union([
-        z.string(),
-        z.object({
-          kind: z.literal('local'),
-          name: z.string(),
-        }),
-        z.object({
-          kind: z.literal('linked'),
-          linkedWorkspaceId: z.string(),
-          envName: z.string(),
-        }),
-      ]),
-    ),
+    order: z.array(ENV_PRIORITY_REF_INPUT),
   }),
   async handler(input, ctx) {
-    // Normalize the heterogeneous tool-input array to EnvPriorityRef[].
-    // Bare strings are convenience syntax for local envs — the dominant
-    // case for MCP callers — so we keep accepting them rather than
-    // forcing every caller to spell out `{kind:'local', ...}`.
-    const order = (
-      input.order as Array<
-        | string
-        | { kind: 'local'; name: string }
-        | { kind: 'linked'; linkedWorkspaceId: string; envName: string }
-      >
-    ).map((entry) => (typeof entry === 'string' ? { kind: 'local' as const, name: entry } : entry));
     const out = await ctx.workspace.apply({
       kind: 'environment.setPriority',
-      order,
+      order: normalizeEnvPriorityOrder(input.order),
     });
     return { changedIds: out.changedIds };
   },
@@ -511,7 +518,8 @@ export const planCreateTool: AnyToolDef = {
   inputSchema: z.object({
     name: z.string().default('New plan'),
     steps: z.array(PLAN_STEP).default([]),
-    envPriorityOrder: z.array(z.string()).default([]),
+    // Bare strings = local env names; objects target local/linked envs.
+    envPriorityOrder: z.array(ENV_PRIORITY_REF_INPUT).default([]),
   }),
   async handler(input, ctx) {
     const id = generateId();
@@ -520,7 +528,7 @@ export const planCreateTool: AnyToolDef = {
       id,
       name: input.name,
       steps: input.steps,
-      envPriorityOrder: input.envPriorityOrder,
+      envPriorityOrder: normalizeEnvPriorityOrder(input.envPriorityOrder),
       createdAt: now,
       updatedAt: now,
     };
@@ -535,37 +543,48 @@ export const planReadTool: AnyToolDef = {
   inputSchema: z.object({ id: z.string().optional() }),
   async handler(input, ctx) {
     const state = await ctx.workspace.read();
+    const plans = state.synced.executionPlans ?? {};
     if (input.id) {
-      const plan = state.local.executionPlans[input.id];
+      const plan = plans[input.id];
       return plan ? { found: true, plan } : { found: false };
     }
     return {
-      count: Object.keys(state.local.executionPlans).length,
-      plans: Object.values(state.local.executionPlans),
+      count: Object.keys(plans).length,
+      plans: Object.values(plans),
     };
   },
 };
 
 export const planUpdateTool: AnyToolDef = {
   name: 'plan.update',
-  description: 'Patch fields on an existing plan.',
+  description:
+    'Patch fields on an existing plan (name, steps, envPriorityOrder, stopOnAssertionFailure). Plan variables have their own tool (plan.set_variables).',
   inputSchema: z.object({
     id: z.string(),
     patch: z
       .object({
         name: z.string().optional(),
         steps: z.array(PLAN_STEP).optional(),
-        envPriorityOrder: z.array(z.string()).optional(),
+        // Bare strings = local env names; objects target local/linked envs.
+        envPriorityOrder: z.array(ENV_PRIORITY_REF_INPUT).optional(),
+        // When true, runPlan halts on the first step whose assertions fail
+        // (only honored when launched withAssertions).
+        stopOnAssertionFailure: z.boolean().optional(),
       })
       .strict(),
   }),
   async handler(input, ctx) {
     const state = await ctx.workspace.read();
-    const existing = state.local.executionPlans[input.id];
+    const existing = (state.synced.executionPlans ?? {})[input.id];
     if (!existing) return { changedIds: [] };
     const merged: ExecutionPlan = {
       ...existing,
       ...input.patch,
+      // Normalize the heterogeneous env-priority input back to EnvPriorityRef[];
+      // keep the existing order when the patch omits the field.
+      envPriorityOrder: input.patch.envPriorityOrder
+        ? normalizeEnvPriorityOrder(input.patch.envPriorityOrder)
+        : existing.envPriorityOrder,
       id: existing.id,
       createdAt: existing.createdAt,
       updatedAt: new Date().toISOString(),
@@ -601,7 +620,7 @@ export const planAddStepTool: AnyToolDef = {
   }),
   async handler(input, ctx) {
     const state = await ctx.workspace.read();
-    const plan = state.local.executionPlans[input.planId];
+    const plan = (state.synced.executionPlans ?? {})[input.planId];
     if (!plan) return { ok: false as const, error: 'plan not found' as const };
     const step = {
       requestId: input.requestId,
@@ -630,7 +649,7 @@ export const planRemoveStepTool: AnyToolDef = {
   }),
   async handler(input, ctx) {
     const state = await ctx.workspace.read();
-    const plan = state.local.executionPlans[input.planId];
+    const plan = (state.synced.executionPlans ?? {})[input.planId];
     if (!plan) return { ok: false as const, error: 'plan not found' as const };
     if (input.index >= plan.steps.length) {
       return { ok: false as const, error: 'index out of range' as const };
@@ -654,7 +673,7 @@ export const planReorderStepsTool: AnyToolDef = {
   }),
   async handler(input, ctx) {
     const state = await ctx.workspace.read();
-    const plan = state.local.executionPlans[input.planId];
+    const plan = (state.synced.executionPlans ?? {})[input.planId];
     if (!plan) return { ok: false as const, error: 'plan not found' as const };
     if (input.order.length !== plan.steps.length) {
       return { ok: false as const, error: 'order length must equal step count' as const };
@@ -685,7 +704,7 @@ export const planSetVariablesTool: AnyToolDef = {
   }),
   async handler(input, ctx) {
     const state = await ctx.workspace.read();
-    const plan = state.local.executionPlans[input.planId];
+    const plan = (state.synced.executionPlans ?? {})[input.planId];
     if (!plan) return { ok: false as const, error: 'plan not found' as const };
     const out = await ctx.workspace.apply({
       kind: 'plan.upsert',
@@ -705,7 +724,7 @@ export const planRunTool: AnyToolDef = {
   }),
   async handler(input, ctx) {
     const state = await ctx.workspace.read();
-    const plan = state.local.executionPlans[input.id];
+    const plan = (state.synced.executionPlans ?? {})[input.id];
     if (!plan) return { ok: false, error: 'plan not found' };
     return {
       ok: false,

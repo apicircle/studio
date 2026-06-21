@@ -5,10 +5,12 @@ import { uriEntityKind } from '../fs/uriKind';
 // CodeLens provider for apicircle-plan YAML documents.
 //
 // Renders above the `name:` line:
-//   ▶ Run Plan
+//   ▶ Run Plan   ◆ Plan environments…
 //
-// Pulls the plan id out of the URI path so `apicircle.runPlan` can target
-// the exact plan without a QuickPick.
+// Pulls the plan id out of the URI's `?id=` query so `apicircle.runPlan` /
+// `apicircle.setPlanEnvPriority` can target the exact plan without a QuickPick.
+// (The path basename is a human-readable name slug — identity rides in the
+// query so it survives renames, matching `ApicircleFsProvider.planUri`.)
 // =============================================================================
 
 const NAME_LINE_RE = /^name:\s*(.+)$/;
@@ -24,7 +26,7 @@ export class PlanCodeLensProvider implements vscode.CodeLensProvider {
     if (document.uri.scheme !== 'apicircle') return [];
     if (uriEntityKind(document.uri) !== 'plan') return [];
 
-    const planId = extractPlanId(document.uri.path);
+    const planId = extractPlanId(document.uri);
     if (!planId) return [];
 
     const lenses: vscode.CodeLens[] = [];
@@ -36,6 +38,11 @@ export class PlanCodeLensProvider implements vscode.CodeLensProvider {
           new vscode.CodeLens(range, {
             title: '▶ Run Plan',
             command: 'apicircle.runPlan',
+            arguments: [{ kind: 'plan', id: planId }],
+          }),
+          new vscode.CodeLens(range, {
+            title: '◆ Plan environments…',
+            command: 'apicircle.setPlanEnvPriority',
             arguments: [{ kind: 'plan', id: planId }],
           }),
         );
@@ -50,8 +57,8 @@ export class PlanCodeLensProvider implements vscode.CodeLensProvider {
   }
 }
 
-function extractPlanId(uriPath: string): string | undefined {
-  // /plans/<id>.yaml
-  const m = /\/plans\/([^/]+)\.yaml$/.exec(uriPath);
-  return m ? m[1] : undefined;
+function extractPlanId(uri: vscode.Uri): string | undefined {
+  // Identity lives in the `?id=<planId>` query (see ApicircleFsProvider.planUri).
+  const id = new URLSearchParams(uri.query || '').get('id');
+  return id ?? undefined;
 }

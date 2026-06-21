@@ -27,6 +27,10 @@ VS Code is where the same engineers who use API Circle already live with Git. Ed
 - **Response viewer** as a virtual `.run.yaml` opened side-by-side — appears instantly on ▶ Send, resolves in place.
 - **Cancel in-flight requests** via status bar, `Esc`, or the `✖ Cancel` CodeLens.
 - **Pre-send diagnostics** surfacing in the Problems panel.
+- **Execution plans** — chain requests in the Execution view; `▶ Run Plan` and
+  `◆ Plan environments…` CodeLenses on the plan YAML, plus
+  `API Circle: Set Plan Environments…` to pick which environments (local +
+  linked) overlay a plan's runs. Plan definitions are shared via Git.
 
 ### Mock servers
 

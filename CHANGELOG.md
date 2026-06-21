@@ -23,7 +23,56 @@
 > ship. Full per-platform walk-through:
 > [`docs/installing.md`](docs/installing.md).
 
-## Unreleased
+## 1.1.4 - 2026-06-22
+
+### Fixed
+
+- **VS Code execution plans now load.** Plan definitions moved to the
+  Git-synced workspace document (`synced.executionPlans`) in an earlier
+  release so teams share them through Git — but the VS Code extension, the
+  headless `applyMutation` write path, and the MCP `plan.*` / `prompt.*_plan_*`
+  tools were all still reading/writing the deprecated, now-empty
+  `WorkspaceLocal.executionPlans`. As a result the Execution view showed no
+  plans and newly created plans vanished. Every plan reader/writer now uses
+  `synced.executionPlans`, so plans created in Desktop / CLI / MCP appear in
+  VS Code (and vice-versa) and round-trip through Git. The `▶ Run Plan`
+  CodeLens now resolves the plan from its `?id=` query (it was matching the
+  path name-slug), so it targets the right plan after a rename. Affects
+  `@apicircle/core`, `@apicircle/mcp-server`, and the VS Code extension.
+- **MCP plan tools accepted a malformed `envPriorityOrder`.** `plan.create`,
+  `plan.update`, and `prompt.create_plan` declared `envPriorityOrder` as a plain
+  string array, but a plan stores `EnvPriorityRef` objects — so an AI client
+  setting per-plan environments would have written corrupt refs. The tools now
+  accept the same shape as `environment.set_priority` (a bare string is a local
+  env name; `{ kind: 'linked', linkedWorkspaceId, envName }` targets a linked
+  env) and normalize to `EnvPriorityRef[]` before persisting. `@apicircle/mcp-server`.
+- **Legacy plans authored headlessly no longer vanish on upgrade.** Plans
+  created by the pre-1.1.4 CLI / MCP / VS Code write path were stored in
+  `WorkspaceLocal.executionPlans`. The desktop/web store already lifts those to
+  `synced.executionPlans` on load, but the headless read paths did not — so a
+  workspace whose only plans were authored via those surfaces would show zero
+  plans after upgrading. `loadFromFile` / `withWorkspace` (CLI + both MCP
+  providers) and the VS Code `GitWorkspaceProvider` now run the same forward-only
+  lift, and the next write persists the corrected shape. `@apicircle/core` +
+  VS Code extension.
+
+### Added
+
+- **MCP `plan.update` can now set `stopOnAssertionFailure`.** The patch schema
+  previously covered only `name` / `steps` / `envPriorityOrder`, so AI clients
+  had no way to toggle a plan's halt-on-first-failure flag. Added it to the
+  patch (plan variables remain on the dedicated `plan.set_variables` tool).
+  `@apicircle/mcp-server`.
+- **Per-plan environment selection in VS Code.** A new
+  **API Circle: Set Plan Environments…** command — reachable from the
+  Execution-view inline 🌐 button, the plan context menu, the command
+  palette, and a `◆ Plan environments…` CodeLens on the plan YAML — lets you
+  choose which environments (local **and** linked) overlay a plan's runs and
+  in what priority order. Picking none clears the overlay so the plan inherits
+  the workspace-wide order. The choice persists through `plan.upsert` and
+  surfaces in the plan YAML's `envPriorityOrder:` block (still editable
+  directly, with completion). The one-off run-time env override prompt on
+  `▶ Run Plan` is unchanged.
 
 ### Tests
 

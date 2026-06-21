@@ -297,14 +297,17 @@ A workspace is split into two JSON documents:
 
 - **`WorkspaceSynced`** — everything that belongs in Git and is shared with the
   team: the request/folder collection tree, environments, mock-server
-  _definitions_, releases, linked workspaces, global assets, secret-crypto
-  metadata. Lives in the repo as `.apicircle/workspace-<id>/workspace.json`
-  (alongside binary attachments under `.apicircle/workspace-<id>/attachments/<slotId>`,
-  indexed by `.apicircle/registry.json`). Path helpers in
+  _definitions_, execution-plan _definitions_ (`executionPlans`), releases,
+  linked workspaces, global assets, secret-crypto metadata. Lives in the repo as
+  `.apicircle/workspace-<id>/workspace.json` (alongside binary attachments under
+  `.apicircle/workspace-<id>/attachments/<slotId>`, indexed by
+  `.apicircle/registry.json`). Path helpers in
   `packages/core/src/git/repoPaths.ts`.
 - **`WorkspaceLocal`** — per-device runtime state that never leaves the
-  machine: history runs, mock-server _runtime_ state, the GitHub session, plain
-  secret material, UI state.
+  machine: history runs (including plan _runs_), mock-server _runtime_ state,
+  the GitHub session, plain secret material, UI state. (`WorkspaceLocal.execution
+Plans` is **deprecated** — kept only so the hydration normalizer can lift
+  pre-migration on-disk plans into `synced.executionPlans`; no code writes it.)
 
 `packages/shared/src/types.ts` is the canonical schema for both.
 

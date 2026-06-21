@@ -49,19 +49,6 @@ function seedPlan(apicircleDir: string, globalStorageRoot: string): void {
       releases: { self: null, perLink: {} },
       globalAssets: { schemas: {}, graphql: {}, files: {} },
       mockServers: {},
-      executionPlans: {},
-      secretKeys: {},
-      secretCrypto: null,
-      meta: { createdAt: '2026-01-01', updatedAt: '2026-01-01', appVersion: '0.1.0' },
-    }),
-  );
-  const localDir = deviceLocalPath(Uri.file(globalStorageRoot), { apicircleDir });
-  fs.mkdirSync(localDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(localDir, 'workspace.local.json'),
-    JSON.stringify({
-      schemaVersion: 1,
-      workspaceId: 'sa',
       executionPlans: {
         p1: {
           id: 'p1',
@@ -76,6 +63,19 @@ function seedPlan(apicircleDir: string, globalStorageRoot: string): void {
           updatedAt: '2026-01-01',
         },
       },
+      secretKeys: {},
+      secretCrypto: null,
+      meta: { createdAt: '2026-01-01', updatedAt: '2026-01-01', appVersion: '0.1.0' },
+    }),
+  );
+  const localDir = deviceLocalPath(Uri.file(globalStorageRoot), { apicircleDir });
+  fs.mkdirSync(localDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(localDir, 'workspace.local.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      workspaceId: 'sa',
+      executionPlans: {},
       history: { requestRuns: [], planRuns: [] },
       secretIndex: { entries: {} },
       sessions: { github: { workspace: null, links: {} } },
@@ -153,7 +153,7 @@ describe('stepActions', () => {
     it('flips an enabled step to disabled', async () => {
       await toggleStepEnabledCommand({ bridge }, { kind: 'step', planId: 'p1', stepIndex: 0 });
       const state = await bridge.activeWorkspace()!.read();
-      expect(state.local.executionPlans.p1.steps[0].enabled).toBe(false);
+      expect(state.synced.executionPlans?.p1.steps[0].enabled).toBe(false);
     });
 
     it('flips a disabled step to enabled', async () => {
@@ -162,7 +162,7 @@ describe('stepActions', () => {
         { kind: 'step-disabled', planId: 'p1', stepIndex: 2 },
       );
       const state = await bridge.activeWorkspace()!.read();
-      expect(state.local.executionPlans.p1.steps[2].enabled).toBe(true);
+      expect(state.synced.executionPlans?.p1.steps[2].enabled).toBe(true);
     });
   });
 
@@ -178,15 +178,15 @@ describe('stepActions', () => {
       (window.showWarningMessage as Mock).mockResolvedValueOnce(undefined);
       await removeStepFromPlanCommand({ bridge }, { kind: 'step', planId: 'p1', stepIndex: 0 });
       const state = await bridge.activeWorkspace()!.read();
-      expect(state.local.executionPlans.p1.steps).toHaveLength(3);
+      expect(state.synced.executionPlans?.p1.steps).toHaveLength(3);
     });
 
     it('drops the step on confirmation', async () => {
       (window.showWarningMessage as Mock).mockResolvedValueOnce('Remove');
       await removeStepFromPlanCommand({ bridge }, { kind: 'step', planId: 'p1', stepIndex: 1 });
       const state = await bridge.activeWorkspace()!.read();
-      expect(state.local.executionPlans.p1.steps).toHaveLength(2);
-      expect(state.local.executionPlans.p1.steps.map((s) => s.requestId)).toEqual(['r1', 'r3']);
+      expect(state.synced.executionPlans?.p1.steps).toHaveLength(2);
+      expect(state.synced.executionPlans?.p1.steps.map((s) => s.requestId)).toEqual(['r1', 'r3']);
     });
   });
 });

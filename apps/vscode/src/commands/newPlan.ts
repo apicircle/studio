@@ -35,7 +35,9 @@ export async function newPlanCommand(deps: NewPlanDeps): Promise<void> {
     return;
   }
 
-  const existingNames = new Set(Object.values(state.local.executionPlans ?? {}).map((p) => p.name));
+  const existingNames = new Set(
+    Object.values(state.synced.executionPlans ?? {}).map((p) => p.name),
+  );
 
   // Step 1: Plan name
   const name = await vscode.window.showInputBox({

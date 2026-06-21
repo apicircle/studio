@@ -1285,31 +1285,30 @@ describe('applyMutation - plans', () => {
   it('upserts a new plan', () => {
     const state = { synced: makeSynced(), local: makeLocal() };
     const out = applyMutation(state, { kind: 'plan.upsert', plan }, { now: T1 });
-    expect(out.next.local.executionPlans['p1']).toBeDefined();
-    expect(out.next.local.executionPlans['p1'].updatedAt).toBe(T1);
-    // synced is unchanged for plan operations
-    expect(out.next.synced).toBe(state.synced);
+    expect(out.next.synced.executionPlans?.['p1']).toBeDefined();
+    expect(out.next.synced.executionPlans?.['p1'].updatedAt).toBe(T1);
+    // local is unchanged for plan upserts — plan definitions live on synced
+    expect(out.next.local).toBe(state.local);
   });
 
   it('plan.upsert preserves createdAt on update', () => {
     const state = {
-      synced: makeSynced(),
-      local: makeLocal({ executionPlans: { p1: { ...plan, createdAt: T0 } } }),
+      synced: makeSynced({ executionPlans: { p1: { ...plan, createdAt: T0 } } }),
+      local: makeLocal(),
     };
     const out = applyMutation(
       state,
       { kind: 'plan.upsert', plan: { ...plan, name: 'Renamed', createdAt: 'should-be-ignored' } },
       { now: T1 },
     );
-    expect(out.next.local.executionPlans['p1'].createdAt).toBe(T0);
-    expect(out.next.local.executionPlans['p1'].name).toBe('Renamed');
+    expect(out.next.synced.executionPlans?.['p1'].createdAt).toBe(T0);
+    expect(out.next.synced.executionPlans?.['p1'].name).toBe('Renamed');
   });
 
   it('deletes a plan and drops its history rows', () => {
     const state = {
-      synced: makeSynced(),
+      synced: makeSynced({ executionPlans: { p1: plan, p2: { ...plan, id: 'p2' } } }),
       local: makeLocal({
-        executionPlans: { p1: plan, p2: { ...plan, id: 'p2' } },
         history: {
           requestRuns: [],
           planRuns: [
@@ -1334,7 +1333,9 @@ describe('applyMutation - plans', () => {
       }),
     };
     const out = applyMutation(state, { kind: 'plan.delete', id: 'p1' });
-    expect(out.next.local.executionPlans['p1']).toBeUndefined();
+    expect(out.next.synced.executionPlans?.['p1']).toBeUndefined();
+    expect(out.next.synced.executionPlans?.['p2']).toBeDefined();
+    // plan runs live in WorkspaceLocal — the dangling run for p1 is dropped.
     expect(out.next.local.history.planRuns).toEqual([
       { id: 'pr2', planId: 'p2', startedAt: T0, durationMs: 1, withAssertions: false, steps: [] },
     ]);

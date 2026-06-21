@@ -139,7 +139,7 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
     } else if (parsed.kind === 'environments') {
       exists = state.synced.environments.items[parsed.id] !== undefined;
     } else if (parsed.kind === 'plans') {
-      exists = state.local.executionPlans[parsed.id] !== undefined;
+      exists = (state.synced.executionPlans ?? {})[parsed.id] !== undefined;
     } else if (parsed.kind === 'endpoints') {
       const mock = parsed.parentMockId ? state.synced.mockServers[parsed.parentMockId] : undefined;
       exists = !!mock && mock.endpoints.some((ep) => ep.id === parsed.id);
@@ -229,7 +229,7 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
       return Buffer.from(serializeEnvironmentToYaml(env), 'utf8');
     }
     if (parsed.kind === 'plans') {
-      const plan = state.local.executionPlans[parsed.id];
+      const plan = (state.synced.executionPlans ?? {})[parsed.id];
       if (!plan) throw vscode.FileSystemError.FileNotFound(uri);
       return Buffer.from(serializePlanToYaml(plan), 'utf8');
     }
@@ -635,7 +635,7 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
           `Plan references unknown request id(s): ${unique.join(', ')}${dangling.length > 3 ? ', …' : ''}. Fix the requestId field or remove the step before saving.`,
         );
       }
-      const existing = state.local.executionPlans[parsed.id];
+      const existing = (state.synced.executionPlans ?? {})[parsed.id];
       const now = new Date().toISOString();
       await surface.apply({
         kind: 'plan.upsert',
@@ -647,7 +647,7 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
         },
       });
       const stateAfterPlan = await surface.read();
-      const planAfter = stateAfterPlan.local.executionPlans[parsed.id];
+      const planAfter = (stateAfterPlan.synced.executionPlans ?? {})[parsed.id];
       if (planAfter) {
         const newUri = ApicircleFsProvider.planUri(decodeAuthority(parsed.workspaceId), planAfter);
         void this.followRenameIfChanged(uri, newUri);

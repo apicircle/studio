@@ -328,7 +328,74 @@ describe('plan CRUD tools', () => {
 
     await planDeleteTool.handler({ id: created.id }, ctx);
     const state = await ctx.workspace.read();
-    expect(state.local.executionPlans[created.id]).toBeUndefined();
+    expect(state.synced.executionPlans?.[created.id]).toBeUndefined();
+  });
+
+  it('plan.create normalizes envPriorityOrder: bare strings → local refs, objects pass through', async () => {
+    const created = (await planCreateTool.handler(
+      {
+        name: 'Env plan',
+        steps: [],
+        envPriorityOrder: [
+          'prod', // string shorthand → { kind: 'local', name: 'prod' }
+          { kind: 'local', name: 'staging' },
+          { kind: 'linked', linkedWorkspaceId: 'ws-2', envName: 'shared' },
+        ],
+      },
+      ctx,
+    )) as { id: string };
+    const state = await ctx.workspace.read();
+    expect(state.synced.executionPlans?.[created.id]?.envPriorityOrder).toEqual([
+      { kind: 'local', name: 'prod' },
+      { kind: 'local', name: 'staging' },
+      { kind: 'linked', linkedWorkspaceId: 'ws-2', envName: 'shared' },
+    ]);
+  });
+
+  it('plan.update normalizes a patched envPriorityOrder and preserves it when omitted', async () => {
+    const created = (await planCreateTool.handler(
+      { name: 'P', steps: [], envPriorityOrder: ['dev'] },
+      ctx,
+    )) as { id: string };
+    await planUpdateTool.handler(
+      {
+        id: created.id,
+        patch: {
+          envPriorityOrder: [{ kind: 'linked', linkedWorkspaceId: 'w', envName: 'e' }, 'prod'],
+        },
+      },
+      ctx,
+    );
+    let state = await ctx.workspace.read();
+    expect(state.synced.executionPlans?.[created.id]?.envPriorityOrder).toEqual([
+      { kind: 'linked', linkedWorkspaceId: 'w', envName: 'e' },
+      { kind: 'local', name: 'prod' },
+    ]);
+    // A patch that omits envPriorityOrder must leave the prior value intact.
+    await planUpdateTool.handler({ id: created.id, patch: { name: 'renamed' } }, ctx);
+    state = await ctx.workspace.read();
+    expect(state.synced.executionPlans?.[created.id]?.envPriorityOrder).toEqual([
+      { kind: 'linked', linkedWorkspaceId: 'w', envName: 'e' },
+      { kind: 'local', name: 'prod' },
+    ]);
+  });
+
+  it('plan.update sets stopOnAssertionFailure and leaves it intact when omitted', async () => {
+    const created = (await planCreateTool.handler(
+      { name: 'Halt plan', steps: [], envPriorityOrder: [] },
+      ctx,
+    )) as { id: string };
+    await planUpdateTool.handler({ id: created.id, patch: { stopOnAssertionFailure: true } }, ctx);
+    let state = await ctx.workspace.read();
+    expect(state.synced.executionPlans?.[created.id]?.stopOnAssertionFailure).toBe(true);
+    // An unrelated patch must not clear the flag.
+    await planUpdateTool.handler({ id: created.id, patch: { name: 'Halt plan v2' } }, ctx);
+    state = await ctx.workspace.read();
+    expect(state.synced.executionPlans?.[created.id]?.stopOnAssertionFailure).toBe(true);
+    // And it can be turned back off.
+    await planUpdateTool.handler({ id: created.id, patch: { stopOnAssertionFailure: false } }, ctx);
+    state = await ctx.workspace.read();
+    expect(state.synced.executionPlans?.[created.id]?.stopOnAssertionFailure).toBe(false);
   });
 
   it('plan.update is a no-op for unknown id', async () => {

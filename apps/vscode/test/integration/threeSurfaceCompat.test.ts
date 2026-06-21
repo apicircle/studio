@@ -291,7 +291,7 @@ describe('three-surface compatibility (Phase 1)', () => {
     expect(desktopResult.changedIds.sort()).toEqual(gitResult.changedIds.sort());
   });
 
-  it('plan.upsert produces identical workspace.local state across providers', async () => {
+  it('plan.upsert produces identical synced.executionPlans state across providers', async () => {
     const synced = emptySynced('plan-compat');
     const local = emptyLocal('plan-compat');
 
@@ -332,13 +332,16 @@ describe('three-surface compatibility (Phase 1)', () => {
     const desktopResult = await desktopProvider.apply(patch);
     const gitResult = await gitProvider.apply(patch);
 
-    const dPlan = desktopResult.state.local.executionPlans[planId];
-    const gPlan = gitResult.state.local.executionPlans[planId];
-    expect(dPlan.name).toBe(gPlan.name);
-    expect(dPlan.steps).toEqual(gPlan.steps);
-    expect(dPlan.envPriorityOrder).toEqual(gPlan.envPriorityOrder);
-    expect(dPlan.variables).toEqual(gPlan.variables);
-    expect(dPlan.stopOnAssertionFailure).toBe(gPlan.stopOnAssertionFailure);
+    // Plans live on synced.executionPlans (git-shared) across every provider.
+    const dPlan = desktopResult.state.synced.executionPlans?.[planId];
+    const gPlan = gitResult.state.synced.executionPlans?.[planId];
+    expect(dPlan).toBeDefined();
+    expect(gPlan).toBeDefined();
+    expect(dPlan?.name).toBe(gPlan?.name);
+    expect(dPlan?.steps).toEqual(gPlan?.steps);
+    expect(dPlan?.envPriorityOrder).toEqual(gPlan?.envPriorityOrder);
+    expect(dPlan?.variables).toEqual(gPlan?.variables);
+    expect(dPlan?.stopOnAssertionFailure).toBe(gPlan?.stopOnAssertionFailure);
     expect(desktopResult.changedIds.sort()).toEqual(gitResult.changedIds.sort());
   });
 

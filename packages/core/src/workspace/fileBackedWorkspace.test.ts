@@ -4,7 +4,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
 import { applyMutation } from './applyMutation';
-import { loadFromFile, saveToFile, withWorkspace } from './fileBackedWorkspace';
+import {
+  liftLegacyExecutionPlans,
+  loadFromFile,
+  saveToFile,
+  withWorkspace,
+} from './fileBackedWorkspace';
 
 const T0 = '2026-04-27T00:00:00.000Z';
 
@@ -138,5 +143,88 @@ describe('fileBackedWorkspace', () => {
     await saveToFile(nested, { synced: makeSynced(), local: makeLocal() });
     const stat = await fs.stat(nested);
     expect(stat.isDirectory()).toBe(true);
+  });
+});
+
+describe('liftLegacyExecutionPlans (headless plan migration)', () => {
+  const plan = {
+    id: 'p1',
+    name: 'Legacy plan',
+    steps: [],
+    envPriorityOrder: [],
+    createdAt: T0,
+    updatedAt: T0,
+  };
+
+  it('lifts legacy local.executionPlans into synced and clears local', () => {
+    const local = makeLocal();
+    local.executionPlans = { p1: plan };
+    const out = liftLegacyExecutionPlans({ synced: makeSynced(), local });
+    expect(out.synced.executionPlans?.p1).toEqual(plan);
+    expect(out.local.executionPlans).toEqual({});
+  });
+
+  it('is a no-op when synced already has plans (synced wins)', () => {
+    const synced = { ...makeSynced(), executionPlans: { p1: plan } };
+    const local = makeLocal();
+    local.executionPlans = { p2: { ...plan, id: 'p2', name: 'Stale local' } };
+    const state = { synced, local };
+    const out = liftLegacyExecutionPlans(state);
+    // Synced wins: returned unchanged, the stale local copy is NOT merged in.
+    expect(out).toBe(state);
+    expect(Object.keys(out.synced.executionPlans ?? {})).toEqual(['p1']);
+    expect(out.synced.executionPlans?.p2).toBeUndefined();
+  });
+
+  it('is a no-op (identity) when there are no legacy local plans', () => {
+    const state = { synced: makeSynced(), local: makeLocal() };
+    expect(liftLegacyExecutionPlans(state)).toBe(state);
+  });
+
+  it('loadFromFile surfaces legacy local plans on synced (visibility after upgrade)', async () => {
+    // Simulate a pre-1.1.4 on-disk workspace: plan only in workspace.local.json.
+    await fs.writeFile(
+      path.join(tmpDir, 'workspace.json'),
+      JSON.stringify(makeSynced(), null, 2),
+      'utf-8',
+    );
+    const local = makeLocal();
+    local.executionPlans = { p1: plan };
+    await fs.writeFile(
+      path.join(tmpDir, 'workspace.local.json'),
+      JSON.stringify(local, null, 2),
+      'utf-8',
+    );
+    const loaded = await loadFromFile(tmpDir);
+    expect(loaded!.synced.executionPlans?.p1).toEqual(plan);
+    expect(loaded!.local.executionPlans).toEqual({});
+  });
+
+  it('withWorkspace persists the lift to disk on the next write', async () => {
+    await fs.writeFile(
+      path.join(tmpDir, 'workspace.json'),
+      JSON.stringify(makeSynced(), null, 2),
+      'utf-8',
+    );
+    const local = makeLocal();
+    local.executionPlans = { p1: plan };
+    await fs.writeFile(
+      path.join(tmpDir, 'workspace.local.json'),
+      JSON.stringify(local, null, 2),
+      'utf-8',
+    );
+    // Any mutation triggers a write; the lift rides along.
+    await withWorkspace(tmpDir, async (state) => {
+      expect(state.synced.executionPlans?.p1).toEqual(plan);
+      return { next: state };
+    });
+    const onDiskSynced = JSON.parse(
+      await fs.readFile(path.join(tmpDir, 'workspace.json'), 'utf-8'),
+    ) as WorkspaceSynced;
+    const onDiskLocal = JSON.parse(
+      await fs.readFile(path.join(tmpDir, 'workspace.local.json'), 'utf-8'),
+    ) as WorkspaceLocal;
+    expect(onDiskSynced.executionPlans?.p1).toEqual(plan);
+    expect(onDiskLocal.executionPlans).toEqual({});
   });
 });

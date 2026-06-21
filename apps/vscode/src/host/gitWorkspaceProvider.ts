@@ -2,6 +2,7 @@ import { promises as fs, existsSync } from 'node:fs';
 import * as path from 'node:path';
 import lockfile from 'proper-lockfile';
 import { applyMutation, type WorkspacePatch, type WorkspaceState } from '@apicircle/core';
+import { liftLegacyExecutionPlans } from '@apicircle/core/workspace/file-backed';
 import type { WorkspaceSynced, WorkspaceLocal } from '@apicircle/shared';
 import { FONT_SIZE_PERCENT_DEFAULT } from '@apicircle/shared';
 import type { WorkspaceProvider } from '@apicircle/mcp-server';
@@ -64,7 +65,10 @@ export class GitWorkspaceProvider implements WorkspaceProvider {
     } else {
       local = createEmptyLocalForSynced(synced);
     }
-    return { synced, local };
+    // Forward-only migration: plans authored by the pre-1.1.4 VS Code / MCP
+    // write path landed in `local.executionPlans`. Surface them on synced so
+    // they don't vanish after upgrade (the next write persists the lift).
+    return liftLegacyExecutionPlans({ synced, local });
   }
 
   async apply(patch: WorkspacePatch): Promise<{ state: WorkspaceState; changedIds: string[] }> {

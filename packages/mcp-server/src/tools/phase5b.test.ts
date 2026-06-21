@@ -107,7 +107,7 @@ describe('plan step granular MCP tools', () => {
     await planAddStepTool.handler({ planId: created.id, requestId: 'r1' }, ctx);
     await planAddStepTool.handler({ planId: created.id, requestId: 'r2' }, ctx);
     const state = await ctx.workspace.read();
-    expect(state.local.executionPlans[created.id].steps.map((s) => s.requestId)).toEqual([
+    expect(state.synced.executionPlans?.[created.id]?.steps.map((s) => s.requestId)).toEqual([
       'r1',
       'r2',
     ]);
@@ -120,7 +120,7 @@ describe('plan step granular MCP tools', () => {
     )) as { id: string };
     await planAddStepTool.handler({ planId: created.id, requestId: 'c', position: 1 }, ctx);
     const state = await ctx.workspace.read();
-    expect(state.local.executionPlans[created.id].steps.map((s) => s.requestId)).toEqual([
+    expect(state.synced.executionPlans?.[created.id]?.steps.map((s) => s.requestId)).toEqual([
       'a',
       'c',
       'b',
@@ -138,7 +138,7 @@ describe('plan step granular MCP tools', () => {
     )) as { id: string };
     await planRemoveStepTool.handler({ planId: created.id, index: 1 }, ctx);
     const state = await ctx.workspace.read();
-    expect(state.local.executionPlans[created.id].steps.map((s) => s.requestId)).toEqual([
+    expect(state.synced.executionPlans?.[created.id]?.steps.map((s) => s.requestId)).toEqual([
       'a',
       'c',
     ]);
@@ -164,7 +164,7 @@ describe('plan step granular MCP tools', () => {
     )) as { id: string };
     await planReorderStepsTool.handler({ planId: created.id, order: [2, 0, 1] }, ctx);
     const state = await ctx.workspace.read();
-    expect(state.local.executionPlans[created.id].steps.map((s) => s.requestId)).toEqual([
+    expect(state.synced.executionPlans?.[created.id]?.steps.map((s) => s.requestId)).toEqual([
       'c',
       'a',
       'b',
@@ -194,7 +194,9 @@ describe('plan step granular MCP tools', () => {
       ctx,
     );
     const state = await ctx.workspace.read();
-    expect(state.local.executionPlans[created.id].variables).toEqual([{ key: 'x', value: '1' }]);
+    expect(state.synced.executionPlans?.[created.id]?.variables).toEqual([
+      { key: 'x', value: '1' },
+    ]);
   });
 });
 

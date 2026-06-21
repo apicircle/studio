@@ -100,7 +100,16 @@ function seed(apicircleDir: string, globalStorageRoot: string): void {
       releases: { self: null, perLink: {} },
       globalAssets: { schemas: {}, graphql: {}, files: {} },
       mockServers: {},
-      executionPlans: {},
+      executionPlans: {
+        'plan-1': {
+          id: 'plan-1',
+          name: 'Login flow',
+          steps: [{ requestId: 'req-a', enabled: true }],
+          envPriorityOrder: [],
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
+        },
+      },
       secretKeys: {},
       secretCrypto: null,
       meta: { createdAt: '2026-01-01', updatedAt: '2026-01-01', appVersion: '0.1.0' },
@@ -113,16 +122,7 @@ function seed(apicircleDir: string, globalStorageRoot: string): void {
     JSON.stringify({
       schemaVersion: 1,
       workspaceId: 'planrt',
-      executionPlans: {
-        'plan-1': {
-          id: 'plan-1',
-          name: 'Login flow',
-          steps: [{ requestId: 'req-a', enabled: true }],
-          envPriorityOrder: [],
-          createdAt: '2026-01-01T00:00:00Z',
-          updatedAt: '2026-01-01T00:00:00Z',
-        },
-      },
+      executionPlans: {},
       history: { requestRuns: [], planRuns: [] },
       secretIndex: { entries: {} },
       sessions: { github: { workspace: null, links: {} } },
@@ -160,7 +160,7 @@ describe('plan YAML round-trip (FS provider integration)', () => {
   // can carry the slugified name for the tab label.
   async function planUriFor(id: string) {
     const state = await bridge.activeWorkspace()!.read();
-    const plan = state.local.executionPlans[id];
+    const plan = (state.synced.executionPlans ?? {})[id];
     if (!plan) throw new Error(`Plan ${id} not seeded`);
     return ApicircleFsProvider.planUri(apicircleDir, plan);
   }
@@ -208,7 +208,7 @@ describe('plan YAML round-trip (FS provider integration)', () => {
       overwrite: true,
     });
     const state = await bridge.activeWorkspace()!.read();
-    expect(state.local.executionPlans['plan-1'].steps).toEqual([
+    expect(state.synced.executionPlans?.['plan-1']?.steps).toEqual([
       { requestId: 'req-a', enabled: true },
       { requestId: 'req-b', enabled: true },
     ]);
@@ -223,8 +223,8 @@ describe('plan YAML round-trip (FS provider integration)', () => {
       overwrite: true,
     });
     const state = await bridge.activeWorkspace()!.read();
-    expect(state.local.executionPlans['plan-1'].createdAt).toBe('2026-01-01T00:00:00Z');
-    expect(state.local.executionPlans['plan-1'].name).toBe('Login flow (updated)');
+    expect(state.synced.executionPlans?.['plan-1']?.createdAt).toBe('2026-01-01T00:00:00Z');
+    expect(state.synced.executionPlans?.['plan-1']?.name).toBe('Login flow (updated)');
   });
 
   it('R5-G4: rejects a plan referencing an unknown requestId', async () => {
@@ -239,7 +239,7 @@ describe('plan YAML round-trip (FS provider integration)', () => {
     const uri = await planUriFor('plan-1');
     await fsProvider.delete(uri, { recursive: false });
     const state = await bridge.activeWorkspace()!.read();
-    expect(state.local.executionPlans['plan-1']).toBeUndefined();
+    expect(state.synced.executionPlans?.['plan-1']).toBeUndefined();
   });
 
   it('R5-G11: typed mock helpers (asMock) round-trip cleanly', () => {

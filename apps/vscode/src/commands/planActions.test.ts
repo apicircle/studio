@@ -88,7 +88,19 @@ function seed(
       releases: { self: null, perLink: {} },
       globalAssets: { schemas: {}, graphql: {}, files: {} },
       mockServers: {},
-      executionPlans: {},
+      executionPlans: Object.fromEntries(
+        plans.map((p) => [
+          p.id,
+          {
+            id: p.id,
+            name: p.name,
+            steps: p.steps ?? [],
+            envPriorityOrder: [],
+            createdAt: '2026-01-01',
+            updatedAt: '2026-01-01',
+          },
+        ]),
+      ),
       secretKeys: {},
       secretCrypto: null,
       meta: { createdAt: '2026-01-01', updatedAt: '2026-01-01', appVersion: '0.1.0' },
@@ -102,19 +114,7 @@ function seed(
       JSON.stringify({
         schemaVersion: 1,
         workspaceId: 'plan-act',
-        executionPlans: Object.fromEntries(
-          plans.map((p) => [
-            p.id,
-            {
-              id: p.id,
-              name: p.name,
-              steps: p.steps ?? [],
-              envPriorityOrder: [],
-              createdAt: '2026-01-01',
-              updatedAt: '2026-01-01',
-            },
-          ]),
-        ),
+        executionPlans: {},
         history: {
           requestRuns: (history.requestRuns ?? []).map((r) => ({
             id: r.id,

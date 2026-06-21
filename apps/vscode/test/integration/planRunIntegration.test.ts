@@ -112,11 +112,8 @@ describe('planRunIntegration (real HTTP plan run)', () => {
     });
 
     // Run it — manually lift plans from local to synced for runPlan
-    let state = await provider.read();
-    state = {
-      synced: { ...state.synced, executionPlans: state.local.executionPlans },
-      local: state.local,
-    };
+    // Plans live on synced.executionPlans — runPlan reads them straight off.
+    const state = await provider.read();
     const result = await runPlan(state, planId, {
       withAssertions: true,
       actor: ANONYMOUS_ACTOR,
@@ -194,11 +191,8 @@ describe('planRunIntegration (real HTTP plan run)', () => {
       },
     });
 
-    let state = await provider.read();
-    state = {
-      synced: { ...state.synced, executionPlans: state.local.executionPlans },
-      local: state.local,
-    };
+    // Plans live on synced.executionPlans — runPlan reads them straight off.
+    const state = await provider.read();
     const result = await runPlan(state, planId, { withAssertions: true });
     expect(result.passed).toBe(false);
     // First step ran and failed; second was halted

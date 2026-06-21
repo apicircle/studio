@@ -4,7 +4,6 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { Uri } from '../../test/mocks/vscode';
 import { VsCodeBridge } from '../host/vscodeBridge';
-import { deviceLocalPath } from '../util/workspaceDiscovery';
 import { ExecutionView, type ExecutionNode } from './ExecutionView';
 
 function makeMockContext(globalStoragePath: string) {
@@ -84,23 +83,6 @@ function seedWorkspace(apicircleDir: string, plans: SeedPlan[], requests: SeedRe
       releases: { self: null, perLink: {} },
       globalAssets: { schemas: {}, graphql: {}, files: {} },
       mockServers: {},
-      executionPlans: {},
-      secretKeys: {},
-      secretCrypto: null,
-      meta: { createdAt: '2026-01-01', updatedAt: '2026-01-01', appVersion: '0.1.0' },
-    }),
-  );
-}
-
-/** Seed workspace.local.json in the device-local path the provider will read. */
-function seedLocalPlans(globalStorageRoot: string, apicircleDir: string, plans: SeedPlan[]): void {
-  const localDir = deviceLocalPath(Uri.file(globalStorageRoot), { apicircleDir });
-  fs.mkdirSync(localDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(localDir, 'workspace.local.json'),
-    JSON.stringify({
-      schemaVersion: 1,
-      workspaceId: 'test-ws',
       executionPlans: Object.fromEntries(
         plans.map((p) => [
           p.id,
@@ -114,27 +96,9 @@ function seedLocalPlans(globalStorageRoot: string, apicircleDir: string, plans: 
           },
         ]),
       ),
-      history: { requestRuns: [], planRuns: [] },
-      secretIndex: { entries: {} },
-      sessions: { github: { workspace: null, links: {} } },
-      connectedRepo: null,
-      workingBranch: null,
-      seededWorkspaceSha: null,
-      retiredBranch: null,
-      sync: { lastPulledSnapshot: null, lastPulledSha: null, lastPulledAt: null, dirtyKeys: [] },
-      linkedCollections: {},
-      attachmentCache: {},
-      globalContext: {},
-      mockRuntime: { active: {} },
-      ui: {
-        activeRequestId: null,
-        sidebarExpandedSections: [],
-        themeId: 'one-dark-pro',
-        fontId: 'system-mono',
-        fontSizePercent: 100,
-      },
-      settings: { validateOnSend: true, monacoConsumesWheel: false },
-      snapshots: { entries: [], maxBytes: 50 * 1024 * 1024 },
+      secretKeys: {},
+      secretCrypto: null,
+      meta: { createdAt: '2026-01-01', updatedAt: '2026-01-01', appVersion: '0.1.0' },
     }),
   );
 }
@@ -169,14 +133,6 @@ describe('ExecutionView', () => {
     bridge.setActive(apicircleDir);
   }
 
-  /**
-   * Helper: seed plans into the local file path the bridge's
-   * GitWorkspaceProvider will read.
-   */
-  function seedLocalForTests(plans: SeedPlan[]): void {
-    seedLocalPlans(path.join(tmp, 'globalStorage'), apicircleDir, plans);
-  }
-
   it('returns [] when no workspace is active', async () => {
     expect(await view.getChildren()).toEqual([]);
   });
@@ -188,7 +144,6 @@ describe('ExecutionView', () => {
     ];
     seedWorkspace(apicircleDir, plans);
     activate();
-    seedLocalForTests(plans);
     const result = await view.getChildren();
     expect(result).toEqual([
       { kind: 'plan', id: 'p2' },
@@ -203,7 +158,6 @@ describe('ExecutionView', () => {
       { id: 'r2', name: 'Step 2' },
     ]);
     activate();
-    seedLocalForTests(plans);
     const result = await view.getChildren({ kind: 'plan', id: 'p1' });
     expect(result).toEqual([
       { kind: 'step', planId: 'p1', stepIndex: 0 },
@@ -220,7 +174,6 @@ describe('ExecutionView', () => {
       { id: 'r2', name: 'b' },
     ]);
     activate();
-    seedLocalForTests(plans);
     const item = await view.getTreeItem({ kind: 'plan', id: 'p1' });
     expect(item.label).toBe('Smoke tests');
     expect(item.description).toBe('2 steps');
@@ -230,7 +183,6 @@ describe('ExecutionView', () => {
     const plans = [{ id: 'p1', name: 'x', steps: [{ requestId: 'r1' }] }];
     seedWorkspace(apicircleDir, plans, [{ id: 'r1', name: 'Sign up', method: 'POST' }]);
     activate();
-    seedLocalForTests(plans);
     const item = await view.getTreeItem({ kind: 'step', planId: 'p1', stepIndex: 0 });
     expect(item.label).toBe('1. Sign up');
     expect(item.description).toBe('POST');
@@ -240,7 +192,6 @@ describe('ExecutionView', () => {
     const plans = [{ id: 'p1', name: 'x', steps: [{ requestId: 'r1', enabled: false }] }];
     seedWorkspace(apicircleDir, plans, [{ id: 'r1', name: 'Skipped step' }]);
     activate();
-    seedLocalForTests(plans);
     const item = await view.getTreeItem({ kind: 'step', planId: 'p1', stepIndex: 0 });
     expect(item.contextValue).toBe('step-disabled');
   });
@@ -249,7 +200,6 @@ describe('ExecutionView', () => {
     const plans = [{ id: 'p1', name: 'x', steps: [{ requestId: 'gone' }] }];
     seedWorkspace(apicircleDir, plans);
     activate();
-    seedLocalForTests(plans);
     const item = await view.getTreeItem({ kind: 'step', planId: 'p1', stepIndex: 0 });
     expect(item.label).toBe('1. (missing request)');
     expect(item.description).toBe('missing');

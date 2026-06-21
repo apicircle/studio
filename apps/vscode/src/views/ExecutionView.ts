@@ -37,7 +37,7 @@ export class ExecutionView extends BaseTreeView<ExecutionNode> {
     if (!active) return new vscode.TreeItem('No workspace');
 
     const state = await active.read();
-    const plans = state.local.executionPlans ?? {};
+    const plans = state.synced.executionPlans ?? {};
 
     if (element.kind === 'plan') {
       const plan = plans[element.id];
@@ -81,7 +81,7 @@ export class ExecutionView extends BaseTreeView<ExecutionNode> {
     const active = this.bridge.activeWorkspace();
     if (!active) return [];
     const state = await active.read();
-    const plans = state.local.executionPlans ?? {};
+    const plans = state.synced.executionPlans ?? {};
 
     if (!element) {
       return Object.values(plans)

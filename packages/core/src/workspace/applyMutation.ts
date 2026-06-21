@@ -1219,7 +1219,9 @@ function clearAssetFromMockBody(body: MockResponseBody, id: string): MockRespons
 }
 
 // ---------------------------------------------------------------------------
-// Plan handlers (WorkspaceLocal — never pushed to git)
+// Plan handlers (WorkspaceSynced — plan definitions travel through git so
+// collaborators share the same plans. Plan *runs* (history) stay in
+// WorkspaceLocal.history.planRuns because they're per-device.)
 // ---------------------------------------------------------------------------
 
 function applyPlanUpsert(
@@ -1227,34 +1229,38 @@ function applyPlanUpsert(
   plan: { id: string },
   now: string,
 ): ApplyMutationResult {
-  const existing = state.local.executionPlans[plan.id];
+  const existing = state.synced.executionPlans?.[plan.id];
   const merged = existing
     ? { ...existing, ...plan, id: existing.id, createdAt: existing.createdAt, updatedAt: now }
     : { ...plan, updatedAt: now };
-  const local: WorkspaceLocal = {
-    ...state.local,
+  const synced: WorkspaceSynced = {
+    ...state.synced,
     executionPlans: {
-      ...state.local.executionPlans,
-      [plan.id]: merged as WorkspaceLocal['executionPlans'][string],
+      ...(state.synced.executionPlans ?? {}),
+      [plan.id]: merged as NonNullable<WorkspaceSynced['executionPlans']>[string],
     },
   };
-  return { next: { ...state, local }, changedIds: [plan.id] };
+  return { next: { ...state, synced }, changedIds: [plan.id] };
 }
 
 function applyPlanDelete(state: WorkspaceState, id: string): ApplyMutationResult {
-  if (!state.local.executionPlans[id]) {
+  if (!state.synced.executionPlans?.[id]) {
     return { next: state, changedIds: [] };
   }
-  const next = { ...state.local.executionPlans };
-  delete next[id];
-  // Drop history rows too — they'd dangle to a non-existent plan.
+  const nextPlans = { ...state.synced.executionPlans };
+  delete nextPlans[id];
+  const synced: WorkspaceSynced = {
+    ...state.synced,
+    executionPlans: nextPlans,
+  };
+  // Drop history rows too — they'd dangle to a non-existent plan. Runs live in
+  // WorkspaceLocal (per-device), so clean them there.
   const planRuns = state.local.history.planRuns.filter((r) => r.planId !== id);
   const local: WorkspaceLocal = {
     ...state.local,
-    executionPlans: next,
     history: { ...state.local.history, planRuns },
   };
-  return { next: { ...state, local }, changedIds: [id] };
+  return { next: { ...state, synced, local }, changedIds: [id] };
 }
 
 // ---------------------------------------------------------------------------

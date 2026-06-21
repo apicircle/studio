@@ -71,17 +71,23 @@ Import routes through the `folder.import_apicircle` patch in `applyMutation`, so
 
 ## Plan CRUD
 
-| Tool                 | Input                                                                                          |
-| -------------------- | ---------------------------------------------------------------------------------------------- |
-| `plan.create`        | `{ name, steps, envPriorityOrder }`                                                            |
-| `plan.read`          | `{ id? }`                                                                                      |
-| `plan.update`        | `{ id, patch }`                                                                                |
-| `plan.delete`        | `{ id }`                                                                                       |
-| `plan.run`           | `{ id, withAssertions }` _(returns not-implemented marker outside Desktop)_                    |
-| `plan.add_step`      | `{ planId, requestId, linkedWorkspaceId?, position? }` — `position` inserts at a 0-based index |
-| `plan.remove_step`   | `{ planId, index }` (0-based)                                                                  |
-| `plan.reorder_steps` | `{ planId, order: number[] }` — a permutation of current step indices                          |
-| `plan.set_variables` | `{ planId, variables: [{ key, value }] }` — replaces plan-scoped variables                     |
+Plan **definitions** live in `WorkspaceSynced.executionPlans` (Git-shared); plan
+**runs** stay device-local in `WorkspaceLocal.history.planRuns`. In
+`envPriorityOrder`, a bare string is a local env name; target a linked env with
+`{ kind: 'linked', linkedWorkspaceId, envName }` (same shape as
+`environment.set_priority`).
+
+| Tool                 | Input                                                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `plan.create`        | `{ name, steps, envPriorityOrder }` — `envPriorityOrder`: `(string \| { kind, … })[]`                                     |
+| `plan.read`          | `{ id? }`                                                                                                                 |
+| `plan.update`        | `{ id, patch }` — patch keys: `name`, `steps`, `envPriorityOrder` (`(string \| { kind, … })[]`), `stopOnAssertionFailure` |
+| `plan.delete`        | `{ id }`                                                                                                                  |
+| `plan.run`           | `{ id, withAssertions }` _(returns not-implemented marker outside Desktop)_                                               |
+| `plan.add_step`      | `{ planId, requestId, linkedWorkspaceId?, position? }` — `position` inserts at a 0-based index                            |
+| `plan.remove_step`   | `{ planId, index }` (0-based)                                                                                             |
+| `plan.reorder_steps` | `{ planId, order: number[] }` — a permutation of current step indices                                                     |
+| `plan.set_variables` | `{ planId, variables: [{ key, value }] }` — replaces plan-scoped variables                                                |
 
 ## History
 
@@ -139,7 +145,7 @@ These tools accept LLM-shaped JSON envelopes — flat, sensible defaults, ids au
 | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `prompt.create_environment`            | `{ name, variables: [{ key, value, encrypted? }] }`                                                                                                                                                   |
 | `prompt.create_assertion`              | `{ requestId, assertion: { kind, op, target?, expected } }`                                                                                                                                           |
-| `prompt.create_plan`                   | `{ name, stepRequestIds, envPriorityOrder }` _(validates all step ids exist)_                                                                                                                         |
+| `prompt.create_plan`                   | `{ name, stepRequestIds, envPriorityOrder }` — `envPriorityOrder`: `(string \| { kind, … })[]` _(validates all step ids exist)_                                                                       |
 | `prompt.create_request`                | `{ name?, method, url, folderId?, headers?, queryParams?, pathParams?, body?: { type, content?, variables? }, auth?, assertions? }` — auth defaults to `inherit`; nested assertion ids auto-generated |
 | `prompt.update_request`                | `{ id, patch: { name?, method?, url?, folderId?, headers?, queryParams?, pathParams?, body?, auth?, assertions? } }` — replace-on-supplied; returns `{ ok: false, error }` when the id is unknown     |
 | `prompt.create_folder_tree`            | `{ parentId?, tree: { name, children?: [...] } }` — recursive; one call seeds the whole hierarchy in pre-order                                                                                        |
