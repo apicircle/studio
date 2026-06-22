@@ -61,7 +61,15 @@ export class GitWorkspaceProvider implements WorkspaceProvider {
     const localPath = this.localPath();
     if (existsSync(localPath)) {
       local = JSON.parse(await fs.readFile(localPath, 'utf-8')) as WorkspaceLocal;
-      local = { ...local, attachmentCache: local.attachmentCache ?? {} };
+      // Default the maps that consumers index without a container guard — a
+      // partial / older / externally-written local doc that omits these keys
+      // must not crash readers (e.g. the Execution view resolving a linked
+      // step via `local.linkedCollections[id]`).
+      local = {
+        ...local,
+        attachmentCache: local.attachmentCache ?? {},
+        linkedCollections: local.linkedCollections ?? {},
+      };
     } else {
       local = createEmptyLocalForSynced(synced);
     }

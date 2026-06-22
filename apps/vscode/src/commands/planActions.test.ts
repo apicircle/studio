@@ -8,6 +8,7 @@ import { Uri, window, workspace } from '../../test/mocks/vscode';
 import { deviceLocalPath } from '../util/workspaceDiscovery';
 import { VsCodeBridge } from '../host/vscodeBridge';
 import { AbortRegistry } from '../execute/abortRegistry';
+import { InFlightPlanTracker } from '../execute/inFlightPlanTracker';
 import { runPlanCommand } from './planActions';
 
 function makeMockContext(globalStoragePath: string) {
@@ -235,30 +236,72 @@ describe('runPlanCommand', () => {
     );
   });
 
-  it('cancels gracefully when env override picker is dismissed', async () => {
+  it('cancels gracefully when the assertions picker is dismissed', async () => {
+    seed(apicircleDir, path.join(tmp, 'globalStorage'), [{ id: 'p1', name: 'X', steps: [] }]);
+    activate();
+    (window.showQuickPick as Mock).mockResolvedValueOnce(undefined); // assertions picker dismissed
+    await runPlanCommand({ bridge, abortRegistry: registry }, { kind: 'plan', id: 'p1' });
+    // No error, no toast — clean exit. Registry should be empty.
+    expect(window.showErrorMessage).not.toHaveBeenCalled();
+    expect(registry.hasActive()).toBe(false);
+  });
+
+  it('never prompts for an env override (the plan env order governs the run)', async () => {
     seed(
       apicircleDir,
       path.join(tmp, 'globalStorage'),
       [{ id: 'p1', name: 'X', steps: [] }],
-      ['prod'],
+      ['prod', 'stage'],
     );
     activate();
-    (window.showQuickPick as Mock).mockResolvedValueOnce(undefined); // env picker dismissed
-    await runPlanCommand({ bridge, abortRegistry: registry }, { kind: 'plan', id: 'p1' });
-    // No error, no toast — clean exit. Registry should be empty.
+    // withAssertions is passed explicitly (the ▶ CodeLens path), so the only
+    // possible QuickPick — the assertions choice — is also skipped. The
+    // presence of envs must NOT trigger an env-override prompt.
+    await runPlanCommand(
+      { bridge, abortRegistry: registry },
+      { kind: 'plan', id: 'p1', withAssertions: true },
+    );
+    expect((window.showQuickPick as Mock).mock.calls.length).toBe(0);
     expect(registry.hasActive()).toBe(false);
   });
 
-  it('skips env override picker when no envs exist', async () => {
+  it('prompts with / without assertions when unspecified, then runs', async () => {
     seed(apicircleDir, path.join(tmp, 'globalStorage'), [{ id: 'p1', name: 'X', steps: [] }]);
     activate();
-    // Plan ID passed directly. The env QuickPick should be skipped entirely
-    // because the workspace has zero envs. runPlan then executes; with an
-    // empty steps array it completes cleanly via withProgress.
+    (window.showQuickPick as Mock).mockResolvedValueOnce({ value: false });
     await runPlanCommand({ bridge, abortRegistry: registry }, { kind: 'plan', id: 'p1' });
-    // showQuickPick was NOT called for env override
-    const qpCalls = (window.showQuickPick as Mock).mock.calls.length;
-    expect(qpCalls).toBe(0);
+    expect(window.showQuickPick).toHaveBeenCalledTimes(1);
+    expect(window.showInformationMessage).toHaveBeenCalledWith(
+      expect.stringContaining('no assertions'),
+    );
+    expect(registry.hasActive()).toBe(false);
+  });
+
+  it('runs directly without a prompt when withAssertions is supplied', async () => {
+    seed(apicircleDir, path.join(tmp, 'globalStorage'), [{ id: 'p1', name: 'X', steps: [] }]);
+    activate();
+    await runPlanCommand(
+      { bridge, abortRegistry: registry },
+      { kind: 'plan', id: 'p1', withAssertions: true },
+    );
+    expect(window.showQuickPick).not.toHaveBeenCalled();
+    expect(registry.hasActive()).toBe(false);
+  });
+
+  it('clears the in-flight tracker even if the result toast never resolves', async () => {
+    // Regression for the "stuck on Running" bug: a plain info toast's promise
+    // only settles when dismissed. If runPlanCommand awaited it, the progress +
+    // the in-flight tracker (and the ⏳ Running CodeLens) would never clear.
+    seed(apicircleDir, path.join(tmp, 'globalStorage'), [{ id: 'p1', name: 'X', steps: [] }]);
+    activate();
+    const tracker = new InFlightPlanTracker();
+    (window.showInformationMessage as Mock).mockReturnValueOnce(new Promise<undefined>(() => {}));
+    await runPlanCommand(
+      { bridge, abortRegistry: registry, tracker },
+      { kind: 'plan', id: 'p1', withAssertions: false },
+    );
+    // Reached here at all ⇒ the toast was not awaited; and the run is cleared.
+    expect(tracker.isInFlight('p1')).toBe(false);
     expect(registry.hasActive()).toBe(false);
   });
 
@@ -269,7 +312,10 @@ describe('runPlanCommand', () => {
       // Arm the next withProgress to report cancellation. The plan command
       // wires `token.onCancellationRequested` to `abortRegistry.cancel(runId)`.
       (window as unknown as { __withProgressCancelOnce: () => void }).__withProgressCancelOnce();
-      await runPlanCommand({ bridge, abortRegistry: registry }, { kind: 'plan', id: 'p1' });
+      await runPlanCommand(
+        { bridge, abortRegistry: registry },
+        { kind: 'plan', id: 'p1', withAssertions: false },
+      );
       // Plan still completes (empty steps), but importantly: the cancel
       // listener attached via onCancellationRequested fired, and any active
       // sends would have been aborted. Verify registry is clean.
@@ -313,7 +359,10 @@ describe('runPlanCommand', () => {
         inspect: vi.fn(),
       }));
       activate();
-      await runPlanCommand({ bridge, abortRegistry: registry }, { kind: 'plan', id: 'p1' });
+      await runPlanCommand(
+        { bridge, abortRegistry: registry },
+        { kind: 'plan', id: 'p1', withAssertions: false },
+      );
 
       const state = await bridge.activeWorkspace()!.read();
       const planRunIds = state.local.history.planRuns.map((r) => r.id);
@@ -344,7 +393,10 @@ describe('runPlanCommand', () => {
         inspect: vi.fn(),
       }));
       activate();
-      await runPlanCommand({ bridge, abortRegistry: registry }, { kind: 'plan', id: 'p1' });
+      await runPlanCommand(
+        { bridge, abortRegistry: registry },
+        { kind: 'plan', id: 'p1', withAssertions: false },
+      );
 
       const state = await bridge.activeWorkspace()!.read();
       expect(state.local.history.planRuns.map((r) => r.id)).toContain('old-pr');

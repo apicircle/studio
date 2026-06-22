@@ -12,12 +12,18 @@ import {
   mergeRequestOverride,
   computeRequestOverridePatch,
   isEmptyOverridePatch,
+  type WorkspaceState,
 } from '@apicircle/core';
 import type { VsCodeBridge, WorkspaceSurface } from '../host/vscodeBridge';
 import { serializeRequestToYaml, parseRequestFromYaml, RequestYamlParseError } from './requestYaml';
 import { serializeFolderToYaml, parseFolderFromYaml, FolderYamlParseError } from './folderYaml';
 import { serializeEnvironmentToYaml, parseEnvironmentFromYaml, EnvYamlParseError } from './envYaml';
-import { serializePlanToYaml, parsePlanFromYaml, PlanYamlParseError } from './planYaml';
+import {
+  serializePlanToYaml,
+  parsePlanFromYaml,
+  PlanYamlParseError,
+  type ResolveStepLabel,
+} from './planYaml';
 import { serializeMockToYaml, parseMockFromYaml, MockYamlParseError } from './mockYaml';
 import {
   serializeEndpointToYaml,
@@ -212,7 +218,11 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
         } else {
           const planRun = state.local.history.planRuns.find((r) => r.id === parsed.id);
           if (planRun) {
-            content = formatPlanRunDocument(planRun, state.local.history.requestRuns);
+            content = formatPlanRunDocument(
+              planRun,
+              state.local.history.requestRuns,
+              state.synced.collections.requests,
+            );
           }
         }
         if (content !== undefined) this.historyStore.set(parsed.id, content);
@@ -231,7 +241,7 @@ export class ApicircleFsProvider implements vscode.FileSystemProvider {
     if (parsed.kind === 'plans') {
       const plan = (state.synced.executionPlans ?? {})[parsed.id];
       if (!plan) throw vscode.FileSystemError.FileNotFound(uri);
-      return Buffer.from(serializePlanToYaml(plan), 'utf8');
+      return Buffer.from(serializePlanToYaml(plan, buildStepLabelResolver(state)), 'utf8');
     }
     if (parsed.kind === 'releases') {
       return Buffer.from(serializeReleasesToYaml(state.synced.releases.self), 'utf8');
@@ -1161,6 +1171,52 @@ export function computeFolderSlugPath(
     current = current.parentId ? folders[current.parentId] : undefined;
   }
   return chain;
+}
+
+/**
+ * Walk the folder chain from `folderId` and join the folder NAMES root→leaf
+ * with ' / ' — the human-readable path shown in plan-step labels and the
+ * Add/Change-step pickers (e.g. "Auth / Onboarding"). Returns '' for
+ * root-level entities. Cycle-safe in the same way as computeFolderSlugPath.
+ */
+export function folderPathNames(
+  folderId: string | null | undefined,
+  folders: Record<string, Folder>,
+): string {
+  if (!folderId) return '';
+  const chain: string[] = [];
+  const visited = new Set<string>();
+  let current: Folder | undefined = folders[folderId];
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    chain.unshift(current.name);
+    current = current.parentId ? folders[current.parentId] : undefined;
+  }
+  return chain.join(' / ');
+}
+
+/**
+ * Build a plan-step → `<name> · <METHOD> · <folder>` label resolver from a
+ * workspace snapshot. Local steps resolve from the synced collection; linked
+ * steps resolve from the cached linked snapshot and tag the source workspace.
+ * Used to annotate plan-YAML step rows so a reader sees what each step is.
+ */
+function buildStepLabelResolver(state: WorkspaceState): ResolveStepLabel {
+  return (step) => {
+    if (step.linkedWorkspaceId) {
+      const ws = state.synced.linkedWorkspaces[step.linkedWorkspaceId];
+      const snap = state.local.linkedCollections[step.linkedWorkspaceId];
+      const req = snap?.collections.requests[step.requestId];
+      const tag = `linked: ${ws?.name ?? step.linkedWorkspaceId}`;
+      if (!req) return `(uncached linked request) · ${tag}`;
+      const fp = folderPathNames(req.folderId, snap.collections.folders);
+      return `${req.name} · ${req.method}${fp ? ` · ${fp}` : ''} · ${tag}`;
+    }
+    const req = state.synced.collections.requests[step.requestId];
+    if (!req) return `(unknown request ${step.requestId.slice(0, 8)})`;
+    const fp = folderPathNames(req.folderId, state.synced.collections.folders);
+    return `${req.name} · ${req.method}${fp ? ` · ${fp}` : ''}`;
+  };
 }
 
 /**

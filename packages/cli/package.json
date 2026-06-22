@@ -1,6 +1,6 @@
 {
   "name": "@apicircle/cli",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "private": false,
   "type": "module",
   "description": "Command-line interface for API Circle Studio. Run mock servers, drive the MCP server, and import OpenAPI / Postman / Insomnia collections from any terminal.",

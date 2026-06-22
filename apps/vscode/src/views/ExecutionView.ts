@@ -61,19 +61,48 @@ export class ExecutionView extends BaseTreeView<ExecutionNode> {
     if (!plan) return new vscode.TreeItem('(deleted)');
     const step = plan.steps[element.stepIndex];
     if (!step) return new vscode.TreeItem('(deleted step)');
-    const request = state.synced.collections.requests[step.requestId];
+    // Resolve the request — local steps from the synced collection, linked
+    // steps from the cached linked snapshot — so a perfectly valid linked step
+    // doesn't render as "(missing request)".
+    const linkedWs = step.linkedWorkspaceId
+      ? state.synced.linkedWorkspaces[step.linkedWorkspaceId]
+      : undefined;
+    const request = step.linkedWorkspaceId
+      ? state.local.linkedCollections[step.linkedWorkspaceId]?.collections.requests[step.requestId]
+      : state.synced.collections.requests[step.requestId];
     const label = request?.name ?? '(missing request)';
     const enabled = step.enabled !== false; // defaults to true when absent
     const item = new vscode.TreeItem(
       `${element.stepIndex + 1}. ${label}`,
       vscode.TreeItemCollapsibleState.None,
     );
-    item.description = request ? `${request.method}` : 'missing';
+    item.description = request
+      ? step.linkedWorkspaceId
+        ? `${request.method} · linked`
+        : request.method
+      : step.linkedWorkspaceId
+        ? 'linked · not cached'
+        : 'missing';
     item.iconPath = new vscode.ThemeIcon(
       enabled ? 'circle-small-filled' : 'circle-small-outline',
       enabled ? undefined : new vscode.ThemeColor('disabledForeground'),
     );
     item.contextValue = enabled ? 'step' : 'step-disabled';
+    item.tooltip = request
+      ? `${request.name}\n${request.method} ${request.url}${
+          linkedWs ? `\nLinked workspace: ${linkedWs.name}` : ''
+        }\nClick to open the request editor`
+      : step.linkedWorkspaceId
+        ? `This step's linked request isn't cached — refresh the linked workspace "${linkedWs?.name ?? step.linkedWorkspaceId}".`
+        : 'This step references a request that no longer exists.';
+    // Clicking a step opens its request editor — the same affordance a
+    // request in the Editor view gets. Resolution (local vs linked) happens
+    // in the command so a deleted/uncached request surfaces a clear warning.
+    item.command = {
+      command: 'apicircle.openPlanStepRequest',
+      title: 'Open Request',
+      arguments: [{ planId: element.planId, stepIndex: element.stepIndex }],
+    };
     return item;
   }
 

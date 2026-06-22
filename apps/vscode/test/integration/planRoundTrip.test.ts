@@ -198,10 +198,12 @@ describe('plan YAML round-trip (FS provider integration)', () => {
   it('round-trips: serialize → mutate → write → re-read produces matching shape', async () => {
     const uri = await planUriFor('plan-1');
     const original = Buffer.from(await fsProvider.readFile(uri)).toString('utf8');
-    // Append step req-b to the steps array.
+    // Append step req-b after the req-a row. Target the step row itself (not a
+    // `steps:\n` prefix) so the insertion is robust to the per-step descriptive
+    // comment the serializer now emits above each row.
     const mutated = original.replace(
-      'steps:\n  - requestId: req-a',
-      'steps:\n  - requestId: req-a\n  - requestId: req-b',
+      '  - requestId: req-a',
+      '  - requestId: req-a\n  - requestId: req-b',
     );
     await fsProvider.writeFile(uri, Buffer.from(mutated, 'utf8'), {
       create: false,

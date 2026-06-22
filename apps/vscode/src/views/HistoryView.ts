@@ -95,7 +95,11 @@ export class HistoryView extends BaseTreeView<HistoryNode> {
     item.contextValue = 'plan-run';
     this.fsProvider.storeHistoryRun(
       planRun.id,
-      formatPlanRunDocument(planRun, state.local.history.requestRuns),
+      formatPlanRunDocument(
+        planRun,
+        state.local.history.requestRuns,
+        state.synced.collections.requests,
+      ),
     );
     item.command = {
       command: 'vscode.open',

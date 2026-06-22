@@ -94,6 +94,12 @@ describe('formatRequestRunDocument', () => {
     const doc = formatRequestRunDocument(run({ responseBodyPreview: '{"user":{"id":"123"}}' }));
     expect(doc).toContain('{"user":{"id":"123"}}');
   });
+
+  it('ends with a single trailing newline even when the body ends in a newline', () => {
+    const doc = formatRequestRunDocument(run({ responseBodyPreview: '{"ok":true}\n' }));
+    expect(doc.endsWith('\n')).toBe(true);
+    expect(doc.endsWith('\n\n')).toBe(false);
+  });
 });
 
 describe('formatPlanRunDocument', () => {
@@ -132,5 +138,90 @@ describe('formatPlanRunDocument', () => {
   it('passed: false rows surface as failures', () => {
     const doc = formatPlanRunDocument(plan(), []);
     expect(doc).toContain('passed: false');
+  });
+
+  it('renders each step with its request name + per-step section heading', () => {
+    const reqRuns: RequestRun[] = [
+      run({ id: 'rr1', requestId: 'q-login', method: 'POST', url: 'https://x/login', status: 200 }),
+      run({ id: 'rr2', requestId: 'q-profile', method: 'GET', url: 'https://x/me', status: 500 }),
+    ];
+    const doc = formatPlanRunDocument(plan(), reqRuns, {
+      'q-login': { name: 'Login' },
+      'q-profile': { name: 'Get profile' },
+    });
+    expect(doc).toContain('step 1 — Login');
+    expect(doc).toContain('request: Login');
+    expect(doc).toContain('step 2 — Get profile');
+    expect(doc).toContain('status: 200 OK');
+    expect(doc).toContain('status: 500 OK');
+  });
+
+  it('embeds assertion verdicts for each step', () => {
+    const reqRuns: RequestRun[] = [
+      run({
+        id: 'rr1',
+        requestId: 'q-login',
+        assertions: [
+          {
+            assertionId: 'a1',
+            kind: 'status',
+            op: 'equals',
+            expected: 200,
+            passed: true,
+            detail: 'status matched',
+          },
+        ],
+      }),
+      run({ id: 'rr2', requestId: 'q-profile' }),
+    ];
+    const doc = formatPlanRunDocument(plan(), reqRuns, { 'q-login': { name: 'Login' } });
+    expect(doc).toContain('# ── assertions ──');
+    expect(doc).toContain('status matched');
+    // A request with no assertions, when the run is withAssertions, says so.
+    expect(doc).toContain('(none defined on this request)');
+  });
+
+  it('renders the full wire detail (request + response headers + body) per step', () => {
+    const reqRuns: RequestRun[] = [
+      run({
+        id: 'rr1',
+        requestId: 'q-login',
+        requestHeaders: { 'X-Trace': 'abc' },
+        responseHeaders: { 'X-Custom': 'yes' },
+        responseBodyPreview: '{"token":"xyz"}',
+        responseBodyKind: 'json',
+      }),
+    ];
+    const doc = formatPlanRunDocument(plan(), reqRuns, { 'q-login': { name: 'Login' } });
+    // Same depth as the single-request run document — not just the summary.
+    expect(doc).toContain('# ── requestHeaders ──');
+    expect(doc).toContain('# ── responseHeaders ──');
+    expect(doc).toContain('x-custom'); // header keys lowercased
+    expect(doc).toContain('# ── responseBody (json) ──');
+    expect(doc).toContain('{"token":"xyz"}');
+  });
+
+  it('marks each step heading with a PASS / FAIL verdict', () => {
+    const reqRuns: RequestRun[] = [run({ id: 'rr1', requestId: 'q-login' })];
+    const doc = formatPlanRunDocument(plan(), reqRuns, { 'q-login': { name: 'Login' } });
+    expect(doc).toContain('step 1 — Login  [PASS]');
+    // step 2 has no captured run (passed: false) → FAIL + a clear note.
+    expect(doc).toContain('[FAIL]');
+    expect(doc).toContain('no request run was captured');
+  });
+
+  it('falls back to the requestId when no name map is supplied', () => {
+    const reqRuns: RequestRun[] = [run({ id: 'rr1', requestId: 'q-login' })];
+    const doc = formatPlanRunDocument(plan(), reqRuns);
+    expect(doc).toContain('request: q-login');
+  });
+
+  it('shows a network-error status + error line for a failed step', () => {
+    const reqRuns: RequestRun[] = [
+      run({ id: 'rr1', requestId: 'q-login', status: null, statusText: '', error: 'fetch failed' }),
+    ];
+    const doc = formatPlanRunDocument(plan(), reqRuns, { 'q-login': { name: 'Login' } });
+    expect(doc).toContain('status: Network error');
+    expect(doc).toContain('error: fetch failed');
   });
 });

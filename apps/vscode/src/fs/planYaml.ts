@@ -39,11 +39,27 @@ interface PlanYamlOutput {
 
 const HEADER_COMMENT = `# API Circle Execution Plan — edit fields below and save to commit.
 # Plans chain requests with assertions to validate end-to-end flows.
-# Use the ▶ Run Plan CodeLens above the 'name:' line or right-click the plan
-# in the Execution view to launch it.
+# Use the ▶ Run with assertions / ▶ Run CodeLenses above the 'name:' line
+# (or right-click the plan in the Execution view) to launch it. The
+# ✚ Add step lens on 'steps:' and the per-step open / enable-disable /
+# change / remove lenses edit the steps without hand-writing request ids.
 `;
 
-export function serializePlanToYaml(plan: ExecutionPlan): string {
+/**
+ * Resolve a human-readable label for a plan step — `<name> · <METHOD> · <folder
+ * path>` — so the YAML annotates each `requestId` row with what it actually is
+ * (the raw id alone is useless to a reader). The FS provider supplies this from
+ * the workspace; when omitted (tests / no resolver) the rows carry no comment.
+ */
+export type ResolveStepLabel = (step: {
+  requestId: string;
+  linkedWorkspaceId?: string;
+}) => string | undefined;
+
+export function serializePlanToYaml(
+  plan: ExecutionPlan,
+  resolveStepLabel?: ResolveStepLabel,
+): string {
   const out: PlanYamlOutput = {
     name: plan.name,
     steps: plan.steps.map((s) => {
@@ -62,6 +78,21 @@ export function serializePlanToYaml(plan: ExecutionPlan): string {
   }
   const doc = new YAML.Document(out);
   doc.commentBefore = HEADER_COMMENT.replace(/^# /gm, ' ').trimEnd();
+
+  // Annotate every step row with its resolved `<name> · <METHOD> · <folder>` so
+  // the reader sees what each step is instead of an opaque requestId. Comments
+  // are dropped by parsePlanFromYaml, so this never affects the round-trip.
+  if (resolveStepLabel) {
+    const stepsNode = doc.get('steps');
+    if (YAML.isSeq(stepsNode)) {
+      stepsNode.items.forEach((item, i) => {
+        const step = plan.steps[i];
+        if (!step || !YAML.isMap(item)) return;
+        const label = resolveStepLabel(step);
+        if (label) item.commentBefore = ` ${label}`;
+      });
+    }
+  }
   return doc.toString({ lineWidth: 0 });
 }
 

@@ -170,6 +170,15 @@ extension contributes:
   validation, completion for the 17 auth types + body types +
   assertion kinds, ▶ Send / Set Active / Delete CodeLenses, and live
   pre-send diagnostics in the Problems panel.
+- **Execution-plan editing** — the plan YAML carries `▶ Run with assertions` /
+  `▶ Run` (the app's two run modes; a running plan swaps to `⏳ Running… ·
+✖ Cancel`), `◆ Plan environments…`, and `✚ Add step…` (a multi-select picker
+  that hides already-added requests and offers "Select all"). Each step row is
+  annotated with a `# <name> · <METHOD> · <folder>` comment, and the per-step
+  actions — **Open / Enable-Disable / Change / Remove** — live on the Execution
+  sidebar (single-click opens the request; inline buttons + the right-click
+  menu). A plan run in History expands each step with full request + assertion
+  detail.
 - **Three-surface byte-identical state** with Desktop and Web — same
   `applyMutation` chokepoint, same workspace shape, byte-for-byte
   identical commits. One repo, three surfaces.

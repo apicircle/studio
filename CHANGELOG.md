@@ -23,6 +23,73 @@
 > ship. Full per-platform walk-through:
 > [`docs/installing.md`](docs/installing.md).
 
+## 1.1.5 - 2026-06-22
+
+### Added
+
+- **VS Code plan editing — readable steps + sidebar actions.** Each step row in
+  the plan YAML is annotated with a `# <Request name> · <METHOD> · <folder path>`
+  comment (resolved from the workspace) so you read what a step _is_ instead of a
+  raw requestId. The plan YAML keeps only **plan-level** CodeLenses — run / env /
+  cancel and `✚ Add step…` — and `✚ Add step…` opens a **multi-select** picker
+  that **hides requests already in the plan**, shows each request's folder path,
+  and offers a **Select all** option. The **per-step actions live on the
+  Execution sidebar** (a comment + a lens row + the requestId was too noisy):
+  single-click a step to open its request (local and linked both resolve), and
+  **Open / Enable-Disable / Change / Remove** are inline buttons + the right-click
+  menu on each step node. The plan context menu gained **Add Step to Plan**.
+- **VS Code — Run with / without assertions.** The plan editor now shows two run
+  lenses, `▶ Run with assertions` and `▶ Run`, mirroring the Desktop / Web
+  Execution panel. Launching from the TreeView or palette prompts for the same
+  choice. The finish toast reports `N/M steps passed` (with assertions) or
+  `N/M requests succeeded (no assertions)` so the verdict is never ambiguous.
+- **VS Code — cancel a running plan.** While a plan is executing, the run lens
+  swaps to `⏳ Running… (elapsed) · ✖ Cancel` (the plan-side mirror of a request
+  send's in-flight Cancel), backed by a new `apicircle.cancelPlanRun` command
+  and an `InFlightPlanTracker`. The progress-notification Cancel button still
+  works too; both abort the in-flight request and the remaining steps.
+- **VS Code — richer plan-run history.** Opening a plan run from the History
+  view now expands every step (with a `[PASS]` / `[FAIL]` heading) into the
+  **same wire depth as a single-request run** — request name, method, URL,
+  status, duration, request + response headers, the response-body preview, and
+  the assertion verdicts (kind / op / target / expected / passed / detail) —
+  instead of an opaque `requestRunId`, so you can see what each step sent,
+  what came back, and why it passed or failed without leaving the document.
+
+### Fixed
+
+- **VS Code — a finished plan run no longer stays stuck on "Running".** The run
+  command `await`ed the "Plan finished…" notification _inside_ the progress
+  callback — but a plain info toast's promise only settles when the toast is
+  dismissed, so the "Running…" progress (and the ⏳ Running CodeLens / in-flight
+  state) lingered long after the run completed in a few seconds. Result toasts
+  are now fire-and-forget, so the progress closes and the CodeLens reverts to
+  `▶ Run` the moment the run + history write finish.
+- **VS Code — "Plan environments…" now updates the open editor.** Setting a
+  plan's environment priority order (via the CodeLens, the TreeView, or the
+  palette) mutated the workspace but left the open plan YAML showing the stale
+  `envPriorityOrder:` block until the tab was reopened. Plan mutations now fire
+  the FS-provider change event for the plan URI, so the projection refreshes
+  immediately (the same mechanism that swaps the response viewer's "Sending…"
+  placeholder). Adding / removing / toggling / changing a step refreshes the
+  editor the same way.
+- **VS Code — no more env prompt on every plan run.** Running a plan no longer
+  pops a "Run with an env overlay?" QuickPick. The plan's own environment
+  priority order (configured via "Plan environments…") governs the run, matching
+  Desktop / Web / the CLI, where the configured order is authoritative and a
+  one-off override is an explicit edit rather than an interactive question.
+- **VS Code — hardened plan editing.** The structured step / env commands refuse
+  to run while the plan editor has unsaved changes (rather than letting the change
+  be silently reverted on the next save); the in-flight run tracker is keyed by
+  the stable plan id so a rename can't break the Running / Cancel affordance; and
+  the Execution view + load path no longer assume `linkedCollections` is present,
+  so a linked step (or a partial device-local file) renders/opens instead of
+  erroring.
+
+The VS Code extension bundle is **2.80 MB** (under the 3.00 MB soft budget).
+No persisted-workspace shape, `WorkspacePatch` variant, MCP tool, or CLI flag
+changed — these are VS Code surface improvements only, with no migration.
+
 ## 1.1.4 - 2026-06-22
 
 ### Fixed

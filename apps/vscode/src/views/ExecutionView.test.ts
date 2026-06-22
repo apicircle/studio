@@ -36,7 +36,7 @@ function makeMockContext(globalStoragePath: string) {
 interface SeedPlan {
   id: string;
   name: string;
-  steps: Array<{ requestId: string; enabled?: boolean }>;
+  steps: Array<{ requestId: string; enabled?: boolean; linkedWorkspaceId?: string }>;
 }
 
 interface SeedReq {
@@ -188,12 +188,34 @@ describe('ExecutionView', () => {
     expect(item.description).toBe('POST');
   });
 
+  it('wires a step click to open its request editor', async () => {
+    const plans = [{ id: 'p1', name: 'x', steps: [{ requestId: 'r1' }] }];
+    seedWorkspace(apicircleDir, plans, [{ id: 'r1', name: 'Sign up', method: 'POST' }]);
+    activate();
+    const item = await view.getTreeItem({ kind: 'step', planId: 'p1', stepIndex: 0 });
+    expect(item.command?.command).toBe('apicircle.openPlanStepRequest');
+    expect(item.command?.arguments).toEqual([{ planId: 'p1', stepIndex: 0 }]);
+  });
+
   it('marks disabled steps with the dimmed icon variant', async () => {
     const plans = [{ id: 'p1', name: 'x', steps: [{ requestId: 'r1', enabled: false }] }];
     seedWorkspace(apicircleDir, plans, [{ id: 'r1', name: 'Skipped step' }]);
     activate();
     const item = await view.getTreeItem({ kind: 'step', planId: 'p1', stepIndex: 0 });
     expect(item.contextValue).toBe('step-disabled');
+  });
+
+  it('renders an uncached linked step without claiming the request is missing', async () => {
+    const plans = [
+      { id: 'p1', name: 'x', steps: [{ requestId: 'lr1', linkedWorkspaceId: 'lw1' }] },
+    ];
+    seedWorkspace(apicircleDir, plans); // no linked snapshot cached
+    activate();
+    const item = await view.getTreeItem({ kind: 'step', planId: 'p1', stepIndex: 0 });
+    expect(item.description).toBe('linked · not cached');
+    // The misleading "no longer exists" copy must NOT appear for a linked step.
+    expect(item.tooltip as string).toContain("isn't cached");
+    expect(item.tooltip as string).not.toContain('no longer exists');
   });
 
   it('handles a missing request gracefully', async () => {

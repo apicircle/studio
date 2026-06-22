@@ -20,8 +20,11 @@ import { ApicircleFsProvider } from './fs/apicircleFsProvider';
 import { uriEntityKind, type UriEntityKind } from './fs/uriKind';
 import { AbortRegistry } from './execute/abortRegistry';
 import { InFlightSendTracker } from './execute/inFlightTracker';
+import { InFlightPlanTracker } from './execute/inFlightPlanTracker';
 import { sendRequestCommand } from './execute/sendRequest';
 import { cancelOneSendCommand } from './commands/cancelRequestSend';
+import { cancelPlanRunCommand } from './commands/cancelPlanRun';
+import { openPlanStepRequestCommand } from './commands/openPlanStepRequest';
 import { PreSendDiagnostics } from './diagnostics/preSendDiagnostics';
 import { StatusBar } from './status/statusBar';
 import { newRequestCommand } from './commands/newRequest';
@@ -149,7 +152,12 @@ import {
   newRequestInFolderCommand,
   openFolderYamlCommand,
 } from './commands/folderActions';
-import { toggleStepEnabledCommand, removeStepFromPlanCommand } from './commands/stepActions';
+import {
+  toggleStepEnabledCommand,
+  removeStepFromPlanCommand,
+  addStepToPlanCommand,
+  changeStepRequestCommand,
+} from './commands/stepActions';
 import {
   newMockCommand,
   startMockCommand,
@@ -279,6 +287,7 @@ import {
 let bridge: VsCodeBridge | null = null;
 let abortRegistry: AbortRegistry | null = null;
 let inFlightTracker: InFlightSendTracker | null = null;
+let inFlightPlanTracker: InFlightPlanTracker | null = null;
 let mockController: VsCodeMockController | null = null;
 let vaultManager: VsCodeVaultManager | null = null;
 let runsChannel: RunsChannel | null = null;
@@ -307,6 +316,10 @@ export function activate(context: vscode.ExtensionContext): void {
   abortRegistry = new AbortRegistry();
   inFlightTracker = new InFlightSendTracker();
   context.subscriptions.push(inFlightTracker);
+  // Plan-run in-flight tracker — drives the plan CodeLens ⏳ Running… · ✖ Cancel
+  // swap, the plan-side mirror of the request InFlightSendTracker.
+  inFlightPlanTracker = new InFlightPlanTracker();
+  context.subscriptions.push(inFlightPlanTracker);
 
   // P4: a single consolidated "API Circle Runs" OutputChannel replaces the
   // P3 per-feature "API Circle Mock" channel. Lazy — never created until the
@@ -536,11 +549,18 @@ export function activate(context: vscode.ExtensionContext): void {
       { scheme: 'apicircle', pattern: '**/environments/*.yaml' },
       new EnvironmentHoverProvider(bridge),
     ),
-    // Plan CodeLens — ▶ Run Plan above the name: line in plan YAMLs.
-    vscode.languages.registerCodeLensProvider(
-      { scheme: 'apicircle', pattern: '**/plans/*.yaml' },
-      new PlanCodeLensProvider(),
-    ),
+    // Plan CodeLens — plan-level only: run / env / cancel above name: and
+    // ✚ Add step on steps:. Per-step actions live on the Execution TreeView.
+    // Wired to the in-flight plan tracker (swaps ▶ Run… → ⏳ Running… · ✖ Cancel
+    // while a run is live).
+    (() => {
+      const provider = new PlanCodeLensProvider(inFlightPlanTracker ?? undefined);
+      context.subscriptions.push(provider);
+      return vscode.languages.registerCodeLensProvider(
+        { scheme: 'apicircle', pattern: '**/plans/*.yaml' },
+        provider,
+      );
+    })(),
     vscode.languages.registerCompletionItemProvider(
       { scheme: 'apicircle', pattern: '**/plans/*.yaml' },
       new PlanCompletionProvider(bridge),
@@ -902,9 +922,19 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!bridge) return;
       return setSnapshotMaxBytesCommand({ bridge });
     }),
-    vscode.commands.registerCommand('apicircle.runPlan', (node?: { kind: 'plan'; id: string }) => {
-      if (!bridge || !abortRegistry) return;
-      return runPlanCommand({ bridge, abortRegistry }, node);
+    vscode.commands.registerCommand(
+      'apicircle.runPlan',
+      (node?: { kind: 'plan'; id: string; withAssertions?: boolean }) => {
+        if (!bridge || !abortRegistry) return;
+        return runPlanCommand(
+          { bridge, abortRegistry, tracker: inFlightPlanTracker ?? undefined },
+          node,
+        );
+      },
+    ),
+    vscode.commands.registerCommand('apicircle.cancelPlanRun', (uri?: vscode.Uri) => {
+      if (!abortRegistry || !inFlightPlanTracker) return;
+      return cancelPlanRunCommand({ abortRegistry, tracker: inFlightPlanTracker }, uri);
     }),
     vscode.commands.registerCommand('apicircle.newPlan', () => {
       if (!bridge) return;
@@ -914,7 +944,7 @@ export function activate(context: vscode.ExtensionContext): void {
       'apicircle.setPlanEnvPriority',
       (node?: { kind: 'plan'; id: string }) => {
         if (!bridge) return;
-        return setPlanEnvPriorityCommand({ bridge }, node);
+        return setPlanEnvPriorityCommand({ bridge, fsProvider }, node);
       },
     ),
     vscode.commands.registerCommand('apicircle.setEnvPriorityOrder', () => {
@@ -1249,16 +1279,52 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.commands.registerCommand(
       'apicircle.toggleStepEnabled',
-      (node?: { kind: 'step' | 'step-disabled'; planId: string; stepIndex: number }) => {
+      (node?: {
+        kind: 'step' | 'step-disabled';
+        planId: string;
+        stepIndex: number;
+        expectedRequestId?: string;
+      }) => {
         if (!bridge) return;
-        return toggleStepEnabledCommand({ bridge }, node);
+        return toggleStepEnabledCommand({ bridge, fsProvider }, node);
       },
     ),
     vscode.commands.registerCommand(
       'apicircle.removeStepFromPlan',
-      (node?: { kind: 'step' | 'step-disabled'; planId: string; stepIndex: number }) => {
+      (node?: {
+        kind: 'step' | 'step-disabled';
+        planId: string;
+        stepIndex: number;
+        expectedRequestId?: string;
+      }) => {
         if (!bridge) return;
-        return removeStepFromPlanCommand({ bridge }, node);
+        return removeStepFromPlanCommand({ bridge, fsProvider }, node);
+      },
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.addStepToPlan',
+      (node?: { kind: 'plan'; id: string }) => {
+        if (!bridge) return;
+        return addStepToPlanCommand({ bridge, fsProvider }, node);
+      },
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.changeStepRequest',
+      (node?: { planId: string; stepIndex: number; expectedRequestId?: string }) => {
+        if (!bridge) return;
+        return changeStepRequestCommand({ bridge, fsProvider }, node);
+      },
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.openPlanStepRequest',
+      (node?: {
+        planId: string;
+        stepIndex: number;
+        requestId?: string;
+        linkedWorkspaceId?: string;
+      }) => {
+        if (!bridge) return;
+        return openPlanStepRequestCommand({ bridge }, node);
       },
     ),
     vscode.commands.registerCommand('apicircle.newMock', () => {
@@ -1927,6 +1993,8 @@ export async function deactivate(): Promise<void> {
   abortRegistry = null;
   inFlightTracker?.dispose();
   inFlightTracker = null;
+  inFlightPlanTracker?.dispose();
+  inFlightPlanTracker = null;
   // P3R2-G3: await disposeAll so the bridge stays alive while runtime
   // entries are cleared. Without the await, the bridge.dispose() below
   // raced with in-flight surface.write() calls and the mocks didn't

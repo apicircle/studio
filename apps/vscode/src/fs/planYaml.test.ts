@@ -36,6 +36,23 @@ describe('serializePlanToYaml', () => {
     expect(out).not.toContain('enabled: true');
   });
 
+  it('annotates each step with the resolved name · method · folder comment', () => {
+    const out = serializePlanToYaml(makePlan(), (step) =>
+      step.requestId === 'req-a' ? 'Login · POST · Auth / Onboarding' : 'Get profile · GET',
+    );
+    expect(out).toContain('# Login · POST · Auth / Onboarding');
+    expect(out).toContain('# Get profile · GET');
+    // The requestId stays the canonical key beneath the comment.
+    expect(out).toContain('requestId: req-a');
+  });
+
+  it('round-trips: the step-label comments are ignored by the parser', () => {
+    const out = serializePlanToYaml(makePlan(), () => 'Some · Label · Folder');
+    const parsed = parsePlanFromYaml(out);
+    expect(parsed.plan.steps.map((s) => s.requestId)).toEqual(['req-a', 'req-b']);
+    expect(parsed.plan.steps[1].enabled).toBe(false);
+  });
+
   it('emits stopOnAssertionFailure only when true', () => {
     const off = serializePlanToYaml(makePlan({ stopOnAssertionFailure: false }));
     expect(off).not.toContain('stopOnAssertionFailure');

@@ -131,7 +131,41 @@ studio/
 │                           shapes (Simple GET, JSON POST, Bearer GET, Paginated
 │                           GET, GraphQL query, REST CRUD folder); env/plan/mock
 │                           YAMLs keep Completion + Hover,
-│                           pre-send diagnostics; per-endpoint
+│                           pre-send diagnostics. The **plan YAML** carries only
+│                           PLAN-LEVEL CodeLenses (run / env / cancel on `name:`,
+│                           `✚ Add step…` on `steps:`); each step row is annotated
+│                           by the serializer with a `# <name> · <METHOD> ·
+│                           <folder path>` comment (resolved via
+│                           `buildStepLabelResolver` in the FS provider, passed to
+│                           `serializePlanToYaml`'s `ResolveStepLabel`) so the
+│                           reader sees what a step is, not a bare requestId.
+│                           `✚ Add step…` opens a multi-select picker that HIDES
+│                           already-added requests + offers "Select all". There
+│                           are deliberately NO per-step CodeLenses (comment +
+│                           lens row + requestId was too noisy) — the per-step
+│                           actions live on the **Execution TreeView** step nodes:
+│                           single-click opens the request, inline buttons + the
+│                           right-click menu give Open / Enable-Disable / Change /
+│                           Remove (`stepActions.ts` + `openPlanStepRequest.ts`,
+│                           guarded by `verifyStepIdentity` + `ensurePlanEditorSaved`,
+│                           all routed through
+│                           `plan.upsert` then `refreshPlanEditor` —
+│                           `planEditorRefresh.ts` fires the FS-provider change
+│                           event so the open editor reloads the re-serialized
+│                           projection, the same mechanism that fixes the
+│                           "Plan environments doesn't update envPriorityOrder"
+│                           staleness). The name-row lens carries `▶ Run with
+│                           assertions` / `▶ Run` (the Desktop/Web two-mode
+│                           split — `runPlanCommand` takes `withAssertions`, no
+│                           run-time env-override prompt; the plan's
+│                           `envPriorityOrder` governs); while a run is live it
+│                           swaps to `⏳ Running… · ✖ Cancel`
+│                           (`InFlightPlanTracker` + `apicircle.cancelPlanRun`,
+│                           the plan mirror of the request `InFlightSendTracker`).
+│                           Clicking a step in the Execution TreeView opens its
+│                           request; a plan run in History expands each step
+│                           with request + assertion detail
+│                           (`formatPlanRunDocument`). Per-endpoint
 │                           `*.endpoint.yaml` mock-validation rules author
 │                           in-editor — `🛡 Add validation rule` inserts a
 │                           prefilled rule (no prompts), then kind-aware

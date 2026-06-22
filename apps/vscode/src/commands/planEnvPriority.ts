@@ -1,7 +1,12 @@
 import * as vscode from 'vscode';
-import type { EnvPriorityRef } from '@apicircle/shared';
+import type { EnvPriorityRef, ExecutionPlan } from '@apicircle/shared';
 import { envPriorityKey } from '@apicircle/shared';
 import type { VsCodeBridge } from '../host/vscodeBridge';
+import {
+  refreshPlanEditor,
+  ensurePlanEditorSaved,
+  type PlanEditorRefresher,
+} from './planEditorRefresh';
 
 // =============================================================================
 // `API Circle: Set Plan Environments` command.
@@ -21,6 +26,8 @@ import type { VsCodeBridge } from '../host/vscodeBridge';
 
 export interface SetPlanEnvPriorityDeps {
   bridge: VsCodeBridge;
+  /** When present, the open plan YAML editor is reloaded after the mutation. */
+  fsProvider?: PlanEditorRefresher;
 }
 
 interface PlanNode {
@@ -67,6 +74,7 @@ export async function setPlanEnvPriorityCommand(
     await vscode.window.showErrorMessage(`Plan ${planId} no longer exists.`);
     return;
   }
+  if (!(await ensurePlanEditorSaved(planId))) return;
 
   // Collect every selectable env across local + every linked workspace — same
   // candidate set as the workspace-level priority picker.
@@ -112,10 +120,13 @@ export async function setPlanEnvPriorityCommand(
   );
   if (!inclusionPicks) return;
   if (inclusionPicks.length === 0) {
-    await active.apply({
-      kind: 'plan.upsert',
-      plan: { ...plan, envPriorityOrder: [], updatedAt: new Date().toISOString() },
-    });
+    const cleared: ExecutionPlan = {
+      ...plan,
+      envPriorityOrder: [],
+      updatedAt: new Date().toISOString(),
+    };
+    await active.apply({ kind: 'plan.upsert', plan: cleared });
+    refreshPlanEditor(deps.fsProvider, active.workspace.id, cleared);
     await vscode.window.showInformationMessage(
       `Plan "${plan.name}" now inherits the workspace environment order.`,
     );
@@ -145,10 +156,13 @@ export async function setPlanEnvPriorityCommand(
     remaining.delete(next.label);
   }
 
-  await active.apply({
-    kind: 'plan.upsert',
-    plan: { ...plan, envPriorityOrder: orderedRefs, updatedAt: new Date().toISOString() },
-  });
+  const updated: ExecutionPlan = {
+    ...plan,
+    envPriorityOrder: orderedRefs,
+    updatedAt: new Date().toISOString(),
+  };
+  await active.apply({ kind: 'plan.upsert', plan: updated });
+  refreshPlanEditor(deps.fsProvider, active.workspace.id, updated);
   await vscode.window.showInformationMessage(
     `Plan "${plan.name}" environments set (${orderedRefs.length} ${
       orderedRefs.length === 1 ? 'entry' : 'entries'

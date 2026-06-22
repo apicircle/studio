@@ -3,16 +3,26 @@ import { runPlan, ANONYMOUS_ACTOR } from '@apicircle/core';
 import { generateId } from '@apicircle/shared';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 import type { AbortRegistry } from '../execute/abortRegistry';
+import type { InFlightPlanTracker } from '../execute/inFlightPlanTracker';
 
 // =============================================================================
 // Plan execution command.
 //
 // Runs the plan via `runPlan` from `@apicircle/core` — the same engine the
 // desktop store + CLI + MCP server use. Wired knobs:
-//   • AbortSignal threaded through abortRegistry → `apicircle.cancelSend`
-//     cancels mid-run (gap #7).
-//   • PlanRun history capped via setting (gap #8).
-//   • Optional env override via QuickPick (gap #20).
+//   • withAssertions — picked up front (the same "Run" vs "Run with assertions"
+//     split the Desktop / Web Execution panel offers); the ▶ CodeLens passes
+//     it explicitly so no prompt appears.
+//   • AbortSignal threaded through abortRegistry → `apicircle.cancelPlanRun`
+//     (and the progress notification's Cancel button) abort mid-run.
+//   • InFlightPlanTracker marks the plan URI in-flight so the plan CodeLens
+//     swaps ▶ Run… → ⏳ Running… · ✖ Cancel.
+//   • PlanRun history capped via setting.
+//
+// The plan's own `envPriorityOrder` (set via "Plan environments…") governs the
+// run — there is no run-time env-override prompt. That matches Desktop / Web /
+// the CLI, where the plan's configured env order is authoritative and a one-off
+// override is an explicit edit, not an interactive question on every run.
 //
 // Plans live in `WorkspaceSynced.executionPlans` (shared via git); `runPlan`
 // reads them straight off `state.synced`, so no lifting is needed here.
@@ -21,11 +31,15 @@ import type { AbortRegistry } from '../execute/abortRegistry';
 export interface PlanActionsDeps {
   bridge: VsCodeBridge;
   abortRegistry: AbortRegistry;
+  /** When present, marks the plan URI in-flight so the CodeLens shows ⏳ · ✖ Cancel. */
+  tracker?: InFlightPlanTracker;
 }
 
 interface PlanNode {
   kind: 'plan';
   id: string;
+  /** When set, skips the with/without-assertions prompt (the ▶ CodeLens path). */
+  withAssertions?: boolean;
 }
 
 export async function runPlanCommand(deps: PlanActionsDeps, node?: PlanNode): Promise<void> {
@@ -62,19 +76,27 @@ export async function runPlanCommand(deps: PlanActionsDeps, node?: PlanNode): Pr
     return;
   }
 
-  // Optional env override (gap #20)
-  const envs = Object.values(state.synced.environments.items);
-  let envOverride: string | undefined;
-  if (envs.length > 0) {
-    const envPick = await vscode.window.showQuickPick(
+  // Assertions choice — explicit from the ▶ CodeLens, else a two-option pick
+  // mirroring the Desktop / Web "Run" vs "Run with assertions" buttons.
+  let withAssertions = node?.withAssertions;
+  if (withAssertions === undefined) {
+    const pick = await vscode.window.showQuickPick(
       [
-        { label: '$(circle-slash) (no override)', name: undefined as string | undefined },
-        ...envs.map((e) => ({ label: e.name, name: e.name })),
+        {
+          label: '$(check) Run with assertions',
+          description: "Evaluate each step's assertions and report pass / fail",
+          value: true,
+        },
+        {
+          label: '$(play) Run without assertions',
+          description: 'Execute the steps only — no assertion checks',
+          value: false,
+        },
       ],
-      { placeHolder: 'Run with an env overlay? (optional — highest precedence)' },
+      { placeHolder: `Run plan "${plan.name}"` },
     );
-    if (envPick === undefined) return;
-    envOverride = envPick.name;
+    if (!pick) return;
+    withAssertions = pick.value;
   }
 
   const runId = generateId();
@@ -84,20 +106,22 @@ export async function runPlanCommand(deps: PlanActionsDeps, node?: PlanNode): Pr
   const retentionDays = cfg.get<number>('history.retentionDays', 30);
 
   try {
+    // Mark the plan in-flight (keyed by id) so the CodeLens swaps to
+    // ⏳ Running… · ✖ Cancel. Inside the try so the finally's `end` always pairs.
+    deps.tracker?.start(plan.id, runId, plan.name);
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: `Running plan "${plan.name}"${envOverride ? ` with env: ${envOverride}` : ''}…`,
+        title: `Running plan "${plan.name}"${withAssertions ? '' : ' (no assertions)'}…`,
         cancellable: true,
       },
       async (_progress, token) => {
         token.onCancellationRequested(() => abortRegistry.cancel(runId));
 
         const result = await runPlan(state, plan.id, {
-          withAssertions: true,
+          withAssertions,
           actor: ANONYMOUS_ACTOR,
           signal,
-          env: envOverride,
         });
         abortRegistry.complete(runId);
 
@@ -127,22 +151,28 @@ export async function runPlanCommand(deps: PlanActionsDeps, node?: PlanNode): Pr
           },
         });
 
-        const passedSteps = result.steps.filter((s) =>
-          (s.assertionResults ?? []).every((a) => a.passed),
-        ).length;
-        await vscode.window.showInformationMessage(
-          `Plan "${plan.name}" finished — ${passedSteps}/${result.steps.length} steps passed.`,
-        );
+        const executed = result.steps.filter((s) => !s.skipped);
+        const verdict = withAssertions
+          ? `${executed.filter((s) => s.passed).length}/${executed.length} steps passed`
+          : `${executed.filter((s) => s.result?.ok).length}/${executed.length} requests succeeded (no assertions)`;
+        // Fire-and-forget. NEVER `await` a notification inside withProgress: a
+        // plain info toast's promise only settles when the toast is dismissed,
+        // so awaiting it keeps the "Running…" progress (and therefore the
+        // in-flight tracker + the ⏳ Running CodeLens) alive long after the run
+        // actually finished — the "stuck on Running" bug.
+        void vscode.window.showInformationMessage(`Plan "${plan.name}" finished — ${verdict}.`);
       },
     );
   } catch (e) {
     abortRegistry.complete(runId);
     if (signal.aborted) {
-      await vscode.window.showInformationMessage(`Plan "${plan.name}" was cancelled.`);
+      void vscode.window.showInformationMessage(`Plan "${plan.name}" was cancelled.`);
       return;
     }
-    await vscode.window.showErrorMessage(
+    void vscode.window.showErrorMessage(
       `Plan run failed: ${e instanceof Error ? e.message : String(e)}`,
     );
+  } finally {
+    deps.tracker?.end(plan.id);
   }
 }

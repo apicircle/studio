@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { Uri, window } from '../../test/mocks/vscode';
+import { Uri, window, workspace } from '../../test/mocks/vscode';
 import { VsCodeBridge } from '../host/vscodeBridge';
 import { setPlanEnvPriorityCommand } from './planEnvPriority';
 
@@ -98,6 +98,7 @@ describe('setPlanEnvPriorityCommand', () => {
     (window.showWarningMessage as Mock).mockReset();
     (window.showErrorMessage as Mock).mockReset();
     (window.showInformationMessage as Mock).mockReset();
+    (workspace as { textDocuments: unknown }).textDocuments = [];
   });
 
   afterEach(() => {
@@ -183,6 +184,40 @@ describe('setPlanEnvPriorityCommand', () => {
     expect(readPlanOrder(apicircleDir, 'p1')).toEqual([{ kind: 'local', name: 'prod' }]);
   });
 
+  it('refreshes the open plan editor after setting the overlay', async () => {
+    seedWorkspace(apicircleDir, ['prod', 'stage'], [{ id: 'p1', name: 'Smoke' }]);
+    activate();
+    (window.showQuickPick as Mock).mockResolvedValueOnce([{ label: 'prod' }]);
+    let refreshed = 0;
+    const fsProvider = {
+      fireChangedExternal: () => {
+        refreshed += 1;
+      },
+    };
+    await setPlanEnvPriorityCommand({ bridge, fsProvider }, { kind: 'plan', id: 'p1' });
+    expect(readPlanOrder(apicircleDir, 'p1')).toEqual([{ kind: 'local', name: 'prod' }]);
+    expect(refreshed).toBe(1);
+  });
+
+  it('refreshes the open plan editor when clearing the overlay', async () => {
+    seedWorkspace(
+      apicircleDir,
+      ['prod', 'stage'],
+      [{ id: 'p1', name: 'Smoke', envPriorityOrder: [{ kind: 'local', name: 'prod' }] }],
+    );
+    activate();
+    (window.showQuickPick as Mock).mockResolvedValueOnce([]); // multi-select empty → inherit
+    let refreshed = 0;
+    const fsProvider = {
+      fireChangedExternal: () => {
+        refreshed += 1;
+      },
+    };
+    await setPlanEnvPriorityCommand({ bridge, fsProvider }, { kind: 'plan', id: 'p1' });
+    expect(readPlanOrder(apicircleDir, 'p1')).toEqual([]);
+    expect(refreshed).toBe(1);
+  });
+
   it('orders multiple envs in the sequence the user picks them', async () => {
     seedWorkspace(apicircleDir, ['a', 'b', 'c'], [{ id: 'p1', name: 'Smoke' }]);
     activate();
@@ -206,5 +241,20 @@ describe('setPlanEnvPriorityCommand', () => {
     qp.mockResolvedValueOnce([{ label: 'prod' }]); // env inclusion
     await setPlanEnvPriorityCommand({ bridge });
     expect(readPlanOrder(apicircleDir, 'p1')).toEqual([{ kind: 'local', name: 'prod' }]);
+  });
+
+  it('refuses to set environments while the plan editor has unsaved changes', async () => {
+    seedWorkspace(apicircleDir, ['prod', 'stage'], [{ id: 'p1', name: 'Smoke' }]);
+    activate();
+    (workspace as { textDocuments: unknown }).textDocuments = [
+      { uri: Uri.parse('apicircle://ws/plans/Smoke.yaml?id=p1'), isDirty: true },
+    ];
+    await setPlanEnvPriorityCommand({ bridge }, { kind: 'plan', id: 'p1' });
+    expect(window.showWarningMessage).toHaveBeenCalledWith(
+      expect.stringContaining('unsaved changes'),
+    );
+    // Never reached the env inclusion picker, and the overlay is unchanged.
+    expect(window.showQuickPick).not.toHaveBeenCalled();
+    expect(readPlanOrder(apicircleDir, 'p1')).toEqual([]);
   });
 });
