@@ -1,8 +1,8 @@
 # Worked example — 1.1.2
 
-The real transform that defines this skill: the **1.1.2 `CHANGELOG.md` entry**
-(input) and the **shipped GitHub release body** (output). Study the deltas, not
-just the shapes.
+The real transform that defines the release-notes step: the **1.1.2
+`CHANGELOG.md` entry** (input) and the **shipped GitHub release body** (output).
+Study the deltas, not just the shapes.
 
 ---
 
