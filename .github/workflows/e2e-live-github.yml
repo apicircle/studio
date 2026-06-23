@@ -54,7 +54,7 @@ jobs:
     outputs:
       specs: ${{ steps.list.outputs.specs }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - id: list
         # Emit a JSON array of bare spec filenames
         # (e.g. ["00-preflight.spec.ts", ...]). The `shard` matrix below
@@ -75,7 +75,7 @@ jobs:
       APICIRCLE_E2E_BOT_OWNER: ${{ vars.APICIRCLE_E2E_BOT_OWNER }}
       APICIRCLE_E2E_GITHUB_PAT: ${{ secrets.APICIRCLE_E2E_BOT_PAT }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: 20
@@ -116,7 +116,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4

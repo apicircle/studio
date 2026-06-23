@@ -39,7 +39,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           # Tag + history needed so electron-builder can stamp the release
           # notes from the git log when --publish always is set.
