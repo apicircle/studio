@@ -65,11 +65,15 @@ export default tseslint.config(
     },
   },
   // Build scripts and Electron main/preload run in Node — give them the
-  // node globals so `process`, `console`, `URL`, etc. resolve.
+  // node globals so `process`, `console`, `URL`, etc. resolve. This also
+  // covers the Node automation scripts that ship inside committed Claude
+  // Code skills (e.g. the release-manager bump-version script); the agent
+  // worktrees under .claude/worktrees/** are excluded by the top ignores.
   {
     files: [
       '{apps,packages}/**/scripts/**/*.{js,mjs,cjs}',
       'scripts/**/*.{js,mjs,cjs}',
+      '.claude/**/scripts/**/*.{js,mjs,cjs}',
       'apps/desktop/src/main/**/*.ts',
     ],
     languageOptions: {
