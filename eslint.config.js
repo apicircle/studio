@@ -24,11 +24,19 @@ export default tseslint.config(
       // Playwright specs use their own tsconfig in the e2e/ packages + the
       // Playwright test runner does its own type-check. ESLint type-aware
       // rules don't resolve them through the project service, so ignore them.
+      // e2e/vscode additionally downloads a full VS Code build under
+      // .vscode-test/ — linting its minified bundles floods thousands of
+      // false positives and OOMs the type-aware pass.
       'e2e/web/**',
       'e2e/desktop/**',
+      'e2e/vscode/**',
       '**/playwright-report/**',
       '**/test-results/**',
       '.husky/**',
+      // Vite transpiles a *.config.ts to an ephemeral *.timestamp-*.mjs while
+      // loading it (vitest, etc.). These temp files are git-ignored build
+      // artifacts, not source.
+      '**/*.timestamp-*.mjs',
     ],
   },
   // Base JS rules apply everywhere.

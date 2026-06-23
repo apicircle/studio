@@ -46,7 +46,12 @@ const patterns = readFileSync(wsFile, 'utf8')
   .split(/\r?\n/)
   .map((l) => l.trim())
   .filter((l) => l.startsWith('- '))
-  .map((l) => l.slice(2).trim().replace(/^['"]|['"]$/g, ''));
+  .map((l) =>
+    l
+      .slice(2)
+      .trim()
+      .replace(/^['"]|['"]$/g, ''),
+  );
 
 // Expand each pattern to concrete directories. We only support the two shapes
 // the workspace actually uses: `dir/*` (immediate children) and an exact path.
