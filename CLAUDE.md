@@ -558,19 +558,20 @@ Desktop: `pnpm --filter @apicircle/desktop build` then `… start`.
 
 ## 9. Where the docs live
 
-| Doc                                                                | Purpose                                                          |
-| ------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| [`docs/architecture/platform.md`](docs/architecture/platform.md)   | Platform surfaces design record (MCP, mock engine, CLI, desktop) |
-| [`docs/auth.md`](docs/auth.md)                                     | The 17-auth-type matrix                                          |
-| [`docs/mock-server.md`](docs/mock-server.md)                       | Mock server feature guide                                        |
-| [`docs/mcp-tools-reference.md`](docs/mcp-tools-reference.md)       | MCP tool catalog reference                                       |
-| [`docs/connect-your-ai-client.md`](docs/connect-your-ai-client.md) | Wiring an MCP client                                             |
-| [`docs/installing.md`](docs/installing.md)                         | Install instructions                                             |
-| [`docs/migration.md`](docs/migration.md)                           | Workspace storage relocation guide (pre-1.0.9 → 1.0.9+)          |
-| [`docs/qa/README.md`](docs/qa/README.md)                           | QA status, E2E CI reference, coverage tooling                    |
-| [`docs/context/api-circle.md`](docs/context/api-circle.md)         | Tool-agnostic cold-start brief (for Cursor / Copilot / etc.)     |
-| [`CHANGELOG.md`](CHANGELOG.md)                                     | Release-by-release feature notes (1.0.0 → now)                   |
-| [`e2e/qa/runner/`](e2e/qa/runner/)                                 | Cowork manual-test runner — fixtures, seed script, runner prompt |
+| Doc                                                                                          | Purpose                                                             |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| [`docs/architecture/platform.md`](docs/architecture/platform.md)                             | Platform surfaces design record (MCP, mock engine, CLI, desktop)    |
+| [`docs/architecture/open-core-and-editions.md`](docs/architecture/open-core-and-editions.md) | Open-core SSOT, extension seams, and the workspace sidecar contract |
+| [`docs/auth.md`](docs/auth.md)                                                               | The 17-auth-type matrix                                             |
+| [`docs/mock-server.md`](docs/mock-server.md)                                                 | Mock server feature guide                                           |
+| [`docs/mcp-tools-reference.md`](docs/mcp-tools-reference.md)                                 | MCP tool catalog reference                                          |
+| [`docs/connect-your-ai-client.md`](docs/connect-your-ai-client.md)                           | Wiring an MCP client                                                |
+| [`docs/installing.md`](docs/installing.md)                                                   | Install instructions                                                |
+| [`docs/migration.md`](docs/migration.md)                                                     | Workspace storage relocation guide (pre-1.0.9 → 1.0.9+)             |
+| [`docs/qa/README.md`](docs/qa/README.md)                                                     | QA status, E2E CI reference, coverage tooling                       |
+| [`docs/context/api-circle.md`](docs/context/api-circle.md)                                   | Tool-agnostic cold-start brief (for Cursor / Copilot / etc.)        |
+| [`CHANGELOG.md`](CHANGELOG.md)                                                               | Release-by-release feature notes (1.0.0 → now)                      |
+| [`e2e/qa/runner/`](e2e/qa/runner/)                                                           | Cowork manual-test runner — fixtures, seed script, runner prompt    |
 
 ---
 
@@ -613,44 +614,35 @@ Desktop: `pnpm --filter @apicircle/desktop build` then `… start`.
 
 ---
 
-## 11. Planned next — Networking & Social Activity
+## 11. Planned next — Open-core architecture & editions
 
-The next product thread extends the Settings → Community section (currently
-read-only: GitHub stars / contributors / latest release with a 6h IndexedDB
-cache) into a first-class **community** surface inside the app.
+API Circle Studio (this repo) is the **open core**. A separate **proprietary
+edition**, developed in a private repository, builds on top of it to add paid,
+account-based capabilities. That edition is out of scope here; the contract that
+keeps the two in one logical codebase with **no duplication** is recorded in
+[`docs/architecture/open-core-and-editions.md`](docs/architecture/open-core-and-editions.md):
 
-In flight / under design:
+- **This repo is the single source of truth** for every `@apicircle/*` package.
+  Any edition built on top **consumes** them (published artifacts or a pinned
+  source checkout) and never copies / forks / vendors their source.
+- **Composition over forking — extension seams.** Editions layer on through
+  additive seams (each a no-op when nothing plugs in): provider interfaces
+  (e.g. a Git provider interface in `packages/git`), composable entry points
+  (the CLI program builder, the MCP server's injectable tool list), and typed
+  extension points. The MCP server's DI (`WorkspaceProvider` / `Workspaces` /
+  `MockController` + `createMcpServer({ tools })`) is the template every new
+  seam follows.
+- **Workspace-directory sidecar contract.** `.apicircle/workspace-<id>/` is
+  shared space: API Circle owns `workspace.json` / `workspace.local.json` /
+  `attachments/`, but external tools may store sibling files there. Every
+  writer preserves files it doesn't own — surgical disk writes (`saveToFile`),
+  `base_tree` Git push, permissive parse. Locked by regression tests; **never
+  add a write path that cleans the workspace dir or rebuilds the Git tree from
+  scratch.**
 
-- **Networking** — user-to-user surfaces beyond the Git/PR loop: profiles,
-  follow / follower lists, mutual connections, and follow-based filtering
-  of the Link Workspace marketplace.
-- **Social Media Activity** — an activity feed of community signals (new
-  releases on linked workspaces, follow-graph posts, stars/forks/comments
-  on public workspaces) plus outbound "share to X / Mastodon / LinkedIn"
-  hooks on public Link Workspace pages.
-
-Architectural anchors when this work starts:
-
-- **Schema lives in `WorkspaceSynced`** — add a new `social` and/or
-  `network` slice in `packages/shared/src/types.ts`. Pre-launch freedom
-  still applies: reshape existing types if a clean social schema demands
-  it. No migration shims.
-- **Mutations route through `applyMutation`** — new `WorkspacePatch`
-  variants (`social.*`, `network.*`) plus matching MCP tools, so AI
-  clients drive the same surfaces the UI does.
-- **Feed data is per-device** — remote-feed fetches live in
-  `WorkspaceLocal`, not Git-synced. Reuse the TTL + IndexedDB caching
-  pattern from `community/communityStorage.ts`.
-- **UI lands in two places first** — a new sub-section inside the existing
-  Settings → Community popover for self/network management, and feed
-  surfaces inside the Link Workspace panel. Don't add a 10th top-nav
-  panel until the feature set actually warrants it.
-- **External shares are share-link snippets first** — open the network's
-  compose URL in the browser; don't take on OAuth-to-post integrations
-  until usage justifies them.
-
-Replace this section with the concrete plan record (or link out to one
-under `docs/architecture/`) once the work begins.
+Earlier-sketched **community / networking** ideas (profiles, follow graph,
+activity feed, share-to-social) build on the edition's account/identity layer
+and are tracked alongside it — not a near-term open-core panel.
 
 ## graphify
 

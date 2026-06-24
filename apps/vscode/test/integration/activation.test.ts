@@ -19,6 +19,8 @@ import { fileURLToPath } from 'node:url';
 import type * as vscode from 'vscode';
 import { Uri, window, workspace, commands } from '../mocks/vscode';
 import { activate, deactivate, __getInternalsForTests } from '../../src/extension';
+import { ApicircleFsProvider } from '../../src/fs/apicircleFsProvider';
+import { EXTENSION_API_VERSION } from '../../src/api';
 
 interface TestContext {
   ctx: vscode.ExtensionContext;
@@ -292,5 +294,18 @@ describe('extension activation (integration)', () => {
     await deactivate();
     expect(__getInternalsForTests().bridge).toBeNull();
     expect(__getInternalsForTests().views).toBeNull();
+  });
+
+  it('returns the public extension API (0e seam) exposing the bridge + fs provider', () => {
+    const { ctx } = makeMockContext(path.join(tmp, 'globalStorage'));
+    const api = activate(ctx);
+
+    expect(api.apiVersion).toBe(EXTENSION_API_VERSION);
+    // The returned bridge is the live one — a companion (Enterprise) extension
+    // drives the same workspaces through it.
+    expect(api.bridge).toBe(__getInternalsForTests().bridge);
+    // The apicircle:// virtual FS provider is exposed so a companion extension
+    // can read/contribute virtual documents without re-implementing it.
+    expect(api.fsProvider).toBeInstanceOf(ApicircleFsProvider);
   });
 });

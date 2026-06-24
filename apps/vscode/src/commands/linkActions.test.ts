@@ -18,12 +18,7 @@ const gh = {
   searchMarketplaceRepos: vi.fn(),
 };
 vi.mock('@apicircle/git', () => ({
-  GitHubClient: class {
-    listAccessibleRepos = gh.listAccessibleRepos;
-    listBranches = gh.listBranches;
-    getContents = gh.getContents;
-    searchMarketplaceRepos = gh.searchMarketplaceRepos;
-  },
+  getGitProvider: () => gh,
   GitHubError: class extends Error {},
 }));
 const auth = { getGitHubToken: vi.fn() };

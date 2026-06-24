@@ -39,8 +39,9 @@ import type {
 import {
   type GitHubBranch,
   type GitHubRepo,
+  type GitProvider,
   BranchDivergedError,
-  GitHubClient,
+  getGitProvider,
   MissingScopeError,
 } from '@apicircle/git';
 import {
@@ -4379,7 +4380,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!trimmed) throw new Error('Token is required');
 
     // Verify via GET /user; throws MissingScopeError when base scopes are missing.
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     const { viewer, scopes } = await client.getViewer(trimmed, {
       requiredScopes: [...REQUIRED_BASE_SCOPES],
     });
@@ -4439,7 +4440,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!payload) return null;
     const masterKey = await getMasterKey();
     const token = await decryptString(payload, masterKey);
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     const { scopes } = await client.getViewer(token);
     // Re-resolve PR capability: scope check first; if inconclusive AND a
     // repo is already connected, fall back to the network probe so the
@@ -4471,7 +4472,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const trimmed = token.trim();
     if (!trimmed) throw new Error('Token is required');
 
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     const { viewer, scopes } = await client.getViewer(trimmed);
     if (viewer.login !== session.accountLogin) {
       throw new Error(
@@ -4516,7 +4517,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // one-click button is gated to dev via `isGitHubDeviceFlowAvailable()`
     // and the PAT path is the supported route everywhere else. Non-browser
     // callers keep the direct origin.
-    const client = new GitHubClient({ loginBaseUrl: resolveGitHubLoginBaseUrl() });
+    const client = getGitProvider('github', { loginBaseUrl: resolveGitHubLoginBaseUrl() });
     // Classic OAuth apps don't accept `pull_request` as a scope — `repo`
     // already grants PR read/write. Requesting it surfaces as
     // `invalid_scope` from `login/device/code`, so we only ask for the
@@ -4582,7 +4583,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!local) throw new Error('Workspace not ready');
     const token = await decryptSessionToken(local);
 
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     const repo: GitHubRepo = await client.getRepo(token, owner.trim(), name.trim());
 
     const connected: ConnectedRepo = {
@@ -4656,7 +4657,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (validationError) throw new Error(validationError);
 
     const token = await decryptSessionToken(local);
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
 
     // Read the base branch HEAD, then create the new ref.
     const head = await client.getBranchHead(token, repo.owner, repo.name, baseBranch);
@@ -4792,7 +4793,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!repo) throw new Error('Connect a repo before seeding the initial commit');
 
     const token = await decryptSessionToken(local);
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     const branchName = repo.defaultBranch;
     let scaffoldSha: string | null = null;
 
@@ -4927,7 +4928,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     get().captureSnapshot({ trigger: 'pre-push', note: `Before push to ${branch.name}` });
 
     const token = await decryptSessionToken(local);
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     const owner = branch.repoOwner;
     const name = branch.repoName;
 
@@ -5197,7 +5198,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const tagName = `v${trimmedVersion}`;
 
     const token = await decryptSessionToken(local);
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
 
     // Resolve the base branch HEAD — that's the commit we tag against.
     // (Always main, never the working branch — see fix scope #6.)
@@ -5249,7 +5250,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       throw new Error('Connect a repo before reading its topics.');
     }
     const token = await decryptSessionToken(local);
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     return client.listRepoTopics(token, local.connectedRepo.owner, local.connectedRepo.name);
   },
 
@@ -5265,7 +5266,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       new Set(topics.map((t) => t.trim().toLowerCase()).filter((t) => t.length > 0)),
     );
     const token = await decryptSessionToken(local);
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     return client.setRepoTopics(
       token,
       local.connectedRepo.owner,
@@ -5280,7 +5281,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const repo = local.connectedRepo;
     const baseBranch = local.workingBranch?.baseBranch ?? repo.defaultBranch ?? 'main';
     const token = await decryptSessionToken(local);
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
 
     // Pull main's workspace.json — that's the authoritative ledger from
     // a consumer's perspective (anything in synced.releases.self that
@@ -5353,7 +5354,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // session — discovery shouldn't require a PAT. The token, when
     // present, only lifts GitHub's anonymous rate limits.
     const token = await tryDecryptSessionToken(local);
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     return client.searchMarketplaceRepos(token, query);
   },
 
@@ -5361,7 +5362,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const local = get().local;
     if (!local) throw new Error('Workspace not ready');
     const token = opts?.tokenOverride?.trim() || (await decryptSessionToken(local));
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     return client.listAccessibleRepos(token);
   },
 
@@ -5369,7 +5370,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const local = get().local;
     if (!local) throw new Error('Workspace not ready');
     const token = opts?.tokenOverride?.trim() || (await decryptSessionToken(local));
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     return client.listBranches(token, owner.trim(), name.trim());
   },
 
@@ -5377,7 +5378,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const local = get().local;
     if (!local) throw new Error('Workspace not ready');
     const token = opts?.tokenOverride?.trim() || (await decryptSessionToken(local));
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     const result = await fetchRemoteWorkspaceJson(async (p) => {
       const f = await client.getContents(token, owner.trim(), name.trim(), p, branch.trim());
       return f?.content ?? null;
@@ -5419,7 +5420,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!link) throw new Error(`Linked workspace ${id} not found`);
 
     const token = await decryptLinkSessionToken(local, link);
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     const [owner, name] = link.source.repoFullName.split('/', 2);
     // Always fetch HEAD of the source branch — that's the source's
     // currently-published view. (Targeting a specific historical version
@@ -5488,7 +5489,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // have moved. Refetching here keeps the apply honest. Routes through
     // the link's bound session (workspace or dedicated) per sessionMode.
     const token = await decryptLinkSessionToken(local, link);
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     const [owner, name] = link.source.repoFullName.split('/', 2);
     const applyFetchResult = await fetchRemoteWorkspaceJson(async (p) => {
       const f = await client.getContents(token, owner, name, p, link.source.branch);
@@ -5597,7 +5598,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // workspace.json fetch. Steady-state refreshes (snapshot exists)
     // remain ledger-only.
     const token = await decryptLinkSessionToken(local, link);
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     const [owner, name] = link.source.repoFullName.split('/', 2);
     const refreshResult = await fetchRemoteWorkspaceJson(async (p) => {
       const f = await client.getContents(token, owner, name, p, link.source.branch);
@@ -5797,7 +5798,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // Verify the PAT before storing — surfaces the same MissingScopeError
     // / UnauthorizedError signals the workspace-session connect uses, so
     // the link card can show a precise reason on failure.
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     const { viewer, scopes } = await client.getViewer(trimmed);
 
     // Rotate over any existing dedicated session: replace the ciphertext
@@ -6198,7 +6199,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const branch = local.workingBranch;
 
     const workspaceToken = await tryDecryptSessionToken(local);
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     let fetched = 0;
     let alreadyPresent = 0;
     let failed = 0;
@@ -6374,7 +6375,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!branch) throw new Error('Create a working branch before refreshing');
 
     const token = await decryptSessionToken(local);
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
 
     // Pre-flight: check whether the branch is functionally over before
     // running the diff. Two paths trigger retirement here:
@@ -6625,7 +6626,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         message: err instanceof Error ? err.message : 'Could not decrypt session token',
       } as const;
     }
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     // Reconstruct the minimal WorkingBranch fields probeBranchRetirement needs.
     // PR url is preserved on the retirement record so the probe can re-check
     // PR state too — if the PR was reopened externally, we want to see it.
@@ -6705,7 +6706,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
 
     const token = await decryptSessionToken(local);
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     const pr = await client.createPullRequest(token, branch.repoOwner, branch.repoName, {
       title: args?.title?.trim() || 'API Circle workspace updates',
       body: args?.body ?? '',
@@ -7405,7 +7406,7 @@ async function doLinkWorkspace(
     if (!provided) {
       throw new Error('Dedicated session requires a PAT for the linking-session step.');
     }
-    const verifier = new GitHubClient();
+    const verifier = getGitProvider('github');
     const { viewer, scopes } = await verifier.getViewer(provided);
     dedicatedTokenSecretId = generateId();
     const masterKey = await getMasterKey();
@@ -7429,7 +7430,7 @@ async function doLinkWorkspace(
     token = await decryptSessionToken(local);
   }
 
-  const client = new GitHubClient();
+  const client = getGitProvider('github');
   let linkFetchResult: { workspaceId: string; content: string } | { error: string };
   try {
     linkFetchResult = await fetchRemoteWorkspaceJson(async (p) => {
@@ -8376,7 +8377,7 @@ function isWithinGrace(verifiedAt: string | undefined, now: number): boolean {
 async function verifyAssetRefsAndPatch(
   set: SetState,
   get: GetState,
-  client: GitHubClient,
+  client: GitProvider,
   token: string,
   branch: WorkingBranch,
 ): Promise<void> {

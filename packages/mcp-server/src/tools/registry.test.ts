@@ -11,7 +11,10 @@ describe('TOOL_REGISTRY', () => {
   });
 
   it('does not introduce tools that are not in the catalog', () => {
-    const catalog = new Set(MCP_TOOL_NAMES);
+    // `Set<string>` because `ToolDef.name` widened to `ExtensionToolName`
+    // (catalog name | `ee.*`); the public TOOL_REGISTRY still only holds
+    // catalog names, which is exactly what this asserts.
+    const catalog = new Set<string>(MCP_TOOL_NAMES);
     for (const tool of TOOL_REGISTRY) {
       expect(catalog.has(tool.name)).toBe(true);
     }

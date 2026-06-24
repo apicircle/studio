@@ -9,7 +9,7 @@ import {
   applyLinkedUpdate,
   type LinkedUpdateResolutionMap,
 } from '@apicircle/core';
-import { GitHubClient, GitHubError } from '@apicircle/git';
+import { getGitProvider, GitHubError, type GitProvider } from '@apicircle/git';
 import type { VsCodeBridge, WorkspaceSurface } from '../host/vscodeBridge';
 import { ApicircleFsProvider } from '../fs/apicircleFsProvider';
 import {
@@ -49,7 +49,7 @@ export type LinkArg = vscode.Uri | { id?: string } | undefined;
  * workspace.json is missing. Throws on network errors so callers can catch.
  */
 async function fetchRemoteWorkspace(
-  client: GitHubClient,
+  client: GitProvider,
   token: string,
   owner: string,
   name: string,
@@ -650,14 +650,14 @@ export async function linkWorkspaceCommand(deps: LinkActionsDeps): Promise<void>
     await vscode.window.showWarningMessage('GitHub sign-in is required to link a workspace.');
     return;
   }
-  const client = new GitHubClient();
+  const client = getGitProvider('github');
 
   // Step 1: pick a repo (accessible repos) or manual entry.
   let repoFullName: string;
   let defaultBranch = 'main';
   let isPrivate = true;
   const MANUAL = '$(edit) Enter owner/name manually…';
-  let repos: Awaited<ReturnType<GitHubClient['listAccessibleRepos']>> = [];
+  let repos: Awaited<ReturnType<GitProvider['listAccessibleRepos']>> = [];
   try {
     repos = await client.listAccessibleRepos(token);
   } catch (e) {
@@ -729,8 +729,8 @@ export async function searchMarketplaceCommand(deps: LinkActionsDeps): Promise<v
   });
   if (query === undefined) return;
   const token = await getGitHubToken(false); // anonymous OK; token lifts rate limits
-  const client = new GitHubClient();
-  let results: Awaited<ReturnType<GitHubClient['searchMarketplaceRepos']>>;
+  const client = getGitProvider('github');
+  let results: Awaited<ReturnType<GitProvider['searchMarketplaceRepos']>>;
   try {
     results = await client.searchMarketplaceRepos(token, query);
   } catch (e) {
@@ -779,7 +779,7 @@ export async function refreshLinkedWorkspaceCommand(
     await vscode.window.showWarningMessage(tokenMissingMessage(r.link));
     return;
   }
-  const client = new GitHubClient();
+  const client = getGitProvider('github');
   const [owner, name] = r.link.source.repoFullName.split('/', 2);
   let remote: { content: string; workspaceId: string } | null;
   try {
@@ -827,7 +827,7 @@ export async function reviewLinkedUpdateCommand(
     await vscode.window.showWarningMessage(tokenMissingMessage(r.link));
     return;
   }
-  const client = new GitHubClient();
+  const client = getGitProvider('github');
   const [owner, name] = r.link.source.repoFullName.split('/', 2);
   let remote: { content: string; workspaceId: string } | null;
   try {
@@ -988,7 +988,7 @@ export async function reviewLinkedUpdateCommand(
 async function linkFromRepo(
   deps: LinkActionsDeps,
   surface: WorkspaceSurface,
-  client: GitHubClient,
+  client: GitProvider,
   token: string,
   args: {
     repoFullName: string;

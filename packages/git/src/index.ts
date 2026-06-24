@@ -24,3 +24,17 @@ export {
   TimeoutError,
   UnauthorizedError,
 } from './github/errors';
+export {
+  getGitProvider,
+  gitHostKindFromOrigin,
+  hasGitProvider,
+  registerGitProvider,
+  resetGitProviderRegistry,
+} from './provider';
+export type {
+  GitHostKind,
+  GitProvider,
+  GitProviderFactory,
+  GitProviderMethod,
+  GitProviderOptions,
+} from './provider';

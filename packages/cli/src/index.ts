@@ -46,6 +46,27 @@ export async function runCli(argv: readonly string[] = process.argv): Promise<vo
   await buildProgram().parseAsync(argv);
 }
 
+// Composition seam: `buildProgram()` returns the full public program, and each
+// `register*Command` helper attaches one command group to a `Command` you own.
+// An out-of-tree (e.g. Enterprise) CLI can do:
+//   const program = buildProgram();      // all public commands
+//   registerGenerateCommand(program);    // + its own
+//   await program.parseAsync(process.argv);
+// …or compose a fresh `new Command()` with only the registrars it wants. The
+// program returned by `buildProgram()` can be re-`.name()` / `.version()`'d.
+export {
+  registerMockCommand,
+  registerMocksCommand,
+  registerMcpCommand,
+  registerImportCommand,
+  registerExportCommand,
+  registerRunCommand,
+  registerWorkspacesCommand,
+  registerLinkedCommand,
+  registerReleaseCommand,
+  registerFolderCommand,
+};
+
 // Run when this file is executed as a script. tsup wraps the CJS output
 // with a node shebang so this branch is what handles `apicircle <args>`.
 // We deliberately do *not* check require.main — works in both CJS and ESM.

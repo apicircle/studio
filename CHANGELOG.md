@@ -23,6 +23,54 @@
 > ship. Full per-platform walk-through:
 > [`docs/installing.md`](docs/installing.md).
 
+## Unreleased
+
+### Added
+
+- **Workspace-directory sidecar contract (open-core seam).** Documented and
+  test-locked the guarantee that API Circle's write paths preserve files they
+  don't own under `.apicircle/workspace-<id>/`. Disk writes (`saveToFile`, and
+  the desktop mirror via `saveWorkspaceById`) write only the workspace JSON
+  files and never clean the directory; Git push builds the commit tree with
+  `base_tree` so committed sidecar files are inherited untouched; remote parse
+  preserves unknown fields. New regression tests in `fileBackedWorkspace.test.ts`
+  and `pushWorkspace.test.ts` lock the invariant (the parse path was already
+  covered). This lets external tools — and editions built on the open core —
+  store data alongside the workspace without it being clobbered. See
+  [`docs/architecture/open-core-and-editions.md`](docs/architecture/open-core-and-editions.md).
+- **Git provider seam (`GitProvider`).** Extracted a host-agnostic `GitProvider`
+  interface plus a tree-shake-safe provider registry (`getGitProvider` /
+  `registerGitProvider` / `hasGitProvider` / `gitHostKindFromOrigin`) in
+  `@apicircle/git`, derived from `GitHubClient` so the contract can't drift.
+  Every app-side construction of the GitHub client — the store, the MCP
+  `linked.*` / `release.*` / `marketplace.*` / `repo.*` tools, the CLI
+  `release` / `linked` commands, and the VS Code link / repo / send surfaces —
+  now resolves through `getGitProvider('github')`, and the provider-agnostic
+  helpers depend on the interface. An out-of-tree edition can register
+  additional hosts (GitLab / Bitbucket / Azure DevOps) without forking the
+  package; `github` is built in and resolved directly (never via an import-time
+  side effect). No behavior change for GitHub.
+- **CLI composition seam.** `@apicircle/cli` now re-exports its ten
+  `register*Command` helpers alongside `buildProgram()`, so an out-of-tree
+  (Enterprise) CLI can extend the public program with its own commands — or
+  compose a fresh program from a subset of the public commands — without forking
+  the binary.
+- **MCP `ee.*` tool namespace.** `ToolDef.name` widened from the 94-name public
+  catalog (`McpToolName`) to `ExtensionToolName` (`McpToolName | ee.${string}`),
+  and `@apicircle/mcp-server` now exports `EnterpriseToolName` / `ExtensionToolName`
+  alongside the existing `ToolDef` / `AnyToolDef` / `ToolHandlerContext`. With the
+  existing `createMcpServer({ tools })` injection, an out-of-tree (Enterprise)
+  package can contribute MCP tools under the reserved `ee.*` prefix without
+  touching the public 94-tool catalog (which is unchanged). End-to-end coverage
+  via an injected `ee.demo` tool dispatched through a real MCP client.
+- **VS Code extension API seam.** The extension's `activate()` now returns a
+  stable `ApicircleExtensionApi` (`{ apiVersion, bridge, fsProvider }`), so a
+  companion (Enterprise) extension that declares
+  `extensionDependencies: ["apicircle.apicircle-vscode"]` can build on the same
+  workspace bridge + `apicircle://` virtual filesystem via
+  `getExtension(...).exports` — without forking the published extension. Bundle:
+  2.80 MB (under the 3.0 MB soft budget).
+
 ## 1.1.5 - 2026-06-22
 
 ### Added

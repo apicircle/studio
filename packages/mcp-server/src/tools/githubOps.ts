@@ -6,7 +6,7 @@ import {
   ledgerFromProbe,
 } from '@apicircle/core';
 import { generateId, type LinkedWorkspace } from '@apicircle/shared';
-import { GitHubClient, GitHubError } from '@apicircle/git';
+import { getGitProvider, GitHubError } from '@apicircle/git';
 import type { AnyToolDef } from './types';
 
 // =============================================================================
@@ -57,7 +57,7 @@ export const linkedLinkTool: AnyToolDef = {
     if (dup)
       return { ok: false, error: `Already linked to ${repoFullName}@${input.branch} (${dup.id})` };
 
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     let result: { workspaceId: string; content: string } | { error: string };
     try {
       result = await fetchRemoteWorkspaceJson(async (p) => {
@@ -113,7 +113,7 @@ export const linkedRefreshTool: AnyToolDef = {
     if (link.kind === 'private' && !token)
       return { ok: false, error: `A token is required for private links. ${TOKEN_HELP}` };
     const [owner, name] = link.source.repoFullName.split('/', 2);
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     let result: { workspaceId: string; content: string } | { error: string };
     try {
       result = await fetchRemoteWorkspaceJson(async (p) => {
@@ -163,7 +163,7 @@ export const releaseTagTool: AnyToolDef = {
   async handler(input, _ctx) {
     const token = resolveToken(input.token);
     if (!token) return { ok: false, error: `A token is required to tag. ${TOKEN_HELP}` };
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     const tagName = `v${input.version.replace(/^v/, '')}`;
     try {
       const repo = await client.getRepo(token, input.owner, input.name);
@@ -223,7 +223,7 @@ export const marketplaceSearchTool: AnyToolDef = {
   }),
   async handler(input, _ctx) {
     const token = resolveToken(input.token) || null;
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     try {
       const repos = await client.searchMarketplaceRepos(token, input.query, {
         sort: input.sort === 'best-match' ? undefined : input.sort,
@@ -268,7 +268,7 @@ export const repoSetTopicsTool: AnyToolDef = {
       if (t.length > 50) return { ok: false, error: `Topic "${t}" exceeds 50 characters.` };
     }
     if (normalized.length > 20) return { ok: false, error: 'GitHub allows at most 20 topics.' };
-    const client = new GitHubClient();
+    const client = getGitProvider('github');
     try {
       const saved = await client.setRepoTopics(token, input.owner, input.name, normalized);
       return { ok: true, topics: saved };

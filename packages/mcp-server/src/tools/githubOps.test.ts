@@ -21,17 +21,7 @@ const gh = {
   searchMarketplaceRepos: vi.fn(),
 };
 vi.mock('@apicircle/git', () => ({
-  GitHubClient: class {
-    getContents = gh.getContents;
-    getRepo = gh.getRepo;
-    getRef = gh.getRef;
-    getTagSha = gh.getTagSha;
-    deleteRef = gh.deleteRef;
-    createTag = gh.createTag;
-    createRelease = gh.createRelease;
-    setRepoTopics = gh.setRepoTopics;
-    searchMarketplaceRepos = gh.searchMarketplaceRepos;
-  },
+  getGitProvider: () => gh,
   GitHubError: class extends Error {},
 }));
 

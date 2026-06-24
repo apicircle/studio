@@ -11,6 +11,12 @@
 //       workspace.json
 //       attachments/
 //         <slotId>
+//
+// The `workspace-<id>/` directory is SHARED space. API Circle owns
+// `workspace.json`, `workspace.local.json`, and `attachments/`, but external
+// tools may store their own sibling files/subdirs there — every writer must
+// preserve files it doesn't own (surgical disk writes + `base_tree` Git push).
+// See docs/architecture/open-core-and-editions.md (sidecar contract).
 
 /** The dotfolder under the repo root that owns every API-Circle-managed
  *  file in a Git-backed workspace. */

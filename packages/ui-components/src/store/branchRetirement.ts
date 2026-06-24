@@ -1,4 +1,4 @@
-import { GitHubError, type GitHubClient } from '@apicircle/git';
+import { GitHubError, type GitProvider } from '@apicircle/git';
 import type { RetiredBranch, WorkingBranch } from '@apicircle/shared';
 
 /**
@@ -49,7 +49,7 @@ export interface BranchProbeResult {
  * choose between retiring, continuing, or no-op'ing.
  */
 export async function probeBranchRetirement(
-  client: GitHubClient,
+  client: GitProvider,
   token: string,
   branch: WorkingBranch,
 ): Promise<BranchProbeResult> {
@@ -63,7 +63,7 @@ export async function probeBranchRetirement(
 }
 
 async function probeBranchHead(
-  client: GitHubClient,
+  client: GitProvider,
   token: string,
   branch: WorkingBranch,
 ): Promise<{ exists: boolean | null; sha: string | null }> {
@@ -85,7 +85,7 @@ async function probeBranchHead(
 }
 
 async function probePrState(
-  client: GitHubClient,
+  client: GitProvider,
   token: string,
   branch: WorkingBranch,
 ): Promise<{ merged: boolean; state: 'open' | 'closed' } | null> {

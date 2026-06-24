@@ -144,6 +144,28 @@ describe('fileBackedWorkspace', () => {
     const stat = await fs.stat(nested);
     expect(stat.isDirectory()).toBe(true);
   });
+
+  it('preserves pre-existing sibling sidecar files/dirs (sidecar contract)', async () => {
+    // An external tool (or an edition built on the open core) stored data
+    // alongside the workspace JSON under the same directory. saveToFile must
+    // not clean it. This also covers the desktop disk mirror, which writes via
+    // saveWorkspaceById -> saveToFile.
+    await fs.mkdir(path.join(tmpDir, 'codegraph'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, 'codegraph', 'index.json'), '{"endpoints":[]}', 'utf-8');
+    await fs.writeFile(path.join(tmpDir, 'NOTES.md'), 'hand-written', 'utf-8');
+
+    await saveToFile(tmpDir, { synced: makeSynced(), local: makeLocal() });
+
+    // Workspace files were written...
+    expect(await fs.readFile(path.join(tmpDir, 'workspace.json'), 'utf-8')).toContain(
+      '"schemaVersion": 1',
+    );
+    // ...and the sidecars survived untouched.
+    expect(await fs.readFile(path.join(tmpDir, 'codegraph', 'index.json'), 'utf-8')).toBe(
+      '{"endpoints":[]}',
+    );
+    expect(await fs.readFile(path.join(tmpDir, 'NOTES.md'), 'utf-8')).toBe('hand-written');
+  });
 });
 
 describe('liftLegacyExecutionPlans (headless plan migration)', () => {

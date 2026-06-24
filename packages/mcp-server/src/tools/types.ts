@@ -22,8 +22,18 @@ export interface ToolHandlerContext {
   mock: MockController;
 }
 
+/**
+ * Namespaced name for an out-of-tree (Enterprise) tool. The `ee.` prefix keeps
+ * it clear of the 94 public `McpToolName` values, so an injected tool never
+ * collides with — or is mistaken for — a tool in the published catalog.
+ */
+export type EnterpriseToolName = `ee.${string}`;
+
+/** Any name a `ToolDef` may carry: a public catalog name, or an Enterprise name. */
+export type ExtensionToolName = McpToolName | EnterpriseToolName;
+
 export interface ToolDef<S extends z.ZodTypeAny = z.ZodTypeAny> {
-  name: McpToolName;
+  name: ExtensionToolName;
   description: string;
   inputSchema: S;
   handler: (input: z.infer<S>, ctx: ToolHandlerContext) => Promise<unknown>;

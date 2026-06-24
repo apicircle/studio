@@ -9,7 +9,7 @@ import {
 } from '@apicircle/core';
 import { saveToFile } from '@apicircle/core/workspace/file-backed';
 import { generateId, type LinkedWorkspace } from '@apicircle/shared';
-import { GitHubClient } from '@apicircle/git';
+import { getGitProvider } from '@apicircle/git';
 import { ensureWorkspace } from '../util/loadWorkspace';
 import { resolveWorkspace, WorkspaceResolutionError } from '../util/resolveWorkspace';
 
@@ -131,7 +131,7 @@ export function registerLinkedCommand(program: Command): void {
         }
 
         const [owner, name] = repo.split('/', 2);
-        const client = new GitHubClient();
+        const client = getGitProvider('github');
         const result = await fetchRemoteWorkspaceJson(async (p) => {
           const f = await client.getContents(token, owner, name, p, opts.branch);
           return f?.content ?? null;
@@ -195,7 +195,7 @@ export function registerLinkedCommand(program: Command): void {
         process.exit(2);
       }
       const [owner, name] = link.source.repoFullName.split('/', 2);
-      const client = new GitHubClient();
+      const client = getGitProvider('github');
       const result = await fetchRemoteWorkspaceJson(async (p) => {
         const f = await client.getContents(token, owner, name, p, link.source.branch);
         return f?.content ?? null;

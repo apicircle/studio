@@ -7,7 +7,7 @@ import {
   type ResolvedRequestResult,
   type WorkspaceState,
 } from '@apicircle/core';
-import { GitHubClient } from '@apicircle/git';
+import { getGitProvider } from '@apicircle/git';
 import type {
   EnvPriorityRef,
   Environment,
@@ -181,7 +181,7 @@ async function fetchLinkedAttachment(
   const token = await getLinkToken(secrets, link);
   const [owner, name] = link.source.repoFullName.split('/', 2);
   const path = attachmentPath(link.sourceWorkspaceId, slotId);
-  const client = new GitHubClient();
+  const client = getGitProvider('github');
   try {
     const file = await client.getBinaryContents(token ?? '', owner, name, path, ref);
     if (!file) return null;

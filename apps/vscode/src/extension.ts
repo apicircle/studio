@@ -17,6 +17,7 @@ import { WorkspaceView } from './views/WorkspaceView';
 import { switchWorkspaceCommand } from './commands/switchWorkspace';
 import { createWorkspaceCommand } from './commands/createWorkspace';
 import { ApicircleFsProvider } from './fs/apicircleFsProvider';
+import { EXTENSION_API_VERSION, type ApicircleExtensionApi } from './api';
 import { uriEntityKind, type UriEntityKind } from './fs/uriKind';
 import { AbortRegistry } from './execute/abortRegistry';
 import { InFlightSendTracker } from './execute/inFlightTracker';
@@ -307,7 +308,7 @@ let views: {
   linkWorkspaces: LinkWorkspaceView;
 } | null = null;
 
-export function activate(context: vscode.ExtensionContext): void {
+export function activate(context: vscode.ExtensionContext): ApicircleExtensionApi {
   bridge = new VsCodeBridge(context);
   // The ◆ Expected / ◆ Target lenses on json-path assertions reach into the
   // latest response via the bridge. Wire it up here; null in tests / before
@@ -378,6 +379,16 @@ export function activate(context: vscode.ExtensionContext): void {
   // Register the apicircle: FileSystemProvider FIRST so views that take a
   // reference to it (history) can wire up.
   const fsProvider = new ApicircleFsProvider(bridge);
+
+  // 0e seam: the value activate() returns becomes the extension's `exports`.
+  // A companion (Enterprise) extension reads it via getExtension(...).exports
+  // to build on the same bridge + virtual FS without forking. Captured here
+  // where `bridge` and `fsProvider` are both live; returned at the end.
+  const extensionApi: ApicircleExtensionApi = {
+    apiVersion: EXTENSION_API_VERSION,
+    bridge,
+    fsProvider,
+  };
 
   // Sidebar views.
   views = {
@@ -1986,6 +1997,8 @@ export function activate(context: vscode.ExtensionContext): void {
   // The blanket `onDidChangeActiveWorkspace` listener (wired near the view
   // registration block) already refreshes every view — including MCP — so
   // no dedicated MCP-only subscription is needed here.
+
+  return extensionApi;
 }
 
 export async function deactivate(): Promise<void> {

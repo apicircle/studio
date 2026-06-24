@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { GitHubClient, GitHubError } from '@apicircle/git';
+import { getGitProvider, GitHubError, type GitProvider } from '@apicircle/git';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 import { getGitHubToken } from '../host/githubAuth';
 
@@ -69,7 +69,7 @@ async function resolveRepo(deps: RepoActionsDeps): Promise<OwnerName | null> {
 
 /** Resolve the default branch SHA — reads repo metadata, falling back to a probe. */
 async function resolveDefaultBranchSha(
-  client: GitHubClient,
+  client: GitProvider,
   token: string,
   repo: OwnerName,
 ): Promise<{ branch: string; sha: string } | null> {
@@ -140,7 +140,7 @@ export async function tagReleaseCommand(deps: RepoActionsDeps): Promise<void> {
   }
   const repo = await resolveRepo(deps);
   if (!repo) return;
-  const client = new GitHubClient();
+  const client = getGitProvider('github');
   const tagName = `v${versionPick.value}`;
 
   let target: { branch: string; sha: string } | null;
@@ -219,7 +219,7 @@ export async function editRepoTopicsCommand(deps: RepoActionsDeps): Promise<void
   }
   const repo = await resolveRepo(deps);
   if (!repo) return;
-  const client = new GitHubClient();
+  const client = getGitProvider('github');
 
   let current: string[];
   try {

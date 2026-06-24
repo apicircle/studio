@@ -17,7 +17,13 @@ import { SingleWorkspaceAdapter, type Workspaces } from './providers/Workspaces'
 
 export { McpHost } from './host/McpHost';
 export { TOOL_REGISTRY, getTool } from './tools/registry';
-export type { AnyToolDef, ToolDef, ToolHandlerContext } from './tools/types';
+export type {
+  AnyToolDef,
+  EnterpriseToolName,
+  ExtensionToolName,
+  ToolDef,
+  ToolHandlerContext,
+} from './tools/types';
 export type { WorkspaceProvider } from './providers/WorkspaceProvider';
 export type { MockController, StartMockResult } from './providers/MockController';
 export {

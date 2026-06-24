@@ -126,6 +126,52 @@ describe('workspaceStore.pushWorkspace', () => {
     expect(body.tree[1].content).toContain('"schemaVersion": 1');
   });
 
+  it('push is incremental over base_tree, so remote sidecar files are inherited untouched', async () => {
+    // The workspace dir on the remote may hold sidecar files an external tool
+    // committed (e.g. a codegraph index). The push must layer over base_tree and
+    // touch ONLY API-Circle-owned paths, so those siblings are inherited rather
+    // than overwritten or deleted. See docs/architecture/open-core-and-editions.md.
+    await setupConnectedBranch();
+
+    const fetchMock = queuedFetch([
+      // getRef
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
+      // getCommit
+      { body: { sha: 'sha-main', message: 'initial', tree: { sha: 'tree-old' } } },
+      // getContents (registry — 404 on first push)
+      { body: { message: 'Not Found' }, status: 404 },
+      // createTree
+      { body: { sha: 'tree-new' } },
+      // createCommit
+      { body: { sha: 'commit-new', message: 'sync', tree: { sha: 'tree-new' } } },
+      // updateRef
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'commit-new' } } },
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await useWorkspaceStore.getState().pushWorkspace();
+
+    const wsId = useWorkspaceStore.getState().synced!.workspaceId;
+    const createTreeCall = fetchMock.mock.calls[3];
+    const body = JSON.parse((createTreeCall[1] as RequestInit).body as string) as {
+      base_tree: string;
+      tree: { path: string; content?: string; sha?: string | null }[];
+    };
+
+    // Incremental over the parent tree — every path not in `tree` is inherited.
+    expect(body.base_tree).toBe('tree-old');
+    // Only API-Circle-owned paths appear; no sidecar path, no deletions.
+    const ownedPaths = new Set([
+      '.apicircle/registry.json',
+      `.apicircle/workspace-${wsId}/workspace.json`,
+    ]);
+    for (const entry of body.tree) {
+      expect(ownedPaths.has(entry.path)).toBe(true);
+      // No `{ sha: null }` delete markers on a clean push.
+      expect(entry.sha === null).toBe(false);
+    }
+  });
+
   it('uses the user-supplied commit message when present', async () => {
     await setupConnectedBranch();
 

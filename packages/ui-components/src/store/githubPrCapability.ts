@@ -1,9 +1,4 @@
-import {
-  GitHubError,
-  type GitHubClient,
-  MissingScopeError,
-  RateLimitedError,
-} from '@apicircle/git';
+import { GitHubError, type GitProvider, MissingScopeError, RateLimitedError } from '@apicircle/git';
 
 /**
  * Decide PR-creation capability from the granted-scope list alone.
@@ -49,7 +44,7 @@ export function checkPrCapabilityFromScopes(grantedScopes: readonly string[]): b
  *               rather than flip it on a flake.
  */
 export async function probePrCapability(
-  client: GitHubClient,
+  client: GitProvider,
   token: string,
   owner: string,
   name: string,

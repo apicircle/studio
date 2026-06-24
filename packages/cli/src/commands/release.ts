@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
 import kleur from 'kleur';
-import { GitHubClient } from '@apicircle/git';
+import { getGitProvider } from '@apicircle/git';
 
 // =============================================================================
 // `apicircle release tag <repo> <version>` — create a `v<version>` git tag on
@@ -61,7 +61,7 @@ export function registerReleaseCommand(program: Command): void {
         process.exit(2);
       }
       const tagName = `v${version.replace(/^v/, '')}`;
-      const client = new GitHubClient();
+      const client = getGitProvider('github');
       try {
         const meta = await client.getRepo(token, parsed.owner, parsed.name);
         const ref = await client.getRef(token, parsed.owner, parsed.name, meta.defaultBranch);
@@ -113,7 +113,7 @@ export function registerReleaseCommand(program: Command): void {
         );
         process.exit(2);
       }
-      const client = new GitHubClient();
+      const client = getGitProvider('github');
       try {
         if (opts.set === undefined) {
           const list = await client.listRepoTopics(token, parsed.owner, parsed.name);

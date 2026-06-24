@@ -17,7 +17,7 @@ vi.mock('@apicircle/git', async () => {
   const actual = await vi.importActual<typeof GitModule>('@apicircle/git');
   return {
     ...actual,
-    GitHubClient: vi.fn(() => tagClientStub),
+    getGitProvider: () => tagClientStub,
   };
 });
 

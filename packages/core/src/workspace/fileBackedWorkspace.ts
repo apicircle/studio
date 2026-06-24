@@ -106,6 +106,11 @@ export async function loadFromFile(
  *
  * Both files are written via `<file>.tmp` + rename so a crash mid-write
  * never leaves a partial JSON document on disk.
+ *
+ * Sidecar contract: this writes ONLY `workspace.json` + `workspace.local.json`
+ * and never cleans `dir`. Sibling files or subdirectories an external tool
+ * stored under the workspace directory (e.g. an analysis/index sidecar) are
+ * left untouched — see docs/architecture/open-core-and-editions.md.
  */
 export async function saveToFile(
   dir: string,

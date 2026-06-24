@@ -53,6 +53,18 @@ const failingTool: AnyToolDef = {
   },
 };
 
+// An out-of-tree (Enterprise) tool: a name in the `ee.*` namespace, injected
+// via `tools` rather than living in the public TOOL_REGISTRY. The `ee.demo`
+// name only type-checks because `ToolDef.name` widened to `ExtensionToolName`.
+const enterpriseTool: AnyToolDef = {
+  name: 'ee.demo',
+  description: 'enterprise-injected tool (ee.* namespace)',
+  inputSchema: z.object({ value: z.number() }),
+  async handler(input) {
+    return { doubled: input.value * 2 };
+  },
+};
+
 function makeContext(): ToolHandlerContext {
   const workspace = {
     async read(): Promise<never> {
@@ -163,6 +175,26 @@ describe('McpHost', () => {
     expect(result.isError).toBe(true);
     const text = (result.content as Array<{ type: string; text: string }>)[0].text;
     expect(text).toContain('boom');
+
+    await c.close();
+    await host.close();
+  });
+
+  it('registers and dispatches an injected ee.* (Enterprise) tool', async () => {
+    const host = new McpHost({ context: makeContext(), tools: [enterpriseTool] });
+    const { server, client } = pair();
+    await host.connect(server);
+
+    const c = new Client({ name: 'test', version: '0.0.0' });
+    await c.connect(client);
+
+    const tools = await c.listTools();
+    expect(tools.tools.find((t) => t.name === 'ee.demo')?.description).toContain('ee.*');
+
+    const result = await c.callTool({ name: 'ee.demo', arguments: { value: 21 } });
+    expect(result.isError).toBeFalsy();
+    const text = (result.content as Array<{ type: string; text: string }>)[0].text;
+    expect(JSON.parse(text)).toEqual({ doubled: 42 });
 
     await c.close();
     await host.close();
