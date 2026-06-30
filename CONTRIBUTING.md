@@ -24,9 +24,14 @@ The two clauses that matter most for contributors:
   irrevocable, royalty-free, sublicensable license to use, modify,
   distribute, and **relicense** your contribution under any terms,
   including the terms of this license or any future version of it.
-  This is a built-in contributor license grant — no separate CLA or
-  DCO sign-off is required. Submitting a pull request is your
-  acceptance of Section 3.
+  This relicensing grant is **built into the license itself**, so the
+  rights the project relies on do not depend on a separate signed CLA.
+  To keep an explicit, auditable record that each contributor
+  affirmatively agreed and has the right to contribute, we additionally
+  require a **Developer Certificate of Origin (DCO) sign-off on every
+  commit** — see [§1a](#1a-developer-certificate-of-origin-dco) below.
+  Opening a pull request signifies acceptance of Section 3; the
+  per-commit sign-off records it.
 - **Section 4 — Trademarks.** You may not use the names "API Circle"
   or "API Circle Studio" or any related logos except as required for
   accurate attribution. Please do not include unauthorized branding,
@@ -35,6 +40,72 @@ The two clauses that matter most for contributors:
 If your employer owns the IP in your work, please confirm with them
 that you have the right to contribute under Section 3 **before** you
 open a pull request.
+
+---
+
+## 1a. Developer Certificate of Origin (DCO)
+
+We use the **Developer Certificate of Origin** — a lightweight, per-commit
+certification (the same mechanism the Linux kernel and GitLab use) instead of a
+separate signed CLA. It does two things: it certifies you have the **right** to
+submit the contribution, and it records your **affirmative agreement** to the
+contribution terms in [Section 3 of the LICENSE](LICENSE) (the relicensing
+grant). The license already provides the substantive grant; the DCO provides the
+auditable record that you agreed to it.
+
+**How to sign off.** Add a `Signed-off-by` line to every commit by committing
+with `-s`:
+
+```bash
+git commit -s -m "feat: add ..."
+```
+
+Git appends a line using the real name and email from your Git config:
+
+```
+Signed-off-by: Jane Doe <jane@example.com>
+```
+
+Use your real name and a reachable email — anonymous or fake sign-offs are not
+accepted. A PR cannot be merged unless **every** commit is signed off. To fix
+missing sign-offs, use `git commit --amend -s` (a single commit) or
+`git rebase --signoff main` (a whole branch).
+
+By adding the sign-off you certify the statement below. **For this project, the
+DCO's references to "the open source license indicated in the file" mean the
+[API Circle Studio License v1.0](LICENSE)**, whose Section 3 governs
+contributions — including the maintainer's right to relicense (e.g. to bundle
+your contribution into commercial API Circle products). The DCO certifies origin
+and assent; Section 3 grants the rights.
+
+> **Developer Certificate of Origin 1.1**
+>
+> By making a contribution to this project, I certify that:
+>
+> (a) The contribution was created in whole or in part by me and I have the
+> right to submit it under the open source license indicated in the file; or
+>
+> (b) The contribution is based upon previous work that, to the best of my
+> knowledge, is covered under an appropriate open source license and I have the
+> right under that license to submit that work with modifications, whether
+> created in whole or in part by me, under the same open source license (unless
+> I am permitted to submit under a different license), as indicated in the file;
+> or
+>
+> (c) The contribution was provided directly to me by some other person who
+> certified (a), (b) or (c) and I have not modified it.
+>
+> (d) I understand and agree that this project and the contribution are public
+> and that a record of the contribution (including all personal information I
+> submit with it, including my sign-off) is maintained indefinitely and may be
+> redistributed consistent with this project or the open source license(s)
+> involved.
+
+The canonical DCO text lives at <https://developercertificate.org>; the version
+above is reproduced verbatim. _(Optional, heavier alternative: if a future
+investor or acquirer requires it, a formal click-through CLA can be layered on
+top via a CLA-assistant bot — but the DCO + Section 3 grant already cover the
+project's needs.)_
 
 ---
 
@@ -136,6 +207,10 @@ the imperative mood; type prefixes you'll most commonly need:
 - `test:` — test changes only
 - `chore:` — tooling / housekeeping
 
+**Sign off every commit** with `-s` (`git commit -s`) — this is the DCO
+requirement from [§1a](#1a-developer-certificate-of-origin-dco). A PR cannot
+merge without a `Signed-off-by` line on each commit.
+
 A `lint-staged` pre-commit hook will format and lint your staged
 files. If a hook fails, fix the underlying issue rather than
 bypassing it — `--no-verify` is reserved for the maintainer.
@@ -157,6 +232,8 @@ Before requesting review, please confirm:
       callers and updated them in the same PR.
 - [ ] PR description explains **why**, not just **what** — link
       to the issue or discussion that motivated the change.
+- [ ] Every commit is signed off (`git commit -s`) per the
+      [DCO](#1a-developer-certificate-of-origin-dco).
 
 Small, focused PRs are reviewed faster than large ones. If a change
 needs more than ~500 lines of diff, consider splitting it.
