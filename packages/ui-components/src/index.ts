@@ -7,6 +7,7 @@ export { useWorkspaceStore } from './store/workspaceStore';
 export { Button, Input, Modal, cn } from './primitives';
 export { PANELS, getPanel } from './layout/panels';
 export type { PanelDef } from './layout/panels';
+export type { ExtraPanelDef } from './layout/extraPanels';
 export {
   getDesktopMcpBridge,
   getDesktopMockBridge,

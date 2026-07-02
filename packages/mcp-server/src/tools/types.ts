@@ -29,8 +29,14 @@ export interface ToolHandlerContext {
  */
 export type EnterpriseToolName = `ee.${string}`;
 
-/** Any name a `ToolDef` may carry: a public catalog name, or an Enterprise name. */
-export type ExtensionToolName = McpToolName | EnterpriseToolName;
+/**
+ * Any name a `ToolDef` may carry: a public catalog `McpToolName`, or an
+ * out-of-tree extension tool's namespaced `<namespace>.<tool>` name. The core is
+ * edition-agnostic — it does NOT hardcode any downstream edition's prefix; an
+ * injected tool (via `createMcpServer({ tools })`) picks its own reserved
+ * namespace (e.g. `ee.*`) and keeps it clear of the public catalog.
+ */
+export type ExtensionToolName = McpToolName | `${string}.${string}`;
 
 export interface ToolDef<S extends z.ZodTypeAny = z.ZodTypeAny> {
   name: ExtensionToolName;

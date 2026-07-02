@@ -32,6 +32,11 @@ unaffected:
   forking the binary.
 - **Typed extension points** — exported tool / handler types and, where present,
   UI extension registries.
+- **UI panel registry** — the React shell (`packages/ui-components`) accepts
+  edition-contributed top-nav panels via the optional `App` `extraPanels` prop
+  (`ExtraPanelDef`, `layout/extraPanels.tsx`), rendered through `PanelTabs` /
+  `PanelContent` / `Sidebar`. Additive and a no-op when empty — Studio registers
+  none, so its panels are unchanged.
 
 The proven template already in this repo is the MCP server's dependency
 injection: tool handlers depend on the `WorkspaceProvider` / `Workspaces` /

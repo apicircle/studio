@@ -1,10 +1,12 @@
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { cn } from '../primitives/cn';
 import { PANELS } from './panels';
+import { useExtraPanels } from './extraPanels';
 
 export function PanelTabs() {
   const activePanel = useWorkspaceStore((s) => s.activePanel);
   const setActivePanel = useWorkspaceStore((s) => s.setActivePanel);
+  const extraPanels = useExtraPanels();
 
   return (
     <nav
@@ -16,7 +18,7 @@ export function PanelTabs() {
       aria-label="Top navigation"
       data-tour="panel-nav"
     >
-      {PANELS.map(({ id, label, icon: Icon }) => {
+      {[...PANELS, ...extraPanels].map(({ id, label, icon: Icon }) => {
         const active = activePanel === id;
         return (
           <button

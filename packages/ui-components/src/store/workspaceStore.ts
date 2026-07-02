@@ -586,6 +586,14 @@ function composeWireHeaders(
   return out;
 }
 
+/**
+ * The active/stored panel id. Widened to accept edition-contributed panel ids
+ * (see `layout/extraPanels`) while preserving `PanelId` autocomplete via the
+ * `(string & {})` trick. Studio only ever stores/sets core `PanelId` values, so
+ * this is a pure type widening with no runtime behavior change.
+ */
+type ActivePanelId = PanelId | (string & {});
+
 function readStoredPanel(): PanelId {
   if (typeof localStorage === 'undefined') return 'editor';
   try {
@@ -597,7 +605,7 @@ function readStoredPanel(): PanelId {
   return 'editor';
 }
 
-function writeStoredPanel(panel: PanelId): void {
+function writeStoredPanel(panel: ActivePanelId): void {
   if (typeof localStorage === 'undefined') return;
   try {
     localStorage.setItem(PANEL_STORAGE_KEY, panel);
@@ -723,7 +731,7 @@ type WorkspaceStore = {
   synced: WorkspaceSynced | null;
   local: WorkspaceLocal | null;
 
-  activePanel: PanelId;
+  activePanel: ActivePanelId;
   /**
    * Right-side dock state. Hosts the workspace inspector tabs:
    * Variables (read-mostly reference list), Vault (secret + GitHub
@@ -923,7 +931,7 @@ type WorkspaceStore = {
    */
   deleteWorkspaceById: (workspaceId: string) => Promise<void>;
 
-  setActivePanel: (panel: PanelId) => void;
+  setActivePanel: (panel: ActivePanelId) => void;
   setActiveRequestId: (id: string | null) => void;
   toggleSidebarSection: (section: string) => void;
   setThemeId: (themeId: ThemeId) => void;

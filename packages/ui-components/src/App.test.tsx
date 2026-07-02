@@ -1,8 +1,10 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
+import { Compass } from 'lucide-react';
 import { App } from './App';
 import { useWorkspaceStore } from './store/workspaceStore';
+import type { ExtraPanelDef } from './layout/extraPanels';
 
 describe('App', () => {
   it('shows loading state, then renders the chrome once hydrated', async () => {
@@ -40,5 +42,36 @@ describe('App', () => {
     await userEvent.click(screen.getByRole('option', { name: /Midnight Blue/ }));
     expect(useWorkspaceStore.getState().local!.ui.themeId).toBe('midnight-blue');
     expect(document.documentElement.getAttribute('data-theme')).toBe('midnight-blue');
+  });
+
+  it('renders an edition-contributed extra panel (tab → content → sidebar) without disturbing core', async () => {
+    const Discover: ExtraPanelDef = {
+      id: 'lens.discover',
+      label: 'Discover',
+      icon: Compass,
+      hasSidebar: true,
+      Panel: () => <div>DISCOVER PANEL BODY</div>,
+      Sidebar: () => <div>DISCOVER SIDEBAR BODY</div>,
+      SidebarActions: () => <button type="button">Discover action</button>,
+    };
+    render(<App extraPanels={[Discover]} />);
+    await waitFor(() => screen.getByText('API Circle Studio'));
+
+    // Core tabs still present; the extra tab is appended after them.
+    expect(screen.getByRole('button', { name: /^Editor$/ })).toBeInTheDocument();
+    const discoverTab = screen.getByRole('button', { name: /^Discover$/ });
+    expect(discoverTab).toBeInTheDocument();
+
+    // Switch to the extra panel → its content + sidebar + actions render.
+    await userEvent.click(discoverTab);
+    expect(useWorkspaceStore.getState().activePanel).toBe('lens.discover');
+    expect(screen.getByText('DISCOVER PANEL BODY')).toBeInTheDocument();
+    expect(screen.getByText('DISCOVER SIDEBAR BODY')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Discover action/ })).toBeInTheDocument();
+
+    // Core still works: back to Workspace clears the extra content.
+    await userEvent.click(screen.getByRole('button', { name: /^Workspace$/ }));
+    expect(useWorkspaceStore.getState().activePanel).toBe('workspace');
+    expect(screen.queryByText('DISCOVER PANEL BODY')).not.toBeInTheDocument();
   });
 });

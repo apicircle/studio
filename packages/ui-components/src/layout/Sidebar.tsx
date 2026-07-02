@@ -8,21 +8,25 @@ import { HistorySidebar } from '../panels/history/HistorySidebar';
 import { MocksSidebar, MocksSidebarActions } from '../panels/mocks/MocksSidebar';
 import { McpSidebar } from '../panels/mcp/McpSidebar';
 import { HelpSidebar } from '../panels/help/HelpSidebar';
-import { getPanel } from './panels';
+import { useExtraPanels, resolveActivePanel } from './extraPanels';
 
 export function Sidebar() {
   const activePanel = useWorkspaceStore((s) => s.activePanel);
-  const panel = getPanel(activePanel);
-  if (!panel.hasSidebar) return null;
+  const extraPanels = useExtraPanels();
+  const resolved = resolveActivePanel(activePanel, extraPanels);
+  if (!resolved.hasSidebar) return null;
+  const ExtraSidebar = resolved.extra?.Sidebar;
+  const ExtraSidebarActions = resolved.extra?.SidebarActions;
 
   return (
     <aside className="flex h-full w-full flex-col border-r border-border-subtle bg-card">
       <header className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border-subtle px-3 text-xs font-medium uppercase tracking-wider text-text-dim">
-        <span>{panel.label}</span>
+        <span>{resolved.label}</span>
         {activePanel === 'editor' && <EditorSidebarActions />}
         {activePanel === 'env' && <EnvironmentsSidebarActions />}
         {activePanel === 'execution' && <ExecutionSidebarActions />}
         {activePanel === 'mocks' && <MocksSidebarActions />}
+        {ExtraSidebarActions ? <ExtraSidebarActions /> : null}
       </header>
       <div className="flex-1 overflow-y-auto p-2">
         {activePanel === 'workspace' && <WorkspaceSidebar />}
@@ -34,6 +38,7 @@ export function Sidebar() {
         {activePanel === 'mocks' && <MocksSidebar />}
         {activePanel === 'mcp' && <McpSidebar />}
         {activePanel === 'help' && <HelpSidebar />}
+        {ExtraSidebar ? <ExtraSidebar /> : null}
       </div>
     </aside>
   );

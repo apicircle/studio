@@ -10,6 +10,7 @@ import { MockServersPanel } from '../panels/mocks/MockServersPanel';
 import { McpServerPanel } from '../panels/mcp/McpServerPanel';
 import { HelpPanel } from '../panels/help/HelpPanel';
 import { PanelErrorBoundary } from '../primitives/PanelErrorBoundary';
+import { useExtraPanels } from './extraPanels';
 
 // PANEL_LABELS is what the error fallback shows in its heading, so the user
 // can recognise which panel crashed without reading the URL. Keep aligned
@@ -30,9 +31,17 @@ const PANEL_LABELS: Record<string, string> = {
 // one panel doesn't leak its "errored" state into the next panel a user
 // opens. Without that, switching away and back to a panel would keep
 // showing the previous error.
-function Bounded({ panel, children }: { panel: string; children: ReactNode }) {
+function Bounded({
+  panel,
+  label,
+  children,
+}: {
+  panel: string;
+  label?: string;
+  children: ReactNode;
+}) {
   return (
-    <PanelErrorBoundary key={panel} panelLabel={PANEL_LABELS[panel] ?? panel}>
+    <PanelErrorBoundary key={panel} panelLabel={label ?? PANEL_LABELS[panel] ?? panel}>
       {children}
     </PanelErrorBoundary>
   );
@@ -40,6 +49,7 @@ function Bounded({ panel, children }: { panel: string; children: ReactNode }) {
 
 export function PanelContent() {
   const activePanel = useWorkspaceStore((s) => s.activePanel);
+  const extraPanels = useExtraPanels();
 
   return (
     <main className="flex h-full flex-1 flex-col overflow-hidden bg-surface">
@@ -87,6 +97,13 @@ export function PanelContent() {
         <Bounded panel="help">
           <HelpPanel />
         </Bounded>
+      )}
+      {extraPanels.map((p) =>
+        activePanel === p.id ? (
+          <Bounded key={p.id} panel={p.id} label={p.label}>
+            <p.Panel />
+          </Bounded>
+        ) : null,
       )}
     </main>
   );

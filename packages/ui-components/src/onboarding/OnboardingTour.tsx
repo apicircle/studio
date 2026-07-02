@@ -278,7 +278,9 @@ export function OnboardingTour() {
   const [rect, setRect] = useState<TargetRect | null>(null);
   // The panel the user was on when the tour started — restored on exit so
   // the tour doesn't strand them on Help Center.
-  const startPanelRef = useRef<PanelId | null>(null);
+  // Holds the active panel id (which may be an edition-contributed id, hence
+  // the widened `string`) so exit can restore it via `setActivePanel`.
+  const startPanelRef = useRef<string | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
 
   const startTour = useCallback(() => {

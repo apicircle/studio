@@ -27,6 +27,17 @@
 
 ### Added
 
+- **UI panel-registry seam (open-core, additive).** The React shell
+  (`@apicircle/ui-components`) now accepts edition-contributed top-nav panels via
+  an optional `App` `extraPanels` prop (`ExtraPanelDef[]`), rendered through
+  `PanelTabs` / `PanelContent` / `Sidebar`. It is a **strict no-op when nothing
+  is registered** — Studio passes no extras, so its panel set, layout, and
+  behavior are unchanged (the store's `activePanel` type is widened to accept
+  edition ids; the core values it stores are untouched). This lets an edition add
+  panels without forking the shell, mirroring the MCP server's injectable-tool
+  seam. Covered by `layout/extraPanels.test.tsx` + an `App.test.tsx` integration
+  test. See [`docs/architecture/open-core-and-editions.md`](docs/architecture/open-core-and-editions.md).
+
 - **Workspace-directory sidecar contract (open-core seam).** Documented and
   test-locked the guarantee that API Circle's write paths preserve files they
   don't own under `.apicircle/workspace-<id>/`. Disk writes (`saveToFile`, and

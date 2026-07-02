@@ -168,9 +168,20 @@ import { Modal } from './primitives/Modal';
 import { ToastViewport } from './primitives/Toast';
 import { UpdateAvailableBanner } from './primitives/UpdateAvailableBanner';
 import { PassphrasePromptModalGate } from './onboarding/PassphrasePromptModalGate';
-import { getPanel } from './layout/panels';
+import {
+  ExtraPanelsProvider,
+  useExtraPanels,
+  resolveActivePanel,
+  NO_EXTRA_PANELS,
+  type ExtraPanelDef,
+} from './layout/extraPanels';
 
-export function App() {
+export function App({
+  extraPanels = NO_EXTRA_PANELS,
+}: {
+  /** Edition-contributed top-nav panels. Omitted in Studio → strict no-op. */
+  extraPanels?: readonly ExtraPanelDef[];
+} = {}) {
   const ready = useWorkspaceStore((s) => s.ready);
   const hydrationError = useWorkspaceStore((s) => s.hydrationError);
   const hydrate = useWorkspaceStore((s) => s.hydrate);
@@ -195,23 +206,25 @@ export function App() {
   }
 
   return (
-    <div className="flex h-full flex-col bg-surface text-text-primary">
-      <TopBar />
-      <PanelTabs />
-      <div className="flex flex-1 overflow-hidden">
-        <BodyArea />
-        <RightDockRail />
+    <ExtraPanelsProvider value={extraPanels}>
+      <div className="flex h-full flex-col bg-surface text-text-primary">
+        <TopBar />
+        <PanelTabs />
+        <div className="flex flex-1 overflow-hidden">
+          <BodyArea />
+          <RightDockRail />
+        </div>
+        <UpdatePreviewModal />
+        <MissingScopeGate />
+        <AttachmentDownloadPromptModal />
+        <KeyboardShortcuts />
+        <OnboardingTour />
+        <ToastSlot />
+        <UpdateAvailableBanner />
+        <PassphrasePromptModalGate />
+        <CloseConfirmModal />
       </div>
-      <UpdatePreviewModal />
-      <MissingScopeGate />
-      <AttachmentDownloadPromptModal />
-      <KeyboardShortcuts />
-      <OnboardingTour />
-      <ToastSlot />
-      <UpdateAvailableBanner />
-      <PassphrasePromptModalGate />
-      <CloseConfirmModal />
-    </div>
+    </ExtraPanelsProvider>
   );
 }
 
@@ -241,7 +254,8 @@ function ToastSlot() {
  */
 function BodyArea() {
   const activePanel = useWorkspaceStore((s) => s.activePanel);
-  const hasSidebar = getPanel(activePanel).hasSidebar;
+  const extraPanels = useExtraPanels();
+  const hasSidebar = resolveActivePanel(activePanel, extraPanels).hasSidebar;
   const dockTab = useWorkspaceStore((s) => s.rightDock.tab);
   const dockMode = useWorkspaceStore((s) => s.rightDock.mode);
   const dockOpen = dockTab !== null;
