@@ -510,6 +510,9 @@ importers:
       '@apicircle/mcp-server':
         specifier: workspace:*
         version: link:../mcp-server
+      '@apicircle/mock-server-core':
+        specifier: workspace:*
+        version: link:../mock-server-core
       '@apicircle/shared':
         specifier: workspace:*
         version: link:../shared

@@ -307,6 +307,9 @@ studio/
 │   ├── git/               GitHub REST client + typed error taxonomy
 │   ├── ui-components/      ALL React UI + the Zustand store + IndexedDB persistence
 │   ├── mock-server-core/   Hono mock-server engine + OpenAPI/Postman/Insomnia parsers
+│   │                       (root = Node + swagger-parser; `/parsing` subpath =
+│   │                       browser-safe, in-document `$ref` only — used by the
+│   │                       web/desktop renderer to materialize endpoints at import)
 │   ├── mcp-server/         stdio MCP host + 94-tool catalog + workspace providers
 │   └── cli/                `apicircle` binary — mock / mcp / import / export / run / workspaces
 ├── examples/              Demo workspaces + a standalone mock-server example

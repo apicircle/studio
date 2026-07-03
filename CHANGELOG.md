@@ -23,7 +23,7 @@
 > ship. Full per-platform walk-through:
 > [`docs/installing.md`](docs/installing.md).
 
-## Unreleased
+## 1.2.0 - 2026-07-03
 
 ### Added
 
@@ -81,6 +81,40 @@
   workspace bridge + `apicircle://` virtual filesystem via
   `getExtension(...).exports` — without forking the published extension. Bundle:
   2.80 MB (under the 3.0 MB soft budget).
+
+### Changed
+
+- **`@apicircle/mock-server-core` now ships a browser-safe `./parsing`
+  subpath.** The package root keeps swagger-parser (full external-`$ref`
+  resolution) for Node consumers (CLI, MCP, Desktop main, VS Code host); the new
+  `@apicircle/mock-server-core/parsing` entry exposes the same
+  `parseSourceToEndpoints` API without the Node runtime or swagger-parser,
+  resolving in-document `$ref`s only. The web bundle imports it lazily (~17 KB
+  gzip, no swagger-parser).
+
+### Fixed
+
+- **Importing an OpenAPI / Postman / Insomnia spec now materializes its
+  endpoints (Web + Desktop).** Creating a mock "from a spec" in the Web or
+  Desktop app previously stored the spec verbatim with `endpoints: []` and
+  deferred parsing to "the runtime on Start" — but nothing ever re-parsed it
+  (the router serves `MockServer.endpoints` directly), so the imported mock had
+  **zero endpoints**. `createMockServer` now parses the source at create time
+  and populates the endpoint table right away, matching what the VS Code wizard,
+  CLI, and MCP `mock.create_from_*` tools already did. The Desktop app parses in
+  its Node main process (via a new `apicircle:mock:parse` IPC bridge → the
+  `DesktopMockBridge.parseSpec` surface) for full external-`$ref` resolution;
+  the pure-web build resolves in-document `$ref`s and surfaces a warning naming
+  any external reference it can't follow. The "Create mock server" modal reports
+  the imported endpoint count and lists parser warnings. Covered by a new
+  `demoImport.test.ts` guard that imports the shipped
+  `examples/swagger-first/apicircle-demo-openapi.yaml` (20 operations) on both
+  parse paths, plus a live-browser E2E.
+
+### Version alignment
+
+- All workspace packages move to **1.2.0** in lockstep (root + 15 packages);
+  `examples/mock-server` catches up from 1.1.3.
 
 ## 1.1.5 - 2026-06-22
 

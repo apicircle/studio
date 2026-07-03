@@ -206,7 +206,7 @@ describe('workspaceStore.syncAttachments', () => {
 
   it('downloads mock response attachments from the current workspace branch', async () => {
     await setupConnectedBranch();
-    const serverId = useWorkspaceStore
+    const { id: serverId } = await useWorkspaceStore
       .getState()
       .createMockServer({ name: 'Files', source: { kind: 'manual', endpoints: [] } });
     const endpointId = useWorkspaceStore.getState().addMockEndpoint(serverId);
@@ -247,7 +247,7 @@ describe('workspaceStore.syncAttachments', () => {
       );
     const asset = useWorkspaceStore.getState().synced!.globalAssets.files?.[fileAssetId];
     if (!asset) throw new Error('Expected global file asset to be present');
-    const serverId = useWorkspaceStore
+    const { id: serverId } = await useWorkspaceStore
       .getState()
       .createMockServer({ name: 'Files', source: { kind: 'manual', endpoints: [] } });
     const endpointId = useWorkspaceStore.getState().addMockEndpoint(serverId);

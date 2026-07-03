@@ -1,10 +1,13 @@
 // OpenAPI / Swagger 2.0 → MockEndpoint[] parser.
 //
 // Two-step pipeline:
-//   1. Parse the source string (JSON or YAML) and run swagger-parser's
-//      `dereference` so all `$ref` chains are resolved up-front. The mock
-//      server doesn't carry a $ref resolver at runtime — every endpoint
-//      ships a self-contained body.
+//   1. Parse the source string (JSON or YAML) and dereference all `$ref`
+//      chains up-front — the mock server doesn't carry a $ref resolver at
+//      runtime, so every endpoint ships a self-contained body. The
+//      dereferencer is INJECTED (`deps.dereference`) so this module stays
+//      browser-safe by default: the web build uses `dereferenceInternal`
+//      (in-document refs only), while the Node build (`openapiNode.ts`)
+//      passes swagger-parser for full external-file / remote resolution.
 //   2. Walk `paths.{path}.{method}.responses.{status}.content.{mediaType}`
 //      and pull either an `example`, the first `examples` entry, or
 //      synthesize one from the schema via `schemaToExample`.
@@ -14,13 +17,26 @@
 // — mock servers should default to the success path; users override via
 // the editor when they want failure cases.
 
-import SwaggerParser from '@apidevtools/swagger-parser';
 import yaml from 'js-yaml';
 import type { HttpMethod, MockEndpoint, MockRequestSchema } from '@apicircle/shared';
 import { makeDefaultRequestSchema } from '@apicircle/shared';
 import { schemaToExample, type JsonSchemaLike } from '../faker/schemaToExample';
 import { paramDef } from './buildEndpoint';
 import { buildMockEndpoint } from './buildEndpoint';
+import { dereferenceInternal, type DereferenceResult } from './refDeref';
+
+/**
+ * A `$ref` dereferencer: takes the parsed spec object and returns a
+ * fully-dereferenced document plus any non-fatal warnings. Injected so the
+ * browser build can use the in-document-only resolver while the Node build
+ * swaps in swagger-parser. May be sync or async.
+ */
+export type DereferenceFn = (root: unknown) => DereferenceResult | Promise<DereferenceResult>;
+
+export interface ParseOpenApiDeps {
+  /** Defaults to the browser-safe {@link dereferenceInternal}. */
+  dereference?: DereferenceFn;
+}
 
 const SUPPORTED_METHODS: ReadonlyArray<HttpMethod> = [
   'GET',
@@ -82,11 +98,16 @@ export interface ParseOpenApiResult {
  * Parse an OpenAPI / Swagger 2.0 spec string and return the mock endpoint
  * table. `format` is a hint — the parser will fall back to JSON.parse if
  * YAML parse fails.
+ *
+ * The `$ref` dereferencer defaults to the browser-safe in-document resolver;
+ * the Node entry point (`parseOpenApiToEndpointsNode`) injects swagger-parser
+ * for full external-reference resolution.
  */
 export async function parseOpenApiToEndpoints(
   source: string,
   format: 'json' | 'yaml' = 'json',
   opts: ParseOpenApiOptions = {},
+  deps: ParseOpenApiDeps = {},
 ): Promise<ParseOpenApiResult> {
   const warnings: string[] = [];
 
@@ -95,22 +116,14 @@ export async function parseOpenApiToEndpoints(
     return { endpoints: [], warnings: ['Could not parse OpenAPI source'] };
   }
 
-  // SwaggerParser.dereference takes either a path or an in-memory object
-  // and mutates `$ref` chains in place so downstream code can ignore refs
-  // entirely. Cast through unknown — the SDK's types are narrower than we
-  // need (they assume a path input and an `info` block).
-  let api: Record<string, unknown>;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const dereffed = await (SwaggerParser as any).dereference(raw);
-    api = dereffed as Record<string, unknown>;
-  } catch (err) {
-    warnings.push(
-      `swagger-parser failed: ${err instanceof Error ? err.message : 'unknown error'}; ` +
-        'falling back to raw spec',
-    );
-    api = raw as Record<string, unknown>;
-  }
+  // Dereference `$ref` chains up-front so downstream code can ignore refs
+  // entirely. The dereferencer is injected (browser: in-document only;
+  // Node: swagger-parser); it surfaces its own warnings (external refs it
+  // couldn't resolve, cycles it broke).
+  const dereference = deps.dereference ?? dereferenceInternal;
+  const { doc, warnings: derefWarnings } = await dereference(raw);
+  warnings.push(...derefWarnings);
+  const api = (doc && typeof doc === 'object' ? doc : raw) as Record<string, unknown>;
 
   const paths = (api.paths ?? {}) as Record<string, Record<string, OpenApiOperation>>;
   const endpoints: MockEndpoint[] = [];

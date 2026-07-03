@@ -75,13 +75,13 @@ test.describe('Mock Servers (MK)', () => {
       // "Derive from path" affordance. Asserts the declared path param lands
       // in the synced doc — the same field the VS Code YAML authoring edits.
       await mainWindow.getByRole('button', { name: /^Mocks$/ }).click();
-      const seeded = await mainWindow.evaluate(() => {
+      const seeded = await mainWindow.evaluate(async () => {
         type Store = {
           getState: () => {
             createMockServer: (args: {
               name: string;
               source: { kind: 'manual'; endpoints: never[] };
-            }) => string;
+            }) => Promise<{ id: string; warnings: string[] }>;
             addMockEndpoint: (serverId: string) => string;
             updateMockEndpoint: (
               serverId: string,
@@ -94,7 +94,7 @@ test.describe('Mock Servers (MK)', () => {
         const w = window as unknown as { __apicircleStore?: Store };
         if (!w.__apicircleStore) return null;
         const s = w.__apicircleStore.getState();
-        const serverId = s.createMockServer({
+        const { id: serverId } = await s.createMockServer({
           name: 'SchemaFlowMock',
           source: { kind: 'manual', endpoints: [] },
         });
@@ -307,19 +307,19 @@ test.describe('Mock Servers (MK)', () => {
       // the unit test in MockServersPanel.test.tsx also covers — here we
       // exercise the same flow against the real renderer + IDB pipeline.
       await mainWindow.getByRole('button', { name: /^Mocks$/ }).click();
-      const seeded = await mainWindow.evaluate(() => {
+      const seeded = await mainWindow.evaluate(async () => {
         type Store = {
           getState: () => {
             createMockServer: (args: {
               name: string;
               source: { kind: 'manual'; endpoints: never[] };
-            }) => string;
+            }) => Promise<{ id: string; warnings: string[] }>;
             setActiveMockEndpoint: (args: { serverId: string; endpointId: null }) => void;
           };
         };
         const w = window as unknown as { __apicircleStore?: Store };
         if (!w.__apicircleStore) return null;
-        const id = w.__apicircleStore.getState().createMockServer({
+        const { id } = await w.__apicircleStore.getState().createMockServer({
           name: 'PortFlowMock',
           source: { kind: 'manual', endpoints: [] },
         });

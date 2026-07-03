@@ -105,6 +105,28 @@ A `MockServer` is just a JSON object on `WorkspaceSynced.mockServers[id]`:
 
 `WorkspaceLocal.mockRuntime.active[id]` carries the live port + start time. It's local-only because every host runs its own ports — pushing it to git would conflict trivially.
 
+## Parsing a spec — two entry points
+
+Endpoints are **materialized at import time**, not at start time: whenever a
+mock is created from a spec (the Desktop / Web "Create mock server" modal, the
+VS Code wizard, the CLI, or an MCP `mock.create_from_*` tool), the source is
+parsed immediately and the resulting `MockEndpoint[]` is stored on
+`MockServer.endpoints`. The runtime router serves that array verbatim and never
+re-parses `source`, so a mock created with zero endpoints stays empty.
+
+The parser ships as two entry points that differ only in how OpenAPI `$ref`s
+are dereferenced:
+
+| Import                                | `$ref` resolution                                                                         | Used by                                                                          |
+| ------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `@apicircle/mock-server-core` (root)  | swagger-parser — in-document **and** external file / remote refs                          | Node surfaces: CLI, MCP server, Desktop main process, VS Code extension host     |
+| `@apicircle/mock-server-core/parsing` | in-document (`#/…`) refs only; external refs are left unresolved and reported as warnings | Browser / renderer code — the web app has no filesystem to resolve external refs |
+
+The Desktop app runs its parse in the Node main process (via the
+`apicircle:mock:parse` IPC bridge), so it gets full external-`$ref` resolution;
+the pure-web build uses the in-document parser and surfaces a warning naming any
+external reference it couldn't follow.
+
 ## Programmatic use
 
 ```ts

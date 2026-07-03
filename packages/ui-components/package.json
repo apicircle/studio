@@ -1,6 +1,6 @@
 {
   "name": "@apicircle/ui-components",
-  "version": "1.1.5",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -17,6 +17,7 @@
     "@apicircle/core": "workspace:*",
     "@apicircle/git": "workspace:*",
     "@apicircle/mcp-server": "workspace:*",
+    "@apicircle/mock-server-core": "workspace:*",
     "@apicircle/shared": "workspace:*",
     "@monaco-editor/react": "^4.6.0",
     "lucide-react": "^0.575.0",

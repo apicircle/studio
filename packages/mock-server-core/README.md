@@ -90,6 +90,12 @@ const { endpoints, warnings } = await parseSourceToEndpoints({
 warnings.forEach((w) => console.warn(w));
 ```
 
+> **Browser use:** the package root pulls in swagger-parser (Node-oriented, for
+> full external-`$ref` resolution). For browser/renderer code, import the
+> `@apicircle/mock-server-core/parsing` subpath instead — same
+> `parseSourceToEndpoints` API, no Node runtime, and OpenAPI `$ref`s are
+> resolved in-document only (external refs are reported as warnings).
+
 ### 2. Start the server
 
 ```ts

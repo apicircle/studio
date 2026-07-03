@@ -139,7 +139,7 @@ test.describe('Live GitHub - core field matrix @live-github', () => {
       const removedPlanId = api.addPlan('matrix removed plan');
       api.removePlan(removedPlanId);
 
-      const mockId = api.createMockServer({
+      const { id: mockId } = await api.createMockServer({
         name: 'matrix mock',
         source: { kind: 'manual', endpoints: [] },
       });

@@ -338,4 +338,174 @@ describe('parseOpenApiToEndpoints', () => {
     expect(endpoints).toHaveLength(1);
     expect(JSON.parse(bodyContent(endpoints[0]))).toEqual({ ok: false });
   });
+
+  it('resolves an in-document $ref in a response schema (default browser parser)', async () => {
+    const spec = JSON.stringify({
+      openapi: '3.0.0',
+      info: { title: 'Ref', version: '1.0.0' },
+      components: {
+        schemas: {
+          Pet: {
+            type: 'object',
+            required: ['id', 'name'],
+            properties: { id: { type: 'integer' }, name: { type: 'string' } },
+          },
+        },
+      },
+      paths: {
+        '/pets': {
+          get: {
+            responses: {
+              '200': {
+                content: { 'application/json': { schema: { $ref: '#/components/schemas/Pet' } } },
+              },
+            },
+          },
+        },
+      },
+    });
+    const { endpoints, warnings } = await parseOpenApiToEndpoints(spec, 'json');
+    expect(warnings).toEqual([]);
+    expect(JSON.parse(bodyContent(endpoints[0]))).toEqual({ id: 0, name: 'string' });
+  });
+
+  it('warns (but still parses) when a response schema uses an external $ref', async () => {
+    const spec = JSON.stringify({
+      openapi: '3.0.0',
+      info: { title: 'Ext', version: '1.0.0' },
+      paths: {
+        '/pets': {
+          get: {
+            responses: {
+              '200': {
+                content: { 'application/json': { schema: { $ref: './pet.yaml#/Pet' } } },
+              },
+            },
+          },
+        },
+      },
+    });
+    const { endpoints, warnings } = await parseOpenApiToEndpoints(spec, 'json');
+    expect(endpoints).toHaveLength(1);
+    expect(warnings.some((w) => w.includes('External $ref not resolved in the web app'))).toBe(
+      true,
+    );
+  });
+
+  it('uses an injected dereferencer when provided', async () => {
+    const spec = JSON.stringify({
+      openapi: '3.0.0',
+      info: { title: 'Inj', version: '1.0.0' },
+      paths: {
+        '/x': { get: { responses: { '200': { content: { 'application/json': {} } } } } },
+      },
+    });
+    let called = false;
+    const { warnings } = await parseOpenApiToEndpoints(
+      spec,
+      'json',
+      {},
+      {
+        dereference: (root) => {
+          called = true;
+          return { doc: root, warnings: ['custom-deref-warning'] };
+        },
+      },
+    );
+    expect(called).toBe(true);
+    expect(warnings).toContain('custom-deref-warning');
+  });
+
+  it('falls back to the lowest 2xx when preferStatus is not among the responses', async () => {
+    const spec = JSON.stringify({
+      openapi: '3.0.0',
+      info: { title: 'X', version: '1.0.0' },
+      paths: {
+        '/x': {
+          get: {
+            responses: {
+              '200': { content: { 'application/json': { example: { from: '200' } } } },
+              '201': { content: { 'application/json': { example: { from: '201' } } } },
+            },
+          },
+        },
+      },
+    });
+    // preferStatus 404 isn't a 2xx candidate → lowest 2xx (200) wins.
+    const { endpoints } = await parseOpenApiToEndpoints(spec, 'json', { preferStatus: 404 });
+    expect(JSON.parse(bodyContent(endpoints[0]))).toEqual({ from: '200' });
+  });
+
+  it('defaults the content type when the response content map is empty', async () => {
+    const spec = JSON.stringify({
+      openapi: '3.0.0',
+      info: { title: 'X', version: '1.0.0' },
+      paths: { '/x': { get: { responses: { '200': { content: {} } } } } },
+    });
+    const { endpoints } = await parseOpenApiToEndpoints(spec, 'json');
+    expect(endpoints).toHaveLength(1);
+    const ct = headers(endpoints[0]).find((h) => h.key === 'Content-Type');
+    expect(ct?.value).toBe('application/json');
+  });
+
+  it('uses the first media type when none is JSON', async () => {
+    const spec = JSON.stringify({
+      openapi: '3.0.0',
+      info: { title: 'X', version: '1.0.0' },
+      paths: {
+        '/x': {
+          get: {
+            responses: { '200': { content: { 'application/xml': { example: '<ok/>' } } } },
+          },
+        },
+      },
+    });
+    const { endpoints } = await parseOpenApiToEndpoints(spec, 'json');
+    const ct = headers(endpoints[0]).find((h) => h.key === 'Content-Type');
+    expect(ct?.value).toBe('application/xml');
+  });
+
+  it('reads a Swagger 2.0 `examples` map keyed by content type', async () => {
+    const spec = JSON.stringify({
+      swagger: '2.0',
+      info: { title: 'S2', version: '1.0.0' },
+      paths: {
+        '/x': {
+          get: {
+            responses: {
+              '200': { description: 'ok', examples: { 'application/json': { hello: 'world' } } },
+            },
+          },
+        },
+      },
+    });
+    const { endpoints } = await parseOpenApiToEndpoints(spec, 'json');
+    expect(endpoints).toHaveLength(1);
+    expect(JSON.parse(bodyContent(endpoints[0]))).toEqual({ hello: 'world' });
+  });
+
+  it('falls back to the raw spec when the dereferencer returns a non-object doc', async () => {
+    const spec = JSON.stringify({
+      openapi: '3.0.0',
+      info: { title: 'Raw', version: '1.0.0' },
+      paths: {
+        '/x': {
+          get: {
+            responses: { '200': { content: { 'application/json': { example: { ok: 1 } } } } },
+          },
+        },
+      },
+    });
+    // A dereferencer that discards the doc (returns null) forces the
+    // `doc && typeof doc === 'object' ? doc : raw` fallback branch — the
+    // parser must still walk the original parsed spec.
+    const { endpoints } = await parseOpenApiToEndpoints(
+      spec,
+      'json',
+      {},
+      { dereference: () => ({ doc: null, warnings: [] }) },
+    );
+    expect(endpoints).toHaveLength(1);
+    expect(JSON.parse(bodyContent(endpoints[0]))).toEqual({ ok: 1 });
+  });
 });

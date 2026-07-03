@@ -24,5 +24,6 @@ export type {
   McpInstallState,
   McpUninstallOutcome,
   McpUninstallResult,
+  ParseSpecResult,
   WorkspaceFileExternalChange,
 } from './desktop/bridge';

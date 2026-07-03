@@ -19,8 +19,10 @@
 
 import type {
   McpToolName,
+  MockEndpoint,
   MockRuntimeEntry,
   MockServer,
+  MockServerSource,
   WorkspaceLocal,
   WorkspaceSynced,
 } from '@apicircle/shared';
@@ -123,12 +125,30 @@ export interface DesktopWorkspaceFileBridge {
 
 // ---------- Mock-server surface ------------------------------------------
 
+/**
+ * Result of parsing a spec-blob `MockServerSource` into an endpoint table in
+ * the Node main process (full swagger-parser `$ref` resolution). The renderer
+ * persists `endpoints` onto `MockServer.endpoints`.
+ */
+export interface ParseSpecResult {
+  endpoints: MockEndpoint[];
+  warnings: string[];
+}
+
 export interface DesktopMockBridge {
   start(server: MockServer, opts?: { port?: number }): Promise<MockRuntimeEntry>;
   stop(serverId: string): Promise<{ ok: boolean }>;
   list(): Promise<Array<{ serverId: string; runtime: MockRuntimeEntry }>>;
   getRuntime(serverId: string): Promise<MockRuntimeEntry | null>;
   stopAll(): Promise<{ ok: boolean }>;
+  /**
+   * Parse an OpenAPI / Postman / Insomnia spec into endpoints in the Node
+   * main process, where swagger-parser can resolve external `$ref`s. The web
+   * (browser-only) build has no equivalent — it falls back to the in-document
+   * parser in `@apicircle/mock-server-core/parsing` and warns about external
+   * refs. Optional so older preload builds don't fail the renderer contract.
+   */
+  parseSpec?(source: MockServerSource): Promise<ParseSpecResult>;
 }
 
 // ---------- Bridge contract ----------------------------------------------

@@ -215,7 +215,10 @@ export interface StoreApi {
   removePlanStep: (planId: string, stepIndex: number) => void;
   setPlanStopOnFailure: (planId: string, stopOnAssertionFailure: boolean) => void;
   setPlanVariables: (planId: string, variables: unknown[]) => void;
-  createMockServer: (args: { name: string; source: unknown }) => string;
+  createMockServer: (args: {
+    name: string;
+    source: unknown;
+  }) => Promise<{ id: string; warnings: string[] }>;
   removeMockServer: (id: string) => void;
   addMockEndpoint: (serverId: string) => string;
   updateMockEndpoint: (serverId: string, endpointId: string, patch: unknown) => void;

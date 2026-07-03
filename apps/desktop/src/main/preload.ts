@@ -9,6 +9,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type {
   MockServer,
+  MockServerSource,
   MockRuntimeEntry,
   McpToolName,
   WorkspaceLocal,
@@ -21,6 +22,7 @@ import type {
   McpInstallResult,
   McpInstallState,
   McpUninstallResult,
+  ParseSpecResult,
   WorkspaceFileExternalChange,
 } from '@apicircle/ui-components';
 
@@ -63,6 +65,8 @@ const bridge = {
       ipcRenderer.invoke('apicircle:mock:getRuntime', serverId) as Promise<MockRuntimeEntry | null>,
     stopAll: (): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('apicircle:mock:stopAll') as Promise<{ ok: boolean }>,
+    parseSpec: (source: MockServerSource): Promise<ParseSpecResult> =>
+      ipcRenderer.invoke('apicircle:mock:parse', source) as Promise<ParseSpecResult>,
   },
 
   mcp: {

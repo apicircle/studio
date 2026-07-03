@@ -255,7 +255,10 @@ describe('workspace meta.updatedAt bump invariant', () => {
     );
     // Mock server
     await expectsMetaBump('createMockServer', () => {
-      useWorkspaceStore
+      // Manual-source create resolves synchronously (no parse step), so the
+      // meta bump lands before the returned promise settles; `void` it to
+      // satisfy no-floating-promises.
+      void useWorkspaceStore
         .getState()
         .createMockServer({ name: 'm1', source: { kind: 'manual', endpoints: [] } });
     });

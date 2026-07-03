@@ -48,7 +48,7 @@ test.describe('Live GitHub - snapshots and data-loss guards @live-github', () =>
         ]);
         const planId = api.addPlan('v2 snapshot plan');
         api.addPlanStep(planId, requestId);
-        const mockId = api.createMockServer({
+        const { id: mockId } = await api.createMockServer({
           name: 'v2 snapshot mock',
           source: { kind: 'manual', endpoints: [] },
         });

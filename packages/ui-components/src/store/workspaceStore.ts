@@ -50,6 +50,7 @@ import {
   resolvePrCapability,
 } from './githubPrCapability';
 import { decideRetirement, probeBranchRetirement } from './branchRetirement';
+import { getDesktopMockBridge } from '../desktop/bridge';
 import { applyFont } from '../theme/applyFont';
 import { applyFontSize, clampFontSizePercent } from '../theme/applyFontSize';
 import {
@@ -983,12 +984,20 @@ type WorkspaceStore = {
   /**
    * Create a new mock definition in `synced.mockServers`. The `source`
    * union discriminates between manual-CRUD endpoints and pasted spec
-   * blobs (OpenAPI / Postman / Insomnia). Spec blobs are stored
-   * verbatim with `endpoints: []` — the runtime (Desktop / CLI) parses
-   * the blob at Start time. The web UI never invokes a parser, so it
-   * can create any mock kind regardless of platform.
+   * blobs (OpenAPI / Postman / Insomnia). Spec blobs are **parsed at
+   * create time** so the endpoint table is materialized onto
+   * `MockServer.endpoints` right away (the router serves that array; it
+   * never re-parses `source`). On Desktop the parse runs in the Node
+   * main process via the mock bridge (full external-`$ref` resolution);
+   * in the browser it uses `@apicircle/mock-server-core/parsing`
+   * (in-document refs only). Returns the new id plus any parser warnings
+   * (external refs skipped, cycles broken) for the caller to surface.
+   * Rejects if the spec can't be parsed.
    */
-  createMockServer: (args: { name: string; source: MockServerSource }) => string;
+  createMockServer: (args: {
+    name: string;
+    source: MockServerSource;
+  }) => Promise<{ id: string; warnings: string[] }>;
   /** Rename a mock definition. */
   setMockServerName: (id: string, name: string) => void;
   /**
@@ -2634,11 +2643,6 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   // Delete a mock definition. Pure data op — the runtime is the Desktop
   // bridge's job and stays gated behind `apicircleDesktop.mock`.
-  // Creation is intentionally MCP-only in the web UI: the OpenAPI /
-  // Postman / Insomnia parsers (swagger-parser et al) are Node-only and
-  // can't run in the browser without significant rework. See
-  // MockServersPanel for the empty-state guidance pointing users at the
-  // MCP `mock.create_from_*` tools / CLI / Desktop instead.
   removeMockServer: (id) => {
     const synced = get().synced;
     if (!synced || !synced.mockServers[id]) return;
@@ -2653,7 +2657,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     queueSaveSynced(nextSynced);
   },
 
-  createMockServer: ({ name, source }) => {
+  createMockServer: async ({ name, source }) => {
     const synced = get().synced;
     if (!synced) throw new Error('Workspace not ready');
     const trimmed = name.trim();
@@ -2662,11 +2666,33 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       (m) => m.name.trim().toLowerCase() === trimmed.toLowerCase(),
     );
     if (collision) throw new Error(`A mock named "${trimmed}" already exists`);
+
+    // Materialize the endpoint table at create time so the router (which
+    // serves `MockServer.endpoints` and never re-parses `source`) has
+    // something to route. Manual-mode mocks carry their endpoints inline;
+    // spec blobs are parsed now. On Desktop the parse runs in the Node main
+    // process (full external-`$ref` resolution via swagger-parser); in the
+    // browser it uses the in-document-only parser and warns about external
+    // refs it can't resolve.
+    let endpoints: MockEndpoint[];
+    let warnings: string[] = [];
+    if (source.kind === 'manual') {
+      endpoints = source.endpoints;
+    } else {
+      const bridge = getDesktopMockBridge();
+      if (bridge?.parseSpec) {
+        const parsed = await bridge.parseSpec(source);
+        endpoints = parsed.endpoints;
+        warnings = parsed.warnings;
+      } else {
+        const { parseSourceToEndpoints } = await import('@apicircle/mock-server-core/parsing');
+        const parsed = await parseSourceToEndpoints(source);
+        endpoints = parsed.endpoints;
+        warnings = parsed.warnings;
+      }
+    }
+
     const id = generateId();
-    // Manual-mode mocks carry their endpoints inline. Spec-blob mocks
-    // store the raw text and defer parsing to the runtime (Desktop or
-    // CLI), so the web app can create them without a Node-side parser.
-    const endpoints = source.kind === 'manual' ? source.endpoints : [];
     const now = new Date().toISOString();
     const newServer = {
       id,
@@ -2685,7 +2711,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     };
     set({ synced: nextSynced });
     queueSaveSynced(nextSynced);
-    return id;
+    return { id, warnings };
   },
 
   setMockServerName: (id, name) => {

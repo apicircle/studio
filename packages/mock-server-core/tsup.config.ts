@@ -7,8 +7,12 @@ import { defineConfig } from 'tsup';
 //
 // The shared workspace dep keeps `@apicircle/shared` external — consumers
 // have it bundled themselves.
+//
+// Two entries: the Node root (`index.ts`, swagger-parser + Node runtime) and
+// the browser-safe parsing subpath (`parsing.ts`, in-document `$ref` only),
+// imported by the web/desktop renderer via `@apicircle/mock-server-core/parsing`.
 export default defineConfig({
-  entry: ['src/index.ts'],
+  entry: ['src/index.ts', 'src/parsing.ts'],
   format: ['cjs', 'esm'],
   dts: true,
   clean: true,

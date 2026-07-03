@@ -64,7 +64,7 @@ interface StoreApi {
   createMockServer: (args: {
     name: string;
     source: { kind: 'manual'; endpoints: unknown[] };
-  }) => string;
+  }) => Promise<{ id: string; warnings: string[] }>;
   addGlobalSchema: (init: { name: string; schema?: string }) => string;
   addGlobalGraphQL: (init: { name: string; source?: string }) => string;
 }
@@ -381,12 +381,13 @@ test.describe('Workspace restore — entity round-trips', () => {
     async ({ appWithGithubMock, mockGithub }) => {
       const name = repoName('0013');
       await mockGithub.seedRepo({ owner: OWNER, name });
-      const mockId = await appWithGithubMock.evaluate(() => {
+      const mockId = await appWithGithubMock.evaluate(async () => {
         const b = (window as unknown as { __apicircleStore: StoreBridge }).__apicircleStore;
-        return b.getState().createMockServer({
+        const { id } = await b.getState().createMockServer({
           name: 'Billing mock',
           source: { kind: 'manual', endpoints: [] },
         });
+        return id;
       });
       const remote = await pushAndRestore(appWithGithubMock, name);
       expect(remote.mockServers[mockId].name).toBe('Billing mock');

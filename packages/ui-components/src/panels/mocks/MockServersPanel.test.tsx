@@ -168,7 +168,7 @@ describe('MockServersPanel (post-rich-editor redesign)', () => {
 
   it('B-fix: createMockServer (manual, empty) seeds a server with no endpoints — endpoints added later via the sidebar', async () => {
     await renderWithStore(<MockServersPanel />);
-    const id = useWorkspaceStore
+    const { id } = await useWorkspaceStore
       .getState()
       .createMockServer({ name: 'Smoke', source: { kind: 'manual', endpoints: [] } });
     const created = useWorkspaceStore.getState().synced!.mockServers[id];
@@ -178,7 +178,7 @@ describe('MockServersPanel (post-rich-editor redesign)', () => {
 
   it('B-fix: addMockEndpoint seeds the new schema shape (defaultResponse, requestSchema, etc.) and selects the endpoint', async () => {
     await renderWithStore(<MockServersPanel />);
-    const sid = useWorkspaceStore
+    const { id: sid } = await useWorkspaceStore
       .getState()
       .createMockServer({ name: 'Smoke', source: { kind: 'manual', endpoints: [] } });
     const eid = useWorkspaceStore.getState().addMockEndpoint(sid);
@@ -289,7 +289,7 @@ describe('MockServersPanel (post-rich-editor redesign)', () => {
 
   it('B-fix: updateMockEndpoint patches a single endpoint field while preserving the rest', async () => {
     await renderWithStore(<MockServersPanel />);
-    const sid = useWorkspaceStore
+    const { id: sid } = await useWorkspaceStore
       .getState()
       .createMockServer({ name: 'Smoke', source: { kind: 'manual', endpoints: [] } });
     const eid = useWorkspaceStore.getState().addMockEndpoint(sid);

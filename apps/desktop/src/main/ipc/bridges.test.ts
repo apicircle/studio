@@ -82,6 +82,37 @@ describe('mock IPC bridge', () => {
     expect(handlers.has(MOCK_CHANNELS.list)).toBe(true);
     expect(handlers.has(MOCK_CHANNELS.getRuntime)).toBe(true);
     expect(handlers.has(MOCK_CHANNELS.stopAll)).toBe(true);
+    expect(handlers.has(MOCK_CHANNELS.parse)).toBe(true);
+  });
+
+  it('parse handler materializes endpoints from a spec (Node/swagger-parser)', async () => {
+    registerMockBridge(new MockManager());
+    const parse = handlers.get(MOCK_CHANNELS.parse)!;
+    const spec = JSON.stringify({
+      openapi: '3.0.0',
+      info: { title: 'P', version: '1.0.0' },
+      components: {
+        schemas: { Pet: { type: 'object', properties: { id: { type: 'integer' } } } },
+      },
+      paths: {
+        '/pets': {
+          get: {
+            responses: {
+              '200': {
+                content: { 'application/json': { schema: { $ref: '#/components/schemas/Pet' } } },
+              },
+            },
+          },
+        },
+      },
+    });
+    const result = (await parse(trustedEvent, {
+      kind: 'openapi',
+      spec,
+      format: 'json',
+    })) as { endpoints: unknown[]; warnings: string[] };
+    expect(result.endpoints).toHaveLength(1);
+    expect(result.warnings).toEqual([]);
   });
 
   it('start handler delegates to the manager', async () => {

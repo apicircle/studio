@@ -966,7 +966,7 @@ Snapshots live only on this machine. They are kept within a size budget — pick
 ## Creating a mock server
 
 - **Empty** — a blank server you add endpoints to by hand.
-- **From a spec** — paste an OpenAPI, Postman, or Insomnia source; it is parsed into endpoints when the server starts.
+- **From a spec** — paste an OpenAPI, Postman, or Insomnia source; it is parsed into endpoints the moment you create the mock, so the endpoint table is populated right away. On the Desktop app the parse runs in the native process and resolves external \`$ref\`s; the web app resolves in-document \`$ref\`s only and warns about any external references it can't follow.
 
 ## Endpoints and the response flow
 

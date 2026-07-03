@@ -122,7 +122,7 @@ test.describe('Live GitHub - global assets through linked workspaces @live-githu
           formRows: [{ kind: 'file', key: 'upload', enabled: true, slotId: null }],
         });
         await api.setFormRowGlobalFileAsset(formRequestId, 0, fileAssetId);
-        const mockId = api.createMockServer({
+        const { id: mockId } = await api.createMockServer({
           name: 'consumer global file mock',
           source: { kind: 'manual', endpoints: [] },
         });

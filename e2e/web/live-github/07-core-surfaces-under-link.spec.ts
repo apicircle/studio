@@ -80,7 +80,7 @@ test.describe('Live GitHub - core surfaces under linked source @live-github', ()
         const planId = api.addPlan('v2 core plan');
         api.addPlanStep(planId, requestId);
         api.addPlanStep(planId, linkedReqId, link.id);
-        const mockId = api.createMockServer({
+        const { id: mockId } = await api.createMockServer({
           name: 'v2 core mock',
           source: { kind: 'manual', endpoints: [] },
         });
