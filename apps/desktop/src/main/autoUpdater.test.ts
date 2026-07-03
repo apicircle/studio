@@ -165,4 +165,64 @@ describe('registerAutoUpdater', () => {
       /Untrusted IPC sender/,
     );
   });
+
+  it('registers stable no-op handlers when electron-updater is unavailable', async () => {
+    // Getter yields no autoUpdater → `resolved` is undefined → the try throws
+    // and the catch installs the no-op IPC contract so the renderer still works.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mockUpdater = undefined as unknown as MockAutoUpdater;
+    const { registerAutoUpdater } = await import('./autoUpdater');
+    await registerAutoUpdater(() => null);
+    const apply = ipcHandlers.get('apicircle:update:apply')!;
+    const checkNow = ipcHandlers.get('apicircle:update:checkNow')!;
+    expect(apply(trustedEvent)).toBeUndefined();
+    expect(await checkNow(trustedEvent)).toEqual({
+      checked: false,
+      reason: 'electron-updater not installed',
+    });
+    warn.mockRestore();
+  });
+
+  it('logs and does not throw when the updater emits an error', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { registerAutoUpdater } = await import('./autoUpdater');
+    await registerAutoUpdater(() => null);
+    expect(() => mockUpdater.__emit('error', new Error('flaky network'))).not.toThrow();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('swallows a rejected initial update check', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mockUpdater.checkForUpdatesAndNotify.mockRejectedValueOnce(new Error('offline'));
+    const { registerAutoUpdater } = await import('./autoUpdater');
+    await registerAutoUpdater(() => null);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('falls back to unknown version + null release notes when version is absent', async () => {
+    const send = vi.fn();
+    const fakeWin = {
+      isDestroyed: () => false,
+      webContents: { send },
+    } as unknown as Electron.BrowserWindow;
+    const { registerAutoUpdater } = await import('./autoUpdater');
+    await registerAutoUpdater(() => fakeWin);
+    mockUpdater.__emit('update-downloaded', {}); // no version, no releaseDate
+    expect(send).toHaveBeenCalledWith('apicircle:update:available', {
+      version: 'unknown',
+      releaseNotesUrl: null,
+      releaseDate: null,
+    });
+  });
+
+  it('checkNow stringifies a non-Error rejection reason', async () => {
+    mockUpdater.checkForUpdates.mockRejectedValueOnce('string blowup');
+    const { registerAutoUpdater } = await import('./autoUpdater');
+    await registerAutoUpdater(() => null);
+    const checkNow = ipcHandlers.get('apicircle:update:checkNow')!;
+    expect(await checkNow(trustedEvent)).toEqual({ checked: false, reason: 'string blowup' });
+  });
 });

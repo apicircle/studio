@@ -66,6 +66,19 @@
   (Enterprise) CLI can extend the public program with its own commands — or
   compose a fresh program from a subset of the public commands — without forking
   the binary.
+- **Desktop shell seam (`@apicircle/desktop-shell`).** Extracted the reusable
+  Electron main-process building blocks — the OS-keychain secrets, mock, MCP, and
+  workspace-file IPC bridges, the OAuth2 callback server, and window-state
+  persistence — from `apps/desktop/src/main` into a new workspace-private package.
+  `apps/desktop` composes it (constructs the managers, calls the `register*Bridge`
+  functions) and keeps only the Studio-specific main: window creation, CSP,
+  branding, auto-update, and the quit-drain lifecycle. The inline `safeStorage`
+  and OAuth2 IPC handlers became `registerSecretsBridge()` / `registerOAuth2Bridge()`
+  (with new unit tests), and the shared `assertHttpUrl` guard is exported for the
+  window-open handler. **Zero behavior change** — the `window.apicircleDesktop`
+  renderer contract and `preload.ts` are byte-identical; validated by the full
+  desktop unit + E2E suites and the build smoke. An edition's Electron app can now
+  consume the same hardened bridges instead of re-implementing them.
 - **MCP `ee.*` tool namespace.** `ToolDef.name` widened from the 94-name public
   catalog (`McpToolName`) to `ExtensionToolName` (`McpToolName | ee.${string}`),
   and `@apicircle/mcp-server` now exports `EnterpriseToolName` / `ExtensionToolName`

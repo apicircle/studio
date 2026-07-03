@@ -311,6 +311,12 @@ studio/
 │   │                       browser-safe, in-document `$ref` only — used by the
 │   │                       web/desktop renderer to materialize endpoints at import)
 │   ├── mcp-server/         stdio MCP host + 94-tool catalog + workspace providers
+│   ├── desktop-shell/      Reusable Electron main-process building blocks —
+│   │                       OS-keychain secrets, mock / MCP / workspace-file IPC
+│   │                       bridges, OAuth2 callback server, window-state. Composed
+│   │                       by apps/desktop (and by an edition's Electron app); the
+│   │                       Studio-specific main (window/CSP/branding/auto-update/
+│   │                       quit-drain) stays in apps/desktop.
 │   └── cli/                `apicircle` binary — mock / mcp / import / export / run / workspaces
 ├── examples/              Demo workspaces + a standalone mock-server example
 ├── docs/                  Product + architecture + QA docs (see §9)
@@ -321,8 +327,8 @@ studio/
 ```
 
 **Publishable npm packages** (`@apicircle/*`): `shared`, `core`,
-`mock-server-core`, `mcp-server`, `cli`. `git` and `ui-components` are
-workspace-private; `apps/*` and `e2e/*` are private.
+`mock-server-core`, `mcp-server`, `cli`. `git`, `ui-components`, and
+`desktop-shell` are workspace-private; `apps/*` and `e2e/*` are private.
 
 ---
 
@@ -445,6 +451,14 @@ writes its bridge with `satisfies DesktopBridge` so missing or mistyped fields
 fail `pnpm check`. Add a new bridge surface here first; never redeclare an
 ad-hoc interface in the consumer.
 
+The **main-process** side of these bridges lives in **`@apicircle/desktop-shell`**
+(`packages/desktop-shell/`): the mock / MCP / workspace-file / secrets / OAuth2
+managers + `register*Bridge(…)` functions, all guarded by `assertTrustedSender`.
+`apps/desktop/src/main/main.ts` composes them (constructs the managers, calls the
+register functions) and keeps only the Studio-specific main — window creation,
+CSP, branding, auto-update, and the quit-drain lifecycle. An edition's Electron
+app consumes the same package to get identical, hardened IPC.
+
 `DesktopMcpBridge` exposes: `status`, `getConfigSnippet`, `getConfigPath`,
 `toolCatalog`, `installConfig` (writes the apicircle entry into a client's
 config file — JSON/YAML/TOML), `detectInstallState` (probes whether the
@@ -452,8 +466,8 @@ entry is absent / installed-current / installed-stale), and `uninstallConfig`
 (removes the apicircle entry — keyed on entry name so a stale entry is removed
 too; preserves foreign entries, strips the now-empty schema block, idempotent).
 The install/uninstall logic lives in
-`apps/desktop/src/main/mcp/mcpInstaller.ts`; IPC wiring in
-`apps/desktop/src/main/ipc/mcpBridge.ts`. The renderer's **Remove** button
+`packages/desktop-shell/src/mcp/mcpInstaller.ts`; IPC wiring in
+`packages/desktop-shell/src/ipc/mcpBridge.ts`. The renderer's **Remove** button
 (gated behind a confirm dialog) lives in the MCP Connection panel's
 `HowToConnect.tsx`.
 

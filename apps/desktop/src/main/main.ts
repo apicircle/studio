@@ -4,25 +4,26 @@
 // `apicircleDesktop` API to wrap secrets with the OS keychain — see
 // preload.ts.
 
-import { app, BrowserWindow, nativeImage, safeStorage, session, shell } from 'electron';
+import { app, BrowserWindow, nativeImage, session, shell } from 'electron';
 import * as path from 'path';
 import { ipcMain } from 'electron';
-import { MockManager } from './mock/mockManager';
-import { McpManager } from './mcp/mcpManager';
-import { WorkspaceFileManager } from './workspaceFile/workspaceFileManager';
-import { registerMockBridge } from './ipc/mockBridge';
-import { registerMcpBridge } from './ipc/mcpBridge';
-import { registerWorkspaceFileBridge, startWorkspaceFileWatcher } from './ipc/workspaceFileBridge';
-import type { WorkspaceWatcher } from './workspaceFile/workspaceWatcher';
 import {
-  findFreePort,
-  openInBrowser,
-  startCallbackServer,
-  type CallbackResult,
-} from './oauth2Server';
-import { readWindowBounds, writeWindowBounds } from './windowState';
+  MockManager,
+  McpManager,
+  WorkspaceFileManager,
+  type WorkspaceWatcher,
+  registerMockBridge,
+  registerMcpBridge,
+  registerWorkspaceFileBridge,
+  startWorkspaceFileWatcher,
+  registerSecretsBridge,
+  registerOAuth2Bridge,
+  readWindowBounds,
+  writeWindowBounds,
+  assertTrustedSender,
+  assertHttpUrl,
+} from '@apicircle/desktop-shell';
 import { registerAutoUpdater } from './autoUpdater';
-import { assertTrustedSender } from './security/assertTrustedSender';
 
 const WEB_DIST_INDEX = path.resolve(__dirname, '../../../web/dist/index.html');
 
@@ -42,11 +43,6 @@ function resolveAppIcon(): string {
   if (process.platform === 'darwin') return path.join(APP_ICON_DIR, 'icon.icns');
   return path.join(APP_ICON_DIR, 'icon.png');
 }
-
-// Hard cap on plaintext / ciphertext we'll accept from the renderer over IPC.
-// The renderer should never need to encrypt a value larger than this; bound
-// it so a compromised renderer can't OOM the main process with a 1GB string.
-const MAX_SECRET_PAYLOAD_BYTES = 1_048_576; // 1 MiB
 
 // Renderer is only ever the bundled file:// origin. We block window.open() to
 // any other URL and route http(s) through the system browser instead.
@@ -69,35 +65,6 @@ const RENDERER_CSP =
   "frame-ancestors 'none'; " +
   "base-uri 'self'; " +
   "form-action 'none'";
-
-// Only these schemes are safe to hand to shell.openExternal — anything else
-// can be a registered OS protocol handler (smb:, ms-msdt:, file:, etc.) and
-// becomes an RCE vector when the renderer or workspace data is compromised.
-function assertHttpUrl(value: unknown, label: string): string {
-  if (typeof value !== 'string' || value.length === 0 || value.length > 8192) {
-    throw new Error(`${label} must be a non-empty string under 8192 chars`);
-  }
-  let parsed: URL;
-  try {
-    parsed = new URL(value);
-  } catch {
-    throw new Error(`${label} is not a valid URL`);
-  }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    throw new Error(`${label} must use https: or http: (got ${parsed.protocol})`);
-  }
-  // http: is only allowed for explicit localhost dev IdPs — everywhere else
-  // we require https: so a malicious workspace can't downgrade transports.
-  if (parsed.protocol === 'http:') {
-    const host = parsed.hostname;
-    const isLoopback =
-      host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1';
-    if (!isLoopback) {
-      throw new Error(`${label} http: is only permitted for localhost (got ${host})`);
-    }
-  }
-  return parsed.toString();
-}
 
 const mockManager = new MockManager();
 let mcpManager: McpManager | null = null;
@@ -191,114 +158,11 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
-// IPC handlers — the preload's contextBridge proxies to these. We do
-// the actual safeStorage calls in the main process because the API
-// isn't available in sandboxed renderer / preload.
-ipcMain.handle('apicircle:secret:isAvailable', (event) => {
-  assertTrustedSender(event);
-  return safeStorage.isEncryptionAvailable();
-});
-
-ipcMain.handle('apicircle:secret:encrypt', (event, plaintext: unknown) => {
-  assertTrustedSender(event);
-  if (typeof plaintext !== 'string') {
-    throw new Error('plaintext must be a string');
-  }
-  if (plaintext.length > MAX_SECRET_PAYLOAD_BYTES) {
-    throw new Error('plaintext exceeds MAX_SECRET_PAYLOAD_BYTES');
-  }
-  if (!safeStorage.isEncryptionAvailable()) {
-    throw new Error('OS keychain not available on this platform');
-  }
-  const buffer = safeStorage.encryptString(plaintext);
-  return buffer.toString('base64');
-});
-
-ipcMain.handle('apicircle:secret:decrypt', (event, ciphertextBase64: unknown) => {
-  assertTrustedSender(event);
-  if (typeof ciphertextBase64 !== 'string') {
-    throw new Error('ciphertext must be a base64 string');
-  }
-  if (ciphertextBase64.length > MAX_SECRET_PAYLOAD_BYTES * 2) {
-    // base64 inflates by ~4/3; allow a margin then hard-cap.
-    throw new Error('ciphertext exceeds MAX_SECRET_PAYLOAD_BYTES');
-  }
-  if (!safeStorage.isEncryptionAvailable()) {
-    throw new Error('OS keychain not available on this platform');
-  }
-  const buffer = Buffer.from(ciphertextBase64, 'base64');
-  return safeStorage.decryptString(buffer);
-});
-
-// OAuth2 callback bridge — see oauth2Server.ts for the full flow.
-ipcMain.handle('apicircle:oauth2:findFreePort', async (event, preferred: unknown) => {
-  assertTrustedSender(event);
-  // Clamp the preferred port to the unprivileged range. A compromised renderer
-  // could otherwise probe privileged ports (22, 80, 443) or coerce us into
-  // binding ephemeral and reading the result, both of which we should reject.
-  if (typeof preferred !== 'number' || !Number.isInteger(preferred)) {
-    throw new Error('preferred must be an integer');
-  }
-  if (preferred < 1024 || preferred > 65535) {
-    throw new Error('preferred must be in 1024..65535');
-  }
-  return findFreePort(preferred);
-});
-
-ipcMain.handle(
-  'apicircle:oauth2:startFlow',
-  async (
-    event,
-    args: {
-      authorizeUrl: string;
-      port: number;
-      mode: 'code' | 'token';
-      callbackPath?: string;
-      timeoutMs?: number;
-    },
-  ): Promise<CallbackResult> => {
-    assertTrustedSender(event);
-    // Sanity-check the timeout. Sub-5-second timeouts are guaranteed to
-    // fire before the user even sees the IdP consent screen — there's no
-    // realistic flow that completes that fast. Reject up-front so a bad
-    // caller can't burn ports on doomed flows.
-    if (args.timeoutMs !== undefined && args.timeoutMs < 5000) {
-      throw new Error('timeoutMs must be at least 5000ms');
-    }
-    // Scheme allowlist: an unvalidated URL handed to shell.openExternal is an
-    // RCE vector on Windows (ms-msdt:, smb:, file:, custom protocol handlers).
-    // The renderer should only ever feed us https: IdP authorize URLs, with
-    // a narrow http:+loopback escape hatch for local-IdP testing.
-    const safeAuthorizeUrl = assertHttpUrl(args.authorizeUrl, 'authorizeUrl');
-    // Validate callbackPath shape — we string-compare it inside the http
-    // handler, and a renderer-controlled value should look like a path.
-    if (args.callbackPath !== undefined) {
-      if (
-        typeof args.callbackPath !== 'string' ||
-        !/^\/[A-Za-z0-9_\-./]{0,128}$/.test(args.callbackPath)
-      ) {
-        throw new Error('callbackPath must match /^\\/[A-Za-z0-9_\\-./]{0,128}$/');
-      }
-    }
-    // Race the callback promise with the browser-open call. If the
-    // browser fails to open, the user can still complete the flow by
-    // pasting the URL — but we surface the failure for diagnostics.
-    const callbackPromise = startCallbackServer({
-      port: args.port,
-      mode: args.mode,
-      callbackPath: args.callbackPath,
-      timeoutMs: args.timeoutMs,
-    });
-    try {
-      await openInBrowser(safeAuthorizeUrl);
-    } catch (err) {
-      // Don't reject the callback yet — user might paste the URL
-      // manually. Log + continue waiting for the redirect.
-      console.error('[oauth2] failed to open authorize URL in browser:', err);
-    }
-    return callbackPromise;
-  },
-);
+// OS-keychain secret bridge (safeStorage encrypt/decrypt) and OAuth2 callback
+// bridge — both extracted to @apicircle/desktop-shell. Registered at load so
+// their handlers exist before the renderer can invoke them.
+registerSecretsBridge();
+registerOAuth2Bridge();
 
 void app.whenReady().then(() => {
   // Lock down the default session before any window opens. We deny every

@@ -1,0 +1,32 @@
+{
+  "name": "@apicircle/desktop-shell",
+  "version": "1.1.5",
+  "private": true,
+  "type": "module",
+  "description": "Reusable Electron main-process bridges (OS-keychain secrets, mock/MCP/workspace-file IPC, OAuth2 callback server, window-state) that an edition's desktop app composes. Main-process only; the renderer contract lives in @apicircle/ui-components.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist node_modules"
+  },
+  "dependencies": {
+    "@apicircle/core": "workspace:*",
+    "@apicircle/mcp-server": "workspace:*",
+    "@apicircle/mock-server-core": "workspace:*",
+    "@apicircle/shared": "workspace:*",
+    "@apicircle/ui-components": "workspace:*",
+    "smol-toml": "^1.3.1",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "electron": "^32.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0"
+  }
+}

@@ -21,14 +21,11 @@
   },
   "dependencies": {
     "@apicircle/core": "workspace:*",
-    "@apicircle/mcp-server": "workspace:*",
-    "@apicircle/mock-server-core": "workspace:*",
+    "@apicircle/desktop-shell": "workspace:*",
     "@apicircle/shared": "workspace:*",
     "@apicircle/ui-components": "workspace:*",
     "@apicircle/web": "workspace:*",
-    "electron-updater": "^6.3.9",
-    "smol-toml": "^1.3.1",
-    "yaml": "^2.7.0"
+    "electron-updater": "^6.3.9"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

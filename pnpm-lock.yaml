@@ -84,12 +84,9 @@ importers:
       '@apicircle/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@apicircle/mcp-server':
+      '@apicircle/desktop-shell':
         specifier: workspace:*
-        version: link:../../packages/mcp-server
-      '@apicircle/mock-server-core':
-        specifier: workspace:*
-        version: link:../../packages/mock-server-core
+        version: link:../../packages/desktop-shell
       '@apicircle/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -102,12 +99,6 @@ importers:
       electron-updater:
         specifier: ^6.3.9
         version: 6.8.3
-      smol-toml:
-        specifier: ^1.3.1
-        version: 1.6.1
-      yaml:
-        specifier: ^2.7.0
-        version: 2.8.3
     devDependencies:
       '@modelcontextprotocol/sdk':
         specifier: ^1.0.0
@@ -403,6 +394,43 @@ importers:
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.6.1)(postcss@8.5.12)(tsx@4.22.0)(typescript@5.9.3)(yaml@2.8.3)
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.0.0
+        version: 2.1.9(@types/node@20.19.39)(jsdom@25.0.1)
+
+  packages/desktop-shell:
+    dependencies:
+      '@apicircle/core':
+        specifier: workspace:*
+        version: link:../core
+      '@apicircle/mcp-server':
+        specifier: workspace:*
+        version: link:../mcp-server
+      '@apicircle/mock-server-core':
+        specifier: workspace:*
+        version: link:../mock-server-core
+      '@apicircle/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@apicircle/ui-components':
+        specifier: workspace:*
+        version: link:../ui-components
+      smol-toml:
+        specifier: ^1.3.1
+        version: 1.6.1
+      yaml:
+        specifier: ^2.7.0
+        version: 2.8.3
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.39
+      electron:
+        specifier: ^32.0.0
+        version: 32.3.3
       typescript:
         specifier: ^5.4.0
         version: 5.9.3

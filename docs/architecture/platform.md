@@ -86,7 +86,7 @@ under `<userData>/workspaces/<id>/`. The CLI and MCP server read and
 write those files directly under `proper-lockfile`. Three pieces keep
 the IDB ↔ disk relationship coherent:
 
-- **`WorkspaceFileManager`** (`apps/desktop/src/main/workspaceFile/`)
+- **`WorkspaceFileManager`** (`packages/desktop-shell/src/workspaceFile/`)
   owns the per-id queues that drain renderer-side writes to disk. Every
   write call records a `{ mtimeMs, size }` snapshot with the
   watcher so its own fs events don't trigger refresh loops.
@@ -104,6 +104,20 @@ the IDB ↔ disk relationship coherent:
 `MultiWorkspaceProvider.activeProvider()` in the MCP server is a lazy
 wrapper that re-reads `registry.json` per call, so the user can switch
 workspaces in the desktop without restarting the MCP process.
+
+## Reusable desktop shell (`@apicircle/desktop-shell`)
+
+The Electron **main-process** building blocks — the OS-keychain secrets, mock,
+MCP, and workspace-file IPC bridges (each guarded by `assertTrustedSender`), the
+OAuth2 callback server, and window-state persistence — live in the
+workspace-private `@apicircle/desktop-shell` package rather than inline in
+`apps/desktop`. `apps/desktop/src/main/main.ts` **composes** the shell:
+constructs the managers, calls the `register*Bridge(…)` functions, and keeps only
+the Studio-specific concerns (window creation, CSP header injection, branding,
+`electron-updater` auto-update, and the mock-drain quit lifecycle). This is the
+same composition seam as the MCP server's injectable tool list and the CLI
+program builder — an edition's Electron app consumes `@apicircle/desktop-shell`
+to get identical, security-hardened IPC without forking the main process.
 
 ## Global File Asset provenance
 

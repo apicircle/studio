@@ -15,7 +15,7 @@
 // If the import fails or the module is missing, we log and no-op.
 
 import { ipcMain, type BrowserWindow } from 'electron';
-import { assertTrustedSender } from './security/assertTrustedSender';
+import { assertTrustedSender } from '@apicircle/desktop-shell';
 
 /** Payload the renderer receives on `apicircle:update:available`. */
 export interface UpdateAvailablePayload {

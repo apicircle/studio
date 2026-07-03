@@ -2,9 +2,10 @@ import { defineConfig } from 'vitest/config';
 import { sharedTestConfig } from '../../vitest.shared';
 
 // Desktop main-process tests run in node. Electron APIs are mocked per-file
-// (see __mocks__/electron.ts via vi.mock in each suite). Workspace deps
-// (`@apicircle/mock-server-core`, `@apicircle/mcp-server`) resolve to TS
-// source through the workspace symlinks — vitest transpiles them on the fly.
+// (via vi.mock in each suite). The reusable managers/bridges now live in
+// `@apicircle/desktop-shell` (with their own suites); what remains here is the
+// Studio-specific composition — `autoUpdater.ts` (unit-tested) plus `main.ts` /
+// `preload.ts` (Electron lifecycle, exercised by the release smoke + desktop E2E).
 export default defineConfig({
   test: {
     ...sharedTestConfig,
