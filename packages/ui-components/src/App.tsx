@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, LifeBuoy } from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { probeWorkspaceRecords } from './persistence/workspaceStorage';
@@ -175,16 +175,50 @@ import {
   NO_EXTRA_PANELS,
   type ExtraPanelDef,
 } from './layout/extraPanels';
+import {
+  SectionsProvider,
+  readStoredSection,
+  writeStoredSection,
+  NO_SECTIONS,
+  type SectionDef,
+} from './layout/sections';
+import { SectionLanding } from './layout/SectionLanding';
 
 export function App({
   extraPanels = NO_EXTRA_PANELS,
+  sections = NO_SECTIONS,
 }: {
   /** Edition-contributed top-nav panels. Omitted in Studio → strict no-op. */
   extraPanels?: readonly ExtraPanelDef[];
+  /** Edition-contributed sections/modes. Omitted in Studio → strict no-op. */
+  sections?: readonly SectionDef[];
 } = {}) {
   const ready = useWorkspaceStore((s) => s.ready);
   const hydrationError = useWorkspaceStore((s) => s.hydrationError);
   const hydrate = useWorkspaceStore((s) => s.hydrate);
+  const workspaceId = useWorkspaceStore((s) => s.synced?.workspaceId ?? '');
+  const setActivePanel = useWorkspaceStore((s) => s.setActivePanel);
+
+  // Active section ("mode"), persisted per-workspace. Inert in Studio (no
+  // sections registered) — the seam is a strict no-op.
+  const [activeSectionId, setActiveSectionIdState] = useState('');
+  useEffect(() => {
+    // Re-resolve the stored mode when the active workspace changes (or sections
+    // first register) so switching workspaces restores that workspace's mode.
+    if (sections.length <= 1 || !workspaceId) return;
+    setActiveSectionIdState(readStoredSection(workspaceId, sections));
+  }, [workspaceId, sections]);
+  const setActiveSectionId = useCallback(
+    (id: string) => {
+      setActiveSectionIdState(id);
+      writeStoredSection(workspaceId, id);
+      // Keep the tab strip + content consistent: move the active panel into the
+      // newly-selected section.
+      const firstPanel = sections.find((s) => s.id === id)?.panelIds[0];
+      if (firstPanel) setActivePanel(firstPanel);
+    },
+    [workspaceId, sections, setActivePanel],
+  );
 
   useEffect(() => {
     void hydrate();
@@ -207,23 +241,26 @@ export function App({
 
   return (
     <ExtraPanelsProvider value={extraPanels}>
-      <div className="flex h-full flex-col bg-surface text-text-primary">
-        <TopBar />
-        <PanelTabs />
-        <div className="flex flex-1 overflow-hidden">
-          <BodyArea />
-          <RightDockRail />
+      <SectionsProvider value={{ sections, activeSectionId, setActiveSectionId }}>
+        <div className="flex h-full flex-col bg-surface text-text-primary">
+          <TopBar />
+          <PanelTabs />
+          <div className="flex flex-1 overflow-hidden">
+            <BodyArea />
+            <RightDockRail />
+          </div>
+          <UpdatePreviewModal />
+          <MissingScopeGate />
+          <AttachmentDownloadPromptModal />
+          <KeyboardShortcuts />
+          <OnboardingTour />
+          <ToastSlot />
+          <UpdateAvailableBanner />
+          <PassphrasePromptModalGate />
+          <CloseConfirmModal />
+          {sections.length > 1 && <SectionLanding />}
         </div>
-        <UpdatePreviewModal />
-        <MissingScopeGate />
-        <AttachmentDownloadPromptModal />
-        <KeyboardShortcuts />
-        <OnboardingTour />
-        <ToastSlot />
-        <UpdateAvailableBanner />
-        <PassphrasePromptModalGate />
-        <CloseConfirmModal />
-      </div>
+      </SectionsProvider>
     </ExtraPanelsProvider>
   );
 }

@@ -1,9 +1,11 @@
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
+import { Compass, Server } from 'lucide-react';
 import { PanelTabs } from './PanelTabs';
 import { renderWithStore } from '../../test/renderWithStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { SectionsProvider, type SectionsContextValue } from './sections';
 
 describe('PanelTabs', () => {
   it('renders the agreed tab set (no Settings, no Commands)', async () => {
@@ -33,5 +35,36 @@ describe('PanelTabs', () => {
     await renderWithStore(<PanelTabs />);
     await userEvent.click(screen.getByRole('button', { name: /^Workspace$/ }));
     expect(useWorkspaceStore.getState().activePanel).toBe('workspace');
+  });
+});
+
+describe('PanelTabs with sections', () => {
+  const value: SectionsContextValue = {
+    sections: [
+      { id: 'studio', label: 'Studio', icon: Compass, panelIds: ['workspace', 'editor', 'mcp'] },
+      { id: 'lens', label: 'Lens', icon: Server, panelIds: ['history'] },
+    ],
+    activeSectionId: 'studio',
+    setActiveSectionId: () => {},
+  };
+
+  it("shows only the active section's panels", async () => {
+    await renderWithStore(
+      <SectionsProvider value={value}>
+        <PanelTabs />
+      </SectionsProvider>,
+    );
+    const labels = screen.getAllByRole('button').map((t) => t.textContent);
+    expect(labels).toEqual(['Workspace', 'Editor', 'MCP']);
+    expect(labels).not.toContain('History');
+  });
+
+  it('shows the other section when it is active', async () => {
+    await renderWithStore(
+      <SectionsProvider value={{ ...value, activeSectionId: 'lens' }}>
+        <PanelTabs />
+      </SectionsProvider>,
+    );
+    expect(screen.getAllByRole('button').map((t) => t.textContent)).toEqual(['History']);
   });
 });

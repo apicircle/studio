@@ -1,10 +1,11 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import { Compass } from 'lucide-react';
+import { Compass, Server } from 'lucide-react';
 import { App } from './App';
 import { useWorkspaceStore } from './store/workspaceStore';
 import type { ExtraPanelDef } from './layout/extraPanels';
+import type { SectionDef } from './layout/sections';
 
 describe('App', () => {
   it('shows loading state, then renders the chrome once hydrated', async () => {
@@ -73,5 +74,73 @@ describe('App', () => {
     await userEvent.click(screen.getByRole('button', { name: /^Workspace$/ }));
     expect(useWorkspaceStore.getState().activePanel).toBe('workspace');
     expect(screen.queryByText('DISCOVER PANEL BODY')).not.toBeInTheDocument();
+  });
+
+  it('renders the first-run landing + mode toggle when sections are registered, and switches mode', async () => {
+    localStorage.removeItem('apicircle:section-landing-done-v1');
+    const sections: SectionDef[] = [
+      {
+        id: 'studio',
+        label: 'Studio',
+        icon: Compass,
+        panelIds: [
+          'workspace',
+          'link-workspace',
+          'editor',
+          'env',
+          'execution',
+          'history',
+          'mocks',
+          'mcp',
+          'help',
+        ],
+      },
+      {
+        id: 'lens',
+        label: 'Lens',
+        icon: Server,
+        description: 'Discover, review, build',
+        panelIds: ['mcp'],
+      },
+    ];
+    render(<App sections={sections} />);
+    await waitFor(() => screen.getByText('API Circle Studio'));
+
+    // First-run landing (>1 section) — one card per section.
+    const dialog = screen.getByRole('dialog', { name: /Choose how you want to start/ });
+    expect(within(dialog).getByText('Lens')).toBeInTheDocument();
+
+    // Choose Lens → landing dismisses, mode switches, activePanel moves into Lens.
+    await userEvent.click(within(dialog).getByText('Lens'));
+    expect(
+      screen.queryByRole('dialog', { name: /Choose how you want to start/ }),
+    ).not.toBeInTheDocument();
+    expect(useWorkspaceStore.getState().activePanel).toBe('mcp');
+
+    // The always-present top toggle switches back to Studio (activePanel → first Studio panel).
+    await userEvent.click(screen.getByRole('tab', { name: /^Studio$/ }));
+    expect(useWorkspaceStore.getState().activePanel).toBe('workspace');
+  });
+
+  it('registers no landing or toggle in Studio (no sections — strict no-op)', async () => {
+    localStorage.removeItem('apicircle:section-landing-done-v1');
+    render(<App />);
+    await waitFor(() => screen.getByText('API Circle Studio'));
+    expect(screen.queryByRole('dialog', { name: /Choose how you want to start/ })).toBeNull();
+    expect(screen.queryByRole('tablist', { name: /Mode/ })).toBeNull();
+  });
+
+  it('leaves the active panel unchanged when switching to a section with no panels', async () => {
+    // A section with empty panelIds → no first panel to move to → activePanel stays.
+    localStorage.setItem('apicircle:section-landing-done-v1', 'true'); // skip the landing
+    const sections: SectionDef[] = [
+      { id: 'studio', label: 'Studio', icon: Compass, panelIds: ['editor'] },
+      { id: 'empty', label: 'Empty', icon: Server, panelIds: [] },
+    ];
+    render(<App sections={sections} />);
+    await waitFor(() => screen.getByText('API Circle Studio'));
+    const before = useWorkspaceStore.getState().activePanel;
+    await userEvent.click(screen.getByRole('tab', { name: /^Empty$/ }));
+    expect(useWorkspaceStore.getState().activePanel).toBe(before);
   });
 });

@@ -23,6 +23,26 @@
 > ship. Full per-platform walk-through:
 > [`docs/installing.md`](docs/installing.md).
 
+## 1.2.1 - Unreleased
+
+### Added
+
+- **UI sections/mode seam (open-core, additive).** Building on the `extraPanels`
+  seam, the React shell (`@apicircle/ui-components`) now accepts edition-contributed
+  top-level **sections** ("modes") via an optional `App` `sections` prop
+  (`SectionDef[]`) — each a named group of panels with an optional `requiresAuth`
+  flag. When ≥2 sections are registered the shell renders a first-run **landing**
+  (pick a mode) and an always-present **top-bar toggle**, persisting the active mode
+  **per workspace** (localStorage keyed by workspace id, mirroring `activePanel`);
+  `PanelTabs` then shows only the active section's panels. It is a **strict no-op
+  when nothing is registered** — Studio passes no sections, so its tab set, top bar,
+  and layout are byte-identical. Sign-in gating for a section lives inside the
+  edition (via `requiresAuth`); core gains no entitlement concept. New
+  `layout/sections.ts` + `layout/SectionLanding.tsx`, wired through `App` /
+  `PanelTabs` / `TopBar`; covered by `sections.test.tsx`, `SectionLanding.test.tsx`,
+  and the `PanelTabs` / `TopBar` / `App` tests (100% of the changed code). See
+  [`docs/architecture/open-core-and-editions.md`](docs/architecture/open-core-and-editions.md).
+
 ## 1.2.0 - 2026-07-03
 
 ### Added

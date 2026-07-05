@@ -2,11 +2,22 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 import { cn } from '../primitives/cn';
 import { PANELS } from './panels';
 import { useExtraPanels } from './extraPanels';
+import { useSections, resolveActiveSection } from './sections';
 
 export function PanelTabs() {
   const activePanel = useWorkspaceStore((s) => s.activePanel);
   const setActivePanel = useWorkspaceStore((s) => s.setActivePanel);
   const extraPanels = useExtraPanels();
+  const { sections, activeSectionId } = useSections();
+
+  const allPanels = [...PANELS, ...extraPanels];
+  // With sections registered, show only the active section's panels; with none
+  // (Studio) show every panel — byte-identical to before.
+  const section = resolveActiveSection(activeSectionId, sections);
+  const visiblePanels =
+    sections.length > 0 && section
+      ? allPanels.filter((p) => section.panelIds.includes(p.id))
+      : allPanels;
 
   return (
     <nav
@@ -18,7 +29,7 @@ export function PanelTabs() {
       aria-label="Top navigation"
       data-tour="panel-nav"
     >
-      {[...PANELS, ...extraPanels].map(({ id, label, icon: Icon }) => {
+      {visiblePanels.map(({ id, label, icon: Icon }) => {
         const active = activePanel === id;
         return (
           <button
