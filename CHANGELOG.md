@@ -37,7 +37,9 @@
   `PanelTabs` then shows only the active section's panels. It is a **strict no-op
   when nothing is registered** — Studio passes no sections, so its tab set, top bar,
   and layout are byte-identical. Sign-in gating for a section lives inside the
-  edition (via `requiresAuth`); core gains no entitlement concept. New
+  edition (via `requiresAuth`); core gains no entitlement concept. The `SectionDef`
+  type is re-exported from the `@apicircle/ui-components` barrel (alongside
+  `ExtraPanelDef`) so an edition can type its `sections` array explicitly. New
   `layout/sections.ts` + `layout/SectionLanding.tsx`, wired through `App` /
   `PanelTabs` / `TopBar`; covered by `sections.test.tsx`, `SectionLanding.test.tsx`,
   and the `PanelTabs` / `TopBar` / `App` tests (100% of the changed code). See
