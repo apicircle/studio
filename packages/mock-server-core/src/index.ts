@@ -31,6 +31,8 @@ export { parsePostmanToEndpoints } from './parsers/postman';
 export { parseInsomniaToEndpoints } from './parsers/insomnia';
 export { schemaToExample } from './faker/schemaToExample';
 export { dereferenceInternal } from './parsers/refDeref';
+export { summarizeSpec } from './specSummary';
+export type { SpecSummary } from './specSummary';
 export type { ParseSourceResult } from './parsing';
 export { getFreePort, isPortFree } from './runtime/portFinder';
 export { buildRouter };

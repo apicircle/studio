@@ -51,6 +51,7 @@ import {
 } from './githubPrCapability';
 import { decideRetirement, probeBranchRetirement } from './branchRetirement';
 import { getDesktopMockBridge } from '../desktop/bridge';
+import { summarizeUploadedSpec } from './specUpload';
 import { applyFont } from '../theme/applyFont';
 import { applyFontSize, clampFontSizePercent } from '../theme/applyFontSize';
 import {
@@ -3497,6 +3498,15 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const slotId = generateId();
     const record = await createAttachmentFromFile(file, slotId);
     await putAttachment(record);
+    // Parse-on-upload: if the bytes are an OpenAPI/Swagger doc, derive its
+    // spec summary now (bytes in hand) so the asset carries it; `undefined`
+    // for ordinary files.
+    const spec = await summarizeUploadedSpec(
+      record.bytes,
+      record.filename,
+      record.mimeType,
+      new Date().toISOString(),
+    );
     // Race-safe: run the reducer against LIVE state inside commitSynced
     // so a mid-await mutation (another upload, a rename, a request edit)
     // is preserved. The previous shape — `commitSynced(() => result.synced)`
@@ -3513,6 +3523,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         size: record.size,
         mimeType: record.mimeType,
         sha256: record.sha256,
+        spec,
       });
       createdFileId = out.file.id;
       return out.synced;
@@ -3562,6 +3573,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // user might be filling a slot the MCP claim guessed at.
     const record = await createAttachmentFromFile(file, slotId);
     await putAttachment(record);
+    // Re-parse on re-upload: keep the spec summary in sync with the new bytes
+    // (and clear it when a non-spec file replaces a spec).
+    const spec = await summarizeUploadedSpec(
+      record.bytes,
+      record.filename,
+      record.mimeType,
+      new Date().toISOString(),
+    );
     // Race-safe: reducer runs against LIVE state. If the user deleted
     // the asset between our await and now, the reducer no-ops by
     // returning `s` unchanged. If the user renamed the asset, the
@@ -3582,6 +3601,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
               size: record.size,
               mimeType: record.mimeType,
               sha256: record.sha256,
+              spec,
               updatedAt: new Date().toISOString(),
             },
           },

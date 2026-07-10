@@ -109,6 +109,7 @@ export type {
   GlobalSchema,
   GlobalGraphQL,
   GlobalFileAsset,
+  SpecAssetMeta,
   AssetGitRef,
   PendingFileUpload,
   AssetUsage,

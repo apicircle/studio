@@ -27,6 +27,17 @@
 
 ### Added
 
+- **Spec-typed Global File Assets (additive).** Uploading an OpenAPI 3.x /
+  Swagger 2.0 document (`.json` / `.yaml` / `.yml`) into the Global Assets
+  **Files** library now parses it once on upload and records a `SpecAssetMeta`
+  summary (`dialect`, `format`, `title`, `version`, `operationCount`,
+  `warnings`) on the asset. The Assets panel shows a spec badge
+  ("OpenAPI 3 · N ops") plus a parsed summary in the file editor, and the MCP
+  `assets.list_files` envelope gains a `spec` field (`null` for ordinary files).
+  Purely additive — existing assets and non-spec files are untouched. Foundation
+  for spec-driven mock servers and code-vs-spec drift.
+  (`@apicircle/shared`, `@apicircle/mock-server-core`, `@apicircle/ui-components`,
+  `@apicircle/mcp-server`)
 - **UI sections/mode seam (open-core, additive).** Building on the `extraPanels`
   seam, the React shell (`@apicircle/ui-components`) now accepts edition-contributed
   top-level **sections** ("modes") via an optional `App` `sections` prop

@@ -1337,6 +1337,8 @@ A request with a graphql body that references the definition gets field and argu
 
 Every file you drop — into the Global Assets sidebar, a binary request body, a form-data file row, or a mock binary response — becomes a reusable Global Asset entry. The workspace tracks filename, size, MIME type, checksum, and the requests or mock responses that bind to the file.
 
+When the file you drop is an OpenAPI 3.x or Swagger 2.0 document (\`.json\` / \`.yaml\` / \`.yml\`), Studio recognises it on upload and tags the asset with a **spec badge** ("OpenAPI 3 · N ops"). Selecting the asset shows the parsed title, version, operation count, and any parse warnings — so the workspace knows which of its files are API contracts.
+
 Each asset shows a small status pill next to its name. The pill tells you where the bytes live:
 
 - **Uploaded locally** — bytes are in your local IDB; the next push uploads them.

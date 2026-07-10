@@ -26,6 +26,8 @@ export { parseInsomniaToEndpoints } from './parsers/insomnia';
 export { schemaToExample } from './faker/schemaToExample';
 export type { JsonSchemaLike } from './faker/schemaToExample';
 export { dereferenceInternal, type DereferenceResult } from './parsers/refDeref';
+export { summarizeSpec } from './specSummary';
+export type { SpecSummary } from './specSummary';
 
 export interface ParseSourceResult {
   endpoints: MockEndpoint[];

@@ -52,7 +52,7 @@ function deriveState(
 export const globalAssetsFilesListTool: AnyToolDef = {
   name: 'assets.list_files',
   description:
-    'List every Global File Asset with its provenance state and reference count. Each entry includes id, name, filename, size, mimeType, sha256, state (uploading | workingOnly | merged | baseOnly | missing | diverged), workingBranchRef, baseBranchRef, and usage { requests, mockEndpoints, total }.',
+    'List every Global File Asset with its provenance state and reference count. Each entry includes id, name, filename, size, mimeType, sha256, state (uploading | workingOnly | merged | baseOnly | missing | diverged), spec (present when the file is an OpenAPI/Swagger document — { dialect, format, title?, version?, operationCount, parsedAt, warnings } — otherwise null), workingBranchRef, baseBranchRef, and usage { requests, mockEndpoints, total }.',
   inputSchema: z.object({}).strict(),
   async handler(_input, ctx) {
     const state = await ctx.workspace.read();
@@ -71,6 +71,7 @@ export const globalAssetsFilesListTool: AnyToolDef = {
         mimeType: asset.mimeType,
         sha256: asset.sha256 ?? null,
         state: deriveState(asset, hasPending),
+        spec: asset.spec ?? null,
         workingBranchRef: asset.workingBranchRef ?? null,
         baseBranchRef: asset.baseBranchRef ?? null,
         usage: { ...u },

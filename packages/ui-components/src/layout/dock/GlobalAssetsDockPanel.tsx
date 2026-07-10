@@ -12,7 +12,7 @@
 // request referencing the deleted id has its mapping cleared.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, FileArchive, Plus, Trash2, Upload } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, FileArchive, Plus, Trash2, Upload } from 'lucide-react';
 import {
   formatBytes,
   type AssetUsage,
@@ -25,6 +25,7 @@ import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { MonacoEditorBase } from '../../editors/MonacoEditorBase';
 import { cn } from '../../primitives/cn';
 import { deriveFileAssetState, FileAssetStatusPill } from '../../primitives/FileAssetStatusPill';
+import { SpecAssetBadge } from '../../primitives/SpecAssetBadge';
 
 interface FileAssetConsumer {
   kind: 'request' | 'mock';
@@ -517,7 +518,10 @@ function FileAssetListRow({
         <span className="flex min-w-0 items-center gap-1.5">
           <FileArchive size={12} className="shrink-0" aria-hidden="true" />
           <span className="truncate font-medium">{file.name}</span>
-          <FileAssetStatusPill assetId={file.id} className="ml-auto" iconOnly />
+          <span className="ml-auto flex shrink-0 items-center gap-1">
+            {file.spec && <SpecAssetBadge spec={file.spec} iconOnly />}
+            <FileAssetStatusPill assetId={file.id} iconOnly />
+          </span>
         </span>
         <span className="mt-0.5 flex items-center gap-1.5 truncate text-[0.6875rem] text-text-dim">
           <span className="truncate">
@@ -831,6 +835,30 @@ function FileAssetEditor({ id }: { id: string | null }) {
           </>
         )}
       </dl>
+
+      {file.spec && (
+        <div className="rounded-sm border border-accent/30 bg-accent/5 p-3 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <SpecAssetBadge spec={file.spec} />
+            {file.spec.title && (
+              <span className="truncate font-medium text-text-primary" title={file.spec.title}>
+                {file.spec.title}
+              </span>
+            )}
+            {file.spec.version && <span className="text-text-dim">v{file.spec.version}</span>}
+          </div>
+          {file.spec.warnings.length > 0 && (
+            <ul className="mt-2 space-y-0.5">
+              {file.spec.warnings.map((w) => (
+                <li key={w} className="flex items-start gap-1 text-warning">
+                  <AlertTriangle size={11} className="mt-0.5 shrink-0" aria-hidden="true" />
+                  <span>{w}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 rounded-sm border border-border bg-card p-3">
         <div className="mb-2 text-xs font-medium text-text-primary">

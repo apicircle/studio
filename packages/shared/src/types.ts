@@ -412,6 +412,33 @@ export interface AssetGitRef {
   verifiedAt: string;
 }
 
+/**
+ * Parsed summary of a Global File Asset that IS an OpenAPI 3.x / Swagger 2.0
+ * document. Present only on spec files — an ordinary file asset leaves `spec`
+ * undefined. Derived once when the bytes are uploaded (and re-derived when they
+ * change) by `summarizeSpec` in `@apicircle/mock-server-core`, so the Assets
+ * panel, the mock "run/import from spec" pickers, and (in the Lens edition) the
+ * code-vs-spec drift check all read one authoritative parse instead of
+ * re-parsing the blob. Purely additive — existing assets and non-spec files are
+ * unaffected.
+ */
+export interface SpecAssetMeta {
+  /** `openapi-3` when the doc has a top-level `openapi:` string; `swagger-2` for `swagger:`. */
+  dialect: 'openapi-3' | 'swagger-2';
+  /** How the bytes are encoded, so consumers parse with the right reader. */
+  format: 'json' | 'yaml';
+  /** `info.title`, when present. */
+  title?: string;
+  /** `info.version`, when present. */
+  version?: string;
+  /** Operations declared — the sum of HTTP methods across `paths`. */
+  operationCount: number;
+  /** ISO timestamp of the parse; re-derived whenever the bytes (sha256) change. */
+  parsedAt: string;
+  /** Non-fatal structural warnings surfaced in the Assets panel. */
+  warnings: string[];
+}
+
 export interface GlobalFileAsset {
   id: string;
   name: string;
@@ -438,6 +465,13 @@ export interface GlobalFileAsset {
    * never been merged leave it `undefined`.
    */
   baseBranchRef?: AssetGitRef | null;
+  /**
+   * Present when this file asset is a recognised OpenAPI/Swagger document — a
+   * parsed summary derived on upload (see {@link SpecAssetMeta}). Absent on
+   * ordinary file assets. Additive; drives the Assets-panel spec badge and the
+   * mock "run/import from spec" pickers.
+   */
+  spec?: SpecAssetMeta;
 }
 
 /**

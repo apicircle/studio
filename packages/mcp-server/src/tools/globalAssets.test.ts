@@ -104,6 +104,36 @@ describe('globalAssets.files.list', () => {
     expect(out.files).toEqual([]);
   });
 
+  it('surfaces the parsed spec summary when the asset is an OpenAPI document', async () => {
+    const specAsset = asset({
+      id: 'spec1',
+      filename: 'petstore.json',
+      mimeType: 'application/json',
+      spec: {
+        dialect: 'openapi-3',
+        format: 'json',
+        title: 'Petstore',
+        version: '1.0',
+        operationCount: 4,
+        parsedAt: T0,
+        warnings: [],
+      },
+    });
+    setupCtx(freshState({ spec1: specAsset }));
+    const out = (await globalAssetsFilesListTool.handler({}, ctx)) as {
+      files: Array<{ spec: unknown }>;
+    };
+    expect(out.files[0]?.spec).toMatchObject({ dialect: 'openapi-3', operationCount: 4 });
+  });
+
+  it('returns spec: null for ordinary file assets', async () => {
+    setupCtx(freshState({ a1: asset({ id: 'a1' }) }));
+    const out = (await globalAssetsFilesListTool.handler({}, ctx)) as {
+      files: Array<{ spec: unknown }>;
+    };
+    expect(out.files[0]?.spec).toBeNull();
+  });
+
   it('derives each asset state from refs + pending bytes', async () => {
     const a1 = asset({ id: 'a1' });
     const a2 = asset({
