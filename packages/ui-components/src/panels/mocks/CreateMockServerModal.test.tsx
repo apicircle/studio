@@ -96,4 +96,36 @@ describe('CreateMockServerModal', () => {
     await user.click(screen.getByRole('button', { name: /Done/i }));
     await waitFor(() => expect(useWorkspaceStore.getState().mocksCreateModalOpen).toBe(false));
   });
+
+  it('shows an empty state on the spec-asset tab when no spec assets exist', async () => {
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /From spec asset/i }));
+    expect(screen.getByText(/No spec assets yet/i)).toBeInTheDocument();
+  });
+
+  it('creates a "run live" (linked) mock from a spec asset', async () => {
+    const user = userEvent.setup();
+    // Seed a spec asset — parse-on-upload tags it as an OpenAPI doc.
+    await act(async () => {
+      await useWorkspaceStore
+        .getState()
+        .addGlobalFileAsset(
+          new File([OPENAPI_JSON], 'petstore.json', { type: 'application/json' }),
+        );
+    });
+    const assetId = Object.values(useWorkspaceStore.getState().synced!.globalAssets.files!)[0].id;
+
+    await user.type(screen.getByLabelText('Mock server name'), 'Live petstore');
+    await user.click(screen.getByRole('button', { name: /From spec asset/i }));
+    await user.selectOptions(await screen.findByLabelText('Spec asset'), assetId);
+    await user.click(screen.getByRole('button', { name: /Create mock server/i }));
+
+    await waitFor(() => expect(useWorkspaceStore.getState().mocksCreateModalOpen).toBe(false));
+    const created = Object.values(useWorkspaceStore.getState().synced!.mockServers).find(
+      (m) => m.name === 'Live petstore',
+    );
+    expect(created?.source.kind).toBe('openapi-asset');
+    if (created?.source.kind === 'openapi-asset') expect(created.source.mode).toBe('linked');
+    expect(created?.endpoints.length).toBe(1);
+  });
 });

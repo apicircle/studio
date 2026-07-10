@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AlertTriangle, FileCode, Info, Plus } from 'lucide-react';
 import type { MockServerSource } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
@@ -28,7 +28,7 @@ export function CreateMockServerModal() {
   // in the Node main process; otherwise we're browser-only (web app).
   const canResolveExternalRefs = getDesktopMockBridge()?.parseSpec != null;
 
-  const [tab, setTab] = useState<'manual' | 'spec'>('manual');
+  const [tab, setTab] = useState<'manual' | 'spec' | 'asset'>('manual');
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -40,11 +40,19 @@ export function CreateMockServerModal() {
   // closing on a partially-resolved import.
   const [result, setResult] = useState<{ endpointCount: number; warnings: string[] } | null>(null);
 
+  // Spec-typed Global File Assets available to build a mock from (Increment A).
+  const files = useWorkspaceStore((s) => s.synced?.globalAssets.files);
+  const specAssets = useMemo(() => Object.values(files ?? {}).filter((f) => f.spec), [files]);
+  const [assetId, setAssetId] = useState('');
+  const [mockMode, setMockMode] = useState<'linked' | 'materialized'>('linked');
+
   const reset = () => {
     setName('');
     setSpecKind('openapi');
     setSpecFormat('json');
     setSpecText('');
+    setAssetId('');
+    setMockMode('linked');
     setError(null);
     setResult(null);
     setTab('manual');
@@ -57,6 +65,18 @@ export function CreateMockServerModal() {
       let source: MockServerSource;
       if (tab === 'manual') {
         source = { kind: 'manual', endpoints: [] };
+      } else if (tab === 'asset') {
+        const asset = specAssets.find((f) => f.id === assetId);
+        if (!asset?.spec) {
+          setError('Select a spec asset to build the mock from.');
+          return;
+        }
+        source = {
+          kind: 'openapi-asset',
+          assetId: asset.id,
+          format: asset.spec.format,
+          mode: mockMode,
+        };
       } else {
         if (!specText.trim()) {
           setError('Paste the spec content.');
@@ -83,7 +103,7 @@ export function CreateMockServerModal() {
       const { id, warnings } = await createMockServer({ name, source });
       // Activate the new server so the panel surfaces its endpoint list.
       setActiveMockEndpoint({ serverId: id, endpointId: null });
-      if (tab === 'spec') {
+      if (tab !== 'manual') {
         const endpointCount =
           useWorkspaceStore.getState().synced?.mockServers[id]?.endpoints.length ?? 0;
         if (warnings.length > 0 || endpointCount === 0) {
@@ -191,6 +211,14 @@ export function CreateMockServerModal() {
               <FileCode size={10} className="mr-1 inline align-text-bottom" aria-hidden="true" />
               Paste spec
             </button>
+            <button
+              type="button"
+              onClick={() => setTab('asset')}
+              className={`px-3 py-1.5 text-[0.6875rem] ${tab === 'asset' ? 'border-b-2 border-accent text-text-primary' : 'text-text-muted hover:text-text-primary'}`}
+            >
+              <FileCode size={10} className="mr-1 inline align-text-bottom" aria-hidden="true" />
+              From spec asset
+            </button>
           </div>
 
           {tab === 'manual' ? (
@@ -200,6 +228,78 @@ export function CreateMockServerModal() {
               add endpoints — you can edit method, path, response body, headers, and rules per
               endpoint there.
             </p>
+          ) : tab === 'asset' ? (
+            <div className="space-y-2">
+              <p className="text-[0.6875rem] text-text-dim">
+                Build a mock from a spec you&rsquo;ve uploaded to Global Assets. Upload the
+                OpenAPI/Swagger file in the Assets &rarr; Files tab first.
+              </p>
+              {specAssets.length === 0 ? (
+                <div className="flex items-start gap-2 rounded-sm border border-warning/40 bg-warning/10 p-2">
+                  <AlertTriangle
+                    size={12}
+                    className="mt-0.5 shrink-0 text-warning"
+                    aria-hidden="true"
+                  />
+                  <p className="text-[0.6875rem] text-text-dim">
+                    No spec assets yet. Upload an OpenAPI/Swagger file under Assets &rarr; Files,
+                    then return here.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <label htmlFor="mock-spec-asset" className="block text-[0.6875rem] text-text-dim">
+                    Spec asset
+                  </label>
+                  <select
+                    id="mock-spec-asset"
+                    value={assetId}
+                    onChange={(ev) => setAssetId(ev.target.value)}
+                    aria-label="Spec asset"
+                    className="h-7 w-full rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary focus:border-accent focus:outline-none"
+                  >
+                    <option value="">Select a spec…</option>
+                    {specAssets.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name} — {f.spec?.dialect === 'swagger-2' ? 'Swagger 2' : 'OpenAPI 3'} ·{' '}
+                        {f.spec?.operationCount ?? 0} ops
+                      </option>
+                    ))}
+                  </select>
+                  <fieldset className="space-y-1">
+                    <legend className="text-[0.6875rem] text-text-dim">Mode</legend>
+                    <label className="flex items-start gap-2 text-[0.6875rem] text-text-primary">
+                      <input
+                        type="radio"
+                        name="mock-mode"
+                        checked={mockMode === 'linked'}
+                        onChange={() => setMockMode('linked')}
+                        className="mt-0.5"
+                        aria-label="Run live"
+                      />
+                      <span>
+                        <strong className="text-text-primary">Run live</strong> — endpoints are
+                        derived from the spec and stay in sync when the asset changes (read-only).
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-2 text-[0.6875rem] text-text-primary">
+                      <input
+                        type="radio"
+                        name="mock-mode"
+                        checked={mockMode === 'materialized'}
+                        onChange={() => setMockMode('materialized')}
+                        className="mt-0.5"
+                        aria-label="Import and edit"
+                      />
+                      <span>
+                        <strong className="text-text-primary">Import &amp; edit</strong> — parse
+                        into editable endpoints you can modify; re-import from the spec anytime.
+                      </span>
+                    </label>
+                  </fieldset>
+                </>
+              )}
+            </div>
           ) : (
             <div className="space-y-2">
               <p className="text-[0.6875rem] text-text-dim">
@@ -270,7 +370,7 @@ export function CreateMockServerModal() {
             <button
               type="button"
               onClick={() => void onSubmit()}
-              disabled={submitting || !name.trim()}
+              disabled={submitting || !name.trim() || (tab === 'asset' && !assetId)}
               className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
             >
               <Plus size={11} aria-hidden="true" />

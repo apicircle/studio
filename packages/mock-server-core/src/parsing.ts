@@ -56,6 +56,17 @@ export async function parseSourceToEndpointsWith(
       return parseInsomniaToEndpoints(source.export);
     case 'manual':
       return { endpoints: source.endpoints, warnings: [] };
+    case 'openapi-asset':
+      // Asset-backed sources must be resolved to an inline OpenAPI source by
+      // the caller (the UI store reads the asset's bytes; the MCP host reads
+      // the attachment blob) before reaching the parser — this engine owns no
+      // asset store. Reaching here means the bytes weren't resolved.
+      return {
+        endpoints: [],
+        warnings: [
+          'An openapi-asset source reached the parser unresolved — resolve its bytes to an inline OpenAPI source first.',
+        ],
+      };
   }
 }
 

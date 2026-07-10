@@ -38,6 +38,19 @@
   for spec-driven mock servers and code-vs-spec drift.
   (`@apicircle/shared`, `@apicircle/mock-server-core`, `@apicircle/ui-components`,
   `@apicircle/mcp-server`)
+- **Mock servers from a spec asset — "run live" vs "import & edit" (additive).**
+  A mock server can now be built from an uploaded spec asset (`GlobalFileAsset`)
+  in two modes: **linked** ("run live" — endpoints derive from the asset and stay
+  in sync; read-only) or **materialized** ("import & edit" — parsed into editable
+  endpoints). New `MockServerSource` variant
+  `{ kind: 'openapi-asset', assetId, format, mode }` + an `isLinkedMockSource`
+  helper; the store resolves the asset's bytes → parses → materializes, auto-
+  refreshes linked mocks when the asset changes, and keeps linked mocks read-only
+  on every surface. New `refreshMockServer` store action + `mock.refresh` MCP tool
+  (catalog **94 → 95**). The "Create mock server" modal gains a **From spec
+  asset** tab (Run live / Import & edit).
+  (`@apicircle/shared`, `@apicircle/mock-server-core`, `@apicircle/ui-components`,
+  `@apicircle/mcp-server`, VS Code)
 - **UI sections/mode seam (open-core, additive).** Building on the `extraPanels`
   seam, the React shell (`@apicircle/ui-components`) now accepts edition-contributed
   top-level **sections** ("modes") via an optional `App` `sections` prop

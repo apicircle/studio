@@ -7,6 +7,7 @@ import type {
 } from '@apicircle/shared';
 import {
   generateId,
+  isLinkedMockSource,
   makeDefaultMockResponse,
   makeDefaultRequestSchema,
   MAX_RESPONSE_MULTIPLIERS,
@@ -39,6 +40,18 @@ async function ingestSource(
     updatedAt: now,
   };
   return { mock, warnings };
+}
+
+/** Reject endpoint edits on a "run live" (linked) mock — its endpoints are
+ *  derived from a spec asset and would be clobbered on the next refresh. */
+function linkedReadOnly(mock: MockServer): { ok: false; error: string } | null {
+  return isLinkedMockSource(mock.source)
+    ? {
+        ok: false,
+        error:
+          'This mock is linked to a spec asset and is read-only. Edit the spec asset, or recreate the mock in "Import & edit" (materialized) mode.',
+      }
+    : null;
 }
 
 export const mockCreateFromOpenApiTool: AnyToolDef = {
@@ -305,6 +318,34 @@ export const mockListEndpointsTool: AnyToolDef = {
   },
 };
 
+export const mockRefreshTool: AnyToolDef = {
+  name: 'mock.refresh',
+  description:
+    "Re-derive a mock server's endpoints from its source (re-parse the spec) — use after the underlying spec changed. Inline sources (openapi / postman / insomnia) re-parse directly; asset-backed (openapi-asset) mocks must be refreshed from the desktop/web app, which owns the attachment bytes. Returns the new endpoint count + parser warnings.",
+  inputSchema: z.object({ id: z.string() }),
+  async handler(input, ctx) {
+    const state = await ctx.workspace.read();
+    const mock = state.synced.mockServers[input.id];
+    if (!mock) return { ok: false as const, error: 'mock not found' as const };
+    if (mock.source.kind === 'openapi-asset') {
+      return {
+        ok: false as const,
+        error:
+          'This mock is backed by a spec asset — refresh it from the desktop/web app (the MCP host cannot read attachment bytes).',
+      };
+    }
+    const { endpoints, warnings } = await parseSourceToEndpoints(mock.source);
+    const next: MockServer = { ...mock, endpoints, updatedAt: new Date().toISOString() };
+    const out = await ctx.workspace.apply({ kind: 'mock.upsert', mock: next });
+    return {
+      ok: true as const,
+      endpointCount: endpoints.length,
+      changedIds: out.changedIds,
+      warnings,
+    };
+  },
+};
+
 const ENDPOINT_RESPONSE = z.object({
   status: z.number().int().min(100).max(599).default(200),
   jsonBody: z.string().default('{}'),
@@ -358,6 +399,8 @@ export const mockAddEndpointTool: AnyToolDef = {
     const state = await ctx.workspace.read();
     const mock = state.synced.mockServers[input.mockId];
     if (!mock) return { ok: false, error: 'mock not found' as const };
+    const ro = linkedReadOnly(mock);
+    if (ro) return ro;
     const endpoint = buildDefaultEndpoint(input);
     const nextEndpoints = [...mock.endpoints, endpoint];
     // Manual-mode mocks mirror endpoints back into source so the runtime
@@ -394,6 +437,8 @@ export const mockUpdateEndpointTool: AnyToolDef = {
     const state = await ctx.workspace.read();
     const mock = state.synced.mockServers[input.mockId];
     if (!mock) return { ok: false, error: 'mock not found' as const };
+    const ro = linkedReadOnly(mock);
+    if (ro) return ro;
     const idx = mock.endpoints.findIndex((e) => e.id === input.endpointId);
     if (idx === -1) return { ok: false, error: 'endpoint not found' as const };
     const existing = mock.endpoints[idx];
@@ -446,6 +491,8 @@ export const mockDeleteEndpointTool: AnyToolDef = {
     const state = await ctx.workspace.read();
     const mock = state.synced.mockServers[input.mockId];
     if (!mock) return { ok: false, error: 'mock not found' as const };
+    const ro = linkedReadOnly(mock);
+    if (ro) return ro;
     const nextEndpoints = mock.endpoints.filter((e) => e.id !== input.endpointId);
     if (nextEndpoints.length === mock.endpoints.length) {
       return { ok: false, error: 'endpoint not found' as const };
@@ -578,6 +625,8 @@ export const mockSetValidationRulesTool: AnyToolDef = {
     const state = await ctx.workspace.read();
     const mock = state.synced.mockServers[input.mockId];
     if (!mock) return { ok: false as const, error: 'mock not found' as const };
+    const ro = linkedReadOnly(mock);
+    if (ro) return ro;
     const rules: Array<z.infer<typeof VALIDATION_RULE>> = input.rules;
     const next = patchEndpoint(mock, input.endpointId, (e) => ({
       ...e,
@@ -610,6 +659,8 @@ export const mockSetResponseRulesTool: AnyToolDef = {
     const state = await ctx.workspace.read();
     const mock = state.synced.mockServers[input.mockId];
     if (!mock) return { ok: false as const, error: 'mock not found' as const };
+    const ro = linkedReadOnly(mock);
+    if (ro) return ro;
     const rules: Array<z.infer<typeof RESPONSE_RULE>> = input.rules;
     const next = patchEndpoint(mock, input.endpointId, (e) => ({
       ...e,
@@ -672,6 +723,8 @@ export const mockSetRequestSchemaTool: AnyToolDef = {
     const state = await ctx.workspace.read();
     const mock = state.synced.mockServers[input.mockId];
     if (!mock) return { ok: false as const, error: 'mock not found' as const };
+    const ro = linkedReadOnly(mock);
+    if (ro) return ro;
     const toParams = (list: Array<z.infer<typeof PARAM>>) =>
       list.map((p) => ({
         id: p.id ?? generateId(),
@@ -710,6 +763,8 @@ export const mockSetMultipliersTool: AnyToolDef = {
     const state = await ctx.workspace.read();
     const mock = state.synced.mockServers[input.mockId];
     if (!mock) return { ok: false as const, error: 'mock not found' as const };
+    const ro = linkedReadOnly(mock);
+    if (ro) return ro;
     const multipliers: Array<z.infer<typeof MULTIPLIER>> = input.multipliers;
     if (multipliers.length > MAX_RESPONSE_MULTIPLIERS) {
       return { ok: false as const, error: 'too many multipliers' as const };

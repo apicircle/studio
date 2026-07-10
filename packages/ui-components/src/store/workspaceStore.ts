@@ -50,8 +50,8 @@ import {
   resolvePrCapability,
 } from './githubPrCapability';
 import { decideRetirement, probeBranchRetirement } from './branchRetirement';
-import { getDesktopMockBridge } from '../desktop/bridge';
 import { summarizeUploadedSpec } from './specUpload';
+import { resolveMockEndpoints } from './mockResolve';
 import { applyFont } from '../theme/applyFont';
 import { applyFontSize, clampFontSizePercent } from '../theme/applyFontSize';
 import {
@@ -59,6 +59,7 @@ import {
   RUN_BODY_PREVIEW_LIMIT,
   envPriorityKey,
   generateId,
+  isLinkedMockSource,
 } from '@apicircle/shared';
 import {
   type AttachmentResolver,
@@ -1024,6 +1025,14 @@ type WorkspaceStore = {
   updateMockEndpoint: (serverId: string, endpointId: string, patch: Partial<MockEndpoint>) => void;
   /** Remove an endpoint from a server. */
   removeMockEndpoint: (serverId: string, endpointId: string) => void;
+  /**
+   * Re-derive a mock's endpoints from its `source` (re-resolves an
+   * `openapi-asset`'s bytes, re-parses a spec). Used by "run live" (linked)
+   * mocks to stay in sync with the asset, and by "import & edit" mocks as an
+   * explicit "re-import from spec" that overwrites local endpoint edits.
+   * No-op for `manual` sources. Returns any parser warnings.
+   */
+  refreshMockServer: (id: string) => Promise<{ warnings: string[] }>;
   /**
    * Clone a mock server with all of its endpoints + nested rules. Every
    * cloned entity gets a fresh id; the legacy `overrides` map is reset
@@ -2670,28 +2679,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
     // Materialize the endpoint table at create time so the router (which
     // serves `MockServer.endpoints` and never re-parses `source`) has
-    // something to route. Manual-mode mocks carry their endpoints inline;
-    // spec blobs are parsed now. On Desktop the parse runs in the Node main
-    // process (full external-`$ref` resolution via swagger-parser); in the
-    // browser it uses the in-document-only parser and warns about external
-    // refs it can't resolve.
-    let endpoints: MockEndpoint[];
-    let warnings: string[] = [];
-    if (source.kind === 'manual') {
-      endpoints = source.endpoints;
-    } else {
-      const bridge = getDesktopMockBridge();
-      if (bridge?.parseSpec) {
-        const parsed = await bridge.parseSpec(source);
-        endpoints = parsed.endpoints;
-        warnings = parsed.warnings;
-      } else {
-        const { parseSourceToEndpoints } = await import('@apicircle/mock-server-core/parsing');
-        const parsed = await parseSourceToEndpoints(source);
-        endpoints = parsed.endpoints;
-        warnings = parsed.warnings;
-      }
-    }
+    // something to route. `resolveMockEndpoints` handles every spec source
+    // kind, including `openapi-asset` (resolves the asset's bytes → parses).
+    // Manual sources are kept SYNCHRONOUS (no `await`) so the meta bump lands
+    // before the returned promise settles — a behavior callers rely on.
+    const { endpoints, warnings } =
+      source.kind === 'manual'
+        ? { endpoints: source.endpoints, warnings: [] as string[] }
+        : await resolveMockEndpoints(source, synced);
 
     const id = generateId();
     const now = new Date().toISOString();
@@ -2798,6 +2793,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!synced) return;
     const existing = synced.mockServers[id];
     if (!existing) return;
+    if (isLinkedMockSource(existing.source)) return;
     const now = new Date().toISOString();
     // For manual-mode mocks, mirror the new endpoints into the source
     // union so the runtime sees the same array regardless of which
@@ -2819,6 +2815,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!synced) return '';
     const existing = synced.mockServers[serverId];
     if (!existing) return '';
+    // Linked ("run live") mocks derive endpoints from the spec asset — read-only.
+    if (isLinkedMockSource(existing.source)) return '';
     const id = generateId();
     const newEndpoint: MockEndpoint = {
       id,
@@ -2858,6 +2856,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!synced) return;
     const existing = synced.mockServers[serverId];
     if (!existing) return;
+    if (isLinkedMockSource(existing.source)) return;
     const idx = existing.endpoints.findIndex((e) => e.id === endpointId);
     if (idx === -1) return;
     const nextEndpoint = { ...existing.endpoints[idx], ...patch };
@@ -2885,6 +2884,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!synced) return;
     const existing = synced.mockServers[serverId];
     if (!existing) return;
+    if (isLinkedMockSource(existing.source)) return;
     const nextEndpoints = existing.endpoints.filter((e) => e.id !== endpointId);
     const source =
       existing.source.kind === 'manual'
@@ -2905,6 +2905,33 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     queueSaveSynced(nextSynced);
   },
 
+  refreshMockServer: async (id) => {
+    const synced = get().synced;
+    if (!synced) return { warnings: [] };
+    const server = synced.mockServers[id];
+    if (!server) return { warnings: [] };
+    const { endpoints, warnings } = await resolveMockEndpoints(server.source, synced);
+    // Race-safe: write against LIVE state (the resolve awaited).
+    set((state) => {
+      const live = state.synced?.mockServers[id];
+      if (!state.synced || !live) return {};
+      const now = new Date().toISOString();
+      return {
+        synced: {
+          ...state.synced,
+          mockServers: {
+            ...state.synced.mockServers,
+            [id]: { ...live, endpoints, updatedAt: now },
+          },
+          meta: { ...state.synced.meta, updatedAt: now },
+        },
+      };
+    });
+    const after = get().synced;
+    if (after) queueSaveSynced(after);
+    return { warnings };
+  },
+
   duplicateMockServer: (id) => {
     const synced = get().synced;
     if (!synced) return null;
@@ -2918,6 +2945,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   duplicateMockEndpoint: (serverId, endpointId) => {
     const synced = get().synced;
     if (!synced) return null;
+    const server = synced.mockServers[serverId];
+    if (server && isLinkedMockSource(server.source)) return null;
     const { synced: nextSynced, endpoint } = duplicateMockEndpointAction(
       synced,
       serverId,
@@ -3612,6 +3641,19 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // push. A no-op when the asset was deleted mid-await.
     if (get().synced?.globalAssets.files?.[id]) {
       recordPendingFileUpload(set, get, id);
+    }
+    // Auto-refresh any "run live" (linked) mocks that read this spec asset so
+    // they reflect the new bytes immediately.
+    const linkedMockIds = Object.values(get().synced?.mockServers ?? {})
+      .filter(
+        (m) =>
+          m.source.kind === 'openapi-asset' &&
+          m.source.mode === 'linked' &&
+          m.source.assetId === id,
+      )
+      .map((m) => m.id);
+    for (const mockId of linkedMockIds) {
+      await get().refreshMockServer(mockId);
     }
   },
   setFormRowGlobalFileAsset: async (requestId, rowIndex, fileAssetId) => {

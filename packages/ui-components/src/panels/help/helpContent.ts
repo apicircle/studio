@@ -967,6 +967,7 @@ Snapshots live only on this machine. They are kept within a size budget — pick
 
 - **Empty** — a blank server you add endpoints to by hand.
 - **From a spec** — paste an OpenAPI, Postman, or Insomnia source; it is parsed into endpoints the moment you create the mock, so the endpoint table is populated right away. On the Desktop app the parse runs in the native process and resolves external \`$ref\`s; the web app resolves in-document \`$ref\`s only and warns about any external references it can't follow.
+- **From a spec asset** — build the mock from an OpenAPI/Swagger file you uploaded to Global Assets → Files, in one of two modes. **Run live** (linked) derives the endpoints from the asset and keeps them in sync — re-uploading the spec updates every linked mock, and its endpoints are read-only. **Import & edit** (materialized) parses the spec into editable endpoints you can modify, with a refresh-from-spec re-import when the asset changes.
 
 ## Endpoints and the response flow
 

@@ -114,6 +114,22 @@ parsed immediately and the resulting `MockEndpoint[]` is stored on
 `MockServer.endpoints`. The runtime router serves that array verbatim and never
 re-parses `source`, so a mock created with zero endpoints stays empty.
 
+### Spec sources: paste, or a spec asset (run live / import)
+
+A spec-backed mock's `source` is either a **verbatim inline spec**
+(`{ kind: 'openapi', spec, format }`, from the paste-spec flow) or a reference to
+an uploaded **spec asset** (`{ kind: 'openapi-asset', assetId, format, mode }` —
+upload the OpenAPI/Swagger file under Global Assets → Files). Asset-backed mocks
+come in two modes:
+
+- **`linked` ("run live")** — endpoints derive from the asset and stay in sync:
+  re-uploading the spec asset auto-refreshes every linked mock, and the endpoints
+  are read-only (edits are rejected on every surface). Best for "just stand up my
+  spec."
+- **`materialized` ("import & edit")** — the spec is parsed once into editable
+  endpoints you can modify; an explicit refresh (`refreshMockServer` / the
+  `mock.refresh` MCP tool) re-imports from the asset.
+
 The parser ships as two entry points that differ only in how OpenAPI `$ref`s
 are dereferenced:
 

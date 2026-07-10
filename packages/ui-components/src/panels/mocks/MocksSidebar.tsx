@@ -5,10 +5,12 @@ import {
   Copy,
   FileCode,
   Plus,
+  RefreshCw,
   Search,
   Server,
   Trash2,
 } from 'lucide-react';
+import { isLinkedMockSource } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { KebabMenu, type KebabMenuItem } from '../../primitives/KebabMenu';
@@ -33,6 +35,7 @@ export function MocksSidebar() {
   const removeMock = useWorkspaceStore((s) => s.removeMockServer);
   const duplicateMockServer = useWorkspaceStore((s) => s.duplicateMockServer);
   const duplicateMockEndpoint = useWorkspaceStore((s) => s.duplicateMockEndpoint);
+  const refreshMockServer = useWorkspaceStore((s) => s.refreshMockServer);
 
   const allServers = Object.values(mockServers);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -126,16 +129,31 @@ export function MocksSidebar() {
                     ? server.endpoints
                     : server.endpoints.filter((e) => matchingEndpointIds.has(e.id));
               const isServerActive = activeServerId === server.id && activeEndpointId === null;
+              const isLinked = isLinkedMockSource(server.source);
               const serverItems: KebabMenuItem[] = [
-                {
-                  id: 'add-endpoint',
-                  label: 'Add endpoint',
-                  icon: <Plus size={12} aria-hidden="true" />,
-                  onSelect: () => {
-                    addMockEndpoint(server.id);
-                    setExpanded((e) => ({ ...e, [server.id]: true }));
-                  },
-                },
+                ...(isLinked
+                  ? []
+                  : [
+                      {
+                        id: 'add-endpoint',
+                        label: 'Add endpoint',
+                        icon: <Plus size={12} aria-hidden="true" />,
+                        onSelect: () => {
+                          addMockEndpoint(server.id);
+                          setExpanded((e) => ({ ...e, [server.id]: true }));
+                        },
+                      },
+                    ]),
+                ...(server.source.kind !== 'manual'
+                  ? [
+                      {
+                        id: 'refresh',
+                        label: isLinked ? 'Refresh from spec' : 'Re-import from spec',
+                        icon: <RefreshCw size={12} aria-hidden="true" />,
+                        onSelect: () => void refreshMockServer(server.id),
+                      },
+                    ]
+                  : []),
                 {
                   id: 'duplicate',
                   label: 'Duplicate',
@@ -189,7 +207,9 @@ export function MocksSidebar() {
                         <FileCode
                           size={10}
                           className="text-text-faint"
-                          aria-label={`${server.source.kind} spec`}
+                          aria-label={
+                            isLinked ? 'Linked spec (read-only)' : `${server.source.kind} spec`
+                          }
                         />
                       )}
                     </button>
@@ -207,26 +227,28 @@ export function MocksSidebar() {
                         visibleEndpoints.map((endpoint) => {
                           const isActive =
                             activeServerId === server.id && activeEndpointId === endpoint.id;
-                          const endpointItems: KebabMenuItem[] = [
-                            {
-                              id: 'duplicate',
-                              label: 'Duplicate',
-                              icon: <Copy size={12} aria-hidden="true" />,
-                              onSelect: () => duplicateMockEndpoint(server.id, endpoint.id),
-                            },
-                            {
-                              id: 'delete',
-                              label: 'Delete',
-                              icon: <Trash2 size={12} aria-hidden="true" />,
-                              tone: 'danger',
-                              onSelect: () =>
-                                setPendingEndpointDelete({
-                                  serverId: server.id,
-                                  endpointId: endpoint.id,
-                                  label: `${endpoint.method} ${endpoint.pathPattern}`,
-                                }),
-                            },
-                          ];
+                          const endpointItems: KebabMenuItem[] = isLinked
+                            ? []
+                            : [
+                                {
+                                  id: 'duplicate',
+                                  label: 'Duplicate',
+                                  icon: <Copy size={12} aria-hidden="true" />,
+                                  onSelect: () => duplicateMockEndpoint(server.id, endpoint.id),
+                                },
+                                {
+                                  id: 'delete',
+                                  label: 'Delete',
+                                  icon: <Trash2 size={12} aria-hidden="true" />,
+                                  tone: 'danger',
+                                  onSelect: () =>
+                                    setPendingEndpointDelete({
+                                      serverId: server.id,
+                                      endpointId: endpoint.id,
+                                      label: `${endpoint.method} ${endpoint.pathPattern}`,
+                                    }),
+                                },
+                              ];
                           return (
                             <li key={endpoint.id}>
                               <div
@@ -259,11 +281,13 @@ export function MocksSidebar() {
                                     {endpoint.pathPattern}
                                   </span>
                                 </button>
-                                <KebabMenu
-                                  items={endpointItems}
-                                  ariaLabel={`${endpoint.method} ${endpoint.pathPattern} actions`}
-                                  size="sm"
-                                />
+                                {endpointItems.length > 0 && (
+                                  <KebabMenu
+                                    items={endpointItems}
+                                    ariaLabel={`${endpoint.method} ${endpoint.pathPattern} actions`}
+                                    size="sm"
+                                  />
+                                )}
                               </div>
                             </li>
                           );

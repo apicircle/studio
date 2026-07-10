@@ -42,6 +42,9 @@ interface MockYamlOutput {
      * the human-edited YAML.
      */
     bytes?: number;
+    /** For openapi-asset: the Global File Asset id + linked/materialized mode. */
+    assetId?: string;
+    mode?: 'linked' | 'materialized';
   };
   endpoints: Array<{
     id: string;
@@ -99,6 +102,14 @@ function serializeSource(source: MockServerSource): MockYamlOutput['source'] {
   }
   if (source.kind === 'postman') {
     return { kind: 'postman', bytes: source.collection.length };
+  }
+  if (source.kind === 'openapi-asset') {
+    return {
+      kind: 'openapi-asset',
+      format: source.format,
+      assetId: source.assetId,
+      mode: source.mode,
+    };
   }
   return { kind: 'insomnia', bytes: source.export.length };
 }

@@ -62,6 +62,7 @@ export {
   makeDefaultRequestSchema,
   MAX_RESPONSE_MULTIPLIERS,
   MAX_RESPONSE_RULE_CONDITIONS,
+  isLinkedMockSource,
 } from './mock';
 export type {
   FontFamilyId,
