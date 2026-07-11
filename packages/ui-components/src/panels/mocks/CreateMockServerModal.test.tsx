@@ -103,7 +103,7 @@ describe('CreateMockServerModal', () => {
     expect(screen.getByText(/No spec assets yet/i)).toBeInTheDocument();
   });
 
-  it('creates a "run live" (linked) mock from a spec asset', async () => {
+  it('imports a spec asset as editable (materialized) endpoints', async () => {
     const user = userEvent.setup();
     // Seed a spec asset — parse-on-upload tags it as an OpenAPI doc.
     await act(async () => {
@@ -115,17 +115,33 @@ describe('CreateMockServerModal', () => {
     });
     const assetId = Object.values(useWorkspaceStore.getState().synced!.globalAssets.files!)[0].id;
 
-    await user.type(screen.getByLabelText('Mock server name'), 'Live petstore');
+    await user.type(screen.getByLabelText('Mock server name'), 'Imported petstore');
     await user.click(screen.getByRole('button', { name: /From spec asset/i }));
     await user.selectOptions(await screen.findByLabelText('Spec asset'), assetId);
     await user.click(screen.getByRole('button', { name: /Create mock server/i }));
 
     await waitFor(() => expect(useWorkspaceStore.getState().mocksCreateModalOpen).toBe(false));
     const created = Object.values(useWorkspaceStore.getState().synced!.mockServers).find(
-      (m) => m.name === 'Live petstore',
+      (m) => m.name === 'Imported petstore',
     );
     expect(created?.source.kind).toBe('openapi-asset');
-    if (created?.source.kind === 'openapi-asset') expect(created.source.mode).toBe('linked');
+    // The unified modal now always IMPORTS (materialized); "run live" moved to
+    // the dedicated Serve OpenAPI contract flow.
+    if (created?.source.kind === 'openapi-asset') expect(created.source.mode).toBe('materialized');
     expect(created?.endpoints.length).toBe(1);
+  });
+
+  it('no longer offers a "run live" toggle on the spec-asset tab, and points to Serve OpenAPI contract', async () => {
+    const user = userEvent.setup();
+    await act(async () => {
+      await useWorkspaceStore
+        .getState()
+        .addGlobalFileAsset(
+          new File([OPENAPI_JSON], 'petstore.json', { type: 'application/json' }),
+        );
+    });
+    await user.click(screen.getByRole('button', { name: /From spec asset/i }));
+    expect(screen.queryByLabelText('Run live')).not.toBeInTheDocument();
+    expect(screen.getByText(/Serve OpenAPI contract/i)).toBeInTheDocument();
   });
 });

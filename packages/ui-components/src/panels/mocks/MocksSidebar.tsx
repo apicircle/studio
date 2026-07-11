@@ -6,6 +6,7 @@ import {
   FileCode,
   FolderPlus,
   Plus,
+  Radio,
   RefreshCw,
   Search,
   Server,
@@ -367,6 +368,7 @@ export function MocksSidebar() {
  */
 export function MocksSidebarActions() {
   const openCreateMockServer = useWorkspaceStore((s) => s.openMocksCreateModal);
+  const openServeContract = useWorkspaceStore((s) => s.openMocksServeContractModal);
 
   const items: KebabMenuItem[] = [
     {
@@ -374,6 +376,12 @@ export function MocksSidebarActions() {
       label: 'New Mock Server',
       icon: <Plus size={12} aria-hidden="true" />,
       onSelect: openCreateMockServer,
+    },
+    {
+      id: 'serve-openapi-contract',
+      label: 'Serve OpenAPI contract',
+      icon: <Radio size={12} aria-hidden="true" />,
+      onSelect: openServeContract,
     },
   ];
 

@@ -1056,6 +1056,15 @@ type WorkspaceStore = {
   openMocksCreateModal: () => void;
   closeMocksCreateModal: () => void;
   /**
+   * Whether the "Serve OpenAPI contract" modal is open — the dedicated
+   * run-live flow that stands up a `linked` mock straight from a spec asset.
+   * Kept separate from the create-mock modal so the two entry points read as
+   * distinct affordances in the Mocks header.
+   */
+  mocksServeContractModalOpen: boolean;
+  openMocksServeContractModal: () => void;
+  closeMocksServeContractModal: () => void;
+  /**
    * Attach a file to a mock endpoint's binary response body. Stores the
    * blob in the same Global-Assets attachment store the request editor
    * uses (slotId-based; SHA-256 cached on the synced doc). Returns the
@@ -2993,6 +3002,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   mocksCreateModalOpen: false,
   openMocksCreateModal: () => set({ mocksCreateModalOpen: true }),
   closeMocksCreateModal: () => set({ mocksCreateModalOpen: false }),
+
+  mocksServeContractModalOpen: false,
+  openMocksServeContractModal: () => set({ mocksServeContractModalOpen: true }),
+  closeMocksServeContractModal: () => set({ mocksServeContractModalOpen: false }),
 
   attachMockResponseFile: async (serverId, endpointId, file) => {
     // Same unified flow — direct upload mints a Global Asset, then we

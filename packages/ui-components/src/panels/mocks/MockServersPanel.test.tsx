@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { MockRuntimeEntry, MockServer } from '@apicircle/shared';
 import { MockServersPanel } from './MockServersPanel';
@@ -7,6 +7,16 @@ import { renderWithStore } from '../../../test/renderWithStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 
 const T0 = '2026-04-27T00:00:00.000Z';
+
+const OPENAPI_JSON = JSON.stringify({
+  openapi: '3.0.0',
+  info: { title: 'Petstore', version: '1.0.0' },
+  paths: {
+    '/pets': {
+      get: { responses: { '200': { content: { 'application/json': { example: [{ id: 1 }] } } } } },
+    },
+  },
+});
 
 function fixtureMock(id: string, name: string): MockServer {
   const endpoint = {
@@ -92,6 +102,29 @@ describe('MockServersPanel (post-rich-editor redesign)', () => {
       activeMockEndpointId: null,
     }));
     expect(await screen.findByLabelText('Mock server name')).toHaveValue('Petstore');
+  });
+
+  it('shows a "Served directly from contract" callout + friendly label for a linked mock', async () => {
+    await renderWithStore(<MockServersPanel />);
+    await act(async () => {
+      await useWorkspaceStore
+        .getState()
+        .addGlobalFileAsset(
+          new File([OPENAPI_JSON], 'petstore.json', { type: 'application/json' }),
+        );
+    });
+    const assetId = Object.values(useWorkspaceStore.getState().synced!.globalAssets.files!)[0].id;
+    const { id } = await useWorkspaceStore.getState().createMockServer({
+      name: 'Petstore live',
+      source: { kind: 'openapi-asset', assetId, format: 'json', mode: 'linked' },
+    });
+    act(() => {
+      useWorkspaceStore.getState().setActiveMockEndpoint({ serverId: id, endpointId: null });
+    });
+
+    expect(await screen.findByText(/Served directly from contract/i)).toBeInTheDocument();
+    // Friendly source label instead of the raw `openapi-asset` union tag.
+    expect(screen.getByText('OpenAPI contract (live)')).toBeInTheDocument();
   });
 
   it('renders the MockEndpointEditor flow + node editor when both a server and endpoint are active', async () => {

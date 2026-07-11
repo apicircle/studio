@@ -1,7 +1,7 @@
 import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import { MocksSidebar } from './MocksSidebar';
+import { MocksSidebar, MocksSidebarActions } from './MocksSidebar';
 import { renderWithStore } from '../../../test/renderWithStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 
@@ -75,5 +75,17 @@ describe('MocksSidebar — asset-backed mocks', () => {
       const reqs = Object.values(useWorkspaceStore.getState().synced!.collections.requests);
       expect(reqs.some((r) => r.url === '/path')).toBe(true);
     });
+  });
+});
+
+describe('MocksSidebarActions', () => {
+  it('offers "New Mock Server" and "Serve OpenAPI contract"; the latter opens the serve modal', async () => {
+    await renderWithStore(<MocksSidebarActions />);
+    await userEvent.click(screen.getByRole('button', { name: /Mocks actions/i }));
+    expect(screen.getByText('New Mock Server')).toBeInTheDocument();
+    const serve = screen.getByText('Serve OpenAPI contract');
+    expect(serve).toBeInTheDocument();
+    await userEvent.click(serve);
+    expect(useWorkspaceStore.getState().mocksServeContractModalOpen).toBe(true);
   });
 });

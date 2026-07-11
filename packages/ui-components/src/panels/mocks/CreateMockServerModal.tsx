@@ -44,7 +44,6 @@ export function CreateMockServerModal() {
   const files = useWorkspaceStore((s) => s.synced?.globalAssets.files);
   const specAssets = useMemo(() => Object.values(files ?? {}).filter((f) => f.spec), [files]);
   const [assetId, setAssetId] = useState('');
-  const [mockMode, setMockMode] = useState<'linked' | 'materialized'>('linked');
 
   const reset = () => {
     setName('');
@@ -52,7 +51,6 @@ export function CreateMockServerModal() {
     setSpecFormat('json');
     setSpecText('');
     setAssetId('');
-    setMockMode('linked');
     setError(null);
     setResult(null);
     setTab('manual');
@@ -71,11 +69,14 @@ export function CreateMockServerModal() {
           setError('Select a spec asset to build the mock from.');
           return;
         }
+        // This unified modal always IMPORTS a spec asset as editable endpoints
+        // (materialized). Running a contract live (read-only) is its own
+        // first-class flow — the "Serve OpenAPI contract" entry point.
         source = {
           kind: 'openapi-asset',
           assetId: asset.id,
           format: asset.spec.format,
-          mode: mockMode,
+          mode: 'materialized',
         };
       } else {
         if (!specText.trim()) {
@@ -231,8 +232,11 @@ export function CreateMockServerModal() {
           ) : tab === 'asset' ? (
             <div className="space-y-2">
               <p className="text-[0.6875rem] text-text-dim">
-                Build a mock from a spec you&rsquo;ve uploaded to Global Assets. Upload the
-                OpenAPI/Swagger file in the Assets &rarr; Files tab first.
+                Import a spec you&rsquo;ve uploaded to Global Assets as editable endpoints you can
+                modify — re-import from the spec anytime. To run a contract{' '}
+                <strong className="text-text-primary">live</strong> (read-only, always in sync), use{' '}
+                <strong className="text-text-primary">Serve OpenAPI contract</strong> in the Mocks
+                menu instead. Upload OpenAPI/Swagger files under Assets &rarr; Files first.
               </p>
               {specAssets.length === 0 ? (
                 <div className="flex items-start gap-2 rounded-sm border border-warning/40 bg-warning/10 p-2">
@@ -266,37 +270,9 @@ export function CreateMockServerModal() {
                       </option>
                     ))}
                   </select>
-                  <fieldset className="space-y-1">
-                    <legend className="text-[0.6875rem] text-text-dim">Mode</legend>
-                    <label className="flex items-start gap-2 text-[0.6875rem] text-text-primary">
-                      <input
-                        type="radio"
-                        name="mock-mode"
-                        checked={mockMode === 'linked'}
-                        onChange={() => setMockMode('linked')}
-                        className="mt-0.5"
-                        aria-label="Run live"
-                      />
-                      <span>
-                        <strong className="text-text-primary">Run live</strong> — endpoints are
-                        derived from the spec and stay in sync when the asset changes (read-only).
-                      </span>
-                    </label>
-                    <label className="flex items-start gap-2 text-[0.6875rem] text-text-primary">
-                      <input
-                        type="radio"
-                        name="mock-mode"
-                        checked={mockMode === 'materialized'}
-                        onChange={() => setMockMode('materialized')}
-                        className="mt-0.5"
-                        aria-label="Import and edit"
-                      />
-                      <span>
-                        <strong className="text-text-primary">Import &amp; edit</strong> — parse
-                        into editable endpoints you can modify; re-import from the spec anytime.
-                      </span>
-                    </label>
-                  </fieldset>
+                  <p className="text-[0.625rem] text-text-faint">
+                    Endpoints are parsed into an editable table you can modify after creating.
+                  </p>
                 </>
               )}
             </div>

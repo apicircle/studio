@@ -47,8 +47,12 @@
   helper; the store resolves the asset's bytes → parses → materializes, auto-
   refreshes linked mocks when the asset changes, and keeps linked mocks read-only
   on every surface. New `refreshMockServer` store action + `mock.refresh` MCP tool
-  (catalog **94 → 95**). The "Create mock server" modal gains a **From spec
-  asset** tab (Run live / Import & edit).
+  (catalog **94 → 95**). Two distinct entry points in the Mocks header: **New
+  Mock Server → From spec asset** imports a contract as editable endpoints
+  (materialized), and **Serve OpenAPI contract** stands up a live, read-only
+  server straight from a contract (linked) with a spec preview, name, and port.
+  The mock panel shows a "Served directly from contract" callout and a friendly
+  source label for a live contract server.
   (`@apicircle/shared`, `@apicircle/mock-server-core`, `@apicircle/ui-components`,
   `@apicircle/mcp-server`, VS Code)
 - **Import an OpenAPI/Swagger spec into a collection (editor, additive).** The
