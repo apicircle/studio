@@ -51,6 +51,15 @@
   asset** tab (Run live / Import & edit).
   (`@apicircle/shared`, `@apicircle/mock-server-core`, `@apicircle/ui-components`,
   `@apicircle/mcp-server`, VS Code)
+- **Import an OpenAPI/Swagger spec into a collection (editor, additive).** The
+  editor's unified Import modal now recognises OpenAPI 3.x / Swagger 2.0
+  (`Auto-detect`, or the explicit "OpenAPI / Swagger" source) — paste or upload a
+  spec and it becomes a new folder with one request per operation (method, path,
+  query/header/path params). The Global Assets spec editor gains an **Import to
+  collection** button that imports straight from the stored asset. `ApiRequest`
+  gains additive `specAssetId` + `operationId` back-refs so an imported
+  collection knows which spec asset + operation each request came from.
+  (`@apicircle/shared`, `@apicircle/ui-components`)
 - **UI sections/mode seam (open-core, additive).** Building on the `extraPanels`
   seam, the React shell (`@apicircle/ui-components`) now accepts edition-contributed
   top-level **sections** ("modes") via an optional `App` `sections` prop

@@ -12,7 +12,15 @@
 // request referencing the deleted id has its mapping cleared.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, ArrowLeft, FileArchive, Plus, Trash2, Upload } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  FileArchive,
+  FolderInput,
+  Plus,
+  Trash2,
+  Upload,
+} from 'lucide-react';
 import {
   formatBytes,
   type AssetUsage,
@@ -26,6 +34,7 @@ import { MonacoEditorBase } from '../../editors/MonacoEditorBase';
 import { cn } from '../../primitives/cn';
 import { deriveFileAssetState, FileAssetStatusPill } from '../../primitives/FileAssetStatusPill';
 import { SpecAssetBadge } from '../../primitives/SpecAssetBadge';
+import { getAttachment } from '../../persistence/attachments';
 
 interface FileAssetConsumer {
   kind: 'request' | 'mock';
@@ -727,6 +736,32 @@ function FileAssetEditor({ id }: { id: string | null }) {
     return out;
   });
   const update = useWorkspaceStore((s) => s.updateGlobalFileAsset);
+  const importOpenApiToCollection = useWorkspaceStore((s) => s.importOpenApiToCollection);
+  const pushToast = useWorkspaceStore((s) => s.pushToast);
+  const importSpecToCollection = async (): Promise<void> => {
+    if (!file?.spec) return;
+    const record = await getAttachment(file.slotId);
+    if (!record) {
+      pushToast({
+        tone: 'error',
+        title: 'Spec bytes are not available locally — re-upload the file.',
+        ttlMs: 8000,
+      });
+      return;
+    }
+    const res = await importOpenApiToCollection({
+      spec: new TextDecoder().decode(record.bytes),
+      format: file.spec.format,
+      specAssetId: file.id,
+      title: file.spec.title,
+    });
+    pushToast({
+      tone: res.warnings.length > 0 ? 'info' : 'success',
+      title: `Imported ${res.requests} request${res.requests === 1 ? '' : 's'} to a new collection`,
+      detail: res.warnings.length > 0 ? res.warnings.join(' · ') : undefined,
+      ttlMs: res.warnings.length > 0 ? 12000 : 6000,
+    });
+  };
   const remove = useWorkspaceStore((s) => s.removeGlobalFileAsset);
   const fillBytes = useWorkspaceStore((s) => s.fillGlobalFileAssetBytes);
   const hasPending = useWorkspaceStore((s) =>
@@ -847,6 +882,14 @@ function FileAssetEditor({ id }: { id: string | null }) {
             )}
             {file.spec.version && <span className="text-text-dim">v{file.spec.version}</span>}
           </div>
+          <button
+            type="button"
+            onClick={() => void importSpecToCollection()}
+            className="mt-2 inline-flex h-6 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.625rem] text-accent hover:bg-accent/20"
+          >
+            <FolderInput size={11} aria-hidden="true" />
+            Import to collection
+          </button>
           {file.spec.warnings.length > 0 && (
             <ul className="mt-2 space-y-0.5">
               {file.spec.warnings.map((w) => (

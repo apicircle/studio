@@ -331,6 +331,15 @@ export interface Request {
   // Optional reference to a workspace-wide GraphQL schema definition. Used
   // for GraphQL request body autocomplete (P19).
   graphqlSchemaId?: string | null;
+  /**
+   * Provenance for requests imported from an OpenAPI/Swagger spec: the Global
+   * File Asset the collection was imported from (`specAssetId`) and the
+   * operation it maps to (`operationId` = `"<METHOD> <path>"`, the stable
+   * operation key). Enables re-syncing a collection when its source spec asset
+   * changes. Additive; absent on hand-authored or non-spec-imported requests.
+   */
+  specAssetId?: string;
+  operationId?: string;
   assertions: Assertion[];
   createdAt: string;
   updatedAt: string;

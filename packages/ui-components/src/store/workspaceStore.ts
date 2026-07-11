@@ -1168,6 +1168,21 @@ type WorkspaceStore = {
     parentFolderId?: string | null,
   ) => { folders: number; requests: number };
   /**
+   * Import an OpenAPI / Swagger spec into a new collection folder — one request
+   * per operation (method + path + query/header/path params). `specAssetId`
+   * stamps the source spec asset onto every created request for later re-sync;
+   * `operationId` (= `"<METHOD> <path>"`) is the stable operation key. Async —
+   * it parses the spec (browser: in-document `$ref`s only). Returns the new
+   * folder id, the request count, and parser warnings.
+   */
+  importOpenApiToCollection: (args: {
+    spec: string;
+    format: 'json' | 'yaml';
+    parentFolderId?: string | null;
+    specAssetId?: string;
+    title?: string;
+  }) => Promise<{ folderId: string | null; requests: number; warnings: string[] }>;
+  /**
    * Import a parsed Postman environment. Returns the final env name
    * (uniquified if it collided), or null if no synced doc was loaded.
    */
@@ -3301,6 +3316,73 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set({ synced: stamped });
     queueSaveSynced(stamped);
     return { folders: parsed.folders.length + 1, requests: parsed.requests.length };
+  },
+
+  importOpenApiToCollection: async ({
+    spec,
+    format,
+    parentFolderId = null,
+    specAssetId,
+    title,
+  }) => {
+    const synced = get().synced;
+    if (!synced) return { folderId: null, requests: 0, warnings: [] };
+    // Reuse the mock resolver's parser dispatch (desktop bridge / browser).
+    const { endpoints, warnings } = await resolveMockEndpoints(
+      { kind: 'openapi', spec, format },
+      synced,
+    );
+
+    let rootFolderId = '';
+    let created = 0;
+    // Build the collection against LIVE state (the parse awaited).
+    set((state) => {
+      if (!state.synced) return {};
+      let cur = state.synced;
+      const { synced: afterRoot, folder } = addFolderAction(
+        cur,
+        parentFolderId,
+        title?.trim() || 'Imported API',
+      );
+      cur = afterRoot;
+      rootFolderId = folder.id;
+      for (const ep of endpoints) {
+        const name = ep.name || `${ep.method} ${ep.pathPattern}`;
+        const { synced: next, request } = addRequestAction(cur, folder.id, name);
+        const patched: ApiRequest = {
+          ...request,
+          method: ep.method,
+          url: ep.pathPattern,
+          query: ep.requestSchema.queryParams.map((p) => ({
+            key: p.name,
+            value: p.example != null ? String(p.example) : '',
+            enabled: false,
+          })),
+          headers: ep.requestSchema.headers.map((p) => ({
+            key: p.name,
+            value: '',
+            enabled: false,
+          })),
+          pathParams: Object.fromEntries(ep.requestSchema.pathParams.map((p) => [p.name, ''])),
+          specAssetId,
+          operationId: `${ep.method} ${ep.pathPattern}`,
+        };
+        cur = {
+          ...next,
+          collections: {
+            ...next.collections,
+            requests: { ...next.collections.requests, [request.id]: patched },
+          },
+        };
+        created += 1;
+      }
+      return {
+        synced: { ...cur, meta: { ...cur.meta, updatedAt: new Date().toISOString() } },
+      };
+    });
+    const after = get().synced;
+    if (after) queueSaveSynced(after);
+    return { folderId: rootFolderId, requests: created, warnings };
   },
 
   importPostmanEnvironment: (parsed) => {
