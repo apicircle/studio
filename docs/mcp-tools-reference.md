@@ -1,6 +1,6 @@
 # MCP tool catalog reference
 
-The `@apicircle/mcp-server` host exposes 95 tools, namespaced by capability area. The full list is canonical in [`packages/shared/src/mcp.ts`](../packages/shared/src/mcp.ts) and registered in [`packages/mcp-server/src/tools/registry.ts`](../packages/mcp-server/src/tools/registry.ts).
+The `@apicircle/mcp-server` host exposes 96 tools, namespaced by capability area. The full list is canonical in [`packages/shared/src/mcp.ts`](../packages/shared/src/mcp.ts) and registered in [`packages/mcp-server/src/tools/registry.ts`](../packages/mcp-server/src/tools/registry.ts).
 
 ## Imports
 
@@ -183,6 +183,7 @@ response-rule shapes mirror the `prompt.set_endpoint_*` tools above.
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mock.list_endpoints`       | `{ mockId }` → `[{ id, method, path, name }]`                                                                                                                                                                                                                                                |
 | `mock.refresh`              | `{ id }` — re-derive endpoints from `source` (re-parse the spec) after the spec changed. Inline sources re-parse; asset-backed (`openapi-asset`) mocks refresh in the desktop/web app. Returns `{ ok, endpointCount, warnings }`. Endpoint edits on a linked mock are rejected as read-only. |
+| `mock.promote_endpoint`     | `{ mockId, endpointId, folderId? }` — promote a mock endpoint into a saved request (method + path + request-schema params) under a folder (root when omitted). Returns `{ ok, requestId, changedIds }`. Allowed on read-only linked mocks (promoting is a read).                             |
 | `mock.add_endpoint`         | `{ mockId, method, pathPattern, name?, description?, response? }` — defaults to a `200` JSON `{}` response                                                                                                                                                                                   |
 | `mock.update_endpoint`      | `{ mockId, endpointId, method?, pathPattern?, name?, description?, ... }` — patches only the supplied fields                                                                                                                                                                                 |
 | `mock.delete_endpoint`      | `{ mockId, endpointId }`                                                                                                                                                                                                                                                                     |

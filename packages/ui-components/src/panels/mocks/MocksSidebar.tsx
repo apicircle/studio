@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Copy,
   FileCode,
+  FolderPlus,
   Plus,
   RefreshCw,
   Search,
@@ -36,6 +37,8 @@ export function MocksSidebar() {
   const duplicateMockServer = useWorkspaceStore((s) => s.duplicateMockServer);
   const duplicateMockEndpoint = useWorkspaceStore((s) => s.duplicateMockEndpoint);
   const refreshMockServer = useWorkspaceStore((s) => s.refreshMockServer);
+  const promoteMockEndpointToRequest = useWorkspaceStore((s) => s.promoteMockEndpointToRequest);
+  const pushToast = useWorkspaceStore((s) => s.pushToast);
 
   const allServers = Object.values(mockServers);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -227,28 +230,47 @@ export function MocksSidebar() {
                         visibleEndpoints.map((endpoint) => {
                           const isActive =
                             activeServerId === server.id && activeEndpointId === endpoint.id;
-                          const endpointItems: KebabMenuItem[] = isLinked
-                            ? []
-                            : [
-                                {
-                                  id: 'duplicate',
-                                  label: 'Duplicate',
-                                  icon: <Copy size={12} aria-hidden="true" />,
-                                  onSelect: () => duplicateMockEndpoint(server.id, endpoint.id),
-                                },
-                                {
-                                  id: 'delete',
-                                  label: 'Delete',
-                                  icon: <Trash2 size={12} aria-hidden="true" />,
-                                  tone: 'danger',
-                                  onSelect: () =>
-                                    setPendingEndpointDelete({
-                                      serverId: server.id,
-                                      endpointId: endpoint.id,
-                                      label: `${endpoint.method} ${endpoint.pathPattern}`,
-                                    }),
-                                },
-                              ];
+                          const endpointItems: KebabMenuItem[] = [
+                            {
+                              id: 'promote',
+                              label: 'Add to collection',
+                              icon: <FolderPlus size={12} aria-hidden="true" />,
+                              onSelect: () => {
+                                const newId = promoteMockEndpointToRequest(server.id, endpoint.id);
+                                if (newId) {
+                                  pushToast({
+                                    tone: 'success',
+                                    title: `Added ${endpoint.method} ${endpoint.pathPattern} to the collection`,
+                                    ttlMs: 5000,
+                                  });
+                                }
+                              },
+                            },
+                          ];
+                          // Linked ("run live") mocks are read-only, so only the
+                          // non-mutating "Add to collection" action shows.
+                          if (!isLinked) {
+                            endpointItems.push(
+                              {
+                                id: 'duplicate',
+                                label: 'Duplicate',
+                                icon: <Copy size={12} aria-hidden="true" />,
+                                onSelect: () => duplicateMockEndpoint(server.id, endpoint.id),
+                              },
+                              {
+                                id: 'delete',
+                                label: 'Delete',
+                                icon: <Trash2 size={12} aria-hidden="true" />,
+                                tone: 'danger',
+                                onSelect: () =>
+                                  setPendingEndpointDelete({
+                                    serverId: server.id,
+                                    endpointId: endpoint.id,
+                                    label: `${endpoint.method} ${endpoint.pathPattern}`,
+                                  }),
+                              },
+                            );
+                          }
                           return (
                             <li key={endpoint.id}>
                               <div

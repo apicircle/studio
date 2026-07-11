@@ -4,6 +4,7 @@ import type {
   MockResponseConfig,
   MockServer,
   MockServerSource,
+  Request as ApiRequest,
 } from '@apicircle/shared';
 import {
   generateId,
@@ -343,6 +344,48 @@ export const mockRefreshTool: AnyToolDef = {
       changedIds: out.changedIds,
       warnings,
     };
+  },
+};
+
+export const mockPromoteEndpointTool: AnyToolDef = {
+  name: 'mock.promote_endpoint',
+  description:
+    "Promote a mock endpoint into a saved request in the collection tree — maps the endpoint's method, path pattern, and request-schema params (query / header / path) to a new request. `folderId` places it under a folder (root when omitted). Returns the new request id.",
+  inputSchema: z.object({
+    mockId: z.string(),
+    endpointId: z.string(),
+    folderId: z.string().nullish(),
+  }),
+  async handler(input, ctx) {
+    const state = await ctx.workspace.read();
+    const mock = state.synced.mockServers[input.mockId];
+    const ep = mock?.endpoints.find((e) => e.id === input.endpointId);
+    if (!mock || !ep) return { ok: false as const, error: 'mock or endpoint not found' as const };
+    const now = new Date().toISOString();
+    const request: ApiRequest = {
+      id: generateId(),
+      name: ep.name || `${ep.method} ${ep.pathPattern}`,
+      folderId: input.folderId ?? null,
+      method: ep.method,
+      url: ep.pathPattern,
+      headers: ep.requestSchema.headers.map((p) => ({ key: p.name, value: '', enabled: false })),
+      query: ep.requestSchema.queryParams.map((p) => ({
+        key: p.name,
+        value: p.example != null ? String(p.example) : '',
+        enabled: false,
+      })),
+      pathParams: Object.fromEntries(ep.requestSchema.pathParams.map((p) => [p.name, ''])),
+      cookies: [],
+      body: { type: 'none', content: '' },
+      auth: { type: 'none' },
+      contextVars: [],
+      extractions: [],
+      assertions: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    const out = await ctx.workspace.apply({ kind: 'request.create', request });
+    return { ok: true as const, requestId: request.id, changedIds: out.changedIds };
   },
 };
 

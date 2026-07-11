@@ -1,4 +1,4 @@
-import { act, screen } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { MocksSidebar } from './MocksSidebar';
@@ -54,5 +54,26 @@ describe('MocksSidebar — asset-backed mocks', () => {
     expect(screen.getByText('Add endpoint')).toBeInTheDocument();
     expect(screen.queryByText('Refresh from spec')).not.toBeInTheDocument();
     expect(screen.queryByText('Re-import from spec')).not.toBeInTheDocument();
+  });
+
+  it('promotes an endpoint into the collection via "Add to collection"', async () => {
+    await renderWithStore(<MocksSidebar />);
+    let mockId = '';
+    await act(async () => {
+      const r = await useWorkspaceStore
+        .getState()
+        .createMockServer({ name: 'API', source: { kind: 'manual', endpoints: [] } });
+      mockId = r.id;
+      useWorkspaceStore.getState().addMockEndpoint(mockId);
+    });
+
+    // The active server auto-expands, so the endpoint row + its kebab are visible.
+    await userEvent.click(await screen.findByRole('button', { name: /GET \/path actions/i }));
+    await userEvent.click(screen.getByText('Add to collection'));
+
+    await waitFor(() => {
+      const reqs = Object.values(useWorkspaceStore.getState().synced!.collections.requests);
+      expect(reqs.some((r) => r.url === '/path')).toBe(true);
+    });
   });
 });

@@ -969,6 +969,8 @@ Snapshots live only on this machine. They are kept within a size budget — pick
 - **From a spec** — paste an OpenAPI, Postman, or Insomnia source; it is parsed into endpoints the moment you create the mock, so the endpoint table is populated right away. On the Desktop app the parse runs in the native process and resolves external \`$ref\`s; the web app resolves in-document \`$ref\`s only and warns about any external references it can't follow.
 - **From a spec asset** — build the mock from an OpenAPI/Swagger file you uploaded to Global Assets → Files, in one of two modes. **Run live** (linked) derives the endpoints from the asset and keeps them in sync — re-uploading the spec updates every linked mock, and its endpoints are read-only. **Import & edit** (materialized) parses the spec into editable endpoints you can modify, with a refresh-from-spec re-import when the asset changes.
 
+Every mock endpoint has an **Add to collection** action (the ⋯ menu on the endpoint row) that saves it as a real request in your collection tree — carrying the method, path pattern, and declared query/header/path params. It works even on read-only "run live" mocks, so you can turn a mocked endpoint into a request you send against the real API.
+
 ## Endpoints and the response flow
 
 Each endpoint is a method + path pattern, edited as a flow: Endpoint → Validation → Rules → Default response. Example — a \`GET /users/:id\` endpoint:

@@ -51,7 +51,7 @@ import {
 } from './githubPrCapability';
 import { decideRetirement, probeBranchRetirement } from './branchRetirement';
 import { summarizeUploadedSpec } from './specUpload';
-import { resolveMockEndpoints } from './mockResolve';
+import { resolveMockEndpoints, requestShapeFromMockEndpoint } from './mockResolve';
 import { applyFont } from '../theme/applyFont';
 import { applyFontSize, clampFontSizePercent } from '../theme/applyFontSize';
 import {
@@ -1182,6 +1182,17 @@ type WorkspaceStore = {
     specAssetId?: string;
     title?: string;
   }) => Promise<{ folderId: string | null; requests: number; warnings: string[] }>;
+  /**
+   * Promote a mock endpoint into a saved request in the collection tree — maps
+   * method + path pattern + request-schema params to a new request under
+   * `parentFolderId` (root when null). Returns the new request id, or null when
+   * the mock / endpoint is missing.
+   */
+  promoteMockEndpointToRequest: (
+    mockId: string,
+    endpointId: string,
+    parentFolderId?: string | null,
+  ) => string | null;
   /**
    * Import a parsed Postman environment. Returns the final env name
    * (uniquified if it collided), or null if no synced doc was loaded.
@@ -3351,19 +3362,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         const { synced: next, request } = addRequestAction(cur, folder.id, name);
         const patched: ApiRequest = {
           ...request,
-          method: ep.method,
-          url: ep.pathPattern,
-          query: ep.requestSchema.queryParams.map((p) => ({
-            key: p.name,
-            value: p.example != null ? String(p.example) : '',
-            enabled: false,
-          })),
-          headers: ep.requestSchema.headers.map((p) => ({
-            key: p.name,
-            value: '',
-            enabled: false,
-          })),
-          pathParams: Object.fromEntries(ep.requestSchema.pathParams.map((p) => [p.name, ''])),
+          ...requestShapeFromMockEndpoint(ep),
           specAssetId,
           operationId: `${ep.method} ${ep.pathPattern}`,
         };
@@ -3383,6 +3382,36 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const after = get().synced;
     if (after) queueSaveSynced(after);
     return { folderId: rootFolderId, requests: created, warnings };
+  },
+
+  promoteMockEndpointToRequest: (mockId, endpointId, parentFolderId = null) => {
+    const synced = get().synced;
+    if (!synced) return null;
+    const server = synced.mockServers[mockId];
+    const ep = server?.endpoints.find((e) => e.id === endpointId);
+    if (!server || !ep) return null;
+    let requestId = '';
+    set((state) => {
+      if (!state.synced) return {};
+      const { synced: next, request } = addRequestAction(
+        state.synced,
+        parentFolderId,
+        ep.name || `${ep.method} ${ep.pathPattern}`,
+      );
+      const patched: ApiRequest = { ...request, ...requestShapeFromMockEndpoint(ep) };
+      requestId = request.id;
+      return {
+        synced: {
+          ...next,
+          collections: {
+            ...next.collections,
+            requests: { ...next.collections.requests, [request.id]: patched },
+          },
+          meta: { ...next.meta, updatedAt: new Date().toISOString() },
+        },
+      };
+    });
+    return requestId || null;
   },
 
   importPostmanEnvironment: (parsed) => {

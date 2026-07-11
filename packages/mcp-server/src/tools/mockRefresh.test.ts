@@ -6,6 +6,7 @@ import { InProcessMockController } from '../providers/InProcessMockController';
 import {
   mockAddEndpointTool,
   mockCreateFromOpenApiTool,
+  mockPromoteEndpointTool,
   mockRefreshTool,
   mockUpdateEndpointTool,
 } from './mocks';
@@ -161,5 +162,32 @@ describe('linked mocks are read-only over MCP', () => {
     )) as { ok: boolean; error: string };
     expect(out.ok).toBe(false);
     expect(out.error).toMatch(/read-only/);
+  });
+});
+
+describe('mock.promote_endpoint', () => {
+  beforeEach(() => {
+    setupCtx(freshState({ m1: linkedMock('m1') }));
+  });
+
+  it('promotes a mock endpoint into a collection request (allowed on linked mocks)', async () => {
+    const out = (await mockPromoteEndpointTool.handler(
+      { mockId: 'm1', endpointId: 'e1' },
+      ctx,
+    )) as { ok: boolean; requestId: string };
+    expect(out.ok).toBe(true);
+    const state = await ctx.workspace.read();
+    const req = state.synced.collections.requests[out.requestId];
+    expect(req.method).toBe('GET');
+    expect(req.url).toBe('/pets');
+  });
+
+  it('returns not found for a missing endpoint', async () => {
+    const out = (await mockPromoteEndpointTool.handler(
+      { mockId: 'm1', endpointId: 'nope' },
+      ctx,
+    )) as { ok: boolean; error: string };
+    expect(out.ok).toBe(false);
+    expect(out.error).toMatch(/not found/);
   });
 });

@@ -102,6 +102,7 @@ export type McpToolName =
   | 'mock.list'
   | 'mock.list_endpoints'
   | 'mock.refresh'
+  | 'mock.promote_endpoint'
   | 'mock.start'
   | 'mock.stop'
   | 'mock.delete'
@@ -214,6 +215,7 @@ export const MCP_TOOL_NAMES: ReadonlyArray<McpToolName> = [
   'mock.list',
   'mock.list_endpoints',
   'mock.refresh',
+  'mock.promote_endpoint',
   'mock.start',
   'mock.stop',
   'mock.delete',

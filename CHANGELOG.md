@@ -60,6 +60,14 @@
   gains additive `specAssetId` + `operationId` back-refs so an imported
   collection knows which spec asset + operation each request came from.
   (`@apicircle/shared`, `@apicircle/ui-components`)
+- **Promote a mock endpoint into a collection (additive).** Every mock endpoint
+  gains an **Add to collection** action (the mock sidebar's endpoint kebab) that
+  creates a saved request from its method + path + request-schema params —
+  available even on read-only "run live" mocks. New
+  `promoteMockEndpointToRequest` store action + `mock.promote_endpoint` MCP tool
+  (catalog 95 → **96**). A shared `requestShapeFromMockEndpoint` mapper keeps
+  promoted requests and OpenAPI-imported requests identical.
+  (`@apicircle/ui-components`, `@apicircle/mcp-server`)
 - **UI sections/mode seam (open-core, additive).** Building on the `extraPanels`
   seam, the React shell (`@apicircle/ui-components`) now accepts edition-contributed
   top-level **sections** ("modes") via an optional `App` `sections` prop
