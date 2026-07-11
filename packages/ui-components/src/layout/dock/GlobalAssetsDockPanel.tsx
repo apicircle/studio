@@ -37,7 +37,7 @@ import { SpecAssetBadge } from '../../primitives/SpecAssetBadge';
 import { getAttachment } from '../../persistence/attachments';
 
 interface FileAssetConsumer {
-  kind: 'request' | 'mock';
+  kind: 'request' | 'mock' | 'spec-mock' | 'spec-request';
   /** Friendly label for the row ("My request", "Petstore · GET /pets"). */
   label: string;
   /** Stable id for the list `key`. */
@@ -58,6 +58,19 @@ function consumersFromIndex(
     const meta = mockNames[`${ref.mockId}:${ref.endpointId}`];
     const label = meta ? `${meta.server} · ${meta.endpoint}` : `${ref.mockId} · ${ref.endpointId}`;
     out.push({ kind: 'mock', id: `mock:${ref.mockId}:${ref.endpointId}`, label });
+  }
+  // Spec-source consumers (Increment E): mocks driven by this spec asset +
+  // requests imported from it.
+  for (const mockId of usage.mockServers ?? []) {
+    const named = Object.entries(mockNames).find(([key]) => key.startsWith(`${mockId}:`));
+    out.push({
+      kind: 'spec-mock',
+      id: `spec-mock:${mockId}`,
+      label: named ? named[1].server : mockId,
+    });
+  }
+  for (const id of usage.importedRequests ?? []) {
+    out.push({ kind: 'spec-request', id: `spec-req:${id}`, label: requestNames[id] ?? id });
   }
   return out;
 }

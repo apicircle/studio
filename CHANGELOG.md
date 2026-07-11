@@ -68,6 +68,15 @@
   (catalog 95 → **96**). A shared `requestShapeFromMockEndpoint` mapper keeps
   promoted requests and OpenAPI-imported requests identical.
   (`@apicircle/ui-components`, `@apicircle/mcp-server`)
+- **Spec-asset usage tracking (additive).** The Global Assets usage index now
+  counts, per spec asset, the mock servers whose source it is (`openapi-asset`)
+  and the requests imported from it (`Request.specAssetId`) — so the Assets
+  panel's "Used in N" and the delete confirmation surface the mocks and
+  collections a spec backs. This completes the spec-asset hub: upload a spec
+  once, then run/import it as a mock, import it as a collection, promote mock
+  endpoints into requests, and (in the Lens edition) drift-check code against it,
+  all referencing the same asset.
+  (`@apicircle/shared`, `@apicircle/ui-components`)
 - **UI sections/mode seam (open-core, additive).** Building on the `extraPanels`
   seam, the React shell (`@apicircle/ui-components`) now accepts edition-contributed
   top-level **sections** ("modes") via an optional `App` `sections` prop

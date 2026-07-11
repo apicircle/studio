@@ -1351,7 +1351,7 @@ Each asset shows a small status pill next to its name. The pill tells you where 
 - **Missing** — both refs dropped and no local copy. Re-upload from the same row to restore.
 - **Diverged** — both refs hold different blob shas. Usually means someone force-pushed the base branch with a different file at the same slot — review before pushing.
 
-Each row also shows "Used in N" — clicking through the Global Assets panel shows every request and mock endpoint that binds to the file. Zero-use assets get an "Unused" badge so you can identify and prune orphans deliberately.
+Each row also shows "Used in N" — clicking through the Global Assets panel shows every request and mock endpoint that binds to the file. For a spec asset, that count also includes the mock servers built from it and the requests imported from it, so you can see what a spec backs before deleting it. Zero-use assets get an "Unused" badge so you can identify and prune orphans deliberately.
 
 When a workspace is pushed to GitHub, file bytes are stored as attachment blobs next to the synced doc under \`.apicircle/workspace-<id>/attachments/<slotId>\`, separate from the workspace document. That keeps the JSON small and makes diffs readable. On another machine, linked or synced file assets show as missing until you download them. Sending a request or running a plan that needs missing files opens a download prompt; after the download verifies the checksum, execution continues. The \`apicircle run\` CLI follows the same rule for headless plans.
 

@@ -512,6 +512,15 @@ export interface AssetUsage {
   requests: string[];
   /** Mock endpoints whose responses bind this asset. */
   mockEndpoints: Array<{ mockId: string; endpointId: string }>;
+  /**
+   * Mock servers whose SOURCE is this spec asset (`openapi-asset`). Present only
+   * for spec assets (Increment E). Deleting the asset breaks linked mocks and
+   * removes the re-import source for materialized ones, so the delete cascade
+   * surfaces these.
+   */
+  mockServers?: string[];
+  /** Request ids imported from this spec asset (`Request.specAssetId`) — spec assets only (Increment E). */
+  importedRequests?: string[];
   /** Total reference count — denormalised for cheap badge rendering. */
   total: number;
 }
