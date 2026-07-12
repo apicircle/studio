@@ -33,6 +33,25 @@ describe('MocksSidebar — asset-backed mocks', () => {
     expect(screen.queryByText('Add endpoint')).not.toBeInTheDocument();
   });
 
+  it('offers "Convert to editable mock" on a linked mock and flips it to materialized', async () => {
+    await renderWithStore(<MocksSidebar />);
+    await seedAssetMock('Live', 'linked');
+
+    await userEvent.click(await screen.findByRole('button', { name: /Live actions/i }));
+    await userEvent.click(screen.getByText('Convert to editable mock'));
+
+    await waitFor(() => {
+      const m = Object.values(useWorkspaceStore.getState().synced!.mockServers).find(
+        (s) => s.name === 'Live',
+      );
+      expect(m?.source).toMatchObject({ kind: 'openapi-asset', mode: 'materialized' });
+    });
+    // Now editable: Add endpoint returns, Convert is gone, read-only indicator lifts.
+    await userEvent.click(screen.getByRole('button', { name: /Live actions/i }));
+    expect(screen.getByText('Add endpoint')).toBeInTheDocument();
+    expect(screen.queryByText('Convert to editable mock')).not.toBeInTheDocument();
+  });
+
   it('offers "Re-import from spec" alongside Add endpoint on a materialized mock', async () => {
     await renderWithStore(<MocksSidebar />);
     await seedAssetMock('Editable', 'materialized');

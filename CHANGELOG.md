@@ -55,9 +55,12 @@
   source label for a live contract server, and the endpoint editor is fully
   read-only for a linked mock — every native control disabled via
   `<fieldset disabled>`, the Monaco response-body editor read-only, plus an
-  explanatory banner — so a live contract mock can't be hand-edited. Long
-  mock-server names now truncate in the sidebar so the per-server actions menu
-  stays reachable.
+  explanatory banner — so a live contract mock can't be hand-edited. A live
+  contract mock can be **converted to an editable mock** in place (the Mocks
+  kebab, the read-only banner, or the panel callout) — this flips it to a
+  materialized copy while keeping the spec link, so "Re-import from spec" still
+  works. Long mock-server names now truncate in the sidebar so the per-server
+  actions menu stays reachable.
   (`@apicircle/shared`, `@apicircle/mock-server-core`, `@apicircle/ui-components`,
   `@apicircle/mcp-server`, VS Code)
 - **Import an OpenAPI/Swagger spec into a collection (editor, additive).** The

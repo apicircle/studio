@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, screen } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { MockRuntimeEntry, MockServer } from '@apicircle/shared';
 import { MockServersPanel } from './MockServersPanel';
@@ -124,7 +124,7 @@ describe('MockServersPanel (post-rich-editor redesign)', () => {
 
     expect(await screen.findByText(/Served directly from contract/i)).toBeInTheDocument();
     // Friendly source label instead of the raw `openapi-asset` union tag.
-    expect(screen.getByText('OpenAPI contract (live)')).toBeInTheDocument();
+    expect(screen.getByText('OpenAPI contract')).toBeInTheDocument();
   });
 
   it('renders the endpoint editor READ-ONLY for a linked contract mock', async () => {
@@ -150,6 +150,37 @@ describe('MockServersPanel (post-rich-editor redesign)', () => {
     expect(await screen.findByText(/Read-only/i)).toBeInTheDocument();
     expect(screen.getByLabelText('Mock endpoint method')).toBeDisabled();
     expect(screen.getByLabelText('Mock endpoint name')).toBeDisabled();
+  });
+
+  it('the read-only editor "Convert to editable" button unlocks editing', async () => {
+    await renderWithStore(<MockServersPanel />);
+    await act(async () => {
+      await useWorkspaceStore
+        .getState()
+        .addGlobalFileAsset(
+          new File([OPENAPI_JSON], 'petstore.json', { type: 'application/json' }),
+        );
+    });
+    const assetId = Object.values(useWorkspaceStore.getState().synced!.globalAssets.files!)[0].id;
+    const { id } = await useWorkspaceStore.getState().createMockServer({
+      name: 'Live',
+      source: { kind: 'openapi-asset', assetId, format: 'json', mode: 'linked' },
+    });
+    const ep = useWorkspaceStore.getState().synced!.mockServers[id].endpoints[0];
+    act(() => {
+      useWorkspaceStore.getState().setActiveMockEndpoint({ serverId: id, endpointId: ep.id });
+    });
+
+    // Read-only initially.
+    expect(await screen.findByText(/Read-only/i)).toBeInTheDocument();
+    expect(screen.getByLabelText('Mock endpoint method')).toBeDisabled();
+
+    // Convert unlocks it: banner gone, controls enabled, source now materialized.
+    await userEvent.click(screen.getByRole('button', { name: /Convert to editable/i }));
+    await waitFor(() => expect(screen.queryByText(/Read-only/i)).not.toBeInTheDocument());
+    expect(screen.getByLabelText('Mock endpoint method')).not.toBeDisabled();
+    const src = useWorkspaceStore.getState().synced!.mockServers[id].source;
+    expect(src).toMatchObject({ kind: 'openapi-asset', mode: 'materialized' });
   });
 
   it('leaves the endpoint editor EDITABLE for a materialized (imported) mock', async () => {

@@ -1,5 +1,15 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Loader2, Play, Plus, Radio, Server, Square, Trash2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  Loader2,
+  Play,
+  Plus,
+  Radio,
+  Server,
+  Square,
+  Trash2,
+  Unlock,
+} from 'lucide-react';
 import type { MockRuntimeEntry, MockServer } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { MockEndpointEditor } from './MockEndpointEditor';
@@ -20,7 +30,7 @@ function friendlySourceKind(source: MockServer['source']): string {
     case 'insomnia':
       return 'Insomnia';
     case 'openapi-asset':
-      return source.mode === 'linked' ? 'OpenAPI contract (live)' : 'OpenAPI (imported from asset)';
+      return source.mode === 'linked' ? 'OpenAPI contract' : 'OpenAPI (imported from asset)';
   }
 }
 
@@ -291,6 +301,7 @@ function ServerSummary({
   onStop: () => void;
 }) {
   const setMockServerName = useWorkspaceStore((s) => s.setMockServerName);
+  const convertMockToEditable = useWorkspaceStore((s) => s.convertMockToEditable);
   const files = useWorkspaceStore((s) => s.synced?.globalAssets.files);
   // A "run live" (linked) contract mock gets a clear provenance callout below.
   const src = server.source;
@@ -327,6 +338,14 @@ function ServerSummary({
               {linkedAsset?.spec?.dialect === 'swagger-2' ? 'Swagger 2.0' : 'OpenAPI 3.x'} ·{' '}
               {linkedAsset?.spec?.operationCount ?? server.endpoints.length} ops
             </p>
+            <button
+              type="button"
+              onClick={() => convertMockToEditable(server.id)}
+              className="mt-1.5 inline-flex h-6 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.625rem] text-accent hover:bg-accent/20"
+            >
+              <Unlock size={11} aria-hidden="true" />
+              Convert to editable mock
+            </button>
           </div>
         </div>
       )}

@@ -11,6 +11,7 @@ import {
   Search,
   Server,
   Trash2,
+  Unlock,
 } from 'lucide-react';
 import { isLinkedMockSource } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
@@ -38,6 +39,7 @@ export function MocksSidebar() {
   const duplicateMockServer = useWorkspaceStore((s) => s.duplicateMockServer);
   const duplicateMockEndpoint = useWorkspaceStore((s) => s.duplicateMockEndpoint);
   const refreshMockServer = useWorkspaceStore((s) => s.refreshMockServer);
+  const convertMockToEditable = useWorkspaceStore((s) => s.convertMockToEditable);
   const promoteMockEndpointToRequest = useWorkspaceStore((s) => s.promoteMockEndpointToRequest);
   const pushToast = useWorkspaceStore((s) => s.pushToast);
 
@@ -155,6 +157,16 @@ export function MocksSidebar() {
                         label: isLinked ? 'Refresh from spec' : 'Re-import from spec',
                         icon: <RefreshCw size={12} aria-hidden="true" />,
                         onSelect: () => void refreshMockServer(server.id),
+                      },
+                    ]
+                  : []),
+                ...(isLinked
+                  ? [
+                      {
+                        id: 'convert-editable',
+                        label: 'Convert to editable mock',
+                        icon: <Unlock size={12} aria-hidden="true" />,
+                        onSelect: () => convertMockToEditable(server.id),
                       },
                     ]
                   : []),

@@ -1034,6 +1034,14 @@ type WorkspaceStore = {
    */
   refreshMockServer: (id: string) => Promise<{ warnings: string[] }>;
   /**
+   * Convert a linked ("run live") contract mock into an editable one by flipping
+   * its `openapi-asset` source from `linked` to `materialized`. Endpoints are
+   * preserved (they already live on the server) and the spec link is kept, so
+   * "Re-import from spec" and asset-usage tracking keep working. No-op for any
+   * non-linked mock.
+   */
+  convertMockToEditable: (serverId: string) => void;
+  /**
    * Clone a mock server with all of its endpoints + nested rules. Every
    * cloned entity gets a fresh id; the legacy `overrides` map is reset
    * since it keys by old endpoint ids. Returns the new server's id, or
@@ -2965,6 +2973,36 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const after = get().synced;
     if (after) queueSaveSynced(after);
     return { warnings };
+  },
+
+  convertMockToEditable: (serverId) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const existing = synced.mockServers[serverId];
+    if (!existing) return;
+    // Only a linked ("run live") contract mock needs converting; every other
+    // source is already editable. The endpoints already live on the server, so
+    // flipping the mode simply unlocks them — nothing is re-parsed.
+    if (existing.source.kind !== 'openapi-asset' || existing.source.mode !== 'linked') return;
+    const now = new Date().toISOString();
+    const nextServer = {
+      ...existing,
+      source: { ...existing.source, mode: 'materialized' as const },
+      updatedAt: now,
+    };
+    const nextSynced: WorkspaceSynced = {
+      ...synced,
+      mockServers: { ...synced.mockServers, [serverId]: nextServer },
+      meta: { ...synced.meta, updatedAt: now },
+    };
+    set({ synced: nextSynced });
+    queueSaveSynced(nextSynced);
+    get().pushToast({
+      tone: 'success',
+      title: `"${existing.name}" is now editable`,
+      detail:
+        'Endpoints no longer auto-sync with the spec — use "Re-import from spec" to pull updates.',
+    });
   },
 
   duplicateMockServer: (id) => {

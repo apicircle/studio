@@ -127,7 +127,10 @@ come in two modes, each with its own entry point in the Mocks header:
   the endpoints are read-only (edits are rejected on every surface). The dedicated
   **Serve OpenAPI contract** flow picks a contract, name, and port and stands up a
   live, read-only server; the mock panel shows a "Served directly from contract"
-  callout. Best for "just run my contract."
+  callout. Best for "just run my contract." A live contract mock can be
+  **converted to an editable mock** in place (`convertMockToEditable`) — this
+  flips the source to `materialized`, unlocking the endpoints while keeping the
+  spec link so "Re-import from spec" still works.
 - **`materialized` (New Mock Server → From spec asset)** — the spec is parsed
   once into editable endpoints you can modify; an explicit refresh
   (`refreshMockServer` / the `mock.refresh` MCP tool) re-imports from the asset.

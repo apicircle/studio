@@ -110,4 +110,54 @@ describe('mock two modes off a spec asset', () => {
     const res = await store().refreshMockServer('no-such');
     expect(res).toEqual({ warnings: [] });
   });
+
+  it('converts a linked mock to editable (materialized), preserving endpoints + spec link', async () => {
+    const assetId = await uploadSpec(['/pets', '/pets/{id}']);
+    const mockId = await createAssetMock(assetId, 'linked');
+    expect(store().synced?.mockServers[mockId]?.endpoints.length).toBe(2);
+
+    act(() => {
+      store().convertMockToEditable(mockId);
+    });
+
+    const mock = store().synced?.mockServers[mockId];
+    // Same spec link, mode flipped to materialized, endpoints preserved.
+    expect(mock?.source).toMatchObject({ kind: 'openapi-asset', assetId, mode: 'materialized' });
+    expect(mock?.endpoints.length).toBe(2);
+    // Now editable — endpoint mutations take effect (were no-ops while linked).
+    act(() => {
+      store().addMockEndpoint(mockId);
+    });
+    expect(store().synced?.mockServers[mockId]?.endpoints.length).toBe(3);
+  });
+
+  it('convertMockToEditable is a no-op for unknown ids, manual, and already-materialized mocks', async () => {
+    // Unknown id — no throw, nothing created.
+    act(() => {
+      store().convertMockToEditable('no-such');
+    });
+
+    let manualId = '';
+    await act(async () => {
+      const r = await store().createMockServer({
+        name: 'manual',
+        source: { kind: 'manual', endpoints: [] },
+      });
+      manualId = r.id;
+    });
+    act(() => {
+      store().convertMockToEditable(manualId);
+    });
+    expect(store().synced?.mockServers[manualId]?.source.kind).toBe('manual');
+
+    const assetId = await uploadSpec(['/pets']);
+    const matId = await createAssetMock(assetId, 'materialized');
+    act(() => {
+      store().convertMockToEditable(matId);
+    });
+    expect(store().synced?.mockServers[matId]?.source).toMatchObject({
+      kind: 'openapi-asset',
+      mode: 'materialized',
+    });
+  });
 });

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { Radio } from 'lucide-react';
+import { Radio, Unlock } from 'lucide-react';
 import type { HttpMethod, MockEndpoint, MockServer } from '@apicircle/shared';
 import { isLinkedMockSource, validateMockPath } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
@@ -49,6 +49,7 @@ export function MockEndpointEditor({
   endpoint: MockEndpoint;
 }) {
   const updateMockEndpoint = useWorkspaceStore((s) => s.updateMockEndpoint);
+  const convertMockToEditable = useWorkspaceStore((s) => s.convertMockToEditable);
   const [selection, setSelection] = useState<MockNodeSelection>({ kind: 'endpoint' });
 
   // Reset selection whenever the active endpoint changes — the user
@@ -97,11 +98,18 @@ export function MockEndpointEditor({
         {readOnly && (
           <div className="flex items-center gap-2 border-b border-accent/30 bg-accent/5 px-4 py-1.5 text-[0.6875rem] text-text-dim">
             <Radio size={12} className="shrink-0 text-accent" aria-hidden="true" />
-            <span>
+            <span className="min-w-0 flex-1">
               <strong className="text-text-primary">Read-only</strong> — served live from the
-              contract and kept in sync with the spec asset. To edit, import an editable copy via{' '}
-              <strong className="text-text-primary">New Mock Server &rarr; From spec asset</strong>.
+              contract and kept in sync with the spec asset.
             </span>
+            <button
+              type="button"
+              onClick={() => convertMockToEditable(server.id)}
+              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.625rem] text-accent hover:bg-accent/20"
+            >
+              <Unlock size={11} aria-hidden="true" />
+              Convert to editable
+            </button>
           </div>
         )}
         <fieldset
