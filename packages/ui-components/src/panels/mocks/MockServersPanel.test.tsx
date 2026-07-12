@@ -127,6 +127,54 @@ describe('MockServersPanel (post-rich-editor redesign)', () => {
     expect(screen.getByText('OpenAPI contract (live)')).toBeInTheDocument();
   });
 
+  it('renders the endpoint editor READ-ONLY for a linked contract mock', async () => {
+    await renderWithStore(<MockServersPanel />);
+    await act(async () => {
+      await useWorkspaceStore
+        .getState()
+        .addGlobalFileAsset(
+          new File([OPENAPI_JSON], 'petstore.json', { type: 'application/json' }),
+        );
+    });
+    const assetId = Object.values(useWorkspaceStore.getState().synced!.globalAssets.files!)[0].id;
+    const { id } = await useWorkspaceStore.getState().createMockServer({
+      name: 'Live',
+      source: { kind: 'openapi-asset', assetId, format: 'json', mode: 'linked' },
+    });
+    const ep = useWorkspaceStore.getState().synced!.mockServers[id].endpoints[0];
+    act(() => {
+      useWorkspaceStore.getState().setActiveMockEndpoint({ serverId: id, endpointId: ep.id });
+    });
+
+    // Banner + native controls disabled via the wrapping <fieldset disabled>.
+    expect(await screen.findByText(/Read-only/i)).toBeInTheDocument();
+    expect(screen.getByLabelText('Mock endpoint method')).toBeDisabled();
+    expect(screen.getByLabelText('Mock endpoint name')).toBeDisabled();
+  });
+
+  it('leaves the endpoint editor EDITABLE for a materialized (imported) mock', async () => {
+    await renderWithStore(<MockServersPanel />);
+    await act(async () => {
+      await useWorkspaceStore
+        .getState()
+        .addGlobalFileAsset(
+          new File([OPENAPI_JSON], 'petstore.json', { type: 'application/json' }),
+        );
+    });
+    const assetId = Object.values(useWorkspaceStore.getState().synced!.globalAssets.files!)[0].id;
+    const { id } = await useWorkspaceStore.getState().createMockServer({
+      name: 'Imported',
+      source: { kind: 'openapi-asset', assetId, format: 'json', mode: 'materialized' },
+    });
+    const ep = useWorkspaceStore.getState().synced!.mockServers[id].endpoints[0];
+    act(() => {
+      useWorkspaceStore.getState().setActiveMockEndpoint({ serverId: id, endpointId: ep.id });
+    });
+
+    expect(await screen.findByLabelText('Mock endpoint method')).not.toBeDisabled();
+    expect(screen.queryByText(/Read-only/i)).not.toBeInTheDocument();
+  });
+
   it('renders the MockEndpointEditor flow + node editor when both a server and endpoint are active', async () => {
     await renderWithStore(<MockServersPanel />);
     useWorkspaceStore.setState((s) => ({

@@ -52,7 +52,12 @@
   (materialized), and **Serve OpenAPI contract** stands up a live, read-only
   server straight from a contract (linked) with a spec preview, name, and port.
   The mock panel shows a "Served directly from contract" callout and a friendly
-  source label for a live contract server.
+  source label for a live contract server, and the endpoint editor is fully
+  read-only for a linked mock — every native control disabled via
+  `<fieldset disabled>`, the Monaco response-body editor read-only, plus an
+  explanatory banner — so a live contract mock can't be hand-edited. Long
+  mock-server names now truncate in the sidebar so the per-server actions menu
+  stays reachable.
   (`@apicircle/shared`, `@apicircle/mock-server-core`, `@apicircle/ui-components`,
   `@apicircle/mcp-server`, VS Code)
 - **Import an OpenAPI/Swagger spec into a collection (editor, additive).** The

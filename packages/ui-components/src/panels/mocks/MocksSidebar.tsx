@@ -201,16 +201,16 @@ export function MocksSidebar() {
                       aria-label={`Open ${server.name}`}
                       aria-current={isServerActive ? 'true' : undefined}
                       className={cn(
-                        'flex h-full flex-1 items-center gap-1 rounded-sm px-1.5 text-left text-[0.6875rem]',
+                        'flex h-full min-w-0 flex-1 items-center gap-1 rounded-sm px-1.5 text-left text-[0.6875rem]',
                         isServerActive ? 'text-accent' : 'text-text-primary',
                       )}
                     >
-                      <Server size={11} className="text-accent" aria-hidden="true" />
+                      <Server size={11} className="shrink-0 text-accent" aria-hidden="true" />
                       <span className="flex-1 truncate font-medium">{server.name}</span>
                       {server.source.kind !== 'manual' && (
                         <FileCode
                           size={10}
-                          className="text-text-faint"
+                          className="shrink-0 text-text-faint"
                           aria-label={
                             isLinked ? 'Linked spec (read-only)' : `${server.source.kind} spec`
                           }

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useContext, useRef, useState } from 'react';
 import { Paperclip, Plus, Trash2, X } from 'lucide-react';
 import {
   coerceMockResponseBodyTypeForStatus,
@@ -19,6 +19,7 @@ import { applyContentTypeForBodyType } from '@apicircle/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { FilePickerMenu } from '../../primitives/FilePickerMenu';
 import { MonacoBodyEditor } from '../../editors/MonacoBodyEditor';
+import { MockReadOnlyContext } from './mockReadOnly';
 import { HeaderKeyAutocomplete, HeaderValueRecommendations } from '../editor/HeaderAutocomplete';
 import { cn } from '../../primitives/cn';
 import { FileAssetStatusPill } from '../../primitives/FileAssetStatusPill';
@@ -356,6 +357,7 @@ function BodyContentEditor({
   attachmentSlot: { serverId: string; endpointId: string } | null;
   compact?: boolean;
 }) {
+  const readOnly = useContext(MockReadOnlyContext);
   if (body.type === 'none') {
     return (
       <p className="rounded-sm border border-dashed border-border-subtle px-2 py-3 text-center text-[0.6875rem] text-text-dim">
@@ -392,6 +394,7 @@ function BodyContentEditor({
         onChange={onContentChange}
         modelPath={`inmemory://apicircle/mock-response/${attachmentSlot?.endpointId ?? 'inline'}.body`}
         ariaLabel={`${label} body`}
+        readOnly={readOnly}
       />
     </div>
   );
