@@ -170,16 +170,25 @@ describe('mock.promote_endpoint', () => {
     setupCtx(freshState({ m1: linkedMock('m1') }));
   });
 
-  it('promotes a mock endpoint into a collection request (allowed on linked mocks)', async () => {
+  it('promotes a mock endpoint into a runnable collection request (allowed on linked mocks)', async () => {
     const out = (await mockPromoteEndpointTool.handler(
       { mockId: 'm1', endpointId: 'e1' },
       ctx,
-    )) as { ok: boolean; requestId: string };
+    )) as { ok: boolean; requestId: string; folderId: string };
     expect(out.ok).toBe(true);
     const state = await ctx.workspace.read();
     const req = state.synced.collections.requests[out.requestId];
     expect(req.method).toBe('GET');
-    expect(req.url).toBe('/pets');
+    // Promote now yields a RUNNABLE request: templated on the active "Mock" env
+    // (MOCK_PORT falls back to 8080 for this portless linked mock) and filed
+    // under a "<name> (mock)" folder — see buildMockPromotion.
+    expect(req.url).toBe('{{MOCK_BASE_URL}}:{{MOCK_PORT}}/pets');
+    expect(req.folderId).toBe(out.folderId);
+    expect(state.synced.collections.folders[out.folderId].name).toBe('Linked (mock)');
+    expect(state.synced.environments.activeName).toBe('Mock');
+    expect(
+      state.synced.environments.items['Mock'].variables.find((v) => v.key === 'MOCK_PORT')?.value,
+    ).toBe('8080');
   });
 
   it('returns not found for a missing endpoint', async () => {
