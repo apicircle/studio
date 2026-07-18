@@ -116,6 +116,7 @@ import {
 } from '@apicircle/core';
 import { create } from 'zustand';
 import {
+  bytesFromFile,
   createAttachmentFromFile,
   deleteAttachment,
   deleteManyAttachments,
@@ -1041,6 +1042,14 @@ type WorkspaceStore = {
    * non-linked mock.
    */
   convertMockToEditable: (serverId: string) => void;
+  /**
+   * Re-upload the OpenAPI/Swagger file backing a spec-asset mock: replaces the
+   * asset's bytes (so every consumer sees the revised spec) which re-parses the
+   * spec summary and auto-refreshes every linked ("run live") mock's endpoints.
+   * Surfaces the new endpoint count as a toast. No-op for non-`openapi-asset`
+   * mocks. The spec asset is shared, so this reflects everywhere it's linked.
+   */
+  reuploadMockSpec: (serverId: string, file: File) => Promise<void>;
   /**
    * Clone a mock server with all of its endpoints + nested rules. Every
    * cloned entity gets a fresh id; the legacy `overrides` map is reset
@@ -3002,6 +3011,38 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       title: `"${existing.name}" is now editable`,
       detail:
         'Endpoints no longer auto-sync with the spec — use "Re-import from spec" to pull updates.',
+    });
+  },
+
+  reuploadMockSpec: async (serverId, file) => {
+    const server = get().synced?.mockServers[serverId];
+    if (!server || server.source.kind !== 'openapi-asset') return;
+    // Validate the new file is an OpenAPI/Swagger doc BEFORE replacing anything —
+    // a non-spec upload would otherwise silently clear the linked endpoints and
+    // de-type the asset. `summarizeUploadedSpec` returns null for non-specs.
+    const bytes = await bytesFromFile(file);
+    const summary = await summarizeUploadedSpec(
+      bytes,
+      file.name,
+      file.type,
+      new Date().toISOString(),
+    );
+    if (!summary) {
+      get().pushToast({
+        tone: 'error',
+        title: "That file isn't a valid OpenAPI/Swagger spec",
+        detail: 'The mock was left unchanged — upload the revised contract as JSON or YAML.',
+      });
+      return;
+    }
+    // Replacing the backing asset's bytes re-parses the spec summary and
+    // auto-refreshes every linked mock reading it (see fillGlobalFileAssetBytes).
+    await get().fillGlobalFileAssetBytes(server.source.assetId, file);
+    const count = get().synced?.mockServers[serverId]?.endpoints.length ?? 0;
+    get().pushToast({
+      tone: 'success',
+      title: `Updated "${server.name}" from the revised spec`,
+      detail: `${count} endpoint${count === 1 ? '' : 's'} now served.`,
     });
   },
 

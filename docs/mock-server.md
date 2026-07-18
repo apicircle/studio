@@ -130,7 +130,9 @@ come in two modes, each with its own entry point in the Mocks header:
   callout. Best for "just run my contract." A live contract mock can be
   **converted to an editable mock** in place (`convertMockToEditable`) — this
   flips the source to `materialized`, unlocking the endpoints while keeping the
-  spec link so "Re-import from spec" still works.
+  spec link so "Re-import from spec" still works. When the contract itself
+  changes, **Update spec…** (`reuploadMockSpec`) re-uploads the revised file,
+  replacing the backing asset's bytes and live-refreshing the linked endpoints.
 - **`materialized` (New Mock Server → From spec asset)** — the spec is parsed
   once into editable endpoints you can modify; an explicit refresh
   (`refreshMockServer` / the `mock.refresh` MCP tool) re-imports from the asset.

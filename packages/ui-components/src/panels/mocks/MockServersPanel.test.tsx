@@ -125,6 +125,9 @@ describe('MockServersPanel (post-rich-editor redesign)', () => {
     expect(await screen.findByText(/Served directly from contract/i)).toBeInTheDocument();
     // Friendly source label instead of the raw `openapi-asset` union tag.
     expect(screen.getByText('OpenAPI contract')).toBeInTheDocument();
+    // The callout exposes both spec actions.
+    expect(screen.getByRole('button', { name: /Update spec/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Convert to editable/i })).toBeInTheDocument();
   });
 
   it('renders the endpoint editor READ-ONLY for a linked contract mock', async () => {

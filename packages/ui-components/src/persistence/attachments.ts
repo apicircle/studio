@@ -91,7 +91,7 @@ export async function deleteManyAttachments(slotIds: string[]): Promise<void> {
  * back to FileReader in environments (notably jsdom) where the method is
  * absent on the File constructor.
  */
-async function bytesFromFile(file: File): Promise<Uint8Array> {
+export async function bytesFromFile(file: File): Promise<Uint8Array> {
   if (typeof file.arrayBuffer === 'function') {
     return new Uint8Array(await file.arrayBuffer());
   }

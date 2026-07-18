@@ -160,4 +160,52 @@ describe('mock two modes off a spec asset', () => {
       mode: 'materialized',
     });
   });
+
+  it('reuploadMockSpec replaces the spec bytes and re-derives a linked mock', async () => {
+    const assetId = await uploadSpec(['/pets']);
+    const mockId = await createAssetMock(assetId, 'linked');
+    expect(store().synced?.mockServers[mockId]?.endpoints.length).toBe(1);
+
+    await act(async () => {
+      await store().reuploadMockSpec(mockId, specFile(['/pets', '/pets/{id}', '/owners']));
+    });
+
+    // Endpoints re-derived from the revised spec + the asset summary re-parsed.
+    expect(store().synced?.mockServers[mockId]?.endpoints.length).toBe(3);
+    expect(store().synced?.globalAssets.files?.[assetId]?.spec?.operationCount).toBe(3);
+  });
+
+  it('reuploadMockSpec is a no-op for a non-spec-asset (manual) mock', async () => {
+    let manualId = '';
+    await act(async () => {
+      const r = await store().createMockServer({
+        name: 'manual',
+        source: { kind: 'manual', endpoints: [] },
+      });
+      manualId = r.id;
+    });
+    await act(async () => {
+      await store().reuploadMockSpec(manualId, specFile(['/pets']));
+    });
+    expect(store().synced?.mockServers[manualId]?.source.kind).toBe('manual');
+    expect(store().synced?.mockServers[manualId]?.endpoints.length).toBe(0);
+  });
+
+  it('reuploadMockSpec rejects a non-spec file and leaves the mock + asset unchanged', async () => {
+    const assetId = await uploadSpec(['/pets']);
+    const mockId = await createAssetMock(assetId, 'linked');
+    expect(store().synced?.mockServers[mockId]?.endpoints.length).toBe(1);
+
+    // A JSON file with no openapi/swagger key is not a spec.
+    const notASpec = new File([JSON.stringify({ hello: 'world' })], 'notes.json', {
+      type: 'application/json',
+    });
+    await act(async () => {
+      await store().reuploadMockSpec(mockId, notASpec);
+    });
+
+    // Untouched: endpoints preserved, the asset keeps its original spec summary.
+    expect(store().synced?.mockServers[mockId]?.endpoints.length).toBe(1);
+    expect(store().synced?.globalAssets.files?.[assetId]?.spec?.operationCount).toBe(1);
+  });
 });

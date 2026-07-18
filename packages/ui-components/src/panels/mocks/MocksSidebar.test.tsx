@@ -1,4 +1,4 @@
-import { act, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { MocksSidebar, MocksSidebarActions } from './MocksSidebar';
@@ -50,6 +50,39 @@ describe('MocksSidebar — asset-backed mocks', () => {
     await userEvent.click(screen.getByRole('button', { name: /Live actions/i }));
     expect(screen.getByText('Add endpoint')).toBeInTheDocument();
     expect(screen.queryByText('Convert to editable mock')).not.toBeInTheDocument();
+  });
+
+  it('offers "Update spec…" on a linked mock and re-derives endpoints from the new file', async () => {
+    await renderWithStore(<MocksSidebar />);
+    await seedAssetMock('Live', 'linked');
+    const mockId = Object.values(useWorkspaceStore.getState().synced!.mockServers)[0].id;
+    expect(useWorkspaceStore.getState().synced!.mockServers[mockId].endpoints.length).toBe(1);
+
+    // Click "Update spec…" (stashes the target server), then supply the new file.
+    await userEvent.click(await screen.findByRole('button', { name: /Live actions/i }));
+    await userEvent.click(screen.getByText('Update spec…'));
+
+    const revised = new File(
+      [
+        JSON.stringify({
+          openapi: '3.0.0',
+          info: { title: 'P', version: '1' },
+          paths: {
+            '/a': { get: { responses: { '200': { description: 'ok' } } } },
+            '/b': { get: { responses: { '200': { description: 'ok' } } } },
+          },
+        }),
+      ],
+      'revised.json',
+      { type: 'application/json' },
+    );
+    fireEvent.change(screen.getByLabelText('Update OpenAPI/Swagger spec file'), {
+      target: { files: [revised] },
+    });
+
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().synced!.mockServers[mockId].endpoints.length).toBe(2);
+    });
   });
 
   it('offers "Re-import from spec" alongside Add endpoint on a materialized mock', async () => {

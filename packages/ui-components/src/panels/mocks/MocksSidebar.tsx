@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   ChevronRight,
@@ -12,6 +12,7 @@ import {
   Server,
   Trash2,
   Unlock,
+  Upload,
 } from 'lucide-react';
 import { isLinkedMockSource } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
@@ -40,8 +41,13 @@ export function MocksSidebar() {
   const duplicateMockEndpoint = useWorkspaceStore((s) => s.duplicateMockEndpoint);
   const refreshMockServer = useWorkspaceStore((s) => s.refreshMockServer);
   const convertMockToEditable = useWorkspaceStore((s) => s.convertMockToEditable);
+  const reuploadMockSpec = useWorkspaceStore((s) => s.reuploadMockSpec);
   const promoteMockEndpointToRequest = useWorkspaceStore((s) => s.promoteMockEndpointToRequest);
   const pushToast = useWorkspaceStore((s) => s.pushToast);
+  // "Update spec…" (linked mocks) triggers this one hidden file input; the
+  // target server id is stashed in a ref so a single input serves the list.
+  const specUploadInput = useRef<HTMLInputElement | null>(null);
+  const specUploadServerId = useRef<string | null>(null);
 
   const allServers = Object.values(mockServers);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -162,6 +168,15 @@ export function MocksSidebar() {
                   : []),
                 ...(isLinked
                   ? [
+                      {
+                        id: 'update-spec',
+                        label: 'Update spec…',
+                        icon: <Upload size={12} aria-hidden="true" />,
+                        onSelect: () => {
+                          specUploadServerId.current = server.id;
+                          specUploadInput.current?.click();
+                        },
+                      },
                       {
                         id: 'convert-editable',
                         label: 'Convert to editable mock',
@@ -368,6 +383,20 @@ export function MocksSidebar() {
           if (pendingEndpointDelete)
             removeMockEndpoint(pendingEndpointDelete.serverId, pendingEndpointDelete.endpointId);
           setPendingEndpointDelete(null);
+        }}
+      />
+
+      <input
+        ref={specUploadInput}
+        type="file"
+        accept=".json,.yaml,.yml,application/json,application/yaml,text/yaml"
+        className="hidden"
+        aria-label="Update OpenAPI/Swagger spec file"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          const serverId = specUploadServerId.current;
+          if (f && serverId) void reuploadMockSpec(serverId, f);
         }}
       />
     </div>

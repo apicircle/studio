@@ -59,8 +59,11 @@
   contract mock can be **converted to an editable mock** in place (the Mocks
   kebab, the read-only banner, or the panel callout) — this flips it to a
   materialized copy while keeping the spec link, so "Re-import from spec" still
-  works. Long mock-server names now truncate in the sidebar so the per-server
-  actions menu stays reachable.
+  works. When the contract itself changes, **Update spec…** (the Mocks kebab or
+  the panel callout) re-uploads the revised OpenAPI/Swagger file — replacing the
+  shared asset's bytes and live-refreshing the linked mock's endpoints. Long
+  mock-server names now truncate in the sidebar so the per-server actions menu
+  stays reachable.
   (`@apicircle/shared`, `@apicircle/mock-server-core`, `@apicircle/ui-components`,
   `@apicircle/mcp-server`, VS Code)
 - **Import an OpenAPI/Swagger spec into a collection (editor, additive).** The
