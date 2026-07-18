@@ -23,7 +23,16 @@
 > ship. Full per-platform walk-through:
 > [`docs/installing.md`](docs/installing.md).
 
-## 1.2.1 - Unreleased
+## 1.3.0 - 2026-07-18
+
+_All workspace packages move to **1.3.0** in lockstep — the published
+`@apicircle/shared`, `@apicircle/core`, `@apicircle/mock-server-core`,
+`@apicircle/mcp-server`, `@apicircle/cli`, and the `apicircle-vscode` VS Code
+extension, plus the private desktop / web / ui-components / git / desktop-shell
+packages. Highlights: the **spec asset hub** (upload an OpenAPI/Swagger spec
+once, then serve it live or import it as a mock, import it as a collection, and
+promote mock endpoints into runnable requests) and **Mock → collection parity**
+across the app, the MCP server, and the VS Code extension._
 
 ### Added
 
@@ -99,9 +108,10 @@
   `http://localhost`; `MOCK_PORT` prefilled from the server's port, else `8080`;
   existing values preserved on re-promote) so you can retarget host/port before
   running. New `promoteMockToCollection` store action alongside
-  `promoteMockEndpointToRequest`; the `mock.promote_endpoint` MCP tool
-  (catalog 95 → **96**) still maps method + path + params (the env/folder
-  auto-setup is UI-only for now). A shared
+  `promoteMockEndpointToRequest`; `mock.promote_endpoint` was added to the MCP
+  server here (catalog 95 → **96**) and later brought to full parity with the
+  app — the same env, folder, and templated URL, across MCP + VS Code (see the
+  Mock → collection parity entry above). A shared
   `requestShapeFromMockEndpoint(ep, urlPrefix)` mapper keeps promoted +
   OpenAPI-imported requests identical.
   (`@apicircle/ui-components`, `@apicircle/mcp-server`)
