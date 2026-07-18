@@ -1,10 +1,39 @@
-import { useEffect, useState } from 'react';
-import { AlertTriangle, Loader2, Play, Plus, Server, Square, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import {
+  AlertTriangle,
+  Loader2,
+  Play,
+  Plus,
+  Radio,
+  Server,
+  Square,
+  Trash2,
+  Unlock,
+  Upload,
+} from 'lucide-react';
 import type { MockRuntimeEntry, MockServer } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { MockEndpointEditor } from './MockEndpointEditor';
 import { CreateMockServerModal } from './CreateMockServerModal';
+import { ServeContractModal } from './ServeContractModal';
 import { DesktopAppLink } from '../../primitives/desktopDownload';
+
+// Friendly label for a mock's source kind — the raw union tags (`openapi-asset`)
+// read poorly in the panel; a linked contract in particular should say so.
+function friendlySourceKind(source: MockServer['source']): string {
+  switch (source.kind) {
+    case 'manual':
+      return 'Manual';
+    case 'openapi':
+      return 'OpenAPI (pasted)';
+    case 'postman':
+      return 'Postman';
+    case 'insomnia':
+      return 'Insomnia';
+    case 'openapi-asset':
+      return source.mode === 'linked' ? 'OpenAPI contract' : 'OpenAPI (imported from asset)';
+  }
+}
 
 // =============================================================================
 // MockServersPanel — split pane: the sidebar (handled by Sidebar.tsx for the
@@ -218,6 +247,7 @@ export function MockServersPanel() {
       )}
 
       <CreateMockServerModal />
+      <ServeContractModal />
     </div>
   );
 }
@@ -272,6 +302,14 @@ function ServerSummary({
   onStop: () => void;
 }) {
   const setMockServerName = useWorkspaceStore((s) => s.setMockServerName);
+  const convertMockToEditable = useWorkspaceStore((s) => s.convertMockToEditable);
+  const reuploadMockSpec = useWorkspaceStore((s) => s.reuploadMockSpec);
+  const specInput = useRef<HTMLInputElement | null>(null);
+  const files = useWorkspaceStore((s) => s.synced?.globalAssets.files);
+  // A "run live" (linked) contract mock gets a clear provenance callout below.
+  const src = server.source;
+  const linked = src.kind === 'openapi-asset' && src.mode === 'linked' ? src : null;
+  const linkedAsset = linked ? files?.[linked.assetId] : undefined;
   return (
     <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-6">
       <div>
@@ -286,9 +324,59 @@ function ServerSummary({
           className="mt-1 h-8 w-full max-w-md rounded-sm border border-border bg-card px-2 text-sm text-text-primary focus:border-accent focus:outline-none"
         />
       </div>
+      {linked && (
+        <div
+          className="flex max-w-md items-start gap-2 rounded-sm border border-accent/40 bg-accent/10 p-2"
+          aria-label="Contract source"
+        >
+          <Radio size={13} className="mt-0.5 shrink-0 text-accent" aria-hidden="true" />
+          <div className="text-[0.6875rem] text-text-primary">
+            <p>
+              <strong className="text-text-primary">Served directly from contract</strong> —
+              endpoints are read-only and stay in sync with the spec asset.
+            </p>
+            <p className="mt-0.5 text-text-dim">
+              {linkedAsset?.spec?.title ?? linkedAsset?.name ?? 'spec asset'}
+              {linkedAsset?.spec?.version ? ` · v${linkedAsset.spec.version}` : ''} ·{' '}
+              {linkedAsset?.spec?.dialect === 'swagger-2' ? 'Swagger 2.0' : 'OpenAPI 3.x'} ·{' '}
+              {linkedAsset?.spec?.operationCount ?? server.endpoints.length} ops
+            </p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => specInput.current?.click()}
+                className="inline-flex h-6 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.625rem] text-accent hover:bg-accent/20"
+              >
+                <Upload size={11} aria-hidden="true" />
+                Update spec…
+              </button>
+              <button
+                type="button"
+                onClick={() => convertMockToEditable(server.id)}
+                className="inline-flex h-6 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.625rem] text-accent hover:bg-accent/20"
+              >
+                <Unlock size={11} aria-hidden="true" />
+                Convert to editable mock
+              </button>
+            </div>
+            <input
+              ref={specInput}
+              type="file"
+              accept=".json,.yaml,.yml,application/json,application/yaml,text/yaml"
+              className="hidden"
+              aria-label="Update OpenAPI/Swagger spec file"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = '';
+                if (f) void reuploadMockSpec(server.id, f);
+              }}
+            />
+          </div>
+        </div>
+      )}
       <dl className="grid max-w-md grid-cols-[140px_1fr] gap-y-1 text-xs">
         <dt className="text-text-dim">Source kind</dt>
-        <dd className="text-text-primary">{server.source.kind}</dd>
+        <dd className="text-text-primary">{friendlySourceKind(server.source)}</dd>
         <dt className="text-text-dim">Endpoints</dt>
         <dd className="text-text-primary">{server.endpoints.length}</dd>
       </dl>

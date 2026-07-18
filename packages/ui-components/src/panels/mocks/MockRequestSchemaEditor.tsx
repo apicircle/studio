@@ -1,3 +1,4 @@
+import { useContext } from 'react';
 import { Plus, Trash2, Wand2 } from 'lucide-react';
 import {
   generateId,
@@ -6,6 +7,7 @@ import {
   type MockRequestSchema,
 } from '@apicircle/shared';
 import { Select } from '../../primitives/Select';
+import { MockReadOnlyContext } from './mockReadOnly';
 
 // =============================================================================
 // Request-schema editor — declares the inputs a mock endpoint expects (path /
@@ -53,6 +55,7 @@ export function MockRequestSchemaEditor({
   endpoint: MockEndpoint;
   setEndpoint: (patch: Partial<MockEndpoint>) => void;
 }) {
+  const readOnly = useContext(MockReadOnlyContext);
   const schema = endpoint.requestSchema;
   const setSchema = (next: MockRequestSchema) => setEndpoint({ requestSchema: next });
   const setList = (key: ParamListKey, next: MockParamDef[]) =>
@@ -77,7 +80,7 @@ export function MockRequestSchemaEditor({
         <h3 className="text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
           Request schema
         </h3>
-        {undeclaredSlots.length > 0 && (
+        {!readOnly && undeclaredSlots.length > 0 && (
           <button
             type="button"
             onClick={deriveFromPath}
@@ -123,6 +126,7 @@ function ParamTable({
   params: MockParamDef[];
   onChange: (next: MockParamDef[]) => void;
 }) {
+  const readOnly = useContext(MockReadOnlyContext);
   const update = (idx: number, patch: Partial<MockParamDef>) => {
     const next = [...params];
     next[idx] = { ...next[idx], ...patch };
@@ -147,7 +151,7 @@ function ParamTable({
       </p>
       {params.length === 0 ? (
         <p className="rounded-sm border border-dashed border-border-subtle px-2 py-2 text-center text-[0.625rem] text-text-dim">
-          No {label.toLowerCase()}. Add one below.
+          No {label.toLowerCase()}.{!readOnly && ' Add one below.'}
         </p>
       ) : (
         <ul className="space-y-1">
@@ -194,26 +198,30 @@ function ParamTable({
                 aria-label={`${singular} ${idx + 1} example`}
                 className="h-7 rounded-sm border border-border bg-card px-1.5 font-mono text-[0.625rem] text-text-primary focus:border-accent focus:outline-none"
               />
-              <button
-                type="button"
-                onClick={() => remove(idx)}
-                aria-label={`Remove ${singular} ${idx + 1}`}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-text-faint hover:bg-danger/5 hover:text-danger"
-              >
-                <Trash2 size={10} aria-hidden="true" />
-              </button>
+              {!readOnly && (
+                <button
+                  type="button"
+                  onClick={() => remove(idx)}
+                  aria-label={`Remove ${singular} ${idx + 1}`}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-text-faint hover:bg-danger/5 hover:text-danger"
+                >
+                  <Trash2 size={10} aria-hidden="true" />
+                </button>
+              )}
             </li>
           ))}
         </ul>
       )}
-      <button
-        type="button"
-        onClick={add}
-        className="mt-1.5 inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary"
-      >
-        <Plus size={9} aria-hidden="true" />
-        Add {singular}
-      </button>
+      {!readOnly && (
+        <button
+          type="button"
+          onClick={add}
+          className="mt-1.5 inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary"
+        >
+          <Plus size={9} aria-hidden="true" />
+          Add {singular}
+        </button>
+      )}
     </div>
   );
 }

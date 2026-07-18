@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorkspaceStore } from '../../store/workspaceStore';
@@ -83,6 +83,22 @@ describe('ImportModal — auto-detect', () => {
     pasteInto(screen.getByLabelText('Import source'), CURL_INPUT);
     expect(await screen.findByText(/cURL\)/)).toBeInTheDocument();
     expect(screen.getByText('POST')).toBeInTheDocument();
+  });
+
+  it('detects an OpenAPI spec and imports it into a collection', async () => {
+    render(<ImportModal open onClose={() => {}} />);
+    const spec = JSON.stringify({
+      openapi: '3.0.0',
+      info: { title: 'Petstore', version: '1.0' },
+      paths: { '/pets': { get: { responses: { '200': { description: 'ok' } } } } },
+    });
+    pasteInto(screen.getByLabelText('Import source'), spec);
+    expect(await screen.findByText(/OpenAPI 3\)/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+    await waitFor(() => {
+      const reqs = Object.values(useWorkspaceStore.getState().synced!.collections.requests);
+      expect(reqs.some((r) => r.url === '/pets' && r.operationId === 'GET /pets')).toBe(true);
+    });
   });
 
   it('surfaces a parse error for non-JSON, non-cURL input', async () => {

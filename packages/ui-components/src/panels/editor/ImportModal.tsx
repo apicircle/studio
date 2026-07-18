@@ -43,6 +43,7 @@ import {
   type ParsedPostmanCollection,
   type ParsedPostmanEnvironment,
 } from '@apicircle/core';
+import { summarizeSpec, type SpecSummary } from '@apicircle/mock-server-core/parsing';
 import {
   useWorkspaceStore,
   type ApicircleEnvironmentPendingBinding,
@@ -51,8 +52,16 @@ import { Modal } from '../../primitives/Modal';
 import { Select } from '../../primitives/Select';
 import { cn } from '../../primitives/cn';
 
-type SourceFormat = 'auto' | 'postman' | 'postman-env' | 'insomnia' | 'curl' | 'apicircle';
+type SourceFormat =
+  | 'auto'
+  | 'openapi'
+  | 'postman'
+  | 'postman-env'
+  | 'insomnia'
+  | 'curl'
+  | 'apicircle';
 type DetectedKind =
+  | { kind: 'openapi'; summary: SpecSummary }
   | { kind: 'postman-collection'; parsed: ParsedPostmanCollection }
   | { kind: 'postman-environment'; parsed: ParsedPostmanEnvironment }
   | { kind: 'insomnia-collection'; parsed: ParsedPostmanCollection }
@@ -72,6 +81,7 @@ interface ImportModalProps {
 
 const FORMAT_LABELS: Record<SourceFormat, string> = {
   auto: 'Auto-detect',
+  openapi: 'OpenAPI / Swagger',
   postman: 'Postman v2.1 collection',
   'postman-env': 'Postman environment',
   insomnia: 'Insomnia v4 export',
@@ -111,6 +121,7 @@ export function ImportModal({
   const [binding, setBinding] = useState(false);
 
   const importPostmanCollection = useWorkspaceStore((s) => s.importPostmanCollection);
+  const importOpenApiToCollection = useWorkspaceStore((s) => s.importOpenApiToCollection);
   const importPostmanEnvironment = useWorkspaceStore((s) => s.importPostmanEnvironment);
   const importApicircleFolder = useWorkspaceStore((s) => s.importApicircleFolder);
   const importApicircleEnvironment = useWorkspaceStore((s) => s.importApicircleEnvironment);
@@ -143,6 +154,22 @@ export function ImportModal({
       importPostmanEnvironment(d.parsed);
     } else if (d.kind === 'curl') {
       addRequestFromCurl(text, parentFolderId);
+    } else if (d.kind === 'openapi') {
+      // Async parse + create; the modal closes immediately (fire-and-forget),
+      // surfacing the outcome via a toast when it lands.
+      void importOpenApiToCollection({
+        spec: text,
+        format: d.summary.format,
+        parentFolderId,
+        title: d.summary.title,
+      }).then((res) => {
+        pushToast({
+          tone: res.warnings.length > 0 ? 'info' : 'success',
+          title: `Imported ${res.requests} request${res.requests === 1 ? '' : 's'} from ${d.summary.title ?? 'the spec'}`,
+          detail: res.warnings.length > 0 ? res.warnings.join(' · ') : undefined,
+          ttlMs: res.warnings.length > 0 ? 12000 : 6000,
+        });
+      });
     } else if (d.kind === 'apicircle-folder') {
       const result = importApicircleFolder(d.parsed, parentFolderId);
       if (result && result.filesRequiringReattachment.length > 0) {
@@ -449,6 +476,16 @@ function detect(text: string, format: SourceFormat): DetectedKind {
     throw new Error('Selected source is "cURL" but the input doesn\'t start with "curl ".');
   }
 
+  // OpenAPI / Swagger — recognised by a top-level `openapi:`/`swagger:` key.
+  // Handled before JSON.parse so YAML specs work too; summarizeSpec is sync.
+  if (format === 'openapi' || format === 'auto') {
+    const summary = summarizeSpec(trimmed);
+    if (summary) return { kind: 'openapi', summary };
+    if (format === 'openapi') {
+      throw new Error('Selected source is "OpenAPI / Swagger" but this is not a recognised spec.');
+    }
+  }
+
   // The remaining formats are JSON.
   let json: unknown;
   try {
@@ -494,6 +531,10 @@ function detect(text: string, format: SourceFormat): DetectedKind {
 }
 
 function labelForDetection(d: DetectedKind): string {
+  if (d.kind === 'openapi') {
+    const dialect = d.summary.dialect === 'swagger-2' ? 'Swagger 2' : 'OpenAPI 3';
+    return `${d.summary.title ?? 'API'} · ${d.summary.operationCount} operation${d.summary.operationCount === 1 ? '' : 's'} (${dialect})`;
+  }
   if (d.kind === 'postman-collection') {
     return `${d.parsed.collectionName} · ${d.parsed.requests.length} request${d.parsed.requests.length === 1 ? '' : 's'} (Postman)`;
   }
@@ -514,6 +555,29 @@ function labelForDetection(d: DetectedKind): string {
 }
 
 function DetectionPreview({ detection }: { detection: DetectedKind }) {
+  if (detection.kind === 'openapi') {
+    const s = detection.summary;
+    const dialect = s.dialect === 'swagger-2' ? 'Swagger 2.0' : 'OpenAPI 3.x';
+    return (
+      <div className="space-y-1 text-xs">
+        <p className="text-text-primary">
+          <span className="font-medium">{s.title ?? 'API'}</span>
+          {s.version ? <span className="text-text-dim"> v{s.version}</span> : null} · {dialect}
+        </p>
+        <p className="text-text-muted">
+          {s.operationCount} operation{s.operationCount === 1 ? '' : 's'} &rarr; one request each in
+          a new folder.
+        </p>
+        {s.warnings.length > 0 ? (
+          <ul className="text-[0.6875rem] text-warning">
+            {s.warnings.map((w) => (
+              <li key={w}>&bull; {w}</li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    );
+  }
   if (detection.kind === 'postman-collection' || detection.kind === 'insomnia-collection') {
     return <CollectionPreview parsed={detection.parsed} />;
   }

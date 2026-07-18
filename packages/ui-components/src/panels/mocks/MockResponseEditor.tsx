@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useContext, useRef, useState } from 'react';
 import { Paperclip, Plus, Trash2, X } from 'lucide-react';
 import {
   coerceMockResponseBodyTypeForStatus,
@@ -19,6 +19,7 @@ import { applyContentTypeForBodyType } from '@apicircle/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { FilePickerMenu } from '../../primitives/FilePickerMenu';
 import { MonacoBodyEditor } from '../../editors/MonacoBodyEditor';
+import { MockReadOnlyContext } from './mockReadOnly';
 import { HeaderKeyAutocomplete, HeaderValueRecommendations } from '../editor/HeaderAutocomplete';
 import { cn } from '../../primitives/cn';
 import { FileAssetStatusPill } from '../../primitives/FileAssetStatusPill';
@@ -185,6 +186,7 @@ function HeadersEditor({
   // expanded everywhere so the editable rows are visible at a glance. The
   // <details> element still allows manual collapse via the summary.
   void compact;
+  const readOnly = useContext(MockReadOnlyContext);
   const update = (idx: number, patch: Partial<MockResponseConfig['headers'][number]>) => {
     const next = [...headers];
     next[idx] = { ...next[idx], ...patch };
@@ -210,14 +212,16 @@ function HeadersEditor({
           />
         ))}
       </ul>
-      <button
-        type="button"
-        onClick={add}
-        aria-label={`Add ${label} header`}
-        className="mt-1.5 inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary"
-      >
-        + Header
-      </button>
+      {!readOnly && (
+        <button
+          type="button"
+          onClick={add}
+          aria-label={`Add ${label} header`}
+          className="mt-1.5 inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary"
+        >
+          + Header
+        </button>
+      )}
     </details>
   );
 }
@@ -238,6 +242,7 @@ function ResponseHeaderRow({
   // Track focus on the value input so we can show the curated-values
   // popover only when focused — mirrors the request editor's UX.
   const [valueFocused, setValueFocused] = useState(false);
+  const readOnly = useContext(MockReadOnlyContext);
   return (
     <li className="grid grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-1">
       <input
@@ -272,14 +277,16 @@ function ResponseHeaderRow({
           ariaLabel={`${label} header ${index + 1} value suggestions`}
         />
       </div>
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label={`Remove ${label} header ${index + 1}`}
-        className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-faint hover:bg-danger/5 hover:text-danger"
-      >
-        <X size={9} aria-hidden="true" />
-      </button>
+      {!readOnly && (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Remove ${label} header ${index + 1}`}
+          className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-faint hover:bg-danger/5 hover:text-danger"
+        >
+          <X size={9} aria-hidden="true" />
+        </button>
+      )}
     </li>
   );
 }
@@ -356,6 +363,7 @@ function BodyContentEditor({
   attachmentSlot: { serverId: string; endpointId: string } | null;
   compact?: boolean;
 }) {
+  const readOnly = useContext(MockReadOnlyContext);
   if (body.type === 'none') {
     return (
       <p className="rounded-sm border border-dashed border-border-subtle px-2 py-3 text-center text-[0.6875rem] text-text-dim">
@@ -392,6 +400,7 @@ function BodyContentEditor({
         onChange={onContentChange}
         modelPath={`inmemory://apicircle/mock-response/${attachmentSlot?.endpointId ?? 'inline'}.body`}
         ariaLabel={`${label} body`}
+        readOnly={readOnly}
       />
     </div>
   );
@@ -631,6 +640,7 @@ function MultipliersEditor({
   multipliers: MockResponseMultiplier[];
   onChange: (next: MockResponseMultiplier[]) => void;
 }) {
+  const readOnly = useContext(MockReadOnlyContext);
   const update = (idx: number, patch: Partial<MockResponseMultiplier>) => {
     onChange(multipliers.map((m, i) => (i === idx ? { ...m, ...patch } : m)));
   };
@@ -667,8 +677,9 @@ function MultipliersEditor({
       <div className="mt-2 space-y-2">
         {multipliers.length === 0 ? (
           <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-[0.6875rem] text-text-dim">
-            No multipliers — server returns the body as-authored. Add one to repeat an array inside
-            the response body based on a request value.
+            No multipliers — server returns the body as-authored.
+            {!readOnly &&
+              ' Add one to repeat an array inside the response body based on a request value.'}
           </p>
         ) : (
           <ul className="space-y-2">
@@ -776,23 +787,23 @@ function MultipliersEditor({
             ))}
           </ul>
         )}
-        {atCap ? (
-          multipliers.length > 0 && (
-            <p className="text-[0.625rem] text-text-faint">
-              Limit reached ({MAX_RESPONSE_MULTIPLIERS}). Multiple multipliers are coming soon.
-            </p>
-          )
-        ) : (
-          <button
-            type="button"
-            onClick={add}
-            aria-label={`Add ${label} multiplier`}
-            className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20"
-          >
-            <Plus size={10} aria-hidden="true" />
-            Add multiplier
-          </button>
-        )}
+        {atCap
+          ? multipliers.length > 0 && (
+              <p className="text-[0.625rem] text-text-faint">
+                Limit reached ({MAX_RESPONSE_MULTIPLIERS}). Multiple multipliers are coming soon.
+              </p>
+            )
+          : !readOnly && (
+              <button
+                type="button"
+                onClick={add}
+                aria-label={`Add ${label} multiplier`}
+                className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20"
+              >
+                <Plus size={10} aria-hidden="true" />
+                Add multiplier
+              </button>
+            )}
       </div>
     </details>
   );

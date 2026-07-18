@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
+import { Radio, Unlock } from 'lucide-react';
 import type { HttpMethod, MockEndpoint, MockServer } from '@apicircle/shared';
-import { validateMockPath } from '@apicircle/shared';
+import { isLinkedMockSource, validateMockPath } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 import { Select } from '../../primitives/Select';
 import { MockEndpointFlow } from './MockEndpointFlow';
 import { MockNodeEditor, type MockNodeSelection } from './MockNodeEditor';
+import { MockReadOnlyContext } from './mockReadOnly';
 
 // Editor pane for a single mock endpoint. Layout follows the Editor
 // pattern but for mocks: a flow diagram up top showing the request-
@@ -47,6 +49,7 @@ export function MockEndpointEditor({
   endpoint: MockEndpoint;
 }) {
   const updateMockEndpoint = useWorkspaceStore((s) => s.updateMockEndpoint);
+  const convertMockToEditable = useWorkspaceStore((s) => s.convertMockToEditable);
   const [selection, setSelection] = useState<MockNodeSelection>({ kind: 'endpoint' });
 
   // Reset selection whenever the active endpoint changes — the user
@@ -83,67 +86,97 @@ export function MockEndpointEditor({
   const setEndpoint = (patch: Partial<MockEndpoint>) =>
     updateMockEndpoint(server.id, endpoint.id, patch);
 
+  // Linked ("run live") contract mocks are read-only — endpoints are derived
+  // from the spec asset. `<fieldset disabled>` disables every native control
+  // (the store also rejects the mutations); Monaco reads the context below. The
+  // flow diagram stays enabled so the contract remains fully inspectable.
+  const readOnly = isLinkedMockSource(server.source);
+
   return (
-    <div className="flex h-full flex-1 flex-col overflow-hidden">
-      <header className="flex flex-wrap items-center gap-2 border-b border-border-subtle bg-card px-4 py-2.5">
-        <Select
-          size="md"
-          value={endpoint.method}
-          onChange={(e) => setEndpoint({ method: e.target.value as HttpMethod })}
-          aria-label="Mock endpoint method"
-          className={cn('bg-surface font-mono font-medium', METHOD_COLOR[endpoint.method])}
+    <MockReadOnlyContext.Provider value={readOnly}>
+      <div className="flex h-full flex-1 flex-col overflow-hidden">
+        {readOnly && (
+          <div className="flex items-center gap-2 border-b border-accent/30 bg-accent/5 px-4 py-1.5 text-[0.6875rem] text-text-dim">
+            <Radio size={12} className="shrink-0 text-accent" aria-hidden="true" />
+            <span className="min-w-0 flex-1">
+              <strong className="text-text-primary">Read-only</strong> — served live from the
+              contract and kept in sync with the spec asset.
+            </span>
+            <button
+              type="button"
+              onClick={() => convertMockToEditable(server.id)}
+              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.625rem] text-accent hover:bg-accent/20"
+            >
+              <Unlock size={11} aria-hidden="true" />
+              Convert to editable
+            </button>
+          </div>
+        )}
+        <fieldset
+          disabled={readOnly}
+          className="flex min-w-0 flex-wrap items-center gap-2 border-b border-border-subtle bg-card px-4 py-2.5"
         >
-          {HTTP_METHODS.map((m) => (
-            <option key={m} value={m} style={{ color: METHOD_OPTION_COLOR[m] }}>
-              {m}
-            </option>
-          ))}
-        </Select>
-        <PathPatternInput
-          server={server}
-          endpoint={endpoint}
-          onChange={(next) => setEndpoint({ pathPattern: next })}
-        />
-        <input
-          value={endpoint.name}
-          onChange={(e) => setEndpoint({ name: e.target.value })}
-          placeholder="Get pet by id"
-          aria-label="Mock endpoint name"
-          className="h-8 w-56 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
-        />
-      </header>
-      <PanelGroup direction="vertical" className="flex-1">
-        <Panel defaultSize={32} minSize={20}>
-          {/* `flex items-center` vertically centers the flow row inside its
+          <Select
+            size="md"
+            value={endpoint.method}
+            onChange={(e) => setEndpoint({ method: e.target.value as HttpMethod })}
+            aria-label="Mock endpoint method"
+            className={cn('bg-surface font-mono font-medium', METHOD_COLOR[endpoint.method])}
+          >
+            {HTTP_METHODS.map((m) => (
+              <option key={m} value={m} style={{ color: METHOD_OPTION_COLOR[m] }}>
+                {m}
+              </option>
+            ))}
+          </Select>
+          <PathPatternInput
+            server={server}
+            endpoint={endpoint}
+            onChange={(next) => setEndpoint({ pathPattern: next })}
+          />
+          <input
+            value={endpoint.name}
+            onChange={(e) => setEndpoint({ name: e.target.value })}
+            placeholder="Get pet by id"
+            aria-label="Mock endpoint name"
+            className="h-8 w-56 rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+          />
+        </fieldset>
+        <PanelGroup direction="vertical" className="flex-1">
+          <Panel defaultSize={32} minSize={20}>
+            {/* `flex items-center` vertically centers the flow row inside its
               panel. `overflow-x-auto` lets the pipeline scroll horizontally
               when the right dock crowds the available width; `overflow-y-hidden`
               keeps vertical scroll out of this row (the bottom panel handles
               its own scroll). */}
-          <div className="flex h-full items-center overflow-x-auto overflow-y-hidden bg-surface px-4 py-3">
-            <MockEndpointFlow
-              serverId={server.id}
-              endpoint={endpoint}
-              selection={selection}
-              onSelect={setSelection}
-            />
-          </div>
-        </Panel>
-        <PanelResizeHandle
-          className="h-1 cursor-row-resize bg-border-subtle hover:bg-accent/40"
-          aria-label="Resize flow diagram"
-        />
-        <Panel defaultSize={68} minSize={30}>
-          <div className="h-full overflow-y-auto bg-surface p-4">
-            <MockNodeEditor
-              server={server}
-              endpoint={endpoint}
-              selection={selection}
-              onSelect={setSelection}
-            />
-          </div>
-        </Panel>
-      </PanelGroup>
-    </div>
+            <div className="flex h-full items-center overflow-x-auto overflow-y-hidden bg-surface px-4 py-3">
+              <MockEndpointFlow
+                serverId={server.id}
+                endpoint={endpoint}
+                selection={selection}
+                onSelect={setSelection}
+              />
+            </div>
+          </Panel>
+          <PanelResizeHandle
+            className="h-1 cursor-row-resize bg-border-subtle hover:bg-accent/40"
+            aria-label="Resize flow diagram"
+          />
+          <Panel defaultSize={68} minSize={30}>
+            <div className="h-full overflow-y-auto bg-surface p-4">
+              <fieldset disabled={readOnly} className="min-w-0">
+                <MockNodeEditor
+                  server={server}
+                  endpoint={endpoint}
+                  selection={selection}
+                  onSelect={setSelection}
+                />
+              </fieldset>
+            </div>
+          </Panel>
+        </PanelGroup>
+      </div>
+    </MockReadOnlyContext.Provider>
   );
 }
 

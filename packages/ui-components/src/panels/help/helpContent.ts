@@ -571,7 +571,7 @@ Extracted values are local-only — they live in this machine's context, never i
 
 ## Import in the app
 
-The Editor sidebar's Import action opens a modal that takes pasted text or an uploaded file and auto-detects the format — Postman v2.1 collections, Postman environments (keys import as context variables), Insomnia v4 exports, **API Circle folder exports** (the \`.apicircle.json\` files produced by the new "Export as JSON" folder action — see below), **API Circle environment exports** (the JSON the Environments sidebar's "Export as JSON" action produces; encrypted variables travel with the slot's user-recognizable label and trigger a **"Provide secret values"** second step in the modal where you can fill the value to bind on the spot, or **Skip & finish** and re-bind later under Environments), and pasted cURL commands:
+The Editor sidebar's Import action opens a modal that takes pasted text or an uploaded file and auto-detects the format — Postman v2.1 collections, Postman environments (keys import as context variables), Insomnia v4 exports, **OpenAPI 3.x / Swagger 2.0 specs** (each operation becomes a request in a new folder — or use **Import to collection** on a spec you've uploaded to Global Assets → Files), **API Circle folder exports** (the \`.apicircle.json\` files produced by the new "Export as JSON" folder action — see below), **API Circle environment exports** (the JSON the Environments sidebar's "Export as JSON" action produces; encrypted variables travel with the slot's user-recognizable label and trigger a **"Provide secret values"** second step in the modal where you can fill the value to bind on the spot, or **Skip & finish** and re-bind later under Environments), and pasted cURL commands:
 
     curl -X POST https://api.example.com/v1/users \\
       -H "Content-Type: application/json" \\
@@ -967,6 +967,10 @@ Snapshots live only on this machine. They are kept within a size budget — pick
 
 - **Empty** — a blank server you add endpoints to by hand.
 - **From a spec** — paste an OpenAPI, Postman, or Insomnia source; it is parsed into endpoints the moment you create the mock, so the endpoint table is populated right away. On the Desktop app the parse runs in the native process and resolves external \`$ref\`s; the web app resolves in-document \`$ref\`s only and warns about any external references it can't follow.
+- **From a spec asset** — import an OpenAPI/Swagger file you uploaded to Global Assets → Files as **editable** endpoints (materialized). Modify them freely; a refresh-from-spec re-import pulls changes when the asset updates.
+- **Serve OpenAPI contract** (a separate action in the Mocks header) — stand up a **live, read-only** server straight from an uploaded contract (linked): pick the contract, name it, choose a port, and start/stop it from the mock's panel. Endpoints derive from the contract and stay in sync — re-uploading the spec updates the server, and the panel shows a "Served directly from contract" callout. Use this when you just want to run a contract; use From a spec asset when you want to tweak the endpoints. Changed your mind after creating it? **Convert to editable mock** (the ⋯ menu, the read-only banner, or the panel callout) flips a live contract into an editable copy in place — the spec link stays, so you can still re-import. And when the contract itself changes, **Update spec…** (the ⋯ menu or the panel callout) re-uploads the revised file — replacing the shared asset and live-refreshing the mock's endpoints.
+
+Every mock endpoint has an **Add to collection** action (the ⋯ menu on the endpoint row), and the server ⋯ menu has **Add all to collection** to promote the whole mock at once. Promoted requests carry the method, path pattern, and declared query/header/path params, land in a **"<name> (mock)" folder**, and target the live mock via a \`{{MOCK_BASE_URL}}:{{MOCK_PORT}}\` URL — backed by a dedicated **"Mock" environment** (MOCK_PORT prefilled from the server's port, else 8080) that is created and activated for you, so you just tweak host/port before running. It works even on read-only "run live" mocks.
 
 ## Endpoints and the response flow
 
@@ -1337,6 +1341,8 @@ A request with a graphql body that references the definition gets field and argu
 
 Every file you drop — into the Global Assets sidebar, a binary request body, a form-data file row, or a mock binary response — becomes a reusable Global Asset entry. The workspace tracks filename, size, MIME type, checksum, and the requests or mock responses that bind to the file.
 
+When the file you drop is an OpenAPI 3.x or Swagger 2.0 document (\`.json\` / \`.yaml\` / \`.yml\`), Studio recognises it on upload and tags the asset with a **spec badge** ("OpenAPI 3 · N ops"). Selecting the asset shows the parsed title, version, operation count, and any parse warnings — so the workspace knows which of its files are API contracts.
+
 Each asset shows a small status pill next to its name. The pill tells you where the bytes live:
 
 - **Uploaded locally** — bytes are in your local IDB; the next push uploads them.
@@ -1346,7 +1352,7 @@ Each asset shows a small status pill next to its name. The pill tells you where 
 - **Missing** — both refs dropped and no local copy. Re-upload from the same row to restore.
 - **Diverged** — both refs hold different blob shas. Usually means someone force-pushed the base branch with a different file at the same slot — review before pushing.
 
-Each row also shows "Used in N" — clicking through the Global Assets panel shows every request and mock endpoint that binds to the file. Zero-use assets get an "Unused" badge so you can identify and prune orphans deliberately.
+Each row also shows "Used in N" — clicking through the Global Assets panel shows every request and mock endpoint that binds to the file. For a spec asset, that count also includes the mock servers built from it and the requests imported from it, so you can see what a spec backs before deleting it. Zero-use assets get an "Unused" badge so you can identify and prune orphans deliberately.
 
 When a workspace is pushed to GitHub, file bytes are stored as attachment blobs next to the synced doc under \`.apicircle/workspace-<id>/attachments/<slotId>\`, separate from the workspace document. That keeps the JSON small and makes diffs readable. On another machine, linked or synced file assets show as missing until you download them. Sending a request or running a plan that needs missing files opens a download prompt; after the download verifies the checksum, execution continues. The \`apicircle run\` CLI follows the same rule for headless plans.
 

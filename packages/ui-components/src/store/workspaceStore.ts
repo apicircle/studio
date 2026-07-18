@@ -50,7 +50,8 @@ import {
   resolvePrCapability,
 } from './githubPrCapability';
 import { decideRetirement, probeBranchRetirement } from './branchRetirement';
-import { getDesktopMockBridge } from '../desktop/bridge';
+import { summarizeUploadedSpec } from './specUpload';
+import { resolveMockEndpoints, requestShapeFromMockEndpoint } from './mockResolve';
 import { applyFont } from '../theme/applyFont';
 import { applyFontSize, clampFontSizePercent } from '../theme/applyFontSize';
 import {
@@ -58,6 +59,7 @@ import {
   RUN_BODY_PREVIEW_LIMIT,
   envPriorityKey,
   generateId,
+  isLinkedMockSource,
 } from '@apicircle/shared';
 import {
   type AttachmentResolver,
@@ -111,9 +113,12 @@ import {
   tryParsePayload,
   validateBranchName,
   yankRelease as yankReleaseAction,
+  applyMutation,
+  buildMockPromotion,
 } from '@apicircle/core';
 import { create } from 'zustand';
 import {
+  bytesFromFile,
   createAttachmentFromFile,
   deleteAttachment,
   deleteManyAttachments,
@@ -1024,6 +1029,30 @@ type WorkspaceStore = {
   /** Remove an endpoint from a server. */
   removeMockEndpoint: (serverId: string, endpointId: string) => void;
   /**
+   * Re-derive a mock's endpoints from its `source` (re-resolves an
+   * `openapi-asset`'s bytes, re-parses a spec). Used by "run live" (linked)
+   * mocks to stay in sync with the asset, and by "import & edit" mocks as an
+   * explicit "re-import from spec" that overwrites local endpoint edits.
+   * No-op for `manual` sources. Returns any parser warnings.
+   */
+  refreshMockServer: (id: string) => Promise<{ warnings: string[] }>;
+  /**
+   * Convert a linked ("run live") contract mock into an editable one by flipping
+   * its `openapi-asset` source from `linked` to `materialized`. Endpoints are
+   * preserved (they already live on the server) and the spec link is kept, so
+   * "Re-import from spec" and asset-usage tracking keep working. No-op for any
+   * non-linked mock.
+   */
+  convertMockToEditable: (serverId: string) => void;
+  /**
+   * Re-upload the OpenAPI/Swagger file backing a spec-asset mock: replaces the
+   * asset's bytes (so every consumer sees the revised spec) which re-parses the
+   * spec summary and auto-refreshes every linked ("run live") mock's endpoints.
+   * Surfaces the new endpoint count as a toast. No-op for non-`openapi-asset`
+   * mocks. The spec asset is shared, so this reflects everywhere it's linked.
+   */
+  reuploadMockSpec: (serverId: string, file: File) => Promise<void>;
+  /**
    * Clone a mock server with all of its endpoints + nested rules. Every
    * cloned entity gets a fresh id; the legacy `overrides` map is reset
    * since it keys by old endpoint ids. Returns the new server's id, or
@@ -1045,6 +1074,15 @@ type WorkspaceStore = {
   mocksCreateModalOpen: boolean;
   openMocksCreateModal: () => void;
   closeMocksCreateModal: () => void;
+  /**
+   * Whether the "Serve OpenAPI contract" modal is open — the dedicated
+   * run-live flow that stands up a `linked` mock straight from a spec asset.
+   * Kept separate from the create-mock modal so the two entry points read as
+   * distinct affordances in the Mocks header.
+   */
+  mocksServeContractModalOpen: boolean;
+  openMocksServeContractModal: () => void;
+  closeMocksServeContractModal: () => void;
   /**
    * Attach a file to a mock endpoint's binary response body. Stores the
    * blob in the same Global-Assets attachment store the request editor
@@ -1157,6 +1195,41 @@ type WorkspaceStore = {
     parsed: ParsedPostmanCollection,
     parentFolderId?: string | null,
   ) => { folders: number; requests: number };
+  /**
+   * Import an OpenAPI / Swagger spec into a new collection folder — one request
+   * per operation (method + path + query/header/path params). `specAssetId`
+   * stamps the source spec asset onto every created request for later re-sync;
+   * `operationId` (= `"<METHOD> <path>"`) is the stable operation key. Async —
+   * it parses the spec (browser: in-document `$ref`s only). Returns the new
+   * folder id, the request count, and parser warnings.
+   */
+  importOpenApiToCollection: (args: {
+    spec: string;
+    format: 'json' | 'yaml';
+    parentFolderId?: string | null;
+    specAssetId?: string;
+    title?: string;
+  }) => Promise<{ folderId: string | null; requests: number; warnings: string[] }>;
+  /**
+   * Promote a mock endpoint into a saved request in the collection tree — maps
+   * method + path pattern + request-schema params to a new request under
+   * `parentFolderId` (root when null). Returns the new request id, or null when
+   * the mock / endpoint is missing.
+   */
+  promoteMockEndpointToRequest: (
+    mockId: string,
+    endpointId: string,
+    parentFolderId?: string | null,
+  ) => string | null;
+  /**
+   * Promote EVERY endpoint of a mock into a single "<name> (mock)" collection
+   * folder at once (not one at a time), ensuring the shared "Mock" environment.
+   * Returns the folder id + request count, or null if the mock is unknown.
+   */
+  promoteMockToCollection: (
+    mockId: string,
+    parentFolderId?: string | null,
+  ) => { folderId: string; requests: number } | null;
   /**
    * Import a parsed Postman environment. Returns the final env name
    * (uniquified if it collided), or null if no synced doc was loaded.
@@ -2049,6 +2122,11 @@ type WorkspaceStore = {
 const REQUIRED_BASE_SCOPES = ['repo'] as const;
 const GITHUB_TOKEN_LABEL_PREFIX = 'github-token:';
 
+// Mock → collection promotion (Increments J/K): the env + folder + request
+// WorkspacePatch sequence is built by `buildMockPromotion` in `@apicircle/core`,
+// shared verbatim with the MCP server and the VS Code extension. The store
+// actions below apply those patches via `applyMutation`.
+
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   ready: false,
   hydrationError: null,
@@ -2669,28 +2747,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
     // Materialize the endpoint table at create time so the router (which
     // serves `MockServer.endpoints` and never re-parses `source`) has
-    // something to route. Manual-mode mocks carry their endpoints inline;
-    // spec blobs are parsed now. On Desktop the parse runs in the Node main
-    // process (full external-`$ref` resolution via swagger-parser); in the
-    // browser it uses the in-document-only parser and warns about external
-    // refs it can't resolve.
-    let endpoints: MockEndpoint[];
-    let warnings: string[] = [];
-    if (source.kind === 'manual') {
-      endpoints = source.endpoints;
-    } else {
-      const bridge = getDesktopMockBridge();
-      if (bridge?.parseSpec) {
-        const parsed = await bridge.parseSpec(source);
-        endpoints = parsed.endpoints;
-        warnings = parsed.warnings;
-      } else {
-        const { parseSourceToEndpoints } = await import('@apicircle/mock-server-core/parsing');
-        const parsed = await parseSourceToEndpoints(source);
-        endpoints = parsed.endpoints;
-        warnings = parsed.warnings;
-      }
-    }
+    // something to route. `resolveMockEndpoints` handles every spec source
+    // kind, including `openapi-asset` (resolves the asset's bytes → parses).
+    // Manual sources are kept SYNCHRONOUS (no `await`) so the meta bump lands
+    // before the returned promise settles — a behavior callers rely on.
+    const { endpoints, warnings } =
+      source.kind === 'manual'
+        ? { endpoints: source.endpoints, warnings: [] as string[] }
+        : await resolveMockEndpoints(source, synced);
 
     const id = generateId();
     const now = new Date().toISOString();
@@ -2797,6 +2861,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!synced) return;
     const existing = synced.mockServers[id];
     if (!existing) return;
+    if (isLinkedMockSource(existing.source)) return;
     const now = new Date().toISOString();
     // For manual-mode mocks, mirror the new endpoints into the source
     // union so the runtime sees the same array regardless of which
@@ -2818,6 +2883,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!synced) return '';
     const existing = synced.mockServers[serverId];
     if (!existing) return '';
+    // Linked ("run live") mocks derive endpoints from the spec asset — read-only.
+    if (isLinkedMockSource(existing.source)) return '';
     const id = generateId();
     const newEndpoint: MockEndpoint = {
       id,
@@ -2857,6 +2924,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!synced) return;
     const existing = synced.mockServers[serverId];
     if (!existing) return;
+    if (isLinkedMockSource(existing.source)) return;
     const idx = existing.endpoints.findIndex((e) => e.id === endpointId);
     if (idx === -1) return;
     const nextEndpoint = { ...existing.endpoints[idx], ...patch };
@@ -2884,6 +2952,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!synced) return;
     const existing = synced.mockServers[serverId];
     if (!existing) return;
+    if (isLinkedMockSource(existing.source)) return;
     const nextEndpoints = existing.endpoints.filter((e) => e.id !== endpointId);
     const source =
       existing.source.kind === 'manual'
@@ -2904,6 +2973,95 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     queueSaveSynced(nextSynced);
   },
 
+  refreshMockServer: async (id) => {
+    const synced = get().synced;
+    if (!synced) return { warnings: [] };
+    const server = synced.mockServers[id];
+    if (!server) return { warnings: [] };
+    const { endpoints, warnings } = await resolveMockEndpoints(server.source, synced);
+    // Race-safe: write against LIVE state (the resolve awaited).
+    set((state) => {
+      const live = state.synced?.mockServers[id];
+      if (!state.synced || !live) return {};
+      const now = new Date().toISOString();
+      return {
+        synced: {
+          ...state.synced,
+          mockServers: {
+            ...state.synced.mockServers,
+            [id]: { ...live, endpoints, updatedAt: now },
+          },
+          meta: { ...state.synced.meta, updatedAt: now },
+        },
+      };
+    });
+    const after = get().synced;
+    if (after) queueSaveSynced(after);
+    return { warnings };
+  },
+
+  convertMockToEditable: (serverId) => {
+    const synced = get().synced;
+    if (!synced) return;
+    const existing = synced.mockServers[serverId];
+    if (!existing) return;
+    // Only a linked ("run live") contract mock needs converting; every other
+    // source is already editable. The endpoints already live on the server, so
+    // flipping the mode simply unlocks them — nothing is re-parsed.
+    if (existing.source.kind !== 'openapi-asset' || existing.source.mode !== 'linked') return;
+    const now = new Date().toISOString();
+    const nextServer = {
+      ...existing,
+      source: { ...existing.source, mode: 'materialized' as const },
+      updatedAt: now,
+    };
+    const nextSynced: WorkspaceSynced = {
+      ...synced,
+      mockServers: { ...synced.mockServers, [serverId]: nextServer },
+      meta: { ...synced.meta, updatedAt: now },
+    };
+    set({ synced: nextSynced });
+    queueSaveSynced(nextSynced);
+    get().pushToast({
+      tone: 'success',
+      title: `"${existing.name}" is now editable`,
+      detail:
+        'Endpoints no longer auto-sync with the spec — use "Re-import from spec" to pull updates.',
+    });
+  },
+
+  reuploadMockSpec: async (serverId, file) => {
+    const server = get().synced?.mockServers[serverId];
+    if (!server || server.source.kind !== 'openapi-asset') return;
+    // Validate the new file is an OpenAPI/Swagger doc BEFORE replacing anything —
+    // a non-spec upload would otherwise silently clear the linked endpoints and
+    // de-type the asset. `summarizeUploadedSpec` returns null for non-specs.
+    const bytes = await bytesFromFile(file);
+    const summary = await summarizeUploadedSpec(
+      bytes,
+      file.name,
+      file.type,
+      new Date().toISOString(),
+    );
+    if (!summary) {
+      get().pushToast({
+        tone: 'error',
+        title: "That file isn't a valid OpenAPI/Swagger spec",
+        detail: 'The mock was left unchanged — upload the revised contract as JSON or YAML.',
+      });
+      return;
+    }
+    // Replacing the backing asset's bytes re-parses the spec summary and
+    // auto-refreshes every linked mock reading it (see fillGlobalFileAssetBytes).
+    await get().fillGlobalFileAssetBytes(server.source.assetId, file);
+    const count = get().synced?.mockServers[serverId]?.endpoints.length ?? 0;
+    get().pushToast({
+      tone: 'success',
+      title: `Updated "${server.name}" from the revised spec`,
+      detail: `${count} endpoint${count === 1 ? '' : 's'} now served.`,
+    });
+  },
+
   duplicateMockServer: (id) => {
     const synced = get().synced;
     if (!synced) return null;
@@ -2917,6 +3075,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   duplicateMockEndpoint: (serverId, endpointId) => {
     const synced = get().synced;
     if (!synced) return null;
+    const server = synced.mockServers[serverId];
+    if (server && isLinkedMockSource(server.source)) return null;
     const { synced: nextSynced, endpoint } = duplicateMockEndpointAction(
       synced,
       serverId,
@@ -2937,6 +3097,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   mocksCreateModalOpen: false,
   openMocksCreateModal: () => set({ mocksCreateModalOpen: true }),
   closeMocksCreateModal: () => set({ mocksCreateModalOpen: false }),
+
+  mocksServeContractModalOpen: false,
+  openMocksServeContractModal: () => set({ mocksServeContractModalOpen: true }),
+  closeMocksServeContractModal: () => set({ mocksServeContractModalOpen: false }),
 
   attachMockResponseFile: async (serverId, endpointId, file) => {
     // Same unified flow — direct upload mints a Global Asset, then we
@@ -3273,6 +3437,102 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     return { folders: parsed.folders.length + 1, requests: parsed.requests.length };
   },
 
+  importOpenApiToCollection: async ({
+    spec,
+    format,
+    parentFolderId = null,
+    specAssetId,
+    title,
+  }) => {
+    const synced = get().synced;
+    if (!synced) return { folderId: null, requests: 0, warnings: [] };
+    // Reuse the mock resolver's parser dispatch (desktop bridge / browser).
+    const { endpoints, warnings } = await resolveMockEndpoints(
+      { kind: 'openapi', spec, format },
+      synced,
+    );
+
+    let rootFolderId = '';
+    let created = 0;
+    // Build the collection against LIVE state (the parse awaited).
+    set((state) => {
+      if (!state.synced) return {};
+      let cur = state.synced;
+      const { synced: afterRoot, folder } = addFolderAction(
+        cur,
+        parentFolderId,
+        title?.trim() || 'Imported API',
+      );
+      cur = afterRoot;
+      rootFolderId = folder.id;
+      for (const ep of endpoints) {
+        const name = ep.name || `${ep.method} ${ep.pathPattern}`;
+        const { synced: next, request } = addRequestAction(cur, folder.id, name);
+        const patched: ApiRequest = {
+          ...request,
+          ...requestShapeFromMockEndpoint(ep),
+          specAssetId,
+          operationId: `${ep.method} ${ep.pathPattern}`,
+        };
+        cur = {
+          ...next,
+          collections: {
+            ...next.collections,
+            requests: { ...next.collections.requests, [request.id]: patched },
+          },
+        };
+        created += 1;
+      }
+      return {
+        synced: { ...cur, meta: { ...cur.meta, updatedAt: new Date().toISOString() } },
+      };
+    });
+    const after = get().synced;
+    if (after) queueSaveSynced(after);
+    return { folderId: rootFolderId, requests: created, warnings };
+  },
+
+  promoteMockEndpointToRequest: (mockId, endpointId, parentFolderId = null) => {
+    const synced = get().synced;
+    if (!synced) return null;
+    const server = synced.mockServers[mockId];
+    const ep = server?.endpoints.find((e) => e.id === endpointId);
+    if (!server || !ep) return null;
+    const local = get().local;
+    if (!local) return null;
+    const now = new Date().toISOString();
+    const { patches, requestIds } = buildMockPromotion(synced, server, [ep], {
+      parentFolderId,
+      now,
+    });
+    let next = { synced, local };
+    for (const patch of patches) next = applyMutation(next, patch, { now }).next;
+    const nextSynced = { ...next.synced, meta: { ...next.synced.meta, updatedAt: now } };
+    set({ synced: nextSynced, local: next.local });
+    queueSaveSynced(nextSynced);
+    return requestIds[0] ?? null;
+  },
+
+  promoteMockToCollection: (mockId, parentFolderId = null) => {
+    const synced = get().synced;
+    if (!synced) return null;
+    const server = synced.mockServers[mockId];
+    if (!server) return null;
+    const local = get().local;
+    if (!local) return null;
+    const now = new Date().toISOString();
+    const { patches, folderId, requestIds } = buildMockPromotion(synced, server, server.endpoints, {
+      parentFolderId,
+      now,
+    });
+    let next = { synced, local };
+    for (const patch of patches) next = applyMutation(next, patch, { now }).next;
+    const nextSynced = { ...next.synced, meta: { ...next.synced.meta, updatedAt: now } };
+    set({ synced: nextSynced, local: next.local });
+    queueSaveSynced(nextSynced);
+    return { folderId, requests: requestIds.length };
+  },
+
   importPostmanEnvironment: (parsed) => {
     const state = get();
     if (!state.synced) return null;
@@ -3497,6 +3757,15 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const slotId = generateId();
     const record = await createAttachmentFromFile(file, slotId);
     await putAttachment(record);
+    // Parse-on-upload: if the bytes are an OpenAPI/Swagger doc, derive its
+    // spec summary now (bytes in hand) so the asset carries it; `undefined`
+    // for ordinary files.
+    const spec = await summarizeUploadedSpec(
+      record.bytes,
+      record.filename,
+      record.mimeType,
+      new Date().toISOString(),
+    );
     // Race-safe: run the reducer against LIVE state inside commitSynced
     // so a mid-await mutation (another upload, a rename, a request edit)
     // is preserved. The previous shape — `commitSynced(() => result.synced)`
@@ -3513,6 +3782,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         size: record.size,
         mimeType: record.mimeType,
         sha256: record.sha256,
+        spec,
       });
       createdFileId = out.file.id;
       return out.synced;
@@ -3562,6 +3832,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // user might be filling a slot the MCP claim guessed at.
     const record = await createAttachmentFromFile(file, slotId);
     await putAttachment(record);
+    // Re-parse on re-upload: keep the spec summary in sync with the new bytes
+    // (and clear it when a non-spec file replaces a spec).
+    const spec = await summarizeUploadedSpec(
+      record.bytes,
+      record.filename,
+      record.mimeType,
+      new Date().toISOString(),
+    );
     // Race-safe: reducer runs against LIVE state. If the user deleted
     // the asset between our await and now, the reducer no-ops by
     // returning `s` unchanged. If the user renamed the asset, the
@@ -3582,6 +3860,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
               size: record.size,
               mimeType: record.mimeType,
               sha256: record.sha256,
+              spec,
               updatedAt: new Date().toISOString(),
             },
           },
@@ -3592,6 +3871,19 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // push. A no-op when the asset was deleted mid-await.
     if (get().synced?.globalAssets.files?.[id]) {
       recordPendingFileUpload(set, get, id);
+    }
+    // Auto-refresh any "run live" (linked) mocks that read this spec asset so
+    // they reflect the new bytes immediately.
+    const linkedMockIds = Object.values(get().synced?.mockServers ?? {})
+      .filter(
+        (m) =>
+          m.source.kind === 'openapi-asset' &&
+          m.source.mode === 'linked' &&
+          m.source.assetId === id,
+      )
+      .map((m) => m.id);
+    for (const mockId of linkedMockIds) {
+      await get().refreshMockServer(mockId);
     }
   },
   setFormRowGlobalFileAsset: async (requestId, rowIndex, fileAssetId) => {

@@ -82,6 +82,17 @@ describe('parseSourceToEndpoints (browser dispatch)', () => {
     expect(endpoints).toHaveLength(1);
   });
 
+  it('warns when an unresolved openapi-asset source reaches the parser', async () => {
+    const { endpoints, warnings } = await parseSourceToEndpoints({
+      kind: 'openapi-asset',
+      assetId: 'a1',
+      format: 'json',
+      mode: 'linked',
+    });
+    expect(endpoints).toEqual([]);
+    expect(warnings[0]).toMatch(/openapi-asset source reached the parser unresolved/);
+  });
+
   it('returns manual endpoints verbatim', async () => {
     const endpoint = {
       id: 'e1',

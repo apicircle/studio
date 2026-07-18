@@ -11,6 +11,7 @@ import type {
   MockResponseBody,
   MockResponseConfig,
   RequestBody,
+  SpecAssetMeta,
   WorkspaceSynced,
 } from '@apicircle/shared';
 import { generateId } from '@apicircle/shared';
@@ -200,6 +201,7 @@ function createGlobalFileAsset(args: {
   size: number;
   mimeType: string;
   sha256?: string;
+  spec?: SpecAssetMeta;
 }): GlobalFileAsset {
   const now = new Date().toISOString();
   return {
@@ -211,6 +213,7 @@ function createGlobalFileAsset(args: {
     size: args.size,
     mimeType: args.mimeType,
     sha256: args.sha256,
+    spec: args.spec,
     createdAt: now,
     updatedAt: now,
   };
@@ -226,6 +229,7 @@ export function addGlobalFileAsset(
     size: number;
     mimeType: string;
     sha256?: string;
+    spec?: SpecAssetMeta;
   },
 ): { synced: WorkspaceSynced; file: GlobalFileAsset } {
   const file = createGlobalFileAsset(init);

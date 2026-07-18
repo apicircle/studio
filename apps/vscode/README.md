@@ -47,7 +47,7 @@ VS Code is where the same engineers who use API Circle already live with Git. Ed
 
 ### MCP integration
 
-- **94-tool MCP catalog** for AI clients — Claude Desktop, Claude Code, Codex, Cursor, Copilot, Windsurf, Zed, Continue, Cline.
+- **97-tool MCP catalog** for AI clients — Claude Desktop, Claude Code, Codex, Cursor, Copilot, Windsurf, Zed, Continue, Cline.
 - **One-click Copilot Chat install** — writes `.vscode/mcp.json` idempotently.
 - **Per-client config snippets** — copy or direct-install MCP configuration.
 - **Curated prompts** — 19 starter prompts across 7 categories in the MCP sidebar.

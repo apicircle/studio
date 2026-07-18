@@ -23,10 +23,107 @@
 > ship. Full per-platform walk-through:
 > [`docs/installing.md`](docs/installing.md).
 
-## 1.2.1 - Unreleased
+## 1.3.0 - 2026-07-18
+
+_All workspace packages move to **1.3.0** in lockstep — the published
+`@apicircle/shared`, `@apicircle/core`, `@apicircle/mock-server-core`,
+`@apicircle/mcp-server`, `@apicircle/cli`, and the `apicircle-vscode` VS Code
+extension, plus the private desktop / web / ui-components / git / desktop-shell
+packages. Highlights: the **spec asset hub** (upload an OpenAPI/Swagger spec
+once, then serve it live or import it as a mock, import it as a collection, and
+promote mock endpoints into runnable requests) and **Mock → collection parity**
+across the app, the MCP server, and the VS Code extension._
 
 ### Added
 
+- **Mock → collection parity across the MCP server + VS Code (catalog 96 → 97).**
+  `mock.promote_endpoint` now produces a RUNNABLE request like the app —
+  ensuring the active `Mock` environment (`MOCK_BASE_URL` + `MOCK_PORT`,
+  prefilled from the mock's port else `8080`, existing values preserved),
+  dropping it in a `<name> (mock)` folder, and templating the URL
+  `{{MOCK_BASE_URL}}:{{MOCK_PORT}}<path>` — and a new
+  `mock.promote_to_collection` tool promotes every endpoint at once. The VS Code
+  extension gains matching **Add to Collection** (mock endpoint node) + **Add
+  All to Collection** (mock server node) commands. All surfaces go through one
+  shared `buildMockPromotion` (`@apicircle/core`), so the web/desktop store, the
+  MCP server, and the VS Code extension stay in lockstep.
+  (`@apicircle/shared`, `@apicircle/core`, `@apicircle/mcp-server`, VS Code)
+- **Spec-typed Global File Assets (additive).** Uploading an OpenAPI 3.x /
+  Swagger 2.0 document (`.json` / `.yaml` / `.yml`) into the Global Assets
+  **Files** library now parses it once on upload and records a `SpecAssetMeta`
+  summary (`dialect`, `format`, `title`, `version`, `operationCount`,
+  `warnings`) on the asset. The Assets panel shows a spec badge
+  ("OpenAPI 3 · N ops") plus a parsed summary in the file editor, and the MCP
+  `assets.list_files` envelope gains a `spec` field (`null` for ordinary files).
+  Purely additive — existing assets and non-spec files are untouched. Foundation
+  for spec-driven mock servers and code-vs-spec drift.
+  (`@apicircle/shared`, `@apicircle/mock-server-core`, `@apicircle/ui-components`,
+  `@apicircle/mcp-server`)
+- **Mock servers from a spec asset — "run live" vs "import & edit" (additive).**
+  A mock server can now be built from an uploaded spec asset (`GlobalFileAsset`)
+  in two modes: **linked** ("run live" — endpoints derive from the asset and stay
+  in sync; read-only) or **materialized** ("import & edit" — parsed into editable
+  endpoints). New `MockServerSource` variant
+  `{ kind: 'openapi-asset', assetId, format, mode }` + an `isLinkedMockSource`
+  helper; the store resolves the asset's bytes → parses → materializes, auto-
+  refreshes linked mocks when the asset changes, and keeps linked mocks read-only
+  on every surface. New `refreshMockServer` store action + `mock.refresh` MCP tool
+  (catalog **94 → 95**). Two distinct entry points in the Mocks header: **New
+  Mock Server → From spec asset** imports a contract as editable endpoints
+  (materialized), and **Serve OpenAPI contract** stands up a live, read-only
+  server straight from a contract (linked) with a spec preview, name, and port.
+  The mock panel shows a "Served directly from contract" callout and a friendly
+  source label for a live contract server, and the endpoint editor is fully
+  read-only for a linked mock — mutation CTAs (Add rule, Import rule, Add param,
+  Add header, Add multiplier, …) are hidden (not just disabled) and their
+  empty-state copy drops the "click Add …" hints, every remaining native control
+  is disabled via `<fieldset disabled>`, the Monaco response-body editor is
+  read-only, and an explanatory banner says why — so a live contract mock can't
+  be hand-edited. A live
+  contract mock can be **converted to an editable mock** in place (the Mocks
+  kebab, the read-only banner, or the panel callout) — this flips it to a
+  materialized copy while keeping the spec link, so "Re-import from spec" still
+  works. When the contract itself changes, **Update spec…** (the Mocks kebab or
+  the panel callout) re-uploads the revised OpenAPI/Swagger file — replacing the
+  shared asset's bytes and live-refreshing the linked mock's endpoints. Long
+  mock-server names now truncate in the sidebar so the per-server actions menu
+  stays reachable.
+  (`@apicircle/shared`, `@apicircle/mock-server-core`, `@apicircle/ui-components`,
+  `@apicircle/mcp-server`, VS Code)
+- **Import an OpenAPI/Swagger spec into a collection (editor, additive).** The
+  editor's unified Import modal now recognises OpenAPI 3.x / Swagger 2.0
+  (`Auto-detect`, or the explicit "OpenAPI / Swagger" source) — paste or upload a
+  spec and it becomes a new folder with one request per operation (method, path,
+  query/header/path params). The Global Assets spec editor gains an **Import to
+  collection** button that imports straight from the stored asset. `ApiRequest`
+  gains additive `specAssetId` + `operationId` back-refs so an imported
+  collection knows which spec asset + operation each request came from.
+  (`@apicircle/shared`, `@apicircle/ui-components`)
+- **Promote mock endpoints into a collection (additive).** A mock's endpoint
+  kebab has **Add to collection**, and the server kebab has **Add all to
+  collection** (the whole mock at once) — available even on read-only "run live"
+  mocks. Promoted requests target the live mock: they land in a
+  **"<name> (mock)" folder** with a `{{MOCK_BASE_URL}}:{{MOCK_PORT}}<path>` URL,
+  backed by a dedicated, activated **"Mock" environment** (`MOCK_BASE_URL` =
+  `http://localhost`; `MOCK_PORT` prefilled from the server's port, else `8080`;
+  existing values preserved on re-promote) so you can retarget host/port before
+  running. New `promoteMockToCollection` store action alongside
+  `promoteMockEndpointToRequest`; `mock.promote_endpoint` was added to the MCP
+  server here (catalog 95 → **96**) and later brought to full parity with the
+  app — the same env, folder, and templated URL, across MCP + VS Code (see the
+  Mock → collection parity entry above). A shared
+  `requestShapeFromMockEndpoint(ep, urlPrefix)` mapper keeps promoted +
+  OpenAPI-imported requests identical.
+  (`@apicircle/ui-components`, `@apicircle/mcp-server`)
+- **Spec-asset usage tracking (additive).** The Global Assets usage index now
+  counts, per spec asset, the mock servers whose source it is (`openapi-asset`)
+  and the requests imported from it (`Request.specAssetId`) — so the Assets
+  panel's "Used in N" and the delete confirmation surface the mocks and
+  collections a spec backs. This completes the spec-asset hub: upload a spec
+  once, then run/import it as a mock, import it as a collection, promote mock
+  endpoints into requests, and (in the Lens edition) drift-check code against it,
+  all referencing the same asset.
+  (`@apicircle/shared`, `@apicircle/ui-components`)
 - **UI sections/mode seam (open-core, additive).** Building on the `extraPanels`
   seam, the React shell (`@apicircle/ui-components`) now accepts edition-contributed
   top-level **sections** ("modes") via an optional `App` `sections` prop

@@ -2,7 +2,7 @@
   "name": "apicircle-vscode",
   "displayName": "API Circle Studio",
   "description": "Git-backed API workspace with mocks, plans, and MCP — natively in VS Code.",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "publisher": "apicircle",
   "private": false,
   "license": "SEE LICENSE IN LICENSE",
@@ -1302,6 +1302,18 @@
         "icon": "$(clippy)"
       },
       {
+        "command": "apicircle.addAllToCollection",
+        "title": "Add All to Collection",
+        "category": "API Circle",
+        "icon": "$(references)"
+      },
+      {
+        "command": "apicircle.addEndpointToCollection",
+        "title": "Add to Collection",
+        "category": "API Circle",
+        "icon": "$(add)"
+      },
+      {
         "command": "apicircle.revealEndpointInMockYaml",
         "title": "Reveal Endpoint in Mock YAML",
         "category": "API Circle",
@@ -2014,6 +2026,11 @@
           "group": "1_actions@3"
         },
         {
+          "command": "apicircle.addAllToCollection",
+          "when": "view == apicircle.mock && viewItem =~ /^mock-(idle|running)$/",
+          "group": "1_actions@4"
+        },
+        {
           "command": "apicircle.deleteMock",
           "when": "view == apicircle.mock && viewItem =~ /^mock-(idle|running)$/",
           "group": "9_danger@1"
@@ -2042,6 +2059,11 @@
           "command": "apicircle.copyEndpointPath",
           "when": "view == apicircle.mock && viewItem == mock-endpoint",
           "group": "1_actions@3"
+        },
+        {
+          "command": "apicircle.addEndpointToCollection",
+          "when": "view == apicircle.mock && viewItem == mock-endpoint",
+          "group": "1_actions@4"
         },
         {
           "command": "apicircle.revealEndpointInMockYaml",

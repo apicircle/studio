@@ -262,9 +262,35 @@ export interface MockEndpoint {
 
 export type MockServerSource =
   | { kind: 'openapi'; spec: string; format: 'json' | 'yaml' }
+  | {
+      // A spec-typed Global File Asset (see `GlobalFileAsset.spec`) drives this
+      // mock. Unlike `kind: 'openapi'` (a verbatim inline copy), the bytes live
+      // once in the asset library and are resolved on create / refresh.
+      kind: 'openapi-asset';
+      /** id of the Global File Asset holding the OpenAPI/Swagger document. */
+      assetId: string;
+      format: 'json' | 'yaml';
+      /**
+       * `linked` — endpoints are derived live from the asset and kept in sync
+       * when the asset changes; they are NOT hand-editable ("run the spec
+       * directly"). `materialized` — parsed once into editable endpoints the
+       * user can modify ("import & edit"); an explicit refresh re-imports.
+       */
+      mode: 'linked' | 'materialized';
+    }
   | { kind: 'postman'; collection: string }
   | { kind: 'insomnia'; export: string }
   | { kind: 'manual'; endpoints: MockEndpoint[] };
+
+/**
+ * True when a mock's endpoints are derived live from a spec asset and must not
+ * be hand-edited — the source is an asset in `linked` mode. Endpoint-mutating
+ * store actions and MCP tools consult this to stay read-only, so "run the spec
+ * directly" mocks always reflect the asset.
+ */
+export function isLinkedMockSource(source: MockServerSource): boolean {
+  return source.kind === 'openapi-asset' && source.mode === 'linked';
+}
 
 export interface MockServer {
   id: string;

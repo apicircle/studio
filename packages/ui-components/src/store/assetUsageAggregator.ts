@@ -82,6 +82,39 @@ export function aggregateAssetUsage(synced: WorkspaceSynced): Record<string, Ass
     }
   }
 
+  // Spec-source usage (Increment E): mocks whose SOURCE is a spec asset
+  // (`openapi-asset`) + requests imported from a spec asset (`specAssetId`).
+  // Distinct from the body-refs above — this is what makes "delete a spec
+  // asset" warn about the mocks/collections it backs.
+  const pushSpec = (assetId: string, kind: 'mockServer' | 'importedRequest', id: string) => {
+    let entry = out[assetId];
+    if (!entry) {
+      entry = { requests: [], mockEndpoints: [], total: 0 };
+      out[assetId] = entry;
+    }
+    if (kind === 'mockServer') {
+      if (!entry.mockServers) entry.mockServers = [];
+      if (!entry.mockServers.includes(id)) {
+        entry.mockServers.push(id);
+        entry.total += 1;
+      }
+    } else {
+      if (!entry.importedRequests) entry.importedRequests = [];
+      if (!entry.importedRequests.includes(id)) {
+        entry.importedRequests.push(id);
+        entry.total += 1;
+      }
+    }
+  };
+  for (const server of Object.values(synced.mockServers ?? {})) {
+    if (server.source.kind === 'openapi-asset') {
+      pushSpec(server.source.assetId, 'mockServer', server.id);
+    }
+  }
+  for (const req of Object.values(synced.collections.requests)) {
+    if (req.specAssetId) pushSpec(req.specAssetId, 'importedRequest', req.id);
+  }
+
   return out;
 }
 
@@ -191,6 +224,18 @@ function sameUsageIndex(
       ) {
         return false;
       }
+    }
+    const xMocks = x.mockServers ?? [];
+    const yMocks = y.mockServers ?? [];
+    if (xMocks.length !== yMocks.length) return false;
+    for (let i = 0; i < xMocks.length; i++) {
+      if (xMocks[i] !== yMocks[i]) return false;
+    }
+    const xImp = x.importedRequests ?? [];
+    const yImp = y.importedRequests ?? [];
+    if (xImp.length !== yImp.length) return false;
+    for (let i = 0; i < xImp.length; i++) {
+      if (xImp[i] !== yImp[i]) return false;
     }
   }
   return true;

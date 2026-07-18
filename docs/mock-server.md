@@ -114,6 +114,29 @@ parsed immediately and the resulting `MockEndpoint[]` is stored on
 `MockServer.endpoints`. The runtime router serves that array verbatim and never
 re-parses `source`, so a mock created with zero endpoints stays empty.
 
+### Spec sources: paste, or a spec asset (serve live / import)
+
+A spec-backed mock's `source` is either a **verbatim inline spec**
+(`{ kind: 'openapi', spec, format }`, from the paste-spec flow) or a reference to
+an uploaded **spec asset** (`{ kind: 'openapi-asset', assetId, format, mode }` —
+upload the OpenAPI/Swagger file under Global Assets → Files). Asset-backed mocks
+come in two modes, each with its own entry point in the Mocks header:
+
+- **`linked` (Serve OpenAPI contract)** — endpoints derive from the asset and
+  stay in sync: re-uploading the spec asset auto-refreshes every linked mock, and
+  the endpoints are read-only (edits are rejected on every surface). The dedicated
+  **Serve OpenAPI contract** flow picks a contract, name, and port and stands up a
+  live, read-only server; the mock panel shows a "Served directly from contract"
+  callout. Best for "just run my contract." A live contract mock can be
+  **converted to an editable mock** in place (`convertMockToEditable`) — this
+  flips the source to `materialized`, unlocking the endpoints while keeping the
+  spec link so "Re-import from spec" still works. When the contract itself
+  changes, **Update spec…** (`reuploadMockSpec`) re-uploads the revised file,
+  replacing the backing asset's bytes and live-refreshing the linked endpoints.
+- **`materialized` (New Mock Server → From spec asset)** — the spec is parsed
+  once into editable endpoints you can modify; an explicit refresh
+  (`refreshMockServer` / the `mock.refresh` MCP tool) re-imports from the asset.
+
 The parser ships as two entry points that differ only in how OpenAPI `$ref`s
 are dereferenced:
 

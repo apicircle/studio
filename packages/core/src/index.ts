@@ -298,6 +298,8 @@ export type {
 export { applyMutation } from './workspace/applyMutation';
 export type { ApplyMutationOptions, ApplyMutationResult } from './workspace/applyMutation';
 export type { WorkspacePatch, WorkspacePatchKind, WorkspaceState } from './workspace/patches';
+export { buildMockPromotion } from './workspace/mockPromotion';
+export type { MockPromotionOptions, MockPromotionResult } from './workspace/mockPromotion';
 
 export { importApicircleFolderInto } from './workspace/apicircleFolderImport';
 export type { ImportApicircleFolderResult } from './workspace/apicircleFolderImport';

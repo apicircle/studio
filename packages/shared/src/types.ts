@@ -331,6 +331,15 @@ export interface Request {
   // Optional reference to a workspace-wide GraphQL schema definition. Used
   // for GraphQL request body autocomplete (P19).
   graphqlSchemaId?: string | null;
+  /**
+   * Provenance for requests imported from an OpenAPI/Swagger spec: the Global
+   * File Asset the collection was imported from (`specAssetId`) and the
+   * operation it maps to (`operationId` = `"<METHOD> <path>"`, the stable
+   * operation key). Enables re-syncing a collection when its source spec asset
+   * changes. Additive; absent on hand-authored or non-spec-imported requests.
+   */
+  specAssetId?: string;
+  operationId?: string;
   assertions: Assertion[];
   createdAt: string;
   updatedAt: string;
@@ -412,6 +421,33 @@ export interface AssetGitRef {
   verifiedAt: string;
 }
 
+/**
+ * Parsed summary of a Global File Asset that IS an OpenAPI 3.x / Swagger 2.0
+ * document. Present only on spec files — an ordinary file asset leaves `spec`
+ * undefined. Derived once when the bytes are uploaded (and re-derived when they
+ * change) by `summarizeSpec` in `@apicircle/mock-server-core`, so the Assets
+ * panel, the mock "run/import from spec" pickers, and (in the Lens edition) the
+ * code-vs-spec drift check all read one authoritative parse instead of
+ * re-parsing the blob. Purely additive — existing assets and non-spec files are
+ * unaffected.
+ */
+export interface SpecAssetMeta {
+  /** `openapi-3` when the doc has a top-level `openapi:` string; `swagger-2` for `swagger:`. */
+  dialect: 'openapi-3' | 'swagger-2';
+  /** How the bytes are encoded, so consumers parse with the right reader. */
+  format: 'json' | 'yaml';
+  /** `info.title`, when present. */
+  title?: string;
+  /** `info.version`, when present. */
+  version?: string;
+  /** Operations declared — the sum of HTTP methods across `paths`. */
+  operationCount: number;
+  /** ISO timestamp of the parse; re-derived whenever the bytes (sha256) change. */
+  parsedAt: string;
+  /** Non-fatal structural warnings surfaced in the Assets panel. */
+  warnings: string[];
+}
+
 export interface GlobalFileAsset {
   id: string;
   name: string;
@@ -438,6 +474,13 @@ export interface GlobalFileAsset {
    * never been merged leave it `undefined`.
    */
   baseBranchRef?: AssetGitRef | null;
+  /**
+   * Present when this file asset is a recognised OpenAPI/Swagger document — a
+   * parsed summary derived on upload (see {@link SpecAssetMeta}). Absent on
+   * ordinary file assets. Additive; drives the Assets-panel spec badge and the
+   * mock "run/import from spec" pickers.
+   */
+  spec?: SpecAssetMeta;
 }
 
 /**
@@ -469,6 +512,15 @@ export interface AssetUsage {
   requests: string[];
   /** Mock endpoints whose responses bind this asset. */
   mockEndpoints: Array<{ mockId: string; endpointId: string }>;
+  /**
+   * Mock servers whose SOURCE is this spec asset (`openapi-asset`). Present only
+   * for spec assets (Increment E). Deleting the asset breaks linked mocks and
+   * removes the re-import source for materialized ones, so the delete cascade
+   * surfaces these.
+   */
+  mockServers?: string[];
+  /** Request ids imported from this spec asset (`Request.specAssetId`) — spec assets only (Increment E). */
+  importedRequests?: string[];
   /** Total reference count — denormalised for cheap badge rendering. */
   total: number;
 }

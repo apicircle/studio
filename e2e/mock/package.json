@@ -1,6 +1,6 @@
 {
   "name": "@apicircle/e2e-mock",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "type": "module",
   "description": "Localhost mock server for the Editor E2E suite. Echoes requests, issues auth challenges, and serves deterministic responses.",

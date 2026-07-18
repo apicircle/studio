@@ -54,6 +54,55 @@ const seedRequest = (synced: WorkspaceSynced, partial: Partial<ApiRequest>): Wor
   };
 };
 
+describe('file asset spec typing', () => {
+  const spec = {
+    dialect: 'openapi-3' as const,
+    format: 'json' as const,
+    title: 'Petstore',
+    version: '1.0',
+    operationCount: 3,
+    parsedAt: 't',
+    warnings: [],
+  };
+
+  it('threads the spec summary onto the created asset', () => {
+    const { file } = addGlobalFileAsset(baseSynced(), {
+      name: 'petstore',
+      slotId: 's',
+      filename: 'petstore.json',
+      size: 10,
+      mimeType: 'application/json',
+      spec,
+    });
+    expect(file.spec).toEqual(spec);
+  });
+
+  it('leaves spec undefined for an ordinary file', () => {
+    const { file } = addGlobalFileAsset(baseSynced(), {
+      name: 'logo',
+      slotId: 's',
+      filename: 'logo.png',
+      size: 4,
+      mimeType: 'image/png',
+    });
+    expect(file.spec).toBeUndefined();
+  });
+
+  it('preserves spec across a rename', () => {
+    const { synced, file } = addGlobalFileAsset(baseSynced(), {
+      name: 'petstore',
+      slotId: 's',
+      filename: 'petstore.json',
+      size: 10,
+      mimeType: 'application/json',
+      spec,
+    });
+    const next = updateGlobalFileAsset(synced, file.id, { name: 'renamed' });
+    expect(next.globalAssets.files?.[file.id]?.name).toBe('renamed');
+    expect(next.globalAssets.files?.[file.id]?.spec).toEqual(spec);
+  });
+});
+
 describe('addGlobalSchema', () => {
   it('appends a new entry with a fresh id and updates meta.updatedAt', () => {
     const before = baseSynced();

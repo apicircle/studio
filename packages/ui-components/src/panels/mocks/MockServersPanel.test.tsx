@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { MockRuntimeEntry, MockServer } from '@apicircle/shared';
 import { MockServersPanel } from './MockServersPanel';
@@ -7,6 +7,16 @@ import { renderWithStore } from '../../../test/renderWithStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 
 const T0 = '2026-04-27T00:00:00.000Z';
+
+const OPENAPI_JSON = JSON.stringify({
+  openapi: '3.0.0',
+  info: { title: 'Petstore', version: '1.0.0' },
+  paths: {
+    '/pets': {
+      get: { responses: { '200': { content: { 'application/json': { example: [{ id: 1 }] } } } } },
+    },
+  },
+});
 
 function fixtureMock(id: string, name: string): MockServer {
   const endpoint = {
@@ -92,6 +102,147 @@ describe('MockServersPanel (post-rich-editor redesign)', () => {
       activeMockEndpointId: null,
     }));
     expect(await screen.findByLabelText('Mock server name')).toHaveValue('Petstore');
+  });
+
+  it('shows a "Served directly from contract" callout + friendly label for a linked mock', async () => {
+    await renderWithStore(<MockServersPanel />);
+    await act(async () => {
+      await useWorkspaceStore
+        .getState()
+        .addGlobalFileAsset(
+          new File([OPENAPI_JSON], 'petstore.json', { type: 'application/json' }),
+        );
+    });
+    const assetId = Object.values(useWorkspaceStore.getState().synced!.globalAssets.files!)[0].id;
+    const { id } = await useWorkspaceStore.getState().createMockServer({
+      name: 'Petstore live',
+      source: { kind: 'openapi-asset', assetId, format: 'json', mode: 'linked' },
+    });
+    act(() => {
+      useWorkspaceStore.getState().setActiveMockEndpoint({ serverId: id, endpointId: null });
+    });
+
+    expect(await screen.findByText(/Served directly from contract/i)).toBeInTheDocument();
+    // Friendly source label instead of the raw `openapi-asset` union tag.
+    expect(screen.getByText('OpenAPI contract')).toBeInTheDocument();
+    // The callout exposes both spec actions.
+    expect(screen.getByRole('button', { name: /Update spec/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Convert to editable/i })).toBeInTheDocument();
+  });
+
+  it('renders the endpoint editor READ-ONLY for a linked contract mock', async () => {
+    await renderWithStore(<MockServersPanel />);
+    await act(async () => {
+      await useWorkspaceStore
+        .getState()
+        .addGlobalFileAsset(
+          new File([OPENAPI_JSON], 'petstore.json', { type: 'application/json' }),
+        );
+    });
+    const assetId = Object.values(useWorkspaceStore.getState().synced!.globalAssets.files!)[0].id;
+    const { id } = await useWorkspaceStore.getState().createMockServer({
+      name: 'Live',
+      source: { kind: 'openapi-asset', assetId, format: 'json', mode: 'linked' },
+    });
+    const ep = useWorkspaceStore.getState().synced!.mockServers[id].endpoints[0];
+    act(() => {
+      useWorkspaceStore.getState().setActiveMockEndpoint({ serverId: id, endpointId: ep.id });
+    });
+
+    // Banner + native controls disabled via the wrapping <fieldset disabled>.
+    expect(await screen.findByText(/Read-only/i)).toBeInTheDocument();
+    expect(screen.getByLabelText('Mock endpoint method')).toBeDisabled();
+    expect(screen.getByLabelText('Mock endpoint name')).toBeDisabled();
+  });
+
+  it('hides mutation CTAs across the read-only editor and drops "click Add rule" hints', async () => {
+    await renderWithStore(<MockServersPanel />);
+    await act(async () => {
+      await useWorkspaceStore
+        .getState()
+        .addGlobalFileAsset(
+          new File([OPENAPI_JSON], 'petstore.json', { type: 'application/json' }),
+        );
+    });
+    const assetId = Object.values(useWorkspaceStore.getState().synced!.globalAssets.files!)[0].id;
+    const { id } = await useWorkspaceStore.getState().createMockServer({
+      name: 'Live',
+      source: { kind: 'openapi-asset', assetId, format: 'json', mode: 'linked' },
+    });
+    const ep = useWorkspaceStore.getState().synced!.mockServers[id].endpoints[0];
+    act(() => {
+      useWorkspaceStore.getState().setActiveMockEndpoint({ serverId: id, endpointId: ep.id });
+    });
+
+    // Validation node: no Add/Import CTAs, and the empty copy doesn't tell you
+    // to click a button that isn't there.
+    await userEvent.click(await screen.findByRole('button', { name: /Validation node/i }));
+    expect(screen.getByText(/No validation rules/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Add rule/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Import rule/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Click.*Add rule/i)).not.toBeInTheDocument();
+
+    // Default response node: no "+ Header" CTA.
+    await userEvent.click(screen.getByRole('button', { name: /Default response node/i }));
+    expect(screen.queryByRole('button', { name: /Add.*header/i })).not.toBeInTheDocument();
+  });
+
+  it('the read-only editor "Convert to editable" button unlocks editing', async () => {
+    await renderWithStore(<MockServersPanel />);
+    await act(async () => {
+      await useWorkspaceStore
+        .getState()
+        .addGlobalFileAsset(
+          new File([OPENAPI_JSON], 'petstore.json', { type: 'application/json' }),
+        );
+    });
+    const assetId = Object.values(useWorkspaceStore.getState().synced!.globalAssets.files!)[0].id;
+    const { id } = await useWorkspaceStore.getState().createMockServer({
+      name: 'Live',
+      source: { kind: 'openapi-asset', assetId, format: 'json', mode: 'linked' },
+    });
+    const ep = useWorkspaceStore.getState().synced!.mockServers[id].endpoints[0];
+    act(() => {
+      useWorkspaceStore.getState().setActiveMockEndpoint({ serverId: id, endpointId: ep.id });
+    });
+
+    // Read-only initially.
+    expect(await screen.findByText(/Read-only/i)).toBeInTheDocument();
+    expect(screen.getByLabelText('Mock endpoint method')).toBeDisabled();
+
+    // Convert unlocks it: banner gone, controls enabled, source now materialized.
+    await userEvent.click(screen.getByRole('button', { name: /Convert to editable/i }));
+    await waitFor(() => expect(screen.queryByText(/Read-only/i)).not.toBeInTheDocument());
+    expect(screen.getByLabelText('Mock endpoint method')).not.toBeDisabled();
+    const src = useWorkspaceStore.getState().synced!.mockServers[id].source;
+    expect(src).toMatchObject({ kind: 'openapi-asset', mode: 'materialized' });
+  });
+
+  it('leaves the endpoint editor EDITABLE for a materialized (imported) mock', async () => {
+    await renderWithStore(<MockServersPanel />);
+    await act(async () => {
+      await useWorkspaceStore
+        .getState()
+        .addGlobalFileAsset(
+          new File([OPENAPI_JSON], 'petstore.json', { type: 'application/json' }),
+        );
+    });
+    const assetId = Object.values(useWorkspaceStore.getState().synced!.globalAssets.files!)[0].id;
+    const { id } = await useWorkspaceStore.getState().createMockServer({
+      name: 'Imported',
+      source: { kind: 'openapi-asset', assetId, format: 'json', mode: 'materialized' },
+    });
+    const ep = useWorkspaceStore.getState().synced!.mockServers[id].endpoints[0];
+    act(() => {
+      useWorkspaceStore.getState().setActiveMockEndpoint({ serverId: id, endpointId: ep.id });
+    });
+
+    expect(await screen.findByLabelText('Mock endpoint method')).not.toBeDisabled();
+    expect(screen.queryByText(/Read-only/i)).not.toBeInTheDocument();
+
+    // An editable mock keeps its mutation CTAs.
+    await userEvent.click(screen.getByRole('button', { name: /Validation node/i }));
+    expect(screen.getByRole('button', { name: /Add rule/i })).toBeInTheDocument();
   });
 
   it('renders the MockEndpointEditor flow + node editor when both a server and endpoint are active', async () => {

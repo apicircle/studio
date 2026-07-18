@@ -58,6 +58,53 @@ describe('GlobalAssetsDockPanel', () => {
     expect(useWorkspaceStore.getState().synced!.globalAssets.schemas[id]).toBeUndefined();
   });
 
+  it('shows a spec badge and summary for an uploaded OpenAPI file', async () => {
+    render(<GlobalAssetsDockPanel />);
+    await userEvent.click(screen.getByRole('button', { name: /^Files/ }));
+    const input = screen.getByLabelText('Global file asset');
+    const openapi = JSON.stringify({
+      openapi: '3.0.0',
+      info: { title: 'Petstore', version: '1.0' },
+      paths: { '/pets': { get: { responses: { '200': {} } } } },
+    });
+    await userEvent.upload(
+      input,
+      new File([openapi], 'petstore.json', { type: 'application/json' }),
+    );
+
+    // Upload auto-selects the asset, so the editor summary mounts with the
+    // labelled dialect + op count + title; the list row also carries an
+    // (icon-only) aria-labelled spec badge.
+    expect(await screen.findByText('OpenAPI 3 · 1 op')).toBeInTheDocument();
+    expect(screen.getByText('Petstore')).toBeInTheDocument();
+    expect(screen.getAllByLabelText(/API spec:/).length).toBeGreaterThan(0);
+  });
+
+  it('imports a spec asset into a collection with the source back-ref', async () => {
+    render(<GlobalAssetsDockPanel />);
+    await userEvent.click(screen.getByRole('button', { name: /^Files/ }));
+    const input = screen.getByLabelText('Global file asset');
+    const openapi = JSON.stringify({
+      openapi: '3.0.0',
+      info: { title: 'Petstore', version: '1.0' },
+      paths: { '/pets': { get: { responses: { '200': {} } } } },
+    });
+    await userEvent.upload(
+      input,
+      new File([openapi], 'petstore.json', { type: 'application/json' }),
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: /Import to collection/i }));
+    await waitFor(() => {
+      const req = Object.values(useWorkspaceStore.getState().synced!.collections.requests).find(
+        (r) => r.url === '/pets',
+      );
+      expect(req?.operationId).toBe('GET /pets');
+      // The imported request carries the source spec asset back-ref.
+      expect(req?.specAssetId).toBeTruthy();
+    });
+  });
+
   it('uploads and edits a reusable file asset', async () => {
     render(<GlobalAssetsDockPanel />);
     await userEvent.click(screen.getByRole('button', { name: /^Files/ }));

@@ -16,6 +16,8 @@ import {
   mockImportPostmanMockCollectionTool,
   mockListTool,
   mockSetDefaultPortTool,
+  mockPromoteEndpointTool,
+  mockPromoteToCollectionTool,
   mockStartTool,
   mockStopTool,
 } from './mocks';
@@ -128,6 +130,112 @@ describe('mock tools', () => {
     expect(out.endpointCount).toBeGreaterThan(0);
     const state = await ctx.workspace.read();
     expect(state.synced.mockServers[out.id]).toBeDefined();
+  });
+
+  it('promote_to_collection creates the active Mock env + "<name> (mock)" folder + templated requests', async () => {
+    const mock: MockServer = {
+      id: 'm1',
+      name: 'Petstore',
+      source: { kind: 'manual', endpoints: [] },
+      endpoints: [
+        {
+          id: 'e1',
+          name: '',
+          method: 'GET',
+          pathPattern: '/pets',
+          requestSchema: {
+            pathParams: [],
+            queryParams: [{ id: 'q1', name: 'limit' }],
+            headers: [],
+            cookies: [],
+          },
+          requestValidation: [],
+          responseRules: [],
+          defaultResponse: { status: 200, headers: [], body: { type: 'json', content: '{}' } },
+        },
+        {
+          id: 'e2',
+          name: '',
+          method: 'POST',
+          pathPattern: '/pets/{id}',
+          requestSchema: {
+            pathParams: [{ id: 'p1', name: 'id' }],
+            queryParams: [],
+            headers: [],
+            cookies: [],
+          },
+          requestValidation: [],
+          responseRules: [],
+          defaultResponse: { status: 200, headers: [], body: { type: 'json', content: '{}' } },
+        },
+      ],
+      defaultPort: 4010,
+      cors: { enabled: false, origins: [] },
+      createdAt: T0,
+      updatedAt: T0,
+    };
+    await ctx.workspace.apply({ kind: 'mock.upsert', mock });
+
+    const out = (await mockPromoteToCollectionTool.handler({ mockId: 'm1' }, ctx)) as {
+      ok: boolean;
+      folderId: string;
+      requestIds: string[];
+    };
+    expect(out.ok).toBe(true);
+    expect(out.requestIds).toHaveLength(2);
+
+    const s = (await ctx.workspace.read()).synced;
+    expect(s.environments.activeName).toBe('Mock');
+    expect(s.environments.items['Mock'].variables.find((v) => v.key === 'MOCK_PORT')?.value).toBe(
+      '4010',
+    );
+    expect(s.collections.folders[out.folderId].name).toBe('Petstore (mock)');
+    const reqs = Object.values(s.collections.requests).filter((r) => r.folderId === out.folderId);
+    expect(reqs).toHaveLength(2);
+    expect(reqs.every((r) => r.url.startsWith('{{MOCK_BASE_URL}}:{{MOCK_PORT}}'))).toBe(true);
+  });
+
+  it('promote_endpoint templates the URL + ensures the Mock env (port falls back to 8080)', async () => {
+    const mock: MockServer = {
+      id: 'm2',
+      name: 'API',
+      source: { kind: 'manual', endpoints: [] },
+      endpoints: [
+        {
+          id: 'e1',
+          name: '',
+          method: 'GET',
+          pathPattern: '/health',
+          requestSchema: { pathParams: [], queryParams: [], headers: [], cookies: [] },
+          requestValidation: [],
+          responseRules: [],
+          defaultResponse: { status: 200, headers: [], body: { type: 'json', content: '{}' } },
+        },
+      ],
+      defaultPort: null,
+      cors: { enabled: false, origins: [] },
+      createdAt: T0,
+      updatedAt: T0,
+    };
+    await ctx.workspace.apply({ kind: 'mock.upsert', mock });
+
+    const out = (await mockPromoteEndpointTool.handler(
+      { mockId: 'm2', endpointId: 'e1' },
+      ctx,
+    )) as {
+      ok: boolean;
+      requestId: string;
+      folderId: string;
+    };
+    expect(out.ok).toBe(true);
+    const s = (await ctx.workspace.read()).synced;
+    expect(s.collections.requests[out.requestId].url).toBe(
+      '{{MOCK_BASE_URL}}:{{MOCK_PORT}}/health',
+    );
+    expect(s.collections.folders[out.folderId].name).toBe('API (mock)');
+    expect(s.environments.items['Mock'].variables.find((v) => v.key === 'MOCK_PORT')?.value).toBe(
+      '8080',
+    );
   });
 
   it('create_from_postman persists a mock', async () => {

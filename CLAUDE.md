@@ -18,7 +18,7 @@ but with:
   read the same source of truth the UI uses, no IPC required.
 - **Local mock servers**: describe an API in OpenAPI / Postman / Insomnia and
   run a Hono-backed mock on `localhost`.
-- An **MCP server**: exposes the workspace as a 94-tool catalog any
+- An **MCP server**: exposes the workspace as a 97-tool catalog any
   Model Context Protocol client (Claude Desktop, ChatGPT, Cursor, Copilot,
   Codex, Continue, Cline, Zed, Windsurf) can drive.
 - A **CLI** for headless use
@@ -310,7 +310,7 @@ studio/
 │   │                       (root = Node + swagger-parser; `/parsing` subpath =
 │   │                       browser-safe, in-document `$ref` only — used by the
 │   │                       web/desktop renderer to materialize endpoints at import)
-│   ├── mcp-server/         stdio MCP host + 94-tool catalog + workspace providers
+│   ├── mcp-server/         stdio MCP host + 97-tool catalog + workspace providers
 │   ├── desktop-shell/      Reusable Electron main-process building blocks —
 │   │                       OS-keychain secrets, mock / MCP / workspace-file IPC
 │   │                       bridges, OAuth2 callback server, window-state. Composed

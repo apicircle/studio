@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   coerceMockResponseBodyTypeForStatus,
   getAllowedMockResponseBodyTypes,
+  isLinkedMockSource,
   MAX_RESPONSE_MULTIPLIERS,
   MAX_RESPONSE_RULE_CONDITIONS,
 } from './mock';
@@ -12,6 +13,7 @@ describe('MockServerSource discriminator', () => {
     const sources: MockServerSource[] = [
       { kind: 'openapi', spec: '{}', format: 'json' },
       { kind: 'openapi', spec: 'paths: {}\n', format: 'yaml' },
+      { kind: 'openapi-asset', assetId: 'a1', format: 'json', mode: 'linked' },
       { kind: 'postman', collection: '{"info":{}}' },
       { kind: 'insomnia', export: '{"resources":[]}' },
       {
@@ -39,6 +41,10 @@ describe('MockServerSource discriminator', () => {
         case 'openapi':
           expect(s.spec).toBeDefined();
           expect(['json', 'yaml']).toContain(s.format);
+          break;
+        case 'openapi-asset':
+          expect(s.assetId).toBeDefined();
+          expect(['linked', 'materialized']).toContain(s.mode);
           break;
         case 'postman':
           expect(s.collection).toBeDefined();
@@ -166,5 +172,28 @@ describe('MockRuntime', () => {
     };
     expect(rt.active['m-1']?.port).toBe(4040);
     expect(rt.active['m-2']).toBeUndefined();
+  });
+});
+
+describe('isLinkedMockSource', () => {
+  it('is true only for an openapi-asset source in linked mode', () => {
+    expect(
+      isLinkedMockSource({ kind: 'openapi-asset', assetId: 'a', format: 'json', mode: 'linked' }),
+    ).toBe(true);
+  });
+
+  it('is false for a materialized asset source and every inline/manual source', () => {
+    expect(
+      isLinkedMockSource({
+        kind: 'openapi-asset',
+        assetId: 'a',
+        format: 'json',
+        mode: 'materialized',
+      }),
+    ).toBe(false);
+    expect(isLinkedMockSource({ kind: 'openapi', spec: '{}', format: 'json' })).toBe(false);
+    expect(isLinkedMockSource({ kind: 'manual', endpoints: [] })).toBe(false);
+    expect(isLinkedMockSource({ kind: 'postman', collection: '{}' })).toBe(false);
+    expect(isLinkedMockSource({ kind: 'insomnia', export: '{}' })).toBe(false);
   });
 });

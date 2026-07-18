@@ -9,6 +9,21 @@ extension version lives in `package.json`.
 > repository-root [`CHANGELOG.md`](../../CHANGELOG.md). This file is the
 > extension-focused subset that ships inside the `.vsix`.
 
+## 1.3.0 - 2026-07-18
+
+### Added
+
+- **Promote mock endpoints into a collection.** A mock server's endpoint node
+  now has an **Add to Collection** action, and the server node has **Add All to
+  Collection** — promote one endpoint or the whole mock at once. Promoted
+  requests land in a `<name> (mock)` folder with a
+  `{{MOCK_BASE_URL}}:{{MOCK_PORT}}<path>` URL, backed by a dedicated, activated
+  **Mock** environment (`MOCK_BASE_URL` + `MOCK_PORT`, prefilled from the mock's
+  port else `8080`) — so the request is runnable and easy to retarget. Behaves
+  identically to the Desktop/Web app and the MCP server (`mock.promote_endpoint`
+  / `mock.promote_to_collection`); all three go through one shared builder in
+  `@apicircle/core`.
+
 ## 1.1.4 - 2026-06-22
 
 ### Added

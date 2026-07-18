@@ -110,6 +110,36 @@ describe('aggregateAssetUsage', () => {
     expect(aggregateAssetUsage(makeSynced())).toEqual({});
   });
 
+  it('tracks spec-source usage — mocks driven by a spec asset + imported requests', () => {
+    const synced = makeSynced({
+      mockServers: {
+        m1: {
+          id: 'm1',
+          name: 'Live',
+          source: { kind: 'openapi-asset', assetId: 'spec1', format: 'json', mode: 'linked' },
+          endpoints: [],
+          defaultPort: null,
+          cors: { enabled: false, origins: [] },
+          createdAt: T,
+          updatedAt: T,
+        },
+      },
+      collections: {
+        tree: { id: 'r', type: 'root', children: [] },
+        requests: {
+          r1: makeRequest('r1', { specAssetId: 'spec1' }),
+          r2: makeRequest('r2', { specAssetId: 'spec1' }),
+          r3: makeRequest('r3'), // not imported from a spec — must be ignored
+        },
+        folders: {},
+      },
+    });
+    const usage = aggregateAssetUsage(synced);
+    expect(usage['spec1']?.mockServers).toEqual(['m1']);
+    expect([...(usage['spec1']?.importedRequests ?? [])].sort()).toEqual(['r1', 'r2']);
+    expect(usage['spec1']?.total).toBe(3); // 1 mock source + 2 imported requests
+  });
+
   it('counts binary request bodies bound to an asset', () => {
     const synced = makeSynced({
       collections: {

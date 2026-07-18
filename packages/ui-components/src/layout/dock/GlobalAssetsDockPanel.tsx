@@ -12,7 +12,15 @@
 // request referencing the deleted id has its mapping cleared.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, FileArchive, Plus, Trash2, Upload } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  FileArchive,
+  FolderInput,
+  Plus,
+  Trash2,
+  Upload,
+} from 'lucide-react';
 import {
   formatBytes,
   type AssetUsage,
@@ -25,9 +33,11 @@ import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { MonacoEditorBase } from '../../editors/MonacoEditorBase';
 import { cn } from '../../primitives/cn';
 import { deriveFileAssetState, FileAssetStatusPill } from '../../primitives/FileAssetStatusPill';
+import { SpecAssetBadge } from '../../primitives/SpecAssetBadge';
+import { getAttachment } from '../../persistence/attachments';
 
 interface FileAssetConsumer {
-  kind: 'request' | 'mock';
+  kind: 'request' | 'mock' | 'spec-mock' | 'spec-request';
   /** Friendly label for the row ("My request", "Petstore · GET /pets"). */
   label: string;
   /** Stable id for the list `key`. */
@@ -48,6 +58,19 @@ function consumersFromIndex(
     const meta = mockNames[`${ref.mockId}:${ref.endpointId}`];
     const label = meta ? `${meta.server} · ${meta.endpoint}` : `${ref.mockId} · ${ref.endpointId}`;
     out.push({ kind: 'mock', id: `mock:${ref.mockId}:${ref.endpointId}`, label });
+  }
+  // Spec-source consumers (Increment E): mocks driven by this spec asset +
+  // requests imported from it.
+  for (const mockId of usage.mockServers ?? []) {
+    const named = Object.entries(mockNames).find(([key]) => key.startsWith(`${mockId}:`));
+    out.push({
+      kind: 'spec-mock',
+      id: `spec-mock:${mockId}`,
+      label: named ? named[1].server : mockId,
+    });
+  }
+  for (const id of usage.importedRequests ?? []) {
+    out.push({ kind: 'spec-request', id: `spec-req:${id}`, label: requestNames[id] ?? id });
   }
   return out;
 }
@@ -517,7 +540,10 @@ function FileAssetListRow({
         <span className="flex min-w-0 items-center gap-1.5">
           <FileArchive size={12} className="shrink-0" aria-hidden="true" />
           <span className="truncate font-medium">{file.name}</span>
-          <FileAssetStatusPill assetId={file.id} className="ml-auto" iconOnly />
+          <span className="ml-auto flex shrink-0 items-center gap-1">
+            {file.spec && <SpecAssetBadge spec={file.spec} iconOnly />}
+            <FileAssetStatusPill assetId={file.id} iconOnly />
+          </span>
         </span>
         <span className="mt-0.5 flex items-center gap-1.5 truncate text-[0.6875rem] text-text-dim">
           <span className="truncate">
@@ -723,6 +749,32 @@ function FileAssetEditor({ id }: { id: string | null }) {
     return out;
   });
   const update = useWorkspaceStore((s) => s.updateGlobalFileAsset);
+  const importOpenApiToCollection = useWorkspaceStore((s) => s.importOpenApiToCollection);
+  const pushToast = useWorkspaceStore((s) => s.pushToast);
+  const importSpecToCollection = async (): Promise<void> => {
+    if (!file?.spec) return;
+    const record = await getAttachment(file.slotId);
+    if (!record) {
+      pushToast({
+        tone: 'error',
+        title: 'Spec bytes are not available locally — re-upload the file.',
+        ttlMs: 8000,
+      });
+      return;
+    }
+    const res = await importOpenApiToCollection({
+      spec: new TextDecoder().decode(record.bytes),
+      format: file.spec.format,
+      specAssetId: file.id,
+      title: file.spec.title,
+    });
+    pushToast({
+      tone: res.warnings.length > 0 ? 'info' : 'success',
+      title: `Imported ${res.requests} request${res.requests === 1 ? '' : 's'} to a new collection`,
+      detail: res.warnings.length > 0 ? res.warnings.join(' · ') : undefined,
+      ttlMs: res.warnings.length > 0 ? 12000 : 6000,
+    });
+  };
   const remove = useWorkspaceStore((s) => s.removeGlobalFileAsset);
   const fillBytes = useWorkspaceStore((s) => s.fillGlobalFileAssetBytes);
   const hasPending = useWorkspaceStore((s) =>
@@ -831,6 +883,38 @@ function FileAssetEditor({ id }: { id: string | null }) {
           </>
         )}
       </dl>
+
+      {file.spec && (
+        <div className="rounded-sm border border-accent/30 bg-accent/5 p-3 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <SpecAssetBadge spec={file.spec} />
+            {file.spec.title && (
+              <span className="truncate font-medium text-text-primary" title={file.spec.title}>
+                {file.spec.title}
+              </span>
+            )}
+            {file.spec.version && <span className="text-text-dim">v{file.spec.version}</span>}
+          </div>
+          <button
+            type="button"
+            onClick={() => void importSpecToCollection()}
+            className="mt-2 inline-flex h-6 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.625rem] text-accent hover:bg-accent/20"
+          >
+            <FolderInput size={11} aria-hidden="true" />
+            Import to collection
+          </button>
+          {file.spec.warnings.length > 0 && (
+            <ul className="mt-2 space-y-0.5">
+              {file.spec.warnings.map((w) => (
+                <li key={w} className="flex items-start gap-1 text-warning">
+                  <AlertTriangle size={11} className="mt-0.5 shrink-0" aria-hidden="true" />
+                  <span>{w}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 rounded-sm border border-border bg-card p-3">
         <div className="mb-2 text-xs font-medium text-text-primary">
