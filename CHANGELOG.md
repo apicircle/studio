@@ -27,6 +27,18 @@
 
 ### Added
 
+- **Mock → collection parity across the MCP server + VS Code (catalog 96 → 97).**
+  `mock.promote_endpoint` now produces a RUNNABLE request like the app —
+  ensuring the active `Mock` environment (`MOCK_BASE_URL` + `MOCK_PORT`,
+  prefilled from the mock's port else `8080`, existing values preserved),
+  dropping it in a `<name> (mock)` folder, and templating the URL
+  `{{MOCK_BASE_URL}}:{{MOCK_PORT}}<path>` — and a new
+  `mock.promote_to_collection` tool promotes every endpoint at once. The VS Code
+  extension gains matching **Add to Collection** (mock endpoint node) + **Add
+  All to Collection** (mock server node) commands. All surfaces go through one
+  shared `buildMockPromotion` (`@apicircle/core`), so the web/desktop store, the
+  MCP server, and the VS Code extension stay in lockstep.
+  (`@apicircle/shared`, `@apicircle/core`, `@apicircle/mcp-server`, VS Code)
 - **Spec-typed Global File Assets (additive).** Uploading an OpenAPI 3.x /
   Swagger 2.0 document (`.json` / `.yaml` / `.yml`) into the Global Assets
   **Files** library now parses it once on upload and records a `SpecAssetMeta`

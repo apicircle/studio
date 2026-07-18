@@ -25,7 +25,7 @@ Insomnia — with a handful of things that set it apart:
   external tools can read or edit the same source of truth the UI uses.
 - **Local mock servers.** Describe an API in OpenAPI / Postman /
   Insomnia and run a Hono-backed mock on `localhost`.
-- **An MCP server.** The workspace is exposed as a 96-tool catalog any
+- **An MCP server.** The workspace is exposed as a 97-tool catalog any
   Model Context Protocol client (Claude Desktop, ChatGPT, Cursor,
   GitHub Copilot, Codex, Continue, Cline, Zed, Windsurf) can drive.
 - **A CLI** (`apicircle mock | mcp | import | run | workspaces`) for
@@ -64,7 +64,7 @@ studio/
 │   ├── git/              GitHub REST client + typed error taxonomy
 │   ├── ui-components/    ALL React UI + the Zustand store + IndexedDB persistence
 │   ├── mock-server-core/ Hono mock engine + OpenAPI/Postman/Insomnia parsers
-│   ├── mcp-server/       stdio MCP host + 96-tool catalog + workspace providers
+│   ├── mcp-server/       stdio MCP host + 97-tool catalog + workspace providers
 │   └── cli/              `apicircle` binary — mock / mcp / import / run / workspaces
 ├── examples/             Demo workspaces + a standalone example mock server
 ├── docs/                 Product + architecture + QA docs (see §16)
@@ -214,7 +214,7 @@ Full matrix: [`docs/auth.md`](../auth.md).
 
 ## 7. MCP server
 
-`@apicircle/mcp-server` exposes **96 tools** over stdio, namespaced by
+`@apicircle/mcp-server` exposes **97 tools** over stdio, namespaced by
 capability: imports, code generation, multi-workspace discovery
 (`workspace.list`), workspace read/write, request / folder /
 environment / plan / assertion CRUD, **folder export / import as JSON**
@@ -313,7 +313,7 @@ promises`, `consistent-type-imports`, `prefer-const`, `eqeqeq` are all
 
 The product surfaces are built and functional: the web + desktop apps,
 the 17 auth types, the mock-server engine across all three runtimes,
-the 96-tool MCP server, the CLI with multi-workspace addressing, the
+the 97-tool MCP server, the CLI with multi-workspace addressing, the
 disk-mirror persistence layer, the MCP **Connection / Prompts** panel
 sections, the Settings → Community surface, and the GitHub Pages web
 deploy. Unit tests are green.
@@ -401,7 +401,7 @@ Because the product is pre-launch with zero users:
 | [`docs/architecture/platform.md`](../architecture/platform.md)   | MCP / mock engine / CLI / desktop design record |
 | [`docs/auth.md`](../auth.md)                                     | The 17-auth-type matrix                         |
 | [`docs/mock-server.md`](../mock-server.md)                       | Mock server feature guide                       |
-| [`docs/mcp-tools-reference.md`](../mcp-tools-reference.md)       | MCP tool catalog reference (96 tools)           |
+| [`docs/mcp-tools-reference.md`](../mcp-tools-reference.md)       | MCP tool catalog reference (97 tools)           |
 | [`docs/connect-your-ai-client.md`](../connect-your-ai-client.md) | Wiring an MCP client                            |
 | [`docs/installing.md`](../installing.md)                         | Install instructions                            |
 | [`docs/qa/README.md`](../qa/README.md)                           | QA status, E2E CI reference, coverage tooling   |

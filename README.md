@@ -27,7 +27,7 @@ rebuilt around two ideas the others miss:
    branch. Teams collaborate the way they collaborate on code — branches,
    diffs, pull requests, review.
 2. **Your workspace is an AI tool catalog.** A built-in Model Context Protocol
-   server exposes **96 tools**, so Claude, ChatGPT, Cursor, Copilot, and any
+   server exposes **97 tools**, so Claude, ChatGPT, Cursor, Copilot, and any
    other MCP client can read, author, and run requests on your behalf.
 
 No cloud account. No vendor lock-in. Your data stays on your machine and in
@@ -80,7 +80,7 @@ The bundled `@apicircle/mcp-server` speaks the open
 [Model Context Protocol](https://modelcontextprotocol.io) over stdio, so it
 works with **Claude Desktop, Claude Code, ChatGPT, GitHub Copilot, Cursor,
 Continue, Cline, Zed, and Windsurf** — or anything else that talks MCP. The
-96-tool catalog covers request and folder CRUD, environment authoring,
+97-tool catalog covers request and folder CRUD, environment authoring,
 assertions, execution plans, history, mock-server lifecycle, the release
 ledger (publish / deprecate / withdraw), linked-workspace config (list / pin /
 scope / unlink), codebase scanning, imports, code generation, and
@@ -437,7 +437,7 @@ packages/
   shared/               Types, generateId, validators, encryption helpers
   git/                  GitHub API client + sync logic
   mock-server-core/     Hono mock-server engine + OpenAPI/Postman/Insomnia parsers
-  mcp-server/           stdio MCP host with the 96-tool catalog
+  mcp-server/           stdio MCP host with the 97-tool catalog
   cli/                  `apicircle` binary — mock / mocks / mcp / import / export / run / workspaces
 ```
 

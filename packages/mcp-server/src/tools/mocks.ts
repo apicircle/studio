@@ -4,7 +4,6 @@ import type {
   MockResponseConfig,
   MockServer,
   MockServerSource,
-  Request as ApiRequest,
 } from '@apicircle/shared';
 import {
   generateId,
@@ -14,6 +13,7 @@ import {
   MAX_RESPONSE_MULTIPLIERS,
 } from '@apicircle/shared';
 import { parseSourceToEndpoints } from '@apicircle/mock-server-core';
+import { buildMockPromotion } from '@apicircle/core';
 import type { AnyToolDef } from './types';
 
 // =============================================================================
@@ -350,7 +350,7 @@ export const mockRefreshTool: AnyToolDef = {
 export const mockPromoteEndpointTool: AnyToolDef = {
   name: 'mock.promote_endpoint',
   description:
-    "Promote a mock endpoint into a saved request in the collection tree — maps the endpoint's method, path pattern, and request-schema params (query / header / path) to a new request. `folderId` places it under a folder (root when omitted). Returns the new request id.",
+    'Promote a mock endpoint into a RUNNABLE request. Ensures the shared "Mock" environment (MOCK_BASE_URL + MOCK_PORT, prefilled from the mock\'s port else 8080, existing values preserved), drops the request into a "<name> (mock)" folder, and templates the URL as {{MOCK_BASE_URL}}:{{MOCK_PORT}}<path> so it targets the live mock. `folderId` nests that folder under a parent (root when omitted). Returns the new request id + the folder id.',
   inputSchema: z.object({
     mockId: z.string(),
     endpointId: z.string(),
@@ -361,31 +361,38 @@ export const mockPromoteEndpointTool: AnyToolDef = {
     const mock = state.synced.mockServers[input.mockId];
     const ep = mock?.endpoints.find((e) => e.id === input.endpointId);
     if (!mock || !ep) return { ok: false as const, error: 'mock or endpoint not found' as const };
-    const now = new Date().toISOString();
-    const request: ApiRequest = {
-      id: generateId(),
-      name: ep.name || `${ep.method} ${ep.pathPattern}`,
-      folderId: input.folderId ?? null,
-      method: ep.method,
-      url: ep.pathPattern,
-      headers: ep.requestSchema.headers.map((p) => ({ key: p.name, value: '', enabled: false })),
-      query: ep.requestSchema.queryParams.map((p) => ({
-        key: p.name,
-        value: p.example != null ? String(p.example) : '',
-        enabled: false,
-      })),
-      pathParams: Object.fromEntries(ep.requestSchema.pathParams.map((p) => [p.name, ''])),
-      cookies: [],
-      body: { type: 'none', content: '' },
-      auth: { type: 'none' },
-      contextVars: [],
-      extractions: [],
-      assertions: [],
-      createdAt: now,
-      updatedAt: now,
-    };
-    const out = await ctx.workspace.apply({ kind: 'request.create', request });
-    return { ok: true as const, requestId: request.id, changedIds: out.changedIds };
+    const { patches, folderId, requestIds } = buildMockPromotion(state.synced, mock, [ep], {
+      parentFolderId: input.folderId ?? null,
+    });
+    const changedIds: string[] = [];
+    for (const patch of patches) changedIds.push(...(await ctx.workspace.apply(patch)).changedIds);
+    return { ok: true as const, requestId: requestIds[0], folderId, changedIds };
+  },
+};
+
+export const mockPromoteToCollectionTool: AnyToolDef = {
+  name: 'mock.promote_to_collection',
+  description:
+    'Promote EVERY endpoint of a mock into a single "<name> (mock)" collection folder at once (not one endpoint at a time). Ensures the shared "Mock" environment (MOCK_BASE_URL + MOCK_PORT) and templates each request\'s URL as {{MOCK_BASE_URL}}:{{MOCK_PORT}}<path> so they target the live mock. `folderId` nests the folder under a parent (root when omitted). Returns the folder id + the created request ids.',
+  inputSchema: z.object({
+    mockId: z.string(),
+    folderId: z.string().nullish(),
+  }),
+  async handler(input, ctx) {
+    const state = await ctx.workspace.read();
+    const mock = state.synced.mockServers[input.mockId];
+    if (!mock) return { ok: false as const, error: 'mock not found' as const };
+    const { patches, folderId, requestIds } = buildMockPromotion(
+      state.synced,
+      mock,
+      mock.endpoints,
+      {
+        parentFolderId: input.folderId ?? null,
+      },
+    );
+    const changedIds: string[] = [];
+    for (const patch of patches) changedIds.push(...(await ctx.workspace.apply(patch)).changedIds);
+    return { ok: true as const, folderId, requestIds, changedIds };
   },
 };
 

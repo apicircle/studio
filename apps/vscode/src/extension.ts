@@ -171,6 +171,10 @@ import {
   openMockEndpointYamlCommand,
   setMockPortCommand,
 } from './commands/mockActions';
+import {
+  addAllToCollectionCommand,
+  addEndpointToCollectionCommand,
+} from './commands/promoteMockActions';
 import { VsCodeMockController } from './host/vscodeMockController';
 import { MockCodeLensProvider } from './lang/mockCodeLens';
 import { MockCompletionProvider } from './lang/mockCompletion';
@@ -1543,6 +1547,20 @@ export function activate(context: vscode.ExtensionContext): ApicircleExtensionAp
       (node?: { kind: 'endpoint'; serverId: string; endpointId: string }) => {
         if (!bridge || !mockController) return;
         return copyEndpointPathCommand({ bridge, controller: mockController }, node);
+      },
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.addEndpointToCollection',
+      (node?: { kind: 'endpoint'; serverId: string; endpointId: string }) => {
+        if (!bridge || !mockController) return;
+        return addEndpointToCollectionCommand({ bridge, controller: mockController }, node);
+      },
+    ),
+    vscode.commands.registerCommand(
+      'apicircle.addAllToCollection',
+      (node?: { kind: 'server' | 'mock-running' | 'mock-idle'; id: string }) => {
+        if (!bridge || !mockController) return;
+        return addAllToCollectionCommand({ bridge, controller: mockController }, node);
       },
     ),
     vscode.commands.registerCommand(

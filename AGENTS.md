@@ -18,7 +18,7 @@ but with:
   read the same source of truth the UI uses, no IPC required.
 - **Local mock servers**: describe an API in OpenAPI / Postman / Insomnia and
   run a Hono-backed mock on `localhost`.
-- An **MCP server**: exposes the workspace as a 96-tool catalog any
+- An **MCP server**: exposes the workspace as a 97-tool catalog any
   Model Context Protocol client (Codex Desktop, ChatGPT, Cursor, Copilot,
   Codex, Continue, Cline, Zed, Windsurf) can drive.
 - A **CLI** for headless use
@@ -262,7 +262,7 @@ studio/
 │   ├── git/               GitHub REST client + typed error taxonomy
 │   ├── ui-components/      ALL React UI + the Zustand store + IndexedDB persistence
 │   ├── mock-server-core/   Hono mock-server engine + OpenAPI/Postman/Insomnia parsers
-│   ├── mcp-server/         stdio MCP host + 96-tool catalog + workspace providers
+│   ├── mcp-server/         stdio MCP host + 97-tool catalog + workspace providers
 │   └── cli/                `apicircle` binary — mock / mcp / import / export / run / workspaces
 ├── examples/              Demo workspaces + a standalone mock-server example
 ├── docs/                  Product + architecture + QA docs (see §9)
