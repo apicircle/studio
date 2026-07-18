@@ -113,6 +113,8 @@ import {
   tryParsePayload,
   validateBranchName,
   yankRelease as yankReleaseAction,
+  applyMutation,
+  buildMockPromotion,
 } from '@apicircle/core';
 import { create } from 'zustand';
 import {
@@ -2120,88 +2122,10 @@ type WorkspaceStore = {
 const REQUIRED_BASE_SCOPES = ['repo'] as const;
 const GITHUB_TOKEN_LABEL_PREFIX = 'github-token:';
 
-// ── Mock → collection promotion (Increment J) ───────────────────────────────
-// Promoted mock requests target the LIVE mock via a shared, editable env so the
-// user can retarget host/port before running: URLs are templated as
-// `{{MOCK_BASE_URL}}:{{MOCK_PORT}}<path>`, backed by a dedicated "Mock"
-// environment; the requests land in a per-mock "<name> (mock)" folder.
-const MOCK_ENV_NAME = 'Mock';
-const MOCK_URL_PREFIX = '{{MOCK_BASE_URL}}:{{MOCK_PORT}}';
-
-/**
- * Ensure the shared "Mock" environment exists, is active, and carries
- * MOCK_BASE_URL + MOCK_PORT. `port` prefills MOCK_PORT (else 8080), but only when
- * a variable is first created — existing values are preserved so re-promoting
- * never clobbers the user's edits.
- */
-function ensureMockEnvironment(synced: WorkspaceSynced, port: number | null): WorkspaceSynced {
-  const existing = synced.environments.items[MOCK_ENV_NAME];
-  const vars: Environment['variables'] = existing ? [...existing.variables] : [];
-  const defaults: Array<[string, string]> = [
-    ['MOCK_BASE_URL', 'http://localhost'],
-    ['MOCK_PORT', String(port ?? 8080)],
-  ];
-  for (const [key, value] of defaults) {
-    if (!vars.some((v) => v.key === key)) vars.push({ key, value, encrypted: false });
-  }
-  return {
-    ...synced,
-    environments: {
-      ...synced.environments,
-      items: {
-        ...synced.environments.items,
-        [MOCK_ENV_NAME]: { name: MOCK_ENV_NAME, variables: vars },
-      },
-      activeName: MOCK_ENV_NAME,
-    },
-  };
-}
-
-/** Find (or create) the "<mockName> (mock)" folder under `parentFolderId`. */
-function findOrCreateMockFolder(
-  synced: WorkspaceSynced,
-  mockName: string,
-  parentFolderId: string | null,
-): { synced: WorkspaceSynced; folderId: string } {
-  const folderName = `${mockName} (mock)`;
-  const found = Object.values(synced.collections.folders).find(
-    (f) => f.name === folderName && f.parentId === parentFolderId,
-  );
-  if (found) return { synced, folderId: found.id };
-  const { synced: next, folder } = addFolderAction(synced, parentFolderId, folderName);
-  return { synced: next, folderId: folder.id };
-}
-
-/**
- * Add each endpoint into `folderId` as a request whose URL targets the live mock
- * through the templated `{{MOCK_BASE_URL}}:{{MOCK_PORT}}` prefix. Returns the new
- * request ids.
- */
-function promoteEndpointsInto(
-  synced: WorkspaceSynced,
-  folderId: string,
-  endpoints: MockEndpoint[],
-): { synced: WorkspaceSynced; requestIds: string[] } {
-  let cur = synced;
-  const requestIds: string[] = [];
-  for (const ep of endpoints) {
-    const name = ep.name || `${ep.method} ${ep.pathPattern}`;
-    const { synced: next, request } = addRequestAction(cur, folderId, name);
-    const patched: ApiRequest = {
-      ...request,
-      ...requestShapeFromMockEndpoint(ep, MOCK_URL_PREFIX),
-    };
-    cur = {
-      ...next,
-      collections: {
-        ...next.collections,
-        requests: { ...next.collections.requests, [request.id]: patched },
-      },
-    };
-    requestIds.push(request.id);
-  }
-  return { synced: cur, requestIds };
-}
+// Mock → collection promotion (Increments J/K): the env + folder + request
+// WorkspacePatch sequence is built by `buildMockPromotion` in `@apicircle/core`,
+// shared verbatim with the MCP server and the VS Code extension. The store
+// actions below apply those patches via `applyMutation`.
 
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   ready: false,
@@ -3574,24 +3498,19 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const server = synced.mockServers[mockId];
     const ep = server?.endpoints.find((e) => e.id === endpointId);
     if (!server || !ep) return null;
-    let requestId = '';
-    set((state) => {
-      if (!state.synced) return {};
-      // Ensure the "Mock" env (host/port) + the per-mock folder, then add the
-      // request with the {{MOCK_BASE_URL}}:{{MOCK_PORT}} URL (Increment J).
-      const cur = ensureMockEnvironment(state.synced, server.defaultPort);
-      const { synced: withFolder, folderId } = findOrCreateMockFolder(
-        cur,
-        server.name,
-        parentFolderId,
-      );
-      const { synced: next, requestIds } = promoteEndpointsInto(withFolder, folderId, [ep]);
-      requestId = requestIds[0] ?? '';
-      return { synced: { ...next, meta: { ...next.meta, updatedAt: new Date().toISOString() } } };
+    const local = get().local;
+    if (!local) return null;
+    const now = new Date().toISOString();
+    const { patches, requestIds } = buildMockPromotion(synced, server, [ep], {
+      parentFolderId,
+      now,
     });
-    const after = get().synced;
-    if (after) queueSaveSynced(after);
-    return requestId || null;
+    let next = { synced, local };
+    for (const patch of patches) next = applyMutation(next, patch, { now }).next;
+    const nextSynced = { ...next.synced, meta: { ...next.synced.meta, updatedAt: now } };
+    set({ synced: nextSynced, local: next.local });
+    queueSaveSynced(nextSynced);
+    return requestIds[0] ?? null;
   },
 
   promoteMockToCollection: (mockId, parentFolderId = null) => {
@@ -3599,26 +3518,19 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!synced) return null;
     const server = synced.mockServers[mockId];
     if (!server) return null;
-    let result: { folderId: string; requests: number } = { folderId: '', requests: 0 };
-    set((state) => {
-      if (!state.synced) return {};
-      const cur = ensureMockEnvironment(state.synced, server.defaultPort);
-      const { synced: withFolder, folderId } = findOrCreateMockFolder(
-        cur,
-        server.name,
-        parentFolderId,
-      );
-      const { synced: next, requestIds } = promoteEndpointsInto(
-        withFolder,
-        folderId,
-        server.endpoints,
-      );
-      result = { folderId, requests: requestIds.length };
-      return { synced: { ...next, meta: { ...next.meta, updatedAt: new Date().toISOString() } } };
+    const local = get().local;
+    if (!local) return null;
+    const now = new Date().toISOString();
+    const { patches, folderId, requestIds } = buildMockPromotion(synced, server, server.endpoints, {
+      parentFolderId,
+      now,
     });
-    const after = get().synced;
-    if (after) queueSaveSynced(after);
-    return result;
+    let next = { synced, local };
+    for (const patch of patches) next = applyMutation(next, patch, { now }).next;
+    const nextSynced = { ...next.synced, meta: { ...next.synced.meta, updatedAt: now } };
+    set({ synced: nextSynced, local: next.local });
+    queueSaveSynced(nextSynced);
+    return { folderId, requests: requestIds.length };
   },
 
   importPostmanEnvironment: (parsed) => {

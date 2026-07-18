@@ -7,37 +7,14 @@
 // parse runs in the Node main process (full external-`$ref` resolution); in the
 // browser it uses `@apicircle/mock-server-core/parsing` (in-document refs only).
 
-import type {
-  MockEndpoint,
-  MockServerSource,
-  Request as ApiRequest,
-  WorkspaceSynced,
-} from '@apicircle/shared';
+import type { MockEndpoint, MockServerSource, WorkspaceSynced } from '@apicircle/shared';
 import { getAttachment } from '../persistence/attachments';
 import { getDesktopMockBridge } from '../desktop/bridge';
 
-/**
- * Map a MockEndpoint's shape to the request fields a promoted (Increment D) or
- * imported (Increment C) request carries: method + path pattern + request-schema
- * params, as disabled/empty rows the user fills in. Shared so a mock endpoint
- * and an OpenAPI operation become the same kind of request.
- */
-export function requestShapeFromMockEndpoint(
-  ep: MockEndpoint,
-  urlPrefix = '',
-): Pick<ApiRequest, 'method' | 'url' | 'query' | 'headers' | 'pathParams'> {
-  return {
-    method: ep.method,
-    url: `${urlPrefix}${ep.pathPattern}`,
-    query: ep.requestSchema.queryParams.map((p) => ({
-      key: p.name,
-      value: p.example != null ? String(p.example) : '',
-      enabled: false,
-    })),
-    headers: ep.requestSchema.headers.map((p) => ({ key: p.name, value: '', enabled: false })),
-    pathParams: Object.fromEntries(ep.requestSchema.pathParams.map((p) => [p.name, ''])),
-  };
-}
+// `requestShapeFromMockEndpoint` moved to `@apicircle/shared` (Increment K) so
+// the store, the MCP server, and the VS Code extension all share one mapper.
+// Re-exported here for the existing in-package import sites.
+export { requestShapeFromMockEndpoint } from '@apicircle/shared';
 
 export interface ResolvedMockEndpoints {
   endpoints: MockEndpoint[];

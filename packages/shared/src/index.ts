@@ -64,6 +64,13 @@ export {
   MAX_RESPONSE_RULE_CONDITIONS,
   isLinkedMockSource,
 } from './mock';
+export {
+  MOCK_ENV_NAME,
+  MOCK_URL_PREFIX,
+  mockEnvVarDefaults,
+  mockFolderName,
+  requestShapeFromMockEndpoint,
+} from './mockPromotion';
 export type {
   FontFamilyId,
   PanelId,
