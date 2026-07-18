@@ -43,6 +43,7 @@ export function MocksSidebar() {
   const convertMockToEditable = useWorkspaceStore((s) => s.convertMockToEditable);
   const reuploadMockSpec = useWorkspaceStore((s) => s.reuploadMockSpec);
   const promoteMockEndpointToRequest = useWorkspaceStore((s) => s.promoteMockEndpointToRequest);
+  const promoteMockToCollection = useWorkspaceStore((s) => s.promoteMockToCollection);
   const pushToast = useWorkspaceStore((s) => s.pushToast);
   // "Update spec…" (linked mocks) triggers this one hidden file input; the
   // target server id is stashed in a ref so a single input serves the list.
@@ -185,6 +186,27 @@ export function MocksSidebar() {
                       },
                     ]
                   : []),
+                ...(server.endpoints.length > 0
+                  ? [
+                      {
+                        id: 'promote-all',
+                        label: 'Add all to collection',
+                        icon: <FolderPlus size={12} aria-hidden="true" />,
+                        onSelect: () => {
+                          const res = promoteMockToCollection(server.id);
+                          if (res) {
+                            pushToast({
+                              tone: 'success',
+                              title: `Added ${res.requests} request${res.requests === 1 ? '' : 's'} to "${server.name} (mock)"`,
+                              detail:
+                                'Set MOCK_BASE_URL / MOCK_PORT in the active "Mock" environment before running.',
+                              ttlMs: 7000,
+                            });
+                          }
+                        },
+                      },
+                    ]
+                  : []),
                 {
                   id: 'duplicate',
                   label: 'Duplicate',
@@ -268,8 +290,10 @@ export function MocksSidebar() {
                                 if (newId) {
                                   pushToast({
                                     tone: 'success',
-                                    title: `Added ${endpoint.method} ${endpoint.pathPattern} to the collection`,
-                                    ttlMs: 5000,
+                                    title: `Added ${endpoint.method} ${endpoint.pathPattern} to "${server.name} (mock)"`,
+                                    detail:
+                                      'Set MOCK_BASE_URL / MOCK_PORT in the "Mock" environment before running.',
+                                    ttlMs: 6000,
                                   });
                                 }
                               },

@@ -24,10 +24,11 @@ import { getDesktopMockBridge } from '../desktop/bridge';
  */
 export function requestShapeFromMockEndpoint(
   ep: MockEndpoint,
+  urlPrefix = '',
 ): Pick<ApiRequest, 'method' | 'url' | 'query' | 'headers' | 'pathParams'> {
   return {
     method: ep.method,
-    url: ep.pathPattern,
+    url: `${urlPrefix}${ep.pathPattern}`,
     query: ep.requestSchema.queryParams.map((p) => ({
       key: p.name,
       value: p.example != null ? String(p.example) : '',

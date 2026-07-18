@@ -78,13 +78,20 @@
   gains additive `specAssetId` + `operationId` back-refs so an imported
   collection knows which spec asset + operation each request came from.
   (`@apicircle/shared`, `@apicircle/ui-components`)
-- **Promote a mock endpoint into a collection (additive).** Every mock endpoint
-  gains an **Add to collection** action (the mock sidebar's endpoint kebab) that
-  creates a saved request from its method + path + request-schema params —
-  available even on read-only "run live" mocks. New
-  `promoteMockEndpointToRequest` store action + `mock.promote_endpoint` MCP tool
-  (catalog 95 → **96**). A shared `requestShapeFromMockEndpoint` mapper keeps
-  promoted requests and OpenAPI-imported requests identical.
+- **Promote mock endpoints into a collection (additive).** A mock's endpoint
+  kebab has **Add to collection**, and the server kebab has **Add all to
+  collection** (the whole mock at once) — available even on read-only "run live"
+  mocks. Promoted requests target the live mock: they land in a
+  **"<name> (mock)" folder** with a `{{MOCK_BASE_URL}}:{{MOCK_PORT}}<path>` URL,
+  backed by a dedicated, activated **"Mock" environment** (`MOCK_BASE_URL` =
+  `http://localhost`; `MOCK_PORT` prefilled from the server's port, else `8080`;
+  existing values preserved on re-promote) so you can retarget host/port before
+  running. New `promoteMockToCollection` store action alongside
+  `promoteMockEndpointToRequest`; the `mock.promote_endpoint` MCP tool
+  (catalog 95 → **96**) still maps method + path + params (the env/folder
+  auto-setup is UI-only for now). A shared
+  `requestShapeFromMockEndpoint(ep, urlPrefix)` mapper keeps promoted +
+  OpenAPI-imported requests identical.
   (`@apicircle/ui-components`, `@apicircle/mcp-server`)
 - **Spec-asset usage tracking (additive).** The Global Assets usage index now
   counts, per spec asset, the mock servers whose source it is (`openapi-asset`)

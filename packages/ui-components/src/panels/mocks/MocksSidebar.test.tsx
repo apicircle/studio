@@ -125,7 +125,40 @@ describe('MocksSidebar — asset-backed mocks', () => {
 
     await waitFor(() => {
       const reqs = Object.values(useWorkspaceStore.getState().synced!.collections.requests);
-      expect(reqs.some((r) => r.url === '/path')).toBe(true);
+      expect(reqs.some((r) => r.url === '{{MOCK_BASE_URL}}:{{MOCK_PORT}}/path')).toBe(true);
+    });
+  });
+
+  it('promotes ALL endpoints to a "<name> (mock)" folder via the server kebab', async () => {
+    await renderWithStore(<MocksSidebar />);
+    let mockId = '';
+    await act(async () => {
+      const r = await useWorkspaceStore
+        .getState()
+        .createMockServer({ name: 'API', source: { kind: 'manual', endpoints: [] } });
+      mockId = r.id;
+    });
+    act(() => {
+      const e1 = useWorkspaceStore.getState().addMockEndpoint(mockId);
+      useWorkspaceStore
+        .getState()
+        .updateMockEndpoint(mockId, e1, { method: 'GET', pathPattern: '/pets' });
+      const e2 = useWorkspaceStore.getState().addMockEndpoint(mockId);
+      useWorkspaceStore
+        .getState()
+        .updateMockEndpoint(mockId, e2, { method: 'POST', pathPattern: '/pets' });
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: /API actions/i }));
+    await userEvent.click(screen.getByText('Add all to collection'));
+
+    await waitFor(() => {
+      const s = useWorkspaceStore.getState().synced!;
+      const folder = Object.values(s.collections.folders).find((f) => f.name === 'API (mock)');
+      expect(folder).toBeTruthy();
+      const reqs = Object.values(s.collections.requests).filter((r) => r.folderId === folder!.id);
+      expect(reqs).toHaveLength(2);
+      expect(s.environments.activeName).toBe('Mock');
     });
   });
 });
