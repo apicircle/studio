@@ -53,9 +53,12 @@
   server straight from a contract (linked) with a spec preview, name, and port.
   The mock panel shows a "Served directly from contract" callout and a friendly
   source label for a live contract server, and the endpoint editor is fully
-  read-only for a linked mock — every native control disabled via
-  `<fieldset disabled>`, the Monaco response-body editor read-only, plus an
-  explanatory banner — so a live contract mock can't be hand-edited. A live
+  read-only for a linked mock — mutation CTAs (Add rule, Import rule, Add param,
+  Add header, Add multiplier, …) are hidden (not just disabled) and their
+  empty-state copy drops the "click Add …" hints, every remaining native control
+  is disabled via `<fieldset disabled>`, the Monaco response-body editor is
+  read-only, and an explanatory banner says why — so a live contract mock can't
+  be hand-edited. A live
   contract mock can be **converted to an editable mock** in place (the Mocks
   kebab, the read-only banner, or the panel callout) — this flips it to a
   materialized copy while keeping the spec link, so "Re-import from spec" still

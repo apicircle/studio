@@ -155,6 +155,38 @@ describe('MockServersPanel (post-rich-editor redesign)', () => {
     expect(screen.getByLabelText('Mock endpoint name')).toBeDisabled();
   });
 
+  it('hides mutation CTAs across the read-only editor and drops "click Add rule" hints', async () => {
+    await renderWithStore(<MockServersPanel />);
+    await act(async () => {
+      await useWorkspaceStore
+        .getState()
+        .addGlobalFileAsset(
+          new File([OPENAPI_JSON], 'petstore.json', { type: 'application/json' }),
+        );
+    });
+    const assetId = Object.values(useWorkspaceStore.getState().synced!.globalAssets.files!)[0].id;
+    const { id } = await useWorkspaceStore.getState().createMockServer({
+      name: 'Live',
+      source: { kind: 'openapi-asset', assetId, format: 'json', mode: 'linked' },
+    });
+    const ep = useWorkspaceStore.getState().synced!.mockServers[id].endpoints[0];
+    act(() => {
+      useWorkspaceStore.getState().setActiveMockEndpoint({ serverId: id, endpointId: ep.id });
+    });
+
+    // Validation node: no Add/Import CTAs, and the empty copy doesn't tell you
+    // to click a button that isn't there.
+    await userEvent.click(await screen.findByRole('button', { name: /Validation node/i }));
+    expect(screen.getByText(/No validation rules/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Add rule/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Import rule/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Click.*Add rule/i)).not.toBeInTheDocument();
+
+    // Default response node: no "+ Header" CTA.
+    await userEvent.click(screen.getByRole('button', { name: /Default response node/i }));
+    expect(screen.queryByRole('button', { name: /Add.*header/i })).not.toBeInTheDocument();
+  });
+
   it('the read-only editor "Convert to editable" button unlocks editing', async () => {
     await renderWithStore(<MockServersPanel />);
     await act(async () => {
@@ -207,6 +239,10 @@ describe('MockServersPanel (post-rich-editor redesign)', () => {
 
     expect(await screen.findByLabelText('Mock endpoint method')).not.toBeDisabled();
     expect(screen.queryByText(/Read-only/i)).not.toBeInTheDocument();
+
+    // An editable mock keeps its mutation CTAs.
+    await userEvent.click(screen.getByRole('button', { name: /Validation node/i }));
+    expect(screen.getByRole('button', { name: /Add rule/i })).toBeInTheDocument();
   });
 
   it('renders the MockEndpointEditor flow + node editor when both a server and endpoint are active', async () => {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useContext, useState } from 'react';
 import {
   ArrowDown,
   ArrowLeft,
@@ -29,6 +29,7 @@ import { MockResponseEditor } from './MockResponseEditor';
 import { MockRequestSchemaEditor } from './MockRequestSchemaEditor';
 import { MockRulePicker } from './MockRulePicker';
 import { Select } from '../../primitives/Select';
+import { MockReadOnlyContext } from './mockReadOnly';
 
 // Node-editor surface for whichever flow node the user has selected.
 // Imports each inner editor below so the selection switch is a single
@@ -229,6 +230,7 @@ function ValidationOverview({
   onSelect: (next: MockNodeSelection) => void;
 }) {
   const [importerOpen, setImporterOpen] = useState(false);
+  const readOnly = useContext(MockReadOnlyContext);
   const move = (idx: number, dir: -1 | 1) => {
     const next = [...endpoint.requestValidation];
     const target = idx + dir;
@@ -281,7 +283,13 @@ function ValidationOverview({
       </p>
       {endpoint.requestValidation.length === 0 ? (
         <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-[0.6875rem] text-text-dim">
-          No validation rules. Click <strong>Add rule</strong> below to create one.
+          No validation rules.
+          {!readOnly && (
+            <>
+              {' '}
+              Click <strong>Add rule</strong> below to create one.
+            </>
+          )}
         </p>
       ) : (
         <ul className="space-y-1.5">
@@ -352,25 +360,27 @@ function ValidationOverview({
           ))}
         </ul>
       )}
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={add}
-          className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20"
-        >
-          <Plus size={10} aria-hidden="true" />
-          Add rule
-        </button>
-        <button
-          type="button"
-          onClick={() => setImporterOpen(true)}
-          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"
-          title="Import a rule from another endpoint"
-        >
-          <Download size={10} aria-hidden="true" />
-          Import rule
-        </button>
-      </div>
+      {!readOnly && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={add}
+            className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20"
+          >
+            <Plus size={10} aria-hidden="true" />
+            Add rule
+          </button>
+          <button
+            type="button"
+            onClick={() => setImporterOpen(true)}
+            className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"
+            title="Import a rule from another endpoint"
+          >
+            <Download size={10} aria-hidden="true" />
+            Import rule
+          </button>
+        </div>
+      )}
       <MockRulePicker
         kind="validation"
         open={importerOpen}
@@ -550,6 +560,7 @@ function ResponseRulesOverview({
   onSelect: (next: MockNodeSelection) => void;
 }) {
   const [importerOpen, setImporterOpen] = useState(false);
+  const readOnly = useContext(MockReadOnlyContext);
   const move = (idx: number, dir: -1 | 1) => {
     const next = [...endpoint.responseRules];
     const target = idx + dir;
@@ -591,7 +602,13 @@ function ResponseRulesOverview({
       </p>
       {endpoint.responseRules.length === 0 ? (
         <p className="rounded-sm border border-dashed border-border-subtle p-4 text-center text-[0.6875rem] text-text-dim">
-          No response rules. Click <strong>Add rule</strong> below to create one.
+          No response rules.
+          {!readOnly && (
+            <>
+              {' '}
+              Click <strong>Add rule</strong> below to create one.
+            </>
+          )}
         </p>
       ) : (
         <ul className="space-y-1.5">
@@ -658,25 +675,27 @@ function ResponseRulesOverview({
           ))}
         </ul>
       )}
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={add}
-          className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20"
-        >
-          <Plus size={10} aria-hidden="true" />
-          Add rule
-        </button>
-        <button
-          type="button"
-          onClick={() => setImporterOpen(true)}
-          className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"
-          title="Import a rule from another endpoint"
-        >
-          <Download size={10} aria-hidden="true" />
-          Import rule
-        </button>
-      </div>
+      {!readOnly && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={add}
+            className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20"
+          >
+            <Plus size={10} aria-hidden="true" />
+            Add rule
+          </button>
+          <button
+            type="button"
+            onClick={() => setImporterOpen(true)}
+            className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-surface px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"
+            title="Import a rule from another endpoint"
+          >
+            <Download size={10} aria-hidden="true" />
+            Import rule
+          </button>
+        </div>
+      )}
       <MockRulePicker
         kind="response"
         open={importerOpen}
