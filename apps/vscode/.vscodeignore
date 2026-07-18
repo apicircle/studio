@@ -3,6 +3,8 @@
 src/**
 test/**
 out/**
+coverage/**
+.turbo/**
 node_modules/**
 .gitignore
 .eslintrc*
