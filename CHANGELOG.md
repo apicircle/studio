@@ -34,6 +34,21 @@
   drift — without reaching into the internal `AttachmentRecord` shape or the
   IndexedDB layer. Purely additive; no existing behavior changes.
   (`@apicircle/ui-components`)
+- **`parseOpenApiRequestBodies(source, format, deps)` parser export
+  (`@apicircle/mock-server-core`).** A new additive export that returns each
+  operation's **request-body schema** — the one part of an operation's contract
+  the mock pipeline deliberately drops (`MockEndpoint` carries no request body,
+  since the mock server never validates request bodies). It walks the same
+  dereferenced operations as `parseOpenApiToEndpoints` and emits
+  `{ method, path, contentType, schema, required }` per operation: OpenAPI 3.x
+  `requestBody` content (a JSON media type preferred) and Swagger 2.0
+  `in: 'body'` parameters both reduce to the same shape. Exposed browser-safe
+  from the `/parsing` subpath and swagger-parser-backed from the Node root
+  (mirroring `parseOpenApiToEndpoints`), so a consumer — e.g. the Lens
+  code-vs-spec contract-drift check — can read a request body's declared shape
+  and join it to the endpoint table by `(method, path)`, without touching
+  `MockEndpoint` or the mock runtime. Purely additive.
+  (`@apicircle/mock-server-core`)
 
 ## 1.3.0 - 2026-07-18
 

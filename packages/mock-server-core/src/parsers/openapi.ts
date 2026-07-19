@@ -64,9 +64,27 @@ interface OpenApiOperation {
   summary?: string;
   responses?: Record<string, OpenApiResponse>;
   parameters?: OpenApiParameter[];
-  // Swagger 2.0 carries `produces` here; we honor it as a fallback for
-  // content-type when `responses[status].content` is absent.
+  // OpenAPI 3.x request body. Swagger 2.0 has no `requestBody`; it models the
+  // body as a single `in: 'body'` parameter instead (see
+  // {@link parseOpenApiRequestBodies}).
+  requestBody?: OpenApiRequestBody;
+  // Swagger 2.0 carries `produces` / `consumes` here. We honor `produces` as a
+  // response content-type fallback, and `consumes` as the request-body content
+  // type for an `in: 'body'` parameter.
   produces?: string[];
+  consumes?: string[];
+}
+
+/**
+ * OpenAPI 3.x request body object. Only the media-type `schema`s matter for
+ * contract extraction — examples live on the response side. Swagger 2.0 has no
+ * equivalent object; its body is a single `in: 'body'` parameter carrying a
+ * `schema` (handled in {@link pickRequestBody}).
+ */
+interface OpenApiRequestBody {
+  content?: Record<string, { schema?: JsonSchemaLike }>;
+  required?: boolean;
+  description?: string;
 }
 
 interface OpenApiResponse {
@@ -91,6 +109,25 @@ export interface ParseOpenApiOptions {
 
 export interface ParseOpenApiResult {
   endpoints: MockEndpoint[];
+  warnings: string[];
+}
+
+/**
+ * One operation's request body, extracted by {@link parseOpenApiRequestBodies}.
+ * Consumers (e.g. the Lens code-vs-spec contract-drift check) join it back to
+ * the parsed endpoint table by `(method, path)`.
+ */
+export interface OpenApiRequestBodySpec {
+  method: HttpMethod;
+  path: string;
+  /** The chosen media type — a JSON one is preferred when several are present. */
+  contentType: string;
+  schema: JsonSchemaLike;
+  required: boolean;
+}
+
+export interface ParseOpenApiRequestBodiesResult {
+  requestBodies: OpenApiRequestBodySpec[];
   warnings: string[];
 }
 
@@ -154,6 +191,122 @@ export async function parseOpenApiToEndpoints(
   }
 
   return { endpoints, warnings };
+}
+
+/**
+ * Extract each operation's **request body** schema from an OpenAPI / Swagger
+ * 2.0 spec — the one part of an operation's contract that the mock pipeline
+ * deliberately drops. `MockEndpoint` carries no request-body shape (the mock
+ * server never validates request bodies), so {@link parseOpenApiToEndpoints}
+ * skips it; this returns it separately, leaving the mock endpoint shape
+ * untouched.
+ *
+ * Callers that need an operation's full contract (e.g. the Lens code-vs-spec
+ * contract-drift check) run this alongside {@link parseOpenApiToEndpoints} and
+ * join the two by `(method, path)`. The `$ref` dereferencer is injected exactly
+ * as there (browser: in-document; Node: swagger-parser via the
+ * `parseOpenApiRequestBodiesNode` entry point).
+ *
+ * Each operation with a resolvable body yields `{ method, path, contentType,
+ * schema, required }`:
+ *   - OpenAPI 3.x — from `requestBody.content[mediaType].schema`, preferring a
+ *     JSON media type (mirrors {@link pickResponsePayload}).
+ *   - Swagger 2.0 — from the `in: 'body'` parameter's `schema`, with the
+ *     content type taken from the operation's `consumes` (default JSON).
+ *
+ * Operations without a body (GET/DELETE, or a body with no resolvable schema)
+ * are omitted from the result.
+ */
+export async function parseOpenApiRequestBodies(
+  source: string,
+  format: 'json' | 'yaml' = 'json',
+  deps: ParseOpenApiDeps = {},
+): Promise<ParseOpenApiRequestBodiesResult> {
+  const warnings: string[] = [];
+
+  const raw = format === 'yaml' ? safeYamlLoad(source) : safeJsonParse(source);
+  if (!raw || typeof raw !== 'object') {
+    return { requestBodies: [], warnings: ['Could not parse OpenAPI source'] };
+  }
+
+  // Same dereference contract as parseOpenApiToEndpoints: resolve `$ref`s
+  // up-front (browser: in-document only; Node: swagger-parser) so the walk
+  // below only ever sees inline schemas.
+  const dereference = deps.dereference ?? dereferenceInternal;
+  const { doc, warnings: derefWarnings } = await dereference(raw);
+  warnings.push(...derefWarnings);
+  const api = (doc && typeof doc === 'object' ? doc : raw) as Record<string, unknown>;
+
+  const paths = (api.paths ?? {}) as Record<string, Record<string, OpenApiOperation>>;
+  const requestBodies: OpenApiRequestBodySpec[] = [];
+
+  for (const [path, ops] of Object.entries(paths)) {
+    if (!ops || typeof ops !== 'object') continue;
+    // Swagger 2.0 body params may live at the path-item level; merge them in
+    // with operation-level precedence (as buildRequestSchema does for the
+    // other param kinds).
+    const pathItemParams = (ops as { parameters?: OpenApiParameter[] }).parameters ?? [];
+    for (const method of Object.keys(ops)) {
+      const upper = method.toUpperCase() as HttpMethod;
+      if (!SUPPORTED_METHODS.includes(upper)) continue;
+      const op = ops[method];
+      if (!op || typeof op !== 'object') continue;
+
+      const body = pickRequestBody(upper, path, op, pathItemParams);
+      if (body) requestBodies.push(body);
+    }
+  }
+
+  return { requestBodies, warnings };
+}
+
+/** Extract one operation's request body — OpenAPI 3.x `requestBody` first, then
+ *  the Swagger 2.0 `in: 'body'` parameter (operation-level winning over
+ *  path-item-level). Returns `null` when there's no resolvable body schema.
+ *  Pure. */
+function pickRequestBody(
+  method: HttpMethod,
+  path: string,
+  op: OpenApiOperation,
+  pathItemParams: OpenApiParameter[],
+): OpenApiRequestBodySpec | null {
+  // OpenAPI 3.x: `requestBody.content` keyed by media type — prefer JSON, the
+  // same preference pickResponsePayload applies to responses.
+  const requestBody = op.requestBody;
+  if (requestBody?.content) {
+    const content = requestBody.content;
+    const mediaTypes = Object.keys(content);
+    const preferred = mediaTypes.find((m) => m.toLowerCase().includes('json')) ?? mediaTypes[0];
+    if (preferred) {
+      const entry = content[preferred];
+      if (entry.schema) {
+        return {
+          method,
+          path,
+          contentType: preferred,
+          schema: entry.schema,
+          required: requestBody.required ?? false,
+        };
+      }
+    }
+  }
+
+  // Swagger 2.0: the body is a single `in: 'body'` parameter; its content type
+  // comes from `consumes` (default JSON). Operation params are checked before
+  // path-item params so an operation-level body wins.
+  for (const p of [...(op.parameters ?? []), ...pathItemParams]) {
+    if (p && p.in === 'body' && p.schema) {
+      return {
+        method,
+        path,
+        contentType: op.consumes?.[0] ?? 'application/json',
+        schema: p.schema,
+        required: typeof p.required === 'boolean' ? p.required : false,
+      };
+    }
+  }
+
+  return null;
 }
 
 /** Merge path-item + operation parameters (operation wins by name+in) and map

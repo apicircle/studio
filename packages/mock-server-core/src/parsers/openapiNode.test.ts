@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MockEndpoint } from '@apicircle/shared';
-import { parseOpenApiToEndpointsNode } from './openapiNode';
+import { parseOpenApiToEndpointsNode, parseOpenApiRequestBodiesNode } from './openapiNode';
 
 const bodyContent = (e: MockEndpoint) =>
   e.defaultResponse.body.type === 'json' ? e.defaultResponse.body.content : '';
@@ -53,5 +53,47 @@ describe('parseOpenApiToEndpointsNode (swagger-parser)', () => {
     expect(endpoints).toHaveLength(1);
     expect(JSON.parse(bodyContent(endpoints[0]))).toEqual({ ok: 1 });
     expect(warnings.some((w) => w.includes('falling back to in-document'))).toBe(true);
+  });
+});
+
+describe('parseOpenApiRequestBodiesNode (swagger-parser)', () => {
+  it('resolves a request body $ref via swagger-parser', async () => {
+    const spec = JSON.stringify({
+      openapi: '3.0.0',
+      info: { title: 'Ref', version: '1.0.0' },
+      components: {
+        schemas: {
+          Pet: {
+            type: 'object',
+            required: ['id', 'name'],
+            properties: { id: { type: 'integer' }, name: { type: 'string' } },
+          },
+        },
+      },
+      paths: {
+        '/pets': {
+          post: {
+            requestBody: {
+              required: true,
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/Pet' } } },
+            },
+            responses: { '201': { description: 'created' } },
+          },
+        },
+      },
+    });
+    const { requestBodies, warnings } = await parseOpenApiRequestBodiesNode(spec, 'json');
+    expect(warnings).toEqual([]);
+    expect(requestBodies).toHaveLength(1);
+    expect(requestBodies[0]).toMatchObject({
+      method: 'POST',
+      path: '/pets',
+      contentType: 'application/json',
+      required: true,
+    });
+    expect(requestBodies[0].schema).toMatchObject({
+      type: 'object',
+      properties: { id: { type: 'integer' }, name: { type: 'string' } },
+    });
   });
 });
