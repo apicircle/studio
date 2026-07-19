@@ -6,6 +6,7 @@ import {
   getAttachment,
   materializeAttachment,
   putAttachment,
+  readAttachmentBytes,
 } from './attachments';
 
 const sampleBytes = (str: string) => new TextEncoder().encode(str);
@@ -30,6 +31,22 @@ describe('attachments IDB store', () => {
 
   it('returns null for missing slotIds', async () => {
     expect(await getAttachment('nope')).toBeNull();
+  });
+
+  it('readAttachmentBytes returns the stored bytes, or null when absent', async () => {
+    await putAttachment({
+      slotId: 'slot-bytes',
+      filename: 'spec.json',
+      mimeType: 'application/json',
+      size: 5,
+      sha256: 'ab',
+      savedAt: '2026-04-27T00:00:00.000Z',
+      bytes: sampleBytes('hello'),
+    });
+    const bytes = await readAttachmentBytes('slot-bytes');
+    expect(bytes).not.toBeNull();
+    expect(new TextDecoder().decode(bytes!)).toBe('hello');
+    expect(await readAttachmentBytes('missing')).toBeNull();
   });
 
   it('deleteAttachment removes the record', async () => {

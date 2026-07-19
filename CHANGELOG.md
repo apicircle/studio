@@ -23,6 +23,18 @@
 > ship. Full per-platform walk-through:
 > [`docs/installing.md`](docs/installing.md).
 
+## Unreleased
+
+### Added
+
+- **`readAttachmentBytes(slotId)` public accessor (`@apicircle/ui-components`).**
+  A narrow, additive export that reads a stored attachment's raw bytes by its
+  `GlobalFileAsset.slotId` (or `null` when absent), so an edition / overlay can
+  resolve an asset's bytes — e.g. parse a stored OpenAPI spec for code-vs-spec
+  drift — without reaching into the internal `AttachmentRecord` shape or the
+  IndexedDB layer. Purely additive; no existing behavior changes.
+  (`@apicircle/ui-components`)
+
 ## 1.3.0 - 2026-07-18
 
 _All workspace packages move to **1.3.0** in lockstep — the published
