@@ -64,6 +64,19 @@ export async function getAttachment(slotId: string): Promise<AttachmentRecord | 
   });
 }
 
+/**
+ * Read a stored attachment's raw bytes by its `slotId` (`GlobalFileAsset.slotId`),
+ * or `null` when the slot has no bytes on this device (e.g. an asset uploaded on
+ * another machine and not yet pulled). A narrow public accessor — re-exported from
+ * the package root — so an edition / overlay can resolve an asset's bytes (e.g.
+ * parse a stored OpenAPI spec for code-vs-spec drift) without depending on the
+ * internal `AttachmentRecord` shape or the IndexedDB layer.
+ */
+export async function readAttachmentBytes(slotId: string): Promise<Uint8Array | null> {
+  const record = await getAttachment(slotId);
+  return record ? record.bytes : null;
+}
+
 export async function deleteAttachment(slotId: string): Promise<void> {
   const db = await openDb();
   return new Promise<void>((resolve, reject) => {
