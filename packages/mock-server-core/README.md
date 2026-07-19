@@ -140,6 +140,29 @@ slow regions, and "what does the app do when this call returns 500?".
 await handle.close();
 ```
 
+## Extracting request-body schemas
+
+The mock pipeline doesn't model request bodies — a mock server responds, it
+doesn't validate what you send it — so `parseSourceToEndpoints` drops them. When
+you need the **shape a spec declares for a request** (say, to diff it against
+what your code actually reads), `parseOpenApiRequestBodies` returns it directly:
+
+```ts
+import { parseOpenApiRequestBodies } from '@apicircle/mock-server-core';
+// browser / renderer: import from '@apicircle/mock-server-core/parsing'
+
+const { requestBodies, warnings } = await parseOpenApiRequestBodies(rawYamlOrJson, 'yaml');
+// → [{ method: 'POST', path: '/pets', contentType: 'application/json',
+//      schema: { type: 'object', properties: { … } }, required: true }, … ]
+```
+
+One entry per operation that declares a body: OpenAPI 3.x `requestBody` (a JSON
+media type preferred) and Swagger 2.0 `in: 'body'` parameters both reduce to the
+same `{ method, path, contentType, schema, required }` shape. Join it back to
+`parseSourceToEndpoints` by `(method, path)` for an operation's full contract.
+Same `$ref` contract as the endpoint parser — the Node root resolves external
+refs via swagger-parser; the `/parsing` subpath resolves in-document refs only.
+
 ## Format support matrix
 
 | Format   | Versions   | What we pull out                                             |

@@ -23,10 +23,12 @@ export type { MockServerHandle, ServeOptions } from './runtime/nodeAdapter';
 export { MockServerStartError } from './runtime/nodeAdapter';
 export type { BuildRouterOptions } from './handlers/buildRouter';
 export { openApiPathToHono } from './handlers/buildRouter';
-// The Node entry exposes the swagger-parser-backed OpenAPI parser as the
-// canonical `parseOpenApiToEndpoints` so CLI / MCP consumers get full
-// external-reference resolution.
+// The Node entry exposes the swagger-parser-backed OpenAPI parsers as the
+// canonical `parseOpenApiToEndpoints` / `parseOpenApiRequestBodies` so CLI /
+// MCP consumers get full external-reference resolution.
 export { parseOpenApiToEndpointsNode as parseOpenApiToEndpoints } from './parsers/openapiNode';
+export { parseOpenApiRequestBodiesNode as parseOpenApiRequestBodies } from './parsers/openapiNode';
+export type { ParseOpenApiRequestBodiesResult, OpenApiRequestBodySpec } from './parsers/openapi';
 export { parsePostmanToEndpoints } from './parsers/postman';
 export { parseInsomniaToEndpoints } from './parsers/insomnia';
 export { schemaToExample } from './faker/schemaToExample';

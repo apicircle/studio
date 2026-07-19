@@ -14,10 +14,12 @@ import { parseOpenApiToEndpoints, type ParseOpenApiResult } from './parsers/open
 import { parsePostmanToEndpoints } from './parsers/postman';
 import { parseInsomniaToEndpoints } from './parsers/insomnia';
 
-export { parseOpenApiToEndpoints } from './parsers/openapi';
+export { parseOpenApiToEndpoints, parseOpenApiRequestBodies } from './parsers/openapi';
 export type {
   ParseOpenApiOptions,
   ParseOpenApiResult,
+  ParseOpenApiRequestBodiesResult,
+  OpenApiRequestBodySpec,
   DereferenceFn,
   ParseOpenApiDeps,
 } from './parsers/openapi';

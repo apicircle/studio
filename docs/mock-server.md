@@ -177,6 +177,31 @@ const handle = await startMockServer({
 await handle.close();
 ```
 
+### Request-body schemas
+
+`parseSourceToEndpoints` intentionally drops request bodies — the mock server
+responds, it never validates the request payload, so `MockEndpoint` carries no
+request-body shape. When a consumer needs the shape a spec _declares_ for a
+request (e.g. the Lens edition's code-vs-spec contract drift), the additive
+`parseOpenApiRequestBodies(source, format, deps)` export returns it separately,
+one entry per operation that declares a body:
+
+```ts
+import { parseOpenApiRequestBodies } from '@apicircle/mock-server-core';
+// browser / renderer: '@apicircle/mock-server-core/parsing'
+
+const { requestBodies } = await parseOpenApiRequestBodies(rawSpec, 'yaml');
+// → [{ method: 'POST', path: '/pets', contentType: 'application/json',
+//      schema: { … }, required: true }, … ]
+```
+
+OpenAPI 3.x `requestBody` (a JSON media type preferred) and Swagger 2.0
+`in: 'body'` parameters both reduce to the same `{ method, path, contentType,
+schema, required }` shape. It follows the same two-entry-point `$ref` contract
+as the endpoint parser (root = swagger-parser, `/parsing` = in-document only)
+and leaves `MockEndpoint` and the mock runtime untouched; join it back to
+`parseSourceToEndpoints` by `(method, path)` for an operation's full contract.
+
 ## Port binding errors
 
 `startMockServer` (and the Desktop / VS Code / CLI wrappers around it) throws

@@ -11,8 +11,10 @@ import SwaggerParser from '@apidevtools/swagger-parser';
 import { dereferenceInternal } from './refDeref';
 import {
   parseOpenApiToEndpoints,
+  parseOpenApiRequestBodies,
   type ParseOpenApiOptions,
   type ParseOpenApiResult,
+  type ParseOpenApiRequestBodiesResult,
 } from './openapi';
 
 async function swaggerDereference(root: unknown) {
@@ -46,4 +48,14 @@ export function parseOpenApiToEndpointsNode(
   opts: ParseOpenApiOptions = {},
 ): Promise<ParseOpenApiResult> {
   return parseOpenApiToEndpoints(source, format, opts, { dereference: swaggerDereference });
+}
+
+/** Node variant of {@link parseOpenApiRequestBodies} using swagger-parser, so
+ *  request-body schemas behind external / remote `$ref`s resolve fully on the
+ *  Desktop main, CLI, MCP, and VS Code host surfaces. */
+export function parseOpenApiRequestBodiesNode(
+  source: string,
+  format: 'json' | 'yaml' = 'json',
+): Promise<ParseOpenApiRequestBodiesResult> {
+  return parseOpenApiRequestBodies(source, format, { dereference: swaggerDereference });
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MockEndpoint } from '@apicircle/shared';
-import { parseOpenApiToEndpoints } from './openapi';
+import { parseOpenApiToEndpoints, parseOpenApiRequestBodies } from './openapi';
 
 // Helper accessors — every endpoint stores its parsed response on
 // `defaultResponse`; these wrap that detail so the tests below stay
@@ -507,5 +507,356 @@ describe('parseOpenApiToEndpoints', () => {
     );
     expect(endpoints).toHaveLength(1);
     expect(JSON.parse(bodyContent(endpoints[0]))).toEqual({ ok: 1 });
+  });
+});
+
+describe('parseOpenApiRequestBodies', () => {
+  // Compact spec builders — the request-body walk only cares about `paths`.
+  const doc = (paths: Record<string, unknown>) =>
+    JSON.stringify({ openapi: '3.0.0', info: { title: 'T', version: '1.0.0' }, paths });
+  const swaggerDoc = (paths: Record<string, unknown>) =>
+    JSON.stringify({ swagger: '2.0', info: { title: 'T', version: '1.0.0' }, paths });
+
+  const petSchema = {
+    type: 'object',
+    required: ['id', 'name'],
+    properties: { id: { type: 'integer' }, name: { type: 'string' } },
+  };
+
+  it('extracts an OpenAPI 3.x JSON request body and skips body-less operations', async () => {
+    const { requestBodies, warnings } = await parseOpenApiRequestBodies(
+      doc({
+        '/pets': {
+          get: { responses: { '200': { description: 'ok' } } },
+          post: {
+            requestBody: {
+              required: true,
+              content: { 'application/json': { schema: petSchema } },
+            },
+            responses: { '201': { description: 'created' } },
+          },
+        },
+      }),
+      'json',
+    );
+    expect(warnings).toEqual([]);
+    expect(requestBodies).toEqual([
+      {
+        method: 'POST',
+        path: '/pets',
+        contentType: 'application/json',
+        schema: petSchema,
+        required: true,
+      },
+    ]);
+  });
+
+  it('defaults `required` to false when the OpenAPI 3.x requestBody omits it', async () => {
+    const { requestBodies } = await parseOpenApiRequestBodies(
+      doc({
+        '/pets': {
+          post: {
+            requestBody: { content: { 'application/json': { schema: petSchema } } },
+            responses: { '201': {} },
+          },
+        },
+      }),
+    );
+    expect(requestBodies[0].required).toBe(false);
+  });
+
+  it('prefers a JSON media type when several are present', async () => {
+    const { requestBodies } = await parseOpenApiRequestBodies(
+      doc({
+        '/pets': {
+          post: {
+            requestBody: {
+              content: {
+                'application/xml': { schema: { type: 'string' } },
+                'application/json': { schema: petSchema },
+              },
+            },
+            responses: { '201': {} },
+          },
+        },
+      }),
+    );
+    expect(requestBodies[0].contentType).toBe('application/json');
+    expect(requestBodies[0].schema).toEqual(petSchema);
+  });
+
+  it('falls back to the first media type when none is JSON', async () => {
+    const { requestBodies } = await parseOpenApiRequestBodies(
+      doc({
+        '/upload': {
+          post: {
+            requestBody: {
+              content: {
+                'application/octet-stream': { schema: { type: 'string', format: 'binary' } },
+              },
+            },
+            responses: { '200': {} },
+          },
+        },
+      }),
+    );
+    expect(requestBodies[0].contentType).toBe('application/octet-stream');
+  });
+
+  it('omits an operation whose requestBody has no content', async () => {
+    const { requestBodies } = await parseOpenApiRequestBodies(
+      doc({ '/x': { post: { requestBody: { required: true }, responses: { '200': {} } } } }),
+    );
+    expect(requestBodies).toEqual([]);
+  });
+
+  it('omits an operation whose requestBody content map is empty', async () => {
+    const { requestBodies } = await parseOpenApiRequestBodies(
+      doc({ '/x': { post: { requestBody: { content: {} }, responses: { '200': {} } } } }),
+    );
+    expect(requestBodies).toEqual([]);
+  });
+
+  it('omits an operation whose chosen media type has no schema', async () => {
+    const { requestBodies } = await parseOpenApiRequestBodies(
+      doc({
+        '/x': {
+          post: {
+            requestBody: { content: { 'application/json': { example: { id: 1 } } } },
+            responses: { '200': {} },
+          },
+        },
+      }),
+    );
+    expect(requestBodies).toEqual([]);
+  });
+
+  it('parses a YAML spec', async () => {
+    const yamlSpec = `openapi: 3.0.0
+info:
+  title: T
+  version: 1.0.0
+paths:
+  /pets:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+      responses:
+        '201':
+          description: created
+`;
+    const { requestBodies } = await parseOpenApiRequestBodies(yamlSpec, 'yaml');
+    expect(requestBodies).toHaveLength(1);
+    expect(requestBodies[0]).toMatchObject({
+      method: 'POST',
+      path: '/pets',
+      contentType: 'application/json',
+      required: true,
+    });
+    expect(requestBodies[0].schema).toEqual({
+      type: 'object',
+      properties: { name: { type: 'string' } },
+    });
+  });
+
+  it('extracts a Swagger 2.0 body parameter, honoring `consumes`, ignoring non-body params', async () => {
+    const { requestBodies } = await parseOpenApiRequestBodies(
+      swaggerDoc({
+        '/pets': {
+          post: {
+            consumes: ['application/xml'],
+            // A null entry + a query param exercise the defensive guards; only
+            // the `in: 'body'` parameter is picked up.
+            parameters: [
+              null,
+              { name: 'q', in: 'query', type: 'string' },
+              { name: 'body', in: 'body', required: true, schema: petSchema },
+            ],
+            responses: { '200': { description: 'ok' } },
+          },
+        },
+      }),
+    );
+    expect(requestBodies).toEqual([
+      {
+        method: 'POST',
+        path: '/pets',
+        contentType: 'application/xml',
+        schema: petSchema,
+        required: true,
+      },
+    ]);
+  });
+
+  it('defaults the Swagger 2.0 body content type to JSON and `required` to false', async () => {
+    const { requestBodies } = await parseOpenApiRequestBodies(
+      swaggerDoc({
+        '/pets': {
+          post: {
+            parameters: [{ name: 'body', in: 'body', schema: { type: 'object' } }],
+            responses: { '200': {} },
+          },
+        },
+      }),
+    );
+    expect(requestBodies[0].contentType).toBe('application/json');
+    expect(requestBodies[0].required).toBe(false);
+  });
+
+  it('reads a Swagger 2.0 body parameter declared at the path-item level', async () => {
+    const { requestBodies } = await parseOpenApiRequestBodies(
+      swaggerDoc({
+        '/pets': {
+          parameters: [{ name: 'body', in: 'body', required: true, schema: petSchema }],
+          post: { responses: { '200': {} } },
+        },
+      }),
+    );
+    expect(requestBodies).toHaveLength(1);
+    expect(requestBodies[0]).toMatchObject({ method: 'POST', schema: petSchema, required: true });
+  });
+
+  it('prefers an operation-level Swagger 2.0 body over a path-item-level one', async () => {
+    const opSchema = { type: 'object', properties: { op: { type: 'boolean' } } };
+    const pathSchema = { type: 'object', properties: { path: { type: 'boolean' } } };
+    const { requestBodies } = await parseOpenApiRequestBodies(
+      swaggerDoc({
+        '/pets': {
+          parameters: [{ name: 'body', in: 'body', schema: pathSchema }],
+          post: {
+            parameters: [{ name: 'body', in: 'body', schema: opSchema }],
+            responses: { '200': {} },
+          },
+        },
+      }),
+    );
+    expect(requestBodies[0].schema).toEqual(opSchema);
+  });
+
+  it('skips a malformed Swagger 2.0 body parameter that has no schema', async () => {
+    const { requestBodies } = await parseOpenApiRequestBodies(
+      swaggerDoc({
+        '/pets': {
+          post: {
+            parameters: [{ name: 'body', in: 'body', required: true }],
+            responses: { '200': {} },
+          },
+        },
+      }),
+    );
+    expect(requestBodies).toEqual([]);
+  });
+
+  it('resolves an in-document $ref in a request body schema (default browser parser)', async () => {
+    const { requestBodies, warnings } = await parseOpenApiRequestBodies(
+      JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Ref', version: '1.0.0' },
+        components: { schemas: { Pet: petSchema } },
+        paths: {
+          '/pets': {
+            post: {
+              requestBody: {
+                content: { 'application/json': { schema: { $ref: '#/components/schemas/Pet' } } },
+              },
+              responses: { '201': {} },
+            },
+          },
+        },
+      }),
+    );
+    expect(warnings).toEqual([]);
+    expect(requestBodies[0].schema).toEqual(petSchema);
+  });
+
+  it('returns a warning and no bodies for invalid JSON', async () => {
+    const { requestBodies, warnings } = await parseOpenApiRequestBodies('{not json', 'json');
+    expect(requestBodies).toEqual([]);
+    expect(warnings.length).toBeGreaterThan(0);
+  });
+
+  it('returns "Could not parse" for non-object input', async () => {
+    const { requestBodies, warnings } = await parseOpenApiRequestBodies('"just a string"', 'json');
+    expect(requestBodies).toEqual([]);
+    expect(warnings).toContain('Could not parse OpenAPI source');
+  });
+
+  it('uses an injected dereferencer and surfaces its warnings', async () => {
+    let called = false;
+    const { warnings } = await parseOpenApiRequestBodies(
+      doc({
+        '/x': {
+          post: {
+            requestBody: { content: { 'application/json': { schema: { type: 'object' } } } },
+            responses: { '200': {} },
+          },
+        },
+      }),
+      'json',
+      {
+        dereference: (root) => {
+          called = true;
+          return { doc: root, warnings: ['custom-deref-warning'] };
+        },
+      },
+    );
+    expect(called).toBe(true);
+    expect(warnings).toContain('custom-deref-warning');
+  });
+
+  it('falls back to the raw spec when the dereferencer returns a non-object doc', async () => {
+    const { requestBodies } = await parseOpenApiRequestBodies(
+      doc({
+        '/x': {
+          post: {
+            requestBody: { content: { 'application/json': { schema: { type: 'string' } } } },
+            responses: { '200': {} },
+          },
+        },
+      }),
+      'json',
+      { dereference: () => ({ doc: null, warnings: [] }) },
+    );
+    expect(requestBodies).toHaveLength(1);
+    expect(requestBodies[0].schema).toEqual({ type: 'string' });
+  });
+
+  it('returns no bodies when the spec declares no paths', async () => {
+    const { requestBodies, warnings } = await parseOpenApiRequestBodies(
+      JSON.stringify({ openapi: '3.0.0', info: { title: 'Empty', version: '1.0.0' } }),
+    );
+    expect(requestBodies).toEqual([]);
+    expect(warnings).toEqual([]);
+  });
+
+  it('skips path items and operations that are not objects', async () => {
+    const { requestBodies } = await parseOpenApiRequestBodies(
+      doc({
+        '/bad': null,
+        '/pets': {
+          get: 'not an operation',
+          post: {
+            requestBody: { content: { 'application/json': { schema: petSchema } } },
+            responses: { '201': {} },
+          },
+        },
+      }),
+    );
+    expect(requestBodies).toEqual([
+      {
+        method: 'POST',
+        path: '/pets',
+        contentType: 'application/json',
+        schema: petSchema,
+        required: false,
+      },
+    ]);
   });
 });
