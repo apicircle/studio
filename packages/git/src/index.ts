@@ -11,6 +11,7 @@ export type {
   GitHubRepo,
   GitHubViewer,
   GitRef,
+  IssueCommentSummary,
   MarketplaceRepo,
   PullRequestSummary,
   ScopeInfo,

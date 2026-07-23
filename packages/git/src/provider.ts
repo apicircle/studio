@@ -49,7 +49,10 @@ export type GitProviderMethod =
   | 'getBinaryContents'
   | 'getPullRequest'
   | 'listPullRequests'
-  | 'createPullRequest';
+  | 'createPullRequest'
+  | 'listIssueComments'
+  | 'createIssueComment'
+  | 'updateIssueComment';
 
 /**
  * Host-agnostic Git provider contract — the surface the workspace

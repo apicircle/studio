@@ -27,6 +27,13 @@
 
 ### Added
 
+- **Issue / PR comment methods on the `GitProvider` contract (`@apicircle/git`).**
+  `GitHubClient` gains `listIssueComments` / `createIssueComment` /
+  `updateIssueComment` (thin REST wrappers over the issue-comments API — a PR is
+  an issue for this endpoint), and the three join the `GitProviderMethod` union so
+  any host provider can implement them. Additive; no existing method or type
+  changed. This is the write capability an edition's PR-review write-back (post the
+  review as an idempotent PR comment) composes on top of.
 - **`readAttachmentBytes(slotId)` public accessor (`@apicircle/ui-components`).**
   A narrow, additive export that reads a stored attachment's raw bytes by its
   `GlobalFileAsset.slotId` (or `null` when absent), so an edition / overlay can
