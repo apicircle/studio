@@ -1066,6 +1066,78 @@ describe('GitHubClient.getBinaryContents', () => {
   });
 });
 
+describe('GitHubClient — issue/PR comments', () => {
+  it('listIssueComments GETs the comments and returns normalized summaries', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse([
+        {
+          id: 1,
+          html_url: 'https://github.com/me/api/pull/12#issuecomment-1',
+          body: '<!-- m -->hello',
+        },
+        { id: 2, html_url: 'https://github.com/me/api/pull/12#issuecomment-2', body: 'other' },
+      ]),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const comments = await client.listIssueComments('tok', 'me', 'api', 12);
+    expect(comments).toEqual([
+      {
+        id: 1,
+        htmlUrl: 'https://github.com/me/api/pull/12#issuecomment-1',
+        body: '<!-- m -->hello',
+      },
+      { id: 2, htmlUrl: 'https://github.com/me/api/pull/12#issuecomment-2', body: 'other' },
+    ]);
+    const [url, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe('https://api.github.com/repos/me/api/issues/12/comments?per_page=100');
+    expect((init as RequestInit).method).toBe('GET');
+  });
+
+  it('createIssueComment POSTs the body and returns the created comment', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({
+        id: 5,
+        html_url: 'https://github.com/me/api/pull/12#issuecomment-5',
+        body: 'the review',
+      }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const c = await client.createIssueComment('tok', 'me', 'api', 12, 'the review');
+    expect(c).toEqual({
+      id: 5,
+      htmlUrl: 'https://github.com/me/api/pull/12#issuecomment-5',
+      body: 'the review',
+    });
+    const [url, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe('https://api.github.com/repos/me/api/issues/12/comments');
+    expect((init as RequestInit).method).toBe('POST');
+    expect(JSON.parse(((init as RequestInit).body as string) ?? '')).toEqual({
+      body: 'the review',
+    });
+  });
+
+  it('updateIssueComment PATCHes an existing comment by id', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({
+        id: 5,
+        html_url: 'https://github.com/me/api/pull/12#issuecomment-5',
+        body: 'updated',
+      }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const c = await client.updateIssueComment('tok', 'me', 'api', 5, 'updated');
+    expect(c).toEqual({
+      id: 5,
+      htmlUrl: 'https://github.com/me/api/pull/12#issuecomment-5',
+      body: 'updated',
+    });
+    const [url, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe('https://api.github.com/repos/me/api/issues/comments/5');
+    expect((init as RequestInit).method).toBe('PATCH');
+    expect(JSON.parse(((init as RequestInit).body as string) ?? '')).toEqual({ body: 'updated' });
+  });
+});
+
 describe('GitHubClient.createPullRequest', () => {
   it('POSTs title/body/head/base and returns the normalized PR summary', async () => {
     const fetchImpl: typeof fetch = vi.fn(async () =>

@@ -104,6 +104,14 @@ export interface PullRequestSummary {
   title: string;
 }
 
+/** A pull-request / issue comment (PRs are issues for the comments API). */
+export interface IssueCommentSummary {
+  id: number;
+  /** GitHub UI URL of the comment. */
+  htmlUrl: string;
+  body: string;
+}
+
 export interface MarketplaceRepo {
   fullName: string;
   owner: string;
@@ -1053,6 +1061,60 @@ export class GitHubClient {
     };
   }
 
+  /**
+   * List a pull request's / issue's comments (a PR is an issue for this API). Used
+   * to find a prior bot comment to UPDATE in place — the caller matches a marker in
+   * `body` — so re-running a review edits its comment rather than spamming new ones.
+   */
+  async listIssueComments(
+    token: string,
+    owner: string,
+    name: string,
+    issueNumber: number,
+    opts: CallOptions = {},
+  ): Promise<IssueCommentSummary[]> {
+    const { json } = await this.call<RawIssueComment[]>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/issues/${issueNumber}/comments?per_page=100`,
+      { ...opts, requiredScopes: ['repo'] },
+    );
+    return json.map((c) => ({ id: c.id, htmlUrl: c.html_url, body: c.body }));
+  }
+
+  /** Create a comment on a pull request / issue. */
+  async createIssueComment(
+    token: string,
+    owner: string,
+    name: string,
+    issueNumber: number,
+    body: string,
+    opts: CallOptions = {},
+  ): Promise<IssueCommentSummary> {
+    const { json } = await this.call<RawIssueComment>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/issues/${issueNumber}/comments`,
+      { ...opts, method: 'POST', body: { body }, requiredScopes: ['repo'] },
+    );
+    return { id: json.id, htmlUrl: json.html_url, body: json.body };
+  }
+
+  /** Update an existing issue / pull-request comment by its id (idempotent re-runs). */
+  async updateIssueComment(
+    token: string,
+    owner: string,
+    name: string,
+    commentId: number,
+    body: string,
+    opts: CallOptions = {},
+  ): Promise<IssueCommentSummary> {
+    const { json } = await this.call<RawIssueComment>(
+      token,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/issues/comments/${commentId}`,
+      { ...opts, method: 'PATCH', body: { body }, requiredScopes: ['repo'] },
+    );
+    return { id: json.id, htmlUrl: json.html_url, body: json.body };
+  }
+
   // --- low-level call ----------------------------------------------------
 
   private async call<T>(
@@ -1167,6 +1229,12 @@ interface RawPullRequest {
   html_url: string;
   state: 'open' | 'closed';
   title: string;
+}
+
+interface RawIssueComment {
+  id: number;
+  html_url: string;
+  body: string;
 }
 
 interface RawSearchRepo {
