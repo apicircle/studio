@@ -179,6 +179,7 @@ import {
   SectionsProvider,
   readStoredSection,
   writeStoredSection,
+  resolveActiveSection,
   NO_SECTIONS,
   type SectionDef,
 } from './layout/sections';
@@ -206,8 +207,24 @@ export function App({
     // Re-resolve the stored mode when the active workspace changes (or sections
     // first register) so switching workspaces restores that workspace's mode.
     if (sections.length <= 1 || !workspaceId) return;
-    setActiveSectionIdState(readStoredSection(workspaceId, sections));
-  }, [workspaceId, sections]);
+    const storedSectionId = readStoredSection(workspaceId, sections);
+    setActiveSectionIdState(storedSectionId);
+    // Reconcile the active panel with the restored mode. `activePanel` is
+    // persisted globally and `readStoredPanel` only round-trips core panel ids,
+    // so a cold launch into an edition section (e.g. Lens) would otherwise leave
+    // a core panel (Editor) showing under the wrong mode — the tab strip shows
+    // that section's tabs while the body renders a panel the section doesn't
+    // list. Land on the section's first panel whenever the current one isn't
+    // part of the restored section (the same move `setActiveSectionId` makes on
+    // an explicit mode switch). Read the panel via getState so this effect
+    // reconciles on load/workspace-change only, and never fights the user as
+    // they switch panels within a mode.
+    const section = resolveActiveSection(storedSectionId, sections);
+    const currentPanel = useWorkspaceStore.getState().activePanel;
+    if (section && section.panelIds.length > 0 && !section.panelIds.includes(currentPanel)) {
+      setActivePanel(section.panelIds[0]);
+    }
+  }, [workspaceId, sections, setActivePanel]);
   const setActiveSectionId = useCallback(
     (id: string) => {
       setActiveSectionIdState(id);

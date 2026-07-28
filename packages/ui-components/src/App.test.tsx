@@ -143,4 +143,29 @@ describe('App', () => {
     await userEvent.click(screen.getByRole('tab', { name: /^Empty$/ }));
     expect(useWorkspaceStore.getState().activePanel).toBe(before);
   });
+
+  it('cold-launches into the restored section, not a stale core panel', async () => {
+    localStorage.setItem('apicircle:section-landing-done-v1', 'true'); // skip the landing
+    const sections: SectionDef[] = [
+      { id: 'studio', label: 'Studio', icon: Compass, panelIds: ['editor', 'workspace'] },
+      { id: 'lens', label: 'Lens', icon: Server, panelIds: ['mcp', 'help'] },
+    ];
+    // First launch to learn the hydrated workspace id (the mode is persisted per id).
+    const first = render(<App sections={sections} />);
+    await waitFor(() => screen.getByText('API Circle Studio'));
+    const wsId = useWorkspaceStore.getState().synced!.workspaceId;
+    first.unmount();
+
+    // Reproduce the real cold-launch state: Lens is the persisted mode, but the
+    // globally-persisted active panel resolves to a core panel (readStoredPanel
+    // can't hold a Lens panel id, so it falls back to 'editor').
+    localStorage.setItem(`apicircle-v2:active-section:${wsId}`, 'lens');
+    useWorkspaceStore.getState().setActivePanel('editor');
+
+    render(<App sections={sections} />);
+    await waitFor(() => screen.getByText('API Circle Studio'));
+    // Restored into Lens mode → 'editor' isn't a Lens panel → land on Lens's
+    // first panel instead of showing the Editor body under the Lens tab strip.
+    await waitFor(() => expect(useWorkspaceStore.getState().activePanel).toBe('mcp'));
+  });
 });
