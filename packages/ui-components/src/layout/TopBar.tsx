@@ -4,19 +4,30 @@ import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { cn } from '../primitives/cn';
 import { useSections } from './sections';
 
-export function TopBar() {
+/**
+ * The header brand. An additive seam (no-op in Studio): omit it and the top bar is
+ * byte-identical — "API Circle Studio" + the tagline. An edition can override the
+ * product `name` (e.g. the umbrella "API Circle") and, via `tagline: null`, drop the
+ * sub-line. Leaving `tagline` undefined keeps Studio's default tagline.
+ */
+export interface BrandDef {
+  name: string;
+  tagline?: string | null;
+}
+
+export function TopBar({ brand }: { brand?: BrandDef } = {}) {
+  const name = brand?.name ?? 'API Circle Studio';
+  const tagline = brand?.tagline === undefined ? 'Built in India. Open to world' : brand.tagline;
   return (
     <div className="flex h-12 shrink-0 items-center justify-between border-b border-border-subtle bg-card px-3">
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
           <AppIcon size={24} className="text-text-secondary" />
           <div className="flex flex-col gap-0.5">
-            <span className="text-sm font-medium leading-none text-text-primary">
-              API Circle Studio
-            </span>
-            <span className="text-[0.625rem] leading-none text-text-dim">
-              Built in India. Open to world
-            </span>
+            <span className="text-sm font-medium leading-none text-text-primary">{name}</span>
+            {tagline !== null ? (
+              <span className="text-[0.625rem] leading-none text-text-dim">{tagline}</span>
+            ) : null}
           </div>
         </div>
         <WorkspaceSwitcher />

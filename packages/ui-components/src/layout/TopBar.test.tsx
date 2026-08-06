@@ -17,6 +17,19 @@ describe('TopBar', () => {
     expect(screen.getByText('Built in India. Open to world')).toBeInTheDocument();
   });
 
+  it('renders an edition brand name and drops the tagline when null', async () => {
+    await renderWithStore(<TopBar brand={{ name: 'API Circle', tagline: null }} />);
+    expect(screen.getByText('API Circle')).toBeInTheDocument();
+    expect(screen.queryByText('API Circle Studio')).toBeNull();
+    expect(screen.queryByText('Built in India. Open to world')).toBeNull();
+  });
+
+  it('renders an edition brand with a custom tagline', async () => {
+    await renderWithStore(<TopBar brand={{ name: 'API Circle', tagline: 'Design-first APIs' }} />);
+    expect(screen.getByText('API Circle')).toBeInTheDocument();
+    expect(screen.getByText('Design-first APIs')).toBeInTheDocument();
+  });
+
   it('shows workspace name when set (B.6 — via WorkspaceSwitcher button)', async () => {
     await renderWithStore(<TopBar />);
     // Default name from createEmptyWorkspace, exposed via the

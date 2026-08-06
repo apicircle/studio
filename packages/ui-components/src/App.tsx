@@ -148,7 +148,7 @@ function useExternalDiskRefresh(): void {
   }, [ready, refreshFromDisk, refreshRegistryFromDisk, pushToast]);
 }
 
-import { TopBar } from './layout/TopBar';
+import { TopBar, type BrandDef } from './layout/TopBar';
 import { PanelTabs } from './layout/PanelTabs';
 import { Sidebar } from './layout/Sidebar';
 import { PanelContent } from './layout/PanelContent';
@@ -188,11 +188,14 @@ import { SectionLanding } from './layout/SectionLanding';
 export function App({
   extraPanels = NO_EXTRA_PANELS,
   sections = NO_SECTIONS,
+  brand,
 }: {
   /** Edition-contributed top-nav panels. Omitted in Studio → strict no-op. */
   extraPanels?: readonly ExtraPanelDef[];
   /** Edition-contributed sections/modes. Omitted in Studio → strict no-op. */
   sections?: readonly SectionDef[];
+  /** Edition-provided header brand. Omitted in Studio → the default "API Circle Studio". */
+  brand?: BrandDef;
 } = {}) {
   const ready = useWorkspaceStore((s) => s.ready);
   const hydrationError = useWorkspaceStore((s) => s.hydrationError);
@@ -260,7 +263,7 @@ export function App({
     <ExtraPanelsProvider value={extraPanels}>
       <SectionsProvider value={{ sections, activeSectionId, setActiveSectionId }}>
         <div className="flex h-full flex-col bg-surface text-text-primary">
-          <TopBar />
+          <TopBar brand={brand} />
           <PanelTabs />
           <div className="flex flex-1 overflow-hidden">
             <BodyArea />

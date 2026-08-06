@@ -27,6 +27,13 @@
 
 ### Added
 
+- **Header `brand` seam on `<App>` / `<TopBar>` (`@apicircle/ui-components`).** An
+  additive, no-op-in-Studio prop: omit it and the top bar is byte-identical
+  ("API Circle Studio" + the tagline). An edition can pass
+  `brand={{ name, tagline? }}` to show its own umbrella brand (e.g. "API Circle")
+  and, with `tagline: null`, drop the sub-line; leaving `tagline` undefined keeps
+  Studio's default. Exported `BrandDef`. No existing prop, default, or the
+  Studio-standalone header changed.
 - **Issue / PR comment methods on the `GitProvider` contract (`@apicircle/git`).**
   `GitHubClient` gains `listIssueComments` / `createIssueComment` /
   `updateIssueComment` (thin REST wrappers over the issue-comments API — a PR is
