@@ -102,6 +102,8 @@ describe('RequestCompletionProvider', () => {
       'lt',
       'gt',
       'matches',
+      'exists',
+      'type',
     ]);
   });
 

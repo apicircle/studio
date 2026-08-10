@@ -743,7 +743,7 @@ export const planRunTool: AnyToolDef = {
 const ASSERTION = z.object({
   id: z.string().optional(),
   kind: z.enum(['status', 'header', 'json-path', 'duration']),
-  op: z.enum(['equals', 'not-equals', 'contains', 'lt', 'gt', 'matches']),
+  op: z.enum(['equals', 'not-equals', 'contains', 'lt', 'gt', 'matches', 'exists', 'type']),
   target: z.string().optional(),
   expected: z.union([z.string(), z.number()]),
 });

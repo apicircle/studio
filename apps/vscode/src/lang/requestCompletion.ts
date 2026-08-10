@@ -44,7 +44,7 @@ const AUTH_TYPES = [
 ];
 
 const ASSERTION_KINDS = ['status', 'header', 'json-path', 'duration'];
-const ASSERTION_OPS = ['equals', 'not-equals', 'contains', 'lt', 'gt', 'matches'];
+const ASSERTION_OPS = ['equals', 'not-equals', 'contains', 'lt', 'gt', 'matches', 'exists', 'type'];
 const EXTRACTION_SOURCES = ['body', 'header', 'cookie', 'status'];
 
 // The active YAML "branch" — which top-level key the cursor is currently

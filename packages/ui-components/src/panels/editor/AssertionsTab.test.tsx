@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Request as ApiRequest } from '@apicircle/shared';
@@ -93,5 +93,80 @@ describe('AssertionsTab', () => {
     expect(useWorkspaceStore.getState().synced!.collections.requests[id].assertions[0].op).toBe(
       'lt',
     );
+  });
+
+  it('switching op to exists clears the value and swaps the input for a hint', async () => {
+    const id = makeRequestId();
+    useWorkspaceStore
+      .getState()
+      .setRequestAssertions(id, [
+        { id: 'a-1', kind: 'json-path', op: 'equals', target: '$.id', expected: 5 },
+      ]);
+    render(<LiveAssertionsTab requestId={id} />);
+    await userEvent.selectOptions(screen.getByLabelText('Assertion 1 op'), 'exists');
+    const a0 = useWorkspaceStore.getState().synced!.collections.requests[id].assertions[0];
+    expect(a0.op).toBe('exists');
+    expect(a0.expected).toBe('');
+    const expected = screen.getByLabelText('Assertion 1 expected');
+    expect(expected.tagName).not.toBe('INPUT');
+    expect(expected).toHaveTextContent('no value needed');
+  });
+
+  it('switching op to type seeds a JSON-type dropdown and persists a pick', async () => {
+    const id = makeRequestId();
+    useWorkspaceStore
+      .getState()
+      .setRequestAssertions(id, [
+        { id: 'a-1', kind: 'json-path', op: 'equals', target: '$.id', expected: 5 },
+      ]);
+    render(<LiveAssertionsTab requestId={id} />);
+    await userEvent.selectOptions(screen.getByLabelText('Assertion 1 op'), 'type');
+    expect(
+      useWorkspaceStore.getState().synced!.collections.requests[id].assertions[0].expected,
+    ).toBe('string');
+    await userEvent.selectOptions(screen.getByLabelText('Assertion 1 expected'), 'array');
+    expect(
+      useWorkspaceStore.getState().synced!.collections.requests[id].assertions[0].expected,
+    ).toBe('array');
+  });
+
+  it('switching op to type keeps an already-valid type value', async () => {
+    const id = makeRequestId();
+    useWorkspaceStore
+      .getState()
+      .setRequestAssertions(id, [
+        { id: 'a-1', kind: 'json-path', op: 'equals', target: '$.x', expected: 'number' },
+      ]);
+    render(<LiveAssertionsTab requestId={id} />);
+    await userEvent.selectOptions(screen.getByLabelText('Assertion 1 op'), 'type');
+    expect(
+      useWorkspaceStore.getState().synced!.collections.requests[id].assertions[0].expected,
+    ).toBe('number');
+  });
+
+  it('Backspace: isRowEmpty keeps structural rows, classifies shapes, and removes a blank one', () => {
+    const id = makeRequestId();
+    useWorkspaceStore.getState().setRequestAssertions(id, [
+      { id: 'r-type', kind: 'json-path', op: 'type', target: '$.t', expected: 'string' }, // op type → keep
+      { id: 'r-exists', kind: 'json-path', op: 'exists', target: '$.e', expected: '' }, // op exists → keep
+      { id: 'r-status0', kind: 'status', op: 'equals', expected: 0 }, // target undefined, expected 0
+      { id: 'r-status5', kind: 'status', op: 'equals', expected: 5 }, // expected non-empty, non-zero
+      { id: 'r-path', kind: 'json-path', op: 'equals', target: '$.x', expected: 'v' }, // target non-empty
+      { id: 'r-empty', kind: 'json-path', op: 'equals', target: '', expected: '' }, // blank → removable
+    ]);
+    render(<LiveAssertionsTab requestId={id} />);
+    // Backspace each row's kind <select> — its value is never empty, so isRowEmpty runs
+    // for every row shape without removing anything.
+    for (let i = 1; i <= 6; i++) {
+      fireEvent.keyDown(screen.getByLabelText(`Assertion ${i} kind`), { key: 'Backspace' });
+    }
+    expect(useWorkspaceStore.getState().synced!.collections.requests[id].assertions).toHaveLength(
+      6,
+    );
+    // Backspacing the blank comparison row's empty target input DOES remove it.
+    fireEvent.keyDown(screen.getByLabelText('Assertion 6 target'), { key: 'Backspace' });
+    const rows = useWorkspaceStore.getState().synced!.collections.requests[id].assertions;
+    expect(rows).toHaveLength(5);
+    expect(rows.some((r) => r.id === 'r-empty')).toBe(false);
   });
 });

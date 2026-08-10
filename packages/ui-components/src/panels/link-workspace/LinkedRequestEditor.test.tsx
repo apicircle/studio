@@ -254,6 +254,27 @@ describe('LinkedRequestEditor', () => {
     expect(patch.assertions?.[0]?.expected).toBe('not-a-number');
   });
 
+  it('override op exists hides the value; type offers a JSON-type dropdown', async () => {
+    useWorkspaceStore
+      .getState()
+      .setActiveLinkedRequest({ linkedWorkspaceId: 'link-1', itemId: 'src' });
+    render(<LinkedRequestEditor />);
+    await userEvent.click(screen.getByRole('button', { name: /^Add assertion$/ }));
+    await userEvent.selectOptions(screen.getByLabelText('Override assertion 1 op'), 'exists');
+    expect(screen.getByLabelText('Override assertion 1 expected').tagName).toBe('SPAN');
+    const read = () =>
+      useWorkspaceStore.getState().synced!.linkedOverrides.requests['link-1:src']?.patch as {
+        assertions?: Array<{ op: string; expected: string | number }>;
+      };
+    expect(read().assertions?.[0]).toMatchObject({ op: 'exists', expected: '' });
+
+    await userEvent.selectOptions(screen.getByLabelText('Override assertion 1 op'), 'type');
+    const typeSel = screen.getByLabelText('Override assertion 1 expected');
+    expect(typeSel.tagName).toBe('SELECT');
+    await userEvent.selectOptions(typeSel, 'array');
+    expect(read().assertions?.[0]).toMatchObject({ op: 'type', expected: 'array' });
+  });
+
   it('removing an extraction row drops it from the patch', async () => {
     useWorkspaceStore.getState().setLinkedRequestOverride('link-1', 'src', {
       extractions: [{ id: 'e1', variable: 'V', source: 'body', path: 'p', enabled: true }],

@@ -64,25 +64,58 @@ function fail(a: Assertion, detail: string): AssertionResult {
   return { ...snapshot(a), passed: false, detail };
 }
 
+/** The operators that compare the resolved value to `expected` — everything but the
+ *  structural `exists` / `type`. The comparison helpers take the flow-narrowed op as a
+ *  parameter so their switches stay total (a single-interface `a` doesn't narrow whole). */
+type ComparisonOp = Exclude<Assertion['op'], 'exists' | 'type'>;
+
+/** Presence assertion (`exists`): passes iff the target resolved to a value. */
+function checkExists(a: Assertion, present: boolean, label: string): AssertionResult {
+  return present ? pass(a, `${label} is present`) : fail(a, `${label} is not present`);
+}
+
+/** The JSON type of a resolved value — `null` and `array` are distinguished from `object`. */
+function jsonTypeOf(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  return typeof value; // 'string' | 'number' | 'boolean' | 'object'
+}
+
+/** Type assertion (`type`): the resolved value's JSON type must equal `expected`. */
+function checkType(a: Assertion, value: unknown, label: string): AssertionResult {
+  if (value === undefined) return fail(a, `${label} is not present`);
+  const actual = jsonTypeOf(value);
+  const expected = String(a.expected);
+  return actual === expected
+    ? pass(a, `${label} is of type ${actual}`)
+    : fail(a, `${label}: expected type "${expected}", got ${actual}`);
+}
+
 function checkStatus(a: Assertion, exec: ExecutionResult): AssertionResult {
   const got = exec.status;
+  if (a.op === 'exists') return checkExists(a, got !== null, 'status');
   if (got === null) return fail(a, `request did not complete (got null status)`);
-  return compareNumber(a, got, 'status');
+  if (a.op === 'type') return checkType(a, got, 'status');
+  return compareNumber(a, a.op, got, 'status');
 }
 
 function checkDuration(a: Assertion, exec: ExecutionResult): AssertionResult {
-  return compareNumber(a, exec.durationMs, 'duration');
+  if (a.op === 'exists') return checkExists(a, true, 'duration');
+  if (a.op === 'type') return checkType(a, exec.durationMs, 'duration');
+  return compareNumber(a, a.op, exec.durationMs, 'duration');
 }
 
 function checkHeader(a: Assertion, exec: ExecutionResult): AssertionResult {
   if (!a.target) return fail(a, 'header assertion missing target header name');
   const value = exec.headers[a.target.toLowerCase()] ?? exec.headers[a.target];
+  if (a.op === 'exists') return checkExists(a, value !== undefined, `header "${a.target}"`);
+  if (a.op === 'type') return checkType(a, value, `header "${a.target}"`);
   if (value === undefined) {
     if (a.op === 'not-equals')
       return pass(a, `header "${a.target}" not present (passes not-equals)`);
     return fail(a, `header "${a.target}" not present`);
   }
-  return compareString(a, value, `header "${a.target}"`);
+  return compareString(a, a.op, value, `header "${a.target}"`);
 }
 
 function checkJsonPath(a: Assertion, exec: ExecutionResult): AssertionResult {
@@ -94,11 +127,13 @@ function checkJsonPath(a: Assertion, exec: ExecutionResult): AssertionResult {
     return fail(a, 'response body is not valid JSON');
   }
   const value = readJsonPath(parsed, a.target);
+  if (a.op === 'exists') return checkExists(a, value !== undefined, `path "${a.target}"`);
+  if (a.op === 'type') return checkType(a, value, `path "${a.target}"`);
   if (value === undefined) {
     if (a.op === 'not-equals') return pass(a, `path "${a.target}" not found (passes not-equals)`);
     return fail(a, `path "${a.target}" not found in response`);
   }
-  if (typeof value === 'number') return compareNumber(a, value, `path "${a.target}"`);
+  if (typeof value === 'number') return compareNumber(a, a.op, value, `path "${a.target}"`);
   // For non-primitive values (objects, arrays), serialize as JSON so the
   // user gets a meaningful diff string rather than `[object Object]`.
   const serialized =
@@ -109,14 +144,19 @@ function checkJsonPath(a: Assertion, exec: ExecutionResult): AssertionResult {
         : value === null
           ? 'null'
           : JSON.stringify(value);
-  return compareString(a, serialized, `path "${a.target}"`);
+  return compareString(a, a.op, serialized, `path "${a.target}"`);
 }
 
-function compareNumber(a: Assertion, actual: number, label: string): AssertionResult {
+function compareNumber(
+  a: Assertion,
+  op: ComparisonOp,
+  actual: number,
+  label: string,
+): AssertionResult {
   const expected = Number(a.expected);
   if (!Number.isFinite(expected))
     return fail(a, `${label}: expected a number, got "${a.expected}"`);
-  switch (a.op) {
+  switch (op) {
     case 'equals':
       return actual === expected
         ? pass(a, `${label}: ${actual} equals ${expected}`)
@@ -135,13 +175,18 @@ function compareNumber(a: Assertion, actual: number, label: string): AssertionRe
         : fail(a, `${label}: expected > ${expected}, got ${actual}`);
     case 'contains':
     case 'matches':
-      return fail(a, `${label}: op "${a.op}" not supported for numeric values`);
+      return fail(a, `${label}: op "${op}" not supported for numeric values`);
   }
 }
 
-function compareString(a: Assertion, actual: string, label: string): AssertionResult {
+function compareString(
+  a: Assertion,
+  op: ComparisonOp,
+  actual: string,
+  label: string,
+): AssertionResult {
   const expected = String(a.expected);
-  switch (a.op) {
+  switch (op) {
     case 'equals':
       return actual === expected
         ? pass(a, `${label}: "${actual}" equals "${expected}"`)
@@ -167,7 +212,7 @@ function compareString(a: Assertion, actual: string, label: string): AssertionRe
     }
     case 'lt':
     case 'gt':
-      return fail(a, `${label}: op "${a.op}" not supported for string values`);
+      return fail(a, `${label}: op "${op}" not supported for string values`);
   }
 }
 

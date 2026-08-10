@@ -104,7 +104,7 @@
         "kind": { "type": "string", "enum": ["status", "header", "json-path", "duration"] },
         "op": {
           "type": "string",
-          "enum": ["equals", "not-equals", "contains", "lt", "gt", "matches"]
+          "enum": ["equals", "not-equals", "contains", "lt", "gt", "matches", "exists", "type"]
         },
         "target": { "type": "string" },
         "expected": { "type": ["string", "number"] }

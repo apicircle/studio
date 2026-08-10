@@ -56,7 +56,7 @@ export const promptCreateAssertionTool: AnyToolDef = {
     requestId: z.string(),
     assertion: z.object({
       kind: z.enum(['status', 'header', 'json-path', 'duration']),
-      op: z.enum(['equals', 'not-equals', 'contains', 'lt', 'gt', 'matches']),
+      op: z.enum(['equals', 'not-equals', 'contains', 'lt', 'gt', 'matches', 'exists', 'type']),
       target: z.string().optional(),
       expected: z.union([z.string(), z.number()]),
     }),
@@ -162,7 +162,7 @@ export const PROMPT_AUTH = z.discriminatedUnion('type', [
 
 const PROMPT_ASSERTION = z.object({
   kind: z.enum(['status', 'header', 'json-path', 'duration']),
-  op: z.enum(['equals', 'not-equals', 'contains', 'lt', 'gt', 'matches']),
+  op: z.enum(['equals', 'not-equals', 'contains', 'lt', 'gt', 'matches', 'exists', 'type']),
   target: z.string().optional(),
   expected: z.union([z.string(), z.number()]),
 });

@@ -27,6 +27,16 @@
 
 ### Added
 
+- **Two new assertion operators — `exists` and `type` (`@apicircle/shared`,
+  `@apicircle/core`).** `exists` passes when the target resolves (a present header or
+  JSON path) and ignores `expected`; `type` checks a value's JSON type against
+  `expected` (`string` / `number` / `boolean` / `array` / `object` / `null`, with
+  `null` and `array` distinguished from `object`). Wired end to end: the request
+  editor's Assertions tab (the value field hides for `exists` and becomes a JSON-type
+  dropdown for `type`), the linked-workspace override editor, the MCP `assertion.*` /
+  `prompt.*` tools, and the VS Code request YAML (completion list + JSON schema). The
+  Help Center's Assertions section documents both. Purely additive — every existing
+  assertion evaluates exactly as before.
 - **Header `brand` seam on `<App>` / `<TopBar>` (`@apicircle/ui-components`).** An
   additive, no-op-in-Studio prop: omit it and the top bar is byte-identical
   ("API Circle Studio" + the tagline). An edition can pass

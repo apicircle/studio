@@ -471,6 +471,42 @@ describe('assertion CRUD tools', () => {
     expect(state2.synced.collections.requests[req.id].assertions.length).toBe(0);
   });
 
+  it('accepts the structural exists / type operators', async () => {
+    const req = (await requestCreateTool.handler(
+      { name: 'S', method: 'GET' as const, url: '/s' },
+      ctx,
+    )) as { id: string };
+    await assertionCreateTool.handler(
+      {
+        requestId: req.id,
+        assertion: {
+          kind: 'json-path' as const,
+          op: 'exists' as const,
+          target: '$.id',
+          expected: '',
+        },
+      },
+      ctx,
+    );
+    await assertionCreateTool.handler(
+      {
+        requestId: req.id,
+        assertion: {
+          kind: 'json-path' as const,
+          op: 'type' as const,
+          target: '$.id',
+          expected: 'number',
+        },
+      },
+      ctx,
+    );
+    const state = await ctx.workspace.read();
+    expect(state.synced.collections.requests[req.id].assertions.map((a) => a.op)).toEqual([
+      'exists',
+      'type',
+    ]);
+  });
+
   it('assertion.read returns found:false when request missing', async () => {
     const out = await assertionReadTool.handler({ requestId: 'missing' }, ctx);
     expect(out).toEqual({ found: false });

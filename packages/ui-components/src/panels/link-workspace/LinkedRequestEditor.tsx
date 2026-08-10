@@ -24,6 +24,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { Modal } from '../../primitives/Modal';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { KeyValueRows } from '../editor/KeyValueRows';
+import { JSON_TYPES, opChangePatch } from '../editor/assertionOps';
 
 const HTTP_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 
@@ -491,7 +492,7 @@ function AssertionRows({
           )}
           <select
             value={row.op}
-            onChange={(e) => update(row.id, { op: e.target.value as Assertion['op'] })}
+            onChange={(e) => update(row.id, opChangePatch(row, e.target.value as Assertion['op']))}
             aria-label={`Override assertion ${i + 1} op`}
             className={inputClass}
           >
@@ -501,18 +502,42 @@ function AssertionRows({
             <option value="lt">{'<'}</option>
             <option value="gt">{'>'}</option>
             <option value="matches">matches</option>
+            <option value="exists">exists</option>
+            <option value="type">is type</option>
           </select>
-          <input
-            value={String(row.expected)}
-            onChange={(e) => {
-              const raw = e.target.value;
-              const numeric = Number(raw);
-              update(row.id, { expected: !raw.length || Number.isNaN(numeric) ? raw : numeric });
-            }}
-            aria-label={`Override assertion ${i + 1} expected`}
-            className={inputClass}
-            placeholder="expected"
-          />
+          {row.op === 'exists' ? (
+            <span
+              aria-label={`Override assertion ${i + 1} expected`}
+              className="flex-1 px-1 text-[0.6875rem] text-text-dim"
+            >
+              no value
+            </span>
+          ) : row.op === 'type' ? (
+            <select
+              value={String(row.expected)}
+              onChange={(e) => update(row.id, { expected: e.target.value })}
+              aria-label={`Override assertion ${i + 1} expected`}
+              className={inputClass}
+            >
+              {JSON_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              value={String(row.expected)}
+              onChange={(e) => {
+                const raw = e.target.value;
+                const numeric = Number(raw);
+                update(row.id, { expected: !raw.length || Number.isNaN(numeric) ? raw : numeric });
+              }}
+              aria-label={`Override assertion ${i + 1} expected`}
+              className={inputClass}
+              placeholder="expected"
+            />
+          )}
           <button
             type="button"
             onClick={() => remove(row.id)}

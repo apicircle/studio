@@ -17,6 +17,12 @@ const baseExec: ExecutionResult = {
   authWarnings: [],
 };
 
+// A body covering every JSON type, for `type` assertions.
+const typedExec: ExecutionResult = {
+  ...baseExec,
+  body: '{"n":1,"s":"x","b":true,"nil":null,"arr":[1,2],"obj":{"k":1}}',
+};
+
 const a = (overrides: Partial<Assertion>): Assertion => ({
   id: 'a1',
   kind: 'status',
@@ -51,6 +57,10 @@ describe('readJsonPath', () => {
 
   it('returns undefined when traversing through a non-object', () => {
     expect(readJsonPath('hello', 'a')).toBeUndefined();
+  });
+
+  it('handles a $ prefix without a following dot', () => {
+    expect(readJsonPath({ a: 5 }, '$a')).toBe(5);
   });
 });
 
@@ -321,5 +331,161 @@ describe('runAssertions: pass explanations', () => {
       baseExec,
     )[0];
     expect(r.detail).toBe('path "missing" not found (passes not-equals)');
+  });
+});
+
+describe('runAssertions: exists', () => {
+  // `expected` is irrelevant for `exists`; the fixtures leave the default 200.
+  it('status exists → passes when the request completed, fails when it did not', () => {
+    expect(runAssertions([a({ kind: 'status', op: 'exists' })], baseExec)[0]).toMatchObject({
+      passed: true,
+      detail: 'status is present',
+    });
+    const nullStatus = runAssertions([a({ kind: 'status', op: 'exists' })], {
+      ...baseExec,
+      status: null,
+    })[0];
+    expect(nullStatus).toMatchObject({ passed: false, detail: 'status is not present' });
+  });
+
+  it('duration always exists', () => {
+    expect(runAssertions([a({ kind: 'duration', op: 'exists' })], baseExec)[0]).toMatchObject({
+      passed: true,
+      detail: 'duration is present',
+    });
+  });
+
+  it('header exists → present vs missing', () => {
+    expect(
+      runAssertions([a({ kind: 'header', op: 'exists', target: 'content-type' })], baseExec)[0],
+    ).toMatchObject({ passed: true, detail: 'header "content-type" is present' });
+    expect(
+      runAssertions([a({ kind: 'header', op: 'exists', target: 'X-Missing' })], baseExec)[0],
+    ).toMatchObject({ passed: false, detail: 'header "X-Missing" is not present' });
+  });
+
+  it('json-path exists → present vs missing', () => {
+    expect(
+      runAssertions([a({ kind: 'json-path', op: 'exists', target: 'id' })], baseExec)[0],
+    ).toMatchObject({ passed: true, detail: 'path "id" is present' });
+    expect(
+      runAssertions([a({ kind: 'json-path', op: 'exists', target: 'missing' })], baseExec)[0],
+    ).toMatchObject({ passed: false, detail: 'path "missing" is not present' });
+  });
+
+  it('json-path exists still fails fast when the body is not JSON', () => {
+    const r = runAssertions([a({ kind: 'json-path', op: 'exists', target: 'id' })], {
+      ...baseExec,
+      body: 'not json',
+    })[0];
+    expect(r.passed).toBe(false);
+    expect(r.detail).toMatch(/not valid JSON/);
+  });
+});
+
+describe('runAssertions: type', () => {
+  const jp = (target: string, expected: string) =>
+    runAssertions([a({ kind: 'json-path', op: 'type', target, expected })], typedExec)[0];
+
+  it('matches every JSON type (number, string, boolean, null, array, object)', () => {
+    expect(jp('n', 'number')).toMatchObject({ passed: true, detail: 'path "n" is of type number' });
+    expect(jp('s', 'string')).toMatchObject({ passed: true, detail: 'path "s" is of type string' });
+    expect(jp('b', 'boolean')).toMatchObject({ passed: true });
+    expect(jp('nil', 'null')).toMatchObject({ passed: true, detail: 'path "nil" is of type null' });
+    expect(jp('arr', 'array')).toMatchObject({
+      passed: true,
+      detail: 'path "arr" is of type array',
+    });
+    expect(jp('obj', 'object')).toMatchObject({
+      passed: true,
+      detail: 'path "obj" is of type object',
+    });
+  });
+
+  it('fails on a type mismatch with a descriptive diff', () => {
+    expect(jp('n', 'string')).toMatchObject({
+      passed: false,
+      detail: 'path "n": expected type "string", got number',
+    });
+  });
+
+  it('fails when the path is not present', () => {
+    expect(jp('missing', 'string')).toMatchObject({
+      passed: false,
+      detail: 'path "missing" is not present',
+    });
+  });
+
+  it('works for header (always a string), status, and duration', () => {
+    expect(
+      runAssertions(
+        [a({ kind: 'header', op: 'type', target: 'content-type', expected: 'string' })],
+        baseExec,
+      )[0],
+    ).toMatchObject({ passed: true, detail: 'header "content-type" is of type string' });
+    expect(
+      runAssertions(
+        [a({ kind: 'header', op: 'type', target: 'X-Missing', expected: 'string' })],
+        baseExec,
+      )[0],
+    ).toMatchObject({ passed: false, detail: 'header "X-Missing" is not present' });
+    expect(
+      runAssertions([a({ kind: 'status', op: 'type', expected: 'number' })], baseExec)[0],
+    ).toMatchObject({
+      passed: true,
+      detail: 'status is of type number',
+    });
+    expect(
+      runAssertions([a({ kind: 'duration', op: 'type', expected: 'number' })], baseExec)[0],
+    ).toMatchObject({
+      passed: true,
+      detail: 'duration is of type number',
+    });
+  });
+
+  it('a null status is reported as not completed, not as type null', () => {
+    const r = runAssertions([a({ kind: 'status', op: 'type', expected: 'null' })], {
+      ...baseExec,
+      status: null,
+    })[0];
+    expect(r.passed).toBe(false);
+    expect(r.detail).toMatch(/did not complete/);
+  });
+});
+
+describe('runAssertions: comparison fail + serialization branches', () => {
+  it('numeric comparisons report failures (equals / not-equals / gt)', () => {
+    expect(
+      runAssertions([a({ kind: 'status', op: 'equals', expected: 500 })], baseExec)[0].passed,
+    ).toBe(false);
+    expect(
+      runAssertions([a({ kind: 'status', op: 'not-equals', expected: 200 })], baseExec)[0].passed,
+    ).toBe(false);
+    expect(
+      runAssertions([a({ kind: 'status', op: 'gt', expected: 500 })], baseExec)[0].passed,
+    ).toBe(false);
+  });
+
+  it('string comparisons cover equals / not-equals / contains / matches failures + unsupported lt', () => {
+    const h = (op: Assertion['op'], expected: string) =>
+      runAssertions([a({ kind: 'header', op, target: 'content-type', expected })], baseExec)[0];
+    expect(h('equals', 'text/html').passed).toBe(false);
+    expect(h('not-equals', 'text/html').passed).toBe(true);
+    expect(h('not-equals', 'application/json').passed).toBe(false);
+    expect(h('contains', 'xml').passed).toBe(false);
+    const noMatch = h('matches', '^xml');
+    expect(noMatch.passed).toBe(false);
+    expect(noMatch.detail).toMatch(/did not match/);
+    const unsupported = h('lt', 'x');
+    expect(unsupported.passed).toBe(false);
+    expect(unsupported.detail).toMatch(/not supported for string values/);
+  });
+
+  it('serializes non-primitive json-path values for comparison (boolean / null / object)', () => {
+    const jp = (target: string, expected: string) =>
+      runAssertions([a({ kind: 'json-path', op: 'equals', target, expected })], typedExec)[0];
+    expect(jp('b', 'true').passed).toBe(true);
+    expect(jp('nil', 'null').passed).toBe(true);
+    expect(jp('obj', '{"k":1}').passed).toBe(true);
   });
 });

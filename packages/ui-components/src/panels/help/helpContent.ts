@@ -490,7 +490,7 @@ OAuth tokens are written into the same Git-pushed JSON as the rest of the reques
 - **Header** — a named response header (you give the header name as the target).
 - **JSON path** — a value inside a JSON body (you give the path; a picker can build it from the last response).
 
-Status and Duration support \`=\`, \`≠\`, \`<\`, \`>\`; Header and JSON path support \`=\`, \`≠\`, \`contains\`, \`matches\` (regex).
+Status and Duration support \`=\`, \`≠\`, \`<\`, \`>\`; Header and JSON path support \`=\`, \`≠\`, \`contains\`, \`matches\` (regex). Two structural operators work regardless of value: \`exists\` passes when the target is present (no expected value), and \`is type\` checks a value's JSON type (\`string\`, \`number\`, \`boolean\`, \`array\`, \`object\`, \`null\`).
 
 ## Examples
 
@@ -500,6 +500,8 @@ Status and Duration support \`=\`, \`≠\`, \`<\`, \`>\`; Header and JSON path s
     Header         contains   application/json    Content-Type
     JSON path      =          admin               $.user.role
     JSON path      matches    ^usr_[a-z0-9]+$     $.user.id
+    JSON path      exists                         $.user.id
+    JSON path      is type    number              $.user.age
 
 After a Send each row shows a green **Pass** or red **Fail** badge. Run a request inside an execution plan "with assertions" and the verdicts fold into a per-step pass/fail flag.
 
@@ -515,6 +517,8 @@ Inside the table, **Enter** appends a row and **Backspace** on an empty row remo
       'duration',
       'json path',
       'matches',
+      'exists',
+      'type',
     ],
   },
   {

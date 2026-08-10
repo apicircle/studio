@@ -761,7 +761,14 @@ export interface LocalAttachmentCacheEntry {
 export interface Assertion {
   id: string;
   kind: 'status' | 'header' | 'json-path' | 'duration';
-  op: 'equals' | 'not-equals' | 'contains' | 'lt' | 'gt' | 'matches';
+  /**
+   * The comparison operator. Most ops compare the resolved value to `expected`.
+   * Two are structural and don't compare a value:
+   *   - `exists` — passes iff the target resolves (is present); `expected` is ignored.
+   *   - `type`   — passes iff the resolved value's JSON type equals `expected`
+   *                (`string` | `number` | `boolean` | `array` | `object` | `null`).
+   */
+  op: 'equals' | 'not-equals' | 'contains' | 'lt' | 'gt' | 'matches' | 'exists' | 'type';
   target?: string;
   expected: string | number;
 }

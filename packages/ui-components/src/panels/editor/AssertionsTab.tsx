@@ -8,6 +8,7 @@ import { JsonPathPicker } from './JsonPathPicker';
 import { Select } from '../../primitives/Select';
 import { cn } from '../../primitives/cn';
 import { useRowKeyboardNav } from './useRowKeyboardNav';
+import { JSON_TYPES, opChangePatch } from './assertionOps';
 
 interface AssertionsTabProps {
   request: ApiRequest;
@@ -27,6 +28,8 @@ const OPS: Array<{ id: Assertion['op']; label: string }> = [
   { id: 'matches', label: 'matches' },
   { id: 'lt', label: '<' },
   { id: 'gt', label: '>' },
+  { id: 'exists', label: 'exists' },
+  { id: 'type', label: 'is type' },
 ];
 
 function newAssertion(): Assertion {
@@ -74,10 +77,10 @@ export const AssertionsTab = memo(function AssertionsTab({ request }: Assertions
     rowCount: request.assertions.length,
     isRowEmpty: (index) => {
       const a = request.assertions[index];
-      return (
-        !a ||
-        ((a.target === undefined || a.target === '') && (a.expected === '' || a.expected === 0))
-      );
+      // `exists` / `type` are complete assertions even with an empty `expected` —
+      // never treat them as a blank row the keyboard nav can Backspace away.
+      if (a.op === 'exists' || a.op === 'type') return false;
+      return (a.target === undefined || a.target === '') && (a.expected === '' || a.expected === 0);
     },
     onAdd: add,
     onRemove: remove,
@@ -140,7 +143,7 @@ export const AssertionsTab = memo(function AssertionsTab({ request }: Assertions
             )}
             <Select
               value={a.op}
-              onChange={(e) => update(i, { op: e.target.value as Assertion['op'] })}
+              onChange={(e) => update(i, opChangePatch(a, e.target.value as Assertion['op']))}
               onKeyDown={(e) => onKeyDown(e, i, 'op')}
               aria-label={`Assertion ${i + 1} op`}
             >
@@ -212,10 +215,12 @@ export const AssertionsTab = memo(function AssertionsTab({ request }: Assertions
 });
 
 /**
- * Expected-value input with op-aware inline validation. Three modes:
- *   - `matches` op: validate as a JS regex; surface compile errors at edit time.
+ * Expected-value editor, op-aware:
+ *   - `exists`: no value — renders a hint (the op compares presence only).
+ *   - `type`: a JSON-type dropdown (string / number / boolean / array / object / null).
+ *   - `matches`: validate as a JS regex; surface compile errors at edit time.
  *   - `lt` / `gt`: require a finite number so the comparison isn't nonsense.
- *   - everything else: free-form string/number (legacy behaviour).
+ *   - everything else: free-form string/number.
  *
  * The valid string is always written through to the assertion; we coerce
  * to number only when the parse succeeds. Errors render below the row.
@@ -229,8 +234,37 @@ function ExpectedInput({
   assertion: Assertion;
   index: number;
   onChange: (patch: Partial<Assertion>) => void;
-  onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  onKeyDown: (e: React.KeyboardEvent<HTMLElement>) => void;
 }) {
+  // `exists` compares nothing — there is no value to enter.
+  if (assertion.op === 'exists') {
+    return (
+      <div
+        className="flex flex-1 items-center px-2 text-xs text-text-dim"
+        aria-label={`Assertion ${index + 1} expected`}
+      >
+        no value needed
+      </div>
+    );
+  }
+  // `type` picks a JSON type name rather than a free-form value.
+  if (assertion.op === 'type') {
+    return (
+      <Select
+        value={String(assertion.expected)}
+        onChange={(e) => onChange({ expected: e.target.value })}
+        onKeyDown={onKeyDown}
+        aria-label={`Assertion ${index + 1} expected`}
+        wrapperClassName="flex-1"
+      >
+        {JSON_TYPES.map((t) => (
+          <option key={t} value={t}>
+            {t}
+          </option>
+        ))}
+      </Select>
+    );
+  }
   const raw = String(assertion.expected);
   let error: string | null = null;
   if (raw !== '') {

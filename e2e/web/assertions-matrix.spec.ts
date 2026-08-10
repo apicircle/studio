@@ -25,7 +25,7 @@ function id(key: string): TcId {
 interface Case {
   name: string;
   kind: 'status' | 'duration' | 'header' | 'json-path';
-  op: 'equals' | 'not-equals' | 'lt' | 'gt' | 'contains' | 'matches';
+  op: 'equals' | 'not-equals' | 'lt' | 'gt' | 'contains' | 'matches' | 'exists' | 'type';
   target?: string;
   expected: string | number;
   url: (mockUrl: (p: string) => string) => string;
@@ -385,6 +385,47 @@ const cases: Case[] = [
     shouldPass: false,
     failDetail: /op "contains" not supported for numeric values/,
   },
+  // structural operators: exists (presence) + type (JSON type), against /json
+  {
+    name: 'json-path exists → pass',
+    kind: 'json-path',
+    op: 'exists',
+    target: 'id',
+    expected: '',
+    url: (m) => m('/json'),
+    shouldPass: true,
+    passDetail: /path "id" is present/,
+  },
+  {
+    name: 'json-path exists → fail',
+    kind: 'json-path',
+    op: 'exists',
+    target: 'missing',
+    expected: '',
+    url: (m) => m('/json'),
+    shouldPass: false,
+    failDetail: /path "missing" is not present/,
+  },
+  {
+    name: 'json-path type → pass',
+    kind: 'json-path',
+    op: 'type',
+    target: 'id',
+    expected: 'number',
+    url: (m) => m('/json'),
+    shouldPass: true,
+    passDetail: /path "id" is of type number/,
+  },
+  {
+    name: 'json-path type → fail',
+    kind: 'json-path',
+    op: 'type',
+    target: 'name',
+    expected: 'number',
+    url: (m) => m('/json'),
+    shouldPass: false,
+    failDetail: /expected type "number", got string/,
+  },
 ];
 
 /**
@@ -442,7 +483,12 @@ test.describe('Assertion matrix', () => {
       if (c.target !== undefined) {
         await app.getByLabel('Assertion 1 target').fill(c.target);
       }
-      await app.getByLabel('Assertion 1 expected').fill(String(c.expected));
+      // `exists` has no value control; `type` picks from a dropdown; the rest are free text.
+      if (c.op === 'type') {
+        await app.getByLabel('Assertion 1 expected').selectOption(String(c.expected));
+      } else if (c.op !== 'exists') {
+        await app.getByLabel('Assertion 1 expected').fill(String(c.expected));
+      }
 
       // Send.
       await app.getByRole('button', { name: /^Send$/ }).click();

@@ -224,7 +224,16 @@ export async function setRequestTextFieldCommand(uri?: vscode.Uri, line?: number
 // ---------------------------------------------------------------------------
 
 const ASSERTION_KINDS = ['status', 'header', 'json-path', 'duration'] as const;
-const ASSERTION_OPS = ['equals', 'not-equals', 'contains', 'lt', 'gt', 'matches'] as const;
+const ASSERTION_OPS = [
+  'equals',
+  'not-equals',
+  'contains',
+  'lt',
+  'gt',
+  'matches',
+  'exists',
+  'type',
+] as const;
 const EXTRACTION_SOURCES = ['body', 'header', 'cookie', 'status'] as const;
 
 async function pickRawScalar(
