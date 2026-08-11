@@ -223,7 +223,7 @@ export async function setRequestTextFieldCommand(uri?: vscode.Uri, line?: number
 // assertion / extraction enum pickers
 // ---------------------------------------------------------------------------
 
-const ASSERTION_KINDS = ['status', 'header', 'json-path', 'duration'] as const;
+const ASSERTION_KINDS = ['status', 'header', 'json-path', 'duration', 'json-schema'] as const;
 const ASSERTION_OPS = [
   'equals',
   'not-equals',
@@ -233,6 +233,7 @@ const ASSERTION_OPS = [
   'matches',
   'exists',
   'type',
+  'matches-schema',
 ] as const;
 const EXTRACTION_SOURCES = ['body', 'header', 'cookie', 'status'] as const;
 
@@ -476,6 +477,23 @@ export async function setRequestAssertionExpectedFieldCommand(
     const typed = await vscode.window.showInputBox({
       prompt: 'Expected value at JSON path',
       placeHolder: 'literal value to compare against',
+    });
+    if (typed === undefined) return;
+    await commitScalar(loaded.document, loaded.line, yamlScalar(typed));
+    return;
+  }
+  if (kind === 'json-schema') {
+    const typed = await vscode.window.showInputBox({
+      prompt: 'Response JSON Schema (validates the whole body — array element shapes included)',
+      placeHolder: '{ "type": "object", "required": ["id"] }',
+      validateInput: (v) => {
+        try {
+          JSON.parse(v);
+          return null;
+        } catch {
+          return 'Must be valid JSON.';
+        }
+      },
     });
     if (typed === undefined) return;
     await commitScalar(loaded.document, loaded.line, yamlScalar(typed));

@@ -232,6 +232,34 @@ describe('LinkedRequestEditor', () => {
     expect(screen.getByLabelText('Override assertion 1 target')).toBeInTheDocument();
   });
 
+  it('changing override assertion kind to json-schema shows the schema editor + single op, and resets on switch-back', async () => {
+    useWorkspaceStore
+      .getState()
+      .setActiveLinkedRequest({ linkedWorkspaceId: 'link-1', itemId: 'src' });
+    render(<LinkedRequestEditor />);
+    await userEvent.click(screen.getByRole('button', { name: /^Add assertion$/ }));
+    await userEvent.selectOptions(
+      screen.getByLabelText('Override assertion 1 kind'),
+      'json-schema',
+    );
+    const op = screen.getByLabelText('Override assertion 1 op') as HTMLSelectElement;
+    expect([...op.options].map((o) => o.value)).toEqual(['matches-schema']);
+    const editor = screen.getByLabelText('Override assertion 1 schema') as HTMLTextAreaElement;
+    expect(editor.tagName).toBe('TEXTAREA');
+    const patch = useWorkspaceStore.getState().synced!.linkedOverrides.requests['link-1:src']
+      ?.patch as {
+      assertions?: Array<{ kind: string; op: string; expected: string }>;
+    };
+    expect(patch.assertions?.[0]).toMatchObject({
+      kind: 'json-schema',
+      op: 'matches-schema',
+      expected: '{}',
+    });
+    // Switching back to a scalar kind restores the scalar ops (no schema editor).
+    await userEvent.selectOptions(screen.getByLabelText('Override assertion 1 kind'), 'status');
+    expect(screen.queryByLabelText('Override assertion 1 schema')).toBeNull();
+  });
+
   it('numeric expected values are coerced to numbers; non-numeric stays string', async () => {
     useWorkspaceStore.getState().setActiveLinkedRequest({
       linkedWorkspaceId: 'link-1',

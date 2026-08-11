@@ -473,6 +473,38 @@ describe('setRequestAssertionExpectedFieldCommand', () => {
     const updated = appliedText(lines);
     expect(updated).toContain('expected: 800');
   });
+
+  it('uses a JSON-schema input box (with JSON validation) for kind=json-schema', async () => {
+    const lines = [
+      'name: r',
+      'method: GET',
+      'url: https://x',
+      'assertions:',
+      "  - id: 'a1'",
+      "    kind: 'json-schema'",
+      "    op: 'matches-schema'",
+      "    expected: '{}'",
+      '    enabled: true',
+      'headers: []',
+      'query: []',
+      'body:',
+      '  type: none',
+      "  content: ''",
+      'auth:',
+      '  type: none',
+    ];
+    arrange(lines);
+    (window.showInputBox as Mock).mockResolvedValueOnce('{"type":"object"}');
+    await setRequestAssertionExpectedFieldCommand(reqUri, 7);
+    // The schema is committed as a (YAML-escaped) scalar on the expected row.
+    expect(appliedText(lines)).toMatch(/expected:.*type.*object/);
+    // The prompt validates that the entered value is JSON.
+    const validate = (window.showInputBox as Mock).mock.calls[0][0].validateInput as (
+      v: string,
+    ) => string | null;
+    expect(validate('{"a":1}')).toBeNull();
+    expect(validate('{ not json')).toBe('Must be valid JSON.');
+  });
 });
 
 describe('setRequestAuthFieldCommand', () => {

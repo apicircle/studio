@@ -489,8 +489,9 @@ OAuth tokens are written into the same Git-pushed JSON as the rest of the reques
 - **Duration (ms)** — how long the request took.
 - **Header** — a named response header (you give the header name as the target).
 - **JSON path** — a value inside a JSON body (you give the path; a picker can build it from the last response).
+- **JSON schema** — validate the whole body (or a target path) against a JSON Schema in one check: nested objects, required fields, and array element shapes all at once.
 
-Status and Duration support \`=\`, \`≠\`, \`<\`, \`>\`; Header and JSON path support \`=\`, \`≠\`, \`contains\`, \`matches\` (regex). Two structural operators work regardless of value: \`exists\` passes when the target is present (no expected value), and \`is type\` checks a value's JSON type (\`string\`, \`number\`, \`boolean\`, \`array\`, \`object\`, \`null\`).
+Status and Duration support \`=\`, \`≠\`, \`<\`, \`>\`; Header and JSON path support \`=\`, \`≠\`, \`contains\`, \`matches\` (regex). Two structural operators work regardless of value: \`exists\` passes when the target is present (no expected value), and \`is type\` checks a value's JSON type (\`string\`, \`number\`, \`boolean\`, \`array\`, \`object\`, \`null\`). The **JSON schema** kind uses \`matches schema\`: it validates the body against a JSON Schema you supply — an empty array passes (no false-fail), and with \`additionalProperties: false\` an unexpected field fails.
 
 ## Examples
 
@@ -502,6 +503,7 @@ Status and Duration support \`=\`, \`≠\`, \`<\`, \`>\`; Header and JSON path s
     JSON path      matches    ^usr_[a-z0-9]+$     $.user.id
     JSON path      exists                         $.user.id
     JSON path      is type    number              $.user.age
+    JSON schema    matches schema  {"type":"object","required":["user"]}
 
 After a Send each row shows a green **Pass** or red **Fail** badge. Run a request inside an execution plan "with assertions" and the verdicts fold into a per-step pass/fail flag.
 
@@ -516,6 +518,8 @@ Inside the table, **Enter** appends a row and **Backspace** on an empty row remo
       'status',
       'duration',
       'json path',
+      'json schema',
+      'schema',
       'matches',
       'exists',
       'type',

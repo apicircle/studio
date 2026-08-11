@@ -24,7 +24,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { Modal } from '../../primitives/Modal';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { KeyValueRows } from '../editor/KeyValueRows';
-import { JSON_TYPES, opChangePatch } from '../editor/assertionOps';
+import { JSON_TYPES, opChangePatch, kindChangePatch } from '../editor/assertionOps';
 
 const HTTP_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 
@@ -472,7 +472,9 @@ function AssertionRows({
         <div key={row.id} className="flex items-center gap-2">
           <select
             value={row.kind}
-            onChange={(e) => update(row.id, { kind: e.target.value as Assertion['kind'] })}
+            onChange={(e) =>
+              update(row.id, kindChangePatch(row, e.target.value as Assertion['kind']))
+            }
             aria-label={`Override assertion ${i + 1} kind`}
             className={inputClass}
           >
@@ -480,6 +482,7 @@ function AssertionRows({
             <option value="header">header</option>
             <option value="json-path">json-path</option>
             <option value="duration">duration</option>
+            <option value="json-schema">json-schema</option>
           </select>
           {row.kind !== 'status' && (
             <input
@@ -496,16 +499,30 @@ function AssertionRows({
             aria-label={`Override assertion ${i + 1} op`}
             className={inputClass}
           >
-            <option value="equals">equals</option>
-            <option value="not-equals">not-equals</option>
-            <option value="contains">contains</option>
-            <option value="lt">{'<'}</option>
-            <option value="gt">{'>'}</option>
-            <option value="matches">matches</option>
-            <option value="exists">exists</option>
-            <option value="type">is type</option>
+            {row.kind === 'json-schema' ? (
+              <option value="matches-schema">matches schema</option>
+            ) : (
+              <>
+                <option value="equals">equals</option>
+                <option value="not-equals">not-equals</option>
+                <option value="contains">contains</option>
+                <option value="lt">{'<'}</option>
+                <option value="gt">{'>'}</option>
+                <option value="matches">matches</option>
+                <option value="exists">exists</option>
+                <option value="type">is type</option>
+              </>
+            )}
           </select>
-          {row.op === 'exists' ? (
+          {row.op === 'matches-schema' ? (
+            <textarea
+              value={String(row.expected)}
+              onChange={(e) => update(row.id, { expected: e.target.value })}
+              aria-label={`Override assertion ${i + 1} schema`}
+              rows={3}
+              className="min-w-0 flex-1 rounded-sm border border-border bg-card px-1 py-0.5 font-mono text-[0.6875rem] text-text-primary"
+            />
+          ) : row.op === 'exists' ? (
             <span
               aria-label={`Override assertion ${i + 1} expected`}
               className="flex-1 px-1 text-[0.6875rem] text-text-dim"

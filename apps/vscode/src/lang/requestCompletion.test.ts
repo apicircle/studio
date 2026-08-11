@@ -82,7 +82,13 @@ describe('RequestCompletionProvider', () => {
       '  - kind: ',
     ]);
     const items = provider.provideCompletionItems(doc, pos(4, 11), fakeToken, fakeCtx);
-    expect(items.map((i) => i.label)).toEqual(['status', 'header', 'json-path', 'duration']);
+    expect(items.map((i) => i.label)).toEqual([
+      'status',
+      'header',
+      'json-path',
+      'duration',
+      'json-schema',
+    ]);
   });
 
   it('completes assertion ops in assertions block', () => {
@@ -104,6 +110,7 @@ describe('RequestCompletionProvider', () => {
       'matches',
       'exists',
       'type',
+      'matches-schema',
     ]);
   });
 

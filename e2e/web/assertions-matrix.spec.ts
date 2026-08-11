@@ -24,8 +24,17 @@ function id(key: string): TcId {
 }
 interface Case {
   name: string;
-  kind: 'status' | 'duration' | 'header' | 'json-path';
-  op: 'equals' | 'not-equals' | 'lt' | 'gt' | 'contains' | 'matches' | 'exists' | 'type';
+  kind: 'status' | 'duration' | 'header' | 'json-path' | 'json-schema';
+  op:
+    | 'equals'
+    | 'not-equals'
+    | 'lt'
+    | 'gt'
+    | 'contains'
+    | 'matches'
+    | 'exists'
+    | 'type'
+    | 'matches-schema';
   target?: string;
   expected: string | number;
   url: (mockUrl: (p: string) => string) => string;
@@ -426,6 +435,25 @@ const cases: Case[] = [
     shouldPass: false,
     failDetail: /expected type "number", got string/,
   },
+  // json-schema: validate the whole body against a JSON Schema in one assertion.
+  {
+    name: 'json-schema matches → pass',
+    kind: 'json-schema',
+    op: 'matches-schema',
+    expected: '{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}',
+    url: (m) => m('/json'),
+    shouldPass: true,
+    passDetail: /matches the schema/,
+  },
+  {
+    name: 'json-schema matches → fail (missing required)',
+    kind: 'json-schema',
+    op: 'matches-schema',
+    expected: '{"type":"object","required":["nonexistent"]}',
+    url: (m) => m('/json'),
+    shouldPass: false,
+    failDetail: /required property missing/,
+  },
 ];
 
 /**
@@ -445,6 +473,7 @@ function caseKey(c: Case): string {
       : 'Single GET / Status check';
   }
   if (c.kind === 'duration') return 'Single GET / Duration';
+  if (c.kind === 'json-schema') return 'Single GET / Schema';
   // json-path: `matches` op → Regex cell; everything else → JSON path cell.
   if (c.kind === 'json-path') {
     return c.op === 'matches' ? 'Single GET / Regex' : 'Single GET / JSON path';
@@ -483,9 +512,12 @@ test.describe('Assertion matrix', () => {
       if (c.target !== undefined) {
         await app.getByLabel('Assertion 1 target').fill(c.target);
       }
-      // `exists` has no value control; `type` picks from a dropdown; the rest are free text.
+      // `exists` has no value control; `type` picks from a dropdown; `matches-schema` edits a
+      // schema textarea; the rest are free text.
       if (c.op === 'type') {
         await app.getByLabel('Assertion 1 expected').selectOption(String(c.expected));
+      } else if (c.op === 'matches-schema') {
+        await app.getByLabel('Assertion 1 schema').fill(String(c.expected));
       } else if (c.op !== 'exists') {
         await app.getByLabel('Assertion 1 expected').fill(String(c.expected));
       }
