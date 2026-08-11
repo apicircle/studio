@@ -55,8 +55,20 @@ export const promptCreateAssertionTool: AnyToolDef = {
   inputSchema: z.object({
     requestId: z.string(),
     assertion: z.object({
-      kind: z.enum(['status', 'header', 'json-path', 'duration']),
-      op: z.enum(['equals', 'not-equals', 'contains', 'lt', 'gt', 'matches', 'exists', 'type']),
+      kind: z.enum(['status', 'header', 'json-path', 'duration', 'json-schema']),
+      op: z.enum([
+        'equals',
+        'not-equals',
+        'contains',
+        'lt',
+        'gt',
+        'matches',
+        'exists',
+        'type',
+        'matches-schema',
+      ]),
+      // `json-schema` (op `matches-schema`): `expected` is a JSON Schema string validating the
+      // whole body (or `target` path) recursively — array element shapes, nested objects, required.
       target: z.string().optional(),
       expected: z.union([z.string(), z.number()]),
     }),
@@ -161,8 +173,18 @@ export const PROMPT_AUTH = z.discriminatedUnion('type', [
 ]);
 
 const PROMPT_ASSERTION = z.object({
-  kind: z.enum(['status', 'header', 'json-path', 'duration']),
-  op: z.enum(['equals', 'not-equals', 'contains', 'lt', 'gt', 'matches', 'exists', 'type']),
+  kind: z.enum(['status', 'header', 'json-path', 'duration', 'json-schema']),
+  op: z.enum([
+    'equals',
+    'not-equals',
+    'contains',
+    'lt',
+    'gt',
+    'matches',
+    'exists',
+    'type',
+    'matches-schema',
+  ]),
   target: z.string().optional(),
   expected: z.union([z.string(), z.number()]),
 });

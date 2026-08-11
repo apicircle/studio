@@ -8,7 +8,7 @@ import { JsonPathPicker } from './JsonPathPicker';
 import { Select } from '../../primitives/Select';
 import { cn } from '../../primitives/cn';
 import { useRowKeyboardNav } from './useRowKeyboardNav';
-import { JSON_TYPES, opChangePatch } from './assertionOps';
+import { JSON_TYPES, opChangePatch, kindChangePatch } from './assertionOps';
 
 interface AssertionsTabProps {
   request: ApiRequest;
@@ -19,6 +19,7 @@ const KINDS: Array<{ id: Assertion['kind']; label: string; needsTarget: boolean 
   { id: 'duration', label: 'Duration (ms)', needsTarget: false },
   { id: 'header', label: 'Header', needsTarget: true },
   { id: 'json-path', label: 'JSON path', needsTarget: true },
+  { id: 'json-schema', label: 'JSON schema', needsTarget: true },
 ];
 
 const OPS: Array<{ id: Assertion['op']; label: string }> = [
@@ -31,6 +32,16 @@ const OPS: Array<{ id: Assertion['op']; label: string }> = [
   { id: 'exists', label: 'exists' },
   { id: 'type', label: 'is type' },
 ];
+
+/** The `json-schema` kind has exactly one op (whole-value validation); every other kind offers the
+ *  scalar comparison ops. Keeping `matches-schema` off the general list stops it being picked for a
+ *  kind that can't run it. */
+const SCHEMA_OPS: Array<{ id: Assertion['op']; label: string }> = [
+  { id: 'matches-schema', label: 'matches schema' },
+];
+function opsForKind(kind: Assertion['kind']): Array<{ id: Assertion['op']; label: string }> {
+  return kind === 'json-schema' ? SCHEMA_OPS : OPS;
+}
 
 function newAssertion(): Assertion {
   return { id: generateId(), kind: 'status', op: 'equals', expected: 200 };
@@ -100,7 +111,7 @@ export const AssertionsTab = memo(function AssertionsTab({ request }: Assertions
           <div key={a.id} className="flex flex-wrap items-center gap-2">
             <Select
               value={a.kind}
-              onChange={(e) => update(i, { kind: e.target.value as Assertion['kind'] })}
+              onChange={(e) => update(i, kindChangePatch(a, e.target.value as Assertion['kind']))}
               onKeyDown={(e) => onKeyDown(e, i, 'kind')}
               aria-label={`Assertion ${i + 1} kind`}
             >
@@ -117,7 +128,13 @@ export const AssertionsTab = memo(function AssertionsTab({ request }: Assertions
                   value={a.target ?? ''}
                   onChange={(e) => update(i, { target: e.target.value })}
                   onKeyDown={(e) => onKeyDown(e, i, 'target')}
-                  placeholder={a.kind === 'header' ? 'Header name' : 'JSON path'}
+                  placeholder={
+                    a.kind === 'header'
+                      ? 'Header name'
+                      : a.kind === 'json-schema'
+                        ? 'JSON path (whole body if empty)'
+                        : 'JSON path'
+                  }
                   aria-label={`Assertion ${i + 1} target`}
                   className="h-7 flex-1 rounded-sm border border-border bg-card px-2 text-xs"
                 />
@@ -147,7 +164,7 @@ export const AssertionsTab = memo(function AssertionsTab({ request }: Assertions
               onKeyDown={(e) => onKeyDown(e, i, 'op')}
               aria-label={`Assertion ${i + 1} op`}
             >
-              {OPS.map((o) => (
+              {opsForKind(a.kind).map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.label}
                 </option>
@@ -236,6 +253,41 @@ function ExpectedInput({
   onChange: (patch: Partial<Assertion>) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLElement>) => void;
 }) {
+  // `matches-schema` edits a JSON Schema (multi-line) rather than a scalar value.
+  if (assertion.op === 'matches-schema') {
+    const raw = String(assertion.expected);
+    let schemaError: string | null = null;
+    if (raw.trim() !== '') {
+      try {
+        JSON.parse(raw);
+      } catch {
+        schemaError = 'Schema is not valid JSON.';
+      }
+    }
+    return (
+      <div className="flex flex-1 flex-col">
+        <textarea
+          value={raw}
+          onChange={(e) => onChange({ expected: e.target.value })}
+          onKeyDown={onKeyDown}
+          placeholder={'{ "type": "object", "properties": { … }, "required": [ … ] }'}
+          aria-label={`Assertion ${index + 1} schema`}
+          rows={4}
+          className={cn(
+            'w-full rounded-sm border bg-card px-2 py-1 font-mono text-xs',
+            schemaError
+              ? 'border-danger focus:border-danger focus:outline-none focus:ring-1 focus:ring-danger/40'
+              : 'border-border',
+          )}
+        />
+        {schemaError && (
+          <p role="alert" className="mt-0.5 text-[0.625rem] text-danger">
+            {schemaError}
+          </p>
+        )}
+      </div>
+    );
+  }
   // `exists` compares nothing — there is no value to enter.
   if (assertion.op === 'exists') {
     return (

@@ -1,5 +1,6 @@
 import type { Assertion } from '@apicircle/shared';
 import type { ExecutionResult } from '../request/executeRequest';
+import { validateJsonSchema, type JsonSchema } from './jsonSchemaValidate';
 
 /**
  * Result of evaluating one assertion against a response. Carries a snapshot
@@ -42,6 +43,8 @@ function runOne(a: Assertion, exec: ExecutionResult): AssertionResult {
       return checkHeader(a, exec);
     case 'json-path':
       return checkJsonPath(a, exec);
+    case 'json-schema':
+      return checkJsonSchema(a, exec);
   }
 }
 
@@ -64,10 +67,18 @@ function fail(a: Assertion, detail: string): AssertionResult {
   return { ...snapshot(a), passed: false, detail };
 }
 
-/** The operators that compare the resolved value to `expected` — everything but the
- *  structural `exists` / `type`. The comparison helpers take the flow-narrowed op as a
- *  parameter so their switches stay total (a single-interface `a` doesn't narrow whole). */
-type ComparisonOp = Exclude<Assertion['op'], 'exists' | 'type'>;
+/** The operators that compare the resolved value to `expected` — everything but the structural
+ *  `exists` / `type` and the whole-value `matches-schema`. The comparison helpers take the
+ *  flow-narrowed op as a parameter so their switches stay total (a single-interface `a` doesn't
+ *  narrow whole). */
+type ComparisonOp = Exclude<Assertion['op'], 'exists' | 'type' | 'matches-schema'>;
+
+/** Narrows to a value-comparison op. `matches-schema` is only valid on the `json-schema` kind (and
+ *  `exists`/`type` are handled before this point), so a non-comparison op reaching a scalar check
+ *  means a malformed assertion — the callers turn that into an explicit failure. */
+function isComparisonOp(op: Assertion['op']): op is ComparisonOp {
+  return op !== 'exists' && op !== 'type' && op !== 'matches-schema';
+}
 
 /** Presence assertion (`exists`): passes iff the target resolved to a value. */
 function checkExists(a: Assertion, present: boolean, label: string): AssertionResult {
@@ -96,12 +107,14 @@ function checkStatus(a: Assertion, exec: ExecutionResult): AssertionResult {
   if (a.op === 'exists') return checkExists(a, got !== null, 'status');
   if (got === null) return fail(a, `request did not complete (got null status)`);
   if (a.op === 'type') return checkType(a, got, 'status');
+  if (!isComparisonOp(a.op)) return fail(a, `op "${a.op}" is not valid for a ${a.kind} assertion`);
   return compareNumber(a, a.op, got, 'status');
 }
 
 function checkDuration(a: Assertion, exec: ExecutionResult): AssertionResult {
   if (a.op === 'exists') return checkExists(a, true, 'duration');
   if (a.op === 'type') return checkType(a, exec.durationMs, 'duration');
+  if (!isComparisonOp(a.op)) return fail(a, `op "${a.op}" is not valid for a ${a.kind} assertion`);
   return compareNumber(a, a.op, exec.durationMs, 'duration');
 }
 
@@ -110,6 +123,7 @@ function checkHeader(a: Assertion, exec: ExecutionResult): AssertionResult {
   const value = exec.headers[a.target.toLowerCase()] ?? exec.headers[a.target];
   if (a.op === 'exists') return checkExists(a, value !== undefined, `header "${a.target}"`);
   if (a.op === 'type') return checkType(a, value, `header "${a.target}"`);
+  if (!isComparisonOp(a.op)) return fail(a, `op "${a.op}" is not valid for a ${a.kind} assertion`);
   if (value === undefined) {
     if (a.op === 'not-equals')
       return pass(a, `header "${a.target}" not present (passes not-equals)`);
@@ -129,6 +143,7 @@ function checkJsonPath(a: Assertion, exec: ExecutionResult): AssertionResult {
   const value = readJsonPath(parsed, a.target);
   if (a.op === 'exists') return checkExists(a, value !== undefined, `path "${a.target}"`);
   if (a.op === 'type') return checkType(a, value, `path "${a.target}"`);
+  if (!isComparisonOp(a.op)) return fail(a, `op "${a.op}" is not valid for a ${a.kind} assertion`);
   if (value === undefined) {
     if (a.op === 'not-equals') return pass(a, `path "${a.target}" not found (passes not-equals)`);
     return fail(a, `path "${a.target}" not found in response`);
@@ -145,6 +160,34 @@ function checkJsonPath(a: Assertion, exec: ExecutionResult): AssertionResult {
           ? 'null'
           : JSON.stringify(value);
   return compareString(a, a.op, serialized, `path "${a.target}"`);
+}
+
+/**
+ * Validate a value against a JSON Schema (the `json-schema` kind). The schema is carried in
+ * `expected` as a JSON string; `target` selects the value (default: the whole body). Unlike the
+ * per-path `type` op, this recurses — array element shapes, nested objects, required fields — in
+ * one assertion, and (with `additionalProperties:false`) flags unexpected fields.
+ */
+function checkJsonSchema(a: Assertion, exec: ExecutionResult): AssertionResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(exec.body);
+  } catch {
+    return fail(a, 'response body is not valid JSON');
+  }
+  let schema: JsonSchema;
+  try {
+    schema = JSON.parse(String(a.expected)) as JsonSchema;
+  } catch {
+    return fail(a, 'assertion schema is not valid JSON');
+  }
+  const scoped = a.target && a.target !== '$';
+  const value = scoped ? readJsonPath(parsed, a.target!) : parsed;
+  const label = scoped ? `path "${a.target}"` : 'response body';
+  const err = validateJsonSchema(schema, value);
+  return err
+    ? fail(a, `${label} does not match schema — ${err}`)
+    : pass(a, `${label} matches the schema`);
 }
 
 function compareNumber(

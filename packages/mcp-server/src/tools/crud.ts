@@ -742,8 +742,21 @@ export const planRunTool: AnyToolDef = {
 
 const ASSERTION = z.object({
   id: z.string().optional(),
-  kind: z.enum(['status', 'header', 'json-path', 'duration']),
-  op: z.enum(['equals', 'not-equals', 'contains', 'lt', 'gt', 'matches', 'exists', 'type']),
+  kind: z.enum(['status', 'header', 'json-path', 'duration', 'json-schema']),
+  op: z.enum([
+    'equals',
+    'not-equals',
+    'contains',
+    'lt',
+    'gt',
+    'matches',
+    'exists',
+    'type',
+    'matches-schema',
+  ]),
+  // For `json-schema` (op `matches-schema`): `expected` is a JSON Schema (as a JSON string) and
+  // `target` selects what to validate (default: the whole response body). It validates structure
+  // recursively — array element shapes, nested objects, required fields — in one assertion.
   target: z.string().optional(),
   expected: z.union([z.string(), z.number()]),
 });

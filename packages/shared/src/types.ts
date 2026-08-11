@@ -760,15 +760,32 @@ export interface LocalAttachmentCacheEntry {
 
 export interface Assertion {
   id: string;
-  kind: 'status' | 'header' | 'json-path' | 'duration';
+  /**
+   * `json-schema` validates a whole value against a JSON Schema (in `expected`, as a JSON
+   * string) — the only kind that checks structure recursively, including array element shapes
+   * (an empty array passes) and nested objects, in a single assertion. `target` selects what to
+   * validate (default: the whole response body, `$`).
+   */
+  kind: 'status' | 'header' | 'json-path' | 'duration' | 'json-schema';
   /**
    * The comparison operator. Most ops compare the resolved value to `expected`.
-   * Two are structural and don't compare a value:
-   *   - `exists` — passes iff the target resolves (is present); `expected` is ignored.
-   *   - `type`   — passes iff the resolved value's JSON type equals `expected`
-   *                (`string` | `number` | `boolean` | `array` | `object` | `null`).
+   * Three don't compare a scalar value:
+   *   - `exists`        — passes iff the target resolves (is present); `expected` is ignored.
+   *   - `type`          — passes iff the resolved value's JSON type equals `expected`
+   *                       (`string` | `number` | `boolean` | `array` | `object` | `null`).
+   *   - `matches-schema`— (the `json-schema` kind) passes iff the target validates against the
+   *                       JSON Schema in `expected`.
    */
-  op: 'equals' | 'not-equals' | 'contains' | 'lt' | 'gt' | 'matches' | 'exists' | 'type';
+  op:
+    | 'equals'
+    | 'not-equals'
+    | 'contains'
+    | 'lt'
+    | 'gt'
+    | 'matches'
+    | 'exists'
+    | 'type'
+    | 'matches-schema';
   target?: string;
   expected: string | number;
 }

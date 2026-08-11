@@ -27,6 +27,20 @@
 
 ### Added
 
+- **New assertion kind — `json-schema` (`@apicircle/shared`, `@apicircle/core`).**
+  Validates a whole value against a JSON Schema (carried in `expected` as a JSON string;
+  `target` selects the value, default the response body) — the only kind that checks structure
+  recursively in ONE assertion: nested objects, required fields, and **array element shapes**
+  (an empty array passes, so it never false-fails), and, with `additionalProperties: false`,
+  unexpected fields. Backed by a small dependency-free validator (`jsonSchemaValidate.ts`)
+  covering `type` (incl. nullable type-arrays + `integer`), `properties`/`required`,
+  `additionalProperties`, `items`, `enum`, and string `pattern`; failures report the first
+  mismatch as a `$`-rooted path. Wired into the request editor's Assertions tab (a "JSON schema"
+  kind with a schema editor) and the MCP `assertion.create` / `prompt.create_assertion` tools.
+  Purely additive — every existing assertion evaluates exactly as before. _(Authoring in the
+  linked-override editor and the VS Code request YAML, plus the Help Center section, land in a
+  follow-up; a `json-schema` assertion created anywhere already RUNS everywhere via the shared
+  engine.)_
 - **Two new assertion operators — `exists` and `type` (`@apicircle/shared`,
   `@apicircle/core`).** `exists` passes when the target resolves (a present header or
   JSON path) and ignores `expected`; `type` checks a value's JSON type against

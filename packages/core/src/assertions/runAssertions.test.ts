@@ -489,3 +489,134 @@ describe('runAssertions: comparison fail + serialization branches', () => {
     expect(jp('obj', '{"k":1}').passed).toBe(true);
   });
 });
+
+describe('runAssertions — json-schema kind', () => {
+  const schema = (s: unknown): string => JSON.stringify(s);
+  const run1 = (assertion: Assertion, exec: ExecutionResult) => runAssertions([assertion], exec)[0];
+
+  const bodySchema = {
+    type: 'object',
+    properties: {
+      id: { type: 'integer' },
+      name: { type: 'string' },
+      scores: { type: 'array', items: { type: 'integer' } },
+    },
+    required: ['id', 'name', 'scores'],
+    additionalProperties: false,
+  };
+
+  it('passes when the whole response body matches the schema (default target)', () => {
+    const r = run1(
+      a({ kind: 'json-schema', op: 'matches-schema', expected: schema(bodySchema) }),
+      baseExec,
+    );
+    expect(r.passed).toBe(true);
+    expect(r.detail).toBe('response body matches the schema');
+  });
+
+  it('fails with a rooted path on a type mismatch', () => {
+    const bad = {
+      ...bodySchema,
+      properties: { ...bodySchema.properties, name: { type: 'number' } },
+    };
+    const r = run1(
+      a({ kind: 'json-schema', op: 'matches-schema', expected: schema(bad) }),
+      baseExec,
+    );
+    expect(r.passed).toBe(false);
+    expect(r.detail).toBe(
+      'response body does not match schema — $.name: expected type number, got string',
+    );
+  });
+
+  it('is strict about extra properties (additionalProperties:false)', () => {
+    const noScores = {
+      type: 'object',
+      properties: { id: { type: 'integer' }, name: { type: 'string' } },
+      required: ['id', 'name'],
+      additionalProperties: false,
+    };
+    const r = run1(
+      a({ kind: 'json-schema', op: 'matches-schema', expected: schema(noScores) }),
+      baseExec,
+    );
+    expect(r.passed).toBe(false);
+    expect(r.detail).toBe('response body does not match schema — $.scores: unexpected property');
+  });
+
+  it('validates a scoped target (a json-path), and an array element shape (empty array passes)', () => {
+    const scoped = run1(
+      a({
+        kind: 'json-schema',
+        op: 'matches-schema',
+        target: '$.scores',
+        expected: schema({ type: 'array', items: { type: 'integer' } }),
+      }),
+      baseExec,
+    );
+    expect(scoped.passed).toBe(true);
+    expect(scoped.detail).toBe('path "$.scores" matches the schema');
+    const empty = run1(
+      a({
+        kind: 'json-schema',
+        op: 'matches-schema',
+        expected: schema({
+          type: 'object',
+          properties: {
+            items: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: { x: { type: 'number' } },
+                required: ['x'],
+                additionalProperties: false,
+              },
+            },
+          },
+          required: ['items'],
+          additionalProperties: false,
+        }),
+      }),
+      { ...baseExec, body: '{"items":[]}' },
+    );
+    expect(empty.passed).toBe(true);
+  });
+
+  it('fails cleanly on a non-JSON body and on a non-JSON schema', () => {
+    const badBody = run1(
+      a({ kind: 'json-schema', op: 'matches-schema', expected: schema(bodySchema) }),
+      { ...baseExec, body: 'not json' },
+    );
+    expect(badBody).toMatchObject({ passed: false, detail: 'response body is not valid JSON' });
+    const badSchema = run1(
+      a({ kind: 'json-schema', op: 'matches-schema', expected: 'not-a-schema{' }),
+      baseExec,
+    );
+    expect(badSchema).toMatchObject({
+      passed: false,
+      detail: 'assertion schema is not valid JSON',
+    });
+  });
+});
+
+describe('runAssertions — matches-schema op is rejected on non-json-schema kinds', () => {
+  const run1 = (assertion: Assertion, exec: ExecutionResult) => runAssertions([assertion], exec)[0];
+  it('fails for status / duration / header / json-path kinds', () => {
+    expect(run1(a({ kind: 'status', op: 'matches-schema', expected: 0 }), baseExec).detail).toBe(
+      'op "matches-schema" is not valid for a status assertion',
+    );
+    expect(run1(a({ kind: 'duration', op: 'matches-schema', expected: 0 }), baseExec).detail).toBe(
+      'op "matches-schema" is not valid for a duration assertion',
+    );
+    expect(
+      run1(
+        a({ kind: 'header', op: 'matches-schema', target: 'content-type', expected: 0 }),
+        baseExec,
+      ).detail,
+    ).toBe('op "matches-schema" is not valid for a header assertion');
+    expect(
+      run1(a({ kind: 'json-path', op: 'matches-schema', target: '$.id', expected: 0 }), baseExec)
+        .detail,
+    ).toBe('op "matches-schema" is not valid for a json-path assertion');
+  });
+});

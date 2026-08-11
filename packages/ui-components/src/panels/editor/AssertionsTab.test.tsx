@@ -169,4 +169,58 @@ describe('AssertionsTab', () => {
     expect(rows).toHaveLength(5);
     expect(rows.some((r) => r.id === 'r-empty')).toBe(false);
   });
+
+  it('switching kind to json-schema sets the matches-schema op, offers only that op, and shows a schema editor', async () => {
+    const id = makeRequestId();
+    useWorkspaceStore
+      .getState()
+      .setRequestAssertions(id, [{ id: 'a-1', kind: 'status', op: 'equals', expected: 200 }]);
+    render(<LiveAssertionsTab requestId={id} />);
+    await userEvent.selectOptions(screen.getByLabelText('Assertion 1 kind'), 'json-schema');
+    const row = useWorkspaceStore.getState().synced!.collections.requests[id].assertions[0];
+    expect(row).toMatchObject({ kind: 'json-schema', op: 'matches-schema', expected: '{}' });
+    // The op dropdown offers exactly one option for this kind.
+    const opSelect = screen.getByLabelText('Assertion 1 op') as HTMLSelectElement;
+    expect([...opSelect.options].map((o) => o.value)).toEqual(['matches-schema']);
+    // A schema editor (textarea) is shown, seeded with the empty-object schema.
+    const editor = screen.getByLabelText('Assertion 1 schema') as HTMLTextAreaElement;
+    expect(editor.tagName).toBe('TEXTAREA');
+    expect(editor.value).toBe('{}');
+  });
+
+  it('flags an invalid JSON schema and clears the error once valid', async () => {
+    const id = makeRequestId();
+    useWorkspaceStore
+      .getState()
+      .setRequestAssertions(id, [
+        { id: 'a-1', kind: 'json-schema', op: 'matches-schema', expected: '{}' },
+      ]);
+    render(<LiveAssertionsTab requestId={id} />);
+    const editor = screen.getByLabelText('Assertion 1 schema');
+    fireEvent.change(editor, { target: { value: '{ not json' } });
+    expect(screen.getByRole('alert')).toHaveTextContent('Schema is not valid JSON.');
+    fireEvent.change(editor, { target: { value: '{ "type": "object" }' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(
+      useWorkspaceStore.getState().synced!.collections.requests[id].assertions[0].expected,
+    ).toBe('{ "type": "object" }');
+  });
+
+  it('leaving json-schema resets the op to a plain equals comparison', async () => {
+    const id = makeRequestId();
+    useWorkspaceStore
+      .getState()
+      .setRequestAssertions(id, [
+        { id: 'a-1', kind: 'json-schema', op: 'matches-schema', expected: '{"type":"object"}' },
+      ]);
+    render(<LiveAssertionsTab requestId={id} />);
+    await userEvent.selectOptions(screen.getByLabelText('Assertion 1 kind'), 'status');
+    expect(
+      useWorkspaceStore.getState().synced!.collections.requests[id].assertions[0],
+    ).toMatchObject({
+      kind: 'status',
+      op: 'equals',
+      expected: '',
+    });
+  });
 });
