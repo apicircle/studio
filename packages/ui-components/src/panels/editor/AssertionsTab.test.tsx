@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { Request as ApiRequest } from '@apicircle/shared';
+import type { Request as ApiRequest, RequestRun } from '@apicircle/shared';
+import type { ExecutionResult } from '@apicircle/core';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { AssertionsTab } from './AssertionsTab';
 
@@ -21,6 +22,55 @@ function LiveAssertionsTab({ requestId }: { requestId: string }) {
 
 function makeRequestId(): string {
   return useWorkspaceStore.getState().addRequest(null);
+}
+
+/** Minimal `ExecutionResult` for seeding `lastRun` (the JSON-path picker gate reads body/bodyKind). */
+function makeExecutionResult(overrides: Partial<ExecutionResult>): ExecutionResult {
+  return {
+    startedAt: '2026-04-27T12:00:00.000Z',
+    durationMs: 1,
+    status: 200,
+    ok: true,
+    statusText: 'OK',
+    headers: {},
+    body: '',
+    bodyKind: 'empty',
+    url: 'https://api.example.com/x',
+    method: 'GET',
+    authWarnings: [],
+    ...overrides,
+  };
+}
+
+/** Minimal `RequestRun` for seeding `local.history.requestRuns` (drives per-row verdict badges). */
+function makeRun(overrides: Partial<RequestRun>): RequestRun {
+  return {
+    id: 'run',
+    requestId: 'req',
+    startedAt: '2026-04-27T12:00:00.000Z',
+    durationMs: 1,
+    status: 200,
+    statusText: 'OK',
+    ok: true,
+    url: 'https://api.example.com/x',
+    method: 'GET',
+    requestHeaders: {},
+    requestBodyPreview: null,
+    responseHeaders: {},
+    responseBodyPreview: '',
+    responseBodyKind: 'empty',
+    responseTruncated: false,
+    assertions: [],
+    ...overrides,
+  };
+}
+
+/** Point `local.history.requestRuns` at the given runs (newest-first). */
+function seedRequestRuns(runs: RequestRun[]): void {
+  const local = useWorkspaceStore.getState().local!;
+  useWorkspaceStore.setState({
+    local: { ...local, history: { ...local.history, requestRuns: runs } },
+  });
 }
 
 describe('AssertionsTab', () => {
@@ -48,7 +98,13 @@ describe('AssertionsTab', () => {
       .setRequestAssertions(id, [{ id: 'a-1', kind: 'status', op: 'equals', expected: 200 }]);
     render(<LiveAssertionsTab requestId={id} />);
     await userEvent.selectOptions(screen.getByLabelText('Assertion 1 kind'), 'header');
-    expect(screen.getByLabelText('Assertion 1 target')).toBeInTheDocument();
+    const target = screen.getByLabelText('Assertion 1 target');
+    expect(target).toBeInTheDocument();
+    // Typing into the target field writes through to the assertion.
+    await userEvent.type(target, 'Content-Type');
+    expect(useWorkspaceStore.getState().synced!.collections.requests[id].assertions[0].target).toBe(
+      'Content-Type',
+    );
   });
 
   it('coerces numeric input to a number; keeps non-numeric as a string', async () => {
@@ -89,10 +145,13 @@ describe('AssertionsTab', () => {
       .getState()
       .setRequestAssertions(id, [{ id: 'a-1', kind: 'status', op: 'equals', expected: 200 }]);
     render(<LiveAssertionsTab requestId={id} />);
-    await userEvent.selectOptions(screen.getByLabelText('Assertion 1 op'), 'lt');
+    const opSelect = screen.getByLabelText('Assertion 1 op');
+    await userEvent.selectOptions(opSelect, 'lt');
     expect(useWorkspaceStore.getState().synced!.collections.requests[id].assertions[0].op).toBe(
       'lt',
     );
+    // The op select participates in the row keyboard nav (no-op on a single row).
+    fireEvent.keyDown(opSelect, { key: 'ArrowDown' });
   });
 
   it('switching op to exists clears the value and swaps the input for a hint', async () => {
@@ -170,7 +229,7 @@ describe('AssertionsTab', () => {
     expect(rows.some((r) => r.id === 'r-empty')).toBe(false);
   });
 
-  it('switching kind to json-schema sets the matches-schema op, offers only that op, and shows a schema editor', async () => {
+  it('switching kind to json-schema sets the matches-schema op, offers only that op, and shows a Monaco schema editor', async () => {
     const id = makeRequestId();
     useWorkspaceStore
       .getState()
@@ -182,13 +241,17 @@ describe('AssertionsTab', () => {
     // The op dropdown offers exactly one option for this kind.
     const opSelect = screen.getByLabelText('Assertion 1 op') as HTMLSelectElement;
     expect([...opSelect.options].map((o) => o.value)).toEqual(['matches-schema']);
-    // A schema editor (textarea) is shown, seeded with the empty-object schema.
-    const editor = screen.getByLabelText('Assertion 1 schema') as HTMLTextAreaElement;
-    expect(editor.tagName).toBe('TEXTAREA');
-    expect(editor.value).toBe('{}');
+    // A full-width JSON editor (Monaco, mocked as a textarea) is shown, seeded
+    // with the empty-object schema, under a labelled wrapper.
+    expect(screen.getByLabelText('Assertion 1 schema')).toBeInTheDocument();
+    const editor = await screen.findByTestId('monaco-editor-mock');
+    expect(editor).toHaveValue('{}');
+    // The seed `{}` parses, so the validity pill reads valid and Format is enabled.
+    expect(screen.getByLabelText('Schema is valid JSON')).toBeInTheDocument();
+    expect(screen.getByLabelText('Format schema for assertion 1')).toBeEnabled();
   });
 
-  it('flags an invalid JSON schema and clears the error once valid', async () => {
+  it('flags an invalid JSON schema, disables Format, and clears the error once valid', async () => {
     const id = makeRequestId();
     useWorkspaceStore
       .getState()
@@ -196,14 +259,70 @@ describe('AssertionsTab', () => {
         { id: 'a-1', kind: 'json-schema', op: 'matches-schema', expected: '{}' },
       ]);
     render(<LiveAssertionsTab requestId={id} />);
-    const editor = screen.getByLabelText('Assertion 1 schema');
+    const editor = await screen.findByTestId('monaco-editor-mock');
     fireEvent.change(editor, { target: { value: '{ not json' } });
-    expect(screen.getByRole('alert')).toHaveTextContent('Schema is not valid JSON.');
+    expect(screen.getByRole('alert')).toHaveTextContent('Not valid JSON');
+    expect(screen.getByLabelText('Schema is not valid JSON')).toBeInTheDocument();
+    expect(screen.getByLabelText('Format schema for assertion 1')).toBeDisabled();
     fireEvent.change(editor, { target: { value: '{ "type": "object" }' } });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Schema is valid JSON')).toBeInTheDocument();
     expect(
       useWorkspaceStore.getState().synced!.collections.requests[id].assertions[0].expected,
     ).toBe('{ "type": "object" }');
+  });
+
+  it('Format pretty-prints a valid but compact schema', async () => {
+    const id = makeRequestId();
+    useWorkspaceStore.getState().setRequestAssertions(id, [
+      {
+        id: 'a-1',
+        kind: 'json-schema',
+        op: 'matches-schema',
+        expected: '{"type":"object","required":["name"]}',
+      },
+    ]);
+    render(<LiveAssertionsTab requestId={id} />);
+    await screen.findByTestId('monaco-editor-mock');
+    await userEvent.click(screen.getByLabelText('Format schema for assertion 1'));
+    expect(
+      useWorkspaceStore.getState().synced!.collections.requests[id].assertions[0].expected,
+    ).toBe(JSON.stringify({ type: 'object', required: ['name'] }, null, 2));
+  });
+
+  it('shows an empty-schema hint and disables Format when the schema is blank', async () => {
+    const id = makeRequestId();
+    useWorkspaceStore
+      .getState()
+      .setRequestAssertions(id, [
+        { id: 'a-1', kind: 'json-schema', op: 'matches-schema', expected: '' },
+      ]);
+    render(<LiveAssertionsTab requestId={id} />);
+    await screen.findByTestId('monaco-editor-mock');
+    expect(screen.getByText(/Empty schema matches anything/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Format schema for assertion 1')).toBeDisabled();
+    // No validity pill in the empty state (neither valid nor invalid).
+    expect(screen.queryByLabelText('Schema is valid JSON')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Schema is not valid JSON')).not.toBeInTheDocument();
+  });
+
+  it('Expand opens a fullscreen schema overlay; Esc closes it', async () => {
+    const id = makeRequestId();
+    useWorkspaceStore
+      .getState()
+      .setRequestAssertions(id, [
+        { id: 'a-1', kind: 'json-schema', op: 'matches-schema', expected: '{}' },
+      ]);
+    render(<LiveAssertionsTab requestId={id} />);
+    await screen.findByTestId('monaco-editor-mock');
+    await userEvent.click(screen.getByLabelText('Fullscreen schema for assertion 1'));
+    expect(
+      screen.getByRole('dialog', { name: /Expected JSON Schema — assertion 1/ }),
+    ).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    expect(
+      screen.queryByRole('dialog', { name: /Expected JSON Schema — assertion 1/ }),
+    ).not.toBeInTheDocument();
   });
 
   it('leaving json-schema resets the op to a plain equals comparison', async () => {
@@ -222,5 +341,149 @@ describe('AssertionsTab', () => {
       op: 'equals',
       expected: '',
     });
+  });
+
+  it('renders per-row Pass/Fail verdict badges from the latest run', () => {
+    const id = makeRequestId();
+    useWorkspaceStore.getState().setRequestAssertions(id, [
+      { id: 'a-pass', kind: 'status', op: 'equals', expected: 200 },
+      { id: 'a-fail', kind: 'json-path', op: 'equals', target: '$.x', expected: 1 },
+    ]);
+    seedRequestRuns([
+      makeRun({
+        requestId: id,
+        assertions: [
+          {
+            assertionId: 'a-pass',
+            kind: 'status',
+            op: 'equals',
+            expected: 200,
+            passed: true,
+            detail: 'status: 200 equals 200',
+          },
+          {
+            assertionId: 'a-fail',
+            kind: 'json-path',
+            op: 'equals',
+            target: '$.x',
+            expected: 1,
+            passed: false,
+            detail: 'expected 1, got 2',
+          },
+        ],
+      }),
+    ]);
+    render(<LiveAssertionsTab requestId={id} />);
+    expect(screen.getByText('Pass')).toBeInTheDocument();
+    expect(screen.getByText('Fail')).toBeInTheDocument();
+    expect(screen.getByLabelText('Last run: assertion passed')).toHaveAttribute(
+      'title',
+      'status: 200 equals 200',
+    );
+    expect(screen.getByLabelText('Last run: assertion failed')).toBeInTheDocument();
+  });
+
+  it('falls back to pass/fail wording in the verdict title when the run carries no detail', () => {
+    const id = makeRequestId();
+    useWorkspaceStore.getState().setRequestAssertions(id, [
+      { id: 'a-pass', kind: 'status', op: 'equals', expected: 200 },
+      { id: 'a-fail', kind: 'status', op: 'equals', expected: 200 },
+    ]);
+    seedRequestRuns([
+      makeRun({
+        requestId: id,
+        assertions: [
+          { assertionId: 'a-pass', kind: 'status', op: 'equals', expected: 200, passed: true },
+          { assertionId: 'a-fail', kind: 'status', op: 'equals', expected: 200, passed: false },
+        ],
+      }),
+    ]);
+    render(<LiveAssertionsTab requestId={id} />);
+    expect(screen.getByLabelText('Last run: assertion passed')).toHaveAttribute('title', 'passed');
+    expect(screen.getByLabelText('Last run: assertion failed')).toHaveAttribute('title', 'failed');
+  });
+
+  it('updates only the targeted row in a multi-assertion list', async () => {
+    const id = makeRequestId();
+    useWorkspaceStore.getState().setRequestAssertions(id, [
+      { id: 'a-1', kind: 'status', op: 'equals', expected: 200 },
+      { id: 'a-2', kind: 'status', op: 'equals', expected: 200 },
+    ]);
+    render(<LiveAssertionsTab requestId={id} />);
+    await userEvent.selectOptions(screen.getByLabelText('Assertion 2 op'), 'lt');
+    const rows = useWorkspaceStore.getState().synced!.collections.requests[id].assertions;
+    expect(rows[0].op).toBe('equals');
+    expect(rows[1].op).toBe('lt');
+  });
+
+  it('enables the JSON-path picker when the last response is JSON and opens it', async () => {
+    const id = makeRequestId();
+    useWorkspaceStore
+      .getState()
+      .setRequestAssertions(id, [
+        { id: 'a-1', kind: 'json-path', op: 'equals', target: '$.id', expected: 1 },
+      ]);
+    useWorkspaceStore.setState({
+      lastRun: { [id]: makeExecutionResult({ body: '{"id":1}', bodyKind: 'json' }) },
+    });
+    render(<LiveAssertionsTab requestId={id} />);
+    const picker = screen.getByLabelText('Pick JSON path for assertion 1');
+    expect(picker).toBeEnabled();
+    expect(picker).toHaveAttribute('title', 'Pick a JSON path from the last response');
+    await userEvent.click(picker);
+    expect(screen.getByRole('dialog', { name: 'Pick a JSON path' })).toBeInTheDocument();
+    // Picking a node writes its path back into the assertion's target and dismisses the picker.
+    await userEvent.click(screen.getByTitle('Pick $'));
+    expect(useWorkspaceStore.getState().synced!.collections.requests[id].assertions[0].target).toBe(
+      '$',
+    );
+    expect(screen.queryByRole('dialog', { name: 'Pick a JSON path' })).not.toBeInTheDocument();
+  });
+
+  it('disables the JSON-path picker with a hint when the last response is not JSON', () => {
+    const id = makeRequestId();
+    useWorkspaceStore
+      .getState()
+      .setRequestAssertions(id, [
+        { id: 'a-1', kind: 'json-path', op: 'equals', target: '$.id', expected: 1 },
+      ]);
+    useWorkspaceStore.setState({
+      lastRun: { [id]: makeExecutionResult({ body: 'plain text', bodyKind: 'text' }) },
+    });
+    render(<LiveAssertionsTab requestId={id} />);
+    const picker = screen.getByLabelText('Pick JSON path for assertion 1');
+    expect(picker).toBeDisabled();
+    expect(picker).toHaveAttribute('title', 'Last response is not JSON');
+  });
+
+  it('flags an invalid regex for the matches op', () => {
+    const id = makeRequestId();
+    useWorkspaceStore
+      .getState()
+      .setRequestAssertions(id, [
+        { id: 'a-1', kind: 'json-path', op: 'matches', target: '$.x', expected: '(unclosed' },
+      ]);
+    render(<LiveAssertionsTab requestId={id} />);
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+
+  it('requires a number for the lt/gt ops', () => {
+    const id = makeRequestId();
+    useWorkspaceStore
+      .getState()
+      .setRequestAssertions(id, [{ id: 'a-1', kind: 'status', op: 'lt', expected: 'abc' }]);
+    render(<LiveAssertionsTab requestId={id} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('< and > require a number.');
+  });
+
+  it('surfaces a JSON-path target syntax error', () => {
+    const id = makeRequestId();
+    useWorkspaceStore
+      .getState()
+      .setRequestAssertions(id, [
+        { id: 'a-1', kind: 'json-path', op: 'equals', target: '$[', expected: 1 },
+      ]);
+    render(<LiveAssertionsTab requestId={id} />);
+    expect(screen.getByRole('alert')).toBeInTheDocument();
   });
 });

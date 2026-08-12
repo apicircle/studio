@@ -493,6 +493,8 @@ OAuth tokens are written into the same Git-pushed JSON as the rest of the reques
 
 Status and Duration support \`=\`, \`≠\`, \`<\`, \`>\`; Header and JSON path support \`=\`, \`≠\`, \`contains\`, \`matches\` (regex). Two structural operators work regardless of value: \`exists\` passes when the target is present (no expected value), and \`is type\` checks a value's JSON type (\`string\`, \`number\`, \`boolean\`, \`array\`, \`object\`, \`null\`). The **JSON schema** kind uses \`matches schema\`: it validates the body against a JSON Schema you supply — an empty array passes (no false-fail), and with \`additionalProperties: false\` an unexpected field fails.
 
+Picking the **JSON schema** kind expands the row into a full-width JSON editor with syntax highlighting and inline diagnostics. A validity pill flags un-parseable JSON, **Format** pretty-prints it, and **Expand** opens the editor fullscreen for large schemas.
+
 ## Examples
 
     Kind           Operator   Expected            Target

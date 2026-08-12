@@ -491,7 +491,7 @@ function caseKey(c: Case): string {
 
 test.describe('Assertion matrix', () => {
   for (const c of cases) {
-    test(tc(id(caseKey(c)), c.name), async ({ app, e2eMock, sidebar }) => {
+    test(tc(id(caseKey(c)), c.name), async ({ app, e2eMock, sidebar, monaco }) => {
       const slug = c.name
         .toLowerCase()
         .replace(/[^a-z0-9]/g, '-')
@@ -513,11 +513,12 @@ test.describe('Assertion matrix', () => {
         await app.getByLabel('Assertion 1 target').fill(c.target);
       }
       // `exists` has no value control; `type` picks from a dropdown; `matches-schema` edits a
-      // schema textarea; the rest are free text.
+      // Monaco JSON editor (driven via the shared editor registry, keyed by aria-label);
+      // the rest are free text.
       if (c.op === 'type') {
         await app.getByLabel('Assertion 1 expected').selectOption(String(c.expected));
       } else if (c.op === 'matches-schema') {
-        await app.getByLabel('Assertion 1 schema').fill(String(c.expected));
+        await monaco.fill('Assertion 1 schema', String(c.expected));
       } else if (c.op !== 'exists') {
         await app.getByLabel('Assertion 1 expected').fill(String(c.expected));
       }

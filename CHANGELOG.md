@@ -36,10 +36,13 @@
   covering `type` (incl. nullable type-arrays + `integer`), `properties`/`required`,
   `additionalProperties`, `items`, `enum`, and string `pattern`; failures report the first
   mismatch as a `$`-rooted path. Wired end to end: the request editor's Assertions tab (a "JSON
-  schema" kind with a schema editor), the linked-workspace override editor, the MCP
-  `assertion.create` / `prompt.create_assertion` tools, and the VS Code request YAML (completion
-  list + a JSON-validated schema input). The Help Center's Assertions section documents it.
-  Purely additive — every existing assertion evaluates exactly as before.
+  schema" kind rendered as a framed block — a full-width **Monaco JSON editor** with syntax
+  highlighting and inline diagnostics, above a slim toolbar with a live validity pill, one-click
+  **Format**, and **expand-to-fullscreen** for large schemas, instead of a cramped inline
+  textarea), the linked-workspace override editor, the MCP `assertion.create` /
+  `prompt.create_assertion` tools, and the VS Code request YAML (completion list + a
+  JSON-validated schema input). The Help Center's Assertions section documents it. Purely
+  additive — every existing assertion evaluates exactly as before.
 - **Two new assertion operators — `exists` and `type` (`@apicircle/shared`,
   `@apicircle/core`).** `exists` passes when the target resolves (a present header or
   JSON path) and ignores `expected`; `type` checks a value's JSON type against

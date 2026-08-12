@@ -388,7 +388,9 @@ function schemaValidity(raw: string): SchemaValidity {
     JSON.parse(trimmed);
     return { status: 'ok' };
   } catch (e) {
-    return { status: 'error', message: e instanceof Error ? e.message : 'Invalid JSON' };
+    // `String(e)` (not `e.message`) avoids a defensively-dead `instanceof` branch
+    // while still surfacing the parser's message in the pill tooltip.
+    return { status: 'error', message: String(e) };
   }
 }
 
@@ -414,18 +416,16 @@ function SchemaAssertionEditor({
   onChange: (patch: Partial<Assertion>) => void;
 }) {
   const [fullscreen, setFullscreen] = useState(false);
-  const raw = String(assertion.expected ?? '');
+  // `expected` is typed `string | number` and every `matches-schema` seed writes a
+  // string, so this is always the schema text.
+  const raw = String(assertion.expected);
   const validity = useMemo(() => schemaValidity(raw), [raw]);
   const ariaLabel = `Assertion ${index + 1} schema`;
 
+  // Pretty-print. Safe to parse unguarded: the Format button is disabled unless
+  // `validity.status === 'ok'`, and a disabled button can't fire this handler.
   const format = () => {
-    // The button is disabled unless the JSON parses, so this only runs on valid
-    // input; the try/catch is defensive belt-and-braces.
-    try {
-      onChange({ expected: JSON.stringify(JSON.parse(raw), null, 2) });
-    } catch {
-      /* unreachable: Format is disabled while the schema is unparseable */
-    }
+    onChange({ expected: JSON.stringify(JSON.parse(raw), null, 2) });
   };
 
   const editorElement = (
