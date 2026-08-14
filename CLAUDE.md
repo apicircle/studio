@@ -579,6 +579,7 @@ Desktop: `pnpm --filter @apicircle/desktop build` then `… start`.
 | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | [`docs/architecture/platform.md`](docs/architecture/platform.md)                             | Platform surfaces design record (MCP, mock engine, CLI, desktop)    |
 | [`docs/architecture/open-core-and-editions.md`](docs/architecture/open-core-and-editions.md) | Open-core SSOT, extension seams, and the workspace sidecar contract |
+| [`docs/architecture/design-system.md`](docs/architecture/design-system.md)                   | Primitives, theme tokens, and the control-height / type scale       |
 | [`docs/auth.md`](docs/auth.md)                                                               | The 17-auth-type matrix                                             |
 | [`docs/mock-server.md`](docs/mock-server.md)                                                 | Mock server feature guide                                           |
 | [`docs/mcp-tools-reference.md`](docs/mcp-tools-reference.md)                                 | MCP tool catalog reference                                          |

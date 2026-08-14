@@ -27,6 +27,21 @@
 
 ### Added
 
+- **Form + layout primitives to stop per-screen UI drift
+  (`@apicircle/ui-components`).** Eight additive primitives, each extracted from a
+  pattern the panels were hand-re-declaring: `Field` (the labelled-control wrapper
+  that owns the label↔control association, required marker, and hint/error slot
+  with `aria-describedby`), `Label`, `Checkbox`, `Radio` (themed but real inputs,
+  ≥24px targets, native grouping intact), `Tabs` + `tabPanelProps` (a real ARIA
+  tablist with ←/→/Home/End roving focus — the request editor's tab row was plain
+  buttons), `Tooltip` (a keyboard- and touch-reachable replacement for the ~227
+  native `title=` attributes, linked via `aria-describedby` so it _describes_
+  rather than _renames_ its control), `Badge` (one tone-scaled status chip), and
+  `Skeleton` (a content-shaped loading placeholder). New
+  [`docs/architecture/design-system.md`](docs/architecture/design-system.md)
+  records the control-height scale (`xs`/`sm`/`md`/`lg` → 24/28/32/36px, 24px
+  floor = WCAG 2.5.8 AA), the type scale, the tone tokens, and which primitive to
+  reach for. All additive; nothing renders differently until a screen adopts them.
 - **New assertion kind — `json-schema` (`@apicircle/shared`, `@apicircle/core`).**
   Validates a whole value against a JSON Schema (carried in `expected` as a JSON string;
   `target` selects the value, default the response body) — the only kind that checks structure
