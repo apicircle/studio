@@ -42,6 +42,8 @@
   records the control-height scale (`xs`/`sm`/`md`/`lg` → 24/28/32/36px, 24px
   floor = WCAG 2.5.8 AA), the type scale, the tone tokens, and which primitive to
   reach for. All additive; nothing renders differently until a screen adopts them.
+  Exported from the package root so editions (via `extraPanels`) can compose the
+  same primitives instead of maintaining a parallel set.
 - **New assertion kind — `json-schema` (`@apicircle/shared`, `@apicircle/core`).**
   Validates a whole value against a JSON Schema (carried in `expected` as a JSON string;
   `target` selects the value, default the response body) — the only kind that checks structure

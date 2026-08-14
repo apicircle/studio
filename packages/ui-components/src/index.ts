@@ -5,7 +5,22 @@ export type { FontFamilyId, FontFamilyDef } from './theme/applyFont';
 export { applyFontSize, clampFontSizePercent } from './theme/applyFontSize';
 export { useWorkspaceStore } from './store/workspaceStore';
 export { readAttachmentBytes } from './persistence/attachments';
-export { Button, Input, Modal, cn } from './primitives';
+export {
+  Button,
+  Input,
+  Label,
+  Field,
+  Checkbox,
+  Radio,
+  Tabs,
+  tabPanelProps,
+  Tooltip,
+  Badge,
+  Skeleton,
+  Modal,
+  cn,
+} from './primitives';
+export type { FieldControlProps, TabDef } from './primitives';
 export { PANELS, getPanel } from './layout/panels';
 export type { PanelDef } from './layout/panels';
 export type { ExtraPanelDef } from './layout/extraPanels';
