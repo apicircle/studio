@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { LinkedSnapshot, Request as ApiRequest } from '@apicircle/shared';
@@ -244,8 +244,11 @@ describe('LinkedRequestEditor', () => {
     );
     const op = screen.getByLabelText('Override assertion 1 op') as HTMLSelectElement;
     expect([...op.options].map((o) => o.value)).toEqual(['matches-schema']);
-    const editor = screen.getByLabelText('Override assertion 1 schema') as HTMLTextAreaElement;
-    expect(editor.tagName).toBe('TEXTAREA');
+    // The schema editor (Monaco, mocked as a textarea) is shown, seeded with `{}`.
+    expect(screen.getByLabelText('Override assertion 1 schema')).toBeInTheDocument();
+    const editor = await screen.findByTestId('monaco-editor-mock');
+    expect(editor).toHaveValue('{}');
+    expect(screen.getByLabelText('Schema is valid JSON')).toBeInTheDocument();
     const patch = useWorkspaceStore.getState().synced!.linkedOverrides.requests['link-1:src']
       ?.patch as {
       assertions?: Array<{ kind: string; op: string; expected: string }>;
@@ -258,6 +261,23 @@ describe('LinkedRequestEditor', () => {
     // Switching back to a scalar kind restores the scalar ops (no schema editor).
     await userEvent.selectOptions(screen.getByLabelText('Override assertion 1 kind'), 'status');
     expect(screen.queryByLabelText('Override assertion 1 schema')).toBeNull();
+  });
+
+  it('editing the json-schema override persists the schema text into the patch', async () => {
+    useWorkspaceStore
+      .getState()
+      .setActiveLinkedRequest({ linkedWorkspaceId: 'link-1', itemId: 'src' });
+    render(<LinkedRequestEditor />);
+    await userEvent.click(screen.getByRole('button', { name: /^Add assertion$/ }));
+    await userEvent.selectOptions(
+      screen.getByLabelText('Override assertion 1 kind'),
+      'json-schema',
+    );
+    const editor = await screen.findByTestId('monaco-editor-mock');
+    fireEvent.change(editor, { target: { value: '{"type":"object"}' } });
+    const patch = useWorkspaceStore.getState().synced!.linkedOverrides.requests['link-1:src']
+      ?.patch as { assertions?: Array<{ expected: string }> };
+    expect(patch.assertions?.[0]?.expected).toBe('{"type":"object"}');
   });
 
   it('numeric expected values are coerced to numbers; non-numeric stays string', async () => {

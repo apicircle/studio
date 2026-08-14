@@ -39,10 +39,11 @@
   schema" kind rendered as a framed block — a full-width **Monaco JSON editor** with syntax
   highlighting and inline diagnostics, above a slim toolbar with a live validity pill, one-click
   **Format**, and **expand-to-fullscreen** for large schemas, instead of a cramped inline
-  textarea), the linked-workspace override editor, the MCP `assertion.create` /
-  `prompt.create_assertion` tools, and the VS Code request YAML (completion list + a
-  JSON-validated schema input). The Help Center's Assertions section documents it. Purely
-  additive — every existing assertion evaluates exactly as before.
+  textarea — the editor is extracted as a shared `SchemaAssertionEditor` and reused by the
+  linked-workspace override editor, which gets the identical treatment), the MCP
+  `assertion.create` / `prompt.create_assertion` tools, and the VS Code request YAML (completion
+  list + a JSON-validated schema input). The Help Center's Assertions section documents it.
+  Purely additive — every existing assertion evaluates exactly as before.
 - **Two new assertion operators — `exists` and `type` (`@apicircle/shared`,
   `@apicircle/core`).** `exists` passes when the target resolves (a present header or
   JSON path) and ignores `expected`; `type` checks a value's JSON type against
@@ -89,6 +90,39 @@
   and join it to the endpoint table by `(method, path)`, without touching
   `MockEndpoint` or the mock runtime. Purely additive.
   (`@apicircle/mock-server-core`)
+
+### Changed
+
+- **`cn()` now resolves Tailwind conflicts, making the primitives usable
+  (`@apicircle/ui-components`).** It was a plain string join, so a component's
+  base class and a call-site override both survived into the attribute and the
+  winner was decided by stylesheet order rather than intent — passing
+  `className="h-7"` to a control based on `h-9` did not reliably do anything.
+  That is why `Button` and `Input` had **no call sites anywhere in the app**
+  while ~384 buttons and ~162 inputs were hand-styled, and why control heights
+  and spacing drifted per screen. `cn()` now merges per Tailwind group (so
+  `text-xs` + `text-accent` both survive, while `text-xs` + `text-sm` resolves to
+  the last one). Audited across all 140 call sites against the real library:
+  the only runtime className differences are **two active-state highlight
+  borders** that previously lost to a later-in-stylesheet base color and now
+  render as intended — the Settings picker's open row and the form-data editor's
+  selected text/file segment each gain the accent border that already
+  accompanies their accent background and text. No text color, size, spacing, or
+  layout changes anywhere; nothing becomes hidden or unreadable. The full
+  1307-test suite passes unchanged.
+- **`Button` and `Input` now share one control-height scale
+  (`@apicircle/ui-components`).** Both take `size="xs" | "sm" | "md" | "lg"` →
+  `h-6 | h-7 | h-8 | h-9`, so a field and the button beside it line up. `xs` is
+  24px, the WCAG 2.5.8 AA minimum target size, and is deliberately the floor.
+  The default is now `sm`, the height the panels overwhelmingly use — previously
+  the default was `h-9`, which no panel used. `Button` also drops `font-mono` for
+  `font-medium` and switches to the tinted-surface variant idiom
+  (`border-<tone>/40` + `bg-<tone>/15`) the panels already use, so a hand-rolled
+  button can be swapped for `<Button>` without the screen shifting. `Button`
+  additionally defaults to `type="button"`, which stops it silently submitting a
+  surrounding form. `Input` gains an `invalid` prop that wires `aria-invalid`
+  alongside the danger border. These primitives had no consumers, so nothing
+  in-tree changes behaviour.
 
 ## 1.3.0 - 2026-07-18
 

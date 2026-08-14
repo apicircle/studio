@@ -24,6 +24,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { Modal } from '../../primitives/Modal';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { KeyValueRows } from '../editor/KeyValueRows';
+import { SchemaAssertionEditor } from '../editor/SchemaAssertionEditor';
 import { JSON_TYPES, opChangePatch, kindChangePatch } from '../editor/assertionOps';
 
 const HTTP_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
@@ -468,8 +469,8 @@ function AssertionRows({
           No assertions.
         </p>
       )}
-      {rows.map((row, i) => (
-        <div key={row.id} className="flex items-center gap-2">
+      {rows.map((row, i) => {
+        const kindSelect = (
           <select
             value={row.kind}
             onChange={(e) =>
@@ -484,15 +485,21 @@ function AssertionRows({
             <option value="duration">duration</option>
             <option value="json-schema">json-schema</option>
           </select>
-          {row.kind !== 'status' && (
-            <input
-              value={row.target ?? ''}
-              onChange={(e) => update(row.id, { target: e.target.value })}
-              aria-label={`Override assertion ${i + 1} target`}
-              className={inputClass}
-              placeholder="path/header/duration"
-            />
-          )}
+        );
+        const targetInput = row.kind !== 'status' && (
+          <input
+            value={row.target ?? ''}
+            onChange={(e) => update(row.id, { target: e.target.value })}
+            aria-label={`Override assertion ${i + 1} target`}
+            className={inputClass}
+            placeholder={
+              row.kind === 'json-schema'
+                ? 'JSON path (whole body if empty)'
+                : 'path/header/duration'
+            }
+          />
+        );
+        const opSelect = (
           <select
             value={row.op}
             onChange={(e) => update(row.id, opChangePatch(row, e.target.value as Assertion['op']))}
@@ -514,47 +521,8 @@ function AssertionRows({
               </>
             )}
           </select>
-          {row.op === 'matches-schema' ? (
-            <textarea
-              value={String(row.expected)}
-              onChange={(e) => update(row.id, { expected: e.target.value })}
-              aria-label={`Override assertion ${i + 1} schema`}
-              rows={3}
-              className="min-w-0 flex-1 rounded-sm border border-border bg-card px-1 py-0.5 font-mono text-[0.6875rem] text-text-primary"
-            />
-          ) : row.op === 'exists' ? (
-            <span
-              aria-label={`Override assertion ${i + 1} expected`}
-              className="flex-1 px-1 text-[0.6875rem] text-text-dim"
-            >
-              no value
-            </span>
-          ) : row.op === 'type' ? (
-            <select
-              value={String(row.expected)}
-              onChange={(e) => update(row.id, { expected: e.target.value })}
-              aria-label={`Override assertion ${i + 1} expected`}
-              className={inputClass}
-            >
-              {JSON_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              value={String(row.expected)}
-              onChange={(e) => {
-                const raw = e.target.value;
-                const numeric = Number(raw);
-                update(row.id, { expected: !raw.length || Number.isNaN(numeric) ? raw : numeric });
-              }}
-              aria-label={`Override assertion ${i + 1} expected`}
-              className={inputClass}
-              placeholder="expected"
-            />
-          )}
+        );
+        const deleteButton = (
           <button
             type="button"
             onClick={() => remove(row.id)}
@@ -563,8 +531,77 @@ function AssertionRows({
           >
             <Trash2 size={12} aria-hidden="true" />
           </button>
-        </div>
-      ))}
+        );
+
+        // `json-schema` edits a whole JSON Schema document, so it gets a framed block —
+        // the control line above a full-width Monaco editor shared with the request
+        // editor's Assertions tab — instead of a cramped inline textarea.
+        if (row.kind === 'json-schema') {
+          return (
+            <div
+              key={row.id}
+              className="flex flex-col gap-2 rounded-md border border-border-subtle bg-surface/40 p-2"
+            >
+              <div className="flex items-center gap-2">
+                {kindSelect}
+                {targetInput}
+                {opSelect}
+                {deleteButton}
+              </div>
+              <SchemaAssertionEditor
+                value={String(row.expected)}
+                onChange={(schema) => update(row.id, { expected: schema })}
+                descriptor={`override assertion ${i + 1}`}
+                modelPath={`inmemory://apicircle/linked-assertion/${row.id}.schema`}
+              />
+            </div>
+          );
+        }
+
+        return (
+          <div key={row.id} className="flex items-center gap-2">
+            {kindSelect}
+            {targetInput}
+            {opSelect}
+            {row.op === 'exists' ? (
+              <span
+                aria-label={`Override assertion ${i + 1} expected`}
+                className="flex-1 px-1 text-[0.6875rem] text-text-dim"
+              >
+                no value
+              </span>
+            ) : row.op === 'type' ? (
+              <select
+                value={String(row.expected)}
+                onChange={(e) => update(row.id, { expected: e.target.value })}
+                aria-label={`Override assertion ${i + 1} expected`}
+                className={inputClass}
+              >
+                {JSON_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                value={String(row.expected)}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  const numeric = Number(raw);
+                  update(row.id, {
+                    expected: !raw.length || Number.isNaN(numeric) ? raw : numeric,
+                  });
+                }}
+                aria-label={`Override assertion ${i + 1} expected`}
+                className={inputClass}
+                placeholder="expected"
+              />
+            )}
+            {deleteButton}
+          </div>
+        );
+      })}
       <button
         type="button"
         onClick={add}
