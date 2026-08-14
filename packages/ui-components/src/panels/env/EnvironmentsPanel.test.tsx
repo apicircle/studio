@@ -6,9 +6,34 @@ import { renderWithStore } from '../../../test/renderWithStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 
 describe('EnvironmentsPanel', () => {
-  it('shows the empty-state when no environments exist', async () => {
+  it('shows a guided empty-state with a create CTA when no environments exist', async () => {
     await renderWithStore(<EnvironmentsPanel />);
-    expect(screen.getByText(/Create an environment from the sidebar/i)).toBeInTheDocument();
+    expect(screen.getByText(/No environments yet/i)).toBeInTheDocument();
+    // The CTA replaces the old "create one from the sidebar" dead-end text.
+    expect(
+      screen.getByRole('button', { name: /Create your first environment/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('the empty-state CTA opens the create-environment flow', async () => {
+    await renderWithStore(<EnvironmentsPanel />);
+    expect(useWorkspaceStore.getState().envAdding).toBeFalsy();
+    await userEvent.click(screen.getByRole('button', { name: /Create your first environment/i }));
+    expect(useWorkspaceStore.getState().envAdding).toBe(true);
+  });
+
+  it('renders visible column headers over the variable grid', async () => {
+    await renderWithStore(<EnvironmentsPanel />);
+    act(() => {
+      useWorkspaceStore.getState().addEnvironment('dev');
+      useWorkspaceStore.getState().addVariableRow('dev');
+    });
+    await screen.findByRole('group', { name: 'Variables for dev' });
+    // Header cells are present for sighted users (the inputs keep their own
+    // aria-labels for assistive tech).
+    expect(screen.getByText('Key')).toBeInTheDocument();
+    expect(screen.getByText('Value')).toBeInTheDocument();
+    expect(screen.getByText('Secret')).toBeInTheDocument();
   });
 
   it('shows layer position chip when the focused env is in the priority layer', async () => {

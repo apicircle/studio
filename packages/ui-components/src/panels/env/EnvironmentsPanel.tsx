@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, KeyRound, Lock, Plus, Trash2, Unlock, X } from 'lucide-react';
+import { AlertTriangle, KeyRound, Layers, Lock, Plus, Trash2, Unlock, X } from 'lucide-react';
 import type { Environment, EnvironmentVariable, SecretEntry } from '@apicircle/shared';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '../../primitives/cn';
+import { Button } from '../../primitives/Button';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { LinkedEnvironmentsSection } from './LinkedEnvironmentsSection';
@@ -24,6 +25,9 @@ export function EnvironmentsPanel() {
   const renameEnvironment = useWorkspaceStore((s) => s.renameEnvironment);
   const envFocus = useWorkspaceStore((s) => s.envFocus);
   const setEnvFocus = useWorkspaceStore((s) => s.setEnvFocus);
+  // Reveals the sidebar's "name your environment" input — the same creation
+  // flow the sidebar uses, so the empty-state CTA has a single source of truth.
+  const setEnvAdding = useWorkspaceStore((s) => s.setEnvAdding);
 
   // Memoize the trio of derivations so the panel only recomputes them when
   // `items` / `priorityOrder` actually move. Without these wrappers, every
@@ -69,8 +73,23 @@ export function EnvironmentsPanel() {
 
   if (allNames.length === 0) {
     return (
-      <div className="flex h-full flex-col gap-2 overflow-y-auto p-6 text-sm text-text-muted">
-        <p>Create an environment from the sidebar to start.</p>
+      <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
+        <div className="mx-auto flex max-w-xl flex-col items-center gap-3 pt-16 text-center text-text-dim">
+          <Layers size={28} aria-hidden="true" />
+          <p className="text-sm text-text-primary">No environments yet.</p>
+          <p className="max-w-md text-xs text-text-muted">
+            An environment is a named set of variables — base URLs, IDs, tokens — that fill in{' '}
+            <code className="rounded-sm bg-card px-1 py-0.5 font-mono">{'{{placeholders}}'}</code>{' '}
+            when a request runs. Create one to switch values between, say, local and production.
+          </p>
+          <Button
+            variant="primary"
+            leftIcon={<Plus size={14} />}
+            onClick={() => setEnvAdding(true)}
+          >
+            Create your first environment
+          </Button>
+        </div>
         <LinkedEnvironmentsSection />
       </div>
     );
@@ -152,6 +171,24 @@ function VariableTable({ env }: VariableTableProps) {
         <p className="rounded-sm border border-dashed border-border-subtle p-3 text-center text-xs text-text-dim">
           No variables yet.
         </p>
+      )}
+      {env.variables.length > 0 && (
+        // Visible column headers over the key/value grid. Each input already
+        // carries its own aria-label, so this row is a purely visual aid for
+        // sighted users (it's aria-hidden). Grid template MUST match VariableRow
+        // so the columns line up.
+        <div
+          aria-hidden="true"
+          // Same grid template AND no container padding, so the fr columns
+          // resolve to the same widths as VariableRow. `pl-2` insets each label
+          // to sit over its input's text (the inputs carry px-2 internally).
+          className="grid grid-cols-[minmax(120px,1fr)_minmax(160px,2fr)_96px_28px] items-center gap-2 pb-0.5 text-[0.6875rem] font-medium uppercase tracking-wide text-text-dim"
+        >
+          <span className="pl-2">Key</span>
+          <span className="pl-2">Value</span>
+          <span className="pl-2">Secret</span>
+          <span />
+        </div>
       )}
       {env.variables.map((v, i) => {
         // A row is a duplicate when its non-empty trimmed key matches
