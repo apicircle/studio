@@ -63,6 +63,22 @@ describe('OnboardingTour', () => {
     expect(localStorage.getItem(DONE_KEY)).toBeNull();
   });
 
+  it('does not auto-start when autoStart is false (an edition with its own first-run landing)', () => {
+    render(<OnboardingTour autoStart={false} />);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // Deferred, not marked done — so it can still be triggered on demand.
+    expect(localStorage.getItem(DONE_KEY)).toBeNull();
+  });
+
+  it('still replays on demand when autoStart is false', () => {
+    render(<OnboardingTour autoStart={false} />);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    act(() => {
+      replayOnboarding();
+    });
+    expect(screen.getByRole('dialog')).toHaveTextContent('Welcome to API Circle Studio');
+  });
+
   it('Escape exits the tour', async () => {
     const user = userEvent.setup();
     render(<OnboardingTour />);

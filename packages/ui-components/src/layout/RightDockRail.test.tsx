@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { RightDockRail } from './RightDockRail';
@@ -32,6 +32,19 @@ describe('RightDockRail', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /Open Secret Vault/ }));
     expect(useWorkspaceStore.getState().rightDock.tab).toBe('vault');
+  });
+
+  it('hides on an edition (non-core) panel — the workspace inspector does not apply there', async () => {
+    await renderWithStore(<RightDockRail />);
+    // On a Studio core panel (the default 'editor') the rail is shown.
+    expect(
+      screen.getByRole('navigation', { name: 'Workspace inspector rail' }),
+    ).toBeInTheDocument();
+    // Switch to an edition panel (e.g. a Lens panel contributed via extraPanels).
+    act(() => {
+      useWorkspaceStore.setState({ activePanel: 'lens.discover' as never });
+    });
+    expect(screen.queryByRole('navigation', { name: 'Workspace inspector rail' })).toBeNull();
   });
 
   it('the active rail icon reflects aria-pressed', async () => {

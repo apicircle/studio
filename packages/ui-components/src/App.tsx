@@ -157,9 +157,6 @@ import { RightDockRail } from './layout/RightDockRail';
 import { MissingScopeGate } from './layout/MissingScopeGate';
 import { AttachmentDownloadPromptModal } from './layout/AttachmentDownloadPromptModal';
 import { KeyboardShortcuts } from './layout/KeyboardShortcuts';
-// Linked request editing now happens in the main EditorPanel — the old
-// modal (LinkedRequestEditor) is no longer mounted. The activeLinkedRequest
-// store state still drives the editor's selector, but no modal opens.
 import { UpdatePreviewModal } from './panels/link-workspace/UpdatePreviewModal';
 import { CloseConfirmModal } from './layout/CloseConfirmModal';
 import { OnboardingTour } from './onboarding/OnboardingTour';
@@ -273,7 +270,11 @@ export function App({
           <MissingScopeGate />
           <AttachmentDownloadPromptModal />
           <KeyboardShortcuts />
-          <OnboardingTour />
+          {/* Don't auto-start the Studio tour for an edition that has its own
+              first-run mode landing (Lens) — it would stack over and disable it.
+              Studio-standalone (no sections) keeps auto-start. Replay is always
+              available via the Help Center. */}
+          <OnboardingTour autoStart={sections.length <= 1} />
           <ToastSlot />
           <UpdateAvailableBanner />
           <PassphrasePromptModalGate />

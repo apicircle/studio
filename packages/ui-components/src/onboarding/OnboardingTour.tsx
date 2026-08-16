@@ -270,7 +270,7 @@ function cardStyle(rect: TargetRect | null): React.CSSProperties {
   };
 }
 
-export function OnboardingTour() {
+export function OnboardingTour({ autoStart = true }: { autoStart?: boolean } = {}) {
   const setActivePanel = useWorkspaceStore((s) => s.setActivePanel);
 
   const [active, setActive] = useState(false);
@@ -298,13 +298,16 @@ export function OnboardingTour() {
     if (back) setActivePanel(back);
   }, [setActivePanel]);
 
-  // First-run auto-start + replay wiring.
+  // First-run auto-start + replay wiring. `autoStart` is false for an edition
+  // (e.g. Lens) whose own first-run "choose a mode" landing would otherwise be
+  // stacked under — and made inert by — this Studio tour; the tour is still
+  // replayable there on demand via the REPLAY_EVENT (Help Center).
   useEffect(() => {
-    if (!readDone()) startTour();
+    if (autoStart && !readDone()) startTour();
     const onReplay = () => startTour();
     window.addEventListener(REPLAY_EVENT, onReplay);
     return () => window.removeEventListener(REPLAY_EVENT, onReplay);
-  }, [startTour]);
+  }, [autoStart, startTour]);
 
   // Navigate to the step's panel so the spotlighted control is mounted.
   useEffect(() => {

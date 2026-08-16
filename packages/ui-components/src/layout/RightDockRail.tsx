@@ -12,6 +12,7 @@
 import { BookOpen, KeyRound, Variable } from 'lucide-react';
 import type { RightDockTab } from '../store/workspaceStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { PANELS } from './panels';
 import { cn } from '../primitives/cn';
 
 interface RailButton {
@@ -29,6 +30,13 @@ const BUTTONS: ReadonlyArray<RailButton> = [
 export function RightDockRail() {
   const activeTab = useWorkspaceStore((s) => s.rightDock.tab);
   const toggle = useWorkspaceStore((s) => s.toggleRightDockTab);
+  const activePanel = useWorkspaceStore((s) => s.activePanel);
+
+  // The rail opens the workspace inspector, which only applies to the Studio
+  // core panels. Hide it on an edition's own panels (e.g. Lens Index / Review /
+  // Account, contributed via `extraPanels`) — including the signed-out gate that
+  // renders in their place. No-op in Studio-standalone (every panel is core).
+  if (!PANELS.some((p) => p.id === activePanel)) return null;
 
   return (
     <nav

@@ -56,8 +56,7 @@
   schema" kind rendered as a framed block — a full-width **Monaco JSON editor** with syntax
   highlighting and inline diagnostics, above a slim toolbar with a live validity pill, one-click
   **Format**, and **expand-to-fullscreen** for large schemas, instead of a cramped inline
-  textarea — the editor is extracted as a shared `SchemaAssertionEditor` and reused by the
-  linked-workspace override editor, which gets the identical treatment), the MCP
+  textarea — the editor lives in a reusable `SchemaAssertionEditor` component), the MCP
   `assertion.create` / `prompt.create_assertion` tools, and the VS Code request YAML (completion
   list + a JSON-validated schema input). The Help Center's Assertions section documents it.
   Purely additive — every existing assertion evaluates exactly as before.
@@ -67,7 +66,7 @@
   `expected` (`string` / `number` / `boolean` / `array` / `object` / `null`, with
   `null` and `array` distinguished from `object`). Wired end to end: the request
   editor's Assertions tab (the value field hides for `exists` and becomes a JSON-type
-  dropdown for `type`), the linked-workspace override editor, the MCP `assertion.*` /
+  dropdown for `type`), the MCP `assertion.*` /
   `prompt.*` tools, and the VS Code request YAML (completion list + JSON schema). The
   Help Center's Assertions section documents both. Purely additive — every existing
   assertion evaluates exactly as before.
@@ -110,6 +109,17 @@
 
 ### Changed
 
+- **Shell seams so an edition's first-run + panels don't collide with Studio's
+  (`@apicircle/ui-components`).** Additive, and a strict no-op in Studio-standalone
+  (no `sections`): (1) `OnboardingTour` takes an `autoStart` prop (default `true`);
+  `App` passes `sections.length <= 1`, so the Studio tour no longer auto-starts —
+  and stacks over, disabling — an edition's own first-run "choose a mode" landing.
+  The tour stays replayable on demand via the Help Center. (2) The right-side
+  workspace inspector (`RightDock`) and its rail (`RightDockRail`) now hide on an
+  edition-contributed panel (one not in `PANELS`, e.g. a Lens Index / Review /
+  Account panel or its signed-out gate) — the Variables / Vault / Assets tools
+  only apply to the Studio workspace. Both read `activePanel` from the store; in
+  Studio every panel is a core panel, so nothing changes.
 - **`cn()` now resolves Tailwind conflicts, making the primitives usable
   (`@apicircle/ui-components`).** It was a plain string join, so a component's
   base class and a call-site override both survived into the attribute and the

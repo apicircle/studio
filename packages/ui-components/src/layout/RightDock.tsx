@@ -9,6 +9,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { BookOpen, KeyRound, PanelRightClose, PanelRightOpen, Variable, X } from 'lucide-react';
 import type { RightDockTab } from '../store/workspaceStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { PANELS } from './panels';
 import { cn } from '../primitives/cn';
 import { VariablesDockPanel } from './dock/VariablesDockPanel';
 import { SecretVaultDockPanel } from './dock/SecretVaultDockPanel';
@@ -48,7 +49,14 @@ export function RightDock() {
   const setTab = useWorkspaceStore((s) => s.setRightDockTab);
   const setMode = useWorkspaceStore((s) => s.setRightDockMode);
   const closeDock = useWorkspaceStore((s) => s.closeRightDock);
+  const activePanel = useWorkspaceStore((s) => s.activePanel);
   const dockRef = useRef<HTMLElement | null>(null);
+  // The dock inspects the workspace (Variables / Vault / Assets), which only
+  // applies to the Studio core panels. On an edition's own panel (e.g. a Lens
+  // Index / Review / Account panel, contributed via `extraPanels`) it doesn't
+  // apply — hide it. In Studio-standalone every panel is a core panel, so this
+  // is a no-op.
+  const onCorePanel = PANELS.some((p) => p.id === activePanel);
 
   // Overlay-mode dismiss-on-outside-click. Docked mode stays put — it's
   // part of the layout, not a popover. The rail is excluded so the
@@ -85,7 +93,7 @@ export function RightDock() {
   // The parent layout chooses not to render the dock at all when tab is
   // null. Defensive null-guard keeps the component safe if called
   // unconditionally — simpler test surface.
-  if (tab === null) return null;
+  if (tab === null || !onCorePanel) return null;
 
   // `w-full` makes the dock fill its container in both modes:
   // - Docked: container is a `Panel` from react-resizable-panels with
