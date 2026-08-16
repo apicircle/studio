@@ -18,7 +18,9 @@ function id(key: string): TcId {
 // field (name/method/url/body + the originals).
 //
 // We seed a fake link directly via the e2e store bridge attached to
-// `window.__apicircleStore`, then drive the LinkedRequestEditor modal.
+// `window.__apicircleStore`, then drive the linked-request editing that now
+// lives inline in the main EditorPanel (the old LinkedRequestEditor modal was
+// removed).
 
 interface SeedRequest {
   id: string;

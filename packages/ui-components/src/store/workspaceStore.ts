@@ -1445,12 +1445,12 @@ type WorkspaceStore = {
    */
   clearLinkedOverridesFor: (linkedWorkspaceId: string) => void;
 
-  /** Currently-viewed linked request, if any. Drives LinkedRequestEditor. */
+  /** Currently-viewed linked request, if any. Drives the editor's linked-request view. */
   activeLinkedRequest: { linkedWorkspaceId: string; itemId: string } | null;
   setActiveLinkedRequest: (id: { linkedWorkspaceId: string; itemId: string } | null) => void;
 
   /**
-   * Execute the linked request currently open in the LinkedRequestEditor.
+   * Execute the linked request currently open in the editor.
    * Resolves variables against the source workspace's environments (with
    * the consumer's env-var overrides applied) and walks the source folder
    * chain for `auth.type === 'inherit'` resolution. Run history is recorded
