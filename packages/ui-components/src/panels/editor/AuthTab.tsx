@@ -26,11 +26,7 @@ export const AuthTab = memo(function AuthTab({ request }: AuthTabProps) {
         folders={folders}
         onUseFolderAuth={() => setRequestAuth(request.id, { type: 'inherit' })}
       />
-      <AuthEditor
-        auth={auth}
-        onChange={(next) => setRequestAuth(request.id, next)}
-        idPrefix={request.id}
-      />
+      <AuthEditor auth={auth} onChange={(next) => setRequestAuth(request.id, next)} />
     </>
   );
 });

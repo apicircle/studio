@@ -70,7 +70,6 @@ export function FolderAuthModal({ folder, onClose }: FolderAuthModalProps) {
           <AuthEditor
             auth={auth}
             onChange={(next) => setFolderAuth(folder.id, next)}
-            idPrefix={`folder-${folder.id}`}
             disableInherit
             noneNote="No folder-level auth. Descendants set to 'Inherit' will keep walking up the chain."
           />

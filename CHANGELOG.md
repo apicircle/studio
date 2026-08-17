@@ -109,6 +109,20 @@
 
 ### Changed
 
+- **Auth editor restructured for information scent + hierarchy
+  (`@apicircle/ui-components`).** The request/folder auth form put 17 schemes
+  behind one dropdown and swapped an unlabelled field grid beneath it, with the
+  scaffolding privately re-declared inside the file. It now: shows a one-line
+  description of the chosen scheme under the picker (so the choice carries scent
+  instead of being made blind); groups each scheme's credentials in a labelled
+  `<fieldset>`/`<legend>` named for the scheme (the region+heading shape the audit
+  calls for); constrains the form to a single readable column with one width
+  scale; and builds every field from the shared `Field`/`Label` primitives rather
+  than the private wrapper. The change ships to both the request Auth tab and the
+  folder-level `FolderAuthModal` (they share the editor), and drops the now-obsolete
+  `idPrefix` prop (`Field` self-generates ids). Every field's accessible name, the
+  native grouped `<select>`, and the per-scheme notes are unchanged, so the auth
+  flows behave identically.
 - **Shell seams so an edition's first-run + panels don't collide with Studio's
   (`@apicircle/ui-components`).** Additive, and a strict no-op in Studio-standalone
   (no `sections`): (1) `OnboardingTour` takes an `autoStart` prop (default `true`);

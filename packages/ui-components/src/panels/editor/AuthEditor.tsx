@@ -2,6 +2,13 @@
 // request) and FolderAuthModal (folder-level). The hosting component owns
 // the auth state and supplies an onChange — this editor is purely
 // controlled.
+//
+// Layout model (UX-S-012): the scheme picker is a single grouped <select>,
+// followed by a one-line description of the chosen scheme (so the 17-way
+// choice carries information scent instead of being picked blind), and then
+// the per-scheme credentials grouped in a labelled <fieldset>. Labels come
+// from the shared Field/Label primitives — the private field scaffolding this
+// file used to carry is gone.
 
 import type {
   AwsSigV4Auth,
@@ -23,6 +30,7 @@ import {
   validateHttpHeaderName,
   validateJsonString,
 } from '@apicircle/shared';
+import { Field } from '../../primitives/Field';
 import { SecretInput } from '../../primitives/SecretInput';
 import { cn } from '../../primitives/cn';
 import { Select } from '../../primitives/Select';
@@ -31,8 +39,6 @@ import { OAuth2FlowActions } from './OAuth2FlowActions';
 export interface AuthEditorProps {
   auth: RequestAuth;
   onChange: (next: RequestAuth) => void;
-  /** Prefix for input id attributes — keeps multiple editors distinct. */
-  idPrefix: string;
   /** When true, hides the 'inherit' option (folder-level auth can't inherit from itself). */
   disableInherit?: boolean;
   /** Override label for the 'No Auth' note. */
@@ -79,29 +85,55 @@ const AUTH_GROUPS: Array<{
   },
 ];
 
-const labelClass = 'text-[0.6875rem] uppercase tracking-wide text-text-dim';
+/** Flat id → human label, derived from the grouped picker options. */
+const AUTH_LABEL: Record<string, string> = Object.fromEntries(
+  AUTH_GROUPS.flatMap((group) => group.types.map((t) => [t.id, t.label] as const)),
+);
+
+/**
+ * One-line scent for each scheme, shown under the picker so the user knows
+ * what they just chose (and what it needs) before the fields appear. Phrasing
+ * kept in step with the Help Center's "Auth types" entry.
+ */
+const AUTH_BLURBS: Record<RequestAuthType, string> = {
+  none: 'No credentials are attached — the request is sent unauthenticated.',
+  inherit: 'Reuses the nearest parent folder that sets an explicit auth.',
+  bearer: 'Sends an Authorization: Bearer <token> header.',
+  basic: 'Username and password, base64-encoded into an Authorization: Basic header.',
+  'api-key': 'A single key sent in a header, query parameter, or cookie.',
+  'custom-header': 'One arbitrary header name and value.',
+  'oauth2-client-credentials':
+    'Machine-to-machine: exchanges a client id and secret for a token — no user involved.',
+  'oauth2-auth-code':
+    'Redirect-based user sign-in that exchanges an authorization code for a token.',
+  'oauth2-pkce': 'Authorization Code with a PKCE verifier — the safe choice for public clients.',
+  'oauth2-password': 'Exchanges a username and password directly for a token (ROPC).',
+  'oauth2-implicit': 'Legacy browser flow that returns a token straight from the redirect.',
+  'oauth2-device':
+    'For input-constrained devices — poll for a token while the user approves elsewhere.',
+  'aws-sigv4': 'Signs the request with AWS Signature v4 credentials.',
+  digest: 'Challenge-response using a digest of the credentials (sent after a 401).',
+  ntlm: 'Windows NTLM challenge-response handshake.',
+  hawk: 'MAC-based scheme signing each request with an id and key.',
+  'jwt-bearer': 'Builds (or accepts) a signed JWT and sends it as a Bearer token.',
+};
+
 const inputClass =
   'h-8 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30';
-const fieldsetClass = 'flex flex-col gap-1';
 const gridClass = 'grid grid-cols-1 gap-3 sm:grid-cols-2';
 const noteClass =
   'rounded-sm border border-border-subtle bg-surface px-2 py-1.5 text-[0.6875rem] text-text-muted';
-
-function Field({ id, label, children }: { id?: string; label: string; children: React.ReactNode }) {
-  return (
-    <div className={fieldsetClass}>
-      <label htmlFor={id} className={labelClass}>
-        {label}
-      </label>
-      {children}
-    </div>
-  );
-}
+const blurbClass = 'text-xs leading-relaxed text-text-muted';
+// Keep the <fieldset> a normal block so the <legend> renders on the border in
+// every browser (a display:flex fieldset mishandles the legend in some); the
+// inner wrapper does the vertical layout.
+const fieldsetClass = 'min-w-0 rounded-md border border-border-subtle bg-surface/40 p-3';
+const fieldsetBodyClass = 'flex min-w-0 flex-col gap-3';
+const legendClass = 'px-1.5 text-[0.6875rem] font-semibold uppercase tracking-wide text-text-muted';
 
 export function AuthEditor({
   auth,
   onChange,
-  idPrefix,
   disableInherit = false,
   noneNote,
   inheritNote,
@@ -115,35 +147,36 @@ export function AuthEditor({
     onChange({ ...(auth as T), ...patch });
   };
 
+  const configurable = auth.type !== 'none' && auth.type !== 'inherit';
+
   return (
-    <div className="flex flex-col gap-3">
-      <div className={fieldsetClass}>
-        <label htmlFor={`auth-type-${idPrefix}`} className={labelClass}>
-          Auth type
-        </label>
-        <Select
-          size="md"
-          id={`auth-type-${idPrefix}`}
-          value={auth.type}
-          onChange={(e) => onChangeType(e.target.value as RequestAuthType)}
-          // The visible <label htmlFor=...> already names this select; an
-          // explicit aria-label here doubled the screen-reader readout.
-          className="text-text-primary"
-          wrapperClassName="w-full max-w-sm"
-        >
-          {AUTH_GROUPS.map((group) => (
-            <optgroup key={group.label} label={group.label}>
-              {group.types
-                .filter((t) => !(disableInherit && t.id === 'inherit'))
-                .map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.label}
-                  </option>
-                ))}
-            </optgroup>
-          ))}
-        </Select>
-      </div>
+    <div className="flex w-full max-w-2xl flex-col gap-4">
+      <Field label="Auth type">
+        {(f) => (
+          <Select
+            {...f}
+            size="md"
+            value={auth.type}
+            onChange={(e) => onChangeType(e.target.value as RequestAuthType)}
+            // The Field's visible <label> already names this select; an explicit
+            // aria-label here doubled the screen-reader readout.
+            className="text-text-primary"
+            wrapperClassName="w-full max-w-sm"
+          >
+            {AUTH_GROUPS.map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.types
+                  .filter((t) => !(disableInherit && t.id === 'inherit'))
+                  .map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label}
+                    </option>
+                  ))}
+              </optgroup>
+            ))}
+          </Select>
+        )}
+      </Field>
 
       {auth.type === 'none' && (
         <p className={noteClass}>{noneNote ?? 'No authentication will be added.'}</p>
@@ -156,224 +189,265 @@ export function AuthEditor({
         </p>
       )}
 
-      {auth.type === 'bearer' && (
-        <Field id={`bearer-${idPrefix}`} label="Token">
-          <SecretInput
-            id={`bearer-${idPrefix}`}
-            ariaLabel="Bearer token"
-            value={auth.token}
-            onChange={(v) => update({ token: v })}
-            placeholder="eyJhbGciOi…"
-          />
-        </Field>
-      )}
-
-      {auth.type === 'basic' && (
-        <div className={gridClass}>
-          <Field id={`basic-user-${idPrefix}`} label="Username">
-            <input
-              id={`basic-user-${idPrefix}`}
-              aria-label="Username"
-              value={auth.username}
-              onChange={(e) => update({ username: e.target.value })}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Password">
-            <SecretInput
-              ariaLabel="Password"
-              value={auth.password}
-              onChange={(v) => update({ password: v })}
-            />
-          </Field>
-        </div>
-      )}
-
-      {auth.type === 'api-key' && (
-        <div className="flex flex-col gap-3">
-          <div className={gridClass}>
-            <Field id={`apikey-key-${idPrefix}`} label="Key">
-              <input
-                id={`apikey-key-${idPrefix}`}
-                aria-label="API key name"
-                value={auth.key}
-                onChange={(e) => update({ key: e.target.value })}
-                className={inputClass}
-                placeholder="X-API-Key"
-              />
-            </Field>
-            <Field label="Value">
-              <SecretInput
-                ariaLabel="API key value"
-                value={auth.value}
-                onChange={(v) => update({ value: v })}
-              />
-            </Field>
-          </div>
-          <Field label="Location">
-            <Select
-              size="md"
-              aria-label="API key location"
-              value={auth.addTo}
-              onChange={(e) => update({ addTo: e.target.value as 'header' | 'query' | 'cookie' })}
-              className="text-text-primary"
-              wrapperClassName="w-full max-w-xs"
-            >
-              <option value="header">Header</option>
-              <option value="query">Query parameter</option>
-              <option value="cookie">Cookie</option>
-            </Select>
-          </Field>
-        </div>
-      )}
-
-      {auth.type === 'custom-header' && (
-        <div className={gridClass}>
-          <Field id={`hdr-key-${idPrefix}`} label="Header name">
-            <CustomHeaderNameInput
-              id={`hdr-key-${idPrefix}`}
-              value={auth.key}
-              onChange={(v) => update({ key: v })}
-            />
-          </Field>
-          <Field label="Header value">
-            <SecretInput
-              ariaLabel="Header value"
-              value={auth.value}
-              onChange={(v) => update({ value: v })}
-            />
-          </Field>
-        </div>
-      )}
-
-      {auth.type === 'oauth2-client-credentials' && (
+      {configurable && (
         <>
-          <OAuth2Form
-            auth={auth}
-            onChange={update}
-            fields={['tokenUrl', 'clientId', 'clientSecret', 'scope']}
-            idPrefix={idPrefix}
-            extra={
-              <Field label="Client auth method">
-                <Select
-                  size="md"
-                  aria-label="Client auth method"
-                  value={auth.clientAuthMethod}
-                  onChange={(e) =>
-                    update({ clientAuthMethod: e.target.value as 'header' | 'body' })
-                  }
-                  className="text-text-primary"
-                  wrapperClassName="w-full max-w-xs"
-                >
-                  <option value="header">Header (Basic auth)</option>
-                  <option value="body">Body</option>
-                </Select>
-              </Field>
-            }
-          />
-          <OAuth2FlowActions auth={auth} onChange={onChange} />
+          <p className={blurbClass}>{AUTH_BLURBS[auth.type]}</p>
+          <fieldset className={fieldsetClass}>
+            <legend className={legendClass}>{AUTH_LABEL[auth.type]}</legend>
+            <div className={fieldsetBodyClass}>
+              {auth.type === 'bearer' && (
+                <Field label="Token">
+                  {(f) => (
+                    <SecretInput
+                      id={f.id}
+                      ariaLabel="Bearer token"
+                      value={auth.token}
+                      onChange={(v) => update({ token: v })}
+                      placeholder="eyJhbGciOi…"
+                    />
+                  )}
+                </Field>
+              )}
+
+              {auth.type === 'basic' && (
+                <div className={gridClass}>
+                  <Field label="Username">
+                    {(f) => (
+                      <input
+                        id={f.id}
+                        aria-label="Username"
+                        value={auth.username}
+                        onChange={(e) => update({ username: e.target.value })}
+                        className={inputClass}
+                      />
+                    )}
+                  </Field>
+                  <Field label="Password">
+                    {(f) => (
+                      <SecretInput
+                        id={f.id}
+                        ariaLabel="Password"
+                        value={auth.password}
+                        onChange={(v) => update({ password: v })}
+                      />
+                    )}
+                  </Field>
+                </div>
+              )}
+
+              {auth.type === 'api-key' && (
+                <>
+                  <div className={gridClass}>
+                    <Field label="Key">
+                      {(f) => (
+                        <input
+                          id={f.id}
+                          aria-label="API key name"
+                          value={auth.key}
+                          onChange={(e) => update({ key: e.target.value })}
+                          className={inputClass}
+                          placeholder="X-API-Key"
+                        />
+                      )}
+                    </Field>
+                    <Field label="Value">
+                      {(f) => (
+                        <SecretInput
+                          id={f.id}
+                          ariaLabel="API key value"
+                          value={auth.value}
+                          onChange={(v) => update({ value: v })}
+                        />
+                      )}
+                    </Field>
+                  </div>
+                  <Field label="Location">
+                    {(f) => (
+                      <Select
+                        {...f}
+                        size="md"
+                        aria-label="API key location"
+                        value={auth.addTo}
+                        onChange={(e) =>
+                          update({ addTo: e.target.value as 'header' | 'query' | 'cookie' })
+                        }
+                        className="text-text-primary"
+                        wrapperClassName="w-full max-w-xs"
+                      >
+                        <option value="header">Header</option>
+                        <option value="query">Query parameter</option>
+                        <option value="cookie">Cookie</option>
+                      </Select>
+                    )}
+                  </Field>
+                </>
+              )}
+
+              {auth.type === 'custom-header' && (
+                <div className={gridClass}>
+                  <Field label="Header name">
+                    {(f) => (
+                      <CustomHeaderNameInput
+                        id={f.id}
+                        value={auth.key}
+                        onChange={(v) => update({ key: v })}
+                      />
+                    )}
+                  </Field>
+                  <Field label="Header value">
+                    {(f) => (
+                      <SecretInput
+                        id={f.id}
+                        ariaLabel="Header value"
+                        value={auth.value}
+                        onChange={(v) => update({ value: v })}
+                      />
+                    )}
+                  </Field>
+                </div>
+              )}
+
+              {auth.type === 'oauth2-client-credentials' && (
+                <>
+                  <OAuth2Form
+                    auth={auth}
+                    onChange={update}
+                    fields={['tokenUrl', 'clientId', 'clientSecret', 'scope']}
+                    extra={
+                      <Field label="Client auth method">
+                        {(f) => (
+                          <Select
+                            {...f}
+                            size="md"
+                            aria-label="Client auth method"
+                            value={auth.clientAuthMethod}
+                            onChange={(e) =>
+                              update({ clientAuthMethod: e.target.value as 'header' | 'body' })
+                            }
+                            className="text-text-primary"
+                            wrapperClassName="w-full max-w-xs"
+                          >
+                            <option value="header">Header (Basic auth)</option>
+                            <option value="body">Body</option>
+                          </Select>
+                        )}
+                      </Field>
+                    }
+                  />
+                  <OAuth2FlowActions auth={auth} onChange={onChange} />
+                </>
+              )}
+
+              {auth.type === 'oauth2-auth-code' && (
+                <>
+                  <OAuth2Form
+                    auth={auth}
+                    onChange={update}
+                    fields={[
+                      'authUrl',
+                      'tokenUrl',
+                      'clientId',
+                      'clientSecret',
+                      'redirectUri',
+                      'scope',
+                      'state',
+                    ]}
+                  />
+                  <OAuth2FlowActions auth={auth} onChange={onChange} />
+                </>
+              )}
+
+              {auth.type === 'oauth2-pkce' && (
+                <>
+                  <OAuth2Form
+                    auth={auth}
+                    onChange={update}
+                    fields={[
+                      'authUrl',
+                      'tokenUrl',
+                      'clientId',
+                      'clientSecret',
+                      'redirectUri',
+                      'scope',
+                      'state',
+                      'codeVerifier',
+                    ]}
+                    extra={
+                      <Field label="Code challenge method">
+                        {(f) => (
+                          <Select
+                            {...f}
+                            size="md"
+                            aria-label="PKCE code challenge method"
+                            value={auth.codeChallengeMethod}
+                            onChange={(e) =>
+                              update({ codeChallengeMethod: e.target.value as 'S256' | 'plain' })
+                            }
+                            className="text-text-primary"
+                            wrapperClassName="w-full max-w-xs"
+                          >
+                            <option value="S256">S256 (recommended)</option>
+                            <option value="plain">plain</option>
+                          </Select>
+                        )}
+                      </Field>
+                    }
+                  />
+                  <OAuth2FlowActions auth={auth} onChange={onChange} />
+                </>
+              )}
+
+              {auth.type === 'oauth2-password' && (
+                <>
+                  <OAuth2Form
+                    auth={auth}
+                    onChange={update}
+                    fields={[
+                      'tokenUrl',
+                      'clientId',
+                      'clientSecret',
+                      'username',
+                      'password',
+                      'scope',
+                    ]}
+                  />
+                  <OAuth2FlowActions auth={auth} onChange={onChange} />
+                </>
+              )}
+
+              {auth.type === 'oauth2-implicit' && (
+                <>
+                  <OAuth2Form
+                    auth={auth}
+                    onChange={update}
+                    fields={['authUrl', 'clientId', 'redirectUri', 'scope']}
+                  />
+                  <OAuth2FlowActions auth={auth} onChange={onChange} />
+                </>
+              )}
+
+              {auth.type === 'oauth2-device' && (
+                <>
+                  <OAuth2Form
+                    auth={auth}
+                    onChange={update}
+                    fields={['deviceAuthUrl', 'tokenUrl', 'clientId', 'scope']}
+                  />
+                  <OAuth2FlowActions auth={auth} onChange={onChange} />
+                </>
+              )}
+
+              {auth.type === 'aws-sigv4' && <AwsSigV4Form auth={auth} update={update} />}
+              {auth.type === 'hawk' && <HawkForm auth={auth} update={update} />}
+              {auth.type === 'jwt-bearer' && <JwtBearerForm auth={auth} update={update} />}
+              {auth.type === 'digest' && (
+                <DigestNtlmForm kind="digest" auth={auth} update={update} />
+              )}
+              {auth.type === 'ntlm' && <DigestNtlmForm kind="ntlm" auth={auth} update={update} />}
+            </div>
+          </fieldset>
         </>
       )}
-
-      {auth.type === 'oauth2-auth-code' && (
-        <>
-          <OAuth2Form
-            auth={auth}
-            onChange={update}
-            fields={[
-              'authUrl',
-              'tokenUrl',
-              'clientId',
-              'clientSecret',
-              'redirectUri',
-              'scope',
-              'state',
-            ]}
-            idPrefix={idPrefix}
-          />
-          <OAuth2FlowActions auth={auth} onChange={onChange} />
-        </>
-      )}
-
-      {auth.type === 'oauth2-pkce' && (
-        <>
-          <OAuth2Form
-            auth={auth}
-            onChange={update}
-            fields={[
-              'authUrl',
-              'tokenUrl',
-              'clientId',
-              'clientSecret',
-              'redirectUri',
-              'scope',
-              'state',
-              'codeVerifier',
-            ]}
-            idPrefix={idPrefix}
-            extra={
-              <Field label="Code challenge method">
-                <Select
-                  size="md"
-                  aria-label="PKCE code challenge method"
-                  value={auth.codeChallengeMethod}
-                  onChange={(e) =>
-                    update({ codeChallengeMethod: e.target.value as 'S256' | 'plain' })
-                  }
-                  className="text-text-primary"
-                  wrapperClassName="w-full max-w-xs"
-                >
-                  <option value="S256">S256 (recommended)</option>
-                  <option value="plain">plain</option>
-                </Select>
-              </Field>
-            }
-          />
-          <OAuth2FlowActions auth={auth} onChange={onChange} />
-        </>
-      )}
-
-      {auth.type === 'oauth2-password' && (
-        <>
-          <OAuth2Form
-            auth={auth}
-            onChange={update}
-            fields={['tokenUrl', 'clientId', 'clientSecret', 'username', 'password', 'scope']}
-            idPrefix={idPrefix}
-          />
-          <OAuth2FlowActions auth={auth} onChange={onChange} />
-        </>
-      )}
-
-      {auth.type === 'oauth2-implicit' && (
-        <>
-          <OAuth2Form
-            auth={auth}
-            onChange={update}
-            fields={['authUrl', 'clientId', 'redirectUri', 'scope']}
-            idPrefix={idPrefix}
-          />
-          <OAuth2FlowActions auth={auth} onChange={onChange} />
-        </>
-      )}
-
-      {auth.type === 'oauth2-device' && (
-        <>
-          <OAuth2Form
-            auth={auth}
-            onChange={update}
-            fields={['deviceAuthUrl', 'tokenUrl', 'clientId', 'scope']}
-            idPrefix={idPrefix}
-          />
-          <OAuth2FlowActions auth={auth} onChange={onChange} />
-        </>
-      )}
-
-      {auth.type === 'aws-sigv4' && <AwsSigV4Form auth={auth} update={update} />}
-      {auth.type === 'hawk' && <HawkForm auth={auth} update={update} />}
-      {auth.type === 'jwt-bearer' && <JwtBearerForm auth={auth} update={update} />}
-      {auth.type === 'digest' && <DigestNtlmForm kind="digest" auth={auth} update={update} />}
-      {auth.type === 'ntlm' && <DigestNtlmForm kind="ntlm" auth={auth} update={update} />}
     </div>
   );
 }
@@ -392,7 +466,6 @@ interface OAuth2FormProps<T extends OAuth2Like> {
   auth: T;
   onChange: (patch: Partial<T>) => void;
   fields: Array<keyof T>;
-  idPrefix: string;
   extra?: React.ReactNode;
 }
 
@@ -413,41 +486,34 @@ const OAUTH2_FIELD_LABELS: Record<
   password: { label: 'Password', secret: true },
 };
 
-function OAuth2Form<T extends OAuth2Like>({
-  auth,
-  onChange,
-  fields,
-  idPrefix,
-  extra,
-}: OAuth2FormProps<T>) {
+function OAuth2Form<T extends OAuth2Like>({ auth, onChange, fields, extra }: OAuth2FormProps<T>) {
   return (
     <div className="flex flex-col gap-3">
       <div className={gridClass}>
         {fields.map((field) => {
           const meta = OAUTH2_FIELD_LABELS[field as string] ?? { label: field as string };
-          const id = `oauth2-${idPrefix}-${String(field)}`;
           const value = (auth[field] as unknown as string) ?? '';
-          if (meta.secret) {
-            return (
-              <Field key={String(field)} label={meta.label}>
-                <SecretInput
-                  ariaLabel={meta.label}
-                  value={value}
-                  onChange={(v) => onChange({ [field]: v } as Partial<T>)}
-                />
-              </Field>
-            );
-          }
           return (
-            <Field key={String(field)} id={id} label={meta.label}>
-              <input
-                id={id}
-                aria-label={meta.label}
-                value={value}
-                placeholder={meta.placeholder}
-                onChange={(e) => onChange({ [field]: e.target.value } as Partial<T>)}
-                className={inputClass}
-              />
+            <Field key={String(field)} label={meta.label}>
+              {(f) =>
+                meta.secret ? (
+                  <SecretInput
+                    id={f.id}
+                    ariaLabel={meta.label}
+                    value={value}
+                    onChange={(v) => onChange({ [field]: v } as Partial<T>)}
+                  />
+                ) : (
+                  <input
+                    id={f.id}
+                    aria-label={meta.label}
+                    value={value}
+                    placeholder={meta.placeholder}
+                    onChange={(e) => onChange({ [field]: e.target.value } as Partial<T>)}
+                    className={inputClass}
+                  />
+                )
+              }
             </Field>
           );
         })}
@@ -475,51 +541,68 @@ function AwsSigV4Form({
   return (
     <div className={gridClass}>
       <Field label="Access key ID">
-        <input
-          aria-label="AWS access key ID"
-          value={auth.accessKeyId}
-          onChange={(e) => update({ accessKeyId: e.target.value })}
-          className={inputClass}
-        />
+        {(f) => (
+          <input
+            id={f.id}
+            aria-label="AWS access key ID"
+            value={auth.accessKeyId}
+            onChange={(e) => update({ accessKeyId: e.target.value })}
+            className={inputClass}
+          />
+        )}
       </Field>
       <Field label="Secret access key">
-        <SecretInput
-          ariaLabel="AWS secret access key"
-          value={auth.secretAccessKey}
-          onChange={(v) => update({ secretAccessKey: v })}
-        />
+        {(f) => (
+          <SecretInput
+            id={f.id}
+            ariaLabel="AWS secret access key"
+            value={auth.secretAccessKey}
+            onChange={(v) => update({ secretAccessKey: v })}
+          />
+        )}
       </Field>
       <Field label="Region">
-        <RegionInput value={auth.region} onChange={(v) => update({ region: v })} />
+        {(f) => (
+          <RegionInput id={f.id} value={auth.region} onChange={(v) => update({ region: v })} />
+        )}
       </Field>
       <Field label="Service">
-        <input
-          aria-label="AWS service"
-          value={auth.service}
-          onChange={(e) => update({ service: e.target.value })}
-          className={inputClass}
-          placeholder="execute-api"
-        />
+        {(f) => (
+          <input
+            id={f.id}
+            aria-label="AWS service"
+            value={auth.service}
+            onChange={(e) => update({ service: e.target.value })}
+            className={inputClass}
+            placeholder="execute-api"
+          />
+        )}
       </Field>
       <Field label="Session token (optional)">
-        <SecretInput
-          ariaLabel="AWS session token"
-          value={auth.sessionToken}
-          onChange={(v) => update({ sessionToken: v })}
-        />
+        {(f) => (
+          <SecretInput
+            id={f.id}
+            ariaLabel="AWS session token"
+            value={auth.sessionToken}
+            onChange={(v) => update({ sessionToken: v })}
+          />
+        )}
       </Field>
       <Field label="Signature location">
-        <Select
-          size="md"
-          aria-label="SigV4 location"
-          value={auth.addTo}
-          onChange={(e) => update({ addTo: e.target.value as 'header' | 'query' })}
-          className="text-text-primary"
-          wrapperClassName="w-full"
-        >
-          <option value="header">Authorization header</option>
-          <option value="query">Query string (presigned)</option>
-        </Select>
+        {(f) => (
+          <Select
+            {...f}
+            size="md"
+            aria-label="SigV4 location"
+            value={auth.addTo}
+            onChange={(e) => update({ addTo: e.target.value as 'header' | 'query' })}
+            className="text-text-primary"
+            wrapperClassName="w-full"
+          >
+            <option value="header">Authorization header</option>
+            <option value="query">Query string (presigned)</option>
+          </Select>
+        )}
       </Field>
     </div>
   );
@@ -535,40 +618,52 @@ function HawkForm({
   return (
     <div className={gridClass}>
       <Field label="Hawk ID">
-        <input
-          aria-label="Hawk ID"
-          value={auth.hawkId}
-          onChange={(e) => update({ hawkId: e.target.value })}
-          className={inputClass}
-        />
+        {(f) => (
+          <input
+            id={f.id}
+            aria-label="Hawk ID"
+            value={auth.hawkId}
+            onChange={(e) => update({ hawkId: e.target.value })}
+            className={inputClass}
+          />
+        )}
       </Field>
       <Field label="Hawk key">
-        <SecretInput
-          ariaLabel="Hawk key"
-          value={auth.hawkKey}
-          onChange={(v) => update({ hawkKey: v })}
-        />
+        {(f) => (
+          <SecretInput
+            id={f.id}
+            ariaLabel="Hawk key"
+            value={auth.hawkKey}
+            onChange={(v) => update({ hawkKey: v })}
+          />
+        )}
       </Field>
       <Field label="Algorithm">
-        <Select
-          size="md"
-          aria-label="Hawk algorithm"
-          value={auth.algorithm}
-          onChange={(e) => update({ algorithm: e.target.value as 'sha256' | 'sha1' })}
-          className="text-text-primary"
-          wrapperClassName="w-full"
-        >
-          <option value="sha256">SHA-256</option>
-          <option value="sha1">SHA-1</option>
-        </Select>
+        {(f) => (
+          <Select
+            {...f}
+            size="md"
+            aria-label="Hawk algorithm"
+            value={auth.algorithm}
+            onChange={(e) => update({ algorithm: e.target.value as 'sha256' | 'sha1' })}
+            className="text-text-primary"
+            wrapperClassName="w-full"
+          >
+            <option value="sha256">SHA-256</option>
+            <option value="sha1">SHA-1</option>
+          </Select>
+        )}
       </Field>
       <Field label="Ext (optional)">
-        <input
-          aria-label="Hawk ext"
-          value={auth.ext}
-          onChange={(e) => update({ ext: e.target.value })}
-          className={inputClass}
-        />
+        {(f) => (
+          <input
+            id={f.id}
+            aria-label="Hawk ext"
+            value={auth.ext}
+            onChange={(e) => update({ ext: e.target.value })}
+            className={inputClass}
+          />
+        )}
       </Field>
     </div>
   );
@@ -586,58 +681,73 @@ function JwtBearerForm({
     <div className="flex flex-col gap-3">
       <div className={gridClass}>
         <Field label="Algorithm">
-          <Select
-            size="md"
-            aria-label="JWT algorithm"
-            value={auth.algorithm}
-            onChange={(e) => update({ algorithm: e.target.value as JwtBearerAuth['algorithm'] })}
-            className="text-text-primary"
-            wrapperClassName="w-full"
-          >
-            <option value="HS256">HS256</option>
-            <option value="HS384">HS384</option>
-            <option value="HS512">HS512</option>
-            <option value="RS256">RS256 (paste pre-signed token below)</option>
-            <option value="RS384">RS384 (paste pre-signed token below)</option>
-            <option value="RS512">RS512 (paste pre-signed token below)</option>
-            <option value="ES256">ES256 (paste pre-signed token below)</option>
-          </Select>
+          {(f) => (
+            <Select
+              {...f}
+              size="md"
+              aria-label="JWT algorithm"
+              value={auth.algorithm}
+              onChange={(e) => update({ algorithm: e.target.value as JwtBearerAuth['algorithm'] })}
+              className="text-text-primary"
+              wrapperClassName="w-full"
+            >
+              <option value="HS256">HS256</option>
+              <option value="HS384">HS384</option>
+              <option value="HS512">HS512</option>
+              <option value="RS256">RS256 (paste pre-signed token below)</option>
+              <option value="RS384">RS384 (paste pre-signed token below)</option>
+              <option value="RS512">RS512 (paste pre-signed token below)</option>
+              <option value="ES256">ES256 (paste pre-signed token below)</option>
+            </Select>
+          )}
         </Field>
         <Field label={isHs ? 'Secret (signing key)' : 'Public key (PEM, for reference)'}>
-          <SecretInput
-            ariaLabel="JWT signing key"
-            value={auth.secretOrKey}
-            onChange={(v) => update({ secretOrKey: v })}
-          />
+          {(f) => (
+            <SecretInput
+              id={f.id}
+              ariaLabel="JWT signing key"
+              value={auth.secretOrKey}
+              onChange={(v) => update({ secretOrKey: v })}
+            />
+          )}
         </Field>
       </div>
       <div className={gridClass}>
         <Field label="Header overrides (JSON)">
-          <JsonTextarea
-            ariaLabel="JWT header"
-            value={auth.jwtHeaders}
-            onChange={(v) => update({ jwtHeaders: v })}
-            allowEmpty
-            allowRoots="object"
-          />
+          {(f) => (
+            <JsonTextarea
+              id={f.id}
+              ariaLabel="JWT header"
+              value={auth.jwtHeaders}
+              onChange={(v) => update({ jwtHeaders: v })}
+              allowEmpty
+              allowRoots="object"
+            />
+          )}
         </Field>
         <Field label="Payload (JSON)">
-          <JsonTextarea
-            ariaLabel="JWT payload"
-            value={auth.payload}
-            onChange={(v) => update({ payload: v })}
-            allowEmpty
-            allowRoots="object"
-          />
+          {(f) => (
+            <JsonTextarea
+              id={f.id}
+              ariaLabel="JWT payload"
+              value={auth.payload}
+              onChange={(v) => update({ payload: v })}
+              allowEmpty
+              allowRoots="object"
+            />
+          )}
         </Field>
       </div>
       <Field label="Pre-computed token (optional, overrides signing)">
-        <SecretInput
-          ariaLabel="JWT token"
-          value={auth.token}
-          onChange={(v) => update({ token: v })}
-          placeholder="eyJ…"
-        />
+        {(f) => (
+          <SecretInput
+            id={f.id}
+            ariaLabel="JWT token"
+            value={auth.token}
+            onChange={(v) => update({ token: v })}
+            placeholder="eyJ…"
+          />
+        )}
       </Field>
       <p className={noteClass}>
         {isHs
@@ -661,37 +771,49 @@ function DigestNtlmForm({
     <div className="flex flex-col gap-3">
       <div className={gridClass}>
         <Field label="Username">
-          <input
-            aria-label={`${kind} username`}
-            value={auth.username}
-            onChange={(e) => update({ username: e.target.value })}
-            className={inputClass}
-          />
+          {(f) => (
+            <input
+              id={f.id}
+              aria-label={`${kind} username`}
+              value={auth.username}
+              onChange={(e) => update({ username: e.target.value })}
+              className={inputClass}
+            />
+          )}
         </Field>
         <Field label="Password">
-          <SecretInput
-            ariaLabel={`${kind} password`}
-            value={auth.password}
-            onChange={(v) => update({ password: v })}
-          />
+          {(f) => (
+            <SecretInput
+              id={f.id}
+              ariaLabel={`${kind} password`}
+              value={auth.password}
+              onChange={(v) => update({ password: v })}
+            />
+          )}
         </Field>
         {kind === 'ntlm' && 'domain' in auth && (
           <>
             <Field label="Domain (optional)">
-              <input
-                aria-label="NTLM domain"
-                value={auth.domain}
-                onChange={(e) => update({ domain: e.target.value })}
-                className={inputClass}
-              />
+              {(f) => (
+                <input
+                  id={f.id}
+                  aria-label="NTLM domain"
+                  value={auth.domain}
+                  onChange={(e) => update({ domain: e.target.value })}
+                  className={inputClass}
+                />
+              )}
             </Field>
             <Field label="Workstation (optional)">
-              <input
-                aria-label="NTLM workstation"
-                value={auth.workstation}
-                onChange={(e) => update({ workstation: e.target.value })}
-                className={inputClass}
-              />
+              {(f) => (
+                <input
+                  id={f.id}
+                  aria-label="NTLM workstation"
+                  value={auth.workstation}
+                  onChange={(e) => update({ workstation: e.target.value })}
+                  className={inputClass}
+                />
+              )}
             </Field>
           </>
         )}
@@ -711,12 +833,14 @@ function DigestNtlmForm({
  * payload fields (audit gap #26: invalid JSON was silently accepted).
  */
 function JsonTextarea({
+  id,
   ariaLabel,
   value,
   onChange,
   allowEmpty,
   allowRoots,
 }: {
+  id?: string;
   ariaLabel: string;
   value: string;
   onChange: (next: string) => void;
@@ -728,6 +852,7 @@ function JsonTextarea({
   return (
     <div className="flex flex-col">
       <textarea
+        id={id}
         aria-label={ariaLabel}
         aria-invalid={invalid}
         value={value}
@@ -774,12 +899,21 @@ const COMMON_AWS_REGIONS = [
   'ca-central-1',
 ];
 
-function RegionInput({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+function RegionInput({
+  id,
+  value,
+  onChange,
+}: {
+  id?: string;
+  value: string;
+  onChange: (next: string) => void;
+}) {
   const result = validateAwsRegion(value);
   const invalid = !result.ok && value.trim().length > 0;
   return (
     <div className="flex flex-col">
       <input
+        id={id}
         aria-label="AWS region"
         list="aws-region-suggestions"
         value={value}
@@ -817,7 +951,7 @@ function CustomHeaderNameInput({
   value,
   onChange,
 }: {
-  id: string;
+  id?: string;
   value: string;
   onChange: (next: string) => void;
 }) {
