@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowDown,
+  Check,
   ChevronDown,
   Download,
   FileArchive,
@@ -27,6 +28,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { getAttachment } from '../../persistence/attachments';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';
+import { cn } from '../../primitives/cn';
 
 export function LinkWorkspacePanel() {
   const session = useWorkspaceStore((s) => s.local?.sessions.github.workspace ?? null);
@@ -645,6 +647,18 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
 
   const args = manualMode || guidedReady ? linkArgs() : null;
 
+  // The four submit-gating stages of the guided flow, in order, with their
+  // completion derived from the same state that drives `submitDisabled`. Shown
+  // as a progress rail so the flow reads as the sequence it is (UX-S-011).
+  // (Required secret keys are optional at link time — provisionable later — so
+  // they get their own body section but don't gate this rail.)
+  const guidedSteps = [
+    { key: 'repo', label: 'Repository', done: Boolean(selectedRepo) },
+    { key: 'branch', label: 'Branch', done: Boolean(selectedRepo) && Boolean(selectedBranch) },
+    { key: 'version', label: 'Version', done: guidedReady },
+    { key: 'session', label: 'Session', done: sessionReady },
+  ];
+
   return (
     <>
       <Modal open={open} onClose={onClose} title="Link a private workspace">
@@ -667,6 +681,8 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
               {manualMode ? 'Browse repos' : 'Manual entry'}
             </button>
           </div>
+
+          {!manualMode && <LinkStepper steps={guidedSteps} />}
 
           {manualMode ? (
             <ManualLinkInputs
@@ -1443,6 +1459,60 @@ function LinkedChangelogModal({
         </div>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * Progress rail for the guided private-link flow. The stages were already
+ * revealed one after another as each completed, but with no sense of where you
+ * were in the sequence or what still remained (UX-S-011) — this makes the shape
+ * legible. Purely presentational: it reads the wizard's state and drives nothing.
+ */
+function LinkStepper({ steps }: { steps: Array<{ key: string; label: string; done: boolean }> }) {
+  const currentIdx = steps.findIndex((s) => !s.done);
+  return (
+    <ol
+      aria-label="Linking progress"
+      className="flex flex-wrap items-center gap-1.5 rounded-sm border border-border-subtle bg-surface/40 px-2 py-1.5 text-[0.625rem]"
+    >
+      {steps.map((s, i) => {
+        const state = s.done ? 'done' : i === currentIdx ? 'current' : 'pending';
+        return (
+          <li
+            key={s.key}
+            aria-current={state === 'current' ? 'step' : undefined}
+            className={cn(
+              'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5',
+              state === 'current' && 'bg-accent/10',
+            )}
+          >
+            <span
+              className={cn(
+                'inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border text-[0.5rem] font-semibold leading-none',
+                state === 'done'
+                  ? 'border-accent bg-accent/15 text-accent'
+                  : state === 'current'
+                    ? 'border-accent text-accent'
+                    : 'border-border text-text-dim',
+              )}
+            >
+              {state === 'done' ? <Check size={9} strokeWidth={3} aria-hidden /> : i + 1}
+            </span>
+            <span
+              className={cn(
+                state === 'done'
+                  ? 'text-text-muted'
+                  : state === 'current'
+                    ? 'font-medium text-text-primary'
+                    : 'text-text-dim',
+              )}
+            >
+              {s.label}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 

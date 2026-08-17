@@ -109,6 +109,15 @@
 
 ### Changed
 
+- **Private-workspace link flow shows a progress stepper
+  (`@apicircle/ui-components`).** The guided "Link a private workspace" wizard
+  revealed its stages (repository → branch → version → session) one after another
+  with no sense of where you were in the sequence or what remained. It now leads
+  with a compact progress rail that marks each gating stage done / current /
+  pending from the wizard's own state — so the multi-step shape is legible at a
+  glance. Purely additive and presentational: the rail drives nothing, the manual
+  entry path (which has no sequence) hides it, and every existing control,
+  accessible name, and the submit gating are unchanged.
 - **Auth editor restructured for information scent + hierarchy
   (`@apicircle/ui-components`).** The request/folder auth form put 17 schemes
   behind one dropdown and swapped an unlabelled field grid beneath it, with the

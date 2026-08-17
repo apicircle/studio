@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
@@ -230,6 +230,60 @@ describe('LinkWorkspacePanel — connected, no links yet', () => {
 
     // Review & link is now enabled.
     expect(screen.getByRole('button', { name: /Review .* link/ })).toBeEnabled();
+  });
+
+  it('the guided flow shows a progress stepper that advances as stages complete', async () => {
+    const user = userEvent.setup();
+    useWorkspaceStore.setState({
+      listAccessibleRepos: vi.fn(async () => [
+        {
+          fullName: 'me/api',
+          owner: 'me',
+          name: 'api',
+          defaultBranch: 'main',
+          visibility: 'private' as const,
+          isPrivate: true,
+          pushable: true,
+        },
+      ]),
+      listRepoBranches: vi.fn(async () => [{ name: 'main', commitSha: 'aaa' }]),
+      probeLinkedRepoVersions: vi.fn(async () => ({
+        repoFullName: 'me/api',
+        versions: ['1.2.0'],
+        currentVersion: '1.2.0',
+        requiredSecretKeys: [],
+      })),
+    });
+
+    render(<LinkWorkspacePanel />);
+    await user.click(screen.getByRole('button', { name: /Link a private workspace/ }));
+
+    // The stepper is present and starts on Repository, with every gating stage listed.
+    const stepper = screen.getByRole('list', { name: 'Linking progress' });
+    expect(screen.getByRole('listitem', { current: 'step' })).toHaveTextContent('Repository');
+    for (const label of ['Repository', 'Branch', 'Version', 'Session']) {
+      expect(within(stepper).getByText(label)).toBeInTheDocument();
+    }
+
+    // Completing the repo → branch → probe chain marks every gating stage done, so
+    // no step is left "current" and Review & link enables.
+    await user.click(await screen.findByLabelText('Filter accessible repos'));
+    await user.click(await screen.findByRole('option', { name: /Pick me\/api/ }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Review .* link/ })).toBeEnabled(),
+    );
+    expect(screen.queryByRole('listitem', { current: 'step' })).toBeNull();
+  });
+
+  it('hides the progress stepper in manual-entry mode', async () => {
+    const user = userEvent.setup();
+    useWorkspaceStore.setState({ listAccessibleRepos: vi.fn(async () => []) });
+    render(<LinkWorkspacePanel />);
+    await user.click(screen.getByRole('button', { name: /Link a private workspace/ }));
+    expect(screen.getByRole('list', { name: 'Linking progress' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Switch to manual entry/ }));
+    expect(screen.queryByRole('list', { name: 'Linking progress' })).toBeNull();
   });
 
   it('switches between repo-browser and manual-entry modes; manual mode hides the combobox', async () => {
