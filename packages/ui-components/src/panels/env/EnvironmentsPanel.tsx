@@ -380,7 +380,7 @@ function VariableRow({
             <button
               type="button"
               onClick={() => setPickerOpen((o) => !o)}
-              className="inline-flex h-5 shrink-0 items-center gap-1 rounded-sm border border-amber/40 bg-amber/10 px-1.5 text-[0.625rem] text-amber hover:border-amber/70"
+              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-sm border border-amber/40 bg-amber/10 px-1.5 text-[0.625rem] text-amber hover:border-amber/70"
               aria-label="Change secret key"
               aria-expanded={pickerOpen}
               title="Pick a different Secret Vault key"

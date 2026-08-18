@@ -390,7 +390,7 @@ function DeviceCodeHint({
           }}
           aria-label={`Copy device code ${device.userCode}`}
           title="Copy device code"
-          className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-text-faint hover:text-text-primary"
+          className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-text-faint hover:text-text-primary"
         >
           <Copy size={10} aria-hidden="true" />
         </button>

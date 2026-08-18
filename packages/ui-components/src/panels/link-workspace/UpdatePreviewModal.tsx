@@ -402,7 +402,7 @@ function PreviewRow({
             onClick={() => setShowDiff((v) => !v)}
             aria-expanded={showDiff}
             aria-label={showDiff ? `Hide diff for ${entry.label}` : `Show diff for ${entry.label}`}
-            className="inline-flex h-5 items-center gap-0.5 rounded-sm border border-border bg-card px-1 text-[0.5625rem] text-text-muted hover:border-accent hover:text-accent"
+            className="inline-flex h-6 items-center gap-0.5 rounded-sm border border-border bg-card px-1 text-[0.5625rem] text-text-muted hover:border-accent hover:text-accent"
           >
             {showDiff ? (
               <ChevronDown size={9} aria-hidden="true" />

@@ -634,7 +634,7 @@ function LinkedSourceBanner({ view }: { view: Extract<ActiveRequestView, { sourc
               onClick={() => clearLinkedRequestOverrideField(view.link.id, view.request.id, field)}
               aria-label={`Reset ${field} to source value`}
               title={`Reset ${field} to source — drops just this field's override`}
-              className="group inline-flex h-5 items-center gap-1 rounded-sm border border-warning/40 bg-warning/10 pl-1.5 pr-1 font-mono text-[0.625rem] text-warning hover:border-danger/40 hover:bg-danger/10 hover:text-danger"
+              className="group inline-flex h-6 items-center gap-1 rounded-sm border border-warning/40 bg-warning/10 pl-1.5 pr-1 font-mono text-[0.625rem] text-warning hover:border-danger/40 hover:bg-danger/10 hover:text-danger"
             >
               <span>{field}</span>
               <X size={9} aria-hidden="true" className="text-warning/60 group-hover:text-danger" />

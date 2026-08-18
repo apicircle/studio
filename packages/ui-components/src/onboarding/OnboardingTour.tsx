@@ -526,7 +526,7 @@ export function OnboardingTour({ autoStart = true }: { autoStart?: boolean } = {
           <button
             type="button"
             onClick={endTour}
-            className="text-[0.6875rem] text-text-dim hover:text-text-primary"
+            className="-ml-1.5 inline-flex h-7 items-center rounded-sm px-1.5 text-[0.6875rem] text-text-dim hover:text-text-primary"
           >
             {isLast ? 'Close' : 'Skip tour'}
           </button>

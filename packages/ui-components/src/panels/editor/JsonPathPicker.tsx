@@ -241,7 +241,7 @@ function Node({ value, path, name, filter, onPick, depth }: NodeProps) {
           type="button"
           onClick={() => setOpen((o) => !o)}
           aria-label={open ? `Collapse ${name}` : `Expand ${name}`}
-          className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-text-faint hover:text-text-primary"
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-text-faint hover:text-text-primary"
         >
           {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </button>

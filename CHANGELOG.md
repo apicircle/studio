@@ -109,6 +109,18 @@
 
 ### Changed
 
+- **Sub-24px tap targets raised to the WCAG 2.5.8 AA floor
+  (`@apicircle/ui-components`).** Eight interactive controls rendered below the
+  24×24px minimum — seven icon buttons and inline chips at `h-5` (20px: the
+  auth-flow device-code copy, the linked-override reveal toggle, the JSON-path
+  expander, the editor's reset-field chip, the Environments "Change key" chip,
+  the History download-body chip, and the update-preview diff toggle), plus the
+  onboarding tour's "Skip tour" button, which had no height at all and measured
+  18px. The icon buttons go to 24×24 and the chips to `h-6` (24px, the `xs` floor
+  in the design-system scale); "Skip tour" gets an `h-7` target aligned with its
+  Next/Back siblings (measured 61×31px, up from 48×18). Icon glyphs and chip text
+  are unchanged — only the hit area grows. Native checkboxes were already
+  compliant via their enclosing `≥24px` label rows. No behaviour or copy change.
 - **Private-workspace link flow shows a progress stepper
   (`@apicircle/ui-components`).** The guided "Link a private workspace" wizard
   revealed its stages (repository → branch → version → session) one after another

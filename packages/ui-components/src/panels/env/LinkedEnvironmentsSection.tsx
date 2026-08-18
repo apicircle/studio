@@ -285,7 +285,7 @@ function LinkedEnvVarRow({
             aria-label={revealed ? 'Hide override value' : 'Show override value'}
             aria-pressed={revealed}
             title={revealed ? 'Hide value' : 'Show value (auto-hides on blur)'}
-            className="absolute right-1 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm text-text-faint hover:text-text-primary"
+            className="absolute right-1 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-sm text-text-faint hover:text-text-primary"
           >
             {revealed ? (
               <EyeOff size={11} aria-hidden="true" />

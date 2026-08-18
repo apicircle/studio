@@ -643,7 +643,7 @@ function DownloadResponseButton({ run }: { run: RequestRun }) {
           : 'Download the response body to a file'
       }
       aria-label="Download response body"
-      className="inline-flex h-5 items-center gap-1 rounded-sm border border-border bg-surface px-1.5 text-[0.625rem] text-text-muted hover:border-accent hover:text-text-primary"
+      className="inline-flex h-6 items-center gap-1 rounded-sm border border-border bg-surface px-1.5 text-[0.625rem] text-text-muted hover:border-accent hover:text-text-primary"
     >
       <Download size={10} />
       Download
