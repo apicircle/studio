@@ -21,7 +21,15 @@ describe('Sidebar', () => {
 
   it('switches header label when panel changes', async () => {
     await renderWithStore(<Sidebar />);
+    act(() => useWorkspaceStore.getState().setActivePanel('env'));
+    expect(screen.getByText('Environments')).toBeInTheDocument();
+  });
+
+  it('renders nothing for the stub-sidebar panels (Workspace / Link Workspace) — UX-S-014', async () => {
+    await renderWithStore(<Sidebar />);
     act(() => useWorkspaceStore.getState().setActivePanel('workspace'));
-    expect(screen.getByText('Workspace')).toBeInTheDocument();
+    expect(screen.queryByRole('complementary')).toBeNull();
+    act(() => useWorkspaceStore.getState().setActivePanel('link-workspace'));
+    expect(screen.queryByRole('complementary')).toBeNull();
   });
 });

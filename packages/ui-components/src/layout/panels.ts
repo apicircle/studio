@@ -24,8 +24,8 @@ export interface PanelDef {
 // Help Center. Settings panel removed; Secret Vault and Theme moved to TopBar.
 // Mocks + MCP added in P27 (Phase 2 — mock server runtime + AI client wiring).
 export const PANELS: ReadonlyArray<PanelDef> = [
-  { id: 'workspace', label: 'Workspace', icon: Workflow, hasSidebar: true },
-  { id: 'link-workspace', label: 'Link Workspace', icon: Link2, hasSidebar: true },
+  { id: 'workspace', label: 'Workspace', icon: Workflow, hasSidebar: false },
+  { id: 'link-workspace', label: 'Link Workspace', icon: Link2, hasSidebar: false },
   { id: 'editor', label: 'Editor', icon: PencilLine, hasSidebar: true },
   { id: 'env', label: 'Environments', icon: Layers, hasSidebar: true },
   { id: 'execution', label: 'Execution', icon: PlayCircle, hasSidebar: true },

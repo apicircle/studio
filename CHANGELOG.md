@@ -109,6 +109,15 @@
 
 ### Changed
 
+- **Workspace + Link Workspace panels reclaim their stub-sidebar space
+  (`@apicircle/ui-components`).** The two densest panels each shipped a fixed
+  ~20%-wide sidebar holding only a placeholder ("manage this from the main
+  panel") or, for Workspace, account/branch chips already shown in the main pane
+  (UX audit S-014). Both now set `hasSidebar: false`, so the main pane spans the
+  full width; the dead `WorkspaceSidebar`/`LinkWorkspaceSidebar` components are
+  removed. Every other panel keeps its sidebar and no content is lost — connection
+  guidance and the working-branch card already live in the Workspace main pane.
+
 - **Sub-24px tap targets raised to the WCAG 2.5.8 AA floor
   (`@apicircle/ui-components`).** Eight interactive controls rendered below the
   24×24px minimum — seven icon buttons and inline chips at `h-5` (20px: the

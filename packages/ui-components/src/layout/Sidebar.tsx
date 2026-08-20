@@ -1,6 +1,4 @@
 import { useWorkspaceStore } from '../store/workspaceStore';
-import { WorkspaceSidebar } from '../panels/workspace/WorkspaceSidebar';
-import { LinkWorkspaceSidebar } from '../panels/link-workspace/LinkWorkspaceSidebar';
 import { EditorSidebar, EditorSidebarActions } from '../panels/editor/EditorSidebar';
 import { EnvironmentsSidebar, EnvironmentsSidebarActions } from '../panels/env/EnvironmentsSidebar';
 import { ExecutionSidebar, ExecutionSidebarActions } from '../panels/execution/ExecutionSidebar';
@@ -29,8 +27,6 @@ export function Sidebar() {
         {ExtraSidebarActions ? <ExtraSidebarActions /> : null}
       </header>
       <div className="flex-1 overflow-y-auto p-2">
-        {activePanel === 'workspace' && <WorkspaceSidebar />}
-        {activePanel === 'link-workspace' && <LinkWorkspaceSidebar />}
         {activePanel === 'editor' && <EditorSidebar />}
         {activePanel === 'env' && <EnvironmentsSidebar />}
         {activePanel === 'execution' && <ExecutionSidebar />}

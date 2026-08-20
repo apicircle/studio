@@ -19,9 +19,9 @@ describe('panels registry', () => {
     ]);
   });
 
-  it('every panel has a sidebar — MCP and Help Center adopted the standard shell in the minor-fixes pass', () => {
+  it('only content-bearing panels carry a sidebar; the two stub-sidebar panels opt out (UX-S-014)', () => {
     const noSidebar = PANELS.filter((p) => !p.hasSidebar).map((p) => p.id);
-    expect(noSidebar).toEqual([]);
+    expect(noSidebar).toEqual(['workspace', 'link-workspace']);
   });
 
   it('getPanel returns the matching def', () => {
