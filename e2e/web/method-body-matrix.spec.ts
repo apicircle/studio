@@ -160,7 +160,7 @@ async function configureBody(
   monaco: MonacoHelpers,
   body: EditorBody,
 ): Promise<BodyResult> {
-  await app.getByRole('button', { name: 'Body', exact: true }).click();
+  await app.getByRole('tab', { name: 'Body', exact: true }).click();
   await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
   await app.getByRole('radio', { name: body }).click();
 

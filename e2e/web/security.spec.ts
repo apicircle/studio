@@ -132,7 +132,7 @@ test.describe('Security', () => {
       // Headers tab (strict-mode collision).
       await app
         .getByRole('group', { name: 'Response sections' })
-        .getByRole('button', { name: 'Headers', exact: true })
+        .getByRole('tab', { name: 'Headers', exact: true })
         .click();
       await expect(app.getByText('content-security-policy')).toBeVisible();
       await expect(app.getByText('strict-transport-security')).toBeVisible();

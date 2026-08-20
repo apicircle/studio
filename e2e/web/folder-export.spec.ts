@@ -67,7 +67,7 @@ test.describe('Folder export (Export as JSON)', () => {
     // the row button's accessible name is "GET POST login". Match exactly
     // to disambiguate from the kebab ("Request actions for POST login").
     await app.getByRole('button', { name: 'GET POST login', exact: true }).click();
-    await app.getByRole('button', { name: /^Auth/ }).click();
+    await app.getByRole('tab', { name: /^Auth/ }).click();
     await app.getByRole('combobox', { name: /^Auth type$/ }).selectOption('bearer');
     // Scope to the input — `getByLabel` partial-matches both the field and
     // the "Show Bearer token" reveal toggle, so use exact match.

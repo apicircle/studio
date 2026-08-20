@@ -69,7 +69,7 @@ test.describe('Plan features — C10', () => {
       await sidebar.createRequest('c10-fails');
       await app.getByLabel('Request URL').fill('https://api.example.test/c10-fails');
       await app
-        .getByRole('button', { name: /^Assertions/ })
+        .getByRole('tab', { name: /^Assertions/ })
         .first()
         .click();
       await app.getByRole('button', { name: /^Add assertion$/ }).click();

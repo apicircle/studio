@@ -36,7 +36,7 @@ test.describe('History — C11', () => {
       await app.getByLabel('Request URL').fill(e2eMock.url('/anything/hist-detail'));
       // Add a status assertion so the assertions tab has content.
       await app
-        .getByRole('button', { name: /^Assertions/ })
+        .getByRole('tab', { name: /^Assertions/ })
         .first()
         .click();
       await app.getByRole('button', { name: /^Add assertion$/ }).click();
@@ -61,10 +61,8 @@ test.describe('History — C11', () => {
       // The Headers + Assertions tabs from ResponseViewer are visible.
       // ResponseViewer's tab row is a labelled group "Response sections".
       const responseTabs = app.getByRole('group', { name: 'Response sections' }).first();
-      await expect(
-        responseTabs.getByRole('button', { name: 'Headers', exact: true }),
-      ).toBeVisible();
-      await expect(responseTabs.getByRole('button', { name: /Assertions/ })).toBeVisible();
+      await expect(responseTabs.getByRole('tab', { name: 'Headers', exact: true })).toBeVisible();
+      await expect(responseTabs.getByRole('tab', { name: /Assertions/ })).toBeVisible();
     },
   );
 
@@ -455,7 +453,7 @@ test.describe('History — C11', () => {
       await sidebar.createRequest('hr-post');
       await app.getByLabel('HTTP method').selectOption('POST');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await app.getByRole('radio', { name: 'JSON' }).click();
       await monaco.fill('Request body', '{"id":42,"name":"replay"}');
 

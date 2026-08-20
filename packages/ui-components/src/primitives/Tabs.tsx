@@ -23,7 +23,34 @@ interface TabsProps {
    */
   idBase?: string;
   className?: string;
+  /**
+   * Visual treatment. `pill` (the default) is the standalone rounded-chip strip;
+   * `underline` is the bottom-border tab row the request/response editors use, so
+   * they can adopt the primitive without changing their look.
+   */
+  variant?: 'pill' | 'underline';
 }
+
+const LIST_VARIANT: Record<'pill' | 'underline', string> = {
+  pill: 'flex items-center gap-1',
+  underline: 'flex border-b border-border-subtle px-2',
+};
+
+const TAB_VARIANT: Record<'pill' | 'underline', string> = {
+  pill: 'h-7 rounded-sm border px-3 font-medium',
+  underline: 'h-9 border-b-2 px-3',
+};
+
+const TAB_STATE: Record<'pill' | 'underline', { active: string; idle: string }> = {
+  pill: {
+    active: 'border-accent/40 bg-accent/15 text-accent',
+    idle: 'border-transparent text-text-muted hover:bg-surface hover:text-text-primary',
+  },
+  underline: {
+    active: 'border-accent text-text-primary',
+    idle: 'border-transparent text-text-muted hover:text-text-primary',
+  },
+};
 
 /**
  * A real ARIA tablist with roving-tabindex keyboard support (←/→/Home/End,
@@ -35,7 +62,15 @@ interface TabsProps {
  * For the associated panel, pass a stable `idBase` and spread
  * {@link tabPanelProps} onto your panel container.
  */
-export function Tabs({ tabs, activeId, onChange, label, idBase, className }: TabsProps) {
+export function Tabs({
+  tabs,
+  activeId,
+  onChange,
+  label,
+  idBase,
+  className,
+  variant = 'pill',
+}: TabsProps) {
   const auto = useId();
   const base = idBase ?? auto;
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -83,7 +118,7 @@ export function Tabs({ tabs, activeId, onChange, label, idBase, className }: Tab
       role="tablist"
       aria-label={label}
       onKeyDown={onKeyDown}
-      className={cn('flex items-center gap-1', className)}
+      className={cn(LIST_VARIANT[variant], className)}
     >
       {tabs.map((t) => {
         const active = t.id === activeId;
@@ -102,12 +137,11 @@ export function Tabs({ tabs, activeId, onChange, label, idBase, className }: Tab
             disabled={t.disabled}
             onClick={() => onChange(t.id)}
             className={cn(
-              'inline-flex h-7 items-center gap-1.5 rounded-sm border px-3 text-xs font-medium transition-colors',
+              'inline-flex items-center gap-1.5 text-xs transition-colors',
+              TAB_VARIANT[variant],
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-1 focus-visible:ring-offset-card',
               'disabled:cursor-not-allowed disabled:opacity-50',
-              active
-                ? 'border-accent/40 bg-accent/15 text-accent'
-                : 'border-transparent text-text-muted hover:bg-surface hover:text-text-primary',
+              active ? TAB_STATE[variant].active : TAB_STATE[variant].idle,
             )}
           >
             {t.label}

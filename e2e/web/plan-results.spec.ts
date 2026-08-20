@@ -82,7 +82,7 @@ test.describe('Plan run details (P21)', () => {
 
       // Default status=200 assertion.
       await app
-        .getByRole('button', { name: /^Assertions/ })
+        .getByRole('tab', { name: /^Assertions/ })
         .first()
         .click();
       await app.getByRole('button', { name: /^Add assertion$/ }).click();
@@ -102,7 +102,7 @@ test.describe('Plan run details (P21)', () => {
       // explanation produced by core/runAssertions on PASS. Click the
       // Assertions tab in that step's response viewer to surface the text.
       const detailsSection = app.getByLabel('Per-step run details');
-      await detailsSection.getByRole('button', { name: /Assertions \(1\/1\)/ }).click();
+      await detailsSection.getByRole('tab', { name: /Assertions \(1\/1\)/ }).click();
       await expect(detailsSection.getByText('status: 200 equals 200')).toBeVisible();
     },
   );
@@ -119,7 +119,7 @@ test.describe('Plan run details (P21)', () => {
       await app.getByLabel('Request URL').fill('https://api.example.test/x');
       // Add a status==999 assertion which will fail.
       await app
-        .getByRole('button', { name: /^Assertions/ })
+        .getByRole('tab', { name: /^Assertions/ })
         .first()
         .click();
       await app.getByRole('button', { name: /^Add assertion$/ }).click();
@@ -139,7 +139,7 @@ test.describe('Plan run details (P21)', () => {
       await expect(app.getByText(/0\/1 assertions/)).toBeVisible();
       // Open the per-step assertions tab to surface the failure detail.
       const detailsSection = app.getByLabel('Per-step run details');
-      await detailsSection.getByRole('button', { name: /Assertions \(0\/1\)/ }).click();
+      await detailsSection.getByRole('tab', { name: /Assertions \(0\/1\)/ }).click();
       await expect(detailsSection.getByText(/expected\s+999,\s+got\s+200/i)).toBeVisible();
     },
   );

@@ -58,7 +58,7 @@ test.describe('Headers — behavioral sweep', () => {
       await sidebar.createRequest('hdr-crud');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
 
@@ -99,7 +99,7 @@ test.describe('Headers — behavioral sweep', () => {
     async ({ app, sidebar }) => {
       await sidebar.createRequest('hdr-autocomplete-empty');
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).click();
@@ -119,7 +119,7 @@ test.describe('Headers — behavioral sweep', () => {
     async ({ app, sidebar }) => {
       await sidebar.createRequest('hdr-autocomplete-prefix');
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).click();
@@ -138,7 +138,7 @@ test.describe('Headers — behavioral sweep', () => {
     async ({ app, sidebar }) => {
       await sidebar.createRequest('hdr-value-rec');
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).click();
@@ -164,7 +164,7 @@ test.describe('Headers — behavioral sweep', () => {
     async ({ app, sidebar }) => {
       await sidebar.createRequest('hdr-reserved-app');
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).click();
@@ -182,7 +182,7 @@ test.describe('Headers — behavioral sweep', () => {
     async ({ app, sidebar }) => {
       await sidebar.createRequest('hdr-reserved-browser');
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).click();
@@ -224,7 +224,7 @@ test.describe('Headers — behavioral sweep', () => {
       await sidebar.createRequest('hdr-auto-override');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).click();
@@ -287,7 +287,7 @@ test.describe('Headers — behavioral sweep', () => {
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByLabel('HTTP method').selectOption('POST');
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).click();
@@ -308,7 +308,7 @@ test.describe('Headers — behavioral sweep', () => {
       await sidebar.createRequest('hdr-empty-key');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).click();
@@ -366,7 +366,7 @@ test.describe('Headers — per-dictionary-entry wire sweep', () => {
         await sidebar.createRequest(`hdr-sweep-${slug}`);
         await app.getByLabel('Request URL').fill(e2eMock.url(path));
         await app
-          .getByRole('button', { name: /^Headers/ })
+          .getByRole('tab', { name: /^Headers/ })
           .first()
           .click();
         await app.getByRole('button', { name: 'Add row' }).click();
@@ -403,7 +403,7 @@ test.describe('Headers Deep Matrix — edge cases', () => {
       await sidebar.createRequest('hd-case');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).first().click();
@@ -423,7 +423,7 @@ test.describe('Headers Deep Matrix — edge cases', () => {
       await sidebar.createRequest('hd-dup');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).first().click();
@@ -447,7 +447,7 @@ test.describe('Headers Deep Matrix — edge cases', () => {
       await sidebar.createRequest('hd-ws');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).first().click();
@@ -470,7 +470,7 @@ test.describe('Headers Deep Matrix — edge cases', () => {
       await sidebar.createRequest('hd-crlf');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).first().click();
@@ -492,7 +492,7 @@ test.describe('Headers Deep Matrix — edge cases', () => {
       await sidebar.createRequest('hd-long');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).first().click();
@@ -516,7 +516,7 @@ test.describe('Headers Deep Matrix — edge cases', () => {
       await sidebar.createRequest('hd-var');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).first().click();
@@ -536,7 +536,7 @@ test.describe('Headers Deep Matrix — edge cases', () => {
       await sidebar.createRequest('hd-order');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).first().click();

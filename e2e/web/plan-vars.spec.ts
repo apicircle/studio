@@ -27,7 +27,7 @@ test(
     await sidebar.createRequest('plan-step-1');
     await app.getByLabel('Request URL').fill(e2eMock.url('/json'));
     await app
-      .getByRole('button', { name: /^Context/ })
+      .getByRole('tab', { name: /^Context/ })
       .first()
       .click();
     await app.getByRole('button', { name: 'Add extractor' }).click();

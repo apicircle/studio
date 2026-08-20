@@ -81,7 +81,7 @@ test.describe('Folder-wise auth — full inherit flow', () => {
     await expect(app.getByLabel('Request name', { exact: true })).toHaveValue('list-invoices');
 
     // ----- 4. The Auth tab should default to `inherit`. -----
-    await app.getByRole('button', { name: /^Auth/ }).first().click();
+    await app.getByRole('tab', { name: /^Auth/ }).first().click();
     await expect(app.getByLabel('Auth type')).toHaveValue('inherit');
     await expect(
       app.getByText(/walks up the folder chain and uses the first folder/i),

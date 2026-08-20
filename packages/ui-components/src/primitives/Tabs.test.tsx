@@ -106,4 +106,22 @@ describe('Tabs', () => {
     expect(onChange).not.toHaveBeenCalled();
     expect(screen.getByRole('tab', { name: /Params/ })).toHaveAttribute('aria-selected', 'true');
   });
+
+  it('renders the underline variant (bottom-border row) the editors adopt', () => {
+    render(
+      <Tabs
+        tabs={TABS}
+        activeId="params"
+        onChange={() => {}}
+        label="Request sections"
+        variant="underline"
+      />,
+    );
+    // Same tablist semantics, editor look: a bordered row of h-9 underline tabs.
+    expect(screen.getByRole('tablist', { name: 'Request sections' })).toHaveClass('border-b');
+    const active = screen.getByRole('tab', { name: /Params/ });
+    expect(active).toHaveClass('h-9', 'border-accent');
+    expect(active).not.toHaveClass('rounded-sm');
+    expect(screen.getByRole('tab', { name: 'Headers' })).toHaveClass('border-transparent');
+  });
 });

@@ -71,7 +71,7 @@ test(
 
     // 2. Create a request, switch body to JSON, pick the schema.
     await sidebar.createRequest('schema-diag');
-    await app.getByRole('button', { name: 'Body', exact: true }).click();
+    await app.getByRole('tab', { name: 'Body', exact: true }).click();
     await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
     await app.getByRole('radio', { name: 'JSON' }).click();
     await app.getByLabel('JSON schema').selectOption({ label: 'UserSchemaDiag' });

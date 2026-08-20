@@ -56,7 +56,7 @@ test.skip(
     await app.getByLabel('Request URL').fill(idp.url('/protected'));
 
     // Switch to the Auth tab and pick client-credentials.
-    await app.getByRole('button', { name: /^Auth/ }).first().click();
+    await app.getByRole('tab', { name: /^Auth/ }).first().click();
     await app.getByLabel('Auth type').selectOption('oauth2-client-credentials');
 
     // Fill in IdP fields. Token URL points at the mock IdP we just spun up.
@@ -85,7 +85,7 @@ test(
   tc(id('Refresh'), 'client_credentials: refresh button rotates the access token'),
   async ({ app, sidebar }) => {
     await sidebar.createRequest('cc-rotate-flow');
-    await app.getByRole('button', { name: /^Auth/ }).first().click();
+    await app.getByRole('tab', { name: /^Auth/ }).first().click();
     await app.getByLabel('Auth type').selectOption('oauth2-client-credentials');
     await app.getByLabel('Token URL').fill(idp.url('/token'));
     await app.getByLabel('Client ID').fill('cc-rotate');

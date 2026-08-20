@@ -93,6 +93,11 @@ export const ParamsTab = memo(function ParamsTab({ request }: ParamsTabProps) {
             key={id}
             type="button"
             role="tab"
+            // The visible label sits in a capitalize <span> (+ a count badge),
+            // which left the tab with no computed accessible name — a screen
+            // reader announced a bare "tab". Name it explicitly, mirroring the
+            // visible "Query"/"Path"/"Cookie (n)" (UX audit S-007).
+            aria-label={`${id[0].toUpperCase()}${id.slice(1)}${counts[id] > 0 ? ` (${counts[id]})` : ''}`}
             aria-selected={section === id}
             // Roving tabindex — only the selected tab is in the page tab
             // sequence; arrow keys move within the group.

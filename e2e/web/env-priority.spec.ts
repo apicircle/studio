@@ -65,7 +65,7 @@ test(
 
     // Now set a per-request context var with the same key.
     await app
-      .getByRole('button', { name: /^Context/ })
+      .getByRole('tab', { name: /^Context/ })
       .first()
       .click();
     await app.getByRole('button', { name: 'Add manual variable' }).click();

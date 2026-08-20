@@ -119,7 +119,7 @@ const CONSUMER_DRIVERS: Record<string, ConsumerDriver> = {
       await sidebar.createRequest('vi-hdr-val');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).first().click();
@@ -135,7 +135,7 @@ const CONSUMER_DRIVERS: Record<string, ConsumerDriver> = {
       await sidebar.createRequest('vi-hdr-key');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).first().click();
@@ -153,7 +153,7 @@ const CONSUMER_DRIVERS: Record<string, ConsumerDriver> = {
       await sidebar.createRequest('vi-json-val');
       await app.getByLabel('HTTP method').selectOption('POST');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await app.getByRole('radio', { name: 'JSON' }).click();
       // `monaco.fill` waits for the editor to register before setValue —
       // a raw `app.evaluate(...setValue...)` no-ops if Monaco hasn't
@@ -172,7 +172,7 @@ const CONSUMER_DRIVERS: Record<string, ConsumerDriver> = {
       await sidebar.createRequest('vi-json-key');
       await app.getByLabel('HTTP method').selectOption('POST');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await app.getByRole('radio', { name: 'JSON' }).click();
       await monaco.fill('Request body', `{"k-{{${KNOWN_VAR}}}":"x"}`);
       return (wire) => {
@@ -185,7 +185,7 @@ const CONSUMER_DRIVERS: Record<string, ConsumerDriver> = {
       await sidebar.createRequest('vi-fd-val');
       await app.getByLabel('HTTP method').selectOption('POST');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await app.getByRole('radio', { name: 'form-data' }).click();
       await app.getByRole('button', { name: /^Add text$/ }).click();
       await app.getByLabel('Form-data row 1 key').fill('field');
@@ -203,7 +203,7 @@ const CONSUMER_DRIVERS: Record<string, ConsumerDriver> = {
       await sidebar.createRequest('vi-fd-key');
       await app.getByLabel('HTTP method').selectOption('POST');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await app.getByRole('radio', { name: 'form-data' }).click();
       await app.getByRole('button', { name: /^Add text$/ }).click();
       await app.getByLabel('Form-data row 1 key').fill(`k-{{${KNOWN_VAR}}}`);
@@ -217,7 +217,7 @@ const CONSUMER_DRIVERS: Record<string, ConsumerDriver> = {
     async configure(app, e2eMock, sidebar, path, expected) {
       await sidebar.createRequest('vi-auth-bearer');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
-      await app.getByRole('button', { name: /^Auth/ }).first().click();
+      await app.getByRole('tab', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('bearer');
       await app
         .getByRole('textbox', { name: 'Bearer token', exact: true })
@@ -231,7 +231,7 @@ const CONSUMER_DRIVERS: Record<string, ConsumerDriver> = {
     async configure(app, e2eMock, sidebar, path, expected) {
       await sidebar.createRequest('vi-auth-basic-u');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
-      await app.getByRole('button', { name: /^Auth/ }).first().click();
+      await app.getByRole('tab', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('basic');
       await app.getByRole('textbox', { name: 'Username', exact: true }).fill(`{{${KNOWN_VAR}}}`);
       await app.getByRole('textbox', { name: 'Password', exact: true }).fill('p');
@@ -247,7 +247,7 @@ const CONSUMER_DRIVERS: Record<string, ConsumerDriver> = {
     async configure(app, e2eMock, sidebar, path, expected) {
       await sidebar.createRequest('vi-auth-basic-p');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
-      await app.getByRole('button', { name: /^Auth/ }).first().click();
+      await app.getByRole('tab', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('basic');
       await app.getByRole('textbox', { name: 'Username', exact: true }).fill('u');
       await app.getByRole('textbox', { name: 'Password', exact: true }).fill(`{{${KNOWN_VAR}}}`);
@@ -262,7 +262,7 @@ const CONSUMER_DRIVERS: Record<string, ConsumerDriver> = {
     async configure(app, e2eMock, sidebar, path, expected) {
       await sidebar.createRequest('vi-auth-apikey');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
-      await app.getByRole('button', { name: /^Auth/ }).first().click();
+      await app.getByRole('tab', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('api-key');
       await app.getByRole('textbox', { name: 'API key name', exact: true }).fill('x-api-key');
       await app

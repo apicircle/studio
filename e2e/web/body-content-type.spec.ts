@@ -73,12 +73,12 @@ test.describe('Body-driven Content-Type', () => {
       async ({ app, sidebar }) => {
         await sidebar.createRequest(`ct-${radioName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`);
         await app.getByLabel('HTTP method').selectOption('POST');
-        await app.getByRole('button', { name: 'Body', exact: true }).click();
+        await app.getByRole('tab', { name: 'Body', exact: true }).click();
         await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
         await app.getByRole('radio', { name: radioName }).click();
         // Switch to Headers tab and assert the Content-Type row.
         await app
-          .getByRole('button', { name: /^Headers/ })
+          .getByRole('tab', { name: /^Headers/ })
           .first()
           .click();
         await expect(app.getByLabel('Headers value 1')).toHaveValue(expectedContentType);
@@ -94,20 +94,20 @@ test.describe('Body-driven Content-Type', () => {
     async ({ app, sidebar }) => {
       await sidebar.createRequest('ct-strip-on-none');
       await app.getByLabel('HTTP method').selectOption('POST');
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
       await app.getByRole('radio', { name: 'JSON' }).click();
       // Confirm Content-Type appears.
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await expect(app.getByLabel('Headers value 1')).toHaveValue('application/json');
       // Flip back to none.
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await app.getByRole('radio', { name: 'none' }).click();
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       // Headers list is now empty (only the Content-Type row was added; no
@@ -126,7 +126,7 @@ test.describe('Body-driven Content-Type', () => {
       await app.getByLabel('HTTP method').selectOption('POST');
       // User sets Content-Type manually first.
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).click();
@@ -137,10 +137,10 @@ test.describe('Body-driven Content-Type', () => {
       // update to JSON's value because the editor's policy is "keep one
       // Content-Type row, value matches body type". This proves the
       // intentional auto-update — switch back to verify.
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await app.getByRole('radio', { name: 'JSON' }).click();
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await expect(app.getByLabel('Headers value 1')).toHaveValue('application/json');
@@ -253,7 +253,7 @@ test.describe('TC-BC JSON edge cases', () => {
         await sidebar.createRequest(`bc-${tcId}`);
         await app.getByLabel('HTTP method').selectOption('POST');
         await app.getByLabel('Request URL').fill(e2eMock.url(path));
-        await app.getByRole('button', { name: 'Body', exact: true }).click();
+        await app.getByRole('tab', { name: 'Body', exact: true }).click();
         await app.getByRole('radio', { name: 'JSON' }).click();
         // `monaco.fill` waits for the editor to register on
         // `window.__apicircleEditors` before calling setValue — a raw
@@ -298,7 +298,7 @@ test.describe('TC-BC XML edge cases', () => {
       await sidebar.createRequest(`bc-${tcId}`);
       await app.getByLabel('HTTP method').selectOption('POST');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await app.getByRole('radio', { name: 'XML' }).click();
       // See JSON loop above — `monaco.fill` waits for editor registration.
       await monaco.fill('Request body', cell.content);
@@ -353,7 +353,7 @@ test.describe('TC-BC Urlencoded + FormData edge cases', () => {
       await sidebar.createRequest(`bc-${tcId}`);
       await app.getByLabel('HTTP method').selectOption('POST');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       const radioName = cell.expect === 'form' ? 'urlencoded' : 'form-data';
       await app.getByRole('radio', { name: radioName }).click();
       if (cell.expect === 'form') {

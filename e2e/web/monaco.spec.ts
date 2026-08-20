@@ -34,7 +34,7 @@ test.describe('Monaco foundation (P12)', () => {
       // whose accessible name contains "Body" (e.g. the response viewer's
       // body tab). Also wait for the radiogroup to confirm the tab content
       // mounted before clicking the radio.
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
       await app.getByRole('radio', { name: 'JSON' }).click();
 
@@ -82,7 +82,7 @@ test.describe('Monaco foundation (P12)', () => {
     tc(id('Tab Title'), 'body fullscreen overlay opens, has the right title, and closes on Escape'),
     async ({ app, monaco, sidebar }) => {
       await sidebar.createRequest('Demo');
-      await app.getByRole('button', { name: 'Body' }).first().click();
+      await app.getByRole('tab', { name: 'Body' }).first().click();
       await app.getByRole('radio', { name: 'JSON' }).click();
       await monaco.fill('Request body', '{"k":"v"}');
 
@@ -143,7 +143,7 @@ test.describe('Monaco foundation (P12)', () => {
       // the request's Rename/Delete buttons collide with the theme picker
       // selector below.
       await sidebar.createRequest('monaco-paint');
-      await app.getByRole('button', { name: 'Body' }).first().click();
+      await app.getByRole('tab', { name: 'Body' }).first().click();
       await app.getByRole('radio', { name: 'JSON' }).click();
       const wrapper = await monaco.ready('Request body');
       // Initial theme is studio-dark — Monaco's `vs-dark` base shows up as

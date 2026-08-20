@@ -53,7 +53,7 @@ test.describe('Environments', () => {
       await sidebar.createRequest('env-substitution');
       await app.getByLabel('Request URL').fill('{{BASE_URL}}/users');
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       // Add a header row referencing the encrypted token.

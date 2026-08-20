@@ -91,7 +91,7 @@ test.describe('Variable autocomplete (P15)', () => {
     async ({ app, sidebar }) => {
       await seedEnv(app, sidebar);
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).click();
@@ -120,7 +120,7 @@ test.describe('Variable autocomplete (P15)', () => {
     async ({ app, sidebar }) => {
       await sidebar.createRequest('header-badges');
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).click();

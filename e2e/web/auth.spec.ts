@@ -42,7 +42,7 @@ async function openAuthTab(
   // kebab menu; `sidebar.createRequest` drives the name-first flow and
   // waits for the editor to switch to the new request.
   await sidebar.createRequest(`${name}-${Math.random().toString(36).slice(2, 8)}`);
-  await app.getByRole('button', { name: /^Auth/ }).first().click();
+  await app.getByRole('tab', { name: /^Auth/ }).first().click();
 }
 
 const tx = (app: Page, name: string) => app.getByRole('textbox', { name, exact: true });

@@ -92,7 +92,7 @@ test(
   async ({ app, context, sidebar }) => {
     // 1. New request + auth tab.
     await sidebar.createRequest(`oauth2-${Math.random().toString(36).slice(2, 8)}`);
-    await app.getByRole('button', { name: /^Auth/ }).first().click();
+    await app.getByRole('tab', { name: /^Auth/ }).first().click();
     await app.getByLabel('Auth type').selectOption('oauth2-auth-code');
     await app.getByLabel('Authorization URL').fill(idp.url('/authorize'));
     await app.getByLabel('Token URL').fill(idp.url('/token'));
@@ -138,7 +138,7 @@ test.skip(
   tc(id('PKCE'), 'PKCE: popup choreography emits S256 challenge in authorize URL'),
   async ({ app, context, sidebar }) => {
     await sidebar.createRequest(`oauth2-${Math.random().toString(36).slice(2, 8)}`);
-    await app.getByRole('button', { name: /^Auth/ }).first().click();
+    await app.getByRole('tab', { name: /^Auth/ }).first().click();
     await app.getByLabel('Auth type').selectOption('oauth2-pkce');
     await app.getByLabel('Authorization URL').fill(idp.url('/authorize'));
     await app.getByLabel('Token URL').fill(idp.url('/token'));
@@ -182,7 +182,7 @@ test(
   tc(id('Implicit'), 'implicit: popup posts fragment-supplied access_token to the parent'),
   async ({ app, context, sidebar }) => {
     await sidebar.createRequest(`oauth2-${Math.random().toString(36).slice(2, 8)}`);
-    await app.getByRole('button', { name: /^Auth/ }).first().click();
+    await app.getByRole('tab', { name: /^Auth/ }).first().click();
     await app.getByLabel('Auth type').selectOption('oauth2-implicit');
     await app.getByLabel('Authorization URL').fill(idp.url('/authorize'));
     await app.getByLabel('Client ID').fill('implicit-client');
@@ -213,7 +213,7 @@ test(
     // without the second-leg /protected fetch (which the cc spec is
     // skipped over for CORS-stability reasons).
     await sidebar.createRequest(`oauth2-ropc-${Math.random().toString(36).slice(2, 8)}`);
-    await app.getByRole('button', { name: /^Auth/ }).first().click();
+    await app.getByRole('tab', { name: /^Auth/ }).first().click();
     await app.getByLabel('Auth type').selectOption('oauth2-password');
     await app.getByLabel('Token URL').fill(idp.url('/token'));
     await app.getByLabel('Client ID').fill('ropc-client');
@@ -240,7 +240,7 @@ test(
     // `idp.approveDevice()` — simulates the user finishing the entry.
 
     await sidebar.createRequest(`oauth2-${Math.random().toString(36).slice(2, 8)}`);
-    await app.getByRole('button', { name: /^Auth/ }).first().click();
+    await app.getByRole('tab', { name: /^Auth/ }).first().click();
     await app.getByLabel('Auth type').selectOption('oauth2-device');
     await app.getByLabel('Device authorization URL').fill(idp.url('/device_authorize'));
     await app.getByLabel('Token URL').fill(idp.url('/token'));

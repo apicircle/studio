@@ -86,14 +86,14 @@ test.describe('Query params', () => {
       await sidebar.createRequest('q-var-sub');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app
-        .getByRole('button', { name: /^Context/ })
+        .getByRole('tab', { name: /^Context/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add manual variable' }).click();
       await app.getByLabel('Context var 1 name').fill('GREETING');
       await app.getByLabel('Context var 1 value').fill('hi');
       await app
-        .getByRole('button', { name: /^Params/ })
+        .getByRole('tab', { name: /^Params/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).first().click();

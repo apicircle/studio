@@ -63,7 +63,7 @@ test.describe('a11y sweep', () => {
       // current scheme), so we match it loosely instead.
       const tabButton =
         tab === 'Auth'
-          ? app.getByRole('button', { name: /^Auth(\s·\s|$)/ }).first()
+          ? app.getByRole('tab', { name: /^Auth(\s·\s|$)/ }).first()
           : app.getByRole('button', { name: tab, exact: true }).first();
       await tabButton.click();
       const results = await new AxeBuilder({ page: app })
@@ -191,14 +191,15 @@ test.describe('A11y — workbook AL rows', () => {
     tc(alId('Color Independence'), 'tab state has a non-colour signal'),
     async ({ app, sidebar }) => {
       await sidebar.createRequest('ci-check');
-      const tab = app.getByRole('button', { name: 'Params', exact: true }).first();
+      const tab = app.getByRole('tab', { name: 'Params', exact: true }).first();
       await tab.click();
       const ariaSel = await tab.getAttribute('aria-selected');
       const dataState = await tab.getAttribute('data-state');
-      // The editor tab strip marks the active tab with `aria-current="page"`
-      // (see panels/editor/EditorPanel.tsx) — a valid WCAG non-colour signal.
       const ariaCurrent = await tab.getAttribute('aria-current');
       const className = (await tab.getAttribute('class')) ?? '';
+      // The editor tab strip is a real ARIA tablist (packages/ui-components/
+      // src/primitives/Tabs.tsx) — the active tab carries aria-selected="true",
+      // a valid WCAG non-colour signal (aria-current/data-state kept as fallbacks).
       const hasNonColourSignal =
         ariaSel === 'true' ||
         dataState === 'active' ||

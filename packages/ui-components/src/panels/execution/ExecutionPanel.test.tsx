@@ -248,7 +248,7 @@ describe('ExecutionPanel — per-step run details', () => {
     await userEvent.click(screen.getByRole('button', { expanded: false, name: /Update user/ }));
     // Assertion detail now lives in the ResponseViewer's Assertions tab
     // (matching the editor's request-execution view); switch to it.
-    const assertionsTabs = screen.getAllByRole('button', { name: /Assertions \(0\/1\)/ });
+    const assertionsTabs = screen.getAllByRole('tab', { name: /Assertions \(0\/1\)/ });
     await userEvent.click(assertionsTabs[assertionsTabs.length - 1]);
     expect(screen.getByText('expected 200, got 500')).toBeInTheDocument();
   });

@@ -481,7 +481,7 @@ test.describe('Response Panel — Headers', () => {
       // Click Headers tab — accept either explicit "Headers" tab or
       // a count badge like "Headers (n)".
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .last()
         .click();
       // Content-Type is set by the mock server on /anything.

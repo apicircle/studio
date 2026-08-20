@@ -53,7 +53,7 @@ test.describe('Auth wire-level — programmatic types', () => {
       const path = '/anything/auth-none';
       await sidebar.createRequest('auth-none');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
-      await app.getByRole('button', { name: /^Auth/ }).first().click();
+      await app.getByRole('tab', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('none');
       await app.getByRole('button', { name: /^Send$/ }).click();
       await expect(app.getByText('200').first()).toBeVisible();
@@ -71,7 +71,7 @@ test.describe('Auth wire-level — programmatic types', () => {
       const path = '/anything/auth-bearer';
       await sidebar.createRequest('auth-bearer');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
-      await app.getByRole('button', { name: /^Auth/ }).first().click();
+      await app.getByRole('tab', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('bearer');
       await app
         .getByRole('textbox', { name: 'Bearer token', exact: true })
@@ -89,7 +89,7 @@ test.describe('Auth wire-level — programmatic types', () => {
       const path = '/anything/auth-basic';
       await sidebar.createRequest('auth-basic');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
-      await app.getByRole('button', { name: /^Auth/ }).first().click();
+      await app.getByRole('tab', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('basic');
       await app.getByLabel('Username').fill('alice');
       await app.getByRole('textbox', { name: 'Password', exact: true }).fill('s3cret');
@@ -107,7 +107,7 @@ test.describe('Auth wire-level — programmatic types', () => {
       const path = '/anything/auth-api-key-header';
       await sidebar.createRequest('auth-api-key-header');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
-      await app.getByRole('button', { name: /^Auth/ }).first().click();
+      await app.getByRole('tab', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('api-key');
       await app.getByLabel('API key location').selectOption('header');
       await app.getByRole('textbox', { name: 'API key name', exact: true }).fill('X-API-Key');
@@ -128,7 +128,7 @@ test.describe('Auth wire-level — programmatic types', () => {
       const path = '/anything/auth-api-key-query';
       await sidebar.createRequest('auth-api-key-query');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
-      await app.getByRole('button', { name: /^Auth/ }).first().click();
+      await app.getByRole('tab', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('api-key');
       await app.getByLabel('API key location').selectOption('query');
       await app.getByRole('textbox', { name: 'API key name', exact: true }).fill('access_token');
@@ -151,7 +151,7 @@ test.describe('Auth wire-level — programmatic types', () => {
       // composed Cookie header; assert on that.
       await sidebar.createRequest('auth-api-key-cookie');
       await app.getByLabel('Request URL').fill(e2eMock.url('/anything'));
-      await app.getByRole('button', { name: /^Auth/ }).first().click();
+      await app.getByRole('tab', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('api-key');
       await app.getByLabel('API key location').selectOption('cookie');
       await app.getByRole('textbox', { name: 'API key name', exact: true }).fill('session');
@@ -168,7 +168,7 @@ test.describe('Auth wire-level — programmatic types', () => {
       const path = '/anything/auth-custom-header';
       await sidebar.createRequest('auth-custom-header');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
-      await app.getByRole('button', { name: /^Auth/ }).first().click();
+      await app.getByRole('tab', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('custom-header');
       await app.getByRole('textbox', { name: 'Header name', exact: true }).fill('X-Auth-Token');
       await app.getByRole('textbox', { name: 'Header value', exact: true }).fill('custom-tok');
@@ -191,7 +191,7 @@ test.describe('Auth wire-level — programmatic types', () => {
     async ({ app, e2eMock, sidebar }) => {
       await sidebar.createRequest('auth-ntlm');
       await app.getByLabel('Request URL').fill(e2eMock.url('/auth/ntlm'));
-      await app.getByRole('button', { name: /^Auth/ }).first().click();
+      await app.getByRole('tab', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('ntlm');
       // NTLM uses the shared digest/ntlm field component — aria-labels
       // are `${kind} username` / `${kind} password` (lowercase kind).
@@ -210,7 +210,7 @@ test.describe('Auth wire-level — programmatic types', () => {
     async ({ app, e2eMock, sidebar }) => {
       await sidebar.createRequest('auth-hawk');
       await app.getByLabel('Request URL').fill(e2eMock.url('/auth/hawk'));
-      await app.getByRole('button', { name: /^Auth/ }).first().click();
+      await app.getByRole('tab', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('hawk');
       await app.getByRole('textbox', { name: 'Hawk ID', exact: true }).fill('e2e-hawk-id');
       await app.getByRole('textbox', { name: 'Hawk key', exact: true }).fill('e2e-hawk-key-secret');
@@ -230,7 +230,7 @@ test.describe('Auth wire-level — programmatic types', () => {
     async ({ app, e2eMock, sidebar }) => {
       await sidebar.createRequest('auth-aws');
       await app.getByLabel('Request URL').fill(e2eMock.url('/auth/aws'));
-      await app.getByRole('button', { name: /^Auth/ }).first().click();
+      await app.getByRole('tab', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('aws-sigv4');
       await app
         .getByRole('textbox', { name: 'AWS access key ID', exact: true })
@@ -258,7 +258,7 @@ test.describe('Auth wire-level — programmatic types', () => {
     async ({ app, e2eMock, sidebar }) => {
       await sidebar.createRequest('auth-digest');
       await app.getByLabel('Request URL').fill(e2eMock.url('/auth/digest'));
-      await app.getByRole('button', { name: /^Auth/ }).first().click();
+      await app.getByRole('tab', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('digest');
       await app
         .getByRole('textbox', { name: 'digest username', exact: true })
@@ -281,7 +281,7 @@ test.describe('Auth wire-level — programmatic types', () => {
     async ({ app, e2eMock, sidebar }) => {
       await sidebar.createRequest('auth-jwt-bearer');
       await app.getByLabel('Request URL').fill(e2eMock.url('/auth/jwt'));
-      await app.getByRole('button', { name: /^Auth/ }).first().click();
+      await app.getByRole('tab', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('jwt-bearer');
       await app.getByLabel('JWT algorithm').selectOption('HS256');
       await app
@@ -341,7 +341,7 @@ test.describe('Folder auth — single send + plan run', () => {
 
       // 2. Create a request inside, then explicitly set its auth to "none".
       await createRequestInFolder(app, 'FolderAuthB', 'overrider');
-      await app.getByRole('button', { name: /^Auth/ }).first().click();
+      await app.getByRole('tab', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('none');
 
       // 3. Bypass cue should appear.

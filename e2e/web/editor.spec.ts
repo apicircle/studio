@@ -45,19 +45,19 @@ test.describe('Editor golden path', () => {
       await app.getByLabel('Request URL').fill('https://api.example.test/users');
 
       // 6. Body tab → JSON. Content-Type header should be auto-set.
-      await app.getByRole('button', { name: 'Body' }).first().click();
+      await app.getByRole('tab', { name: 'Body' }).first().click();
       await app.getByRole('radio', { name: 'JSON' }).click();
       await monaco.fill('Request body', '{"name":"alice"}');
 
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       // The header row's value field should carry application/json.
       await expect(app.getByLabel('Headers value 1')).toHaveValue('application/json');
 
       // 7. Add a status assertion.
-      await app.getByRole('button', { name: 'Assertions', exact: false }).first().click();
+      await app.getByRole('tab', { name: 'Assertions', exact: false }).first().click();
       await app.getByRole('button', { name: /^Add assertion$/ }).click();
 
       // 8. Mock the API and click Send.
@@ -71,7 +71,7 @@ test.describe('Editor golden path', () => {
       // Switch to response Headers tab. The editor's tab is "Headers (1)"
       // (the auto-set Content-Type takes the count to 1); the response
       // viewer's tab is exactly "Headers".
-      await app.getByRole('button', { name: 'Headers', exact: true }).click();
+      await app.getByRole('tab', { name: 'Headers', exact: true }).click();
       await expect(app.getByText('content-type')).toBeVisible();
 
       // 10. Delete the request via its sidebar kebab → "Delete request" →
@@ -93,7 +93,7 @@ test.describe('Editor golden path', () => {
       // Create a fresh request via the name-first flow.
       await sidebar.createRequest('autocomplete-test');
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: /^Add row$/ }).click();
@@ -140,7 +140,7 @@ test.describe('Editor golden path', () => {
 
       // Add a status assertion (default expected=200, equals).
       await app
-        .getByRole('button', { name: /^Assertions/ })
+        .getByRole('tab', { name: /^Assertions/ })
         .first()
         .click();
       await app.getByRole('button', { name: /^Add assertion$/ }).click();
@@ -150,7 +150,7 @@ test.describe('Editor golden path', () => {
       await expect(app.getByText('200')).toBeVisible();
 
       // The response viewer's tab label updates with the pass count.
-      const tabs = app.getByRole('button', { name: /Assertions/ });
+      const tabs = app.getByRole('tab', { name: /Assertions/ });
       const responseTab = tabs.filter({ hasText: /\(1\/1\)/ });
       await responseTab.click();
 

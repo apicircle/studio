@@ -21,7 +21,7 @@ test.describe('Monaco scroll setting', () => {
     // Default is `false` (page-scroll friendly). Read the editor option
     // through the test registry the editor exposes on `window`.
     await sidebar.createRequest('Scroll test');
-    await app.getByRole('button', { name: 'Body', exact: true }).click();
+    await app.getByRole('tab', { name: 'Body', exact: true }).click();
     await app.getByRole('radio', { name: 'JSON' }).click();
     // Wait for the body editor to register itself. Use the shared
     // `monaco.ready` helper (15s timeout) — Monaco's lazy-import chain

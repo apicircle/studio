@@ -87,7 +87,7 @@ test.describe('Import cURL (paste-import)', () => {
 
       // Header is on the request.
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await expect(app.getByLabel('Headers key 1')).toHaveValue('X-Foo');

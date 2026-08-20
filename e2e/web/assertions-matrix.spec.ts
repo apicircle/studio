@@ -501,7 +501,7 @@ test.describe('Assertion matrix', () => {
 
       // Open Assertions tab + add an assertion.
       await app
-        .getByRole('button', { name: /^Assertions/ })
+        .getByRole('tab', { name: /^Assertions/ })
         .first()
         .click();
       await app.getByRole('button', { name: /^Add assertion$/ }).click();
@@ -529,7 +529,7 @@ test.describe('Assertion matrix', () => {
 
       // Click the response's Assertions tab to surface the explanation.
       const responseTab = app
-        .getByRole('button', { name: /^Assertions/ })
+        .getByRole('tab', { name: /^Assertions/ })
         .filter({ hasText: c.shouldPass ? '(1/1)' : '(0/1)' });
       await responseTab.click();
 

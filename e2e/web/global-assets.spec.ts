@@ -127,7 +127,7 @@ test.describe('Body Schema picker integration (P18 surface)', () => {
 
       // Open a request and switch the body to JSON.
       await sidebar.createRequest('schema-json');
-      await app.getByRole('button', { name: 'Body' }).first().click();
+      await app.getByRole('tab', { name: 'Body' }).first().click();
       await app.getByRole('radio', { name: 'JSON' }).click();
 
       const picker = app.getByLabel('JSON schema');
@@ -148,7 +148,7 @@ test.describe('Body Schema picker integration (P18 surface)', () => {
       await closeAssets(app);
 
       await sidebar.createRequest('schema-graphql');
-      await app.getByRole('button', { name: 'Body' }).first().click();
+      await app.getByRole('tab', { name: 'Body' }).first().click();
       await app.getByRole('radio', { name: 'GraphQL' }).click();
 
       const picker = app.getByLabel('GraphQL schema');

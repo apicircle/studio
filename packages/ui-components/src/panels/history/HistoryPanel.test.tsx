@@ -182,7 +182,7 @@ describe('HistoryPanel — request rows', () => {
       'monaco-editor-mock',
     );
     expect(bodyEditor).toHaveValue('{\n  "id": 42\n}');
-    await userEvent.click(screen.getByRole('button', { name: /^Headers$/ }));
+    await userEvent.click(screen.getByRole('tab', { name: /^Headers$/ }));
     expect(screen.getByText('content-type')).toBeInTheDocument();
   });
 });

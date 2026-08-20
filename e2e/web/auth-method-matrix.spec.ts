@@ -124,7 +124,7 @@ async function configureAuth(
   app: import('@playwright/test').Page,
   authLabel: string,
 ): Promise<void> {
-  await app.getByRole('button', { name: /^Auth/ }).first().click();
+  await app.getByRole('tab', { name: /^Auth/ }).first().click();
   switch (authLabel) {
     case 'Bearer':
       await app.getByLabel('Auth type').selectOption('bearer');

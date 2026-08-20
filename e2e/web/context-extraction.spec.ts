@@ -30,7 +30,7 @@ test.describe('Context extraction (P16)', () => {
 
       // Add an extractor for data.token → ACCESS_TOKEN.
       await app
-        .getByRole('button', { name: /^Context/ })
+        .getByRole('tab', { name: /^Context/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add extractor' }).click();
@@ -67,7 +67,7 @@ test.describe('Context extraction (P16)', () => {
     async ({ app, sidebar }) => {
       await sidebar.createRequest('manual-vars');
       await app
-        .getByRole('button', { name: /^Context/ })
+        .getByRole('tab', { name: /^Context/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add manual variable' }).click();
@@ -77,7 +77,7 @@ test.describe('Context extraction (P16)', () => {
       await app.getByRole('button', { name: /^History$/ }).click();
       await app.getByRole('button', { name: /^Editor$/ }).click();
       await app
-        .getByRole('button', { name: /^Context/ })
+        .getByRole('tab', { name: /^Context/ })
         .first()
         .click();
       await expect(app.getByLabel('Context var 1 name')).toHaveValue('USER_ID');
@@ -96,7 +96,7 @@ test.describe('Context extraction (P16)', () => {
       await mockApi.json(/api\.example\.test\/x/, { token: 'aaa' });
 
       await app
-        .getByRole('button', { name: /^Context/ })
+        .getByRole('tab', { name: /^Context/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add extractor' }).click();

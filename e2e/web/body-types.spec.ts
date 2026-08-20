@@ -60,7 +60,7 @@ test.describe('Request body types', () => {
       await sidebar.createRequest('body-none');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByLabel('HTTP method').selectOption('POST');
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
       // Default is `none`; click radio for explicitness.
       await app.getByRole('radio', { name: 'none' }).click();
@@ -78,7 +78,7 @@ test.describe('Request body types', () => {
       await sidebar.createRequest('body-json');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByLabel('HTTP method').selectOption('POST');
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
       await app.getByRole('radio', { name: 'JSON' }).click();
       await monaco.fill('Request body', '{"name":"alice","n":42}');
@@ -99,7 +99,7 @@ test.describe('Request body types', () => {
       await sidebar.createRequest('body-text');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByLabel('HTTP method').selectOption('POST');
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
       await app.getByRole('radio', { name: 'text' }).click();
       await monaco.fill('Request body', 'plain ascii payload');
@@ -118,7 +118,7 @@ test.describe('Request body types', () => {
       await sidebar.createRequest('body-xml');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByLabel('HTTP method').selectOption('POST');
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
       await app.getByRole('radio', { name: 'XML' }).click();
       await monaco.fill('Request body', '<root><child>hi</child></root>');
@@ -140,7 +140,7 @@ test.describe('Request body types', () => {
       await sidebar.createRequest('body-urlencoded');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByLabel('HTTP method').selectOption('POST');
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
       await app.getByRole('radio', { name: 'urlencoded' }).click();
       await app.getByLabel('Form field key 1').fill('emptyValue');
@@ -168,7 +168,7 @@ test.describe('Request body types', () => {
       await sidebar.createRequest('body-form-text');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByLabel('HTTP method').selectOption('POST');
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
       await app.getByRole('radio', { name: 'form-data' }).click();
       await app.getByRole('button', { name: /^Add text$/ }).click();
@@ -217,7 +217,7 @@ test.describe('Request body types', () => {
       await sidebar.createRequest('body-form-file');
       await app.getByLabel('Request URL').fill(url);
       await app.getByLabel('HTTP method').selectOption('POST');
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
       await app.getByRole('radio', { name: 'form-data' }).click();
       await app.getByRole('button', { name: /^Add file$/ }).click();
@@ -273,7 +273,7 @@ test.describe('Request body types', () => {
       await sidebar.createRequest('body-binary');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByLabel('HTTP method').selectOption('POST');
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
       await app.getByRole('radio', { name: 'binary' }).click();
       const fileInput = app.getByLabel('Binary body file');
@@ -338,7 +338,7 @@ test.describe('Request body types', () => {
       await sidebar.createRequest('body-graphql');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByLabel('HTTP method').selectOption('POST');
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
       await app.getByRole('radio', { name: 'GraphQL' }).click();
       await monaco.fill('GraphQL query', 'query Q($id: ID!) { user(id: $id) { name } }');
@@ -371,7 +371,7 @@ test.describe('Request body types — matrix', () => {
       await sidebar.createRequest('body-fd-empty');
       await app.getByLabel('Request URL').fill(e2eMock.url('/upload'));
       await app.getByLabel('HTTP method').selectOption('POST');
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
       await app.getByRole('radio', { name: 'form-data' }).click();
       await app.getByRole('button', { name: /^Add text$/ }).click();
@@ -396,7 +396,7 @@ test.describe('Request body types — matrix', () => {
       await sidebar.createRequest('body-fd-unicode');
       await app.getByLabel('Request URL').fill(e2eMock.url('/upload'));
       await app.getByLabel('HTTP method').selectOption('POST');
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
       await app.getByRole('radio', { name: 'form-data' }).click();
       await app.getByRole('button', { name: /^Add text$/ }).click();
@@ -421,7 +421,7 @@ test.describe('Request body types — matrix', () => {
       await sidebar.createRequest('body-urlenc-reserved');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByLabel('HTTP method').selectOption('POST');
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
       await app.getByRole('radio', { name: 'urlencoded' }).click();
       await app.getByLabel('Form field key 1').fill('q');
@@ -446,7 +446,7 @@ test.describe('Request body types — matrix', () => {
       await sidebar.createRequest('body-gql-vars');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByLabel('HTTP method').selectOption('POST');
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
       await app.getByRole('radio', { name: 'GraphQL' }).click();
       await monaco.fill(
@@ -475,7 +475,7 @@ test.describe('Request body types — matrix', () => {
       await sidebar.createRequest('body-gql-mutation');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByLabel('HTTP method').selectOption('POST');
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
       await app.getByRole('radio', { name: 'GraphQL' }).click();
       await monaco.fill(
@@ -504,7 +504,7 @@ test.describe('Request body types — matrix', () => {
       await sidebar.createRequest('body-gql-frag');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByLabel('HTTP method').selectOption('POST');
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
       await app.getByRole('radio', { name: 'GraphQL' }).click();
       await monaco.fill(
@@ -531,7 +531,7 @@ test.describe('Request body types — matrix', () => {
       await sidebar.createRequest('body-type-switch');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
       await app.getByLabel('HTTP method').selectOption('POST');
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
       // Author a JSON body, then switch the type over to text.
       await app.getByRole('radio', { name: 'JSON' }).click();
@@ -553,7 +553,7 @@ test.describe('Request body types — matrix', () => {
     ),
     async ({ app, sidebar }) => {
       await sidebar.createRequest('body-fd-picker');
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
       await app.getByRole('radio', { name: 'form-data' }).click();
       await app.getByRole('button', { name: /^Add file$/ }).click();

@@ -47,7 +47,7 @@ describe('EditorPanel', () => {
     });
 
     it('selecting body type "json" appends a Content-Type header', async () => {
-      await userEvent.click(screen.getByRole('button', { name: /^Body/ }));
+      await userEvent.click(screen.getByRole('tab', { name: /^Body/ }));
       await userEvent.click(screen.getByRole('radio', { name: 'JSON' }));
       const headers = useWorkspaceStore.getState().synced!.collections.requests[id].headers;
       expect(headers).toContainEqual({
@@ -55,6 +55,14 @@ describe('EditorPanel', () => {
         value: 'application/json',
         enabled: true,
       });
+    });
+
+    it('the nested Query/Path/Cookie sub-tabs carry accessible names', () => {
+      // Each sub-tab's visible label sits in a capitalize <span>, so it needs an
+      // explicit name — else a screen reader announces a bare "tab" (S-007).
+      expect(screen.getByRole('tab', { name: /^Query/ })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'Path' })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'Cookie' })).toBeInTheDocument();
     });
   });
 
@@ -114,8 +122,8 @@ describe('EditorPanel', () => {
       await userEvent.click(screen.getByRole('button', { name: /Send/i }));
       await waitFor(() => expect(screen.getByText('200 OK')).toBeInTheDocument());
       // Click the Assertions tab in the response viewer (there are now two
-      // "Assertions" buttons — the editor tab and the response-viewer tab).
-      const assertionsTabs = screen.getAllByRole('button', { name: /Assertions/i });
+      // "Assertions" tabs — the editor tab and the response-viewer tab).
+      const assertionsTabs = screen.getAllByRole('tab', { name: /Assertions/i });
       // The response viewer's tab shows pass/fail counts in its label.
       const responseAssertionsTab = assertionsTabs.find((b) =>
         /\(1\/2\)/.test(b.textContent ?? ''),

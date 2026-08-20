@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { AlertCircle, CheckCircle2, Maximize2, RotateCw, XCircle } from 'lucide-react';
 import { cn } from '../../primitives/cn';
 import { FullscreenOverlay } from '../../primitives/FullscreenOverlay';
+import { Tabs } from '../../primitives/Tabs';
 import { MonacoResponseViewer } from '../../editors/MonacoResponseViewer';
 import { ResponseSizeHint } from './ResponseSizeHint';
 
@@ -157,30 +158,23 @@ export function ResponseViewer({ result, assertions, isExecuting, onRetry }: Res
         )}
       </div>
 
-      <div
-        role="group"
-        aria-label="Response sections"
-        className="flex border-b border-border-subtle px-2"
-      >
-        {(['body', 'headers', 'assertions'] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={cn(
-              'h-8 border-b-2 px-3 text-xs transition-colors',
-              tab === t
-                ? 'border-accent text-text-primary'
-                : 'border-transparent text-text-muted hover:text-text-primary',
-            )}
-            aria-current={tab === t ? 'page' : undefined}
-          >
-            {t === 'assertions' && assertions.length > 0
-              ? `Assertions (${assertions.filter((a) => a.passed).length}/${assertions.length})`
-              : t.charAt(0).toUpperCase() + t.slice(1)}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        variant="underline"
+        label="Response sections"
+        activeId={tab}
+        onChange={(id) => setTab(id as ResponseTab)}
+        tabs={[
+          { id: 'body', label: 'Body' },
+          { id: 'headers', label: 'Headers' },
+          {
+            id: 'assertions',
+            label:
+              assertions.length > 0
+                ? `Assertions (${assertions.filter((a) => a.passed).length}/${assertions.length})`
+                : 'Assertions',
+          },
+        ]}
+      />
 
       <div className="min-h-0 flex-1 overflow-hidden">
         {tab === 'body' && result.error ? <ErrorPanel result={result} onRetry={onRetry} /> : null}

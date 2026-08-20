@@ -20,7 +20,7 @@ test.describe('GraphQL request body (P19)', () => {
     }),
     async ({ app, monaco, sidebar }) => {
       await sidebar.createRequest('graphql-1');
-      await app.getByRole('button', { name: 'Body' }).first().click();
+      await app.getByRole('tab', { name: 'Body' }).first().click();
       await app.getByRole('radio', { name: 'GraphQL' }).click();
 
       // Two Monaco editors mount: the query (aria-label="GraphQL query") and
@@ -52,7 +52,7 @@ test.describe('GraphQL request body (P19)', () => {
       await sidebar.createRequest('graphql-2');
       await app.getByLabel('HTTP method').selectOption('POST');
       await app.getByLabel('Request URL').fill('https://api.example.test/graphql');
-      await app.getByRole('button', { name: 'Body' }).first().click();
+      await app.getByRole('tab', { name: 'Body' }).first().click();
       await app.getByRole('radio', { name: 'GraphQL' }).click();
       await monaco.fill('GraphQL query', 'query Q($id: ID!) { user(id: $id) { name } }');
       await monaco.fill('GraphQL variables', '{"id":"42"}');
@@ -90,7 +90,7 @@ test.describe('GraphQL request body (P19)', () => {
       await sidebar.createRequest('graphql-errors');
       await app.getByLabel('HTTP method').selectOption('POST');
       await app.getByLabel('Request URL').fill('https://api.example.test/graphql');
-      await app.getByRole('button', { name: 'Body' }).first().click();
+      await app.getByRole('tab', { name: 'Body' }).first().click();
       await app.getByRole('radio', { name: 'GraphQL' }).click();
       await monaco.fill('GraphQL query', 'query { missing }');
 
@@ -131,7 +131,7 @@ test.describe('GraphQL request body (P19)', () => {
 
       // Map it to a new request.
       await sidebar.createRequest('graphql-schema-pick');
-      await app.getByRole('button', { name: 'Body' }).first().click();
+      await app.getByRole('tab', { name: 'Body' }).first().click();
       await app.getByRole('radio', { name: 'GraphQL' }).click();
       await app.getByLabel('GraphQL schema').selectOption({ label: 'Pets' });
       await expect(app.getByLabel('GraphQL schema')).not.toHaveValue('');

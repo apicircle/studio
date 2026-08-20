@@ -109,6 +109,23 @@
 
 ### Changed
 
+- **The request + response editors are real ARIA tablists
+  (`@apicircle/ui-components`).** The editor's Params / Headers / Auth / Body /
+  Context / Assertions strip and the response viewer's Body / Headers /
+  Assertions strip were hand-rolled `<button>` rows marked only with
+  `aria-current` (the response one was even a bare `role="group"`) — no
+  `role="tab"`, no tablist, and no arrow-key movement (UX audit S-007). Both now
+  adopt the `Tabs` primitive, which gains an `underline` variant so the editors
+  keep their bottom-border look while gaining full tablist semantics:
+  `role="tablist"` / `role="tab"`, `aria-selected`, roving tabindex, and
+  ←/→/Home/End navigation. Labels (param/header counts, the auth badge, the
+  response pass/total) are unchanged; the response strip's tabs match the
+  request strip's height. The Params sub-tabs (Query / Path / Cookie) were
+  already a tablist but exposed no accessible name — their label sat in a
+  capitalize `<span>`, so a screen reader announced a bare "tab" — and are now
+  named explicitly. The e2e specs that drove these tabs now select them by
+  `role="tab"`.
+
 - **Workspace + Link Workspace panels reclaim their stub-sidebar space
   (`@apicircle/ui-components`).** The two densest panels each shipped a fixed
   ~20%-wide sidebar holding only a placeholder ("manage this from the main

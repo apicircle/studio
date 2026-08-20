@@ -65,7 +65,7 @@ test.describe('Headers — per-curated-value sweep', () => {
       async ({ app, sidebar }) => {
         await sidebar.createRequest(`hdr-cv-${slug}`);
         await app
-          .getByRole('button', { name: /^Headers/ })
+          .getByRole('tab', { name: /^Headers/ })
           .first()
           .click();
         await app.getByRole('button', { name: 'Add row' }).click();

@@ -47,14 +47,14 @@ test.describe('Reload persistence', () => {
       await app.getByLabel('Request URL').fill(url);
       await app.getByLabel('HTTP method').selectOption('POST');
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).click();
       await app.getByLabel('Headers key 1').fill('X-Persist-Test');
       await app.keyboard.press('Escape');
       await app.getByLabel('Headers value 1').fill('still-here');
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect(app.getByRole('radiogroup', { name: 'Body type' })).toBeVisible();
       await app.getByRole('radio', { name: 'JSON' }).click();
       await monaco.fill('Request body', '{"persisted":true}');
@@ -70,14 +70,14 @@ test.describe('Reload persistence', () => {
 
       // Headers tab — row 1 still has the key + value we typed.
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await expect(app.getByLabel('Headers key 1')).toHaveValue('X-Persist-Test');
       await expect(app.getByLabel('Headers value 1')).toHaveValue('still-here');
 
       // Body Monaco rehydrates with the same value.
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await expect.poll(() => monaco.read('Request body')).toBe('{"persisted":true}');
     },
   );

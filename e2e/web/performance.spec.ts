@@ -251,7 +251,7 @@ test.describe('Performance', () => {
       await sidebar.createRequest('pe-headers');
       // Open Headers tab and let the editor render; the tab strip is on
       // every editor since hydration.
-      await app.getByRole('button', { name: 'Headers', exact: true }).first().click();
+      await app.getByRole('tab', { name: 'Headers', exact: true }).first().click();
       expect(app).toBeTruthy();
     },
   );
@@ -263,7 +263,7 @@ test.describe('Performance', () => {
     ),
     async ({ app, sidebar }) => {
       await sidebar.createRequest('pe-query');
-      await app.getByRole('button', { name: 'Params', exact: true }).first().click();
+      await app.getByRole('tab', { name: 'Params', exact: true }).first().click();
       expect(app).toBeTruthy();
     },
   );

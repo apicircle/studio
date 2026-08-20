@@ -92,7 +92,7 @@ test.describe('Validate on send', () => {
     async ({ app, sidebar }) => {
       await setValidateOnSend(app, true);
       await sidebar.createRequest('vos-bearer-empty');
-      await app.getByRole('button', { name: /^Auth/ }).first().click();
+      await app.getByRole('tab', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('bearer');
       // Don't fill the token — that's the trigger.
       const panel = app.getByLabel('Pre-send validation');
@@ -111,7 +111,7 @@ test.describe('Validate on send', () => {
     async ({ app, sidebar }) => {
       await setValidateOnSend(app, true);
       await sidebar.createRequest('vos-bearer-fill');
-      await app.getByRole('button', { name: /^Auth/ }).first().click();
+      await app.getByRole('tab', { name: /^Auth/ }).first().click();
       await app.getByLabel('Auth type').selectOption('bearer');
       await expect(app.getByRole('button', { name: /^Send$/ })).toBeDisabled();
       // Fill the token.

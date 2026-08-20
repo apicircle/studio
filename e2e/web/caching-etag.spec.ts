@@ -52,7 +52,7 @@ test.describe('HTTP caching', () => {
       // would 304 (we drive the wire via the headers panel).
       await app.getByLabel('Request URL').fill(e2eMock.url(`/cache/etag?t=${scope}-b`));
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).click();
@@ -75,7 +75,7 @@ test.describe('HTTP caching', () => {
       await expect(app.getByText('200').first()).toBeVisible({ timeout: 10_000 });
 
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).click();
@@ -108,7 +108,7 @@ test.describe('HTTP caching', () => {
       const tag = `"ca-304-${Math.random().toString(36).slice(2, 8)}"`;
       await app.getByLabel('Request URL').fill(e2eMock.url('/cache/etag'));
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).click();
@@ -140,7 +140,7 @@ test.describe('HTTP caching', () => {
       await sidebar.createRequest('ca-if-match');
       await app.getByLabel('Request URL').fill(e2eMock.url('/anything/ca-if-match'));
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).click();
@@ -161,7 +161,7 @@ test.describe('HTTP caching', () => {
       await app.getByRole('button', { name: /^Send$/ }).click();
       await expect(app.getByText('200').first()).toBeVisible({ timeout: 10_000 });
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .last()
         .click();
       await expect(app.getByRole('row', { name: /cache-control.*private/i })).toBeVisible();
@@ -170,7 +170,7 @@ test.describe('HTTP caching', () => {
       await app.getByRole('button', { name: /^Send$/ }).click();
       await expect(app.getByText('200').first()).toBeVisible({ timeout: 10_000 });
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .last()
         .click();
       await expect(app.getByRole('row', { name: /cache-control.*public/i })).toBeVisible();
@@ -183,23 +183,23 @@ test.describe('HTTP caching', () => {
       await sidebar.createRequest('ca-etag-body');
       await app.getByLabel('HTTP method').selectOption('POST');
       await app.getByLabel('Request URL').fill(e2eMock.url('/cache/etag-body'));
-      await app.getByRole('button', { name: 'Body', exact: true }).first().click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).first().click();
       await app.getByRole('radio', { name: 'JSON' }).click();
       await monaco.fill('Request body', '{"value":"alpha"}');
       await app.getByRole('button', { name: /^Send$/ }).click();
       await expect(app.getByText('200').first()).toBeVisible({ timeout: 10_000 });
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .last()
         .click();
       const firstEtag = await app.getByRole('row', { name: /etag/i }).textContent();
 
-      await app.getByRole('button', { name: 'Body', exact: true }).first().click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).first().click();
       await monaco.fill('Request body', '{"value":"alphabet"}');
       await app.getByRole('button', { name: /^Send$/ }).click();
       await expect(app.getByText('200').first()).toBeVisible({ timeout: 10_000 });
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .last()
         .click();
       const secondEtag = await app.getByRole('row', { name: /etag/i }).textContent();
@@ -218,7 +218,7 @@ test.describe('HTTP caching', () => {
       await app.getByRole('button', { name: /^Send$/ }).click();
       await expect(app.getByText('200').first()).toBeVisible({ timeout: 10_000 });
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .last()
         .click();
       await expect(

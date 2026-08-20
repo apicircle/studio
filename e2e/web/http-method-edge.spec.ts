@@ -75,7 +75,7 @@ test.describe('HTTP method edge cases', () => {
       await sidebar.createRequest('me-post-empty-json');
       await app.getByLabel('HTTP method').selectOption('POST');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await app.getByRole('radio', { name: 'JSON' }).click();
       await monaco.fill('Request body', '{}');
       await app.getByRole('button', { name: /^Send$/ }).click();
@@ -131,7 +131,7 @@ test.describe('HTTP method edge cases', () => {
       await sidebar.createRequest('me-del-body');
       await app.getByLabel('HTTP method').selectOption('DELETE');
       await app.getByLabel('Request URL').fill(e2eMock.url(path));
-      await app.getByRole('button', { name: 'Body', exact: true }).click();
+      await app.getByRole('tab', { name: 'Body', exact: true }).click();
       await app.getByRole('radio', { name: 'JSON' }).click();
       await monaco.fill('Request body', '{"query":{"match":{"id":"1"}}}');
       await app.getByRole('button', { name: /^Send$/ }).click();
@@ -175,7 +175,7 @@ test.describe('HTTP method edge cases', () => {
       await expect(app.getByText(/^204 No Content$/).first()).toBeVisible({ timeout: 10_000 });
 
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .last()
         .click();
       const allowMethods = app.getByRole('row', { name: /access-control-allow-methods/i });

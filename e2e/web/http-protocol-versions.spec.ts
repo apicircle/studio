@@ -90,7 +90,7 @@ test.describe('HTTP protocol versions', () => {
       await sidebar.createRequest('hv-100-continue');
       await app.getByLabel('Request URL').fill(e2eMock.url('/anything/hv-100-continue'));
       await app
-        .getByRole('button', { name: /^Headers/ })
+        .getByRole('tab', { name: /^Headers/ })
         .first()
         .click();
       await app.getByRole('button', { name: 'Add row' }).click();

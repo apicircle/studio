@@ -20,6 +20,7 @@ import {
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
 import { Select } from '../../primitives/Select';
+import { Tabs } from '../../primitives/Tabs';
 import { ParamsTab } from './ParamsTab';
 import { HeadersTab } from './HeadersTab';
 import { BodyTab } from './BodyTab';
@@ -417,36 +418,41 @@ export function EditorPanel() {
         )}
       </header>
 
-      <div className="flex border-b border-border-subtle px-2">
-        {(['params', 'headers', 'auth', 'body', 'context', 'assertions'] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={cn(
-              'h-9 border-b-2 px-3 text-xs transition-colors',
-              tab === t
-                ? 'border-accent text-text-primary'
-                : 'border-transparent text-text-muted hover:text-text-primary',
-            )}
-            aria-current={tab === t ? 'page' : undefined}
-          >
-            {t === 'params' &&
-              `Params${
-                paramsTotalForRequest(request) > 0 ? ` (${paramsTotalForRequest(request)})` : ''
-              }`}
-            {t === 'headers' &&
-              `Headers${request.headers.length ? ` (${request.headers.length})` : ''}`}
-            {t === 'auth' &&
-              `Auth${request.auth && request.auth.type !== 'none' ? ` · ${authBadge(request.auth.type)}` : ''}`}
-            {t === 'body' && 'Body'}
-            {t === 'context' &&
-              `Context${request.contextVars.length + request.extractions.length > 0 ? ` (${request.contextVars.length + request.extractions.length})` : ''}`}
-            {t === 'assertions' &&
-              `Assertions${request.assertions.length ? ` (${request.assertions.length})` : ''}`}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        variant="underline"
+        label="Request sections"
+        activeId={tab}
+        onChange={(id) => setTab(id as Tab)}
+        tabs={[
+          {
+            id: 'params',
+            label: `Params${
+              paramsTotalForRequest(request) > 0 ? ` (${paramsTotalForRequest(request)})` : ''
+            }`,
+          },
+          {
+            id: 'headers',
+            label: `Headers${request.headers.length ? ` (${request.headers.length})` : ''}`,
+          },
+          {
+            id: 'auth',
+            label: `Auth${request.auth && request.auth.type !== 'none' ? ` · ${authBadge(request.auth.type)}` : ''}`,
+          },
+          { id: 'body', label: 'Body' },
+          {
+            id: 'context',
+            label: `Context${
+              request.contextVars.length + request.extractions.length > 0
+                ? ` (${request.contextVars.length + request.extractions.length})`
+                : ''
+            }`,
+          },
+          {
+            id: 'assertions',
+            label: `Assertions${request.assertions.length ? ` (${request.assertions.length})` : ''}`,
+          },
+        ]}
+      />
 
       <div className="min-h-0 flex-1 overflow-hidden">
         {/*
