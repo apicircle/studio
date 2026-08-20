@@ -38,8 +38,8 @@ describe('workspaceStore', () => {
         await useWorkspaceStore.getState().hydrate();
       });
       expect(useWorkspaceStore.getState().local!.ui.fontSizePercent).toBe(100);
-      // Rendered CSS percent = stored + FONT_SIZE_PERCENT_RENDER_OFFSET (10).
-      expect(document.documentElement.style.fontSize).toBe('110%');
+      // Rendered CSS percent = stored + FONT_SIZE_PERCENT_RENDER_OFFSET (15).
+      expect(document.documentElement.style.fontSize).toBe('115%');
     });
 
     it('writes through to local.ui.fontSizePercent and the DOM', async () => {
@@ -48,7 +48,7 @@ describe('workspaceStore', () => {
         useWorkspaceStore.getState().setFontSizePercent(120);
       });
       expect(useWorkspaceStore.getState().local!.ui.fontSizePercent).toBe(120);
-      expect(document.documentElement.style.fontSize).toBe('130%');
+      expect(document.documentElement.style.fontSize).toBe('135%');
       expect(document.documentElement.getAttribute('data-font-size-percent')).toBe('120');
     });
 

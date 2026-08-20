@@ -19,10 +19,10 @@ import {
 
 // Constant offset applied between the stored/labelled percent and the
 // actual rendered CSS percent. The stored default of 100 renders as
-// 110%, 90 renders as 100%, etc. Bumps the baseline UI text size so the
+// 115%, 90 renders as 105%, etc. Bumps the baseline UI text size so the
 // picker labels (80/90/100/...) map to a more comfortable rendered range
 // without forcing a migration of every existing workspace.
-export const FONT_SIZE_PERCENT_RENDER_OFFSET = 10;
+export const FONT_SIZE_PERCENT_RENDER_OFFSET = 15;
 
 /**
  * Snap `percent` into the supported range and round to the nearest

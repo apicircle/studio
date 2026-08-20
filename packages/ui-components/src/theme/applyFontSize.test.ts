@@ -4,7 +4,11 @@ import {
   FONT_SIZE_PERCENT_MAX,
   FONT_SIZE_PERCENT_MIN,
 } from '@apicircle/shared';
-import { applyFontSize, clampFontSizePercent } from './applyFontSize';
+import {
+  applyFontSize,
+  clampFontSizePercent,
+  FONT_SIZE_PERCENT_RENDER_OFFSET,
+} from './applyFontSize';
 
 beforeEach(() => {
   document.documentElement.removeAttribute('data-font-size-percent');
@@ -42,7 +46,9 @@ describe('clampFontSizePercent', () => {
 describe('applyFontSize', () => {
   it('writes the clamped percent + render offset to html.style.fontSize', () => {
     applyFontSize(120);
-    expect(document.documentElement.style.fontSize).toBe('130%');
+    expect(document.documentElement.style.fontSize).toBe(
+      `${120 + FONT_SIZE_PERCENT_RENDER_OFFSET}%`,
+    );
   });
 
   it('sets the data-font-size-percent attribute to the stored (un-offset) value', () => {
@@ -52,7 +58,9 @@ describe('applyFontSize', () => {
 
   it('clamps before applying — out-of-range values never reach the DOM', () => {
     applyFontSize(9999);
-    expect(document.documentElement.style.fontSize).toBe(`${FONT_SIZE_PERCENT_MAX + 10}%`);
+    expect(document.documentElement.style.fontSize).toBe(
+      `${FONT_SIZE_PERCENT_MAX + FONT_SIZE_PERCENT_RENDER_OFFSET}%`,
+    );
   });
 
   it('does not touch localStorage — the workspace owns the persistence', () => {
