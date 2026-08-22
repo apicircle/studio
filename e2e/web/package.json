@@ -18,8 +18,8 @@
     "@apicircle/shared": "workspace:*"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.10.0",
-    "@playwright/test": "^1.48.0",
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^20.0.0"
   }
 }
