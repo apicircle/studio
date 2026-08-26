@@ -107,6 +107,22 @@ describe('Tabs', () => {
     expect(screen.getByRole('tab', { name: /Params/ })).toHaveAttribute('aria-selected', 'true');
   });
 
+  it('keeps a stable accessible name when the visible label carries live data', () => {
+    render(
+      <Tabs
+        tabs={[{ id: 'refinements', label: 'Refinements (3)', ariaLabel: 'Refinements' }]}
+        activeId="refinements"
+        onChange={() => {}}
+        label="Index view"
+      />,
+    );
+    // Visible label still shows the count; the name a screen reader (or a
+    // selector) uses does not move with the data.
+    const tab = screen.getByRole('tab', { name: 'Refinements' });
+    expect(tab).toHaveTextContent('Refinements (3)');
+    expect(tab).toHaveAccessibleName('Refinements');
+  });
+
   it('renders the underline variant (bottom-border row) the editors adopt', () => {
     render(
       <Tabs

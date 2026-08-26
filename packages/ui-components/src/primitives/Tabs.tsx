@@ -7,6 +7,13 @@ export interface TabDef {
   label: ReactNode;
   /** Optional trailing count/badge shown after the label. */
   count?: ReactNode;
+  /**
+   * Stable accessible name, for a tab whose visible label carries live data
+   * (`Refinements (3)`). Without it the name moves with the data, and a name
+   * that moves cannot be selected for — by a screen-reader user, by voice
+   * control, or by a test. Omit it when the label is already stable.
+   */
+  ariaLabel?: string;
   disabled?: boolean;
 }
 
@@ -131,6 +138,7 @@ export function Tabs({
             type="button"
             role="tab"
             id={`${base}-tab-${t.id}`}
+            aria-label={t.ariaLabel}
             aria-selected={active}
             aria-controls={idBase ? `${base}-panel-${t.id}` : undefined}
             tabIndex={active ? 0 : -1}
