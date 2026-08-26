@@ -46,3 +46,12 @@ export type {
   ParseSpecResult,
   WorkspaceFileExternalChange,
 } from './desktop/bridge';
+export {
+  DEFAULT_WORKSPACE_ACCESS,
+  WorkspaceAccessProvider,
+  canCreateWorkspace,
+  unlockedWorkspaceIds,
+  useWorkspaceAccess,
+  type WorkspaceAccess,
+} from './layout/workspaceAccess';
+export { WorkspaceLockedNotice } from './layout/WorkspaceLockedNotice';

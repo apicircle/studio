@@ -111,6 +111,18 @@ describe('workspaceStorage — multi-workspace registry actions', () => {
     expect(reloadedEntry.name).toBe('Second');
   });
 
+  it('createWorkspace refuses to exceed the workspace cap', async () => {
+    // The switcher hides the create affordance at the cap, but a limit enforced
+    // only in the UI is not enforced at all - this is the hard floor.
+    const initial = await loadWorkspace();
+    await expect(createWorkspace(initial.registry, 'Second', 1)).rejects.toThrow(
+      /includes 1 workspace/,
+    );
+    // Below the cap it still creates.
+    const after = await createWorkspace(initial.registry, 'Second', 5);
+    expect(after.registry.workspaces).toHaveLength(2);
+  });
+
   it('createWorkspace rejects duplicate names', async () => {
     const initial = await freshState();
     const after = await createWorkspace(initial.registry, 'Unique');

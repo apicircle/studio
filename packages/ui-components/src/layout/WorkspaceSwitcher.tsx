@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, Lock, Plus, Trash2 } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { Modal } from '../primitives/Modal';
 import { ConfirmDialog } from '../primitives/ConfirmDialog';
+import { WorkspaceLockedNotice } from './WorkspaceLockedNotice';
+import { canCreateWorkspace, unlockedWorkspaceIds, useWorkspaceAccess } from './workspaceAccess';
 
 // B.6 — Top-bar workspace switcher. Replaces the static `/ <name>` chip
 // with a dropdown that lists all registered workspaces, lets the user
@@ -24,8 +26,10 @@ export function WorkspaceSwitcher() {
   const activeWorkspaceName =
     registry?.workspaces.find((w) => w.id === registry.activeWorkspaceId)?.name ?? '';
 
+  const access = useWorkspaceAccess();
   const [open, setOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
+  const [lockedOpen, setLockedOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -42,6 +46,12 @@ export function WorkspaceSwitcher() {
   }, [open]);
 
   if (!registry) return null;
+
+  // Which workspaces stay reachable under the plan's cap. Everything else stays
+  // on disk and renders locked rather than being hidden - a workspace that
+  // silently vanished would read as data loss.
+  const unlocked = unlockedWorkspaceIds(registry.workspaces, access.maxWorkspaces);
+  const canCreate = canCreateWorkspace(registry.workspaces.length, access.maxWorkspaces);
 
   const sorted = [...registry.workspaces].sort((a, b) =>
     a.id === registry.activeWorkspaceId
@@ -109,10 +119,13 @@ export function WorkspaceSwitcher() {
         >
           {sorted.map((w) => {
             const isActive = w.id === registry.activeWorkspaceId;
+            const isLocked = !unlocked.has(w.id);
             const disambiguator = disambiguatorFor(w.name, w.id);
-            const ariaLabel = disambiguator
-              ? `Switch to ${w.name} (id ${disambiguator})`
-              : `Switch to ${w.name}`;
+            const ariaLabel = isLocked
+              ? `${w.name} (locked)`
+              : disambiguator
+                ? `Switch to ${w.name} (id ${disambiguator})`
+                : `Switch to ${w.name}`;
             return (
               <li key={w.id}>
                 <div className="flex items-center gap-1">
@@ -121,13 +134,23 @@ export function WorkspaceSwitcher() {
                     role="option"
                     aria-selected={isActive}
                     aria-label={ariaLabel}
-                    onClick={() => void onSwitch(w.id)}
+                    onClick={() => {
+                      if (isLocked) {
+                        setOpen(false);
+                        setLockedOpen(true);
+                        return;
+                      }
+                      void onSwitch(w.id);
+                    }}
                     className={
-                      isActive
-                        ? 'flex flex-1 items-center gap-2 rounded-sm border border-accent/40 bg-accent/10 px-2 py-1.5 text-left text-xs text-accent'
-                        : 'flex flex-1 items-center gap-2 rounded-sm border border-transparent px-2 py-1.5 text-left text-xs text-text-muted hover:bg-surface hover:text-text-primary'
+                      isLocked
+                        ? 'flex flex-1 items-center gap-2 rounded-sm border border-transparent px-2 py-1.5 text-left text-xs text-text-faint hover:bg-surface'
+                        : isActive
+                          ? 'flex flex-1 items-center gap-2 rounded-sm border border-accent/40 bg-accent/10 px-2 py-1.5 text-left text-xs text-accent'
+                          : 'flex flex-1 items-center gap-2 rounded-sm border border-transparent px-2 py-1.5 text-left text-xs text-text-muted hover:bg-surface hover:text-text-primary'
                     }
                   >
+                    {isLocked && <Lock size={11} aria-hidden="true" />}
                     <span className="flex-1 truncate">{w.name}</span>
                     {disambiguator && (
                       <span
@@ -137,11 +160,17 @@ export function WorkspaceSwitcher() {
                         #{disambiguator}
                       </span>
                     )}
-                    {isActive && (
+                    {isLocked && (
+                      <span className="text-[0.625rem] uppercase tracking-wider">locked</span>
+                    )}
+                    {isActive && !isLocked && (
                       <span className="text-[0.625rem] uppercase tracking-wider">active</span>
                     )}
                   </button>
-                  {sorted.length > 1 && (
+                  {/* No delete on a locked row: the user cannot open it to see
+                      what is inside, so a destructive action there is not a
+                      choice they can make informedly. */}
+                  {!isLocked && sorted.length > 1 && (
                     <button
                       type="button"
                       onClick={() => setConfirmDelete({ id: w.id, name: w.name })}
@@ -164,12 +193,21 @@ export function WorkspaceSwitcher() {
               type="button"
               onClick={() => {
                 setOpen(false);
-                setNewOpen(true);
+                if (canCreate) setNewOpen(true);
+                else setLockedOpen(true);
               }}
-              aria-label="New workspace"
-              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs text-accent hover:bg-accent/5"
+              aria-label={canCreate ? 'New workspace' : 'New workspace (locked)'}
+              className={
+                canCreate
+                  ? 'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs text-accent hover:bg-accent/5'
+                  : 'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs text-text-faint hover:bg-surface'
+              }
             >
-              <Plus size={11} aria-hidden="true" />
+              {canCreate ? (
+                <Plus size={11} aria-hidden="true" />
+              ) : (
+                <Lock size={11} aria-hidden="true" />
+              )}
               New workspace…
             </button>
           </li>
@@ -183,11 +221,14 @@ export function WorkspaceSwitcher() {
           {error}
         </p>
       )}
+      <Modal open={lockedOpen} onClose={() => setLockedOpen(false)} title="Workspace locked">
+        {access.lockedNotice ?? <WorkspaceLockedNotice />}
+      </Modal>
       <NewWorkspaceModal
         open={newOpen}
         onClose={() => setNewOpen(false)}
         onCreate={async (name) => {
-          await createNewWorkspace(name);
+          await createNewWorkspace(name, access.maxWorkspaces);
           setNewOpen(false);
         }}
       />

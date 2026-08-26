@@ -181,11 +181,17 @@ import {
   type SectionDef,
 } from './layout/sections';
 import { SectionLanding } from './layout/SectionLanding';
+import {
+  DEFAULT_WORKSPACE_ACCESS,
+  WorkspaceAccessProvider,
+  type WorkspaceAccess,
+} from './layout/workspaceAccess';
 
 export function App({
   extraPanels = NO_EXTRA_PANELS,
   sections = NO_SECTIONS,
   brand,
+  workspaceAccess = DEFAULT_WORKSPACE_ACCESS,
 }: {
   /** Edition-contributed top-nav panels. Omitted in Studio → strict no-op. */
   extraPanels?: readonly ExtraPanelDef[];
@@ -193,6 +199,12 @@ export function App({
   sections?: readonly SectionDef[];
   /** Edition-provided header brand. Omitted in Studio → the default "API Circle Studio". */
   brand?: BrandDef;
+  /**
+   * How many workspaces may stay open. Unlike the seams above, omitting this
+   * is NOT a no-op: the default is a cap of one, because a build with no
+   * edition attached is the free tier. See `layout/workspaceAccess.tsx`.
+   */
+  workspaceAccess?: WorkspaceAccess;
 } = {}) {
   const ready = useWorkspaceStore((s) => s.ready);
   const hydrationError = useWorkspaceStore((s) => s.hydrationError);
@@ -257,32 +269,34 @@ export function App({
   }
 
   return (
-    <ExtraPanelsProvider value={extraPanels}>
-      <SectionsProvider value={{ sections, activeSectionId, setActiveSectionId }}>
-        <div className="flex h-full flex-col bg-surface text-text-primary">
-          <TopBar brand={brand} />
-          <PanelTabs />
-          <div className="flex flex-1 overflow-hidden">
-            <BodyArea />
-            <RightDockRail />
-          </div>
-          <UpdatePreviewModal />
-          <MissingScopeGate />
-          <AttachmentDownloadPromptModal />
-          <KeyboardShortcuts />
-          {/* Don't auto-start the Studio tour for an edition that has its own
+    <WorkspaceAccessProvider value={workspaceAccess}>
+      <ExtraPanelsProvider value={extraPanels}>
+        <SectionsProvider value={{ sections, activeSectionId, setActiveSectionId }}>
+          <div className="flex h-full flex-col bg-surface text-text-primary">
+            <TopBar brand={brand} />
+            <PanelTabs />
+            <div className="flex flex-1 overflow-hidden">
+              <BodyArea />
+              <RightDockRail />
+            </div>
+            <UpdatePreviewModal />
+            <MissingScopeGate />
+            <AttachmentDownloadPromptModal />
+            <KeyboardShortcuts />
+            {/* Don't auto-start the Studio tour for an edition that has its own
               first-run mode landing (Lens) — it would stack over and disable it.
               Studio-standalone (no sections) keeps auto-start. Replay is always
               available via the Help Center. */}
-          <OnboardingTour autoStart={sections.length <= 1} />
-          <ToastSlot />
-          <UpdateAvailableBanner />
-          <PassphrasePromptModalGate />
-          <CloseConfirmModal />
-          {sections.length > 1 && <SectionLanding />}
-        </div>
-      </SectionsProvider>
-    </ExtraPanelsProvider>
+            <OnboardingTour autoStart={sections.length <= 1} />
+            <ToastSlot />
+            <UpdateAvailableBanner />
+            <PassphrasePromptModalGate />
+            <CloseConfirmModal />
+            {sections.length > 1 && <SectionLanding />}
+          </div>
+        </SectionsProvider>
+      </ExtraPanelsProvider>
+    </WorkspaceAccessProvider>
   );
 }
 

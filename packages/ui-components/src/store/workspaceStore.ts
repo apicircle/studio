@@ -931,7 +931,13 @@ type WorkspaceStore = {
    * Create a fresh workspace + register it. The new workspace becomes
    * active. Returns the new workspace's id.
    */
-  createNewWorkspace: (name: string) => Promise<string>;
+  /**
+   * Create a workspace. `maxWorkspaces` is passed in rather than read from
+   * context because the store must stay free of React and of any notion of
+   * plans; the caller (the switcher) knows the policy. Omitting it is
+   * uncapped, which is what every non-UI caller wants.
+   */
+  createNewWorkspace: (name: string, maxWorkspaces?: number) => Promise<string>;
   /**
    * Delete a workspace. If it was the active one, switches to the
    * most-recently-opened remaining workspace; if it was the last,
@@ -2519,10 +2525,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     });
   },
 
-  createNewWorkspace: async (name) => {
+  createNewWorkspace: async (name, maxWorkspaces = Infinity) => {
     const registry = get().workspaceRegistry;
     if (!registry) throw new Error('Registry not loaded');
-    const result = await createWorkspacePersisted(registry, name);
+    const result = await createWorkspacePersisted(registry, name, maxWorkspaces);
     applyTheme(result.local.ui.themeId);
     applyFont(result.local.ui.fontId);
     applyFontSize(result.local.ui.fontSizePercent);

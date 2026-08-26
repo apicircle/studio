@@ -729,6 +729,12 @@ export async function setActiveWorkspace(
 export async function createWorkspace(
   registry: WorkspaceRegistry,
   name: string,
+  /**
+   * Cap on open workspaces. The HARD floor for the policy — the switcher hides
+   * the create affordance at the cap, but a limit enforced only in the UI is not
+   * enforced at all, so it is refused here too.
+   */
+  maxWorkspaces: number = Infinity,
 ): Promise<{
   synced: WorkspaceSynced;
   local: WorkspaceLocal;
@@ -736,6 +742,11 @@ export async function createWorkspace(
 }> {
   const trimmed = name.trim();
   if (!trimmed) throw new Error('Workspace name is required');
+  if (registry.workspaces.length >= maxWorkspaces) {
+    throw new Error(
+      `This plan includes ${maxWorkspaces} workspace${maxWorkspaces === 1 ? '' : 's'}.`,
+    );
+  }
   // Case-insensitive uniqueness, matching the CLI's
   // `apicircle workspaces create` guard at packages/cli/src/util/resolveWorkspace.ts.
   // The desktop's previous case-sensitive check was looser than the CLI

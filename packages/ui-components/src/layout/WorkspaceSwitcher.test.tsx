@@ -4,6 +4,23 @@ import { describe, expect, it } from 'vitest';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { renderWithStore } from '../../test/renderWithStore';
+import { WorkspaceAccessProvider } from './workspaceAccess';
+
+/**
+ * The switcher inside an UNCAPPED policy.
+ *
+ * The default access policy is a cap of ONE, so rendering the bare component
+ * would lock every row but the oldest and these tests would be asserting the
+ * lock rather than the naming rules they are actually about. Locking has its own
+ * describe block below.
+ */
+function Unlimited() {
+  return (
+    <WorkspaceAccessProvider value={{ maxWorkspaces: Infinity }}>
+      <WorkspaceSwitcher />
+    </WorkspaceAccessProvider>
+  );
+}
 
 // Switcher's disambiguation logic — when two registry entries share a
 // (case-insensitive) name, the dropdown appends a short `#xxxx` id
@@ -16,7 +33,7 @@ const T0 = '2026-05-22T00:00:00.000Z';
 
 describe('WorkspaceSwitcher disambiguation', () => {
   it('renders bare names when every workspace has a unique name', async () => {
-    await renderWithStore(<WorkspaceSwitcher />);
+    await renderWithStore(<Unlimited />);
     useWorkspaceStore.setState({
       workspaceRegistry: {
         schemaVersion: 1,
@@ -37,7 +54,7 @@ describe('WorkspaceSwitcher disambiguation', () => {
   });
 
   it('appends a short id suffix to colliding rows (case-insensitive)', async () => {
-    await renderWithStore(<WorkspaceSwitcher />);
+    await renderWithStore(<Unlimited />);
     useWorkspaceStore.setState({
       workspaceRegistry: {
         schemaVersion: 1,
@@ -83,5 +100,76 @@ describe('WorkspaceSwitcher disambiguation', () => {
     expect(within(list).getByText('#aaaa')).toBeInTheDocument();
     expect(within(list).getByText('#bbbb')).toBeInTheDocument();
     expect(within(list).queryByText('#cccc')).toBeNull();
+  });
+});
+
+describe('WorkspaceSwitcher access policy', () => {
+  const registryOf = (...ids: string[]) => ({
+    schemaVersion: 1 as const,
+    activeWorkspaceId: ids[0],
+    workspaces: ids.map((id, i) => ({
+      id,
+      name: id.toUpperCase(),
+      // Ascending createdAt, so `ids[0]` is the oldest and stays unlocked.
+      createdAt: `2026-05-2${i + 1}T00:00:00.000Z`,
+      lastOpenedAt: T0,
+    })),
+  });
+
+  async function openWith(max: number, ...ids: string[]) {
+    await renderWithStore(
+      <WorkspaceAccessProvider value={{ maxWorkspaces: max }}>
+        <WorkspaceSwitcher />
+      </WorkspaceAccessProvider>,
+    );
+    useWorkspaceStore.setState({ workspaceRegistry: registryOf(...ids) });
+    await userEvent.click(await screen.findByRole('button', { name: /Switch workspace/ }));
+  }
+
+  it('locks every workspace past the cap, oldest first', async () => {
+    await openWith(1, 'ws-a', 'ws-b', 'ws-c');
+    expect(screen.getByRole('option', { name: 'Switch to WS-A' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'WS-B (locked)' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'WS-C (locked)' })).toBeInTheDocument();
+  });
+
+  it('unlocks exactly the cap, not one more', async () => {
+    await openWith(2, 'ws-a', 'ws-b', 'ws-c');
+    expect(screen.getByRole('option', { name: 'Switch to WS-A' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Switch to WS-B' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'WS-C (locked)' })).toBeInTheDocument();
+  });
+
+  it('offers no delete on a locked row', async () => {
+    // The user cannot open a locked workspace to see what is inside, so a
+    // destructive action on it is not a choice they can make informedly.
+    await openWith(1, 'ws-a', 'ws-b');
+    expect(screen.queryByRole('button', { name: 'Delete WS-B' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete WS-A' })).toBeInTheDocument();
+  });
+
+  it('explains the lock instead of switching, and says the data is safe', async () => {
+    await openWith(1, 'ws-a', 'ws-b');
+    await userEvent.click(screen.getByRole('option', { name: 'WS-B (locked)' }));
+    expect(await screen.findByText(/end of September/)).toBeInTheDocument();
+    expect(screen.getByText(/Nothing has been deleted/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'contact@apicircle.dev' })).toBeInTheDocument();
+    // and it did NOT switch
+    expect(useWorkspaceStore.getState().workspaceRegistry?.activeWorkspaceId).toBe('ws-a');
+  });
+
+  it('locks the create affordance at the cap', async () => {
+    await openWith(1, 'ws-a');
+    expect(screen.getByRole('button', { name: 'New workspace (locked)' })).toBeInTheDocument();
+  });
+
+  it('offers the create affordance below the cap', async () => {
+    await openWith(3, 'ws-a');
+    expect(screen.getByRole('button', { name: 'New workspace' })).toBeInTheDocument();
+  });
+
+  it('renders every row unlocked when the policy is unlimited', async () => {
+    await openWith(Infinity, 'ws-a', 'ws-b', 'ws-c');
+    expect(screen.queryByText('locked')).not.toBeInTheDocument();
   });
 });
