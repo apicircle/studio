@@ -14,6 +14,7 @@ export {
   Radio,
   Tabs,
   tabPanelProps,
+  SchemaView,
   Tooltip,
   Badge,
   Skeleton,

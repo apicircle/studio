@@ -5,6 +5,7 @@ export { Field, type FieldControlProps } from './Field';
 export { Checkbox } from './Checkbox';
 export { Radio } from './Radio';
 export { Tabs, tabPanelProps, type TabDef } from './Tabs';
+export { SchemaView, describeType, type JsonSchemaNode, type SchemaViewProps } from './SchemaView';
 export { Tooltip } from './Tooltip';
 export { Badge } from './Badge';
 export { Skeleton } from './Skeleton';
