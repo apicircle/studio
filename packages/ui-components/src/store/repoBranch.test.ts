@@ -274,3 +274,125 @@ describe('workspaceStore — repo + working branch (P4.2)', () => {
     });
   });
 });
+
+describe('workspaceStore — multi-host connection state (S1)', () => {
+  beforeEach(async () => {
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrate();
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('connectRepo stamps hostKind on the connected repo', async () => {
+    vi.stubGlobal(
+      'fetch',
+      queuedFetch([userResponse({ login: 'me' }), repoResponse({ owner: 'me', name: 'api' })]),
+    );
+    await useWorkspaceStore.getState().connectGitHubSession('tok');
+    await useWorkspaceStore.getState().connectRepo('me', 'api');
+
+    expect(useWorkspaceStore.getState().local!.connectedRepo?.hostKind).toBe('github');
+  });
+
+  it('createWorkingBranch inherits the connected repo hostKind', async () => {
+    vi.stubGlobal(
+      'fetch',
+      queuedFetch([
+        userResponse({ login: 'me' }),
+        repoResponse({ owner: 'me', name: 'api' }),
+        { body: { name: 'main', commit: { sha: 'sha1' } } },
+        { body: { ref: 'refs/heads/apicircle/wb-abc', object: { sha: 'sha1' } } },
+        { status: 404, body: { message: 'Not Found' } },
+        { status: 404, body: { message: 'Not Found' } },
+      ]),
+    );
+    await useWorkspaceStore.getState().connectGitHubSession('tok');
+    await useWorkspaceStore.getState().connectRepo('me', 'api');
+    await useWorkspaceStore.getState().createWorkingBranch({ branchName: 'apicircle/wb-abc' });
+
+    expect(useWorkspaceStore.getState().local!.workingBranch?.hostKind).toBe('github');
+  });
+
+  it('drops a working branch whose repo path matches but whose HOST differs', async () => {
+    vi.stubGlobal(
+      'fetch',
+      queuedFetch([
+        userResponse({ login: 'me' }),
+        repoResponse({ owner: 'me', name: 'api' }),
+        { body: { name: 'main', commit: { sha: 'sha1' } } },
+        { body: { ref: 'refs/heads/apicircle/wb-abc', object: { sha: 'sha1' } } },
+        { status: 404, body: { message: 'Not Found' } },
+        { status: 404, body: { message: 'Not Found' } },
+        // Re-connect to the SAME owner/name — only the host differs.
+        repoResponse({ owner: 'me', name: 'api' }),
+      ]),
+    );
+    await useWorkspaceStore.getState().connectGitHubSession('tok');
+    await useWorkspaceStore.getState().connectRepo('me', 'api');
+    await useWorkspaceStore.getState().createWorkingBranch({ branchName: 'apicircle/wb-abc' });
+
+    // Pretend the branch belongs to gitlab:me/api. `repoFullName` is host-blind,
+    // so without the host comparison this branch would survive and the next push
+    // would send GitHub SHAs to GitLab.
+    const local = useWorkspaceStore.getState().local!;
+    useWorkspaceStore.setState({
+      local: { ...local, workingBranch: { ...local.workingBranch!, hostKind: 'gitlab' } },
+    });
+
+    await useWorkspaceStore.getState().connectRepo('me', 'api');
+    expect(useWorkspaceStore.getState().local!.workingBranch).toBeNull();
+  });
+
+  it('keeps sessions.hosts intact across a repo connect', async () => {
+    vi.stubGlobal(
+      'fetch',
+      queuedFetch([userResponse({ login: 'me' }), repoResponse({ owner: 'me', name: 'api' })]),
+    );
+    await useWorkspaceStore.getState().connectGitHubSession('tok');
+
+    const seeded = useWorkspaceStore.getState().local!;
+    useWorkspaceStore.setState({
+      local: {
+        ...seeded,
+        sessions: {
+          ...seeded.sessions,
+          hosts: { gitlab: { workspace: null, links: {} } },
+        },
+      },
+    });
+
+    await useWorkspaceStore.getState().connectRepo('me', 'api');
+
+    // connectRepo rebuilds `sessions` to patch the github slot; spreading only
+    // `github` would silently drop every other host's credentials.
+    expect(useWorkspaceStore.getState().local!.sessions.hosts).toEqual({
+      gitlab: { workspace: null, links: {} },
+    });
+  });
+
+  it('keeps sessions.hosts intact across a session disconnect', async () => {
+    vi.stubGlobal('fetch', queuedFetch([userResponse({ login: 'me' })]));
+    await useWorkspaceStore.getState().connectGitHubSession('tok');
+
+    const seeded = useWorkspaceStore.getState().local!;
+    useWorkspaceStore.setState({
+      local: {
+        ...seeded,
+        sessions: {
+          ...seeded.sessions,
+          hosts: { bitbucket: { workspace: null, links: {} } },
+        },
+      },
+    });
+
+    await useWorkspaceStore.getState().disconnectGitHubSession();
+
+    expect(useWorkspaceStore.getState().local!.sessions.github.workspace).toBeNull();
+    expect(useWorkspaceStore.getState().local!.sessions.hosts).toEqual({
+      bitbucket: { workspace: null, links: {} },
+    });
+  });
+});

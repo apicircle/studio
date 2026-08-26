@@ -875,7 +875,13 @@ export interface LinkedWorkspace {
    *  when fetching from the source repo. */
   sourceWorkspaceId: string;
   source: {
-    provider: 'github';
+    /**
+     * Which Git host the source repo lives on. Every record persisted before
+     * multi-host support carries `'github'`, so widening this union is
+     * read-compatible. NOTE: this rides in the SYNCED `workspace.json`, so an
+     * older Studio reading a non-`'github'` value would mis-route to GitHub.
+     */
+    provider: GitHostKind;
     repoFullName: string;
     branch: string;
     /**
@@ -971,14 +977,20 @@ export interface WorkspaceLocal {
   // `tokenSecretId` on each session points into the `apicircle-secret-vault`
   // IDB store (per-device, never pushed to git).
   sessions: {
-    github: {
-      workspace: GitHubSession | null;
-      links: Record<string, GitHubSession>;
-    };
+    github: GitHostSessions;
+    /**
+     * Credentials for the NON-GitHub hosts, keyed by host kind. Absent on every
+     * workspace persisted before multi-host support; backfilled to `{}` on load.
+     *
+     * GitHub deliberately keeps its own `github` slot above rather than being
+     * mirrored in here, so a GitHub PAT lives in exactly one place and there is
+     * no reconciliation problem between two copies.
+     */
+    hosts?: Partial<Record<Exclude<GitHostKind, 'github'>, GitHostSessions>>;
   };
-  // The GitHub repo the user has bound this workspace to. Holds metadata
-  // copied from `GET /repos/:owner/:repo` at connect time so the UI can
-  // render without re-fetching. Cleared on disconnect.
+  // The repo the user has bound this workspace to. Holds metadata copied from
+  // the host's repo endpoint at connect time so the UI can render without
+  // re-fetching. Cleared on disconnect.
   connectedRepo: ConnectedRepo | null;
   workingBranch: WorkingBranch | null;
   /**
@@ -1216,6 +1228,27 @@ export interface SecretUsage {
   label: string;
 }
 
+/**
+ * One host's credentials, split by purpose. Structurally identical to the shape
+ * `sessions.github` has always had — extracting it is a pure rename, so every
+ * existing reader is unaffected.
+ *
+ *   - `workspace` — the token that drives push/pull/PR for THIS workspace's own
+ *     repo. Single-valued.
+ *   - `links` — per-link dedicated tokens, keyed by `LinkedWorkspace.id`.
+ */
+export interface GitHostSessions {
+  workspace: GitHostSession | null;
+  links: Record<string, GitHostSession>;
+}
+
+/**
+ * Canonical per-host session record. `GitHubSession` is retained as the name it
+ * has always had (and is what this aliases) so existing imports and annotations
+ * keep compiling; new host-generic code should prefer `GitHostSession`.
+ */
+export type GitHostSession = GitHubSession;
+
 export interface GitHubSession {
   accountLogin: string;
   // Points into secretIndex.entries — the actual encrypted PAT lives in the
@@ -1414,6 +1447,18 @@ export interface PlanRun {
   steps: Array<{ requestRunId: string; passed: boolean }>;
 }
 
+/**
+ * Known Git hosting kinds.
+ *
+ * Canonical home is `@apicircle/shared` rather than `@apicircle/git` because the
+ * persisted workspace types below reference it, and `shared` is the published,
+ * dependency-free leaf of the graph — a type owned by the private, unpublished
+ * `@apicircle/git` could not appear in `shared`'s emitted `.d.ts`.
+ * `@apicircle/git` re-exports this, so `import { GitHostKind } from '@apicircle/git'`
+ * keeps working verbatim.
+ */
+export type GitHostKind = 'github' | 'gitlab' | 'bitbucket' | 'azure-devops';
+
 export interface ConnectedRepo {
   fullName: string;
   owner: string;
@@ -1423,6 +1468,19 @@ export interface ConnectedRepo {
   isPrivate: boolean;
   pushable: boolean;
   connectedAt: string;
+  /**
+   * Which Git host this repo lives on. OPTIONAL and ABSENT on every workspace
+   * connected before multi-host support — readers MUST treat `undefined` as
+   * `'github'`, which is what every pre-existing record is. Backfilled on first
+   * load and written explicitly by every new connect.
+   */
+  hostKind?: GitHostKind;
+  /**
+   * API base URL for a self-managed host (self-hosted GitLab, an Azure DevOps
+   * organisation, GitHub Enterprise Server). Absent ⇒ the host's public default.
+   * Cannot be derived from `owner`/`name`, so it has to be persisted.
+   */
+  apiBaseUrl?: string;
 }
 
 export interface WorkingBranch {
@@ -1442,6 +1500,16 @@ export interface WorkingBranch {
   lastPushedSha: string | null;
   diffSummary: { ahead: number; behind: number; staleAt: string } | null;
   openPrUrl: string | null;
+  /**
+   * Which Git host this branch lives on. Absent ⇒ `'github'` (every branch
+   * created before multi-host support).
+   *
+   * Load-bearing, not decorative: the branch-identity check on re-connect
+   * compares `repoFullName`, which is host-BLIND. Without this, disconnecting
+   * `github:acme/api` and connecting `gitlab:acme/api` would keep the branch and
+   * then push GitHub SHAs at GitLab.
+   */
+  hostKind?: GitHostKind;
 }
 
 /**

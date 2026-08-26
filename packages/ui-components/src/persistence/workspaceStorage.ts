@@ -27,7 +27,38 @@ import {
 } from './db';
 import type { WorkspaceRegistry, WorkspaceRegistryEntry } from './db';
 import { deleteSecretPayload } from './secrets';
-import type { GitHubSession } from '@apicircle/shared';
+import type { GitHostKind, GitHostSessions, GitHubSession } from '@apicircle/shared';
+
+/**
+ * Backfill `canCreatePullRequests` on one session from its granted scopes when
+ * the field is missing — covers pre-feature sessions without forcing a verify
+ * call. Shared by the GitHub slot and the per-host map.
+ */
+function hydrateSession(s: GitHubSession | null | undefined): GitHubSession | null {
+  if (!s) return null;
+  return {
+    ...s,
+    canCreatePullRequests:
+      s.canCreatePullRequests === undefined
+        ? s.grantedScopes.includes('repo') || s.grantedScopes.includes('pull_request')
+          ? true
+          : null
+        : s.canCreatePullRequests,
+  };
+}
+
+/** Hydrate an already-`{ workspace, links }`-shaped value, dropping null links. */
+function hydrateSessionsShape(raw: {
+  workspace?: GitHubSession | null;
+  links?: Record<string, GitHubSession>;
+}): GitHostSessions {
+  const links: Record<string, GitHubSession> = {};
+  for (const [id, s] of Object.entries(raw.links ?? {})) {
+    const h = hydrateSession(s);
+    if (h) links[id] = h;
+  }
+  return { workspace: hydrateSession(raw.workspace ?? null), links };
+}
 
 /**
  * Normalize the persisted `sessions.github` shape into the per-purpose
@@ -38,44 +69,58 @@ import type { GitHubSession } from '@apicircle/shared';
  *   - legacy single value `GitHubSession | null` (pre-per-link)
  *                       → `{ workspace: hydrated, links: {} }`
  *   - already-new shape → pass-through, hydrating each session.
- *
- * Each hydrated session backfills `canCreatePullRequests` from granted
- * scopes when missing — covers pre-feature sessions without forcing a
- * verify call.
  */
 function hydrateGithubSessions(
   sessions: WorkspaceLocal['sessions'] | undefined,
 ): WorkspaceLocal['sessions']['github'] {
-  const hydrate = (s: GitHubSession | null | undefined): GitHubSession | null => {
-    if (!s) return null;
-    return {
-      ...s,
-      canCreatePullRequests:
-        s.canCreatePullRequests === undefined
-          ? s.grantedScopes.includes('repo') || s.grantedScopes.includes('pull_request')
-            ? true
-            : null
-          : s.canCreatePullRequests,
-    };
-  };
-
   const raw = sessions?.github;
   // Already-new shape carries `workspace` (or `links`) — distinguish from the
   // legacy single-session shape by the presence of those keys.
   if (raw && typeof raw === 'object' && ('workspace' in raw || 'links' in raw)) {
-    const newShape = raw as {
-      workspace?: GitHubSession | null;
-      links?: Record<string, GitHubSession>;
-    };
-    const links: Record<string, GitHubSession> = {};
-    for (const [id, s] of Object.entries(newShape.links ?? {})) {
-      const h = hydrate(s);
-      if (h) links[id] = h;
-    }
-    return { workspace: hydrate(newShape.workspace ?? null), links };
+    return hydrateSessionsShape(raw);
   }
   // Legacy or null: treat the value as the workspace session.
-  return { workspace: hydrate(raw), links: {} };
+  return { workspace: hydrateSession(raw), links: {} };
+}
+
+/** The non-GitHub hosts, in the order they are surfaced. GitHub keeps its own
+ *  dedicated `sessions.github` slot and is deliberately not mirrored here. */
+const NON_GITHUB_HOSTS = ['gitlab', 'bitbucket', 'azure-devops'] as const;
+
+// `hydrateHostSessions` only copies across the hosts named above, so a host
+// added to `GitHostKind` but forgotten here would have its credentials silently
+// dropped on the next load. This assignment fails to compile in exactly that
+// case: the conditional resolves to `false` when some host is not covered.
+const _NON_GITHUB_HOSTS_ARE_EXHAUSTIVE: Exclude<
+  GitHostKind,
+  'github'
+> extends (typeof NON_GITHUB_HOSTS)[number]
+  ? true
+  : false = true;
+void _NON_GITHUB_HOSTS_ARE_EXHAUSTIVE;
+
+/**
+ * Normalize the persisted `sessions.hosts` map. Absent on every workspace saved
+ * before multi-host support → `{}`. Unlike `sessions.github` there is no legacy
+ * single-session shape to tolerate (the field is new), so an entry that does not
+ * carry the `{ workspace, links }` keys is skipped rather than guessed at — the
+ * same key-presence probe, applied conservatively.
+ */
+function hydrateHostSessions(
+  sessions: WorkspaceLocal['sessions'] | undefined,
+): NonNullable<WorkspaceLocal['sessions']['hosts']> {
+  const raw = sessions?.hosts;
+  if (!raw || typeof raw !== 'object') return {};
+  const out: NonNullable<WorkspaceLocal['sessions']['hosts']> = {};
+  for (const kind of NON_GITHUB_HOSTS) {
+    const entry = (raw as Record<string, unknown>)[kind];
+    if (!entry || typeof entry !== 'object') continue;
+    if (!('workspace' in entry || 'links' in entry)) continue;
+    out[kind] = hydrateSessionsShape(
+      entry as { workspace?: GitHubSession | null; links?: Record<string, GitHubSession> },
+    );
+  }
+  return out;
 }
 
 /**
@@ -166,10 +211,17 @@ async function purgeWorkspaceSecrets(local: WorkspaceLocal | null): Promise<void
   // Workspace session token + every per-link linking-session token. All
   // payloads live in the shared `apicircle-secret-vault` IDB; missing them
   // when the workspace is destroyed leaves stale ciphertext lying around.
-  const wsToken = local.sessions.github.workspace?.tokenSecretId;
-  if (wsToken) ids.add(wsToken);
-  for (const linkSession of Object.values(local.sessions.github.links)) {
-    if (linkSession.tokenSecretId) ids.add(linkSession.tokenSecretId);
+  // Walks the GitHub slot AND the per-host map, so a non-GitHub PAT can't
+  // outlive its workspace. `sessions.hosts` carries no credentials yet — the
+  // writers land with the per-host connect flow — but wiring the purge with the
+  // schema means it cannot be forgotten once they do.
+  for (const host of [local.sessions.github, ...Object.values(local.sessions.hosts ?? {})]) {
+    if (!host) continue;
+    const wsToken = host.workspace?.tokenSecretId;
+    if (wsToken) ids.add(wsToken);
+    for (const linkSession of Object.values(host.links)) {
+      if (linkSession.tokenSecretId) ids.add(linkSession.tokenSecretId);
+    }
   }
   for (const id of ids) {
     try {
@@ -576,10 +628,24 @@ export async function loadWorkspaceById(
     //     `sessions.github: { workspace, links }`. Old fixtures and any
     //     IDB blobs from before the per-link split are normalized here so
     //     the rest of the app can assume the new shape.
+    //  3. `sessions.hosts` (the non-GitHub hosts) and the `hostKind` on
+    //     `connectedRepo` / `workingBranch` are all absent before multi-host
+    //     support. Backfilled to `{}` and `'github'` respectively — that is
+    //     what every pre-existing record factually is.
     const hydratedGithub = hydrateGithubSessions(local.sessions);
     const upgradedLocal: WorkspaceLocal = {
       ...local,
-      sessions: { ...local.sessions, github: hydratedGithub },
+      sessions: {
+        ...local.sessions,
+        github: hydratedGithub,
+        hosts: hydrateHostSessions(local.sessions),
+      },
+      connectedRepo: local.connectedRepo
+        ? { ...local.connectedRepo, hostKind: local.connectedRepo.hostKind ?? 'github' }
+        : null,
+      workingBranch: local.workingBranch
+        ? { ...local.workingBranch, hostKind: local.workingBranch.hostKind ?? 'github' }
+        : null,
       // Backfill the seeded-scaffold sha (added with the empty-repo seed
       // flow). Older workspaces hydrate with `null` — they predate the
       // feature and have nothing to suppress.
@@ -938,7 +1004,7 @@ export function createEmptyWorkspace(): { synced: WorkspaceSynced; local: Worksp
     executionPlans: {},
     history: { requestRuns: [], planRuns: [] },
     secretIndex: { entries: {} },
-    sessions: { github: { workspace: null, links: {} } },
+    sessions: { github: { workspace: null, links: {} }, hosts: {} },
     connectedRepo: null,
     workingBranch: null,
     seededWorkspaceSha: null,

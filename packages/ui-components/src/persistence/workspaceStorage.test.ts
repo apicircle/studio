@@ -13,10 +13,13 @@ import {
   setActiveWorkspace,
   updateRegistryEntryName,
 } from './workspaceStorage';
+import type { WorkspaceLocal } from '@apicircle/shared';
+import { getSecretPayload, putSecretPayload } from './secrets';
 import {
   LOCAL_STORE,
   SYNCED_STORE,
   clearAll,
+  readRecord,
   readRegistry,
   type WorkspaceRegistry,
   writeBoth,
@@ -646,5 +649,230 @@ describe('workspaceStorage — collection-orphan self-heal', () => {
         (c) => c.kind === 'request' && c.id === 'ghost-id-no-dict-entry',
       ),
     ).toBe(false);
+  });
+});
+
+describe('workspaceStorage — multi-host backfill on hydrate', () => {
+  /** Seed IDB with `local` verbatim and hydrate it back through loadWorkspace. */
+  async function hydrateLocal(
+    mutate: (local: ReturnType<typeof createEmptyWorkspace>['local']) => unknown,
+  ) {
+    await freshState();
+    const seed = createEmptyWorkspace();
+    await writeBoth(seed.synced, mutate(seed.local) as typeof seed.local);
+    await writeRegistry({
+      schemaVersion: 1,
+      activeWorkspaceId: seed.synced.workspaceId,
+      workspaces: [{ id: seed.synced.workspaceId, name: 'W', createdAt: 't', lastOpenedAt: 't' }],
+    });
+    return (await loadWorkspace()).local;
+  }
+
+  const REPO = {
+    fullName: 'acme/api',
+    owner: 'acme',
+    name: 'api',
+    defaultBranch: 'main',
+    visibility: 'private' as const,
+    isPrivate: true,
+    pushable: true,
+    connectedAt: 't',
+  };
+
+  const BRANCH = {
+    name: 'apicircle/x',
+    baseBranch: 'main',
+    repoFullName: 'acme/api',
+    repoOwner: 'acme',
+    repoName: 'api',
+    headSha: 'abc',
+    createdAt: 't',
+    lastPushedSha: null,
+    diffSummary: null,
+    openPrUrl: null,
+  };
+
+  it('a pre-multi-host workspace hydrates with hosts:{} and hostKind backfilled to github', async () => {
+    const local = await hydrateLocal((seed) => {
+      // Exactly what a workspace saved before multi-host support looks like:
+      // no `sessions.hosts`, no `hostKind` on either record.
+      const sessions = { github: seed.sessions.github };
+      return { ...seed, sessions, connectedRepo: REPO, workingBranch: BRANCH };
+    });
+
+    expect(local.sessions.hosts).toEqual({});
+    expect(local.connectedRepo?.hostKind).toBe('github');
+    expect(local.workingBranch?.hostKind).toBe('github');
+  });
+
+  it('leaves a null connectedRepo / workingBranch null rather than fabricating a record', async () => {
+    const local = await hydrateLocal((seed) => ({
+      ...seed,
+      connectedRepo: null,
+      workingBranch: null,
+    }));
+
+    expect(local.connectedRepo).toBeNull();
+    expect(local.workingBranch).toBeNull();
+  });
+
+  it('preserves an explicit non-github hostKind instead of overwriting it', async () => {
+    const local = await hydrateLocal((seed) => ({
+      ...seed,
+      connectedRepo: { ...REPO, hostKind: 'gitlab', apiBaseUrl: 'https://gl.acme.dev/api/v4' },
+      workingBranch: { ...BRANCH, hostKind: 'gitlab' },
+    }));
+
+    expect(local.connectedRepo?.hostKind).toBe('gitlab');
+    expect(local.connectedRepo?.apiBaseUrl).toBe('https://gl.acme.dev/api/v4');
+    expect(local.workingBranch?.hostKind).toBe('gitlab');
+  });
+
+  it('hydrates a well-formed hosts entry, keeping workspace + links', async () => {
+    const session = {
+      accountLogin: 'dev',
+      tokenSecretId: 'sec-1',
+      grantedScopes: ['api'],
+      addedAt: 't',
+      lastVerifiedAt: null,
+      canCreatePullRequests: true,
+    };
+    const local = await hydrateLocal((seed) => ({
+      ...seed,
+      sessions: {
+        github: seed.sessions.github,
+        hosts: { gitlab: { workspace: session, links: { 'link-1': session } } },
+      },
+    }));
+
+    expect(local.sessions.hosts?.gitlab?.workspace?.accountLogin).toBe('dev');
+    expect(local.sessions.hosts?.gitlab?.links['link-1']?.accountLogin).toBe('dev');
+  });
+
+  it('backfills canCreatePullRequests on a hosts session the same way it does for github', async () => {
+    const local = await hydrateLocal((seed) => ({
+      ...seed,
+      sessions: {
+        github: seed.sessions.github,
+        hosts: {
+          gitlab: {
+            // `canCreatePullRequests` absent — the pre-feature shape.
+            workspace: {
+              accountLogin: 'dev',
+              tokenSecretId: 'sec-1',
+              grantedScopes: ['repo'],
+              addedAt: 't',
+              lastVerifiedAt: null,
+            },
+            links: {},
+          },
+        },
+      },
+    }));
+
+    expect(local.sessions.hosts?.gitlab?.workspace?.canCreatePullRequests).toBe(true);
+  });
+
+  it('skips a malformed hosts entry rather than guessing at its shape', async () => {
+    const local = await hydrateLocal((seed) => ({
+      ...seed,
+      sessions: {
+        github: seed.sessions.github,
+        hosts: {
+          // Carries neither `workspace` nor `links` — unlike sessions.github there
+          // is no legacy single-session shape to fall back on, so it is dropped.
+          gitlab: { accountLogin: 'dev' },
+          bitbucket: null,
+          'azure-devops': 'nonsense',
+        },
+      },
+    }));
+
+    expect(local.sessions.hosts).toEqual({});
+  });
+
+  it('drops a null link inside a hosts entry', async () => {
+    const local = await hydrateLocal((seed) => ({
+      ...seed,
+      sessions: {
+        github: seed.sessions.github,
+        hosts: { bitbucket: { workspace: null, links: { dead: null } } },
+      },
+    }));
+
+    expect(local.sessions.hosts?.bitbucket).toEqual({ workspace: null, links: {} });
+  });
+
+  it('tolerates a non-object hosts value', async () => {
+    const local = await hydrateLocal((seed) => ({
+      ...seed,
+      sessions: { github: seed.sessions.github, hosts: 'nonsense' },
+    }));
+
+    expect(local.sessions.hosts).toEqual({});
+  });
+
+  it('createEmptyWorkspace seeds an empty hosts map', () => {
+    const { local } = createEmptyWorkspace();
+    expect(local.sessions.hosts).toEqual({});
+  });
+});
+
+describe('workspaceStorage — secret purge covers every host slot', () => {
+  const session = (tokenSecretId: string) => ({
+    accountLogin: 'dev',
+    tokenSecretId,
+    grantedScopes: ['repo'],
+    addedAt: 't',
+    lastVerifiedAt: null,
+    canCreatePullRequests: true,
+  });
+
+  /** Seed `workspaceId`'s local doc with the given sessions block. */
+  async function seedSessions(
+    workspaceId: string,
+    sessions: WorkspaceLocal['sessions'],
+  ): Promise<void> {
+    const local = await readRecord<WorkspaceLocal>(LOCAL_STORE, workspaceId);
+    await writeRecord(LOCAL_STORE, { ...local!, sessions });
+  }
+
+  it('deletes non-GitHub PAT ciphertext alongside the GitHub slot on workspace delete', async () => {
+    // Two workspaces — deleting the LAST one re-seeds instead of purging, so
+    // the doomed one needs a survivor beside it.
+    const initial = await freshState();
+    const { synced, registry } = await createWorkspace(initial.registry, 'Doomed');
+
+    const ids = ['gh-ws', 'gh-link', 'gl-ws', 'gl-link', 'bb-ws'];
+    for (const id of ids) await putSecretPayload(id, { iv: 'X', ciphertext: 'Y' });
+
+    await seedSessions(synced.workspaceId, {
+      github: { workspace: session('gh-ws'), links: { l1: session('gh-link') } },
+      hosts: {
+        gitlab: { workspace: session('gl-ws'), links: { l2: session('gl-link') } },
+        bitbucket: { workspace: session('bb-ws'), links: {} },
+      },
+    });
+
+    await deleteWorkspace(registry, synced.workspaceId);
+
+    // Every slot's ciphertext is gone — GitHub's and the per-host map's alike.
+    for (const id of ids) {
+      expect(await getSecretPayload(id)).toBeNull();
+    }
+  });
+
+  it('tolerates a workspace whose sessions carry no hosts map', async () => {
+    const initial = await freshState();
+    const { synced, registry } = await createWorkspace(initial.registry, 'Doomed');
+    await putSecretPayload('only-gh', { iv: 'X', ciphertext: 'Y' });
+
+    // The pre-multi-host shape: `hosts` absent entirely.
+    await seedSessions(synced.workspaceId, {
+      github: { workspace: session('only-gh'), links: {} },
+    });
+
+    await expect(deleteWorkspace(registry, synced.workspaceId)).resolves.toBeDefined();
+    expect(await getSecretPayload('only-gh')).toBeNull();
   });
 });

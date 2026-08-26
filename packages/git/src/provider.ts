@@ -12,6 +12,7 @@
 // *additional* hosts live in the mutable registry (populated by an explicit
 // `registerGitProvider` call, which is never tree-shaken).
 
+import type { GitHostKind } from '@apicircle/shared';
 import { GitHubClient, type GitHubClientOptions } from './github/api';
 
 /**
@@ -69,8 +70,14 @@ export type GitProviderOptions = GitHubClientOptions;
 /** Builds a provider instance for a given host. */
 export type GitProviderFactory = (opts?: GitProviderOptions) => GitProvider;
 
-/** Known Git hosting kinds. Only `github` ships in open core. */
-export type GitHostKind = 'github' | 'gitlab' | 'bitbucket' | 'azure-devops';
+/**
+ * Known Git hosting kinds. Only `github` ships in open core.
+ *
+ * Declared in `@apicircle/shared` (the published, dependency-free leaf) because
+ * the persisted workspace types reference it; re-exported here so every existing
+ * `from '@apicircle/git'` import keeps resolving unchanged.
+ */
+export type { GitHostKind };
 
 const githubFactory: GitProviderFactory = (opts) => new GitHubClient(opts);
 const extraProviders = new Map<GitHostKind, GitProviderFactory>();

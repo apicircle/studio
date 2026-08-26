@@ -439,6 +439,10 @@ importers:
         version: 2.1.9(@types/node@20.19.39)(jsdom@25.0.1)
 
   packages/git:
+    dependencies:
+      '@apicircle/shared':
+        specifier: workspace:*
+        version: link:../shared
     devDependencies:
       typescript:
         specifier: ^5.4.0
