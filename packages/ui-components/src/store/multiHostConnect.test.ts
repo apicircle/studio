@@ -67,6 +67,134 @@ function stubGitHubFetch(scopes: string) {
   );
 }
 
+describe('workspaceStore — a token never reaches another host (S3c)', () => {
+  // The credential-crossing class. Every instance had one shape: a client built
+  // for one host beside a token resolved for another. They agreed while GitHub
+  // was the only connectable host and stopped agreeing the moment it was not.
+  //
+  // These assert on the TOKEN THE CLIENT RECEIVED, not on which call was made —
+  // "it called GitLab" is true of both the correct and the leaking version.
+  // This block records the TOKEN each client received, not which calls happened —
+  // "it called GitLab" is true of the leaking version too.
+  let seen: Array<{ host: string; token: string }>;
+
+  /** A provider that records the token handed to it. */
+  function spyProvider(host: string): GitProvider {
+    return {
+      getViewer: vi.fn(async (token: string) => {
+        seen.push({ host, token });
+        return { viewer: { login: `${host}-user`, id: 1 }, scopes: { granted: [], missing: [] } };
+      }),
+      listAccessibleRepos: vi.fn(async (token: string) => {
+        seen.push({ host, token });
+        return [];
+      }),
+      listBranches: vi.fn(async (token: string) => {
+        seen.push({ host, token });
+        return [];
+      }),
+      getRepo: vi.fn(async (token: string, owner: string, name: string) => {
+        seen.push({ host, token });
+        return {
+          fullName: `${owner}/${name}`,
+          owner,
+          name,
+          defaultBranch: 'main',
+          visibility: 'private' as const,
+          isPrivate: true,
+          pushable: true,
+        };
+      }),
+      searchMarketplaceRepos: vi.fn(async (token: string | null) => {
+        seen.push({ host, token: token ?? '<anonymous>' });
+        return [];
+      }),
+    } as unknown as GitProvider;
+  }
+
+  beforeEach(async () => {
+    seen = [];
+    resetGitProviderRegistry();
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrate();
+    });
+  });
+
+  afterEach(() => {
+    resetGitProviderRegistry();
+    vi.unstubAllGlobals();
+  });
+
+  it('sends the GitLab token — not the GitHub one — when the repo browser targets GitLab', async () => {
+    // The headline leak. `listAccessibleRepos` runs BEFORE a repo is connected,
+    // which is exactly when the connected-host fallback still answers 'github',
+    // so the GitHub PAT went to whichever host the picker named.
+    stubGitHubFetch('repo');
+    await useWorkspaceStore.getState().connectGitHubSession('GITHUB-SECRET');
+    vi.unstubAllGlobals();
+    registerGitProvider('gitlab', () => spyProvider('gitlab'));
+    await useWorkspaceStore.getState().connectHostSession('GITLAB-SECRET', 'gitlab');
+    seen.length = 0;
+
+    await useWorkspaceStore.getState().listAccessibleRepos({ host: 'gitlab' });
+
+    expect(seen).toEqual([{ host: 'gitlab', token: 'GITLAB-SECRET' }]);
+    expect(seen.some((s) => s.token === 'GITHUB-SECRET')).toBe(false);
+  });
+
+  it('sends the right token when listing branches on a caller-named host', async () => {
+    stubGitHubFetch('repo');
+    await useWorkspaceStore.getState().connectGitHubSession('GITHUB-SECRET');
+    vi.unstubAllGlobals();
+    registerGitProvider('bitbucket', () => spyProvider('bitbucket'));
+    await useWorkspaceStore.getState().connectHostSession('BB-SECRET', 'bitbucket');
+    seen.length = 0;
+
+    await useWorkspaceStore.getState().listRepoBranches('team', 'api', { host: 'bitbucket' });
+
+    expect(seen).toEqual([{ host: 'bitbucket', token: 'BB-SECRET' }]);
+  });
+
+  it('never sends a non-GitHub token to the GitHub marketplace', async () => {
+    // The reverse direction, and one no reviewer flagged: marketplace search is
+    // deliberately pinned to GitHub, but the token came from the CONNECTED host —
+    // so a GitLab-only workspace sent its GitLab PAT to github.com.
+    registerGitProvider('gitlab', () => spyProvider('gitlab'));
+    await useWorkspaceStore.getState().connectHostSession('GITLAB-SECRET', 'gitlab');
+    await useWorkspaceStore.getState().connectRepo('group', 'api', { host: 'gitlab' });
+
+    const marketplaceTokens: Array<string | null> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        const auth = (init?.headers as Record<string, string> | undefined)?.Authorization ?? null;
+        marketplaceTokens.push(auth);
+        return new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+    await useWorkspaceStore.getState().searchMarketplace('anything');
+
+    // No GitHub session exists, so the search must go out ANONYMOUSLY rather
+    // than carrying the GitLab credential.
+    expect(marketplaceTokens.every((t) => t === null || !t.includes('GITLAB-SECRET'))).toBe(true);
+  });
+
+  it('honours an explicit tokenOverride without consulting any session', async () => {
+    registerGitProvider('gitlab', () => spyProvider('gitlab'));
+    await useWorkspaceStore.getState().connectHostSession('GITLAB-SECRET', 'gitlab');
+    seen.length = 0;
+
+    await useWorkspaceStore
+      .getState()
+      .listAccessibleRepos({ host: 'gitlab', tokenOverride: 'DEDICATED-LINK-TOKEN' });
+
+    expect(seen).toEqual([{ host: 'gitlab', token: 'DEDICATED-LINK-TOKEN' }]);
+  });
+});
+
 describe('workspaceStore — the session lifecycle is host-aware (S3b)', () => {
   // Connect shipped in S3; verify / rotate / disconnect stayed pinned to the
   // GitHub slot, so a GitLab session could be created and then never tested,

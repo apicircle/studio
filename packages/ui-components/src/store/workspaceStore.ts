@@ -6021,9 +6021,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // Marketplace search runs anonymously when the user has no GitHub
     // session — discovery shouldn't require a PAT. The token, when
     // present, only lifts GitHub's anonymous rate limits.
-    const token = await tryDecryptSessionToken(local);
     // Pinned to GitHub deliberately: the marketplace IS GitHub topic search.
-    // No other host has an equivalent, so there is nothing to resolve.
+    // No other host has an equivalent, so there is nothing to resolve — and the
+    // token must be GitHub's for the same reason. Reading the CONNECTED host's
+    // token here sent a GitLab PAT to github.com for any GitLab workspace.
+    const token = await tryDecryptSessionToken(local, 'github');
     const client = getGitProvider('github');
     return client.searchMarketplaceRepos(token, query);
   },
@@ -6031,24 +6033,24 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   listAccessibleRepos: async (opts) => {
     const local = get().local;
     if (!local) throw new Error('Workspace not ready');
-    const token = opts?.tokenOverride?.trim() || (await decryptSessionToken(local));
-    const client = targetProvider(opts);
+    // The repo browser runs BEFORE a repo is connected, which is exactly when
+    // `connectedHostKind` still answers 'github' — so resolving the token
+    // separately sent the GitHub PAT to whichever host the picker named.
+    const { client, token } = await targetClientAndToken(local, opts);
     return client.listAccessibleRepos(token);
   },
 
   listRepoBranches: async (owner, name, opts) => {
     const local = get().local;
     if (!local) throw new Error('Workspace not ready');
-    const token = opts?.tokenOverride?.trim() || (await decryptSessionToken(local));
-    const client = targetProvider(opts);
+    const { client, token } = await targetClientAndToken(local, opts);
     return client.listBranches(token, owner.trim(), name.trim());
   },
 
   probeLinkedRepoVersions: async (owner, name, branch, opts) => {
     const local = get().local;
     if (!local) throw new Error('Workspace not ready');
-    const token = opts?.tokenOverride?.trim() || (await decryptSessionToken(local));
-    const client = targetProvider(opts);
+    const { client, token } = await targetClientAndToken(local, opts);
     const result = await fetchRemoteWorkspaceJson(async (p) => {
       const f = await client.getContents(token, owner.trim(), name.trim(), p, branch.trim());
       return f?.content ?? null;
@@ -6973,7 +6975,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     ]);
     if (localSlots.length > 0) {
       if (!branch) throw new Error('Create a working branch before syncing workspace attachments');
-      if (!workspaceToken) throw new Error('No GitHub session - connect a PAT first');
+      if (!workspaceToken)
+        throw new Error(
+          // Names the host the workspace is actually on. "No GitHub session" was
+          // shown to users whose setup had no GitHub in it anywhere, leaving them
+          // with an instruction they could not act on.
+          `No ${GIT_HOST_LABELS[connectedHostKind(local)]} session - connect a PAT first`,
+        );
       // Build a slotId → asset lookup once so the ref-chain per slot is
       // cheap to derive.
       const assetBySlot: Record<string, NonNullable<typeof synced.globalAssets.files>[string]> = {};
@@ -8106,9 +8114,12 @@ async function doLinkWorkspace(
     };
     token = provided;
   } else if (args.kind === 'public') {
-    token = (await tryDecryptSessionToken(local)) ?? '';
+    // A link targets ITS OWN host, which need not be the workspace's. Resolving
+    // the token from the connected host would hand one host's PAT to another's
+    // API — the same crossing the repo browser had.
+    token = (await tryDecryptSessionToken(local, args.provider)) ?? '';
   } else {
-    token = await decryptSessionToken(local);
+    token = await decryptSessionToken(local, args.provider);
   }
 
   const client = targetProvider({ host: args.provider, baseUrl: args.apiBaseUrl });
@@ -8543,6 +8554,29 @@ function findProvisionedSecretId(
   return null;
 }
 
+/**
+ * The client and the token for `host`, resolved TOGETHER.
+ *
+ * Every credential-crossing bug in this file had the same shape: a client built
+ * for one host beside a token resolved for another. The two were independent
+ * calls that happened to agree while GitHub was the only connectable host, and
+ * silently stopped agreeing the moment it was not — sending a real PAT to a
+ * third-party API. Returning both from one place makes disagreement impossible
+ * rather than merely fixed.
+ *
+ * `tokenOverride` is honoured verbatim: a caller supplying its own credential
+ * (a dedicated link session) has already decided which one is right.
+ */
+async function targetClientAndToken(
+  local: WorkspaceLocal,
+  opts?: { host?: GitHostKind; baseUrl?: string; tokenOverride?: string },
+): Promise<{ client: GitProvider; token: string }> {
+  const client = targetProvider(opts);
+  const override = opts?.tokenOverride?.trim();
+  const token = override || (await decryptSessionToken(local, opts?.host));
+  return { client, token };
+}
+
 async function decryptSessionToken(local: WorkspaceLocal, host?: GitHostKind): Promise<string> {
   // Host-aware at the CHOKEPOINT. Every workspace-repo operation resolves its
   // token through here, so reading the host once means each of them uses the
@@ -8672,9 +8706,22 @@ async function wait(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-async function tryDecryptSessionToken(local: WorkspaceLocal): Promise<string | null> {
-  if (!local.sessions.github.workspace) return null;
-  return decryptSessionToken(local);
+/**
+ * The token for `host`, or null when that host has no session.
+ *
+ * `host` defaults to the connected repo's, which is what every repo-bound caller
+ * wants. It used to GATE on `sessions.github` and then RESOLVE via the connected
+ * host — two different hosts in one function, so a GitLab workspace was blocked
+ * unless an unrelated GitHub session existed, and marketplace search sent the
+ * GitLab token to github.com.
+ */
+async function tryDecryptSessionToken(
+  local: WorkspaceLocal,
+  host?: GitHostKind,
+): Promise<string | null> {
+  const resolved = host ?? connectedHostKind(local);
+  if (!workspaceSessionFor(local, resolved)) return null;
+  return decryptSessionToken(local, resolved);
 }
 
 /**
