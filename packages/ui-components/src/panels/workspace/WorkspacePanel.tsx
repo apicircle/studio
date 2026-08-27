@@ -22,7 +22,16 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { type GitHubBranch, type GitHubRepo, GitHubError, MissingScopeError } from '@apicircle/git';
+import {
+  type GitHostKind,
+  type GitHubBranch,
+  type GitHubRepo,
+  GIT_HOST_KINDS,
+  GIT_HOST_LABELS,
+  GitHubError,
+  hasGitProvider,
+  MissingScopeError,
+} from '@apicircle/git';
 import {
   type DiffEntry,
   type ResolutionMap,
@@ -35,7 +44,7 @@ import {
   validateBranchName,
 } from '@apicircle/core';
 import { validatePRTitle } from '@apicircle/shared';
-import { useWorkspaceStore } from '../../store/workspaceStore';
+import { anyWorkspaceSession, useWorkspaceStore } from '../../store/workspaceStore';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';
 import { ReleaseAndTopicsModal } from './ReleaseAndTopicsModal';
@@ -50,7 +59,11 @@ export function WorkspacePanel() {
     return reg.workspaces.find((w) => w.id === reg.activeWorkspaceId)?.name ?? '';
   });
   const setWorkspaceName = useWorkspaceStore((s) => s.setWorkspaceName);
-  const session = useWorkspaceStore((s) => s.local?.sessions.github.workspace ?? null);
+  // ANY host's session, not GitHub's. Reading `sessions.github.workspace` here
+  // made a workspace holding only a GitLab PAT report as local-only, which hid
+  // the connect form entirely — the form being GitHub-shaped was the second
+  // problem, not the first.
+  const session = useWorkspaceStore((s) => anyWorkspaceSession(s.local));
   const connectedRepo = useWorkspaceStore((s) => s.local?.connectedRepo ?? null);
   const workingBranch = useWorkspaceStore((s) => s.local?.workingBranch ?? null);
 
@@ -769,6 +782,15 @@ function ConnectRepoForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Only hosts this BUILD can actually resolve. The open-core Studio registers
+  // GitHub alone, so `hosts` is `['github']` there and the picker below is not
+  // rendered at all — the form stays exactly as it was. An edition that calls
+  // `registerGitProvider` for the other three gets the picker for free, rather
+  // than the list being a hardcoded four that half of them cannot connect to.
+  const hosts = useMemo(() => GIT_HOST_KINDS.filter((kind) => hasGitProvider(kind)), []);
+  const [host, setHost] = useState<GitHostKind>('github');
+  const [apiBaseUrl, setApiBaseUrl] = useState('');
+
   const [repos, setRepos] = useState<GitHubRepo[] | null>(null);
   const [reposError, setReposError] = useState<string | null>(null);
   const [loadingRepos, setLoadingRepos] = useState(false);
@@ -781,7 +803,7 @@ function ConnectRepoForm() {
     setLoadingRepos(true);
     setReposError(null);
     setRepos(null);
-    listAccessibleRepos()
+    listAccessibleRepos({ host, baseUrl: apiBaseUrl.trim() || undefined })
       .then((list) => {
         if (cancelled) return;
         setRepos(list);
@@ -803,7 +825,7 @@ function ConnectRepoForm() {
     return () => {
       cancelled = true;
     };
-  }, [manualMode, listAccessibleRepos, surfaceMissingScope]);
+  }, [manualMode, host, apiBaseUrl, listAccessibleRepos, surfaceMissingScope]);
 
   const filteredRepos = useMemo(() => {
     if (!repos) return [];
@@ -823,7 +845,7 @@ function ConnectRepoForm() {
     setSubmitting(true);
     setError(null);
     try {
-      await connectRepo(owner, name);
+      await connectRepo(owner, name, { host, baseUrl: apiBaseUrl.trim() || undefined });
       setValue('');
       setFilter('');
       setShowRepoList(false);
@@ -859,7 +881,9 @@ function ConnectRepoForm() {
   return (
     <div className="space-y-2 rounded-sm border border-accent/30 bg-accent/5 p-4">
       <div className="flex items-start justify-between gap-3">
-        <label className="block text-xs text-text-muted">Connect a repo on GitHub</label>
+        <label className="block text-xs text-text-muted" htmlFor="connect-repo-host">
+          Connect a repo on {GIT_HOST_LABELS[host]}
+        </label>
         <button
           type="button"
           onClick={() => {
@@ -873,6 +897,41 @@ function ConnectRepoForm() {
           {manualMode ? 'Browse repos' : 'Manual entry'}
         </button>
       </div>
+
+      {hosts.length > 1 && (
+        <div className="flex gap-2">
+          <select
+            id="connect-repo-host"
+            aria-label="Git host"
+            value={host}
+            onChange={(e) => {
+              setHost(e.target.value as GitHostKind);
+              // The repo list belongs to the old host; keeping it on screen
+              // would offer repos the new host cannot connect.
+              setError(null);
+              setFilter('');
+              setShowRepoList(false);
+            }}
+            className="h-7 rounded-sm border border-border bg-card px-2 text-xs text-text-primary"
+          >
+            {hosts.map((kind) => (
+              <option key={kind} value={kind}>
+                {GIT_HOST_LABELS[kind]}
+              </option>
+            ))}
+          </select>
+          <input
+            aria-label="API base URL"
+            value={apiBaseUrl}
+            onChange={(e) => setApiBaseUrl(e.target.value)}
+            // Optional on purpose: blank means the host's public API. Only a
+            // self-managed instance needs this, and demanding it from everyone
+            // would make the common case harder to serve the rare one.
+            placeholder="API base URL (self-managed — optional)"
+            className="h-7 min-w-0 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary placeholder:text-text-dim"
+          />
+        </div>
+      )}
 
       {manualMode ? (
         <div className="flex gap-2">

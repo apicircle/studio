@@ -32,6 +32,10 @@ export {
   registerGitProvider,
   resetGitProviderRegistry,
 } from './provider';
+// Host metadata lives in `@apicircle/shared` (the published, dependency-free
+// leaf that owns `GitHostKind`); re-exported here so a consumer already holding
+// `@apicircle/git` does not need a second import for the host list or its labels.
+export { GIT_HOST_KINDS, GIT_HOST_LABELS } from '@apicircle/shared';
 export type {
   GitHostKind,
   GitProvider,

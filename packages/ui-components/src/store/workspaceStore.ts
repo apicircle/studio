@@ -35,6 +35,7 @@ import type {
   WorkspaceLocal,
   WorkspaceSnapshotTrigger,
   WorkspaceSynced,
+  GitHostSession,
 } from '@apicircle/shared';
 import {
   type GitHostKind,
@@ -44,6 +45,8 @@ import {
   type GitProviderOptions,
   BranchDivergedError,
   getGitProvider,
+  GIT_HOST_KINDS,
+  GIT_HOST_LABELS,
   MissingScopeError,
 } from '@apicircle/git';
 import {
@@ -1619,6 +1622,24 @@ type WorkspaceStore = {
    */
   connectGitHubSession: (token: string) => Promise<GitHubSession>;
   /**
+   * Connect a workspace session for any Git host.
+   *
+   * `connectGitHubSession` is retained as the name it has always had and simply
+   * delegates here with `'github'`, so nothing that already calls it changes.
+   * `baseUrl` targets a self-managed instance (self-hosted GitLab, an Azure
+   * DevOps organisation, GitHub Enterprise Server) and is recorded so later
+   * calls reach the same server.
+   *
+   * Which hosts are actually resolvable depends on the build: the open-core
+   * Studio registers GitHub only, so callers should offer a host that
+   * `hasGitProvider` reports as available rather than assuming all four.
+   */
+  connectHostSession: (
+    token: string,
+    host?: GitHostKind,
+    opts?: { baseUrl?: string },
+  ) => Promise<GitHostSession>;
+  /**
    * Kick off GitHub's OAuth Device Flow. Returns the user-facing code +
    * verification URL immediately so the UI can render them; the
    * promise resolves to the final `GitHubSession` once the user
@@ -1655,7 +1676,19 @@ type WorkspaceStore = {
    * persist the connection metadata into `local.connectedRepo`. Throws
    * when no GitHub session is active or the repo is inaccessible.
    */
-  connectRepo: (owner: string, name: string) => Promise<ConnectedRepo>;
+  /**
+   * Bind this workspace to a repo.
+   *
+   * `opts.host` names the Git host; omitted, it falls back to whichever host
+   * already holds a session, so every existing two-argument call is unchanged.
+   * `opts.baseUrl` targets a self-managed instance and is persisted onto the
+   * connected repo so later calls reach the same server.
+   */
+  connectRepo: (
+    owner: string,
+    name: string,
+    opts?: { host?: GitHostKind; baseUrl?: string },
+  ) => Promise<ConnectedRepo>;
   /**
    * Drop the connected repo and any working branch tied to it.
    */
@@ -2129,13 +2162,58 @@ type WorkspaceStore = {
 };
 
 /**
- * Required base scopes for the connect flow. Push-to-save needs `repo`;
- * `pull_request` is required only for PR creation, surfaced as a warning
- * at connect time via the UI guidance copy. The verify step on connect
- * throws MissingScopeError when REQUIRED_BASE_SCOPES are missing.
+ * Required base scopes for the connect flow, per host.
+ *
+ * GitHub is unchanged and stays enforced: push-to-save needs `repo`,
+ * `pull_request` is required only for PR creation (surfaced as guidance rather
+ * than a gate), and GitHub is the one host that actually REPORTS a token's
+ * scopes — `GET /user` returns them in `x-oauth-scopes`, so the check has
+ * something real to check against.
+ *
+ * Every other host reports NOTHING. GitLab, Bitbucket Cloud and Azure DevOps
+ * each answer `getViewer` with `scopes: { granted: [] }`, because none of them
+ * expose a token's scopes on their user endpoint. Requiring any scope name for
+ * those hosts would therefore reject EVERY valid token — which is precisely the
+ * bug this table exists to fix.
+ *
+ * So for those hosts the gate is the one thing that is genuinely observable:
+ * `getViewer` succeeded, meaning the host accepted the token and told us whose
+ * it is. A token that turns out to lack write access still fails — at the first
+ * write, with that host's own error. That is an honest failure. Inventing a
+ * scope check we cannot evaluate would be a false one, and a false gate is
+ * worse than a late error because it blames the user for the wrong thing.
+ *
+ * The scopes a user should CREATE each token with are guidance copy, not a
+ * gate: see `SCOPE_GUIDANCE_BY_HOST`.
  */
-const REQUIRED_BASE_SCOPES = ['repo'] as const;
-const GITHUB_TOKEN_LABEL_PREFIX = 'github-token:';
+const REQUIRED_SCOPES_BY_HOST: Record<GitHostKind, readonly string[]> = {
+  github: ['repo'],
+  gitlab: [],
+  bitbucket: [],
+  'azure-devops': [],
+};
+
+/** GitHub's required scopes, kept under its original name for the call sites
+ *  that are legitimately GitHub-only (the OAuth device grant's scope string). */
+const REQUIRED_BASE_SCOPES = REQUIRED_SCOPES_BY_HOST.github;
+
+/**
+ * What to tell a user to create their token WITH, per host. Guidance, never
+ * enforced — see `REQUIRED_SCOPES_BY_HOST` for why these cannot be checked
+ * anywhere but GitHub.
+ */
+export const SCOPE_GUIDANCE_BY_HOST: Record<GitHostKind, readonly string[]> = {
+  github: ['repo', 'pull_request'],
+  gitlab: ['api', 'read_repository', 'write_repository'],
+  bitbucket: ['repository', 'repository:write', 'pullrequest:write'],
+  'azure-devops': ['Code (Read & Write)', 'Pull Request Threads (Read & Write)'],
+};
+
+/** Vault label prefix for a host's PAT. GitHub keeps `github-token:` verbatim so
+ *  every already-stored label still resolves; the others follow the same shape. */
+function tokenLabelPrefix(host: GitHostKind): string {
+  return `${host}-token:`;
+}
 
 // ---------------------------------------------------------------------------
 // Host resolution
@@ -2196,6 +2274,91 @@ function targetProvider(opts?: { host?: GitHostKind; baseUrl?: string }): GitPro
     opts?.host ?? 'github',
     opts?.baseUrl ? { baseUrl: opts.baseUrl } : undefined,
   );
+}
+
+/**
+ * The workspace session for `host`.
+ *
+ * GitHub deliberately keeps its own `sessions.github` slot rather than being
+ * mirrored into `sessions.hosts`, so a GitHub PAT lives in exactly one place and
+ * there is no reconciliation problem between two copies. That asymmetry is
+ * confined to these two functions — nothing else needs to know about it.
+ */
+function workspaceSessionFor(
+  local: WorkspaceLocal | null | undefined,
+  host: GitHostKind,
+): GitHostSession | null {
+  if (!local) return null;
+  return host === 'github'
+    ? (local.sessions.github.workspace ?? null)
+    : (local.sessions.hosts?.[host]?.workspace ?? null);
+}
+
+/**
+ * The host this workspace's credential belongs to.
+ *
+ * `connectedHostKind` reads the CONNECTED REPO — which does not exist yet at the
+ * moment a user is connecting one, so it would answer `'github'` for everybody
+ * and a GitLab-first workspace could never get off the ground. During connect
+ * the SESSION is the only evidence of intent, so it is what this reads.
+ *
+ * Precedence: an already-connected repo wins (a re-connect stays on its host),
+ * then the one host holding a session. With sessions on more than one host the
+ * answer is genuinely ambiguous, so callers that know better pass the host
+ * explicitly — this is the fallback, not the decision.
+ */
+function hostWithSession(local: WorkspaceLocal): GitHostKind {
+  if (local.connectedRepo?.hostKind) return local.connectedRepo.hostKind;
+  if (local.sessions.github.workspace) return 'github';
+  const withSession = GIT_HOST_KINDS.find((host) => workspaceSessionFor(local, host));
+  return withSession ?? 'github';
+}
+
+/** `local` with `session` written into `host`'s slot, every other host's left
+ *  untouched. Spreads `local.sessions` rather than rebuilding it: an object
+ *  literal here drops `sessions.hosts` and TypeScript does not complain,
+ *  because `hosts` is optional. */
+function withWorkspaceSession(
+  local: WorkspaceLocal,
+  host: GitHostKind,
+  session: GitHostSession | null,
+): WorkspaceLocal {
+  if (host === 'github') {
+    return {
+      ...local,
+      sessions: {
+        ...local.sessions,
+        github: { ...local.sessions.github, workspace: session },
+      },
+    };
+  }
+  const existing = local.sessions.hosts?.[host] ?? { workspace: null, links: {} };
+  return {
+    ...local,
+    sessions: {
+      ...local.sessions,
+      hosts: { ...local.sessions.hosts, [host]: { ...existing, workspace: session } },
+    },
+  };
+}
+
+/**
+ * Any workspace session, on any host — the "is this workspace connected at all"
+ * question the UI asks before it offers a repo.
+ *
+ * Exported because the panels need it: reading `sessions.github.workspace`
+ * directly is what made a GitLab-only workspace look local-only, so there is one
+ * predicate rather than a slot lookup repeated per surface.
+ */
+export function anyWorkspaceSession(
+  local: WorkspaceLocal | null | undefined,
+): GitHostSession | null {
+  if (!local) return null;
+  for (const host of GIT_HOST_KINDS) {
+    const session = workspaceSessionFor(local, host);
+    if (session) return session;
+  }
+  return null;
 }
 
 /** Provider for a linked workspace's source repo. */
@@ -4783,24 +4946,27 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   // --- GitHub session ----------------------------------------------------
 
-  connectGitHubSession: async (token) => {
+  connectGitHubSession: async (token) => get().connectHostSession(token, 'github'),
+
+  connectHostSession: async (token, host = 'github', opts) => {
     const local = get().local;
     if (!local) throw new Error('Workspace not ready');
     const trimmed = token.trim();
     if (!trimmed) throw new Error('Token is required');
 
-    // Verify via GET /user; throws MissingScopeError when base scopes are missing.
-    // Pinned to GitHub deliberately. The verified token is persisted into
-    // `local.sessions.github`, and the required-scope check below is the GitHub
-    // scope vocabulary (`repo`). Routing a non-GitHub token through here would
-    // store it in the GitHub slot and reject it against the wrong scope names —
-    // so the host parameter lands with the per-host session slot + scope table,
-    // not before it.
-    const client = getGitProvider('github');
+    // Verify by identifying the token's owner; throws MissingScopeError when the
+    // host's required scopes are missing. Host-aware since S3: the provider, the
+    // scope vocabulary, the vault label and the session slot all follow `host`,
+    // which is what makes a non-GitHub PAT connectable at all. Omitting `host`
+    // resolves to `'github'`, so every existing caller is unchanged.
+    const client = getGitProvider(host, opts?.baseUrl ? { baseUrl: opts.baseUrl } : undefined);
+    const required = REQUIRED_SCOPES_BY_HOST[host];
     const { viewer, scopes } = await client.getViewer(trimmed, {
-      requiredScopes: [...REQUIRED_BASE_SCOPES],
+      requiredScopes: [...required],
     });
-    const missingBase = REQUIRED_BASE_SCOPES.filter((s) => !scopes.granted.includes(s));
+    // Empty for every host but GitHub — see REQUIRED_SCOPES_BY_HOST for why a
+    // scope check none of them can answer is worse than no check at all.
+    const missingBase = required.filter((s) => !scopes.granted.includes(s));
     if (missingBase.length > 0) {
       throw new MissingScopeError(
         `Token is missing required base scopes: ${missingBase.join(', ')}.`,
@@ -4817,12 +4983,15 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     await putSecretPayload(tokenSecretId, payload);
     const indexed = addSecretEntryAction(local, {
       id: tokenSecretId,
-      label: `${GITHUB_TOKEN_LABEL_PREFIX}${viewer.login}`,
+      // Prefixed by host, so the same account name on two hosts does not collide
+      // in the vault index — and `github-token:` is unchanged, so every label
+      // already on disk still resolves.
+      label: `${tokenLabelPrefix(host)}${viewer.login}`,
     });
     if (indexed === local) {
       // Label collision (already a session for this account?) — clean up.
       await deleteSecretPayload(tokenSecretId);
-      throw new Error(`A session for ${viewer.login} already exists`);
+      throw new Error(`A ${GIT_HOST_LABELS[host]} session for ${viewer.login} already exists`);
     }
 
     const session: GitHubSession = {
@@ -4837,12 +5006,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       // PATs that surface `pull_request` directly. A `null` here means the
       // token uses a permission model the scope check can't read; the
       // probe runs once a repo is connected (see `connectRepo`).
+      // Unchanged for GitHub. Every other host reports no scopes, so this
+      // returns `null` (unknown) and `connectRepo`'s existing probe resolves it
+      // against the real repo — which is the honest answer, and needs no
+      // per-host special case here.
       canCreatePullRequests: checkPrCapabilityFromScopes(scopes.granted),
     };
-    const next: WorkspaceLocal = {
-      ...indexed,
-      sessions: { ...indexed.sessions, github: { ...indexed.sessions.github, workspace: session } },
-    };
+    const next = withWorkspaceSession(indexed, host, session);
     set({ local: next });
     queueSaveLocal(next);
     return session;
@@ -5015,12 +5185,18 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   // --- Repo + working-branch (P4.2) -------------------------------------
 
-  connectRepo: async (owner, name) => {
+  connectRepo: async (owner, name, opts) => {
     const local = get().local;
     if (!local) throw new Error('Workspace not ready');
-    const token = await decryptSessionToken(local);
 
-    const client = workspaceProvider(local);
+    // A repo is connected against whichever host the caller names, else the one
+    // that already holds a session — the session is what a user connects FIRST,
+    // so it is the best available evidence. The connected repo then records the
+    // answer for every call that follows.
+    const host = opts?.host ?? hostWithSession(local);
+    const baseUrl = opts?.baseUrl ?? local.connectedRepo?.apiBaseUrl;
+    const token = await decryptSessionToken(local, host);
+    const client = getGitProvider(host, baseUrl ? { baseUrl } : undefined);
     const repo: GitHubRepo = await client.getRepo(token, owner.trim(), name.trim());
 
     const connected: ConnectedRepo = {
@@ -5032,7 +5208,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       isPrivate: repo.isPrivate,
       pushable: repo.pushable,
       connectedAt: new Date().toISOString(),
-      hostKind: 'github',
+      // The host the client above was resolved for — NOT a literal. These two
+      // were consistent only while `'github'` was the only connectable host;
+      // once a GitLab session can exist, a hardcoded `hostKind` would persist a
+      // repo that claims GitHub while every later call resolves GitLab.
+      hostKind: host,
+      ...(baseUrl ? { apiBaseUrl: baseUrl } : {}),
     };
 
     // If session connect couldn't determine PR capability from scopes
@@ -8325,9 +8506,14 @@ function findProvisionedSecretId(
   return null;
 }
 
-async function decryptSessionToken(local: WorkspaceLocal): Promise<string> {
-  const session = local.sessions.github.workspace;
-  if (!session) throw new Error('No GitHub session — connect a PAT first');
+async function decryptSessionToken(local: WorkspaceLocal, host?: GitHostKind): Promise<string> {
+  // Host-aware at the CHOKEPOINT. Every workspace-repo operation resolves its
+  // token through here, so reading the host once means each of them uses the
+  // right credential without having to know that hosts exist. `host` is explicit
+  // only where the connected repo cannot answer yet — during connect itself.
+  const resolved = host ?? connectedHostKind(local);
+  const session = workspaceSessionFor(local, resolved);
+  if (!session) throw new Error(`No ${GIT_HOST_LABELS[resolved]} session — connect a PAT first`);
   const payload = await getSecretPayload(session.tokenSecretId);
   if (!payload) throw new Error('Stored token is missing — reconnect to refresh');
   const masterKey = await getMasterKey();

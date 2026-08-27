@@ -67,11 +67,37 @@ async function seedSession(): Promise<void> {
   vi.unstubAllGlobals();
 }
 
-/** Point the workspace at `hostKind` (omit for the pre-multi-host shape). */
+/**
+ * Point the workspace at `hostKind` (omit for the pre-multi-host shape).
+ *
+ * Seeds a session in THAT host's slot too, because the token now follows the
+ * host: before S3 every repo-bound action decrypted `sessions.github` whatever
+ * host the repo was on, which would have sent a GitHub PAT to gitlab.com. That
+ * was unreachable while GitHub was the only connectable host, and is reachable
+ * the moment it is not — so the fixture has to be coherent rather than relying
+ * on the old host-blind read. The GitHub session's `tokenSecretId` is reused:
+ * the vault entry already exists, and what this file tests is ROUTING, not
+ * connect.
+ */
 function connectRepoAs(hostKind?: 'gitlab' | 'bitbucket' | 'azure-devops'): void {
   const local = useWorkspaceStore.getState().local!;
+  const githubSession = local.sessions.github.workspace!;
   useWorkspaceStore.setState({
-    local: { ...local, connectedRepo: { ...REPO, ...(hostKind ? { hostKind } : {}) } },
+    local: {
+      ...local,
+      connectedRepo: { ...REPO, ...(hostKind ? { hostKind } : {}) },
+      sessions: {
+        ...local.sessions,
+        ...(hostKind
+          ? {
+              hosts: {
+                ...local.sessions.hosts,
+                [hostKind]: { workspace: githubSession, links: {} },
+              },
+            }
+          : {}),
+      },
+    },
   });
 }
 

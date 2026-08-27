@@ -27,6 +27,40 @@
 
 ### Added
 
+- **Connect a repo on GitLab, Bitbucket Cloud or Azure DevOps
+  (`@apicircle/ui-components`).** The `GitProvider` seam already accepted other
+  hosts, but the connect path did not: `REQUIRED_BASE_SCOPES = ['repo']` is
+  GitHub's scope vocabulary, and GitLab, Bitbucket and Azure DevOps all report
+  `scopes: { granted: [] }` because none of them expose a token's scopes at all.
+  Every valid non-GitHub token was therefore rejected with a `MissingScopeError`
+  naming a scope that host does not have. Scopes are now a **per-host table**:
+  GitHub keeps `repo`, enforced exactly as before; the others require none,
+  because a check none of them can answer is a false gate, and a false gate is
+  worse than a late error — it blames the user for the wrong thing. What to
+  create each token with is now guidance copy (`SCOPE_GUIDANCE_BY_HOST`) that
+  says plainly which hosts cannot verify it.
+
+  New `connectHostSession(token, host?, { baseUrl })`; `connectGitHubSession`
+  is retained and delegates to it with `'github'`, so nothing that already calls
+  it changes. `connectRepo` takes an optional `{ host, baseUrl }` and now
+  persists the **resolved** host rather than a hardcoded `'github'` literal.
+  Sessions land in `sessions.hosts[kind]`; GitHub keeps its own `sessions.github`
+  slot and its `github-token:` vault-label prefix, so tokens already on disk
+  still resolve.
+
+  The Workspace panel's "is this workspace connected" test now reads **any**
+  host's session — reading `sessions.github.workspace` made a workspace holding
+  only a GitLab PAT report as local-only, which hid the connect form entirely.
+  The host picker and the optional self-managed API base URL render only when
+  more than one provider is registered, so **standalone Studio is unchanged**:
+  it registers GitHub alone, the picker does not appear, and every existing
+  string and `aria-label` is byte-identical.
+
+  Also fixes a latent credential leak that this work would otherwise have made
+  reachable: `decryptSessionToken` read `sessions.github` whatever host the repo
+  was on, so a GitLab-connected workspace would have sent the user's GitHub PAT
+  to gitlab.com. It now follows the connected host.
+
 - **Form + layout primitives to stop per-screen UI drift
   (`@apicircle/ui-components`).** Eight additive primitives, each extracted from a
   pattern the panels were hand-re-declaring: `Field` (the labelled-control wrapper

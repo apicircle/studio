@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import type { SecretEntry, SecretKeyMeta } from '@apicircle/shared';
 import { safeExternalHref } from '@apicircle/shared';
+import { type GitHostKind, GIT_HOST_KINDS, GIT_HOST_LABELS, hasGitProvider } from '@apicircle/git';
+import { SCOPE_GUIDANCE_BY_HOST } from '../../store/workspaceStore';
 import { useShallow } from 'zustand/react/shallow';
 import {
   GitHubError,
@@ -832,8 +834,16 @@ function SecretRow({ entry }: SecretRowProps) {
 }
 
 function SessionsTab() {
-  const workspaceSession = useWorkspaceStore((s) => s.local?.sessions.github.workspace ?? null);
-  const linkSessions = useWorkspaceStore((s) => s.local?.sessions.github.links ?? {});
+  // Only hosts this build can resolve; the open-core Studio registers GitHub
+  // alone, so this is `['github']` there and the picker below never renders.
+  const hosts = useMemo(() => GIT_HOST_KINDS.filter((kind) => hasGitProvider(kind)), []);
+  const [host, setHost] = useState<GitHostKind>('github');
+  const local = useWorkspaceStore((s) => s.local);
+  const workspaceSession =
+    host === 'github'
+      ? (local?.sessions.github.workspace ?? null)
+      : (local?.sessions.hosts?.[host]?.workspace ?? null);
+  const linkSessions = local?.sessions.github.links ?? {};
   const linkedWorkspaces = useWorkspaceStore((s) => s.synced?.linkedWorkspaces ?? {});
   const linkSessionEntries = Object.entries(linkSessions);
   return (
@@ -846,8 +856,35 @@ function SessionsTab() {
           Drives push, pull, and PR creation for this workspace&apos;s own repo. Disconnecting
           doesn&apos;t touch linking sessions below.
         </p>
-        <ScopeGuidance />
-        {workspaceSession ? <ActiveSessionCard /> : <ConnectForm />}
+        {hosts.length > 1 && (
+          <div className="mb-2 flex items-center gap-2">
+            <label className="text-[0.6875rem] text-text-muted" htmlFor="session-host">
+              Host
+            </label>
+            <select
+              id="session-host"
+              aria-label="Session Git host"
+              value={host}
+              onChange={(e) => setHost(e.target.value as GitHostKind)}
+              className="h-6 rounded-sm border border-border bg-card px-1.5 text-[0.6875rem] text-text-primary"
+            >
+              {hosts.map((kind) => (
+                <option key={kind} value={kind}>
+                  {GIT_HOST_LABELS[kind]}
+                  {(
+                    kind === 'github'
+                      ? local?.sessions.github.workspace
+                      : local?.sessions.hosts?.[kind]?.workspace
+                  )
+                    ? ' · connected'
+                    : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        <ScopeGuidance host={host} />
+        {workspaceSession ? <ActiveSessionCard /> : <ConnectForm host={host} />}
       </div>
       <div>
         <h3 className="mb-1 text-xs font-medium uppercase tracking-wider text-text-dim">
@@ -891,37 +928,81 @@ function SessionsTab() {
   );
 }
 
-function ScopeGuidance() {
+/** Where each host issues personal access tokens. */
+const TOKEN_PAGE_BY_HOST: Record<GitHostKind, string> = {
+  github: 'https://github.com/settings/tokens?type=beta',
+  gitlab: 'https://gitlab.com/-/user_settings/personal_access_tokens',
+  bitbucket: 'https://bitbucket.org/account/settings/app-passwords/',
+  'azure-devops': 'https://dev.azure.com',
+};
+
+/**
+ * What to create the token WITH.
+ *
+ * GitHub's two scopes are the only ones the product can actually verify — it is
+ * the one host that reports a token's scopes back. For the others this is
+ * guidance and nothing more: they do not expose scopes, so the connect step
+ * cannot check them and deliberately does not pretend to. Saying so here is the
+ * difference between a user understanding a later 403 and being baffled by it.
+ */
+function ScopeGuidance({ host }: { host: GitHostKind }) {
+  const scopes = SCOPE_GUIDANCE_BY_HOST[host];
   return (
     <div className="rounded-sm border border-border bg-card p-3 text-xs text-text-muted">
-      <p className="mb-2 text-text-primary">Required PAT scopes</p>
+      {/* GitHub's heading is unchanged, verbatim. It is asserted by this panel's
+          own tests and it is what users have read since the vault shipped; only
+          a non-GitHub host needs to say which host it means. */}
+      <p className="mb-2 text-text-primary">
+        {host === 'github'
+          ? 'Required PAT scopes'
+          : `Required ${GIT_HOST_LABELS[host]} token scopes`}
+      </p>
       <ul className="ml-4 list-disc space-y-0.5">
-        <li>
-          <code className="text-text-primary">repo</code> — required for push to save and read of
-          the working branch
-        </li>
-        <li>
-          <code className="text-text-primary">pull_request</code> — required to create PRs from the
-          working branch to <code>main</code>
-        </li>
+        {host === 'github' ? (
+          <>
+            <li>
+              <code className="text-text-primary">repo</code> — required for push to save and read
+              of the working branch
+            </li>
+            <li>
+              <code className="text-text-primary">pull_request</code> — required to create PRs from
+              the working branch to <code>main</code>
+            </li>
+          </>
+        ) : (
+          scopes.map((scope) => (
+            <li key={scope}>
+              <code className="text-text-primary">{scope}</code>
+            </li>
+          ))
+        )}
       </ul>
+      {host !== 'github' && (
+        <p className="mt-2">
+          {GIT_HOST_LABELS[host]} does not report a token&apos;s scopes, so these cannot be checked
+          when you connect — a token missing one fails at the first write instead.
+        </p>
+      )}
       <a
-        href="https://github.com/settings/tokens?type=beta"
+        href={TOKEN_PAGE_BY_HOST[host]}
         target="_blank"
         rel="noreferrer noopener"
         className="mt-2 inline-flex items-center gap-1 text-accent hover:underline"
       >
-        Create a token on github.com
+        Create a token on {GIT_HOST_LABELS[host]}
         <ExternalLink size={10} aria-hidden="true" />
       </a>
     </div>
   );
 }
 
-function ConnectForm() {
-  const connect = useWorkspaceStore((s) => s.connectGitHubSession);
+function ConnectForm({ host = 'github' }: { host?: GitHostKind } = {}) {
+  const connect = useWorkspaceStore((s) => s.connectHostSession);
   const connectViaDeviceFlow = useWorkspaceStore((s) => s.connectGitHubSessionViaDeviceFlow);
   const [token, setToken] = useState('');
+  // Self-managed instances only (self-hosted GitLab, an Azure DevOps org,
+  // GitHub Enterprise Server). Blank means the host's public API.
+  const [baseUrl, setBaseUrl] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -941,7 +1022,7 @@ function ConnectForm() {
     setSubmitting(true);
     setError(null);
     try {
-      await connect(token);
+      await connect(token, host, { baseUrl: baseUrl.trim() || undefined });
       setToken('');
     } catch (err) {
       if (err instanceof MissingScopeError) {
@@ -1045,13 +1126,28 @@ function ConnectForm() {
           type="password"
           value={token}
           onChange={(e) => setToken(e.target.value)}
-          placeholder="ghp_… or github_pat_…"
-          aria-label="GitHub PAT"
+          placeholder={
+            host === 'github' ? 'ghp_… or github_pat_…' : `${GIT_HOST_LABELS[host]} token`
+          }
+          // The aria-label stays "GitHub PAT" for GitHub, verbatim: it is what
+          // every existing test and the Lens regression harness select on, and a
+          // renamed control does not throw — it matches nothing and those cases
+          // silently stop asserting.
+          aria-label={host === 'github' ? 'GitHub PAT' : `${GIT_HOST_LABELS[host]} PAT`}
           className="h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !submitting) void submit();
           }}
         />
+        {host !== 'github' && (
+          <input
+            aria-label="API base URL"
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder="API base URL (self-managed — optional)"
+            className="h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary placeholder:text-text-dim focus:border-accent focus:outline-none"
+          />
+        )}
         {error && (
           <p className="text-xs text-danger" role="alert">
             {error}

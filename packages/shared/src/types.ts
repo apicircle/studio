@@ -1459,6 +1459,42 @@ export interface PlanRun {
  */
 export type GitHostKind = 'github' | 'gitlab' | 'bitbucket' | 'azure-devops';
 
+/**
+ * Every host kind, in the order a picker should offer them: GitHub first
+ * because it is the only one the open-core build can resolve, then the rest
+ * alphabetically.
+ *
+ * A tuple rather than a derived list because a union type cannot be enumerated
+ * at runtime. `GIT_HOST_LABELS` below carries the compile-time tie that keeps
+ * the two in step, so adding a kind to the union without adding it here is a
+ * type error rather than a host that silently never appears in the UI.
+ */
+export const GIT_HOST_KINDS = ['github', 'gitlab', 'bitbucket', 'azure-devops'] as const;
+
+/**
+ * Product names, for UI copy and error messages. Written out rather than
+ * title-cased from the kind, because no rule turns `azure-devops` into
+ * `Azure DevOps`.
+ *
+ * Typed as `Record<GitHostKind, string>`, so a new kind added to the union
+ * fails to compile until it is named here.
+ */
+export const GIT_HOST_LABELS: Record<GitHostKind, string> = {
+  github: 'GitHub',
+  gitlab: 'GitLab',
+  bitbucket: 'Bitbucket',
+  'azure-devops': 'Azure DevOps',
+};
+
+// The tuple must cover the union exactly: a kind missing from GIT_HOST_KINDS
+// would be absent from every picker built on it, which is a hole no test would
+// notice — the picker would simply be one option shorter.
+type _GitHostKindsAreExhaustive = GitHostKind extends (typeof GIT_HOST_KINDS)[number]
+  ? true
+  : ['GIT_HOST_KINDS is missing a GitHostKind', never];
+const _gitHostKindsAreExhaustive: _GitHostKindsAreExhaustive = true;
+void _gitHostKindsAreExhaustive;
+
 export interface ConnectedRepo {
   fullName: string;
   owner: string;

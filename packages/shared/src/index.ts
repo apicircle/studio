@@ -28,6 +28,8 @@ export {
   FONT_SIZE_PERCENT_STEP,
   FONT_SIZE_PERCENT_DEFAULT,
   DEFAULT_WORKSPACE_NAME,
+  GIT_HOST_KINDS,
+  GIT_HOST_LABELS,
 } from './types';
 export { REQUEST_AUTH_TYPES, defaultAuthFor, normalizeAuth } from './authDefaults';
 export type { RequestAuthType } from './authDefaults';
