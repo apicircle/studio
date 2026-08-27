@@ -84,7 +84,9 @@ describe('LinkWorkspacePanel — no session state', () => {
 
   it('shows the connect-prompt and disables the private-link CTA when no GitHub session exists', () => {
     render(<LinkWorkspacePanel />);
-    expect(screen.getByText(/Connect GitHub to link a workspace/)).toBeInTheDocument();
+    // Host-neutral since multi-host: the gate reads ANY host's session, so naming
+    // GitHub here told a GitLab-only user to connect a PAT they have no reason to own.
+    expect(screen.getByText(/Connect a Git host to link a workspace/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Link a private workspace/ })).toBeDisabled();
   });
 
@@ -811,8 +813,10 @@ describe('LinkWorkspacePanel — per-link session UX', () => {
     useWorkspaceStore.setState({ listAccessibleRepos });
     render(<LinkWorkspacePanel />);
     await user.click(screen.getByRole('button', { name: /Link a private workspace/ }));
-    // Initial open: workspace mode, no tokenOverride.
-    expect(listAccessibleRepos).toHaveBeenCalledWith(undefined);
+    // Initial open: workspace mode, no tokenOverride. The call now always names
+    // the source host — the client and the token must resolve for the same one,
+    // and passing `undefined` let them diverge.
+    expect(listAccessibleRepos).toHaveBeenCalledWith({ host: 'github', baseUrl: undefined });
     // Switch to dedicated → existing repo list clears (no token yet).
     await user.click(screen.getByLabelText(/Add a dedicated session/));
     // Paste a PAT. The combobox should refetch with tokenOverride. Type
@@ -823,9 +827,13 @@ describe('LinkWorkspacePanel — per-link session UX', () => {
     await user.paste('ghp_dedicated_secret');
     await waitFor(() => {
       const lastCall = listAccessibleRepos.mock.calls.at(-1) as
-        | [{ tokenOverride?: string } | undefined]
+        | [{ host?: string; baseUrl?: string; tokenOverride?: string } | undefined]
         | undefined;
-      expect(lastCall?.[0]).toEqual({ tokenOverride: 'ghp_dedicated_secret' });
+      expect(lastCall?.[0]).toEqual({
+        host: 'github',
+        baseUrl: undefined,
+        tokenOverride: 'ghp_dedicated_secret',
+      });
     });
   });
 });

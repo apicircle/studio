@@ -1914,6 +1914,15 @@ type WorkspaceStore = {
     sessionMode?: 'workspace' | 'dedicated';
     linkSessionToken?: string;
     /**
+     * Which Git host the SOURCE repo lives on — independent of the host this
+     * workspace's own repo is on. Omitted ⇒ `'github'`, so every existing caller
+     * is unchanged. Recorded on `source.provider` so later refreshes resolve the
+     * same host and the same credential.
+     */
+    provider?: GitHostKind;
+    /** API base URL for a self-managed source host. */
+    apiBaseUrl?: string;
+    /**
      * Optional plaintext values for the source's required secret-key
      * slots, keyed by `secretKeyId`. The link wizard collects these so
      * users can supply values at link-time instead of having to scroll
@@ -8608,15 +8617,23 @@ async function decryptLinkSessionToken(
   link: LinkedWorkspace,
 ): Promise<string> {
   const mode = link.source.sessionMode ?? 'workspace';
+  // A link lives on ITS OWN host, which need not be the one this workspace's own
+  // repo is on. Resolving against the workspace's connected host handed one
+  // host's PAT to another's API — the same crossing the repo browser had, and
+  // the reason both the gate and the read below name `host` explicitly.
+  const host = linkHostKind(link);
   if (mode === 'workspace') {
-    if (!local.sessions.github.workspace) {
+    if (!workspaceSessionFor(local, host)) {
       if (link.kind === 'public') return '';
       throw new Error(
-        `Link "${link.name}" uses the workspace session — connect a PAT in Sessions to fetch it.`,
+        `Link "${link.name}" uses the workspace session — connect a ${GIT_HOST_LABELS[host]} PAT in Sessions to fetch it.`,
       );
     }
-    return decryptSessionToken(local);
+    return decryptSessionToken(local, host);
   }
+  // Dedicated link sessions stay in the `github.links` map on purpose: they are
+  // keyed by LINK ID, not by host, so one map holds them all correctly whatever
+  // host each link targets. Only the slot's name is historical.
   const linkSession = local.sessions.github.links[link.id];
   if (!linkSession) {
     throw new Error(

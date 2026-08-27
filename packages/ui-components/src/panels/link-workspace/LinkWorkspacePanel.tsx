@@ -20,18 +20,31 @@ import {
   Star,
   Trash2,
 } from 'lucide-react';
-import { type GitHubBranch, type GitHubRepo, GitHubError, MissingScopeError } from '@apicircle/git';
+import {
+  type GitHostKind,
+  type GitHubBranch,
+  type GitHubRepo,
+  GIT_HOST_KINDS,
+  GIT_HOST_LABELS,
+  GitHubError,
+  hasGitProvider,
+  MissingScopeError,
+} from '@apicircle/git';
 import { sortVersionsDesc } from '@apicircle/core';
 import { formatBytes } from '@apicircle/shared';
 import type { LinkedSnapshot, LinkedWorkspace, SecretKeyMeta } from '@apicircle/shared';
-import { useWorkspaceStore } from '../../store/workspaceStore';
+import { anyWorkspaceSession, useWorkspaceStore } from '../../store/workspaceStore';
 import { getAttachment } from '../../persistence/attachments';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';
 import { cn } from '../../primitives/cn';
 
 export function LinkWorkspacePanel() {
-  const session = useWorkspaceStore((s) => s.local?.sessions.github.workspace ?? null);
+  // ANY host's session. Reading the GitHub slot meant a user whose only session
+  // was GitLab saw the not-connected card and a disabled form, told to connect a
+  // GitHub PAT they have no reason to own — the same gate that hid the repo
+  // connect form before S3.
+  const session = useWorkspaceStore((s) => anyWorkspaceSession(s.local));
   const links = useWorkspaceStore((s) => s.synced?.linkedWorkspaces ?? {});
 
   const linkArray = Object.values(links);
@@ -88,12 +101,12 @@ function NoSessionCard() {
     <div className="rounded-sm border border-border bg-card p-4">
       <div className="mb-2 flex items-center gap-2 text-sm text-text-primary">
         <ShieldAlert size={14} className="text-amber" aria-hidden="true" />
-        Connect GitHub to link a workspace
+        Connect a Git host to link a workspace
       </div>
       <p className="mb-3 text-xs text-text-muted">
         You can browse the public marketplace without signing in. Linking a workspace (public or
-        private) fetches its <code>workspace.json</code> via the GitHub API and needs an active
-        session in the Secret Vault → Sessions tab.
+        private) fetches its <code>workspace.json</code> from the host it lives on, and needs an
+        active session for that host in the Secret Vault → Sessions tab.
       </p>
       <button
         type="button"
@@ -114,7 +127,7 @@ function LinkPrivateForm({ hasSession }: { hasSession: boolean }) {
         type="button"
         onClick={() => setOpen(true)}
         disabled={!hasSession}
-        title={hasSession ? undefined : 'Connect GitHub in Secret Vault to link a workspace'}
+        title={hasSession ? undefined : 'Connect a Git host in Secret Vault to link a workspace'}
         className="inline-flex h-8 items-center gap-2 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-50"
       >
         <Link2 size={13} />
@@ -147,7 +160,7 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
   const linkPublicWorkspace = useWorkspaceStore((s) => s.linkPublicWorkspace);
   const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
   const openRightDockTab = useWorkspaceStore((s) => s.openRightDockTab);
-  const hasSession = useWorkspaceStore((s) => s.local?.sessions.github.workspace != null);
+  const hasSession = useWorkspaceStore((s) => anyWorkspaceSession(s.local) !== null);
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<
@@ -279,7 +292,7 @@ function MarketplaceSearchModal({ open, onClose }: { open: boolean; onClose: () 
                       title={
                         hasSession
                           ? undefined
-                          : 'Connect GitHub in Secret Vault to link this workspace'
+                          : 'Connect a Git host in Secret Vault to link this workspace'
                       }
                       className="ml-auto inline-flex h-6 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.625rem] text-accent hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -381,6 +394,11 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
   // (e.g. private repos in orgs the user has explicit grants on but isn't
   // a formal member of). Toggling this mode hides the combobox + dropdowns
   // and shows free-text inputs that match the pre-B.1 flow.
+  // Only hosts this build can resolve — `['github']` in open-core Studio, so the
+  // picker below never renders there and the form is unchanged.
+  const hosts = useMemo(() => GIT_HOST_KINDS.filter((k) => hasGitProvider(k)), []);
+  const [host, setHost] = useState<GitHostKind>('github');
+  const [apiBaseUrl, setApiBaseUrl] = useState('');
   const [manualMode, setManualMode] = useState(false);
   const [manualRepo, setManualRepo] = useState('');
   const [manualBranch, setManualBranch] = useState('main');
@@ -421,7 +439,11 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
     setLoadingRepos(true);
     setReposError(null);
     setRepos(null);
-    listAccessibleRepos(tokenOverride ? { tokenOverride } : undefined)
+    listAccessibleRepos({
+      host,
+      baseUrl: apiBaseUrl.trim() || undefined,
+      ...(tokenOverride ? { tokenOverride } : {}),
+    })
       .then((list) => {
         if (cancelled) return;
         setRepos(list);
@@ -443,7 +465,16 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
     return () => {
       cancelled = true;
     };
-  }, [open, manualMode, sessionMode, tokenOverride, listAccessibleRepos, surfaceMissingScope]);
+  }, [
+    open,
+    manualMode,
+    sessionMode,
+    tokenOverride,
+    host,
+    apiBaseUrl,
+    listAccessibleRepos,
+    surfaceMissingScope,
+  ]);
 
   // Fetch branches whenever the user picks a repo.
   useEffect(() => {
@@ -456,11 +487,11 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
     setLoadingBranches(true);
     setBranchesError(null);
     setBranches(null);
-    listRepoBranches(
-      selectedRepo.owner,
-      selectedRepo.name,
-      tokenOverride ? { tokenOverride } : undefined,
-    )
+    listRepoBranches(selectedRepo.owner, selectedRepo.name, {
+      host,
+      baseUrl: apiBaseUrl.trim() || undefined,
+      ...(tokenOverride ? { tokenOverride } : {}),
+    })
       .then((list) => {
         if (cancelled) return;
         setBranches(list);
@@ -480,7 +511,7 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
     return () => {
       cancelled = true;
     };
-  }, [selectedRepo, tokenOverride, listRepoBranches]);
+  }, [selectedRepo, tokenOverride, host, apiBaseUrl, listRepoBranches]);
 
   // Probe workspace.json on the selected branch — populates the pin
   // dropdown. Returning null means the branch has no workspace.json,
@@ -580,6 +611,8 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
     sessionMode: 'workspace' | 'dedicated';
     linkSessionToken?: string;
     secretValues?: Record<string, string>;
+    provider?: GitHostKind;
+    apiBaseUrl?: string;
   } => {
     const sessionFields =
       sessionMode === 'dedicated'
@@ -596,6 +629,10 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
       Object.keys(trimmedSecrets).length > 0 ? { secretValues: trimmedSecrets } : {};
     if (manualMode) {
       return {
+        // Recorded on `source.provider`, so every later refresh resolves the
+        // same host instead of re-deriving it (or defaulting to GitHub).
+        provider: host,
+        apiBaseUrl: apiBaseUrl.trim() || undefined,
         repoFullName: manualRepo.trim(),
         branch: manualBranch.trim(),
         pinnedVersion: manualPin.trim() || undefined,
@@ -607,6 +644,8 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
     const pinnedVersion =
       pinChoice === 'specific' && specificPin ? specificPin : (probe?.currentVersion ?? undefined);
     return {
+      provider: host,
+      apiBaseUrl: apiBaseUrl.trim() || undefined,
       repoFullName: fullName,
       branch: selectedBranch,
       pinnedVersion,
@@ -665,9 +704,41 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
         <div className="space-y-3">
           <div className="flex items-start justify-between gap-3">
             <p className="text-[0.6875rem] text-text-dim">
-              Reads <code>workspace.json</code> from the source branch using your active GitHub
-              session. The cached release ledger is stored under <code>releases.perLink[id]</code>.
+              Reads <code>workspace.json</code> from the source branch using your active session for
+              that host. The cached release ledger is stored under <code>releases.perLink[id]</code>
+              .
             </p>
+            {hosts.length > 1 && (
+              <select
+                aria-label="Source Git host"
+                value={host}
+                onChange={(e) => {
+                  setHost(e.target.value as GitHostKind);
+                  // The repo list belongs to the previous host; keeping it would
+                  // offer repos this one cannot reach.
+                  setRepos(null);
+                  setSelectedRepo(null);
+                  setReposError(null);
+                  setError(null);
+                }}
+                className="h-6 shrink-0 rounded-sm border border-border bg-card px-1.5 text-[0.625rem] text-text-primary"
+              >
+                {hosts.map((k) => (
+                  <option key={k} value={k}>
+                    {GIT_HOST_LABELS[k]}
+                  </option>
+                ))}
+              </select>
+            )}
+            {hosts.length > 1 && host !== 'github' && (
+              <input
+                aria-label="Source API base URL"
+                value={apiBaseUrl}
+                onChange={(e) => setApiBaseUrl(e.target.value)}
+                placeholder="API base URL (self-managed — optional)"
+                className="h-6 min-w-0 flex-1 rounded-sm border border-border bg-card px-1.5 text-[0.625rem] text-text-primary placeholder:text-text-dim"
+              />
+            )}
             <button
               type="button"
               onClick={() => {

@@ -67,6 +67,130 @@ function stubGitHubFetch(scopes: string) {
   );
 }
 
+describe('workspaceStore — a LINK uses its own host, not the workspace (S3d)', () => {
+  // A linked workspace lives on its own host, independent of the one this
+  // workspace's repo is on. Every part of the link path assumed GitHub: the
+  // panel gate read `sessions.github`, no host could be chosen, and
+  // `decryptLinkSessionToken` resolved the WORKSPACE's connected host — so a
+  // GitLab link on a GitHub workspace fetched with the GitHub PAT.
+  let seen: Array<{ host: string; token: string }>;
+
+  function spyProvider(host: string): GitProvider {
+    return {
+      getViewer: vi.fn(async (token: string) => {
+        seen.push({ host, token });
+        return { viewer: { login: `${host}-user`, id: 1 }, scopes: { granted: [], missing: [] } };
+      }),
+      getRepo: vi.fn(async (token: string, owner: string, name: string) => {
+        seen.push({ host, token });
+        return {
+          fullName: `${owner}/${name}`,
+          owner,
+          name,
+          defaultBranch: 'main',
+          visibility: 'private' as const,
+          isPrivate: true,
+          pushable: true,
+        };
+      }),
+      getContents: vi.fn(async (token: string) => {
+        seen.push({ host, token });
+        return null;
+      }),
+      listAccessibleRepos: vi.fn(async () => []),
+      listBranches: vi.fn(async () => []),
+    } as unknown as GitProvider;
+  }
+
+  beforeEach(async () => {
+    seen = [];
+    resetGitProviderRegistry();
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrate();
+    });
+  });
+
+  afterEach(() => {
+    resetGitProviderRegistry();
+    vi.unstubAllGlobals();
+  });
+
+  it('refreshes a GitLab link with the GitLab token, on a GitHub workspace', async () => {
+    // Drives `previewLinkedUpdateForLink`, which is where `decryptLinkSessionToken`
+    // actually runs. An earlier version of this test drove link CREATION instead —
+    // it passed against a deliberately broken build, because creation resolves its
+    // own token and never touches the resolver under test. Planting the bug back
+    // is what exposed that.
+    stubGitHubFetch('repo');
+    await useWorkspaceStore.getState().connectGitHubSession('GITHUB-SECRET');
+    vi.unstubAllGlobals();
+    registerGitProvider('gitlab', () => spyProvider('gitlab'));
+    await useWorkspaceStore.getState().connectHostSession('GITLAB-SECRET', 'gitlab');
+
+    // A link whose SOURCE is GitLab while the workspace itself is on GitHub —
+    // the exact shape that leaked.
+    const link = {
+      id: 'lnk1',
+      name: 'shared',
+      kind: 'private' as const,
+      source: {
+        repoFullName: 'group/shared',
+        branch: 'main',
+        provider: 'gitlab' as const,
+        sessionMode: 'workspace' as const,
+      },
+    };
+    useWorkspaceStore.setState({
+      synced: {
+        ...useWorkspaceStore.getState().synced!,
+        linkedWorkspaces: { lnk1: link as never },
+      },
+    });
+    seen.length = 0;
+
+    await useWorkspaceStore
+      .getState()
+      .previewLinkedUpdateForLink('lnk1')
+      .catch(() => undefined); // the stub serves no workspace.json; the TOKEN is the subject
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((s) => s.host === 'gitlab')).toBe(true);
+    expect(seen.some((s) => s.token === 'GITHUB-SECRET')).toBe(false);
+    expect(seen.every((s) => s.token === 'GITLAB-SECRET')).toBe(true);
+  });
+
+  it('names the LINK host when its session is missing, not GitHub', async () => {
+    stubGitHubFetch('repo');
+    await useWorkspaceStore.getState().connectGitHubSession('GITHUB-SECRET');
+    vi.unstubAllGlobals();
+    registerGitProvider('gitlab', () => spyProvider('gitlab'));
+
+    // GitHub is connected; GitLab is not. A GitLab link must say so rather than
+    // silently reaching for the GitHub PAT it can see.
+    const link = {
+      id: 'lnk2',
+      name: 'shared',
+      kind: 'private' as const,
+      source: {
+        repoFullName: 'group/shared',
+        branch: 'main',
+        provider: 'gitlab' as const,
+        sessionMode: 'workspace' as const,
+      },
+    };
+    useWorkspaceStore.setState({
+      synced: {
+        ...useWorkspaceStore.getState().synced!,
+        linkedWorkspaces: { lnk2: link as never },
+      },
+    });
+
+    await expect(useWorkspaceStore.getState().previewLinkedUpdateForLink('lnk2')).rejects.toThrow(
+      /GitLab/,
+    );
+  });
+});
+
 describe('workspaceStore — a token never reaches another host (S3c)', () => {
   // The credential-crossing class. Every instance had one shape: a client built
   // for one host beside a token resolved for another. They agreed while GitHub
