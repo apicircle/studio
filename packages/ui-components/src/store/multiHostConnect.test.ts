@@ -67,6 +67,99 @@ function stubGitHubFetch(scopes: string) {
   );
 }
 
+describe('workspaceStore — the session lifecycle is host-aware (S3b)', () => {
+  // Connect shipped in S3; verify / rotate / disconnect stayed pinned to the
+  // GitHub slot, so a GitLab session could be created and then never tested,
+  // rotated or removed — and `disconnectGitHubSession` also clears
+  // `connectedRepo` + `workingBranch`, so pressing Disconnect on what the UI
+  // labelled GitLab destroyed the GitHub binding instead.
+  let calls: string[];
+
+  beforeEach(async () => {
+    calls = [];
+    resetGitProviderRegistry();
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrate();
+    });
+  });
+
+  afterEach(() => {
+    resetGitProviderRegistry();
+    vi.unstubAllGlobals();
+  });
+
+  it('verifies the GitLab token against GitLab, and writes the answer to its own slot', async () => {
+    registerGitProvider('gitlab', () => stubProvider(calls, 'gitlab', []));
+    await useWorkspaceStore.getState().connectHostSession('glpat-x', 'gitlab');
+    calls.length = 0;
+
+    const granted = await useWorkspaceStore.getState().verifyHostScopes('gitlab');
+
+    expect(calls).toContain('gitlab:getViewer');
+    expect(granted).toEqual([]);
+    const local = useWorkspaceStore.getState().local!;
+    expect(local.sessions.hosts?.gitlab?.workspace?.lastVerifiedAt).not.toBeNull();
+  });
+
+  it('rotates the GitLab token in place without touching GitHub', async () => {
+    stubGitHubFetch('repo');
+    await useWorkspaceStore.getState().connectGitHubSession('ghp-x');
+    vi.unstubAllGlobals();
+    registerGitProvider('gitlab', () => stubProvider(calls, 'gitlab', []));
+    await useWorkspaceStore.getState().connectHostSession('glpat-x', 'gitlab');
+
+    await useWorkspaceStore.getState().updateHostToken('glpat-new', 'gitlab');
+
+    const local = useWorkspaceStore.getState().local!;
+    expect(local.sessions.hosts?.gitlab?.workspace?.accountLogin).toBe('gitlab-user');
+    expect(local.sessions.github.workspace?.accountLogin).toBe('gh-user');
+  });
+
+  it('disconnects ONLY the named host, and keeps a repo that belongs to another', async () => {
+    // The destructive one. Disconnect clears the connected repo + working branch,
+    // which is right when they belong to the host being disconnected and is data
+    // loss when they do not. Driven as "disconnect GitHub, keep the GitLab repo"
+    // because that is the direction a user actually hits: they tidy up an old
+    // GitHub session and expect their GitLab workspace to survive it.
+    stubGitHubFetch('repo');
+    await useWorkspaceStore.getState().connectGitHubSession('ghp-x');
+    vi.unstubAllGlobals();
+    registerGitProvider('gitlab', () => stubProvider(calls, 'gitlab', []));
+    await useWorkspaceStore.getState().connectHostSession('glpat-x', 'gitlab');
+    await useWorkspaceStore.getState().connectRepo('group', 'api', { host: 'gitlab' });
+
+    await useWorkspaceStore.getState().disconnectHostSession('github');
+
+    const local = useWorkspaceStore.getState().local!;
+    expect(local.sessions.github.workspace).toBeNull();
+    // GitLab's session and its repo are untouched.
+    expect(local.sessions.hosts?.gitlab?.workspace?.accountLogin).toBe('gitlab-user');
+    expect(local.connectedRepo?.fullName).toBe('group/api');
+    expect(local.connectedRepo?.hostKind).toBe('gitlab');
+  });
+
+  it('still clears the repo when the disconnected host is the one that owns it', async () => {
+    registerGitProvider('gitlab', () => stubProvider(calls, 'gitlab', []));
+    await useWorkspaceStore.getState().connectHostSession('glpat-x', 'gitlab');
+    await useWorkspaceStore.getState().connectRepo('group', 'api', { host: 'gitlab' });
+
+    await useWorkspaceStore.getState().disconnectHostSession('gitlab');
+
+    const local = useWorkspaceStore.getState().local!;
+    expect(local.connectedRepo).toBeNull();
+    expect(local.workingBranch).toBeNull();
+  });
+
+  it('the GitHub-named actions still delegate, so existing callers are unchanged', async () => {
+    stubGitHubFetch('repo');
+    await useWorkspaceStore.getState().connectGitHubSession('ghp-x');
+    await useWorkspaceStore.getState().verifyGitHubScopes();
+    await useWorkspaceStore.getState().disconnectGitHubSession();
+
+    expect(useWorkspaceStore.getState().local!.sessions.github.workspace).toBeNull();
+  });
+});
+
 describe('workspaceStore — connecting a non-GitHub host (S3)', () => {
   let calls: string[];
 

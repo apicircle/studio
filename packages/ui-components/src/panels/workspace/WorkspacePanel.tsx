@@ -44,7 +44,11 @@ import {
   validateBranchName,
 } from '@apicircle/core';
 import { validatePRTitle } from '@apicircle/shared';
-import { anyWorkspaceSession, useWorkspaceStore } from '../../store/workspaceStore';
+import {
+  anyWorkspaceSession,
+  hostOfWorkspaceSession,
+  useWorkspaceStore,
+} from '../../store/workspaceStore';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';
 import { ReleaseAndTopicsModal } from './ReleaseAndTopicsModal';
@@ -731,13 +735,24 @@ function NoSessionCard() {
 }
 
 function SessionCard() {
-  const session = useWorkspaceStore((s) => s.local!.sessions.github.workspace!);
+  // ANY host's session, matching the `isLocalOnly` gate that decides whether this
+  // card renders at all. Reading `sessions.github.workspace!` here was a crash:
+  // the gate was widened to `anyWorkspaceSession` for multi-host, so a
+  // GitLab-only workspace reached this card, the non-null assertion hid a `null`
+  // from tsc, and `session.accountLogin` threw — taking the whole Workspace panel
+  // (identity, repo, branch) down with it.
+  const session = useWorkspaceStore((s) => anyWorkspaceSession(s.local));
+  const host = useWorkspaceStore((s) => hostOfWorkspaceSession(s.local));
   const openRightDockTab = useWorkspaceStore((s) => s.openRightDockTab);
+  // The gate guarantees this, but the gate lives in another component; a card
+  // that renders nothing is a far better failure than one that throws.
+  if (!session) return null;
   return (
     <div className="rounded-sm border border-border bg-card p-4">
       <div className="mb-3 flex items-center gap-2 text-sm text-text-primary">
         <GitBranch size={14} className="text-accent" />
         {session.accountLogin}
+        <span className="text-[0.6875rem] text-text-dim">on {GIT_HOST_LABELS[host]}</span>
       </div>
       <dl className="grid grid-cols-[120px_1fr] gap-y-1.5 text-xs">
         <dt className="text-text-dim">Granted scopes</dt>

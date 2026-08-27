@@ -884,7 +884,7 @@ function SessionsTab() {
           </div>
         )}
         <ScopeGuidance host={host} />
-        {workspaceSession ? <ActiveSessionCard /> : <ConnectForm host={host} />}
+        {workspaceSession ? <ActiveSessionCard host={host} /> : <ConnectForm host={host} />}
       </div>
       <div>
         <h3 className="mb-1 text-xs font-medium uppercase tracking-wider text-text-dim">
@@ -1310,11 +1310,26 @@ type ConnectionTestResult =
       message: string;
     };
 
-function ActiveSessionCard() {
-  const session = useWorkspaceStore((s) => s.local!.sessions.github.workspace!);
-  const verify = useWorkspaceStore((s) => s.verifyGitHubScopes);
-  const updateToken = useWorkspaceStore((s) => s.updateGitHubToken);
-  const disconnect = useWorkspaceStore((s) => s.disconnectGitHubSession);
+function ActiveSessionCard({ host = 'github' }: { host?: GitHostKind } = {}) {
+  // Reads and ACTS ON the selected host. Both halves matter and the second is the
+  // dangerous one: this card was pinned to `sessions.github.workspace!` while the
+  // Sessions tab chose which card to show host-aware, so on a GitLab-only
+  // workspace the non-null assertion hid a `null` and the panel crashed — and
+  // with both hosts connected it rendered GitHub's account under a "Host: GitLab"
+  // selector while Test / Update / Disconnect all operated on the GitHub slot.
+  // Disconnect also clears `connectedRepo` + `workingBranch`, so pressing it on
+  // what looked like the GitLab card destroyed GitHub's binding instead.
+  const session = useWorkspaceStore((s) =>
+    host === 'github'
+      ? (s.local?.sessions.github.workspace ?? null)
+      : (s.local?.sessions.hosts?.[host]?.workspace ?? null),
+  );
+  const verifyHost = useWorkspaceStore((s) => s.verifyHostScopes);
+  const updateHost = useWorkspaceStore((s) => s.updateHostToken);
+  const disconnectHost = useWorkspaceStore((s) => s.disconnectHostSession);
+  const verify = () => verifyHost(host);
+  const updateToken = (token: string) => updateHost(token, host);
+  const disconnect = () => disconnectHost(host);
 
   const [verifying, setVerifying] = useState(false);
   const [updating, setUpdating] = useState(false);
@@ -1408,7 +1423,18 @@ function ActiveSessionCard() {
     }
   };
 
-  const missingRequired = REQUIRED_SESSION_SCOPES.filter((s) => !session.grantedScopes.includes(s));
+  // The Sessions tab only renders this card when a session exists, but that gate
+  // lives in another component — a card that renders nothing beats one that throws.
+  if (!session) return null;
+
+  // Scope CHIPS are GitHub's alone. Only GitHub reports a token's granted scopes;
+  // the other three answer `getViewer` with an empty list, so every chip would
+  // render as "missing" and tell a user with a perfectly good token that it is
+  // broken. Showing nothing is the honest answer where nothing is knowable.
+  const scopesAreKnowable = host === 'github';
+  const missingRequired = scopesAreKnowable
+    ? REQUIRED_SESSION_SCOPES.filter((s) => !session.grantedScopes.includes(s))
+    : [];
   // The recommended `pull_request` permission is satisfied either by the
   // scope appearing in the granted list (fine-grained PATs that surface
   // it) or by `canCreatePullRequests` being true (classic PATs where
@@ -1423,12 +1449,24 @@ function ActiveSessionCard() {
       <div className="flex items-center gap-2">
         <CheckCircle2 size={14} className="text-success" aria-hidden="true" />
         <span className="text-sm font-medium text-text-primary">
-          Connected as {session.accountLogin}
+          Connected as {session.accountLogin} on {GIT_HOST_LABELS[host]}
         </span>
       </div>
       <dl className="grid grid-cols-[120px_1fr] gap-y-1 text-xs">
-        <dt className="text-text-dim">Required scopes</dt>
-        <dd className="flex flex-wrap items-center gap-1.5 text-text-primary">
+        {!scopesAreKnowable && (
+          <>
+            <dt className="text-text-dim">Scopes</dt>
+            <dd className="text-text-muted">
+              {GIT_HOST_LABELS[host]} does not report a token&apos;s scopes, so they cannot be shown
+              or checked here.
+            </dd>
+          </>
+        )}
+        {scopesAreKnowable && <dt className="text-text-dim">Required scopes</dt>}
+        <dd
+          className="flex flex-wrap items-center gap-1.5 text-text-primary"
+          hidden={!scopesAreKnowable}
+        >
           {REQUIRED_SESSION_SCOPES.map((s) => (
             <ScopeChip key={s} name={s} ok={session.grantedScopes.includes(s)} required />
           ))}

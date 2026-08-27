@@ -1663,12 +1663,29 @@ type WorkspaceStore = {
    */
   verifyGitHubScopes: () => Promise<string[] | null>;
   /**
+   * Re-verify a host's stored token and refresh its recorded scopes.
+   *
+   * `verifyGitHubScopes` is retained and delegates here with `'github'`, so every
+   * existing caller is unchanged. Omitting `host` means GitHub.
+   */
+  verifyHostScopes: (host?: GitHostKind) => Promise<string[] | null>;
+  /**
    * Replace the PAT for the active session without losing branch/PR state.
    * Re-verifies + refreshes scopes in the same pass.
    */
   updateGitHubToken: (token: string) => Promise<GitHubSession>;
+  /** Rotate a host's token in place. `updateGitHubToken` delegates here. */
+  updateHostToken: (token: string, host?: GitHostKind) => Promise<GitHostSession>;
   /** Disconnect: free the encrypted token, clear the session entry. */
   disconnectGitHubSession: () => Promise<void>;
+  /**
+   * Drop a host's workspace session.
+   *
+   * The connected repo and working branch are cleared only when they belong to
+   * THAT host — disconnecting GitHub must not destroy a GitLab repo binding.
+   * `disconnectGitHubSession` delegates here.
+   */
+  disconnectHostSession: (host?: GitHostKind) => Promise<void>;
 
   // Repo + working-branch flow (P4.2)
   /**
@@ -2314,6 +2331,23 @@ function hostWithSession(local: WorkspaceLocal): GitHostKind {
   return withSession ?? 'github';
 }
 
+/**
+ * Provider options for a lifecycle call on `host`.
+ *
+ * The self-managed base URL is recorded on the CONNECTED REPO, so it only
+ * applies when that repo is on the host being acted upon — verifying a GitHub
+ * token against a self-hosted GitLab's base URL would send it to the wrong
+ * server entirely.
+ */
+function hostProviderOptions(
+  local: WorkspaceLocal | null | undefined,
+  host: GitHostKind,
+): GitProviderOptions | undefined {
+  if (connectedHostKind(local) !== host) return undefined;
+  const baseUrl = local?.connectedRepo?.apiBaseUrl;
+  return baseUrl ? { baseUrl } : undefined;
+}
+
 /** `local` with `session` written into `host`'s slot, every other host's left
  *  untouched. Spreads `local.sessions` rather than rebuilding it: an object
  *  literal here drops `sessions.hosts` and TypeScript does not complain,
@@ -2359,6 +2393,18 @@ export function anyWorkspaceSession(
     if (session) return session;
   }
   return null;
+}
+
+/**
+ * Which host `anyWorkspaceSession` found — so a card rendering that session can
+ * say whose account it is showing.
+ *
+ * Exported alongside it deliberately: the two are always read together, and a
+ * surface that shows an account without naming its host is exactly how a user
+ * comes to believe their GitLab session is connected when it is GitHub's.
+ */
+export function hostOfWorkspaceSession(local: WorkspaceLocal | null | undefined): GitHostKind {
+  return GIT_HOST_KINDS.find((host) => workspaceSessionFor(local, host)) ?? 'github';
 }
 
 /** Provider for a linked workspace's source repo. */
@@ -5018,21 +5064,21 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     return session;
   },
 
-  verifyGitHubScopes: async () => {
+  verifyGitHubScopes: async () => get().verifyHostScopes('github'),
+
+  verifyHostScopes: async (host = 'github') => {
     const local = get().local;
-    const session = local?.sessions.github.workspace ?? null;
+    const session = workspaceSessionFor(local, host);
     if (!local || !session) return null;
     const payload = await getSecretPayload(session.tokenSecretId);
     if (!payload) return null;
     const masterKey = await getMasterKey();
     const token = await decryptString(payload, masterKey);
-    // Pinned to GitHub deliberately. The verified token is persisted into
-    // `local.sessions.github`, and the required-scope check below is the GitHub
-    // scope vocabulary (`repo`). Routing a non-GitHub token through here would
-    // store it in the GitHub slot and reject it against the wrong scope names —
-    // so the host parameter lands with the per-host session slot + scope table,
-    // not before it.
-    const client = getGitProvider('github');
+    // Host-aware since S3b. This used to be pinned to GitHub, which was safe only
+    // while GitHub was the sole connectable host: once a GitLab session can
+    // exist, verifying it against `getGitProvider('github')` sends that token to
+    // github.com and writes the answer into the wrong slot.
+    const client = getGitProvider(host, hostProviderOptions(local, host));
     const { scopes } = await client.getViewer(token);
     // Re-resolve PR capability: scope check first; if inconclusive AND a
     // repo is already connected, fall back to the network probe so the
@@ -5048,29 +5094,24 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       lastVerifiedAt: new Date().toISOString(),
       canCreatePullRequests: capability,
     };
-    const next: WorkspaceLocal = {
-      ...local,
-      sessions: { ...local.sessions, github: { ...local.sessions.github, workspace: updated } },
-    };
+    const next = withWorkspaceSession(local, host, updated);
     set({ local: next });
     queueSaveLocal(next);
     return scopes.granted;
   },
 
-  updateGitHubToken: async (token) => {
+  updateGitHubToken: async (token) => get().updateHostToken(token, 'github'),
+
+  updateHostToken: async (token, host = 'github') => {
     const local = get().local;
-    const session = local?.sessions.github.workspace ?? null;
+    const session = workspaceSessionFor(local, host);
     if (!local || !session) throw new Error('No active session to update');
     const trimmed = token.trim();
     if (!trimmed) throw new Error('Token is required');
 
-    // Pinned to GitHub deliberately. The verified token is persisted into
-    // `local.sessions.github`, and the required-scope check below is the GitHub
-    // scope vocabulary (`repo`). Routing a non-GitHub token through here would
-    // store it in the GitHub slot and reject it against the wrong scope names —
-    // so the host parameter lands with the per-host session slot + scope table,
-    // not before it.
-    const client = getGitProvider('github');
+    // Host-aware since S3b — see `verifyHostScopes` for why a pinned client here
+    // would rotate the wrong slot and send the new token to the wrong server.
+    const client = getGitProvider(host, hostProviderOptions(local, host));
     const { viewer, scopes } = await client.getViewer(trimmed);
     if (viewer.login !== session.accountLogin) {
       throw new Error(
@@ -5095,10 +5136,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       lastVerifiedAt: new Date().toISOString(),
       canCreatePullRequests: capability,
     };
-    const next: WorkspaceLocal = {
-      ...local,
-      sessions: { ...local.sessions, github: { ...local.sessions.github, workspace: updated } },
-    };
+    const next = withWorkspaceSession(local, host, updated);
     set({ local: next });
     queueSaveLocal(next);
     return updated;
@@ -5156,29 +5194,28 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     throw new Error('Device code expired — try again.');
   },
 
-  disconnectGitHubSession: async () => {
+  disconnectGitHubSession: async () => get().disconnectHostSession('github'),
+
+  disconnectHostSession: async (host = 'github') => {
     const local = get().local;
-    const session = local?.sessions.github.workspace ?? null;
+    const session = workspaceSessionFor(local, host);
     if (!local || !session) return;
     await deleteSecretPayload(session.tokenSecretId);
     const indexCleared = removeSecretEntryAction(local, session.tokenSecretId);
-    const next: WorkspaceLocal = {
-      ...indexCleared,
-      // Only the workspace session is cleared. Per-link linking sessions
-      // stay put — disconnecting the workspace PAT shouldn't silently nuke
-      // unrelated link credentials. Links bound with sessionMode='workspace'
-      // become orphaned; the link card surfaces a "session missing" warning
-      // and the user can remap to a dedicated session or re-add the
-      // workspace session.
-      sessions: {
-        ...indexCleared.sessions,
-        github: { ...indexCleared.sessions.github, workspace: null },
-      },
-      // Disconnecting the session also drops the repo + branch — they're
-      // unusable without an authenticated client.
-      connectedRepo: null,
-      workingBranch: null,
-    };
+    // Only the workspace session for THIS host is cleared. Per-link linking
+    // sessions stay put — disconnecting the workspace PAT shouldn't silently
+    // nuke unrelated link credentials. Links bound with sessionMode='workspace'
+    // become orphaned; the link card surfaces a "session missing" warning and
+    // the user can remap to a dedicated session or re-add the workspace session.
+    const cleared = withWorkspaceSession(indexCleared, host, null);
+    // Disconnecting drops the repo + branch — they're unusable without an
+    // authenticated client. But ONLY when they belong to the host being
+    // disconnected: clearing a GitLab repo because the user disconnected an
+    // unrelated GitHub session would destroy state they never touched.
+    const ownsRepo = connectedHostKind(cleared) === host;
+    const next: WorkspaceLocal = ownsRepo
+      ? { ...cleared, connectedRepo: null, workingBranch: null }
+      : cleared;
     set({ local: next });
     queueSaveLocal(next);
   },
