@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
@@ -18,8 +18,9 @@ import {
 } from 'lucide-react';
 import type { SecretEntry, SecretKeyMeta } from '@apicircle/shared';
 import { safeExternalHref } from '@apicircle/shared';
-import { type GitHostKind, GIT_HOST_KINDS, GIT_HOST_LABELS, hasGitProvider } from '@apicircle/git';
+import { type GitHostKind, GIT_HOST_LABELS } from '@apicircle/git';
 import { SCOPE_GUIDANCE_BY_HOST } from '../../store/workspaceStore';
+import { useHostSelection } from '../../hooks/useHostSelection';
 import { useShallow } from 'zustand/react/shallow';
 import {
   GitHubError,
@@ -834,10 +835,10 @@ function SecretRow({ entry }: SecretRowProps) {
 }
 
 function SessionsTab() {
-  // Only hosts this build can resolve; the open-core Studio registers GitHub
-  // alone, so this is `['github']` there and the picker below never renders.
-  const hosts = useMemo(() => GIT_HOST_KINDS.filter((kind) => hasGitProvider(kind)), []);
-  const [host, setHost] = useState<GitHostKind>('github');
+  // Opens on the host that HAS a session, not on GitHub — see `useHostSelection`.
+  // Defaulting to GitHub showed a GitLab-only user a connect form instead of the
+  // session they already had.
+  const { hosts, host, setHost } = useHostSelection();
   const local = useWorkspaceStore((s) => s.local);
   const workspaceSession =
     host === 'github'

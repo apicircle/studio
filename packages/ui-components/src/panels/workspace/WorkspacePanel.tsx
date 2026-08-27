@@ -26,10 +26,8 @@ import {
   type GitHostKind,
   type GitHubBranch,
   type GitHubRepo,
-  GIT_HOST_KINDS,
   GIT_HOST_LABELS,
   GitHubError,
-  hasGitProvider,
   MissingScopeError,
 } from '@apicircle/git';
 import {
@@ -49,6 +47,7 @@ import {
   hostOfWorkspaceSession,
   useWorkspaceStore,
 } from '../../store/workspaceStore';
+import { useHostSelection } from '../../hooks/useHostSelection';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';
 import { ReleaseAndTopicsModal } from './ReleaseAndTopicsModal';
@@ -797,13 +796,12 @@ function ConnectRepoForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Only hosts this BUILD can actually resolve. The open-core Studio registers
-  // GitHub alone, so `hosts` is `['github']` there and the picker below is not
-  // rendered at all — the form stays exactly as it was. An edition that calls
-  // `registerGitProvider` for the other three gets the picker for free, rather
-  // than the list being a hardcoded four that half of them cannot connect to.
-  const hosts = useMemo(() => GIT_HOST_KINDS.filter((kind) => hasGitProvider(kind)), []);
-  const [host, setHost] = useState<GitHostKind>('github');
+  // Which hosts this build can resolve, and which one is selected — defaulting
+  // to the host that HAS a session rather than to GitHub, so a GitLab-only user
+  // is not shown a repo browser asking GitHub for repos with no GitHub token.
+  // The open-core Studio registers GitHub alone, so `hosts` is `['github']`
+  // there and the picker below never renders: the form stays exactly as it was.
+  const { hosts, host, setHost } = useHostSelection();
   const [apiBaseUrl, setApiBaseUrl] = useState('');
 
   const [repos, setRepos] = useState<GitHubRepo[] | null>(null);

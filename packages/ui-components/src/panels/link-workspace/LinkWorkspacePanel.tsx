@@ -24,16 +24,15 @@ import {
   type GitHostKind,
   type GitHubBranch,
   type GitHubRepo,
-  GIT_HOST_KINDS,
   GIT_HOST_LABELS,
   GitHubError,
-  hasGitProvider,
   MissingScopeError,
 } from '@apicircle/git';
 import { sortVersionsDesc } from '@apicircle/core';
 import { formatBytes } from '@apicircle/shared';
 import type { LinkedSnapshot, LinkedWorkspace, SecretKeyMeta } from '@apicircle/shared';
 import { anyWorkspaceSession, useWorkspaceStore } from '../../store/workspaceStore';
+import { useHostSelection } from '../../hooks/useHostSelection';
 import { getAttachment } from '../../persistence/attachments';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';
@@ -394,10 +393,10 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
   // (e.g. private repos in orgs the user has explicit grants on but isn't
   // a formal member of). Toggling this mode hides the combobox + dropdowns
   // and shows free-text inputs that match the pre-B.1 flow.
-  // Only hosts this build can resolve — `['github']` in open-core Studio, so the
-  // picker below never renders there and the form is unchanged.
-  const hosts = useMemo(() => GIT_HOST_KINDS.filter((k) => hasGitProvider(k)), []);
-  const [host, setHost] = useState<GitHostKind>('github');
+  // A link's SOURCE host is independent of the workspace's, but the session you
+  // hold is the best available default — you can only fetch a source you can
+  // authenticate to. `['github']` in open-core Studio, so no picker renders there.
+  const { hosts, host, setHost } = useHostSelection();
   const [apiBaseUrl, setApiBaseUrl] = useState('');
   const [manualMode, setManualMode] = useState(false);
   const [manualRepo, setManualRepo] = useState('');
