@@ -92,19 +92,8 @@ export function isRepoCoordinateComplete(value: string, host: GitHostKind): bool
 }
 
 /**
- * Split a stored `repoFullName` back into `{ owner, name }`.
- *
- * Splits on the LAST separator, which is right for every host: the two-part ones
- * have nothing extra, and GitLab's extra levels belong in `owner` — the same
- * fold {@link parseRepoCoordinate} applies going in.
- *
- * The call sites used `split('/', 2)`, which on `group/subgroup/project` yields
- * `owner: 'group'`, `name: 'subgroup'` and DISCARDS the last segment — silently
- * addressing a different repository rather than failing. That is the worse
- * failure of the two, because nothing surfaces.
+ * Re-exported so this module stays the one place the UI asks about repo
+ * coordinates. The implementation lives in `@apicircle/shared` because the VS
+ * Code extension host needs it too and cannot import a React package.
  */
-export function splitRepoFullName(repoFullName: string): { owner: string; name: string } {
-  const at = repoFullName.lastIndexOf('/');
-  if (at < 0) return { owner: repoFullName, name: '' };
-  return { owner: repoFullName.slice(0, at), name: repoFullName.slice(at + 1) };
-}
+export { splitRepoFullName } from '@apicircle/shared';

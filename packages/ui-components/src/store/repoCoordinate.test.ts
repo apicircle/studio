@@ -102,7 +102,10 @@ describe('parseRepoCoordinate', () => {
   });
 });
 
-describe('splitRepoFullName', () => {
+// The splitter itself is tested in `@apicircle/shared`; what belongs HERE is
+// that the parser and the splitter agree — whatever the form produces must
+// come back out of storage unchanged.
+describe('splitRepoFullName round-trip', () => {
   it('round-trips what parseRepoCoordinate produced', () => {
     for (const [input, host] of [
       ['acme/api', 'github'],
@@ -118,19 +121,5 @@ describe('splitRepoFullName', () => {
         name: parsed.name,
       });
     }
-  });
-
-  it('does NOT drop the last segment of a subgroup path', () => {
-    // `split('/', 2)` returned `{ owner: 'group', name: 'subgroup' }` here — it
-    // discarded `project` and addressed a DIFFERENT repository, with nothing
-    // surfacing. That is a worse failure than a rejection.
-    expect(splitRepoFullName('group/subgroup/project')).toEqual({
-      owner: 'group/subgroup',
-      name: 'project',
-    });
-  });
-
-  it('reports an empty name rather than guessing when there is no separator', () => {
-    expect(splitRepoFullName('justrepo')).toEqual({ owner: 'justrepo', name: '' });
   });
 });

@@ -21,6 +21,7 @@ export {
   envPriorityRefEqual,
   envPriorityDisplayName,
 } from './envPriority';
+export { splitRepoFullName } from './repoFullName';
 export {
   RUN_BODY_PREVIEW_LIMIT,
   FONT_SIZE_PERCENT_MIN,

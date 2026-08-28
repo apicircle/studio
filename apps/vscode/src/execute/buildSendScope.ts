@@ -8,11 +8,12 @@ import {
   type WorkspaceState,
 } from '@apicircle/core';
 import { getGitProvider } from '@apicircle/git';
-import type {
-  EnvPriorityRef,
-  Environment,
-  LinkedWorkspace,
-  Request as ApiRequest,
+import {
+  splitRepoFullName,
+  type EnvPriorityRef,
+  type Environment,
+  type LinkedWorkspace,
+  type Request as ApiRequest,
 } from '@apicircle/shared';
 import type * as vscode from 'vscode';
 import type { VsCodeVaultManager } from '../host/vaultManager';
@@ -179,7 +180,7 @@ async function fetchLinkedAttachment(
 ): Promise<{ blob: Blob; filename: string } | null> {
   // Token: dedicated PAT first, otherwise the built-in GitHub session (if any).
   const token = await getLinkToken(secrets, link);
-  const [owner, name] = link.source.repoFullName.split('/', 2);
+  const { owner, name } = splitRepoFullName(link.source.repoFullName);
   const path = attachmentPath(link.sourceWorkspaceId, slotId);
   const client = getGitProvider('github');
   try {

@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { generateId, type LinkedWorkspace } from '@apicircle/shared';
+import { generateId, splitRepoFullName, type LinkedWorkspace } from '@apicircle/shared';
 import {
   fetchRemoteWorkspaceJson,
   parseLinkedWorkspaceJson,
@@ -691,7 +691,7 @@ export async function linkWorkspaceCommand(deps: LinkActionsDeps): Promise<void>
   }
 
   // Step 2: branch.
-  const [owner, name] = repoFullName.split('/', 2);
+  const { owner, name } = splitRepoFullName(repoFullName);
   let branch = defaultBranch;
   try {
     const branches = await client.listBranches(token, owner, name);
@@ -780,7 +780,7 @@ export async function refreshLinkedWorkspaceCommand(
     return;
   }
   const client = getGitProvider('github');
-  const [owner, name] = r.link.source.repoFullName.split('/', 2);
+  const { owner, name } = splitRepoFullName(r.link.source.repoFullName);
   let remote: { content: string; workspaceId: string } | null;
   try {
     remote = await fetchRemoteWorkspace(client, token ?? '', owner, name, r.link.source.branch);
@@ -828,7 +828,7 @@ export async function reviewLinkedUpdateCommand(
     return;
   }
   const client = getGitProvider('github');
-  const [owner, name] = r.link.source.repoFullName.split('/', 2);
+  const { owner, name } = splitRepoFullName(r.link.source.repoFullName);
   let remote: { content: string; workspaceId: string } | null;
   try {
     remote = await fetchRemoteWorkspace(client, token ?? '', owner, name, r.link.source.branch);
@@ -997,7 +997,7 @@ async function linkFromRepo(
     marketplace?: { listedAs: string; tags: string[]; summary: string };
   },
 ): Promise<void> {
-  const [owner, name] = args.repoFullName.split('/', 2);
+  const { owner, name } = splitRepoFullName(args.repoFullName);
   let remote: { content: string; workspaceId: string } | null;
   try {
     remote = await fetchRemoteWorkspace(client, token, owner, name, args.branch);
