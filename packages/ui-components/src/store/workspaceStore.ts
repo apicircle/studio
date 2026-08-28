@@ -8072,7 +8072,12 @@ async function doLinkWorkspace(
   if (!trimmedRepo.includes('/')) {
     throw new Error('Repo must be `owner/name`');
   }
-  const [owner, name] = trimmedRepo.split('/', 2);
+  // Fold the way the refresh paths do. This one is the CREATE side, and it
+  // persists `repoFullName: trimmedRepo` — the full path — a few lines below.
+  // Splitting differently here meant create and refresh addressed different
+  // repositories for the same link: the initial fetch read `group/subgroup`
+  // while every later refresh correctly read `group/subgroup` + `project`.
+  const { owner, name } = splitRepoFullName(trimmedRepo);
   const sessionMode = args.sessionMode ?? 'workspace';
 
   // Allocate the link id up front — we need it both for keying the

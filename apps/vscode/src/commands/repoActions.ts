@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { getGitProvider, GitHubError, type GitProvider } from '@apicircle/git';
+import { splitRepoFullName } from '@apicircle/shared';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 import { getGitHubToken } from '../host/githubAuth';
 
@@ -63,7 +64,7 @@ async function resolveRepo(deps: RepoActionsDeps): Promise<OwnerName | null> {
     validateInput: (v) => (v.includes('/') ? null : 'Use owner/name'),
   });
   if (!manual?.trim()) return null;
-  const [owner, name] = manual.trim().split('/', 2);
+  const { owner, name } = splitRepoFullName(manual.trim());
   return { owner, name };
 }
 
