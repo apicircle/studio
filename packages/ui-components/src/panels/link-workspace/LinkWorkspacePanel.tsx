@@ -33,6 +33,7 @@ import { formatBytes } from '@apicircle/shared';
 import type { LinkedSnapshot, LinkedWorkspace, SecretKeyMeta } from '@apicircle/shared';
 import { anyWorkspaceSession, useWorkspaceStore } from '../../store/workspaceStore';
 import { useHostSelection } from '../../hooks/useHostSelection';
+import { isRepoCoordinateComplete, REPO_PLACEHOLDER } from '../../store/repoCoordinate';
 import { getAttachment } from '../../persistence/attachments';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';
@@ -594,7 +595,10 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
     probe !== null &&
     !loadingProbe;
 
-  const manualReady = manualMode && manualRepo.trim().includes('/') && manualBranch.trim();
+  // Host-aware: `includes('/')` accepted anything with a slash, so a coordinate
+  // the target host cannot address got as far as a failed fetch.
+  const manualReady =
+    manualMode && isRepoCoordinateComplete(manualRepo, host) && manualBranch.trim();
 
   // Dedicated session mode requires a token before we can submit — without
   // it the store action would throw, and a disabled-button UX is clearer
@@ -756,6 +760,7 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
 
           {manualMode ? (
             <ManualLinkInputs
+              host={host}
               repo={manualRepo}
               setRepo={setManualRepo}
               branch={manualBranch}
@@ -1943,6 +1948,7 @@ function RequiredSecretKeysPicker({
 }
 
 function ManualLinkInputs({
+  host,
   repo,
   setRepo,
   branch,
@@ -1950,6 +1956,7 @@ function ManualLinkInputs({
   pin,
   setPin,
 }: {
+  host: GitHostKind;
   repo: string;
   setRepo: (v: string) => void;
   branch: string;
@@ -1967,7 +1974,7 @@ function ManualLinkInputs({
           id="link-repo-input"
           value={repo}
           onChange={(e) => setRepo(e.target.value)}
-          placeholder="org/payments-api"
+          placeholder={REPO_PLACEHOLDER[host]}
           aria-label="Linked repo full name"
           className="mt-1 h-8 w-full rounded-sm border border-border bg-surface px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
         />

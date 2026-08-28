@@ -47,6 +47,7 @@ import {
   hostOfWorkspaceSession,
   useWorkspaceStore,
 } from '../../store/workspaceStore';
+import { parseRepoCoordinate, REPO_HINT, REPO_PLACEHOLDER } from '../../store/repoCoordinate';
 import { useHostSelection } from '../../hooks/useHostSelection';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';
@@ -878,17 +879,14 @@ function ConnectRepoForm() {
   };
 
   const submitManual = async () => {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      setError('Enter `owner/name`');
+    // Host-aware: a GitLab subgroup path is legitimate and the flat two-part rule
+    // rejected it, while an Azure org typed here belongs in the base URL instead.
+    const parsed = parseRepoCoordinate(value, host);
+    if (!parsed.ok) {
+      setError(parsed.error);
       return;
     }
-    const [owner, name, ...rest] = trimmed.split('/');
-    if (!owner || !name || rest.length > 0) {
-      setError('Format must be `owner/name`');
-      return;
-    }
-    await connectByOwnerName(owner, name, trimmed);
+    await connectByOwnerName(parsed.owner, parsed.name, value.trim());
   };
 
   return (
@@ -947,26 +945,34 @@ function ConnectRepoForm() {
       )}
 
       {manualMode ? (
-        <div className="flex gap-2">
-          <input
-            id="repo-fullname-input"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder="owner/name"
-            aria-label="Repo full name"
-            className="h-8 flex-1 rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !submitting) void submitManual();
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => void submitManual()}
-            disabled={submitting || !value.trim()}
-            className="inline-flex h-8 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
-          >
-            {submitting ? 'Verifying…' : 'Connect repo'}
-          </button>
+        <div className="space-y-1">
+          <div className="flex gap-2">
+            <input
+              id="repo-fullname-input"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={REPO_PLACEHOLDER[host]}
+              aria-label="Repo full name"
+              className="h-8 flex-1 rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !submitting) void submitManual();
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => void submitManual()}
+              disabled={submitting || !value.trim()}
+              className="inline-flex h-8 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+            >
+              {submitting ? 'Verifying…' : 'Connect repo'}
+            </button>
+          </div>
+          {REPO_HINT[host] && (
+            // Only Azure DevOps has one: it is the sole host where part of the
+            // coordinate lives in a DIFFERENT field, which no rejection message
+            // can teach you after the fact.
+            <p className="text-[0.6875rem] text-text-muted">{REPO_HINT[host]}</p>
+          )}
         </div>
       ) : (
         <div className="relative">
