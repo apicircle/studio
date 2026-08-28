@@ -11,17 +11,12 @@ import type {
   MockServer,
   MockServerSource,
   MockRuntimeEntry,
-  McpToolName,
   WorkspaceLocal,
   WorkspaceSynced,
 } from '@apicircle/shared';
 import type { WorkspaceRegistry, WorkspaceRegistryEntry } from '@apicircle/core/workspace/registry';
 import type {
-  ConfigSnippetVariants,
   DesktopBridgeContract,
-  McpInstallResult,
-  McpInstallState,
-  McpUninstallResult,
   ParseSpecResult,
   WorkspaceFileExternalChange,
 } from '@apicircle/ui-components';
@@ -67,29 +62,6 @@ const bridge = {
       ipcRenderer.invoke('apicircle:mock:stopAll') as Promise<{ ok: boolean }>,
     parseSpec: (source: MockServerSource): Promise<ParseSpecResult> =>
       ipcRenderer.invoke('apicircle:mock:parse', source) as Promise<ParseSpecResult>,
-  },
-
-  mcp: {
-    status: (): Promise<{ workspaceDir: string; binary: string }> =>
-      ipcRenderer.invoke('apicircle:mcp:status') as Promise<{
-        workspaceDir: string;
-        binary: string;
-      }>,
-    getConfigSnippet: (client: string): Promise<ConfigSnippetVariants> =>
-      ipcRenderer.invoke(
-        'apicircle:mcp:getConfigSnippet',
-        client,
-      ) as Promise<ConfigSnippetVariants>,
-    getConfigPath: (client: string): Promise<string | null> =>
-      ipcRenderer.invoke('apicircle:mcp:getConfigPath', client) as Promise<string | null>,
-    toolCatalog: (): Promise<readonly McpToolName[]> =>
-      ipcRenderer.invoke('apicircle:mcp:toolCatalog') as Promise<readonly McpToolName[]>,
-    installConfig: (client: string): Promise<McpInstallResult> =>
-      ipcRenderer.invoke('apicircle:mcp:installConfig', client) as Promise<McpInstallResult>,
-    detectInstallState: (client: string): Promise<McpInstallState> =>
-      ipcRenderer.invoke('apicircle:mcp:detectInstallState', client) as Promise<McpInstallState>,
-    uninstallConfig: (client: string): Promise<McpUninstallResult> =>
-      ipcRenderer.invoke('apicircle:mcp:uninstallConfig', client) as Promise<McpUninstallResult>,
   },
 
   // On-disk multi-workspace mirror. The renderer writes every debounced

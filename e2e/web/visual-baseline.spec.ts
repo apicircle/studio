@@ -36,7 +36,6 @@ const PANELS = [
   { name: 'Execution', label: 'execution' },
   { name: 'History', label: 'history' },
   { name: 'Mocks', label: 'mocks' },
-  { name: 'MCP', label: 'mcp' },
   { name: 'Help Center', label: 'help-center' },
 ] as const;
 

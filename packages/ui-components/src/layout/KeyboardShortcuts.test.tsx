@@ -42,7 +42,9 @@ describe('KeyboardShortcuts', () => {
     expect(useWorkspaceStore.getState().activePanel).toBe('history');
     pressKey({ key: '7', ctrl: true });
     expect(useWorkspaceStore.getState().activePanel).toBe('mocks');
-    pressKey({ key: '9', ctrl: true });
+    // Help is Ctrl+8, not Ctrl+9: removing the MCP panel (index 7) shifted it
+    // down one. Ctrl+9 now matches no panel and is a no-op.
+    pressKey({ key: '8', ctrl: true });
     expect(useWorkspaceStore.getState().activePanel).toBe('help');
   });
 

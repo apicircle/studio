@@ -20,7 +20,6 @@ describe('PanelTabs', () => {
       'Execution',
       'History',
       'Mocks',
-      'MCP',
       'Help Center',
     ]);
   });
@@ -41,7 +40,7 @@ describe('PanelTabs', () => {
 describe('PanelTabs with sections', () => {
   const value: SectionsContextValue = {
     sections: [
-      { id: 'studio', label: 'Studio', icon: Compass, panelIds: ['workspace', 'editor', 'mcp'] },
+      { id: 'studio', label: 'Studio', icon: Compass, panelIds: ['workspace', 'editor', 'mocks'] },
       { id: 'lens', label: 'Lens', icon: Server, panelIds: ['history'] },
     ],
     activeSectionId: 'studio',
@@ -55,7 +54,7 @@ describe('PanelTabs with sections', () => {
       </SectionsProvider>,
     );
     const labels = screen.getAllByRole('button').map((t) => t.textContent);
-    expect(labels).toEqual(['Workspace', 'Editor', 'MCP']);
+    expect(labels).toEqual(['Workspace', 'Editor', 'Mocks']);
     expect(labels).not.toContain('History');
   });
 

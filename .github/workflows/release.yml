@@ -16,12 +16,12 @@ name: Release
 #   @apicircle/shared
 #   @apicircle/core
 #   @apicircle/mock-server-core
-#   @apicircle/mcp-server
-#   @apicircle/cli
 #
 # Other workspace members (@apicircle/git, @apicircle/ui-components,
 # @apicircle/web, @apicircle/desktop, examples/*) are intentionally NOT
-# published — they're either private or internal-only.
+# published — they're either private or internal-only. The MCP server and the
+# CLI used to be published from here; they are paid Lens surfaces now and live
+# in the Lens repo.
 #
 # Required secret: NPM_TOKEN — npm automation token for the `apicircle`
 # account (the @apicircle scope is owned by that user).
@@ -48,7 +48,10 @@ env:
   # Single source of truth for what ships. Space-separated list of the
   # pnpm package names to publish. The build step uses these as
   # `--filter` arguments; the publish step iterates them.
-  RELEASE_PACKAGES: '@apicircle/shared @apicircle/core @apicircle/mock-server-core @apicircle/mcp-server @apicircle/cli'
+  # @apicircle/mcp-server and @apicircle/cli were removed: both are paid Lens
+  # surfaces now and no longer live in this repo. Leaving them here would
+  # re-publish an ungated MCP server on the next release tag.
+  RELEASE_PACKAGES: '@apicircle/shared @apicircle/core @apicircle/mock-server-core'
 
 jobs:
   release:

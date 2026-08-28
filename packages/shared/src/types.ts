@@ -137,7 +137,8 @@ export type FontFamilyId =
 
 // No 'settings' panel — Secret Vault and Theme moved to TopBar.
 // No 'command' panel — feature dropped per revision #2.
-// 'mocks' and 'mcp' added in P27 (mock-server runtime + MCP config snippets).
+// 'mocks' added in P27 (mock-server runtime). 'mcp' was removed when the MCP
+// surface left this repo -- it is no longer a Studio panel.
 export type PanelId =
   | 'workspace' // renamed from 'git'
   | 'link-workspace' // renamed from 'api-connections'
@@ -146,7 +147,6 @@ export type PanelId =
   | 'execution'
   | 'history'
   | 'mocks'
-  | 'mcp'
   | 'help';
 
 // ---------------------------------------------------------------------------

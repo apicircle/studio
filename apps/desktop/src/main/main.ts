@@ -9,11 +9,9 @@ import * as path from 'path';
 import { ipcMain } from 'electron';
 import {
   MockManager,
-  McpManager,
   WorkspaceFileManager,
   type WorkspaceWatcher,
   registerMockBridge,
-  registerMcpBridge,
   registerWorkspaceFileBridge,
   startWorkspaceFileWatcher,
   registerSecretsBridge,
@@ -67,7 +65,6 @@ const RENDERER_CSP =
   "form-action 'none'";
 
 const mockManager = new MockManager();
-let mcpManager: McpManager | null = null;
 let workspaceFileManager: WorkspaceFileManager | null = null;
 let workspaceWatcher: WorkspaceWatcher | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -210,10 +207,8 @@ void app.whenReady().then(() => {
       console.warn('[main] dock.setIcon failed:', err);
     }
   }
-  // McpManager + WorkspaceFileManager are constructed after `app` is ready.
-  // The file manager owns `~/.apicircle/` (multi-workspace registry +
-  // per-id subdirectories); McpManager points AI clients at the same root.
-  mcpManager = new McpManager();
+  // WorkspaceFileManager is constructed after `app` is ready. It owns
+  // `~/.apicircle/` -- the multi-workspace registry plus per-id subdirectories.
   workspaceFileManager = new WorkspaceFileManager({
     workspacesRoot: process.env.APICIRCLE_WORKSPACES_ROOT || undefined,
   });
@@ -221,7 +216,6 @@ void app.whenReady().then(() => {
     console.error('[main] workspace file manager init failed:', err);
   });
   registerMockBridge(mockManager);
-  registerMcpBridge(mcpManager);
   registerWorkspaceFileBridge(workspaceFileManager);
   // Start the file watcher BEFORE the main window so any boot-time
   // renderer writes (the hydrate path's initial IDB→disk mirror write)
@@ -310,7 +304,7 @@ async function drainAndQuit(): Promise<void> {
   // Drain any in-flight workspace mirror write so the on-disk file matches
   // whatever the renderer last queued. Renderer would have called its own
   // flush on `beforeunload`, but the IPC handler may still be settling
-  // here; this awaits it so the next CLI / MCP read sees the latest state.
+  // here; this awaits it so the next external read sees the latest state.
   if (workspaceFileManager) {
     try {
       await workspaceFileManager.flush();

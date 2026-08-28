@@ -27,22 +27,11 @@ export type { PanelDef } from './layout/panels';
 export type { ExtraPanelDef } from './layout/extraPanels';
 export type { SectionDef } from './layout/sections';
 export type { BrandDef } from './layout/TopBar';
-export {
-  getDesktopMcpBridge,
-  getDesktopMockBridge,
-  getDesktopWorkspaceFileBridge,
-} from './desktop/bridge';
+export { getDesktopMockBridge, getDesktopWorkspaceFileBridge } from './desktop/bridge';
 export type {
-  ConfigSnippetVariants,
   DesktopBridgeContract,
-  DesktopMcpBridge,
   DesktopMockBridge,
   DesktopWorkspaceFileBridge,
-  McpInstallOutcome,
-  McpInstallResult,
-  McpInstallState,
-  McpUninstallOutcome,
-  McpUninstallResult,
   ParseSpecResult,
   WorkspaceFileExternalChange,
 } from './desktop/bridge';

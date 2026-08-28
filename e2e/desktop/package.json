@@ -7,7 +7,6 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@apicircle/cli": "workspace:*",
     "@apicircle/mock-server-core": "workspace:*",
     "@apicircle/shared": "workspace:*"
   },

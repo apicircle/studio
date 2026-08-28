@@ -1,7 +1,7 @@
 {
   "name": "apicircle-vscode",
   "displayName": "API Circle Studio",
-  "description": "Git-backed API workspace with mocks, plans, and MCP — natively in VS Code.",
+  "description": "Git-backed API workspace with mocks and plans — natively in VS Code.",
   "version": "1.3.0",
   "publisher": "apicircle",
   "private": false,
@@ -34,7 +34,6 @@
     "openapi",
     "graphql",
     "mock",
-    "mcp",
     "postman",
     "insomnia"
   ],
@@ -82,24 +81,9 @@
     "onCommand:apicircle.changeVaultPassphrase",
     "onCommand:apicircle.openVaultEntry",
     "onCommand:apicircle.showRunsChannel",
-    "onCommand:apicircle.openMcpConfigFile",
-    "onCommand:apicircle.openMcpConnectGuide",
-    "onCommand:apicircle.copyMcpConfig",
-    "onCommand:apicircle.copyMcpPrompt",
-    "onCommand:apicircle.openMcpPromptCategory",
-    "onCommand:apicircle.revealMcpBinaryInfo",
-    "onCommand:apicircle.installCopilotMcpConfig",
-    "onCommand:apicircle.uninstallCopilotMcpConfig",
-    "onCommand:apicircle.installMcpForClient",
-    "onCommand:apicircle.installMcpForAllClients",
-    "onCommand:apicircle.uninstallMcpForClient",
     "onCommand:apicircle.forgetVaultOnDevice",
     "onCommand:apicircle.openPlanAsNotebook",
     "onNotebook:apicircle-plan",
-    "onCommand:apicircle.startEmbeddedMcp",
-    "onCommand:apicircle.stopEmbeddedMcp",
-    "onCommand:apicircle.restartEmbeddedMcp",
-    "onCommand:apicircle.copyEmbeddedMcpUrl",
     "onCommand:apicircle.switchWorkspace",
     "onView:apicircle.workspace",
     "onCommand:apicircle.editMockEndpoint",
@@ -166,7 +150,6 @@
     "onCommand:apicircle.removeMockMultiplier",
     "onCommand:apicircle.toggleMockRuleEnabled",
     "onCommand:apicircle.addMockResponseHeader",
-    "onView:apicircle.mcp",
     "workspaceContains:**/.apicircle/registry.json"
   ],
   "contributes": {
@@ -210,10 +193,6 @@
         {
           "id": "apicircle.snapshots",
           "name": "Snapshots"
-        },
-        {
-          "id": "apicircle.mcp",
-          "name": "MCP"
         },
         {
           "id": "apicircle.linkWorkspaces",
@@ -285,16 +264,6 @@
       {
         "view": "apicircle.snapshots",
         "contents": "No snapshots yet.\n\nWorkspace snapshots are point-in-time copies of `synced` state. Use them to undo accidental deletes or revert before risky imports — the safety net for Git-tracked workspace changes.\n\n[Capture Snapshot…](command:apicircle.captureSnapshot)\n[Set Storage Cap…](command:apicircle.setSnapshotMaxBytes)",
-        "when": "apicircle.hasActiveWorkspace"
-      },
-      {
-        "view": "apicircle.mcp",
-        "contents": "No workspace active.\n\nCreate or open a workspace to configure MCP integration with your AI clients.\n\n[Create New Workspace](command:apicircle.createWorkspace)\n[Open Folder…](command:workbench.action.files.openFolder)",
-        "when": "!apicircle.hasActiveWorkspace"
-      },
-      {
-        "view": "apicircle.mcp",
-        "contents": "MCP integration exposes your workspace to Claude Desktop, Claude Code, Cursor, Continue, Cline, Zed, Windsurf, GitHub Copilot, and ChatGPT.\n\nOpen a folder with an API Circle workspace to see per-AI-client config snippets you can paste into each client.\n\n[Open Connect Guide](command:apicircle.openMcpConnectGuide)",
         "when": "apicircle.hasActiveWorkspace"
       },
       {
@@ -473,7 +442,7 @@
         "command": "apicircle.refresh",
         "key": "ctrl+shift+r",
         "mac": "cmd+shift+r",
-        "when": "focusedView == apicircle.workspace || focusedView == apicircle.editor || focusedView == apicircle.environment || focusedView == apicircle.execution || focusedView == apicircle.history || focusedView == apicircle.snapshots || focusedView == apicircle.mock || focusedView == apicircle.mcp || focusedView == apicircle.linkWorkspaces"
+        "when": "focusedView == apicircle.workspace || focusedView == apicircle.editor || focusedView == apicircle.environment || focusedView == apicircle.execution || focusedView == apicircle.history || focusedView == apicircle.snapshots || focusedView == apicircle.mock || focusedView == apicircle.linkWorkspaces"
       },
       {
         "command": "apicircle.newRequest",
@@ -1365,72 +1334,6 @@
         "icon": "$(output)"
       },
       {
-        "command": "apicircle.openMcpConfigFile",
-        "title": "Open AI Client MCP Config File",
-        "category": "API Circle",
-        "icon": "$(go-to-file)"
-      },
-      {
-        "command": "apicircle.openMcpConnectGuide",
-        "title": "Open Connect Guide",
-        "category": "API Circle",
-        "icon": "$(book)"
-      },
-      {
-        "command": "apicircle.copyMcpPrompt",
-        "title": "Copy MCP Prompt",
-        "category": "API Circle",
-        "icon": "$(copy)"
-      },
-      {
-        "command": "apicircle.openMcpPromptCategory",
-        "title": "Browse MCP Prompts",
-        "category": "API Circle",
-        "icon": "$(book)"
-      },
-      {
-        "command": "apicircle.copyMcpConfig",
-        "title": "Copy MCP Config Snippet",
-        "category": "API Circle",
-        "icon": "$(clippy)"
-      },
-      {
-        "command": "apicircle.revealMcpBinaryInfo",
-        "title": "Show MCP Binary Info",
-        "category": "API Circle",
-        "icon": "$(info)"
-      },
-      {
-        "command": "apicircle.installCopilotMcpConfig",
-        "title": "Install for Copilot Chat / VS Code MCP",
-        "category": "API Circle",
-        "icon": "$(rocket)"
-      },
-      {
-        "command": "apicircle.uninstallCopilotMcpConfig",
-        "title": "Remove API Circle MCP from Copilot Chat / VS Code MCP",
-        "category": "API Circle",
-        "icon": "$(trash)"
-      },
-      {
-        "command": "apicircle.installMcpForClient",
-        "title": "Install API Circle MCP",
-        "category": "API Circle",
-        "icon": "$(add)"
-      },
-      {
-        "command": "apicircle.installMcpForAllClients",
-        "title": "Install MCP for All Configured Clients",
-        "category": "API Circle",
-        "icon": "$(rocket)"
-      },
-      {
-        "command": "apicircle.uninstallMcpForClient",
-        "title": "Uninstall API Circle MCP",
-        "category": "API Circle",
-        "icon": "$(remove)"
-      },
-      {
         "command": "apicircle.forgetVaultOnDevice",
         "title": "Forget Vault Credentials on This Device",
         "category": "API Circle",
@@ -1441,30 +1344,6 @@
         "title": "Open Plan as Notebook",
         "category": "API Circle",
         "icon": "$(notebook)"
-      },
-      {
-        "command": "apicircle.startEmbeddedMcp",
-        "title": "Start Embedded MCP Host",
-        "category": "API Circle",
-        "icon": "$(play)"
-      },
-      {
-        "command": "apicircle.stopEmbeddedMcp",
-        "title": "Stop Embedded MCP Host",
-        "category": "API Circle",
-        "icon": "$(debug-stop)"
-      },
-      {
-        "command": "apicircle.restartEmbeddedMcp",
-        "title": "Restart Embedded MCP Host (rotates token)",
-        "category": "API Circle",
-        "icon": "$(debug-restart)"
-      },
-      {
-        "command": "apicircle.copyEmbeddedMcpUrl",
-        "title": "Copy Embedded MCP Host URL",
-        "category": "API Circle",
-        "icon": "$(link)"
       },
       {
         "command": "apicircle.editMockEndpoint",
@@ -1488,12 +1367,6 @@
             "filenamePattern": "*.apicircle-plan.json"
           }
         ]
-      }
-    ],
-    "mcpServerDefinitionProviders": [
-      {
-        "id": "apicircle-embedded",
-        "label": "API Circle (embedded)"
       }
     ],
     "menus": {
@@ -1540,11 +1413,6 @@
         },
         {
           "command": "apicircle.refresh",
-          "when": "view == apicircle.mcp",
-          "group": "navigation@99"
-        },
-        {
-          "command": "apicircle.refresh",
           "when": "view == apicircle.linkWorkspaces",
           "group": "navigation@99"
         },
@@ -1562,16 +1430,6 @@
           "command": "apicircle.searchMarketplace",
           "when": "view == apicircle.linkWorkspaces",
           "group": "navigation@3"
-        },
-        {
-          "command": "apicircle.openMcpConnectGuide",
-          "when": "view == apicircle.mcp",
-          "group": "navigation@1"
-        },
-        {
-          "command": "apicircle.revealMcpBinaryInfo",
-          "when": "view == apicircle.mcp",
-          "group": "1_info"
         },
         {
           "command": "apicircle.newRequest",
@@ -1896,36 +1754,6 @@
           "group": "inline"
         },
         {
-          "command": "apicircle.installMcpForClient",
-          "when": "view == apicircle.mcp && viewItem =~ /^mcp-client-(absent|stale)$/",
-          "group": "inline"
-        },
-        {
-          "command": "apicircle.uninstallMcpForClient",
-          "when": "view == apicircle.mcp && viewItem == mcp-client-installed",
-          "group": "inline"
-        },
-        {
-          "command": "apicircle.installMcpForClient",
-          "when": "view == apicircle.mcp && viewItem =~ /^mcp-client-(absent|stale)$/",
-          "group": "1_actions@1"
-        },
-        {
-          "command": "apicircle.uninstallMcpForClient",
-          "when": "view == apicircle.mcp && viewItem == mcp-client-installed",
-          "group": "1_actions@2"
-        },
-        {
-          "command": "apicircle.openMcpConfigFile",
-          "when": "view == apicircle.mcp && viewItem =~ /^mcp-client-(absent|stale|installed)$/",
-          "group": "1_actions@3"
-        },
-        {
-          "command": "apicircle.revealMcpBinaryInfo",
-          "when": "view == apicircle.mcp && viewItem =~ /^mcp-header/",
-          "group": "1_actions@1"
-        },
-        {
           "command": "apicircle.runPlan",
           "when": "view == apicircle.execution && viewItem == plan",
           "group": "inline@1"
@@ -2112,28 +1940,6 @@
           "default": null,
           "description": "Default port when starting a mock server (null = pick a free port)."
         },
-        "apicircle.mcp.autoConfigureClients": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "enum": [
-              "claude-desktop",
-              "claude-code",
-              "cursor",
-              "windsurf",
-              "zed",
-              "continue"
-            ]
-          },
-          "default": [],
-          "uniqueItems": true,
-          "markdownDescription": "**(Phase 8 + 11)** List of AI clients to target when the **Install MCP for All Configured Clients** command runs. Each entry tells API Circle to merge an `apicircle` MCP server entry into that client's user-level config file (e.g. `~/.cursor/mcp.json`, `~/.continue/config.yaml`). Empty by default — the bulk command prompts you with a multi-pick if no clients are configured. Supported: `claude-desktop`, `claude-code`, `cursor`, `windsurf`, `zed`, and (Phase 11) `continue` (YAML config). Cline is not auto-configurable — it reads workspace `.vscode/mcp.json` so use **Install for Copilot Chat / VS Code MCP** instead."
-        },
-        "apicircle.mcp.allowDecrypt": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "**(Phase 6+ — deferred)** When true, MCP tools may receive decrypted secret values from the active workspace's vault. Off by default for safety — today MCP clients only see encrypted `enc:v1:` wires. Requires the vault to be unlocked. Wiring this means the security model has to gate per-tool access — that work lands in Phase 6 alongside the in-extension MCP host."
-        },
         "apicircle.editor.defaultView": {
           "type": "string",
           "enum": [
@@ -2166,33 +1972,6 @@
           "default": false,
           "markdownDescription": "**(Phase 8)** Remember the vault passphrase on this device via VS Code's SecretStorage (backed by OS keychain — Keychain on macOS, Credential Manager on Windows, libsecret on Linux). When enabled, after a successful unlock the passphrase is persisted; the next time you open the workspace the vault unlocks silently. **Security tradeoff:** anyone with access to your OS keychain can read the passphrase, so this should only be enabled on a trusted, encrypted-at-rest device. Disabled by default. Use the **API Circle: Forget Vault Credentials on This Device** command to wipe the stored entry."
         },
-        "apicircle.mcp.embeddedHost.enabled": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "**(Phase 10)** Run an in-extension MCP server over Streamable HTTP. When enabled, the extension exposes the 78-tool MCP catalog on a local loopback port that AI clients (Copilot Chat, Cursor, Claude Desktop with the HTTP transport) can connect to directly — no separate `apicircle-mcp` binary required. Off by default. **Security:** binds ONLY to loopback (`127.0.0.1` / `::1`); bearer-token auth on every request; DNS-rebinding protection via Host-header validation; token rotates on every **Restart**. Use **API Circle: Copy Embedded MCP Host URL** to share the connection URL (incl. token) with your AI client."
-        },
-        "apicircle.mcp.embeddedHost.port": {
-          "type": "number",
-          "default": 0,
-          "minimum": 0,
-          "maximum": 65535,
-          "markdownDescription": "**(Phase 10)** Port the embedded MCP host binds to. `0` = let the OS pick a free port (recommended, the chosen port is shown in the MCP view). Set explicitly if you've pre-configured your AI client with a fixed port."
-        },
-        "apicircle.mcp.embeddedHost.bindHost": {
-          "type": "string",
-          "default": "127.0.0.1",
-          "markdownDescription": "**(Phase 10)** Host interface the embedded MCP host binds to. **Must be a loopback address** (`127.0.0.1`, `localhost`, `::1`, or any `127.x.y.z`). Any non-loopback value is rejected at startup — binding to a non-loopback interface would expose the workspace's MCP tools to the network and is never safe."
-        },
-        "apicircle.mcp.binaryPath": {
-          "type": "string",
-          "default": "apicircle-mcp",
-          "markdownDescription": "Path to the `apicircle-mcp` binary that external AI clients launch as their MCP server. Defaults to `apicircle-mcp` (assumes the binary is on `PATH`, installed via `pnpm install -g @apicircle/mcp-server`). Set to an absolute path if you installed the binary in a non-standard location."
-        },
-        "apicircle.mcp.workspaceConfigPath": {
-          "type": "string",
-          "default": ".vscode/mcp.json",
-          "markdownDescription": "Path (relative to the workspace folder) where the **Install for Copilot Chat / VS Code MCP** command writes the workspace-level MCP config. Default `.vscode/mcp.json` is the standard location VS Code 1.86+ Copilot Chat reads automatically. Override only if your project uses a non-standard location."
-        },
         "apicircle.validation.validateOnSend": {
           "type": "boolean",
           "default": true,
@@ -2215,11 +1994,9 @@
   "dependencies": {
     "@apicircle/core": "workspace:*",
     "@apicircle/git": "workspace:*",
-    "@apicircle/mcp-server": "workspace:*",
     "@apicircle/mock-server-core": "workspace:*",
     "@apicircle/shared": "workspace:*",
     "proper-lockfile": "^4.1.2",
-    "smol-toml": "^1.3.0",
     "yaml": "^2.5.0"
   },
   "devDependencies": {

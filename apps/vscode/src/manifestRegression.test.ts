@@ -28,6 +28,8 @@ interface Manifest {
     };
     languages?: Array<{ id: string; icon?: { light: string; dark: string } }>;
     yamlValidation?: Array<{ fileMatch: string; url: string }>;
+    views?: Record<string, Array<{ id: string; name?: string }>>;
+    mcpServerDefinitionProviders?: unknown;
   };
   activationEvents: string[];
 }
@@ -84,32 +86,27 @@ describe('package.json manifest regression', () => {
     }
   });
 
-  // ----- P5 MCP host integration -----
+  // ----- MCP surface removal -----
+  //
+  // The MCP server left this repo for the Lens overlay, where it sits behind a
+  // paid entitlement. The manifest is the surface a user actually sees, so an
+  // inverse pin is what catches a partial removal: source can be deleted while a
+  // command, view, setting or activation event survives here, leaving a menu
+  // entry that dispatches into nothing. The original pins asserted the four P5
+  // commands were PRESENT; asserting absence is the guard that now matters.
 
-  it('every Phase 5 MCP command is declared in contributes.commands', () => {
+  it('declares no MCP commands, views, settings or activation events', () => {
     const pkg = readManifest();
-    const ids = new Set(pkg.contributes.commands.map((c) => c.command));
-    for (const id of [
-      'apicircle.openMcpConfigFile',
-      'apicircle.openMcpConnectGuide',
-      'apicircle.copyMcpConfig',
-      'apicircle.revealMcpBinaryInfo',
-    ]) {
-      expect(ids.has(id)).toBe(true);
-    }
+    const mcpish = (v: string) => v.toLowerCase().includes('mcp');
+
+    expect(pkg.contributes.commands.filter((c) => mcpish(c.command))).toEqual([]);
+    expect(pkg.activationEvents.filter(mcpish)).toEqual([]);
+    expect(Object.keys(pkg.contributes.configuration?.properties ?? {}).filter(mcpish)).toEqual([]);
+    expect((pkg.contributes.views?.apicircle ?? []).map((v) => v.id).filter(mcpish)).toEqual([]);
   });
 
-  it('every Phase 5 MCP command has an onCommand activation event', () => {
-    const pkg = readManifest();
-    const events = new Set(pkg.activationEvents);
-    for (const id of [
-      'apicircle.openMcpConfigFile',
-      'apicircle.openMcpConnectGuide',
-      'apicircle.copyMcpConfig',
-      'apicircle.revealMcpBinaryInfo',
-    ]) {
-      expect(events.has(`onCommand:${id}`)).toBe(true);
-    }
+  it('registers no MCP server definition provider', () => {
+    expect(readManifest().contributes.mcpServerDefinitionProviders).toBeUndefined();
   });
 
   // ----- Folder YAML schema registration -----
@@ -174,44 +171,7 @@ describe('package.json manifest regression', () => {
 
   // ----- P6 Copilot Chat / VS Code MCP install -----
 
-  it('apicircle.installCopilotMcpConfig is declared in contributes.commands', () => {
-    const pkg = readManifest();
-    const ids = new Set(pkg.contributes.commands.map((c) => c.command));
-    expect(ids.has('apicircle.installCopilotMcpConfig')).toBe(true);
-  });
-
-  it('apicircle.installCopilotMcpConfig has an onCommand activation event', () => {
-    const pkg = readManifest();
-    const events = new Set(pkg.activationEvents);
-    expect(events.has('onCommand:apicircle.installCopilotMcpConfig')).toBe(true);
-  });
-
-  it('apicircle.mcp.workspaceConfigPath setting is declared with a non-empty default', () => {
-    const pkg = readManifest();
-    const setting = pkg.contributes.configuration.properties['apicircle.mcp.workspaceConfigPath'];
-    expect(setting).toBeDefined();
-    const def = (setting as unknown as { default?: unknown }).default;
-    expect(typeof def).toBe('string');
-    expect((def as string).length).toBeGreaterThan(0);
-  });
-
   // ----- P8 multi-AI-client MCP install -----
-
-  it('P8 commands (installMcpForClient, installMcpForAllClients, uninstallMcpForClient) are declared', () => {
-    const pkg = readManifest();
-    const ids = new Set(pkg.contributes.commands.map((c) => c.command));
-    expect(ids.has('apicircle.installMcpForClient')).toBe(true);
-    expect(ids.has('apicircle.installMcpForAllClients')).toBe(true);
-    expect(ids.has('apicircle.uninstallMcpForClient')).toBe(true);
-  });
-
-  it('P8 commands have onCommand activation events', () => {
-    const pkg = readManifest();
-    const events = new Set(pkg.activationEvents);
-    expect(events.has('onCommand:apicircle.installMcpForClient')).toBe(true);
-    expect(events.has('onCommand:apicircle.installMcpForAllClients')).toBe(true);
-    expect(events.has('onCommand:apicircle.uninstallMcpForClient')).toBe(true);
-  });
 
   // ----- P11 Mock endpoint editor + Continue auto-install -----
 
@@ -234,42 +194,7 @@ describe('package.json manifest regression', () => {
     expect(editMenuEntries[0].when).toContain('viewItem == mock-endpoint');
   });
 
-  it('P11 Continue is in apicircle.mcp.autoConfigureClients enum', () => {
-    const pkg = readManifest();
-    const setting = pkg.contributes.configuration.properties['apicircle.mcp.autoConfigureClients'];
-    const items = (setting as { items?: { enum?: string[] } }).items;
-    expect(items?.enum).toContain('continue');
-  });
-
   // ----- P10 Embedded MCP host -----
-
-  it('P10 embedded MCP host commands + settings are declared', () => {
-    const pkg = readManifest();
-    const ids = new Set(pkg.contributes.commands.map((c) => c.command));
-    expect(ids.has('apicircle.startEmbeddedMcp')).toBe(true);
-    expect(ids.has('apicircle.stopEmbeddedMcp')).toBe(true);
-    expect(ids.has('apicircle.restartEmbeddedMcp')).toBe(true);
-    expect(ids.has('apicircle.copyEmbeddedMcpUrl')).toBe(true);
-
-    const events = new Set(pkg.activationEvents);
-    expect(events.has('onCommand:apicircle.startEmbeddedMcp')).toBe(true);
-    expect(events.has('onCommand:apicircle.stopEmbeddedMcp')).toBe(true);
-    expect(events.has('onCommand:apicircle.restartEmbeddedMcp')).toBe(true);
-    expect(events.has('onCommand:apicircle.copyEmbeddedMcpUrl')).toBe(true);
-
-    const props = pkg.contributes.configuration.properties;
-    expect(props['apicircle.mcp.embeddedHost.enabled']).toBeDefined();
-    expect((props['apicircle.mcp.embeddedHost.enabled'] as { type?: string }).type).toBe('boolean');
-    expect((props['apicircle.mcp.embeddedHost.enabled'] as { default?: unknown }).default).toBe(
-      false,
-    );
-    expect(props['apicircle.mcp.embeddedHost.port']).toBeDefined();
-    expect((props['apicircle.mcp.embeddedHost.port'] as { type?: string }).type).toBe('number');
-    expect(props['apicircle.mcp.embeddedHost.bindHost']).toBeDefined();
-    expect((props['apicircle.mcp.embeddedHost.bindHost'] as { default?: unknown }).default).toBe(
-      '127.0.0.1',
-    );
-  });
 
   // ----- P9 Plan Notebook + Test Controller -----
 
@@ -298,19 +223,6 @@ describe('package.json manifest regression', () => {
     expect((setting as { default?: unknown }).default).toBe(false);
   });
 
-  it('apicircle.mcp.autoConfigureClients setting is declared as a typed string array', () => {
-    const pkg = readManifest();
-    const setting = pkg.contributes.configuration.properties['apicircle.mcp.autoConfigureClients'];
-    expect(setting).toBeDefined();
-    expect((setting as { type?: unknown }).type).toBe('array');
-    const items = (setting as { items?: { type?: string; enum?: string[] } }).items;
-    expect(items?.type).toBe('string');
-    expect(items?.enum).toContain('claude-desktop');
-    expect(items?.enum).toContain('cursor');
-    expect(items?.enum).toContain('zed');
-    expect(Array.isArray((setting as { default?: unknown }).default)).toBe(true);
-  });
-
   it('no setting carries a "Phase 6 — not yet implemented" label (Phase 6 shipped)', () => {
     const pkg = readManifest();
     for (const [key, prop] of Object.entries(pkg.contributes.configuration.properties)) {
@@ -331,26 +243,6 @@ describe('package.json manifest regression', () => {
         /ships in phase 6/,
       );
     }
-  });
-
-  it('apicircle.mcp.binaryPath setting is declared with a non-empty default', () => {
-    const pkg = readManifest();
-    const setting = pkg.contributes.configuration.properties['apicircle.mcp.binaryPath'];
-    expect(setting).toBeDefined();
-    // Hand-decode the typed default — manifest properties have an
-    // `default` field but JSON's value-typing means we coerce loosely
-    // and assert the shape rather than the precise typing.
-    const def = (setting as unknown as { default?: unknown }).default;
-    expect(typeof def).toBe('string');
-    expect((def as string).length).toBeGreaterThan(0);
-  });
-
-  it('apicircle.mcp.binaryPath is NOT labelled as "not yet implemented"', () => {
-    const pkg = readManifest();
-    const setting = pkg.contributes.configuration.properties['apicircle.mcp.binaryPath'];
-    const text = (setting.markdownDescription ?? setting.description ?? '').toLowerCase();
-    expect(text).not.toMatch(/not yet implemented/);
-    expect(text).not.toMatch(/phase 5.*not yet/);
   });
 
   // ----- XPhase-G6: cross-phase honesty guard -----
@@ -434,10 +326,9 @@ describe('package.json manifest regression', () => {
     expect((cmd as unknown as { icon?: string }).icon).toBe('$(add)');
   });
 
-  it('post-launch UX: request template + add-section commands + Copilot uninstall are declared & activated', () => {
+  it('post-launch UX: request template + add-section commands are declared & activated', () => {
     // Three commands added in the first-week feedback sweep — the
-    // template picker, the YAML CodeLens "+ Add section…" handler, and
-    // the Copilot Chat uninstall affordance. All three need the
+    // template picker, and the YAML CodeLens "+ Add section…" handler. Both need the
     // matching activation event so the lazy-load path triggers from the
     // CodeLens / TreeView click.
     const pkg = readManifest();
@@ -471,7 +362,6 @@ describe('package.json manifest regression', () => {
       'apicircle.toggleMockRuleEnabled',
       'apicircle.addMockResponseHeader',
       'apicircle.openMockEndpointYaml',
-      'apicircle.uninstallCopilotMcpConfig',
     ]) {
       expect(ids.has(id), `${id} missing from contributes.commands`).toBe(true);
       expect(events.has(`onCommand:${id}`), `${id} missing onCommand activation`).toBe(true);
@@ -652,51 +542,6 @@ describe('package.json manifest regression', () => {
     );
     expect(restoreInline, 'restoreSnapshot missing inline menu entry').toBeDefined();
     expect(deleteInline, 'deleteSnapshot missing inline menu entry').toBeDefined();
-  });
-
-  it('every vscode.lm MCP provider id passed at runtime is declared in contributes.mcpServerDefinitionProviders', () => {
-    // Second first-install repro: Phase 10 wired
-    // `vscode.lm.registerMcpServerDefinitionProvider('apicircle-embedded', ...)`
-    // but never declared "apicircle-embedded" in
-    // contributes.mcpServerDefinitionProviders. VS Code 1.94+
-    // throws on registration when the id isn't in the manifest, and
-    // the throw escapes activate() — the whole extension fails to
-    // load. Pin every id that source code passes to
-    // registerMcpServerDefinitionProvider against the manifest.
-    const pkg = readManifest() as Manifest & {
-      contributes: { mcpServerDefinitionProviders?: Array<{ id: string; label?: string }> };
-    };
-    const declaredIds = new Set(
-      (pkg.contributes.mcpServerDefinitionProviders ?? []).map((p) => p.id),
-    );
-
-    // Scan src/ for every registerMcpServerDefinitionProvider call and
-    // pull the first-arg string literal.
-    const srcDir = path.resolve(__dirname);
-    const runtimeIds = new Set<string>();
-    function walk(dir: string): void {
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        if (entry.name === 'node_modules' || entry.name === 'dist') continue;
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          walk(full);
-        } else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) {
-          const text = fs.readFileSync(full, 'utf8');
-          const re = /registerMcpServerDefinitionProvider\s*\(\s*['"]([^'"]+)['"]/g;
-          let m: RegExpExecArray | null;
-          while ((m = re.exec(text)) !== null) {
-            runtimeIds.add(m[1]);
-          }
-        }
-      }
-    }
-    walk(srcDir);
-
-    const missing = [...runtimeIds].filter((id) => !declaredIds.has(id));
-    expect(
-      missing,
-      `vscode.lm.registerMcpServerDefinitionProvider id(s) NOT declared in package.json contributes.mcpServerDefinitionProviders: ${missing.join(', ')}`,
-    ).toEqual([]);
   });
 
   it('every runtime dependency declared in package.json is bundled (noExternal in tsup.config.ts)', () => {

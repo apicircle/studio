@@ -6,7 +6,7 @@ import type { WorkspaceSurface } from './vscodeBridge';
 // =============================================================================
 // VsCodeMockController — the VS Code extension's mock lifecycle owner.
 //
-// Wraps `InProcessMockController` (from `@apicircle/mcp-server`, same engine
+// Wraps `InProcessMockController` (from `@apicircle/core/providers`, same engine
 // the CLI uses) and bridges its runtime state to `WorkspaceLocal.mockRuntime.active`
 // so the MockView, status bar, CodeLens, and external readers (CLI / MCP)
 // all see the same view of which mocks are running on which ports.

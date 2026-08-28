@@ -13,7 +13,6 @@ on:
       - 'apps/vscode/**'
       - 'e2e/vscode/**'
       - 'packages/core/**'
-      - 'packages/mcp-server/**'
       - 'packages/shared/**'
       - '.github/workflows/vscode.yml'
       - 'pnpm-lock.yaml'

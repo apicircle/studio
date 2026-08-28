@@ -16,7 +16,6 @@
   "dependencies": {
     "@apicircle/core": "workspace:*",
     "@apicircle/git": "workspace:*",
-    "@apicircle/mcp-server": "workspace:*",
     "@apicircle/mock-server-core": "workspace:*",
     "@apicircle/shared": "workspace:*",
     "@monaco-editor/react": "^4.6.0",

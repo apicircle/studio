@@ -396,11 +396,11 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build workspace packages and desktop main
-        # Desktop specs spawn the built CLI + MCP binaries directly, so all
-        # of cli, mcp-server, and the desktop main bundle must be built.
+        # The specs that spawned the CLI and MCP binaries moved to the Lens
+        # repo with those packages; only the desktop main bundle is needed
+        # here. Filtering on a package that no longer exists would hard-fail
+        # with "No projects matched the filters".
         run: |
-          pnpm --filter @apicircle/cli build
-          pnpm --filter @apicircle/mcp-server build
           pnpm --filter @apicircle/desktop build
 
       - name: Install Electron runtime deps

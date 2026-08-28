@@ -4,8 +4,9 @@ import { PANELS, getPanel } from './panels';
 describe('panels registry', () => {
   it('lists the agreed panel set in the agreed order', () => {
     // Workspace / Link Workspace / Editor / Env / Execution / History — the
-    // P1 navigation bones. Mocks + MCP are P27 additions; Help Center stays
-    // last as the catch-all reference panel.
+    // P1 navigation bones. Mocks is a P27 addition; Help Center stays last as
+    // the catch-all reference panel. MCP was removed when the MCP surface left
+    // the open-core repo, which shifted Help from index 8 to 7.
     expect(PANELS.map((p) => p.id)).toEqual([
       'workspace',
       'link-workspace',
@@ -14,7 +15,6 @@ describe('panels registry', () => {
       'execution',
       'history',
       'mocks',
-      'mcp',
       'help',
     ]);
   });

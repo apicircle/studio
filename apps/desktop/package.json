@@ -28,7 +28,6 @@
     "electron-updater": "^6.3.9"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
     "@types/node": "^20.0.0",
     "electron": "^32.0.0",
     "electron-builder": "^25.0.0",

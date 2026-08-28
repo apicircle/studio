@@ -7,7 +7,6 @@ import { EnvironmentsPanel } from '../panels/env/EnvironmentsPanel';
 import { ExecutionPanel } from '../panels/execution/ExecutionPanel';
 import { HistoryPanel } from '../panels/history/HistoryPanel';
 import { MockServersPanel } from '../panels/mocks/MockServersPanel';
-import { McpServerPanel } from '../panels/mcp/McpServerPanel';
 import { HelpPanel } from '../panels/help/HelpPanel';
 import { PanelErrorBoundary } from '../primitives/PanelErrorBoundary';
 import { useExtraPanels } from './extraPanels';
@@ -23,7 +22,6 @@ const PANEL_LABELS: Record<string, string> = {
   execution: 'Execution',
   history: 'History',
   mocks: 'Mock Servers',
-  mcp: 'MCP',
   help: 'Help Center',
 };
 
@@ -86,11 +84,6 @@ export function PanelContent() {
       {activePanel === 'mocks' && (
         <Bounded panel="mocks">
           <MockServersPanel />
-        </Bounded>
-      )}
-      {activePanel === 'mcp' && (
-        <Bounded panel="mcp">
-          <McpServerPanel />
         </Bounded>
       )}
       {activePanel === 'help' && (

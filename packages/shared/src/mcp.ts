@@ -1,10 +1,13 @@
-// MCP envelope types shared by the MCP server (`@apicircle/mcp-server`)
+// MCP envelope types. The MCP server itself moved to the Lens overlay
+// (`@apicircle-lens/mcp-core`); these names stay here because they are
+// published API of `@apicircle/shared` and removing them would be a
+// breaking change to a package the split was meant to leave untouched.
 // and any consumer that needs to know the tool catalog up-front (the
 // desktop app's "MCP" panel renders config snippets that reference these
 // tool names verbatim).
 //
 // The actual tool input/output schemas live next to each tool's
-// implementation in `@apicircle/mcp-server` (Zod schemas), since they
+// implementation in `@apicircle-lens/mcp-core` (Zod schemas), since they
 // depend on workspace types that would otherwise force `shared` to
 // import everything.
 

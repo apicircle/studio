@@ -91,7 +91,6 @@ describe('App', () => {
           'execution',
           'history',
           'mocks',
-          'mcp',
           'help',
         ],
       },
@@ -100,7 +99,7 @@ describe('App', () => {
         label: 'Lens',
         icon: Server,
         description: 'Discover, review, build',
-        panelIds: ['mcp'],
+        panelIds: ['lens.discover'],
       },
     ];
     render(<App sections={sections} />);
@@ -115,7 +114,7 @@ describe('App', () => {
     expect(
       screen.queryByRole('dialog', { name: /Choose how you want to start/ }),
     ).not.toBeInTheDocument();
-    expect(useWorkspaceStore.getState().activePanel).toBe('mcp');
+    expect(useWorkspaceStore.getState().activePanel).toBe('lens.discover');
 
     // The always-present top toggle switches back to Studio (activePanel → first Studio panel).
     await userEvent.click(screen.getByRole('tab', { name: /^Studio$/ }));
@@ -148,7 +147,7 @@ describe('App', () => {
     localStorage.setItem('apicircle:section-landing-done-v1', 'true'); // skip the landing
     const sections: SectionDef[] = [
       { id: 'studio', label: 'Studio', icon: Compass, panelIds: ['editor', 'workspace'] },
-      { id: 'lens', label: 'Lens', icon: Server, panelIds: ['mcp', 'help'] },
+      { id: 'lens', label: 'Lens', icon: Server, panelIds: ['lens.discover', 'help'] },
     ];
     // First launch to learn the hydrated workspace id (the mode is persisted per id).
     const first = render(<App sections={sections} />);
@@ -166,6 +165,6 @@ describe('App', () => {
     await waitFor(() => screen.getByText('API Circle Studio'));
     // Restored into Lens mode → 'editor' isn't a Lens panel → land on Lens's
     // first panel instead of showing the Editor body under the Lens tab strip.
-    await waitFor(() => expect(useWorkspaceStore.getState().activePanel).toBe('mcp'));
+    await waitFor(() => expect(useWorkspaceStore.getState().activePanel).toBe('lens.discover'));
   });
 });

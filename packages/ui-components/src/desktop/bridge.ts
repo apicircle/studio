@@ -11,14 +11,13 @@
 //      renderer actually consumes.
 //   2. `preload.ts` writes its bridge object with `satisfies DesktopBridge` —
 //      missing or mistyped fields fail `pnpm check`.
-//   3. Consumers call the typed accessors below (`getDesktopMcpBridge`,
-//      `getDesktopWorkspaceFileSurface`, …) instead of casting `window` ad-hoc.
+//   3. Consumers call the typed accessors below
+//      (`getDesktopWorkspaceFileBridge`, …) instead of casting `window` ad-hoc.
 //
 // Add surfaces here as new consumers need them; do not redeclare locally.
 // =============================================================================
 
 import type {
-  McpToolName,
   MockEndpoint,
   MockRuntimeEntry,
   MockServer,
@@ -27,52 +26,6 @@ import type {
   WorkspaceSynced,
 } from '@apicircle/shared';
 import type { WorkspaceRegistry, WorkspaceRegistryEntry } from '@apicircle/core/workspace/registry';
-
-// ---------- MCP surface --------------------------------------------------
-
-/**
- * Two valid-JSON renderings of the same MCP config snippet, differing only in
- * how the Windows workspace path is encoded inside JSON strings.
- *
- * - `forwardSlash`: `"C:/Users/.../workspaces"` — no escapes, easier to read.
- *   Node.js, Electron, and Windows file APIs all accept forward slashes, so
- *   this works as-is when pasted into any AI client config.
- * - `escaped`: `"C:\\Users\\...\\workspaces"` — the literal OS path with JSON
- *   string escapes. What `JSON.stringify` produces by default.
- * - `identical`: true on macOS/Linux where paths have no backslashes; the UI
- *   uses this to hide the picker on platforms where there's only one form.
- */
-export interface ConfigSnippetVariants {
-  forwardSlash: string;
-  escaped: string;
-  identical: boolean;
-}
-
-export type McpInstallOutcome = 'created' | 'updated' | 'unchanged';
-
-export interface McpInstallResult {
-  outcome: McpInstallOutcome;
-  path: string;
-}
-
-export type McpInstallState = 'absent' | 'installed-current' | 'installed-stale';
-
-export type McpUninstallOutcome = 'removed' | 'absent';
-
-export interface McpUninstallResult {
-  outcome: McpUninstallOutcome;
-  path: string;
-}
-
-export interface DesktopMcpBridge {
-  status(): Promise<{ workspaceDir: string; binary: string }>;
-  getConfigSnippet(client: string): Promise<ConfigSnippetVariants>;
-  getConfigPath(client: string): Promise<string | null>;
-  toolCatalog(): Promise<readonly McpToolName[]>;
-  installConfig(client: string): Promise<McpInstallResult>;
-  detectInstallState(client: string): Promise<McpInstallState>;
-  uninstallConfig(client: string): Promise<McpUninstallResult>;
-}
 
 // ---------- WorkspaceFile (mirror) surface -------------------------------
 
@@ -164,7 +117,6 @@ export interface DesktopMockBridge {
  * ad-hoc shapes for now; migrate them here when you next touch them.
  */
 export interface DesktopBridgeContract {
-  mcp: DesktopMcpBridge;
   workspaceFile: DesktopWorkspaceFileBridge;
   mock: DesktopMockBridge;
 }
@@ -178,10 +130,6 @@ interface BridgeWindow {
 function getBridgeRoot(): Partial<DesktopBridgeContract> | null {
   if (typeof globalThis === 'undefined') return null;
   return (globalThis as unknown as BridgeWindow).apicircleDesktop ?? null;
-}
-
-export function getDesktopMcpBridge(): DesktopMcpBridge | null {
-  return getBridgeRoot()?.mcp ?? null;
 }
 
 export function getDesktopWorkspaceFileBridge(): DesktopWorkspaceFileBridge | null {

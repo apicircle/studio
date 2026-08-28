@@ -1,6 +1,5 @@
 import type { PanelId } from '@apicircle/shared';
 import {
-  Bot,
   HelpCircle,
   History,
   Layers,
@@ -31,7 +30,6 @@ export const PANELS: ReadonlyArray<PanelDef> = [
   { id: 'execution', label: 'Execution', icon: PlayCircle, hasSidebar: true },
   { id: 'history', label: 'History', icon: History, hasSidebar: true },
   { id: 'mocks', label: 'Mocks', icon: Server, hasSidebar: true },
-  { id: 'mcp', label: 'MCP', icon: Bot, hasSidebar: true },
   { id: 'help', label: 'Help Center', icon: HelpCircle, hasSidebar: true },
 ];
 

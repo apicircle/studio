@@ -36,10 +36,8 @@ const T0 = '2026-04-27T00:00:00.000Z';
 const trustedEvent = { senderFrame: { url: 'file:///dist/index.html' } };
 
 import { MockManager } from '../mock/mockManager';
-import { McpManager } from '../mcp/mcpManager';
 import { WorkspaceFileManager } from '../workspaceFile/workspaceFileManager';
 import { registerMockBridge, MOCK_CHANNELS } from './mockBridge';
-import { registerMcpBridge, MCP_CHANNELS } from './mcpBridge';
 import { registerWorkspaceFileBridge, WORKSPACE_FILE_CHANNELS } from './workspaceFileBridge';
 
 function fixtureMock(id: string): MockServer {
@@ -145,51 +143,6 @@ describe('mock IPC bridge', () => {
     await start(trustedEvent, fixtureMock('m2'));
     expect(await stopAll(trustedEvent)).toEqual({ ok: true });
     expect((list(trustedEvent) as unknown[]).length).toBe(0);
-  });
-});
-
-describe('mcp IPC bridge', () => {
-  it('registers handlers for every MCP channel', () => {
-    registerMcpBridge(new McpManager('/ws'));
-    expect(handlers.has(MCP_CHANNELS.status)).toBe(true);
-    expect(handlers.has(MCP_CHANNELS.getConfigSnippet)).toBe(true);
-    expect(handlers.has(MCP_CHANNELS.getConfigPath)).toBe(true);
-    expect(handlers.has(MCP_CHANNELS.toolCatalog)).toBe(true);
-  });
-
-  it('status returns the manager paths', () => {
-    registerMcpBridge(new McpManager('/ws'));
-    const handler = handlers.get(MCP_CHANNELS.status)!;
-    const out = handler(trustedEvent) as { workspaceDir: string };
-    expect(out.workspaceDir).toBe('/ws');
-  });
-
-  it('snippet + path + catalog delegate to the manager', () => {
-    registerMcpBridge(new McpManager('/ws'));
-    const snippet = handlers.get(MCP_CHANNELS.getConfigSnippet)!(
-      trustedEvent,
-      'claude-desktop',
-    ) as { forwardSlash: string; escaped: string; identical: boolean };
-    expect(snippet.identical).toBe(true);
-    expect(JSON.parse(snippet.forwardSlash).mcpServers).toBeDefined();
-    const cfgPath = handlers.get(MCP_CHANNELS.getConfigPath)!(trustedEvent, 'cursor');
-    expect(typeof cfgPath).toBe('string');
-    const catalog = handlers.get(MCP_CHANNELS.toolCatalog)!(trustedEvent) as readonly string[];
-    expect(catalog.length).toBeGreaterThan(30);
-  });
-
-  it('rejects an IPC call whose sender frame is not file://', () => {
-    registerMcpBridge(new McpManager('/ws'));
-    const handler = handlers.get(MCP_CHANNELS.status)!;
-    expect(() => handler({ senderFrame: { url: 'https://attacker.example/' } })).toThrow(
-      /Untrusted IPC sender/,
-    );
-  });
-
-  it('rejects an IPC call with no senderFrame at all (e.g. detached frame)', () => {
-    registerMcpBridge(new McpManager('/ws'));
-    const handler = handlers.get(MCP_CHANNELS.status)!;
-    expect(() => handler({})).toThrow(/Untrusted IPC sender/);
   });
 });
 

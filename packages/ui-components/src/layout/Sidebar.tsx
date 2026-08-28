@@ -4,7 +4,6 @@ import { EnvironmentsSidebar, EnvironmentsSidebarActions } from '../panels/env/E
 import { ExecutionSidebar, ExecutionSidebarActions } from '../panels/execution/ExecutionSidebar';
 import { HistorySidebar } from '../panels/history/HistorySidebar';
 import { MocksSidebar, MocksSidebarActions } from '../panels/mocks/MocksSidebar';
-import { McpSidebar } from '../panels/mcp/McpSidebar';
 import { HelpSidebar } from '../panels/help/HelpSidebar';
 import { useExtraPanels, resolveActivePanel } from './extraPanels';
 
@@ -32,7 +31,6 @@ export function Sidebar() {
         {activePanel === 'execution' && <ExecutionSidebar />}
         {activePanel === 'history' && <HistorySidebar />}
         {activePanel === 'mocks' && <MocksSidebar />}
-        {activePanel === 'mcp' && <McpSidebar />}
         {activePanel === 'help' && <HelpSidebar />}
         {ExtraSidebar ? <ExtraSidebar /> : null}
       </div>

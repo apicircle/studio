@@ -55,6 +55,7 @@ import {
   resolvePrCapability,
 } from './githubPrCapability';
 import { decideRetirement, probeBranchRetirement } from './branchRetirement';
+import { splitRepoFullName } from './repoCoordinate';
 import { summarizeUploadedSpec } from './specUpload';
 import { resolveMockEndpoints, requestShapeFromMockEndpoint } from './mockResolve';
 import { applyFont } from '../theme/applyFont';
@@ -162,7 +163,7 @@ import {
 } from '../persistence/debouncedPersist';
 import { getDiskMirror } from '../persistence/diskMirror';
 import { mergeSyncedFromDisk } from '../persistence/diskMirrorMerge';
-import type { McpPanelSection, McpRefreshResult } from '../panels/mcp/mcpPanelTypes';
+import type { RefreshFromDiskResult } from './refreshFromDiskTypes';
 import { applyTheme } from '../theme/applyTheme';
 import type { ToastRecord } from '../primitives/Toast';
 import { bytesToBase64 } from './attachmentBlobs';
@@ -1376,22 +1377,13 @@ type WorkspaceStore = {
   setHelpQuery: (value: string) => void;
   setHelpSectionId: (value: string | null) => void;
 
-  /** MCP panel: which top-level section is active. The panel renders one
-   *  section at a time (Connection / Prompts); the sidebar lists the two. */
-  mcpActiveSection: McpPanelSection;
-  setMcpActiveSection: (value: McpPanelSection) => void;
-  /** MCP Connection sub-state: which AI client's snippet is in the setup
-   *  picker. `null` means the picker hasn't been touched yet — the block
-   *  defaults to Claude Desktop in that case. */
-  mcpHowToConnectClient: string | null;
-  setMcpHowToConnectClient: (value: string | null) => void;
   /**
-   * MCP "Connection" refresh: re-read `workspace.json` from disk
+   * Disk-mirror refresh: re-read `workspace.json` from disk
    * and, if it's newer than the in-memory copy, hydrate the store with
    * it. Returns a result discriminator so the caller can render a toast
    * describing what happened. No-op (returns 'no-mirror') on web.
    */
-  refreshFromDisk: () => Promise<McpRefreshResult>;
+  refreshFromDisk: () => Promise<RefreshFromDiskResult>;
 
   /**
    * Re-read `<root>/registry.json` from disk and push the result into
@@ -2523,8 +2515,6 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   envAdding: false,
   helpQuery: '',
   helpSectionId: null,
-  mcpActiveSection: 'connection',
-  mcpHowToConnectClient: null,
   activeLinkedRequest: null,
   pendingRefresh: null,
   missingScopePrompt: null,
@@ -4229,8 +4219,6 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   setEnvAdding: (value) => set({ envAdding: value }),
   setHelpQuery: (value) => set({ helpQuery: value }),
   setHelpSectionId: (value) => set({ helpSectionId: value }),
-  setMcpActiveSection: (value) => set({ mcpActiveSection: value }),
-  setMcpHowToConnectClient: (value) => set({ mcpHowToConnectClient: value }),
 
   refreshFromDisk: async () => {
     const mirror = getDiskMirror();
@@ -6102,7 +6090,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
     const token = await decryptLinkSessionToken(local, link);
     const client = linkProvider(link);
-    const [owner, name] = link.source.repoFullName.split('/', 2);
+    const { owner, name } = splitRepoFullName(link.source.repoFullName);
     // Always fetch HEAD of the source branch — that's the source's
     // currently-published view. (Targeting a specific historical version
     // would need git tags / commit refs, deferred to a follow-on slice.)
@@ -6171,7 +6159,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // the link's bound session (workspace or dedicated) per sessionMode.
     const token = await decryptLinkSessionToken(local, link);
     const client = linkProvider(link);
-    const [owner, name] = link.source.repoFullName.split('/', 2);
+    const { owner, name } = splitRepoFullName(link.source.repoFullName);
     const applyFetchResult = await fetchRemoteWorkspaceJson(async (p) => {
       const f = await client.getContents(token, owner, name, p, link.source.branch);
       return f?.content ?? null;
@@ -6280,7 +6268,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // remain ledger-only.
     const token = await decryptLinkSessionToken(local, link);
     const client = linkProvider(link);
-    const [owner, name] = link.source.repoFullName.split('/', 2);
+    const { owner, name } = splitRepoFullName(link.source.repoFullName);
     const refreshResult = await fetchRemoteWorkspaceJson(async (p) => {
       const f = await client.getContents(token, owner, name, p, link.source.branch);
       return f?.content ?? null;
@@ -7023,7 +7011,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     for (const [linkId, snapshot] of Object.entries(local.linkedCollections)) {
       const link = synced.linkedWorkspaces[linkId];
       if (!link) continue;
-      const [owner, name] = link.source.repoFullName.split('/', 2);
+      const { owner, name } = splitRepoFullName(link.source.repoFullName);
       const linkToken = await decryptLinkSessionToken(local, link);
       const slots = dedupeAttachmentSlots([
         ...collectAttachmentSlotsFromCollections(snapshot.collections),

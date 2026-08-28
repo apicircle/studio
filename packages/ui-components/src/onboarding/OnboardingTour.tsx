@@ -53,8 +53,8 @@ const STEPS: ReadonlyArray<TourStep> = [
   },
   {
     id: 'panel-nav',
-    title: 'Nine panels, one per workflow',
-    body: 'These tabs switch between the nine panels — one for each stage of API work. The tour walks through them in order.',
+    title: 'Eight panels, one per workflow',
+    body: 'These tabs switch between the eight panels — one for each stage of API work. The tour walks through them in order.',
     target: 'panel-nav',
   },
   {
@@ -144,13 +144,6 @@ const STEPS: ReadonlyArray<TourStep> = [
     body: 'Turn an OpenAPI, Postman, or Insomnia spec into a mock server and scan endpoints in the same compact method-and-path style as the Editor.',
     panel: 'mocks',
     target: 'nav-mocks',
-  },
-  {
-    id: 'mcp',
-    title: 'MCP',
-    body: 'Expose this workspace to AI clients like Claude, Cursor, and Copilot. Open MCP → Connection — the top of the tab shows the workspace-mirror path and a Refresh that pulls in CLI / MCP edits. The four-step "Set up your AI client" flow (install → pick client → paste snippet → restart) sits below for first-time wiring.',
-    panel: 'mcp',
-    target: 'nav-mcp',
   },
   {
     id: 'workspace-switcher',

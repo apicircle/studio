@@ -76,7 +76,6 @@ export default defineConfig({
   noExternal: [
     '@apicircle/core',
     '@apicircle/git',
-    '@apicircle/mcp-server',
     '@apicircle/mock-server-core',
     '@apicircle/shared',
     '@modelcontextprotocol/sdk',

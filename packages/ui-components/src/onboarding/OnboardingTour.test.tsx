@@ -25,7 +25,7 @@ describe('OnboardingTour', () => {
     expect(screen.queryByRole('button', { name: 'Back' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Next' }));
-    expect(screen.getByRole('dialog')).toHaveTextContent('Nine panels, one per workflow');
+    expect(screen.getByRole('dialog')).toHaveTextContent('Eight panels, one per workflow');
 
     await user.click(screen.getByRole('button', { name: 'Back' }));
     expect(screen.getByRole('dialog')).toHaveTextContent('Welcome to API Circle Studio');

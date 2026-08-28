@@ -10,7 +10,6 @@ import { EnvironmentView } from './views/EnvironmentView';
 import { ExecutionView } from './views/ExecutionView';
 import { MockView } from './views/MockView';
 import { HistoryView } from './views/HistoryView';
-import { McpView } from './views/McpView';
 import { LinkWorkspaceView } from './views/LinkWorkspaceView';
 import { SnapshotsView } from './views/SnapshotsView';
 import { WorkspaceView } from './views/WorkspaceView';
@@ -229,51 +228,12 @@ import {
   silentUnlockFromDevice,
   type VaultActionsDeps,
 } from './commands/vaultActions';
-import { VsCodeMcpManager } from './host/mcpManager';
-import type { AiClient } from '@apicircle/mcp-server';
-import type { McpPrompt } from '@apicircle/mcp-server';
-import {
-  openMcpConfigFileCommand,
-  openMcpConnectGuideCommand,
-  revealMcpBinaryInfoCommand,
-  copyMcpConfigCommand,
-  copyMcpPromptCommand,
-  openMcpPromptCategoryCommand,
-} from './commands/mcpActions';
-import { PromptCatalogContentProvider, PROMPT_CATALOG_SCHEME } from './fs/promptCatalog';
-import { PromptCatalogCodeLensProvider } from './lang/promptCatalogCodeLens';
-import {
-  installCopilotMcpConfigCommand,
-  uninstallCopilotMcpConfigCommand,
-} from './commands/copilotMcpActions';
 import { PlanNotebookSerializer } from './notebook/planNotebookSerializer';
 import { PlanNotebookController } from './notebook/planNotebookController';
 import { openPlanAsNotebookCommand } from './commands/openPlanAsNotebook';
 import { AssertionTestController } from './testing/assertionTestController';
-import { EmbeddedMcpHost } from './host/embeddedMcpHost';
-import {
-  startEmbeddedMcpCommand,
-  stopEmbeddedMcpCommand,
-  restartEmbeddedMcpCommand,
-  copyEmbeddedMcpUrlCommand,
-} from './commands/embeddedMcpActions';
-import {
-  tryRegisterEmbeddedMcpAsLmProvider,
-  type ProposedMcpRegistration,
-} from './host/proposedMcpProviderRegistration';
 import { MockEndpointEditor } from './webview/mockEndpointEditor';
 import { editMockEndpointCommand, applyFormStateToMock } from './commands/editMockEndpoint';
-import {
-  installMcpForClientCommand,
-  installMcpForAllClientsCommand,
-  uninstallMcpForClientCommand,
-  coerceInstallableClientArg,
-} from './commands/mcpClientActions';
-import {
-  INSTALLABLE_CLIENTS,
-  detectClientMcpConfigState,
-  type InstallableClient,
-} from './host/mcpClientInstall';
 
 // =============================================================================
 // API Circle Studio — VS Code extension entry point.
@@ -296,9 +256,6 @@ let inFlightPlanTracker: InFlightPlanTracker | null = null;
 let mockController: VsCodeMockController | null = null;
 let vaultManager: VsCodeVaultManager | null = null;
 let runsChannel: RunsChannel | null = null;
-let mcpManager: VsCodeMcpManager | null = null;
-let embeddedMcpHost: EmbeddedMcpHost | null = null;
-let lmMcpRegistration: ProposedMcpRegistration | null = null;
 let mockEndpointEditor: MockEndpointEditor | null = null;
 let views: {
   workspace: WorkspaceView;
@@ -308,7 +265,6 @@ let views: {
   mock: MockView;
   history: HistoryView;
   snapshots: SnapshotsView;
-  mcp: McpView;
   linkWorkspaces: LinkWorkspaceView;
 } | null = null;
 
@@ -360,25 +316,8 @@ export function activate(context: vscode.ExtensionContext): ApicircleExtensionAp
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('apicircle.secrets')) applyVaultSettings();
-      // P6R4-G1: if `apicircle.mcp.workspaceConfigPath` (or `binaryPath`,
-      // which affects the probe result) changes mid-session, refresh the
-      // McpView so the Copilot row's install state reflects the new
-      // setting without waiting for an unrelated event.
-      if (e.affectsConfiguration('apicircle.mcp')) {
-        views?.mcp.refresh();
-      }
     }),
   );
-
-  // P5: MCP manager. Reads `apicircle.mcp.binaryPath` on every call so a
-  // settings change takes effect without reactivation. The manager itself
-  // is stateless — no lifecycle wiring beyond the dispose-on-extension-
-  // deactivate path below.
-  mcpManager = new VsCodeMcpManager({
-    bridge,
-    getBinaryPath: () =>
-      vscode.workspace.getConfiguration('apicircle.mcp').get<string>('binaryPath', 'apicircle-mcp'),
-  });
 
   // Register the apicircle: FileSystemProvider FIRST so views that take a
   // reference to it (history) can wire up.
@@ -403,15 +342,6 @@ export function activate(context: vscode.ExtensionContext): ApicircleExtensionAp
     mock: new MockView(bridge),
     history: new HistoryView(bridge, fsProvider),
     snapshots: new SnapshotsView(bridge),
-    mcp: new McpView(mcpManager, (client) => {
-      const paths = mcpManager!.resolvePaths();
-      if (!paths.hasActiveWorkspace) return 'absent';
-      return detectClientMcpConfigState({
-        client,
-        binary: paths.binary,
-        apicircleDir: paths.workspace,
-      });
-    }),
     linkWorkspaces: new LinkWorkspaceView(bridge),
   };
   for (const v of Object.values(views)) {
@@ -458,22 +388,6 @@ export function activate(context: vscode.ExtensionContext): ApicircleExtensionAp
       new RequestCompletionProvider(),
       ':',
       ' ',
-    ),
-  );
-
-  // Read-only prompt-catalog documents (apicircle-prompts:) — the MCP view's
-  // prompt-category rows open one of these per category. The CodeLens provider
-  // adds a per-prompt ⧉ Copy lens + a ↗ Open preview lens on the title.
-  const promptCatalogCodeLens = new PromptCatalogCodeLensProvider();
-  context.subscriptions.push(
-    promptCatalogCodeLens,
-    vscode.workspace.registerTextDocumentContentProvider(
-      PROMPT_CATALOG_SCHEME,
-      new PromptCatalogContentProvider(),
-    ),
-    vscode.languages.registerCodeLensProvider(
-      { scheme: PROMPT_CATALOG_SCHEME },
-      promptCatalogCodeLens,
     ),
   );
 
@@ -756,41 +670,6 @@ export function activate(context: vscode.ExtensionContext): ApicircleExtensionAp
     log: runsChannel?.forCategory('mock'),
   });
   context.subscriptions.push({ dispose: () => mockEndpointEditor?.dispose() });
-
-  // ---- P10: Embedded MCP host ----
-  // In-extension MCP server over Streamable HTTP. Off by default; opt-in
-  // via `apicircle.mcp.embeddedHost.enabled`. Auto-starts if enabled.
-  embeddedMcpHost = new EmbeddedMcpHost(bridge, runsChannel?.forCategory('misc'));
-  context.subscriptions.push({ dispose: () => embeddedMcpHost?.dispose() });
-  // P10-3: best-effort native registration with VS Code's MCP client
-  // surface (Copilot Chat). No-op on engines without
-  // `vscode.lm.registerMcpServerDefinitionProvider` — Copilot Chat still
-  // picks up `.vscode/mcp.json` via the P6 install command in that case.
-  lmMcpRegistration = tryRegisterEmbeddedMcpAsLmProvider(
-    embeddedMcpHost,
-    runsChannel?.forCategory('misc'),
-  );
-  if (lmMcpRegistration) {
-    context.subscriptions.push(lmMcpRegistration);
-  }
-  const embeddedEnabledAtBoot = vscode.workspace
-    .getConfiguration('apicircle.mcp.embeddedHost')
-    .get<boolean>('enabled', false);
-  if (embeddedEnabledAtBoot) {
-    void embeddedMcpHost
-      .start(readEmbeddedMcpOptions())
-      .then((info) => {
-        runsChannel?.forCategory('misc')(
-          `embedded MCP host auto-started on ${info.url} (rotate token via Restart)`,
-        );
-        views?.mcp.refresh();
-      })
-      .catch((err) => {
-        runsChannel?.forCategory('misc')(
-          `embedded MCP host auto-start failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      });
-  }
 
   // Auto-refresh views when external writes hit either workspace file
   // (Git pull, CLI run, MCP server, hand-edit) — synced OR local. Plan
@@ -1651,192 +1530,12 @@ export function activate(context: vscode.ExtensionContext): ApicircleExtensionAp
       },
     ),
     // ---- P10 Embedded MCP host ----
-    vscode.commands.registerCommand('apicircle.startEmbeddedMcp', () => {
-      if (!embeddedMcpHost) return;
-      return startEmbeddedMcpCommand({
-        host: embeddedMcpHost,
-        getOptions: readEmbeddedMcpOptions,
-        onChanged: () => views?.mcp.refresh(),
-        log: runsChannel?.forCategory('misc'),
-      });
-    }),
-    vscode.commands.registerCommand('apicircle.stopEmbeddedMcp', () => {
-      if (!embeddedMcpHost) return;
-      return stopEmbeddedMcpCommand({
-        host: embeddedMcpHost,
-        getOptions: readEmbeddedMcpOptions,
-        onChanged: () => views?.mcp.refresh(),
-        log: runsChannel?.forCategory('misc'),
-      });
-    }),
-    vscode.commands.registerCommand('apicircle.restartEmbeddedMcp', () => {
-      if (!embeddedMcpHost) return;
-      return restartEmbeddedMcpCommand({
-        host: embeddedMcpHost,
-        getOptions: readEmbeddedMcpOptions,
-        onChanged: () => views?.mcp.refresh(),
-        log: runsChannel?.forCategory('misc'),
-      });
-    }),
-    vscode.commands.registerCommand('apicircle.copyEmbeddedMcpUrl', () => {
-      if (!embeddedMcpHost) return;
-      return copyEmbeddedMcpUrlCommand({
-        host: embeddedMcpHost,
-        getOptions: readEmbeddedMcpOptions,
-        onChanged: () => views?.mcp.refresh(),
-        log: runsChannel?.forCategory('misc'),
-      });
-    }),
     vscode.commands.registerCommand('apicircle.showRunsChannel', () => {
       runsChannel?.reveal();
     }),
     // ---- P5 MCP commands ----
-    vscode.commands.registerCommand(
-      'apicircle.openMcpConfigFile',
-      (node?: { kind: 'client'; client: AiClient }) => {
-        if (!mcpManager) return;
-        return openMcpConfigFileCommand(
-          {
-            mcp: mcpManager,
-            onChanged: () => views?.mcp.refresh(),
-            log: runsChannel?.forCategory('misc'),
-          },
-          node,
-        );
-      },
-    ),
-    vscode.commands.registerCommand('apicircle.openMcpConnectGuide', () => {
-      return openMcpConnectGuideCommand();
-    }),
-    vscode.commands.registerCommand('apicircle.copyMcpPrompt', (prompt: unknown) => {
-      if (!prompt || typeof prompt !== 'object' || !('text' in prompt)) return;
-      return copyMcpPromptCommand(prompt as McpPrompt);
-    }),
-    vscode.commands.registerCommand('apicircle.openMcpPromptCategory', (arg?: unknown) => {
-      return openMcpPromptCategoryCommand(
-        arg as Parameters<typeof openMcpPromptCategoryCommand>[0],
-      );
-    }),
-    vscode.commands.registerCommand(
-      'apicircle.copyMcpConfig',
-      (node?: { kind: 'client'; client: AiClient }) => {
-        if (!mcpManager) return;
-        return copyMcpConfigCommand(
-          {
-            mcp: mcpManager,
-            onChanged: () => views?.mcp.refresh(),
-            log: runsChannel?.forCategory('misc'),
-          },
-          node,
-        );
-      },
-    ),
-    vscode.commands.registerCommand('apicircle.revealMcpBinaryInfo', () => {
-      if (!mcpManager) return;
-      return revealMcpBinaryInfoCommand({
-        mcp: mcpManager,
-        log: runsChannel?.forCategory('misc'),
-      });
-    }),
     // ---- P6: Copilot Chat / VS Code MCP integration ----
-    vscode.commands.registerCommand('apicircle.installCopilotMcpConfig', () => {
-      if (!mcpManager) return;
-      return installCopilotMcpConfigCommand({
-        mcp: mcpManager,
-        getRelativeConfigPath: () =>
-          vscode.workspace
-            .getConfiguration('apicircle.mcp')
-            .get<string>('workspaceConfigPath', '.vscode/mcp.json'),
-        // P6R1-G8: refresh the McpView so the Copilot row flips
-        // immediately after install/update.
-        onInstalled: () => views?.mcp.refresh(),
-        log: runsChannel?.forCategory('misc'),
-      });
-    }),
-    vscode.commands.registerCommand('apicircle.uninstallCopilotMcpConfig', () => {
-      if (!mcpManager) return;
-      return uninstallCopilotMcpConfigCommand({
-        mcp: mcpManager,
-        getRelativeConfigPath: () =>
-          vscode.workspace
-            .getConfiguration('apicircle.mcp')
-            .get<string>('workspaceConfigPath', '.vscode/mcp.json'),
-        onInstalled: () => views?.mcp.refresh(),
-        log: runsChannel?.forCategory('misc'),
-      });
-    }),
     // ---- P8: multi-AI-client MCP install ----
-    vscode.commands.registerCommand(
-      'apicircle.installMcpForClient',
-      // `arg` arrives as a string client id when the row's
-      // `item.command.arguments = [client]` fires; as an `McpNode`
-      // `{ kind: 'client', client }` from the inline button / context
-      // menu (VS Code passes the tree node). `coerceInstallableClientArg`
-      // normalises both into the bare client id; an unrecognised arg
-      // falls through to the QuickPick.
-      (arg?: unknown) => {
-        if (!mcpManager) return;
-        const clientArg = coerceInstallableClientArg(arg);
-        if (!clientArg) {
-          return vscode.window
-            .showQuickPick(
-              INSTALLABLE_CLIENTS.map((c) => ({ label: c, value: c })),
-              { title: 'Install API Circle MCP for which client?' },
-            )
-            .then((pick) => {
-              if (!pick) return;
-              return installMcpForClientCommand(
-                {
-                  mcp: mcpManager!,
-                  getAutoConfigureClients: readAutoConfigureClients,
-                  onChanged: () => views?.mcp.refresh(),
-                  log: runsChannel?.forCategory('misc'),
-                },
-                pick.value,
-              );
-            });
-        }
-        return installMcpForClientCommand(
-          {
-            mcp: mcpManager,
-            getAutoConfigureClients: readAutoConfigureClients,
-            onChanged: () => views?.mcp.refresh(),
-            log: runsChannel?.forCategory('misc'),
-          },
-          clientArg,
-        );
-      },
-    ),
-    vscode.commands.registerCommand('apicircle.installMcpForAllClients', () => {
-      if (!mcpManager) return;
-      return installMcpForAllClientsCommand({
-        mcp: mcpManager,
-        getAutoConfigureClients: readAutoConfigureClients,
-        onChanged: () => views?.mcp.refresh(),
-        log: runsChannel?.forCategory('misc'),
-      });
-    }),
-    vscode.commands.registerCommand(
-      'apicircle.uninstallMcpForClient',
-      // Same arg shapes as `installMcpForClient`. Without the unwrap the
-      // handler returned silently when invoked from the inline trash
-      // button or the row's context menu — the 1.1.0 bug where "Remove
-      // API Circle MCP from AI Client" did nothing.
-      (arg?: unknown) => {
-        if (!mcpManager) return;
-        const clientArg = coerceInstallableClientArg(arg);
-        if (!clientArg) return;
-        return uninstallMcpForClientCommand(
-          {
-            mcp: mcpManager,
-            getAutoConfigureClients: readAutoConfigureClients,
-            onChanged: () => views?.mcp.refresh(),
-            log: runsChannel?.forCategory('misc'),
-          },
-          clientArg,
-        );
-      },
-    ),
   );
 
   // ---- P8: shared VaultActionsDeps builder ----
@@ -1863,25 +1562,6 @@ export function activate(context: vscode.ExtensionContext): ApicircleExtensionAp
           .get<boolean>('rememberOnDevice', false),
       log: _runs?.forCategory('vault'),
     };
-  }
-
-  // ---- P10: setting reader for embedded MCP host ----
-  function readEmbeddedMcpOptions(): { port: number; bindHost: string } {
-    const cfg = vscode.workspace.getConfiguration('apicircle.mcp.embeddedHost');
-    return {
-      port: cfg.get<number>('port', 0),
-      bindHost: cfg.get<string>('bindHost', '127.0.0.1'),
-    };
-  }
-
-  // ---- P8: setting reader for autoConfigureClients ----
-  function readAutoConfigureClients(): readonly InstallableClient[] {
-    const raw = vscode.workspace
-      .getConfiguration('apicircle.mcp')
-      .get<readonly string[]>('autoConfigureClients', []);
-    return raw.filter((c): c is InstallableClient =>
-      (INSTALLABLE_CLIENTS as readonly string[]).includes(c),
-    );
   }
 
   // ---- Workspace discovery + hasActiveWorkspace context key ----
@@ -2037,15 +1717,6 @@ export async function deactivate(): Promise<void> {
   }
   vaultManager?.lockAll();
   vaultManager = null;
-  // P10: stop the embedded MCP host cleanly on shutdown. We `await` so a
-  // VS Code reload that races shutdown doesn't leave the socket bound.
-  if (embeddedMcpHost) {
-    await embeddedMcpHost.stop();
-    embeddedMcpHost = null;
-  }
-  // P5: McpManager is stateless — no dispose needed; just clear the
-  // module ref so a re-activate gets a fresh instance.
-  mcpManager = null;
   runsChannel?.dispose();
   runsChannel = null;
   bridge?.dispose();

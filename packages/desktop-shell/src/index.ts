@@ -5,14 +5,11 @@
 
 // Managers
 export * from './mock/mockManager';
-export * from './mcp/mcpManager';
-export * from './mcp/mcpInstaller';
 export * from './workspaceFile/workspaceFileManager';
 export * from './workspaceFile/workspaceWatcher';
 
 // IPC bridges
 export * from './ipc/mockBridge';
-export * from './ipc/mcpBridge';
 export * from './ipc/workspaceFileBridge';
 export * from './ipc/secretsBridge';
 export * from './ipc/oauth2Bridge';

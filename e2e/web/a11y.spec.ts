@@ -26,7 +26,6 @@ const TABS = [
   'Execution',
   'History',
   'Mocks',
-  'MCP',
   'Help Center',
 ];
 

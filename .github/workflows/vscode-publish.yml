@@ -14,7 +14,6 @@ on:
     paths:
       - 'apps/vscode/**'
       - 'packages/core/**'
-      - 'packages/mcp-server/**'
       - 'packages/shared/**'
       - 'packages/mock-server-core/**'
       - '.github/workflows/vscode-publish.yml'

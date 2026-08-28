@@ -133,7 +133,7 @@ describe('extension activation (integration)', () => {
     else process.env.APICIRCLE_WORKSPACES_ROOT = prevWorkspacesRoot;
   });
 
-  it('registers all 9 sidebar views when no folder is open', () => {
+  it('registers all 8 sidebar views when no folder is open', () => {
     const { ctx } = makeMockContext(path.join(tmp, 'globalStorage'));
     activate(ctx);
 
@@ -144,7 +144,6 @@ describe('extension activation (integration)', () => {
         'apicircle.execution',
         'apicircle.history',
         'apicircle.linkWorkspaces',
-        'apicircle.mcp',
         'apicircle.mock',
         'apicircle.snapshots',
         'apicircle.workspace',
