@@ -1,11 +1,7 @@
 import * as http from 'node:http';
 import * as crypto from 'node:crypto';
-import {
-  createMcpServer,
-  InProcessMockController,
-  StreamableHTTPServerTransport,
-  type WorkspaceProvider,
-} from '@apicircle/mcp-server';
+import { createMcpServer, StreamableHTTPServerTransport } from '@apicircle/mcp-server';
+import { InProcessMockController, type WorkspaceProvider } from '@apicircle/core/providers';
 import type { WorkspacePatch, WorkspaceState } from '@apicircle/core';
 import type { WorkspaceSynced, WorkspaceLocal } from '@apicircle/shared';
 import type { VsCodeBridge, WorkspaceSurface } from './vscodeBridge';

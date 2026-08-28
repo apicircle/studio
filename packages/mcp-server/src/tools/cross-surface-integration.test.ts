@@ -12,11 +12,13 @@ import {
   workspaceDirFor,
   emptyRegistry as _emptyRegistry,
 } from '@apicircle/core/workspace/registry';
-import { FileBackedWorkspaceProvider } from './FileBackedWorkspaceProvider';
-import { MultiWorkspaceProvider } from './MultiWorkspaceProvider';
-import { SingleWorkspaceAdapter } from './Workspaces';
-import { InProcessMockController } from './InProcessMockController';
-import { workspaceReadTool } from '../tools/crud';
+import {
+  FileBackedWorkspaceProvider,
+  MultiWorkspaceProvider,
+  SingleWorkspaceAdapter,
+  InProcessMockController,
+} from '@apicircle/core/providers';
+import { workspaceReadTool } from './crud';
 
 // =============================================================================
 // Cross-surface integration tests.

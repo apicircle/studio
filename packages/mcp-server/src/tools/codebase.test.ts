@@ -1,7 +1,7 @@
 ﻿import { describe, expect, it } from 'vitest';
-import { InMemoryWorkspaceProvider } from '../providers/InMemoryWorkspaceProvider';
-import { SingleWorkspaceAdapter } from '../providers/Workspaces';
-import { InProcessMockController } from '../providers/InProcessMockController';
+import { InMemoryWorkspaceProvider } from '@apicircle/core/providers';
+import { SingleWorkspaceAdapter } from '@apicircle/core/providers';
+import { InProcessMockController } from '@apicircle/core/providers';
 import { codebaseExtractCollectionTool } from './codebase';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
 

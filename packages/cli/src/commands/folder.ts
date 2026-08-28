@@ -2,7 +2,7 @@ import type { Command } from 'commander';
 import kleur from 'kleur';
 import type { Folder, RequestAuth } from '@apicircle/shared';
 import { generateId } from '@apicircle/shared';
-import { FileBackedWorkspaceProvider } from '@apicircle/mcp-server';
+import { FileBackedWorkspaceProvider } from '@apicircle/core/providers';
 import { ensureWorkspace } from '../util/loadWorkspace';
 import { resolveWorkspace, WorkspaceResolutionError } from '../util/resolveWorkspace';
 

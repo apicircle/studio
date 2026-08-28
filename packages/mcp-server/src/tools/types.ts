@@ -1,8 +1,8 @@
 import type { z } from 'zod';
 import type { McpToolName } from '@apicircle/shared';
-import type { WorkspaceProvider } from '../providers/WorkspaceProvider';
-import type { MockController } from '../providers/MockController';
-import type { Workspaces } from '../providers/Workspaces';
+import type { WorkspaceProvider } from '@apicircle/core/providers';
+import type { MockController } from '@apicircle/core/providers';
+import type { Workspaces } from '@apicircle/core/providers';
 
 // =============================================================================
 // ToolDef — shape every MCP tool implements. The host iterates over the

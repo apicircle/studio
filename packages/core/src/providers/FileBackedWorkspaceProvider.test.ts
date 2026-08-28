@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
-import { saveToFile } from '@apicircle/core/workspace/file-backed';
+import { saveToFile } from '../workspace/fileBackedWorkspace';
 import { FileBackedWorkspaceProvider } from './FileBackedWorkspaceProvider';
 
 const T0 = '2026-04-27T00:00:00.000Z';

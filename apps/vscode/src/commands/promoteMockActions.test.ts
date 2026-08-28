@@ -9,7 +9,7 @@ import { VsCodeBridge } from '../host/vscodeBridge';
 import { VsCodeMockController } from '../host/vscodeMockController';
 import { addAllToCollectionCommand, addEndpointToCollectionCommand } from './promoteMockActions';
 
-vi.mock('@apicircle/mcp-server', () => ({
+vi.mock('@apicircle/core/providers', () => ({
   InProcessMockController: class {
     async start() {
       return { port: 3000, pid: 42, startedAt: '2026-01-01T00:00:00Z' };

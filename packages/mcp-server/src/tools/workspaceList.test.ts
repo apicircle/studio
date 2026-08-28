@@ -5,10 +5,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { workspaceListTool } from './workspaceList';
 import { workspaceReadTool } from './crud';
-import { MultiWorkspaceProvider } from '../providers/MultiWorkspaceProvider';
-import { InMemoryWorkspaceProvider } from '../providers/InMemoryWorkspaceProvider';
-import { SingleWorkspaceAdapter } from '../providers/Workspaces';
-import { InProcessMockController } from '../providers/InProcessMockController';
+import { MultiWorkspaceProvider } from '@apicircle/core/providers';
+import { InMemoryWorkspaceProvider } from '@apicircle/core/providers';
+import { SingleWorkspaceAdapter } from '@apicircle/core/providers';
+import { InProcessMockController } from '@apicircle/core/providers';
 import { saveToFile } from '@apicircle/core/workspace/file-backed';
 import {
   registerWorkspace,

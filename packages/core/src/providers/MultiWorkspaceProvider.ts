@@ -1,5 +1,5 @@
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
-import type { WorkspacePatch, WorkspaceState } from '@apicircle/core';
+import type { WorkspacePatch, WorkspaceState } from '../workspace/patches';
 import {
   loadRegistry,
   loadWorkspaceById,
@@ -7,7 +7,7 @@ import {
   setActiveWorkspace as setActiveWorkspaceOnDisk,
   workspaceDirFor,
   type WorkspaceRegistry,
-} from '@apicircle/core/workspace/registry';
+} from '../workspace/workspaceRegistry';
 import { FileBackedWorkspaceProvider } from './FileBackedWorkspaceProvider';
 import type { WorkspaceProvider } from './WorkspaceProvider';
 import { WorkspaceNotFoundError, type WorkspaceSummary, type Workspaces } from './Workspaces';

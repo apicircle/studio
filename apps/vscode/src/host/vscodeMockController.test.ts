@@ -12,7 +12,7 @@ import { VsCodeMockController } from './vscodeMockController';
 const mockStartResult = vi.fn();
 const mockStopResult = vi.fn();
 const mockListResult = vi.fn();
-vi.mock('@apicircle/mcp-server', async () => {
+vi.mock('@apicircle/core/providers', async () => {
   return {
     InProcessMockController: class {
       async start(server: { id: string }, opts: { port?: number }): Promise<unknown> {

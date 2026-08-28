@@ -2,12 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { saveToFile } from '@apicircle/core/workspace/file-backed';
-import {
-  registerWorkspace,
-  saveRegistry,
-  workspaceDirFor,
-} from '@apicircle/core/workspace/registry';
+import { saveToFile } from '../workspace/fileBackedWorkspace';
+import { registerWorkspace, saveRegistry, workspaceDirFor } from '../workspace/workspaceRegistry';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
 import { MultiWorkspaceProvider } from './MultiWorkspaceProvider';
 import { WorkspaceNotFoundError } from './Workspaces';
@@ -92,7 +88,7 @@ async function seedRegistry(
     });
   }
   if (activeId) {
-    const { loadRegistry } = await import('@apicircle/core/workspace/registry');
+    const { loadRegistry } = await import('../workspace/workspaceRegistry');
     const reg = await loadRegistry(root);
     if (reg) await saveRegistry(root, { ...reg, activeWorkspaceId: activeId });
   }
@@ -149,7 +145,7 @@ describe('MultiWorkspaceProvider.activeProvider', () => {
     // MCP process — write `registry.json` directly (the desktop's
     // `WorkspaceFileManager.setActiveWorkspace` does the same thing).
     const { setActiveWorkspace: setActiveWorkspaceOnDisk } =
-      await import('@apicircle/core/workspace/registry');
+      await import('../workspace/workspaceRegistry');
     await setActiveWorkspaceOnDisk(root, 'ws-b');
 
     // The next call MUST route to ws-b — that's the regression.

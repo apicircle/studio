@@ -1,8 +1,8 @@
 ﻿import { describe, expect, it } from 'vitest';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
-import { InMemoryWorkspaceProvider } from '../providers/InMemoryWorkspaceProvider';
-import { SingleWorkspaceAdapter } from '../providers/Workspaces';
-import { InProcessMockController } from '../providers/InProcessMockController';
+import { InMemoryWorkspaceProvider } from '@apicircle/core/providers';
+import { SingleWorkspaceAdapter } from '@apicircle/core/providers';
+import { InProcessMockController } from '@apicircle/core/providers';
 import { generateCodeTool } from './codegen';
 
 const T0 = '2026-04-27T00:00:00.000Z';

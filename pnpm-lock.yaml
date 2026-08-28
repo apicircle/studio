@@ -381,6 +381,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@apicircle/mock-server-core':
+        specifier: workspace:*
+        version: link:../mock-server-core
       '@apicircle/shared':
         specifier: workspace:*
         version: link:../shared

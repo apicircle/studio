@@ -1,5 +1,5 @@
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
-import type { WorkspacePatch, WorkspaceState } from '@apicircle/core';
+import type { WorkspacePatch, WorkspaceState } from '../workspace/patches';
 
 // =============================================================================
 // WorkspaceProvider — pluggable backend that lets the same MCP tool handlers

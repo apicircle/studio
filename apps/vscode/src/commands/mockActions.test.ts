@@ -20,7 +20,7 @@ import {
   openMockInBrowserCommand,
 } from './mockActions';
 
-vi.mock('@apicircle/mcp-server', () => ({
+vi.mock('@apicircle/core/providers', () => ({
   InProcessMockController: class {
     started = new Map<string, { port: number; pid: number; startedAt: string }>();
     async start(server: { id: string }, _opts: { port?: number }) {

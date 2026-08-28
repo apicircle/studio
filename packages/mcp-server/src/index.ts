@@ -1,9 +1,9 @@
 import { McpHost } from './host/McpHost';
 import { TOOL_REGISTRY } from './tools/registry';
-import type { WorkspaceProvider } from './providers/WorkspaceProvider';
-import type { MockController } from './providers/MockController';
+import type { WorkspaceProvider } from '@apicircle/core/providers';
+import type { MockController } from '@apicircle/core/providers';
 import type { AnyToolDef } from './tools/types';
-import { SingleWorkspaceAdapter, type Workspaces } from './providers/Workspaces';
+import { SingleWorkspaceAdapter, type Workspaces } from '@apicircle/core/providers';
 
 // Public API for `@apicircle/mcp-server`.
 //
@@ -24,19 +24,19 @@ export type {
   ToolDef,
   ToolHandlerContext,
 } from './tools/types';
-export type { WorkspaceProvider } from './providers/WorkspaceProvider';
-export type { MockController, StartMockResult } from './providers/MockController';
+export type { WorkspaceProvider } from '@apicircle/core/providers';
+export type { MockController, StartMockResult } from '@apicircle/core/providers';
 export {
   SingleWorkspaceAdapter,
   WorkspaceNotFoundError,
   type WorkspaceSummary,
   type Workspaces,
-} from './providers/Workspaces';
-export { InMemoryWorkspaceProvider } from './providers/InMemoryWorkspaceProvider';
-export { FileBackedWorkspaceProvider } from './providers/FileBackedWorkspaceProvider';
-export { GitBackedWorkspaceProvider } from './providers/GitBackedWorkspaceProvider';
-export { MultiWorkspaceProvider } from './providers/MultiWorkspaceProvider';
-export { InProcessMockController } from './providers/InProcessMockController';
+} from '@apicircle/core/providers';
+export { InMemoryWorkspaceProvider } from '@apicircle/core/providers';
+export { FileBackedWorkspaceProvider } from '@apicircle/core/providers';
+export { GitBackedWorkspaceProvider } from '@apicircle/core/providers';
+export { MultiWorkspaceProvider } from '@apicircle/core/providers';
+export { InProcessMockController } from '@apicircle/core/providers';
 
 export { AI_CLIENTS, buildSnippetVariants, resolveAiClientConfigPath } from './config/snippets';
 export type { AiClient, ConfigSnippetVariants, ConfigPathEnv } from './config/snippets';

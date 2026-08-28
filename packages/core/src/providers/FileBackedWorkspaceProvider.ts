@@ -1,7 +1,7 @@
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
-import type { WorkspacePatch, WorkspaceState } from '@apicircle/core';
-import { applyMutation } from '@apicircle/core';
-import { loadFromFile, saveToFile, withWorkspace } from '@apicircle/core/workspace/file-backed';
+import type { WorkspacePatch, WorkspaceState } from '../workspace/patches';
+import { applyMutation } from '../workspace/applyMutation';
+import { loadFromFile, saveToFile, withWorkspace } from '../workspace/fileBackedWorkspace';
 import type { WorkspaceProvider } from './WorkspaceProvider';
 
 /**

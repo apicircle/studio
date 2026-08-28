@@ -5,7 +5,7 @@ import { applyMutation, type WorkspacePatch, type WorkspaceState } from '@apicir
 import { liftLegacyExecutionPlans } from '@apicircle/core/workspace/file-backed';
 import type { WorkspaceSynced, WorkspaceLocal } from '@apicircle/shared';
 import { FONT_SIZE_PERCENT_DEFAULT } from '@apicircle/shared';
-import type { WorkspaceProvider } from '@apicircle/mcp-server';
+import type { WorkspaceProvider } from '@apicircle/core/providers';
 
 // =============================================================================
 // GitWorkspaceProvider — VS Code-specific WorkspaceProvider implementation.

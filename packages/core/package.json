@@ -48,7 +48,8 @@
     ".": "./src/index.ts",
     "./workspace/file-backed": "./src/workspace/fileBackedWorkspace.ts",
     "./workspace/registry": "./src/workspace/workspaceRegistry.ts",
-    "./test/mock-idp": "./src/auth/oauth2/__fixtures__/mockIdp.ts"
+    "./test/mock-idp": "./src/auth/oauth2/__fixtures__/mockIdp.ts",
+    "./providers": "./src/providers/index.ts"
   },
   "files": [
     "dist"
@@ -97,6 +98,16 @@
           "types": "./dist/test/mock-idp.d.cts",
           "default": "./dist/test/mock-idp.cjs"
         }
+      },
+      "./providers": {
+        "import": {
+          "types": "./dist/providers.d.ts",
+          "default": "./dist/providers.js"
+        },
+        "require": {
+          "types": "./dist/providers.d.cts",
+          "default": "./dist/providers.cjs"
+        }
       }
     }
   },
@@ -107,6 +118,7 @@
     "clean": "rm -rf dist node_modules"
   },
   "dependencies": {
+    "@apicircle/mock-server-core": "workspace:*",
     "@apicircle/shared": "workspace:*",
     "proper-lockfile": "^4.1.2"
   },

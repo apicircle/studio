@@ -5,9 +5,9 @@ import * as path from 'node:path';
 import type { WorkspaceSynced } from '@apicircle/shared';
 import { workspaceListTool } from '../tools/workspaceList';
 import { workspaceReadTool } from '../tools/crud';
-import { FileBackedWorkspaceProvider } from '../providers/FileBackedWorkspaceProvider';
-import { SingleWorkspaceAdapter } from '../providers/Workspaces';
-import { InProcessMockController } from '../providers/InProcessMockController';
+import { FileBackedWorkspaceProvider } from '@apicircle/core/providers';
+import { SingleWorkspaceAdapter } from '@apicircle/core/providers';
+import { InProcessMockController } from '@apicircle/core/providers';
 import { saveToFile } from '@apicircle/core/workspace/file-backed';
 import type { WorkspaceState } from '@apicircle/core';
 

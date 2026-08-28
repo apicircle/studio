@@ -1,5 +1,5 @@
-import { InProcessMockController } from '@apicircle/mcp-server';
-import type { MockController, StartMockResult } from '@apicircle/mcp-server';
+import { InProcessMockController } from '@apicircle/core/providers';
+import type { MockController, StartMockResult } from '@apicircle/core/providers';
 import type { MockServer, MockRuntimeEntry } from '@apicircle/shared';
 import type { WorkspaceSurface } from './vscodeBridge';
 

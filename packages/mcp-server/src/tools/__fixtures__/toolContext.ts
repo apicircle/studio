@@ -1,6 +1,6 @@
-import { InMemoryWorkspaceProvider } from '../../providers/InMemoryWorkspaceProvider';
-import { InProcessMockController } from '../../providers/InProcessMockController';
-import { SingleWorkspaceAdapter } from '../../providers/Workspaces';
+import { InMemoryWorkspaceProvider } from '@apicircle/core/providers';
+import { InProcessMockController } from '@apicircle/core/providers';
+import { SingleWorkspaceAdapter } from '@apicircle/core/providers';
 import type { ToolHandlerContext } from '../types';
 import type { WorkspaceState } from '@apicircle/core';
 

@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { applyMutation, initSecretCrypto } from '@apicircle/core';
-import { FileBackedWorkspaceProvider } from '@apicircle/mcp-server';
+import { FileBackedWorkspaceProvider } from '@apicircle/core/providers';
 import type { WorkspaceSynced, WorkspaceLocal, SecretCryptoMeta } from '@apicircle/shared';
 import { GitWorkspaceProvider } from '../../src/host/gitWorkspaceProvider';
 

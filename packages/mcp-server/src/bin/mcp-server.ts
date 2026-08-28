@@ -55,17 +55,13 @@ async function main(): Promise<void> {
 
   const [
     { createMcpServer },
-    { FileBackedWorkspaceProvider },
-    { MultiWorkspaceProvider },
-    { InProcessMockController },
-    { SingleWorkspaceAdapter },
-  ] = await Promise.all([
-    import('../index'),
-    import('../providers/FileBackedWorkspaceProvider'),
-    import('../providers/MultiWorkspaceProvider'),
-    import('../providers/InProcessMockController'),
-    import('../providers/Workspaces'),
-  ]);
+    {
+      FileBackedWorkspaceProvider,
+      MultiWorkspaceProvider,
+      InProcessMockController,
+      SingleWorkspaceAdapter,
+    },
+  ] = await Promise.all([import('../index'), import('@apicircle/core/providers')]);
 
   const dir = getWorkspaceDir();
 

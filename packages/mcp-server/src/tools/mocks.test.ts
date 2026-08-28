@@ -5,9 +5,9 @@ import type {
   WorkspaceLocal,
   WorkspaceSynced,
 } from '@apicircle/shared';
-import { InMemoryWorkspaceProvider } from '../providers/InMemoryWorkspaceProvider';
-import { SingleWorkspaceAdapter } from '../providers/Workspaces';
-import type { MockController, StartMockResult } from '../providers/MockController';
+import { InMemoryWorkspaceProvider } from '@apicircle/core/providers';
+import { SingleWorkspaceAdapter } from '@apicircle/core/providers';
+import type { MockController, StartMockResult } from '@apicircle/core/providers';
 import {
   mockCreateFromInsomniaTool,
   mockCreateFromOpenApiTool,

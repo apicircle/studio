@@ -1,10 +1,7 @@
 import type { Command } from 'commander';
 import kleur from 'kleur';
-import {
-  createMcpServer,
-  FileBackedWorkspaceProvider,
-  InProcessMockController,
-} from '@apicircle/mcp-server';
+import { createMcpServer } from '@apicircle/mcp-server';
+import { FileBackedWorkspaceProvider, InProcessMockController } from '@apicircle/core/providers';
 import { ensureWorkspace } from '../util/loadWorkspace';
 import { resolveWorkspace, WorkspaceResolutionError } from '../util/resolveWorkspace';
 

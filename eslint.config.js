@@ -110,10 +110,6 @@ export default tseslint.config(
   // would force us to wrap every field access in a runtime guard or cast
   // chain — Zod already validates at the entry point of each MCP tool,
   // and the parsers each have warnings for the malformed cases.
-  //
-  // Provider implementations (in-memory / file-backed / in-process) match
-  // an async interface even when their bodies are synchronous, so
-  // `require-await` would force a contortion that adds no value.
   {
     files: [
       'packages/mcp-server/src/**/*.ts',
@@ -129,6 +125,17 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-argument': 'off',
       '@typescript-eslint/no-unsafe-call': 'off',
       '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/require-await': 'off',
+    },
+  },
+  // Provider implementations (in-memory / file-backed / git- and file-backed,
+  // in-process mock controller) satisfy an async interface even where the body
+  // is synchronous, so `require-await` would force a contortion that adds no
+  // value. They used to sit under packages/mcp-server; the exemption followed
+  // them to @apicircle/core/providers rather than being widened to all of core.
+  {
+    files: ['packages/core/src/providers/**/*.ts'],
+    rules: {
       '@typescript-eslint/require-await': 'off',
     },
   },
