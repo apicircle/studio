@@ -1852,7 +1852,7 @@ type WorkspaceStore = {
   tagReleaseVersion: (args: {
     version: string;
     notes?: string;
-    createGitHubRelease?: boolean;
+    createHostRelease?: boolean;
     override?: boolean;
   }) => Promise<{ tagRef: string; sha: string; releaseUrl?: string }>;
 
@@ -5895,7 +5895,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       sha: targetSha,
     };
 
-    if (args.createGitHubRelease) {
+    if (args.createHostRelease) {
       const parsed = parseSemver(trimmedVersion);
       const release = await client.createRelease(token, repo.owner, repo.name, {
         tagName,

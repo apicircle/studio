@@ -152,7 +152,7 @@ describe('tagReleaseVersion', () => {
     expect(deleteCall!.url).toContain('git/refs/tags/v1.0.0');
   });
 
-  it('createGitHubRelease=true also POSTs the release', async () => {
+  it('createHostRelease=true also POSTs the release', async () => {
     await connectViaSession([]);
     const { fn, calls } = queuedFetch([
       { body: { ref: 'refs/heads/main', object: { sha: 'mainHead123' } } },
@@ -170,7 +170,7 @@ describe('tagReleaseVersion', () => {
     const result = await useWorkspaceStore.getState().tagReleaseVersion({
       version: '1.0.0',
       notes: 'first cut',
-      createGitHubRelease: true,
+      createHostRelease: true,
     });
     expect(result.releaseUrl).toBe('https://github.com/me/api/releases/tag/v1.0.0');
     const releaseCall = calls.find((c) => c.url.endsWith('/releases'));

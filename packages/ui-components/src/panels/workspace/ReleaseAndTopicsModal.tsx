@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Hash, Tag, X } from 'lucide-react';
 import { Modal } from '../../primitives/Modal';
+import { GIT_HOST_LABELS } from '@apicircle/shared';
+import { supportsGitMethod } from '@apicircle/git';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 
 /**
  * "Release & topics" modal — the dedicated path for cutting a Git tag
- * (and optionally a GitHub Release) on the connected repo's base branch
+ * (and optionally a host Release) on the connected repo's base branch
  * after the corresponding ledger entry has been merged via PR. Decoupled
  * from the Publish modal: publishing only writes the ledger to the
  * working branch; tagging always targets `main`'s HEAD so tags can
@@ -33,6 +35,19 @@ export function ReleaseAndTopicsModal({ open, onClose }: ReleaseAndTopicsModalPr
   const loadLatestUntaggedRelease = useWorkspaceStore((s) => s.loadLatestUntaggedRelease);
   const connectedRepo = useWorkspaceStore((s) => s.local?.connectedRepo);
 
+  // What THIS host can actually do. Every host can tag; only some have a
+  // release object to hang off the tag, and only some can write topics. Asking
+  // before rendering is the whole point — the alternative is offering a control
+  // and letting the provider reject the call after the user commits to it.
+  //
+  // `hostKind` is optional on `ConnectedRepo` (it was added when the second host
+  // was), so a repo connected before it existed reads as GitHub — which is what
+  // it was.
+  const host = connectedRepo?.hostKind ?? 'github';
+  const hostLabel = GIT_HOST_LABELS[host];
+  const canCreateRelease = supportsGitMethod(host, 'createRelease');
+  const canWriteTopics = supportsGitMethod(host, 'setRepoTopics');
+
   // ─── Section 1: tag-release state ───────────────────────────────────
   const [loadingTag, setLoadingTag] = useState(false);
   const [tagLoadError, setTagLoadError] = useState<string | null>(null);
@@ -41,7 +56,7 @@ export function ReleaseAndTopicsModal({ open, onClose }: ReleaseAndTopicsModalPr
     notes: string;
     existingTagSha: string | null;
   } | null>(null);
-  const [createGitHubRelease, setCreateGitHubRelease] = useState(false);
+  const [createHostRelease, setCreateHostRelease] = useState(false);
   const [notes, setNotes] = useState('');
   const [tagSubmitting, setTagSubmitting] = useState(false);
   const [tagError, setTagError] = useState<string | null>(null);
@@ -72,7 +87,7 @@ export function ReleaseAndTopicsModal({ open, onClose }: ReleaseAndTopicsModalPr
     setTagError(null);
     setTagSuccess(null);
     setNotes('');
-    setCreateGitHubRelease(false);
+    setCreateHostRelease(false);
     setLoadingTag(true);
     loadLatestUntaggedRelease()
       .then((res) => {
@@ -152,7 +167,7 @@ export function ReleaseAndTopicsModal({ open, onClose }: ReleaseAndTopicsModalPr
       const res = await tagReleaseVersion({
         version: latest.version,
         notes,
-        createGitHubRelease,
+        createHostRelease,
       });
       setTagSuccess(res);
     } catch (err) {
@@ -213,22 +228,31 @@ export function ReleaseAndTopicsModal({ open, onClose }: ReleaseAndTopicsModalPr
                 </code>
               </div>
 
-              <label className="flex items-start gap-2 text-[0.6875rem] text-text-muted">
-                <input
-                  type="checkbox"
-                  checked={createGitHubRelease}
-                  onChange={(e) => setCreateGitHubRelease(e.target.checked)}
-                  aria-label="Also create GitHub Release"
-                  style={{ accentColor: 'rgb(var(--accent))' }}
-                  className="mt-0.5"
-                />
-                <span>
-                  Also create a GitHub Release pointing at the tag (uses the notes below as the
-                  release body).
-                </span>
-              </label>
+              {canCreateRelease ? (
+                <label className="flex items-start gap-2 text-[0.6875rem] text-text-muted">
+                  <input
+                    type="checkbox"
+                    checked={createHostRelease}
+                    onChange={(e) => setCreateHostRelease(e.target.checked)}
+                    aria-label={`Also create ${hostLabel} Release`}
+                    style={{ accentColor: 'rgb(var(--accent))' }}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    Also create a {hostLabel} Release pointing at the tag (uses the notes below as
+                    the release body).
+                  </span>
+                </label>
+              ) : (
+                // Stated, not hidden. The tag still gets created, and a user who
+                // knows GitHub would otherwise wonder whether tagging failed too.
+                <p className="text-[0.6875rem] text-text-dim">
+                  {hostLabel} has no release object to attach to a tag, so the tag is all that is
+                  created here.
+                </p>
+              )}
 
-              {createGitHubRelease && (
+              {canCreateRelease && createHostRelease && (
                 <div>
                   <label
                     htmlFor="release-tag-notes"
@@ -298,8 +322,17 @@ export function ReleaseAndTopicsModal({ open, onClose }: ReleaseAndTopicsModalPr
           <p className="mb-2 text-[0.6875rem] text-text-dim">
             Topics drive marketplace discoverability for public API Circle workspaces. The{' '}
             <code>apicircle</code> topic is locked since the marketplace search depends on it.
-            GitHub caps topics at 20.
+            {canWriteTopics ? ` ${hostLabel} caps topics at 20.` : ''}
           </p>
+
+          {!canWriteTopics && (
+            // Read-only rather than absent: the list still LOADS on every host,
+            // and "this repo has no topics" is a real answer worth showing. Only
+            // the editing controls come off.
+            <p className="mb-2 text-[0.6875rem] text-text-dim">
+              {hostLabel} has no API for setting topics, so this list is read-only.
+            </p>
+          )}
 
           {loadingTopics ? (
             <p className="text-[0.6875rem] text-text-muted">Loading topics…</p>
@@ -314,7 +347,9 @@ export function ReleaseAndTopicsModal({ open, onClose }: ReleaseAndTopicsModalPr
                 className="flex flex-wrap gap-1.5 rounded-sm border border-border bg-card p-2 min-h-[40px]"
               >
                 {topics.length === 0 && (
-                  <span className="text-[0.6875rem] text-text-dim">No topics set yet.</span>
+                  <span className="text-[0.6875rem] text-text-dim">
+                    {canWriteTopics ? 'No topics set yet.' : 'No topics.'}
+                  </span>
                 )}
                 {topics.map((topic) => {
                   const locked = topic === 'apicircle';
@@ -328,7 +363,7 @@ export function ReleaseAndTopicsModal({ open, onClose }: ReleaseAndTopicsModalPr
                       }
                     >
                       {topic}
-                      {!locked && (
+                      {!locked && canWriteTopics && (
                         <button
                           type="button"
                           onClick={() => onRemoveTopic(topic)}
@@ -343,31 +378,33 @@ export function ReleaseAndTopicsModal({ open, onClose }: ReleaseAndTopicsModalPr
                 })}
               </div>
 
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={topicDraft}
-                  onChange={(e) => setTopicDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      onAddTopic();
-                    }
-                  }}
-                  placeholder="Add topic (e.g. payments, graphql)"
-                  aria-label="New topic"
-                  className="h-7 flex-1 rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
-                  disabled={topics.length >= 20}
-                />
-                <button
-                  type="button"
-                  onClick={onAddTopic}
-                  disabled={!topicDraft.trim() || topics.length >= 20}
-                  className="inline-flex h-7 items-center rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary disabled:opacity-50"
-                >
-                  Add
-                </button>
-              </div>
+              {canWriteTopics && (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={topicDraft}
+                    onChange={(e) => setTopicDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        onAddTopic();
+                      }
+                    }}
+                    placeholder="Add topic (e.g. payments, graphql)"
+                    aria-label="New topic"
+                    className="h-7 flex-1 rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+                    disabled={topics.length >= 20}
+                  />
+                  <button
+                    type="button"
+                    onClick={onAddTopic}
+                    disabled={!topicDraft.trim() || topics.length >= 20}
+                    className="inline-flex h-7 items-center rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary disabled:opacity-50"
+                  >
+                    Add
+                  </button>
+                </div>
+              )}
 
               {topicsError && (
                 <p className="text-[0.6875rem] text-danger" role="alert">
@@ -378,16 +415,18 @@ export function ReleaseAndTopicsModal({ open, onClose }: ReleaseAndTopicsModalPr
                 <p className="text-[0.6875rem] text-success">Topics saved.</p>
               )}
 
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => void onSaveTopics()}
-                  disabled={!topicsDirty || topicsSubmitting}
-                  className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
-                >
-                  {topicsSubmitting ? 'Saving…' : 'Save topics'}
-                </button>
-              </div>
+              {canWriteTopics && (
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => void onSaveTopics()}
+                    disabled={!topicsDirty || topicsSubmitting}
+                    className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
+                  >
+                    {topicsSubmitting ? 'Saving…' : 'Save topics'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </section>

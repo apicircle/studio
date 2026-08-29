@@ -25,6 +25,35 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Release & topics now asks the host what it can do before offering a control.**
+  The dialog offered a "GitHub Release" checkbox and a topics editor on every
+  connected host. Two of the four cannot serve either call: `createRelease` and
+  `setRepoTopics` reject on Bitbucket Cloud and Azure DevOps, so the user was
+  invited to click a control that could only fail, and the failure arrived as a
+  raw provider error after they had committed to the action.
+
+  `supportsGitMethod(host, method)` (new, from `@apicircle/git`) answers the
+  question ahead of the call, from a per-host table of what each host's API has
+  no equivalent for. The dialog now offers the Release checkbox only where a
+  Release exists, and offers topic _editing_ only where topics can be written —
+  saying which host and why in both cases rather than silently hiding controls.
+
+  Deliberately narrow: tagging is supported on all four hosts and keeps being
+  offered everywhere, and topics stay _readable_ everywhere (Bitbucket answers
+  with an empty list, which is a real answer). Hiding the dialog, or the whole
+  topics section, would have removed working features to fix a broken one.
+
+  GitHub's rendered copy is byte-identical — the labels are templated on the
+  host name, and `GIT_HOST_LABELS.github` is `GitHub`.
+
+### Changed
+
+- `tagReleaseVersion`'s `createGitHubRelease` argument is now `createHostRelease`.
+  GitLab has releases too, so the old name read as a GitHub-only feature to
+  anyone deciding whether to gate on it.
+
 ### Added
 
 - **Connect a repo on GitLab, Bitbucket Cloud or Azure DevOps

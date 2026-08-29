@@ -284,12 +284,14 @@ A published version moves through states:
 
 ## Tag & Topics
 
-The Releases & Topics dialog cuts a Git tag for the latest untagged version (optionally a GitHub Release with notes), and edits the repo's topics:
+The Releases & Topics dialog cuts a Git tag for the latest untagged version (optionally a Release with notes, on hosts that have them), and edits the repo's topics:
 
     Tag:     v1.4.0  ->  refs/tags/v1.4.0 @ <default-branch HEAD sha>
     Topics:  apicircle (locked), payments, rest, billing
 
 Tags always point at the default branch's HEAD, never at unmerged working-branch commits. The \`apicircle\` topic is locked because it makes the repo discoverable in the marketplace.
+
+**What your host supports.** Tagging works on all four hosts. A Release object that hangs off the tag exists on GitHub and GitLab only — on Bitbucket Cloud and Azure DevOps the dialog says so and cuts the tag alone (an Azure "Release" is a deployment pipeline, not a tag annotation). Topics are readable everywhere but writable on GitHub and GitLab only; Bitbucket Cloud repos have no topics at all, so the list shows read-only rather than offering an edit that cannot be saved.
 
 ## How consumers see it
 
