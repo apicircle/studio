@@ -43,3 +43,4 @@ export type {
   GitProviderMethod,
   GitProviderOptions,
 } from './provider';
+export { supportsGitMethod, unsupportedGitMethods } from './capabilities';
