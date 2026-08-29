@@ -984,6 +984,20 @@ function ScopeGuidance({ host }: { host: GitHostKind }) {
           when you connect — a token missing one fails at the first write instead.
         </p>
       )}
+      {host === 'bitbucket' && (
+        // Bitbucket is the only host with two credential shapes that need
+        // DIFFERENT auth schemes. An app password authenticates as
+        // `username:secret` over Basic; an access token is a Bearer value. The
+        // client picks the scheme from the shape, so the one thing the user must
+        // get right is pasting the username with an app password — without it,
+        // the credential this page links to cannot authenticate at all.
+        <p className="mt-2">
+          Using an <strong className="text-text-primary">app password</strong>? Paste it as{' '}
+          <code className="text-text-primary">username:app_password</code> — Bitbucket authenticates
+          app passwords with your username. A workspace, project or repository{' '}
+          <strong className="text-text-primary">access token</strong> is pasted on its own.
+        </p>
+      )}
       <a
         href={TOKEN_PAGE_BY_HOST[host]}
         target="_blank"

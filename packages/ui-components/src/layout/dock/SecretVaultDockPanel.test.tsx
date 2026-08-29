@@ -6,6 +6,7 @@ import { __setWebBuildForTests } from './webBuild';
 import { __setGitHubDeviceFlowAvailableForTests } from './githubDeviceFlow';
 import { renderWithStore } from '../../../test/renderWithStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { registerGitProvider, resetGitProviderRegistry } from '@apicircle/git';
 
 describe('SecretVaultDockPanel', () => {
   it('renders Vault tab content by default', async () => {
@@ -31,6 +32,40 @@ describe('SecretVaultDockPanel', () => {
     expect(guidance!.textContent).toMatch(/pull_request/);
     // Connect form is visible when no workspace session is active.
     expect(screen.getByLabelText('GitHub PAT')).toBeInTheDocument();
+  });
+
+  it('tells a Bitbucket user how to paste an app password', async () => {
+    // Bitbucket is the only host with two credential shapes needing different
+    // auth schemes: an app password authenticates as `username:secret` over
+    // Basic, an access token as a Bearer value. The client picks the scheme from
+    // the shape, so pasting an app password WITHOUT the username is the one
+    // mistake that cannot be recovered from — and this page links straight to
+    // the app-password creation screen.
+    registerGitProvider('bitbucket', () => ({}) as never);
+    try {
+      await renderWithStore(<SecretVaultDockPanel />);
+      await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+      await userEvent.selectOptions(screen.getByLabelText('Session Git host'), 'bitbucket');
+
+      expect(screen.getByText(/username:app_password/)).toBeInTheDocument();
+    } finally {
+      resetGitProviderRegistry();
+    }
+  });
+
+  it('shows no credential-format note on a host with one credential shape', async () => {
+    // GitLab issues PATs only. A note about pasting a username there would be
+    // advice for a credential the host does not have.
+    registerGitProvider('gitlab', () => ({}) as never);
+    try {
+      await renderWithStore(<SecretVaultDockPanel />);
+      await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+      await userEvent.selectOptions(screen.getByLabelText('Session Git host'), 'gitlab');
+
+      expect(screen.queryByText(/username:app_password/)).not.toBeInTheDocument();
+    } finally {
+      resetGitProviderRegistry();
+    }
   });
 
   describe('Vault tab — secret CRUD', () => {
