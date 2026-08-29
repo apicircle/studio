@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerGitProvider, resetGitProviderRegistry, type GitProvider } from '@apicircle/git';
 import { GIT_HOST_LABELS, type GitHostKind } from '@apicircle/shared';
 import { ReleaseAndTopicsModal } from './ReleaseAndTopicsModal';
+import { WorkspacePanel } from './WorkspacePanel';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 
 // The modal offered a Release checkbox and a topics editor on every host. Two of
@@ -227,6 +228,25 @@ describe('Release & topics — per-host capability gate', () => {
       expect(screen.getByText(/Tag a release on/)).toBeInTheDocument();
       unmount();
     }
+  });
+
+  it.each([
+    ['github' as const, 'Edit topics'],
+    ['gitlab' as const, 'Edit topics'],
+    ['bitbucket' as const, 'View topics'],
+    ['azure-devops' as const, 'View topics'],
+  ])('%s: the ENTRY POINT promises only what the dialog will deliver', async (host, label) => {
+    // Gating the dialog alone is not enough. The button that opens it is the
+    // promise a user reads first — "Edit topics" on a host that cannot write
+    // them is an invitation the dialog then has to withdraw.
+    await bootstrap(host);
+    render(<WorkspacePanel />);
+    expect(await screen.findByRole('button', { name: label })).toBeInTheDocument();
+    const other = label === 'Edit topics' ? 'View topics' : 'Edit topics';
+    expect(screen.queryByRole('button', { name: other })).not.toBeInTheDocument();
+
+    // Tagging is offered on every host, so this button never changes.
+    expect(screen.getByRole('button', { name: 'Tag release' })).toBeInTheDocument();
   });
 
   it('treats a repo connected before hostKind existed as GitHub', async () => {

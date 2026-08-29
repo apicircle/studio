@@ -23,12 +23,13 @@ import {
   X,
 } from 'lucide-react';
 import {
-  type GitHostKind,
-  type GitHubBranch,
-  type GitHubRepo,
   GIT_HOST_LABELS,
   GitHubError,
   MissingScopeError,
+  supportsGitMethod,
+  type GitHostKind,
+  type GitHubBranch,
+  type GitHubRepo,
 } from '@apicircle/git';
 import {
   type DiffEntry,
@@ -1056,6 +1057,14 @@ function ConnectRepoForm() {
 
 function RepoCard() {
   const repo = useWorkspaceStore((s) => s.local!.connectedRepo!);
+  // The ENTRY POINTS have to agree with what the dialog behind them will offer.
+  // Gating only the dialog's contents left "Edit topics" inviting an edit that a
+  // Bitbucket or Azure DevOps user cannot make, and a tooltip promising a
+  // "GitHub Release" on hosts that have no release object at all.
+  const repoHost = repo.hostKind ?? 'github';
+  const repoHostLabel = GIT_HOST_LABELS[repoHost];
+  const canRelease = supportsGitMethod(repoHost, 'createRelease');
+  const canEditTopics = supportsGitMethod(repoHost, 'setRepoTopics');
   const branch = useWorkspaceStore((s) => s.local?.workingBranch ?? null);
   const disconnectRepo = useWorkspaceStore((s) => s.disconnectRepo);
   const [releaseAndTopicsOpen, setReleaseAndTopicsOpen] = useState(false);
@@ -1115,7 +1124,11 @@ function RepoCard() {
         <button
           type="button"
           onClick={() => setReleaseAndTopicsOpen(true)}
-          title={`Create a Git tag for the latest published version, pointing at ${repo.defaultBranch}'s HEAD. Optionally creates a matching GitHub Release.`}
+          title={
+            canRelease
+              ? `Create a Git tag for the latest published version, pointing at ${repo.defaultBranch}'s HEAD. Optionally creates a matching ${repoHostLabel} Release.`
+              : `Create a Git tag for the latest published version, pointing at ${repo.defaultBranch}'s HEAD. ${repoHostLabel} has no release object to attach to it.`
+          }
           className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20"
         >
           <Tag size={11} aria-hidden="true" />
@@ -1124,11 +1137,15 @@ function RepoCard() {
         <button
           type="button"
           onClick={() => setReleaseAndTopicsOpen(true)}
-          title="Add or remove GitHub topics on this repo. Topics drive marketplace discoverability for public workspaces."
+          title={
+            canEditTopics
+              ? `Add or remove ${repoHostLabel} topics on this repo. Topics drive marketplace discoverability for public workspaces.`
+              : `${repoHostLabel} has no API for setting topics, so this list is read-only.`
+          }
           className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-accent hover:text-accent"
         >
           <Hash size={11} aria-hidden="true" />
-          Edit topics
+          {canEditTopics ? 'Edit topics' : 'View topics'}
         </button>
         <button
           type="button"
