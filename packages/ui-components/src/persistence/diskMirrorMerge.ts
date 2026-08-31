@@ -4,7 +4,7 @@ import type { Folder, Request as ApiRequest, WorkspaceSynced } from '@apicircle/
 // One-time IDB ↔ disk merge.
 //
 // Before this mirror landed, the desktop app's workspace lived in IndexedDB
-// while `apicircle import` / `apicircle-mcp` wrote a separate
+// while Lens-owned headless automation wrote a separate
 // `workspace.json` on disk. Users who used both surfaces have
 // content in BOTH stores under DIFFERENT workspaceIds (the CLI seeded a
 // fresh workspace via `ensureWorkspace`, the desktop app has its own).

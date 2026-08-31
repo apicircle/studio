@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>The TypeScript contract for everything API Circle Studio reads, writes, and ships.</strong><br />
-  One package, one source of truth — types, IDs, validators, crypto, and the MCP tool catalog.
+  One package, one source of truth — types, IDs, validators, crypto, and legacy MCP envelope names kept for compatibility.
 </p>
 
 <p align="center">
@@ -21,14 +21,16 @@
 ## Why this package exists
 
 Every other `@apicircle/*` package — the request engine, the mock server, the
-MCP host, the CLI, the desktop app — agrees on **one workspace schema**.
+desktop app, web app, VS Code extension, and Lens-owned CLI/MCP automation — agrees on **one workspace schema**.
 That schema lives here.
 
 If you are building a third-party tool that reads, writes, syncs, lints, or
 visualises an API Circle workspace, this is the only dependency you need to
 stay byte-for-byte compatible with Studio.
 
-> **Use this directly when** you are writing a custom MCP client, a workspace
+> **MCP status:** Studio no longer ships an MCP server. These MCP names are retained as legacy shared API so existing consumers do not break. Use API Circle Lens for supported MCP clients.
+>
+> **Use this directly when** you are writing a workspace
 > linter, a Git pre-commit hook, a migration script, or any other tool that
 > needs to understand the Studio workspace format without pulling in the
 > full execution engine.
@@ -52,7 +54,7 @@ Ships dual ESM + CJS builds and full `.d.ts` types. Zero runtime dependencies.
 | **`generateId()`**   | The only sanctioned way to mint entity IDs — collision-resistant, URL-safe, length-bounded.                                                                                           |
 | **Validators**       | Lightweight shape checks for workspace documents and imported specs — handy when you're loading untrusted JSON.                                                                       |
 | **Crypto helpers**   | AES-GCM via WebCrypto for at-rest secret material. Browser-safe, no Node-only modules.                                                                                                |
-| **MCP catalog**      | `MCP_TOOL_NAMES` — the canonical list of every tool the MCP server exposes, plus the `McpToolName` union type. Stay in lockstep with the server, by version.                          |
+| **Legacy MCP names** | `MCP_TOOL_NAMES` and `McpToolName` remain for backward-compatible shared API. The active MCP server moved to API Circle Lens.                                                         |
 | **Envelope types**   | Discriminated unions for MCP responses (`multiple-workspaces`, error envelopes, etc.) so your client gets exhaustive narrowing for free.                                              |
 
 ## A taste of it
@@ -99,11 +101,10 @@ function dispatch(name: McpToolName) {
 @apicircle/shared              ◀── you are here (types + utilities)
 ├── @apicircle/core            (request engine, auth, imports, applyMutation)
 ├── @apicircle/mock-server-core (Hono mock-server runtime)
-├── @apicircle/mcp-server       (MCP stdio host + tool catalog)
-└── @apicircle/cli              (apicircle binary)
+└── API Circle Lens owns the current MCP server and headless CLI (`apicircle-lens mcp`)
 ```
 
-Most users will install `@apicircle/cli` or `@apicircle/mcp-server` and never
+Studio no longer publishes `@apicircle/cli` or `@apicircle/mcp-server`. Use API Circle Lens for current CLI/MCP automation.
 touch this package directly. You only need `@apicircle/shared` when you're
 the one **building** something that talks to a Studio workspace.
 
@@ -112,13 +113,13 @@ the one **building** something that talks to a Studio workspace.
 The workspace schema is the public contract API Circle Studio cares about most.
 Breaking changes are versioned per [semver](https://semver.org); the schema
 is exercised by **1,900+ unit and integration tests** across the wider Studio
-codebase, and every Studio release (desktop, web, CLI, MCP) pins the same
+codebase, and every Studio release (desktop and web) pins the same
 `@apicircle/shared` version.
 
 ## Learn more
 
 - **Studio repo & docs**: <https://github.com/apicircle/studio>
-- **MCP tool reference**: <https://github.com/apicircle/studio/blob/main/docs/mcp-tools-reference.md>
+- **MCP status**: Studio MCP is deprecated; current MCP support lives in API Circle Lens.
 - **Architecture overview**: <https://github.com/apicircle/studio/blob/main/docs/architecture/platform.md>
 
 ## License

@@ -1,6 +1,6 @@
 # API Circle Studio
 
-Git-backed API workspace with mocks, plans, and MCP — natively in VS Code.
+Git-backed API workspace with mocks and plans — natively in VS Code.
 
 Edit your API Circle workspace **inside VS Code**. The same `.apicircle/` workspace directory you commit to Git, edit in the [API Circle Desktop App](https://github.com/apicircle/studio), or open in the [API Circle Web App](https://studio.apicircle.dev) — one repo, three surfaces, byte-identical commits.
 
@@ -12,7 +12,7 @@ VS Code is where the same engineers who use API Circle already live with Git. Ed
 
 ### Workspace & navigation
 
-- **Activity Bar icon** opens the API Circle sidebar with 9 views: Workspace, Editor, Environment, Execution, Mock, History, Snapshots, MCP, and Link Workspaces.
+- **Activity Bar icon** opens the API Circle sidebar with 8 views: Workspace, Editor, Environment, Execution, Mock, History, Snapshots, and Link Workspaces.
 - **Workspace discovery** auto-detects `.apicircle/registry.json` in your open folders and Git-backed `.apicircle/` directories.
 - **Workspace switcher** — switch between discovered workspaces via the sidebar or `API Circle: Switch Workspace`.
 - **`apicircle:` virtual filesystem** — requests, environments, plans, mocks, folders, and responses project as YAML documents in real VS Code text editors. Human-readable tab titles, folder paths in tooltips, identity preserved across renames and moves.
@@ -42,15 +42,12 @@ VS Code is where the same engineers who use API Circle already live with Git. Ed
 
 - **Mock endpoint authoring in YAML** — `*.endpoint.yaml` with field-level `◆` CodeLens editors on method, status, headers, body type, response rules, and multipliers.
 - **Validation rules** — `🛡 Add validation rule` with kind-aware pickers for headers, query params, cookies, and path params.
-- **Request schema editing** on all surfaces (VS Code YAML, Web/Desktop editor, and MCP).
+- **Request schema editing** on the Studio surfaces: VS Code YAML and the Web/Desktop editor.
 - **In-process mock server lifecycle** — start, stop, and manage mocks from the sidebar.
 
-### MCP integration
+### MCP status
 
-- **97-tool MCP catalog** for AI clients — Claude Desktop, Claude Code, Codex, Cursor, Copilot, Windsurf, Zed, Continue, Cline.
-- **One-click Copilot Chat install** — writes `.vscode/mcp.json` idempotently.
-- **Per-client config snippets** — copy or direct-install MCP configuration.
-- **Curated prompts** — 19 starter prompts across 7 categories in the MCP sidebar.
+MCP is deprecated in API Circle Studio. Studio no longer ships, publishes, configures, or documents an active MCP server or MCP CLI. Existing `.apicircle` workspaces remain compatible; open the same repo in API Circle Lens and use `apicircle-lens mcp` for supported AI-client workflows.
 
 ### Secret vault
 

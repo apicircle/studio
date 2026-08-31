@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>An embeddable API engine — execute requests, sign auth, import specs, and mutate workspaces from any JavaScript runtime.</strong><br />
-  The same engine that powers the API Circle Studio desktop app, web app, CLI, and MCP server.
+  The same engine that powers the API Circle Studio desktop app, web app, and VS Code extension. Lens-owned CLI/MCP automation composes this core through the public package boundary.
 </p>
 
 <p align="center">
@@ -138,7 +138,7 @@ const next = applyMutation(state, {
 
 `WorkspacePatch` is a discriminated union over `request.* | folder.* |
 environment.* | assertion.* | mock.* | plan.*`. Adding a new entity in your
-own UI? One union variant + one switch case. The CLI, MCP server, and desktop
+own UI? One union variant + one switch case. The Studio desktop/web surfaces and Lens-owned CLI/MCP automation
 app all flow through this single function — it's the audit log seam.
 
 ## Entry points
@@ -171,7 +171,7 @@ import {
   advisory locking, so concurrent CLI runs don't corrupt each other.
 - **`/workspace/registry`** — many workspaces, one root. `registry.json` at
   the top, `workspaces/<id>/` subdirectories underneath. All surfaces
-  (desktop, CLI, MCP, VS Code) default to `~/.apicircle/`. Use
+  (desktop, web, VS Code, and Lens-owned CLI/MCP automation) default to `~/.apicircle/`. Use
   `resolveApicircleRoot()` to honor the `APICIRCLE_WORKSPACES_ROOT` override
   (CI / tests / relocated stores); `defaultApicircleRoot()` is the raw
   `~/.apicircle/` fallback it builds on.
@@ -188,10 +188,9 @@ import {
 ## Where it fits
 
 ```
-@apicircle/shared              (types + IDs + crypto + MCP catalog)
+@apicircle/shared              (types + IDs + crypto + legacy MCP envelope names)
 └── @apicircle/core            ◀── you are here
-    ├── @apicircle/mcp-server  (wraps core as MCP tools)
-    ├── @apicircle/cli         (wraps core as a CLI binary)
+    ├── API Circle Lens MCP/CLI (current headless automation, outside Studio)
     └── @apicircle/mock-server-core (sister package — mock-server engine)
 ```
 

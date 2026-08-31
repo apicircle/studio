@@ -3,7 +3,7 @@
   "version": "1.3.0",
   "private": true,
   "type": "module",
-  "description": "API Circle Studio - greenfield API workspace with Git-backed sync, local mock servers, and an MCP server for AI clients",
+  "description": "API Circle Studio - greenfield API workspace with Git-backed sync and local mock servers. MCP/CLI automation has moved to API Circle Lens",
   "license": "SEE LICENSE IN LICENSE",
   "scripts": {
     "dev": "turbo dev",
@@ -31,7 +31,6 @@
     "changeset": "changeset",
     "release": "changeset version && pnpm install --lockfile-only",
     "release:publish": "changeset publish",
-    "release:binaries": "node scripts/release/buildBinaries.mjs",
     "release:installers": "node scripts/release/buildDesktopInstallers.mjs",
     "icons": "node scripts/render-icons.mjs",
     "prepare": "husky"

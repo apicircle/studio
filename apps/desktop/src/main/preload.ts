@@ -67,7 +67,7 @@ const bridge = {
   // On-disk multi-workspace mirror. The renderer writes every debounced
   // persistence flush through `writeWorkspace` so each workspace's pair
   // (`workspace.json` + `workspace.local.json`) stays in sync with
-  // IndexedDB — that's the pair `apicircle-mcp` and the CLI read.
+  // IndexedDB — the same files Lens-owned headless automation can read.
   workspaceFile: {
     status: (): Promise<{ workspacesRoot: string }> =>
       ipcRenderer.invoke('apicircle:workspaceFile:status') as Promise<{ workspacesRoot: string }>,

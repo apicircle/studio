@@ -5,9 +5,9 @@
 <h1 align="center">API Circle Studio</h1>
 
 <p align="center">
-  <strong>An API workspace you can <code>git diff</code> — and an AI can drive.</strong><br />
-  A desktop, web, and CLI client where collections live in your repo<br />
-  and a built-in MCP server lets any AI client read, author, and run requests.
+  <strong>An API workspace you can <code>git diff</code>.</strong><br />
+  A desktop, web, and VS Code workspace where collections live in your repo.<br />
+  MCP and headless CLI automation have moved to API Circle Lens.
 </p>
 
 <p align="center">
@@ -26,9 +26,7 @@ rebuilt around two ideas the others miss:
    definitions are plain JSON pushed to your own GitHub repo on a working
    branch. Teams collaborate the way they collaborate on code — branches,
    diffs, pull requests, review.
-2. **Your workspace is an AI tool catalog.** A built-in Model Context Protocol
-   server exposes **97 tools**, so Claude, ChatGPT, Cursor, Copilot, and any
-   other MCP client can read, author, and run requests on your behalf.
+2. **Your workspace stays portable.** Studio writes `.apicircle` workspace files that API Circle Lens can open when you need MCP tools or headless CLI automation.
 
 No cloud account. No vendor lock-in. Your data stays on your machine and in
 your repo.
@@ -43,13 +41,10 @@ your repo.
 - **Collaborate through pull requests.** Auto-create a working branch from
   `main`, push to save, open a PR from inside the app. API collections get the
   same review workflow as the code that calls them.
-- **AI-native, not AI-bolted-on.** The MCP server is a first-class surface, not
-  a plugin. An assistant can scan a codebase, propose a collection, generate
-  runnable client code, or spin up a mock from a spec — all without leaving the
-  chat.
-- **Runs everywhere you do.** Desktop, browser, CLI, and embeddable npm
-  packages — one engine, one workspace format, one mutation API behind all of
-  them.
+- **Automation-ready.** Studio keeps the workspace format clean and Git-backed; API Circle Lens now owns MCP and headless CLI automation on top of the same files.
+- **Runs where you work.** Desktop, browser, VS Code, and embeddable npm
+  packages share one engine and one workspace format. Lens-owned automation
+  composes the same core when you need MCP or CLI workflows.
 - **Comfortable to tune.** Settings ships **60+ themes** (One Dark Pro is
   the default; dark, light, and high-contrast variants for VS Code, GitHub,
   Kanagawa, Everforest, Nightfox, Tokyo Night, Solarized, and more) and **50+
@@ -58,8 +53,9 @@ your repo.
   code editor. Click-open Theme and Font Family pickers, one-second hover
   previews with a pending indicator, keyboard previews, and UI text-size
   scaling round it out.
-- **Built on open standards.** MCP for AI, Git for sync, OpenAPI / Postman /
-  Insomnia / HAR for import. No proprietary formats waiting to trap you.
+- **Built on open standards.** Git for sync, OpenAPI / Postman / Insomnia /
+  HAR for import, and MCP through API Circle Lens. No proprietary formats waiting
+  to trap you.
 
 ## Features
 
@@ -74,23 +70,9 @@ collections and a public marketplace. Individual folders + environments can
 also be exchanged out-of-band as portable `.apicircle.json` exports — see
 **Import what you already have** below.
 
-### AI integration via MCP
+### Lens-compatible MCP and CLI automation
 
-The bundled `@apicircle/mcp-server` speaks the open
-[Model Context Protocol](https://modelcontextprotocol.io) over stdio, so it
-works with **Claude Desktop, Claude Code, ChatGPT, GitHub Copilot, Cursor,
-Continue, Cline, Zed, and Windsurf** — or anything else that talks MCP. The
-97-tool catalog covers request and folder CRUD, environment authoring,
-assertions, execution plans, history, mock-server lifecycle, the release
-ledger (publish / deprecate / withdraw), linked-workspace config (list / pin /
-scope / unlink), codebase scanning, imports, code generation, and
-natural-language authoring.
-
-The desktop app watches `workspace.json` for external writes, so
-anything the MCP server (or the `apicircle` CLI) writes shows up in the
-editor automatically — no manual refresh needed. The desktop's own
-mirror writes are suppressed via a stat-snapshot check, so the loop
-can't trigger itself.
+MCP is deprecated in API Circle Studio. Studio no longer ships, publishes, configures, or documents an active MCP server or MCP CLI. Existing `.apicircle` workspaces remain compatible with API Circle Lens; open the same repo in Lens and use `apicircle-lens mcp` for supported AI-client workflows.
 
 ### Local mock servers
 
@@ -139,7 +121,7 @@ teammates share them; _runtime_ state stays on the local machine.
 | **Desktop app**       | Day-to-day development (Windows / macOS / Linux)                   |
 | **Web app**           | Quick access, zero install                                         |
 | **VS Code extension** | Editing the same `.apicircle/` workspace from your IDE — see below |
-| **CLI**               | CI pipelines, terminals, headless agents                           |
+| **API Circle Lens**   | MCP and headless CLI automation on the same `.apicircle` workspace |
 | **npm packages**      | Embedding the engine in your own tooling                           |
 
 ### VS Code extension (`apps/vscode/`)
@@ -152,19 +134,7 @@ The same workspace document the desktop and web apps drive can be edited
 in place from VS Code — no embedded webview, no separate sync. The
 extension contributes:
 
-- **Nine sidebar TreeViews**: **Workspace** (active workspace details,
-  stats, and Switch Workspace action), Editor (folder/request tree),
-  Environment (with active marker, encrypted-variable mask, hover with
-  mask-warnings - secret-slot binding), Execution Plans, Mock servers,
-  History (recent request + plan runs), **Snapshots** (storage meter +
-  restore/delete inline, capture + cap commands from the title bar),
-  MCP, and **Link Workspaces** — the publish side (the workspace's own release
-  ledger: publish / deprecate / withdraw the versions linked consumers
-  pin to, plus ▶ Tag release on GitHub / Edit repo topics) **and** the
-  consume side (link a private repo or a marketplace result, edit every
-  link field via `<name>.link.yaml`, three-way `previewLinkedUpdate` /
-  `applyLinkedUpdate` review with per-entry resolution, dedicated PAT
-  sessions, required-secret provisioning).
+- **Eight sidebar TreeViews**: Workspace, Editor, Environment, Execution Plans, Mock servers, History, Snapshots, and Link Workspaces. The old MCP view was removed from Studio; use API Circle Lens for MCP setup.
 - **`.req.yaml` / `.env.yaml` / `.run.yaml` virtual documents** under
   the `apicircle:` URI scheme — full Monaco editing with JSON Schema
   validation, completion for the 17 auth types + body types +
@@ -183,30 +153,18 @@ extension contributes:
   `applyMutation` chokepoint, same workspace shape, byte-for-byte
   identical commits. One repo, three surfaces.
 - **Auto-refresh** on external writes — file watchers on both the
-  synced and device-local files so MCP / CLI / hand-edits propagate
+  synced and device-local files so Lens-owned CLI/MCP changes or hand-edits propagate
   without manual refresh.
-- **Mock servers** (Phase 3) — the same `InProcessMockController` the
-  CLI uses runs in the extension host. Spin up local HTTP mocks from
-  OpenAPI / Postman / Insomnia specs, hit them with the request editor,
-  see request counts in the status bar.
+- **Mock servers** — spin up local HTTP mocks from OpenAPI / Postman /
+  Insomnia specs, hit them with the request editor, and see request counts in
+  the status bar.
 - **Secret vault** (Phase 4) — passphrase-unlocked, in-memory AES-GCM
   key, auto-lock by inactivity, clipboard auto-clear on copy, reveal
   encrypted environment variables in place, consolidated `APICircle
 Runs` OutputChannel.
-- **MCP host integration** (Phase 5) — built-in MCP view generates
-  per-AI-client config snippets (Claude Desktop, Claude Code, Cursor,
-  Continue, Cline, Zed, Windsurf, GitHub Copilot, ChatGPT, generic
-  stdio) pointing at the active workspace's `.apicircle/` directory.
-  Snippet bytes are byte-identical to what the desktop app emits.
-- **Copilot Chat one-click install** (Phase 6) — the GitHub Copilot
-  row in the MCP view writes `.vscode/mcp.json` idempotently with a
-  single click. VS Code 1.86+ Copilot Chat (and any MCP client that
-  reads the workspace-level config) picks it up automatically.
-  Path-traversal guard rejects malicious `apicircle.mcp.workspaceConfigPath`
-  values committed in `.vscode/settings.json` from a teammate.
+- **MCP status** — deprecated in Studio. Use API Circle Lens for MCP host integration, AI-client config snippets, Copilot/ChatGPT/Cursor setup, and current protocol validation.
 - **Wired settings** for execution timeout, Remote-SSH host hint,
-  history retention, secret vault auto-lock + clipboard-clear, MCP
-  binary path, MCP workspace config path.
+  history retention, and secret vault auto-lock + clipboard-clear.
 
 **First public Marketplace cut at 1.1.0; now 1.1.3**, back in lockstep
 with the rest of the monorepo. Bundle currently **2.76 MB**, well under the
@@ -232,17 +190,16 @@ Everything works from inside the app:
 - The **Mocks panel** starts and stops local mock servers from your OpenAPI,
   Postman, or Insomnia specs. The VS Code extension's Mock view ships
   the same lifecycle — start mocks from your IDE without switching apps.
-- The **MCP panel** generates a ready-to-paste config snippet for every AI
-  client (Claude Desktop, Cursor, Copilot, ChatGPT, …). Copy it, drop it into
-  your client's config, restart — the client now drives your workspace.
+- MCP setup is no longer provided by Studio. Open the same `.apicircle`
+  workspace in API Circle Lens when you need AI-client config snippets or
+  `apicircle-lens mcp`.
 
 This is the easiest way to get started. You don't need a workspace folder, a
 git repo, or a `--workspace` flag.
 
 ### Mode B — Git-backed workspace (teams, CI, headless tooling)
 
-When you want to collaborate via PRs, run the CLI in CI, or point an external
-AI client at the workspace as JSON-on-disk, use the app's **Link to Git**
+When you want to collaborate via PRs or later use Lens-owned CLI/MCP automation against JSON-on-disk, use the app's **Link to Git**
 feature to bridge your local workspace to a GitHub repo. The repo becomes
 your portable workspace.
 
@@ -259,10 +216,10 @@ git clone https://github.com/<you>/<your-workspace-repo>
 - `workspace.local.json` — per-device history, sessions, runtime state
   (kept out of git)
 
-Pass that folder to the CLI or MCP server with `--workspace`:
+Open that folder in API Circle Lens when you need MCP or CLI automation:
 
 ```bash
-apicircle-mcp --workspace ./<your-workspace-repo>
+apicircle-lens mcp --repo ./<your-workspace-repo>
 ```
 
 > Wherever the docs or a CLI flag say _"workspace folder,"_ they mean a
@@ -278,46 +235,14 @@ Grab the installer for your OS from the
 [latest release](https://github.com/apicircle/studio/releases/latest), then
 follow the one-time setup step in [`docs/installing.md`](docs/installing.md).
 
-### CLI (mode B)
+### Headless automation
+
+Studio no longer publishes the old `@apicircle/cli` or `@apicircle/mcp-server` packages. Use API Circle Lens for current CLI and MCP workflows:
 
 ```bash
-# Spin up a mock server from an OpenAPI spec — no workspace needed
-npx @apicircle/cli mock ./openapi.yaml
-
-# Start the MCP server. With no workspace flag, it boots against the desktop's
-# multi-workspace registry and exposes every workspace via workspace.list.
-npx @apicircle/cli mcp
-
-# Pick a registered workspace (matches by name or id, case-insensitive)
-npx @apicircle/cli mcp --workspace-name Petstore
-npx @apicircle/cli import openapi ./postman_collection.json --workspace-name Petstore
-npx @apicircle/cli run "Smoke Tests" --workspace-name Petstore --reporter junit
-
-# Or point at a workspace directory directly (CI / git-cloned, skips the registry)
-npx @apicircle/cli run "Smoke Tests" --workspace-path ./checkout-repo --reporter junit
-
-# Export a folder as a portable .apicircle.json envelope, then re-import it
-# elsewhere — credentials are redacted by default
-npx @apicircle/cli export folder "Payments" --out payments.apicircle.json --list-credentials
-npx @apicircle/cli import apicircle ./payments.apicircle.json --workspace-name Petstore
-
-# Manage the workspace registry from the terminal
-npx @apicircle/cli workspaces list
-npx @apicircle/cli workspaces create "Internal API"
-npx @apicircle/cli workspaces use Petstore
+apicircle-lens mcp --repo ./your-workspace-repo
+apicircle-lens run "Smoke Tests" --repo ./your-workspace-repo
 ```
-
-Two mutually-exclusive flags pick the workspace:
-
-- `--workspace-name <name-or-id>` — registry lookup. Names are case-insensitive;
-  ids survive renames (handy for CI).
-- `--workspace-path <dir>` — literal filesystem directory containing a
-  workspace layout (registry root, disk-mirror export, or a repo's
-  `.apicircle/` directory). Skips the registry; ideal for git-cloned
-  workspace repos.
-
-When neither is passed, the CLI uses the registry's active workspace (or the
-current directory when no registry exists yet).
 
 ### Run from source
 
@@ -330,53 +255,18 @@ pnpm dev:web            # web app → http://localhost:5174
 
 ## Connect your AI client
 
-**The easy path:** open the Desktop app, head to **MCP → Connection**. The
-top of the tab shows the live workspace-mirror path and a Refresh button.
-Below that, follow the four steps under **Set up your AI client** — install
-the binary, pick your AI client, paste the snippet, restart. **MCP →
-Prompts** ships a curated catalog of starter prompts.
+MCP has moved to API Circle Lens. Studio no longer ships, publishes, configures, or documents an active MCP server or MCP CLI. Existing Studio references to `apicircle-mcp`, `@apicircle/mcp-server`, or `apicircle mcp` are legacy/deprecated.
 
-**Multi-workspace by default:** `apicircle-mcp` boots against the desktop's
-multi-workspace registry. AI clients see every workspace via the
-`workspace.list` tool. When the AI asks for data without naming a workspace
-and more than one is registered, the server returns a structured "found
-multiple workspaces" envelope so the AI can disambiguate or call entity-
-specific tools (which default to the active workspace).
-
-**Headless or repo-cloned path:**
+Open the same `.apicircle` workspace in Lens and use:
 
 ```bash
-npm install -g @apicircle/mcp-server
+apicircle-lens mcp --repo ./your-workspace-repo
 ```
-
-```jsonc
-// e.g. Claude Desktop's claude_desktop_config.json
-{
-  "mcpServers": {
-    "apicircle": {
-      "command": "apicircle-mcp",
-      // Omit --workspace to boot in multi-workspace mode against the desktop's
-      // registry. Pass a directory to pin to a single workspace (CI / repo-
-      // cloned flows).
-      "args": [],
-    },
-  },
-}
-```
-
-Full per-client instructions (Cursor, Copilot, ChatGPT, Codex, Continue, Cline,
-Zed, Windsurf, generic stdio) live in
-**[Connect your AI client](docs/connect-your-ai-client.md)**.
 
 ## How it works
 
-Every write to a workspace — from the UI, the CLI, or an AI tool call — funnels
-through a single mutation API (`applyMutation`) in `@apicircle/core`. That
-means an AI agent can never produce workspace state the UI couldn't have
-produced, and vice versa. The same parsers, the same Hono mock engine, and
-the same workspace format back all four surfaces. See
-[`docs/architecture/platform.md`](docs/architecture/platform.md) for the full
-design record.
+Every write to a workspace from Studio funnels through a single mutation API (`applyMutation`) in `@apicircle/core`. Lens-owned MCP and CLI automation compose the same core package boundary, so Studio workspaces remain compatible without Studio shipping those headless surfaces. See
+[`docs/architecture/platform.md`](docs/architecture/platform.md) for the current platform notes.
 
 ## Project status
 
@@ -430,19 +320,18 @@ export → re-import workflow, see [`docs/migration.md`](docs/migration.md).
 ```
 apps/
   web/                  Vite + React shell — the browser build
-  desktop/              Electron shell — mock + MCP bridges, OS-keychain secrets
+  desktop/              Electron shell — local mock bridges, OS-keychain secrets
 packages/
   ui-components/        React UI + Zustand store + IndexedDB persistence
   core/                 Request execution, auth signing, assertions, mutation API
   shared/               Types, generateId, validators, encryption helpers
   git/                  GitHub API client + sync logic
   mock-server-core/     Hono mock-server engine + OpenAPI/Postman/Insomnia parsers
-  mcp-server/           stdio MCP host with the 97-tool catalog
-  cli/                  `apicircle` binary — mock / mocks / mcp / import / export / run / workspaces
 ```
 
-`@apicircle/{shared,core,mock-server-core,mcp-server,cli}` are published to
-npm; `apps/*` and the `git` and `ui-components` packages are workspace-private.
+`@apicircle/{shared,core,mock-server-core}` are published to npm. MCP and CLI
+publishing moved to API Circle Lens; `apps/*`, `git`, and `ui-components` are
+workspace-private.
 
 ## Develop
 

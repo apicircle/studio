@@ -6,37 +6,25 @@ API Circle ships a local mock server engine that turns OpenAPI / Swagger / Postm
 
 The same `@apicircle/mock-server-core` Hono app runs in four places:
 
-| Runtime                    | When to use                            | How to start                                  |
-| -------------------------- | -------------------------------------- | --------------------------------------------- |
-| **Desktop App**            | Day-to-day development                 | Open the _Mocks_ panel → click **Start**      |
-| **VS Code extension**      | Editing the workspace alongside code   | Mock view → ▶ Start, or `apicircle.startMock` |
-| **CLI** (`@apicircle/cli`) | CI, terminals, headless agents, Docker | `npx @apicircle/cli mock ./openapi.yaml`      |
-| **Hosted** (future)        | Sharing mocks with non-developers      | TBD; engine is runtime-agnostic               |
+| Runtime               | When to use                            | How to start                                                         |
+| --------------------- | -------------------------------------- | -------------------------------------------------------------------- |
+| **Desktop App**       | Day-to-day development                 | Open the _Mocks_ panel → click **Start**                             |
+| **VS Code extension** | Editing the workspace alongside code   | Mock view → ▶ Start, or `apicircle.startMock`                        |
+| **Lens CLI**          | CI, terminals, headless agents, Docker | Use API Circle Lens CLI; Studio no longer publishes `@apicircle/cli` |
+| **Hosted** (future)   | Sharing mocks with non-developers      | TBD; engine is runtime-agnostic                                      |
 
-The VS Code extension's `VsCodeMockController` wraps `InProcessMockController`
-(the same controller the CLI uses). It runs in the extension host process —
-no IPC, no sidecar. Server ids are internally namespaced by workspace id so
-multi-root workspaces with shared mock ids stay independent. When VS Code
-closes, every running mock dies; same model as the desktop app.
+The VS Code extension's `VsCodeMockController` wraps `InProcessMockController`.
+It runs in the extension host process — no IPC, no sidecar. Server ids are
+internally namespaced by workspace id so multi-root workspaces with shared mock
+ids stay independent. When VS Code closes, every running mock dies; same model
+as the desktop app.
 
-## CLI walkthrough
+## Headless walkthrough
 
-```bash
-# Boot from an OpenAPI 3 YAML on a free port
-npx @apicircle/cli mock ./openapi.yaml
-
-# Pin the port (defaults to a free one)
-npx @apicircle/cli mock ./openapi.yaml --port 4040
-
-# Postman / Insomnia
-npx @apicircle/cli mock ./postman_collection.json --type postman
-npx @apicircle/cli mock ./Insomnia_export.json    --type insomnia
-
-# Disable CORS (default: enabled with `*`)
-npx @apicircle/cli mock ./openapi.yaml --cors=false
-```
-
-The CLI prints `Mock server listening on http://127.0.0.1:<port> with N endpoints (type=openapi). Press Ctrl-C to stop.`
+Studio no longer publishes the old `@apicircle/cli` package. For CI,
+terminals, headless agents, Docker, execution-plan runs, or MCP startup, use
+API Circle Lens and its plan-gated CLI pipeline. Studio remains compatible by
+sharing the same `@apicircle/mock-server-core` engine and workspace format.
 
 ## Desktop walkthrough
 
@@ -109,7 +97,7 @@ A `MockServer` is just a JSON object on `WorkspaceSynced.mockServers[id]`:
 
 Endpoints are **materialized at import time**, not at start time: whenever a
 mock is created from a spec (the Desktop / Web "Create mock server" modal, the
-VS Code wizard, the CLI, or an MCP `mock.create_from_*` tool), the source is
+VS Code wizard or Lens-owned CLI/MCP automation), the source is
 parsed immediately and the resulting `MockEndpoint[]` is stored on
 `MockServer.endpoints`. The runtime router serves that array verbatim and never
 re-parses `source`, so a mock created with zero endpoints stays empty.
@@ -135,15 +123,15 @@ come in two modes, each with its own entry point in the Mocks header:
   replacing the backing asset's bytes and live-refreshing the linked endpoints.
 - **`materialized` (New Mock Server → From spec asset)** — the spec is parsed
   once into editable endpoints you can modify; an explicit refresh
-  (`refreshMockServer` / the `mock.refresh` MCP tool) re-imports from the asset.
+  (`refreshMockServer` in Studio, or the corresponding Lens-owned MCP refresh tool) re-imports from the asset.
 
 The parser ships as two entry points that differ only in how OpenAPI `$ref`s
 are dereferenced:
 
-| Import                                | `$ref` resolution                                                                         | Used by                                                                          |
-| ------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `@apicircle/mock-server-core` (root)  | swagger-parser — in-document **and** external file / remote refs                          | Node surfaces: CLI, MCP server, Desktop main process, VS Code extension host     |
-| `@apicircle/mock-server-core/parsing` | in-document (`#/…`) refs only; external refs are left unresolved and reported as warnings | Browser / renderer code — the web app has no filesystem to resolve external refs |
+| Import                                | `$ref` resolution                                                                         | Used by                                                                                        |
+| ------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `@apicircle/mock-server-core` (root)  | swagger-parser — in-document **and** external file / remote refs                          | Node surfaces: Desktop main process, VS Code extension host, and Lens-owned CLI/MCP automation |
+| `@apicircle/mock-server-core/parsing` | in-document (`#/…`) refs only; external refs are left unresolved and reported as warnings | Browser / renderer code — the web app has no filesystem to resolve external refs               |
 
 The Desktop app runs its parse in the Node main process (via the
 `apicircle:mock:parse` IPC bridge), so it gets full external-`$ref` resolution;

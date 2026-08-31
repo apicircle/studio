@@ -748,7 +748,7 @@ export async function createWorkspace(
     );
   }
   // Case-insensitive uniqueness, matching the CLI's
-  // `apicircle workspaces create` guard at packages/cli/src/util/resolveWorkspace.ts.
+  // Lens-owned workspace creation guard.
   // The desktop's previous case-sensitive check was looser than the CLI
   // and let `My Workspace` + `my workspace` coexist — both indistinguishable
   // in the workspace switcher because rendering normalises whitespace.

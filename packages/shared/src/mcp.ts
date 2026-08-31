@@ -3,8 +3,7 @@
 // published API of `@apicircle/shared` and removing them would be a
 // breaking change to a package the split was meant to leave untouched.
 // and any consumer that needs to know the tool catalog up-front (the
-// desktop app's "MCP" panel renders config snippets that reference these
-// tool names verbatim).
+// Lens uses the legacy names when maintaining backward-compatible adapters.
 //
 // The actual tool input/output schemas live next to each tool's
 // implementation in `@apicircle-lens/mcp-core` (Zod schemas), since they
@@ -13,8 +12,8 @@
 
 /**
  * Every MCP tool the server exposes. Namespaced by capability area so AI
- * clients can group them in their UI. Keep in sync with the registry in
- * `packages/mcp-server/src/tools/registry.ts`.
+ * clients can group them in their UI. Keep in sync with the Lens MCP registry
+ * while this legacy shared API remains exported.
  */
 export type McpToolName =
   // Imports

@@ -197,12 +197,11 @@ Because the engine is just a Hono app builder, anywhere Hono runs, this runs:
 ```
 @apicircle/shared              (types + utilities)
 └── @apicircle/mock-server-core ◀── you are here
-    └── @apicircle/cli         (`apicircle mock ./spec.yaml`)
-    └── @apicircle/mcp-server  (mock.start / mock.stop tools)
+    └── API Circle Lens CLI/MCP  (current headless automation, outside Studio)
 ```
 
 The exact same factory powers the desktop `MockManager`, the
-`apicircle mock` CLI command, and the MCP `mock.start` tool. One engine,
+Studio surfaces and Lens-owned headless automation. One engine,
 three runtimes.
 
 ## Learn more

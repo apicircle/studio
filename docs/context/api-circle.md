@@ -1,3 +1,5 @@
+> **MCP status:** API Circle Studio no longer owns MCP or the old Studio CLI. Any MCP/CLI sections below are legacy context for the pre-Lens split. Current supported MCP and headless CLI workflows live in API Circle Lens through `apicircle-lens mcp` and Lens CLI commands. Studio `.apicircle` workspaces remain compatible.
+
 # API Circle Studio — Project Context
 
 A standalone briefing for any AI agent or contributor picking up this
@@ -21,15 +23,10 @@ Insomnia — with a handful of things that set it apart:
   GitHub repo on a working branch; teams collaborate via pull requests.
 - **On-disk workspace mirror.** Every workspace lives on disk under
   `~/.apicircle/workspace-<id>/` (indexed by
-  `~/.apicircle/registry.json`) so the CLI, the MCP server, and
-  external tools can read or edit the same source of truth the UI uses.
+  `~/.apicircle/registry.json`) so Studio can recover state and API Circle Lens can run its CLI/MCP automation against the same workspace when needed.
 - **Local mock servers.** Describe an API in OpenAPI / Postman /
   Insomnia and run a Hono-backed mock on `localhost`.
-- **An MCP server.** The workspace is exposed as a 97-tool catalog any
-  Model Context Protocol client (Claude Desktop, ChatGPT, Cursor,
-  GitHub Copilot, Codex, Continue, Cline, Zed, Windsurf) can drive.
-- **A CLI** (`apicircle mock | mcp | import | run | workspaces`) for
-  headless use.
+- **Lens-owned automation compatibility.** Studio no longer ships MCP or the old CLI. Existing `.apicircle` workspaces remain compatible with API Circle Lens, where `apicircle-lens mcp` and Lens CLI commands provide supported headless workflows.
 
 It ships in three forms: a browser web app (continuously deployed to
 GitHub Pages from `main`), an Electron desktop app, and npm packages +
@@ -55,17 +52,16 @@ studio/
 ├── apps/
 │   ├── web/              Vite + React 18 shell — browser build (dev port 5174)
 │   └── desktop/          Electron shell — hosts the web UI, OS-keychain
-│                           secrets, mock + MCP IPC bridges (src/main/*)
+│                           secrets, mock, and workspace-file IPC bridges (src/main/*)
 ├── packages/
-│   ├── shared/           Types, generateId, validators, encryption, MCP envelopes
+│   ├── shared/           Types, generateId, validators, encryption, legacy MCP envelopes
 │   ├── core/             Request execution, env resolution, auth signing,
 │   │                       assertions, imports, git serialize/merge,
 │   │                       transforms, applyMutation
 │   ├── git/              GitHub REST client + typed error taxonomy
 │   ├── ui-components/    ALL React UI + the Zustand store + IndexedDB persistence
 │   ├── mock-server-core/ Hono mock engine + OpenAPI/Postman/Insomnia parsers
-│   ├── mcp-server/       stdio MCP host + 97-tool catalog + workspace providers
-│   └── cli/              `apicircle` binary — mock / mcp / import / run / workspaces
+│   └── mock-server-core/ Hono mock engine + OpenAPI/Postman/Insomnia parsers
 ├── examples/             Demo workspaces + a standalone example mock server
 ├── docs/                 Product + architecture + QA docs (see §16)
 ├── e2e/                  E2E suites — web/ + desktop/ (Playwright packages),
@@ -74,9 +70,9 @@ studio/
 └── .github/workflows/    CI: ci, codeql, e2e, release, desktop-release, deploy-web
 ```
 
-**Publishable npm packages** (`@apicircle/*`): `shared`, `core`,
-`mock-server-core`, `mcp-server`, `cli`. `git` and `ui-components` are
-workspace-private; `apps/*` are private.
+**Publishable npm packages** (`@apicircle/*`): `shared`, `core`, and
+`mock-server-core`. `git` and `ui-components` are workspace-private;
+`apps/*` are private. MCP and headless CLI publishing moved to API Circle Lens.
 
 ## 4. Architecture — the load-bearing ideas
 
@@ -97,42 +93,25 @@ A workspace is split into two JSON documents:
 ### `applyMutation` — the single mutation choke point
 
 `applyMutation(state, patch)` in `@apicircle/core` is the contract for
-mutating a workspace. The MCP tool handlers and CLI commands all funnel
+mutating a workspace. Studio surfaces and Lens-owned CLI/MCP automation funnel
 through it. `WorkspacePatch` is a discriminated union over
 `request.* | folder.* | environment.* | assertion.* | mock.* | release.* | linkedWorkspace.* | linkedOverride.* | plan.*`.
-Adding an entity type = one union variant + one switch case + one MCP
-tool.
+Adding an entity type = one union variant + one switch case, with any Lens MCP
+tool added in the Lens project.
 
 > The live UI store (`workspaceStore.ts`) also performs some direct
 > `set({ synced, local })` transitions rather than routing every change
-> through `applyMutation`. Treat `applyMutation` as the contract for
-> headless (MCP / CLI) writers.
+> through `applyMutation`. Treat `applyMutation` as the contract Lens-owned
+> MCP / CLI writers also compose.
 
-### MCP provider abstraction
+### Lens-owned MCP/CLI compatibility
 
-`@apicircle/mcp-server` tool handlers depend on three interfaces, not
-concretes:
-
-- **`WorkspaceProvider`** — `read()` / `apply(patch)` /
-  `write({synced?, local?})`. Implementations:
-  `InMemoryWorkspaceProvider` and `FileBackedWorkspaceProvider` (disk +
-  `proper-lockfile` advisory lock).
-- **`Workspaces`** — multi-workspace discovery: `list()` /
-  `get(id)` / `setActive(id)`. Implementations:
-  `SingleWorkspaceWorkspaces` (one workspace, fixed) and
-  `MultiWorkspaceProvider` (registry root on disk, rebuilds the per-id
-  `FileBackedWorkspaceProvider` whenever the active id changes).
-- **`MockController`** — `start` / `stop` / `list`. Implementation:
-  `InProcessMockController` (wraps `mock-server-core` directly).
-
-This is why the MCP server doesn't care whether it runs inline in
-Electron, standalone via the CLI, or in a future hosted service.
+The original Studio MCP server and CLI moved to API Circle Lens. Studio keeps the shared workspace, provider, and mock-engine contracts needed for compatibility, but Studio no longer ships or publishes the MCP server or headless CLI.
 
 ### Mock server — three runtimes, one engine
 
 `@apicircle/mock-server-core` is a Hono app builder. The same factory
-powers the desktop `MockManager`, the CLI `apicircle mock`, and the MCP
-`mock.start` tool.
+powers the desktop `MockManager`, the VS Code mock controller, and Lens-owned headless automation.
 
 ### Disk mirror + workspace registry
 
@@ -141,8 +120,7 @@ renderer) plus a plain-JSON mirror on disk under
 `~/.apicircle/workspace-<id>/{workspace.json,workspace.local.json}`
 with a sibling `~/.apicircle/registry.json` listing every workspace
 and its `lastOpenedAt`. The mirror exists so external readers (the
-CLI, the MCP server, an editor poking at the JSON, future hosted
-services) can operate on the same source of truth the UI uses,
+an editor poking at the JSON, future hosted services, or Lens-owned CLI/MCP automation) can operate on the same source of truth the UI uses,
 without any IPC.
 
 - `diskMirror` + `diskMirrorMerge` (`packages/ui-components/src/persistence/`)
@@ -151,16 +129,16 @@ without any IPC.
   owns the on-disk registry shape; the IDB-side `WorkspaceRegistry`
   type in `packages/ui-components/src/persistence/db.ts` mirrors it
   exactly.
-- `resolveWorkspace` (`packages/cli/src/util/resolveWorkspace.ts`)
-  gives every CLI subcommand the same `--workspace-name` /
-  `--workspace-path` addressing model the desktop uses.
+- API Circle Lens owns current CLI workspace resolution and MCP startup.
+  Studio keeps the registry and workspace-file contracts stable so Lens can
+  target the same Git-backed workspace.
 
 ### Desktop bridge contract
 
 `packages/ui-components/src/desktop/bridge.ts` is the single source of
 truth for the `window.apicircleDesktop` IPC surface. Both
 `apps/desktop/src/main/preload.ts` and every renderer consumer (the
-MCP panel, the Workspace Mirror row, the mock-server controls) import
+Workspace Mirror row and the mock-server controls) import
 the typed shapes here — `preload.ts` uses `satisfies DesktopBridge` so
 missing or mistyped fields fail `pnpm check`. Add a new bridge surface
 here first; never redeclare an ad-hoc interface in the consumer.
@@ -178,9 +156,9 @@ Full design record: [`docs/architecture/platform.md`](../architecture/platform.m
   blobs; secrets encrypted (AES-GCM, WebCrypto). On desktop the master
   key is wrapped via the OS keychain; on web a workspace passphrase
   model is used instead.
-- **UI:** `packages/ui-components/src/` — `App.tsx` + 9 panels
+- **UI:** `packages/ui-components/src/` — `App.tsx` + 8 panels
   (`layout/panels.ts`): Workspace, Link Workspace, Editor, Environments,
-  Execution, History, Mocks, MCP, Help Center. Editors are Monaco-based.
+  Execution, History, Mocks, Help Center. Editors are Monaco-based.
 - **Settings popover** (`layout/SettingsPicker.tsx`) hangs off the top
   bar — behavioral toggles, theme + font pickers, and the
   **Community section** (`community/CommunitySection.tsx`) that
@@ -205,35 +183,21 @@ response retries (Digest 401, NTLM 3-way).
 set an auth block that descendant requests with `auth.type === 'inherit'`
 pick up automatically via `resolveInheritedAuth`, which walks up the
 folder chain and returns the first explicit (non-`inherit`, non-`none`)
-auth. Editable on every host: web/desktop modal, VS Code's
-`apicircle://<ws>/folders/<…>.folder.yaml` projection, and the MCP
-`folder.update` tool (`{ id, name?, auth?, clearAuth?, parentId? }`).
-Mutations route through the `folder.update` WorkspacePatch.
+auth. Editable in Studio through the web/desktop modal and VS Code's
+`apicircle://<ws>/folders/<…>.folder.yaml` projection. Lens-owned MCP/CLI
+automation can compose the same WorkspacePatch when the workspace is opened in Lens.
 
 Full matrix: [`docs/auth.md`](../auth.md).
 
-## 7. MCP server
+## 7. MCP and CLI status
 
-`@apicircle/mcp-server` exposes **97 tools** over stdio, namespaced by
-capability: imports, code generation, multi-workspace discovery
-(`workspace.list`), workspace read/write, request / folder /
-environment / plan / assertion CRUD, **folder export / import as JSON**
-(`apicircle.folder/v1` envelope — credentials redacted by default),
-history, codebase extraction, prompt-driven authoring, and mock-server
-lifecycle + endpoint editing.
-Canonical list: `packages/shared/src/mcp.ts`; registered in
-`packages/mcp-server/src/tools/registry.ts`. Per-tool input shapes:
-[`docs/mcp-tools-reference.md`](../mcp-tools-reference.md).
+MCP and the old Studio CLI are deprecated in this repository. Current supported headless automation lives in API Circle Lens:
 
-The in-product **MCP panel** (`panels/mcp/`) has two sections driven
-by `mcpPanelTypes`: **Connection** (the four-step `HowToConnect` setup
-flow that emits a per-client config snippet via the desktop bridge,
-plus the workspace mirror status and refresh) and **Prompts** (the
-curated `mcpPrompts` catalog). Setup snippets handle Windows path
-encoding via the `ConfigSnippetVariants` `{forwardSlash, escaped,
-identical}` shape — the UI lets the user pick which JSON-escape form
-to paste. Wiring a client end-to-end:
-[`docs/connect-your-ai-client.md`](../connect-your-ai-client.md).
+```bash
+apicircle-lens mcp --repo ./your-workspace-repo
+```
+
+Studio `.apicircle` workspaces remain compatible with Lens.
 
 ## 8. Mock server
 
@@ -245,18 +209,9 @@ mockRuntime`). Creation works in both web and desktop; **starting** a
 mock runtime needs the desktop bridge or the CLI. Feature guide:
 [`docs/mock-server.md`](../mock-server.md).
 
-## 9. CLI
+## 9. Headless automation
 
-`@apicircle/cli` ships the `apicircle` binary with five subcommands:
-`mock` (run a mock server from a spec), `mcp` (run the MCP server over
-stdio), `import` (load a spec into a workspace), `run` (execute a
-saved execution plan and report pass/fail — for CI gates), and
-`workspaces` (`list | create | use | path` — manage the on-disk
-multi-workspace registry the desktop app shares with the CLI and AI
-clients). Every command resolves `--workspace-name` /
-`--workspace-path` against that registry via `resolveWorkspace`.
-Distributed as an npm package and as platform binaries (linux-x64,
-macos-x64, macos-arm64, win-x64).
+Studio no longer publishes the old `@apicircle/cli` package. Use API Circle Lens for current CLI workflows, including execution-plan runs and MCP server startup.
 
 ## 10. Build & test commands
 
@@ -312,11 +267,7 @@ promises`, `consistent-type-imports`, `prefer-const`, `eqeqeq` are all
 ## 13. Current status & what's pending
 
 The product surfaces are built and functional: the web + desktop apps,
-the 17 auth types, the mock-server engine across all three runtimes,
-the 97-tool MCP server, the CLI with multi-workspace addressing, the
-disk-mirror persistence layer, the MCP **Connection / Prompts** panel
-sections, the Settings → Community surface, and the GitHub Pages web
-deploy. Unit tests are green.
+the 17 auth types, the mock-server engine, the disk-mirror persistence layer, the Settings → Community surface, and the GitHub Pages web deploy. MCP and the old Studio CLI moved to API Circle Lens. Unit tests are green.
 
 Open work is concentrated in **E2E test depth**: a large share of the
 "covered" test-case rows are workbook-iteration placeholders rather

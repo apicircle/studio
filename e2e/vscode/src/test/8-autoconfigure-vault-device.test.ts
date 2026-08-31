@@ -4,34 +4,30 @@ import * as vscode from 'vscode';
 // =============================================================================
 // Phase 8 / spec 8-autoconfigure-vault-device: command IDs + settings shape.
 //
-// Deep coverage of mcpClientInstall + vaultDeviceMemory lives in their
-// co-located unit tests (35 + 8 tests). This E2E spec proves the host-side
-// wiring:
-//   • Phase 8 commands all resolve via getCommands.
-//   • The three new settings exist with the right defaults.
-//   • forgetVaultOnDevice on an empty workspace short-circuits cleanly.
+// Studio no longer registers MCP install commands or MCP settings. Lens owns
+// current MCP client onboarding. This E2E spec keeps the Studio host-side vault
+// wiring covered while guarding against MCP settings drifting back in.
 // =============================================================================
 
 suite('Phase 8 — 8-autoconfigure-vault-device: commands + settings', () => {
-  test('Phase 8 commands all resolve', async function () {
+  test('Studio registers vault device command but no MCP install commands', async function () {
     this.timeout(10_000);
     const all = await vscode.commands.getCommands(true);
+    assert.ok(all.includes('apicircle.forgetVaultOnDevice'));
     for (const id of [
       'apicircle.installMcpForClient',
       'apicircle.installMcpForAllClients',
       'apicircle.uninstallMcpForClient',
-      'apicircle.forgetVaultOnDevice',
     ]) {
-      assert.ok(all.includes(id), `Command ${id} is not registered`);
+      assert.ok(!all.includes(id), `Command ${id} must not be registered in Studio`);
     }
   });
 
-  test('apicircle.mcp.autoConfigureClients setting is a string array (default empty)', () => {
+  test('Studio exposes no apicircle.mcp auto-config setting', () => {
     const value = vscode.workspace
       .getConfiguration('apicircle.mcp')
       .get<readonly string[]>('autoConfigureClients');
-    assert.ok(Array.isArray(value), 'autoConfigureClients must be an array');
-    assert.strictEqual(value!.length, 0, 'default must be []');
+    assert.strictEqual(value, undefined);
   });
 
   test('apicircle.secrets.rememberOnDevice setting defaults to false', () => {

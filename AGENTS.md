@@ -224,19 +224,11 @@ studio/
 │                           clipboard auto-clear, encrypted env-variable
 │                           reveal via `apicircle.openVaultEntry`,
 │                           consolidated `APICircle Runs` OutputChannel**,
-│                           **MCP host integration (Phase 5) — per-AI-client
-│                           config snippets via `apicircle.copyMcpConfig`
-│                           pointing at active workspace's .apicircle/ dir,
-│                           shared snippet builder in `@apicircle/mcp-server`,
-│                           McpView with 10 supported clients + connect
-│                           guide, `apicircle.mcp.binaryPath` setting**,
-│                           **Copilot Chat MCP install (Phase 6) —
-│                           `apicircle.installCopilotMcpConfig` writes
-│                           `.vscode/mcp.json` idempotently for VS Code
-│                           1.86+ Copilot Chat / any workspace-config MCP
-│                           client, GitHub Copilot row shows install state
-│                           (absent/installed/stale), preserves foreign
-│                           mcpServers entries**,
+│                           **MCP status** — Studio no longer ships,
+│                           publishes, configures, or registers MCP host
+│                           integration. API Circle Lens owns AI-client
+│                           snippets, MCP protocol validation, and CLI-gated
+│                           automation.
 │                           **bundle code-splitting (Phase 7) — esbuild
 │                           tree-shaking via `"sideEffects": false` on
 │                           all `@apicircle/*` workspace packages drops
@@ -256,14 +248,12 @@ studio/
 │                           All-native (no webview) by default; opt-in
 │                           visual editors land in Phase 6.
 ├── packages/
-│   ├── shared/            Types, generateId, validators, encryption + MCP envelopes
+│   ├── shared/            Types, generateId, validators, encryption helpers
 │   ├── core/              Request execution, env resolution, auth signing, assertions,
 │   │                       imports, git serialize/merge, transforms, applyMutation
 │   ├── git/               GitHub REST client + typed error taxonomy
 │   ├── ui-components/      ALL React UI + the Zustand store + IndexedDB persistence
 │   ├── mock-server-core/   Hono mock-server engine + OpenAPI/Postman/Insomnia parsers
-│   ├── mcp-server/         stdio MCP host + 97-tool catalog + workspace providers
-│   └── cli/                `apicircle` binary — mock / mcp / import / export / run / workspaces
 ├── examples/              Demo workspaces + a standalone mock-server example
 ├── docs/                  Product + architecture + QA docs (see §9)
 ├── e2e/                   E2E suites — web/ + desktop/ (Playwright), mock/ (Hono
@@ -273,7 +263,7 @@ studio/
 ```
 
 **Publishable npm packages** (`@apicircle/*`): `shared`, `core`,
-`mock-server-core`, `mcp-server`, `cli`. `git` and `ui-components` are
+`mock-server-core`. MCP and CLI publishing moved to API Circle Lens. `git` and `ui-components` are
 workspace-private; `apps/*` and `e2e/*` are private.
 
 ---
@@ -319,27 +309,12 @@ result of a three-way `previewLinkedUpdate` / `applyLinkedUpdate`.)
 > `applyMutation`. Treat `applyMutation` as the contract for headless
 > (MCP/CLI) writers.
 
-### MCP provider abstraction
+### Lens-owned MCP and CLI automation
 
-`@apicircle/mcp-server` tool handlers depend on three interfaces, not
-concretes:
-
-- **`WorkspaceProvider`** — `read()` / `apply(patch)` / `write({synced?,local?})`.
-  Implementations: `InMemoryWorkspaceProvider`, `FileBackedWorkspaceProvider`
-  (disk + `proper-lockfile` advisory lock), `GitBackedWorkspaceProvider`
-  (reads `workspace.json` from a Git-backed `.apicircle/` directory —
-  delegates to core `loadFromFile`/`saveToFile` with
-  `syncedFilename: 'workspace.json'`).
-- **`Workspaces`** — multi-workspace discovery: `list()` / `get(id)` /
-  `setActive(id)`. Implementations: `SingleWorkspaceWorkspaces` and
-  `MultiWorkspaceProvider`. `MultiWorkspaceProvider.activeProvider()`
-  returns a **lazy wrapper that re-reads `registry.json` on every
-  `read` / `apply` / `write`** so a workspace switch in the desktop
-  reaches a running MCP process without restart. Do NOT cache the
-  per-id provider in tool handlers — always go through
-  `ctx.workspace`.
-- **`MockController`** — `start` / `stop` / `list`. Implementation:
-  `InProcessMockController` (wraps `mock-server-core` directly).
+MCP and the old Studio CLI moved to API Circle Lens. Studio keeps the shared
+workspace, core mutation, mock-engine, and Git-backed persistence contracts
+compatible so Lens can run gated CLI and MCP workflows against the same
+`.apicircle` workspace without Studio publishing those headless artifacts.
 
 ### Mock server — three runtimes, one engine
 
@@ -358,15 +333,15 @@ can operate on the same source of truth.
 - `workspaceRegistry` in `packages/core/src/workspace/workspaceRegistry.ts`
   owns the on-disk registry shape. The IDB-side `WorkspaceRegistry` type in
   `packages/ui-components/src/persistence/db.ts` mirrors it exactly.
-- `resolveWorkspace` in `packages/cli/src/util/resolveWorkspace.ts` gives
-  every CLI subcommand the same `--workspace-name` / `--workspace-path`
-  addressing model the desktop uses.
+- API Circle Lens owns current CLI workspace resolution and MCP server
+  startup. Studio keeps the registry and workspace-file contracts stable so
+  Lens can target the same Git-backed workspace.
 - **Boot-time disk-vs-IDB resolution is timestamp-driven.** `hydrate()`
   reads both halves at boot and adopts whichever has the newer
-  `meta.updatedAt`. External writers (MCP / CLI) bumping `updatedAt`
-  inside `applyMutation` is what makes their writes survive the next
-  desktop launch. When changing `hydrate`, the IDB→disk write at the
-  end MUST stay gated behind "memory wins" — unconditional re-write
+  `meta.updatedAt`. External writers such as Lens-owned CLI/MCP automation bumping
+  `updatedAt` inside `applyMutation` is what makes their writes survive
+  the next desktop launch. When changing `hydrate`, the IDB→disk write at
+  the end MUST stay gated behind "memory wins" — unconditional re-write
   silently overwrites external changes.
 - **External-write auto-refresh.** The file watcher in
   `apps/desktop/src/main/workspaceFile/workspaceWatcher.ts` emits

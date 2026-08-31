@@ -14,10 +14,9 @@ import type { WorkspaceProvider } from './WorkspaceProvider';
 // at `.apicircle/workspace-<id>/workspace.json` in a user's repo (discovered
 // via `.apicircle/registry.json`).
 //
-// This enables the `apicircle-mcp` binary to operate directly on a cloned repo
-// without requiring the desktop app's disk mirror. External AI clients (Codex,
-// Cursor, Claude Code) that point `--workspace` at a repo's `.apicircle/`
-// directory hit this path.
+// This enables Lens-owned CLI/MCP automation to operate directly on a cloned
+// repo without requiring the desktop app's disk mirror. External AI clients
+// target this path through Lens rather than Studio.
 //
 // Layout (relative to the directory passed in):
 //   workspace.json        ← WorkspaceSynced (Git-tracked, collaborators share)

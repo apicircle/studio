@@ -84,9 +84,7 @@ auth — `inherit` is never seen by signing primitives.
   dispatches the `folder.update` `WorkspacePatch`. Request YAMLs grow a
   `◆ Inherits from <Folder> (<type>)` CodeLens above `auth:` whenever
   the request's auth resolves via `inherit`.
-- **MCP / CLI** — the `folder.update` tool accepts `name`, `auth`,
-  `clearAuth`, and `parentId` in a single call. See
-  [`docs/mcp-tools-reference.md`](mcp-tools-reference.md).
+- **Lens MCP / CLI** — Studio no longer owns MCP/CLI deployment. When the same workspace is opened in API Circle Lens, Lens-owned automation can update folder auth through its current tool and command surface.
 
 **Tests.** `packages/core/src/request/resolveInheritedAuth.test.ts` covers
 the walk semantics; the FS-provider + folder YAML parser tests cover the

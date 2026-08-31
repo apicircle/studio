@@ -2,7 +2,7 @@
 
 API Circle Studio (this repository) is the **open core** — the source-available,
 freely-usable API client: Git-backed workspaces, collections, environments,
-mocks, MCP integration, and the CLI / desktop / web / VS Code surfaces.
+mocks, desktop / web / VS Code surfaces, and compatibility with Lens-owned CLI/MCP automation.
 
 A separate **proprietary edition**, developed in a private repository, builds
 _on top of_ this open core to add paid, account-based capabilities. That edition
@@ -27,9 +27,7 @@ unaffected:
 
 - **Provider interfaces** — e.g. a Git provider interface in `packages/git`
   (GitHub ships here; other providers implement the same interface out-of-tree).
-- **Composable entry points** — the CLI program builder and the MCP server's
-  injectable tool list let an out-of-tree package add commands / tools without
-  forking the binary.
+- **Composable entry points** — Studio keeps additive seams for downstream editions. Current MCP and headless CLI composition lives in API Circle Lens, not in this Studio app.
 - **Typed extension points** — exported tool / handler types and, where present,
   UI extension registries.
 - **UI panel registry** — the React shell (`packages/ui-components`) accepts
@@ -38,10 +36,7 @@ unaffected:
   `PanelContent` / `Sidebar`. Additive and a no-op when empty — Studio registers
   none, so its panels are unchanged.
 
-The proven template already in this repo is the MCP server's dependency
-injection: tool handlers depend on the `WorkspaceProvider` / `Workspaces` /
-`MockController` interfaces, and `createMcpServer` accepts an injectable tool
-list. New seams follow that shape.
+The historical MCP dependency-injection template moved to API Circle Lens with the current MCP server. New Studio seams should remain additive and no-op when nothing plugs in.
 
 ## Workspace-directory sidecar contract
 

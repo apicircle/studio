@@ -6,11 +6,8 @@ import { defineConfig } from '@playwright/test';
 // suite — too much shared state in IDB / window.localStorage / native
 // secrets for that to be reliable.
 //
-// The MCP-stdio and CLI specs spawn child processes directly via
-// `child_process.spawn` (`fixtures/mcpStdio.ts`, `fixtures/cliSpawn.ts`).
-// They don't go through Electron — the binary under test is the published
-// `apicircle-mcp` (packages/mcp-server/dist/bin) and `apicircle`
-// (packages/cli/dist) executables respectively.
+// Studio desktop E2E no longer launches the old MCP or CLI binaries. Current
+// headless CLI/MCP validation belongs to the API Circle Lens regression suite.
 
 export default defineConfig({
   testDir: '.',

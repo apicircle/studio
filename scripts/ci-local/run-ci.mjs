@@ -581,8 +581,6 @@ function buildSteps(stage, t) {
         });
       }
       if (t.desktop && !filtering) {
-        steps.push({ name: 'Build CLI', cmd: 'pnpm --filter @apicircle/cli build' });
-        steps.push({ name: 'Build MCP server', cmd: 'pnpm --filter @apicircle/mcp-server build' });
         steps.push({ name: 'Build desktop main', cmd: 'pnpm --filter @apicircle/desktop build' });
         steps.push({
           name: 'Desktop Electron E2E suite',

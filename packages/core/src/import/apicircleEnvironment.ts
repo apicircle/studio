@@ -1,7 +1,6 @@
 // Importer for the `apicircleEnvironment: 1 | 2` JSON envelope produced by
 // `exportEnvironment` in `../../../ui-components/src/store/envActions.ts`
-// (and by the MCP `environment.export` tool in
-// `../../../mcp-server/src/tools/crud.ts`). Sister parser to
+// (and by Lens-owned MCP/CLI export flows). Sister parser to
 // `./apicircleFolder.ts` — same surface, different document.
 //
 // Shape (v2 — current, matches Git push/pull) — encrypted rows carry their

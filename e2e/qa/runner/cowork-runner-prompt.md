@@ -32,7 +32,7 @@ Result and record what you saw.
 - **Run scope** (one of):
   - `--all` (everything in the workbook)
   - `--priority High` (smoke pass)
-  - `--module «module-name»` (e.g. `MCP (Model Context Protocol)`)
+  - `--module «module-name»` (e.g. `Mock Servers`)
   - `--ids TC-WS-0001..TC-WS-0030`
   - `--type Functional --priority High` (combined filters)
 
@@ -65,17 +65,17 @@ The ones you write (via the helper script — do NOT edit the xlsx directly):
 
 ## Tooling map — pick the right tool per test
 
-| When a test involves…                         | Use                                                                                                       |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Web UI interaction                            | `mcp__Claude_in_Chrome__*` (preferred) or `mcp__Claude_Preview__*`                                        |
-| Visual inspection (screenshots)               | The browser MCP's screenshot tool                                                                         |
-| Reading console errors                        | `mcp__Claude_in_Chrome__read_console_messages` / `mcp__Claude_Preview__preview_console_logs`              |
-| Network behavior                              | `mcp__Claude_in_Chrome__read_network_requests` / `mcp__Claude_Preview__preview_network`                   |
-| HTTP probes from outside the app              | `Bash` with `curl`                                                                                        |
-| CLI commands (`apicircle …`)                  | `Bash`                                                                                                    |
-| MCP server tests                              | `Bash` to run `apicircle-mcp --workspace «dir»` and pipe JSON-RPC frames via `node`/`python` test harness |
-| File-system setup (fixtures, workspace state) | `Read`, `Write`, `Edit`, `Bash`                                                                           |
-| Recording a test result                       | `Bash` → `python tc_results.py record …`                                                                  |
+| When a test involves…                         | Use                                                                                                 |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Web UI interaction                            | `mcp__Claude_in_Chrome__*` (preferred) or `mcp__Claude_Preview__*`                                  |
+| Visual inspection (screenshots)               | The browser MCP's screenshot tool                                                                   |
+| Reading console errors                        | `mcp__Claude_in_Chrome__read_console_messages` / `mcp__Claude_Preview__preview_console_logs`        |
+| Network behavior                              | `mcp__Claude_in_Chrome__read_network_requests` / `mcp__Claude_Preview__preview_network`             |
+| HTTP probes from outside the app              | `Bash` with `curl`                                                                                  |
+| CLI commands (`apicircle …`)                  | `Bash`                                                                                              |
+| MCP server tests                              | Not applicable in Studio; current MCP validation belongs to the API Circle Lens regression harness. |
+| File-system setup (fixtures, workspace state) | `Read`, `Write`, `Edit`, `Bash`                                                                     |
+| Recording a test result                       | `Bash` → `python tc_results.py record …`                                                            |
 
 If the test is **desktop UI** (Electron) and you have no Electron driver
 available in this Cowork session, mark the test `Skipped` with
@@ -309,11 +309,9 @@ Procedure:
 
 ## Specific guidance per module
 
-- **MCP (Model Context Protocol)** — start `apicircle-mcp --workspace
-«fixtures/mcp-ws»` from `Bash`. Speak the MCP JSON-RPC protocol over
-  its stdin/stdout. Validate `tools/list` returns 50 tools. For each
-  tool, send a `tools/call` with the minimal valid input and check the
-  result shape against Expected. Tear the server down on the next test.
+- **MCP (Model Context Protocol)** — Studio should not contain active MCP
+  rows. If an MCP row appears in a Studio workbook, mark it `Blocked` and file
+  a test-plan defect; run current MCP validation from API Circle Lens instead.
 
 - **OAuth2 IdP Compatibility** — only run rows for IdPs you actually
   have credentials for. Mark the rest `Blocked` with a note about

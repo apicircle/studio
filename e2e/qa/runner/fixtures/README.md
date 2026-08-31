@@ -14,7 +14,7 @@ multi-device git scenarios.
 | `bodies/`     | Request body samples — JSON / XML / HTML / text / unicode / encodings / large / huge / invalid.                |
 | `binary/`     | Real binary fixtures — PNG, PDF, fixed-size .bin, empty, unicode-named.                                        |
 | `schemas/`    | JSON Schemas for body-validation tests, including circular and external `$ref` patterns.                       |
-| `workspaces/` | Seeded `workspace.json` files consumed by `FileBackedWorkspaceProvider` (used by `apicircle-mcp --workspace`). |
+| `workspaces/` | Seeded `workspace.json` files consumed by `FileBackedWorkspaceProvider` for workspace restore and disk-mirror tests. |
 | `curl/`       | cURL command strings for the cURL-import tests.                                                                |
 | `oauth/`      | Mock IdP config (consumed by the in-repo mock IdP harness).                                                    |
 | `git/`        | Helper scripts for two-device git-conflict simulations.                                                        |

@@ -60,7 +60,7 @@ First time here? An onboarding tour runs on first launch — replay it any time 
 ## What "multi-workspace" looks like
 
 - **In the app** — the workspace switcher next to the brand mark cycles between every workspace this install knows about. The active workspace's name shows in the chip.
-- **On disk** — every workspace lives in a per-id subdirectory under \`~/.apicircle/workspaces/\` plus a single \`~/.apicircle/registry.json\` index. Desktop, CLI, and MCP consumers all read the same files.
+- **On disk** — every workspace lives in a per-id subdirectory under \`~/.apicircle/workspaces/\` plus a single \`~/.apicircle/registry.json\` index. Studio desktop and web read these files directly. CLI and MCP automation moved to API Circle Lens; Lens can open the same \`.apicircle\` workspaces.
 - **In Git** — each workspace can link to its own GitHub repo + branch. Switching workspaces switches which repo the Workspace panel talks to.
 
 ## Disk layout
@@ -76,48 +76,18 @@ All workspace data lives under \`~/.apicircle/\` (the user's home directory on e
         <workspace-id-2>/
           ...
 
-The renderer keeps the canonical copy in IndexedDB and mirrors every change to this layout so the CLI, the MCP server, and the file watcher see the same content.
+The renderer keeps the canonical copy in IndexedDB and mirrors every change to this layout so Studio can recover state and Lens-owned CLI/MCP automation can operate on the same workspace when the repo is opened in API Circle Lens.
 
-## Picking a workspace from the CLI
+## CLI and MCP automation
 
-Two mutually-exclusive flags, no ambiguity:
+Studio no longer ships, publishes, or configures the MCP server or the headless CLI. Those automation surfaces moved to API Circle Lens so they can be maintained with Lens features and gated through the appropriate plan.
 
-    apicircle mcp                                       # active workspace from the registry
-    apicircle import openapi spec.yaml \\
-       --workspace-name Petstore                        # by name (or id) — registry lookup
-    apicircle run "Smoke" --workspace-name ws-x         # by id
-    apicircle run "Smoke" --workspace-path ./ws         # by filesystem dir (skips the registry)
+Use Lens for supported headless workflows:
 
-Passing both flags is an error. Names are matched case-insensitively, so \`--workspace-name petstore\` resolves to "Petstore". Ids are stable across renames — ideal for CI scripts.
+    apicircle-lens mcp --repo ./your-workspace-repo
+    apicircle-lens run "Smoke" --repo ./your-workspace-repo
 
-Manage the registry from the terminal:
-
-    apicircle workspaces list                # every workspace + which is active
-    apicircle workspaces create "Petstore"   # seed a new one
-    apicircle workspaces use Petstore        # change active
-    apicircle workspaces path Petstore       # print the on-disk path
-
-## How MCP handles multiple workspaces
-
-\`apicircle-mcp\` boots against the registry root by default and exposes every workspace at once. Two new behaviours follow from that:
-
-- **\`workspace.list\`** — new tool. Returns every workspace + per-workspace counts (requests, folders, environments, mocks, plans) + which is active. AI clients call it to disambiguate.
-- **Multi-workspace envelope** — \`workspace.read\` (and any other tool that takes \`workspaceId\`) returns a structured "found multiple workspaces" response when no \`workspaceId\` is given AND more than one workspace is registered. The AI uses the included \`hint\` to ask the user which workspace they meant, or to call entity-specific tools (which default to the active workspace) when scoping to one is acceptable.
-
-Most tools (\`request.read\`, \`environment.create\`, etc) default to the active workspace and don't require \`workspaceId\` — multi-workspace is opt-in per tool call.
-
-## Refreshing without restarting
-
-The app re-reads the active workspace's \`workspace.json\` from disk on startup and merges any newer changes (e.g. from an \`apicircle import\` invocation or an AI-driven edit) into the in-memory store. No more "quit and reopen the desktop app to see CLI edits".
-
-Since 1.0.8 the desktop also **watches the on-disk files automatically**: when an MCP server or CLI write lands while the app is running, the editor and Environments panel update without you clicking Refresh. The watcher knows the difference between its own mirror writes and an external one, so it never refreshes on top of your own edits.
-
-## "MCP says it created a collection but the editor still shows the old content"
-
-This used to mean the desktop's boot-time write overwrote what MCP had just landed — a bug fixed in 1.0.8. If you still see a mismatch:
-
-- Reopen the workspace. The refresh toast reports the on-disk request / folder / environment counts. If the counts match what your AI client claimed, the data is on disk; the editor's selection may just be on a different workspace inside the registry — open the workspace switcher in the top bar.
-- If the counts on the refresh toast show fewer items than your AI client reports, the write didn't land. Check that your AI client's MCP config points at the same workspace mirror path under \`~/.apicircle/workspaces/\`.`,
+Existing Studio \`.apicircle\` workspaces remain compatible. Open the same repo in Lens when you need MCP tools, AI-client setup, or CLI execution-plan automation.`,
     keywords: [
       'multi-workspace',
       'multiple workspaces',
@@ -625,8 +595,8 @@ Drop the same \`.apicircle.json\` file into the Import modal in any other worksp
 
 The same format is available outside the desktop / web app:
 
-- CLI: \`apicircle export folder <name-or-id> -o file.apicircle.json\` and \`apicircle import apicircle file.apicircle.json\`. \`--list-credentials\` enumerates the detected credential ids; pass \`--include-credential <id>\` to keep specific fields verbatim.
-- MCP: tools \`folder.export_json\` and \`folder.import_json\` expose the same surface to AI clients (Claude Desktop, Cursor, Copilot, …) so workflows can round-trip a folder without leaving the chat.`,
+- Lens CLI: use \`apicircle-lens export folder <name-or-id> -o file.apicircle.json\` and \`apicircle-lens import apicircle file.apicircle.json\` for current headless import/export flows.
+- MCP: Studio no longer exposes folder import/export over MCP. Use API Circle Lens for Lens-owned MCP tools such as \`folder.export_json\` and \`folder.import_json\`; Studio \`.apicircle\` workspaces remain compatible.`,
     keywords: ['import', 'curl', 'openapi', 'postman', 'insomnia', 'har', 'spec', 'collection'],
   },
   {
@@ -770,7 +740,7 @@ On the web build, secret values can only be saved after you set a workspace pass
 
 ## Encrypted env vars across machines (export, import, Git)
 
-The model is the same on every path. The plaintext slot VALUE never leaves your device. The ciphertext + the slot's salt + the slot's label DO travel — through Git push/pull, through **Export as JSON** on the Environments sidebar, and through the MCP \`environment.export\` tool. On the receiving device:
+The model is the same on every path. The plaintext slot VALUE never leaves your device. The ciphertext + the slot's salt + the slot's label DO travel through Git push/pull and through **Export as JSON** on the Environments sidebar. If the same workspace is opened in API Circle Lens, Lens-owned MCP export tools follow the same rule. On the receiving device:
 
 - If the local Vault has the matching slot value, the row decrypts transparently the next time you send the request.
 - If the local Vault doesn't know about the slot yet, the **Provide secret values** gate appears in the Vault dock — fill each one and you're set.
@@ -1145,7 +1115,7 @@ The binaries are built in the open by this repository's GitHub Actions, and noth
 ## What the desktop app adds over the browser build
 
 - **Mock servers** — Start and Stop a mock from the Mocks panel; a browser tab cannot open a listening port.
-- **MCP server** — host the stdio MCP server so AI clients can drive the workspace.
+- **Lens-compatible workspace files** — open the same \`.apicircle\` workspace in API Circle Lens when you need the deprecated Studio MCP workflow now provided by Lens.
 - **OS-keychain secrets** — the master key is wrapped by macOS Keychain, Windows Credential Manager, or Linux libsecret instead of a workspace passphrase.
 - **No browser limits** — requests send the \`Cookie\` header and are not blocked by CORS.
 

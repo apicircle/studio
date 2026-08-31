@@ -27,7 +27,7 @@ repo-root/
         └── attachments/<slotId>           ← attachments moved alongside
 ```
 
-**Layout 3 is the current format.** The desktop app, CLI, MCP server, and
+**Layout 3 is the current format.** The desktop app, VS Code extension, and Lens-owned CLI/MCP automation
 VS Code extension all resolve workspace paths via `registry.json` →
 `workspace-<id>/workspace.json`.
 
@@ -160,20 +160,11 @@ This works from **any** layout version.
 3. To export environments separately: go to the **Environments** sidebar →
    kebab menu → **Export as JSON**.
 
-**From the CLI:**
+**From headless automation:**
 
-```bash
-# Export a folder
-npx @apicircle/cli export folder "My Folder" \
-  --out my-folder.apicircle.json \
-  --workspace-path ./old-repo
-
-# List credentials that would be included (they are redacted by default)
-npx @apicircle/cli export folder "My Folder" \
-  --out my-folder.apicircle.json \
-  --list-credentials \
-  --workspace-path ./old-repo
-```
+Studio no longer publishes the old `@apicircle/cli` package. Use API Circle
+Lens for current import/export automation against the same Git-backed
+`.apicircle` workspace.
 
 ### Import into a new workspace
 
@@ -184,21 +175,10 @@ npx @apicircle/cli export folder "My Folder" \
 3. If the export contained encrypted secret rows, the importer will prompt
    you to provide secret values (or skip them).
 
-**From the CLI:**
+**From headless automation:**
 
-```bash
-npx @apicircle/cli import apicircle ./my-folder.apicircle.json \
-  --workspace-name "My New Workspace"
-```
-
-You can also import from other formats during the transition:
-
-```bash
-# Import from Postman, OpenAPI, Insomnia, HAR, or cURL
-npx @apicircle/cli import openapi ./openapi.yaml --workspace-name "My Workspace"
-npx @apicircle/cli import postman ./collection.json --workspace-name "My Workspace"
-npx @apicircle/cli import curl "curl -X GET https://api.example.com/users"
-```
+Use API Circle Lens for current CLI import flows. Studio's migration path stays
+the UI import/export workflow plus the shared `.apicircle` workspace format.
 
 ---
 
@@ -230,9 +210,9 @@ test -f .apicircle/workspace.json && echo "WARNING: stale flat workspace.json" |
 test -d .apicircle/attachments && echo "WARNING: stale flat attachments/" || echo "OK — no flat attachments"
 ```
 
-Open the workspace in the desktop app or point the MCP server at it to
+Open the workspace in the desktop app or, for MCP automation, open the same repo in API Circle Lens to
 confirm it loads correctly:
 
 ```bash
-npx @apicircle/cli mcp --workspace-path .
+apicircle-lens mcp --repo .
 ```

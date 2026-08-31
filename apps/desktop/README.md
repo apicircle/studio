@@ -41,8 +41,7 @@ need a display.
 ## Workspace mirror (multi-workspace on disk)
 
 The renderer keeps every workspace in IndexedDB; the desktop main
-process mirrors each one to disk so the CLI (`@apicircle/cli`) and
-the MCP server (`@apicircle/mcp-server`) see the same content. Layout
+process mirrors each one to disk so compatible headless automation can read the same workspace files. Studio no longer publishes the old CLI or MCP server; use API Circle Lens and `apicircle-lens mcp` for supported MCP workflows. Layout
 under `app.getPath('userData')`:
 
 ```
