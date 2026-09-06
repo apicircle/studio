@@ -96,6 +96,44 @@ export interface CreatedBlob {
   size: number;
 }
 
+/**
+ * One file in a {@link GitHubClient.commitFiles} commit. Exactly one of
+ * `content`, `contentBase64` or `delete` is meaningful; `content` is the
+ * default when none is given, so an empty file is `{ path, content: '' }`.
+ */
+export interface CommitFileInput {
+  path: string;
+  /** UTF-8 text content. */
+  content?: string;
+  /** Base64-encoded bytes — the binary path (attachments). */
+  contentBase64?: string;
+  /** Remove `path` from the tree. Idempotent when it is already absent. */
+  delete?: boolean;
+}
+
+export interface CommitFilesInput {
+  branch: string;
+  message: string;
+  /**
+   * The commit the new one is built on — the head the caller observed. Passing
+   * it rather than re-reading the branch keeps the write on the state the
+   * caller checked for divergence, instead of racing whatever landed since.
+   */
+  parentSha: string;
+  files: CommitFileInput[];
+}
+
+export interface CommittedFiles {
+  commitSha: string;
+  /**
+   * Blob sha per path, where the host reports one. GitHub does, because it
+   * uploads blobs itself; the other hosts commit whole files in a single call
+   * and report only the commit, so this is absent there and the caller's
+   * `blobSha` stays undefined until a refresh probe fills it in.
+   */
+  fileShas?: Record<string, string>;
+}
+
 export interface PullRequestSummary {
   number: number;
   /** GitHub UI URL (e.g. https://github.com/me/api/pull/12) — what we link to. */
@@ -465,6 +503,69 @@ export class GitHubClient {
       },
     );
     return { ref: json.ref, sha: json.object.sha };
+  }
+
+  /**
+   * Commit whole files onto a branch, layered over its current tree so
+   * untouched paths are inherited.
+   *
+   * ONE method rather than the blob/tree/commit/ref sequence it performs
+   * below, because that sequence is GitHub's git-data API and no other host
+   * has an equivalent: GitLab takes a commit with `actions[]`, Bitbucket a
+   * `/src` POST, Azure DevOps a push with `changes[]` — each a single call.
+   * Exposing the five-step shape as the contract made every other host
+   * unimplementable, which is why push-to-save worked on GitHub alone and
+   * failed on Bitbucket with `"getCommit" is not supported`.
+   *
+   * GitHub's own behaviour is unchanged by construction: this is the same five
+   * calls, in the same order, with the same arguments push-to-save made itself.
+   */
+  async commitFiles(
+    token: string,
+    owner: string,
+    name: string,
+    input: CommitFilesInput,
+    opts: CallOptions = {},
+  ): Promise<CommittedFiles> {
+    const parent = await this.getCommit(token, owner, name, input.parentSha, opts);
+    const fileShas: Record<string, string> = {};
+    const entries: TreeEntryInput[] = [];
+    for (const file of input.files) {
+      if (file.delete) {
+        // `{path, sha: null}` over a base_tree is GitHub's "remove this path".
+        entries.push({ path: file.path, sha: null });
+      } else if (file.contentBase64 !== undefined) {
+        // Binary bytes cannot ride in a tree entry's `content`, so they go
+        // through a blob first — the only reason GitHub can report `fileShas`.
+        const blob = await this.createBlob(
+          token,
+          owner,
+          name,
+          { content: file.contentBase64, encoding: 'base64' },
+          opts,
+        );
+        fileShas[file.path] = blob.sha;
+        entries.push({ path: file.path, sha: blob.sha });
+      } else {
+        entries.push({ path: file.path, content: file.content ?? '' });
+      }
+    }
+    const tree = await this.createTree(
+      token,
+      owner,
+      name,
+      { baseTreeSha: parent.treeSha, entries },
+      opts,
+    );
+    const commit = await this.createCommit(
+      token,
+      owner,
+      name,
+      { message: input.message, treeSha: tree.sha, parents: [input.parentSha] },
+      opts,
+    );
+    await this.updateRef(token, owner, name, { branch: input.branch, sha: commit.sha }, opts);
+    return { commitSha: commit.sha, fileShas };
   }
 
   /**

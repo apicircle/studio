@@ -46,6 +46,14 @@ import type { GitProviderMethod } from './provider';
 const UNSUPPORTED: Record<GitHostKind, readonly GitProviderMethod[]> = {
   github: [],
 
+  // `commitFiles` is absent from EVERY list — supported everywhere — and that
+  // is a statement about the hosts, not an oversight. Each of the four commits
+  // a set of whole files in a single call: GitLab a commit with `actions[]`,
+  // Bitbucket a `/src` POST, Azure DevOps a push with `changes[]`, GitHub the
+  // blob/tree/commit/ref sequence it wraps. The git-data PRIMITIVES below stay
+  // unsupported off GitHub, so a caller that wants to write files asks for
+  // `commitFiles` rather than building a tree.
+
   // GitLab: no low-level git-data write recipe (single-file writes go through
   // `putContents`), and MR notes are not issue comments.
   gitlab: [

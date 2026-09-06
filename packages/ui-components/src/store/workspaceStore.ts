@@ -167,7 +167,7 @@ import type { RefreshFromDiskResult } from './refreshFromDiskTypes';
 import { applyTheme } from '../theme/applyTheme';
 import type { ToastRecord } from '../primitives/Toast';
 import { bytesToBase64 } from './attachmentBlobs';
-import type { TreeEntryInput } from '@apicircle/git';
+import type { CommitFileInput } from '@apicircle/git';
 import {
   addFolder as addFolderAction,
   addRequest as addRequestAction,
@@ -5648,32 +5648,32 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
 
     // If steps 1-5 throw, the local store stays untouched (mutation only
-    // happens in step 6 below). A retry is safe: orphan blobs/trees from a
-    // partial run are harmless, and updateRef is idempotent on the same SHA.
-    // 1. Read the head tree SHA so createTree can layer on top of it.
-    const headCommit = await client.getCommit(token, owner, name, head.sha);
-    // 2. Upload every locally-cached attachment as a blob. Slots whose
-    //    bytes aren't in local IDB are skipped — base_tree keeps the
-    //    remote entry intact (or absent, on first push).
+    // happens in step 6 below). A retry is safe: the commit is one call, and
+    // it is a fast-forward over the head we just checked for divergence.
+    // 1. Collect every locally-cached attachment as a binary file. Slots whose
+    //    bytes aren't in local IDB are skipped — the commit layers over the
+    //    branch's current tree, so the remote entry stays intact (or absent,
+    //    on first push). Nothing reaches the network here: a checksum failure
+    //    below must abort before any of this is written.
     const slots = collectAttachmentSlots(synced);
-    const attachmentEntries: TreeEntryInput[] = [];
-    // Track which Global File Assets were pushed in this commit so we
-    // can stamp their `workingBranchRef` (provenance state machine) after
-    // updateRef succeeds. Map by slotId → blob sha; the asset lookup is
-    // done at stamp time so a slot that doesn't correspond to a Global
+    const attachmentFiles: CommitFileInput[] = [];
+    // Which Global File Assets went into this commit, so their
+    // `workingBranchRef` can be stamped (provenance state machine) once it
+    // lands. Slot id → blob sha, or `null` on a host that reports no per-file
+    // sha; the asset lookup happens at stamp time, so a slot with no Global
     // Asset (legacy private-slot entries) is silently skipped.
-    const pushedBySlotId: Record<string, string> = {};
+    const pushedBySlotId: Record<string, string | null> = {};
     // Snapshot the attachment-delete queue under a safety filter:
     // any slotId still referenced by a CURRENT asset is dropped
     // (defensive against a snapshot-restore that brought a deleted
-    // asset back). Whatever's left is emitted as `{path, sha: null}`
-    // tree entries below.
+    // asset back). Whatever's left is emitted as a deletion below.
     const liveSlotIds = new Set(
       Object.values(synced.globalAssets.files ?? {}).map((a) => a.slotId),
     );
     const deletesToEmit = (local.pendingAttachmentDeletes ?? []).filter(
       (slotId) => !liveSlotIds.has(slotId),
     );
+    const pushedSlotIds: string[] = [];
     for (const slot of slots) {
       const record = await getAttachment(slot.slotId);
       if (!record) continue;
@@ -5683,15 +5683,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           `Attachment ${slot.filename ?? slot.slotId} failed checksum verification; push aborted.`,
         );
       }
-      const blob = await client.createBlob(token, owner, name, {
-        content: bytesToBase64(record.bytes),
-        encoding: 'base64',
-      });
-      attachmentEntries.push({
+      attachmentFiles.push({
         path: attachmentPath(synced.workspaceId, slot.slotId),
-        sha: blob.sha,
+        contentBase64: bytesToBase64(record.bytes),
       });
-      pushedBySlotId[slot.slotId] = blob.sha;
+      pushedSlotIds.push(slot.slotId);
     }
     // 3. Build the new tree, layering workspace.json + attachments over base_tree.
     //    Phase 8 security: redact every secret-bearing field BEFORE
@@ -5701,18 +5697,16 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     //    git. `assertNoPlaintextCredentials` is a fail-closed lint pass
     //    over the already-serialised bytes — if any redactor case got
     //    missed (or a future RequestAuth variant is added without
-    //    wiring), the push is refused before we ever call createTree.
+    //    wiring), the push is refused before we ever write a commit.
     const redacted = redactForGit(synced);
     const content = serializeWorkspaceForGit(redacted);
     assertNoPlaintextCredentials(content);
-    // GitHub's git-data tree API treats `{path, sha: null}` over a
-    // `base_tree` as "delete this path." We emit one such entry per
-    // queued attachment delete so the working branch's tree (and via
-    // PR merge, the base branch) drops the orphan blob. Idempotent
-    // when the path already missing.
-    const deleteEntries: TreeEntryInput[] = deletesToEmit.map((slotId) => ({
+    // One deletion per queued attachment delete, so the working branch (and
+    // via PR merge, the base branch) drops the orphan blob. Idempotent when
+    // the path is already missing.
+    const deleteFiles: CommitFileInput[] = deletesToEmit.map((slotId) => ({
       path: attachmentPath(synced.workspaceId, slotId),
-      sha: null,
+      delete: true,
     }));
     // Read the existing registry so sibling workspace entries survive
     // the push. Without this, a multi-workspace repo loses every entry
@@ -5766,28 +5760,38 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       null,
       2,
     );
-    const newTree = await client.createTree(token, owner, name, {
-      baseTreeSha: headCommit.treeSha,
-      entries: [
+    // 4. ONE commit carrying registry + workspace + attachments + deletions,
+    //    layered over the branch's current tree and parented on the head this
+    //    push already checked for divergence.
+    //
+    //    `commitFiles` rather than the blob/tree/commit/ref sequence this used
+    //    to perform inline: that sequence is GitHub's git-data API, which no
+    //    other host implements, so push-to-save worked on GitHub alone and
+    //    died on Bitbucket at the first call with `"getCommit" is not
+    //    supported by the bitbucket provider`. On GitHub the provider still
+    //    makes exactly those five calls, so nothing about that path changed.
+    const message = (commitMessage ?? '').trim() || 'chore: sync workspace via API Circle Studio';
+    const committed = await client.commitFiles(token, owner, name, {
+      branch: branch.name,
+      message,
+      parentSha: head.sha,
+      files: [
         { path: REGISTRY_JSON_PATH, content: registryContent },
         { path: workspaceJsonPath(synced.workspaceId), content },
-        ...attachmentEntries,
-        ...deleteEntries,
+        ...attachmentFiles,
+        ...deleteFiles,
       ],
     });
-    // 4. Create the commit.
-    const message = (commitMessage ?? '').trim() || 'chore: sync workspace via API Circle Studio';
-    const newCommit = await client.createCommit(token, owner, name, {
-      message,
-      treeSha: newTree.sha,
-      parents: [head.sha],
-    });
-    const newCommitSha = newCommit.sha;
-    // 5. Fast-forward the branch ref.
-    await client.updateRef(token, owner, name, {
-      branch: branch.name,
-      sha: newCommit.sha,
-    });
+    const newCommitSha = committed.commitSha;
+    // 5. Record what landed, per slot. A host that reports per-file shas
+    //    (GitHub, which uploads the blobs itself) gives the asset its
+    //    `blobSha`; elsewhere the entry is `null` — pushed, sha unknown — and
+    //    the refresh probe fills it in later. `blobSha` is optional precisely
+    //    so an absent one is not a lie about what is on the branch.
+    for (const slotId of pushedSlotIds) {
+      pushedBySlotId[slotId] =
+        committed.fileShas?.[attachmentPath(synced.workspaceId, slotId)] ?? null;
+    }
 
     // 6. Persist the new local branch state + refresh the sync snapshot.
     //    After a successful push, the just-pushed `synced` doc IS the
@@ -8602,14 +8606,28 @@ function findProvisionedSecretId(
  *
  * `tokenOverride` is honoured verbatim: a caller supplying its own credential
  * (a dedicated link session) has already decided which one is right.
+ *
+ * The host is resolved ONCE, here, and handed to both halves. Reading it twice
+ * is what let them disagree again: `targetProvider` fell back to `'github'`
+ * while `decryptSessionToken` fell back to the CONNECTED host, so a caller that
+ * named no host — the create-branch form's base-branch fetch — built a GitHub
+ * client and handed it the Bitbucket PAT. That is a 401 the user reads as
+ * "couldn't fetch the base branch", and a third-party credential sent to
+ * api.github.com. An omitted host now means the workspace's own repo, which is
+ * the only thing such a caller can mean.
  */
 async function targetClientAndToken(
   local: WorkspaceLocal,
   opts?: { host?: GitHostKind; baseUrl?: string; tokenOverride?: string },
 ): Promise<{ client: GitProvider; token: string }> {
-  const client = targetProvider(opts);
+  const host = opts?.host ?? connectedHostKind(local);
+  // `hostProviderOptions` rather than `connectedRepo.apiBaseUrl` directly: the
+  // recorded base URL belongs to the connected repo's host, so it must not be
+  // aimed at a DIFFERENT host the caller named explicitly.
+  const baseUrl = opts?.baseUrl ?? hostProviderOptions(local, host)?.baseUrl;
+  const client = targetProvider({ host, baseUrl });
   const override = opts?.tokenOverride?.trim();
-  const token = override || (await decryptSessionToken(local, opts?.host));
+  const token = override || (await decryptSessionToken(local, host));
   return { client, token };
 }
 
@@ -9010,10 +9028,16 @@ function queueAttachmentDelete(set: SetState, get: GetState, slotId: string): vo
 //
 // `stripPushedFromPending` mirrors the same set: any asset whose blob is
 // now durable on the remote drops out of `pendingFileUploads`.
+//
+// Both read the map by KEY PRESENCE, not by truthiness. The value is the blob
+// sha where the host reports one and `null` where it does not (a single-call
+// commit reports only the commit), so a falsy check would treat every asset
+// pushed to Bitbucket / GitLab / Azure DevOps as not pushed at all — leaving it
+// stuck on "Uploaded locally" and queued for re-upload forever.
 
 function stampPushedAssetRefs(
   synced: WorkspaceSynced,
-  pushedBySlotId: Record<string, string>,
+  pushedBySlotId: Record<string, string | null>,
   branchName: string,
   commitSha: string,
   verifiedAt: string,
@@ -9023,14 +9047,23 @@ function stampPushedAssetRefs(
   const nextFiles: Record<string, (typeof files)[string]> = {};
   let touched = false;
   for (const [id, asset] of Object.entries(files)) {
-    const blobSha = pushedBySlotId[asset.slotId];
-    if (!blobSha) {
+    if (!Object.prototype.hasOwnProperty.call(pushedBySlotId, asset.slotId)) {
       nextFiles[id] = asset;
       continue;
     }
+    const blobSha = pushedBySlotId[asset.slotId];
     nextFiles[id] = {
       ...asset,
-      workingBranchRef: { branchName, blobSha, commitSha, verifiedAt },
+      // `blobSha` is omitted rather than set to a placeholder when the host
+      // reports none: it is an optional field whose whole job is an equality
+      // check against the base branch, and a stand-in value would answer that
+      // question wrongly. The refresh probe fills it in from `getContents`.
+      workingBranchRef: {
+        branchName,
+        ...(blobSha ? { blobSha } : {}),
+        commitSha,
+        verifiedAt,
+      },
       updatedAt: verifiedAt,
     };
     touched = true;
@@ -9089,14 +9122,14 @@ function mergeStampsIntoLive(
 function stripPushedFromPending(
   pending: WorkspaceLocal['pendingFileUploads'],
   files: WorkspaceSynced['globalAssets']['files'],
-  pushedBySlotId: Record<string, string>,
+  pushedBySlotId: Record<string, string | null>,
 ): WorkspaceLocal['pendingFileUploads'] {
   if (!pending || Object.keys(pending).length === 0) return pending;
   if (!files) return pending;
   const next = { ...pending };
   let touched = false;
   for (const [id, asset] of Object.entries(files)) {
-    if (next[id] && pushedBySlotId[asset.slotId]) {
+    if (next[id] && Object.prototype.hasOwnProperty.call(pushedBySlotId, asset.slotId)) {
       delete next[id];
       touched = true;
     }

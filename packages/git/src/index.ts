@@ -1,5 +1,8 @@
 export { GitHubClient } from './github/api';
 export type {
+  CommitFileInput,
+  CommitFilesInput,
+  CommittedFiles,
   CreatedBlob,
   CreatedCommit,
   BinaryFileContents,

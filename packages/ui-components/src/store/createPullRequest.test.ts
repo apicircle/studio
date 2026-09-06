@@ -48,10 +48,12 @@ async function setupConnectedBranchPushed(): Promise<void> {
       // Registry fallback probe: when workspace.json is 404, createWorkingBranch
       // also checks .apicircle/registry.json on the branch. 404 = no registry either.
       { status: 404, body: { message: 'Not Found' } },
-      // push flow: getRef, getCommit, getContents(registry), createTree, createCommit, updateRef
+      // push flow: getRef, getContents(registry), then the commit — getCommit →
+      // createTree → createCommit → updateRef, which `commitFiles` performs on
+      // GitHub's behalf.
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
-      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
       { status: 404, body: { message: 'Not Found' } },
+      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
       { body: { sha: 'tree-new' } },
       { body: { sha: 'commit-new', message: 'm', tree: { sha: 'tree-new' } } },
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'commit-new' } } },

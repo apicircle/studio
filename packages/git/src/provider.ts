@@ -34,6 +34,7 @@ export type GitProviderMethod =
   | 'createTree'
   | 'createCommit'
   | 'updateRef'
+  | 'commitFiles'
   | 'searchMarketplaceRepos'
   | 'startDeviceFlow'
   | 'pollDeviceToken'

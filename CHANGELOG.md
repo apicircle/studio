@@ -27,6 +27,41 @@
 
 ### Fixed
 
+- **Push to save now works on every connected host, not just GitHub.**
+  `pushWorkspace` performed GitHub's git-data recipe inline —
+  `getCommit` → `createBlob` → `createTree` → `createCommit` → `updateRef` — and
+  no other host implements any of those five. A Bitbucket user who connected a
+  repo and created a working branch could not push at all: the first call came
+  straight back as `"getCommit" is not supported by the bitbucket provider`.
+
+  The provider contract gains `commitFiles`, one call that commits a set of
+  whole files over a branch's current tree. Each host has a real equivalent —
+  GitLab a commit with `actions[]`, Bitbucket a `/src` POST, Azure DevOps a push
+  with `changes[]` — and GitHub's implementation performs exactly the same five
+  calls, in the same order, that push used to make itself, so nothing about the
+  GitHub path changed.
+
+  Text, binary and deletions all travel through it: Bitbucket's write is
+  multipart so an attachment's bytes are committed verbatim rather than
+  url-encoded into corruption, and each host probes a path before naming
+  `create`/`update` (or `add`/`edit`) because they reject the wrong one. Where a
+  host reports no per-file blob sha, an asset's `blobSha` is left absent for the
+  refresh probe to fill in rather than stamped with a stand-in.
+
+  Two incidental improvements: a corrupt attachment now aborts the push after a
+  single read and before any write (it used to fetch the head commit first), and
+  the fast-forward guarantee is preserved on every host — Bitbucket via
+  `parents`, Azure via `oldObjectId`, GitHub via the non-forced `updateRef`.
+
+- **The base-branch list asked the wrong host, with the wrong host's token.**
+  `targetClientAndToken` resolved the client and the token independently: the
+  client fell back to GitHub while the token fell back to the CONNECTED host. A
+  caller that named no host — the create-branch form loading its base branches —
+  therefore built a GitHub client and handed it a Bitbucket credential, which
+  reads to the user as "couldn't fetch the base branch" and sends a third-party
+  token to `api.github.com`. The host is now resolved once and handed to both
+  halves, and an omitted host means the workspace's own repo.
+
 - **The Workspace panel no longer calls every Git source "GitHub".** The section
   heading read "GitHub Connection" and the empty state "No GitHub connection"
   whatever host the build could connect, so a Bitbucket session sat under a

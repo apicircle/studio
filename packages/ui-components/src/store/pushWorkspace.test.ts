@@ -85,6 +85,8 @@ describe('workspaceStore.pushWorkspace', () => {
     const fetchMock = queuedFetch([
       // getRef
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
+      // getContents (registry — 404 on first push)
+      { body: { message: 'Not Found' }, status: 404 },
       // getCommit
       {
         body: {
@@ -93,8 +95,6 @@ describe('workspaceStore.pushWorkspace', () => {
           tree: { sha: 'tree-old' },
         },
       },
-      // getContents (registry — 404 on first push)
-      { body: { message: 'Not Found' }, status: 404 },
       // createTree
       { body: { sha: 'tree-new' } },
       // createCommit
@@ -136,10 +136,10 @@ describe('workspaceStore.pushWorkspace', () => {
     const fetchMock = queuedFetch([
       // getRef
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
-      // getCommit
-      { body: { sha: 'sha-main', message: 'initial', tree: { sha: 'tree-old' } } },
       // getContents (registry — 404 on first push)
       { body: { message: 'Not Found' }, status: 404 },
+      // getCommit
+      { body: { sha: 'sha-main', message: 'initial', tree: { sha: 'tree-old' } } },
       // createTree
       { body: { sha: 'tree-new' } },
       // createCommit
@@ -177,8 +177,8 @@ describe('workspaceStore.pushWorkspace', () => {
 
     const fetchMock = queuedFetch([
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
-      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
       { body: { message: 'Not Found' }, status: 404 },
+      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
       { body: { sha: 'tree-new' } },
       { body: { sha: 'commit-new', message: 'm', tree: { sha: 'tree-new' } } },
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'commit-new' } } },
@@ -199,8 +199,8 @@ describe('workspaceStore.pushWorkspace', () => {
 
     const fetchMock = queuedFetch([
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
-      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
       { body: { message: 'Not Found' }, status: 404 },
+      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
       { body: { sha: 'tree-new' } },
       { body: { sha: 'commit-new', message: 'm', tree: { sha: 'tree-new' } } },
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'commit-new' } } },
@@ -246,12 +246,12 @@ describe('workspaceStore.pushWorkspace', () => {
     const fetchMock = queuedFetch([
       // getRef
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
-      // getCommit
+      // getContents (registry — 404 on first push)
+      { body: { message: 'Not Found' }, status: 404 },
+      // getCommit — from here down, `commitFiles` is driving
       { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
       // createBlob (one per referenced attachment)
       { body: { sha: 'blob-1', size: bytes.length } },
-      // getContents (registry — 404 on first push)
-      { body: { message: 'Not Found' }, status: 404 },
       // createTree
       { body: { sha: 'tree-new' } },
       // createCommit
@@ -264,7 +264,7 @@ describe('workspaceStore.pushWorkspace', () => {
     await useWorkspaceStore.getState().pushWorkspace();
 
     // createBlob body carries base64 content + encoding.
-    const createBlobCall = fetchMock.mock.calls[2];
+    const createBlobCall = fetchMock.mock.calls[3];
     expect(createBlobCall[0]).toBe('https://api.github.com/repos/me/api/git/blobs');
     const blobBody = JSON.parse((createBlobCall[1] as RequestInit).body as string) as {
       content: string;
@@ -314,9 +314,9 @@ describe('workspaceStore.pushWorkspace', () => {
 
     const fetchMock = queuedFetch([
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
+      { body: { message: 'Not Found' }, status: 404 },
       { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
       { body: { sha: 'blob-tracked', size: bytes.length } },
-      { body: { message: 'Not Found' }, status: 404 },
       { body: { sha: 'tree-new' } },
       { body: { sha: 'commit-new', message: 'm', tree: { sha: 'tree-new' } } },
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'commit-new' } } },
@@ -371,12 +371,12 @@ describe('workspaceStore.pushWorkspace', () => {
         return fakeResponse({
           body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } },
         });
-      if (call === 2)
+      if (call === 2) return fakeResponse({ body: { message: 'Not Found' }, status: 404 });
+      if (call === 3)
         return fakeResponse({
           body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } },
         });
-      if (call === 3) return fakeResponse({ body: { sha: 'blob-pushed', size: bytes.length } });
-      if (call === 4) return fakeResponse({ body: { message: 'Not Found' }, status: 404 });
+      if (call === 4) return fakeResponse({ body: { sha: 'blob-pushed', size: bytes.length } });
       if (call === 5) {
         // Mid-push mutation: a second Global File Asset (simulating any
         // synced mutation that lands during the push — a rename, another
@@ -486,8 +486,8 @@ describe('workspaceStore.pushWorkspace', () => {
 
     const fetchMock = queuedFetch([
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
-      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
       { body: { message: 'Not Found' }, status: 404 },
+      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
       { body: { sha: 'tree-new' } },
       { body: { sha: 'commit-new', message: 'm', tree: { sha: 'tree-new' } } },
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'commit-new' } } },
@@ -549,14 +549,18 @@ describe('workspaceStore.pushWorkspace', () => {
     });
     const fetchMock = queuedFetch([
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
-      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
     ]);
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(useWorkspaceStore.getState().pushWorkspace()).rejects.toThrow(
       /checksum verification/,
     );
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // ONE call — the divergence pre-flight — and then nothing. Attachments are
+    // now read and verified locally before the commit is assembled, so corrupt
+    // bytes abort without a second read and, more importantly, without any
+    // write. This used to be two calls because the head commit was fetched
+    // before the checksums were checked.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('skips slots whose bytes are not in local IDB (pulled but not downloaded)', async () => {
@@ -573,9 +577,10 @@ describe('workspaceStore.pushWorkspace', () => {
 
     const fetchMock = queuedFetch([
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
-      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
-      // No createBlob — getContents (registry 404) then straight to createTree.
       { body: { message: 'Not Found' }, status: 404 },
+      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
+      // No createBlob: the slot has no local bytes, so the commit carries no
+      // attachment file and getCommit goes straight on to createTree.
       { body: { sha: 'tree-new' } },
       { body: { sha: 'commit-new', message: 'm', tree: { sha: 'tree-new' } } },
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'commit-new' } } },
@@ -600,8 +605,8 @@ describe('workspaceStore.pushWorkspace', () => {
 
     const fetchMock = queuedFetch([
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
-      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
       { body: { message: 'Not Found' }, status: 404 },
+      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
       // createTree fails with 422
       { body: { message: 'Tree object not found' }, status: 422 },
     ]);
@@ -623,8 +628,8 @@ describe('workspaceStore.pushWorkspace', () => {
     // than double-commit.
     const fetchMock = queuedFetch([
       { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
-      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
       { body: { message: 'Not Found' }, status: 404 },
+      { body: { sha: 'sha-main', message: 'i', tree: { sha: 'tree-old' } } },
       { body: { sha: 'tree-new' } },
       { body: { sha: 'commit-orphan', message: 'm', tree: { sha: 'tree-new' } } },
       // updateRef returns 500 — server-side glitch

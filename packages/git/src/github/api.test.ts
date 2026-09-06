@@ -1346,3 +1346,82 @@ describe('GitHubClient.updateRef', () => {
     expect(body.force).toBe(true);
   });
 });
+
+describe('GitHubClient.commitFiles', () => {
+  // The seam that made push-to-save host-agnostic. On GitHub it is still the
+  // blob/tree/commit/ref sequence push used to perform inline, so these assert
+  // the sequence AND the shape of what each call carries.
+  function queued(bodies: unknown[]): typeof fetch {
+    let i = 0;
+    return vi.fn(async () => jsonResponse(bodies[i++])) as unknown as typeof fetch;
+  }
+
+  const SEQUENCE = [
+    { sha: 'parent', message: 'i', tree: { sha: 'tree-old' } },
+    { sha: 'blob-1', size: 4 },
+    { sha: 'tree-new' },
+    { sha: 'commit-new', message: 'm', tree: { sha: 'tree-new' } },
+    { ref: 'refs/heads/wb', object: { sha: 'commit-new' } },
+  ];
+
+  it('layers text, binary and deletions over the parent tree in one commit', async () => {
+    const fetchImpl = queued(SEQUENCE);
+    const client = new GitHubClient({ fetchImpl });
+    const result = await client.commitFiles('tok', 'me', 'api', {
+      branch: 'wb',
+      message: 'sync',
+      parentSha: 'parent',
+      files: [
+        { path: 'a.json', content: '{}' },
+        { path: 'bin', contentBase64: 'AQIDBA==' },
+        { path: 'gone', delete: true },
+      ],
+    });
+
+    const calls = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls.map(([url]) => String(url))).toEqual([
+      'https://api.github.com/repos/me/api/git/commits/parent',
+      'https://api.github.com/repos/me/api/git/blobs',
+      'https://api.github.com/repos/me/api/git/trees',
+      'https://api.github.com/repos/me/api/git/commits',
+      'https://api.github.com/repos/me/api/git/refs/heads/wb',
+    ]);
+
+    // Binary goes through a blob; text is inlined; a deletion is `sha: null`.
+    const blob = JSON.parse((calls[1][1] as RequestInit).body as string);
+    expect(blob).toEqual({ content: 'AQIDBA==', encoding: 'base64' });
+    const tree = JSON.parse((calls[2][1] as RequestInit).body as string);
+    expect(tree.base_tree).toBe('tree-old');
+    expect(tree.tree).toEqual([
+      { path: 'a.json', mode: '100644', type: 'blob', content: '{}' },
+      { path: 'bin', mode: '100644', type: 'blob', sha: 'blob-1' },
+      { path: 'gone', mode: '100644', type: 'blob', sha: null },
+    ]);
+    // The commit is parented on the sha the CALLER observed, not on a re-read.
+    const commit = JSON.parse((calls[3][1] as RequestInit).body as string);
+    expect(commit).toMatchObject({ message: 'sync', tree: 'tree-new', parents: ['parent'] });
+    // A non-forced ref update: the fast-forward guarantee.
+    expect(JSON.parse((calls[4][1] as RequestInit).body as string)).toEqual({
+      sha: 'commit-new',
+      force: false,
+    });
+
+    // Blob shas are reported per path, which is what lets an attachment record
+    // its `blobSha`. Only the binary file has one — the others were never blobs.
+    expect(result).toEqual({ commitSha: 'commit-new', fileShas: { bin: 'blob-1' } });
+  });
+
+  it('treats a file with neither content nor base64 as empty rather than skipping it', async () => {
+    const fetchImpl = queued([SEQUENCE[0], SEQUENCE[2], SEQUENCE[3], SEQUENCE[4]]);
+    const client = new GitHubClient({ fetchImpl });
+    await client.commitFiles('tok', 'me', 'api', {
+      branch: 'wb',
+      message: 'sync',
+      parentSha: 'parent',
+      files: [{ path: 'empty' }],
+    });
+    const calls = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls;
+    const tree = JSON.parse((calls[1][1] as RequestInit).body as string);
+    expect(tree.tree).toEqual([{ path: 'empty', mode: '100644', type: 'blob', content: '' }]);
+  });
+});

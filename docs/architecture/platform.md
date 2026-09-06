@@ -92,7 +92,10 @@ moment:
 - `synced.globalAssets.files[id]` — the asset entry itself, plus two
   optional ref slots:
   - `workingBranchRef` — bytes verified on the consumer's working
-    branch. Populated by the push flow after `updateRef` resolves.
+    branch. Populated by the push flow once the commit lands. Its
+    `blobSha` is optional and stays ABSENT on hosts that report no
+    per-file sha (only GitHub does, because only it uploads the blobs
+    by hand); the refresh probe fills it in from `getContents` later.
   - `baseBranchRef` — bytes verified on the base branch (typically
     `main`). Populated by the refresh-time verification pass when it
     detects the bytes on base — i.e. after a PR merges.
@@ -108,10 +111,11 @@ moment:
   Without this queue, removing an asset would drop it from
   `workspace.json` but leave the orphan blob on the remote tree
   forever — and the PR merge would carry the orphan into the base
-  branch. The push emits one `{path: '.apicircle/workspace-<id>/attachments/<slotId>',
-sha: null}` tree entry per queued slot (GitHub treats `sha: null`
-  layered over `base_tree` as a deletion), clears the queue post-
-  `updateRef`, and a pre-emit safety filter drops any slotId that
+  branch. The push emits one deletion per queued slot through
+  `GitProvider.commitFiles` (GitHub renders it as a `{path, sha: null}`
+  tree entry over `base_tree`, GitLab as a `delete` action, Bitbucket as
+  a `files` field, Azure DevOps as a `delete` change), clears the queue
+  once the commit lands, and a pre-emit safety filter drops any slotId that
   matches a currently-registered asset (defends against snapshot-
   restore bringing a previously-deleted asset back). The aggregator
   also self-heals ghost entries on every commit so the queue never
