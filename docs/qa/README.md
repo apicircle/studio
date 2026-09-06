@@ -303,7 +303,7 @@ pnpm test:e2e:live-github
 
 ### Live-GitHub CI pipeline
 
-The [`.github/workflows/e2e-live-github.yml`](../../.github/workflows/e2e-live-github.yml) workflow runs **nightly and on manual dispatch only** — it does **not** run on PRs/pushes and does **not** gate merges, because it hits real `api.github.com` (slow, rate-limited, and subject to Contents-API eventual consistency). It validates the required secret/variable set, sweeps orphaned bot repos older than 12 hours, and then runs `pnpm test:e2e:live-github` single worker with Playwright traces/video retained only on failure. Run it locally before risky GitHub-sync changes with `node scripts/ci-local/run-ci.mjs --only live-github`.
+The [`.github/workflows/e2e-live-github.yml`](../../.github/workflows/e2e-live-github.yml) workflow runs **on manual dispatch only** — it does **not** run on a schedule, PRs, or pushes and does **not** gate merges, because it hits real `api.github.com` (slow, rate-limited, and subject to Contents-API eventual consistency). It validates the required secret/variable set, sweeps orphaned bot repos older than 12 hours, and then runs `pnpm test:e2e:live-github` single worker with Playwright traces/video retained only on failure. Run it locally before risky GitHub-sync changes with `node scripts/ci-local/run-ci.mjs --only live-github`.
 
 Configure GitHub Actions like this:
 

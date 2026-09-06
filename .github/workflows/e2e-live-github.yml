@@ -2,11 +2,11 @@
 # ephemeral repos per test against real api.github.com; the workflow
 # keeps an orphan sweep as an outer safety net for crashed runs.
 #
-# Schedule: nightly + workflow_dispatch only. This suite does NOT run on
+# Trigger: workflow_dispatch only. This suite does NOT run on
 # PRs/pushes and does NOT gate merges — it hits real api.github.com (slow,
 # rate-limited, subject to Contents-API eventual consistency), so it runs
-# nightly as a regression net and on demand via "Run workflow". Run it
-# locally before risky GitHub-sync changes: scripts/ci-local/README.md
+# on demand via "Run workflow". Run it locally before risky GitHub-sync
+# changes: scripts/ci-local/README.md
 # (`node scripts/ci-local/run-ci.mjs --only live-github`).
 #
 # Sharding: one matrix job per `e2e/web/live-github/*.spec.ts` file, run
@@ -30,16 +30,13 @@
 name: e2e-live-github
 
 on:
-  schedule:
-    # Nightly at 02:30 UTC.
-    - cron: '30 2 * * *'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Single queue per ref so a manual run and the nightly cron can't overlap and
-# double the per-PAT rate-limit footprint. Never cancel a live run mid-flight —
+# Single queue per ref so manual runs can't overlap and double the per-PAT
+# rate-limit footprint. Never cancel a live run mid-flight —
 # an interrupted run can leave orphan repos (the sweep job reaps them, but
 # there's no reason to create the mess).
 concurrency:
