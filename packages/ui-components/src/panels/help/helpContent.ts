@@ -768,7 +768,7 @@ The **Unbind** button on an encrypted row tries to decrypt back to plaintext usi
   {
     id: 'sessions',
     title: 'Sessions',
-    body: `The Sessions tab — alongside Vault in the inspector dock — manages your GitHub sign-in. It is what authorises push, pull, refresh, and pull-request creation.
+    body: `The Sessions tab — alongside Vault in the inspector dock — manages your Git host sign-in. It is what authorises push, pull, refresh, and pull-request creation.
 
 ## Signing in
 
@@ -783,6 +783,14 @@ Either way the token is verified with a \`GET /user\` call before it is accepted
     Verified      2 minutes ago
 
 A token needs \`repo\` (read + push) and \`pull_request\` (open PRs). If \`pull_request\` is missing the tab warns you.
+
+## More than one host
+
+Builds that register more than one Git host (GitLab, Bitbucket Cloud, Azure DevOps) show a host strip at the top of the tab. Each pill carries a dot — filled when that host already holds a session — and picking one shows that host's required scopes and either its connect form or its session card. Arrow keys move between hosts.
+
+Bitbucket Cloud offers two credential types. An **API token** is created on your Atlassian account and entered together with your account email; a workspace, project or repository **access token** is pasted on its own. The scope list changes with the type you pick. App passwords were retired by Atlassian and no longer work.
+
+The Workspace panel's repo browser lists repos only through hosts that hold a session — connect the host first, then pick the repo.
 
 ## How the token is stored
 

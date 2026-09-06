@@ -50,6 +50,8 @@ import {
 } from '../../store/workspaceStore';
 import { parseRepoCoordinate, REPO_HINT, REPO_PLACEHOLDER } from '../../store/repoCoordinate';
 import { useHostSelection } from '../../hooks/useHostSelection';
+import { useLazyListWindow } from '../../hooks/useLazyListWindow';
+import { Badge } from '../../primitives/Badge';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';
 import { ReleaseAndTopicsModal } from './ReleaseAndTopicsModal';
@@ -69,6 +71,7 @@ export function WorkspacePanel() {
   // the connect form entirely — the form being GitHub-shaped was the second
   // problem, not the first.
   const session = useWorkspaceStore((s) => anyWorkspaceSession(s.local));
+  const sessionHost = useWorkspaceStore((s) => hostOfWorkspaceSession(s.local));
   const connectedRepo = useWorkspaceStore((s) => s.local?.connectedRepo ?? null);
   const workingBranch = useWorkspaceStore((s) => s.local?.workingBranch ?? null);
 
@@ -82,6 +85,7 @@ export function WorkspacePanel() {
           isLocalOnly={isLocalOnly}
           hasRepo={!!connectedRepo}
           hasBranch={!!workingBranch}
+          host={sessionHost}
         />
       </header>
 
@@ -105,8 +109,11 @@ export function WorkspacePanel() {
       </section>
 
       <section>
+        {/* "Git source", not "GitHub Connection": the session below can belong to
+            any registered host, and a heading naming GitHub over a Bitbucket
+            account told the user their connection was something it was not. */}
         <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
-          GitHub Connection
+          Git source
         </h2>
         {isLocalOnly ? <NoSessionCard /> : <SessionCard />}
       </section>
@@ -668,10 +675,14 @@ function StateBadge({
   isLocalOnly,
   hasRepo,
   hasBranch,
+  host,
 }: {
   isLocalOnly: boolean;
   hasRepo: boolean;
   hasBranch: boolean;
+  /** The host holding the session — named in the badge, so a Bitbucket session
+   *  does not report as "GitHub Connected". */
+  host: GitHostKind;
 }) {
   let label: string;
   let className: string;
@@ -685,7 +696,7 @@ function StateBadge({
     label = 'Repo connected';
     className = 'border-accent/40 bg-accent/10 text-accent';
   } else {
-    label = 'GitHub Connected';
+    label = `${GIT_HOST_LABELS[host]} Connected`;
     className = 'border-success/40 bg-success/10 text-success';
   }
   return (
@@ -702,27 +713,51 @@ function StateBadge({
 
 function NoSessionCard() {
   const openRightDockTab = useWorkspaceStore((s) => s.openRightDockTab);
+  // Which hosts this build can connect. Open-core Studio registers GitHub alone
+  // and keeps naming GitHub's two scopes here; a multi-host build cannot list
+  // one host's scopes under a card that offers four, so it names the hosts and
+  // sends the reader to the per-host guidance the vault already carries.
+  const { registeredHosts } = useHostSelection();
+  const multiHost = registeredHosts.length > 1;
   return (
     <div className="rounded-sm border border-border bg-card p-4">
       <div className="mb-3 flex items-center gap-2 text-sm text-text-primary">
         <ShieldAlert size={14} className="text-amber" />
-        No GitHub connection
+        No Git source connected
       </div>
       <p className="mb-3 text-xs text-text-muted">
         You&apos;re working in local-only mode. All changes live in IndexedDB and are never pushed
-        anywhere. Connect a GitHub PAT to enable push-to-save and PR creation.
+        anywhere. Connect a Git host to enable push-to-save and pull-request creation.
       </p>
-      <p className="mb-2 text-xs text-text-muted">Required scopes when creating the PAT:</p>
-      <ul className="mb-4 ml-4 list-disc space-y-0.5 text-xs text-text-muted">
-        <li>
-          <code className="text-text-primary">repo</code> — read/write workspace.json on the working
-          branch
-        </li>
-        <li>
-          <code className="text-text-primary">pull_request</code> — open PRs from working branch to
-          base
-        </li>
-      </ul>
+      {multiHost ? (
+        <>
+          <p className="mb-2 text-xs text-text-muted">Supported hosts:</p>
+          <ul className="mb-3 flex flex-wrap gap-1.5" aria-label="Supported Git hosts">
+            {registeredHosts.map((kind) => (
+              <li key={kind}>
+                <Badge>{GIT_HOST_LABELS[kind]}</Badge>
+              </li>
+            ))}
+          </ul>
+          <p className="mb-4 text-xs text-text-muted">
+            Each host lists the token scopes it needs under Secret Vault → Sessions.
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="mb-2 text-xs text-text-muted">Required scopes when creating the PAT:</p>
+          <ul className="mb-4 ml-4 list-disc space-y-0.5 text-xs text-text-muted">
+            <li>
+              <code className="text-text-primary">repo</code> — read/write workspace.json on the
+              working branch
+            </li>
+            <li>
+              <code className="text-text-primary">pull_request</code> — open PRs from working branch
+              to base
+            </li>
+          </ul>
+        </>
+      )}
       <button
         type="button"
         onClick={() => openRightDockTab('vault', { vaultSubtab: 'sessions' })}
@@ -798,12 +833,14 @@ function ConnectRepoForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Which hosts this build can resolve, and which one is selected — defaulting
-  // to the host that HAS a session rather than to GitHub, so a GitLab-only user
-  // is not shown a repo browser asking GitHub for repos with no GitHub token.
-  // The open-core Studio registers GitHub alone, so `hosts` is `['github']`
-  // there and the picker below never renders: the form stays exactly as it was.
-  const { hosts, host, setHost } = useHostSelection();
+  // Only the hosts holding a session are offered. The browser below lists repos
+  // THROUGH that session, so a host without one could only fail at the token
+  // step — and a picker offering it read as "choose any of four" when one could
+  // answer. `registeredHosts` still says whether this is a multi-host build: the
+  // self-managed base URL belongs to that, not to how many sessions exist. In
+  // open-core Studio both lists are `['github']` and nothing extra renders.
+  const { hosts, registeredHosts, host, setHost } = useHostSelection({ connectedOnly: true });
+  const multiHostBuild = registeredHosts.length > 1;
   const [apiBaseUrl, setApiBaseUrl] = useState('');
 
   const [repos, setRepos] = useState<GitHubRepo[] | null>(null);
@@ -842,19 +879,20 @@ function ConnectRepoForm() {
     };
   }, [manualMode, host, apiBaseUrl, listAccessibleRepos, surfaceMissingScope]);
 
+  // The whole filtered list: the filter must see every repo, and the listbox
+  // renders a window over it that grows as the user scrolls (see the hook).
   const filteredRepos = useMemo(() => {
     if (!repos) return [];
     const trimmed = filter.trim().toLowerCase();
-    if (trimmed.length === 0) return repos.slice(0, 50);
-    return repos
-      .filter(
-        (r) =>
-          r.fullName.toLowerCase().includes(trimmed) ||
-          r.name.toLowerCase().includes(trimmed) ||
-          r.owner.toLowerCase().includes(trimmed),
-      )
-      .slice(0, 50);
+    if (trimmed.length === 0) return repos;
+    return repos.filter(
+      (r) =>
+        r.fullName.toLowerCase().includes(trimmed) ||
+        r.name.toLowerCase().includes(trimmed) ||
+        r.owner.toLowerCase().includes(trimmed),
+    );
   }, [repos, filter]);
+  const repoWindow = useLazyListWindow(filteredRepos);
 
   const connectByOwnerName = async (owner: string, name: string, label: string) => {
     setSubmitting(true);
@@ -893,7 +931,10 @@ function ConnectRepoForm() {
   return (
     <div className="space-y-2 rounded-sm border border-accent/30 bg-accent/5 p-4">
       <div className="flex items-start justify-between gap-3">
-        <label className="block text-xs text-text-muted" htmlFor="connect-repo-host">
+        <label
+          className="block text-xs text-text-muted"
+          htmlFor={hosts.length > 1 ? 'connect-repo-host' : undefined}
+        >
           Connect a repo on {GIT_HOST_LABELS[host]}
         </label>
         <button
@@ -910,39 +951,51 @@ function ConnectRepoForm() {
         </button>
       </div>
 
-      {hosts.length > 1 && (
+      {(hosts.length > 1 || multiHostBuild) && (
         <div className="flex gap-2">
-          <select
-            id="connect-repo-host"
-            aria-label="Git host"
-            value={host}
-            onChange={(e) => {
-              setHost(e.target.value as GitHostKind);
-              // The repo list belongs to the old host; keeping it on screen
-              // would offer repos the new host cannot connect.
-              setError(null);
-              setFilter('');
-              setShowRepoList(false);
-            }}
-            className="h-7 rounded-sm border border-border bg-card px-2 text-xs text-text-primary"
-          >
-            {hosts.map((kind) => (
-              <option key={kind} value={kind}>
-                {GIT_HOST_LABELS[kind]}
-              </option>
-            ))}
-          </select>
-          <input
-            aria-label="API base URL"
-            value={apiBaseUrl}
-            onChange={(e) => setApiBaseUrl(e.target.value)}
-            // Optional on purpose: blank means the host's public API. Only a
-            // self-managed instance needs this, and demanding it from everyone
-            // would make the common case harder to serve the rare one.
-            placeholder="API base URL (self-managed — optional)"
-            className="h-7 min-w-0 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary placeholder:text-text-dim"
-          />
+          {hosts.length > 1 && (
+            <select
+              id="connect-repo-host"
+              aria-label="Git host"
+              value={host}
+              onChange={(e) => {
+                setHost(e.target.value as GitHostKind);
+                // The repo list belongs to the old host; keeping it on screen
+                // would offer repos the new host cannot connect.
+                setError(null);
+                setFilter('');
+                setShowRepoList(false);
+              }}
+              className="h-7 rounded-sm border border-border bg-card px-2 text-xs text-text-primary"
+            >
+              {hosts.map((kind) => (
+                <option key={kind} value={kind}>
+                  {GIT_HOST_LABELS[kind]}
+                </option>
+              ))}
+            </select>
+          )}
+          {multiHostBuild && (
+            <input
+              aria-label="API base URL"
+              value={apiBaseUrl}
+              onChange={(e) => setApiBaseUrl(e.target.value)}
+              // Optional on purpose: blank means the host's public API. Only a
+              // self-managed instance needs this, and demanding it from everyone
+              // would make the common case harder to serve the rare one.
+              placeholder="API base URL (self-managed — optional)"
+              className="h-7 min-w-0 flex-1 rounded-sm border border-border bg-card px-2 text-xs text-text-primary placeholder:text-text-dim"
+            />
+          )}
         </div>
+      )}
+      {multiHostBuild && hosts.length === 1 && (
+        // One session, so no picker — but a multi-host build should still say
+        // how to reach the other hosts, or the missing picker reads as a bug.
+        <p className="text-[0.6875rem] text-text-dim">
+          Repos are listed through your {GIT_HOST_LABELS[host]} session. To connect a repo on
+          another host, connect that host under Secret Vault → Sessions first.
+        </p>
       )}
 
       {manualMode ? (
@@ -1004,9 +1057,10 @@ function ConnectRepoForm() {
             <ul
               id="connect-repo-options"
               role="listbox"
+              onScroll={repoWindow.onScroll}
               className="absolute left-0 right-0 top-full z-10 mt-1 max-h-64 overflow-y-auto rounded-sm border border-border bg-card shadow-elevated"
             >
-              {filteredRepos.map((r) => (
+              {repoWindow.visible.map((r) => (
                 <li key={r.fullName}>
                   <button
                     type="button"
@@ -1024,6 +1078,23 @@ function ConnectRepoForm() {
                   </button>
                 </li>
               ))}
+              {repoWindow.hasMore && (
+                // The next page arrives on scroll; this row is the same action
+                // for a keyboard or screen-reader user, and says how much is left.
+                <li>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={repoWindow.showMore}
+                    role="option"
+                    aria-label="Show more repositories"
+                    className="flex w-full items-center justify-center px-2 py-1.5 text-[0.625rem] text-text-dim hover:bg-surface hover:text-text-primary"
+                  >
+                    Showing {repoWindow.visible.length} of {filteredRepos.length} — scroll or click
+                    for more
+                  </button>
+                </li>
+              )}
             </ul>
           )}
           {showRepoList &&
@@ -1048,8 +1119,8 @@ function ConnectRepoForm() {
       )}
       <p className="text-[0.6875rem] text-text-dim">
         Pick from your accessible repos, or use Manual entry for repos that don&apos;t show up. We
-        call <code>GET /repos/&lt;owner&gt;/&lt;name&gt;</code> with your stored PAT to validate
-        access and read the default branch. Nothing is written.
+        read the repo with your stored token to validate access and its default branch. Nothing is
+        written.
       </p>
     </div>
   );

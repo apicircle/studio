@@ -1,6 +1,7 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { registerGitProvider, resetGitProviderRegistry } from '@apicircle/git';
 import type {
   LinkedSnapshot,
   LinkedWorkspace,
@@ -835,5 +836,94 @@ describe('LinkWorkspacePanel — per-link session UX', () => {
         tokenOverride: 'ghp_dedicated_secret',
       });
     });
+  });
+
+  describe('source host on a multi-host build', () => {
+    afterEach(() => {
+      resetGitProviderRegistry();
+    });
+
+    it('offers only connected hosts through the workspace session, every host with a dedicated PAT', async () => {
+      // The workspace session can only list repos on the host it belongs to, so
+      // in that mode a host without a session is not offered — with one session
+      // there is no picker at all. A dedicated PAT can reach any registered host.
+      registerGitProvider('gitlab', () => ({}) as never);
+      registerGitProvider('bitbucket', () => ({}) as never);
+      const user = userEvent.setup();
+      const listAccessibleRepos = vi.fn(async () => []);
+      useWorkspaceStore.setState({ listAccessibleRepos });
+      const local = useWorkspaceStore.getState().local!;
+      useWorkspaceStore.setState({
+        local: {
+          ...local,
+          sessions: {
+            github: { workspace: null, links: {} },
+            hosts: {
+              gitlab: {
+                workspace: {
+                  accountLogin: 'gl-user',
+                  tokenSecretId: 'sec_gl',
+                  grantedScopes: [],
+                  addedAt: 't',
+                  lastVerifiedAt: null,
+                  canCreatePullRequests: null,
+                },
+                links: {},
+              },
+            },
+          },
+        },
+      });
+      render(<LinkWorkspacePanel />);
+      await user.click(screen.getByRole('button', { name: /Link a private workspace/ }));
+
+      expect(screen.queryByLabelText('Source Git host')).not.toBeInTheDocument();
+      // GitLab is not GitHub, so the self-managed base URL is offered even
+      // without a picker: the build is multi-host, the session just is not.
+      expect(screen.getByLabelText('Source API base URL')).toBeInTheDocument();
+      await waitFor(() =>
+        expect(listAccessibleRepos).toHaveBeenCalledWith({ host: 'gitlab', baseUrl: undefined }),
+      );
+
+      await user.click(screen.getByLabelText(/Add a dedicated session/));
+      const picker = screen.getByLabelText('Source Git host');
+      expect(
+        within(picker)
+          .getAllByRole('option')
+          .map((o) => o.textContent),
+      ).toEqual(['GitHub', 'GitLab', 'Bitbucket']);
+    });
+  });
+
+  it('the repo combobox pages on scroll instead of stopping at fifty', async () => {
+    const user = userEvent.setup();
+    const repos = Array.from({ length: 70 }, (_, i) => ({
+      fullName: `me/repo-${i}`,
+      owner: 'me',
+      name: `repo-${i}`,
+      defaultBranch: 'main',
+      visibility: 'private' as const,
+      isPrivate: true,
+      pushable: true,
+    }));
+    useWorkspaceStore.setState({ listAccessibleRepos: vi.fn(async () => repos) });
+    render(<LinkWorkspacePanel />);
+    await user.click(screen.getByRole('button', { name: /Link a private workspace/ }));
+    const combo = await screen.findByLabelText('Filter accessible repos');
+    await waitFor(() => expect(combo).toBeEnabled());
+    await user.click(combo);
+    const listbox = await screen.findByRole('listbox');
+    // Fifty repos plus the "more" row, which says how much is left.
+    expect(within(listbox).getAllByRole('option')).toHaveLength(51);
+    const more = within(listbox).getByRole('option', { name: 'Show more repositories' });
+    expect(more.textContent).toContain('Showing 50 of 70');
+    await user.click(more);
+    expect(within(listbox).getAllByRole('option')).toHaveLength(70);
+    expect(
+      within(listbox).queryByRole('option', { name: 'Show more repositories' }),
+    ).not.toBeInTheDocument();
+    // Scrolling the listbox is the pointer path to the same window growth.
+    fireEvent.scroll(listbox, { target: { scrollTop: 10_000 } });
+    expect(within(listbox).getAllByRole('option')).toHaveLength(70);
   });
 });

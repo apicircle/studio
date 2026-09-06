@@ -1,6 +1,9 @@
-import { act, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { GitHubRepo } from '@apicircle/git';
+import { registerGitProvider, resetGitProviderRegistry } from '@apicircle/git';
+import type { GitHostSession } from '@apicircle/shared';
 import { WorkspacePanel } from './WorkspacePanel';
 import { renderWithStore } from '../../../test/renderWithStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
@@ -28,14 +31,20 @@ function queuedFetch(queue: ResponseSpec[]): ReturnType<typeof vi.fn> {
 }
 
 describe('WorkspacePanel', () => {
-  it('shows "Local Workspace" badge and connection prompt when no GitHub session', async () => {
+  it('shows "Local Workspace" badge and connection prompt when no session exists', async () => {
     await renderWithStore(<WorkspacePanel />);
     expect(screen.getByText('Local Workspace')).toBeInTheDocument();
-    expect(screen.getByText(/No GitHub connection/)).toBeInTheDocument();
-    // The scope guidance lists `repo` and `pull_request` as required.
+    // Host-neutral: the session can belong to any registered host, so the empty
+    // state must not claim the one it is missing is GitHub's.
+    expect(screen.getByText(/No Git source connected/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Git source' })).toBeInTheDocument();
+    expect(screen.queryByText(/GitHub Connection/)).not.toBeInTheDocument();
+    // Open-core Studio registers GitHub alone, so the guidance still lists
+    // GitHub's `repo` and `pull_request` scopes.
     const codeMatches = screen.getAllByText(/^repo$/);
     expect(codeMatches.length).toBeGreaterThan(0);
     expect(screen.getByText('pull_request')).toBeInTheDocument();
+    expect(screen.queryByText('Supported hosts:')).not.toBeInTheDocument();
   });
 
   it('clicking the connect CTA opens the Vault dock pre-selected on the Sessions sub-tab', async () => {
@@ -90,6 +99,165 @@ describe('WorkspacePanel', () => {
     const reg = useWorkspaceStore.getState().workspaceRegistry!;
     const active = reg.workspaces.find((w) => w.id === reg.activeWorkspaceId)!;
     expect(active.name).toBe('Payments API');
+  });
+
+  describe('Git source on a multi-host build', () => {
+    // The Lens shell registers GitLab / Bitbucket Cloud / Azure DevOps behind the
+    // provider seam. Everything below is what THAT build shows; open-core Studio
+    // registers GitHub alone and keeps the GitHub-only rendering asserted above.
+    const SESSION: GitHostSession = {
+      accountLogin: 'bb-user',
+      tokenSecretId: 'sec_bb',
+      grantedScopes: [],
+      addedAt: '2026-09-01T00:00:00.000Z',
+      lastVerifiedAt: null,
+      canCreatePullRequests: null,
+    };
+
+    function repo(fullName: string): GitHubRepo {
+      const [owner, name] = fullName.split('/');
+      return {
+        fullName,
+        owner,
+        name,
+        defaultBranch: 'main',
+        visibility: 'private',
+        isPrivate: true,
+        pushable: true,
+      };
+    }
+
+    function registerAllHosts(): void {
+      registerGitProvider('gitlab', () => ({}) as never);
+      registerGitProvider('bitbucket', () => ({}) as never);
+      registerGitProvider('azure-devops', () => ({}) as never);
+    }
+
+    function seedSessions(hosts: Array<'github' | 'gitlab' | 'bitbucket' | 'azure-devops'>): void {
+      act(() => {
+        const local = useWorkspaceStore.getState().local!;
+        const others = Object.fromEntries(
+          hosts
+            .filter((h) => h !== 'github')
+            .map((h) => [h, { workspace: { ...SESSION, accountLogin: `${h}-user` }, links: {} }]),
+        );
+        useWorkspaceStore.setState({
+          local: {
+            ...local,
+            sessions: {
+              github: hosts.includes('github')
+                ? { workspace: { ...SESSION, accountLogin: 'gh-user' }, links: {} }
+                : { workspace: null, links: {} },
+              hosts: others,
+            },
+          },
+        });
+      });
+    }
+
+    afterEach(() => {
+      resetGitProviderRegistry();
+    });
+
+    it('names the hosts it can connect instead of reciting GitHub scopes', async () => {
+      registerAllHosts();
+      await renderWithStore(<WorkspacePanel />);
+      expect(screen.getByText(/No Git source connected/)).toBeInTheDocument();
+      const hosts = screen.getByRole('list', { name: 'Supported Git hosts' });
+      expect(hosts.textContent).toBe('GitHubGitLabBitbucketAzure DevOps');
+      // GitHub's scope list is wrong advice for three of the four hosts, so the
+      // card points at the per-host guidance in the vault instead.
+      expect(screen.queryByText(/^repo$/)).not.toBeInTheDocument();
+      expect(screen.getByText(/Each host lists the token scopes it needs/)).toBeInTheDocument();
+      // The one route out is unchanged.
+      expect(screen.getByRole('button', { name: /Connect via Secret Vault/ })).toBeInTheDocument();
+    });
+
+    it('a Bitbucket-only session is reported as Bitbucket, and the repo form lists through it', async () => {
+      registerAllHosts();
+      const listAccessibleRepos = vi.fn(async () => [repo('acme/api')]);
+      await renderWithStore(<WorkspacePanel />);
+      useWorkspaceStore.setState({ listAccessibleRepos });
+      seedSessions(['bitbucket']);
+
+      expect(screen.getByText('Bitbucket Connected')).toBeInTheDocument();
+      expect(screen.queryByText('GitHub Connected')).not.toBeInTheDocument();
+      expect(screen.getByText('bitbucket-user')).toBeInTheDocument();
+      expect(screen.getByText('Connect a repo on Bitbucket')).toBeInTheDocument();
+      // One session ⇒ no host picker: the other three hosts could only fail at
+      // the token step, and offering them read as "choose any of four".
+      expect(screen.queryByRole('combobox', { name: 'Git host' })).not.toBeInTheDocument();
+      expect(
+        screen.getByText(/Repos are listed through your Bitbucket session/),
+      ).toBeInTheDocument();
+      // A multi-host build still offers the self-managed base URL.
+      expect(screen.getByLabelText('API base URL')).toBeInTheDocument();
+      await waitFor(() =>
+        expect(listAccessibleRepos).toHaveBeenCalledWith({ host: 'bitbucket', baseUrl: undefined }),
+      );
+    });
+
+    it('offers only the hosts holding a session when more than one does', async () => {
+      registerAllHosts();
+      const listAccessibleRepos = vi.fn(async (opts?: { host?: string }) =>
+        opts?.host === 'bitbucket' ? [repo('acme/bb-api')] : [repo('me/gh-api')],
+      );
+      await renderWithStore(<WorkspacePanel />);
+      useWorkspaceStore.setState({ listAccessibleRepos });
+      seedSessions(['github', 'bitbucket']);
+
+      const picker = screen.getByRole('combobox', { name: 'Git host' });
+      expect(
+        within(picker)
+          .getAllByRole('option')
+          .map((o) => o.textContent),
+      ).toEqual(['GitHub', 'Bitbucket']);
+      expect(screen.getByText('Connect a repo on GitHub')).toBeInTheDocument();
+
+      await userEvent.selectOptions(picker, 'bitbucket');
+      expect(screen.getByText('Connect a repo on Bitbucket')).toBeInTheDocument();
+      await waitFor(() =>
+        expect(listAccessibleRepos).toHaveBeenLastCalledWith({
+          host: 'bitbucket',
+          baseUrl: undefined,
+        }),
+      );
+      await userEvent.click(screen.getByRole('combobox', { name: 'Filter accessible repos' }));
+      expect(
+        await screen.findByRole('option', { name: 'Connect acme/bb-api' }),
+      ).toBeInTheDocument();
+    });
+
+    it('pages the repo list on scroll instead of stopping at fifty', async () => {
+      const repos = Array.from({ length: 120 }, (_, i) => repo(`me/repo-${i}`));
+      await renderWithStore(<WorkspacePanel />);
+      useWorkspaceStore.setState({ listAccessibleRepos: vi.fn(async () => repos) });
+      seedSessions(['github']);
+
+      const filter = screen.getByRole('combobox', { name: 'Filter accessible repos' });
+      await waitFor(() => expect(filter).toBeEnabled());
+      await userEvent.click(filter);
+      const listbox = await screen.findByRole('listbox');
+      // Fifty repos plus the "more" row, which says how much is left.
+      expect(within(listbox).getAllByRole('option')).toHaveLength(51);
+      const more = within(listbox).getByRole('option', { name: 'Show more repositories' });
+      expect(more.textContent).toContain('Showing 50 of 120');
+
+      // The keyboard / assistive path: activating the row reveals a page.
+      await userEvent.click(more);
+      expect(within(listbox).getAllByRole('option')).toHaveLength(101);
+
+      // The pointer path: scrolling the listbox to its bottom reveals the rest.
+      fireEvent.scroll(listbox, { target: { scrollTop: 10_000 } });
+      expect(within(listbox).getAllByRole('option')).toHaveLength(120);
+      expect(
+        within(listbox).queryByRole('option', { name: 'Show more repositories' }),
+      ).not.toBeInTheDocument();
+
+      // A new filter is a new list: the window starts over.
+      await userEvent.type(filter, 'repo-1');
+      expect(within(listbox).getAllByRole('option')).toHaveLength(31);
+    });
   });
 
   describe('Repo + working branch (P4.2)', () => {

@@ -142,6 +142,24 @@ export interface BinaryFileContents {
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
+/** Pages of 100 the repo listing follows before stopping — 1,000 repos. */
+const MAX_REPO_PAGES = 10;
+
+/**
+ * The `rel="next"` target of an RFC 8288 `Link` header, or `null` when the
+ * response is the last page. Each comma-separated member is matched on its
+ * own with bounded character classes, so a hostile header cannot make the
+ * scan backtrack.
+ */
+function nextPageUrl(link: string | null): string | null {
+  if (!link) return null;
+  for (const member of link.split(',')) {
+    const match = /<([^>]+)>\s*;\s*rel="next"/.exec(member);
+    if (match) return match[1];
+  }
+  return null;
+}
+
 interface CallOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
@@ -188,16 +206,23 @@ export class GitHubClient {
 
   /**
    * List repositories the authenticated user can access. Used by the repo
-   * picker. Capped at 100 sorted by recent push; users with thousands of
-   * repos can paginate later.
+   * picker. Sorted by recent push and paged 100 at a time, following the
+   * `Link: rel="next"` header up to `MAX_REPO_PAGES` — a single page silently
+   * hid the 101st repo from anyone with more, and the picker had no way to say
+   * so. Only a `next` on this client's own API origin is followed: a header
+   * naming another host is not a page of this listing.
    */
   async listAccessibleRepos(token: string, opts: CallOptions = {}): Promise<GitHubRepo[]> {
-    const { json } = await this.call<RawRepo[]>(
-      token,
-      '/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member',
-      opts,
-    );
-    return json.map(normalizeRepo);
+    const repos: GitHubRepo[] = [];
+    let path: string | null =
+      '/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member';
+    for (let page = 0; path !== null && page < MAX_REPO_PAGES; page += 1) {
+      const { json, response } = await this.call<RawRepo[]>(token, path, opts);
+      repos.push(...json.map(normalizeRepo));
+      const next = nextPageUrl(response.headers.get('link'));
+      path = next !== null && next.startsWith(`${this.baseUrl}/`) ? next : null;
+    }
+    return repos;
   }
 
   /**

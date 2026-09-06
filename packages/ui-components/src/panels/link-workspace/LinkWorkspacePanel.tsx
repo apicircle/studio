@@ -33,6 +33,7 @@ import { formatBytes } from '@apicircle/shared';
 import type { LinkedSnapshot, LinkedWorkspace, SecretKeyMeta } from '@apicircle/shared';
 import { anyWorkspaceSession, useWorkspaceStore } from '../../store/workspaceStore';
 import { useHostSelection } from '../../hooks/useHostSelection';
+import { useLazyListWindow } from '../../hooks/useLazyListWindow';
 import { isRepoCoordinateComplete, REPO_PLACEHOLDER } from '../../store/repoCoordinate';
 import { getAttachment } from '../../persistence/attachments';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
@@ -394,10 +395,6 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
   // (e.g. private repos in orgs the user has explicit grants on but isn't
   // a formal member of). Toggling this mode hides the combobox + dropdowns
   // and shows free-text inputs that match the pre-B.1 flow.
-  // A link's SOURCE host is independent of the workspace's, but the session you
-  // hold is the best available default — you can only fetch a source you can
-  // authenticate to. `['github']` in open-core Studio, so no picker renders there.
-  const { hosts, host, setHost } = useHostSelection();
   const [apiBaseUrl, setApiBaseUrl] = useState('');
   const [manualMode, setManualMode] = useState(false);
   const [manualRepo, setManualRepo] = useState('');
@@ -409,6 +406,16 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
   // source repo can be reached even when the workspace session can't see it.
   const [sessionMode, setSessionMode] = useState<'workspace' | 'dedicated'>('workspace');
   const [linkSessionToken, setLinkSessionToken] = useState('');
+
+  // A link's SOURCE host is independent of the workspace's, but the session you
+  // hold is the best available default — you can only fetch a source you can
+  // authenticate to. In workspace-session mode that is also the whole list: a
+  // host without a session cannot list anything, so it is not offered. A
+  // dedicated PAT can reach any registered host. `['github']` in open-core
+  // Studio either way, so no picker renders there.
+  const { hosts, registeredHosts, host, setHost } = useHostSelection({
+    connectedOnly: sessionMode === 'workspace',
+  });
 
   const [submitting, setSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -555,18 +562,18 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
     };
   }, [selectedRepo, selectedBranch, tokenOverride, probeLinkedRepoVersions]);
 
+  // The whole filtered list: the filter must see every repo. The combobox pages
+  // the DOM itself, growing its window as the user scrolls.
   const filteredRepos = useMemo(() => {
     if (!repos) return [];
     const trimmed = filter.trim().toLowerCase();
-    if (trimmed.length === 0) return repos.slice(0, 50);
-    return repos
-      .filter(
-        (r) =>
-          r.fullName.toLowerCase().includes(trimmed) ||
-          r.name.toLowerCase().includes(trimmed) ||
-          r.owner.toLowerCase().includes(trimmed),
-      )
-      .slice(0, 50);
+    if (trimmed.length === 0) return repos;
+    return repos.filter(
+      (r) =>
+        r.fullName.toLowerCase().includes(trimmed) ||
+        r.name.toLowerCase().includes(trimmed) ||
+        r.owner.toLowerCase().includes(trimmed),
+    );
   }, [repos, filter]);
 
   const reset = () => {
@@ -733,7 +740,7 @@ function LinkPrivateModal({ open, onClose }: { open: boolean; onClose: () => voi
                 ))}
               </select>
             )}
-            {hosts.length > 1 && host !== 'github' && (
+            {registeredHosts.length > 1 && host !== 'github' && (
               <input
                 aria-label="Source API base URL"
                 value={apiBaseUrl}
@@ -1614,6 +1621,9 @@ function RepoCombobox({
   onPick: (r: GitHubRepo) => void;
   onClear: () => void;
 }) {
+  // A growing window over `repos`, so a large account is scrollable rather than
+  // cut off at a fixed count with nothing on screen to say so.
+  const repoWindow = useLazyListWindow(repos);
   return (
     <div>
       <label htmlFor="link-repo-combobox" className="block text-[0.6875rem] text-text-dim">
@@ -1671,9 +1681,10 @@ function RepoCombobox({
             <ul
               id="link-repo-options"
               role="listbox"
+              onScroll={repoWindow.onScroll}
               className="absolute left-0 right-0 top-full z-10 mt-1 max-h-64 overflow-y-auto rounded-sm border border-border bg-card shadow-elevated"
             >
-              {repos.map((r) => (
+              {repoWindow.visible.map((r) => (
                 <li key={r.fullName}>
                   <button
                     type="button"
@@ -1689,6 +1700,21 @@ function RepoCombobox({
                   </button>
                 </li>
               ))}
+              {repoWindow.hasMore && (
+                // The next page arrives on scroll; this row is the same action
+                // for a keyboard or screen-reader user, and says how much is left.
+                <li>
+                  <button
+                    type="button"
+                    onClick={repoWindow.showMore}
+                    role="option"
+                    aria-label="Show more repositories"
+                    className="flex w-full items-center justify-center px-2 py-1.5 text-[0.625rem] text-text-dim hover:bg-surface hover:text-text-primary"
+                  >
+                    Showing {repoWindow.visible.length} of {repos.length} — scroll or click for more
+                  </button>
+                </li>
+              )}
             </ul>
           )}
           {showList && !loading && repos.length === 0 && filter.trim().length > 0 && (

@@ -148,7 +148,7 @@ const STEPS: ReadonlyArray<TourStep> = [
   {
     id: 'workspace-switcher',
     title: 'Switch workspaces',
-    body: 'Jump between workspaces or create a new one. Each keeps its own collections, environments, and GitHub connection.',
+    body: 'Jump between workspaces or create a new one. Each keeps its own collections, environments, and Git connection.',
     target: 'workspace-switcher',
   },
   {

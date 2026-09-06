@@ -34,38 +34,200 @@ describe('SecretVaultDockPanel', () => {
     expect(screen.getByLabelText('GitHub PAT')).toBeInTheDocument();
   });
 
-  it('tells a Bitbucket user how to paste an app password', async () => {
-    // Bitbucket is the only host with two credential shapes needing different
-    // auth schemes: an app password authenticates as `username:secret` over
-    // Basic, an access token as a Bearer value. The client picks the scheme from
-    // the shape, so pasting an app password WITHOUT the username is the one
-    // mistake that cannot be recovered from — and this page links straight to
-    // the app-password creation screen.
-    registerGitProvider('bitbucket', () => ({}) as never);
-    try {
+  describe('Sessions tab — more than one registered host', () => {
+    // The Lens shell registers the other three hosts behind the provider seam.
+    // Open-core Studio registers GitHub alone and renders no host strip at all,
+    // which the GitHub-only test above keeps asserting.
+    const BB_SESSION = {
+      accountLogin: 'bb-user',
+      tokenSecretId: 'sec_bb',
+      grantedScopes: [],
+      addedAt: '2026-09-01T00:00:00.000Z',
+      lastVerifiedAt: null,
+      canCreatePullRequests: null,
+    };
+
+    function seedBitbucketSession(): void {
+      act(() => {
+        const local = useWorkspaceStore.getState().local!;
+        useWorkspaceStore.setState({
+          local: {
+            ...local,
+            sessions: {
+              ...local.sessions,
+              hosts: { bitbucket: { workspace: BB_SESSION, links: {} } },
+            },
+          },
+        });
+      });
+    }
+
+    async function openSessions(): Promise<void> {
       await renderWithStore(<SecretVaultDockPanel />);
       await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
-      await userEvent.selectOptions(screen.getByLabelText('Session Git host'), 'bitbucket');
-
-      expect(screen.getByText(/username:app_password/)).toBeInTheDocument();
-    } finally {
-      resetGitProviderRegistry();
     }
-  });
 
-  it('shows no credential-format note on a host with one credential shape', async () => {
-    // GitLab issues PATs only. A note about pasting a username there would be
-    // advice for a credential the host does not have.
-    registerGitProvider('gitlab', () => ({}) as never);
-    try {
-      await renderWithStore(<SecretVaultDockPanel />);
-      await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
-      await userEvent.selectOptions(screen.getByLabelText('Session Git host'), 'gitlab');
-
-      expect(screen.queryByText(/username:app_password/)).not.toBeInTheDocument();
-    } finally {
+    afterEach(() => {
       resetGitProviderRegistry();
-    }
+    });
+
+    it('picks the host from a tab strip that shows each host connection status', async () => {
+      registerGitProvider('gitlab', () => ({}) as never);
+      registerGitProvider('bitbucket', () => ({}) as never);
+      await openSessions();
+      seedBitbucketSession();
+
+      // A real tablist, not a <select>: every host's status is visible at once,
+      // and the accessible name spells out what the dot shows.
+      const strip = screen.getByRole('tablist', { name: 'Session Git host' });
+      expect(
+        within(strip)
+          .getAllByRole('tab')
+          .map((t) => t.getAttribute('aria-label')),
+      ).toEqual(['GitHub, not connected', 'GitLab, not connected', 'Bitbucket, connected']);
+      // Opens on the host that HAS a session.
+      expect(screen.getByRole('tab', { name: 'Bitbucket, connected' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      expect(screen.getByText(/Connected as bb-user on Bitbucket/)).toBeInTheDocument();
+      expect(screen.getByRole('tabpanel', { name: 'Bitbucket, connected' })).toBeInTheDocument();
+
+      // Arrow keys move between hosts, and the section below follows.
+      screen.getByRole('tab', { name: 'Bitbucket, connected' }).focus();
+      await userEvent.keyboard('{ArrowLeft}');
+      expect(screen.getByRole('tab', { name: 'GitLab, not connected' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      expect(screen.getByText('Required GitLab token scopes')).toBeInTheDocument();
+      expect(screen.getByLabelText('GitLab PAT')).toBeInTheDocument();
+    });
+
+    it('does not render the strip with a single registered host', async () => {
+      await openSessions();
+      expect(screen.queryByRole('tablist', { name: 'Session Git host' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('tabpanel')).not.toBeInTheDocument();
+    });
+
+    it('connects Bitbucket with an API token as email:token', async () => {
+      // Bitbucket authenticates an API token together with the Atlassian account
+      // email, over HTTP Basic. The form takes both and composes ONE secret, so
+      // the user never has to know about the colon that used to be the only way.
+      registerGitProvider('bitbucket', () => ({}) as never);
+      const connectHostSession = vi.fn(async () => BB_SESSION);
+      await openSessions();
+      useWorkspaceStore.setState({ connectHostSession });
+      await userEvent.click(screen.getByRole('tab', { name: 'Bitbucket, not connected' }));
+
+      // API token is the default kind, with its own scope vocabulary — including
+      // the one scope `GET /user` itself needs.
+      expect(screen.getByRole('radio', { name: /API token/ })).toBeChecked();
+      expect(screen.getByText('Required Bitbucket API token scopes')).toBeInTheDocument();
+      expect(screen.getByText('read:user:bitbucket')).toBeInTheDocument();
+      expect(screen.getByText('write:pullrequest:bitbucket')).toBeInTheDocument();
+      expect(screen.queryByText(/app_password/)).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('link', { name: /Create an API token on Atlassian/ }),
+      ).toHaveAttribute('href', 'https://id.atlassian.com/manage-profile/security/api-tokens');
+
+      // The token alone is not enough: an API token without its email cannot
+      // authenticate, so Connect stays disabled until both are present.
+      await userEvent.type(screen.getByLabelText('Bitbucket API token'), 'ATATT-secret');
+      expect(screen.getByRole('button', { name: 'Connect' })).toBeDisabled();
+      await userEvent.type(screen.getByLabelText('Atlassian account email'), 'ada@example.com');
+      await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+
+      await waitFor(() =>
+        expect(connectHostSession).toHaveBeenCalledWith(
+          'ada@example.com:ATATT-secret',
+          'bitbucket',
+          {
+            baseUrl: undefined,
+          },
+        ),
+      );
+      // Both fields clear on success.
+      expect(screen.getByLabelText('Bitbucket API token')).toHaveValue('');
+      expect(screen.getByLabelText('Atlassian account email')).toHaveValue('');
+    });
+
+    it('connects Bitbucket with an access token pasted on its own', async () => {
+      registerGitProvider('bitbucket', () => ({}) as never);
+      const connectHostSession = vi.fn(async () => BB_SESSION);
+      await openSessions();
+      useWorkspaceStore.setState({ connectHostSession });
+      await userEvent.click(screen.getByRole('tab', { name: 'Bitbucket, not connected' }));
+      await userEvent.click(screen.getByRole('radio', { name: /Access token/ }));
+
+      // The guidance follows the kind: classic scope names, `account` first,
+      // and the link goes to the guide because access tokens have no one page.
+      expect(screen.getByText('Required Bitbucket access token scopes')).toBeInTheDocument();
+      // The scope line, not the note below it that also names `account`.
+      expect(screen.getByText('account', { selector: 'li > code' })).toBeInTheDocument();
+      expect(screen.getByText(/verify the token when you connect/)).toBeInTheDocument();
+      expect(screen.getByText('pullrequest:write')).toBeInTheDocument();
+      expect(screen.queryByText('read:user:bitbucket')).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('link', { name: /How to create a Bitbucket access token/ }),
+      ).toHaveAttribute(
+        'href',
+        'https://support.atlassian.com/bitbucket-cloud/docs/access-tokens/',
+      );
+      expect(screen.queryByLabelText('Atlassian account email')).not.toBeInTheDocument();
+
+      await userEvent.type(screen.getByLabelText('Bitbucket access token'), 'ATCTT-secret');
+      await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+      await waitFor(() =>
+        expect(connectHostSession).toHaveBeenCalledWith('ATCTT-secret', 'bitbucket', {
+          baseUrl: undefined,
+        }),
+      );
+    });
+
+    it('offers no credential type on a host with one credential shape', async () => {
+      // GitLab issues PATs only. A credential-type choice there would describe a
+      // credential the host does not have.
+      registerGitProvider('gitlab', () => ({}) as never);
+      await openSessions();
+      await userEvent.click(screen.getByRole('tab', { name: 'GitLab, not connected' }));
+      expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Atlassian account email')).not.toBeInTheDocument();
+      expect(screen.getByLabelText('GitLab PAT')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /Create a token on GitLab/ })).toHaveAttribute(
+        'href',
+        'https://gitlab.com/-/user_settings/personal_access_tokens',
+      );
+    });
+
+    it('replaces a Bitbucket token through the same two-field form', async () => {
+      registerGitProvider('bitbucket', () => ({}) as never);
+      const updateHostToken = vi.fn(async () => BB_SESSION);
+      await openSessions();
+      seedBitbucketSession();
+      useWorkspaceStore.setState({ updateHostToken });
+
+      expect(screen.getByRole('button', { name: 'Test Bitbucket connection' })).toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Update token' }));
+
+      // API token by default: email + token, and Update waits for both.
+      await userEvent.type(screen.getByLabelText('New Bitbucket API token'), 'ATATT-new');
+      expect(screen.getByRole('button', { name: 'Update' })).toBeDisabled();
+      await userEvent.type(screen.getByLabelText('New Atlassian account email'), 'ada@example.com');
+      await userEvent.click(screen.getByRole('button', { name: 'Update' }));
+      await waitFor(() =>
+        expect(updateHostToken).toHaveBeenCalledWith('ada@example.com:ATATT-new', 'bitbucket'),
+      );
+
+      // Switching to an access token drops the email field; Cancel clears it all.
+      await userEvent.click(screen.getByRole('button', { name: 'Update token' }));
+      await userEvent.click(screen.getByRole('radio', { name: /Access token/ }));
+      expect(screen.queryByLabelText('New Atlassian account email')).not.toBeInTheDocument();
+      await userEvent.type(screen.getByLabelText('New Bitbucket access token'), 'ATCTT-new');
+      await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(screen.queryByLabelText('New Bitbucket access token')).not.toBeInTheDocument();
+      expect(updateHostToken).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('Vault tab — secret CRUD', () => {

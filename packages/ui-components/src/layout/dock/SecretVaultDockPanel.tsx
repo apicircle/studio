@@ -19,8 +19,10 @@ import {
 import type { SecretEntry, SecretKeyMeta } from '@apicircle/shared';
 import { safeExternalHref } from '@apicircle/shared';
 import { type GitHostKind, GIT_HOST_LABELS } from '@apicircle/git';
-import { SCOPE_GUIDANCE_BY_HOST } from '../../store/workspaceStore';
+import { BITBUCKET_ACCESS_TOKEN_SCOPES, SCOPE_GUIDANCE_BY_HOST } from '../../store/workspaceStore';
 import { useHostSelection } from '../../hooks/useHostSelection';
+import { Radio } from '../../primitives/Radio';
+import { Tabs, tabPanelProps } from '../../primitives/Tabs';
 import { useShallow } from 'zustand/react/shallow';
 import {
   GitHubError,
@@ -38,7 +40,9 @@ import { isGitHubDeviceFlowAvailable } from './githubDeviceFlow';
 /**
  * Secret Vault tab content for the right-side dock. Two sub-tabs:
  *   - Vault    — encrypted named secrets, referenced via `{{LABEL}}`
- *   - Sessions — GitHub PAT/OAuth session for this workspace
+ *   - Sessions — the Git host session for this workspace (GitHub PAT/OAuth in
+ *                open core; a host strip picks among the registered hosts when
+ *                the edition registers more than one)
  *
  * Sub-tab selection lives in the workspace store (`rightDock.vaultSubtab`)
  * so external callers — e.g. the "Manage session" button on the
@@ -838,7 +842,7 @@ function SessionsTab() {
   // Opens on the host that HAS a session, not on GitHub — see `useHostSelection`.
   // Defaulting to GitHub showed a GitLab-only user a connect form instead of the
   // session they already had.
-  const { hosts, host, setHost } = useHostSelection();
+  const { hosts, connectedHosts, host, setHost } = useHostSelection();
   const local = useWorkspaceStore((s) => s.local);
   const workspaceSession =
     host === 'github'
@@ -847,6 +851,13 @@ function SessionsTab() {
   const linkSessions = local?.sessions.github.links ?? {};
   const linkedWorkspaces = useWorkspaceStore((s) => s.synced?.linkedWorkspaces ?? {});
   const linkSessionEntries = Object.entries(linkSessions);
+  // Which Bitbucket credential the user is entering. Owned here rather than by
+  // the form, because the scope guidance ABOVE the form has to describe the
+  // same credential the form below is about to accept.
+  const [bitbucketKind, setBitbucketKind] = useState<BitbucketCredentialKind>('api-token');
+  // The strip renders only with more than one registered host, exactly as the
+  // select it replaces did — so open-core Studio's GitHub-only tab is unchanged.
+  const multiHost = hosts.length > 1;
   return (
     <div className="space-y-4">
       <div>
@@ -857,35 +868,58 @@ function SessionsTab() {
           Drives push, pull, and PR creation for this workspace&apos;s own repo. Disconnecting
           doesn&apos;t touch linking sessions below.
         </p>
-        {hosts.length > 1 && (
-          <div className="mb-2 flex items-center gap-2">
-            <label className="text-[0.6875rem] text-text-muted" htmlFor="session-host">
-              Host
-            </label>
-            <select
-              id="session-host"
-              aria-label="Session Git host"
-              value={host}
-              onChange={(e) => setHost(e.target.value as GitHostKind)}
-              className="h-6 rounded-sm border border-border bg-card px-1.5 text-[0.6875rem] text-text-primary"
-            >
-              {hosts.map((kind) => (
-                <option key={kind} value={kind}>
-                  {GIT_HOST_LABELS[kind]}
-                  {(
-                    kind === 'github'
-                      ? local?.sessions.github.workspace
-                      : local?.sessions.hosts?.[kind]?.workspace
-                  )
-                    ? ' · connected'
-                    : ''}
-                </option>
-              ))}
-            </select>
+        {multiHost && (
+          <div className="mb-2">
+            <p className="mb-1 text-[0.6875rem] text-text-muted">Host</p>
+            {/* A real tablist rather than a <select>: the choice changes the
+                whole section below it (guidance + form or session card), the
+                connection status of every host is visible at once instead of
+                hidden inside a closed dropdown, and arrow keys move between
+                hosts. The dot is the status; the accessible name spells it out. */}
+            <Tabs
+              label="Session Git host"
+              idBase="session-host"
+              activeId={host}
+              onChange={(id) => setHost(id as GitHostKind)}
+              className="flex-wrap"
+              tabs={hosts.map((kind) => {
+                const connected = connectedHosts.includes(kind);
+                return {
+                  id: kind,
+                  label: (
+                    <span className="inline-flex items-center gap-1.5">
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'h-1.5 w-1.5 shrink-0 rounded-full',
+                          connected ? 'bg-success' : 'bg-border-strong',
+                        )}
+                      />
+                      {GIT_HOST_LABELS[kind]}
+                    </span>
+                  ),
+                  ariaLabel: `${GIT_HOST_LABELS[kind]}, ${connected ? 'connected' : 'not connected'}`,
+                };
+              })}
+            />
           </div>
         )}
-        <ScopeGuidance host={host} />
-        {workspaceSession ? <ActiveSessionCard host={host} /> : <ConnectForm host={host} />}
+        <div className="space-y-2" {...(multiHost ? tabPanelProps('session-host', host) : {})}>
+          <ScopeGuidance host={host} bitbucketKind={bitbucketKind} />
+          {workspaceSession ? (
+            <ActiveSessionCard
+              host={host}
+              bitbucketKind={bitbucketKind}
+              onBitbucketKindChange={setBitbucketKind}
+            />
+          ) : (
+            <ConnectForm
+              host={host}
+              bitbucketKind={bitbucketKind}
+              onBitbucketKindChange={setBitbucketKind}
+            />
+          )}
+        </div>
       </div>
       <div>
         <h3 className="mb-1 text-xs font-medium uppercase tracking-wider text-text-dim">
@@ -929,13 +963,141 @@ function SessionsTab() {
   );
 }
 
-/** Where each host issues personal access tokens. */
-const TOKEN_PAGE_BY_HOST: Record<GitHostKind, string> = {
+/** Where each host issues personal access tokens. Bitbucket is keyed by
+ *  credential kind instead — see `BITBUCKET_TOKEN_PAGE`. */
+const TOKEN_PAGE_BY_HOST: Record<Exclude<GitHostKind, 'bitbucket'>, string> = {
   github: 'https://github.com/settings/tokens?type=beta',
   gitlab: 'https://gitlab.com/-/user_settings/personal_access_tokens',
-  bitbucket: 'https://bitbucket.org/account/settings/app-passwords/',
   'azure-devops': 'https://dev.azure.com',
 };
+
+/**
+ * The two credential shapes Bitbucket Cloud issues to a person today. App
+ * passwords, the third, were retired by Atlassian in 2026 — a form still asking
+ * for one sends the user to a settings page that no longer issues anything.
+ */
+type BitbucketCredentialKind = 'api-token' | 'access-token';
+
+/** Title-case name of each kind, for headings and field labels. */
+const BITBUCKET_KIND_TITLE: Record<BitbucketCredentialKind, string> = {
+  'api-token': 'API token',
+  'access-token': 'Access token',
+};
+
+/** Mid-sentence name of each kind. */
+const BITBUCKET_KIND_NOUN: Record<BitbucketCredentialKind, string> = {
+  'api-token': 'API token',
+  'access-token': 'access token',
+};
+
+/** Where each Bitbucket credential is created. An API token belongs to the
+ *  Atlassian ACCOUNT, not to Bitbucket, so its page is on id.atlassian.com; an
+ *  access token is created per workspace / project / repository, which has no
+ *  one URL, so the link is the guide that says where. */
+const BITBUCKET_TOKEN_PAGE: Record<BitbucketCredentialKind, string> = {
+  'api-token': 'https://id.atlassian.com/manage-profile/security/api-tokens',
+  'access-token': 'https://support.atlassian.com/bitbucket-cloud/docs/access-tokens/',
+};
+
+/** The link text for each Bitbucket credential; the other hosts say "Create a
+ *  token on {host}", which for an API token would name the wrong site. */
+const BITBUCKET_TOKEN_LINK_TEXT: Record<BitbucketCredentialKind, string> = {
+  'api-token': 'Create an API token on Atlassian',
+  'access-token': 'How to create a Bitbucket access token',
+};
+
+/**
+ * What each scope is FOR — the difference between a list to copy and a list to
+ * understand. Scopes absent here render bare; GitHub's two carry their reasons
+ * inline in the guidance, as they always have.
+ */
+const SCOPE_PURPOSE: Record<string, string> = {
+  'read:user:bitbucket': 'verify the account when you connect',
+  'read:workspace:bitbucket': 'list the workspaces your repositories live in',
+  'read:repository:bitbucket': 'browse and read repositories',
+  'write:repository:bitbucket': 'push to save',
+  'read:pullrequest:bitbucket': 'read pull requests',
+  'write:pullrequest:bitbucket': 'open pull requests',
+  account: 'verify the token when you connect',
+  repository: 'browse and read repositories',
+  'repository:write': 'push to save',
+  pullrequest: 'read pull requests',
+  'pullrequest:write': 'open pull requests',
+};
+
+/**
+ * The one opaque secret the vault stores for a Bitbucket credential.
+ *
+ * An API token authenticates as `email:token` over HTTP Basic; an access token
+ * is sent alone, as a Bearer value. The client picks the scheme from that
+ * shape, so composing the pair HERE — rather than asking the user to type the
+ * colon themselves — is what lets the form's two fields land on the wire as one
+ * credential. Nothing about the stored shape changes: it was always one string.
+ */
+function composeBitbucketSecret(
+  kind: BitbucketCredentialKind,
+  email: string,
+  token: string,
+): string {
+  const secret = token.trim();
+  return kind === 'api-token' ? `${email.trim()}:${secret}` : secret;
+}
+
+/**
+ * The accessible name of a token field, per host.
+ *
+ * GitHub keeps "GitHub PAT" verbatim: every existing test and the Lens
+ * regression harness select on it, and a renamed control does not throw — it
+ * matches nothing and those cases silently stop asserting. Bitbucket names the
+ * credential kind instead, because "PAT" is not what Bitbucket calls either of
+ * its shapes and a field saying one thing while its label says another fails
+ * the label-in-name rule.
+ */
+function tokenFieldName(
+  host: GitHostKind,
+  bitbucketKind: BitbucketCredentialKind,
+  prefix = '',
+): string {
+  if (host === 'bitbucket') return `${prefix}Bitbucket ${BITBUCKET_KIND_NOUN[bitbucketKind]}`;
+  return `${prefix}${GIT_HOST_LABELS[host]} PAT`;
+}
+
+/**
+ * The Bitbucket credential-type choice. Shared by the connect form and the
+ * update-token form so the two cannot describe different credentials.
+ */
+function BitbucketCredentialKindPicker({
+  name,
+  kind,
+  onChange,
+}: {
+  /** The radio-group name — unique per form, so two forms never share a group. */
+  name: string;
+  kind: BitbucketCredentialKind;
+  onChange: (kind: BitbucketCredentialKind) => void;
+}) {
+  return (
+    <fieldset className="space-y-1">
+      <legend className="mb-1 text-xs text-text-muted">Credential type</legend>
+      <Radio
+        name={name}
+        value="api-token"
+        checked={kind === 'api-token'}
+        onChange={() => onChange('api-token')}
+        label="API token"
+        hint="Created on your Atlassian account and paired with your account email."
+      />
+      <Radio
+        name={name}
+        value="access-token"
+        checked={kind === 'access-token'}
+        onChange={() => onChange('access-token')}
+        label="Access token"
+        hint="A workspace, project or repository access token, pasted on its own."
+      />
+    </fieldset>
+  );
+}
 
 /**
  * What to create the token WITH.
@@ -945,19 +1107,41 @@ const TOKEN_PAGE_BY_HOST: Record<GitHostKind, string> = {
  * guidance and nothing more: they do not expose scopes, so the connect step
  * cannot check them and deliberately does not pretend to. Saying so here is the
  * difference between a user understanding a later 403 and being baffled by it.
+ *
+ * Bitbucket's guidance follows the credential kind the user picked: the two
+ * kinds use different scope vocabularies and are created in different places,
+ * so one list for both would be wrong for one of them.
  */
-function ScopeGuidance({ host }: { host: GitHostKind }) {
-  const scopes = SCOPE_GUIDANCE_BY_HOST[host];
+function ScopeGuidance({
+  host,
+  bitbucketKind,
+}: {
+  host: GitHostKind;
+  bitbucketKind: BitbucketCredentialKind;
+}) {
+  const scopes =
+    host === 'bitbucket' && bitbucketKind === 'access-token'
+      ? BITBUCKET_ACCESS_TOKEN_SCOPES
+      : SCOPE_GUIDANCE_BY_HOST[host];
+  const tokenPage =
+    host === 'bitbucket' ? BITBUCKET_TOKEN_PAGE[bitbucketKind] : TOKEN_PAGE_BY_HOST[host];
+  const tokenLinkText =
+    host === 'bitbucket'
+      ? BITBUCKET_TOKEN_LINK_TEXT[bitbucketKind]
+      : `Create a token on ${GIT_HOST_LABELS[host]}`;
+  // GitHub's heading is unchanged, verbatim. It is asserted by this panel's
+  // own tests and it is what users have read since the vault shipped; only
+  // a non-GitHub host needs to say which host — and, for Bitbucket, which
+  // credential — it means.
+  const heading =
+    host === 'github'
+      ? 'Required PAT scopes'
+      : host === 'bitbucket'
+        ? `Required Bitbucket ${BITBUCKET_KIND_NOUN[bitbucketKind]} scopes`
+        : `Required ${GIT_HOST_LABELS[host]} token scopes`;
   return (
     <div className="rounded-sm border border-border bg-card p-3 text-xs text-text-muted">
-      {/* GitHub's heading is unchanged, verbatim. It is asserted by this panel's
-          own tests and it is what users have read since the vault shipped; only
-          a non-GitHub host needs to say which host it means. */}
-      <p className="mb-2 text-text-primary">
-        {host === 'github'
-          ? 'Required PAT scopes'
-          : `Required ${GIT_HOST_LABELS[host]} token scopes`}
-      </p>
+      <p className="mb-2 text-text-primary">{heading}</p>
       <ul className="ml-4 list-disc space-y-0.5">
         {host === 'github' ? (
           <>
@@ -974,6 +1158,7 @@ function ScopeGuidance({ host }: { host: GitHostKind }) {
           scopes.map((scope) => (
             <li key={scope}>
               <code className="text-text-primary">{scope}</code>
+              {SCOPE_PURPOSE[scope] ? ` — ${SCOPE_PURPOSE[scope]}` : null}
             </li>
           ))
         )}
@@ -984,42 +1169,59 @@ function ScopeGuidance({ host }: { host: GitHostKind }) {
           when you connect — a token missing one fails at the first write instead.
         </p>
       )}
-      {host === 'bitbucket' && (
-        // Bitbucket is the only host with two credential shapes that need
-        // DIFFERENT auth schemes. An app password authenticates as
-        // `username:secret` over Basic; an access token is a Bearer value. The
-        // client picks the scheme from the shape, so the one thing the user must
-        // get right is pasting the username with an app password — without it,
-        // the credential this page links to cannot authenticate at all.
-        <p className="mt-2">
-          Using an <strong className="text-text-primary">app password</strong>? Paste it as{' '}
-          <code className="text-text-primary">username:app_password</code> — Bitbucket authenticates
-          app passwords with your username. A workspace, project or repository{' '}
-          <strong className="text-text-primary">access token</strong> is pasted on its own.
-        </p>
-      )}
+      {host === 'bitbucket' &&
+        // Bitbucket's two credentials need DIFFERENT auth schemes: an API token
+        // authenticates as `email:token` over Basic, an access token as a Bearer
+        // value. The form composes the first from two fields, so the one thing
+        // left to say is what each credential is and which tokens qualify.
+        (bitbucketKind === 'api-token' ? (
+          <p className="mt-2">
+            An <strong className="text-text-primary">API token</strong> is created on your Atlassian
+            account and authenticates together with your account email — enter both below. App
+            passwords were retired by Atlassian and no longer work.
+          </p>
+        ) : (
+          <p className="mt-2">
+            A workspace, project or repository{' '}
+            <strong className="text-text-primary">access token</strong> is pasted on its own. It
+            needs the <code className="text-text-primary">account</code> scope so the token can be
+            verified — workspace access tokens offer it, repository and project tokens do not.
+          </p>
+        ))}
       <a
-        href={TOKEN_PAGE_BY_HOST[host]}
+        href={tokenPage}
         target="_blank"
         rel="noreferrer noopener"
         className="mt-2 inline-flex items-center gap-1 text-accent hover:underline"
       >
-        Create a token on {GIT_HOST_LABELS[host]}
+        {tokenLinkText}
         <ExternalLink size={10} aria-hidden="true" />
       </a>
     </div>
   );
 }
 
-function ConnectForm({ host = 'github' }: { host?: GitHostKind } = {}) {
+function ConnectForm({
+  host,
+  bitbucketKind,
+  onBitbucketKindChange,
+}: {
+  host: GitHostKind;
+  bitbucketKind: BitbucketCredentialKind;
+  onBitbucketKindChange: (kind: BitbucketCredentialKind) => void;
+}) {
   const connect = useWorkspaceStore((s) => s.connectHostSession);
   const connectViaDeviceFlow = useWorkspaceStore((s) => s.connectGitHubSessionViaDeviceFlow);
   const [token, setToken] = useState('');
+  // The Atlassian account email an API token is paired with. Bitbucket only.
+  const [email, setEmail] = useState('');
   // Self-managed instances only (self-hosted GitLab, an Azure DevOps org,
   // GitHub Enterprise Server). Blank means the host's public API.
   const [baseUrl, setBaseUrl] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const needsEmail = host === 'bitbucket' && bitbucketKind === 'api-token';
+  const canSubmit = token.trim().length > 0 && (!needsEmail || email.trim().length > 0);
 
   // Device-flow state. While `code` is non-null, the polling loop is
   // running and the UI shows the user_code + verification URL with a
@@ -1034,11 +1236,15 @@ function ConnectForm({ host = 'github' }: { host?: GitHostKind } = {}) {
   const abortRef = useRef<AbortController | null>(null);
 
   const submit = async () => {
+    if (!canSubmit) return;
     setSubmitting(true);
     setError(null);
     try {
-      await connect(token, host, { baseUrl: baseUrl.trim() || undefined });
+      const secret =
+        host === 'bitbucket' ? composeBitbucketSecret(bitbucketKind, email, token) : token;
+      await connect(secret, host, { baseUrl: baseUrl.trim() || undefined });
       setToken('');
+      setEmail('');
     } catch (err) {
       if (err instanceof MissingScopeError) {
         setError(`Token is missing required scope(s): ${err.missingScopes.join(', ')}`);
@@ -1131,10 +1337,42 @@ function ConnectForm({ host = 'github' }: { host?: GitHostKind } = {}) {
         <p className="text-[0.6875rem] font-medium uppercase tracking-wider text-text-dim">
           {deviceFlowAvailable
             ? 'Or — paste a personal access token'
-            : 'Connect with a personal access token'}
+            : host === 'bitbucket'
+              ? `Connect with an ${BITBUCKET_KIND_NOUN[bitbucketKind]}`
+              : 'Connect with a personal access token'}
         </p>
+        {host === 'bitbucket' && (
+          <BitbucketCredentialKindPicker
+            name="connect-bitbucket-credential-kind"
+            kind={bitbucketKind}
+            onChange={(kind) => {
+              onBitbucketKindChange(kind);
+              setError(null);
+            }}
+          />
+        )}
+        {needsEmail && (
+          <>
+            <label htmlFor="bitbucket-email-input" className="block text-xs text-text-muted">
+              Atlassian account email
+            </label>
+            <input
+              id="bitbucket-email-input"
+              type="email"
+              autoComplete="off"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              aria-label="Atlassian account email"
+              className="h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary placeholder:text-text-dim focus:border-accent focus:outline-none"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !submitting) void submit();
+              }}
+            />
+          </>
+        )}
         <label htmlFor="pat-input" className="block text-xs text-text-muted">
-          Personal access token
+          {host === 'bitbucket' ? BITBUCKET_KIND_TITLE[bitbucketKind] : 'Personal access token'}
         </label>
         <input
           id="pat-input"
@@ -1142,13 +1380,15 @@ function ConnectForm({ host = 'github' }: { host?: GitHostKind } = {}) {
           value={token}
           onChange={(e) => setToken(e.target.value)}
           placeholder={
-            host === 'github' ? 'ghp_… or github_pat_…' : `${GIT_HOST_LABELS[host]} token`
+            host === 'github'
+              ? 'ghp_… or github_pat_…'
+              : host === 'bitbucket'
+                ? bitbucketKind === 'api-token'
+                  ? 'ATATT…'
+                  : 'ATCTT…'
+                : `${GIT_HOST_LABELS[host]} token`
           }
-          // The aria-label stays "GitHub PAT" for GitHub, verbatim: it is what
-          // every existing test and the Lens regression harness select on, and a
-          // renamed control does not throw — it matches nothing and those cases
-          // silently stop asserting.
-          aria-label={host === 'github' ? 'GitHub PAT' : `${GIT_HOST_LABELS[host]} PAT`}
+          aria-label={tokenFieldName(host, bitbucketKind)}
           className="h-8 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !submitting) void submit();
@@ -1172,7 +1412,7 @@ function ConnectForm({ host = 'github' }: { host?: GitHostKind } = {}) {
           <button
             type="button"
             onClick={() => void submit()}
-            disabled={submitting || !token.trim()}
+            disabled={submitting || !canSubmit}
             className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
           >
             {submitting ? 'Verifying…' : 'Connect'}
@@ -1325,7 +1565,15 @@ type ConnectionTestResult =
       message: string;
     };
 
-function ActiveSessionCard({ host = 'github' }: { host?: GitHostKind } = {}) {
+function ActiveSessionCard({
+  host,
+  bitbucketKind,
+  onBitbucketKindChange,
+}: {
+  host: GitHostKind;
+  bitbucketKind: BitbucketCredentialKind;
+  onBitbucketKindChange: (kind: BitbucketCredentialKind) => void;
+}) {
   // Reads and ACTS ON the selected host. Both halves matter and the second is the
   // dangerous one: this card was pinned to `sessions.github.workspace!` while the
   // Sessions tab chose which card to show host-aware, so on a GitLab-only
@@ -1350,9 +1598,13 @@ function ActiveSessionCard({ host = 'github' }: { host?: GitHostKind } = {}) {
   const [updating, setUpdating] = useState(false);
   const [showUpdate, setShowUpdate] = useState(false);
   const [newToken, setNewToken] = useState('');
+  // The Atlassian account email a replacement API token is paired with.
+  const [newEmail, setNewEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
+  const needsEmail = host === 'bitbucket' && bitbucketKind === 'api-token';
+  const canUpdate = newToken.trim().length > 0 && (!needsEmail || newEmail.trim().length > 0);
 
   const onVerify = async () => {
     setVerifying(true);
@@ -1419,11 +1671,15 @@ function ActiveSessionCard({ host = 'github' }: { host?: GitHostKind } = {}) {
   };
 
   const onUpdate = async () => {
+    if (!canUpdate) return;
     setUpdating(true);
     setError(null);
     try {
-      await updateToken(newToken);
+      const secret =
+        host === 'bitbucket' ? composeBitbucketSecret(bitbucketKind, newEmail, newToken) : newToken;
+      await updateToken(secret);
       setNewToken('');
+      setNewEmail('');
       setShowUpdate(false);
     } catch (err) {
       if (err instanceof MissingScopeError) {
@@ -1542,19 +1798,44 @@ function ActiveSessionCard({ host = 'github' }: { host?: GitHostKind } = {}) {
       )}
       {showUpdate ? (
         <div className="space-y-2 rounded-sm border border-accent/30 bg-accent/5 p-2">
+          {host === 'bitbucket' && (
+            <BitbucketCredentialKindPicker
+              name="update-bitbucket-credential-kind"
+              kind={bitbucketKind}
+              onChange={(kind) => {
+                onBitbucketKindChange(kind);
+                setError(null);
+              }}
+            />
+          )}
+          {needsEmail && (
+            <input
+              type="email"
+              autoComplete="off"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+              placeholder="Atlassian account email"
+              aria-label="New Atlassian account email"
+              className="h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary placeholder:text-text-dim focus:border-accent focus:outline-none"
+            />
+          )}
           <input
             type="password"
             value={newToken}
             onChange={(e) => setNewToken(e.target.value)}
-            placeholder="New PAT (must belong to the same account)"
-            aria-label="New GitHub PAT"
+            placeholder={
+              host === 'bitbucket'
+                ? `New ${BITBUCKET_KIND_NOUN[bitbucketKind]} (must belong to the same account)`
+                : 'New PAT (must belong to the same account)'
+            }
+            aria-label={tokenFieldName(host, bitbucketKind, 'New ')}
             className="h-7 w-full rounded-sm border border-border bg-card px-2 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
           />
           <div className="flex gap-2">
             <button
               type="button"
               onClick={() => void onUpdate()}
-              disabled={updating || !newToken.trim()}
+              disabled={updating || !canUpdate}
               className="inline-flex h-7 items-center rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
             >
               {updating ? 'Verifying…' : 'Update'}
@@ -1564,6 +1845,7 @@ function ActiveSessionCard({ host = 'github' }: { host?: GitHostKind } = {}) {
               onClick={() => {
                 setShowUpdate(false);
                 setNewToken('');
+                setNewEmail('');
                 setError(null);
               }}
               className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:text-text-primary"
@@ -1578,7 +1860,7 @@ function ActiveSessionCard({ host = 'github' }: { host?: GitHostKind } = {}) {
             type="button"
             onClick={() => void onVerify()}
             disabled={verifying}
-            aria-label="Test GitHub connection"
+            aria-label={`Test ${GIT_HOST_LABELS[host]} connection`}
             className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50"
           >
             <RefreshCw size={12} className={verifying ? 'animate-spin' : ''} />

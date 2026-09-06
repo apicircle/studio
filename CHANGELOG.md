@@ -27,6 +27,53 @@
 
 ### Fixed
 
+- **The Workspace panel no longer calls every Git source "GitHub".** The section
+  heading read "GitHub Connection" and the empty state "No GitHub connection"
+  whatever host the build could connect, so a Bitbucket session sat under a
+  GitHub heading and the status badge announced "GitHub Connected" for it. The
+  section is now "Git source", the empty state "No Git source connected", and
+  the badge names the host holding the session. On a multi-host build the empty
+  state lists the hosts it can connect and points at the per-host scope guidance
+  in the vault instead of reciting GitHub's two scopes. Open-core Studio, which
+  registers GitHub alone, keeps the GitHub scope list.
+
+- **The repo form offers only hosts that hold a session.** Its host picker was
+  built from the provider registry, so with one Bitbucket session it still
+  offered GitHub, GitLab and Azure DevOps — each of which could only fail at the
+  token step. `useHostSelection({ connectedOnly: true })` narrows the list to
+  connected hosts (no picker at all with one), and the Link Workspace source
+  picker does the same in workspace-session mode while a dedicated PAT can still
+  target any registered host.
+
+- **Bitbucket connect asks for the credential Bitbucket actually issues.** The
+  form linked to the app-password page and named app-password scopes; Atlassian
+  retired app passwords, and the connect step's own `GET /user` needs
+  `read:user:bitbucket`, which the guidance never mentioned — so a token created
+  from the guidance was rejected as "invalid". The Sessions tab now offers a
+  credential-type choice: an **API token** (Atlassian account email + token,
+  composed into one `email:token` secret so the client sends HTTP Basic) or a
+  workspace / project / repository **access token** pasted alone. Each type
+  lists its own scopes — the `read:…:bitbucket` vocabulary for API tokens, the
+  classic one for access tokens, `account` included — with a purpose beside
+  each, and links to where that credential is created.
+
+### Changed
+
+- **The Sessions host picker is a host strip.** The `<select>` in the vault's
+  Sessions tab is now a pill tablist (the shared `Tabs` primitive: arrow keys,
+  Home / End, focus ring) with a status dot per host — filled when that host
+  holds a session — and an accessible name that says so. The strip renders only
+  on builds with more than one registered host, as the select did.
+
+- **Repo browsers page on scroll instead of stopping at fifty.** Both the
+  Workspace repo form and the Link Workspace combobox rendered `slice(0, 50)`
+  with nothing on screen to say more existed. `useLazyListWindow` keeps the
+  whole filtered list in memory and grows the rendered window by fifty each
+  time the listbox scrolls near its bottom, with a "Showing N of M" row that
+  doubles as the keyboard path. `GitHubClient.listAccessibleRepos` now follows
+  `Link: rel="next"` up to ten pages (1,000 repos) on its own API origin, so the
+  list has more than one page to scroll.
+
 - **Release & topics now asks the host what it can do before offering a control.**
   The dialog offered a "GitHub Release" checkbox and a topics editor on every
   connected host. Two of the four cannot serve either call: `createRelease` and

@@ -2219,13 +2219,44 @@ const REQUIRED_BASE_SCOPES = REQUIRED_SCOPES_BY_HOST.github;
  * What to tell a user to create their token WITH, per host. Guidance, never
  * enforced — see `REQUIRED_SCOPES_BY_HOST` for why these cannot be checked
  * anywhere but GitHub.
+ *
+ * Bitbucket's entry is for an Atlassian **API token**, the credential Bitbucket
+ * Cloud issues to a person now that app passwords are retired, so the scopes
+ * use its `read:…:bitbucket` vocabulary. `read:user:bitbucket` is the one the
+ * connect step itself needs — `GET /user` answers 401 without it, which read
+ * as "your token is invalid" when the token was fine and one scope was missing.
+ * `read:workspace:bitbucket` is what lets the repo browser list the workspaces
+ * the repositories live in. Access tokens use the classic vocabulary instead:
+ * see `BITBUCKET_ACCESS_TOKEN_SCOPES`.
  */
 export const SCOPE_GUIDANCE_BY_HOST: Record<GitHostKind, readonly string[]> = {
   github: ['repo', 'pull_request'],
   gitlab: ['api', 'read_repository', 'write_repository'],
-  bitbucket: ['repository', 'repository:write', 'pullrequest:write'],
+  bitbucket: [
+    'read:user:bitbucket',
+    'read:workspace:bitbucket',
+    'read:repository:bitbucket',
+    'write:repository:bitbucket',
+    'read:pullrequest:bitbucket',
+    'write:pullrequest:bitbucket',
+  ],
   'azure-devops': ['Code (Read & Write)', 'Pull Request Threads (Read & Write)'],
 };
+
+/**
+ * Bitbucket's OTHER credential: a workspace, project or repository **access
+ * token**, whose scopes use the classic vocabulary. `account` is what lets the
+ * connect step verify the token via `GET /user`; workspace access tokens offer
+ * it, repository and project tokens do not — so those two cannot connect here,
+ * and the guidance says so rather than letting the 401 explain it.
+ */
+export const BITBUCKET_ACCESS_TOKEN_SCOPES: readonly string[] = [
+  'account',
+  'repository',
+  'repository:write',
+  'pullrequest',
+  'pullrequest:write',
+];
 
 /** Vault label prefix for a host's PAT. GitHub keeps `github-token:` verbatim so
  *  every already-stored label still resolves; the others follow the same shape. */
@@ -2301,8 +2332,11 @@ function targetProvider(opts?: { host?: GitHostKind; baseUrl?: string }): GitPro
  * mirrored into `sessions.hosts`, so a GitHub PAT lives in exactly one place and
  * there is no reconciliation problem between two copies. That asymmetry is
  * confined to these two functions — nothing else needs to know about it.
+ *
+ * Exported for `useHostSelection`, which needs "which hosts hold a session" to
+ * offer a repo browser only the hosts it can actually authenticate to.
  */
-function workspaceSessionFor(
+export function workspaceSessionFor(
   local: WorkspaceLocal | null | undefined,
   host: GitHostKind,
 ): GitHostSession | null {

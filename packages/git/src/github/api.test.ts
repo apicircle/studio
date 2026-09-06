@@ -304,6 +304,82 @@ describe('GitHubClient.listAccessibleRepos', () => {
     ]);
   });
 
+  // Paging. One page hid the 101st repo from anyone with more, and the picker
+  // had no way to say so.
+  function rawRepo(fullName: string) {
+    const [owner, name] = fullName.split('/');
+    return {
+      full_name: fullName,
+      name,
+      owner: { login: owner },
+      default_branch: 'main',
+      private: false,
+      visibility: 'public',
+      permissions: { push: true, admin: false },
+    };
+  }
+
+  it('follows Link rel="next" on its own origin until the last page', async () => {
+    const calls: string[] = [];
+    const fetchImpl: typeof fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new Request(input).url;
+      calls.push(url);
+      if (url.includes('page=2')) return jsonResponse([rawRepo('me/second')]);
+      return jsonResponse([rawRepo('me/first')], {
+        headers: {
+          link: '<https://api.github.com/user/repos?per_page=100&page=2>; rel="next", <https://api.github.com/user/repos?per_page=100&page=2>; rel="last"',
+        },
+      });
+    });
+    const client = new GitHubClient({ fetchImpl });
+    const repos = await client.listAccessibleRepos('tok');
+    expect(repos.map((r) => r.fullName)).toEqual(['me/first', 'me/second']);
+    expect(calls).toEqual([
+      'https://api.github.com/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member',
+      'https://api.github.com/user/repos?per_page=100&page=2',
+    ]);
+  });
+
+  it('ignores a Link header that names no next page', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse([rawRepo('me/only')], {
+        headers: { link: '<https://api.github.com/user/repos?page=1>; rel="prev"' },
+      }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    expect(await client.listAccessibleRepos('tok')).toHaveLength(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('never follows a next link on another origin', async () => {
+    // A header is response data. One that points off this client's API origin
+    // is not a page of this listing, and following it would send the token there.
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse([rawRepo('me/only')], {
+        headers: { link: '<https://elsewhere.example/user/repos?page=2>; rel="next"' },
+      }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    expect(await client.listAccessibleRepos('tok')).toHaveLength(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops after ten pages even when the host keeps offering more', async () => {
+    let page = 0;
+    const fetchImpl: typeof fetch = vi.fn(async () => {
+      page += 1;
+      return jsonResponse([rawRepo(`me/r${page}`)], {
+        headers: {
+          link: `<https://api.github.com/user/repos?per_page=100&page=${page + 1}>; rel="next"`,
+        },
+      });
+    });
+    const client = new GitHubClient({ fetchImpl });
+    const repos = await client.listAccessibleRepos('tok');
+    expect(repos).toHaveLength(10);
+    expect(fetchImpl).toHaveBeenCalledTimes(10);
+  });
+
   it('infers visibility/isPrivate when only the legacy `private` flag is present', async () => {
     const fetchImpl: typeof fetch = vi.fn(async () =>
       jsonResponse([
