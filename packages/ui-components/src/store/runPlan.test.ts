@@ -260,6 +260,79 @@ describe('workspaceStore.runPlan', () => {
     expect(orphan.error).toMatch(/Linked workspace was unlinked/);
   });
 
+  it('refuses a linked step up front when workspace sharing is off', async () => {
+    // The shipped configuration. A linked step can still RESOLVE from a cached
+    // snapshot, so without an up-front refusal it would begin, then fail on a
+    // file attachment it cannot fetch (the linked branch of `syncAttachments`
+    // is gated) with "Attachments still missing" — an error about the wrong
+    // thing, and one the user can do nothing about. It must say why instead.
+    vi.spyOn(workspaceSharing, 'isWorkspaceSharingEnabled').mockReturnValue(false);
+    const planId = useWorkspaceStore.getState().addPlan('p');
+    const synced = useWorkspaceStore.getState().synced!;
+    const local = useWorkspaceStore.getState().local!;
+    const linkedReq = {
+      ...synced.collections.requests[Object.keys(synced.collections.requests)[0]],
+      id: 'linked-req',
+      url: 'https://linked.test/ping',
+    };
+    // A link AND a cached snapshot — i.e. a step that WOULD resolve and run.
+    // Using a phantom link here would pass for the wrong reason.
+    useWorkspaceStore.setState({
+      synced: {
+        ...synced,
+        linkedWorkspaces: {
+          'lw-1': {
+            id: 'lw-1',
+            kind: 'public',
+            name: 'Payments',
+            sourceWorkspaceId: 'src',
+            source: {
+              provider: 'github',
+              repoFullName: 'org/payments',
+              branch: 'main',
+              sessionMode: 'workspace',
+            },
+            scope: ['collections'],
+            pinnedVersion: '1.0.0',
+            updatePolicy: 'manual',
+            linkedAt: 't',
+            requiredSecretKeyIds: [],
+          },
+        },
+        executionPlans: {
+          ...(synced.executionPlans ?? {}),
+          [planId]: {
+            ...synced.executionPlans![planId],
+            steps: [{ requestId: 'linked-req', linkedWorkspaceId: 'lw-1' }],
+          },
+        },
+      },
+      local: {
+        ...local,
+        linkedCollections: {
+          'lw-1': {
+            pulledAt: 't',
+            ref: 'v1.0.0',
+            collections: {
+              tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'linked-req' }] },
+              requests: { 'linked-req': linkedReq },
+              folders: {},
+            },
+            environments: { items: {}, activeName: null, priorityOrder: [] },
+          },
+        },
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn());
+
+    const planRun = await useWorkspaceStore.getState().runPlan(planId);
+    expect(planRun.steps[0].passed).toBe(false);
+    const run = useWorkspaceStore.getState().local!.history.requestRuns[0];
+    expect(run.error).toMatch(/linked workspace, which this build does not include/);
+    // And it never reached the network on the way to failing.
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it('honors plan-level env priority during runs', async () => {
     // Two envs: dev sets BASE_URL=https://dev, prod sets BASE_URL=https://prod.
     // Workspace priority = ['dev'], plan priority = ['prod'] → BASE_URL

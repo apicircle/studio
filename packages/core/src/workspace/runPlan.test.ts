@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   ExecutionPlan,
   Request as ApiRequest,
@@ -7,6 +7,15 @@ import type {
 } from '@apicircle/shared';
 import { PlanRunDeniedError, resolvePlanRef, runPlan } from './runPlan';
 import type { WorkspaceState } from './patches';
+
+import * as workspaceSharing from '../workspaceSharing';
+
+// Linked plan steps are refused outright when workspace sharing is off (the
+// shipped build). Forcing the accessor on keeps the linked-step execution
+// engine covered; the refusal itself is asserted at the bottom of this file.
+beforeEach(() => {
+  vi.spyOn(workspaceSharing, 'isWorkspaceSharingEnabled').mockReturnValue(true);
+});
 
 const T0 = '2026-05-01T00:00:00.000Z';
 
@@ -374,6 +383,65 @@ describe('runPlan', () => {
     expect(out.passed).toBe(true);
     expect(out.steps[0].requestName).toBe('r1');
     expect(calls[0].url).toBe('https://linked.test/upload');
+  });
+
+  it('refuses a linked step when workspace sharing is off, without sending', async () => {
+    // The shipped build. This engine is what the VS Code extension and every
+    // headless consumer run plans through, so the refusal has to happen here —
+    // gating only the web store would leave linked steps executing on the
+    // other surfaces. Byte-identical fixture to the test above; only the flag
+    // differs, so a pass here cannot be an artefact of a broken setup.
+    vi.spyOn(workspaceSharing, 'isWorkspaceSharingEnabled').mockReturnValue(false);
+    const linkedRequest = makeRequest('r1', { url: 'https://linked.test/upload' });
+    const synced = makeSynced({
+      linkedWorkspaces: {
+        lw1: {
+          id: 'lw1',
+          kind: 'public',
+          name: 'Payments',
+          sourceWorkspaceId: 'src',
+          source: {
+            provider: 'github',
+            repoFullName: 'org/payments',
+            branch: 'main',
+            sessionMode: 'workspace',
+          },
+          scope: ['collections'],
+          pinnedVersion: '1.0.0',
+          updatePolicy: 'manual',
+          linkedAt: T0,
+          requiredSecretKeyIds: [],
+        },
+      },
+      executionPlans: {
+        p1: makePlan('p1', { steps: [{ requestId: 'r1', linkedWorkspaceId: 'lw1' }] }),
+      },
+    });
+    const state: WorkspaceState = {
+      synced,
+      local: makeLocal({
+        linkedCollections: {
+          lw1: {
+            pulledAt: T0,
+            ref: 'HEAD@main',
+            collections: {
+              tree: { id: 'root', type: 'root', children: [] },
+              requests: { r1: linkedRequest },
+              folders: {},
+            },
+            environments: { items: {}, activeName: null, priorityOrder: [] },
+          },
+        },
+      }),
+    };
+    const { fetchImpl, calls } = makeFetch({ '*': { status: 200 } });
+
+    const out = await runPlan(state, 'p1', { fetchImpl });
+
+    expect(out.passed).toBe(false);
+    expect(out.steps[0].error).toMatch(/linked workspace, which this build does not include/);
+    // Refused before it reached the wire.
+    expect(calls).toHaveLength(0);
   });
 
   it('resolves env-priority variables and CLI-supplied secrets', async () => {

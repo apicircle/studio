@@ -460,6 +460,12 @@ function isGlobalFileSlot(synced: WorkspaceSynced, slotId: string): boolean {
 }
 
 const PANEL_STORAGE_KEY = 'apicircle-v2:active-panel';
+// Every panel id that may legitimately appear in localStorage — NOT the list
+// of panels this build shows. 'link-workspace' stays here on purpose even
+// though workspace sharing is off: this answers "is the stored value a real
+// panel id?", and dropping it would make `readStoredPanel` silently rewrite a
+// value written by a sharing-enabled build. `App` reconciles a restored id
+// that isn't currently visible; see `VISIBLE_PANELS` in `layout/panels.ts`.
 const VALID_PANELS: PanelId[] = [
   'workspace',
   'link-workspace',
@@ -8600,6 +8606,24 @@ function lookupPlanStepRequest(
     return request
       ? { request }
       : { request: null, error: 'Request no longer exists in workspace' };
+  }
+  // Workspace sharing off: refuse the step here rather than let it start.
+  //
+  // This is the single chokepoint all three execution paths funnel through
+  // (`runPlan`, `retryPlanStep`, `executeLinkedActiveRequest`), which is why the
+  // guard lives here and not in each of them.
+  //
+  // Refusing UP FRONT matters. A linked step can still resolve from a cached
+  // snapshot, so without this it would begin, discover a file attachment it
+  // cannot fetch (the linked branch of `syncAttachments` is gated), and fail
+  // with "Attachments still missing" — an error about the wrong thing, with no
+  // action the user can take. The step stays VISIBLE in the plan; it just says
+  // plainly why it will not run.
+  if (!isWorkspaceSharingEnabled()) {
+    return {
+      request: null,
+      error: 'Step comes from a linked workspace, which this build does not include',
+    };
   }
   const link = synced.linkedWorkspaces[step.linkedWorkspaceId];
   if (!link) {

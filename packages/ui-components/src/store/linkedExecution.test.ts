@@ -3,6 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Folder, LinkedSnapshot, Request as ApiRequest } from '@apicircle/shared';
 import { useWorkspaceStore } from './workspaceStore';
 
+import * as workspaceSharing from '../layout/workspaceSharing';
+
+// `executeLinkedActiveRequest` routes through `lookupPlanStepRequest`, which
+// refuses a linked step outright when workspace sharing is off (the shipped
+// build). Forcing the accessor on keeps this suite covering the linked
+// execution path itself; the refusal is covered by `runPlan.test.ts` and
+// `layout/workspaceSharingOff.test.tsx`.
+beforeEach(() => {
+  vi.spyOn(workspaceSharing, 'isWorkspaceSharingEnabled').mockReturnValue(true);
+});
+
 const T0 = '2026-04-27T00:00:00.000Z';
 
 function makeRequest(opts: Partial<ApiRequest> = {}): ApiRequest {

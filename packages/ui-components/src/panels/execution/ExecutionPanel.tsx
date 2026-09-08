@@ -976,9 +976,16 @@ function PlanStepRow({
           </>
         ) : (
           <span className="flex-1 truncate text-xs italic text-warning">
-            {linkedName
-              ? `Request not in cached snapshot of "${linkedName}" — refresh the link`
-              : 'Request no longer exists'}
+            {/* Three cases, and telling them apart matters. With sharing off,
+                snapshots are no longer bootstrapped, so a linked step lands
+                here — and the "refresh the link" copy would send the user to a
+                link card this build does not have. Say the real reason, and
+                match the wording `lookupPlanStepRequest` fails the run with. */}
+            {linkedName && !isWorkspaceSharingEnabled()
+              ? 'From a linked workspace, which this build does not include'
+              : linkedName
+                ? `Request not in cached snapshot of "${linkedName}" — refresh the link`
+                : 'Request no longer exists'}
           </span>
         )}
         {onQuickView && (

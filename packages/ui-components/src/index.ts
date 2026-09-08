@@ -22,7 +22,7 @@ export {
   cn,
 } from './primitives';
 export type { FieldControlProps, TabDef } from './primitives';
-export { PANELS, getPanel } from './layout/panels';
+export { PANELS, VISIBLE_PANELS, getPanel } from './layout/panels';
 export type { PanelDef } from './layout/panels';
 export type { ExtraPanelDef } from './layout/extraPanels';
 export type { SectionDef } from './layout/sections';

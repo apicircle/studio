@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ExecutionPanel } from './ExecutionPanel';
 import { ExecutionSidebar, ExecutionSidebarActions } from './ExecutionSidebar';
+import * as workspaceSharing from '../../layout/workspaceSharing';
 
 async function hydrate(): Promise<void> {
   await act(async () => {
@@ -166,6 +167,126 @@ describe('ExecutionPanel — plan editor', () => {
     await user.click(await screen.findByRole('menuitem', { name: 'Delete' }));
     await user.click(screen.getByRole('button', { name: 'Delete' }));
     expect(screen.getByText('No execution plans yet')).toBeInTheDocument();
+  });
+});
+
+describe('ExecutionPanel — a linked step with workspace sharing off', () => {
+  beforeEach(hydrate);
+
+  it('says the step comes from a linked workspace, not "refresh the link"', async () => {
+    // With sharing off, `refreshWorkspace` no longer bootstraps linked
+    // snapshots, so a linked step falls into the row's no-request branch. The
+    // pre-existing copy there tells the user to "refresh the link" — a link
+    // card this build does not have. It has to say the real reason instead.
+    const planId = useWorkspaceStore.getState().addPlan('p');
+    const synced = useWorkspaceStore.getState().synced!;
+    await act(async () => {
+      useWorkspaceStore.setState({
+        synced: {
+          ...synced,
+          linkedWorkspaces: {
+            'lw-1': {
+              id: 'lw-1',
+              kind: 'public',
+              name: 'Payments',
+              sourceWorkspaceId: 'src',
+              source: {
+                provider: 'github',
+                repoFullName: 'org/payments',
+                branch: 'main',
+                sessionMode: 'workspace',
+              },
+              scope: ['collections'],
+              pinnedVersion: '1.0.0',
+              updatePolicy: 'manual',
+              linkedAt: 't',
+              requiredSecretKeyIds: [],
+            },
+          },
+          executionPlans: {
+            ...(synced.executionPlans ?? {}),
+            [planId]: {
+              ...synced.executionPlans![planId],
+              steps: [{ requestId: 'linked-req', linkedWorkspaceId: 'lw-1' }],
+            },
+          },
+        },
+      });
+    });
+
+    render(<ExecutionPanel />);
+    expect(
+      screen.getByText('From a linked workspace, which this build does not include'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/refresh the link/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Request no longer exists')).not.toBeInTheDocument();
+  });
+
+  it('with sharing ON, an un-refreshed link still says "refresh the link"', async () => {
+    // The other side of the same message. Sharing on + a link whose snapshot
+    // was never pulled is the case the original copy was written for, and it
+    // has to survive.
+    vi.spyOn(workspaceSharing, 'isWorkspaceSharingEnabled').mockReturnValue(true);
+    const planId = useWorkspaceStore.getState().addPlan('p');
+    const synced = useWorkspaceStore.getState().synced!;
+    await act(async () => {
+      useWorkspaceStore.setState({
+        synced: {
+          ...synced,
+          linkedWorkspaces: {
+            'lw-1': {
+              id: 'lw-1',
+              kind: 'public',
+              name: 'Payments',
+              sourceWorkspaceId: 'src',
+              source: {
+                provider: 'github',
+                repoFullName: 'org/payments',
+                branch: 'main',
+                sessionMode: 'workspace',
+              },
+              scope: ['collections'],
+              pinnedVersion: '1.0.0',
+              updatePolicy: 'manual',
+              linkedAt: 't',
+              requiredSecretKeyIds: [],
+            },
+          },
+          executionPlans: {
+            ...(synced.executionPlans ?? {}),
+            [planId]: {
+              ...synced.executionPlans![planId],
+              steps: [{ requestId: 'linked-req', linkedWorkspaceId: 'lw-1' }],
+            },
+          },
+        },
+      });
+    });
+
+    render(<ExecutionPanel />);
+    expect(screen.getByText(/refresh the link/)).toBeInTheDocument();
+  });
+
+  it('a plain step whose request was deleted still says so', async () => {
+    const planId = useWorkspaceStore.getState().addPlan('p');
+    const synced = useWorkspaceStore.getState().synced!;
+    await act(async () => {
+      useWorkspaceStore.setState({
+        synced: {
+          ...synced,
+          executionPlans: {
+            ...(synced.executionPlans ?? {}),
+            [planId]: {
+              ...synced.executionPlans![planId],
+              steps: [{ requestId: 'gone' }],
+            },
+          },
+        },
+      });
+    });
+
+    render(<ExecutionPanel />);
+    expect(screen.getByText('Request no longer exists')).toBeInTheDocument();
   });
 });
 

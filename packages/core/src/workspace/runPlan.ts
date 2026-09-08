@@ -18,6 +18,7 @@ import { extractContext } from '../environment/extractContext';
 import { resolveInheritedAuth } from '../request/resolveInheritedAuth';
 import { buildScope, resolveString } from '../environment/variableResolver';
 import type { WorkspaceState } from './patches';
+import { isWorkspaceSharingEnabled } from '../workspaceSharing';
 
 // =============================================================================
 // runPlan — the headless execution-plan runner.
@@ -192,6 +193,20 @@ function lookupPlanStepRequest(
     return request
       ? { request }
       : { request: null, error: 'Request no longer exists in workspace.' };
+  }
+
+  // Workspace sharing off: refuse the step before it starts.
+  //
+  // This engine is what the VS Code extension and every headless consumer run
+  // plans through, so the guard has to sit here and not only in the web store
+  // — otherwise a linked step keeps executing on whichever surface was gated
+  // last. It refuses rather than silently skipping so the step still appears
+  // in the run with an honest reason.
+  if (!isWorkspaceSharingEnabled()) {
+    return {
+      request: null,
+      error: 'Step comes from a linked workspace, which this build does not include.',
+    };
   }
 
   const link = synced.linkedWorkspaces[step.linkedWorkspaceId];

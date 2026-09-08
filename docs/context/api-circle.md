@@ -368,7 +368,7 @@ Because the product is pre-launch with zero users:
 | [`docs/architecture/platform.md`](../architecture/platform.md)   | MCP / mock engine / CLI / desktop design record |
 | [`docs/auth.md`](../auth.md)                                     | The 17-auth-type matrix                         |
 | [`docs/mock-server.md`](../mock-server.md)                       | Mock server feature guide                       |
-| [`docs/mcp-tools-reference.md`](../mcp-tools-reference.md)       | MCP tool catalog reference (97 tools)           |
+| [`docs/mcp-tools-reference.md`](../mcp-tools-reference.md)       | MCP tool catalog reference (84 tools)           |
 | [`docs/connect-your-ai-client.md`](../connect-your-ai-client.md) | Wiring an MCP client                            |
 | [`docs/installing.md`](../installing.md)                         | Install instructions                            |
 | [`docs/qa/README.md`](../qa/README.md)                           | QA status, E2E CI reference, coverage tooling   |
