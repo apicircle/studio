@@ -126,6 +126,22 @@ To move to a different branch, **discard** the current one and **create** a new 
 
 Discarding only clears the branch pointer. It does **not** touch your local document — run history, request drafts, decrypted secrets, snapshots, and UI state all survive — and it does not delete the branch on GitHub. So switching branches is safe: nothing local is lost. Whether you then Push your current synced doc to the new branch, or Refresh to pull that branch's \`workspace.json\`, decides the content you work against.
 
+## Starting a branch from a workspace that is already on Git
+
+The create-branch form asks what the new branch should start from:
+
+- **This workspace** (default) — the branch starts empty and your first push commits the document you have open.
+- **Import from workspace** — pick one of the workspaces that already live on the base branch. The form reads that branch's \`.apicircle/registry.json\` to list them, then copies the chosen \`workspace.json\` into the workspace you are in.
+
+Importing **replaces** the current workspace's document — requests, folders, environments, mock servers, plans, releases and global assets all go. A **Before workspace import** snapshot is captured first, so History → Snapshots can put the old document back. Run history, saved secrets, and your Git connection are untouched.
+
+Two things to know about an import:
+
+- **File assets arrive as metadata only.** Their bytes live under the source workspace's \`.apicircle/workspace-<id>/attachments/\` path, which your workspace id does not resolve to, so each asset shows "Missing — re-upload" until you upload it again.
+- **The import is a copy, not a takeover.** Your workspace keeps its own id, so pushing writes \`workspace-<your-id>/\` alongside the source rather than over it.
+
+If the base branch has no \`.apicircle/registry.json\` — a repo nothing has been pushed to yet — the picker says so and the option stays unavailable.
+
 ## Replacing your local workspace with what is on Git
 
 When you want to discard local edits and take the remote copy:

@@ -47,6 +47,7 @@ import {
   anyWorkspaceSession,
   hostOfWorkspaceSession,
   useWorkspaceStore,
+  type BranchWorkspaceSummary,
 } from '../../store/workspaceStore';
 import { parseRepoCoordinate, REPO_HINT, REPO_PLACEHOLDER } from '../../store/repoCoordinate';
 import { useHostSelection } from '../../hooks/useHostSelection';
@@ -1973,6 +1974,16 @@ function CreatePrModal({ open, onClose }: { open: boolean; onClose: () => void }
   );
 }
 
+/**
+ * Workspace ids are `generateId()` UUIDs, far too long for a dropdown row.
+ * Show a prefix with an ellipsis so it reads as an abbreviation rather than
+ * a mangled name — but leave short ids whole, since truncating those loses
+ * information and gains nothing.
+ */
+function abbreviateWorkspaceId(id: string): string {
+  return id.length <= 12 ? id : `${id.slice(0, 8)}…`;
+}
+
 function CreateBranchForm() {
   const repo = useWorkspaceStore((s) => s.local!.connectedRepo!);
   const displayName = useWorkspaceStore((s) => {
@@ -1982,6 +1993,7 @@ function CreateBranchForm() {
   });
   const createWorkingBranch = useWorkspaceStore((s) => s.createWorkingBranch);
   const listRepoBranches = useWorkspaceStore((s) => s.listRepoBranches);
+  const listBranchWorkspaces = useWorkspaceStore((s) => s.listBranchWorkspaces);
   const seedInitialCommit = useWorkspaceStore((s) => s.seedInitialCommit);
   const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
 
@@ -1995,6 +2007,15 @@ function CreateBranchForm() {
   const [baseBranch, setBaseBranch] = useState<string>(repo.defaultBranch);
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState<string | null>(null);
+
+  // Where the new branch's content comes from. 'local' keeps today's
+  // behaviour (the branch starts from this workspace); 'import' copies a
+  // workspace that already lives on the base branch over the top of it.
+  const [startFrom, setStartFrom] = useState<'local' | 'import'>('local');
+  const [branchWorkspaces, setBranchWorkspaces] = useState<BranchWorkspaceSummary[] | null>(null);
+  const [workspacesError, setWorkspacesError] = useState<string | null>(null);
+  const [loadingWorkspaces, setLoadingWorkspaces] = useState(false);
+  const [importId, setImportId] = useState<string>('');
 
   useEffect(() => {
     let cancelled = false;
@@ -2028,6 +2049,44 @@ function CreateBranchForm() {
     };
   }, [repo.owner, repo.name, repo.defaultBranch, listRepoBranches, surfaceMissingScope]);
 
+  // Re-read the base branch's workspace registry whenever the user opts
+  // into import mode or retargets the base branch. Scoped to import mode
+  // so the default path costs no extra request.
+  useEffect(() => {
+    if (startFrom !== 'import' || !baseBranch) return;
+    let cancelled = false;
+    setLoadingWorkspaces(true);
+    setWorkspacesError(null);
+    setBranchWorkspaces(null);
+    listBranchWorkspaces(baseBranch)
+      .then((list) => {
+        if (cancelled) return;
+        setBranchWorkspaces(list);
+        // Default to the branch's active workspace (sorted first). A
+        // selection carried over from another branch may not exist here,
+        // so re-seed rather than leaving a dangling id in the select.
+        setImportId((prev) => (list.some((w) => w.id === prev) ? prev : (list[0]?.id ?? '')));
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setBranchWorkspaces([]);
+        if (err instanceof MissingScopeError) {
+          surfaceMissingScope(err.missingScopes);
+          setWorkspacesError(`Missing required scopes: ${err.missingScopes.join(', ')}`);
+        } else if (err instanceof Error) {
+          setWorkspacesError(err.message);
+        } else {
+          setWorkspacesError('Failed to load workspaces on this branch');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingWorkspaces(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [startFrom, baseBranch, listBranchWorkspaces, surfaceMissingScope]);
+
   const onSeed = async () => {
     setSeeding(true);
     setSeedError(null);
@@ -2055,6 +2114,12 @@ function CreateBranchForm() {
 
   const validation = validateBranchName(name);
   const noBranches = branches !== null && branches.length === 0;
+  const importing = startFrom === 'import';
+  const noBranchWorkspaces = branchWorkspaces !== null && branchWorkspaces.length === 0;
+  // In import mode the form is only actionable once a source is resolved —
+  // an empty branch registry or an in-flight fetch has nothing to import.
+  const importBlocked = importing && (loadingWorkspaces || noBranchWorkspaces || !importId);
+  const selectedImport = branchWorkspaces?.find((w) => w.id === importId) ?? null;
 
   const submit = async () => {
     if (validation) {
@@ -2068,7 +2133,11 @@ function CreateBranchForm() {
     setSubmitting(true);
     setError(null);
     try {
-      await createWorkingBranch({ branchName: name, baseBranch });
+      await createWorkingBranch({
+        branchName: name,
+        baseBranch,
+        ...(importing ? { importWorkspaceId: importId } : {}),
+      });
     } catch (err) {
       if (err instanceof GitHubError && err.status === 422) {
         setError(`Branch \`${name}\` already exists on GitHub. Pick a different name.`);
@@ -2092,7 +2161,8 @@ function CreateBranchForm() {
     <div className="space-y-2 rounded-sm border border-border bg-card p-3">
       <p className="text-xs text-text-muted">
         Create a working branch from an existing branch. Auto-named for you; editable. The first
-        push to save will commit <code>workspace.json</code> here.
+        push to save will commit <code>workspace.json</code> here. Start from this workspace, or
+        import one that already lives on the base branch.
       </p>
 
       <label htmlFor="base-branch-select" className="block text-[0.6875rem] text-text-dim">
@@ -2154,6 +2224,108 @@ function CreateBranchForm() {
         </div>
       )}
 
+      {!noBranches && (
+        <fieldset className="space-y-1.5 border-0 p-0">
+          <legend className="mb-1 block text-[0.6875rem] text-text-dim">Start from</legend>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+            <label className="inline-flex items-center gap-1.5 text-xs text-text-primary">
+              <input
+                type="radio"
+                name="branch-start-from"
+                value="local"
+                checked={!importing}
+                onChange={() => {
+                  setStartFrom('local');
+                  setError(null);
+                }}
+                className="h-3 w-3 accent-accent"
+              />
+              This workspace
+            </label>
+            <label className="inline-flex items-center gap-1.5 text-xs text-text-primary">
+              <input
+                type="radio"
+                name="branch-start-from"
+                value="import"
+                checked={importing}
+                onChange={() => {
+                  setStartFrom('import');
+                  setError(null);
+                }}
+                className="h-3 w-3 accent-accent"
+              />
+              Import from workspace
+            </label>
+          </div>
+        </fieldset>
+      )}
+
+      {importing && !noBranches && (
+        <div className="space-y-2">
+          <label htmlFor="import-workspace-select" className="block text-[0.6875rem] text-text-dim">
+            Workspace on <code className="font-mono">{baseBranch}</code>
+          </label>
+          {loadingWorkspaces ? (
+            <p className="text-[0.6875rem] text-text-dim">Loading workspaces…</p>
+          ) : workspacesError ? (
+            <p className="text-[0.6875rem] text-danger" role="alert">
+              {workspacesError}
+            </p>
+          ) : noBranchWorkspaces ? (
+            <p className="text-[0.6875rem] text-text-muted">
+              No workspaces on <code className="font-mono">{baseBranch}</code> yet — there is
+              nothing to import. Push this workspace to the branch first, or start from this
+              workspace.
+            </p>
+          ) : (
+            <div className="relative">
+              <select
+                id="import-workspace-select"
+                value={importId}
+                onChange={(e) => {
+                  setImportId(e.target.value);
+                  setError(null);
+                }}
+                aria-label="Workspace to import"
+                className="h-7 w-full appearance-none rounded-sm border border-border bg-surface px-2 pr-7 text-xs text-text-primary focus:border-accent focus:outline-none"
+              >
+                {branchWorkspaces?.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name} · {abbreviateWorkspaceId(w.id)}
+                    {w.isActive ? ' · active' : ''}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                size={12}
+                aria-hidden="true"
+                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-text-faint"
+              />
+            </div>
+          )}
+          {selectedImport && (
+            <div className="flex items-start gap-2 rounded-sm border border-danger/40 bg-danger/5 p-2.5">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0 text-danger" aria-hidden="true" />
+              <div className="space-y-1 text-[0.6875rem] leading-relaxed">
+                <p className="font-medium text-danger">
+                  This clears the current workspace&apos;s data
+                </p>
+                <p className="text-text-muted">
+                  Every request, folder, environment, mock server, plan, release and global asset in
+                  this workspace is replaced by <strong>{selectedImport.name}</strong>. A “Before
+                  workspace import” snapshot is taken first, so History → Snapshots can put it back.
+                </p>
+                <p className="text-text-muted">
+                  Run history, saved secrets and your Git connection are kept. Imported file assets
+                  arrive as metadata only — their bytes stay with the source workspace, so each one
+                  shows “Missing — re-upload” until you upload it again.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <label htmlFor="branch-name-input" className="block text-[0.6875rem] text-text-dim">
         New branch name
       </label>
@@ -2178,11 +2350,24 @@ function CreateBranchForm() {
         <button
           type="button"
           onClick={() => void submit()}
-          disabled={submitting || !!validation || loadingBranches || noBranches || !baseBranch}
+          disabled={
+            submitting ||
+            !!validation ||
+            loadingBranches ||
+            noBranches ||
+            !baseBranch ||
+            importBlocked
+          }
           className="inline-flex h-7 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50"
         >
           <Plus size={12} />
-          {submitting ? 'Creating…' : 'Create working branch'}
+          {submitting
+            ? importing
+              ? 'Importing…'
+              : 'Creating…'
+            : importing
+              ? 'Import & create working branch'
+              : 'Create working branch'}
         </button>
         <button
           type="button"

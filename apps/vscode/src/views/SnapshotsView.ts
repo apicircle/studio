@@ -82,6 +82,7 @@ export class SnapshotsView extends BaseTreeView<SnapshotsNode> {
 
 const ICON_BY_TRIGGER: Record<string, string> = {
   manual: 'save',
+  'pre-import': 'repo-pull',
   'pre-linked-update': 'cloud-download',
   'pre-yank': 'warning',
   'pre-deprecate': 'archive',

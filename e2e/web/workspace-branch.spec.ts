@@ -197,4 +197,139 @@ test.describe('Workspace — auto-branch flow (P4.2)', () => {
       await expect(app.getByText(/already exists on GitHub/i)).toBeVisible();
     },
   );
+
+  test(
+    tc(
+      id('Branch :: Switch working branch'),
+      'import a base-branch workspace while creating the working branch',
+    ),
+    async ({ app }) => {
+      // Tagged against the create-working-branch cell: the workbook has no
+      // dedicated row for the import variant yet, and the maps under
+      // e2e/web/fixtures are generated from the workbook, not hand-edited.
+      const IMPORT_ID = 'ws-payments';
+      const corsHeaders = {
+        'access-control-allow-origin': '*',
+        'access-control-expose-headers':
+          'x-oauth-scopes, x-accepted-oauth-scopes, x-ratelimit-remaining, x-ratelimit-reset',
+      };
+
+      await setupMocks(app, {
+        user: { login: 'me', scopes: 'repo, pull_request' },
+        repo: { fullName: 'me/api', owner: 'me', name: 'api', defaultBranch: 'main' },
+        branchHead: { branch: 'main', sha: 'abc12345' },
+        createBranchBody: {
+          ref: 'refs/heads/apicircle/wb-import',
+          object: { sha: 'abc12345' },
+        },
+      });
+
+      // The base-branch dropdown needs a real branch list.
+      await app.route('**/repos/me/api/branches?**', async (route) => {
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify([{ name: 'main', commit: { sha: 'abc12345' } }]),
+        });
+      });
+
+      // `.apicircle/registry.json` on main enumerates what can be imported;
+      // `workspace-<id>/workspace.json` is the document itself.
+      const remoteDoc = {
+        schemaVersion: 1,
+        workspaceId: IMPORT_ID,
+        collections: {
+          tree: { id: 'root', type: 'root', children: [{ kind: 'request', id: 'imported-req' }] },
+          requests: {
+            'imported-req': {
+              id: 'imported-req',
+              name: 'Imported from main',
+              folderId: null,
+              method: 'GET',
+              url: 'https://example.test/imported',
+              headers: [],
+              query: [],
+              body: { type: 'none', content: '' },
+              auth: { type: 'inherit' },
+              contextVars: [],
+              extractions: [],
+              assertions: [],
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+            },
+          },
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
+        linkedWorkspaces: {},
+        linkedOverrides: { requests: {}, environmentVars: {} },
+        releases: { self: null, perLink: {} },
+        globalAssets: { schemas: {}, graphql: {}, files: {} },
+        mockServers: {},
+        secretKeys: {},
+        meta: {
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          appVersion: '1.0.0',
+        },
+      };
+
+      await app.route('**/repos/me/api/contents/**', async (route) => {
+        const url = route.request().url();
+        const json = url.includes('registry.json')
+          ? JSON.stringify({
+              schemaVersion: 1,
+              activeWorkspaceId: IMPORT_ID,
+              workspaces: [{ id: IMPORT_ID, name: 'Payments API' }],
+            })
+          : JSON.stringify(remoteDoc);
+        const path = url.includes('registry.json')
+          ? '.apicircle/registry.json'
+          : `.apicircle/workspace-${IMPORT_ID}/workspace.json`;
+        await route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json', ...corsHeaders },
+          body: JSON.stringify({
+            type: 'file',
+            path,
+            sha: 'blob-sha',
+            size: json.length,
+            content: Buffer.from(json, 'utf-8').toString('base64'),
+            encoding: 'base64',
+          }),
+        });
+      });
+
+      await app.getByRole('button', { name: /Open Secret Vault/ }).click();
+      await app.getByRole('button', { name: /Sessions/ }).click();
+      await app.getByLabel('GitHub PAT').fill('tok');
+      await app.getByRole('button', { name: 'Connect', exact: true }).click();
+      await app.keyboard.press('Escape');
+
+      await app.getByRole('button', { name: /^Workspace$/ }).click();
+      await app.getByRole('button', { name: 'Switch to manual entry' }).click();
+      await app.getByLabel('Repo full name').fill('me/api');
+      await app.getByRole('button', { name: 'Connect repo' }).click();
+      await expect(app.getByText('me/api')).toBeVisible();
+
+      // Opt into the import path; the picker loads main's registry.
+      await app.getByRole('radio', { name: 'Import from workspace' }).click();
+      const picker = app.getByLabel('Workspace to import');
+      await expect(picker).toBeVisible();
+      await expect(picker).toHaveValue(IMPORT_ID);
+
+      // The destructive warning has to be on screen BEFORE the user commits.
+      await expect(app.getByText(/This clears the current workspace/)).toBeVisible();
+      await expect(app.locator('strong', { hasText: 'Payments API' })).toBeVisible();
+
+      await app.getByRole('button', { name: /Import & create working branch/ }).click();
+
+      await expect(app.getByText('Branch ready')).toBeVisible();
+
+      // The imported document actually replaced the local one — the request
+      // that only exists on main's workspace is now in this workspace's tree.
+      await app.getByRole('button', { name: /^Editor$/ }).click();
+      await expect(app.getByText('Imported from main')).toBeVisible();
+    },
+  );
 });

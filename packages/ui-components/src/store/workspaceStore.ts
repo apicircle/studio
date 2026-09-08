@@ -263,6 +263,26 @@ interface AttachmentSlotRefLike {
   requiredBy: Array<{ requestId: string; requestName: string }>;
 }
 
+/**
+ * One workspace discovered on a remote branch, read out of that branch's
+ * `.apicircle/registry.json`. Drives the "Import from workspace" picker in
+ * the create-working-branch form — the registry is the only place a branch
+ * enumerates its workspaces, since each one lives in its own
+ * `workspace-<id>/` directory with no index of its own.
+ */
+export interface BranchWorkspaceSummary {
+  /** Matches the directory segment in `.apicircle/workspace-<id>/`. */
+  id: string;
+  /**
+   * The name the last pusher's device carried. Names are per-device, so
+   * this is a hint for recognising the workspace, not an identity —
+   * `id` is what the import actually resolves against.
+   */
+  name: string;
+  /** True for the branch registry's `activeWorkspaceId`. */
+  isActive: boolean;
+}
+
 export interface AttachmentDownloadPromptItem {
   slotId: string;
   sha256?: string;
@@ -454,6 +474,16 @@ const MAX_REQUEST_RUNS = 500;
 // Plan-runs are coarser-grained than request-runs; cap separately so the
 // list stays browsable without competing for the request-run buffer.
 const MAX_PLAN_RUNS = 200;
+
+/**
+ * Shape a workspace id must have before we will interpolate it into a repo
+ * path (`.apicircle/workspace-<id>/workspace.json`). Ids are `generateId()`
+ * UUIDs, so this is a deliberately strict superset: no dots, so `..` can't
+ * appear; no separators, so a path can't be escaped. Applied to ids read
+ * out of a *remote* branch's registry, which is untrusted input — any
+ * collaborator with push access can write that file.
+ */
+const SAFE_WORKSPACE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 /**
  * Module-scoped set of plan ids whose `runPlan` is currently in flight.
@@ -1706,10 +1736,23 @@ type WorkspaceStore = {
    * Auto-create a new branch from `connectedRepo.defaultBranch` (or
    * caller-supplied baseBranch). Generates `apicircle/<slug>-<id>` when
    * no name is supplied. Throws on validation failure or GitHub error.
+   *
+   * `importWorkspaceId` starts the branch from a workspace that already
+   * lives on the base branch instead of from the local document: the
+   * chosen `workspace-<id>/workspace.json` is copied into THIS workspace,
+   * replacing the current synced doc wholesale. The local `workspaceId` is
+   * kept, so the import is a copy — pushing writes this workspace's own
+   * `workspace-<localId>/` directory on the branch and leaves the source
+   * workspace untouched.
+   *
+   * The source document is fetched and validated BEFORE the branch ref is
+   * created, so a missing or malformed source fails with nothing written:
+   * no half-created branch pointing at content that never arrived.
    */
   createWorkingBranch: (opts?: {
     branchName?: string;
     baseBranch?: string;
+    importWorkspaceId?: string;
   }) => Promise<WorkingBranch>;
   /**
    * Seed the very first commit on a freshly-created empty repo. Writes a
@@ -1992,6 +2035,19 @@ type WorkspaceStore = {
     name: string,
     opts?: { tokenOverride?: string; host?: GitHostKind; baseUrl?: string },
   ) => Promise<GitHubBranch[]>;
+
+  /**
+   * Enumerate the workspaces that already exist on `branch` of the
+   * connected repo, by reading that ref's `.apicircle/registry.json`.
+   *
+   * Returns `[]` — never throws — when the branch carries no registry, an
+   * unparseable one, or an empty one: a branch with nothing to import is a
+   * normal empty state for the picker, not an error. Transport failures
+   * (auth, network, missing scopes) DO propagate so the form can tell the
+   * user why the list is unavailable rather than claiming the branch is
+   * empty.
+   */
+  listBranchWorkspaces: (branch: string) => Promise<BranchWorkspaceSummary[]>;
 
   /**
    * Probe a candidate source repo's `workspace.json` for its
@@ -5357,6 +5413,46 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const token = await decryptSessionToken(local);
     const client = workspaceProvider(local);
 
+    // Import pre-flight. Resolve the source document BEFORE any ref is
+    // created, so a source that is missing or malformed leaves the repo
+    // exactly as it was — the alternative is a branch that exists but
+    // holds none of the content the user asked for, which they would then
+    // have to notice and clean up by hand.
+    const importId = opts?.importWorkspaceId?.trim() || null;
+    let imported: WorkspaceSynced | null = null;
+    if (importId) {
+      if (!SAFE_WORKSPACE_ID.test(importId)) {
+        throw new Error(`"${importId}" is not a valid workspace id.`);
+      }
+      const sourceFile = await client.getContents(
+        token,
+        repo.owner,
+        repo.name,
+        workspaceJsonPath(importId),
+        baseBranch,
+      );
+      if (sourceFile === null) {
+        throw new Error(
+          `Workspace ${importId} has no workspace.json on ${baseBranch}. ` +
+            `The branch registry lists it, but the document is missing — pick another workspace.`,
+        );
+      }
+      try {
+        imported = parseWorkspaceJson(sourceFile.content);
+      } catch (err) {
+        if (err instanceof RemoteWorkspaceParseError) {
+          throw new Error(
+            `Workspace ${importId} on ${baseBranch} could not be read (${err.code}): ${err.message}.`,
+          );
+        }
+        // Unreachable: parseWorkspaceJson documents RemoteWorkspaceParseError
+        // as its only failure mode. Kept so that if it ever grows another,
+        // the error surfaces raw instead of being swallowed here.
+        /* v8 ignore next 2 */
+        throw err;
+      }
+    }
+
     // Read the base branch HEAD, then create the new ref.
     const head = await client.getBranchHead(token, repo.owner, repo.name, baseBranch);
     const created = await client.createBranch(
@@ -5385,6 +5481,103 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const next: WorkspaceLocal = { ...local, workingBranch: branch, retiredBranch: null };
     set({ local: next });
     queueSaveLocal(next);
+
+    if (imported) {
+      // Undo path first. The replacement below is total, so capture the
+      // outgoing document while it is still the live one — the History
+      // panel's "Before workspace import" entry is the only way back.
+      get().captureSnapshot({
+        trigger: 'pre-import',
+        note: `Before importing workspace ${importId} from ${baseBranch}`,
+      });
+
+      // Copy-in, not adoption: the document arrives under THIS workspace's
+      // id. Pushing therefore writes `workspace-<localId>/` on the branch
+      // and never touches the source workspace's directory.
+      //
+      // Global File Asset refs cannot survive that rewrite. Every ref
+      // points at `.apicircle/workspace-<sourceId>/attachments/<slotId>`,
+      // and under our id that path holds nothing — so carrying the refs
+      // over would make the status pill claim bytes are on the branch when
+      // they are not. Dropping both refs leaves each asset in the honest
+      // `missing` state ("Missing — re-upload"): the metadata is here, the
+      // bytes are not, and the pill says so.
+      const importedFiles = imported.globalAssets?.files;
+      const rebasedFiles = importedFiles
+        ? Object.fromEntries(
+            Object.entries(importedFiles).map(([id, asset]) => [
+              id,
+              { ...asset, workingBranchRef: null, baseBranchRef: null },
+            ]),
+          )
+        : importedFiles;
+      // Every bucket the type declares is filled explicitly. `parseWorkspaceJson`
+      // validates only workspaceId / collections / environments and returns the
+      // rest of the document as-is, so a doc written by a partial or older
+      // writer can be missing whole top-level keys. `refreshWorkspace` survives
+      // that because it MERGES into a complete local doc; an import replaces
+      // wholesale, so anything left undefined here is what the next reader
+      // dereferences. Truly optional keys (`executionPlans`, `secretKeys`,
+      // `secretCrypto`) ride along in the spread and stay absent if absent.
+      const importedAt = new Date().toISOString();
+      const importedSynced: WorkspaceSynced = {
+        ...imported,
+        schemaVersion: 1,
+        workspaceId: synced.workspaceId,
+        linkedWorkspaces: imported.linkedWorkspaces ?? {},
+        linkedOverrides: {
+          requests: imported.linkedOverrides?.requests ?? {},
+          environmentVars: imported.linkedOverrides?.environmentVars ?? {},
+        },
+        releases: {
+          self: imported.releases?.self ?? null,
+          perLink: imported.releases?.perLink ?? {},
+        },
+        globalAssets: {
+          schemas: imported.globalAssets?.schemas ?? {},
+          graphql: imported.globalAssets?.graphql ?? {},
+          ...(rebasedFiles ? { files: rebasedFiles } : {}),
+        },
+        mockServers: imported.mockServers ?? {},
+        meta: {
+          createdAt: imported.meta?.createdAt ?? importedAt,
+          updatedAt: importedAt,
+          appVersion: imported.meta?.appVersion ?? synced.meta.appVersion,
+        },
+      };
+
+      // Local caches keyed to the document we just discarded. `linkedCollections`
+      // holds snapshots of the OLD doc's linked workspaces and `attachmentCache`
+      // holds bytes for its slots; neither is addressable by the incoming doc,
+      // and both rebuild on demand. History, snapshots, the secret vault, the
+      // GitHub session and the connected repo are deliberately untouched —
+      // they belong to the device, not to the document.
+      const afterImport: WorkspaceLocal = {
+        ...get().local!,
+        linkedCollections: {},
+        attachmentCache: {},
+        // Nothing on the branch lives at our `workspace-<localId>` path yet,
+        // so there is no pulled baseline to diff against. Null means the
+        // next push correctly reports the whole document as unpushed — and
+        // `lastPulledAt` goes with them rather than dating a pull that no
+        // longer describes anything.
+        sync: {
+          ...get().local!.sync,
+          lastPulledSnapshot: null,
+          lastPulledSha: null,
+          lastPulledAt: null,
+        },
+      };
+      set({ synced: importedSynced, local: afterImport });
+      queueSaveBoth(importedSynced, afterImport);
+      await flushPendingPersist();
+      // Both follow-on passes below are meaningless for an import: asset-ref
+      // inheritance would re-stamp the refs we just deliberately cleared, and
+      // the first-pull prompt exists to stop a local seed clobbering unseen
+      // remote content — but the user has just *chosen* this content, and
+      // their own workspace path on the branch is empty regardless.
+      return branch;
+    }
 
     // Opportunistic asset-ref inheritance. The new working branch was
     // forked from `baseBranch`, so any Global File Asset whose bytes
@@ -6080,6 +6273,57 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!local) throw new Error('Workspace not ready');
     const { client, token } = await targetClientAndToken(local, opts);
     return client.listBranches(token, owner.trim(), name.trim());
+  },
+
+  listBranchWorkspaces: async (branch) => {
+    const local = get().local;
+    if (!local) throw new Error('Workspace not ready');
+    const repo = local.connectedRepo;
+    if (!repo) throw new Error('Connect a repo before listing branch workspaces');
+    const ref = branch.trim();
+    if (!ref) return [];
+
+    const token = await decryptSessionToken(local);
+    const client = workspaceProvider(local);
+    // Transport errors propagate — the caller distinguishes "couldn't ask"
+    // from "asked, nothing there". Only the *content* of the answer is
+    // treated leniently below.
+    const file = await client.getContents(token, repo.owner, repo.name, REGISTRY_JSON_PATH, ref);
+    if (file === null) return [];
+
+    let parsed: { activeWorkspaceId?: unknown; workspaces?: unknown };
+    try {
+      parsed = JSON.parse(file.content) as typeof parsed;
+    } catch {
+      // A branch whose registry is corrupt has nothing we can safely
+      // offer to import. Empty list; the form renders its empty state.
+      return [];
+    }
+    if (!Array.isArray(parsed.workspaces)) return [];
+    const activeId = typeof parsed.activeWorkspaceId === 'string' ? parsed.activeWorkspaceId : null;
+
+    const seen = new Set<string>();
+    const out: BranchWorkspaceSummary[] = [];
+    for (const raw of parsed.workspaces) {
+      if (typeof raw !== 'object' || raw === null) continue;
+      const entry = raw as { id?: unknown; name?: unknown };
+      // The id becomes a repo path segment (`workspace-<id>/workspace.json`),
+      // so anything with a separator or traversal in it is rejected rather
+      // than escaped — a hostile registry must not be able to aim the
+      // follow-up fetch at an arbitrary file in the repo.
+      if (typeof entry.id !== 'string' || !SAFE_WORKSPACE_ID.test(entry.id)) continue;
+      if (seen.has(entry.id)) continue;
+      seen.add(entry.id);
+      out.push({
+        id: entry.id,
+        name: typeof entry.name === 'string' && entry.name.trim() ? entry.name.trim() : 'Workspace',
+        isActive: entry.id === activeId,
+      });
+    }
+    // Active workspace first — it is the one a branch's own tooling boots
+    // into, so it is the likeliest import target.
+    out.sort((a, b) => Number(b.isActive) - Number(a.isActive));
+    return out;
   },
 
   probeLinkedRepoVersions: async (owner, name, branch, opts) => {

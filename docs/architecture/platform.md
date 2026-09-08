@@ -142,6 +142,15 @@ working ref drops it; the next read tries base; if both are missing
 and there's no local copy, the asset enters the `missing` state and
 the UI prompts for re-upload.
 
+**Workspace import clears both refs.** "Import from workspace" (the
+create-working-branch form) copies another workspace's document in
+under _this_ workspace's id. Every ref on the incoming assets points
+at `.apicircle/workspace-<sourceId>/attachments/<slotId>`, which the
+importing workspace's id does not resolve to — so both refs are
+dropped at import time and each asset lands in `missing`. Carrying
+them over would make the pill claim bytes are on the branch when
+nothing is reachable at the path this workspace actually reads.
+
 **Verification grace window.** The refresh probe trusts any ref
 stamped within the last 60 seconds without re-probing. GitHub's
 strongly-consistent Git Data API is what the push commits through,

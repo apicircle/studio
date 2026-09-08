@@ -1136,6 +1136,7 @@ export type WorkspaceSnapshotTrigger =
   | 'manual'
   | 'pre-push'
   | 'pre-merge'
+  | 'pre-import'
   | 'pre-linked-update'
   | 'pre-yank'
   | 'pre-deprecate';

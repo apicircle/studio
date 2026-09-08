@@ -25,6 +25,44 @@
 
 ## Unreleased
 
+### Added
+
+- **Start a working branch from a workspace that is already on the base
+  branch.** The create-branch form gains a "Start from" choice. The default,
+  **This workspace**, is the old behaviour — the branch starts from your local
+  document. **Import from workspace** reads the base branch's
+  `.apicircle/registry.json`, lists every workspace on it, and copies the one
+  you pick into the workspace you are in.
+
+  This is the missing half of "switch branches without losing local data": you
+  could already point a new branch at a different base, but there was no way to
+  pick up the content sitting on it without pushing first and pulling back.
+
+  The import is deliberately explicit about what it costs:
+  - It **replaces** the current synced document — requests, folders,
+    environments, mock servers, plans, releases and global assets — and the
+    form says so, naming the workspace that is about to land, before you
+    commit. Run history, saved secrets, and the Git session are untouched.
+  - A **`pre-import`** snapshot is captured first, so History → Snapshots can
+    restore the document the import replaced. (New
+    `WorkspaceSnapshotTrigger` variant, labelled "Before workspace import".)
+  - Imported Global File Assets arrive as metadata only — their bytes live
+    under the _source_ workspace's attachment path — so each one reads
+    "Missing — re-upload" rather than claiming bytes that are not on the
+    branch.
+  - The document arrives under **your** workspace id, so a later push writes
+    your own `workspace-<id>/` directory and never overwrites the source.
+
+  The source document is fetched and validated _before_ the branch ref is
+  created, so a missing or malformed source fails with nothing written instead
+  of leaving a branch that holds none of the content you asked for. Workspace
+  ids read out of a remote registry are checked against a strict pattern before
+  they are interpolated into a repo path — that file is writable by anyone with
+  push access.
+
+  New store action `listBranchWorkspaces(branch)`; `createWorkingBranch` takes
+  an optional `importWorkspaceId`.
+
 ### Fixed
 
 - **Push to save now works on every connected host, not just GitHub.**

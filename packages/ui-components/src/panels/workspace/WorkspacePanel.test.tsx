@@ -594,6 +594,420 @@ describe('WorkspacePanel', () => {
     });
   });
 
+  describe('Import from workspace (create working branch)', () => {
+    // The create-branch form can start the new branch from a workspace that
+    // already lives on the base branch. These tests drive the picker, its
+    // three non-happy states (loading / error / empty), the destructive
+    // warning, and the wiring through to `createWorkingBranch`.
+
+    const IMPORT_ID = 'ws-payments';
+
+    /** Contents-API response body carrying `json` as base64. */
+    function contentsSpec(path: string, json: string, sha = 'blob-sha'): ResponseSpec {
+      return {
+        body: {
+          type: 'file',
+          path,
+          sha,
+          size: json.length,
+          content: btoa(unescape(encodeURIComponent(json))),
+          encoding: 'base64',
+        },
+      };
+    }
+
+    function registrySpec(workspaces: Array<{ id: string; name: string }>): ResponseSpec {
+      return contentsSpec(
+        '.apicircle/registry.json',
+        JSON.stringify({
+          schemaVersion: 1,
+          activeWorkspaceId: workspaces[0]?.id ?? null,
+          workspaces,
+        }),
+        'registry-sha',
+      );
+    }
+
+    /** URL-routed stub — the form's request order is an implementation detail. */
+    function routedFetch(routes: Array<[RegExp, ResponseSpec]>): {
+      fetch: ReturnType<typeof vi.fn>;
+      urls: string[];
+    } {
+      const urls: string[] = [];
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        urls.push(url);
+        for (const [pattern, spec] of routes) {
+          if (pattern.test(url)) return fakeResponse(spec);
+        }
+        throw new Error(`unrouted fetch: ${url}`);
+      });
+      return { fetch: fetchMock, urls };
+    }
+
+    const REGISTRY_RE = /contents\/\.apicircle\/registry\.json/;
+    const SOURCE_RE = new RegExp(`contents/\\.apicircle/workspace-${IMPORT_ID}/workspace\\.json`);
+
+    const CONNECT_ROUTES: Array<[RegExp, ResponseSpec]> = [
+      [/\/user$/, { body: { login: 'me', id: 1 }, headers: { 'x-oauth-scopes': 'repo' } }],
+      [
+        /\/repos\/me\/api$/,
+        {
+          body: {
+            full_name: 'me/api',
+            name: 'api',
+            owner: { login: 'me' },
+            default_branch: 'main',
+            visibility: 'public',
+            permissions: { push: true, admin: false },
+          },
+        },
+      ],
+      [/\/branches\?/, { body: [{ name: 'main', commit: { sha: 'abc123' } }] }],
+    ];
+
+    /** A minimal but valid remote workspace document. */
+    function sourceJson(): string {
+      return JSON.stringify({
+        schemaVersion: 1,
+        workspaceId: IMPORT_ID,
+        collections: {
+          tree: { id: 'root', type: 'root', children: [{ kind: 'request', id: 'imported-req' }] },
+          requests: {
+            'imported-req': {
+              id: 'imported-req',
+              name: 'Imported request',
+              folderId: null,
+              method: 'GET',
+              url: 'https://example.test/imported',
+              headers: [],
+              query: [],
+              body: { type: 'none', content: '' },
+              auth: { type: 'inherit' },
+              contextVars: [],
+              extractions: [],
+              assertions: [],
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+            },
+          },
+          folders: {},
+        },
+        environments: { items: {}, activeName: null, priorityOrder: [] },
+        linkedWorkspaces: {},
+        linkedOverrides: { requests: {}, environmentVars: {} },
+        releases: { self: null, perLink: {} },
+        globalAssets: { schemas: {}, graphql: {}, files: {} },
+        mockServers: {},
+        secretKeys: {},
+        meta: {
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          appVersion: '1.0.0',
+        },
+      });
+    }
+
+    async function connect(): Promise<void> {
+      await renderWithStore(<WorkspacePanel />);
+      await act(async () => {
+        await useWorkspaceStore.getState().connectGitHubSession('tok');
+        await useWorkspaceStore.getState().connectRepo('me', 'api');
+      });
+      // The base-branch <select> only renders once the branch listing has
+      // settled; until then the whole form is disabled. Gate on it so the
+      // assertions below describe the settled form, not the loading one.
+      await screen.findByRole('combobox', { name: 'Base branch' });
+    }
+
+    it('defaults to starting from this workspace, with no picker on screen', async () => {
+      vi.stubGlobal('fetch', routedFetch(CONNECT_ROUTES).fetch);
+      await connect();
+      expect(screen.getByRole('radio', { name: 'This workspace' })).toBeChecked();
+      expect(screen.getByRole('radio', { name: 'Import from workspace' })).not.toBeChecked();
+      expect(screen.queryByLabelText('Workspace to import')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Create working branch/ })).toBeEnabled();
+    });
+
+    it('lists the base branch workspaces once import mode is chosen', async () => {
+      vi.stubGlobal(
+        'fetch',
+        routedFetch([
+          ...CONNECT_ROUTES,
+          [
+            REGISTRY_RE,
+            registrySpec([
+              { id: IMPORT_ID, name: 'Payments' },
+              { id: 'ws-billing', name: 'Billing' },
+            ]),
+          ],
+        ]).fetch,
+      );
+      await connect();
+      await userEvent.click(screen.getByRole('radio', { name: 'Import from workspace' }));
+
+      const select = (await screen.findByLabelText('Workspace to import')) as HTMLSelectElement;
+      expect(within(select).getByText(/Payments/)).toBeInTheDocument();
+      expect(within(select).getByText(/Billing/)).toBeInTheDocument();
+      // The branch's active workspace is pre-selected.
+      expect(select.value).toBe(IMPORT_ID);
+    });
+
+    it('warns that the import clears the current workspace and says what survives', async () => {
+      vi.stubGlobal(
+        'fetch',
+        routedFetch([
+          ...CONNECT_ROUTES,
+          [REGISTRY_RE, registrySpec([{ id: IMPORT_ID, name: 'Payments' }])],
+        ]).fetch,
+      );
+      await connect();
+      await userEvent.click(screen.getByRole('radio', { name: 'Import from workspace' }));
+
+      expect(await screen.findByText(/This clears the current workspace/)).toBeInTheDocument();
+      expect(screen.getByText(/is replaced by/)).toBeInTheDocument();
+      expect(screen.getByText(/Before workspace import/)).toBeInTheDocument();
+      expect(screen.getByText(/Run history, saved secrets/)).toBeInTheDocument();
+      expect(screen.getByText(/Missing — re-upload/)).toBeInTheDocument();
+    });
+
+    it('renders an empty state, and blocks submit, when the branch has no workspaces', async () => {
+      vi.stubGlobal(
+        'fetch',
+        routedFetch([
+          ...CONNECT_ROUTES,
+          [REGISTRY_RE, { status: 404, body: { message: 'Not Found' } }],
+        ]).fetch,
+      );
+      await connect();
+      await userEvent.click(screen.getByRole('radio', { name: 'Import from workspace' }));
+
+      expect(await screen.findByText(/there is nothing to import/)).toBeInTheDocument();
+      expect(screen.queryByLabelText('Workspace to import')).not.toBeInTheDocument();
+      // No warning without a selection — nothing is about to be replaced.
+      expect(screen.queryByText(/This clears the current workspace/)).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Import & create working branch/ })).toBeDisabled();
+    });
+
+    it('surfaces a listing failure instead of claiming the branch is empty', async () => {
+      vi.stubGlobal(
+        'fetch',
+        routedFetch([...CONNECT_ROUTES, [REGISTRY_RE, { status: 500, body: { message: 'boom' } }]])
+          .fetch,
+      );
+      await connect();
+      await userEvent.click(screen.getByRole('radio', { name: 'Import from workspace' }));
+
+      expect(await screen.findByRole('alert')).toBeInTheDocument();
+      expect(screen.queryByText(/there is nothing to import/)).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Import & create working branch/ })).toBeDisabled();
+    });
+
+    it('re-reads the workspace list when the base branch changes', async () => {
+      const routed = routedFetch([
+        ...CONNECT_ROUTES.slice(0, 2),
+        [
+          /\/branches\?/,
+          {
+            body: [
+              { name: 'main', commit: { sha: 'abc123' } },
+              { name: 'release/2.x', commit: { sha: 'def456' } },
+            ],
+          },
+        ],
+        [REGISTRY_RE, registrySpec([{ id: IMPORT_ID, name: 'Payments' }])],
+      ]);
+      vi.stubGlobal('fetch', routed.fetch);
+      await connect();
+      await userEvent.click(screen.getByRole('radio', { name: 'Import from workspace' }));
+      await screen.findByLabelText('Workspace to import');
+
+      await userEvent.selectOptions(
+        screen.getByRole('combobox', { name: 'Base branch' }),
+        'release/2.x',
+      );
+
+      await waitFor(() => {
+        expect(
+          routed.urls.filter(
+            (u) => REGISTRY_RE.test(u) && u.includes(encodeURIComponent('release/2.x')),
+          ),
+        ).toHaveLength(1);
+      });
+    });
+
+    it('imports the chosen workspace and creates the branch', async () => {
+      vi.stubGlobal(
+        'fetch',
+        routedFetch([
+          ...CONNECT_ROUTES,
+          [REGISTRY_RE, registrySpec([{ id: IMPORT_ID, name: 'Payments' }])],
+          [
+            SOURCE_RE,
+            contentsSpec(`.apicircle/workspace-${IMPORT_ID}/workspace.json`, sourceJson()),
+          ],
+          [/\/branches\/main/, { body: { name: 'main', commit: { sha: 'abc123' } } }],
+          [
+            /\/git\/refs$/,
+            { body: { ref: 'refs/heads/apicircle/imported', object: { sha: 'abc123' } } },
+          ],
+        ]).fetch,
+      );
+      await connect();
+      const localId = useWorkspaceStore.getState().synced!.workspaceId;
+      await userEvent.click(screen.getByRole('radio', { name: 'Import from workspace' }));
+      await screen.findByLabelText('Workspace to import');
+
+      // The auto-generated branch name is already valid — retyping it would
+      // only cost a char-by-char userEvent.type on every run.
+      const branchName = (screen.getByLabelText('Branch name') as HTMLInputElement).value;
+      await userEvent.click(screen.getByRole('button', { name: /Import & create working branch/ }));
+
+      await waitFor(() => {
+        expect(useWorkspaceStore.getState().local!.workingBranch?.name).toBe(branchName);
+      });
+      const synced = useWorkspaceStore.getState().synced!;
+      expect(synced.collections.requests['imported-req']?.name).toBe('Imported request');
+      // Copy-in: the content arrived, the identity did not.
+      expect(synced.workspaceId).toBe(localId);
+    });
+
+    it('renders the store error inline when the source document is gone', async () => {
+      vi.stubGlobal(
+        'fetch',
+        routedFetch([
+          ...CONNECT_ROUTES,
+          [REGISTRY_RE, registrySpec([{ id: IMPORT_ID, name: 'Payments' }])],
+          [SOURCE_RE, { status: 404, body: { message: 'Not Found' } }],
+        ]).fetch,
+      );
+      await connect();
+      await userEvent.click(screen.getByRole('radio', { name: 'Import from workspace' }));
+      await screen.findByLabelText('Workspace to import');
+      await userEvent.click(screen.getByRole('button', { name: /Import & create working branch/ }));
+
+      expect(await screen.findByText(/has no workspace\.json on main/)).toBeInTheDocument();
+      expect(useWorkspaceStore.getState().local!.workingBranch).toBeNull();
+    });
+
+    it('still explains itself when the listing rejects with a non-Error', async () => {
+      vi.stubGlobal('fetch', routedFetch(CONNECT_ROUTES).fetch);
+      await connect();
+      // Override the action itself: nothing in the client throws a bare
+      // string today, but a rejected promise carries no type guarantee, and
+      // an unlabelled empty picker would be the worst possible outcome.
+      // Typed `unknown` on purpose: the point of this test is a rejection
+      // that is NOT an Error, which is what the component's last branch
+      // handles.
+      const nonError: unknown = 'nope';
+      act(() => {
+        useWorkspaceStore.setState({
+          listBranchWorkspaces: async () => {
+            throw nonError;
+          },
+        });
+      });
+
+      await userEvent.click(screen.getByRole('radio', { name: 'Import from workspace' }));
+
+      expect(
+        await screen.findByText('Failed to load workspaces on this branch'),
+      ).toBeInTheDocument();
+    });
+
+    it('routes a missing-scope listing failure to the scope prompt', async () => {
+      vi.stubGlobal(
+        'fetch',
+        routedFetch([
+          ...CONNECT_ROUTES,
+          [
+            REGISTRY_RE,
+            {
+              status: 403,
+              body: { message: 'Forbidden' },
+              headers: { 'x-accepted-oauth-scopes': 'repo', 'x-oauth-scopes': '' },
+            },
+          ],
+        ]).fetch,
+      );
+      await connect();
+      await userEvent.click(screen.getByRole('radio', { name: 'Import from workspace' }));
+
+      expect(await screen.findByText(/Missing required scopes: repo/)).toBeInTheDocument();
+      // A scope failure is actionable, so it also raises the app-wide prompt
+      // that points the user at the Sessions tab.
+      expect(useWorkspaceStore.getState().missingScopePrompt).toEqual(['repo']);
+    });
+
+    it('imports whichever workspace the user selects, not just the default', async () => {
+      vi.stubGlobal(
+        'fetch',
+        routedFetch([
+          ...CONNECT_ROUTES,
+          [
+            REGISTRY_RE,
+            registrySpec([
+              { id: IMPORT_ID, name: 'Payments' },
+              { id: 'ws-billing', name: 'Billing' },
+            ]),
+          ],
+          [
+            /contents\/\.apicircle\/workspace-ws-billing\/workspace\.json/,
+            contentsSpec(
+              '.apicircle/workspace-ws-billing/workspace.json',
+              sourceJson().replace(IMPORT_ID, 'ws-billing'),
+            ),
+          ],
+          [/\/branches\/main/, { body: { name: 'main', commit: { sha: 'abc123' } } }],
+          [
+            /\/git\/refs$/,
+            { body: { ref: 'refs/heads/apicircle/imported', object: { sha: 'abc123' } } },
+          ],
+        ]).fetch,
+      );
+      await connect();
+      await userEvent.click(screen.getByRole('radio', { name: 'Import from workspace' }));
+      const picker = (await screen.findByLabelText('Workspace to import')) as HTMLSelectElement;
+
+      await userEvent.selectOptions(picker, 'ws-billing');
+      expect(picker.value).toBe('ws-billing');
+      // The warning names the workspace that is actually about to land.
+      expect(screen.getByText('Billing')).toBeInTheDocument();
+
+      // The auto-generated branch name is already valid — retyping it would
+      // only cost a char-by-char userEvent.type on every run.
+      const branchName = (screen.getByLabelText('Branch name') as HTMLInputElement).value;
+      await userEvent.click(screen.getByRole('button', { name: /Import & create working branch/ }));
+
+      await waitFor(() => {
+        expect(useWorkspaceStore.getState().local!.workingBranch?.name).toBe(branchName);
+      });
+      expect(
+        useWorkspaceStore.getState().synced!.collections.requests['imported-req'],
+      ).toBeDefined();
+    });
+
+    it('switching back to this workspace drops the picker and the warning', async () => {
+      vi.stubGlobal(
+        'fetch',
+        routedFetch([
+          ...CONNECT_ROUTES,
+          [REGISTRY_RE, registrySpec([{ id: IMPORT_ID, name: 'Payments' }])],
+        ]).fetch,
+      );
+      await connect();
+      await userEvent.click(screen.getByRole('radio', { name: 'Import from workspace' }));
+      await screen.findByLabelText('Workspace to import');
+
+      await userEvent.click(screen.getByRole('radio', { name: 'This workspace' }));
+
+      expect(screen.queryByLabelText('Workspace to import')).not.toBeInTheDocument();
+      expect(screen.queryByText(/This clears the current workspace/)).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Create working branch/ })).toBeEnabled();
+    });
+  });
+
   describe('Releases card', () => {
     it('publishes a new version end-to-end through the modal + confirm dialog', async () => {
       await renderWithStore(<WorkspacePanel />);

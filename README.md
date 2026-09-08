@@ -39,8 +39,9 @@ your repo.
   Secrets are encrypted locally (AES-GCM via WebCrypto, wrapped by the OS
   keychain on desktop). Nothing is uploaded to a third-party server.
 - **Collaborate through pull requests.** Auto-create a working branch from
-  `main`, push to save, open a PR from inside the app. API collections get the
-  same review workflow as the code that calls them.
+  `main` — starting from your own workspace, or importing one that already
+  lives on the base branch — push to save, and open a PR from inside the app.
+  API collections get the same review workflow as the code that calls them.
 - **Automation-ready.** Studio keeps the workspace format clean and Git-backed; API Circle Lens now owns MCP and headless CLI automation on top of the same files.
 - **Runs where you work.** Desktop, browser, VS Code, and embeddable npm
   packages share one engine and one workspace format. Lens-owned automation
