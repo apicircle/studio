@@ -27,11 +27,13 @@ test.describe('Help Center (P7)', () => {
     await expect(nav.getByRole('button', { name: 'Keyboard Shortcuts' })).toBeVisible();
 
     const search = app.getByLabel('Search help');
-    await search.fill('yank');
-    // Search filters the sidebar; the first match becomes the selected
-    // article (Release Management is the only "yank" hit).
-    await expect(app.getByRole('heading', { level: 2, name: 'Release Management' })).toBeVisible();
-    // Welcome no longer matches "yank" — its sidebar button is gone.
+    await search.fill('hotkey');
+    // Search filters the sidebar; the first match becomes the selected article.
+    // The probe used to be "yank" -> Release Management, an article withheld
+    // with workspace sharing; "hotkey" is a keyword on Keyboard Shortcuts and
+    // nowhere else.
+    await expect(app.getByRole('heading', { level: 2, name: 'Keyboard Shortcuts' })).toBeVisible();
+    // Welcome no longer matches — its sidebar button is gone.
     await expect(nav.getByRole('button', { name: 'Welcome' })).toHaveCount(0);
 
     // Empty query restores everything.

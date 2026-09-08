@@ -283,7 +283,7 @@ The default E2E suite uses the local GitHub mock. Real GitHub credentials are op
 
 `pnpm test:e2e:live-github` now runs the canonical `chromium-live-github` Playwright project. It only picks up specs under [`e2e/web/live-github/`](../../e2e/web/live-github/); the older sandbox suite has been removed so there is one live GitHub contract to maintain.
 
-Each spec creates bot-owned ephemeral private/public repos as needed, seeds deterministic `.apicircle/` workspace data, and deletes repos/branches in test cleanup. The main bot PAT needs `repo` + `delete_repo`; the dedicated-link PAT needs `repo` so private linked workspaces can refresh after the active workspace GitHub session is disconnected.
+Each spec creates bot-owned ephemeral private/public repos as needed, seeds deterministic `.apicircle/` workspace data, and deletes repos/branches in test cleanup. The main bot PAT needs `repo` + `delete_repo`; the dedicated-link PAT needs `repo` so private linked workspaces can refresh (unused while workspace sharing is off) after the active workspace GitHub session is disconnected.
 
 | Env var                                | Required? | Purpose                                                                              |
 | -------------------------------------- | --------- | ------------------------------------------------------------------------------------ |
@@ -347,24 +347,29 @@ specs stay deterministic — reach for one of these before adding a bare sleep:
 
 ### Current live specs
 
-| Spec                                      | Covers                                                                                                                                       |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `00-preflight.spec.ts`                    | PAT validity, bot owner guard, private/public repo create/delete, dedicated PAT private-read access.                                         |
-| `01-connect-branch-push.spec.ts`          | Connect private repo, create exact branch, push minimal workspace, fetch remote `.apicircle/` workspace data, assert branch/commit exist.    |
-| `02-private-link-workspace.spec.ts`       | Two-repo private linking: source workspace provides requests/env/release notes, host links and materializes them.                            |
-| `03-private-dedicated-pat.spec.ts`        | Private source link bound to a dedicated PAT still refreshes after workspace GitHub session disconnect.                                      |
-| `04-public-link-workspace.spec.ts`        | Public source link materializes without an active workspace GitHub session.                                                                  |
-| `05-public-marketplace.spec.ts`           | Public repo with `apicircle` topic appears in marketplace search and links from discovery.                                                   |
-| `06-release-update-flow.spec.ts`          | Latest/pinned release links, markdown notes, v1.1/v1.2 on-demand adopt/decline, deprecated/yanked visibility.                                |
-| `07-core-surfaces-under-link.spec.ts`     | Editor, Environments, Execution Plans, and Mock Servers mutate under a linked source, diff, push, refresh, and remain secret-safe.           |
-| `08-dependency-diff.spec.ts`              | `linkedWorkspace`, request/env overrides, and `releasePerLink` added/modified/removed diffs clear after push.                                |
-| `09-refresh-conflict-resolution.spec.ts`  | Remote-only dependency changes, unrelated remote core changes, same-key conflicts, cancel, mine, and theirs resolution.                      |
-| `10-snapshot-data-loss.spec.ts`           | Pre-push/pre-merge snapshots restore core/link/override/release state; failure paths keep synced byte-identical.                             |
-| `11-core-field-matrix.spec.ts`            | Broad field-level diff/push coverage across Editor, Environment, Execution, and Mock definitions.                                            |
-| `12-branch-workspace-transitions.spec.ts` | Multiple working branches, merge-to-main transitions, multi-workspace switching, and restore without data loss.                              |
-| `13-global-assets-live.spec.ts`           | JSON Schema, GraphQL, reusable file assets, request mappings, deletion tracking, and mock binary response reuse through GitHub sync/linking. |
-| `14-attachments-live.spec.ts`             | Current-workspace and linked private/public attachment blob transmission, on-demand download metadata, and checksum fail-closed behavior.    |
-| `15-execution-with-linked-assets.spec.ts` | Send/plan execution downloads required linked/global file assets before execution, including public-link and local-global-file flows.        |
+> Twelve of the specs below are skipped while workspace sharing is off
+> (`WORKSPACE_SHARING_ENABLED`) — the surfaces they drive do not render. Their
+> workbook rows sit in `e2e/web/manual-residue.ts` so they read as deliberately
+> withheld rather than as a coverage gap.
+
+| Spec                                      | Covers                                                                                                                                                                                   |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `00-preflight.spec.ts`                    | PAT validity, bot owner guard, private/public repo create/delete, dedicated PAT private-read access.                                                                                     |
+| `01-connect-branch-push.spec.ts`          | Connect private repo, create exact branch, push minimal workspace, fetch remote `.apicircle/` workspace data, assert branch/commit exist.                                                |
+| `02-private-link-workspace.spec.ts`       | Two-repo private linking: source workspace provides requests/env/release notes, host links and materializes them. **(skipped in v1 — workspace sharing off)**                            |
+| `03-private-dedicated-pat.spec.ts`        | Private source link bound to a dedicated PAT still refreshes after workspace GitHub session disconnect. **(skipped in v1 — workspace sharing off)**                                      |
+| `04-public-link-workspace.spec.ts`        | Public source link materializes without an active workspace GitHub session. **(skipped in v1 — workspace sharing off)**                                                                  |
+| `05-public-marketplace.spec.ts`           | Public repo with `apicircle` topic appears in marketplace search and links from discovery. **(skipped in v1 — workspace sharing off)**                                                   |
+| `06-release-update-flow.spec.ts`          | Latest/pinned release links, markdown notes, v1.1/v1.2 on-demand adopt/decline, deprecated/yanked visibility. **(skipped in v1 — workspace sharing off)**                                |
+| `07-core-surfaces-under-link.spec.ts`     | Editor, Environments, Execution Plans, and Mock Servers mutate under a linked source, diff, push, refresh, and remain secret-safe. **(skipped in v1 — workspace sharing off)**           |
+| `08-dependency-diff.spec.ts`              | `linkedWorkspace`, request/env overrides, and `releasePerLink` added/modified/removed diffs clear after push. **(skipped in v1 — workspace sharing off)**                                |
+| `09-refresh-conflict-resolution.spec.ts`  | Remote-only dependency changes, unrelated remote core changes, same-key conflicts, cancel, mine, and theirs resolution. **(skipped in v1 — workspace sharing off)**                      |
+| `10-snapshot-data-loss.spec.ts`           | Pre-push/pre-merge snapshots restore core/link/override/release state; failure paths keep synced byte-identical. **(skipped in v1 — workspace sharing off)**                             |
+| `11-core-field-matrix.spec.ts`            | Broad field-level diff/push coverage across Editor, Environment, Execution, and Mock definitions.                                                                                        |
+| `12-branch-workspace-transitions.spec.ts` | Multiple working branches, merge-to-main transitions, multi-workspace switching, and restore without data loss.                                                                          |
+| `13-global-assets-live.spec.ts`           | JSON Schema, GraphQL, reusable file assets, request mappings, deletion tracking, and mock binary response reuse through GitHub sync/linking. **(skipped in v1 — workspace sharing off)** |
+| `14-attachments-live.spec.ts`             | Current-workspace and linked private/public attachment blob transmission, on-demand download metadata, and checksum fail-closed behavior. **(skipped in v1 — workspace sharing off)**    |
+| `15-execution-with-linked-assets.spec.ts` | Send/plan execution downloads required linked/global file assets before execution, including public-link and local-global-file flows. **(skipped in v1 — workspace sharing off)**        |
 
 ---
 

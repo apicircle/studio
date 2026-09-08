@@ -4,6 +4,7 @@ import { Modal } from '../../primitives/Modal';
 import { GIT_HOST_LABELS } from '@apicircle/shared';
 import { supportsGitMethod } from '@apicircle/git';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { isWorkspaceSharingEnabled } from '../../layout/workspaceSharing';
 
 /**
  * "Release & topics" modal — the dedicated path for cutting a Git tag
@@ -28,7 +29,16 @@ interface ReleaseAndTopicsModalProps {
   onClose: () => void;
 }
 
-export function ReleaseAndTopicsModal({ open, onClose }: ReleaseAndTopicsModalProps) {
+export function ReleaseAndTopicsModal(props: ReleaseAndTopicsModalProps) {
+  // Guarding here rather than at the mount in `RepoCard` keeps that call site
+  // unchanged, and stops the body's mount effect — which reads the repo's
+  // topics and its latest untagged release over the network — from ever
+  // running.
+  if (!isWorkspaceSharingEnabled()) return null;
+  return <ReleaseAndTopicsModalBody {...props} />;
+}
+
+function ReleaseAndTopicsModalBody({ open, onClose }: ReleaseAndTopicsModalProps) {
   const tagReleaseVersion = useWorkspaceStore((s) => s.tagReleaseVersion);
   const listRepoTopics = useWorkspaceStore((s) => s.listRepoTopics);
   const setRepoTopics = useWorkspaceStore((s) => s.setRepoTopics);

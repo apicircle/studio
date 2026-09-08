@@ -10,6 +10,16 @@ import { test, expect } from './fixtures/gitFixture';
 import { tc } from './fixtures/tcCoverage';
 import { tcMapLV } from './fixtures/tcMapLV';
 
+// Workspace sharing (Link Workspace, linked content, Releases, Tag/Topics) is
+// switched off in shipped builds — `WORKSPACE_SHARING_ENABLED` in
+// `@apicircle/shared` is hard-coded `false`, with no prop, env var or storage
+// key that lifts it. These specs drive surfaces that therefore do not render,
+// so they are skipped rather than deleted: the feature's own behaviour stays
+// covered by the unit suites, and this file is what comes back when the
+// constant flips. The matching workbook rows are marked N/A for v1 so the
+// coverage denominator moves with the numerator.
+test.skip(true, 'Workspace sharing is off in v1 (WORKSPACE_SHARING_ENABLED)');
+
 test.describe('Linked workspace versioning', () => {
   test.describe.configure({ mode: 'serial' });
 

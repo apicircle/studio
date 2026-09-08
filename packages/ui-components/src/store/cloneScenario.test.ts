@@ -3,6 +3,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorkspaceStore } from './workspaceStore';
 import { serializeWorkspaceForGit, summarizeUnpushedChanges } from '@apicircle/core';
 import type { WorkspaceSynced } from '@apicircle/shared';
+import * as workspaceSharing from '../layout/workspaceSharing';
+
+// This suite covers the workspace-sharing cluster, which is switched OFF in
+// shipped builds (`WORKSPACE_SHARING_ENABLED`). Forcing the accessor to `true`
+// keeps that coverage alive — the code is still in the repo and still has to
+// work the day the switch flips. The shipped, disabled path is covered by
+// `layout/workspaceSharingOff.test.tsx`.
+//
+// A spy rather than `vi.mock`: `test/setup.ts` imports `workspaceStore`, so the
+// store — and the accessor it imports — are already evaluated by the time a
+// test file's module mocks register, and a `vi.mock` here would only rebind the
+// test's own import. Re-applied per test because setup's `afterEach` calls
+// `vi.restoreAllMocks()`, and declared first so it lands before any suite's own
+// `beforeEach` reaches a gated action.
+beforeEach(() => {
+  vi.spyOn(workspaceSharing, 'isWorkspaceSharingEnabled').mockReturnValue(true);
+});
 
 // "Switch workspace" / "clone scenario" — the user's report:
 //
@@ -498,6 +515,146 @@ describe('clone scenario — Second workspace pulling First workspace.json', () 
     expect(cached).toBeDefined();
     expect(cached.collections.requests['pay-1']).toBeDefined();
     expect(cached.collections.requests['pay-1'].url).toBe('https://payments.test/charge');
+  });
+
+  it('refreshWorkspace makes NO linked-source request when sharing is off', async () => {
+    // Byte-identical setup to the bootstrap test above, with the flag
+    // flipped back to its shipped value. This is the strongest statement of
+    // the "no reads" requirement: the bootstrap loop is not user-initiated —
+    // it runs on every pull and, via `useFocusRefresh`, every window focus —
+    // so without its guard a build with the panel hidden would still be
+    // fetching from a third-party repo, invisibly, forever.
+    vi.spyOn(workspaceSharing, 'isWorkspaceSharingEnabled').mockReturnValue(false);
+    await connectSession();
+    const local = useWorkspaceStore.getState().local!;
+    const synced = useWorkspaceStore.getState().synced!;
+    const linkId = 'lw-payments';
+
+    // Seed: a working branch + a connected repo. The session is real
+    // (set up by connectSession above) so the bootstrap step's
+    // decryptSessionToken can resolve a token.
+    useWorkspaceStore.setState({
+      local: {
+        ...local,
+        connectedRepo: {
+          owner: 'me',
+          name: 'first',
+          fullName: 'me/first',
+          defaultBranch: 'main',
+          visibility: 'public',
+          isPrivate: false,
+          pushable: true,
+          connectedAt: 't',
+        },
+        workingBranch: {
+          name: 'work',
+          baseBranch: 'main',
+          repoFullName: 'me/first',
+          repoOwner: 'me',
+          repoName: 'first',
+          headSha: 'abc',
+          createdAt: 't',
+          lastPushedSha: 'abc',
+          diffSummary: null,
+          openPrUrl: null,
+        },
+        // Seed lastPulledSnapshot to the current synced doc so the
+        // 3-way diff has a valid base (= synced; remote is the only
+        // thing that's "new"). Without this, computeThreeWayDiff
+        // throws on null.
+        sync: {
+          ...local.sync,
+          lastPulledSnapshot: synced,
+          lastPulledSha: 'abc',
+        },
+      },
+    });
+
+    // The remote workspace.json (working branch) carries a link
+    // declaration but has no companion linkedCollections — that's
+    // what the second workspace is about to clone.
+    const remoteFirst: WorkspaceSynced = {
+      ...synced,
+      linkedWorkspaces: {
+        [linkId]: {
+          id: linkId,
+          kind: 'private',
+          name: 'Payments',
+          sourceWorkspaceId: 'src-ws-payments',
+          source: {
+            provider: 'github',
+            repoFullName: 'org/payments',
+            branch: 'main',
+            sessionMode: 'workspace',
+          },
+          scope: ['collections', 'environments'],
+          pinnedVersion: null,
+          updatePolicy: 'manual',
+          linkedAt: 't',
+          requiredSecretKeyIds: [],
+        },
+      },
+    };
+
+    // The linked source's workspace.json (what the auto-bootstrap
+    // refresh will fetch).
+    const sourceJson = JSON.stringify({
+      workspaceName: 'Payments',
+      collections: {
+        tree: { id: 'r', type: 'root', children: [{ kind: 'request', id: 'pay-1' }] },
+        requests: {
+          'pay-1': {
+            id: 'pay-1',
+            name: 'Charge',
+            folderId: null,
+            method: 'POST',
+            url: 'https://payments.test/charge',
+            headers: [],
+            query: [],
+            body: { type: 'none', content: '' },
+            auth: { type: 'none' },
+            contextVars: [],
+            extractions: [],
+            assertions: [],
+            createdAt: 't',
+            updatedAt: 't',
+          },
+        },
+        folders: {},
+      },
+      environments: { items: {}, activeName: null, priorityOrder: [] },
+      releases: { self: { versions: [], currentVersion: null } },
+    });
+
+    // Three fetches happen during refreshWorkspace:
+    //   1. probeBranchRetirement → getBranchHead on working branch (alive).
+    //   2. GET workspace.json on the working branch (returns remoteFirst).
+    //   3. After persistMerged, the bootstrap step fetches the LINKED
+    //      source's workspace.json once (returns sourceJson).
+    // (The PR-state probe is skipped when openPrUrl is null on the
+    // working branch.)
+    // Queued with the source response still available, so the assertion below
+    // proves the loop was SKIPPED rather than that it merely ran out of
+    // responses to consume.
+    const fetchMock = queuedFetch([
+      { body: { name: 'work', commit: { sha: 'abc' } } },
+      workspaceFileContents(JSON.stringify(remoteFirst)),
+      ...fileContents(sourceJson),
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await useWorkspaceStore.getState().refreshWorkspace();
+
+    // The link metadata still arrives — pulling the workspace doc is the
+    // workspace's own business and must stay lossless, so the record
+    // round-trips exactly as a sharing-enabled build wrote it.
+    expect(useWorkspaceStore.getState().synced!.linkedWorkspaces[linkId]).toBeDefined();
+
+    // But nothing was fetched from the linked SOURCE repo, and no snapshot
+    // was cached from it.
+    expect(useWorkspaceStore.getState().local!.linkedCollections[linkId]).toBeUndefined();
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.includes('org/payments'))).toBe(false);
   });
 
   it('refreshLinkedWorkspace bootstraps a missing snapshot on first call', async () => {

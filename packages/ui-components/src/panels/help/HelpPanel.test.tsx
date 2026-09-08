@@ -30,8 +30,6 @@ describe('HelpPanel', () => {
       'Environments',
       'Secret Vault',
       'Sessions',
-      'Link Workspace',
-      'Release Management',
       'Execution Plans',
       'History',
       'Keyboard Shortcuts',
@@ -56,9 +54,21 @@ describe('HelpPanel', () => {
   it('filters the rail via the search input', async () => {
     const user = userEvent.setup();
     await renderWithStore(<HelpFixture />);
-    await user.type(screen.getByLabelText('Search help'), 'yank');
-    expect(screen.getByRole('button', { name: 'Release Management' })).toBeInTheDocument();
+    // 'hotkey' is a keyword on Keyboard Shortcuts and nowhere else. The
+    // previous probe here was 'yank' → Release Management, an article this
+    // build withholds.
+    await user.type(screen.getByLabelText('Search help'), 'hotkey');
+    expect(screen.getByRole('button', { name: 'Keyboard Shortcuts' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Welcome' })).not.toBeInTheDocument();
+  });
+
+  it('lists neither withheld article, and finds nothing when searching for one', async () => {
+    const user = userEvent.setup();
+    await renderWithStore(<HelpFixture />);
+    expect(screen.queryByRole('button', { name: 'Link Workspace' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Release Management' })).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('Search help'), 'marketplace');
+    expect(screen.queryByRole('button', { name: 'Link Workspace' })).not.toBeInTheDocument();
   });
 
   it('renders the empty state when nothing matches', async () => {

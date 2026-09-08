@@ -247,6 +247,7 @@ import { recomputeUsedIn } from './usedInAggregator';
 import { recomputeAssetUsage } from './assetUsageAggregator';
 import { deleteSecretPayload, getSecretPayload, putSecretPayload } from '../persistence/secrets';
 import { assertSecretsProtected } from '../persistence/platformSecretGate';
+import { isWorkspaceSharingEnabled } from '../layout/workspaceSharing';
 
 const attachmentResolver: AttachmentResolver = async (slotId) => {
   const record = await getAttachment(slotId);
@@ -2363,6 +2364,28 @@ function workspaceProvider(
   extra?: GitProviderOptions,
 ): GitProvider {
   return getGitProvider(connectedHostKind(local), connectedProviderOptions(local, extra));
+}
+
+/**
+ * Refuse a workspace-sharing action in a build that doesn't ship the feature.
+ *
+ * The UI for all of this is gated (see `layout/workspaceSharing`), so in
+ * practice nothing calls these. The guard exists for the other half of the
+ * requirement: a disabled feature must not TOUCH THE NETWORK. Two of these
+ * actions are not user-initiated — `refreshWorkspace`'s linked bootstrap and
+ * `syncAttachments`' linked loop both run on their own, the first on every pull
+ * and every window focus — so without a guard here a build with the panel
+ * hidden would still be fetching from third-party source repos in the
+ * background, invisibly, for a feature the user cannot see.
+ *
+ * Throws rather than no-ops so a future caller finds out at the call site
+ * instead of silently getting an empty result. The two actions whose contract
+ * is "return nothing / null on failure" guard inline instead.
+ */
+function assertWorkspaceSharing(): void {
+  if (!isWorkspaceSharingEnabled()) {
+    throw new Error('Workspace sharing is not enabled in this build.');
+  }
 }
 
 /** Host kind for a LINKED workspace's source repo — which is independent of the
@@ -6081,6 +6104,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   tagReleaseVersion: async (args) => {
+    assertWorkspaceSharing();
     const local = get().local;
     if (!local?.connectedRepo) {
       throw new Error('Connect a repo before tagging a release.');
@@ -6141,6 +6165,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   listRepoTopics: async () => {
+    assertWorkspaceSharing();
     const local = get().local;
     if (!local?.connectedRepo) {
       throw new Error('Connect a repo before reading its topics.');
@@ -6151,6 +6176,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   setRepoTopics: async (topics) => {
+    assertWorkspaceSharing();
     const local = get().local;
     if (!local?.connectedRepo) {
       throw new Error('Connect a repo before editing its topics.');
@@ -6172,6 +6198,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   loadLatestUntaggedRelease: async () => {
+    if (!isWorkspaceSharingEnabled()) return null;
     const local = get().local;
     if (!local?.connectedRepo) return null;
     const repo = local.connectedRepo;
@@ -6244,6 +6271,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   linkPublicWorkspace: async (args) => doLinkWorkspace(set, get, { ...args, kind: 'public' }),
 
   searchMarketplace: async (query) => {
+    assertWorkspaceSharing();
     const local = get().local;
     if (!local) throw new Error('Workspace not ready');
     // Marketplace search runs anonymously when the user has no GitHub
@@ -6327,6 +6355,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   probeLinkedRepoVersions: async (owner, name, branch, opts) => {
+    assertWorkspaceSharing();
     const local = get().local;
     if (!local) throw new Error('Workspace not ready');
     const { client, token } = await targetClientAndToken(local, opts);
@@ -6364,6 +6393,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   activeLinkedUpdate: null,
 
   previewLinkedUpdateForLink: async (id) => {
+    assertWorkspaceSharing();
     const local = get().local;
     const synced = get().synced;
     if (!local || !synced) throw new Error('Workspace not ready');
@@ -6416,6 +6446,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   clearLinkedUpdatePreview: () => set({ activeLinkedUpdate: null }),
 
   applyLinkedUpdateForLink: async (resolutions) => {
+    if (!isWorkspaceSharingEnabled()) return;
     const state = get();
     const active = state.activeLinkedUpdate;
     const synced = state.synced;
@@ -6528,6 +6559,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   refreshLinkedWorkspace: async (id) => {
+    assertWorkspaceSharing();
     const local = get().local;
     const synced = get().synced;
     if (!local || !synced) throw new Error('Workspace not ready');
@@ -6738,6 +6770,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   addLinkSession: async (linkedWorkspaceId, token) => {
+    assertWorkspaceSharing();
     const local = get().local;
     const synced = get().synced;
     if (!local || !synced) throw new Error('Workspace not ready');
@@ -7290,7 +7323,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       }
     }
 
-    for (const [linkId, snapshot] of Object.entries(local.linkedCollections)) {
+    // Linked-source attachment bytes. Skipped without workspace sharing —
+    // same reason as the bootstrap loop above: it reaches a third-party repo
+    // for content no surface in this build can show.
+    const linkedSnapshots = isWorkspaceSharingEnabled()
+      ? Object.entries(local.linkedCollections)
+      : [];
+    for (const [linkId, snapshot] of linkedSnapshots) {
       const link = synced.linkedWorkspaces[linkId];
       if (!link) continue;
       const { owner, name } = splitRepoFullName(link.source.repoFullName);
@@ -8290,6 +8329,16 @@ async function persistMerged(
   // Best-effort: any individual link's bootstrap can fail (auth /
   // network / source 404); we don't block the pull on it. The link
   // card's "Refresh ledger" remains as a manual retry path.
+  //
+  // Skipped outright without workspace sharing. This loop is the single
+  // largest source of invisible network traffic in a sharing-disabled build:
+  // it is not user-initiated, it runs on every pull and — via
+  // `useFocusRefresh` — every time the window regains focus, and it fetches
+  // from whatever third-party repos a sharing-enabled build happened to link.
+  // The cost of skipping is that `releases.perLink` goes stale while the
+  // feature is off, which is the right trade: a disabled feature should not be
+  // quietly maintaining state over the network. Re-enabling refreshes once.
+  if (!isWorkspaceSharingEnabled()) return;
   const refreshLinkedWorkspace = get().refreshLinkedWorkspace;
   for (const linkId of Object.keys(merged.linkedWorkspaces)) {
     if (!nextLocal.linkedCollections[linkId]) {
@@ -8346,6 +8395,7 @@ async function doLinkWorkspace(
     apiBaseUrl?: string;
   },
 ): Promise<LinkedWorkspace> {
+  assertWorkspaceSharing();
   const local = get().local;
   const synced = get().synced;
   if (!local || !synced) throw new Error('Workspace not ready');

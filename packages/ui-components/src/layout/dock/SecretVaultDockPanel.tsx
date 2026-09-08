@@ -16,7 +16,7 @@ import {
   Trash2,
   XCircle,
 } from 'lucide-react';
-import type { SecretEntry, SecretKeyMeta } from '@apicircle/shared';
+import type { LinkedWorkspace, SecretEntry, SecretKeyMeta } from '@apicircle/shared';
 import { safeExternalHref } from '@apicircle/shared';
 import { type GitHostKind, GIT_HOST_LABELS } from '@apicircle/git';
 import { BITBUCKET_ACCESS_TOKEN_SCOPES, SCOPE_GUIDANCE_BY_HOST } from '../../store/workspaceStore';
@@ -36,6 +36,10 @@ import { cn } from '../../primitives/cn';
 import { safeCopyToClipboard } from '../../primitives/clipboard';
 import { isWebBuild } from './webBuild';
 import { isGitHubDeviceFlowAvailable } from './githubDeviceFlow';
+import { isWorkspaceSharingEnabled } from '../workspaceSharing';
+
+// Frozen empty, so the folded selector keeps a stable identity across renders.
+const NO_LINKED_WORKSPACES: Record<string, LinkedWorkspace> = Object.freeze({});
 
 /**
  * Secret Vault tab content for the right-side dock. Two sub-tabs:
@@ -151,7 +155,11 @@ function VaultTab() {
       // entry in secretIndex has `origin === 'linked'` matching this
       // link/key pair. Pull the human label from the cached snapshot
       // so the row reads "Database token" instead of a raw id.
-      const links = s.synced?.linkedWorkspaces ?? {};
+      //
+      // Folded to empty without sharing: a slot whose only "provide" path is
+      // a link card the user cannot open would sit in the Vault as a
+      // permanently-unsatisfiable warning.
+      const links = isWorkspaceSharingEnabled() ? (s.synced?.linkedWorkspaces ?? {}) : {};
       const cached = s.local?.linkedCollections ?? {};
       for (const link of Object.values(links)) {
         for (const keyId of link.requiredSecretKeyIds) {
@@ -848,8 +856,14 @@ function SessionsTab() {
     host === 'github'
       ? (local?.sessions.github.workspace ?? null)
       : (local?.sessions.hosts?.[host]?.workspace ?? null);
-  const linkSessions = local?.sessions.github.links ?? {};
-  const linkedWorkspaces = useWorkspaceStore((s) => s.synced?.linkedWorkspaces ?? {});
+  // Both folded to empty without sharing, which is what removes the whole
+  // "Linking sessions" block below — including its copy telling the user to
+  // manage each session "from its link card under Link Workspace", a panel
+  // this build doesn't have.
+  const linkSessions = isWorkspaceSharingEnabled() ? (local?.sessions.github.links ?? {}) : {};
+  const linkedWorkspaces = useWorkspaceStore((s) =>
+    isWorkspaceSharingEnabled() ? (s.synced?.linkedWorkspaces ?? {}) : NO_LINKED_WORKSPACES,
+  );
   const linkSessionEntries = Object.entries(linkSessions);
   // Which Bitbucket credential the user is entering. Owned here rather than by
   // the form, because the scope guidance ABOVE the form has to describe the

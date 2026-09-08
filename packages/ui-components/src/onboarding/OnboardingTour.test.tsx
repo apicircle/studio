@@ -25,7 +25,7 @@ describe('OnboardingTour', () => {
     expect(screen.queryByRole('button', { name: 'Back' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Next' }));
-    expect(screen.getByRole('dialog')).toHaveTextContent('Eight panels, one per workflow');
+    expect(screen.getByRole('dialog')).toHaveTextContent('One panel per workflow');
 
     await user.click(screen.getByRole('button', { name: 'Back' }));
     expect(screen.getByRole('dialog')).toHaveTextContent('Welcome to API Circle Studio');
@@ -86,5 +86,21 @@ describe('OnboardingTour', () => {
 
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('never walks to a panel the tab strip does not show', async () => {
+    // The tour and the nav read the same filter, so the Link Workspace step is
+    // absent for the same reason its tab is. Walking the whole tour is the only
+    // assertion that actually proves the two agree.
+    const user = userEvent.setup();
+    render(<OnboardingTour autoStart />);
+    const seen: string[] = [];
+    for (;;) {
+      seen.push(screen.getByRole('dialog').textContent ?? '');
+      const next = screen.queryByRole('button', { name: 'Next' });
+      if (!next) break;
+      await user.click(next);
+    }
+    expect(seen.some((t) => t.includes('Link Workspace'))).toBe(false);
   });
 });

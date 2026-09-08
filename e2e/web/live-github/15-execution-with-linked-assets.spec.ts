@@ -14,6 +14,16 @@ import {
   v2SkipReason,
 } from './_helpers';
 
+// Workspace sharing (Link Workspace, linked content, Releases, Tag/Topics) is
+// switched off in shipped builds — `WORKSPACE_SHARING_ENABLED` in
+// `@apicircle/shared` is hard-coded `false`, with no prop, env var or storage
+// key that lifts it. These specs drive surfaces that therefore do not render,
+// so they are skipped rather than deleted: the feature's own behaviour stays
+// covered by the unit suites, and this file is what comes back when the
+// constant flips. The matching workbook rows are marked N/A for v1 so the
+// coverage denominator moves with the numerator.
+test.skip(true, 'Workspace sharing is off in v1 (WORKSPACE_SHARING_ENABLED)');
+
 const SOURCE_SCHEMA_ID = 'v2-exec-source-json-schema';
 const SOURCE_GRAPHQL_ID = 'v2-exec-source-graphql-schema';
 

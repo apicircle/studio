@@ -1,7 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as vscode from 'vscode';
 import { Uri } from '../../test/mocks/vscode';
 import { LinkCodeLensProvider } from './linkCodeLens';
+
+import * as workspaceSharing from '../workspaceSharing';
+
+// These lenses belong to the workspace-sharing cluster, which is switched OFF
+// in shipped builds. Spying the accessor keeps the lens-building logic covered;
+// the shipped behaviour is asserted by the `sharing off` case at the bottom.
+beforeEach(() => {
+  vi.spyOn(workspaceSharing, 'isWorkspaceSharingEnabled').mockReturnValue(true);
+});
 
 function makeDoc(uri: unknown, lines: string[]): vscode.TextDocument {
   return {
@@ -71,5 +80,11 @@ describe('LinkCodeLensProvider', () => {
     expect(removes).toHaveLength(2);
     expect(removes[0].command?.arguments).toEqual([LINK_URI, 'k1']);
     expect(removes[1].command?.arguments).toEqual([LINK_URI, 'k2']);
+  });
+
+  it('offers no lenses at all when workspace sharing is off', () => {
+    vi.spyOn(workspaceSharing, 'isWorkspaceSharingEnabled').mockReturnValue(false);
+    const p = new LinkCodeLensProvider();
+    expect(p.provideCodeLenses(makeDoc(LINK_URI, ['name: Payments API']), fakeToken)).toEqual([]);
   });
 });

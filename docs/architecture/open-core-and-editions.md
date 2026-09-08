@@ -36,7 +36,18 @@ unaffected:
   `PanelContent` / `Sidebar`. Additive and a no-op when empty — Studio registers
   none, so its panels are unchanged.
 
-The historical MCP dependency-injection template moved to API Circle Lens with the current MCP server. New Studio seams should remain additive and no-op when nothing plugs in.
+- **Workspace-sharing switch** — `WORKSPACE_SHARING_ENABLED`
+  (`packages/shared/src/types.ts`), read through `isWorkspaceSharingEnabled()`
+  in `ui-components/src/layout/workspaceSharing.ts` and mirrored in the VS Code
+  extension. Unlike the seams above this one is NOT additive and NOT
+  edition-configurable: it is hard-coded `false`, and there is deliberately no
+  prop, context or setting an edition can pass to turn it on, because a
+  user-reachable toggle would make a withheld feature discoverable. It hides
+  the Link Workspace / linked-content / Releases / Topics cluster on every
+  surface while leaving the types, patch variants and core helpers live, so the
+  data round-trips and re-enabling is a code change rather than a migration.
+
+The historical MCP dependency-injection template moved to API Circle Lens with the current MCP server. New Studio seams should remain additive and no-op when nothing plugs in — the workspace-sharing switch above is the one deliberate exception, and its rationale is why.
 
 ## Workspace-directory sidecar contract
 

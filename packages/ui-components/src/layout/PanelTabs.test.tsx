@@ -8,13 +8,14 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 import { SectionsProvider, type SectionsContextValue } from './sections';
 
 describe('PanelTabs', () => {
-  it('renders the agreed tab set (no Settings, no Commands)', async () => {
+  it('renders the agreed tab set (no Settings, no Commands, no Link Workspace)', async () => {
     await renderWithStore(<PanelTabs />);
     const tabs = screen.getAllByRole('button');
     const labels = tabs.map((t) => t.textContent);
+    // Link Workspace sits between Workspace and Editor in the registry but is
+    // filtered out of the strip: the sharing cluster doesn't ship in v1.
     expect(labels).toEqual([
       'Workspace',
-      'Link Workspace',
       'Editor',
       'Environments',
       'Execution',
@@ -22,6 +23,7 @@ describe('PanelTabs', () => {
       'Mocks',
       'Help Center',
     ]);
+    expect(labels).not.toContain('Link Workspace');
   });
 
   it('marks the active tab with aria-current="page"', async () => {

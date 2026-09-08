@@ -17,6 +17,7 @@ import type {
 } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
+import { isWorkspaceSharingEnabled } from '../../layout/workspaceSharing';
 
 const METHOD_COLOR: Record<string, string> = {
   GET: 'text-http-get',
@@ -44,7 +45,15 @@ interface RenderNode {
  * `synced.linkedOverrides.requests` so a linked request that the user
  * has modified is immediately visible in the sidebar.
  */
-export function LinkedWorkspaceTreeSection({ searchQuery }: { searchQuery?: string } = {}) {
+export function LinkedWorkspaceTreeSection(props: { searchQuery?: string } = {}) {
+  // Guard ahead of the body's hooks rather than beside the empty-links return
+  // below: a workspace authored by a sharing-enabled build has links, so
+  // "no links" is not the same question as "no sharing".
+  if (!isWorkspaceSharingEnabled()) return null;
+  return <LinkedWorkspaceTreeSectionBody {...props} />;
+}
+
+function LinkedWorkspaceTreeSectionBody({ searchQuery }: { searchQuery?: string } = {}) {
   const links = useWorkspaceStore((s) =>
     s.synced ? Object.values(s.synced.linkedWorkspaces) : [],
   );

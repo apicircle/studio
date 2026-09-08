@@ -18,9 +18,10 @@ function alId(key: string): TcId {
 // and `color-contrast` (driven by Tailwind theme tokens — exercised
 // across all 6 themes in a separate visual review, not per-panel here).
 
+// Link Workspace is absent: workspace sharing is off in v1, so the tab is not
+// in the strip to sweep.
 const TABS = [
   'Workspace',
-  'Link Workspace',
   'Editor',
   'Environments',
   'Execution',
@@ -87,7 +88,10 @@ test.describe('a11y sweep', () => {
     expect(results.violations).toEqual([]);
   });
 
-  test('Publish release modal has zero WCAG 2.1 AA violations', async ({ app }) => {
+  // The next two drive workspace-sharing surfaces, which do not render in a
+  // shipped build. Kept (not deleted) so the a11y guarantee comes back with the
+  // feature.
+  test.skip('Publish release modal has zero WCAG 2.1 AA violations', async ({ app }) => {
     await app.getByRole('button', { name: /^Workspace$/ }).click();
     await app.getByRole('button', { name: /Publish release/ }).click();
     await expect(app.getByRole('dialog', { name: /Publish release/ })).toBeVisible();
@@ -98,7 +102,7 @@ test.describe('a11y sweep', () => {
     expect(results.violations).toEqual([]);
   });
 
-  test('Link a private workspace modal has zero WCAG 2.1 AA violations', async ({ app }) => {
+  test.skip('Link a private workspace modal has zero WCAG 2.1 AA violations', async ({ app }) => {
     // Need a session to expose the link form — stub the verify call.
     await app.route('https://api.github.com/user', async (route) => {
       await route.fulfill({

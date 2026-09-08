@@ -63,11 +63,10 @@ your repo.
 ### Git-backed workspaces
 
 A workspace is two JSON documents — `workspace.json` (the shared
-collection tree, environments, mocks, releases) and `workspace.local.json`
+collection tree, environments, mocks) and `workspace.local.json`
 (per-device history, sessions, UI state). The synced document pushes to a
 GitHub repo on a working branch; teammates pull, branch, and merge it like any
-other file. Per-connection release management supports both private
-collections and a public marketplace. Individual folders + environments can
+other file. Individual folders + environments can
 also be exchanged out-of-band as portable `.apicircle.json` exports — see
 **Import what you already have** below.
 
@@ -107,7 +106,7 @@ teammates share them; _runtime_ state stays on the local machine.
   Python (requests), Go, and Rust.
 - **Environments** with priority ordering and cross-workspace variable sources.
 - **Global Assets** for reusable JSON Schemas, GraphQL definitions, and file
-  assets. Request uploads, linked workspace downloads, execution plans, and
+  assets. Request uploads, execution plans, and
   mock binary responses can all point at the same tracked asset metadata while
   file bytes travel as Git blobs alongside the synced doc, both under
   `.apicircle/` in the repo (`.apicircle/workspace-<id>/workspace.json` plus
@@ -135,7 +134,7 @@ The same workspace document the desktop and web apps drive can be edited
 in place from VS Code — no embedded webview, no separate sync. The
 extension contributes:
 
-- **Eight sidebar TreeViews**: Workspace, Editor, Environment, Execution Plans, Mock servers, History, Snapshots, and Link Workspaces. The old MCP view was removed from Studio; use API Circle Lens for MCP setup.
+- **Seven sidebar TreeViews**: Workspace, Editor, Environment, Execution Plans, Mock servers, History, and Snapshots. The old MCP view was removed from Studio; use API Circle Lens for MCP setup.
 - **`.req.yaml` / `.env.yaml` / `.run.yaml` virtual documents** under
   the `apicircle:` URI scheme — full Monaco editing with JSON Schema
   validation, completion for the 17 auth types + body types +

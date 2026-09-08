@@ -99,6 +99,15 @@ through it. `WorkspacePatch` is a discriminated union over
 Adding an entity type = one union variant + one switch case, with any Lens MCP
 tool added in the Lens project.
 
+> **Withheld in v1:** `WORKSPACE_SHARING_ENABLED` (`packages/shared/src/types.ts`)
+> is hard-coded `false`, hiding the Link Workspace panel + marketplace, linked
+> collections / environments / execution / overrides, linked release notes, the
+> Releases card, and Tag release + repo Topics on every surface, and removing the
+> 13 `linked.*` / `release.*` / `repo.set_topics` / `marketplace.search` verbs
+> from the MCP catalogue (97 -> 84). The `linkedWorkspace.*`, `linkedOverride.*`
+> and `release.*` patch variants named here stay live so the data still
+> round-trips.
+
 > The live UI store (`workspaceStore.ts`) also performs some direct
 > `set({ synced, local })` transitions rather than routing every change
 > through `applyMutation`. Treat `applyMutation` as the contract Lens-owned
@@ -158,7 +167,9 @@ Full design record: [`docs/architecture/platform.md`](../architecture/platform.m
   model is used instead.
 - **UI:** `packages/ui-components/src/` — `App.tsx` + 8 panels
   (`layout/panels.ts`): Workspace, Link Workspace, Editor, Environments,
-  Execution, History, Mocks, Help Center. Editors are Monaco-based.
+  Execution, History, Mocks, Help Center. Editors are Monaco-based. Link
+  Workspace is filtered out of the visible strip (`VISIBLE_PANELS`) while
+  workspace sharing is off, leaving seven tabs.
 - **Settings popover** (`layout/SettingsPicker.tsx`) hangs off the top
   bar — behavioral toggles, theme + font pickers, and the
   **Community section** (`community/CommunitySection.tsx`) that
@@ -280,6 +291,11 @@ web-UI HAR/OpenAPI import). The authoritative status, numbers, and
 pending list are in [`docs/qa/README.md`](../qa/README.md).
 
 ## 13a. Planned next — Networking & Social Activity
+
+> **Deferred with workspace sharing.** Everything in this section is built on
+> the Link Workspace panel and the marketplace, which are switched off in v1
+> (`WORKSPACE_SHARING_ENABLED`). The design below stands; it unblocks when that
+> constant flips.
 
 The next product thread builds on the Settings → Community section
 (which today is read-only: GitHub stars / contributors / latest

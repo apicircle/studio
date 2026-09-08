@@ -1,7 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as vscode from 'vscode';
 import { Uri } from '../../test/mocks/vscode';
 import { ReleasesCodeLensProvider } from './releasesCodeLens';
+
+import * as workspaceSharing from '../workspaceSharing';
+
+// These lenses belong to the workspace-sharing cluster, which is switched OFF
+// in shipped builds. Spying the accessor keeps the lens-building logic covered;
+// the shipped behaviour is asserted by the `sharing off` case at the bottom.
+beforeEach(() => {
+  vi.spyOn(workspaceSharing, 'isWorkspaceSharingEnabled').mockReturnValue(true);
+});
 
 function makeDoc(uri: unknown, lines: string[]): vscode.TextDocument {
   return {
@@ -116,5 +125,19 @@ describe('ReleasesCodeLensProvider', () => {
       .map((l) => l.command?.arguments);
     // Only v1.2.0 is still withdrawable; v1.0.0 already withdrawn.
     expect(withdrawArgs).toEqual([[{ version: '1.2.0' }]]);
+  });
+
+  it('offers no lenses at all when workspace sharing is off', () => {
+    // The shipped configuration. The provider stays registered so a
+    // releases.yaml tab restored from a previous session still opens and reads
+    // — it just carries no actions.
+    vi.spyOn(workspaceSharing, 'isWorkspaceSharingEnabled').mockReturnValue(false);
+    const p = new ReleasesCodeLensProvider();
+    expect(
+      p.provideCodeLenses(
+        makeDoc(RELEASES_URI, ['currentVersion: 1.2.0', 'versions:', '  - version: 1.2.0']),
+        fakeToken,
+      ),
+    ).toEqual([]);
   });
 });

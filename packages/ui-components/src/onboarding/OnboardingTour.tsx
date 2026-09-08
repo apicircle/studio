@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Compass, X } from 'lucide-react';
 import type { PanelId } from '@apicircle/shared';
+import { visibleUnderSharing, type SharingTagged } from '../layout/workspaceSharing';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { cn } from '../primitives/cn';
 
@@ -37,7 +38,7 @@ export function replayOnboarding(): void {
  *   button when no request is open), the card centres itself and the
  *   step reads as a plain explainer — the tour never gets stuck.
  */
-interface TourStep {
+interface TourStep extends SharingTagged {
   id: string;
   title: string;
   body: string;
@@ -53,8 +54,8 @@ const STEPS: ReadonlyArray<TourStep> = [
   },
   {
     id: 'panel-nav',
-    title: 'Eight panels, one per workflow',
-    body: 'These tabs switch between the eight panels — one for each stage of API work. The tour walks through them in order.',
+    title: 'One panel per workflow',
+    body: 'These tabs switch between the panels — one for each stage of API work. The tour walks through them in order.',
     target: 'panel-nav',
   },
   {
@@ -70,6 +71,7 @@ const STEPS: ReadonlyArray<TourStep> = [
     body: "Connect your GitHub account and link other teams' workspaces, so you can call their requests without copying anything.",
     panel: 'link-workspace',
     target: 'nav-link-workspace',
+    requiresWorkspaceSharing: true,
   },
   {
     id: 'editor',
@@ -170,6 +172,15 @@ const STEPS: ReadonlyArray<TourStep> = [
     body: "That's the whole workspace. A sample request is waiting in the Editor — open it and hit Send to see a live response. Happy building.",
   },
 ];
+
+/**
+ * The steps this build actually walks. Filtered through the same predicate as
+ * the panel registry and the Help Center, so the tour can never navigate to a
+ * panel the tab strip doesn't show — a property rather than three lists
+ * happening to agree. Frozen at module scope: `stepIndex` is state, so a fresh
+ * array per render would make the "N of M" counter and the progress bar jump.
+ */
+const VISIBLE_STEPS: ReadonlyArray<TourStep> = Object.freeze(visibleUnderSharing(STEPS));
 
 interface TargetRect {
   top: number;
@@ -305,7 +316,7 @@ export function OnboardingTour({ autoStart = true }: { autoStart?: boolean } = {
   // Navigate to the step's panel so the spotlighted control is mounted.
   useEffect(() => {
     if (!active) return;
-    const panel = STEPS[stepIndex]?.panel;
+    const panel = VISIBLE_STEPS[stepIndex]?.panel;
     if (panel) setActivePanel(panel);
   }, [active, stepIndex, setActivePanel]);
 
@@ -318,7 +329,7 @@ export function OnboardingTour({ autoStart = true }: { autoStart?: boolean } = {
     // This effect is the single owner of `rect` — clear the previous
     // step's spotlight up front, then re-derive it for the new step.
     setRect(null);
-    const step = STEPS[stepIndex];
+    const step = VISIBLE_STEPS[stepIndex];
     if (!step?.target) return;
     const selector = `[data-tour="${step.target}"]`;
     let cancelled = false;
@@ -384,11 +395,11 @@ export function OnboardingTour({ autoStart = true }: { autoStart?: boolean } = {
   }, [active, stepIndex]);
 
   const goNext = useCallback(() => {
-    if (stepIndex >= STEPS.length - 1) {
+    if (stepIndex >= VISIBLE_STEPS.length - 1) {
       endTour();
       return;
     }
-    setStepIndex((i) => Math.min(STEPS.length - 1, i + 1));
+    setStepIndex((i) => Math.min(VISIBLE_STEPS.length - 1, i + 1));
   }, [stepIndex, endTour]);
 
   const goBack = useCallback(() => {
@@ -397,9 +408,9 @@ export function OnboardingTour({ autoStart = true }: { autoStart?: boolean } = {
 
   if (!active) return null;
 
-  const step = STEPS[stepIndex];
+  const step = VISIBLE_STEPS[stepIndex];
   const isFirst = stepIndex === 0;
-  const isLast = stepIndex === STEPS.length - 1;
+  const isLast = stepIndex === VISIBLE_STEPS.length - 1;
   const titleId = 'onboarding-tour-title';
   const bodyId = 'onboarding-tour-body';
 
@@ -481,7 +492,7 @@ export function OnboardingTour({ autoStart = true }: { autoStart?: boolean } = {
           </span>
           <div className="flex-1">
             <p className="text-[0.625rem] font-medium uppercase tracking-wider text-text-dim">
-              Quick tour · {stepIndex + 1} of {STEPS.length}
+              Quick tour · {stepIndex + 1} of {VISIBLE_STEPS.length}
             </p>
             <h2 id={titleId} className="mt-0.5 text-sm font-semibold text-text-primary">
               {step.title}
@@ -505,13 +516,13 @@ export function OnboardingTour({ autoStart = true }: { autoStart?: boolean } = {
           className="h-1 w-full overflow-hidden rounded-full bg-surface"
           role="progressbar"
           aria-valuemin={1}
-          aria-valuemax={STEPS.length}
+          aria-valuemax={VISIBLE_STEPS.length}
           aria-valuenow={stepIndex + 1}
           aria-label="Tour progress"
         >
           <div
             className="h-full rounded-full bg-accent transition-[width] duration-200"
-            style={{ width: `${((stepIndex + 1) / STEPS.length) * 100}%` }}
+            style={{ width: `${((stepIndex + 1) / VISIBLE_STEPS.length) * 100}%` }}
           />
         </div>
 

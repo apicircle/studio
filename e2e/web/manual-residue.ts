@@ -16,6 +16,11 @@
 //   - Production-only surfaces that the dev server can't fake (mixed
 //     content, registered service worker, PWA install prompt)
 //   - Perception perf where no automated metric exists
+//   - Cases for a feature the product deliberately withholds from a release.
+//     These are not "a human checks it instead" — nobody can check them,
+//     because the surface does not ship. They sit here so the denominator
+//     stays honest: the case is real and comes back with the feature, but it
+//     is not a coverage GAP while there is nothing to cover.
 //
 // **What does NOT go here:**
 //   - Cases blocked by missing fixtures we plan to build (git-fixture,
@@ -1196,6 +1201,44 @@ export const MANUAL_RESIDUE_TC_IDS: Readonly<Record<TcId, string>> = {
   'TC-PE-0018': '100MB raw body — OS-RAM perception case, manual',
   'TC-PE-0019': '100MB binary response — viewer-paint perception case, manual',
   'TC-PE-0022': 'Unicode-heavy CJK workspace — OS-font-engine sensitive, manual perception QA',
+
+  // --- Workspace sharing (Link Workspace / marketplace / releases) ---
+  'TC-SE-0001':
+    'Workspace sharing is withheld from v1 (WORKSPACE_SHARING_ENABLED); the surface does not ship.',
+  'TC-SE-0002':
+    'Workspace sharing is withheld from v1 (WORKSPACE_SHARING_ENABLED); the surface does not ship.',
+  'TC-SE-0003':
+    'Workspace sharing is withheld from v1 (WORKSPACE_SHARING_ENABLED); the surface does not ship.',
+  'TC-LV-0001':
+    'Workspace sharing is withheld from v1 (WORKSPACE_SHARING_ENABLED); the surface does not ship.',
+  'TC-LV-0002':
+    'Workspace sharing is withheld from v1 (WORKSPACE_SHARING_ENABLED); the surface does not ship.',
+  'TC-LV-0003':
+    'Workspace sharing is withheld from v1 (WORKSPACE_SHARING_ENABLED); the surface does not ship.',
+  'TC-LV-0004':
+    'Workspace sharing is withheld from v1 (WORKSPACE_SHARING_ENABLED); the surface does not ship.',
+  'TC-LV-0005':
+    'Workspace sharing is withheld from v1 (WORKSPACE_SHARING_ENABLED); the surface does not ship.',
+  'TC-LV-0006':
+    'Workspace sharing is withheld from v1 (WORKSPACE_SHARING_ENABLED); the surface does not ship.',
+  'TC-LV-0007':
+    'Workspace sharing is withheld from v1 (WORKSPACE_SHARING_ENABLED); the surface does not ship.',
+  'TC-LV-0008':
+    'Workspace sharing is withheld from v1 (WORKSPACE_SHARING_ENABLED); the surface does not ship.',
+  'TC-LV-0009':
+    'Workspace sharing is withheld from v1 (WORKSPACE_SHARING_ENABLED); the surface does not ship.',
+  'TC-LV-0010':
+    'Workspace sharing is withheld from v1 (WORKSPACE_SHARING_ENABLED); the surface does not ship.',
+  'TC-LV-0011':
+    'Workspace sharing is withheld from v1 (WORKSPACE_SHARING_ENABLED); the surface does not ship.',
+  'TC-LV-0012':
+    'Workspace sharing is withheld from v1 (WORKSPACE_SHARING_ENABLED); the surface does not ship.',
+  'TC-LV-0013':
+    'Workspace sharing is withheld from v1 (WORKSPACE_SHARING_ENABLED); the surface does not ship.',
+  'TC-LV-0014':
+    'Workspace sharing is withheld from v1 (WORKSPACE_SHARING_ENABLED); the surface does not ship.',
+  'TC-LV-0015':
+    'Workspace sharing is withheld from v1 (WORKSPACE_SHARING_ENABLED); the surface does not ship.',
 };
 
 /** Set form for runtime checks (used by `tcCoverage.ts` if needed). */

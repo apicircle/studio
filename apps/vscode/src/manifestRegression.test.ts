@@ -38,6 +38,44 @@ function readManifest(): Manifest {
   return JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as Manifest;
 }
 
+// The workspace-sharing command surface, in one place. Two tests read it — the
+// "declared & activated" check and the palette-gating check — and a command
+// that appeared in only one of them would be exactly the gap this list exists
+// to prevent.
+const LINKED_COMMAND_IDS = [
+  'apicircle.linkWorkspace',
+  'apicircle.searchMarketplace',
+  'apicircle.refreshLinkedWorkspace',
+  'apicircle.reviewLinkedUpdate',
+  'apicircle.tagRelease',
+  'apicircle.editRepoTopics',
+  'apicircle.unlinkWorkspace',
+  'apicircle.openLinkYaml',
+  'apicircle.showLinkedChangelog',
+  'apicircle.setLinkNameField',
+  'apicircle.setLinkDescriptionField',
+  'apicircle.setLinkPinnedVersionField',
+  'apicircle.setLinkScopeField',
+  'apicircle.setLinkSessionModeField',
+  'apicircle.addLinkRequiredKey',
+  'apicircle.removeLinkRequiredKey',
+  'apicircle.setLinkSessionToken',
+  'apicircle.clearLinkSessionToken',
+  'apicircle.openLinkedRequest',
+  'apicircle.resetLinkedRequest',
+  'apicircle.discardLinkedMods',
+  'apicircle.provisionLinkedSecret',
+  'apicircle.clearLinkedSecret',
+  'apicircle.setLinkedEnvVarOverride',
+] as const;
+
+const RELEASE_COMMAND_IDS = [
+  'apicircle.openReleaseHistory',
+  'apicircle.publishRelease',
+  'apicircle.deprecateRelease',
+  'apicircle.withdrawRelease',
+] as const;
+
 describe('package.json manifest regression', () => {
   it('the two Phase 4 secrets settings exist and DO NOT carry the placeholder banner', () => {
     const pkg = readManifest();
@@ -591,34 +629,28 @@ describe('package.json manifest regression', () => {
     const pkg = readManifest();
     const ids = new Set(pkg.contributes.commands.map((c) => c.command));
     const events = new Set(pkg.activationEvents);
-    for (const id of [
-      'apicircle.linkWorkspace',
-      'apicircle.searchMarketplace',
-      'apicircle.refreshLinkedWorkspace',
-      'apicircle.reviewLinkedUpdate',
-      'apicircle.tagRelease',
-      'apicircle.editRepoTopics',
-      'apicircle.unlinkWorkspace',
-      'apicircle.openLinkYaml',
-      'apicircle.showLinkedChangelog',
-      'apicircle.setLinkNameField',
-      'apicircle.setLinkDescriptionField',
-      'apicircle.setLinkPinnedVersionField',
-      'apicircle.setLinkScopeField',
-      'apicircle.setLinkSessionModeField',
-      'apicircle.addLinkRequiredKey',
-      'apicircle.removeLinkRequiredKey',
-      'apicircle.setLinkSessionToken',
-      'apicircle.clearLinkSessionToken',
-      'apicircle.openLinkedRequest',
-      'apicircle.resetLinkedRequest',
-      'apicircle.discardLinkedMods',
-      'apicircle.provisionLinkedSecret',
-      'apicircle.clearLinkedSecret',
-      'apicircle.setLinkedEnvVarOverride',
-    ]) {
+    for (const id of LINKED_COMMAND_IDS) {
       expect(ids.has(id), `${id} missing from contributes.commands`).toBe(true);
       expect(events.has(`onCommand:${id}`), `${id} missing onCommand activation`).toBe(true);
+    }
+  });
+
+  it('every workspace-sharing command is hidden from the command palette', () => {
+    // The commands stay REGISTERED — `when` on a commandPalette entry is
+    // VS Code's documented way to hide one, and a registered-but-unlisted
+    // command beats "command not found" from a stale keybinding. Without these
+    // entries all 28 stay typeable in the palette, which is the real exposure:
+    // the tree view's `when` hides the view and its menus, but not the palette.
+    const pkg = readManifest() as Manifest & {
+      contributes: { menus?: { commandPalette?: Array<{ command: string; when?: string }> } };
+    };
+    const gated = new Map(
+      (pkg.contributes.menus?.commandPalette ?? []).map((e) => [e.command, e.when]),
+    );
+    for (const id of [...LINKED_COMMAND_IDS, ...RELEASE_COMMAND_IDS]) {
+      expect(gated.get(id), `${id} is reachable from the command palette`).toBe(
+        'apicircle.workspaceSharing',
+      );
     }
   });
 
@@ -651,9 +683,12 @@ describe('package.json manifest regression', () => {
     const ids = views.map((v) => v.id);
     expect(ids).toContain('apicircle.linkWorkspaces');
     expect(ids).not.toContain('apicircle.marketplace');
-    // The view is always-on now — no enableMarketplace gate.
+    // Gated on the workspace-sharing master switch (off in v1), NOT on the old
+    // per-feature `apicircle.enableMarketplace` setting — that config property
+    // must stay gone. Hiding the view is load-bearing: every `view/title` and
+    // `view/item/context` entry is already scoped to it, so they go too.
     const link = views.find((v) => v.id === 'apicircle.linkWorkspaces');
-    expect(link?.when).toBeUndefined();
+    expect(link?.when).toBe('apicircle.workspaceSharing');
     expect(pkg.contributes.configuration.properties['apicircle.enableMarketplace']).toBeUndefined();
   });
 

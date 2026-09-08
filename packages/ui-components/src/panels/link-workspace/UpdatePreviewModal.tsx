@@ -17,6 +17,7 @@ import type {
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { Modal } from '../../primitives/Modal';
 import { LinkedReleaseNotes } from './LinkedReleaseNotes';
+import { isWorkspaceSharingEnabled } from '../../layout/workspaceSharing';
 
 const STATUS_LABEL: Record<LinkedUpdateStatus, string> = {
   unchanged: 'Unchanged',
@@ -48,8 +49,18 @@ const BUCKET_LABEL: Record<LinkedUpdateBucket, string> = {
  * (and optionally `removed-in-source` rows where the default of "drop
  * orphan" can be flipped). Apply is disabled until every required
  * decision is made.
+ *
+ * Mounted unconditionally at the App root, so the guard makes that mount
+ * provably dead in a build without workspace sharing. `activeLinkedUpdate` is
+ * only ever set by the gated Link Workspace panel, so this is belt-and-braces
+ * — but a modal that can't be reached shouldn't be subscribing to the store.
  */
 export function UpdatePreviewModal() {
+  if (!isWorkspaceSharingEnabled()) return null;
+  return <UpdatePreviewModalBody />;
+}
+
+function UpdatePreviewModalBody() {
   const active = useWorkspaceStore((s) => s.activeLinkedUpdate);
   const close = useWorkspaceStore((s) => s.clearLinkedUpdatePreview);
   const apply = useWorkspaceStore((s) => s.applyLinkedUpdateForLink);

@@ -18,7 +18,7 @@ but with:
   read the same source of truth the UI uses, no IPC required.
 - **Local mock servers**: describe an API in OpenAPI / Postman / Insomnia and
   run a Hono-backed mock on `localhost`.
-- An **MCP server**: exposes the workspace as a 97-tool catalog any
+- An **MCP server**: exposes the workspace as an 84-tool catalog any
   Model Context Protocol client (Claude Desktop, ChatGPT, Cursor, Copilot,
   Codex, Continue, Cline, Zed, Windsurf) can drive.
 - A **CLI** for headless use
@@ -350,6 +350,17 @@ collections/environments snapshot produced by the GitHub fetch in the host;
 `local.linkedCollections` + the per-link session; `.applyUpdate` is the atomic
 result of a three-way `previewLinkedUpdate` / `applyLinkedUpdate`.)
 
+> **Workspace sharing is switched off in shipped builds.** `WORKSPACE_SHARING_ENABLED`
+> in `packages/shared/src/types.ts` is hard-coded `false`, which hides the Link
+> Workspace panel + marketplace, linked collections / environments / execution /
+> overrides, linked release notes, the Releases card, and Tag release + repo
+> Topics — across web, desktop and the VS Code extension — and removed the 13
+> `linked.*` / `release.*` / `repo.set_topics` / `marketplace.search` verbs from
+> the MCP catalogue. The types, `WorkspacePatch` variants, `applyMutation` cases
+> and `@apicircle/core` helpers below all stay live, so a workspace authored by a
+> sharing-enabled build still round-trips losslessly and turning the constant back
+> on is a code change, not a migration. See `layout/workspaceSharing.ts`.
+
 > Note: the live UI store (`workspaceStore.ts`) also performs some direct
 > `set({ synced, local })` transitions rather than routing every change through
 > `applyMutation`. Treat `applyMutation` as the contract for headless
@@ -449,7 +460,10 @@ The install/uninstall logic lives in
   OS keychain; on web a workspace passphrase model is used instead.
 - **UI:** `packages/ui-components/src/` — `App.tsx` + 9 panels
   (`layout/panels.ts`): Workspace, Link Workspace, Editor, Environments,
-  Execution, History, Mocks, MCP, Help Center. Editors are Monaco-based.
+  Execution, History, Mocks, MCP, Help Center. Editors are Monaco-based. Link
+  Workspace is filtered out of the visible list (`VISIBLE_PANELS`) while
+  workspace sharing is off, so the strip shows seven tabs and `Ctrl/Cmd+N`
+  numbers against those.
 - **Settings popover** (`layout/SettingsPicker.tsx`) hangs off the top bar —
   behavioral toggles, theme + font pickers, and the **Community section**
   (`community/CommunitySection.tsx`) that fetches live GitHub stats with a

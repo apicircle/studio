@@ -11,7 +11,7 @@ import {
   Search,
   Trash2,
 } from 'lucide-react';
-import type { EnvPriorityRef } from '@apicircle/shared';
+import type { EnvPriorityRef, LinkedSnapshot, LinkedWorkspace } from '@apicircle/shared';
 import { envPriorityKey, envPriorityRefEqual } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { cn } from '../../primitives/cn';
@@ -20,6 +20,12 @@ import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 // Phase 12: lazy wrapper — see editor/ImportModalLazy.tsx for the
 // rationale (parser bundle defer).
 import { ImportModalLazy as ImportModal } from '../editor/ImportModalLazy';
+import { isWorkspaceSharingEnabled } from '../../layout/workspaceSharing';
+
+// Frozen empties, so the folded selectors return a stable identity and don't
+// re-render the sidebar on every unrelated store tick.
+const NO_LINKED_WORKSPACES: Record<string, LinkedWorkspace> = Object.freeze({});
+const NO_LINKED_COLLECTIONS: Record<string, LinkedSnapshot> = Object.freeze({});
 
 /**
  * One row in the sidebar's flat env list. Mixes local + linked envs under
@@ -42,8 +48,16 @@ type EnvRow =
 
 export function EnvironmentsSidebar() {
   const items = useWorkspaceStore((s) => s.synced?.environments.items ?? {});
-  const linkedWorkspaces = useWorkspaceStore((s) => s.synced?.linkedWorkspaces ?? {});
-  const linkedCollections = useWorkspaceStore((s) => s.local?.linkedCollections ?? {});
+  // Folded to empty when sharing is off, rather than gating each place a
+  // linked env could surface. Everything downstream — the row list, the
+  // by-key index, the search filter, the priority reorder — then behaves as
+  // if this workspace simply has no links, which is the honest shape.
+  const linkedWorkspaces = useWorkspaceStore((s) =>
+    isWorkspaceSharingEnabled() ? (s.synced?.linkedWorkspaces ?? {}) : NO_LINKED_WORKSPACES,
+  );
+  const linkedCollections = useWorkspaceStore((s) =>
+    isWorkspaceSharingEnabled() ? (s.local?.linkedCollections ?? {}) : NO_LINKED_COLLECTIONS,
+  );
   const priorityOrder = useWorkspaceStore((s) => s.synced?.environments.priorityOrder ?? []);
   const setPriorityOrder = useWorkspaceStore((s) => s.setPriorityOrder);
   const addEnvironment = useWorkspaceStore((s) => s.addEnvironment);

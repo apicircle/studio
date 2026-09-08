@@ -59,6 +59,7 @@ import { ReleaseAndTopicsModal } from './ReleaseAndTopicsModal';
 import { cn } from '../../primitives/cn';
 import { formatRelativeTime } from '../../primitives/relativeTime';
 import { formatGitError, type GitErrorView } from './gitErrorMessage';
+import { isWorkspaceSharingEnabled } from '../../layout/workspaceSharing';
 
 export function WorkspacePanel() {
   const workspaceName = useWorkspaceStore((s) => {
@@ -129,12 +130,18 @@ export function WorkspacePanel() {
         </section>
       )}
 
-      <section>
-        <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
-          Releases
-        </h2>
-        <ReleasesCard />
-      </section>
+      {/* Note this section sits OUTSIDE the `!isLocalOnly` guard above — it
+          renders for a local-only workspace too, because publishing a release
+          is a pure write to `synced.releases.self` and needs no repo. So this
+          gate is the only thing that hides it. */}
+      {isWorkspaceSharingEnabled() && (
+        <section>
+          <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
+            Releases
+          </h2>
+          <ReleasesCard />
+        </section>
+      )}
 
       <ConflictResolverModal />
     </div>
@@ -1178,7 +1185,9 @@ function RepoCard() {
 
       <BranchSection />
 
-      {!repo.isPrivate && (
+      {/* The banner points at "Edit topics below" and at a marketplace, both of
+          which this build doesn't ship — so it goes with them. */}
+      {!repo.isPrivate && isWorkspaceSharingEnabled() && (
         <div className="flex items-start gap-2 rounded-sm border border-accent/30 bg-accent/5 p-2 text-[0.6875rem] leading-snug text-text-muted">
           <Globe size={12} className="mt-0.5 shrink-0 text-accent" aria-hidden="true" />
           <span>
@@ -1193,32 +1202,39 @@ function RepoCard() {
       )}
 
       <div className="flex flex-wrap gap-2 pt-1">
-        <button
-          type="button"
-          onClick={() => setReleaseAndTopicsOpen(true)}
-          title={
-            canRelease
-              ? `Create a Git tag for the latest published version, pointing at ${repo.defaultBranch}'s HEAD. Optionally creates a matching ${repoHostLabel} Release.`
-              : `Create a Git tag for the latest published version, pointing at ${repo.defaultBranch}'s HEAD. ${repoHostLabel} has no release object to attach to it.`
-          }
-          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20"
-        >
-          <Tag size={11} aria-hidden="true" />
-          Tag release
-        </button>
-        <button
-          type="button"
-          onClick={() => setReleaseAndTopicsOpen(true)}
-          title={
-            canEditTopics
-              ? `Add or remove ${repoHostLabel} topics on this repo. Topics drive marketplace discoverability for public workspaces.`
-              : `${repoHostLabel} has no API for setting topics, so this list is read-only.`
-          }
-          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-accent hover:text-accent"
-        >
-          <Hash size={11} aria-hidden="true" />
-          {canEditTopics ? 'Edit topics' : 'View topics'}
-        </button>
+        {/* Both openers of ReleaseAndTopicsModal, gated together so
+            "Disconnect repo" is left as the only button in the row rather than
+            sitting beside a gap. */}
+        {isWorkspaceSharingEnabled() && (
+          <>
+            <button
+              type="button"
+              onClick={() => setReleaseAndTopicsOpen(true)}
+              title={
+                canRelease
+                  ? `Create a Git tag for the latest published version, pointing at ${repo.defaultBranch}'s HEAD. Optionally creates a matching ${repoHostLabel} Release.`
+                  : `Create a Git tag for the latest published version, pointing at ${repo.defaultBranch}'s HEAD. ${repoHostLabel} has no release object to attach to it.`
+              }
+              className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20"
+            >
+              <Tag size={11} aria-hidden="true" />
+              Tag release
+            </button>
+            <button
+              type="button"
+              onClick={() => setReleaseAndTopicsOpen(true)}
+              title={
+                canEditTopics
+                  ? `Add or remove ${repoHostLabel} topics on this repo. Topics drive marketplace discoverability for public workspaces.`
+                  : `${repoHostLabel} has no API for setting topics, so this list is read-only.`
+              }
+              className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-accent hover:text-accent"
+            >
+              <Hash size={11} aria-hidden="true" />
+              {canEditTopics ? 'Edit topics' : 'View topics'}
+            </button>
+          </>
+        )}
         <button
           type="button"
           onClick={() => setConfirmDisconnectOpen(true)}

@@ -196,7 +196,8 @@
         },
         {
           "id": "apicircle.linkWorkspaces",
-          "name": "Link Workspaces"
+          "name": "Link Workspaces",
+          "when": "apicircle.workspaceSharing"
         }
       ]
     },
@@ -269,12 +270,12 @@
       {
         "view": "apicircle.linkWorkspaces",
         "contents": "Open a folder with an API Circle workspace to manage this workspace's releases — the versions linked consumers pin to.\n\n[Create New Workspace](command:apicircle.createWorkspace)",
-        "when": "!apicircle.hasActiveWorkspace"
+        "when": "!apicircle.hasActiveWorkspace && apicircle.workspaceSharing"
       },
       {
         "view": "apicircle.linkWorkspaces",
         "contents": "No releases published yet.\n\nPublish a version to give linked consumers something to pin to. Each release is fingerprinted with a SHA-256 of the workspace contents.\n\n[Publish release…](command:apicircle.publishRelease)\n[Open release history](command:apicircle.openReleaseHistory)\n\nOr discover and link workspaces from the marketplace:\n\n[Search Marketplace…](command:apicircle.searchMarketplace)\n[Link a Workspace…](command:apicircle.linkWorkspace)",
-        "when": "apicircle.hasActiveWorkspace"
+        "when": "apicircle.hasActiveWorkspace && apicircle.workspaceSharing"
       }
     ],
     "languages": [
@@ -1370,6 +1371,120 @@
       }
     ],
     "menus": {
+      "commandPalette": [
+        {
+          "command": "apicircle.openReleaseHistory",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.publishRelease",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.deprecateRelease",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.withdrawRelease",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.linkWorkspace",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.searchMarketplace",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.refreshLinkedWorkspace",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.reviewLinkedUpdate",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.tagRelease",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.editRepoTopics",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.unlinkWorkspace",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.openLinkYaml",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.showLinkedChangelog",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.setLinkNameField",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.setLinkDescriptionField",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.setLinkPinnedVersionField",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.setLinkScopeField",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.setLinkSessionModeField",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.addLinkRequiredKey",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.removeLinkRequiredKey",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.setLinkSessionToken",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.clearLinkSessionToken",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.openLinkedRequest",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.resetLinkedRequest",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.discardLinkedMods",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.provisionLinkedSecret",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.clearLinkedSecret",
+          "when": "apicircle.workspaceSharing"
+        },
+        {
+          "command": "apicircle.setLinkedEnvVarOverride",
+          "when": "apicircle.workspaceSharing"
+        }
+      ],
       "view/title": [
         {
           "command": "apicircle.switchWorkspace",

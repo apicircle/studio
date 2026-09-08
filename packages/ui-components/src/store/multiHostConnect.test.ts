@@ -7,6 +7,23 @@ import {
   type GitProvider,
 } from '@apicircle/git';
 import { useWorkspaceStore } from './workspaceStore';
+import * as workspaceSharing from '../layout/workspaceSharing';
+
+// This suite covers the workspace-sharing cluster, which is switched OFF in
+// shipped builds (`WORKSPACE_SHARING_ENABLED`). Forcing the accessor to `true`
+// keeps that coverage alive — the code is still in the repo and still has to
+// work the day the switch flips. The shipped, disabled path is covered by
+// `layout/workspaceSharingOff.test.tsx`.
+//
+// A spy rather than `vi.mock`: `test/setup.ts` imports `workspaceStore`, so the
+// store — and the accessor it imports — are already evaluated by the time a
+// test file's module mocks register, and a `vi.mock` here would only rebind the
+// test's own import. Re-applied per test because setup's `afterEach` calls
+// `vi.restoreAllMocks()`, and declared first so it lands before any suite's own
+// `beforeEach` reaches a gated action.
+beforeEach(() => {
+  vi.spyOn(workspaceSharing, 'isWorkspaceSharingEnabled').mockReturnValue(true);
+});
 
 // S3 — a NON-GitHub host can actually be connected.
 //

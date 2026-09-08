@@ -10,6 +10,7 @@ import { MockServersPanel } from '../panels/mocks/MockServersPanel';
 import { HelpPanel } from '../panels/help/HelpPanel';
 import { PanelErrorBoundary } from '../primitives/PanelErrorBoundary';
 import { useExtraPanels } from './extraPanels';
+import { isWorkspaceSharingEnabled } from './workspaceSharing';
 
 // PANEL_LABELS is what the error fallback shows in its heading, so the user
 // can recognise which panel crashed without reading the URL. Keep aligned
@@ -56,7 +57,12 @@ export function PanelContent() {
           <WorkspacePanel />
         </Bounded>
       )}
-      {activePanel === 'link-workspace' && (
+      {/* The panel has no tab and `App` reconciles a persisted `activePanel`
+          off it, so this branch is only reachable for the single render before
+          that effect runs. Gated anyway: `LinkWorkspacePanel` returns null on
+          its own, and an error boundary wrapping nothing is a confusing thing
+          to leave in the tree. */}
+      {isWorkspaceSharingEnabled() && activePanel === 'link-workspace' && (
         <Bounded panel="link-workspace">
           <LinkWorkspacePanel />
         </Bounded>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HELP_SECTIONS, searchHelp } from './helpContent';
+import { HELP_SECTIONS, VISIBLE_HELP_SECTIONS, searchHelp } from './helpContent';
 
 describe('Help Center content', () => {
   it('every section has a non-empty title and body', () => {
@@ -40,10 +40,34 @@ describe('Help Center content', () => {
   });
 });
 
+describe('VISIBLE_HELP_SECTIONS', () => {
+  it('withholds the two workspace-sharing articles without deleting them', () => {
+    const visible = VISIBLE_HELP_SECTIONS.map((x) => x.id);
+    expect(visible).not.toContain('link-workspace');
+    expect(visible).not.toContain('release-management');
+    // Still in the catalogue, so an anchor written before the switch resolves.
+    expect(HELP_SECTIONS.map((x) => x.id)).toContain('link-workspace');
+    expect(HELP_SECTIONS.map((x) => x.id)).toContain('release-management');
+  });
+});
+
 describe('searchHelp', () => {
-  it('returns every section for an empty / whitespace query', () => {
-    expect(searchHelp('')).toEqual(HELP_SECTIONS);
-    expect(searchHelp('   ')).toEqual(HELP_SECTIONS);
+  it('returns every VISIBLE section for an empty / whitespace query', () => {
+    expect(searchHelp('')).toEqual([...VISIBLE_HELP_SECTIONS]);
+    expect(searchHelp('   ')).toEqual([...VISIBLE_HELP_SECTIONS]);
+  });
+
+  it('searches the visible list, so a hit can never jump to a hidden article', () => {
+    // 'yank' appears only in Release Management, which this build withholds.
+    // The search finding it would open an article the rail doesn't list.
+    expect(searchHelp('yank')).toEqual([]);
+    expect(searchHelp('marketplace')).toEqual([]);
+  });
+
+  it('still searches the full catalogue when explicitly given it', () => {
+    // The parameter exists so the articles stay reachable the day the switch
+    // flips, and so this assertion can prove they were withheld, not deleted.
+    expect(searchHelp('yank', HELP_SECTIONS).map((x) => x.id)).toEqual(['release-management']);
   });
 
   it('matches by title substring (case-insensitive)', () => {

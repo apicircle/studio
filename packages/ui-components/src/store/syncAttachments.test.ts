@@ -3,6 +3,23 @@ import { act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAttachment, putAttachment } from '../persistence/attachments';
 import { useWorkspaceStore } from './workspaceStore';
+import * as workspaceSharing from '../layout/workspaceSharing';
+
+// This suite covers the workspace-sharing cluster, which is switched OFF in
+// shipped builds (`WORKSPACE_SHARING_ENABLED`). Forcing the accessor to `true`
+// keeps that coverage alive — the code is still in the repo and still has to
+// work the day the switch flips. The shipped, disabled path is covered by
+// `layout/workspaceSharingOff.test.tsx`.
+//
+// A spy rather than `vi.mock`: `test/setup.ts` imports `workspaceStore`, so the
+// store — and the accessor it imports — are already evaluated by the time a
+// test file's module mocks register, and a `vi.mock` here would only rebind the
+// test's own import. Re-applied per test because setup's `afterEach` calls
+// `vi.restoreAllMocks()`, and declared first so it lands before any suite's own
+// `beforeEach` reaches a gated action.
+beforeEach(() => {
+  vi.spyOn(workspaceSharing, 'isWorkspaceSharingEnabled').mockReturnValue(true);
+});
 
 interface ResponseSpec {
   body: unknown;
@@ -370,5 +387,103 @@ describe('workspaceStore.syncAttachments', () => {
       localPath: 'indexeddb://apicircle-attachments/public-linked-slot',
       requiredBy: [{ requestId: 'linked-request', requestName: 'linked request' }],
     });
+  });
+  it('fetches NO linked attachment bytes when sharing is off', async () => {
+    // Same fixture as above with the flag at its shipped value. The linked
+    // loop reaches a third-party repo for bytes no surface in this build can
+    // show, so it is skipped outright rather than fetched-and-hidden.
+    vi.spyOn(workspaceSharing, 'isWorkspaceSharingEnabled').mockReturnValue(false);
+    await setupConnectedBranch();
+    const local = useWorkspaceStore.getState().local!;
+    const synced = useWorkspaceStore.getState().synced!;
+    const linkedRequest = {
+      id: 'linked-request',
+      name: 'linked request',
+      folderId: null,
+      method: 'POST' as const,
+      url: 'https://example.test/upload',
+      headers: [],
+      query: [],
+      pathParams: {},
+      cookies: [],
+      body: {
+        type: 'form-data' as const,
+        content: '',
+        formRows: [
+          {
+            kind: 'file' as const,
+            key: 'upload',
+            slotId: 'public-linked-slot',
+            filename: 'public.txt',
+            mimeType: 'text/plain',
+            size: 6,
+            enabled: true,
+          },
+        ],
+      },
+      auth: { type: 'none' as const },
+      contextVars: [],
+      extractions: [],
+      assertions: [],
+      createdAt: 'fixed',
+      updatedAt: 'fixed',
+    };
+    useWorkspaceStore.setState({
+      synced: {
+        ...synced,
+        linkedWorkspaces: {
+          publicLink: {
+            id: 'publicLink',
+            kind: 'public',
+            name: 'public/source',
+            sourceWorkspaceId: 'src-ws-public',
+            source: {
+              provider: 'github',
+              repoFullName: 'public/source',
+              branch: 'main',
+              sessionMode: 'workspace',
+            },
+            scope: ['collections', 'environments'],
+            pinnedVersion: '1.0.0',
+            updatePolicy: 'manual',
+            linkedAt: 'fixed',
+            requiredSecretKeyIds: [],
+          },
+        },
+      },
+      local: {
+        ...local,
+        sessions: {
+          ...local.sessions,
+          github: { ...local.sessions.github, workspace: null },
+        },
+        linkedCollections: {
+          publicLink: {
+            pulledAt: 'fixed',
+            ref: 'v1.0.0',
+            collections: {
+              tree: {
+                id: 'root',
+                type: 'root',
+                children: [{ kind: 'request', id: linkedRequest.id }],
+              },
+              folders: {},
+              requests: { [linkedRequest.id]: linkedRequest },
+            },
+            environments: { items: {}, activeName: null, priorityOrder: [] },
+          },
+        },
+      },
+    });
+
+    const bytes = new Uint8Array([1, 2, 3, 4, 5, 6]);
+    vi.stubGlobal('fetch', queuedFetch([fileResponse(bytes)]));
+
+    const result = await useWorkspaceStore.getState().syncAttachments();
+    // Nothing fetched, and — the part that matters — nothing counted as
+    // FAILED either. A skipped feature is not a broken download.
+    expect(result).toEqual({ fetched: 0, alreadyPresent: 0, failed: 0 });
+    expect(await getAttachment('public-linked-slot')).toBeNull();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });

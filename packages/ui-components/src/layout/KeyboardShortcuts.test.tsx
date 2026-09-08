@@ -35,17 +35,40 @@ describe('KeyboardShortcuts', () => {
     vi.restoreAllMocks();
   });
 
-  it('Ctrl+1..9 switches the active panel by side effect', () => {
-    pressKey({ key: '3', ctrl: true });
+  it('Ctrl+1..9 selects the Nth VISIBLE tab, left to right', () => {
+    // The numbering follows the tab strip, not the panel registry. Hiding Link
+    // Workspace (registry index 1) shifted every later panel down one, and this
+    // case is the guard that the shortcut and the strip never disagree about
+    // where a panel sits.
+    pressKey({ key: '1', ctrl: true });
+    expect(useWorkspaceStore.getState().activePanel).toBe('workspace');
+    pressKey({ key: '2', ctrl: true });
     expect(useWorkspaceStore.getState().activePanel).toBe('editor');
-    pressKey({ key: '6', ctrl: true });
+    pressKey({ key: '3', ctrl: true });
+    expect(useWorkspaceStore.getState().activePanel).toBe('env');
+    pressKey({ key: '4', ctrl: true });
+    expect(useWorkspaceStore.getState().activePanel).toBe('execution');
+    pressKey({ key: '5', ctrl: true });
     expect(useWorkspaceStore.getState().activePanel).toBe('history');
-    pressKey({ key: '7', ctrl: true });
+    pressKey({ key: '6', ctrl: true });
     expect(useWorkspaceStore.getState().activePanel).toBe('mocks');
-    // Help is Ctrl+8, not Ctrl+9: removing the MCP panel (index 7) shifted it
-    // down one. Ctrl+9 now matches no panel and is a no-op.
-    pressKey({ key: '8', ctrl: true });
+    pressKey({ key: '7', ctrl: true });
     expect(useWorkspaceStore.getState().activePanel).toBe('help');
+  });
+
+  it('Ctrl+8 and Ctrl+9 are no-ops — there are only seven visible tabs', () => {
+    useWorkspaceStore.getState().setActivePanel('history');
+    pressKey({ key: '8', ctrl: true });
+    expect(useWorkspaceStore.getState().activePanel).toBe('history');
+    pressKey({ key: '9', ctrl: true });
+    expect(useWorkspaceStore.getState().activePanel).toBe('history');
+  });
+
+  it('never selects a panel the tab strip does not show', () => {
+    for (const key of ['1', '2', '3', '4', '5', '6', '7', '8', '9']) {
+      pressKey({ key, ctrl: true });
+      expect(useWorkspaceStore.getState().activePanel).not.toBe('link-workspace');
+    }
   });
 
   it('Ctrl+K opens the Vault tab in the workspace inspector dock', () => {

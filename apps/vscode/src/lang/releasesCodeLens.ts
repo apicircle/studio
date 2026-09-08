@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { isWorkspaceSharingEnabled } from '../workspaceSharing';
 
 // =============================================================================
 // CodeLens provider for the apicircle release-ledger document
@@ -36,6 +37,10 @@ export class ReleasesCodeLensProvider implements vscode.CodeLensProvider, vscode
     document: vscode.TextDocument,
     _token: vscode.CancellationToken,
   ): vscode.CodeLens[] {
+    // The workspace-sharing cluster doesn't ship in this build. The provider
+    // stays registered — a YAML tab restored from a previous session still
+    // opens and reads fine, it just carries no actions.
+    if (!isWorkspaceSharingEnabled()) return [];
     if (document.uri.scheme !== 'apicircle') return [];
     if (!document.uri.path.endsWith('/releases.yaml')) return [];
 

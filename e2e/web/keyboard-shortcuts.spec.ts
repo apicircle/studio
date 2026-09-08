@@ -42,12 +42,14 @@ test.describe('Keyboard shortcuts', () => {
     // Each digit binds to a panel slot per layout/panels.ts. The
     // simplest cross-version assertion is that the corresponding
     // top-bar button stays visible after the press.
+    // Numbering follows the VISIBLE strip. With workspace sharing off, Link
+    // Workspace is not in it, so every panel after Workspace shifts down one.
     await app.keyboard.press('Control+2');
-    await expect(app.getByRole('button', { name: 'Link Workspace', exact: true })).toBeVisible();
-    await app.keyboard.press('Control+3');
     await expect(app.getByRole('button', { name: 'Editor', exact: true })).toBeVisible();
-    await app.keyboard.press('Control+4');
+    await app.keyboard.press('Control+3');
     await expect(app.getByRole('button', { name: 'Environments', exact: true })).toBeVisible();
+    await app.keyboard.press('Control+4');
+    await expect(app.getByRole('button', { name: 'Execution', exact: true })).toBeVisible();
   });
 
   test(tc(id('Vault'), 'Ctrl/Cmd+K opens the Vault tab'), async ({ app }) => {

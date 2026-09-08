@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { WORKSPACE_SHARING_ENABLED } from '@apicircle/shared';
 import { VsCodeBridge } from './host/vscodeBridge';
 import {
   discoverRegistryWorkspaces,
@@ -269,6 +270,22 @@ let views: {
 } | null = null;
 
 export function activate(context: vscode.ExtensionContext): ApicircleExtensionApi {
+  // Workspace-sharing master switch, mirroring the web/desktop shell
+  // (`ui-components/src/layout/workspaceSharing.ts`) off the same build
+  // constant so the two surfaces cannot disagree about whether the Link
+  // Workspace / release / topics cluster ships.
+  //
+  // FIRST statement, deliberately: `contributes.views[].when` and the
+  // commandPalette gates in package.json are evaluated the moment we activate,
+  // and the other `setContext` calls in this file run inside the async
+  // `discoverWorkspaces()` — too late for a view that would already have
+  // rendered. Not a `contributes.configuration` setting either: a user-visible
+  // toggle is a discoverable feature, which is the thing this hides.
+  void vscode.commands.executeCommand(
+    'setContext',
+    'apicircle.workspaceSharing',
+    WORKSPACE_SHARING_ENABLED,
+  );
   bridge = new VsCodeBridge(context);
   // The ◆ Expected / ◆ Target lenses on json-path assertions reach into the
   // latest response via the bridge. Wire it up here; null in tests / before

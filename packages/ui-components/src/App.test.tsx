@@ -76,6 +76,38 @@ describe('App', () => {
     expect(screen.queryByText('DISCOVER PANEL BODY')).not.toBeInTheDocument();
   });
 
+  // Workspace sharing is off, so 'link-workspace' has no tab and no body.
+  // `activePanel` is restored from localStorage before the store knows that,
+  // which is what these cover.
+  it('reconciles a persisted activePanel that this build no longer shows', async () => {
+    useWorkspaceStore.setState({ activePanel: 'link-workspace' });
+    render(<App />);
+    await waitFor(() => screen.getByText('API Circle Studio'));
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().activePanel).toBe('editor');
+    });
+    // The user lands somewhere real rather than on a tab with no strip entry.
+    expect(screen.queryByRole('button', { name: 'Link Workspace' })).not.toBeInTheDocument();
+  });
+
+  it('leaves an edition-contributed panel id alone', async () => {
+    // `lens.discover` is not in VISIBLE_PANELS either, but it is not a CORE
+    // panel — stomping it would break the edition whose section owns it. That
+    // case belongs to the sections effect, not this one.
+    const extraPanels: ExtraPanelDef[] = [
+      {
+        id: 'lens.discover',
+        label: 'Index',
+        icon: Compass,
+        Panel: () => <div>Index panel</div>,
+      },
+    ];
+    useWorkspaceStore.setState({ activePanel: 'lens.discover' });
+    render(<App extraPanels={extraPanels} />);
+    await waitFor(() => screen.getByText('API Circle Studio'));
+    expect(useWorkspaceStore.getState().activePanel).toBe('lens.discover');
+  });
+
   it('renders the first-run landing + mode toggle when sections are registered, and switches mode', async () => {
     localStorage.removeItem('apicircle:section-landing-done-v1');
     const sections: SectionDef[] = [

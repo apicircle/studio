@@ -161,6 +161,33 @@ export type PanelId =
  */
 export const DEFAULT_WORKSPACE_NAME = 'My Workspace';
 
+/**
+ * Master switch for the workspace-SHARING cluster: the Link Workspace panel +
+ * marketplace search, linked collections / environments / execution /
+ * overrides, linked release notes, the Releases card (publish / deprecate /
+ * withdraw), and Tag release + repo Topics.
+ *
+ * Hard-coded, deliberately. No prop, no context, no env var, no setting and no
+ * storage key can flip it — a user-reachable toggle would make a withheld
+ * feature discoverable, which is the thing this exists to prevent. Turning the
+ * cluster back on is a code change and a release.
+ *
+ * It is a VISIBILITY switch, not a capability one. Every type, every
+ * `WorkspacePatch` variant, every `applyMutation` case and every helper under
+ * `@apicircle/core`'s `linked/` and `release/` directories stays live, because
+ * a workspace authored by a sharing-enabled build has to round-trip through a
+ * disabled one without losing a byte, and `parseLinkedWorkspaceJson` still has
+ * to read other people's `releases.self`. What the flag removes is REACH: no
+ * UI, no MCP tool, no CLI verb, and no network read — see the gated store
+ * actions in `workspaceStore.ts`.
+ *
+ * The `: boolean` annotation is load-bearing. Without it TypeScript narrows
+ * this to the literal type `false`, every `if (!enabled)` guard makes the code
+ * after it unreachable, and eslint's `no-unreachable` turns the whole cluster
+ * into build errors.
+ */
+export const WORKSPACE_SHARING_ENABLED: boolean = false;
+
 export interface WorkspaceSynced {
   schemaVersion: 1;
   workspaceId: string;

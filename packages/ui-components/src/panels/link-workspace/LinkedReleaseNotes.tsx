@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ChevronDown, ChevronRight, ScrollText } from 'lucide-react';
 import type { ReleaseVersion } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { isWorkspaceSharingEnabled } from '../../layout/workspaceSharing';
 
 // Renders the release notes for every linked-source version in the range
 // `(fromVersion, toVersion]`. Pulls from `synced.releases.perLink` which is
@@ -17,7 +18,15 @@ interface Props {
   toVersion: string;
 }
 
-export function LinkedReleaseNotes({ linkedWorkspaceId, fromVersion, toVersion }: Props) {
+export function LinkedReleaseNotes(props: Props) {
+  // Reached only from the (gated) UpdatePreviewModal and Link Workspace panel.
+  // Guarded anyway so a direct render — its own tests included — behaves the
+  // way the app does.
+  if (!isWorkspaceSharingEnabled()) return null;
+  return <LinkedReleaseNotesBody {...props} />;
+}
+
+function LinkedReleaseNotesBody({ linkedWorkspaceId, fromVersion, toVersion }: Props) {
   const ledger = useWorkspaceStore((s) => s.synced?.releases.perLink[linkedWorkspaceId] ?? null);
 
   const versions = pickVersions(ledger?.versions ?? [], fromVersion, toVersion);

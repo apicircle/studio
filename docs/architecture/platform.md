@@ -40,6 +40,15 @@ environment.* | assertion.* | mock.* | release.* | linkedWorkspace.* |
 linkedOverride.* | plan.*`. Adding a new entity type is one variant + one switch
 case, with Lens adding its own MCP tool definition outside Studio when needed.
 
+> **Withheld in v1:** `WORKSPACE_SHARING_ENABLED` (`packages/shared/src/types.ts`)
+> is hard-coded `false`, hiding the Link Workspace panel + marketplace, linked
+> collections / environments / execution / overrides, linked release notes, the
+> Releases card, and Tag release + repo Topics on every surface, and removing the
+> 13 `linked.*` / `release.*` / `repo.set_topics` / `marketplace.search` verbs
+> from the MCP catalogue (97 -> 84). The `linkedWorkspace.*`, `linkedOverride.*`
+> and `release.*` patch variants named here stay live so the data still
+> round-trips.
+
 ## Lens-owned MCP/CLI compatibility
 
 The original Studio MCP server and CLI moved to API Circle Lens. Studio keeps the workspace and mock-engine contracts Lens composes, but Studio no longer hosts, publishes, or configures an MCP server.

@@ -39,8 +39,24 @@ import { getAttachment } from '../../persistence/attachments';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';
 import { cn } from '../../primitives/cn';
+import { isWorkspaceSharingEnabled } from '../../layout/workspaceSharing';
 
+/**
+ * The panel has no tab in this build (see `layout/panels.ts`), so this guard is
+ * for a direct render — the panel's own tests, and anything that reaches
+ * `PanelContent` with a stale `activePanel` before `App` reconciles it.
+ *
+ * Returning BEFORE the body mounts, rather than early-returning inside it, is
+ * what keeps the guard honest: none of the body's hooks run, so there are no
+ * store subscriptions and — the part that matters — no fetch effects. It also
+ * keeps `react-hooks/rules-of-hooks` satisfied without an eslint-disable.
+ */
 export function LinkWorkspacePanel() {
+  if (!isWorkspaceSharingEnabled()) return null;
+  return <LinkWorkspacePanelBody />;
+}
+
+function LinkWorkspacePanelBody() {
   // ANY host's session. Reading the GitHub slot meant a user whose only session
   // was GitLab saw the not-connected card and a disabled form, told to connect a
   // GitHub PAT they have no reason to own — the same gate that hid the repo

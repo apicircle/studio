@@ -5,6 +5,7 @@ import type {
 } from '@apicircle/shared';
 import { useShallow } from 'zustand/react/shallow';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { isWorkspaceSharingEnabled } from '../layout/workspaceSharing';
 
 /**
  * Unified "what's the editor currently editing?" selector. Resolves three
@@ -50,7 +51,11 @@ export function useActiveRequestView(): ActiveRequestView | null {
   // compare so we only re-render when the relevant fields actually moved.
   return useWorkspaceStore(
     useShallow((s) => {
-      const active = s.activeLinkedRequest;
+      // Folding the linked view away HERE is what disables the whole
+      // linked-editing surface: `EditorPanel`'s `isLinked` flag, its
+      // "Linked from …" banner, the Reset control and the linked send path all
+      // hang off this one view, so none of them need their own guard.
+      const active = isWorkspaceSharingEnabled() ? s.activeLinkedRequest : null;
       if (active) {
         const link = s.synced?.linkedWorkspaces[active.linkedWorkspaceId];
         const snapshot = s.local?.linkedCollections[active.linkedWorkspaceId];

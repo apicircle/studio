@@ -117,28 +117,14 @@ export type McpToolName =
   | 'mock.set_multipliers'
   | 'mock.set_request_schema'
   | 'mock.set_default_port'
-  | 'mock.import_postman_mock_collection'
+  | 'mock.import_postman_mock_collection';
 
-  // Release ledger (synced.releases.self — the versions linked consumers pin to)
-  | 'release.list'
-  | 'release.publish'
-  | 'release.deprecate'
-  | 'release.yank'
-
-  // Linked workspaces — pure-data config (synced.linkedWorkspaces)
-  | 'linked.list'
-  | 'linked.get'
-  | 'linked.set_config'
-  | 'linked.unlink'
-
-  // GitHub network ops (need a token: `token` arg or `GITHUB_TOKEN` env)
-  | 'linked.link'
-  | 'linked.refresh'
-  | 'release.tag'
-  | 'repo.set_topics'
-
-  // Marketplace discovery (anonymous or token-authenticated)
-  | 'marketplace.search';
+// The workspace-sharing verbs — `linked.*`, `release.*`, `repo.set_topics` and
+// `marketplace.search` — were removed here when that cluster was switched off
+// (`WORKSPACE_SHARING_ENABLED` in `./types`). The catalogue is the contract an
+// MCP host reads, so leaving the names in it would advertise 13 tools no
+// server answers. The underlying `WorkspacePatch` variants and `applyMutation`
+// cases stay, so the data still round-trips; only the verbs are gone.
 
 export interface McpError {
   code: 'invalid_input' | 'not_found' | 'conflict' | 'unsupported' | 'internal';
@@ -232,17 +218,4 @@ export const MCP_TOOL_NAMES: ReadonlyArray<McpToolName> = [
   'mock.set_request_schema',
   'mock.set_default_port',
   'mock.import_postman_mock_collection',
-  'release.list',
-  'release.publish',
-  'release.deprecate',
-  'release.yank',
-  'linked.list',
-  'linked.get',
-  'linked.set_config',
-  'linked.unlink',
-  'linked.link',
-  'linked.refresh',
-  'release.tag',
-  'repo.set_topics',
-  'marketplace.search',
 ];

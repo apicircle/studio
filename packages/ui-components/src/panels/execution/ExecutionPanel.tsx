@@ -21,6 +21,7 @@ import { cn } from '../../primitives/cn';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { ResponseViewer } from '../editor/ResponseViewer';
 import { RequestQuickView } from './RequestQuickView';
+import { isWorkspaceSharingEnabled } from '../../layout/workspaceSharing';
 
 export function ExecutionPanel() {
   const plans = useWorkspaceStore((s) => s.synced?.executionPlans ?? {});
@@ -120,7 +121,14 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
     for (const env of Object.values(envItems)) {
       out.push({ ref: { kind: 'local', name: env.name }, label: env.name });
     }
-    for (const link of Object.values(linkedWorkspaces)) {
+    // These two memos are the ADD affordances — the "add env row" list and the
+    // step picker's linked groups. They are the only sharing surfaces folded
+    // away in this panel; the step rows and the priority list below keep
+    // resolving whatever a sharing-enabled build already wrote. That asymmetry
+    // is deliberate: `runPlan` still executes an existing linked step, and a
+    // step that runs but cannot be seen is worse than one that is visible and
+    // inert. So: nothing new can be added, nothing existing is hidden.
+    for (const link of isWorkspaceSharingEnabled() ? Object.values(linkedWorkspaces) : []) {
       const snap = linkedCollections[link.id];
       if (!snap) continue;
       for (const env of Object.values(snap.environments.items)) {
@@ -138,7 +146,7 @@ function PlanEditor({ plan }: { plan: ExecutionPlan }) {
   // populate). Plan §6 §11.1: cross-workspace plan steps.
   const linkedGroups = useMemo(
     () =>
-      Object.values(linkedWorkspaces)
+      (isWorkspaceSharingEnabled() ? Object.values(linkedWorkspaces) : [])
         .map((link) => ({
           link,
           requests: Object.values(linkedCollections[link.id]?.collections.requests ?? {}),

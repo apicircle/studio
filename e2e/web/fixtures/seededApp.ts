@@ -12,11 +12,11 @@
 
 import { expect, test as base, type Page } from '@playwright/test';
 import { test as appTest } from './app';
-import { seedAndOpen, type WorkspaceVariant } from './idbSeed';
+import { seedAndOpen, type SeedVariant } from './idbSeed';
 
 interface SeededFixtures {
   /** Workspace variant to seed before navigating to `/`. */
-  workspaceVariant: WorkspaceVariant;
+  workspaceVariant: SeedVariant;
   /** Pre-hydrated page with the seeded workspace already active. */
   app: Page;
 }

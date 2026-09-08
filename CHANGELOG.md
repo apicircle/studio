@@ -25,6 +25,53 @@
 
 ## Unreleased
 
+### Changed
+
+- **Workspace sharing is withheld from v1.** The Link Workspace panel and
+  marketplace search, linked collections / environments / execution /
+  overrides, linked release notes, the Releases card (publish / deprecate /
+  withdraw) and Tag release + repo Topics are switched off across every
+  surface: web, desktop, and the VS Code extension. This is a deliberate
+  scoping decision about what ships first, not an unfinished feature — the
+  cluster is complete and stays fully tested behind the switch.
+
+  The switch is `WORKSPACE_SHARING_ENABLED` in `@apicircle/shared`, hard-coded
+  `false`. There is no prop, context, environment variable, setting or storage
+  key that flips it: a user-reachable toggle would make a withheld feature
+  discoverable, which is the point of withholding it. Turning it back on is a
+  code change and a release.
+
+  What that means in practice:
+  - **Nothing is deleted.** Every type, `WorkspacePatch` variant,
+    `applyMutation` case and `@apicircle/core` helper stays, so a workspace
+    authored by a sharing-enabled build round-trips through this one without
+    losing a byte.
+  - **No network reads.** Each sharing action that touches a remote repository
+    refuses before doing so. That includes two paths the user never triggers:
+    `refreshWorkspace`'s linked bootstrap — which ran on every pull _and_ every
+    window focus — and `syncAttachments`' linked loop. The visible consequence
+    is that `releases.perLink` goes stale while the feature is off; refreshing
+    once on re-enable restores it.
+  - **The MCP catalogue drops 13 verbs, 97 → 84.** `linked.list` / `.get` /
+    `.set_config` / `.unlink` / `.link` / `.refresh`, `release.list` /
+    `.publish` / `.deprecate` / `.yank` / `.tag`, `repo.set_topics` and
+    `marketplace.search` are gone from `MCP_TOOL_NAMES`. Studio itself no
+    longer ships an MCP server or CLI — both moved to API Circle Lens — so the
+    matching tool and command implementations are removed there.
+  - **VS Code** hides the Link Workspaces tree view (and, with it, every
+    view-scoped menu), gates all 28 sharing commands out of the command
+    palette, and returns no CodeLens actions on link / linked-request /
+    releases documents. Commands stay registered and the virtual filesystem
+    keeps serving those URIs, so a YAML tab restored from an earlier session
+    still opens read-only instead of erroring on every window reload.
+  - **The tab strip has seven tabs**, and `Ctrl/Cmd + 1..9` now selects by
+    position in the strip rather than by index into the panel registry, so the
+    shortcut and the visible order cannot disagree. A persisted
+    `activePanel: 'link-workspace'` is reconciled to the Editor on launch.
+  - Help Center withholds the **Link Workspace** and **Release Management**
+    articles and the cross-references to them; the onboarding tour skips the
+    Link Workspace step.
+
 ### Added
 
 - **Start a working branch from a workspace that is already on the base

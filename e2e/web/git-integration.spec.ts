@@ -165,7 +165,7 @@ test.describe('GitHub integration', () => {
   test(
     tc(
       id('GitHub Flow :: GitHub flow: Link to public repo'),
-      'link to public repo surfaces the marketplace-topics banner',
+      'link to public repo connects; no marketplace-topics banner in v1',
     ),
     async ({ appWithGithubMock, mockGithub }) => {
       const owner = 'mock-user';
@@ -177,15 +177,19 @@ test.describe('GitHub integration', () => {
         return w.__apicircleStore!.getState().local?.connectedRepo ?? null;
       });
       expect(connected?.fullName).toBe(`${owner}/${name}`);
-      // The Workspace panel's repo card tells the user a public repo is
-      // discoverable in the marketplace via its GitHub topics.
+      // The repo card used to tell the user a public repo is discoverable in
+      // the marketplace via its GitHub topics. Workspace sharing is off in v1
+      // (WORKSPACE_SHARING_ENABLED), so that banner — and the "Edit topics"
+      // control it points at — are not rendered. Connecting a public repo
+      // still works, which is what this case is really about.
       await appWithGithubMock
         .getByRole('button', { name: 'Workspace', exact: true })
         .first()
         .click();
-      await expect(
-        appWithGithubMock.getByText(/listed in the API Circle marketplace/),
-      ).toBeVisible();
+      await expect(appWithGithubMock.getByText(/Repo & Working Branch/)).toBeVisible();
+      await expect(appWithGithubMock.getByText(/listed in the API Circle marketplace/)).toHaveCount(
+        0,
+      );
     },
   );
 

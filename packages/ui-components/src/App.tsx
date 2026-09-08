@@ -149,6 +149,7 @@ function useExternalDiskRefresh(): void {
 }
 
 import { TopBar, type BrandDef } from './layout/TopBar';
+import { PANELS, VISIBLE_PANELS } from './layout/panels';
 import { PanelTabs } from './layout/PanelTabs';
 import { Sidebar } from './layout/Sidebar';
 import { PanelContent } from './layout/PanelContent';
@@ -237,6 +238,26 @@ export function App({
       setActivePanel(section.panelIds[0]);
     }
   }, [workspaceId, sections, setActivePanel]);
+
+  // Reconcile a persisted `activePanel` this build no longer shows.
+  //
+  // `activePanel` is restored from localStorage at store-creation time by
+  // `readStoredPanel`, which validates that the id is a real panel but knows
+  // nothing about workspace sharing — so a user who was last on Link Workspace
+  // would cold-launch onto a tab that has no entry in the strip and no body.
+  // Land them on 'editor', which is already what `readStoredPanel` does for an
+  // id it doesn't recognise, and let `setActivePanel` rewrite the stored value
+  // so the repair sticks.
+  //
+  // The `isCore` guard matters: an edition's own panel id (Lens's
+  // 'lens.discover') is not in `VISIBLE_PANELS` either, and must not be stomped
+  // — that case belongs to the sections effect above.
+  useEffect(() => {
+    const current = useWorkspaceStore.getState().activePanel;
+    const isCore = PANELS.some((p) => p.id === current);
+    if (isCore && !VISIBLE_PANELS.some((p) => p.id === current)) setActivePanel('editor');
+  }, [setActivePanel]);
+
   const setActiveSectionId = useCallback(
     (id: string) => {
       setActiveSectionIdState(id);

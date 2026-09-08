@@ -1,6 +1,6 @@
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { cn } from '../primitives/cn';
-import { PANELS } from './panels';
+import { VISIBLE_PANELS } from './panels';
 import { useExtraPanels } from './extraPanels';
 import { useSections, resolveActiveSection } from './sections';
 
@@ -10,7 +10,7 @@ export function PanelTabs() {
   const extraPanels = useExtraPanels();
   const { sections, activeSectionId } = useSections();
 
-  const allPanels = [...PANELS, ...extraPanels];
+  const allPanels = [...VISIBLE_PANELS, ...extraPanels];
   // With sections registered, show only the active section's panels; with none
   // (Studio) show every panel — byte-identical to before.
   const section = resolveActiveSection(activeSectionId, sections);

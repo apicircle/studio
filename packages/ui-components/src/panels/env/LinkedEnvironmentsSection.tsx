@@ -16,6 +16,7 @@ import type {
   LinkedWorkspace,
 } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { isWorkspaceSharingEnabled } from '../../layout/workspaceSharing';
 
 function reportError(title: string, err: unknown): void {
   const detail = err instanceof Error ? err.message : String(err);
@@ -44,6 +45,13 @@ const safe = <T,>(value: T | Promise<T>, title: string): Promise<T | undefined> 
  * those rows persist as overrides keyed by varKey with `removed: false`.
  */
 export function LinkedEnvironmentsSection() {
+  // One guard covers both call sites in EnvironmentsPanel — which is the
+  // reason it lives here rather than at either of them.
+  if (!isWorkspaceSharingEnabled()) return null;
+  return <LinkedEnvironmentsSectionBody />;
+}
+
+function LinkedEnvironmentsSectionBody() {
   const links = useWorkspaceStore((s) =>
     s.synced ? Object.values(s.synced.linkedWorkspaces) : [],
   );

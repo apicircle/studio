@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PANELS, getPanel } from './panels';
+import { PANELS, VISIBLE_PANELS, getPanel } from './panels';
 
 describe('panels registry', () => {
   it('lists the agreed panel set in the agreed order', () => {
@@ -32,5 +32,34 @@ describe('panels registry', () => {
   it('getPanel throws for unknown ids', () => {
     // @ts-expect-error testing invalid input
     expect(() => getPanel('settings')).toThrow(/Unknown panel/);
+  });
+});
+
+describe('VISIBLE_PANELS', () => {
+  it('drops Link Workspace — the sharing cluster does not ship in v1', () => {
+    expect(VISIBLE_PANELS.map((p) => p.id)).toEqual([
+      'workspace',
+      'editor',
+      'env',
+      'execution',
+      'history',
+      'mocks',
+      'help',
+    ]);
+  });
+
+  it('leaves PANELS intact so a persisted id still resolves', () => {
+    // The registry is what `getPanel` / `resolveActivePanel` / the store's
+    // `VALID_PANELS` read. Filtering it rather than the visible list would turn
+    // a stale `activePanel: 'link-workspace'` into a crash instead of a redirect.
+    expect(PANELS.map((p) => p.id)).toContain('link-workspace');
+    expect(getPanel('link-workspace').label).toBe('Link Workspace');
+  });
+
+  it('has a stable identity across reads', () => {
+    // KeyboardShortcuts indexes this inside a useEffect. A fresh array each
+    // read would re-subscribe the global keydown listener on every render.
+    expect(VISIBLE_PANELS).toBe(VISIBLE_PANELS);
+    expect(Object.isFrozen(VISIBLE_PANELS)).toBe(true);
   });
 });

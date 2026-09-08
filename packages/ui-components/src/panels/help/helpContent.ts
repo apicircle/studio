@@ -1,3 +1,5 @@
+import { visibleUnderSharing, type SharingTagged } from '../../layout/workspaceSharing';
+
 // Help Center content. One section per top-level concept. Sections are
 // reference material — each explains what a surface does, the options it
 // offers, the behaviour that isn't obvious, and shows worked examples.
@@ -14,7 +16,7 @@
 // Keep the prose accurate to the shipping app — when a feature changes,
 // the matching section is part of the change.
 
-export interface HelpSection {
+export interface HelpSection extends SharingTagged {
   /** Stable id used for anchor links and search-result jump targets. */
   id: string;
   title: string;
@@ -34,7 +36,7 @@ export const HELP_SECTIONS: HelpSection[] = [
 
 Every workspace is split into two JSON documents, and knowing which is which explains most of the app's behaviour:
 
-- **Synced** — the team-shared half, pushed to Git under the \`.apicircle/\` directory. Requests, folders, environments, mock-server definitions, execution plans, releases, linked workspaces, global assets, and secret metadata.
+- **Synced** — the team-shared half, pushed to Git under the \`.apicircle/\` directory. Requests, folders, environments, mock-server definitions, execution plans, global assets, and secret metadata.
 - **Local** — the per-device half, kept in IndexedDB and never sent anywhere. Run history, your GitHub session, decrypted secret values, workspace snapshots, and UI state.
 
 A quick rule: if a teammate should see it, it is synced; if it is private to this machine, it is local. Example — you build a request and push:
@@ -44,7 +46,7 @@ A quick rule: if a teammate should see it, it is synced; if it is private to thi
 
 ## Finding your way around
 
-- **Top navigation** — eight panels. Switch with a click or with **Ctrl/Cmd + 1-8** (1 = Workspace ... 8 = Help Center).
+- **Top navigation** — one panel per stage of API work. Switch with a click, or with **Ctrl/Cmd** plus the panel's position in the strip (**Ctrl/Cmd + 1** is the leftmost).
 - **Inspector dock** — a resizable right-side dock with three tabs: Variables, Vault, and Assets. **Ctrl/Cmd + K** jumps to the Vault tab.
 - **Workspace switcher** — the \`/ name\` chip in the top bar. One browser can hold several independent workspaces.
 - **Settings** — the gear in the top bar: theme, font, text size, and behaviour toggles.
@@ -133,7 +135,7 @@ The create-branch form asks what the new branch should start from:
 - **This workspace** (default) — the branch starts empty and your first push commits the document you have open.
 - **Import from workspace** — pick one of the workspaces that already live on the base branch. The form reads that branch's \`.apicircle/registry.json\` to list them, then copies the chosen \`workspace.json\` into the workspace you are in.
 
-Importing **replaces** the current workspace's document — requests, folders, environments, mock servers, plans, releases and global assets all go. A **Before workspace import** snapshot is captured first, so History → Snapshots can put the old document back. Run history, saved secrets, and your Git connection are untouched.
+Importing **replaces** the current workspace's document — requests, folders, environments, mock servers, plans and global assets all go. A **Before workspace import** snapshot is captured first, so History → Snapshots can put the old document back. Run history, saved secrets, and your Git connection are untouched.
 
 Two things to know about an import:
 
@@ -158,7 +160,7 @@ The synced half travels through Git; the local half does not. On a second machin
     2. Connect the same repository
     3. Create a working branch and Refresh -- workspace.json loads
 
-**Comes back automatically:** every request, folder, environment, mock-server definition, execution plan, global asset, and release — plus the metadata for your encrypted values.
+**Comes back automatically:** every request, folder, environment, mock-server definition, execution plan, and global asset — plus the metadata for your encrypted values.
 
 **Does NOT transfer (per-device):** run history, workspace snapshots, the GitHub session, UI state, and the decrypted values in your Secret Vault. Encrypted environment variables travel as ciphertext and decrypt once you re-enter the workspace passphrase; Secret Vault values and the GitHub token must be re-added on the new machine.
 
@@ -183,6 +185,7 @@ If the branch's PR is merged or the branch is deleted on GitHub, Refresh retires
   },
   {
     id: 'link-workspace',
+    requiresWorkspaceSharing: true,
     title: 'Link Workspace',
     body: `Linking lets one workspace consume another workspace's published releases — a dependency relationship, one level deep (links are not transitive).
 
@@ -237,6 +240,7 @@ You can override a linked request's headers, context variables, extractions, and
   },
   {
     id: 'release-management',
+    requiresWorkspaceSharing: true,
     title: 'Release Management',
     body: `A workspace owns its **release history** inside \`workspace.json\`, under \`releases.self.versions\`. There is no GitHub Actions integration and no tag automation — the workspace document is the source of truth.
 
@@ -591,7 +595,6 @@ Pasting a command that begins with \`curl \` straight into the URL bar also offe
 
 API Circle workspaces are not shared as loose files — they live in Git. To use another API Circle workspace's collections you have two paths:
 
-- **Link it** (Link Workspace) — consume its published releases read-only, with optional per-request overrides. Best when you depend on someone else's API.
 - **Connect its repo** (Workspace panel) — open the workspace directly to edit it. Best when it is your own workspace on another machine.
 
 A workspace snapshot can also be downloaded as a \`WorkspaceSynced\` JSON file from History → Snapshots — a portable, offline copy of the whole workspace state.
@@ -739,11 +742,9 @@ In both cases the passphrase and key are never written to Git and never persiste
 Each entry is a label and a value. Saving encrypts the value with AES-256-GCM under your workspace master key (see Environments → how the encryption works). Example entries:
 
     STRIPE_KEY      ............   origin: workspace   used in 2 places
-    PARTNER_TOKEN   ............   origin: linked      used in 1 place
 
 - Values are masked; reveal them briefly, or copy to clipboard.
-- An **origin** badge marks each key "workspace" (you created it) or "linked" (a linked workspace asked for it).
-- A **"where used"** list tracks the environments, requests, and link cards that consume the key — and delete is blocked while a key is still in use, so you cannot strand a reference.
+- A **"where used"** list tracks the environments and requests that consume the key — and delete is blocked while a key is still in use, so you cannot strand a reference.
 - After cloning a workspace a **missing-slots gate** prompts you to fill any keys that have no local value yet.
 
 ## How it is stored
@@ -851,7 +852,7 @@ The GitHub repository, the branch, and your commits are untouched on GitHub — 
       3. GET  /projects?limit=5
       4. POST /projects         (body: a new project)
 
-Add steps with the step picker — it lists local and linked requests, filterable by name. Each row has an enable/disable checkbox, up/down reorder arrows, a quick-view (the resolved request, read-only), and a remove control.
+Add steps with the step picker — it lists your requests, filterable by name. Each row has an enable/disable checkbox, up/down reorder arrows, a quick-view (the resolved request, read-only), and a remove control.
 
 - **Plan variables** — key/value pairs scoped to the plan, sitting between extracted globals and the environment priority.
 - A **plan-level environment priority** can override the workspace order for this run only.
@@ -936,7 +937,7 @@ History is a circular buffer capped by a fixed maximum number of runs — once f
 
 ## When snapshots are taken
 
-- **Automatically** — before every push, merge, linked-workspace update, withdraw, and deprecate.
+- **Automatically** — before every push and merge.
 - **Manually** — "Take snapshot now" on History → Snapshots, with an optional note.
 
 Each row shows what triggered it, when, and its size:
@@ -1215,7 +1216,7 @@ Each asset shows a small status pill next to its name. The pill tells you where 
 
 Each row also shows "Used in N" — clicking through the Global Assets panel shows every request and mock endpoint that binds to the file. For a spec asset, that count also includes the mock servers built from it and the requests imported from it, so you can see what a spec backs before deleting it. Zero-use assets get an "Unused" badge so you can identify and prune orphans deliberately.
 
-When a workspace is pushed to GitHub, file bytes are stored as attachment blobs next to the synced doc under \`.apicircle/workspace-<id>/attachments/<slotId>\`, separate from the workspace document. That keeps the JSON small and makes diffs readable. On another machine, linked or synced file assets show as missing until you download them. Sending a request or running a plan that needs missing files opens a download prompt; after the download verifies the checksum, execution continues. The \`apicircle run\` CLI follows the same rule for headless plans.
+When a workspace is pushed to GitHub, file bytes are stored as attachment blobs next to the synced doc under \`.apicircle/workspace-<id>/attachments/<slotId>\`, separate from the workspace document. That keeps the JSON small and makes diffs readable. On another machine, synced file assets show as missing until you download them. Sending a request or running a plan that needs missing files opens a download prompt; after the download verifies the checksum, execution continues. The \`apicircle run\` CLI follows the same rule for headless plans.
 
 ## Why one library
 
@@ -1270,7 +1271,7 @@ A single source of truth: update the "User" asset once and every request that re
 
 ## Navigation
 
-- **Switch panels** — **Ctrl/Cmd + 1-8**: 1 Workspace, 2 Link Workspace, 3 Editor, 4 Environments, 5 Execution, 6 History, 7 Mocks, 8 Help Center. Example: **Ctrl/Cmd + 6** jumps to History to inspect the response you just got.
+- **Switch panels** — **Ctrl/Cmd + 1** through **Ctrl/Cmd + 9** select the 1st through 9th tab in the top navigation, left to right. Example: **Ctrl/Cmd + 1** jumps to Workspace, the leftmost tab.
 - **Open the Secret Vault** — **Ctrl/Cmd + K** opens the Vault tab in the inspector dock.
 - **Refresh the working branch** — **Ctrl/Cmd + Shift + R**. Plain **Ctrl + R** is the browser's reload — the Shift is what disambiguates them.
 
@@ -1312,7 +1313,7 @@ Files over 100 MB are refused (GitHub's blob limit). 10-100 MB warn and recommen
 
 ## "Rate limited"
 
-GitHub's API hit its rate limit. The error names a reset time — wait, or sign in (signed-in requests get a higher limit than anonymous marketplace browsing).
+GitHub's API hit its rate limit. The error names a reset time — wait, or sign in (signed-in requests get a higher limit than anonymous ones).
 
 ## Wrong workspace passphrase
 
@@ -1369,14 +1370,32 @@ The Secret Vault and the GitHub session live in this browser's IndexedDB. Cleari
  * Leading and trailing punctuation (`:`, `,`, `?`, `.`) is stripped from
  * each token so accidental copy-paste doesn't break matching.
  */
-export function searchHelp(query: string): HelpSection[] {
+/**
+ * The articles this build lists. `HELP_SECTIONS` keeps every entry so an
+ * anchor link written before the switch still resolves; this is what the panel
+ * and the sidebar render.
+ */
+export const VISIBLE_HELP_SECTIONS: readonly HelpSection[] = Object.freeze(
+  visibleUnderSharing(HELP_SECTIONS),
+);
+
+/**
+ * `sections` defaults to the VISIBLE list rather than `HELP_SECTIONS`, so both
+ * call sites (`HelpPanel`, `HelpSidebar`) get the right answer without either
+ * having to remember to filter — the failure mode being a search result that
+ * jumps to an article the rail doesn't list.
+ */
+export function searchHelp(
+  query: string,
+  sections: readonly HelpSection[] = VISIBLE_HELP_SECTIONS,
+): HelpSection[] {
   const tokens = query
     .toLowerCase()
     .split(/\s+/)
     .map((t) => t.replace(/^[^\p{L}\p{N}_-]+|[^\p{L}\p{N}_-]+$/gu, ''))
     .filter((t) => t.length > 0);
-  if (tokens.length === 0) return HELP_SECTIONS;
-  return HELP_SECTIONS.filter((section) => {
+  if (tokens.length === 0) return [...sections];
+  return sections.filter((section) => {
     const haystack =
       `${section.title}\n${section.body}\n${(section.keywords ?? []).join(' ')}`.toLowerCase();
     return tokens.every((tok) => haystack.includes(tok));
