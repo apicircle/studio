@@ -345,6 +345,21 @@ function ToastSlot() {
  * In both cases the rail (rendered by App.tsx) sits to the right of
  * this whole area, providing the entry point.
  */
+/**
+ * The dock's stacking, shared by BOTH render modes.
+ *
+ * It has to be one constant because the bug it fixes was the two modes disagreeing. Overlay mode
+ * is `position: absolute; z-index: 30`, so it wins ties against the z-30 popovers (KebabMenu, the
+ * secret-key picker, the header and variable autocompletes) on DOM order. Docked mode is a
+ * `react-resizable-panels` `Panel`, which the library styles inline as `position: static` with no
+ * z-index at all — so the *same two elements* painted in the opposite order depending on a layout
+ * mode that has nothing to do with stacking, and a dropdown opened in the main pane rendered
+ * straight over the inspector.
+ *
+ * `relative` is what makes `z-30` apply: a z-index on a statically-positioned element is ignored.
+ */
+const DOCK_Z = 'z-30';
+
 function BodyArea() {
   const activePanel = useWorkspaceStore((s) => s.activePanel);
   const extraPanels = useExtraPanels();
@@ -364,7 +379,7 @@ function BodyArea() {
           // the body area. The rail (40px) is rendered as a sibling at
           // the App level — by the time we hit BodyArea's right edge
           // the rail is already accounted for, so right-0 is correct.
-          className="absolute right-0 top-0 z-30 flex h-full w-[400px] max-w-[80vw]"
+          className={`absolute right-0 top-0 flex h-full w-[400px] max-w-[80vw] ${DOCK_Z}`}
         >
           <RightDock />
         </div>
@@ -422,11 +437,21 @@ function InlineLayout({ hasSidebar, dockedInline, activePanel }: InlineLayoutPro
         <>
           <PanelResizeHandle
             aria-label="Resize workspace inspector"
-            className="group flex w-1.5 cursor-col-resize items-center justify-center border-x border-border-subtle bg-surface hover:bg-accent/20"
+            // Raised with the dock rather than left behind it: the handle IS the dock's left
+            // edge, and a popover painting over the separator reads as the same defect as one
+            // painting over the panel.
+            className={`group flex w-1.5 cursor-col-resize items-center justify-center border-x border-border-subtle bg-surface hover:bg-accent/20 relative ${DOCK_Z}`}
           >
             <span className="h-8 w-0.5 rounded-full bg-border group-hover:bg-accent" />
           </PanelResizeHandle>
-          <Panel id="dock" order={3} defaultSize={28} minSize={16} maxSize={60}>
+          <Panel
+            id="dock"
+            order={3}
+            defaultSize={28}
+            minSize={16}
+            maxSize={60}
+            className={`relative ${DOCK_Z}`}
+          >
             <RightDock />
           </Panel>
         </>

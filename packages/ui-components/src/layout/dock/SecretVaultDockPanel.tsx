@@ -795,7 +795,12 @@ function SecretRow({ entry }: SecretRowProps) {
       </div>
 
       {isRevealed && (
-        <pre className="mt-2 break-all rounded-sm border border-border-subtle bg-surface p-2 font-mono text-[0.6875rem] text-text-primary">
+        // `whitespace-pre-wrap` is load-bearing, not decoration. A `<pre>` is `white-space: pre`
+        // by default, and `break-all` only chooses WHERE to break a line that is already allowed
+        // to wrap — with wrapping off it has nothing to act on. Without this, a revealed 148-char
+        // key sat on one line and ran 532px past a 336px box: the reader saw a sliver of their
+        // own secret and had to scroll a box with no scrollbar. Measured, not guessed.
+        <pre className="mt-2 whitespace-pre-wrap break-all rounded-sm border border-border-subtle bg-surface p-2 font-mono text-[0.6875rem] text-text-primary">
           {revealed}
         </pre>
       )}
