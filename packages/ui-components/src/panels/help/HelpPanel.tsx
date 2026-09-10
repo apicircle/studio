@@ -113,10 +113,22 @@ function renderHelpBody(body: string): ReactNode {
  */
 function renderInline(text: string): ReactNode[] {
   const out: ReactNode[] = [];
-  // Order matters: links are matched first so a `[label](url)` containing
-  // backticks or asterisks inside `label` doesn't get half-eaten by the
-  // other spans. Each alternative captures into its own group:
+  // Each alternative captures into its own group:
   //   1 = bold, 2 = code, 3 = link text, 4 = link href.
+  //
+  // Alternatives are tried left to right at each position, so the BOLD branch
+  // wins over a link nested inside it: in `**[text](url)**` its inner `[^*]+`
+  // happily swallows the whole link. The bold branch therefore renders what it
+  // captured through `renderInline` again rather than as raw text — without
+  // that, `**[Desktop](https://…)**` reached the reader as literal markdown,
+  // URL and all.
+  //
+  // The recursion is one level deep by construction: the bold branch captures
+  // `[^*]+`, so the string handed back cannot contain `*` and cannot match the
+  // bold branch a second time.
+  //
+  // Code spans deliberately do NOT recurse — a `` `**x**` `` chip is supposed
+  // to show its asterisks.
   const pattern = /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
   let lastIndex = 0;
   let key = 0;
@@ -126,7 +138,7 @@ function renderInline(text: string): ReactNode[] {
     if (match[1] !== undefined) {
       out.push(
         <strong key={key++} className="font-medium text-text-primary">
-          {match[1]}
+          {renderInline(match[1])}
         </strong>,
       );
     } else if (match[2] !== undefined) {
