@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, FileCode, Info, Plus } from 'lucide-react';
 import type { MockServerSource } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
-import { getDesktopMockBridge } from '../../desktop/bridge';
 import { Modal } from '../../primitives/Modal';
 
 // Standalone "Create mock server" modal. Driven by `mocksCreateModalOpen`
@@ -23,10 +22,6 @@ export function CreateMockServerModal() {
   const close = useWorkspaceStore((s) => s.closeMocksCreateModal);
   const createMockServer = useWorkspaceStore((s) => s.createMockServer);
   const setActiveMockEndpoint = useWorkspaceStore((s) => s.setActiveMockEndpoint);
-
-  // When the Desktop mock bridge is present, external `$ref`s resolve fully
-  // in the Node main process; otherwise we're browser-only (web app).
-  const canResolveExternalRefs = getDesktopMockBridge()?.parseSpec != null;
 
   const [tab, setTab] = useState<'manual' | 'spec' | 'asset'>('manual');
   const [name, setName] = useState('');
@@ -282,14 +277,13 @@ export function CreateMockServerModal() {
                 Paste the spec verbatim. Endpoints are parsed and added to the mock as soon as you
                 create it.
               </p>
-              {specKind === 'openapi' && !canResolveExternalRefs && (
+              {specKind === 'openapi' && (
                 <div className="flex items-start gap-2 rounded-sm border border-border-subtle bg-card p-2">
                   <Info size={12} className="mt-0.5 shrink-0 text-text-muted" aria-hidden="true" />
                   <p className="text-[0.6875rem] text-text-dim">
-                    The web app resolves in-document <code className="font-mono">$ref</code>s only.
-                    External or remote references (to other files / URLs) aren&rsquo;t resolved here
-                    — open the mock in the Desktop app, CLI, or VS Code extension for full
-                    resolution.
+                    Spec parsing resolves in-document <code className="font-mono">$ref</code>s only,
+                    on every surface. A reference to another file or URL is reported as a warning
+                    and left unresolved — inline the definition into this document to mock it.
                   </p>
                 </div>
               )}

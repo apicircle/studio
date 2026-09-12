@@ -1,5 +1,11 @@
 name: CodeQL
 
+# The repo's one CodeQL analysis. Keep GitHub's CodeQL "default setup" off
+# (Settings → Code security): it used to run beside this file as a second
+# "CodeQL" workflow, and while it is on GitHub refuses results from an
+# advanced setup like this one. The matrix covers every language default
+# setup scanned, including the Python QA tooling under scripts/ and e2e/.
+
 on:
   push:
     branches: [main]
@@ -10,7 +16,7 @@ on:
 
 jobs:
   analyze:
-    name: Analyze
+    name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -19,15 +25,21 @@ jobs:
     # security-extended is heavy; bump the cap to absorb the full sweep
     # plus the autobuild step on a fresh runner cache.
     timeout-minutes: 60
+    strategy:
+      # One language failing must not cancel the other's upload.
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, python]
     steps:
       - uses: actions/checkout@v6
       - uses: github/codeql-action/init@v4
         with:
-          languages: javascript-typescript
+          languages: ${{ matrix.language }}
           # Inline config that skips dependency / build / coverage trees so
           # the analyzer only looks at code we wrote. Without these excludes
           # the database balloons with node_modules and the analyze step OOMs
-          # or times out on a 7 GB ubuntu-latest runner.
+          # or times out on a 7 GB ubuntu-latest runner. Every committed .py
+          # file lives under scripts/ or e2e/, so the same paths serve Python.
           config: |
             paths:
               - apps
@@ -51,4 +63,6 @@ jobs:
           queries: +security-and-quality
       - uses: github/codeql-action/analyze@v4
         with:
-          category: '/language:javascript-typescript'
+          # Same category as before for JavaScript/TypeScript, so its alert
+          # history carries over.
+          category: '/language:${{ matrix.language }}'

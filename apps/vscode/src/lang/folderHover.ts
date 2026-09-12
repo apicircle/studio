@@ -3,6 +3,7 @@ import type { Folder } from '@apicircle/shared';
 import { resolveInheritedAuth } from '@apicircle/core';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 import { uriEntityKind } from '../fs/uriKind';
+import { markdownCode, markdownText } from '../util/markdownText';
 
 // =============================================================================
 // HoverProvider for apicircle:// folder and request YAML documents — focused
@@ -18,6 +19,9 @@ import { uriEntityKind } from '../fs/uriKind';
 //     `inherit` or omits auth);
 //   - which descendant requests reference this folder via `auth: inherit`
 //     (best-effort count so the user knows what they're affecting).
+//
+// Folder names and auth types come from imports and git-synced workspaces, so
+// they go through the markdownText helpers and render as text and code.
 // =============================================================================
 
 const AUTH_LINE_RE = /^auth:\s*$/;
@@ -65,9 +69,9 @@ export class InheritAuthHoverProvider implements vscode.HoverProvider {
       });
       const source = findInheritSource(req.folderId, folders);
       const md = new vscode.MarkdownString();
-      md.appendMarkdown(`**Inherits → \`${resolved.type}\`**\n\n`);
+      md.appendMarkdown(`**Inherits → ${markdownCode(resolved.type)}**\n\n`);
       if (source) {
-        md.appendMarkdown(`Resolved from folder **${source.name}**.\n\n`);
+        md.appendMarkdown(`Resolved from folder **${markdownText(source.name)}**.\n\n`);
         md.appendMarkdown(`_Click the ◆ CodeLens above this line to open the source folder YAML._`);
       } else {
         md.appendMarkdown(
@@ -83,7 +87,7 @@ export class InheritAuthHoverProvider implements vscode.HoverProvider {
     const md = new vscode.MarkdownString();
     const declared = folder.auth?.type ?? 'none';
     if (declared !== 'inherit' && declared !== 'none') {
-      md.appendMarkdown(`**Descendants resolve to \`${declared}\`** at this folder.\n\n`);
+      md.appendMarkdown(`**Descendants resolve to ${markdownCode(declared)}** at this folder.\n\n`);
     } else {
       // Walk up from THIS folder's parent (skipping self) to preview the
       // effective auth when a descendant `inherit` request bubbles past it.
@@ -93,10 +97,10 @@ export class InheritAuthHoverProvider implements vscode.HoverProvider {
         folders,
       });
       const source = findInheritSource(folder.parentId, folders);
-      md.appendMarkdown(`**This folder declares \`${declared}\`.**\n\n`);
+      md.appendMarkdown(`**This folder declares ${markdownCode(declared)}.**\n\n`);
       if (source) {
         md.appendMarkdown(
-          `Descendant requests with \`auth: inherit\` resolve past this folder to **${source.name}** (\`${upstream.type}\`).`,
+          `Descendant requests with \`auth: inherit\` resolve past this folder to **${markdownText(source.name)}** (${markdownCode(upstream.type)}).`,
         );
       } else {
         md.appendMarkdown(

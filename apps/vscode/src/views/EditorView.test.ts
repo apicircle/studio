@@ -264,5 +264,39 @@ describe('EditorView', () => {
       const item = await view.getTreeItem({ kind: 'request', id: 'nonexistent' });
       expect(item.label).toBe('(deleted request)');
     });
+
+    it('renders hostile folder and request fields in tooltips as inert text', async () => {
+      const folderId = generateId();
+      const r1 = generateId();
+      const folder: Folder = {
+        ...makeFolder(folderId, '[f](https://evil.example) $(zap)'),
+        auth: { type: 'bearer', token: 'abc' },
+      };
+      const req = {
+        ...makeRequest(r1, 'Get **me** [r](command:foo)', folderId),
+        url: 'https://evil.example/[u](https://phish.example)',
+      };
+      seedWorkspace(apicircleDir, {
+        rootChildren: [{ kind: 'folder', id: folderId }],
+        folders: [folder],
+        requests: [req],
+      });
+      registerAndActivate();
+
+      const folderItem = await view.getTreeItem({ kind: 'folder', id: folderId });
+      const folderMd = folderItem.tooltip as { value: string; isTrusted?: unknown };
+      expect(folderMd.isTrusted).not.toBe(true);
+      expect(folderMd.value).toContain(
+        '**\\[f\\]\\(https\\:\\/\\/evil\\.example\\) \\$\\(zap\\)**\n\n1 request, 0 folders\n\nFolder-level auth: `bearer`',
+      );
+
+      const reqItem = await view.getTreeItem({ kind: 'request', id: r1 });
+      const reqMd = reqItem.tooltip as { value: string; isTrusted?: unknown };
+      expect(reqMd.isTrusted).not.toBe(true);
+      // The URL stays readable but can no longer become a clickable (phishing) link.
+      expect(reqMd.value).toBe(
+        '**Get \\*\\*me\\*\\* \\[r\\]\\(command\\:foo\\)**\n\n`GET` https\\:\\/\\/evil\\.example\\/\\[u\\]\\(https\\:\\/\\/phish\\.example\\)\n\n_Click ▶ to send, or open to edit._',
+      );
+    });
   });
 });

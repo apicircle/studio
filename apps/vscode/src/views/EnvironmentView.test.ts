@@ -312,6 +312,18 @@ describe('EnvironmentView', () => {
       expect(item.description).toContain('2 vars');
     });
 
+    it('renders a hostile env name in the tooltip as inert text', async () => {
+      const evil = '[e](https://evil.example) **b** $(zap)';
+      seedWorkspace(apicircleDir, [{ name: evil, variables: [] }]);
+      activate();
+      const item = await view.getTreeItem({ kind: 'env', name: evil });
+      const md = item.tooltip as { value: string; isTrusted?: unknown };
+      expect(md.isTrusted).not.toBe(true);
+      expect(md.value).toBe(
+        '**\\[e\\]\\(https\\:\\/\\/evil\\.example\\) \\*\\*b\\*\\* \\$\\(zap\\)**\n\n0 variables\n\n_Click to open the env YAML._',
+      );
+    });
+
     it('masks short encrypted values with just dots', async () => {
       seedWorkspace(apicircleDir, [
         {

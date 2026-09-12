@@ -30,7 +30,6 @@
     "clean": "turbo clean && rm -rf node_modules",
     "changeset": "changeset",
     "release": "changeset version && pnpm install --lockfile-only",
-    "release:publish": "changeset publish",
     "release:installers": "node scripts/release/buildDesktopInstallers.mjs",
     "icons": "node scripts/render-icons.mjs",
     "prepare": "husky"

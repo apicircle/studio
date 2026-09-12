@@ -1142,6 +1142,89 @@ describe('GitHubClient.getBinaryContents', () => {
   });
 });
 
+describe('GitHubClient — Contents API path containment', () => {
+  // A Contents API path is built from ids read out of a collaborator-written
+  // workspace.json. `encodeURIComponent` leaves `.` and `..` intact, and the
+  // renderer's WHATWG fetch collapses dot segments, so an unchecked `..` would
+  // re-aim the authenticated call at another repository or API route.
+  const hostilePaths = [
+    '.apicircle/workspace-ws1/attachments/../../../../../../victim/priv/contents/.env',
+    '.apicircle/workspace-ws1/attachments/..',
+    '.apicircle/./registry.json',
+    '.apicircle//registry.json',
+    '/.apicircle/registry.json',
+    '.apicircle/registry.json/',
+    '',
+    '.apicircle/workspace-ws1/attachments/%2e%2e',
+    '.apicircle/workspace-ws1/attachments/%2E',
+    '.apicircle/workspace-ws1/attachments/..%2F..%2Fuser',
+    '.apicircle/workspace-ws1/attachments/..\\..\\x',
+  ];
+
+  function fileResponse(): Response {
+    return jsonResponse({
+      type: 'file',
+      path: 'p',
+      sha: 's',
+      size: 0,
+      content: '',
+      encoding: 'base64',
+    });
+  }
+
+  it.each(hostilePaths)('getContents refuses %j without calling GitHub', async (repoPath) => {
+    const fetchImpl = vi.fn(async () => fileResponse());
+    const client = new GitHubClient({ fetchImpl });
+    await expect(client.getContents('tok', 'me', 'api', repoPath, 'main')).rejects.toThrow(
+      /^Refusing repository path/,
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it.each(hostilePaths)('getBinaryContents refuses %j without calling GitHub', async (repoPath) => {
+    const fetchImpl = vi.fn(async () => fileResponse());
+    const client = new GitHubClient({ fetchImpl });
+    await expect(client.getBinaryContents('tok', 'me', 'api', repoPath, 'main')).rejects.toThrow(
+      /^Refusing repository path/,
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it.each(hostilePaths)('putContents refuses %j without calling GitHub', async (repoPath) => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ commit: { sha: 'c' }, content: { sha: 'b' } }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    await expect(
+      client.putContents('tok', 'me', 'api', repoPath, { message: 'm', contentBase64: '' }),
+    ).rejects.toThrow(/^Refusing repository path/);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('keeps segments that merely contain dots or a stray percent sign', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () => fileResponse());
+    const client = new GitHubClient({ fetchImpl });
+    await client.getContents('tok', 'me', 'api', '.apicircle/a..b/.hidden/100%.txt', 'main');
+    expect((fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe(
+      'https://api.github.com/repos/me/api/contents/.apicircle/a..b/.hidden/100%25.txt?ref=main',
+    );
+  });
+
+  it('putContents still writes a nested path encoded segment by segment', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({ commit: { sha: 'c' }, content: { sha: 'b' } }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    await client.putContents('tok', 'me', 'api', '.apicircle/workspace-ws 1/workspace.json', {
+      message: 'm',
+      contentBase64: '',
+    });
+    expect((fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe(
+      'https://api.github.com/repos/me/api/contents/.apicircle/workspace-ws%201/workspace.json',
+    );
+  });
+});
+
 describe('GitHubClient — issue/PR comments', () => {
   it('listIssueComments GETs the comments and returns normalized summaries', async () => {
     const fetchImpl: typeof fetch = vi.fn(async () =>

@@ -195,6 +195,87 @@ describe('EnvironmentHoverProvider', () => {
     expect(r).toBeUndefined();
   });
 
+  it('renders an ordinary plaintext variable exactly as before', async () => {
+    const provider = new EnvironmentHoverProvider(makeBridge({ synced: baseSynced }));
+    const r = await provider.provideHover(
+      makeDoc(Uri.parse('apicircle://x/environments/prod.yaml'), ['name: prod', '- key: API_BASE']),
+      pos(1, 8),
+      fakeToken,
+    );
+    const md = (r as vscode.Hover).contents[0] as vscode.MarkdownString;
+    expect(md.value).toBe(
+      '**`API_BASE`** *(in env `prod`)*\n\n📝 Plaintext value: `https://api.prod`\n\n✅ Resolved from this env (active environment).\n\n',
+    );
+  });
+
+  // Environment names, secret-slot labels and values arrive from Postman
+  // imports and git-synced workspaces: each must render as literal code, never
+  // as a command link, formatting, or a theme icon.
+  it('renders a hostile env name and value as inert code in an untrusted hover', async () => {
+    const evilEnv = 'prod`[x](command:foo)`';
+    const synced = {
+      secretKeys: {},
+      environments: {
+        items: {
+          [evilEnv]: {
+            name: evilEnv,
+            variables: [{ key: 'API_BASE', value: '`[v](command:foo)` **b** $(zap)' }],
+          },
+        },
+        activeName: evilEnv,
+        priorityOrder: [{ kind: 'local', name: evilEnv }],
+      },
+    };
+    const provider = new EnvironmentHoverProvider(makeBridge({ synced }));
+    const r = await provider.provideHover(
+      makeDoc(Uri.parse('apicircle://x/environments/prod.yaml'), [
+        `name: ${evilEnv}`,
+        '- key: API_BASE',
+      ]),
+      pos(1, 8),
+      fakeToken,
+    );
+    const md = (r as vscode.Hover).contents[0] as vscode.MarkdownString;
+    expect(md.isTrusted).not.toBe(true);
+    expect(md.supportThemeIcons).not.toBe(true);
+    expect(md.value).toBe(
+      '**`API_BASE`** *(in env `` prod`[x](command:foo)` ``)*\n\n' +
+        '📝 Plaintext value: `` `[v](command:foo)` **b** $(zap) ``\n\n' +
+        '✅ Resolved from this env (active environment).\n\n',
+    );
+  });
+
+  it('renders a hostile slot label and masking env name as inert code', async () => {
+    const evilStg = 'stg`[m](command:foo)`';
+    const synced = {
+      secretKeys: {
+        'slot-1': { id: 'slot-1', label: 'Prod `x` [l](command:foo)', createdAt: '2026-01-01' },
+      },
+      environments: {
+        items: {
+          prod: baseSynced.environments.items.prod,
+          [evilStg]: { name: evilStg, variables: [{ key: 'TOKEN', value: 'x' }] },
+        },
+        activeName: evilStg,
+        priorityOrder: [
+          { kind: 'local', name: evilStg },
+          { kind: 'local', name: 'prod' },
+        ],
+      },
+    };
+    const provider = new EnvironmentHoverProvider(makeBridge({ synced }));
+    const r = await provider.provideHover(
+      makeDoc(Uri.parse('apicircle://x/environments/prod.yaml'), ['name: prod', '- key: TOKEN']),
+      pos(1, 8),
+      fakeToken,
+    );
+    const md = (r as vscode.Hover).contents[0] as vscode.MarkdownString;
+    expect(md.isTrusted).not.toBe(true);
+    expect(md.supportThemeIcons).not.toBe(true);
+    expect(md.value).toContain('Slot label: ``Prod `x` [l](command:foo)``\n\n');
+    expect(md.value).toContain('higher-priority env(s): `` stg`[m](command:foo)` ``.');
+  });
+
   // Avoid `vi.fn()` import warning
   void vi;
 });

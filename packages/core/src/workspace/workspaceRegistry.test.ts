@@ -6,6 +6,7 @@ import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
 import {
   REGISTRY_FILE,
   WORKSPACE_DIR_PREFIX,
+  childPathWithin,
   defaultApicircleRoot,
   resolveApicircleRoot,
   deleteWorkspaceById,
@@ -112,6 +113,70 @@ describe('resolveApicircleRoot', () => {
 describe('workspaceDirFor', () => {
   it('joins root + workspaces/ + workspaceId', () => {
     expect(workspaceDirFor('/r', 'ws-a')).toBe(path.join('/r', `${WORKSPACE_DIR_PREFIX}ws-a`));
+  });
+
+  it('keeps accepting the id shapes every surface mints', () => {
+    const uuid = '8f14e45f-ceea-467a-9575-6d8f0b2c1a3e';
+    expect(workspaceDirFor('/r', uuid)).toBe(path.join('/r', `${WORKSPACE_DIR_PREFIX}${uuid}`));
+    expect(workspaceDirFor('/r', 'imported-folder-0123456789abcdef')).toBe(
+      path.join('/r', `${WORKSPACE_DIR_PREFIX}imported-folder-0123456789abcdef`),
+    );
+  });
+
+  // A registry id is read from `registry.json`, which for a git-folder
+  // workspace is a file the repo commits. `workspace-../../x` would otherwise
+  // normalise straight out of the root.
+  it.each([
+    '../../../home/victim/.apicircle/workspace-abc',
+    'a/../../b',
+    '..\\..\\x',
+    '/etc',
+    'C:\\x',
+    '..%2f',
+    '',
+  ])('refuses the id %j', (id) => {
+    expect(() => workspaceDirFor('/r', id)).toThrow(/Unsafe workspace id/);
+  });
+});
+
+describe('childPathWithin', () => {
+  it('joins a single child segment under the root', () => {
+    expect(childPathWithin('/r', 'workspace-ws-a')).toBe(path.join('/r', 'workspace-ws-a'));
+  });
+
+  it.each(['..', '../x', 'a/../../b', path.resolve('/elsewhere/x'), '.', 'a/b'])(
+    'refuses %j because it does not resolve to a direct child of the root',
+    (segment) => {
+      expect(() => childPathWithin('/r', segment)).toThrow(/is not directly inside/);
+    },
+  );
+});
+
+describe('fs helpers refuse a traversal id before touching disk', () => {
+  const hostile = '../escaped';
+
+  it('loadWorkspaceById', async () => {
+    await expect(loadWorkspaceById(root, hostile)).rejects.toThrow(/Unsafe workspace id/);
+  });
+
+  it('saveWorkspaceById writes nothing outside the root', async () => {
+    await expect(
+      saveWorkspaceById(root, hostile, { synced: makeSynced(), local: makeLocal() }),
+    ).rejects.toThrow(/Unsafe workspace id/);
+    await expect(fs.access(path.join(root, '..', 'escaped'))).rejects.toThrow();
+  });
+
+  it('deleteWorkspaceById leaves a sibling of the root untouched', async () => {
+    const sibling = path.join(root, '..', `${path.basename(root)}-sibling`);
+    await fs.mkdir(sibling, { recursive: true });
+    try {
+      await expect(deleteWorkspaceById(root, `../${path.basename(root)}-sibling`)).rejects.toThrow(
+        /Unsafe workspace id/,
+      );
+      await expect(fs.access(sibling)).resolves.toBeUndefined();
+    } finally {
+      await fs.rm(sibling, { recursive: true, force: true });
+    }
   });
 });
 

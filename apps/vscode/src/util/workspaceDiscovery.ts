@@ -1,7 +1,7 @@
 import type * as vscode from 'vscode';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { WORKSPACE_DIR } from '@apicircle/core';
+import { WORKSPACE_DIR, isSafePathId, unsafePathIdMessage } from '@apicircle/core';
 import {
   resolveApicircleRoot,
   REGISTRY_FILE,
@@ -87,7 +87,8 @@ export function discoverWorkspaces(
     }
 
     for (const entry of registry.workspaces) {
-      const wsDir = workspaceDirFor(apicircleRoot, entry.id);
+      const wsDir = workspaceDirForEntry(apicircleRoot, entry.id, registryPath);
+      if (!wsDir || !staysInsideRoot(apicircleRoot, wsDir, registryPath)) continue;
       const wsJsonPath = path.join(wsDir, 'workspace.json');
       if (fs.existsSync(wsJsonPath)) {
         workspaces.push({
@@ -107,6 +108,51 @@ export function discoverWorkspaces(
   }
 
   return { workspaces, foldersWithoutWorkspace };
+}
+
+/**
+ * The `workspace-<id>/` directory for a registry entry, or null when the
+ * entry has to be skipped. Registry ids are untrusted — a git-folder registry
+ * is a file the opened repo commits — and `workspaceDirFor` throws for an id
+ * that is not a single safe segment. Skipping with a warning keeps one bad
+ * entry from taking the rest of discovery down with it.
+ */
+function workspaceDirForEntry(
+  apicircleRoot: string,
+  id: unknown,
+  registryPath: string,
+): string | null {
+  if (!isSafePathId(id)) {
+    console.warn(
+      `[apicircle] Skipping a workspace listed in ${registryPath}: ${unsafePathIdMessage('workspace id', id)}`,
+    );
+    return null;
+  }
+  return workspaceDirFor(apicircleRoot, id);
+}
+
+/**
+ * A repo can commit `.apicircle/workspace-<id>` as a symlink (a junction on
+ * Windows) to anywhere on the machine, and edits made in the API Circle views
+ * would then be written through it. Resolve both ends and require the
+ * workspace dir to stay a direct child of the repo's `.apicircle/`. A dir
+ * that doesn't exist simply isn't a workspace, so that case is not warned
+ * about.
+ */
+function staysInsideRoot(apicircleRoot: string, wsDir: string, registryPath: string): boolean {
+  let realRoot: string;
+  let realDir: string;
+  try {
+    realRoot = fs.realpathSync.native(apicircleRoot);
+    realDir = fs.realpathSync.native(wsDir);
+  } catch {
+    return false;
+  }
+  if (path.dirname(realDir) === realRoot) return true;
+  console.warn(
+    `[apicircle] Skipping ${wsDir} listed in ${registryPath}: it resolves outside ${apicircleRoot} (to ${realDir}).`,
+  );
+  return false;
 }
 
 /**
@@ -222,7 +268,8 @@ export function discoverRegistryWorkspaces(root?: string): DiscoveredWorkspace[]
 
   const results: DiscoveredWorkspace[] = [];
   for (const entry of registry.workspaces) {
-    const wsDir = workspaceDirFor(apicircleRoot, entry.id);
+    const wsDir = workspaceDirForEntry(apicircleRoot, entry.id, registryPath);
+    if (!wsDir) continue;
     const wsJsonPath = path.join(wsDir, 'workspace.json');
     if (fs.existsSync(wsJsonPath)) {
       results.push({

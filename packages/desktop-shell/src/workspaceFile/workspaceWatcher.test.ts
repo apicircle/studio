@@ -253,6 +253,7 @@ describe('WorkspaceWatcher — null-filename inotify events (loaded Linux CI)', 
     handleRootEvent(filename: string | null): void;
     scheduleEmit(target: string): void;
     rescanWorkspaceDirs(): void;
+    dirWatchers: Map<string, unknown>;
   }
 
   function internalsOf(w: WorkspaceWatcher): WatcherInternals {
@@ -286,6 +287,36 @@ describe('WorkspaceWatcher — null-filename inotify events (loaded Linux CI)', 
     internals.handleDirEvent('ws-1', 'change', 'workspace.local.json');
 
     expect(scheduled).not.toContain('ws-1');
+  });
+
+  it('keeps watching the other workspace dirs when one dir name is not a usable id', async () => {
+    // Someone (not Studio — every surface mints UUID-shaped ids) leaves a
+    // `workspace-<junk>` folder under the root. The core path helpers refuse
+    // that id; the watcher must log it and carry on with the real dirs.
+    await fs.mkdir(path.join(workspacesRoot, 'workspace-bad%id'), { recursive: true });
+    await saveToFile(workspaceDirFor(workspacesRoot, 'ws-2'), {
+      synced: makeSynced('ws-2'),
+      local: makeLocal('ws-2'),
+    });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    internalsOf(watcher).rescanWorkspaceDirs();
+
+    const watched = internalsOf(watcher).dirWatchers;
+    expect(watched.has('ws-2')).toBe(true);
+    expect(watched.has('bad%id')).toBe(false);
+    expect(errors).toHaveBeenCalledWith(
+      '[workspaceWatcher] could not watch dir for bad%id',
+      expect.objectContaining({ message: expect.stringMatching(/Unsafe workspace id/) }),
+    );
+
+    // A fresh watcher starting over the same root must not throw either.
+    const second = new WorkspaceWatcher(manager);
+    try {
+      expect(() => second.start()).not.toThrow();
+    } finally {
+      second.stop();
+    }
   });
 
   it('root handler schedules a registry emit when inotify omits the filename', () => {

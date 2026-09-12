@@ -236,5 +236,111 @@ describe('MockHoverProvider', () => {
     expect(r).toBeUndefined();
   });
 
+  it('resolves the mock from the ?id= query the FS provider puts on mock URIs', async () => {
+    const p = new MockHoverProvider(makeBridge(mockShape), makeController(null));
+    const r = await p.provideHover(
+      makeDoc(Uri.parse('apicircle://x/mocks/Pet-Store.yaml?id=m1'), ['name: Pet Store']),
+      pos(0, 5),
+      fakeToken,
+    );
+    const md = (r as vscode.Hover).contents[0] as vscode.MarkdownString;
+    expect(md.value).toBe(
+      '🧪 **Pet Store** · 1 endpoint\n\n◦ Idle — use the **▶ Start Mock** CodeLens above to launch.\n',
+    );
+  });
+
+  it('renders an ordinary endpoint exactly as before', async () => {
+    const p = new MockHoverProvider(makeBridge(mockShape), makeController(null));
+    const r = await p.provideHover(
+      makeDoc(Uri.parse('apicircle://x/mocks/m1.yaml'), [
+        '  - id: e1',
+        '    method: GET',
+        '    pathPattern: /pets',
+      ]),
+      pos(2, 20),
+      fakeToken,
+    );
+    const md = (r as vscode.Hover).contents[0] as vscode.MarkdownString;
+    expect(md.value).toBe(
+      '📍 **GET** `/pets` · list pets\n\nList the pets\n\nDefault response: **200**\n\nResponse rules: 1 (edit in the desktop app)\n',
+    );
+  });
+
+  // Mock names come from an imported spec's title and endpoint fields from its
+  // operations, so each renders as text or code, never as a link, formatting,
+  // or a theme icon.
+  const hostileMock = {
+    m1: {
+      id: 'm1',
+      name: 'Pets [Start](command:workbench.extensions.installExtension?%22evil.ext%22) **b** $(zap)',
+      source: { kind: 'manual' },
+      endpoints: [
+        {
+          id: 'e1',
+          method: 'GET',
+          pathPattern: '/p`[x](command:foo)`',
+          name: '[n](https://evil.example)',
+          description: 'Try **this** [d](command:foo)\n\nsecond `para`',
+          defaultResponse: { status: 200 },
+          responseRules: [],
+        },
+      ],
+      defaultPort: 3000,
+    },
+  };
+
+  it('renders a hostile mock name as inert text in an untrusted hover', async () => {
+    const p = new MockHoverProvider(makeBridge(hostileMock), makeController(null));
+    const r = await p.provideHover(
+      makeDoc(Uri.parse('apicircle://x/mocks/m1.yaml'), ['name: Pets']),
+      pos(0, 5),
+      fakeToken,
+    );
+    const md = (r as vscode.Hover).contents[0] as vscode.MarkdownString;
+    expect(md.isTrusted).not.toBe(true);
+    expect(md.supportThemeIcons).not.toBe(true);
+    expect(md.value).toContain(
+      '🧪 **Pets \\[Start\\]\\(command\\:workbench\\.extensions\\.installExtension\\?\\%22evil\\.ext\\%22\\) \\*\\*b\\*\\* \\$\\(zap\\)** · 1 endpoint\n\n',
+    );
+  });
+
+  it('renders hostile endpoint fields as inert text and code', async () => {
+    const p = new MockHoverProvider(makeBridge(hostileMock), makeController(null));
+    const r = await p.provideHover(
+      makeDoc(Uri.parse('apicircle://x/mocks/m1.yaml'), [
+        '  - id: e1',
+        '    method: GET',
+        '    pathPattern: /p`[x](command:foo)`',
+      ]),
+      pos(2, 20),
+      fakeToken,
+    );
+    const md = (r as vscode.Hover).contents[0] as vscode.MarkdownString;
+    expect(md.isTrusted).not.toBe(true);
+    expect(md.supportThemeIcons).not.toBe(true);
+    expect(md.value).toBe(
+      '📍 **GET** `` /p`[x](command:foo)` `` · \\[n\\]\\(https\\:\\/\\/evil\\.example\\)\n\n' +
+        'Try \\*\\*this\\*\\* \\[d\\]\\(command\\:foo\\)\n\nsecond \\`para\\`\n\n' +
+        'Default response: **200**\n\n',
+    );
+  });
+
+  it('keeps a hostile defaultPort value inside its code span', async () => {
+    const p = new MockHoverProvider(makeBridge(mockShape), makeController(null));
+    const r = await p.provideHover(
+      makeDoc(Uri.parse('apicircle://x/mocks/m1.yaml'), [
+        'defaultPort: 1`[p](https://evil.example)`',
+      ]),
+      pos(0, 14),
+      fakeToken,
+    );
+    const md = (r as vscode.Hover).contents[0] as vscode.MarkdownString;
+    expect(md.isTrusted).not.toBe(true);
+    expect(md.supportThemeIcons).not.toBe(true);
+    expect(md.value).toContain(
+      'start will bind to `` http://localhost:1`[p](https://evil.example)` ``. Conflict',
+    );
+  });
+
   void vi;
 });

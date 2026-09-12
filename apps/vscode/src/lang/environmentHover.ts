@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 import { uriEntityKind } from '../fs/uriKind';
+import { markdownCode } from '../util/markdownText';
 
 // =============================================================================
 // Hover provider for apicircle-environment YAML documents.
@@ -13,6 +14,10 @@ import { uriEntityKind } from '../fs/uriKind';
 // Gap C — replaces the prior "no hover" experience. The Set Active / Delete
 // CodeLens (environmentCodeLens.ts) plus this hover round out the env IDE
 // surface for Phase 2.
+//
+// Environment names, slot labels and values come from imports and git-synced
+// workspaces, so the hover is untrusted markdown without theme icons, and each
+// value is a code span that no backtick inside it can close.
 // =============================================================================
 
 const KEY_LINE_RE = /^(\s*-\s*)?key:\s*([A-Za-z0-9_.-]+)\s*$/;
@@ -46,21 +51,21 @@ export class EnvironmentHoverProvider implements vscode.HoverProvider {
     const variable = env.variables.find((v) => v.key === key);
     if (!variable) return undefined;
 
-    const md = new vscode.MarkdownString(undefined, true);
-    md.appendMarkdown(`**\`${key}\`** *(in env \`${envName}\`)*\n\n`);
+    const md = new vscode.MarkdownString();
+    md.appendMarkdown(`**${markdownCode(key)}** *(in env ${markdownCode(envName)})*\n\n`);
 
     if (variable.encrypted) {
       const slotId = variable.secretKeyId ?? '(unbound)';
-      md.appendMarkdown(`🔒 **Encrypted** · secret slot \`${slotId}\`\n\n`);
+      md.appendMarkdown(`🔒 **Encrypted** · secret slot ${markdownCode(slotId)}\n\n`);
       const secretKeys = state.synced.secretKeys ?? {};
       const slot = slotId !== '(unbound)' ? secretKeys[slotId] : undefined;
       if (slot) {
-        md.appendMarkdown(`Slot label: \`${slot.label}\`\n\n`);
+        md.appendMarkdown(`Slot label: ${markdownCode(slot.label)}\n\n`);
       } else if (slotId !== '(unbound)') {
         md.appendMarkdown(`⚠️ Slot id not found in \`secretKeys\` — vault entry missing.\n\n`);
       }
     } else {
-      md.appendMarkdown(`📝 Plaintext value: \`${truncate(variable.value, 80)}\`\n\n`);
+      md.appendMarkdown(`📝 Plaintext value: ${markdownCode(truncate(variable.value, 80))}\n\n`);
     }
 
     // Source: this env, plus mask warnings. priorityOrder holds EnvPriorityRef —
@@ -81,7 +86,7 @@ export class EnvironmentHoverProvider implements vscode.HoverProvider {
     if (masks.length > 0) {
       md.appendMarkdown(
         `⚠️ **Masked** at request-send time by higher-priority env(s): ${masks
-          .map((n) => `\`${n}\``)
+          .map((n) => markdownCode(n))
           .join(', ')}.\n\n`,
       );
     } else {
@@ -98,7 +103,6 @@ export class EnvironmentHoverProvider implements vscode.HoverProvider {
       }
     }
 
-    md.isTrusted = true;
     return new vscode.Hover(md, document.lineAt(position.line).range);
   }
 }

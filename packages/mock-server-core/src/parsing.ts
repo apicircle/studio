@@ -4,8 +4,8 @@
 // runtime (Hono node-server, port finder) or swagger-parser. Import this
 // from browser/renderer code (the web + desktop UI in `@apicircle/ui-
 // components`); import the package root (`index.ts`) from Node surfaces
-// (CLI, MCP, Desktop main, VS Code host) to get full external-`$ref`
-// resolution via swagger-parser.
+// (CLI, MCP, Desktop main, VS Code host) to resolve `$ref`s with
+// swagger-parser instead. Either way, only in-document refs resolve.
 //
 // Subpath: `@apicircle/mock-server-core/parsing`.
 

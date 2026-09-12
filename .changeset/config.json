@@ -7,11 +7,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": [
-    "@apicircle/web",
-    "@apicircle/desktop",
-    "@apicircle/example-mock-server",
-    "@apicircle/mcp-server",
-    "@apicircle/cli"
-  ]
+  "ignore": ["@apicircle/web", "@apicircle/desktop", "@apicircle/example-mock-server"]
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -137,6 +137,96 @@ describe('discoverWorkspaces', () => {
     const r = discoverWorkspaces([makeFolder('half-baked', dir)]);
     expect(r.workspaces).toEqual([]);
     expect(r.foldersWithoutWorkspace).toHaveLength(1);
+  });
+
+  // The registry below is a file the opened repo commits, so its ids are
+  // untrusted. `workspace-<id>` must stay a direct child of the repo's
+  // `.apicircle/`, otherwise edits in the API Circle views would rewrite a
+  // workspace.json somewhere else on the machine.
+  describe('with a hostile repo-committed registry', () => {
+    function writeRegistry(apicircleRoot: string, ids: unknown[]): void {
+      fs.mkdirSync(apicircleRoot, { recursive: true });
+      fs.writeFileSync(
+        path.join(apicircleRoot, 'registry.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          activeWorkspaceId: null,
+          workspaces: ids.map((id) => ({ id, name: 'API', createdAt: 't', lastOpenedAt: 't' })),
+        }),
+      );
+    }
+
+    function seedWorkspace(dir: string): void {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'workspace.json'), '{}');
+    }
+
+    it('skips (and warns about) an id that climbs out of .apicircle/', () => {
+      const dir = tmpDir();
+      const victim = tmpDir();
+      cleanup.push(dir, victim);
+      // A real workspace.json the traversal id would otherwise resolve to.
+      seedWorkspace(path.join(victim, '.apicircle', 'workspace-abc'));
+      const apicircleRoot = path.join(dir, '.apicircle');
+      const target = path.join(victim, '.apicircle', 'workspace-abc');
+      // `workspace-` + `../` forms the segment `workspace-..`, so one extra
+      // `..` pops it before the relative walk to the target begins.
+      const hostileId = `../../${path.relative(apicircleRoot, target)}`;
+      expect(path.join(apicircleRoot, `workspace-${hostileId}`)).toBe(target);
+      writeRegistry(apicircleRoot, [hostileId]);
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const r = discoverWorkspaces([makeFolder('hostile', dir)]);
+
+      expect(r.workspaces).toEqual([]);
+      expect(r.foldersWithoutWorkspace.map((f) => f.name)).toEqual(['hostile']);
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/Unsafe workspace id/));
+    });
+
+    it('keeps the legitimate entries next to a hostile one', () => {
+      const dir = tmpDir();
+      cleanup.push(dir);
+      const apicircleRoot = path.join(dir, '.apicircle');
+      seedWorkspace(path.join(apicircleRoot, 'workspace-ws-good'));
+      writeRegistry(apicircleRoot, ['..\\..\\x', 42, 'ws-good']);
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const r = discoverWorkspaces([makeFolder('mixed', dir)]);
+
+      expect(r.workspaces.map((w) => w.id)).toEqual(['ws-good']);
+      expect(warn).toHaveBeenCalledTimes(2);
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/Unsafe workspace id \(number\)/));
+    });
+
+    it('skips a workspace dir that is a link out of the repo', () => {
+      const dir = tmpDir();
+      const elsewhere = tmpDir();
+      cleanup.push(dir, elsewhere);
+      seedWorkspace(elsewhere);
+      const apicircleRoot = path.join(dir, '.apicircle');
+      writeRegistry(apicircleRoot, ['ws-linked']);
+      // A junction needs no elevation on Windows; elsewhere the type is ignored.
+      fs.symlinkSync(elsewhere, path.join(apicircleRoot, 'workspace-ws-linked'), 'junction');
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const r = discoverWorkspaces([makeFolder('linked', dir)]);
+
+      expect(r.workspaces).toEqual([]);
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/resolves outside/));
+    });
+
+    it('quietly skips a listed id whose directory does not exist', () => {
+      const dir = tmpDir();
+      cleanup.push(dir);
+      writeRegistry(path.join(dir, '.apicircle'), ['ws-missing']);
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const r = discoverWorkspaces([makeFolder('ghost', dir)]);
+
+      expect(r.workspaces).toEqual([]);
+      expect(r.foldersWithoutWorkspace).toHaveLength(1);
+      expect(warn).not.toHaveBeenCalled();
+    });
   });
 });
 
@@ -328,6 +418,27 @@ describe('discoverRegistryWorkspaces', () => {
 
     const result = discoverRegistryWorkspaces(tmp);
     expect(result).toEqual([]);
+  });
+
+  it('skips (and warns about) a registry entry whose id would leave the root', () => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'apicircle-reg-'));
+    const outside = path.join(tmp, 'outside');
+    fs.mkdirSync(outside, { recursive: true });
+    fs.writeFileSync(path.join(outside, 'workspace.json'), '{}');
+    const root = path.join(tmp, 'root');
+    fs.mkdirSync(root, { recursive: true });
+    const registry = {
+      schemaVersion: 1,
+      activeWorkspaceId: null,
+      workspaces: [{ id: '../../outside', name: 'Escape', createdAt: 't', lastOpenedAt: 't' }],
+    };
+    fs.writeFileSync(path.join(root, 'registry.json'), JSON.stringify(registry));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    expect(discoverRegistryWorkspaces(root)).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringMatching(/Unsafe workspace id "\.\.\/\.\.\/outside"/),
+    );
   });
 
   it('discovers multiple workspaces, skipping missing ones', () => {

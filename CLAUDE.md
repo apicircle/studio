@@ -302,12 +302,15 @@ studio/
 ├── e2e/                   E2E suites — web/ + desktop/ (Playwright), mock/ (Hono
 │                            test backend), qa/ (Cowork manual-test runner)
 ├── scripts/               Build (icons, release binaries) + E2E coverage tooling
-└── .github/workflows/     CI: ci, codeql, e2e, release, desktop-release, deploy-web
+└── .github/workflows/     CI: ci, codeql, e2e, vscode, vscode-publish, desktop-release, deploy-web
 ```
 
 **Publishable npm packages** (`@apicircle/*`): `shared`, `core`,
-`mock-server-core`. MCP and CLI publishing moved to API Circle Lens. `git`, `ui-components`, and
-`desktop-shell` are workspace-private; `apps/*` and `e2e/*` are private.
+`mock-server-core`. MCP and CLI publishing moved to API Circle Lens, and so did
+npm publishing itself: this repo has no npm workflow, and Lens publishes these
+three from its vendored snapshot (its `release-core.yml`). `git`,
+`ui-components`, and `desktop-shell` are workspace-private; `apps/*` and `e2e/*`
+are private.
 
 ---
 
@@ -533,17 +536,24 @@ Desktop: `pnpm --filter @apicircle/desktop build` then `… start`.
   `scripts/e2e_coverage_*`.
 - **CI workflows** (`.github/workflows/`):
   - `ci.yml` — lint / typecheck / unit tests (quality gates).
-  - `codeql.yml` — security analysis.
+  - `codeql.yml` — the repo's only CodeQL analysis (JavaScript/TypeScript and
+    Python, `security-and-quality`). Keep GitHub's CodeQL default setup off:
+    while it is on, GitHub refuses this workflow's results.
   - `e2e.yml` — Playwright + cross-browser smoke. The visual-baseline
     job is manual-dispatch only (baselines not yet committed).
-  - `release.yml` — changesets-driven npm publish of `@apicircle/*` packages.
-  - `desktop-release.yml` — Electron installers + `electron-updater` indexes.
+  - `vscode.yml` / `vscode-publish.yml` — the VS Code extension's quality
+    gates, and its Marketplace + Open VSX publish on pushes to `main`.
+  - `desktop-release.yml` — Electron installers + `electron-updater` indexes,
+    started by a pushed `v*` tag or a manual dispatch.
   - `deploy-web.yml` — builds `apps/web` and publishes to GitHub Pages on
     every push to `main`.
+  - No npm workflow: the Lens repo publishes the `@apicircle/*` packages. The
+    live-GitHub suite has no workflow either; it runs locally, on demand.
 - **Local CI runner** (`scripts/ci-local/run-ci.mjs`, `pnpm ci:local`) — a
   cross-platform Node orchestrator that reproduces the `ci`, `vscode`, `e2e`,
-  `codeql`, and `e2e-live-github` workflows locally, stage by stage, after
-  `pnpm install` + `pnpm build`. Reads `scripts/ci-local/.test.env`
+  and `codeql` workflows locally, stage by stage, after `pnpm install` +
+  `pnpm build`, and is the only runner for the opt-in live-GitHub suite.
+  Reads `scripts/ci-local/.test.env`
   (git-ignored) for the GitHub bot creds + a `CI_PLATFORM=windows|mac|ubuntu`
   switch that gates the platform-dependent desktop/VS Code E2E suites (xvfb on
   Linux). Heavy/destructive suites are opt-in. See

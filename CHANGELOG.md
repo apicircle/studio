@@ -25,6 +25,47 @@
 
 ## Unreleased
 
+### Security
+
+Three fixes from a full security audit of the codebase. Each closes a path that
+began with content somebody else wrote — an imported collection, a spec, a
+git-synced workspace — and ended somewhere it should never have reached.
+
+- **VS Code hovers no longer render workspace text as trusted markdown.** The
+  plan, environment, mock and folder hovers interpolated names, URLs, labels and
+  values straight into a trusted `MarkdownString`. VS Code turns
+  `[text](command:…)` in trusted markdown into a clickable command with no
+  allowlist, so a request named by whoever shared a Postman collection could run
+  an arbitrary VS Code command when the hover was clicked. The hovers are plain
+  untrusted markdown now, and every interpolated value goes through one escaping
+  helper that neutralises markdown syntax, closes backtick code spans safely, and
+  stops `$(icon)` substitution. Hover output for ordinary names is unchanged.
+
+- **Spec parsing no longer follows a `$ref` into a file or a URL.** A spec always
+  arrives as an in-memory string — pasted, stored as a spec asset, pulled from
+  git, or handed over by MCP or the CLI — so there is no base directory worth
+  trusting, and json-schema-ref-parser resolved a relative ref against the
+  process working directory: the customer's repo for the CLI, the install
+  directory for the Desktop app. A ref inside an `example` value was followed
+  too. Whatever it read was inlined into a mock response body or a collection
+  example, which git sync could then push. Both parser entry points now resolve
+  in-document (`#/…`) refs only, on every surface, and name each external ref in
+  a warning instead of fetching it. **This is a deliberate behaviour change:** a
+  multi-file spec whose relative refs happened to line up with the working
+  directory no longer resolves them — inline the definition to mock it.
+
+- **Workspace and attachment ids are validated before they become paths.** Each
+  becomes one segment of a repo path that the Git clients turn into a Contents
+  API URL carrying the user's token, and both are read out of files a collaborator
+  can write (`workspace.json`, `registry.json`). `encodeURIComponent` leaves `.`
+  and `..` intact and a browser's `fetch` collapses them, so an id like
+  `../../other/repo/contents` re-aimed an authenticated request at a different
+  repository. An id must now be a single safe segment wherever it becomes a path
+  or a directory, a document carrying an unsafe id is refused with a message
+  naming it, and the GitHub Contents client rejects any path with an empty, `.`
+  or `..` segment. Existing free-form ids — including slot ids with spaces — keep
+  working; only ids that could change a path's shape are refused.
+
 ### Changed
 
 - **Workspace sharing is withheld from v1.** The Link Workspace panel and
@@ -441,6 +482,27 @@
   surrounding form. `Input` gains an `invalid` prop that wires `aria-invalid`
   alongside the danger border. These primitives had no consumers, so nothing
   in-tree changes behaviour.
+
+### CI
+
+- **npm publishing moved to the Lens repo.** `release.yml` is gone, and with it
+  the `release:publish` (`changeset publish`) script and this repo's need for an
+  npm token. `@apicircle/shared`, `@apicircle/core` and
+  `@apicircle/mock-server-core` keep publishing at the versions set here: the
+  Lens repo publishes them from its vendored snapshot once a sync reaches its
+  `main`. The `v*` tag is now pushed by hand, and that push is what starts
+  Desktop Release. `release.yml` pushed its tag with the workflow token, and a
+  tag pushed that way starts no workflow, so every past Desktop Release run was
+  a manual dispatch anyway.
+- **One CodeQL.** The Actions list showed two workflows named "CodeQL":
+  `codeql.yml` and GitHub's default setup, idle since 2026-08-26. `codeql.yml`
+  is now the only one, and it also analyzes the Python QA tooling under
+  `scripts/` and `e2e/` — the one thing default setup scanned that it did not.
+- **`e2e-live-github.yml` is retired.** The live-GitHub suite still runs on
+  demand with `node scripts/ci-local/run-ci.mjs --only live-github`.
+- **`pnpm changeset` works again.** `.changeset/config.json` still ignored
+  `@apicircle/cli` and `@apicircle/mcp-server`, which left this repo for Lens,
+  and changesets rejects a config that names a package it cannot find.
 
 ## 1.3.0 - 2026-07-18
 

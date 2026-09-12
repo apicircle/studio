@@ -7,10 +7,12 @@
 //
 // Consumers (Desktop main / CLI / MCP / VS Code host / future hosted) call
 // `parseSourceToEndpoints` once when a MockServer is created or refreshed,
-// then `startMockServer` every time the user clicks Start. This entry uses
-// swagger-parser for full external-`$ref` resolution; browser/renderer code
-// imports the `@apicircle/mock-server-core/parsing` subpath instead, which
-// resolves in-document refs only and never pulls in the Node runtime.
+// then `startMockServer` every time the user clicks Start. This entry resolves
+// `$ref`s with swagger-parser; browser/renderer code imports the
+// `@apicircle/mock-server-core/parsing` subpath instead, which never pulls in
+// the Node runtime. Both resolve IN-DOCUMENT refs only — a spec arrives as an
+// in-memory string with no base directory to trust, so neither entry reads a
+// file or opens a connection for a ref (see `parsers/openapiNode.ts`).
 
 import type { MockServer, MockServerSource } from '@apicircle/shared';
 import type { Hono } from 'hono';
@@ -24,8 +26,8 @@ export { MockServerStartError } from './runtime/nodeAdapter';
 export type { BuildRouterOptions } from './handlers/buildRouter';
 export { openApiPathToHono } from './handlers/buildRouter';
 // The Node entry exposes the swagger-parser-backed OpenAPI parsers as the
-// canonical `parseOpenApiToEndpoints` / `parseOpenApiRequestBodies` so CLI /
-// MCP consumers get full external-reference resolution.
+// canonical `parseOpenApiToEndpoints` / `parseOpenApiRequestBodies`, so CLI /
+// MCP consumers get the same resolution the Desktop main process uses.
 export { parseOpenApiToEndpointsNode as parseOpenApiToEndpoints } from './parsers/openapiNode';
 export { parseOpenApiRequestBodiesNode as parseOpenApiRequestBodies } from './parsers/openapiNode';
 export type { ParseOpenApiRequestBodiesResult, OpenApiRequestBodySpec } from './parsers/openapi';
@@ -40,7 +42,7 @@ export { getFreePort, isPortFree } from './runtime/portFinder';
 export { buildRouter };
 
 /**
- * Dispatch the right parser for a `MockServerSource` (Node — full `$ref`
+ * Dispatch the right parser for a `MockServerSource` (Node — in-document `$ref`
  * resolution via swagger-parser). Returns the resolved `MockEndpoint[]`
  * along with any non-fatal warnings. The caller persists `endpoints` onto
  * `MockServer.endpoints`.

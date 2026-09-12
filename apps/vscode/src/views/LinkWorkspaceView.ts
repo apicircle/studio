@@ -3,6 +3,7 @@ import { sortVersionsDesc } from '@apicircle/core';
 import { BaseTreeView } from './BaseTreeView';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 import { ApicircleFsProvider } from '../fs/apicircleFsProvider';
+import { markdownCode, markdownText } from '../util/markdownText';
 
 // =============================================================================
 // Link Workspaces view.
@@ -178,10 +179,12 @@ export class LinkWorkspaceView extends BaseTreeView<LinkWorkspaceNode> {
         folder.auth !== undefined && folder.auth.type !== 'none' && folder.auth.type !== 'inherit';
       item.iconPath = new vscode.ThemeIcon(hasAuth ? 'key' : 'folder');
       item.description = hasAuth ? `auth: ${folder.auth!.type} (read-only)` : 'read-only';
+      // The linked snapshot is someone else's workspace: escape its folder
+      // fields so a crafted name renders as text, not a link.
       item.tooltip = new vscode.MarkdownString(
         hasAuth
-          ? `**${folder.name}**\n\nFolder-level auth: \`${folder.auth!.type}\`. Linked requests with \`auth: inherit\` pick this up.\n\n_Linked folders are read-only — edits happen in the source workspace._`
-          : `**${folder.name}**\n\nNo folder-level auth set. The \`inherit\` walk continues up the chain.\n\n_Linked folders are read-only._`,
+          ? `**${markdownText(folder.name)}**\n\nFolder-level auth: ${markdownCode(folder.auth!.type)}. Linked requests with \`auth: inherit\` pick this up.\n\n_Linked folders are read-only — edits happen in the source workspace._`
+          : `**${markdownText(folder.name)}**\n\nNo folder-level auth set. The \`inherit\` walk continues up the chain.\n\n_Linked folders are read-only._`,
       );
       item.contextValue = 'apicircleLinkedFolder';
       const link = state?.synced.linkedWorkspaces[node.linkId];

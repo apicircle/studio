@@ -136,5 +136,83 @@ describe('PlanHoverProvider', () => {
     expect(md.value).toContain('orphan reference');
   });
 
+  it('renders an ordinary request exactly as before', async () => {
+    const p = new PlanHoverProvider(makeBridge(baseState));
+    const r = await p.provideHover(
+      makeDoc(Uri.parse('apicircle://x/plans/p1.yaml'), ['  - requestId: req-1']),
+      pos(0, 16),
+      fakeToken,
+    );
+    const md = (r as vscode.Hover).contents[0] as vscode.MarkdownString;
+    expect(md.value).toBe(
+      '📩 **Login**\n\n`POST` `https://api.example.com/auth/login`\n\n*Plan step references this request — runPlan executes it inline.*',
+    );
+  });
+
+  // Request names, URLs and linked-workspace names arrive from imports and
+  // git-synced workspaces, so the hover renders them as text: a crafted value
+  // must not become a clickable command link, formatting, or a theme icon.
+  const hostileState = {
+    synced: {
+      collections: {
+        requests: {
+          'req-evil': {
+            id: 'req-evil',
+            name: 'Get users [docs](command:workbench.action.terminal.sendSequence?%7B%22text%22%3A%22x%22%7D) `tick` **bold** $(zap)',
+            method: 'GET',
+            url: 'https://x.example/`) [y](command:foo) $(zap)',
+          },
+        },
+      },
+      linkedWorkspaces: {
+        'ws-evil': { id: 'ws-evil', name: 'Shared ``[x](command:foo)``' },
+      },
+    },
+  };
+
+  it('renders a hostile request name and URL as inert text in an untrusted hover', async () => {
+    const p = new PlanHoverProvider(makeBridge(hostileState));
+    const r = await p.provideHover(
+      makeDoc(Uri.parse('apicircle://x/plans/p1.yaml'), ['  - requestId: req-evil']),
+      pos(0, 16),
+      fakeToken,
+    );
+    const md = (r as vscode.Hover).contents[0] as vscode.MarkdownString;
+    expect(md.isTrusted).not.toBe(true);
+    expect(md.supportThemeIcons).not.toBe(true);
+    expect(md.value).not.toContain('[docs](command:');
+    expect(md.value).toContain(
+      '📩 **Get users \\[docs\\]\\(command\\:workbench\\.action\\.terminal\\.sendSequence\\?\\%7B\\%22text\\%22\\%3A\\%22x\\%22\\%7D\\) \\`tick\\` \\*\\*bold\\*\\* \\$\\(zap\\)**\n\n',
+    );
+    // The URL keeps its code span; a fence longer than its backtick run stops it closing early.
+    expect(md.value).toContain('`GET` ``https://x.example/`) [y](command:foo) $(zap)``\n\n');
+  });
+
+  it('renders a hostile linked-workspace name inside a code span it cannot close', async () => {
+    const p = new PlanHoverProvider(makeBridge(hostileState));
+    const r = await p.provideHover(
+      makeDoc(Uri.parse('apicircle://x/plans/p1.yaml'), ['    linkedWorkspaceId: ws-evil']),
+      pos(0, 22),
+      fakeToken,
+    );
+    const md = (r as vscode.Hover).contents[0] as vscode.MarkdownString;
+    expect(md.isTrusted).not.toBe(true);
+    expect(md.supportThemeIcons).not.toBe(true);
+    expect(md.value).toContain('🔗 **Linked workspace** ``` Shared ``[x](command:foo)`` ```\n\n');
+  });
+
+  it('renders a hostile unknown request id inside a code span it cannot close', async () => {
+    const p = new PlanHoverProvider(makeBridge(baseState));
+    const r = await p.provideHover(
+      makeDoc(Uri.parse('apicircle://x/plans/p1.yaml'), ['  - requestId: `[x](command:foo)`']),
+      pos(0, 16),
+      fakeToken,
+    );
+    const md = (r as vscode.Hover).contents[0] as vscode.MarkdownString;
+    expect(md.isTrusted).not.toBe(true);
+    expect(md.supportThemeIcons).not.toBe(true);
+    expect(md.value).toContain('⚠️ **Unknown request id** `` `[x](command:foo)` `` — saving');
+  });
+
   void vi;
 });

@@ -61,9 +61,12 @@ makes the simple case scale.
   / `0` placeholder data — what's in the spec is what you get.
 - **CORS, on by default.** Browser-friendly out of the box, configurable when
   you need to lock it down.
-- **Strict $ref resolution.** OpenAPI parsing flows through
+- **Strict in-document $ref resolution.** OpenAPI parsing flows through
   [`@apidevtools/swagger-parser`](https://www.npmjs.com/package/@apidevtools/swagger-parser)
-  for compliant dereferencing — `$ref` chains, recursive schemas, file refs.
+  for compliant dereferencing — `$ref` chains and recursive schemas. A ref into
+  another file or a URL is never followed: a spec reaches the parser as a string
+  with no base directory to trust, so external refs are reported as warnings and
+  left in place.
 
 ## Install
 
@@ -90,11 +93,11 @@ const { endpoints, warnings } = await parseSourceToEndpoints({
 warnings.forEach((w) => console.warn(w));
 ```
 
-> **Browser use:** the package root pulls in swagger-parser (Node-oriented, for
-> full external-`$ref` resolution). For browser/renderer code, import the
-> `@apicircle/mock-server-core/parsing` subpath instead — same
-> `parseSourceToEndpoints` API, no Node runtime, and OpenAPI `$ref`s are
-> resolved in-document only (external refs are reported as warnings).
+> **Browser use:** the package root pulls in swagger-parser (Node-oriented). For
+> browser/renderer code, import the `@apicircle/mock-server-core/parsing` subpath
+> instead — same `parseSourceToEndpoints` API, no Node runtime. Both entry points
+> resolve OpenAPI `$ref`s in-document only and report external refs as warnings,
+> so the two differ in bundle weight, not behaviour.
 
 ### 2. Start the server
 
@@ -160,8 +163,8 @@ One entry per operation that declares a body: OpenAPI 3.x `requestBody` (a JSON
 media type preferred) and Swagger 2.0 `in: 'body'` parameters both reduce to the
 same `{ method, path, contentType, schema, required }` shape. Join it back to
 `parseSourceToEndpoints` by `(method, path)` for an operation's full contract.
-Same `$ref` contract as the endpoint parser — the Node root resolves external
-refs via swagger-parser; the `/parsing` subpath resolves in-document refs only.
+Same `$ref` contract as the endpoint parser — in-document refs only on both
+entry points, with external refs reported as warnings.
 
 ## Format support matrix
 

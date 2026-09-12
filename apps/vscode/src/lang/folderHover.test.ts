@@ -176,4 +176,85 @@ describe('InheritAuthHoverProvider', () => {
     expect(text).toContain('AncestorAuth');
     expect(text).toContain('bearer');
   });
+
+  // Folder names and auth types come from imports and git-synced workspaces;
+  // the hover shows them as text and code, never as links or formatting.
+  it('renders a hostile source-folder name on a request as inert text', async () => {
+    const wsId = '/test/.apicircle';
+    const reqId = 'req_x';
+    const bridge = makeBridge({
+      workspaceId: wsId,
+      requests: { [reqId]: { folderId: 'fChild', auth: { type: 'inherit' } } },
+      folders: {
+        fParent: {
+          id: 'fParent',
+          name: 'Auth [x](https://evil.example) **b** $(zap)',
+          parentId: null,
+          auth: { type: 'bearer', token: 'tk' },
+        },
+        fChild: { id: 'fChild', name: 'Users', parentId: 'fParent' },
+      },
+    });
+    const provider = new InheritAuthHoverProvider(bridge);
+    const uri = Uri.parse(`apicircle://${authority(wsId)}/requests/r.yaml?id=${reqId}`);
+    const hover = await provider.provideHover(
+      makeDoc(uri, ['name: X', 'auth:', '  type: inherit']),
+      position(1, 0),
+    );
+    const md = (hover as unknown as { contents: MarkdownString[] }).contents[0];
+    expect(md.isTrusted).not.toBe(true);
+    expect(md.supportThemeIcons).not.toBe(true);
+    expect(String(md.value)).toContain(
+      'Resolved from folder **Auth \\[x\\]\\(https\\:\\/\\/evil\\.example\\) \\*\\*b\\*\\* \\$\\(zap\\)**.',
+    );
+  });
+
+  it('renders a hostile auth type and ancestor name on a folder as inert code and text', async () => {
+    const wsId = '/test/.apicircle';
+    const bridge = makeBridge({
+      workspaceId: wsId,
+      requests: {},
+      folders: {
+        fEvil: {
+          id: 'fEvil',
+          name: 'E',
+          parentId: null,
+          auth: { type: 'x`[t](https://evil.example)`' },
+        },
+        fAnc: {
+          id: 'fAnc',
+          name: '[a](https://evil.example)',
+          parentId: null,
+          auth: { type: 'bearer', token: 'TK' },
+        },
+        fPass: { id: 'fPass', name: 'P', parentId: 'fAnc', auth: { type: 'inherit' } },
+      },
+    });
+    const provider = new InheritAuthHoverProvider(bridge);
+
+    const declaredHover = await provider.provideHover(
+      makeDoc(Uri.parse(`apicircle://${authority(wsId)}/folders/E.yaml?id=fEvil`), [
+        'name: E',
+        'auth:',
+      ]),
+      position(1, 0),
+    );
+    const declaredMd = (declaredHover as unknown as { contents: MarkdownString[] }).contents[0];
+    expect(String(declaredMd.value)).toContain(
+      '**Descendants resolve to `` x`[t](https://evil.example)` ``** at this folder.',
+    );
+
+    const passHover = await provider.provideHover(
+      makeDoc(Uri.parse(`apicircle://${authority(wsId)}/folders/P.yaml?id=fPass`), [
+        'name: P',
+        'auth:',
+        '  type: inherit',
+      ]),
+      position(1, 0),
+    );
+    const passMd = (passHover as unknown as { contents: MarkdownString[] }).contents[0];
+    expect(String(passMd.value)).toContain(
+      'resolve past this folder to **\\[a\\]\\(https\\:\\/\\/evil\\.example\\)** (`bearer`).',
+    );
+  });
 });

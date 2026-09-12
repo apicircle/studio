@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 import type { VsCodeMockController } from '../host/vscodeMockController';
 import { uriEntityKind } from '../fs/uriKind';
+import { markdownCode, markdownParagraphs, markdownText } from '../util/markdownText';
 
 // =============================================================================
 // HoverProvider for apicircle-mock YAML documents.
@@ -13,6 +14,11 @@ import { uriEntityKind } from '../fs/uriKind';
 //     picks a free port at start".
 //   • Hover on an endpoint summary `pathPattern: /pets` → endpoint's
 //     name + default status + responseRules count.
+//
+// Mock names come from an imported spec's title and endpoint fields from its
+// operations (and the port from the document text), so every hover here is
+// untrusted markdown without theme icons, and each value goes through the
+// markdownText helpers.
 // =============================================================================
 
 export class MockHoverProvider implements vscode.HoverProvider {
@@ -30,13 +36,12 @@ export class MockHoverProvider implements vscode.HoverProvider {
     if (uriEntityKind(document.uri) !== 'mock') return undefined;
 
     const lineText = document.lineAt(position.line).text;
-    const mockId = extractMockId(document.uri.path);
+    const mockId = extractMockId(document.uri);
     if (!mockId) return undefined;
 
     // name: <value>  → status panel
     if (/^name:\s*\S/.test(lineText)) {
-      const md = new vscode.MarkdownString(undefined, true);
-      md.isTrusted = true;
+      const md = new vscode.MarkdownString();
       const surface = this.bridge.activeWorkspace();
       if (!surface) return undefined;
       const state = await surface.read();
@@ -44,7 +49,7 @@ export class MockHoverProvider implements vscode.HoverProvider {
       if (!server) return undefined;
       const rt = await this.controller.runtime(mockId);
       md.appendMarkdown(
-        `🧪 **${server.name}** · ${server.endpoints.length} endpoint${server.endpoints.length === 1 ? '' : 's'}\n\n`,
+        `🧪 **${markdownText(server.name)}** · ${server.endpoints.length} endpoint${server.endpoints.length === 1 ? '' : 's'}\n\n`,
       );
       if (rt) {
         md.appendMarkdown(`▶ Running on \`http://localhost:${rt.port}\` (since ${rt.startedAt})\n`);
@@ -59,7 +64,7 @@ export class MockHoverProvider implements vscode.HoverProvider {
       /^\s+enabled:\s*(true|false)\s*$/.test(lineText) &&
       isInsideCorsBlock(document, position.line)
     ) {
-      const md = new vscode.MarkdownString(undefined, true);
+      const md = new vscode.MarkdownString();
       md.appendMarkdown(`🌐 **CORS** — controls cross-origin requests against this mock.\n\n`);
       md.appendMarkdown(
         `When \`true\`, the mock responds with \`Access-Control-Allow-Origin\` based on \`origins\`. When \`false\`, no CORS headers are emitted (browser-driven cross-origin clients will be blocked).\n\n`,
@@ -70,7 +75,7 @@ export class MockHoverProvider implements vscode.HoverProvider {
       return new vscode.Hover(md, document.lineAt(position.line).range);
     }
     if (/^\s+(?:origins|-)\s*[:-]/.test(lineText) && isInsideCorsBlock(document, position.line)) {
-      const md = new vscode.MarkdownString(undefined, true);
+      const md = new vscode.MarkdownString();
       md.appendMarkdown(`🌐 **CORS origins** — allowed \`Origin\` header values.\n\n`);
       md.appendMarkdown(
         `Empty list **with** \`enabled: true\` → reflect any Origin header (permissive). Non-empty list → only those Origins receive CORS headers. Empty list **with** \`enabled: false\` → no CORS at all.`,
@@ -81,7 +86,7 @@ export class MockHoverProvider implements vscode.HoverProvider {
     // bytes: <n>  → secret-safety projection note (P3R6-G3)
     const bytesMatch = /^\s+bytes:\s*(\d+)\s*$/.exec(lineText);
     if (bytesMatch) {
-      const md = new vscode.MarkdownString(undefined, true);
+      const md = new vscode.MarkdownString();
       const n = Number(bytesMatch[1]);
       md.appendMarkdown(`📏 **Source spec size**: ${n.toLocaleString()} bytes\n\n`);
       md.appendMarkdown(
@@ -94,7 +99,7 @@ export class MockHoverProvider implements vscode.HoverProvider {
     // defaultPort: <n>  → port semantics
     const portMatch = /^defaultPort:\s*(\S+)/.exec(lineText);
     if (portMatch) {
-      const md = new vscode.MarkdownString(undefined, true);
+      const md = new vscode.MarkdownString();
       const v = portMatch[1];
       if (v === 'null') {
         md.appendMarkdown(
@@ -102,7 +107,7 @@ export class MockHoverProvider implements vscode.HoverProvider {
         );
       } else {
         md.appendMarkdown(
-          `🔢 **Port** — start will bind to \`http://localhost:${v}\`. Conflict on an in-use port throws on start.`,
+          `🔢 **Port** — start will bind to ${markdownCode(`http://localhost:${v}`)}. Conflict on an in-use port throws on start.`,
         );
       }
       return new vscode.Hover(md, document.lineAt(position.line).range);
@@ -128,10 +133,14 @@ export class MockHoverProvider implements vscode.HoverProvider {
         ? (candidates.find((e) => e.method === expectedMethod) ?? candidates[0])
         : candidates[0];
       if (!ep) return undefined;
-      const md = new vscode.MarkdownString(undefined, true);
-      md.appendMarkdown(`📍 **${ep.method}** \`${ep.pathPattern}\` · ${ep.name}\n\n`);
-      if (ep.description) md.appendMarkdown(`${ep.description}\n\n`);
-      md.appendMarkdown(`Default response: **${ep.defaultResponse.status}**\n\n`);
+      const md = new vscode.MarkdownString();
+      md.appendMarkdown(
+        `📍 **${markdownText(ep.method)}** ${markdownCode(ep.pathPattern)} · ${markdownText(ep.name)}\n\n`,
+      );
+      if (ep.description) md.appendMarkdown(`${markdownParagraphs(ep.description)}\n\n`);
+      md.appendMarkdown(
+        `Default response: **${markdownText(String(ep.defaultResponse.status))}**\n\n`,
+      );
       if (ep.responseRules.length > 0) {
         md.appendMarkdown(`Response rules: ${ep.responseRules.length} (edit in the desktop app)\n`);
       }
@@ -141,8 +150,12 @@ export class MockHoverProvider implements vscode.HoverProvider {
   }
 }
 
-function extractMockId(uriPath: string): string | undefined {
-  const m = /\/mocks\/([^/]+)\.yaml$/.exec(uriPath);
+// The mock id rides in the URI query (`?id=<mockId>`); the path basename is the
+// name slug, so the path shape is only a fallback for URIs without a query id.
+function extractMockId(uri: vscode.Uri): string | undefined {
+  const fromQuery = new URLSearchParams(uri.query).get('id');
+  if (fromQuery) return fromQuery;
+  const m = /\/mocks\/([^/]+)\.yaml$/.exec(uri.path);
   return m ? m[1] : undefined;
 }
 

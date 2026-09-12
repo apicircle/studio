@@ -215,6 +215,24 @@ describe('MultiWorkspaceProvider.for', () => {
     // surfaces ENOENT) without binding to a specific message wording.
     await expect(scoped.read()).rejects.toThrow();
   });
+
+  it('refuses an id that would resolve outside the registry root', async () => {
+    const mwp = new MultiWorkspaceProvider(root);
+    await mwp.init();
+    expect(() => mwp.for('../elsewhere')).toThrow(/Unsafe workspace id/);
+    expect(() => mwp.for('a\\..\\..\\b')).toThrow(/Unsafe workspace id/);
+  });
+
+  it('the active provider refuses a traversal activeWorkspaceId in registry.json', async () => {
+    await saveRegistry(root, {
+      schemaVersion: 1,
+      activeWorkspaceId: '../elsewhere',
+      workspaces: [],
+    });
+    const mwp = new MultiWorkspaceProvider(root);
+    await mwp.init();
+    await expect(mwp.activeProvider().read()).rejects.toThrow(/Unsafe workspace id/);
+  });
 });
 
 describe('MultiWorkspaceProvider.setActive', () => {

@@ -3,6 +3,7 @@ import type { Folder, Request as ApiRequest } from '@apicircle/shared';
 import { BaseTreeView } from './BaseTreeView';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 import { ApicircleFsProvider } from '../fs/apicircleFsProvider';
+import { markdownCode, markdownText } from '../util/markdownText';
 
 // =============================================================================
 // EditorView — workspace folder + request tree backed by the active workspace's
@@ -64,10 +65,12 @@ export class EditorView extends BaseTreeView<EditorNode> {
         const countDesc = total === 0 ? 'empty' : `${total} item${total === 1 ? '' : 's'}`;
         item.description = hasAuth ? `${countDesc} · auth: ${folder.auth!.type}` : countDesc;
         const authLine = hasAuth
-          ? `\n\nFolder-level auth: \`${folder.auth!.type}\` — descendant requests with \`auth: inherit\` pick this up.`
+          ? `\n\nFolder-level auth: ${markdownCode(folder.auth!.type)} — descendant requests with \`auth: inherit\` pick this up.`
           : `\n\n_No folder-level auth set. Descendant requests with \`auth: inherit\` walk further up the chain._`;
+        // Folder and request names (and URLs) come from imports and git sync,
+        // so the tooltips escape them: a crafted one renders as text, not a link.
         item.tooltip = new vscode.MarkdownString(
-          `**${folder.name}**\n\n${childCount.requests} request${childCount.requests === 1 ? '' : 's'}, ${childCount.folders} folder${childCount.folders === 1 ? '' : 's'}` +
+          `**${markdownText(folder.name)}**\n\n${childCount.requests} request${childCount.requests === 1 ? '' : 's'}, ${childCount.folders} folder${childCount.folders === 1 ? '' : 's'}` +
             authLine +
             `\n\n_Click to open the folder YAML and edit name + auth._`,
         );
@@ -95,9 +98,9 @@ export class EditorView extends BaseTreeView<EditorNode> {
     item.iconPath = methodIcon(request.method);
     item.contextValue = 'request';
     item.tooltip = new vscode.MarkdownString(
-      `**${request.name}**\n\n\`${request.method}\` ${request.url}` +
-        (request.auth.type !== 'none' ? `\n\nAuth: \`${request.auth.type}\`` : '') +
-        (request.body.type !== 'none' ? `\n\nBody: \`${request.body.type}\`` : '') +
+      `**${markdownText(request.name)}**\n\n${markdownCode(request.method)} ${markdownText(request.url)}` +
+        (request.auth.type !== 'none' ? `\n\nAuth: ${markdownCode(request.auth.type)}` : '') +
+        (request.body.type !== 'none' ? `\n\nBody: ${markdownCode(request.body.type)}` : '') +
         `\n\n_Click ▶ to send, or open to edit._`,
     );
     const uri = ApicircleFsProvider.requestUri(

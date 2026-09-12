@@ -5,9 +5,10 @@
 //      chains up-front — the mock server doesn't carry a $ref resolver at
 //      runtime, so every endpoint ships a self-contained body. The
 //      dereferencer is INJECTED (`deps.dereference`) so this module stays
-//      browser-safe by default: the web build uses `dereferenceInternal`
-//      (in-document refs only), while the Node build (`openapiNode.ts`)
-//      passes swagger-parser for full external-file / remote resolution.
+//      browser-safe by default: the web build uses `dereferenceInternal`,
+//      while the Node build (`openapiNode.ts`) passes swagger-parser. Both
+//      resolve in-document refs only — an external ref is reported, never
+//      fetched (see `openapiNode.ts` for why).
 //   2. Walk `paths.{path}.{method}.responses.{status}.content.{mediaType}`
 //      and pull either an `example`, the first `examples` entry, or
 //      synthesize one from the schema via `schemaToExample`.
@@ -137,8 +138,8 @@ export interface ParseOpenApiRequestBodiesResult {
  * YAML parse fails.
  *
  * The `$ref` dereferencer defaults to the browser-safe in-document resolver;
- * the Node entry point (`parseOpenApiToEndpointsNode`) injects swagger-parser
- * for full external-reference resolution.
+ * the Node entry point (`parseOpenApiToEndpointsNode`) injects swagger-parser,
+ * which resolves in-document refs only as well.
  */
 export async function parseOpenApiToEndpoints(
   source: string,
@@ -516,6 +517,11 @@ function safeJsonParse(s: string): unknown {
   }
 }
 
+// An alias cap here would buy nothing: js-yaml returns ONE shared object per
+// anchor, so an alias-heavy document costs no more to load than its own length,
+// however many times each anchor is used. The whole cost of an alias graph falls
+// on whoever walks the loaded result — see `refDeref.ts` for that walk and the
+// unbounded-expansion limitation it still carries.
 function safeYamlLoad(s: string): unknown {
   try {
     return yaml.load(s);

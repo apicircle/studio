@@ -215,6 +215,22 @@ describe('PlanNotebookSerializer — round-trip', () => {
     expect(data.cells[0].value).toContain('Plan Notebook parse error');
   });
 
+  it('fences the parse error so backticks echoed from the malformed file cannot close it', () => {
+    // V8 quotes the offending input in the JSON.parse message, newlines and
+    // all, so a backtick line in the file would otherwise end the fence and
+    // let the rest of the message render as markdown.
+    const source = 'x\n````\n[x](command:foo)';
+    let message = '';
+    try {
+      JSON.parse(source);
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).toContain('\n````\n');
+    const data = makeSerializer().deserializeNotebook(ENCODER.encode(source));
+    expect(data.cells[0].value).toContain(`\n\`\`\`\`\`\n${message}\n\`\`\`\`\`\n`);
+  });
+
   it('user-edited directive line overrides cell metadata on save', () => {
     const ser = makeSerializer(sampleRequests);
     const data = ser.deserializeNotebook(

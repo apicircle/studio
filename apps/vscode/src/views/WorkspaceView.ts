@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { BaseTreeView } from './BaseTreeView';
 import type { VsCodeBridge } from '../host/vscodeBridge';
+import { markdownCode, markdownText } from '../util/markdownText';
 
 export type WorkspaceNode =
   | { kind: 'active' }
@@ -46,10 +47,12 @@ export class WorkspaceView extends BaseTreeView<WorkspaceNode> {
       item.iconPath = new vscode.ThemeIcon('briefcase');
       item.description = parts.join(' · ');
       item.contextValue = 'workspace-active';
+      // The label and path come from the opened folder and its workspace.json:
+      // escape them so a crafted one renders as text, not a link.
       item.tooltip = new vscode.MarkdownString(
-        `**${ws.label}**\n\n` +
-          `Source: \`${ws.source}\`\n\n` +
-          `Path: \`${ws.apicircleDir}\`\n\n` +
+        `**${markdownText(ws.label)}**\n\n` +
+          `Source: ${markdownCode(ws.source)}\n\n` +
+          `Path: ${markdownCode(ws.apicircleDir)}\n\n` +
           `${reqCount} requests · ${folderCount} folders · ${envCount} environments · ${mockCount} mocks`,
       );
       return item;

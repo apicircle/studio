@@ -63,7 +63,20 @@ describe('CreateMockServerModal', () => {
     expect(created.some((m) => m.name === 'Manual mock')).toBe(true);
   });
 
-  it('shows the web external-$ref advisory on the OpenAPI spec tab', async () => {
+  it('shows the external-$ref advisory on the OpenAPI spec tab', async () => {
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Paste spec/i }));
+    expect(screen.getByText(/resolves in-document/i)).toBeInTheDocument();
+    expect(screen.getByText(/on every surface/i)).toBeInTheDocument();
+  });
+
+  // No surface follows an external ref — the Node parsers resolve in-document
+  // refs only as well — so the advisory is not conditional on the Desktop
+  // mock bridge being present.
+  it('shows the same advisory when the Desktop mock bridge is present', async () => {
+    (globalThis as { apicircleDesktop?: unknown }).apicircleDesktop = {
+      mock: { parseSpec: vi.fn() },
+    };
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /Paste spec/i }));
     expect(screen.getByText(/resolves in-document/i)).toBeInTheDocument();

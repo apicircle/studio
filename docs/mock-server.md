@@ -125,18 +125,25 @@ come in two modes, each with its own entry point in the Mocks header:
   once into editable endpoints you can modify; an explicit refresh
   (`refreshMockServer` in Studio, or the corresponding Lens-owned MCP refresh tool) re-imports from the asset.
 
-The parser ships as two entry points that differ only in how OpenAPI `$ref`s
-are dereferenced:
+The parser ships as two entry points that differ only in which dereferencer
+they carry. **Neither resolves an external `$ref`:** a spec always arrives as
+an in-memory string — pasted, stored as a workspace asset, pulled from git, or
+handed over by MCP/CLI — so there is no base directory worth trusting, and
+json-schema-ref-parser would otherwise resolve a relative ref against the
+process working directory (the customer's repo for the CLI, the install
+directory for the Desktop app) and inline whatever it read into a mock
+response. Every unresolved external ref is named in a warning instead.
 
-| Import                                | `$ref` resolution                                                                         | Used by                                                                                        |
-| ------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `@apicircle/mock-server-core` (root)  | swagger-parser — in-document **and** external file / remote refs                          | Node surfaces: Desktop main process, VS Code extension host, and Lens-owned CLI/MCP automation |
-| `@apicircle/mock-server-core/parsing` | in-document (`#/…`) refs only; external refs are left unresolved and reported as warnings | Browser / renderer code — the web app has no filesystem to resolve external refs               |
+| Import                                | `$ref` resolution                                                                       | Used by                                                                                        |
+| ------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `@apicircle/mock-server-core` (root)  | swagger-parser, in-document (`#/…`) refs only; external refs reported as warnings       | Node surfaces: Desktop main process, VS Code extension host, and Lens-owned CLI/MCP automation |
+| `@apicircle/mock-server-core/parsing` | in-document (`#/…`) refs only; external refs reported as warnings; no Node dependencies | Browser / renderer code — keeps swagger-parser (~1 MB, Node-oriented) out of the web bundle    |
 
 The Desktop app runs its parse in the Node main process (via the
-`apicircle:mock:parse` IPC bridge), so it gets full external-`$ref` resolution;
-the pure-web build uses the in-document parser and surfaces a warning naming any
-external reference it couldn't follow.
+`apicircle:mock:parse` IPC bridge) and the pure-web build parses in the
+renderer, but both surface the same warning naming any external reference, so a
+spec behaves identically everywhere. To mock a definition that lives in another
+file, inline it into the document.
 
 ## Programmatic use
 
@@ -186,7 +193,7 @@ const { requestBodies } = await parseOpenApiRequestBodies(rawSpec, 'yaml');
 OpenAPI 3.x `requestBody` (a JSON media type preferred) and Swagger 2.0
 `in: 'body'` parameters both reduce to the same `{ method, path, contentType,
 schema, required }` shape. It follows the same two-entry-point `$ref` contract
-as the endpoint parser (root = swagger-parser, `/parsing` = in-document only)
+as the endpoint parser (in-document refs only on both, external refs reported)
 and leaves `MockEndpoint` and the mock runtime untouched; join it back to
 `parseSourceToEndpoints` by `(method, path)` for an operation's full contract.
 

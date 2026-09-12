@@ -33,6 +33,40 @@ describe('repoPaths', () => {
       '.apicircle/workspace-ws-1/attachments/with spaces',
     );
   });
+
+  it('accepts the id shapes Studio mints (UUIDs and the imported-folder wrapper)', () => {
+    const uuid = '8f14e45f-ceea-467a-9575-6d8f0b2c1a3e';
+    expect(workspaceJsonPath(uuid)).toBe(`.apicircle/workspace-${uuid}/workspace.json`);
+    expect(attachmentPath('imported-folder-0123456789abcdef', uuid)).toBe(
+      `.apicircle/workspace-imported-folder-0123456789abcdef/attachments/${uuid}`,
+    );
+  });
+
+  // The workspace id and slot id come from a remote workspace.json /
+  // registry.json. Each must stay one segment: the renderer's fetch collapses
+  // `..` segments, so a traversal id would aim a Contents API call carrying
+  // the user's token at another repository.
+  const exploits = [
+    '..',
+    '../x',
+    '..%2f',
+    'a/../../b',
+    '..\\x',
+    '/etc/passwd',
+    'C:\\x',
+    '',
+    '../../../../../../victim/priv/contents/.env',
+  ];
+
+  it.each(exploits)('refuses the workspace id %j in every path builder', (id) => {
+    expect(() => workspaceJsonPath(id)).toThrow(/Unsafe workspace id/);
+    expect(() => attachmentsDir(id)).toThrow(/Unsafe workspace id/);
+    expect(() => attachmentPath(id, 'slot-1')).toThrow(/Unsafe workspace id/);
+  });
+
+  it.each(exploits)('refuses the attachment slot id %j', (slotId) => {
+    expect(() => attachmentPath('ws-1', slotId)).toThrow(/Unsafe attachment slot id/);
+  });
 });
 
 describe('parseRegistryActiveId', () => {
@@ -79,6 +113,33 @@ describe('parseRegistryActiveId', () => {
 
   it('returns null for non-object root (array)', () => {
     expect(parseRegistryActiveId('[1,2,3]')).toBeNull();
+  });
+
+  it('returns null for an empty-string active id with no entries (same as an empty registry)', () => {
+    expect(parseRegistryActiveId(JSON.stringify({ activeWorkspaceId: '', workspaces: [] }))).toBe(
+      null,
+    );
+  });
+
+  it('refuses a traversal activeWorkspaceId instead of handing it to a path builder', () => {
+    const json = JSON.stringify({
+      activeWorkspaceId: 'a/../../x',
+      workspaces: [{ id: 'ws-first' }],
+    });
+    expect(() => parseRegistryActiveId(json)).toThrow(
+      /Unsafe workspace id in registry\.json "a\/\.\.\/\.\.\/x"/,
+    );
+  });
+
+  it('refuses a traversal id on the first-entry fallback too', () => {
+    const json = JSON.stringify({ activeWorkspaceId: null, workspaces: [{ id: '..\\x' }] });
+    expect(() => parseRegistryActiveId(json)).toThrow(/Unsafe workspace id in registry\.json/);
+  });
+
+  it('refuses an id that is not a string', () => {
+    expect(() => parseRegistryActiveId(JSON.stringify({ activeWorkspaceId: 7 }))).toThrow(
+      /Unsafe workspace id in registry\.json \(number\)/,
+    );
   });
 });
 
@@ -132,4 +193,22 @@ describe('fetchRemoteWorkspaceJson', () => {
     const result = await fetchRemoteWorkspaceJson(fetchFile);
     expect(result).toEqual({ error: 'No workspace.json at .apicircle/workspace-ws-gone/' });
   });
+
+  it.each(['../../../other/repo', '..%2f..%2fx', 'a\\..\\b'])(
+    'returns an error and never fetches a workspace path for the registry id %j',
+    async (hostileId) => {
+      const registry = JSON.stringify({ activeWorkspaceId: hostileId, workspaces: [] });
+      const requested: string[] = [];
+      const fetchFile = async (path: string): Promise<string | null> => {
+        requested.push(path);
+        return path === REGISTRY_JSON_PATH ? registry : '{}';
+      };
+
+      const result = await fetchRemoteWorkspaceJson(fetchFile);
+      expect(result).toEqual({
+        error: expect.stringMatching(/^Unsafe workspace id in registry\.json /),
+      });
+      expect(requested).toEqual([REGISTRY_JSON_PATH]);
+    },
+  );
 });

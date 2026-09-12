@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import lockfile from 'proper-lockfile';
 import type { WorkspaceLocal, WorkspaceSynced } from '@apicircle/shared';
+import { assertSafePathId } from '../git/safePathId';
 import { loadFromFile, saveToFile } from './fileBackedWorkspace';
 import type { WorkspaceState } from './patches';
 
@@ -80,9 +81,30 @@ export function emptyRegistry(): WorkspaceRegistry {
 }
 
 /** Compute the directory inside `<root>/` that holds a workspace's files.
- *  Layout: `<root>/workspace-<id>/`. */
+ *  Layout: `<root>/workspace-<id>/`. Every fs helper here goes through this,
+ *  and the id comes from a registry file — for a git-folder workspace, one
+ *  the repo itself commits — so an id that is not a single safe segment is
+ *  refused before any read, write or recursive delete is attempted. */
 export function workspaceDirFor(root: string, workspaceId: string): string {
-  return path.join(root, `${WORKSPACE_DIR_PREFIX}${workspaceId}`);
+  return childPathWithin(
+    root,
+    `${WORKSPACE_DIR_PREFIX}${assertSafePathId(workspaceId, 'workspace id')}`,
+  );
+}
+
+/** Join `name` onto `root`, refusing a `name` that does not resolve to a
+ *  direct child of `root` (`..`, a nested path, an absolute path). Backs up
+ *  the id check in `workspaceDirFor`, so a future relaxation of that check
+ *  still can't walk a path helper out of its root. */
+export function childPathWithin(root: string, name: string): string {
+  const base = path.resolve(root);
+  const target = path.resolve(base, name);
+  if (path.dirname(target) !== base) {
+    throw new Error(
+      `Refusing path ${JSON.stringify(name)}: it resolves to ${target}, which is not directly inside ${base}`,
+    );
+  }
+  return path.join(root, name);
 }
 
 /** Load the registry from disk; returns `null` if the file is missing. */

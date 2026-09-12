@@ -301,16 +301,15 @@ $env:APICIRCLE_E2E_BOT_PAT_LINK_DEDICATED = '<classic repo PAT>'
 pnpm test:e2e:live-github
 ```
 
-### Live-GitHub CI pipeline
+### Running the live-GitHub suite
 
-The [`.github/workflows/e2e-live-github.yml`](../../.github/workflows/e2e-live-github.yml) workflow runs **on manual dispatch only** — it does **not** run on a schedule, PRs, or pushes and does **not** gate merges, because it hits real `api.github.com` (slow, rate-limited, and subject to Contents-API eventual consistency). It validates the required secret/variable set, sweeps orphaned bot repos older than 12 hours, and then runs `pnpm test:e2e:live-github` single worker with Playwright traces/video retained only on failure. Run it locally before risky GitHub-sync changes with `node scripts/ci-local/run-ci.mjs --only live-github`.
+The suite has **no CI workflow**: the `e2e-live-github` workflow was retired, so GitHub Actions never runs it and it never gates merges. It hits real `api.github.com` (slow, rate-limited, and subject to Contents-API eventual consistency), so run it on demand, locally, before risky GitHub-sync changes:
 
-Configure GitHub Actions like this:
+```bash
+node scripts/ci-local/run-ci.mjs --only live-github
+```
 
-- Repository variable: `APICIRCLE_E2E_BOT_OWNER`
-- Repository secrets: `APICIRCLE_E2E_BOT_PAT`, `APICIRCLE_E2E_BOT_PAT_LINK_DEDICATED`
-
-The workflow maps `APICIRCLE_E2E_BOT_PAT` into the runtime `APICIRCLE_E2E_GITHUB_PAT` env var because that is what the Playwright helpers consume.
+The runner reads the credentials above from `scripts/ci-local/.test.env` (git-ignored), sweeps orphaned bot repos older than 12 hours, and runs the suite single worker with Playwright traces/video retained only on failure. Bot setup: [`live-github-bot-setup.md`](live-github-bot-setup.md).
 
 ### Eventual-consistency handling (read before chasing a flake)
 

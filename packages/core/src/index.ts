@@ -223,6 +223,8 @@ export {
   workspaceJsonPath,
 } from './git/repoPaths';
 
+export { assertSafePathId, isSafePathId, unsafePathIdMessage } from './git/safePathId';
+
 export { parseWorkspaceJson, RemoteWorkspaceParseError } from './git/parseWorkspaceJson';
 
 export { redactForGit, assertNoPlaintextCredentials } from './git/redactWorkspace';

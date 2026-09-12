@@ -133,4 +133,40 @@ describe('MockView', () => {
     expect(arg.path).toBe('/mocks/Pet-Store.yaml');
     expect(arg.query).toBe('id=m1');
   });
+
+  it('renders an ordinary endpoint tooltip exactly as before', async () => {
+    const view = new MockView(makeBridge({ m1: makeServer() }));
+    const item = (await view.getTreeItem({
+      kind: 'endpoint',
+      serverId: 'm1',
+      endpointId: 'e1',
+    })) as vscode.TreeItem;
+    expect((item.tooltip as vscode.MarkdownString).value).toBe(
+      '**GET** `/pets`\n\n**Default response:** `200` · body type `json`\n\n_Click the ✎ pencil to edit method / path / status / body in a form, or open the mock YAML for full control._',
+    );
+  });
+
+  it('renders hostile endpoint fields in the tooltip as inert text and code', async () => {
+    const base = makeServer().endpoints[0];
+    const server = makeServer({
+      endpoints: [
+        {
+          ...base,
+          pathPattern: '/p`x`',
+          description: '[d](https://evil.example) **b** $(zap)',
+        },
+      ],
+    });
+    const view = new MockView(makeBridge({ m1: server }));
+    const item = (await view.getTreeItem({
+      kind: 'endpoint',
+      serverId: 'm1',
+      endpointId: 'e1',
+    })) as vscode.TreeItem;
+    const md = item.tooltip as vscode.MarkdownString;
+    expect(md.isTrusted).not.toBe(true);
+    expect(md.value).toContain(
+      '**GET** `` /p`x` ``\n\n\\[d\\]\\(https\\:\\/\\/evil\\.example\\) \\*\\*b\\*\\* \\$\\(zap\\)\n\n',
+    );
+  });
 });

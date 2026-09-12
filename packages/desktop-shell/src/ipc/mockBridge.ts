@@ -20,8 +20,9 @@ const CHANNEL = {
 
 export function registerMockBridge(manager: MockManager): void {
   // Parse a spec-blob source into an endpoint table in the Node main process,
-  // where swagger-parser can resolve external `$ref`s (the browser build can
-  // only resolve in-document refs). Stateless — doesn't touch the manager.
+  // using swagger-parser rather than the browser build's own resolver. Both
+  // resolve in-document `$ref`s only — no surface reads a file or opens a
+  // connection for a ref. Stateless — doesn't touch the manager.
   ipcMain.handle(CHANNEL.parse, async (event, source: MockServerSource) => {
     assertTrustedSender(event);
     return parseSourceToEndpoints(source);

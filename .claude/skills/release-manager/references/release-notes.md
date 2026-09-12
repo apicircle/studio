@@ -71,15 +71,16 @@ preserving the CHANGELOG's section order — with these rules:
 
 - **Desktop** — download from the [Releases page](https://github.com/apicircle/studio/releases) (Windows / macOS / Linux)
 - **Web** — [studio.apicircle.dev](https://studio.apicircle.dev)
-- **npm** — `npm install @apicircle/cli` / `@apicircle/mcp-server` / `@apicircle/core` / `@apicircle/shared` / `@apicircle/mock-server-core`
+- **npm** — `npm install @apicircle/core` / `@apicircle/shared` / `@apicircle/mock-server-core`
 - **VS Code** — install from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=apicircle.apicircle-vscode) or [Open VSX](https://open-vsx.org/extension/apicircle/apicircle-vscode)
 
 > **macOS install note:** the desktop build is unsigned. Run `xattr -d com.apple.quarantine /Applications/API\ Circle\ Studio.app` once after install. See [`docs/installing.md`](docs/installing.md).
 ```
 
-The npm line lists only the **5 publishable packages** (`cli`, `mcp-server`,
-`core`, `shared`, `mock-server-core`); `git` and `ui-components` are
-workspace-private and never published.
+The npm line lists only the **3 publishable packages** (`core`, `shared`,
+`mock-server-core`), which the Lens repo publishes once it syncs the release;
+`git`, `ui-components` and `desktop-shell` are workspace-private and never
+published. The CLI and MCP server are Lens products — never list them here.
 
 ### 5. `## Breaking Changes` (boilerplate)
 
@@ -97,7 +98,7 @@ summarize it here instead of "None."
 ```markdown
 ## Packages
 
-All `@apicircle/*` packages ship at **<version>**: `shared`, `core`, `git`, `ui-components`, `mock-server-core`, `mcp-server`, `cli`, plus `apps/web`, `apps/desktop`, `apps/vscode`, and the e2e suites.
+All `@apicircle/*` packages ship at **<version>**: `shared`, `core`, `git`, `ui-components`, `mock-server-core`, `desktop-shell`, plus `apps/web`, `apps/desktop`, `apps/vscode`, and the e2e suites.
 ```
 
 If the entry's `### Version alignment` section lists a different/extra set (e.g.

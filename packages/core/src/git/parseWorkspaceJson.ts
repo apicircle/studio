@@ -25,6 +25,7 @@
 // that aren't structurally workspaces. Both are achieved here.
 
 import type { WorkspaceSynced } from '@apicircle/shared';
+import { isSafePathId, unsafePathIdMessage } from './safePathId';
 
 /** Hard cap on the JSON string length we'll accept. 16 MiB is generous
  *  for any realistic workspace doc — Git tooling chokes on much smaller
@@ -51,7 +52,8 @@ export class RemoteWorkspaceParseError extends Error {
       | 'not-object'
       | 'missing-workspace-id'
       | 'missing-collections'
-      | 'missing-environments',
+      | 'missing-environments'
+      | 'unsafe-id',
   ) {
     super(message);
     this.name = 'RemoteWorkspaceParseError';
@@ -131,8 +133,82 @@ export function parseWorkspaceJson(content: string): WorkspaceSynced {
     );
   }
 
+  // Every id below becomes one segment of a repo path that attachment sync
+  // and push turn into GitHub Contents API URLs, sent with the user's
+  // token. A document that smuggles a traversal through one is refused whole
+  // rather than merged into state and left for the first fetch to trip on.
+  for (const [kind, value] of pathIdsIn(obj)) {
+    if (!isSafePathId(value)) {
+      throw new RemoteWorkspaceParseError(
+        `Remote workspace.json was refused: ${unsafePathIdMessage(kind, value)}`,
+        'unsafe-id',
+      );
+    }
+  }
+
   // Shape passes — return the parsed value cast to the workspace type.
   // Unknown fields are preserved; the consumer is responsible for any
   // schema-version handling.
   return obj as unknown as WorkspaceSynced;
+}
+
+/**
+ * Every id in the document that ends up as a path segment, paired with the
+ * name a refusal uses for it. The walk is over raw JSON, so a malformed
+ * container around a reference just contributes nothing — this pass only
+ * vets ids that would actually be used. Slot references are checked on
+ * every body whatever its current `type`, since switching the type back
+ * brings a stale reference into use.
+ */
+function pathIdsIn(doc: Record<string, unknown>): Array<[kind: string, value: unknown]> {
+  const ids: Array<[string, unknown]> = [['workspace id', doc.workspaceId]];
+  // A falsy slot id (`null` on a file row nothing is attached to yet) is
+  // never turned into a path, so there is nothing to vet.
+  const addSlot = (value: unknown): void => {
+    if (value) ids.push(['attachment slot id', value]);
+  };
+  const addBody = (body: unknown): void => {
+    for (const row of entriesOf(field(body, 'formRows'))) addSlot(field(row, 'slotId'));
+    addSlot(field(field(body, 'attachment'), 'slotId'));
+  };
+
+  for (const request of entriesOf(field(doc.collections, 'requests'))) {
+    addBody(field(request, 'body'));
+  }
+  for (const override of entriesOf(field(doc.linkedOverrides, 'requests'))) {
+    addBody(field(field(override, 'patch'), 'body'));
+  }
+  for (const server of entriesOf(doc.mockServers)) {
+    for (const endpoint of entriesOf(field(server, 'endpoints'))) {
+      addBody(field(field(endpoint, 'defaultResponse'), 'body'));
+      for (const rule of entriesOf(field(endpoint, 'requestValidation'))) {
+        addBody(field(field(rule, 'failResponse'), 'body'));
+      }
+      for (const rule of entriesOf(field(endpoint, 'responseRules'))) {
+        addBody(field(field(rule, 'response'), 'body'));
+      }
+    }
+  }
+  for (const file of entriesOf(field(doc.globalAssets, 'files'))) {
+    addSlot(field(file, 'slotId'));
+  }
+  for (const link of entriesOf(doc.linkedWorkspaces)) {
+    const source = field(link, 'sourceWorkspaceId');
+    if (source) ids.push(['linked workspace sourceWorkspaceId', source]);
+  }
+  return ids;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function field(value: unknown, key: string): unknown {
+  return isRecord(value) ? value[key] : undefined;
+}
+
+/** The elements of an array or the values of a keyed map; nothing otherwise. */
+function entriesOf(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  return isRecord(value) ? Object.values(value) : [];
 }

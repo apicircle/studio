@@ -1,10 +1,11 @@
 // Browser-safe internal `$ref` dereferencer.
 //
 // The Node build resolves `$ref` chains with `@apidevtools/swagger-parser`,
-// which can follow refs into other files and remote URLs — but that pulls in
-// ~1 MB of Node-oriented dependencies (fs / path / http resolvers) that cannot
-// run in the browser. The web app never has a filesystem or a base path for a
-// pasted spec anyway, so external resolution was never meaningful there.
+// which pulls in ~1 MB of Node-oriented dependencies (fs / path / http
+// resolvers) that cannot run in the browser. The web app has no filesystem and
+// no base path for a pasted spec, so there is nothing here for those resolvers
+// to do — and the Node build turns external resolution off too, for the same
+// reason: an in-memory spec carries no base path worth trusting.
 //
 // This resolver handles the one case that matters for an in-memory,
 // single-document spec: **in-document JSON Pointer refs** (`#/components/...`
@@ -13,8 +14,9 @@
 //   • breaks reference cycles by substituting `{}` (so the downstream
 //     `schemaToExample` walk — which has no cycle guard — can never loop),
 //   • leaves external refs (anything not starting with `#/`) in place and
-//     reports each once as a warning so the web import UI can tell the user
-//     to use the Desktop app / CLI / VS Code for full resolution.
+//     reports each once as a warning. No surface follows them: a spec always
+//     reaches us as an in-memory string with no trustworthy base directory,
+//     so the Node build disables external resolution too (`openapiNode.ts`).
 
 export interface DereferenceResult {
   doc: unknown;
@@ -67,8 +69,9 @@ export function dereferenceInternal(root: unknown): DereferenceResult {
         if (!externalSeen.has(ref)) {
           externalSeen.add(ref);
           warnings.push(
-            `External $ref not resolved in the web app: "${ref}". Open this mock in the ` +
-              `Desktop app, CLI, or VS Code extension for full external reference resolution.`,
+            `External $ref not resolved in the web app: "${ref}". Spec parsing never reads ` +
+              `files or opens network connections on any surface — inline the referenced ` +
+              `definition into this document.`,
           );
         }
         return obj;

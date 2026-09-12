@@ -259,4 +259,46 @@ describe('LinkWorkspaceView', () => {
     const children = await view.getChildren({ kind: 'linkedWorkspace', id: 'a' });
     expect(children.every((c) => c.kind !== 'linkedFoldersRoot')).toBe(true);
   });
+
+  it('renders hostile linked-folder names in the tooltip as inert text', async () => {
+    const snapshot = {
+      pulledAt: 't',
+      ref: 'HEAD@main',
+      collections: {
+        tree: { id: 'r', type: 'root', children: [] },
+        requests: {},
+        folders: {
+          fA: {
+            id: 'fA',
+            name: '[f](https://evil.example)',
+            parentId: null,
+            auth: { type: 'bearer', token: 't' },
+          },
+          fB: { id: 'fB', name: '**b** $(zap)', parentId: null },
+        },
+      },
+      environments: { items: {}, activeName: null, priorityOrder: [] },
+    };
+    const view = new LinkWorkspaceView(
+      bridgeWith(null, { a: lw('a', { name: 'Alpha' }) }, { a: snapshot }),
+    );
+
+    const authItem = await view.getTreeItem({ kind: 'linkedFolder', linkId: 'a', folderId: 'fA' });
+    const authMd = authItem.tooltip as { value: string; isTrusted?: unknown };
+    expect(authMd.isTrusted).not.toBe(true);
+    expect(authMd.value).toBe(
+      '**\\[f\\]\\(https\\:\\/\\/evil\\.example\\)**\n\nFolder-level auth: `bearer`. Linked requests with `auth: inherit` pick this up.\n\n_Linked folders are read-only — edits happen in the source workspace._',
+    );
+
+    const plainItem = await view.getTreeItem({
+      kind: 'linkedFolder',
+      linkId: 'a',
+      folderId: 'fB',
+    });
+    const plainMd = plainItem.tooltip as { value: string; isTrusted?: unknown };
+    expect(plainMd.isTrusted).not.toBe(true);
+    expect(plainMd.value).toBe(
+      '**\\*\\*b\\*\\* \\$\\(zap\\)**\n\nNo folder-level auth set. The `inherit` walk continues up the chain.\n\n_Linked folders are read-only._',
+    );
+  });
 });

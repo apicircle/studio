@@ -5,7 +5,8 @@
  *
  * Reproduces the full GitHub Actions validation matrix on a developer machine
  * so you can catch regressions before pushing. Each "stage" is a faithful
- * mirror of one workflow under `.github/workflows/`:
+ * mirror of one workflow under `.github/workflows/`, except live-github, whose
+ * workflow was retired — this runner is the only place that suite runs:
  *
  *   stage         mirrors workflow      file
  *   ─────────────────────────────────────────────────────────────────────
@@ -14,7 +15,7 @@
  *   vscode        VS Code extension     .github/workflows/vscode.yml
  *   e2e           E2E                   .github/workflows/e2e.yml
  *   codeql        CodeQL                .github/workflows/codeql.yml
- *   live-github   e2e-live-github       .github/workflows/e2e-live-github.yml
+ *   live-github   (none — local only)   e2e/web/live-github/*.spec.ts
  *
  * Environment is read from `.test.env` (+ optional `.secrets.env`) — see
  * scripts/ci-local/.test.env.example and scripts/ci-local/README.md.
@@ -177,8 +178,9 @@ function printHelp() {
   console.log(`
 ${bold('API Circle Studio — local CI runner')}
 
-Mirrors the GitHub Actions workflows (CI, VS Code extension, E2E, CodeQL,
-e2e-live-github) so the full validation matrix can be run locally.
+Mirrors the GitHub Actions workflows (CI, VS Code extension, E2E, CodeQL) so
+the full validation matrix can be run locally, and runs the live-GitHub suite,
+which has no workflow of its own.
 
 ${bold('Usage')}
   node scripts/ci-local/run-ci.mjs [options]
@@ -190,7 +192,7 @@ ${bold('Stages')}  (default run = setup, ci, vscode, e2e)
   vscode        vscode.yml      typecheck, lint, unit, build, bundle budget, knip [+ cross-host E2E]
   e2e           e2e.yml         chromium suite, coverage, cross-browser smoke, desktop Electron suite
   codeql        codeql.yml      CodeQL static analysis            ${dim('(opt-in; needs codeql CLI)')}
-  live-github   e2e-live-github live GitHub suite                 ${dim('(opt-in; ⚠ creates/deletes real repos)')}
+  live-github   (local only)    live GitHub suite                 ${dim('(opt-in; ⚠ creates/deletes real repos)')}
 
 ${bold('Options')}
   --list                 Print the resolved plan (stages, steps, env) and exit

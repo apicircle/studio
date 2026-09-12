@@ -3,6 +3,7 @@ import { BaseTreeView } from './BaseTreeView';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 import type { VsCodeVaultManager } from '../host/vaultManager';
 import { ApicircleFsProvider } from '../fs/apicircleFsProvider';
+import { markdownText } from '../util/markdownText';
 
 // =============================================================================
 // EnvironmentView — workspace environments + variables tree.
@@ -135,8 +136,9 @@ export class EnvironmentView extends BaseTreeView<EnvironmentNode> {
         : `${varCount} var${varCount === 1 ? '' : 's'}`;
       item.contextValue = isActive ? 'env-active' : 'env';
       if (env) {
+        // Env names arrive from imports and git sync: escape so a crafted one renders as text.
         item.tooltip = new vscode.MarkdownString(
-          `**${env.name}**${isActive ? ' · _active_' : ''}\n\n${varCount} variable${varCount === 1 ? '' : 's'}` +
+          `**${markdownText(env.name)}**${isActive ? ' · _active_' : ''}\n\n${varCount} variable${varCount === 1 ? '' : 's'}` +
             (encryptedCount > 0 ? ` (${encryptedCount} encrypted)` : '') +
             `\n\n_Click to open the env YAML._`,
         );

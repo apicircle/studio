@@ -157,4 +157,24 @@ describe('WorkspaceView', () => {
     const md = item.tooltip as vscode.MarkdownString;
     expect(md.value).toContain('registry');
   });
+
+  it('renders an ordinary workspace tooltip exactly as before', async () => {
+    const view = new WorkspaceView(makeBridge([makeSurface()]));
+    const item = (await view.getTreeItem({ kind: 'active' })) as vscode.TreeItem;
+    expect((item.tooltip as vscode.MarkdownString).value).toBe(
+      '**My API**\n\nSource: `git-folder`\n\nPath: `/repo/.apicircle/workspace-ws-1`\n\n2 requests · 1 folders · 2 environments · 1 mocks',
+    );
+  });
+
+  it('renders a hostile workspace label as inert text in the tooltip', async () => {
+    const view = new WorkspaceView(
+      makeBridge([makeSurface('[w](https://evil.example) **b** $(zap)')]),
+    );
+    const item = (await view.getTreeItem({ kind: 'active' })) as vscode.TreeItem;
+    const md = item.tooltip as vscode.MarkdownString;
+    expect(md.isTrusted).not.toBe(true);
+    expect(md.value).toContain(
+      '**\\[w\\]\\(https\\:\\/\\/evil\\.example\\) \\*\\*b\\*\\* \\$\\(zap\\)**\n\n',
+    );
+  });
 });

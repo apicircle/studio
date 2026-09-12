@@ -20,28 +20,36 @@ description: >-
 # Release manager
 
 The single runbook for shipping a version of API Circle Studio: version bump →
-CHANGELOG → quality gates → release notes → push → verify.
+CHANGELOG → quality gates → release notes → push + tag → hand npm to Lens →
+verify.
 
 ## How a release ships here — read this first
 
 A release is **CI-driven**. You never publish from your laptop. Your job is to
 land the right _source edits_ on `main` — uniform version bumps plus a CHANGELOG
 entry — and produce the one _outward-facing artifact_ CI can't write for you: the
-GitHub Release body. **Pushing those edits to `main` is the act of releasing.**
-The workflows do the rest.
+GitHub Release body. **Pushing those edits to `main`, then the `v<version>`
+tag, is the act of releasing.** The workflows do the rest, except npm: the Lens
+repo publishes that once it syncs the commit.
 
-| When this happens                        | Workflow              | What it does                                                                                                                                             |
-| ---------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| push to `main`                           | `release.yml`         | publishes the **5 public** `@apicircle/*` npm packages at the checked-in version (skips any already on npm), then **tags `main` with `v<root-version>`** |
-| push to `main` (web/packages touched)    | `deploy-web.yml`      | rebuilds `apps/web` → GitHub Pages (studio.apicircle.dev)                                                                                                |
-| push to `main` (vscode/upstream touched) | `vscode-publish.yml`  | publishes the VS Code extension to Marketplace + Open VSX (`--skip-duplicate`)                                                                           |
-| the `v<version>` tag appears             | `desktop-release.yml` | builds Win/macOS/Linux Electron installers and publishes them to a **GitHub Release** with `electron-updater` indexes                                    |
+| When this happens                        | Workflow                | What it does                                                                                                          |
+| ---------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| push to `main` (web/packages touched)    | `deploy-web.yml`        | rebuilds `apps/web` → GitHub Pages (studio.apicircle.dev)                                                             |
+| push to `main` (vscode/upstream touched) | `vscode-publish.yml`    | publishes the VS Code extension to Marketplace + Open VSX (`--skip-duplicate`)                                        |
+| you push the `v<version>` tag            | `desktop-release.yml`   | builds Win/macOS/Linux Electron installers and publishes them to a **GitHub Release** with `electron-updater` indexes |
+| the version reaches Lens `main` (a sync) | Lens `release-core.yml` | publishes the **3 public** `@apicircle/*` npm packages at the synced version (skips any already on npm)               |
 
-Two things to internalize:
+Three things to internalize:
 
-- **The tag is created by `release.yml` _after_ a successful npm publish** — you
-  don't tag by hand. That tag is what triggers the desktop installers and the
-  GitHub Release.
+- **npm is published from the Lens repo, not here.** This repo has no npm
+  workflow and holds no npm token. Lens vendors it with
+  `pnpm sync:studio --apply`, and Lens's `release-core.yml` publishes `shared`,
+  `core` and `mock-server-core` when a sync carrying a new version reaches Lens
+  `main`. A Studio version is not on npm until that sync lands.
+- **You push the `v<version>` tag.** A tag pushed by a person starts
+  `desktop-release.yml`, which builds the installers and creates the GitHub
+  Release. A tag pushed with the workflow token starts no workflow, which is why
+  every Desktop Release run in the old `release.yml` era was a manual dispatch.
 - **Everything is idempotent.** npm publish skips live versions, `vsce`/`ovsx`
   use `--skip-duplicate`, re-running a workflow is a safe no-op. A half-finished
   release is recovered by **re-running**, not by cleanup.
@@ -59,7 +67,7 @@ Two things to internalize:
 
 ### 1. Bump every package to the target version
 
-One release = **one version across the whole monorepo** (root + all 15 workspace
+One release = **one version across the whole monorepo** (root + all 14 workspace
 packages). This is non-negotiable: `desktop-release.yml` hard-fails when the
 `v*` tag doesn't equal `apps/desktop/package.json`, and a mixed npm set is
 incoherent for consumers. Use the bundled helper — it reads the package globs
@@ -72,12 +80,13 @@ pnpm install --lockfile-only   # refresh pnpm-lock.yaml to the new versions
 git diff                        # eyeball it
 ```
 
-The 16 manifests: root `package.json`; `packages/{shared,core,git,ui-components,mock-server-core,mcp-server,cli}`; `apps/{web,desktop,vscode}`; `e2e/{web,desktop,mock,vscode}`; `examples/mock-server`.
+The 15 manifests: root `package.json`; `packages/{shared,core,git,ui-components,mock-server-core,desktop-shell}`; `apps/{web,desktop,vscode}`; `e2e/{web,desktop,mock,vscode}`; `examples/mock-server`.
 
 > Changesets is installed (`pnpm changeset`, `pnpm release`) but is **not** the
-> shipping path — `release.yml` deliberately skips "the changeset PR dance" and
-> publishes whatever version is checked in. Don't open a changeset PR unless the
-> user explicitly asks for that flow.
+> shipping path — Lens's `release-core.yml` publishes whatever version is
+> checked in, with no changeset PR. Don't open a changeset PR unless the user
+> explicitly asks for that flow. There is no `release:publish` script: npm
+> publishing happens only in Lens.
 
 ### 2. Write the CHANGELOG entry
 
@@ -114,8 +123,8 @@ pnpm lint && pnpm check && pnpm test && pnpm build
 ```
 
 If UI or e2e-covered behavior changed, also `pnpm test:e2e`. These mirror what
-`ci.yml` and `release.yml` run anyway — catching a failure locally beats a failed
-publish. (For a fuller dress rehearsal, `pnpm ci:local -- --list`.)
+`ci.yml` runs anyway — catching a failure locally beats a failed release. (For a
+fuller dress rehearsal, `pnpm ci:local -- --list`.)
 
 ### 4. Generate the GitHub Release body (release notes)
 
@@ -134,7 +143,7 @@ it wholesale. Then offer to save it to `release-notes-<version>.md`. **Do not ru
 `desktop-release.yml` auto-creates the GitHub Release from the tag; the body is
 pasted onto it (or `gh release edit "v<version>" --notes-file …` on request).
 
-### 5. Commit and push — this is the release
+### 5. Commit, push, and tag — this is the release
 
 Stage the bump + lockfile + CHANGELOG and commit with a Conventional Commit
 (commitlint + Husky enforce this; never `--no-verify`). The repo's established
@@ -144,37 +153,60 @@ message:
 chore: bump version to <version> across all packages
 ```
 
-**Pushing this to `main` publishes the release.** Treat it like any
-hard-to-reverse outward-facing action: confirm with the user before pushing
-unless they've already told you to proceed.
-
-### 6. Watch and verify
+Then push `main` and tag the release commit:
 
 ```bash
-gh run list --branch main --limit 5             # find the Release + Deploy runs
-gh run watch <run-id>                            # follow one to green
-npm view @apicircle/cli version                  # confirm npm went live
-git fetch --tags && git tag -l "v<version>"      # confirm release.yml tagged it
-gh run list --workflow desktop-release.yml --limit 3   # installers building off the tag
-gh release view "v<version>"                     # the GitHub Release + assets
+git push origin main
+git tag -a "v<version>" -m "Release v<version>"
+git push origin "v<version>"
 ```
 
-**Done when:** the 5 npm packages show the new version, `v<version>` exists, the
-desktop installers are attached to the GitHub Release, and the release body is the
-one from step 4.
+**These pushes publish the release.** `main` redeploys the web app and publishes
+the VS Code extension; the tag builds the desktop installers and creates the
+GitHub Release. Treat both like any hard-to-reverse outward-facing action:
+confirm with the user before pushing unless they've already told you to proceed.
+
+### 6. Hand npm to Lens
+
+npm is published from the Lens repo, not from here. In the Lens checkout
+(`../lens`), vendor this commit and get it to Lens `main`; that push runs Lens's
+`release-core.yml`, which publishes `shared`, `core` and `mock-server-core` at the
+new version. The sync lands in another repo with its own gates, so confirm with
+the user before starting it. Lens's `docs/releasing-npm.md` is the runbook.
+
+```bash
+pnpm sync:studio --apply   # in ../lens, then pnpm verify, commit, and merge to main
+```
+
+### 7. Watch and verify
+
+```bash
+gh run list --branch main --limit 5             # the Deploy web + VS Code publish runs
+gh run watch <run-id>                            # follow one to green
+gh run list --workflow desktop-release.yml --limit 3   # installers building off the tag
+gh release view "v<version>"                     # the GitHub Release + assets
+npm view @apicircle/core version                 # once the Lens sync is on its main
+```
+
+**Done when:** `v<version>` exists, the desktop installers are attached to the
+GitHub Release, the release body is the one from step 4, and — once the Lens sync
+reaches its `main` — the 3 npm packages show the new version.
 
 ## Load-bearing rules
 
-- **Only 5 packages publish to npm:** `shared`, `core`, `mock-server-core`,
-  `mcp-server`, `cli`. `git` and `ui-components` are workspace-private;
-  `apps/*`, `e2e/*`, `examples/*` never publish. The allowlist is `RELEASE_PACKAGES`
-  in `.github/workflows/release.yml` — keep it in sync if the set ever changes.
-- **`@apicircle` is the npm _username_ `apicircle`, not an org.** `NPM_TOKEN` must
-  be an automation token from that account. `.changeset/config.json` sets
-  `access: public` so scoped packages publish publicly.
-- **Publishing uses `pnpm publish`, not `npm publish`** — pnpm rewrites
-  `workspace:*` specifiers to real versions; `npm` would ship an uninstallable
-  tarball (`EUNSUPPORTEDPROTOCOL`).
+- **Only 3 packages publish to npm:** `shared`, `core`, `mock-server-core` — and
+  the Lens repo publishes them (the allowlist is `RELEASE_PACKAGES` in Lens's
+  `.github/workflows/release-core.yml`). `git`, `ui-components` and
+  `desktop-shell` are workspace-private; `apps/*`, `e2e/*`, `examples/*` never
+  publish. The CLI and MCP server are Lens products (`@apicircle-lens/cli`) —
+  never list them in a Studio release.
+- **`@apicircle` is the npm _username_ `apicircle`, not an org.** The publish
+  token (`NPM_TOKEN`) lives in the Lens repo and must come from that account;
+  this repo holds none.
+- **Packing goes through pnpm, not npm** — pnpm rewrites `workspace:*`
+  specifiers to real versions and applies `publishConfig`; an npm-packed
+  tarball would be uninstallable (`EUNSUPPORTEDPROTOCOL`). Lens's workflow packs
+  with pnpm and uploads the tarball with npm.
 - **The release-notes compare base is the most recent `v*` tag strictly _below_
   the target — not always the previous CHANGELOG header.** A version that bumped
   only one package may never have been tagged (1.1.1 was VS Code-only and untagged,
@@ -200,7 +232,7 @@ one from step 4.
 ## What's bundled
 
 - `scripts/bump-version.mjs` — dependency-free helper that bumps every workspace
-  manifest (root + 15 packages) to one version. Has a `--dry` preview.
+  manifest (root + 14 packages) to one version. Has a `--dry` preview.
 - `references/release-notes.md` — the GitHub Release body template + the
   CHANGELOG→release transform rules.
 - `references/worked-example.md` — the real 1.1.2 CHANGELOG entry → shipped

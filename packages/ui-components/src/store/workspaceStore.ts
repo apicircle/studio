@@ -5934,33 +5934,44 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // the push. Without this, a multi-workspace repo loses every entry
     // except the active one.
     const now = new Date().toISOString();
-    let registryWorkspaces: Array<{
-      id: string;
-      name: string;
-      lastOpenedAt?: string;
-      createdAt?: string;
-    }> = [];
-    try {
-      const existingReg = await client.getContents(
-        token,
-        owner,
-        name,
-        REGISTRY_JSON_PATH,
-        branch.name,
-      );
-      if (existingReg) {
-        const parsed = JSON.parse(existingReg.content) as {
-          workspaces?: Array<{
-            id: string;
-            name: string;
-            lastOpenedAt?: string;
-            createdAt?: string;
-          }>;
-        };
-        registryWorkspaces = parsed.workspaces ?? [];
+    // The registry. A MISSING one (every provider maps 404 to null) is a first
+    // push: start it. A registry that could not be READ or PARSED is not the
+    // same thing and must never be treated as empty. This commit rewrites the
+    // whole file, so the old "best-effort: start fresh" silently dropped every
+    // other workspace registered on this branch on any failed read -- a network
+    // blip, a rate limit, a 5xx. Their workspace.json stayed on the branch, but
+    // import finds workspaces ONLY through this index, so for every teammate
+    // they simply vanished. Nothing has been written yet (the commit is one call,
+    // below), so refusing leaves the branch exactly as it was and a retry is safe.
+    type RegistryEntry = { id: string; name: string; lastOpenedAt?: string; createdAt?: string };
+    let registryWorkspaces: RegistryEntry[] = [];
+    const existingReg = await client.getContents(
+      token,
+      owner,
+      name,
+      REGISTRY_JSON_PATH,
+      branch.name,
+    );
+    if (existingReg) {
+      const unsafe = (why: string) =>
+        new Error(
+          `${REGISTRY_JSON_PATH} on "${branch.name}" ${why}, and pushing would overwrite the list ` +
+            'of workspaces stored on this branch. Fix or remove that file on the branch, then push again.',
+        );
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(existingReg.content);
+      } catch {
+        throw unsafe('is not valid JSON');
       }
-    } catch {
-      // Best-effort: if the registry can't be read, start fresh.
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        throw unsafe('is not a JSON object');
+      }
+      const listed = (parsed as { workspaces?: unknown }).workspaces;
+      if (listed !== undefined && !Array.isArray(listed)) {
+        throw unsafe('has a "workspaces" field that is not a list');
+      }
+      registryWorkspaces = (listed ?? []) as RegistryEntry[];
     }
     const registryContent = JSON.stringify(
       {

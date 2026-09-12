@@ -4,14 +4,14 @@ Reproduce the **full GitHub Actions validation matrix** on your machine before
 pushing. One orchestrator (`run-ci.mjs`) runs each CI workflow as a "stage",
 in the same order and with the same commands CI uses.
 
-| Stage         | Mirrors workflow      | File                                    | What it runs                                                                                                         |
-| ------------- | --------------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `setup`       | (pre-steps)           | —                                       | `pnpm install --frozen-lockfile`, `pnpm build`                                                                       |
-| `ci`          | **CI**                | `.github/workflows/ci.yml`              | typecheck (`pnpm -r check`), lint, `format:check`, unit+integration tests w/ coverage, build, web gzip bundle budget |
-| `vscode`      | **VS Code extension** | `.github/workflows/vscode.yml`          | typecheck (vscode + e2e-vscode), lint, unit tests, build, bundle-size budget, knip [+ opt-in cross-host E2E]         |
-| `e2e`         | **E2E**               | `.github/workflows/e2e.yml`             | Playwright chromium suite, strict coverage report, cross-browser smoke (Firefox/WebKit), desktop Electron suite      |
-| `codeql`      | **CodeQL**            | `.github/workflows/codeql.yml`          | CodeQL static analysis (opt-in; needs the `codeql` CLI)                                                              |
-| `live-github` | **e2e-live-github**   | `.github/workflows/e2e-live-github.yml` | live GitHub suite (opt-in; ⚠️ creates/deletes real repos)                                                            |
+| Stage         | Mirrors workflow      | File                           | What it runs                                                                                                         |
+| ------------- | --------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `setup`       | (pre-steps)           | —                              | `pnpm install --frozen-lockfile`, `pnpm build`                                                                       |
+| `ci`          | **CI**                | `.github/workflows/ci.yml`     | typecheck (`pnpm -r check`), lint, `format:check`, unit+integration tests w/ coverage, build, web gzip bundle budget |
+| `vscode`      | **VS Code extension** | `.github/workflows/vscode.yml` | typecheck (vscode + e2e-vscode), lint, unit tests, build, bundle-size budget, knip [+ opt-in cross-host E2E]         |
+| `e2e`         | **E2E**               | `.github/workflows/e2e.yml`    | Playwright chromium suite, strict coverage report, cross-browser smoke (Firefox/WebKit), desktop Electron suite      |
+| `codeql`      | **CodeQL**            | `.github/workflows/codeql.yml` | CodeQL static analysis (opt-in; needs the `codeql` CLI)                                                              |
+| `live-github` | — (local only)        | —                              | live GitHub suite (opt-in; ⚠️ creates/deletes real repos). No CI workflow runs it; this stage is the only runner     |
 
 Default run (`node scripts/ci-local/run-ci.mjs` with no flags) executes
 **setup + ci + vscode + e2e**. The heavy/destructive/external suites
@@ -158,6 +158,7 @@ Run `node scripts/ci-local/run-ci.mjs --help` for the full list. Highlights:
 - **CodeQL** is best-effort: if the `codeql` CLI isn't on PATH the stage is
   skipped with a pointer to the install page. When present it builds a database
   scoped to `apps/packages/scripts/e2e` (matching `codeql.yml`) and runs the
-  `security-and-quality` suite.
+  `security-and-quality` suite. It analyzes JavaScript/TypeScript only; CI's
+  `codeql.yml` also analyzes the Python tooling under `scripts/` and `e2e/`.
 - **Reports** are written to `scripts/ci-local/results/last-run.{json,md}`
   (git-ignored).

@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { markdownCodeBlock } from '../util/markdownText';
 
 // =============================================================================
 // Phase 9 — Plan Notebook serializer.
@@ -158,10 +159,12 @@ export class PlanNotebookSerializer implements vscode.NotebookSerializer {
       // Don't throw — surface the parse error in a single error cell so
       // the user can see what's wrong rather than VS Code's generic
       // "couldn't open notebook" toast.
+      // The message quotes the malformed input, newlines included, so fence it
+      // with markdownCodeBlock: a backtick line from the file cannot end it.
       const msg = err instanceof Error ? err.message : String(err);
       const errorCell = new vscode.NotebookCellData(
         vscode.NotebookCellKind.Markup,
-        `# Plan Notebook parse error\n\n\`\`\`\n${msg}\n\`\`\`\n\n_The underlying \`.apicircle-plan.json\` file is malformed. Open it in raw text mode to repair._`,
+        `# Plan Notebook parse error\n\n${markdownCodeBlock(msg)}\n\n_The underlying \`.apicircle-plan.json\` file is malformed. Open it in raw text mode to repair._`,
         'markdown',
       );
       return new vscode.NotebookData([errorCell]);

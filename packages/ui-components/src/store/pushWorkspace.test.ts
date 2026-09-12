@@ -126,6 +126,86 @@ describe('workspaceStore.pushWorkspace', () => {
     expect(body.tree[1].content).toContain('"schemaVersion": 1');
   });
 
+  // The branch registry is the ONLY index import reads, and the push rewrites the whole file. These
+  // pin the rule that a registry the push could not read or parse is never treated as empty: the
+  // old "best-effort: start fresh" dropped every other workspace registered on the branch on any
+  // failed read, so a teammate's workspace silently vanished from import.
+  function registryFile(content: string): ResponseSpec {
+    return {
+      body: {
+        type: 'file',
+        encoding: 'base64',
+        path: '.apicircle/registry.json',
+        sha: 'reg-sha',
+        size: content.length,
+        content: btoa(content),
+      },
+    };
+  }
+
+  it('does not overwrite a registry it could not read: a transient failure stops the push', async () => {
+    await setupConnectedBranch();
+    const fetchMock = queuedFetch([
+      // getRef
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
+      // getContents (registry) -- a 5xx, NOT a 404
+      { body: { message: 'Server Error' }, status: 502 },
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(useWorkspaceStore.getState().pushWorkspace()).rejects.toThrow();
+    // Nothing was written: no tree, no commit, no ref move.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(useWorkspaceStore.getState().local!.workingBranch!.lastPushedSha).toBeNull();
+  });
+
+  it("keeps every other workspace the branch registry lists -- a teammate's workspace survives", async () => {
+    await setupConnectedBranch();
+    const teammate = { id: 'teammate-ws', name: 'Teammate', createdAt: '2026-01-01T00:00:00.000Z' };
+    const fetchMock = queuedFetch([
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
+      registryFile(
+        JSON.stringify({
+          schemaVersion: 1,
+          activeWorkspaceId: 'teammate-ws',
+          workspaces: [teammate],
+        }),
+      ),
+      { body: { sha: 'sha-main', message: 'initial', tree: { sha: 'tree-old' } } },
+      { body: { sha: 'tree-new' } },
+      { body: { sha: 'commit-new', message: 'sync', tree: { sha: 'tree-new' } } },
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'commit-new' } } },
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await useWorkspaceStore.getState().pushWorkspace();
+
+    const tree = JSON.parse((fetchMock.mock.calls[3][1] as RequestInit).body as string) as {
+      tree: { path: string; content?: string }[];
+    };
+    const registry = JSON.parse(
+      tree.tree.find((t) => t.path === '.apicircle/registry.json')!.content!,
+    ) as {
+      workspaces: { id: string }[];
+    };
+    const ids = registry.workspaces.map((w) => w.id);
+    expect(ids).toContain('teammate-ws');
+    expect(ids).toContain(useWorkspaceStore.getState().synced!.workspaceId);
+  });
+
+  it('refuses to overwrite a registry that is not valid JSON, before writing anything', async () => {
+    await setupConnectedBranch();
+    const fetchMock = queuedFetch([
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
+      registryFile('{ this is not json'),
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(useWorkspaceStore.getState().pushWorkspace()).rejects.toThrow(/not valid JSON/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(useWorkspaceStore.getState().local!.workingBranch!.lastPushedSha).toBeNull();
+  });
+
   it('push is incremental over base_tree, so remote sidecar files are inherited untouched', async () => {
     // The workspace dir on the remote may hold sidecar files an external tool
     // committed (e.g. a codegraph index). The push must layer over base_tree and

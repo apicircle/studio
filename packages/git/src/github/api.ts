@@ -17,6 +17,42 @@ import {
 const API_BASE = 'https://api.github.com';
 const LOGIN_BASE = 'https://github.com';
 
+/**
+ * Encode a repo-relative path for the Contents API, segment by segment.
+ * Callers build these paths from ids read out of collaborator-written
+ * files, and `encodeURIComponent` leaves `.` and `..` untouched — a
+ * WHATWG fetch then collapses them, re-aiming a call that carries the
+ * user's token at another repository or API route. So a path with an
+ * empty, `.` or `..` segment is refused before any URL is built, including
+ * one that only shows up once a segment is percent-decoded or split on a
+ * backslash.
+ */
+function encodeContentsPath(path: string): string {
+  const segments = path.split('/');
+  for (const segment of segments) {
+    if (segment === '' || decodeSegment(segment).split(/[\\/]/).some(isDotSegment)) {
+      throw new Error(
+        `Refusing repository path ${JSON.stringify(path)}: every segment must be a name, not empty, "." or "..".`,
+      );
+    }
+  }
+  return segments.map(encodeURIComponent).join('/');
+}
+
+function isDotSegment(piece: string): boolean {
+  return piece === '.' || piece === '..';
+}
+
+/** Percent-decode one segment; a stray `%` that isn't an escape (a file
+ *  literally named `100%.txt`) is checked as written. */
+function decodeSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
 export interface GitHubViewer {
   login: string;
   id: number;
@@ -961,13 +997,11 @@ export class GitHubClient {
     opts: CallOptions = {},
   ): Promise<FileContents | null> {
     const query = `?ref=${encodeURIComponent(ref)}`;
+    const contentsPath = encodeContentsPath(path);
     try {
       const { json } = await this.call<RawFileContents>(
         token,
-        `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/contents/${path
-          .split('/')
-          .map(encodeURIComponent)
-          .join('/')}${query}`,
+        `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/contents/${contentsPath}${query}`,
         opts,
       );
       // GitHub may return an array for directories — we only care about files.
@@ -1014,15 +1048,13 @@ export class GitHubClient {
     };
     if (args.branch) body.branch = args.branch;
     if (args.sha) body.sha = args.sha;
+    const contentsPath = encodeContentsPath(path);
     const { json } = await this.call<{
       commit: { sha: string };
       content: { sha: string };
     }>(
       token,
-      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/contents/${path
-        .split('/')
-        .map(encodeURIComponent)
-        .join('/')}`,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/contents/${contentsPath}`,
       {
         ...opts,
         method: 'PUT',
@@ -1048,13 +1080,11 @@ export class GitHubClient {
     opts: CallOptions = {},
   ): Promise<BinaryFileContents | null> {
     const query = `?ref=${encodeURIComponent(ref)}`;
+    const contentsPath = encodeContentsPath(path);
     try {
       const { json } = await this.call<RawFileContents>(
         token,
-        `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/contents/${path
-          .split('/')
-          .map(encodeURIComponent)
-          .join('/')}${query}`,
+        `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/contents/${contentsPath}${query}`,
         opts,
       );
       if (Array.isArray(json) || json.type !== 'file') {

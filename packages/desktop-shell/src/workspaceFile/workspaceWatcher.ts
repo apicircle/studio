@@ -246,8 +246,12 @@ export class WorkspaceWatcher extends EventEmitter {
   }
 
   private watchWorkspaceDir(workspaceId: string): void {
-    const dir = workspaceDirFor(this.manager.workspacesRoot, workspaceId);
     try {
+      // Resolved inside the try: the id may be a `workspace-*` folder name
+      // someone left under the root, and the core path helper refuses one
+      // that isn't a usable id. Log it and keep watching the real dirs —
+      // throwing here would abort `start()` and the rescan loop.
+      const dir = workspaceDirFor(this.manager.workspacesRoot, workspaceId);
       const watcher = fs.watch(dir, { persistent: false }, (eventType, filename) => {
         this.handleDirEvent(workspaceId, eventType, filename);
       });

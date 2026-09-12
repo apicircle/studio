@@ -67,7 +67,7 @@ studio/
 ├── e2e/                  E2E suites — web/ + desktop/ (Playwright packages),
 │                           mock/ (Hono test backend), qa/ (Cowork runner)
 ├── scripts/              Build (icons, release binaries) + E2E coverage tooling
-└── .github/workflows/    CI: ci, codeql, e2e, release, desktop-release, deploy-web
+└── .github/workflows/    CI: ci, codeql, e2e, vscode, vscode-publish, desktop-release, deploy-web
 ```
 
 **Publishable npm packages** (`@apicircle/*`): `shared`, `core`, and
@@ -250,13 +250,15 @@ Desktop: `pnpm --filter @apicircle/desktop build` then `… start`.
   is tracked against the manual test-case workbooks in
   `docs/qa/test_cases/` via `tcMap*` fixtures + `scripts/e2e_coverage_*`.
 - **CI workflows** (`.github/workflows/`): `ci.yml` (lint / typecheck /
-  unit), `codeql.yml` (security), `e2e.yml` (Playwright + cross-browser
-  smoke + visual baseline), `release.yml` (changesets-driven npm
-  publish of `@apicircle/*`), `desktop-release.yml` (Electron
+  unit), `codeql.yml` (the only CodeQL analysis — JavaScript/TypeScript and
+  Python), `e2e.yml` (Playwright + cross-browser smoke + visual baseline),
+  `vscode.yml` + `vscode-publish.yml` (VS Code extension gates, and its
+  Marketplace / Open VSX publish), `desktop-release.yml` (Electron
   installers + `electron-updater` indexes), and `deploy-web.yml`
   (builds `apps/web` and deploys it to GitHub Pages on every push to
   `main` — the hosted web build is continuously available; custom
-  domain wired via a checked-in `CNAME`).
+  domain wired via a checked-in `CNAME`). The `@apicircle/*` npm packages
+  are published from the Lens repo, not here.
 - QA status, coverage modes, and the E2E CI reference live in
   [`docs/qa/README.md`](../qa/README.md).
 

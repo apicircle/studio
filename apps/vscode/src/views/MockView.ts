@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { BaseTreeView } from './BaseTreeView';
 import type { VsCodeBridge } from '../host/vscodeBridge';
 import { ApicircleFsProvider } from '../fs/apicircleFsProvider';
+import { markdownCode, markdownParagraphs, markdownText } from '../util/markdownText';
 
 // =============================================================================
 // MockView — workspace mock servers tree.
@@ -70,10 +71,12 @@ export class MockView extends BaseTreeView<MockNode> {
       vscode.TreeItemCollapsibleState.None,
     );
     item.description = ep.name;
+    // Endpoint fields come from imported specs: escape them so a crafted
+    // description or path renders as text, not a link.
     item.tooltip = new vscode.MarkdownString(
-      `**${ep.method}** \`${ep.pathPattern}\`` +
-        (ep.description ? `\n\n${ep.description}` : '') +
-        `\n\n**Default response:** \`${ep.defaultResponse.status}\` · body type \`${ep.defaultResponse.body.type}\`` +
+      `**${markdownText(ep.method)}** ${markdownCode(ep.pathPattern)}` +
+        (ep.description ? `\n\n${markdownParagraphs(ep.description)}` : '') +
+        `\n\n**Default response:** ${markdownCode(String(ep.defaultResponse.status))} · body type ${markdownCode(ep.defaultResponse.body.type)}` +
         `\n\n_Click the ✎ pencil to edit method / path / status / body in a form, or open the mock YAML for full control._`,
     );
     item.iconPath = new vscode.ThemeIcon('symbol-method');
