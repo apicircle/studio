@@ -55,6 +55,7 @@ import {
   resolvePrCapability,
 } from './githubPrCapability';
 import { decideRetirement, probeBranchRetirement } from './branchRetirement';
+import { beforeAnyWrite } from './nothingWritten';
 import { splitRepoFullName } from './repoCoordinate';
 import { summarizeUploadedSpec } from './specUpload';
 import { resolveMockEndpoints, requestShapeFromMockEndpoint } from './mockResolve';
@@ -5859,7 +5860,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     //    tree + a commit before discovering the divergence at updateRef.
     //    Throw BranchDivergedError up-front so the UI can route the user
     //    through Refresh first — no orphan objects on the remote.
-    const head = await client.getRef(token, owner, name, branch.name);
+    const head = await beforeAnyWrite(() => client.getRef(token, owner, name, branch.name));
     if (branch.headSha && head.sha !== branch.headSha) {
       throw new BranchDivergedError(
         `Remote branch "${branch.name}" has moved since your last sync. ` +
@@ -5945,12 +5946,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // below), so refusing leaves the branch exactly as it was and a retry is safe.
     type RegistryEntry = { id: string; name: string; lastOpenedAt?: string; createdAt?: string };
     let registryWorkspaces: RegistryEntry[] = [];
-    const existingReg = await client.getContents(
-      token,
-      owner,
-      name,
-      REGISTRY_JSON_PATH,
-      branch.name,
+    const existingReg = await beforeAnyWrite(() =>
+      client.getContents(token, owner, name, REGISTRY_JSON_PATH, branch.name),
     );
     if (existingReg) {
       const unsafe = (why: string) =>

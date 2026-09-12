@@ -153,6 +153,31 @@ git-synced workspace — and ended somewhere it should never have reached.
 
 ### Fixed
 
+- **A push whose registry read failed no longer erases every other workspace on
+  the branch.** `pushWorkspace` read `.apicircle/registry.json` inside a `try`
+  whose `catch` started a fresh, empty registry — and the push then committed a
+  registry listing only the pushing workspace. One transient failure during one
+  person's push, a 5xx or a rate limit, silently removed every teammate's entry
+  from the branch index. Their `workspace.json` stayed on the branch, but import
+  finds workspaces only through that index, so for everyone else they had
+  vanished.
+
+  The push is refused instead. Nothing has been written at that point — the
+  commit is a single call made afterwards — so the branch is left exactly as it
+  was and retrying is safe. A registry that is unreadable, unparseable, not a
+  JSON object, or whose `workspaces` field is not a list is refused the same
+  way, naming the file and what is wrong with it; a genuinely missing registry
+  (a first push) still starts one.
+
+- **A push refused before it wrote anything no longer warns that the write may
+  have partially landed.** The recovery advice was inferred from the status code
+  alone, so a 502 out of the pre-flight branch check or the registry read — both
+  reads, both before the single commit — told the user the write might have
+  landed and to refresh before retrying. That is the opposite of the truth, and
+  it steers them away from the one action that is safe: pushing again. The reads
+  that precede the first write now say so, and the panel keeps the underlying
+  error's own message and call to action while dropping the false warning.
+
 - **Push to save now works on every connected host, not just GitHub.**
   `pushWorkspace` performed GitHub's git-data recipe inline —
   `getCommit` → `createBlob` → `createTree` → `createCommit` → `updateRef` — and

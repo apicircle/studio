@@ -12,6 +12,7 @@ import {
   TimeoutError,
   UnauthorizedError,
 } from '@apicircle/git';
+import { NothingWrittenError } from '../../store/nothingWritten';
 
 export type GitErrorAction =
   | { kind: 'none' }
@@ -30,6 +31,14 @@ export interface GitErrorView {
 }
 
 export function formatGitError(err: unknown, opName: string): GitErrorView {
+  if (err instanceof NothingWrittenError) {
+    // The call site proved the operation had not written anything yet, so the
+    // partial-write warning would be false however bad the underlying error is
+    // -- and it would send the user to Refresh when a retry is the safe act.
+    // Everything else about the failure still holds: a 401 still asks for a
+    // reconnect, a rate limit still says when to come back.
+    return { ...formatGitError(err.underlying, opName), partialWrite: false };
+  }
   if (err instanceof BranchDivergedError) {
     return {
       message:

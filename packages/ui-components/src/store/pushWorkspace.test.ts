@@ -1,6 +1,8 @@
 import { act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { putAttachment } from '../persistence/attachments';
+import { formatGitError } from '../panels/workspace/gitErrorMessage';
+import { NothingWrittenError } from './nothingWritten';
 import { useWorkspaceStore } from './workspaceStore';
 
 interface ResponseSpec {
@@ -204,6 +206,59 @@ describe('workspaceStore.pushWorkspace', () => {
     await expect(useWorkspaceStore.getState().pushWorkspace()).rejects.toThrow(/not valid JSON/);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(useWorkspaceStore.getState().local!.workingBranch!.lastPushedSha).toBeNull();
+  });
+
+  // `typeof [] === 'object'` and `[] !== null`, so a bare array reaches the
+  // `workspaces` lookup as `undefined` and would coerce to an EMPTY registry --
+  // the exact silent teammate-erasure this refusal exists to stop. Only the
+  // explicit Array.isArray check separates the two.
+  it('refuses a registry whose top level is an array, before writing anything', async () => {
+    await setupConnectedBranch();
+    const fetchMock = queuedFetch([
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
+      registryFile(JSON.stringify([{ id: 'teammate-ws', name: 'Teammate' }])),
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(useWorkspaceStore.getState().pushWorkspace()).rejects.toThrow(/not a JSON object/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(useWorkspaceStore.getState().local!.workingBranch!.lastPushedSha).toBeNull();
+  });
+
+  it('refuses a registry whose "workspaces" field is not a list, before writing anything', async () => {
+    await setupConnectedBranch();
+    const fetchMock = queuedFetch([
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
+      registryFile(
+        JSON.stringify({ schemaVersion: 1, workspaces: { 'teammate-ws': { name: 'Teammate' } } }),
+      ),
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(useWorkspaceStore.getState().pushWorkspace()).rejects.toThrow(/not a list/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(useWorkspaceStore.getState().local!.workingBranch!.lastPushedSha).toBeNull();
+  });
+
+  it('marks a pre-write failure as such, so the UI never claims the write may have landed', async () => {
+    await setupConnectedBranch();
+    const fetchMock = queuedFetch([
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
+      { body: { message: 'Server Error' }, status: 502 },
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const err = await useWorkspaceStore
+      .getState()
+      .pushWorkspace()
+      .catch((e: unknown) => e);
+
+    // Without the marker `formatGitError` reads the 502 alone and warns the user
+    // that the write may have partially landed -- steering them to Refresh when
+    // retrying is the safe act, because the commit is one call and never ran.
+    expect(err).toBeInstanceOf(NothingWrittenError);
+    expect(formatGitError(err, 'Push').partialWrite).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('push is incremental over base_tree, so remote sidecar files are inherited untouched', async () => {

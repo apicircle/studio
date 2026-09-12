@@ -2,7 +2,8 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GitHubRepo } from '@apicircle/git';
-import { registerGitProvider, resetGitProviderRegistry } from '@apicircle/git';
+import { GitHubError, registerGitProvider, resetGitProviderRegistry } from '@apicircle/git';
+import { NothingWrittenError } from '../../store/nothingWritten';
 import type { GitHostSession } from '@apicircle/shared';
 import { WorkspacePanel } from './WorkspacePanel';
 import { renderWithStore } from '../../../test/renderWithStore';
@@ -1352,5 +1353,81 @@ describe('WorkspacePanel', () => {
       // BranchCard's "Created from" line is now visible instead.
       expect(screen.getByText(/Created from/)).toBeInTheDocument();
     });
+  });
+});
+
+// The recovery advice a failed push gives, which is the half the user acts on.
+// A 5xx alone cannot say whether anything was written: out of `createCommit` it
+// might have left an orphan commit, out of a pre-flight read it wrote nothing at
+// all. The store marks the second case; this is where that marking has to show.
+describe('WorkspacePanel push failure advice', () => {
+  function setupPushableBranch(): void {
+    const local = useWorkspaceStore.getState().local!;
+    useWorkspaceStore.setState({
+      local: {
+        ...local,
+        sessions: {
+          github: {
+            workspace: {
+              accountLogin: 'me',
+              tokenSecretId: 'sec',
+              grantedScopes: ['repo'],
+              addedAt: 't',
+              lastVerifiedAt: 't',
+              canCreatePullRequests: true,
+            },
+            links: {},
+          },
+        },
+        connectedRepo: {
+          fullName: 'me/api',
+          owner: 'me',
+          name: 'api',
+          defaultBranch: 'main',
+          visibility: 'public',
+          isPrivate: false,
+          pushable: true,
+          connectedAt: 't',
+        },
+        workingBranch: {
+          name: 'apicircle/test',
+          baseBranch: 'main',
+          repoFullName: 'me/api',
+          repoOwner: 'me',
+          repoName: 'api',
+          headSha: 'abc1234',
+          createdAt: 't',
+          lastPushedSha: null,
+          diffSummary: null,
+          openPrUrl: null,
+        },
+      },
+    });
+  }
+
+  async function pushRejectingWith(err: unknown): Promise<void> {
+    await renderWithStore(<WorkspacePanel />);
+    await act(async () => {
+      setupPushableBranch();
+      useWorkspaceStore.setState({ pushWorkspace: vi.fn().mockRejectedValue(err) });
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Push to save' }));
+  }
+
+  it('warns the write may have landed when the failure could have hit the commit', async () => {
+    await pushRejectingWith(new GitHubError('Server Error', 502));
+
+    expect(await screen.findByText('GitHub 502: Server Error')).toBeInTheDocument();
+    expect(screen.getByText(/may have partially landed/i)).toBeInTheDocument();
+  });
+
+  it('does not warn about a partial write when the push was refused before writing', async () => {
+    await pushRejectingWith(new NothingWrittenError(new GitHubError('Server Error', 502)));
+
+    // Same failure, same message -- only the advice differs, because this one
+    // never wrote: sending the user to Refresh would steer them away from the
+    // retry that is actually safe.
+    expect(await screen.findByText('GitHub 502: Server Error')).toBeInTheDocument();
+    expect(screen.queryByText(/may have partially landed/i)).not.toBeInTheDocument();
   });
 });
