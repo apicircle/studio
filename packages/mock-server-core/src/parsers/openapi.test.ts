@@ -860,3 +860,236 @@ paths:
     ]);
   });
 });
+
+// A `$ref` that survives dereferencing points at another document, which spec
+// parsing refuses to read. What is left in the tree is a reference — not data,
+// not a schema — and these pin that every position treats it as one: an example
+// falls through, a schema reads as unknown, a whole path item is named in a
+// warning instead of vanishing.
+describe('parseOpenApiToEndpoints — unresolved external references', () => {
+  const doc = (paths: Record<string, unknown>) =>
+    JSON.stringify({ openapi: '3.0.0', info: { title: 'T', version: '1.0.0' }, paths });
+  const petSchema = {
+    type: 'object',
+    required: ['id', 'name'],
+    properties: { id: { type: 'integer' }, name: { type: 'string' } },
+  };
+  const okWith = (content: Record<string, unknown>) => ({
+    get: { responses: { '200': { description: 'ok', content } } },
+  });
+
+  it('names a path item that is only a reference, and keeps its siblings', async () => {
+    const { endpoints, warnings } = await parseOpenApiToEndpoints(
+      doc({
+        '/pets': { $ref: './paths/pets.yaml' },
+        '/health': okWith({ 'application/json': { example: { ok: true } } }),
+      }),
+    );
+    expect(endpoints.map((e) => e.pathPattern)).toEqual(['/health']);
+    // The dereferencer names the ref it would not follow; this names the path
+    // that went with it.
+    const skipped = warnings.find((w) => w.includes('path item for /pets'));
+    expect(skipped).toContain('./paths/pets.yaml');
+    expect(skipped).toContain('none of its operations could be read');
+  });
+
+  it('falls through to the schema when the example is a reference', async () => {
+    const { endpoints } = await parseOpenApiToEndpoints(
+      doc({
+        '/pets': okWith({
+          'application/json': { example: { $ref: './petEx.json' }, schema: petSchema },
+        }),
+      }),
+    );
+    expect(JSON.parse(bodyContent(endpoints[0]))).toEqual({ id: 0, name: 'string' });
+  });
+
+  it('serves an empty body, not the reference, when a referenced example is all there is', async () => {
+    const { endpoints } = await parseOpenApiToEndpoints(
+      doc({ '/pets': okWith({ 'application/json': { example: { $ref: './petEx.json' } } }) }),
+    );
+    expect(bodyContent(endpoints[0])).not.toContain('$ref');
+    expect(JSON.parse(bodyContent(endpoints[0]))).toEqual({});
+  });
+
+  it('takes the first named example that carries a value', async () => {
+    const { endpoints } = await parseOpenApiToEndpoints(
+      doc({
+        '/pets': okWith({
+          'application/json': {
+            examples: {
+              shared: { $ref: './common.yaml#/components/examples/PetEx' },
+              inline: { value: { id: 7, name: 'Rex' } },
+            },
+          },
+        }),
+      }),
+    );
+    expect(endpoints[0].example).toBe('inline');
+    expect(JSON.parse(bodyContent(endpoints[0]))).toEqual({ id: 7, name: 'Rex' });
+  });
+
+  it('falls through to the schema when every named example is a reference', async () => {
+    const { endpoints } = await parseOpenApiToEndpoints(
+      doc({
+        '/pets': okWith({
+          'application/json': {
+            examples: { shared: { $ref: './common.yaml#/PetEx' } },
+            schema: petSchema,
+          },
+        }),
+      }),
+    );
+    expect(endpoints[0].example).toBeUndefined();
+    expect(JSON.parse(bodyContent(endpoints[0]))).toEqual({ id: 0, name: 'string' });
+  });
+
+  it('ignores a referenced Swagger 2.0 example', async () => {
+    const swaggerDoc = (paths: Record<string, unknown>) =>
+      JSON.stringify({ swagger: '2.0', info: { title: 'T', version: '1.0.0' }, paths });
+    const { endpoints } = await parseOpenApiToEndpoints(
+      swaggerDoc({
+        '/pets': {
+          get: {
+            responses: {
+              '200': {
+                description: 'ok',
+                examples: { 'application/json': { $ref: './petEx.json' } },
+              },
+            },
+          },
+        },
+      }),
+    );
+    expect(bodyContent(endpoints[0])).not.toContain('$ref');
+    expect(JSON.parse(bodyContent(endpoints[0]))).toEqual({});
+  });
+
+  it('samples a response header from its schema when its example is a reference', async () => {
+    const { endpoints } = await parseOpenApiToEndpoints(
+      doc({
+        '/pets': {
+          get: {
+            responses: {
+              '200': {
+                description: 'ok',
+                headers: {
+                  'X-Rate-Limit': {
+                    example: { $ref: './limit.json' },
+                    schema: { type: 'integer' },
+                  },
+                },
+                content: { 'application/json': { example: { ok: true } } },
+              },
+            },
+          },
+        },
+      }),
+    );
+    const rate = headers(endpoints[0]).find((h) => h.key === 'X-Rate-Limit');
+    expect(rate?.value).toBe('0');
+  });
+
+  it('drops a referenced parameter example instead of stringifying the reference', async () => {
+    const { endpoints } = await parseOpenApiToEndpoints(
+      doc({
+        '/pets': {
+          get: {
+            parameters: [
+              { name: 'status', in: 'query', example: { $ref: './statusEx.json' }, type: 'string' },
+            ],
+            responses: {
+              '200': { description: 'ok', content: { 'application/json': { example: {} } } },
+            },
+          },
+        },
+      }),
+    );
+    expect(endpoints[0].requestSchema.queryParams[0].example).toBeUndefined();
+  });
+});
+
+describe('parseOpenApiRequestBodies — unresolved external references', () => {
+  const doc = (paths: Record<string, unknown>) =>
+    JSON.stringify({ openapi: '3.0.0', info: { title: 'T', version: '1.0.0' }, paths });
+
+  it('reports an unresolved nested definition as an unknown shape and keeps the rest', async () => {
+    const { requestBodies, warnings } = await parseOpenApiRequestBodies(
+      doc({
+        '/pets': {
+          post: {
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: { id: { type: 'string' }, pet: { $ref: './pet.yaml' } },
+                  },
+                },
+              },
+            },
+            responses: { '201': { description: 'created' } },
+          },
+        },
+      }),
+    );
+    expect(requestBodies[0].schema).toEqual({
+      type: 'object',
+      properties: { id: { type: 'string' }, pet: {} },
+    });
+    const unknownShape = warnings.find((w) => w.includes('POST /pets'));
+    expect(unknownShape).toContain('./pet.yaml');
+    expect(unknownShape).toContain('shape is reported as unknown');
+  });
+
+  it('leaves a fully resolvable schema untouched and warns about nothing', async () => {
+    const { requestBodies, warnings } = await parseOpenApiRequestBodies(
+      doc({
+        '/pets': {
+          post: {
+            requestBody: { content: { 'application/json': { schema: { type: 'string' } } } },
+            responses: { '201': {} },
+          },
+        },
+      }),
+    );
+    expect(requestBodies[0].schema).toEqual({ type: 'string' });
+    expect(warnings).toEqual([]);
+  });
+
+  it('names a path item that is only a reference', async () => {
+    const { requestBodies, warnings } = await parseOpenApiRequestBodies(
+      doc({ '/pets': { $ref: './paths/pets.yaml' } }),
+    );
+    expect(requestBodies).toEqual([]);
+    expect(warnings.some((w) => w.includes('path item for /pets'))).toBe(true);
+  });
+
+  it('walks a circular schema once and keeps the cycle in the copy', async () => {
+    // Dereferencing leaves an in-document cycle as a real object cycle, so the
+    // reference-stripping walk has to meet the same node twice and stop.
+    const properties: Record<string, unknown> = { pet: { $ref: './pet.yaml' } };
+    const node: Record<string, unknown> = { type: 'object', properties };
+    properties.self = node;
+    const cyclicDoc = {
+      openapi: '3.0.0',
+      paths: {
+        '/nodes': {
+          post: {
+            requestBody: { content: { 'application/json': { schema: node } } },
+            responses: { '201': {} },
+          },
+        },
+      },
+    };
+
+    const { requestBodies } = await parseOpenApiRequestBodies('{}', 'json', {
+      dereference: () => ({ doc: cyclicDoc, warnings: [] }),
+    });
+    const schema = requestBodies[0].schema as unknown as Record<string, unknown>;
+    const props = schema.properties as Record<string, unknown>;
+    expect(props.pet).toEqual({});
+    expect(props.self).toBe(schema);
+  });
+});

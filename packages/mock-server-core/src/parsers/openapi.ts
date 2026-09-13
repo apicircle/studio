@@ -39,6 +39,97 @@ export interface ParseOpenApiDeps {
   dereference?: DereferenceFn;
 }
 
+// ---------------------------------------------------------------------------
+// Unresolved references
+//
+// Dereferencing inlines every in-document `$ref`, so a `$ref` still standing
+// afterwards is one neither resolver will follow: it names another document, and
+// reading that document is what spec parsing refuses to do. What is left in the
+// tree is a reference, NOT data and NOT a schema, and the difference matters at
+// every position one can appear in:
+//
+//   - as an `example`, serving it verbatim answers a real HTTP request with the
+//     body `{"$ref": "./petEx.json"}` — a document the contract never described,
+//     which then gets persisted onto the endpoint and pushed by git sync;
+//   - as a request-body schema, handing it back reads to every consumer as a
+//     schema with one oddly-named property rather than as an unknown shape;
+//   - as a whole path item, it carries no method keys, so the operation
+//     disappears from the endpoint table with nothing said about it.
+//
+// So each position treats it as what it is: a missing value that falls through
+// to the next source, an unknown shape, or a skipped path the warnings name.
+// ---------------------------------------------------------------------------
+
+/** The target of an unresolved reference at `value`, or null when `value` is
+ *  ordinary data. A lone `$ref` string is a reference wherever it appears: every
+ *  ref this document could resolve was already inlined by the time we look. */
+function unresolvedRef(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const ref = (value as Record<string, unknown>).$ref;
+  return typeof ref === 'string' ? ref : null;
+}
+
+/** `value`, or `undefined` when it is an unresolved reference — for the example
+ *  positions, where a reference means "no example here" and the caller should
+ *  keep looking (the schema, then the empty body). */
+function dataOrUndefined(value: unknown): unknown {
+  return unresolvedRef(value) === null ? value : undefined;
+}
+
+/** The first unresolved reference anywhere under `value` (`value` itself
+ *  included), or null when there is none. Iterative, and skipping nodes already
+ *  seen, so a circular document — dereferencing leaves in-document cycles as
+ *  real object cycles — neither loops nor overflows. */
+function firstUnresolvedRef(value: unknown): string | null {
+  const seen = new Set<object>();
+  const queue: unknown[] = [value];
+  for (let i = 0; i < queue.length; i += 1) {
+    const node = queue[i];
+    if (!node || typeof node !== 'object') continue;
+    if (seen.has(node)) continue;
+    seen.add(node);
+    const ref = unresolvedRef(node);
+    if (ref !== null) return ref;
+    // Object.values covers array elements too.
+    for (const child of Object.values(node)) queue.push(child);
+  }
+  return null;
+}
+
+/** A copy of `value` with every unresolved reference replaced by `{}` — the
+ *  empty schema, which says "any shape" instead of naming a property that does
+ *  not exist. A node met twice yields the same copy, so cycles terminate. */
+function withoutUnresolvedRefs(value: unknown, seen = new Map<object, unknown>()): unknown {
+  if (!value || typeof value !== 'object') return value;
+  const already = seen.get(value);
+  if (already !== undefined) return already;
+  if (unresolvedRef(value) !== null) {
+    const empty: Record<string, unknown> = {};
+    seen.set(value, empty);
+    return empty;
+  }
+  if (Array.isArray(value)) {
+    const out: unknown[] = [];
+    seen.set(value, out);
+    for (const item of value) out.push(withoutUnresolvedRefs(item, seen));
+    return out;
+  }
+  const out: Record<string, unknown> = {};
+  seen.set(value, out);
+  for (const [key, child] of Object.entries(value)) out[key] = withoutUnresolvedRefs(child, seen);
+  return out;
+}
+
+/** The message every unresolved-reference warning shares, so a user meets one
+ *  explanation whichever position the reference sat in. */
+function unresolvedRefWarning(subject: string, ref: string, consequence: string): string {
+  return (
+    `${subject} is an unresolved external $ref ("${ref}") — ${consequence}. ` +
+    'Spec parsing never reads files or opens network connections; inline the ' +
+    'referenced definition into this document.'
+  );
+}
+
 const SUPPORTED_METHODS: ReadonlyArray<HttpMethod> = [
   'GET',
   'POST',
@@ -123,6 +214,10 @@ export interface OpenApiRequestBodySpec {
   path: string;
   /** The chosen media type — a JSON one is preferred when several are present. */
   contentType: string;
+  /** The body's schema, with every definition the parser could not resolve
+   *  replaced by the empty schema `{}` — "shape unknown". A `$ref` never
+   *  survives into this field, so a property here is always a real property; the
+   *  result's warnings name what was dropped. */
   schema: JsonSchemaLike;
   required: boolean;
 }
@@ -169,6 +264,21 @@ export async function parseOpenApiToEndpoints(
 
   for (const [path, ops] of Object.entries(paths)) {
     if (!ops || typeof ops !== 'object') continue;
+    // A split spec writes `paths: { '/pets': { $ref: './paths/pets.yaml' } }`.
+    // The path item then holds no method keys, so the loop below would drop
+    // every operation under this path without a word — say which path went and
+    // why instead.
+    const pathItemRef = unresolvedRef(ops);
+    if (pathItemRef !== null) {
+      warnings.push(
+        unresolvedRefWarning(
+          `The path item for ${path}`,
+          pathItemRef,
+          'none of its operations could be read',
+        ),
+      );
+      continue;
+    }
     // Path-item-level parameters apply to every operation under the path; an
     // operation's own parameters override them by (name, in).
     const pathItemParams = (ops as { parameters?: OpenApiParameter[] }).parameters ?? [];
@@ -243,6 +353,20 @@ export async function parseOpenApiRequestBodies(
 
   for (const [path, ops] of Object.entries(paths)) {
     if (!ops || typeof ops !== 'object') continue;
+    // Same as in parseOpenApiToEndpoints: a path item that is only a reference
+    // has no operations to read, and silence there looks like "this path has no
+    // request bodies".
+    const pathItemRef = unresolvedRef(ops);
+    if (pathItemRef !== null) {
+      warnings.push(
+        unresolvedRefWarning(
+          `The path item for ${path}`,
+          pathItemRef,
+          'none of its operations could be read',
+        ),
+      );
+      continue;
+    }
     // Swagger 2.0 body params may live at the path-item level; merge them in
     // with operation-level precedence (as buildRequestSchema does for the
     // other param kinds).
@@ -254,7 +378,7 @@ export async function parseOpenApiRequestBodies(
       if (!op || typeof op !== 'object') continue;
 
       const body = pickRequestBody(upper, path, op, pathItemParams);
-      if (body) requestBodies.push(body);
+      if (body) requestBodies.push(resolvableSchemaOnly(body, warnings));
     }
   }
 
@@ -310,6 +434,27 @@ function pickRequestBody(
   return null;
 }
 
+/** The body with every unresolved reference inside its schema replaced by the
+ *  empty schema, and a warning naming the operation when that happened. The
+ *  schema is returned to callers that compare it against real code, so an
+ *  unresolved reference has to read as "shape unknown" rather than as a schema
+ *  with a `$ref` property. Copies only when there is something to replace. */
+function resolvableSchemaOnly(
+  body: OpenApiRequestBodySpec,
+  warnings: string[],
+): OpenApiRequestBodySpec {
+  const ref = firstUnresolvedRef(body.schema);
+  if (ref === null) return body;
+  warnings.push(
+    unresolvedRefWarning(
+      `The request body schema for ${body.method} ${body.path}`,
+      ref,
+      'its shape is reported as unknown',
+    ),
+  );
+  return { ...body, schema: withoutUnresolvedRefs(body.schema) as JsonSchemaLike };
+}
+
 /** Merge path-item + operation parameters (operation wins by name+in) and map
  *  them into a `MockRequestSchema`. Pure. */
 function buildRequestSchema(
@@ -326,7 +471,7 @@ function buildRequestSchema(
   for (const p of merged.values()) {
     const rawType = p.schema?.type ?? p.type;
     const typeHint = p.schema?.format ?? (Array.isArray(rawType) ? rawType[0] : rawType);
-    const exampleVal = p.example ?? p.schema?.example;
+    const exampleVal = dataOrUndefined(p.example) ?? dataOrUndefined(p.schema?.example);
     const def = paramDef(p.name as string, {
       typeHint: typeof typeHint === 'string' ? typeHint : undefined,
       required: typeof p.required === 'boolean' ? p.required : undefined,
@@ -415,17 +560,24 @@ function pickResponsePayload(
       'application/json';
     const entry = response.content[preferred];
     if (entry) {
-      if (entry.example !== undefined) {
+      const example = dataOrUndefined(entry.example);
+      if (example !== undefined) {
         return {
           contentType: preferred,
-          body: stringifyForContentType(entry.example, preferred),
+          body: stringifyForContentType(example, preferred),
           exampleName: undefined,
         };
       }
       if (entry.examples) {
-        const firstExampleName = Object.keys(entry.examples)[0];
+        // A named example that is only a reference has no value to serve; take
+        // the first one that does, and fall through to the schema when none
+        // does rather than answering with an empty body.
+        const examples = entry.examples;
+        const firstExampleName = Object.keys(examples).find(
+          (name) => dataOrUndefined(examples[name]?.value) !== undefined,
+        );
         if (firstExampleName) {
-          const v = entry.examples[firstExampleName];
+          const v = examples[firstExampleName];
           return {
             contentType: preferred,
             body: stringifyForContentType(v?.value, preferred),
@@ -453,9 +605,14 @@ function pickResponsePayload(
     };
   }
   if (response.examples) {
-    const firstName = Object.keys(response.examples)[0];
+    // Swagger 2.0 keys examples by media type and the value IS the payload —
+    // same rule as above: a reference is not a payload.
+    const examples = response.examples;
+    const firstName = Object.keys(examples).find(
+      (name) => dataOrUndefined(examples[name]) !== undefined,
+    );
     if (firstName) {
-      const v = response.examples[firstName];
+      const v = examples[firstName];
       return {
         contentType: firstName,
         body: stringifyForContentType(v, firstName),
@@ -478,7 +635,10 @@ function pickResponseHeaders(response: OpenApiResponse, contentType: string): Pa
   if (response.headers) {
     for (const [name, def] of Object.entries(response.headers)) {
       if (name.toLowerCase() === 'content-type') continue;
-      const value = def.example !== undefined ? def.example : schemaToExample(def.schema);
+      // A referenced example is no example — sample the schema instead of
+      // sending `{"$ref":"./x.json"}` as the header value.
+      const example = dataOrUndefined(def.example);
+      const value = example !== undefined ? example : schemaToExample(def.schema);
       if (value === undefined || value === null) continue;
       // Header values must be strings. Strings pass through; everything
       // else gets JSON-encoded — covers objects/arrays/numbers/booleans

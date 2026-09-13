@@ -128,12 +128,20 @@ describe('parseOpenApiToEndpointsNode — external $refs are never followed', ()
     });
   });
 
-  it('leaves the unresolved ref in the body instead of the file contents', async () => {
-    const { endpoints } = await parseOpenApiToEndpointsNode(specWithExternalRefs(), 'json');
+  // The ref sat in an `example` position, where OpenAPI means the value as
+  // literal data. Serving the reference object would answer a real request with
+  // a body the contract never described — and that body is persisted onto the
+  // endpoint and pushed by git sync, so it has to be an empty body, not a
+  // fabricated one.
+  it('serves an empty body rather than the reference object, and names the ref', async () => {
+    const { endpoints, warnings } = await parseOpenApiToEndpointsNode(
+      specWithExternalRefs(),
+      'json',
+    );
     const fileUrl = endpoints.find((e) => e.pathPattern === '/file-url');
-    expect(JSON.parse(fileUrl!.defaultResponse.body.content)).toEqual({
-      $ref: externalRefs().fileUrl,
-    });
+    expect(JSON.parse(fileUrl!.defaultResponse.body.content)).toEqual({});
+    expect(fileUrl!.defaultResponse.body.content).not.toContain('$ref');
+    expect(warnings.some((w) => w.includes(externalRefs().fileUrl))).toBe(true);
   });
 });
 
@@ -205,8 +213,44 @@ describe('parseOpenApiRequestBodiesNode — external $refs are never followed', 
     const { requestBodies, warnings } = await parseOpenApiRequestBodiesNode(spec, 'json');
     expect(JSON.stringify(requestBodies)).not.toContain(MARKER);
     expect(requests).toEqual([]);
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain(refs.fileUrl);
-    expect(requestBodies[0].schema).toEqual({ $ref: refs.fileUrl });
+    // The schema is a PUBLIC export consumers compare against real code, so an
+    // unresolved reference is reported as the empty schema — "shape unknown" —
+    // and never as `{ $ref: … }`, which reads as a property named `$ref`.
+    expect(requestBodies[0].schema).toEqual({});
+    expect(warnings.filter((w) => w.includes(refs.fileUrl))).toHaveLength(2);
+    expect(warnings.some((w) => w.includes('POST /pets'))).toBe(true);
+  });
+});
+
+// The layout a split spec has before a bundle step: each path item lives in its
+// own file. swagger-parser leaves the path item as a bare `$ref`, which carries
+// no method keys — so without a word about it the operation would simply not be
+// in the endpoint table, and a "linked" mock would come back empty on refresh.
+describe('parseOpenApiToEndpointsNode — a path item behind an external $ref', () => {
+  const splitSpec = JSON.stringify({
+    openapi: '3.0.3',
+    info: { title: 'Split spec', version: '1.0.0' },
+    paths: {
+      '/pets': { $ref: './paths/pets.yaml' },
+      '/health': {
+        get: {
+          responses: {
+            '200': {
+              description: 'ok',
+              content: { 'application/json': { example: { ok: true } } },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  it('names the path and the file, and still parses the inline path', async () => {
+    const { endpoints, warnings } = await parseOpenApiToEndpointsNode(splitSpec, 'json');
+    expect(endpoints.map((e) => e.pathPattern)).toEqual(['/health']);
+    const pathItemWarning = warnings.find((w) => w.includes('path item for /pets'));
+    expect(pathItemWarning).toBeDefined();
+    expect(pathItemWarning).toContain('./paths/pets.yaml');
+    expect(requests).toEqual([]);
   });
 });

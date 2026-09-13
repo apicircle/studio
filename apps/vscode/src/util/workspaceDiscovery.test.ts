@@ -213,6 +213,45 @@ describe('discoverWorkspaces', () => {
 
       expect(r.workspaces).toEqual([]);
       expect(warn).toHaveBeenCalledWith(expect.stringMatching(/resolves outside/));
+      // The workspace EXISTS — it is only one we won't follow. Offering "Create
+      // New Workspace" over the top of it would invite a duplicate, and the
+      // reason has to reach a channel the user can actually open.
+      expect(r.foldersWithoutWorkspace).toEqual([]);
+      expect(r.skipped).toHaveLength(1);
+      expect(r.skipped[0]).toContain('resolves outside');
+      expect(r.skipped[0]).toContain('Desktop and the CLI still read it');
+    });
+
+    it('still opens the workspaces listed beside a linked-out one', () => {
+      const dir = tmpDir();
+      const elsewhere = tmpDir();
+      cleanup.push(dir, elsewhere);
+      seedWorkspace(elsewhere);
+      const apicircleRoot = path.join(dir, '.apicircle');
+      seedWorkspace(path.join(apicircleRoot, 'workspace-ws-good'));
+      writeRegistry(apicircleRoot, ['ws-linked', 'ws-good']);
+      fs.symlinkSync(elsewhere, path.join(apicircleRoot, 'workspace-ws-linked'), 'junction');
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const r = discoverWorkspaces([makeFolder('mixed-link', dir)]);
+
+      expect(r.workspaces.map((w) => w.id)).toEqual(['ws-good']);
+      expect(r.foldersWithoutWorkspace).toEqual([]);
+      expect(r.skipped).toHaveLength(1);
+    });
+
+    it('names an unusable id in the skipped lines, and still offers to create', () => {
+      const dir = tmpDir();
+      cleanup.push(dir);
+      writeRegistry(path.join(dir, '.apicircle'), ['../../x']);
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const r = discoverWorkspaces([makeFolder('hostile-id', dir)]);
+
+      expect(r.skipped).toHaveLength(1);
+      expect(r.skipped[0]).toContain('Unsafe workspace id');
+      // No workspace directory to duplicate, so the folder stays a candidate.
+      expect(r.foldersWithoutWorkspace).toHaveLength(1);
     });
 
     it('quietly skips a listed id whose directory does not exist', () => {

@@ -35,15 +35,35 @@ export function markdownText(value: string): string {
 }
 
 /**
- * Markdown that renders `value` as prose: blank-line paragraph breaks survive,
- * everything else is escaped as in {@link markdownText}. Each paragraph is
- * trimmed so leading indentation cannot turn it into a code block.
+ * Markdown that renders `value` as prose: its LINE STRUCTURE survives —
+ * paragraphs stay paragraphs and every other newline becomes a hard break —
+ * while each line's characters are escaped as in {@link markdownText}.
+ *
+ * The line breaks have to survive because the only field rendered through here
+ * is an OpenAPI `description`, which the format declares to be CommonMark, and
+ * real specs write a bullet list as one `- item` per line. Folding those to
+ * spaces (what {@link markdownText} does, to keep a value on its own line inside
+ * surrounding markup) turned a three-item list into one run-on sentence. The
+ * escaping still stands: a description arrives from a spec somebody else wrote,
+ * so its markup is shown rather than rendered, and a link it declares cannot
+ * become a clickable one.
+ *
+ * Every line is trimmed: leading indentation would otherwise start an indented
+ * code block, and trailing spaces are what the hard break is made of.
  */
 export function markdownParagraphs(value: string): string {
   return value
     .replace(/\r\n?/g, '\n')
     .split(/\n[\t ]*\n/)
-    .map((paragraph) => markdownText(paragraph.trim()))
+    .map((paragraph) =>
+      paragraph
+        .trim()
+        .split('\n')
+        .map((line) => markdownText(line.trim()))
+        // Two trailing spaces: CommonMark's hard line break, which VS Code's
+        // renderer turns into a `<br>`.
+        .join('  \n'),
+    )
     .join('\n\n');
 }
 

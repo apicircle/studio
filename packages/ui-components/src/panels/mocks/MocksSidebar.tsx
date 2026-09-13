@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { isLinkedMockSource } from '@apicircle/shared';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { mockSpecWarningToast } from '../../store/mockSpecWarnings';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { KebabMenu, type KebabMenuItem } from '../../primitives/KebabMenu';
 import { cn } from '../../primitives/cn';
@@ -163,7 +164,18 @@ export function MocksSidebar() {
                         id: 'refresh',
                         label: isLinked ? 'Refresh from spec' : 'Re-import from spec',
                         icon: <RefreshCw size={12} aria-hidden="true" />,
-                        onSelect: () => void refreshMockServer(server.id),
+                        // A refresh replaces the endpoint table in place, so a
+                        // spec the parser could only partly read looks exactly
+                        // like a refresh that did nothing. Say what it missed.
+                        onSelect: () => {
+                          void refreshMockServer(server.id).then(({ warnings }) => {
+                            const count =
+                              useWorkspaceStore.getState().synced?.mockServers[server.id]?.endpoints
+                                .length ?? 0;
+                            const toast = mockSpecWarningToast(server.name, count, warnings);
+                            if (toast) pushToast(toast);
+                          });
+                        },
                       },
                     ]
                   : []),

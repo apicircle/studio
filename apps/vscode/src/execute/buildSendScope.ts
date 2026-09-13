@@ -181,9 +181,13 @@ async function fetchLinkedAttachment(
   // Token: dedicated PAT first, otherwise the built-in GitHub session (if any).
   const token = await getLinkToken(secrets, link);
   const { owner, name } = splitRepoFullName(link.source.repoFullName);
-  const path = attachmentPath(link.sourceWorkspaceId, slotId);
   const client = getGitProvider('github');
   try {
+    // Inside the try: `attachmentPath` refuses an id that would not stay one path
+    // segment, and the ids here come out of a linked workspace someone else
+    // wrote. One odd slot must leave that attachment unresolved — the same as a
+    // fetch that 404s — not fail the whole send.
+    const path = attachmentPath(link.sourceWorkspaceId, slotId);
     const file = await client.getBinaryContents(token ?? '', owner, name, path, ref);
     if (!file) return null;
     // Filename: try the cached assets registry; otherwise fall back to slotId.

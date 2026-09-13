@@ -49,8 +49,14 @@ export interface DiscoveredWorkspace {
 export interface DiscoveryResult {
   workspaces: DiscoveredWorkspace[];
   /** Workspace folders that DON'T yet contain a `.apicircle/registry.json` —
-   *  candidates for "Create New Workspace". */
+   *  candidates for "Create New Workspace". A folder whose registry named
+   *  workspaces that were all SKIPPED is not one of them: the workspace exists,
+   *  so offering to create another would invite a duplicate. */
   foldersWithoutWorkspace: vscode.WorkspaceFolder[];
+  /** One line per registry entry discovery refused, for the caller to surface.
+   *  `console.warn` alone puts this in the extension-host log, where the user
+   *  whose workspace has vanished from the views will never read it. */
+  skipped: string[];
 }
 
 /**
@@ -64,9 +70,10 @@ export function discoverWorkspaces(
 ): DiscoveryResult {
   const workspaces: DiscoveredWorkspace[] = [];
   const foldersWithoutWorkspace: vscode.WorkspaceFolder[] = [];
+  const skipped: string[] = [];
 
   if (!folders || folders.length === 0) {
-    return { workspaces, foldersWithoutWorkspace };
+    return { workspaces, foldersWithoutWorkspace, skipped };
   }
 
   for (const folder of folders) {
@@ -86,9 +93,16 @@ export function discoverWorkspaces(
       continue;
     }
 
+    let refusedAPresentWorkspace = false;
     for (const entry of registry.workspaces) {
-      const wsDir = workspaceDirForEntry(apicircleRoot, entry.id, registryPath);
-      if (!wsDir || !staysInsideRoot(apicircleRoot, wsDir, registryPath)) continue;
+      const wsDir = workspaceDirForEntry(apicircleRoot, entry.id, registryPath, skipped);
+      if (!wsDir) continue;
+      const containment = containmentOf(apicircleRoot, wsDir, registryPath, skipped);
+      if (containment === 'escapes-root') {
+        refusedAPresentWorkspace = true;
+        continue;
+      }
+      if (containment === 'unresolvable') continue;
       const wsJsonPath = path.join(wsDir, 'workspace.json');
       if (fs.existsSync(wsJsonPath)) {
         workspaces.push({
@@ -102,12 +116,19 @@ export function discoverWorkspaces(
       }
     }
 
-    if (!workspaces.some((w) => w.workspaceFolder === folder)) {
+    // "No workspace here" is the welcome view's cue to offer "Create New
+    // Workspace". A folder whose only entries point at a directory we refused to
+    // FOLLOW has a workspace — it is just not one we will open — and offering to
+    // create another over the top of it is how a user ends up with a duplicate
+    // they never wanted. An entry whose directory simply is not there, or whose
+    // id is not a usable one, leaves the folder genuinely empty, so it stays a
+    // candidate.
+    if (!refusedAPresentWorkspace && !workspaces.some((w) => w.workspaceFolder === folder)) {
       foldersWithoutWorkspace.push(folder);
     }
   }
 
-  return { workspaces, foldersWithoutWorkspace };
+  return { workspaces, foldersWithoutWorkspace, skipped };
 }
 
 /**
@@ -121,38 +142,51 @@ function workspaceDirForEntry(
   apicircleRoot: string,
   id: unknown,
   registryPath: string,
+  skipped?: string[],
 ): string | null {
   if (!isSafePathId(id)) {
-    console.warn(
-      `[apicircle] Skipping a workspace listed in ${registryPath}: ${unsafePathIdMessage('workspace id', id)}`,
-    );
+    const reason = `Skipping a workspace listed in ${registryPath}: ${unsafePathIdMessage('workspace id', id)}`;
+    skipped?.push(reason);
+    console.warn(`[apicircle] ${reason}`);
     return null;
   }
   return workspaceDirFor(apicircleRoot, id);
 }
 
 /**
+ * Where a registry entry's directory really is:
+ *   - `inside` — a direct child of the repo's `.apicircle/`, safe to open;
+ *   - `escapes-root` — it resolves somewhere else, so we refuse to follow it;
+ *   - `unresolvable` — nothing is there (which is simply not a workspace).
+ *
  * A repo can commit `.apicircle/workspace-<id>` as a symlink (a junction on
  * Windows) to anywhere on the machine, and edits made in the API Circle views
- * would then be written through it. Resolve both ends and require the
- * workspace dir to stay a direct child of the repo's `.apicircle/`. A dir
- * that doesn't exist simply isn't a workspace, so that case is not warned
- * about.
+ * would then be written through it — hence the refusal. The two failures are
+ * told apart because only the first means "a workspace exists here": an absent
+ * directory leaves the folder free to offer "Create New Workspace".
  */
-function staysInsideRoot(apicircleRoot: string, wsDir: string, registryPath: string): boolean {
+function containmentOf(
+  apicircleRoot: string,
+  wsDir: string,
+  registryPath: string,
+  skipped?: string[],
+): 'inside' | 'escapes-root' | 'unresolvable' {
   let realRoot: string;
   let realDir: string;
   try {
     realRoot = fs.realpathSync.native(apicircleRoot);
     realDir = fs.realpathSync.native(wsDir);
   } catch {
-    return false;
+    return 'unresolvable';
   }
-  if (path.dirname(realDir) === realRoot) return true;
-  console.warn(
-    `[apicircle] Skipping ${wsDir} listed in ${registryPath}: it resolves outside ${apicircleRoot} (to ${realDir}).`,
-  );
-  return false;
+  if (path.dirname(realDir) === realRoot) return 'inside';
+  const reason =
+    `Skipping ${wsDir} listed in ${registryPath}: it resolves outside ${apicircleRoot} ` +
+    `(to ${realDir}). Move the workspace directory inside .apicircle/ to open it here; ` +
+    'Desktop and the CLI still read it where it is.';
+  skipped?.push(reason);
+  console.warn(`[apicircle] ${reason}`);
+  return 'escapes-root';
 }
 
 /**
@@ -226,7 +260,9 @@ export function workspaceIdForOpenEditor(
  * Find a discovered workspace whose directory contains the given absolute path.
  */
 export function findOwningWorkspace(
-  result: DiscoveryResult,
+  // Only the discovered workspaces are read, so a caller holding just those can
+  // ask (and adding a field to the result never breaks one).
+  result: Pick<DiscoveryResult, 'workspaces'>,
   absolutePath: string,
 ): DiscoveredWorkspace | undefined {
   const normalized = absolutePath.replace(/\\/g, '/').toLowerCase();

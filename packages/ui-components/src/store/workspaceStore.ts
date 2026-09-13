@@ -59,6 +59,7 @@ import { beforeAnyWrite } from './nothingWritten';
 import { splitRepoFullName } from './repoCoordinate';
 import { summarizeUploadedSpec } from './specUpload';
 import { resolveMockEndpoints, requestShapeFromMockEndpoint } from './mockResolve';
+import { mockSpecWarningToast } from './mockSpecWarnings';
 import { applyFont } from '../theme/applyFont';
 import { applyFontSize, clampFontSizePercent } from '../theme/applyFontSize';
 import {
@@ -3467,6 +3468,20 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // auto-refreshes every linked mock reading it (see fillGlobalFileAssetBytes).
     await get().fillGlobalFileAssetBytes(server.source.assetId, file);
     const count = get().synced?.mockServers[serverId]?.endpoints.length ?? 0;
+    // "0 endpoints now served" is not a success. The refresh that ran inside
+    // fillGlobalFileAssetBytes has already reported WHY (the parser's warnings);
+    // this says what it means for the mock the user was updating.
+    if (count === 0) {
+      get().pushToast({
+        tone: 'error',
+        title: `"${server.name}" serves no endpoints after the update`,
+        detail:
+          'The revised spec produced no operations — the previous endpoints are gone. ' +
+          'Re-upload the contract, or convert the mock to an editable one to keep hand-written endpoints.',
+        ttlMs: 12000,
+      });
+      return;
+    }
     get().pushToast({
       tone: 'success',
       title: `Updated "${server.name}" from the revised spec`,
@@ -4295,7 +4310,17 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       )
       .map((m) => m.id);
     for (const mockId of linkedMockIds) {
-      await get().refreshMockServer(mockId);
+      const { warnings } = await get().refreshMockServer(mockId);
+      // This refresh happens on the user's behalf, with no modal or panel of its
+      // own to report into: a revised spec the parser can only partly read would
+      // otherwise rebuild a working endpoint table silently.
+      const refreshed = get().synced?.mockServers[mockId];
+      const toast = mockSpecWarningToast(
+        refreshed?.name ?? mockId,
+        refreshed?.endpoints.length ?? 0,
+        warnings,
+      );
+      if (toast) get().pushToast(toast);
     }
   },
   setFormRowGlobalFileAsset: async (requestId, rowIndex, fileAssetId) => {
@@ -6425,9 +6450,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return f?.content ?? null;
     });
     if ('error' in fetchResult) {
-      throw new Error(
-        `workspace.json missing on ${link.source.repoFullName}@${link.source.branch}`,
-      );
+      // Say what actually stopped the read. `fetchRemoteWorkspaceJson`
+      // distinguishes a missing registry, an empty one, an id it refuses and a
+      // missing workspace.json; collapsing all four into "missing" sent users
+      // hunting for a file that is sitting right there.
+      throw new Error(`${link.source.repoFullName}@${link.source.branch}: ${fetchResult.error}`);
     }
     const parsed = parseLinkedWorkspaceJson(fetchResult.content);
     const targetSnapshot = buildLinkedSnapshot(parsed, link);
@@ -6492,8 +6519,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return f?.content ?? null;
     });
     if ('error' in applyFetchResult) {
+      // Say what actually stopped the read. `fetchRemoteWorkspaceJson`
+      // distinguishes a missing registry, an empty one, an id it refuses and a
+      // missing workspace.json; collapsing all four into "missing" sent users
+      // hunting for a file that is sitting right there.
       throw new Error(
-        `workspace.json missing on ${link.source.repoFullName}@${link.source.branch}`,
+        `${link.source.repoFullName}@${link.source.branch}: ${applyFetchResult.error}`,
       );
     }
     const parsed = parseLinkedWorkspaceJson(applyFetchResult.content);
@@ -6602,9 +6633,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return f?.content ?? null;
     });
     if ('error' in refreshResult) {
-      throw new Error(
-        `workspace.json missing on ${link.source.repoFullName}@${link.source.branch}`,
-      );
+      // Say what actually stopped the read. `fetchRemoteWorkspaceJson`
+      // distinguishes a missing registry, an empty one, an id it refuses and a
+      // missing workspace.json; collapsing all four into "missing" sent users
+      // hunting for a file that is sitting right there.
+      throw new Error(`${link.source.repoFullName}@${link.source.branch}: ${refreshResult.error}`);
     }
     const parsed = parseLinkedWorkspaceJson(refreshResult.content);
     const cachedLedger: ReleaseHistory = parsed.releases?.self ?? {
@@ -8497,7 +8530,7 @@ async function doLinkWorkspace(
         /* swallow cleanup error */
       }
     }
-    throw new Error(`workspace.json not found on ${trimmedRepo}@${trimmedBranch}`);
+    throw new Error(`${trimmedRepo}@${trimmedBranch}: ${linkFetchResult.error}`);
   }
   const parsed = parseLinkedWorkspaceJson(linkFetchResult.content);
 
@@ -9535,7 +9568,18 @@ async function verifyAssetRefsAndPatch(
   for (const [id, asset] of Object.entries(files)) {
     let workingRef = asset.workingBranchRef ?? null;
     let baseRef = asset.baseBranchRef ?? null;
-    const blobPath = attachmentPath(synced.workspaceId, asset.slotId);
+    // `attachmentPath` refuses a slot id that would not stay one path segment,
+    // and this runs AFTER the pull has already been merged and persisted: a throw
+    // here would turn a pull that succeeded into a bare error message. One odd
+    // slot means one asset whose ref cannot be probed — keep its refs as they
+    // are, like any other failed probe in this best-effort loop, and carry on.
+    let blobPath: string;
+    try {
+      blobPath = attachmentPath(synced.workspaceId, asset.slotId);
+    } catch {
+      nextFiles[id] = asset;
+      continue;
+    }
 
     // Working-branch probe — verify (with grace), or opportunistically
     // re-discover when the ref is null but a working branch is connected.

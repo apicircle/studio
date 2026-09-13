@@ -169,4 +169,30 @@ describe('MockView', () => {
       '**GET** `` /p`x` ``\n\n\\[d\\]\\(https\\:\\/\\/evil\\.example\\) \\*\\*b\\*\\* \\$\\(zap\\)\n\n',
     );
   });
+
+  // An OpenAPI `description` is CommonMark, and the common shape is a sentence
+  // followed by one `- item` per line. The escaping shows that markup as text,
+  // but the LINES have to stay lines — folded to spaces, a three-item list read
+  // as one run-on sentence.
+  it('keeps a description list one item per line in the tooltip', async () => {
+    const base = makeServer().endpoints[0];
+    const server = makeServer({
+      endpoints: [
+        {
+          ...base,
+          description:
+            'Find pets by status.\n- `available`\n- `sold`\n\nOnly one status is allowed.',
+        },
+      ],
+    });
+    const view = new MockView(makeBridge({ m1: server }));
+    const item = (await view.getTreeItem({
+      kind: 'endpoint',
+      serverId: 'm1',
+      endpointId: 'e1',
+    })) as vscode.TreeItem;
+    expect((item.tooltip as vscode.MarkdownString).value).toContain(
+      'Find pets by status\\.  \n\\- \\`available\\`  \n\\- \\`sold\\`\n\nOnly one status is allowed\\.',
+    );
+  });
 });

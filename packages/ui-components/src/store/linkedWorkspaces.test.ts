@@ -226,14 +226,46 @@ describe('workspaceStore.linkPrivateWorkspace', () => {
     expect(link.pinnedVersion).toBeNull();
   });
 
-  it('throws when the remote workspace.json is missing', async () => {
+  it('says WHICH file was missing, not just that something was', async () => {
     await setupSession();
     vi.stubGlobal('fetch', queuedFetch([{ body: { message: 'Not Found' }, status: 404 }]));
     await expect(
       useWorkspaceStore
         .getState()
         .linkPrivateWorkspace({ repoFullName: 'me/missing', branch: 'main' }),
-    ).rejects.toThrow(/not found/);
+    ).rejects.toThrow(/me\/missing@main: No \.apicircle\/registry\.json found/);
+  });
+
+  // The registry names the workspace whose file we go and read, so an id it
+  // cannot build a path from is the reason nothing was read. Reporting that as
+  // "workspace.json not found" sent the user looking for a file that is there.
+  it('names the registry id it refused rather than blaming a missing file', async () => {
+    await setupSession();
+    const hostile = JSON.stringify({
+      schemaVersion: 1,
+      activeWorkspaceId: '../../other/repo/contents',
+      workspaces: [{ id: '../../other/repo/contents' }],
+    });
+    vi.stubGlobal(
+      'fetch',
+      queuedFetch([
+        {
+          body: {
+            type: 'file',
+            path: '.apicircle/registry.json',
+            sha: 'registry-sha',
+            size: hostile.length,
+            content: btoa(unescape(encodeURIComponent(hostile))),
+            encoding: 'base64',
+          },
+        },
+      ]),
+    );
+    await expect(
+      useWorkspaceStore
+        .getState()
+        .linkPrivateWorkspace({ repoFullName: 'me/hostile', branch: 'main' }),
+    ).rejects.toThrow(/Unsafe workspace id in registry\.json "\.\.\/\.\.\/other\/repo\/contents"/);
   });
 
   it('rejects remote files that are not valid JSON', async () => {

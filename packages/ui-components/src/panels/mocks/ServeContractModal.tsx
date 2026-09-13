@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, FileCode, Info, Server } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { mockSpecWarningToast } from '../../store/mockSpecWarnings';
 import { Modal } from '../../primitives/Modal';
 
 // "Serve OpenAPI contract" — the dedicated run-live entry point. It stands up a
@@ -20,6 +21,7 @@ export function ServeContractModal() {
   const createMockServer = useWorkspaceStore((s) => s.createMockServer);
   const setMockServerDefaultPort = useWorkspaceStore((s) => s.setMockServerDefaultPort);
   const setActiveMockEndpoint = useWorkspaceStore((s) => s.setActiveMockEndpoint);
+  const pushToast = useWorkspaceStore((s) => s.pushToast);
 
   // Only spec-typed Global File Assets can back a contract server (Increment A).
   const files = useWorkspaceStore((s) => s.synced?.globalAssets.files);
@@ -75,7 +77,7 @@ export function ServeContractModal() {
         }
         portValue = n;
       }
-      const { id } = await createMockServer({
+      const { id, warnings } = await createMockServer({
         name,
         source: {
           kind: 'openapi-asset',
@@ -87,6 +89,13 @@ export function ServeContractModal() {
       if (portValue !== null) setMockServerDefaultPort(id, portValue);
       // Activate the new server so its panel (with Start/Stop) is front-and-centre.
       setActiveMockEndpoint({ serverId: id, endpointId: null });
+      // A contract mock IS its spec, so this is the flow most likely to be handed
+      // an enterprise contract split across files. The modal closes on success,
+      // so what the parser could not read leaves with it unless it is toasted.
+      const endpointCount =
+        useWorkspaceStore.getState().synced?.mockServers[id]?.endpoints.length ?? 0;
+      const toast = mockSpecWarningToast(name, endpointCount, warnings);
+      if (toast) pushToast(toast);
       reset();
       close();
     } catch (err) {

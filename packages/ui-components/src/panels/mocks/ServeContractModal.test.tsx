@@ -174,3 +174,39 @@ describe('ServeContractModal', () => {
     expect(Object.keys(useWorkspaceStore.getState().synced!.mockServers)).toHaveLength(0);
   });
 });
+
+// A contract mock IS its spec, so this flow meets enterprise contracts split
+// across files more often than any other. The modal closes on success — what the
+// parser could not read has to leave with a toast, not with the modal.
+describe('ServeContractModal — a contract the parser could only partly read', () => {
+  const SPLIT_CONTRACT = JSON.stringify({
+    openapi: '3.0.0',
+    info: { title: 'Split', version: '1.0.0' },
+    paths: { '/pets': { $ref: './paths/pets.yaml' } },
+  });
+
+  it('names the unresolved file after closing, and serves nothing quietly no more', async () => {
+    await renderWithStore(<ServeContractModal />);
+    await act(async () => {
+      await useWorkspaceStore
+        .getState()
+        .addGlobalFileAsset(new File([SPLIT_CONTRACT], 'split.json', { type: 'application/json' }));
+    });
+    const assetId = Object.values(useWorkspaceStore.getState().synced!.globalAssets.files!)[0].id;
+    await openModal();
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText('Server name'), 'Split contract');
+    await user.selectOptions(await screen.findByLabelText('OpenAPI / Swagger contract'), assetId);
+    await user.click(screen.getByRole('button', { name: /Create contract server/i }));
+
+    await waitFor(() =>
+      expect(useWorkspaceStore.getState().mocksServeContractModalOpen).toBe(false),
+    );
+    const toast = useWorkspaceStore
+      .getState()
+      .toasts.find((t) => t.detail?.includes('./paths/pets.yaml'));
+    expect(toast?.tone).toBe('error');
+    expect(toast?.title).toContain('Split contract');
+  });
+});

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseWorkspaceJson, RemoteWorkspaceParseError } from './parseWorkspaceJson';
+import { attachmentPath } from './repoPaths';
 
 // Minimum valid shape: `workspaceId` + `collections` + `environments`.
 // Anything else is preserved verbatim.
@@ -236,90 +237,53 @@ describe('parseWorkspaceJson - path ids', () => {
     },
   );
 
-  it('refuses a traversal slotId on a form-data file row', () => {
-    const content = docWith((doc) => {
-      (doc.collections as Record<string, unknown>).requests = requestWithBody({
-        type: 'form-data',
-        formRows: [{ kind: 'file', key: 'f', slotId: traversal, enabled: true }],
-      });
-    });
-    expect(() => parseWorkspaceJson(content)).toThrow(
-      'Remote workspace.json was refused: Unsafe attachment slot id "../../../../../../victim/priv/contents/.env"',
-    );
-    expect(codeOf(content)).toBe('unsafe-id');
-  });
+  // A slot id (and a linked source id) is scoped to the ONE attachment or link
+  // it names, and is checked again where it becomes a path. Refusing the whole
+  // document for one of them meant a workspace.json written by hand or by a tool
+  // other than Studio could be neither pulled nor imported — with nothing to do
+  // about it from inside the app — so these pin that the document loads and the
+  // refusal happens at the path instead.
+  const oddSlots = ['report 50%.csv', '2024-01-01T10:00:00Z', 'with spaces', traversal];
 
-  it('refuses a traversal slotId on a binary body attachment', () => {
+  it.each(oddSlots)('loads a document whose attachment slot is %j', (slotId) => {
     const content = docWith((doc) => {
       (doc.collections as Record<string, unknown>).requests = requestWithBody({
         type: 'binary',
-        attachment: { slotId: 'a/../../b' },
+        attachment: { slotId },
       });
     });
-    expect(codeOf(content)).toBe('unsafe-id');
+    const parsed = parseWorkspaceJson(content) as unknown as {
+      collections: { requests: Record<string, { body: { attachment: { slotId: string } } }> };
+    };
+    // Left EXACTLY as written: a rewrite here would be pushed back to the branch
+    // on the next push, quietly editing somebody else's document.
+    expect(parsed.collections.requests.r1.body.attachment.slotId).toBe(slotId);
   });
 
-  it('checks the slot reference even when the body is currently another type', () => {
+  it('loads a document whose linked workspace names a free-form source id', () => {
     const content = docWith((doc) => {
-      (doc.collections as Record<string, unknown>).requests = requestWithBody({
-        type: 'json',
-        attachment: { slotId: '..\\x' },
-      });
+      doc.linkedWorkspaces = { l1: { id: 'l1', sourceWorkspaceId: 'acme.api workspace' } };
     });
-    expect(codeOf(content)).toBe('unsafe-id');
+    const parsed = parseWorkspaceJson(content) as unknown as {
+      linkedWorkspaces: Record<string, { sourceWorkspaceId: string }>;
+    };
+    expect(parsed.linkedWorkspaces.l1.sourceWorkspaceId).toBe('acme.api workspace');
   });
 
-  it('refuses a slotId that is not a string', () => {
+  it('leaves a traversal slot id for the path builder to refuse', () => {
     const content = docWith((doc) => {
-      (doc.collections as Record<string, unknown>).requests = requestWithBody({
-        type: 'binary',
-        attachment: { slotId: 5 },
-      });
+      doc.globalAssets = { schemas: {}, graphql: {}, files: { f1: { slotId: traversal } } };
     });
-    expect(() => parseWorkspaceJson(content)).toThrow(/Unsafe attachment slot id \(number\)/);
-  });
-
-  it('refuses a traversal slotId in a linked request override', () => {
-    const content = docWith((doc) => {
-      doc.linkedOverrides = {
-        requests: { 'l:r': { patch: { body: { attachment: { slotId: '..%2f' } } } } },
-        environmentVars: {},
-      };
-    });
-    expect(codeOf(content)).toBe('unsafe-id');
-  });
-
-  it.each([
-    ['defaultResponse', (body: unknown) => ({ endpoints: [{ defaultResponse: { body } }] })],
-    [
-      'requestValidation failResponse',
-      (body: unknown) => ({ endpoints: [{ requestValidation: [{ failResponse: { body } }] }] }),
-    ],
-    [
-      'responseRules response',
-      (body: unknown) => ({ endpoints: [{ responseRules: [{ response: { body } }] }] }),
-    ],
-  ])('refuses a traversal slotId in a mock %s', (_label, server) => {
-    const content = docWith((doc) => {
-      doc.mockServers = { m1: server({ type: 'binary', attachment: { slotId: '../x' } }) };
-    });
-    expect(codeOf(content)).toBe('unsafe-id');
-  });
-
-  it('refuses a traversal slotId on a global file asset', () => {
-    const content = docWith((doc) => {
-      doc.globalAssets = { schemas: {}, graphql: {}, files: { f1: { slotId: '/etc/passwd' } } };
-    });
-    expect(codeOf(content)).toBe('unsafe-id');
-  });
-
-  it('refuses a traversal sourceWorkspaceId on a linked workspace', () => {
-    const content = docWith((doc) => {
-      doc.linkedWorkspaces = { l1: { id: 'l1', sourceWorkspaceId: '../../x' } };
-    });
-    expect(() => parseWorkspaceJson(content)).toThrow(
-      /Unsafe linked workspace sourceWorkspaceId "\.\.\/\.\.\/x"/,
+    const parsed = parseWorkspaceJson(content);
+    // The guarantee did not move out of the product, it moved to the place that
+    // can act on it: nothing reaches a URL, and the refusal names the slot.
+    expect(() => attachmentPath(parsed.workspaceId, traversal)).toThrow(
+      /Unsafe attachment slot id/,
     );
+  });
+
+  it('refuses a non-string workspaceId', () => {
+    expect(codeOf(docWith((doc) => (doc.workspaceId = 5)))).toBe('missing-workspace-id');
   });
 });
 

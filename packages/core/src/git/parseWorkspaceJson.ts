@@ -133,82 +133,31 @@ export function parseWorkspaceJson(content: string): WorkspaceSynced {
     );
   }
 
-  // Every id below becomes one segment of a repo path that attachment sync
-  // and push turn into GitHub Contents API URLs, sent with the user's
-  // token. A document that smuggles a traversal through one is refused whole
-  // rather than merged into state and left for the first fetch to trip on.
-  for (const [kind, value] of pathIdsIn(obj)) {
-    if (!isSafePathId(value)) {
-      throw new RemoteWorkspaceParseError(
-        `Remote workspace.json was refused: ${unsafePathIdMessage(kind, value)}`,
-        'unsafe-id',
-      );
-    }
+  // The workspace id is the ONE id the whole document rests on: every repo path
+  // this workspace reads or writes is built from it, so a traversal smuggled
+  // through it aims all of them somewhere else and there is nothing here worth
+  // merging. It is refused before the document reaches state.
+  //
+  // The ids further down — attachment slots, a linked source workspace — are
+  // scoped to the one attachment or link they name, and each is checked again
+  // where it actually becomes a path (`attachmentPath`, the workspace dir
+  // builders), which is what keeps the traversal out. Refusing the whole
+  // document for one of them cost far more than it bought: slot ids have always
+  // been free-form strings a hand-written or third-party-written workspace.json
+  // may set to anything, and one odd slot made Pull AND Import fail outright,
+  // with no way to recover from inside the app. So it is left exactly as
+  // written — never rewritten, since the next push would carry the rewrite back
+  // to the branch — and the one operation that needs it as a path is the one
+  // that refuses.
+  if (!isSafePathId(obj.workspaceId)) {
+    throw new RemoteWorkspaceParseError(
+      `Remote workspace.json was refused: ${unsafePathIdMessage('workspace id', obj.workspaceId)}`,
+      'unsafe-id',
+    );
   }
 
   // Shape passes — return the parsed value cast to the workspace type.
   // Unknown fields are preserved; the consumer is responsible for any
   // schema-version handling.
   return obj as unknown as WorkspaceSynced;
-}
-
-/**
- * Every id in the document that ends up as a path segment, paired with the
- * name a refusal uses for it. The walk is over raw JSON, so a malformed
- * container around a reference just contributes nothing — this pass only
- * vets ids that would actually be used. Slot references are checked on
- * every body whatever its current `type`, since switching the type back
- * brings a stale reference into use.
- */
-function pathIdsIn(doc: Record<string, unknown>): Array<[kind: string, value: unknown]> {
-  const ids: Array<[string, unknown]> = [['workspace id', doc.workspaceId]];
-  // A falsy slot id (`null` on a file row nothing is attached to yet) is
-  // never turned into a path, so there is nothing to vet.
-  const addSlot = (value: unknown): void => {
-    if (value) ids.push(['attachment slot id', value]);
-  };
-  const addBody = (body: unknown): void => {
-    for (const row of entriesOf(field(body, 'formRows'))) addSlot(field(row, 'slotId'));
-    addSlot(field(field(body, 'attachment'), 'slotId'));
-  };
-
-  for (const request of entriesOf(field(doc.collections, 'requests'))) {
-    addBody(field(request, 'body'));
-  }
-  for (const override of entriesOf(field(doc.linkedOverrides, 'requests'))) {
-    addBody(field(field(override, 'patch'), 'body'));
-  }
-  for (const server of entriesOf(doc.mockServers)) {
-    for (const endpoint of entriesOf(field(server, 'endpoints'))) {
-      addBody(field(field(endpoint, 'defaultResponse'), 'body'));
-      for (const rule of entriesOf(field(endpoint, 'requestValidation'))) {
-        addBody(field(field(rule, 'failResponse'), 'body'));
-      }
-      for (const rule of entriesOf(field(endpoint, 'responseRules'))) {
-        addBody(field(field(rule, 'response'), 'body'));
-      }
-    }
-  }
-  for (const file of entriesOf(field(doc.globalAssets, 'files'))) {
-    addSlot(field(file, 'slotId'));
-  }
-  for (const link of entriesOf(doc.linkedWorkspaces)) {
-    const source = field(link, 'sourceWorkspaceId');
-    if (source) ids.push(['linked workspace sourceWorkspaceId', source]);
-  }
-  return ids;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function field(value: unknown, key: string): unknown {
-  return isRecord(value) ? value[key] : undefined;
-}
-
-/** The elements of an array or the values of a keyed map; nothing otherwise. */
-function entriesOf(value: unknown): unknown[] {
-  if (Array.isArray(value)) return value;
-  return isRecord(value) ? Object.values(value) : [];
 }

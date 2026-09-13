@@ -174,3 +174,43 @@ describe('MocksSidebarActions', () => {
     expect(useWorkspaceStore.getState().mocksServeContractModalOpen).toBe(true);
   });
 });
+
+// A refresh REPLACES the endpoint table in place, so a spec the parser can only
+// partly read looks exactly like a refresh that did nothing. Here every path item
+// is a reference to another file, which nothing reads: the table comes back empty
+// and the menu action has to say so.
+describe('MocksSidebar — re-import reports what the spec lost', () => {
+  const SPLIT_OPENAPI = JSON.stringify({
+    openapi: '3.0.0',
+    info: { title: 'P', version: '1' },
+    paths: { '/pets': { $ref: './paths/pets.yaml' } },
+  });
+
+  it('toasts the unresolved file instead of rebuilding an empty mock in silence', async () => {
+    await renderWithStore(<MocksSidebar />);
+    await act(async () => {
+      const assetId = await useWorkspaceStore
+        .getState()
+        .addGlobalFileAsset(new File([SPLIT_OPENAPI], 'split.json', { type: 'application/json' }));
+      await useWorkspaceStore.getState().createMockServer({
+        name: 'Split',
+        source: { kind: 'openapi-asset', assetId, format: 'json', mode: 'materialized' },
+      });
+    });
+    act(() => {
+      for (const t of useWorkspaceStore.getState().toasts)
+        useWorkspaceStore.getState().dismissToast(t.id);
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: /Split actions/i }));
+    await userEvent.click(screen.getByText('Re-import from spec'));
+
+    await waitFor(() => {
+      const toast = useWorkspaceStore
+        .getState()
+        .toasts.find((t) => t.detail?.includes('./paths/pets.yaml'));
+      expect(toast?.tone).toBe('error');
+      expect(toast?.title).toContain('serves no endpoints');
+    });
+  });
+});

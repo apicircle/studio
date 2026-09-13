@@ -41,8 +41,21 @@ describe('markdownParagraphs', () => {
     );
   });
 
-  it('folds a single line break into a space, as markdown already renders it', () => {
-    expect(markdownParagraphs('one\ntwo\r\nthree')).toBe('one two three');
+  // An OpenAPI `description` is CommonMark, and real specs write a list as one
+  // `- item` per line. Folding those newlines to spaces turned the list into one
+  // run-on sentence, so each line keeps its own line via a hard break.
+  it('keeps every line on its own line with a hard break', () => {
+    expect(markdownParagraphs('one\ntwo\r\nthree')).toBe('one  \ntwo  \nthree');
+  });
+
+  it('keeps a bullet list readable as a list', () => {
+    expect(markdownParagraphs('Find pets by status.\n- `available`\n- `sold`')).toBe(
+      'Find pets by status\\.  \n\\- \\`available\\`  \n\\- \\`sold\\`',
+    );
+  });
+
+  it('trims each line so indentation cannot start a code block', () => {
+    expect(markdownParagraphs('intro\n      indented  ')).toBe('intro  \nindented');
   });
 });
 

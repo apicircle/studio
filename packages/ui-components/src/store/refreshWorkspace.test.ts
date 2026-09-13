@@ -433,6 +433,97 @@ describe('workspaceStore.refreshWorkspace', () => {
     });
   });
 
+  // The slot ids here come out of the LOCAL merged document, which no remote
+  // parser vetted (a workspace created locally, imported from a folder, or
+  // written by MCP). `attachmentPath` refuses one that would not stay a single
+  // path segment — and this verification runs AFTER the merge has been persisted,
+  // so a throw would turn a pull that SUCCEEDED into a bare error with no status
+  // for the caller. One odd slot must cost that one asset's probe, nothing more.
+  it('keeps verifying the other assets when one slot id cannot become a path', async () => {
+    await setupConnectedBranch();
+    const startSynced = useWorkspaceStore.getState().synced!;
+    const oddSlot = 'report 50%.csv';
+    const goodSlot = 'slot-good';
+    const oddRef = {
+      branchName: 'apicircle/wb-aaa',
+      blobSha: 'blob-odd',
+      commitSha: 'commit-w',
+      verifiedAt: '2026-06-06T00:00:00.000Z',
+    };
+    const asset = (id: string, slotId: string) => ({
+      id,
+      name: id,
+      slotId,
+      filename: 'payload.bin',
+      size: 4,
+      mimeType: 'application/octet-stream',
+      sha256: 'sha-x',
+      createdAt: '2026-06-06T00:00:00.000Z',
+      updatedAt: '2026-06-06T00:00:00.000Z',
+    });
+    const initialSynced: WorkspaceSynced = {
+      ...startSynced,
+      globalAssets: {
+        ...startSynced.globalAssets,
+        files: {
+          // Ordered so the refused one is met FIRST: it used to throw here and
+          // the good asset below was never probed.
+          'asset-odd': { ...asset('asset-odd', oddSlot), workingBranchRef: oddRef },
+          'asset-good': asset('asset-good', goodSlot),
+        },
+      },
+    };
+    useWorkspaceStore.setState({
+      synced: initialSynced,
+      local: {
+        ...useWorkspaceStore.getState().local!,
+        sync: {
+          ...useWorkspaceStore.getState().local!.sync,
+          lastPulledSnapshot: initialSynced,
+          lastPulledSha: 'sha-base',
+          lastPulledAt: '2026-06-06T00:00:00.000Z',
+        },
+      },
+    });
+
+    const goodBlob: ResponseSpec = {
+      body: {
+        type: 'file',
+        path: `.apicircle/workspace-${initialSynced.workspaceId}/attachments/${goodSlot}`,
+        sha: 'blob-good',
+        size: 4,
+        content: btoa('xxxx'),
+        encoding: 'base64',
+      },
+    };
+    vi.stubGlobal(
+      'fetch',
+      queuedFetch([
+        branchHeadOk(),
+        fileContents(initialSynced, 'sha-up-to-date'),
+        // Only the good asset is probed — twice (working branch, then base).
+        goodBlob,
+        goodBlob,
+      ]),
+    );
+
+    const result = await useWorkspaceStore.getState().refreshWorkspace();
+    expect(result.status).toBe('up-to-date');
+
+    const files = useWorkspaceStore.getState().synced!.globalAssets.files!;
+    // The refused asset is left exactly as it was — same as any other failed probe.
+    expect(files['asset-odd'].workingBranchRef).toEqual(oddRef);
+    // The good asset was probed on BOTH branches and landed on the cleanup
+    // invariant (the same blob on each, so base becomes the single truth) —
+    // which is only reachable if the loop ran past the refused asset.
+    expect(files['asset-good'].baseBranchRef).toEqual({
+      branchName: 'main',
+      blobSha: 'blob-good',
+      verifiedAt: expect.any(String),
+    });
+    expect(files['asset-good'].workingBranchRef).toBeNull();
+  });
+
   it('verifyAssetRefs drops a workingBranchRef when its blob 404s', async () => {
     // PR merged on GitHub → branch deleted → bytes no longer reachable
     // via the working ref. The probe returns 404; the ref is dropped.

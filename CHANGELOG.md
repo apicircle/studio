@@ -40,6 +40,11 @@ git-synced workspace — and ended somewhere it should never have reached.
   untrusted markdown now, and every interpolated value goes through one escaping
   helper that neutralises markdown syntax, closes backtick code spans safely, and
   stops `$(icon)` substitution. Hover output for ordinary names is unchanged.
+  Two consequences worth knowing. A request URL in the Editor tree tooltip is no
+  longer a clickable link — nothing can tell a legitimate URL from a hostile one,
+  and the click was the vector. And an endpoint `description`, the one field
+  OpenAPI declares to be CommonMark, is shown as written rather than rendered; it
+  keeps its line structure, so a bullet list still reads as one item per line.
 
 - **Spec parsing no longer follows a `$ref` into a file or a URL.** A spec always
   arrives as an in-memory string — pasted, stored as a spec asset, pulled from
@@ -54,6 +59,17 @@ git-synced workspace — and ended somewhere it should never have reached.
   multi-file spec whose relative refs happened to line up with the working
   directory no longer resolves them — inline the definition to mock it.
 
+  A reference left standing is treated as a reference everywhere it can appear,
+  never as the value it points at: an unresolved `example` falls through to the
+  schema instead of serving `{"$ref": "./petEx.json"}` as a mock response body, a
+  request-body schema comes back as the empty schema (shape unknown) instead of
+  an object with a `$ref` property, and a path item that is only a `$ref` — the
+  shape of a split spec before its bundle step — is named in a warning instead of
+  quietly taking its operations out of the endpoint table. Every flow that builds
+  or rebuilds a mock now surfaces those warnings, including "Refresh from spec",
+  "Serve OpenAPI contract" and "Update spec…", and a rebuild that leaves a mock
+  serving nothing is reported as a failure rather than confirmed as a success.
+
 - **Workspace and attachment ids are validated before they become paths.** Each
   becomes one segment of a repo path that the Git clients turn into a Contents
   API URL carrying the user's token, and both are read out of files a collaborator
@@ -61,10 +77,17 @@ git-synced workspace — and ended somewhere it should never have reached.
   and `..` intact and a browser's `fetch` collapses them, so an id like
   `../../other/repo/contents` re-aimed an authenticated request at a different
   repository. An id must now be a single safe segment wherever it becomes a path
-  or a directory, a document carrying an unsafe id is refused with a message
-  naming it, and the GitHub Contents client rejects any path with an empty, `.`
-  or `..` segment. Existing free-form ids — including slot ids with spaces — keep
-  working; only ids that could change a path's shape are refused.
+  or a directory, and the GitHub Contents client rejects any path with an empty,
+  `.` or `..` segment. Existing free-form ids — including slot ids with spaces —
+  keep working; only ids that could change a path's shape are refused, and only
+  where one is built. A remote `workspace.json` is refused whole for just one id,
+  the workspace id every path in it is built from; an odd attachment slot or
+  linked source id costs that one attachment, so a document written by hand or by
+  another tool still pulls and imports. The refusals also say what they refused:
+  the reason now reaches the Link flows instead of being replaced by
+  "workspace.json not found", and a workspace VS Code skips because its directory
+  resolves outside the repo is named in the runs channel — and no longer makes
+  that repo look empty enough to offer "Create New Workspace" over the top of it.
 
 ### Changed
 

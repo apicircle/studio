@@ -209,3 +209,78 @@ describe('mock two modes off a spec asset', () => {
     expect(store().synced?.globalAssets.files?.[assetId]?.spec?.operationCount).toBe(1);
   });
 });
+
+// A split spec: the path item lives in another file. Nothing reads that file, so
+// the endpoint table comes back EMPTY — the case that used to rebuild a working
+// mock into an empty one without a word.
+describe('a revised spec the parser can only partly read', () => {
+  const splitSpecFile = (): File =>
+    new File(
+      [
+        JSON.stringify({
+          openapi: '3.0.0',
+          info: { title: 'Petstore', version: '1.0' },
+          paths: { '/pets': { $ref: './paths/pets.yaml' } },
+        }),
+      ],
+      'petstore.json',
+      { type: 'application/json' },
+    );
+
+  const clearToasts = (): void => {
+    act(() => {
+      for (const t of store().toasts) store().dismissToast(t.id);
+    });
+  };
+
+  beforeEach(async () => {
+    await act(async () => {
+      await store().hydrate();
+    });
+  });
+
+  it('reports what the auto-refresh could not read, naming the file', async () => {
+    const assetId = await uploadSpec(['/pets']);
+    const mockId = await createAssetMock(assetId, 'linked');
+    clearToasts();
+
+    await act(async () => {
+      await store().fillGlobalFileAssetBytes(assetId, splitSpecFile());
+    });
+
+    expect(store().synced?.mockServers[mockId]?.endpoints).toHaveLength(0);
+    const reported = store().toasts.filter((t) => t.detail?.includes('./paths/pets.yaml'));
+    expect(reported).toHaveLength(1);
+    expect(reported[0].tone).toBe('error');
+    expect(reported[0].title).toContain('serves no endpoints');
+  });
+
+  it('does not call an empty endpoint table a successful spec update', async () => {
+    const assetId = await uploadSpec(['/pets']);
+    const mockId = await createAssetMock(assetId, 'linked');
+    clearToasts();
+
+    await act(async () => {
+      await store().reuploadMockSpec(mockId, splitSpecFile());
+    });
+
+    expect(store().toasts.some((t) => t.tone === 'success')).toBe(false);
+    const failed = store().toasts.find((t) => t.title.includes('after the update'));
+    expect(failed?.tone).toBe('error');
+    expect(failed?.detail).toContain('previous endpoints are gone');
+  });
+
+  it('still confirms an update that produced endpoints', async () => {
+    const assetId = await uploadSpec(['/pets']);
+    const mockId = await createAssetMock(assetId, 'linked');
+    clearToasts();
+
+    await act(async () => {
+      await store().reuploadMockSpec(mockId, specFile(['/pets', '/owners']));
+    });
+
+    const ok = store().toasts.find((t) => t.tone === 'success');
+    expect(ok?.detail).toContain('2 endpoints');
+    expect(store().toasts.some((t) => t.tone === 'error')).toBe(false);
+  });
+});

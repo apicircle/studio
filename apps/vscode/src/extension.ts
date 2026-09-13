@@ -1613,6 +1613,9 @@ export function activate(context: vscode.ExtensionContext): ApicircleExtensionAp
           .join(' | ')}`,
       );
     }
+    // A registry entry we refuse leaves a workspace out of every view. The
+    // channel the user can actually open is the place to say which, and why.
+    for (const reason of discovery.skipped) log?.(`discover: ${reason}`);
 
     // Registry-based discovery: also load workspaces from ~/.apicircle/registry.json
     const registryWorkspaces = discoverRegistryWorkspaces();
