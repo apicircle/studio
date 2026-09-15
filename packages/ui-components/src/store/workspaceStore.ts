@@ -277,13 +277,61 @@ export interface BranchWorkspaceSummary {
   /** Matches the directory segment in `.apicircle/workspace-<id>/`. */
   id: string;
   /**
-   * The name the last pusher's device carried. Names are per-device, so
-   * this is a hint for recognising the workspace, not an identity —
-   * `id` is what the import actually resolves against.
+   * The name the workspace was last pushed with, or `null` when the entry
+   * carries none worth showing: missing, blank, or the `'Workspace'`
+   * placeholder every push wrote before names were pushed. A hint for
+   * recognising the workspace, not an identity — `id` is what the import
+   * actually resolves against.
    */
-  name: string;
+  name: string | null;
   /** True for the branch registry's `activeWorkspaceId`. */
   isActive: boolean;
+}
+
+/**
+ * The name a branch registry entry is written with when no real one is
+ * available — and the one every entry a push created carried before workspace
+ * names were pushed.
+ */
+const REGISTRY_PLACEHOLDER_NAME = 'Workspace';
+
+/** The longest workspace name written into a branch's `.apicircle/registry.json`. */
+const REGISTRY_NAME_MAX_LENGTH = 256;
+
+/**
+ * The name a push, or the initial seed, writes into the pushing workspace's own
+ * entry in the branch registry: this device's name for the workspace, trimmed;
+ * else the name the branch already carries for it; else the placeholder. Never
+ * blank, and clamped to {@link REGISTRY_NAME_MAX_LENGTH} code points so the
+ * clamp cannot split a surrogate pair.
+ *
+ * The local name is re-checked rather than trusted: `setWorkspaceName` keeps a
+ * typed-but-invalid name (blank, or clashing with another workspace) in memory
+ * while it skips persisting it.
+ */
+function registryEntryName(
+  localRegistry: WorkspaceRegistry | null,
+  workspaceId: string,
+  branchName: unknown,
+): string {
+  const localName = localRegistry?.workspaces.find((w) => w.id === workspaceId)?.name.trim();
+  const name =
+    localName ||
+    (typeof branchName === 'string' ? branchName.trim() : '') ||
+    REGISTRY_PLACEHOLDER_NAME;
+  return Array.from(name).slice(0, REGISTRY_NAME_MAX_LENGTH).join('');
+}
+
+/**
+ * The name a branch registry entry offers for display, or `null` when it has
+ * none worth showing: missing, blank, or exactly the placeholder older pushes
+ * wrote (so a workspace someone really named "Workspace" reads as unnamed too).
+ * The device default is `'My Workspace'`, so it never collides with this.
+ */
+function branchRegistryName(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const name = raw.trim();
+  return name && name !== REGISTRY_PLACEHOLDER_NAME ? name : null;
 }
 
 export interface AttachmentDownloadPromptItem {
@@ -2055,6 +2103,9 @@ type WorkspaceStore = {
    * (auth, network, missing scopes) DO propagate so the form can tell the
    * user why the list is unavailable rather than claiming the branch is
    * empty.
+   *
+   * Each entry's `name` is the one it was last pushed with, or `null` when the
+   * registry holds no usable name for it.
    */
   listBranchWorkspaces: (branch: string) => Promise<BranchWorkspaceSummary[]>;
 
@@ -3103,7 +3154,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const activeId = registry?.activeWorkspaceId ?? get().synced?.workspaceId ?? null;
     if (!registry || !activeId) return;
     // The registry is the single source of truth for the workspace's
-    // display name — git never sees it. Reflect the rename in-memory so
+    // display name; a push copies it into the branch's registry (see
+    // `registryEntryName`). Reflect the rename in-memory so
     // the switcher / TopBar update synchronously; the IDB write below
     // is fire-and-forget on the latest in-memory state. We deliberately
     // do NOT round-trip the persisted result back into store state:
@@ -5771,8 +5823,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       // Build a minimal scaffold: keep the user's workspaceId (so this
       // repo's identity stays tied to their workspace) but clear all content
       // arrays. The user's actual content lands via the working-branch push.
-      // No workspace name is included — names live in each user's local
-      // registry, not in the git-tracked doc.
+      // The scaffold document carries no workspace name; the registry entry
+      // written below does, chosen the same way a push chooses it.
       const scaffold: WorkspaceSynced = {
         schemaVersion: synced.schemaVersion,
         workspaceId: synced.workspaceId,
@@ -5806,7 +5858,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           workspaces: [
             {
               id: synced.workspaceId,
-              name: 'Workspace',
+              name: registryEntryName(get().workspaceRegistry, synced.workspaceId, undefined),
               lastOpenedAt: new Date().toISOString(),
               createdAt: new Date().toISOString(),
             },
@@ -5995,20 +6047,20 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       }
       registryWorkspaces = (listed ?? []) as RegistryEntry[];
     }
+    // This workspace's own entry carries its name, rewritten on every push so a
+    // rename reaches the branch with the next one; that is what lets a teammate's
+    // import picker tell the branch's workspaces apart. Every other entry is
+    // written back exactly as it was read.
+    const ownEntry = registryWorkspaces.find((w) => w.id === synced.workspaceId);
+    const ownName = registryEntryName(get().workspaceRegistry, synced.workspaceId, ownEntry?.name);
     const registryContent = JSON.stringify(
       {
         schemaVersion: 1,
         activeWorkspaceId: synced.workspaceId,
         workspaces: [
-          {
-            ...(registryWorkspaces.find((w) => w.id === synced.workspaceId) ?? {
-              id: synced.workspaceId,
-              name: 'Workspace',
-              createdAt: now,
-            }),
-            id: synced.workspaceId,
-            lastOpenedAt: now,
-          },
+          ownEntry
+            ? { ...ownEntry, name: ownName, lastOpenedAt: now }
+            : { id: synced.workspaceId, name: ownName, createdAt: now, lastOpenedAt: now },
           ...registryWorkspaces.filter((w) => w.id !== synced.workspaceId),
         ],
       },
@@ -6383,7 +6435,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       seen.add(entry.id);
       out.push({
         id: entry.id,
-        name: typeof entry.name === 'string' && entry.name.trim() ? entry.name.trim() : 'Workspace',
+        name: branchRegistryName(entry.name),
         isActive: entry.id === activeId,
       });
     }

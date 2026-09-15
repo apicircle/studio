@@ -5,7 +5,7 @@ import type { GitHubRepo } from '@apicircle/git';
 import { GitHubError, registerGitProvider, resetGitProviderRegistry } from '@apicircle/git';
 import { NothingWrittenError } from '../../store/nothingWritten';
 import type { GitHostSession } from '@apicircle/shared';
-import { WorkspacePanel } from './WorkspacePanel';
+import { WorkspacePanel, importWorkspaceLabels } from './WorkspacePanel';
 import { renderWithStore } from '../../../test/renderWithStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import * as workspaceSharing from '../../layout/workspaceSharing';
@@ -63,6 +63,15 @@ describe('WorkspacePanel', () => {
     expect(codeMatches.length).toBeGreaterThan(0);
     expect(screen.getByText('pull_request')).toBeInTheDocument();
     expect(screen.queryByText('Supported hosts:')).not.toBeInTheDocument();
+  });
+
+  it('says the workspace name is shared in the repo when you push', async () => {
+    await renderWithStore(<WorkspacePanel />);
+    expect(
+      screen.getByText(/shared in the repo's workspace list when you push/),
+    ).toBeInTheDocument();
+    // The shipped copy promised the opposite; pushes now write the name.
+    expect(screen.queryByText(/Never pushed to Git/)).not.toBeInTheDocument();
   });
 
   it('clicking the connect CTA opens the Vault dock pre-selected on the Sessions sub-tab', async () => {
@@ -634,7 +643,7 @@ describe('WorkspacePanel', () => {
       };
     }
 
-    function registrySpec(workspaces: Array<{ id: string; name: string }>): ResponseSpec {
+    function registrySpec(workspaces: Array<{ id: string; name?: string }>): ResponseSpec {
       return contentsSpec(
         '.apicircle/registry.json',
         JSON.stringify({
@@ -772,6 +781,92 @@ describe('WorkspacePanel', () => {
       expect(select.value).toBe(IMPORT_ID);
     });
 
+    /** Opens import mode over a branch registry listing `workspaces`; returns the picker. */
+    async function openPicker(
+      workspaces: Array<{ id: string; name?: string }>,
+    ): Promise<HTMLSelectElement> {
+      vi.stubGlobal(
+        'fetch',
+        routedFetch([...CONNECT_ROUTES, [REGISTRY_RE, registrySpec(workspaces)]]).fetch,
+      );
+      await connect();
+      await userEvent.click(screen.getByRole('radio', { name: 'Import from workspace' }));
+      return (await screen.findByLabelText('Workspace to import')) as HTMLSelectElement;
+    }
+
+    function optionLabels(select: HTMLSelectElement): Array<string | null> {
+      return within(select)
+        .getAllByRole('option')
+        .map((option) => option.textContent);
+    }
+
+    it('labels each workspace with the name it was pushed with, not an abbreviated id', async () => {
+      const select = await openPicker([
+        { id: IMPORT_ID, name: 'Payments' },
+        { id: 'ws-billing', name: 'Billing' },
+      ]);
+      expect(optionLabels(select)).toEqual(['Payments · active', 'Billing']);
+    });
+
+    it("prefers this device's own name for a workspace over the pushed one", async () => {
+      vi.stubGlobal(
+        'fetch',
+        routedFetch([
+          ...CONNECT_ROUTES,
+          [REGISTRY_RE, registrySpec([{ id: IMPORT_ID, name: 'Payments' }])],
+        ]).fetch,
+      );
+      await connect();
+      act(() => {
+        const registry = useWorkspaceStore.getState().workspaceRegistry!;
+        useWorkspaceStore.setState({
+          workspaceRegistry: {
+            ...registry,
+            workspaces: [
+              ...registry.workspaces,
+              {
+                id: IMPORT_ID,
+                name: '  Payments (mine)  ',
+                createdAt: '2026-01-01T00:00:00.000Z',
+                lastOpenedAt: '2026-01-01T00:00:00.000Z',
+              },
+            ],
+          },
+        });
+      });
+      await userEvent.click(screen.getByRole('radio', { name: 'Import from workspace' }));
+
+      const select = (await screen.findByLabelText('Workspace to import')) as HTMLSelectElement;
+      expect(optionLabels(select)).toEqual(['Payments (mine) · active']);
+      // The destructive warning names it the same way.
+      expect(screen.getByText('Payments (mine)', { selector: 'strong' })).toBeInTheDocument();
+    });
+
+    it('falls back to the full workspace id when no name is known', async () => {
+      // A missing name and the legacy 'Workspace' placeholder both read as unnamed.
+      const select = await openPicker([{ id: IMPORT_ID }, { id: 'ws-billing', name: 'Workspace' }]);
+      expect(optionLabels(select)).toEqual([`${IMPORT_ID} · active`, 'ws-billing']);
+      expect(screen.getByText(IMPORT_ID, { selector: 'strong' })).toBeInTheDocument();
+    });
+
+    it('tells same-named workspaces apart with a short id suffix', async () => {
+      const select = await openPicker([
+        { id: IMPORT_ID, name: 'API' },
+        { id: 'ws-billing', name: 'api' },
+        { id: 'ws-orders', name: 'Orders' },
+      ]);
+      expect(optionLabels(select)).toEqual(['API #ws-p · active', 'api #ws-b', 'Orders']);
+      // The warning carries the suffix too, so it names exactly one workspace.
+      expect(screen.getByText('API #ws-p', { selector: 'strong' })).toBeInTheDocument();
+    });
+
+    it('explains that only workspaces pushed to the base branch are listed', async () => {
+      const select = await openPicker([{ id: IMPORT_ID, name: 'Payments' }]);
+      expect(select).toHaveAccessibleDescription(
+        /^Only workspaces pushed to main are listed\. To import one that lives on a working branch, choose that branch as the base\.$/,
+      );
+    });
+
     it('warns that the import clears the current workspace and says what survives', async () => {
       vi.stubGlobal(
         'fetch',
@@ -802,6 +897,8 @@ describe('WorkspacePanel', () => {
       await userEvent.click(screen.getByRole('radio', { name: 'Import from workspace' }));
 
       expect(await screen.findByText(/there is nothing to import/)).toBeInTheDocument();
+      // An empty base branch is exactly when the working-branch tip matters.
+      expect(screen.getByText(/Only workspaces pushed to/)).toBeInTheDocument();
       expect(screen.queryByLabelText('Workspace to import')).not.toBeInTheDocument();
       // No warning without a selection — nothing is about to be replaced.
       expect(screen.queryByText(/This clears the current workspace/)).not.toBeInTheDocument();
@@ -819,6 +916,8 @@ describe('WorkspacePanel', () => {
 
       expect(await screen.findByRole('alert')).toBeInTheDocument();
       expect(screen.queryByText(/there is nothing to import/)).not.toBeInTheDocument();
+      // No listing came back, so there is nothing for the hint to describe.
+      expect(screen.queryByText(/Only workspaces pushed to/)).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Import & create working branch/ })).toBeDisabled();
     });
 
@@ -990,8 +1089,9 @@ describe('WorkspacePanel', () => {
 
       await userEvent.selectOptions(picker, 'ws-billing');
       expect(picker.value).toBe('ws-billing');
-      // The warning names the workspace that is actually about to land.
-      expect(screen.getByText('Billing')).toBeInTheDocument();
+      // The warning names the workspace that is actually about to land. Scoped to the
+      // warning's <strong>: the picker's own option now reads "Billing" as well.
+      expect(screen.getByText('Billing', { selector: 'strong' })).toBeInTheDocument();
 
       // The auto-generated branch name is already valid — retyping it would
       // only cost a char-by-char userEvent.type on every run.
@@ -1023,6 +1123,69 @@ describe('WorkspacePanel', () => {
       expect(screen.queryByLabelText('Workspace to import')).not.toBeInTheDocument();
       expect(screen.queryByText(/This clears the current workspace/)).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Create working branch/ })).toBeEnabled();
+    });
+
+    describe('importWorkspaceLabels', () => {
+      function localRegistry(workspaces: Array<{ id: string; name: string }>) {
+        return {
+          schemaVersion: 1 as const,
+          activeWorkspaceId: workspaces[0]?.id ?? null,
+          workspaces: workspaces.map((w) => ({ ...w, createdAt: 't', lastOpenedAt: 't' })),
+        };
+      }
+
+      function summary(id: string, name: string | null) {
+        return { id, name, isActive: false };
+      }
+
+      it("labels with this device's name, then the pushed name, then the id", () => {
+        const labels = importWorkspaceLabels(
+          [
+            summary('ws-local', 'Pushed'),
+            summary('ws-pushed', 'Pushed name'),
+            summary('ws-unnamed', null),
+          ],
+          localRegistry([
+            { id: 'ws-local', name: '  Mine  ' },
+            // Blank locally (a name mid-edit) — the pushed name still shows.
+            { id: 'ws-pushed', name: '   ' },
+          ]),
+        );
+        expect([...labels]).toEqual([
+          ['ws-local', 'Mine'],
+          ['ws-pushed', 'Pushed name'],
+          ['ws-unnamed', 'ws-unnamed'],
+        ]);
+      });
+
+      it('works before the local registry has loaded', () => {
+        expect([
+          ...importWorkspaceLabels([summary('ws-a', null), summary('ws-b', 'B')], null),
+        ]).toEqual([
+          ['ws-a', 'ws-a'],
+          ['ws-b', 'B'],
+        ]);
+      });
+
+      it('suffixes only case-insensitive collisions, with the first four id characters', () => {
+        const labels = importWorkspaceLabels(
+          [summary('aaaa1111', 'API'), summary('bbbb2222', 'api'), summary('cccc3333', 'Orders')],
+          null,
+        );
+        expect([...labels.values()]).toEqual(['API #aaaa', 'api #bbbb', 'Orders']);
+      });
+
+      it('counts a local name toward collisions', () => {
+        const labels = importWorkspaceLabels(
+          [summary('aaaa1111', 'Payments'), summary('bbbb2222', 'Billing')],
+          localRegistry([{ id: 'bbbb2222', name: 'payments' }]),
+        );
+        expect([...labels.values()]).toEqual(['Payments #aaaa', 'payments #bbbb']);
+      });
+
+      it('returns an empty map for an empty list', () => {
+        expect(importWorkspaceLabels([], null).size).toBe(0);
+      });
     });
   });
 

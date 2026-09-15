@@ -49,6 +49,7 @@ import {
   useWorkspaceStore,
   type BranchWorkspaceSummary,
 } from '../../store/workspaceStore';
+import type { WorkspaceRegistry } from '../../persistence/db';
 import { parseRepoCoordinate, REPO_HINT, REPO_PLACEHOLDER } from '../../store/repoCoordinate';
 import { useHostSelection } from '../../hooks/useHostSelection';
 import { useLazyListWindow } from '../../hooks/useLazyListWindow';
@@ -105,8 +106,8 @@ export function WorkspacePanel() {
           className="mt-1 h-9 w-full max-w-md rounded-sm border border-border bg-card px-3 text-sm text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
         />
         <p className="mt-2 text-xs text-text-dim">
-          Local label for this workspace on this machine. Never pushed to Git — each user can name
-          their own copy independently.
+          Saved with this workspace, and shared in the repo&apos;s workspace list when you push so
+          teammates can recognise it.
         </p>
       </section>
 
@@ -1991,13 +1992,39 @@ function CreatePrModal({ open, onClose }: { open: boolean; onClose: () => void }
 }
 
 /**
- * Workspace ids are `generateId()` UUIDs, far too long for a dropdown row.
- * Show a prefix with an ellipsis so it reads as an abbreviation rather than
- * a mangled name — but leave short ids whole, since truncating those loses
- * information and gains nothing.
+ * Picker labels for the workspaces a branch registry lists, keyed by id.
+ *
+ * A label is this device's own name for that workspace when it has one — what
+ * the user already calls it — else the name it was last pushed with, else the
+ * full workspace id, so an unnamed workspace is still identifiable. Labels that
+ * collide case-insensitively get ` #` plus the first four id characters, the
+ * same disambiguation the workspace switcher uses; unique labels stay clean.
+ *
+ * Exported for tests.
  */
-function abbreviateWorkspaceId(id: string): string {
-  return id.length <= 12 ? id : `${id.slice(0, 8)}…`;
+export function importWorkspaceLabels(
+  list: readonly BranchWorkspaceSummary[],
+  localRegistry: WorkspaceRegistry | null,
+): Map<string, string> {
+  const localNames = new Map<string, string>();
+  for (const entry of localRegistry?.workspaces ?? []) {
+    // `setWorkspaceName` keeps a name that is mid-edit in memory unvalidated,
+    // so a blank one falls through to the pushed name.
+    const name = entry.name.trim();
+    if (name) localNames.set(entry.id, name);
+  }
+  const labels = list.map((w) => ({ id: w.id, label: localNames.get(w.id) ?? w.name ?? w.id }));
+  const counts = new Map<string, number>();
+  for (const { label } of labels) {
+    const key = label.toLowerCase();
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return new Map(
+    labels.map(({ id, label }) => [
+      id,
+      counts.get(label.toLowerCase()) === 1 ? label : `${label} #${id.slice(0, 4)}`,
+    ]),
+  );
 }
 
 function CreateBranchForm() {
@@ -2012,6 +2039,7 @@ function CreateBranchForm() {
   const listBranchWorkspaces = useWorkspaceStore((s) => s.listBranchWorkspaces);
   const seedInitialCommit = useWorkspaceStore((s) => s.seedInitialCommit);
   const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
+  const localRegistry = useWorkspaceStore((s) => s.workspaceRegistry);
 
   const [name, setName] = useState(() => generateWorkingBranchName({ displayName }));
   const [submitting, setSubmitting] = useState(false);
@@ -2136,6 +2164,7 @@ function CreateBranchForm() {
   // an empty branch registry or an in-flight fetch has nothing to import.
   const importBlocked = importing && (loadingWorkspaces || noBranchWorkspaces || !importId);
   const selectedImport = branchWorkspaces?.find((w) => w.id === importId) ?? null;
+  const importLabels = importWorkspaceLabels(branchWorkspaces ?? [], localRegistry);
 
   const submit = async () => {
     if (validation) {
@@ -2303,11 +2332,12 @@ function CreateBranchForm() {
                   setError(null);
                 }}
                 aria-label="Workspace to import"
+                aria-describedby="import-workspace-hint"
                 className="h-7 w-full appearance-none rounded-sm border border-border bg-surface px-2 pr-7 text-xs text-text-primary focus:border-accent focus:outline-none"
               >
                 {branchWorkspaces?.map((w) => (
                   <option key={w.id} value={w.id}>
-                    {w.name} · {abbreviateWorkspaceId(w.id)}
+                    {importLabels.get(w.id)}
                     {w.isActive ? ' · active' : ''}
                   </option>
                 ))}
@@ -2319,6 +2349,14 @@ function CreateBranchForm() {
               />
             </div>
           )}
+          {/* The list comes from the base branch's registry alone, so a workspace
+              pushed only to a working branch never shows up here. */}
+          {!loadingWorkspaces && !workspacesError && (
+            <p id="import-workspace-hint" className="text-[0.6875rem] text-text-dim">
+              Only workspaces pushed to <code className="font-mono">{baseBranch}</code> are listed.
+              To import one that lives on a working branch, choose that branch as the base.
+            </p>
+          )}
           {selectedImport && (
             <div className="flex items-start gap-2 rounded-sm border border-danger/40 bg-danger/5 p-2.5">
               <AlertTriangle size={13} className="mt-0.5 shrink-0 text-danger" aria-hidden="true" />
@@ -2328,8 +2366,9 @@ function CreateBranchForm() {
                 </p>
                 <p className="text-text-muted">
                   Every request, folder, environment, mock server, plan, release and global asset in
-                  this workspace is replaced by <strong>{selectedImport.name}</strong>. A “Before
-                  workspace import” snapshot is taken first, so History → Snapshots can put it back.
+                  this workspace is replaced by{' '}
+                  <strong>{importLabels.get(selectedImport.id)}</strong>. A “Before workspace
+                  import” snapshot is taken first, so History → Snapshots can put it back.
                 </p>
                 <p className="text-text-muted">
                   Run history, saved secrets and your Git connection are kept. Imported file assets

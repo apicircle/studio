@@ -59,7 +59,11 @@ export function resolveApicircleRoot(): string {
 export interface WorkspaceRegistryEntry {
   /** Matches the in-workspace `synced.workspaceId`. */
   id: string;
-  /** Human-readable label. Local to this device — never pushed to git. */
+  /**
+   * Human-readable label, kept in this device's registry. Studio's push also
+   * writes it into the branch's `.apicircle/registry.json`, so teammates can
+   * recognise the workspace.
+   */
   name: string;
   /** ISO timestamp; bumped every time this workspace is opened or written. */
   lastOpenedAt: string;

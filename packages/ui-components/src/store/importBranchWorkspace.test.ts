@@ -311,14 +311,52 @@ describe('listBranchWorkspaces', () => {
     expect(list).toEqual([{ id: 'ws-ok', name: 'Fine', isActive: false }]);
   });
 
-  it('falls back to "Workspace" when an entry carries no usable name', async () => {
+  it('reports no name when an entry carries no usable one', async () => {
+    // A registry written by hand, by the migration guide, or by another tool can
+    // omit the name or leave it blank — the entry still lists, just unnamed.
     vi.stubGlobal(
       'fetch',
-      routedFetch([[REGISTRY_RE, registryJson([{ id: 'ws-a' }, { id: 'ws-b', name: '   ' }])]])
-        .fetch,
+      routedFetch([
+        [
+          REGISTRY_RE,
+          registryJson([{ id: 'ws-a' }, { id: 'ws-b', name: '   ' }, { id: 'ws-c', name: 42 }]),
+        ],
+      ]).fetch,
     );
     const list = await useWorkspaceStore.getState().listBranchWorkspaces('main');
-    expect(list.map((w) => w.name)).toEqual(['Workspace', 'Workspace']);
+    expect(list).toEqual([
+      { id: 'ws-a', name: null, isActive: false },
+      { id: 'ws-b', name: null, isActive: false },
+      { id: 'ws-c', name: null, isActive: false },
+    ]);
+  });
+
+  it("treats the 'Workspace' placeholder older pushes wrote as no name", async () => {
+    // Before names were pushed, every entry a push created was named 'Workspace',
+    // so showing it would label every workspace on the branch identically.
+    vi.stubGlobal(
+      'fetch',
+      routedFetch([[REGISTRY_RE, registryJson([{ id: 'ws-a', name: 'Workspace' }])]]).fetch,
+    );
+    const list = await useWorkspaceStore.getState().listBranchWorkspaces('main');
+    expect(list).toEqual([{ id: 'ws-a', name: null, isActive: false }]);
+  });
+
+  it('keeps a real pushed name, trimmed, including the device default', async () => {
+    vi.stubGlobal(
+      'fetch',
+      routedFetch([
+        [
+          REGISTRY_RE,
+          registryJson([
+            { id: 'ws-a', name: '  Payments API  ' },
+            { id: 'ws-b', name: 'My Workspace' },
+          ]),
+        ],
+      ]).fetch,
+    );
+    const list = await useWorkspaceStore.getState().listBranchWorkspaces('main');
+    expect(list.map((w) => w.name)).toEqual(['Payments API', 'My Workspace']);
   });
 
   it('ignores a non-string activeWorkspaceId rather than marking an entry active', async () => {

@@ -136,6 +136,34 @@ git-synced workspace — and ended somewhere it should never have reached.
     articles and the cross-references to them; the onboarding tour skips the
     Link Workspace step.
 
+- **Workspace names are now pushed to Git, so teammates can tell workspaces
+  apart (`@apicircle/ui-components`).** This reverses the Identity section's
+  shipped promise that a workspace's name was a local label, "never pushed to
+  Git". Because of that promise, every entry a push wrote into a branch's
+  `.apicircle/registry.json` was named `Workspace`, and the Import from
+  workspace picker could only offer `Workspace · <id…>`. A push now writes the
+  workspace's name into its own registry entry, on every push, so a rename
+  reaches the branch with the next one; seeding an empty repo does the same.
+  Teammates' entries are written back untouched, and a name that is blank
+  mid-edit keeps whatever the branch already had. The Identity section now says
+  the name is shared in the repo's workspace list when you push.
+
+  **Privacy:** a workspace's name now travels with the repo. Anyone who can read
+  the repo — everyone, for a public one — can read the name of every workspace
+  pushed to it, so rename a workspace before pushing if its name should stay
+  private. Nothing else in the registry changed, and a registry written without
+  names (by an older version, by hand, or by the migration guide) still loads.
+  - The picker labels each workspace with this device's own name for it, else
+    the name it was pushed with, else its full id; adds ` #abcd` from the id only
+    where labels collide; and says that only workspaces pushed to the base
+    branch are listed, so to import one from a working branch you choose that
+    branch as the base. The legacy `Workspace` placeholder reads as unnamed.
+  - `BranchWorkspaceSummary.name` is now `string | null`, `null` when the entry
+    has no usable name.
+  - VS Code's folder workspace list labels a workspace with its registry name,
+    so it now shows the real name of a workspace pushed by this version instead
+    of `Workspace`.
+
 ### Added
 
 - **Start a working branch from a workspace that is already on the base

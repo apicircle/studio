@@ -195,6 +195,128 @@ describe('workspaceStore.pushWorkspace', () => {
     expect(ids).toContain(useWorkspaceStore.getState().synced!.workspaceId);
   });
 
+  // The pusher's own entry carries this device's name for the workspace, so a teammate's import
+  // picker can tell the branch's workspaces apart. It is rewritten on every push, so a rename
+  // reaches the branch with the next one; every other entry is written back exactly as found.
+  interface PushedRegistry {
+    activeWorkspaceId: string;
+    workspaces: Array<{ id: string; name: string; createdAt?: string; lastOpenedAt?: string }>;
+  }
+
+  /** Pushes over `registry` (`null`: none on the branch yet) and returns the registry written. */
+  async function pushOver(
+    registry: object | null,
+    headSha = 'sha-main',
+    commitSha = 'commit-new',
+  ): Promise<PushedRegistry> {
+    const fetchMock = queuedFetch([
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: headSha } } },
+      registry === null
+        ? { body: { message: 'Not Found' }, status: 404 }
+        : registryFile(JSON.stringify(registry)),
+      { body: { sha: headSha, message: 'previous', tree: { sha: 'tree-old' } } },
+      { body: { sha: 'tree-new' } },
+      { body: { sha: commitSha, message: 'sync', tree: { sha: 'tree-new' } } },
+      { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: commitSha } } },
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+    await useWorkspaceStore.getState().pushWorkspace();
+    const tree = JSON.parse((fetchMock.mock.calls[3][1] as RequestInit).body as string) as {
+      tree: { path: string; content?: string }[];
+    };
+    return JSON.parse(
+      tree.tree.find((t) => t.path === '.apicircle/registry.json')!.content!,
+    ) as PushedRegistry;
+  }
+
+  it("writes this device's name for the workspace into its own registry entry", async () => {
+    await setupConnectedBranch();
+    const wsId = useWorkspaceStore.getState().synced!.workspaceId;
+    useWorkspaceStore.getState().setWorkspaceName('  Payments API  ');
+
+    const registry = await pushOver(null);
+
+    expect(registry.workspaces).toEqual([
+      expect.objectContaining({ id: wsId, name: 'Payments API' }),
+    ]);
+  });
+
+  it('carries a rename to the branch with the next push', async () => {
+    await setupConnectedBranch();
+    const wsId = useWorkspaceStore.getState().synced!.workspaceId;
+    useWorkspaceStore.getState().setWorkspaceName('Payments');
+    const first = await pushOver(null);
+    expect(first.workspaces[0].name).toBe('Payments');
+
+    useWorkspaceStore.getState().setWorkspaceName('Payments v2');
+    // The branch now holds the first push's registry, at the first push's commit.
+    const second = await pushOver(first, 'commit-new', 'commit-2');
+
+    expect(second.workspaces).toHaveLength(1);
+    expect(second.workspaces[0]).toMatchObject({ id: wsId, name: 'Payments v2' });
+    // A rename is not a new registration.
+    expect(second.workspaces[0].createdAt).toBe(first.workspaces[0].createdAt);
+  });
+
+  it("writes a teammate's entry back exactly as the branch had it", async () => {
+    await setupConnectedBranch();
+    useWorkspaceStore.getState().setWorkspaceName('Payments API');
+    const teammate = {
+      id: 'teammate-ws',
+      name: 'Teammate',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      lastOpenedAt: '2026-01-02T00:00:00.000Z',
+    };
+
+    const registry = await pushOver({
+      schemaVersion: 1,
+      activeWorkspaceId: 'teammate-ws',
+      workspaces: [teammate],
+    });
+
+    expect(registry.workspaces.find((w) => w.id === 'teammate-ws')).toEqual(teammate);
+  });
+
+  it("keeps the branch's name for this workspace while this device's name is blank", async () => {
+    await setupConnectedBranch();
+    const wsId = useWorkspaceStore.getState().synced!.workspaceId;
+    // `setWorkspaceName` keeps a blank name in memory (it only skips persisting it), so a push
+    // fired mid-edit must not replace a good name with nothing.
+    useWorkspaceStore.getState().setWorkspaceName('   ');
+
+    const registry = await pushOver({
+      schemaVersion: 1,
+      activeWorkspaceId: wsId,
+      workspaces: [{ id: wsId, name: 'Pushed earlier', createdAt: '2026-01-01T00:00:00.000Z' }],
+    });
+
+    expect(registry.workspaces[0]).toMatchObject({ id: wsId, name: 'Pushed earlier' });
+  });
+
+  it('writes the placeholder when neither this device nor the branch has a usable name', async () => {
+    await setupConnectedBranch();
+    const wsId = useWorkspaceStore.getState().synced!.workspaceId;
+    useWorkspaceStore.getState().setWorkspaceName('');
+
+    const registry = await pushOver({
+      schemaVersion: 1,
+      activeWorkspaceId: wsId,
+      workspaces: [{ id: wsId, name: '  ', createdAt: '2026-01-01T00:00:00.000Z' }],
+    });
+
+    expect(registry.workspaces[0].name).toBe('Workspace');
+  });
+
+  it('clamps a very long name to 256 characters', async () => {
+    await setupConnectedBranch();
+    // Counted in code points, so the clamp can never split a surrogate pair.
+    useWorkspaceStore.getState().setWorkspaceName('🚀'.repeat(300));
+
+    const registry = await pushOver(null);
+
+    expect(registry.workspaces[0].name).toBe('🚀'.repeat(256));
+  });
+
   it('refuses to overwrite a registry that is not valid JSON, before writing anything', async () => {
     await setupConnectedBranch();
     const fetchMock = queuedFetch([

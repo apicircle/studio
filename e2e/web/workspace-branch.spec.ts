@@ -317,6 +317,12 @@ test.describe('Workspace — auto-branch flow (P4.2)', () => {
       const picker = app.getByLabel('Workspace to import');
       await expect(picker).toBeVisible();
       await expect(picker).toHaveValue(IMPORT_ID);
+      // Each option names the workspace as it was pushed rather than abbreviating its
+      // id, and the form says the list only covers what was pushed to the base branch.
+      await expect(picker.locator('option')).toHaveText(['Payments API · active']);
+      await expect(picker).toHaveAccessibleDescription(
+        /Only workspaces pushed to main are listed\. To import one that lives on a working branch, choose that branch as the base\./,
+      );
 
       // The destructive warning has to be on screen BEFORE the user commits.
       await expect(app.getByText(/This clears the current workspace/)).toBeVisible();
