@@ -3,11 +3,25 @@ import type { FocusEvent, MouseEvent, ReactElement, ReactNode } from 'react';
 import { cn } from './cn';
 
 type Side = 'top' | 'bottom' | 'left' | 'right';
+type Align = 'center' | 'start' | 'end';
 
 interface TooltipProps {
   /** The tooltip text. Kept to a short string so it can be the accessible desc. */
   content: ReactNode;
   side?: Side;
+  /**
+   * Where the tooltip sits along its side. `center` (the default) centres it on
+   * the trigger. `start` / `end` pin it to one edge of the trigger instead — the
+   * left / right edge for `top` and `bottom`, the top / bottom edge for `left`
+   * and `right` — so it grows away from that edge rather than spilling past it.
+   *
+   * Use it for a control near the edge of a clipping container. The Lens app
+   * uses `side="bottom" align="end"` for the controls in a right-aligned header
+   * toolbar under an `overflow-hidden` parent, where a top tooltip is cut off
+   * above the header: bottom + end opens it downward and grows it leftward,
+   * inside the parent.
+   */
+  align?: Align;
   /**
    * The single interactive child the tooltip describes. It must forward
    * `onMouseEnter/Leave`, `onFocus/Blur`, and `aria-describedby` — a native
@@ -24,6 +38,17 @@ const SIDE: Record<Side, string> = {
 };
 
 /**
+ * `align="start" | "end"`: the same side offset as {@link SIDE}, anchored to one
+ * edge of the trigger with no centring translate.
+ */
+const EDGE: Record<Side, Record<Exclude<Align, 'center'>, string>> = {
+  top: { start: 'bottom-full left-0 mb-1', end: 'bottom-full right-0 mb-1' },
+  bottom: { start: 'top-full left-0 mt-1', end: 'top-full right-0 mt-1' },
+  left: { start: 'right-full top-0 mr-1', end: 'right-full bottom-0 mr-1' },
+  right: { start: 'left-full top-0 ml-1', end: 'left-full bottom-0 ml-1' },
+};
+
+/**
  * An accessible replacement for the native `title=` attribute (227 of which are
  * scattered through the app). Native titles are unreachable by keyboard, never
  * appear on touch, can't be styled, and — worst — become the element's
@@ -31,7 +56,7 @@ const SIDE: Record<Side, string> = {
  * sentence. This surfaces on hover AND on keyboard focus, and links via
  * `aria-describedby` so it *describes* rather than *renames* its control.
  */
-export function Tooltip({ content, side = 'top', children }: TooltipProps) {
+export function Tooltip({ content, side = 'top', align = 'center', children }: TooltipProps) {
   const id = useId();
   const [open, setOpen] = useState(false);
 
@@ -78,7 +103,7 @@ export function Tooltip({ content, side = 'top', children }: TooltipProps) {
         className={cn(
           'pointer-events-none absolute z-50 w-max max-w-xs rounded-sm border border-border bg-card px-2 py-1',
           'text-[0.6875rem] leading-snug text-text-primary shadow-md transition-opacity',
-          SIDE[side],
+          align === 'center' ? SIDE[side] : EDGE[side][align],
           open ? 'opacity-100' : 'opacity-0',
         )}
       >

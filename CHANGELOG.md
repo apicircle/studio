@@ -363,6 +363,10 @@ git-synced workspace — and ended somewhere it should never have reached.
   reach for. All additive; nothing renders differently until a screen adopts them.
   Exported from the package root so editions (via `extraPanels`) can compose the
   same primitives instead of maintaining a parallel set.
+- **`Tooltip` can anchor to an edge of its trigger (`@apicircle/ui-components`).**
+  A new optional `align` prop (`center` | `start` | `end`) pins the tooltip to the
+  trigger's start or end edge instead of centring it, for controls near the edge
+  of a clipping container; omitted or `center`, it renders exactly as before.
 - **New assertion kind — `json-schema` (`@apicircle/shared`, `@apicircle/core`).**
   Validates a whole value against a JSON Schema (carried in `expected` as a JSON string;
   `target` selects the value, default the response body) — the only kind that checks structure
