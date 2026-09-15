@@ -16,6 +16,14 @@ import type { LucideIcon } from 'lucide-react';
  * gating for a section lives inside the edition (it renders its own gate when the
  * section carries `requiresAuth`); the seam only carries the flag, so no
  * entitlement concept leaks into Studio.
+ *
+ * The active section follows the visible panel. Anything can open a panel
+ * through the store — an edition's own navigation calls
+ * `setActivePanel('editor')` while its section is active — so when the active
+ * panel is one the active section doesn't list, App selects the first section
+ * that does and stores it as the workspace's mode, as a toggle click would. A
+ * panel no section lists leaves the mode where it is, and following never
+ * changes the active panel itself.
  */
 export interface SectionDef {
   /** Edition-namespaced id, e.g. `lens.studio` / `lens.lens`. */
@@ -28,6 +36,7 @@ export interface SectionDef {
    * Panel ids (core `PanelId`s and/or edition panel ids) that belong to this
    * section. `PanelTabs` shows only the active section's panels; a panel id not
    * listed in any section is simply hidden while that section is active.
+   * Opening a panel that another section lists switches the mode to it.
    */
   panelIds: readonly string[];
   /**

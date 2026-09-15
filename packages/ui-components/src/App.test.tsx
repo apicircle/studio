@@ -1,6 +1,6 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Compass, Server } from 'lucide-react';
 import { App } from './App';
 import { useWorkspaceStore } from './store/workspaceStore';
@@ -198,5 +198,133 @@ describe('App', () => {
     // Restored into Lens mode → 'editor' isn't a Lens panel → land on Lens's
     // first panel instead of showing the Editor body under the Lens tab strip.
     await waitFor(() => expect(useWorkspaceStore.getState().activePanel).toBe('lens.discover'));
+  });
+
+  // An edition opens panels straight through the store — Lens's "Send to Studio
+  // Editor" calls `setActivePanel('editor')` while its own section is active — so
+  // the Mode toggle has to follow the panel that is now on screen.
+  describe('the mode follows the visible panel', () => {
+    const SECTION_KEY = 'apicircle-v2:active-section:';
+    // 'history' is deliberately in neither section.
+    const sections: SectionDef[] = [
+      { id: 'studio', label: 'Studio', icon: Compass, panelIds: ['workspace', 'editor'] },
+      { id: 'lens', label: 'Lens', icon: Server, panelIds: ['lens.discover'] },
+    ];
+    const extraPanels: ExtraPanelDef[] = [
+      {
+        id: 'lens.discover',
+        label: 'Index',
+        icon: Compass,
+        Panel: () => <div>INDEX PANEL BODY</div>,
+      },
+    ];
+
+    function modeTab(name: RegExp): HTMLElement {
+      return within(screen.getByRole('tablist', { name: /Mode/ })).getByRole('tab', { name });
+    }
+
+    /** Mounts the two-section shell past the landing and waits for the restored mode. */
+    async function renderEdition(): Promise<string> {
+      localStorage.setItem('apicircle:section-landing-done-v1', 'true'); // skip the landing
+      render(<App sections={sections} extraPanels={extraPanels} />);
+      await waitFor(() => expect(modeTab(/^Studio$/)).toHaveAttribute('aria-selected', 'true'));
+      return useWorkspaceStore.getState().synced!.workspaceId;
+    }
+
+    function openPanel(panel: string): void {
+      act(() => {
+        useWorkspaceStore.getState().setActivePanel(panel);
+      });
+    }
+
+    /** Every `setItem` call that stored a section, ignoring the store's own panel writes. */
+    function sectionWrites(setItem: { mock: { calls: string[][] } }): string[][] {
+      return setItem.mock.calls.filter(([key]) => key.startsWith(SECTION_KEY));
+    }
+
+    it('opening the editor while the Lens section is active selects Studio and stores it', async () => {
+      const wsId = await renderEdition();
+      await userEvent.click(modeTab(/^Lens$/));
+      expect(useWorkspaceStore.getState().activePanel).toBe('lens.discover');
+
+      openPanel('editor');
+
+      expect(modeTab(/^Studio$/)).toHaveAttribute('aria-selected', 'true');
+      expect(modeTab(/^Lens$/)).toHaveAttribute('aria-selected', 'false');
+      expect(localStorage.getItem(`${SECTION_KEY}${wsId}`)).toBe('studio');
+      // The strip shows the section that owns the visible panel...
+      expect(screen.getByRole('button', { name: /^Editor$/ })).toBeInTheDocument();
+      // ...and following it never moves the panel itself.
+      expect(useWorkspaceStore.getState().activePanel).toBe('editor');
+    });
+
+    it('opening a Lens panel while the Studio section is active selects Lens', async () => {
+      const wsId = await renderEdition();
+
+      openPanel('lens.discover');
+
+      expect(modeTab(/^Lens$/)).toHaveAttribute('aria-selected', 'true');
+      expect(localStorage.getItem(`${SECTION_KEY}${wsId}`)).toBe('lens');
+      expect(screen.getByText('INDEX PANEL BODY')).toBeInTheDocument();
+      expect(useWorkspaceStore.getState().activePanel).toBe('lens.discover');
+    });
+
+    it('a panel the active section already lists writes nothing', async () => {
+      await renderEdition();
+      const setItem = vi.spyOn(Storage.prototype, 'setItem');
+
+      openPanel('workspace');
+
+      expect(sectionWrites(setItem)).toEqual([]);
+      expect(modeTab(/^Studio$/)).toHaveAttribute('aria-selected', 'true');
+      expect(useWorkspaceStore.getState().activePanel).toBe('workspace');
+    });
+
+    it('a panel listed in no section leaves the toggle alone', async () => {
+      await renderEdition();
+      await userEvent.click(modeTab(/^Lens$/));
+      const setItem = vi.spyOn(Storage.prototype, 'setItem');
+
+      openPanel('history');
+
+      expect(modeTab(/^Lens$/)).toHaveAttribute('aria-selected', 'true');
+      expect(sectionWrites(setItem)).toEqual([]);
+      expect(useWorkspaceStore.getState().activePanel).toBe('history');
+    });
+
+    it('writes nothing without sections (Studio standalone)', async () => {
+      render(<App />);
+      await waitFor(() => screen.getByText('API Circle Studio'));
+      const setItem = vi.spyOn(Storage.prototype, 'setItem');
+
+      openPanel('history');
+
+      expect(sectionWrites(setItem)).toEqual([]);
+      expect(Object.keys(localStorage).filter((key) => key.startsWith(SECTION_KEY))).toEqual([]);
+      expect(screen.queryByRole('tablist', { name: /Mode/ })).toBeNull();
+      expect(useWorkspaceStore.getState().activePanel).toBe('history');
+    });
+
+    it('a cold launch into the stored section does not rewrite it', async () => {
+      localStorage.setItem('apicircle:section-landing-done-v1', 'true'); // skip the landing
+      // The first launch only learns the hydrated workspace id (the mode is stored per id).
+      const first = render(<App sections={sections} extraPanels={extraPanels} />);
+      await waitFor(() => screen.getByText('API Circle Studio'));
+      const wsId = useWorkspaceStore.getState().synced!.workspaceId;
+      first.unmount();
+
+      // Lens is the stored mode while the globally stored panel is a core one, so
+      // the restore effect moves the panel into Lens as the shell mounts.
+      localStorage.setItem(`${SECTION_KEY}${wsId}`, 'lens');
+      useWorkspaceStore.getState().setActivePanel('editor');
+      const setItem = vi.spyOn(Storage.prototype, 'setItem');
+
+      render(<App sections={sections} extraPanels={extraPanels} />);
+      await waitFor(() => expect(modeTab(/^Lens$/)).toHaveAttribute('aria-selected', 'true'));
+      await waitFor(() => expect(useWorkspaceStore.getState().activePanel).toBe('lens.discover'));
+
+      expect(sectionWrites(setItem)).toEqual([]);
+      expect(localStorage.getItem(`${SECTION_KEY}${wsId}`)).toBe('lens');
+    });
   });
 });

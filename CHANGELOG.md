@@ -504,6 +504,14 @@ git-synced workspace — and ended somewhere it should never have reached.
   Account panel or its signed-out gate) — the Variables / Vault / Assets tools
   only apply to the Studio workspace. Both read `activePanel` from the store; in
   Studio every panel is a core panel, so nothing changes.
+- **The mode toggle follows the visible panel (`@apicircle/ui-components`).** With
+  `sections` registered, a panel opened through the store — an edition calling
+  `setActivePanel('editor')` from its own section, say — rendered under the other
+  section's tab strip while the Mode toggle stayed on the section the user had
+  left. `App` now selects the first section that lists the visible panel and
+  stores it as the workspace's mode, as a toggle click would. A panel no section
+  lists leaves the mode alone, the active panel itself is never changed, and
+  Studio-standalone, which registers no sections, is untouched.
 - **`cn()` now resolves Tailwind conflicts, making the primitives usable
   (`@apicircle/ui-components`).** It was a plain string join, so a component's
   base class and a call-site override both survived into the attribute and the

@@ -239,6 +239,39 @@ export function App({
     }
   }, [workspaceId, sections, setActivePanel]);
 
+  // The mode follows the visible panel. An edition's own navigation opens panels
+  // through the store — Lens calls `setActivePanel('editor')` from its Lens
+  // section — which left the Editor on screen under the Lens tab strip and Mode
+  // toggle. When the active panel isn't in the active section, select the first
+  // section that lists it and store that, as a toggle click would. It never
+  // changes `activePanel` itself.
+  //
+  // Keyed on `activePanel` alone, with everything else read through refs, so a
+  // toggle click or a workspace switch (the restore effect's job) never re-runs
+  // it — and a click into a section with no panels leaves `activePanel` as it
+  // is, so it can't flip the mode back. It waits until the restore effect has
+  // resolved a section (`activeSectionId` is '' before that), so a cold launch
+  // never rewrites the stored mode. A panel no section lists leaves the mode
+  // alone. Studio registers no sections, so there this is a strict no-op.
+  const activePanel = useWorkspaceStore((s) => s.activePanel);
+  const sectionsRef = useRef(sections);
+  sectionsRef.current = sections;
+  const activeSectionIdRef = useRef(activeSectionId);
+  activeSectionIdRef.current = activeSectionId;
+  const workspaceIdRef = useRef(workspaceId);
+  workspaceIdRef.current = workspaceId;
+  useEffect(() => {
+    const registered = sectionsRef.current;
+    const sectionId = activeSectionIdRef.current;
+    const ws = workspaceIdRef.current;
+    if (registered.length <= 1 || !ws || !sectionId) return;
+    if (resolveActiveSection(sectionId, registered)?.panelIds.includes(activePanel)) return;
+    const owner = registered.find((s) => s.panelIds.includes(activePanel));
+    if (!owner) return;
+    setActiveSectionIdState(owner.id);
+    writeStoredSection(ws, owner.id);
+  }, [activePanel]);
+
   // Reconcile a persisted `activePanel` this build no longer shows.
   //
   // `activePanel` is restored from localStorage at store-creation time by
