@@ -11,6 +11,12 @@ name: E2E
 #     Cross-browser / desktop don't gate PR merges; they run on main.
 #   - push to main → all jobs except visual-baseline.
 #   - workflow_dispatch → all jobs (use this to (re)generate visual baselines).
+#
+# Artifacts are kept for 3 days (blob reports 1, the coverage summary 30).
+# Every repository in the apicircle org shares one 500 MB Actions storage
+# quota, and at 14 days the merged web report alone (~46 MB a run) filled it,
+# which fails artifact uploads in every repo, not just this one. Download a
+# report or trace within 3 days of its run.
 
 on:
   pull_request:
@@ -99,7 +105,7 @@ jobs:
         with:
           name: playwright-traces-shard-${{ matrix.shard }}
           path: e2e/web/test-results
-          retention-days: 7
+          retention-days: 3
           if-no-files-found: ignore
 
   playwright-merge:
@@ -194,6 +200,10 @@ jobs:
           path: |
             docs/qa/results/e2e-coverage.json
             docs/qa/results/e2e-coverage.md
+          # 30 days, unlike the 3 of everything else here: a PR's coverage-delta
+          # job downloads MAIN's copy from an earlier run
+          # (scripts/e2e_coverage_delta.mjs), so a quiet main must not age it
+          # out. At about 35 KB a run it costs the storage quota nothing.
           retention-days: 30
           if-no-files-found: warn
 
@@ -203,7 +213,7 @@ jobs:
         with:
           name: playwright-report-web-${{ github.run_id }}
           path: e2e/web/playwright-report
-          retention-days: 14
+          retention-days: 3
           if-no-files-found: ignore
 
       - name: Fail the job if any shard failed
@@ -292,7 +302,7 @@ jobs:
         with:
           name: playwright-report-${{ matrix.browser }}-${{ github.run_id }}
           path: e2e/web/playwright-report
-          retention-days: 14
+          retention-days: 3
           if-no-files-found: ignore
 
   visual-baseline:
@@ -351,7 +361,7 @@ jobs:
           path: |
             e2e/web/test-results
             e2e/web/visual-baseline.spec.ts-snapshots
-          retention-days: 30
+          retention-days: 3
           if-no-files-found: ignore
 
       - name: Upload screenshot diffs on failure
@@ -362,7 +372,7 @@ jobs:
           path: |
             e2e/web/test-results
             e2e/web/__screenshots__
-          retention-days: 14
+          retention-days: 3
           if-no-files-found: ignore
 
   desktop:
@@ -417,7 +427,7 @@ jobs:
         with:
           name: playwright-report-desktop-${{ matrix.os }}-${{ github.run_id }}
           path: e2e/desktop/playwright-report
-          retention-days: 14
+          retention-days: 3
           if-no-files-found: ignore
 
       - name: Upload Playwright traces on failure
@@ -426,5 +436,5 @@ jobs:
         with:
           name: playwright-traces-desktop-${{ matrix.os }}-${{ github.run_id }}
           path: e2e/desktop/test-results
-          retention-days: 7
+          retention-days: 3
           if-no-files-found: ignore

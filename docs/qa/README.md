@@ -160,7 +160,7 @@ The web E2E suite runs on every PR and every push to `main`
 3. **`visual-baseline`** _(manual dispatch only)_ — pixel-diff baseline of
    every primary panel. Off by default because the Linux baselines aren't
    committed yet. Trigger from the Actions tab → "Run workflow" when you
-   want to (re)generate baselines; download the
+   want to (re)generate baselines; within 3 days, download the
    `visual-baseline-snapshots-<run_id>` artifact and commit the PNGs under
    `e2e/web/visual-baseline.spec.ts-snapshots/` to seed the gate.
 
@@ -180,11 +180,22 @@ artifacts but are _not_ a gate — engine-only drift is informational.
 
 ### Artifacts every build publishes
 
-- `playwright-report-${run_id}` — HTML report of the chromium run.
-- `e2e-coverage-${run_id}` — strict coverage `.md`, `.json`, and the
-  Playwright JSON results (used by the PR delta script).
-- `smoke-report-${run_id}` — HTML report from the firefox + webkit run.
-- `playwright-traces-${run_id}` — traces from failed tests (failure only).
+Artifacts are kept for **3 days** unless noted, so download what you need
+within 3 days of the run. Every repository in the apicircle org shares one
+500 MB Actions storage quota, and longer-lived reports filled it.
+
+- `playwright-report-web-${run_id}` — merged HTML report of the chromium run.
+- `e2e-coverage-${run_id}` — strict coverage `.md` and `.json`. Kept 30 days,
+  because the PR delta script downloads main's copy from an earlier run.
+- `playwright-report-{firefox,webkit}-${run_id}` — HTML reports from the
+  cross-browser smoke run.
+- `playwright-report-desktop-ubuntu-latest-${run_id}` — HTML report of the
+  desktop Electron suite.
+- `playwright-traces-shard-<n>` and
+  `playwright-traces-desktop-ubuntu-latest-${run_id}` — traces from failed
+  tests (failure only).
+- `blob-report-<n>` — per-shard blob reports, merged within the same run.
+  Kept 1 day.
 - `visual-baseline-snapshots-${run_id}` / `visual-baseline-diffs-${run_id}` —
   baseline PNGs and diff PNGs from manual-dispatch visual-baseline runs.
 
@@ -260,12 +271,12 @@ scatter residue rationales across specs.
 
 ## Failure debug recipe
 
-1. **`playwright` failed** — open `playwright-report-${run_id}`; the HTML
-   report links every failed test to its trace. Download
-   `playwright-traces-${run_id}` and open with
+1. **`playwright` failed** — open `playwright-report-web-${run_id}`; the HTML
+   report links every failed test to its trace. Download the failing shard's
+   `playwright-traces-shard-<n>` and open with
    `pnpm exec playwright show-trace <trace.zip>`.
 2. **`cross-browser-smoke` failed** — same recipe via
-   `smoke-report-${run_id}`. Most engine-only failures trace back to
+   `playwright-report-{firefox,webkit}-${run_id}`. Most engine-only failures trace back to
    Chromium-specific timing assumptions in the spec.
 3. **`visual-baseline` failed** _(manual dispatch only)_ — download
    `visual-baseline-diffs-${run_id}`. If the change is intentional, run

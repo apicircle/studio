@@ -591,6 +591,12 @@ git-synced workspace — and ended somewhere it should never have reached.
 - **`pnpm changeset` works again.** `.changeset/config.json` still ignored
   `@apicircle/cli` and `@apicircle/mcp-server`, which left this repo for Lens,
   and changesets rejects a config that names a package it cannot find.
+- **E2E artifacts are kept for 3 days, not 7–30.** Every repository in the
+  apicircle org shares one 500 MB Actions storage quota. The E2E reports and
+  traces held about 770 MB of it, the merged web report alone ~46 MB a run, so
+  artifact uploads failed across the org, the Lens staging installer included.
+  Blob reports keep their 1 day. The coverage summary keeps 30, because a PR's
+  coverage delta downloads main's copy from an earlier run.
 
 ## 1.3.0 - 2026-07-18
 
