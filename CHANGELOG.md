@@ -25,6 +25,22 @@
 
 ## Unreleased
 
+## 2.0.0 - 2026-09-20
+
+_All workspace packages move to **2.0.0** in lockstep — the published
+`@apicircle/shared`, `@apicircle/core`, `@apicircle/mock-server-core` and the
+`apicircle-vscode` VS Code extension, plus the private desktop / web /
+ui-components / git / desktop-shell / e2e packages._
+
+_Major rather than minor, because this release takes things away. Workspace
+sharing is switched off, and with it linked workspaces, the marketplace, the
+release ledger and repo topics — along with the MCP verbs and CLI commands that
+drove them. `@apicircle/cli` and `@apicircle/mcp-server` are no longer published
+from this repository: the command line and the MCP server now ship with API
+Circle Lens, which carries an entitlement check. Spec parsing no longer follows
+a `$ref` into a file or a URL. Read the Security and Changed notes below before
+upgrading from 1.3.0._
+
 ### Security
 
 Three fixes from a full security audit of the codebase. Each closes a path that

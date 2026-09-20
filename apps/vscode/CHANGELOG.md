@@ -9,6 +9,30 @@ extension version lives in `package.json`.
 > repository-root [`CHANGELOG.md`](../../CHANGELOG.md). This file is the
 > extension-focused subset that ships inside the `.vsix`.
 
+## 2.0.0 - 2026-09-20
+
+### Removed
+
+- **The Link Workspaces view is gone.** Workspace sharing is switched off across
+  every surface in this release, so the tree view, and everything reachable from
+  it — linked collections and environments, the release ledger, repo topics —
+  no longer appears. The sidebar now shows seven views: Workspace, Editor,
+  Environment, Execution, Mock, History and Snapshots.
+- **The MCP view is gone.** The MCP server moved to API Circle Lens, which
+  handles its setup. Nothing in this extension installs or configures it.
+
+### Security
+
+- **Hovers no longer render workspace text as trusted markdown.** A hover used
+  to interpolate workspace values into a trusted `MarkdownString`, which let a
+  crafted collection put a clickable command link in a tooltip. Hovers are plain
+  text now.
+
+### Changed
+
+- Spec parsing no longer follows a `$ref` into a file or a URL. Inline the
+  definition if you need it mocked.
+
 ## 1.3.0 - 2026-07-18
 
 ### Added

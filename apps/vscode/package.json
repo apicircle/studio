@@ -2,7 +2,7 @@
   "name": "apicircle-vscode",
   "displayName": "API Circle Studio",
   "description": "Git-backed API workspace with mocks and plans — natively in VS Code.",
-  "version": "1.3.0",
+  "version": "2.0.0",
   "publisher": "apicircle",
   "private": false,
   "license": "SEE LICENSE IN LICENSE",
