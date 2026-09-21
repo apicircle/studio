@@ -1,5 +1,9 @@
 export { App } from './App';
 export { applyTheme, getStoredThemeId, ALL_THEMES } from './theme/applyTheme';
+// For an editor built outside this package: a Monaco instance reads its theme
+// from these names, not from `data-theme`, so anything mounting its own Monaco
+// needs them to follow the workspace theme.
+export { getMonacoThemeId, registerMonacoThemes } from './theme/monacoThemes';
 export { applyFont, ALL_FONTS } from './theme/applyFont';
 export type { FontFamilyId, FontFamilyDef } from './theme/applyFont';
 export { applyFontSize, clampFontSizePercent } from './theme/applyFontSize';
