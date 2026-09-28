@@ -229,6 +229,13 @@ export { parseWorkspaceJson, RemoteWorkspaceParseError } from './git/parseWorksp
 
 export { redactForGit, assertNoPlaintextCredentials } from './git/redactWorkspace';
 
+export {
+  scanWorkspaceForSecrets,
+  unacknowledgedSecretFindings,
+  SecretsInPushError,
+} from './git/scanWorkspaceForSecrets';
+export type { SecretFinding } from './git/scanWorkspaceForSecrets';
+
 export { collectAttachmentSlots } from './git/collectAttachments';
 export type { AttachmentSlotRef } from './git/collectAttachments';
 

@@ -34,7 +34,9 @@ import {
 import {
   type DiffEntry,
   type ResolutionMap,
+  type SecretFinding,
   type UnpushedChange,
+  SecretsInPushError,
   generateWorkingBranchName,
   isValidSemver,
   parseSemver,
@@ -57,6 +59,7 @@ import { Badge } from '../../primitives/Badge';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
 import { Modal } from '../../primitives/Modal';
 import { ReleaseAndTopicsModal } from './ReleaseAndTopicsModal';
+import { PushSecretsDialog } from './PushSecretsDialog';
 import { cn } from '../../primitives/cn';
 import { formatRelativeTime } from '../../primitives/relativeTime';
 import { formatGitError, type GitErrorView } from './gitErrorMessage';
@@ -1326,6 +1329,8 @@ function BranchCard() {
   const [prModalOpen, setPrModalOpen] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
   const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
+  // Set when a push stopped on values shaped like secrets; drives the dialog.
+  const [secretFindings, setSecretFindings] = useState<readonly SecretFinding[] | null>(null);
   // Disable mutation-causing actions during any in-flight async op so the
   // user can't fire conflicting requests (push during refresh, discard
   // during push, etc.). Each individual handler still flips its own flag,
@@ -1422,13 +1427,15 @@ function BranchCard() {
     }
   };
 
-  const onPush = async () => {
+  const onPush = async (acknowledged?: readonly SecretFinding[]) => {
     setPushing(true);
     setError(null);
     setErrorView(null);
     setJustPushedSha(null);
     try {
-      const { commitSha } = await pushWorkspace(message || undefined);
+      const { commitSha } = acknowledged
+        ? await pushWorkspace(message || undefined, { acknowledgedSecretFindings: acknowledged })
+        : await pushWorkspace(message || undefined);
       setJustPushedSha(commitSha);
       setMessage('');
       setShowMessageField(false);
@@ -1438,6 +1445,11 @@ function BranchCard() {
         detail: `Commit ${commitSha.slice(0, 7)} is now on the remote.`,
       });
     } catch (err) {
+      if (err instanceof SecretsInPushError) {
+        // Nothing was written. Ask, showing where each value sits.
+        setSecretFindings(err.findings);
+        return;
+      }
       const view = formatGitError(err, 'Push');
       if (view.action.kind === 'request-scopes') {
         surfaceMissingScope(view.action.missingScopes);
@@ -1647,6 +1659,17 @@ function BranchCard() {
       </div>
 
       <CreatePrModal open={prModalOpen} onClose={() => setPrModalOpen(false)} />
+
+      <PushSecretsDialog
+        findings={secretFindings}
+        repo={`${branch.repoOwner}/${branch.repoName}`}
+        branch={branch.name}
+        onCancel={() => setSecretFindings(null)}
+        onPushAnyway={(acknowledged) => {
+          setSecretFindings(null);
+          void onPush(acknowledged);
+        }}
+      />
 
       <ConfirmDialog
         open={confirmDiscardOpen}

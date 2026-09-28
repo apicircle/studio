@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GitHubRepo } from '@apicircle/git';
 import { GitHubError, registerGitProvider, resetGitProviderRegistry } from '@apicircle/git';
+import { SecretsInPushError, type SecretFinding } from '@apicircle/core';
 import { NothingWrittenError } from '../../store/nothingWritten';
 import type { GitHostSession } from '@apicircle/shared';
 import { WorkspacePanel } from './WorkspacePanel';
@@ -1457,54 +1458,54 @@ describe('WorkspacePanel', () => {
 });
 
 // The recovery advice a failed push gives, which is the half the user acts on.
+function setupPushableBranch(): void {
+  const local = useWorkspaceStore.getState().local!;
+  useWorkspaceStore.setState({
+    local: {
+      ...local,
+      sessions: {
+        github: {
+          workspace: {
+            accountLogin: 'me',
+            tokenSecretId: 'sec',
+            grantedScopes: ['repo'],
+            addedAt: 't',
+            lastVerifiedAt: 't',
+            canCreatePullRequests: true,
+          },
+          links: {},
+        },
+      },
+      connectedRepo: {
+        fullName: 'me/api',
+        owner: 'me',
+        name: 'api',
+        defaultBranch: 'main',
+        visibility: 'public',
+        isPrivate: false,
+        pushable: true,
+        connectedAt: 't',
+      },
+      workingBranch: {
+        name: 'apicircle/test',
+        baseBranch: 'main',
+        repoFullName: 'me/api',
+        repoOwner: 'me',
+        repoName: 'api',
+        headSha: 'abc1234',
+        createdAt: 't',
+        lastPushedSha: null,
+        diffSummary: null,
+        openPrUrl: null,
+      },
+    },
+  });
+}
+
 // A 5xx alone cannot say whether anything was written: out of `createCommit` it
 // might have left an orphan commit, out of a pre-flight read it wrote nothing at
 // all. The store marks the second case; this is where that marking has to show.
 describe('WorkspacePanel push failure advice', () => {
-  function setupPushableBranch(): void {
-    const local = useWorkspaceStore.getState().local!;
-    useWorkspaceStore.setState({
-      local: {
-        ...local,
-        sessions: {
-          github: {
-            workspace: {
-              accountLogin: 'me',
-              tokenSecretId: 'sec',
-              grantedScopes: ['repo'],
-              addedAt: 't',
-              lastVerifiedAt: 't',
-              canCreatePullRequests: true,
-            },
-            links: {},
-          },
-        },
-        connectedRepo: {
-          fullName: 'me/api',
-          owner: 'me',
-          name: 'api',
-          defaultBranch: 'main',
-          visibility: 'public',
-          isPrivate: false,
-          pushable: true,
-          connectedAt: 't',
-        },
-        workingBranch: {
-          name: 'apicircle/test',
-          baseBranch: 'main',
-          repoFullName: 'me/api',
-          repoOwner: 'me',
-          repoName: 'api',
-          headSha: 'abc1234',
-          createdAt: 't',
-          lastPushedSha: null,
-          diffSummary: null,
-          openPrUrl: null,
-        },
-      },
-    });
-  }
-
   async function pushRejectingWith(err: unknown): Promise<void> {
     await renderWithStore(<WorkspacePanel />);
     await act(async () => {
@@ -1529,5 +1530,111 @@ describe('WorkspacePanel push failure advice', () => {
     // retry that is actually safe.
     expect(await screen.findByText('GitHub 502: Server Error')).toBeInTheDocument();
     expect(screen.queryByText(/may have partially landed/i)).not.toBeInTheDocument();
+  });
+});
+
+// A push that would write values shaped like secrets stops before writing and
+// asks. The dialog says where each value sits and why it was flagged — never the
+// value — and the user either cancels (nothing written) or pushes anyway.
+describe('WorkspacePanel push: values that look like secrets', () => {
+  const findings: SecretFinding[] = [
+    {
+      id: 'request:login:Header:1:Authorization',
+      location: 'Request "Login" in Auth › Header "Authorization"',
+      reason: 'looks like a GitHub token',
+    },
+    {
+      id: 'environment:prod:variable:0:API_TOKEN',
+      location: 'Environment "prod" › Variable "API_TOKEN"',
+      reason: 'named like a credential',
+    },
+  ];
+
+  async function pushWith(pushWorkspace: ReturnType<typeof vi.fn>): Promise<void> {
+    await renderWithStore(<WorkspacePanel />);
+    await act(async () => {
+      setupPushableBranch();
+      useWorkspaceStore.setState({ pushWorkspace });
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Push to save' }));
+  }
+
+  it('pushes straight through when there is nothing to ask about', async () => {
+    const pushWorkspace = vi.fn().mockResolvedValue({ commitSha: '0123456789abc' });
+    await pushWith(pushWorkspace);
+
+    expect(await screen.findByText('0123456')).toBeInTheDocument();
+    expect(pushWorkspace).toHaveBeenCalledTimes(1);
+    expect(pushWorkspace).toHaveBeenCalledWith(undefined);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('lists where each value sits and why, and Cancel pushes nothing', async () => {
+    const pushWorkspace = vi.fn().mockRejectedValue(new SecretsInPushError(findings));
+    await pushWith(pushWorkspace);
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Push 2 values that look like secrets?',
+    });
+    expect(within(dialog).getByText('me/api')).toBeInTheDocument();
+    expect(within(dialog).getByText('apicircle/test')).toBeInTheDocument();
+    const items = within(within(dialog).getByRole('list')).getAllByRole('listitem');
+    expect(items.map((item) => item.textContent)).toEqual([
+      'Request "Login" in Auth › Header "Authorization" — looks like a GitHub token',
+      'Environment "prod" › Variable "API_TOKEN" — named like a credential',
+    ]);
+    // Asking is not failing: no error is shown behind the dialog.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(pushWorkspace).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Push to save' })).toBeEnabled();
+  });
+
+  it('Push anyway pushes again with exactly those findings acknowledged', async () => {
+    const one = [findings[0]];
+    const pushWorkspace = vi
+      .fn()
+      .mockRejectedValueOnce(new SecretsInPushError(one))
+      .mockResolvedValueOnce({ commitSha: 'abcdef1234567' });
+    await pushWith(pushWorkspace);
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Push a value that looks like a secret?',
+    });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Push anyway' }));
+
+    await waitFor(() => expect(pushWorkspace).toHaveBeenCalledTimes(2));
+    expect(pushWorkspace).toHaveBeenNthCalledWith(1, undefined);
+    expect(pushWorkspace).toHaveBeenNthCalledWith(2, undefined, {
+      acknowledgedSecretFindings: one,
+    });
+    expect(await screen.findByText('abcdef1')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('keeps the custom commit message across the question', async () => {
+    const pushWorkspace = vi
+      .fn()
+      .mockRejectedValueOnce(new SecretsInPushError(findings))
+      .mockResolvedValueOnce({ commitSha: 'fedcba9876543' });
+    await renderWithStore(<WorkspacePanel />);
+    await act(async () => {
+      setupPushableBranch();
+      useWorkspaceStore.setState({ pushWorkspace });
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Custom commit message' }));
+    await userEvent.type(screen.getByLabelText('Commit message'), 'feat: rotate keys');
+    await userEvent.click(screen.getByRole('button', { name: 'Push to save' }));
+
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Push anyway' }));
+
+    await waitFor(() => expect(pushWorkspace).toHaveBeenCalledTimes(2));
+    expect(pushWorkspace).toHaveBeenNthCalledWith(1, 'feat: rotate keys');
+    expect(pushWorkspace).toHaveBeenNthCalledWith(2, 'feat: rotate keys', {
+      acknowledgedSecretFindings: findings,
+    });
   });
 });

@@ -88,6 +88,9 @@ describe('MockServersPanel (post-rich-editor redesign)', () => {
     expect(
       screen.getByRole('button', { name: /Create your first mock server/ }),
     ).toBeInTheDocument();
+    expect(screen.getByText(/Run the mock from the/).textContent).toMatch(
+      /Run the mock from the Desktop App or the VS Code extension\./,
+    );
   });
 
   it('renders the server-summary view when a server is active without an endpoint', async () => {
@@ -302,6 +305,19 @@ describe('MockServersPanel (post-rich-editor redesign)', () => {
     // which is expected.)
     const banner = await screen.findByText(/Running them needs the/);
     expect(banner.textContent).toMatch(/Running them needs the Desktop App/);
+    // The two surfaces that can run a mock, and why a browser tab can't. No
+    // CLI is named: Studio ships none (`apicircle mock run` never existed).
+    expect(banner.textContent).toMatch(
+      /or the VS Code extension — a browser tab can't listen on a port\./,
+    );
+    expect(document.body.textContent).not.toMatch(/apicircle mock/);
+    expect(screen.getByText(/^Needs the/).textContent).toBe(
+      'Needs the Desktop App or the VS Code extension.',
+    );
+    expect(screen.getByRole('button', { name: 'Start' })).toHaveAttribute(
+      'title',
+      "Running mocks needs the Desktop App or the VS Code extension — a browser tab can't listen on a port",
+    );
     const links = screen.getAllByRole('link', { name: /Desktop App/ });
     expect(links.length).toBeGreaterThan(0);
     for (const link of links) {

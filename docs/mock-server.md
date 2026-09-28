@@ -145,6 +145,17 @@ renderer, but both surface the same warning naming any external reference, so a
 spec behaves identically everywhere. To mock a definition that lives in another
 file, inline it into the document.
 
+**Recursive and very large schemas.** A schema that contains itself (a
+`Category` whose `children` are `Category[]`) is sampled once, and the place it
+recurs gets an empty `{}` / `[]` — on both entry points. Every example an
+operation gets (its response body, response headers and parameter examples) is
+built on a budget of its own — 10,000 nodes and 64 levels of nesting — so a few
+KB of `$ref` or YAML-alias fan-out can no longer exhaust memory. An operation
+that runs past it keeps its endpoint; the rest of its example is left empty and
+a warning names it. The budget is per operation, never per document, so a large
+spec keeps every endpoint. An operation the parser cannot read at all is skipped
+with a warning naming it, instead of failing the whole import.
+
 ## Programmatic use
 
 ```ts

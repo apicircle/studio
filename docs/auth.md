@@ -1,6 +1,6 @@
 # Authentication
 
-API Circle Studio supports 17 auth schemes spanning shared-secret, signing-based, challenge-response, and OAuth2 flows. This document is the source of truth for what's implemented, where signing happens, what each grant requires from the host, and which gaps still exist.
+API Circle Studio supports 15 auth schemes (plus No Auth and Inherit) spanning shared-secret, signing-based, challenge-response, and OAuth2 flows. This document is the source of truth for what's implemented, where signing happens, what each grant requires from the host, and which gaps still exist.
 
 > **Architecture summary**: signing primitives live in `@apicircle/core/auth/*` and are pure functions (browser-safe — no Node-only modules). `applyAuth` in `@apicircle/core/request/applyAuth.ts` wires the per-request auth into outgoing headers. `executeRequest` drives challenge-response retries (Digest 401, NTLM 3-way). OAuth2 callback flows route through a host-specific bridge (Electron localhost server in desktop, popup-window + BroadcastChannel in web).
 

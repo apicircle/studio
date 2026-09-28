@@ -25,6 +25,83 @@
 
 ## Unreleased
 
+### Security
+
+- **A push stops and asks before it writes a value that looks like a
+  secret.** `redactForGit` blanks the credential fields it knows about; free
+  text it cannot vouch for — a literal bearer token in a header row,
+  `?api_key=` in a query row, a session cookie, a plaintext environment
+  variable — reached `workspace.json` verbatim. The push now scans the document
+  it is about to write (`scanWorkspaceForSecrets` in `@apicircle/core`: request
+  and linked-request headers, query rows, cookies, context variables, the URL's
+  user-info and query string, custom-header auth values, plaintext environment
+  variables, linked-environment overrides and plan variables) for
+  credential-shaped names carrying a literal value and for credential-shaped
+  values — GitHub, GitLab, Slack, Stripe, AWS, Google, npm and SendGrid tokens,
+  `sk-…` keys, JSON Web Tokens, PEM private keys, long random-looking strings.
+  When it finds any, nothing is written, not even the pre-push snapshot, and a
+  dialog lists where each value sits and why it was flagged — never the value.
+  **Cancel** pushes nothing; **Push anyway** pushes with exactly those findings
+  acknowledged, and asks again if a new one appeared meanwhile. A workspace
+  whose secrets live in `{{variables}}` and the Secret Vault pushes without a
+  prompt, as do the example workspaces. Request bodies are not scanned.
+- **A custom auth header's value and a URL's `user:pass@` no longer reach
+  Git.** The push blanks the custom-header value the way it blanks an API key's
+  (the header name stays), and drops user-info that carries a password or a
+  token from request URLs; a plain user name or `{{variable}}` user-info stays.
+  A pull keeps this device's value of both, the way it already kept every other
+  redacted credential.
+
+### Fixed
+
+- **Refresh no longer reports a phantom change for credentials Git never
+  holds.** A push blanks auth credentials (and now custom-header values and URL
+  passwords), so the remote never has them — yet Refresh compared the raw local
+  doc against it, so a workspace with a bearer token, a password or an API key
+  answered every Refresh with "Pulled remote changes" (and a pre-merge snapshot),
+  and a first pull with a conflict. Refresh now compares all three sides the way
+  Git holds them, as the unpushed-changes strip already did, while the merge
+  still keeps this device's credentials; a credential an older Studio pushed can
+  no longer overwrite the one this device has.
+
+- **Creating a mock from a spec with a recursive schema no longer crashes on
+  Desktop, in the VS Code host or in the Lens CLI / MCP tools.** swagger-parser
+  resolves an in-document cycle (`Category.children: Category[]`) into a real
+  object cycle, and building the example recursed through it until
+  `Maximum call stack size exceeded` — "Serve OpenAPI contract" and
+  create-mock-from-spec failed on a spec the web app handled. The example
+  builder now cuts a schema where it recurs inside itself (`{}` / `[]`, where
+  the browser resolver cuts it) and stops at 64 levels of nesting, and an
+  operation the parser cannot read is skipped with a warning naming it instead
+  of failing the whole import.
+- **A few KB of `$ref` or YAML-alias fan-out can no longer exhaust memory.**
+  The browser resolver resolves each `$ref` target once and shares it between
+  every use, and keeps a node YAML aliases share shared, so the dereferenced
+  document is never larger than its input. Every example an operation gets is
+  built on a budget of its own — 10,000 nodes; repeated example data and text
+  spend it, data the spec spells out once never does — so an exploding
+  operation keeps its endpoint with its example cut short and a warning naming
+  it, while a large ordinary spec (800 operations sharing one component) keeps
+  every endpoint and example whole. The budget is per operation, never per
+  document.
+- **The Mocks panel and the Help Center no longer point at a command that
+  doesn't exist.** They said to run `apicircle mock run <id>` or
+  `apicircle mock ./openapi.yaml`; Studio ships no CLI. They now say a mock
+  runs in the Desktop app or the VS Code extension, because a browser tab
+  can't listen on a port.
+- **Auth copy counts 15 schemes (plus No Auth and Inherit), not 17** — the
+  README, `docs/auth.md`, the onboarding tour, and the `@apicircle/core` and
+  VS Code extension READMEs.
+
+### Changed
+
+- **`dereferenceInternal` returns shared objects.** Every use of a `$ref` is
+  now the same resolved object (the result is a DAG, still without cycles), so a
+  consumer that walks it as a tree should bound its own walk, as the mock parser
+  does. Where two schemas refer to each other, the cycle is cut where the walk
+  first comes back to one of them, so an operation reached through the other can
+  get an example one level shallower than before.
+
 ## 2.0.0 - 2026-09-20
 
 _All workspace packages move to **2.0.0** in lockstep — the published

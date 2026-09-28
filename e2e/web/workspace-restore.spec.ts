@@ -150,9 +150,10 @@ test.describe('Workspace restore — entity round-trips', () => {
         s.setRequestUrl(id, 'https://api.example.com/orders');
         s.setRequestHeaders(id, [{ key: 'X-Custom', value: 'hello', enabled: true }]);
         s.setRequestBody(id, { type: 'json', content: '{"hello":"world"}' });
-        // custom-header auth is NOT redacted on push (see redactWorkspace.ts),
-        // so it survives the round-trip verbatim — credential-bearing auth
-        // types are deliberately exercised in auth-wire.spec.ts instead.
+        // A custom auth header travels by NAME only: its value is the
+        // credential, so a push blanks it the way it blanks an api-key value
+        // (see redactWorkspace.ts). Sending with it is exercised in
+        // auth-wire.spec.ts.
         s.setRequestAuth(id, { type: 'custom-header', key: 'X-Trace', value: 'trace-abc' });
         return id;
       });
@@ -166,7 +167,7 @@ test.describe('Workspace restore — entity round-trips', () => {
       expect(req.auth.type).toBe('custom-header');
       if (req.auth.type === 'custom-header') {
         expect(req.auth.key).toBe('X-Trace');
-        expect(req.auth.value).toBe('trace-abc');
+        expect(req.auth.value).toBe('');
       }
     },
   );

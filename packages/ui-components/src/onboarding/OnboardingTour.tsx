@@ -97,7 +97,7 @@ const STEPS: ReadonlyArray<TourStep> = [
   {
     id: 'folder-auth',
     title: 'Folder-level auth',
-    body: 'Right-click a folder → Edit auth to set bearer / OAuth2 / NTLM / any of the 17 auth schemes once at the folder level. Every descendant request whose auth is "Inherit" (the default) picks it up — no copy-paste per request. The CodeLens above each request\'s auth row shows which folder it\'s inheriting from.',
+    body: 'Right-click a folder → Edit auth to set bearer / OAuth2 / NTLM / any of the 15 auth schemes (plus No Auth and Inherit) once at the folder level. Every descendant request whose auth is "Inherit" (the default) picks it up — no copy-paste per request. The CodeLens above each request\'s auth row shows which folder it\'s inheriting from.',
     panel: 'editor',
     target: 'editor-actions',
   },

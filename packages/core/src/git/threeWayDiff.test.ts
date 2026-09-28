@@ -143,6 +143,73 @@ describe('computeThreeWayDiff', () => {
     });
   });
 
+  // A push blanks a custom auth header's value and drops `user:pass@` from a
+  // request URL, so a pull brings them back blank. Taking the remote request must
+  // not wipe what only this device ever had.
+  it('keeps the local custom auth header value and URL credentials a pull brings back blank', () => {
+    const localRequest: ApiRequest = {
+      ...req('r-1', 'Get'),
+      url: 'https://alice:hunter22@api.example.com/v1',
+      auth: { type: 'custom-header', key: 'X-Service-Token', value: 'local-secret' },
+    };
+    const remoteRequest: ApiRequest = {
+      ...localRequest,
+      name: 'Renamed by a teammate',
+      url: 'https://api.example.com/v1',
+      auth: { type: 'custom-header', key: 'X-Service-Token', value: '' },
+    };
+    const local = withRequests(localRequest);
+    const remote = withRequests(remoteRequest);
+    const d = computeThreeWayDiff(local, local, remote);
+    const merged = applyMerge(local, remote, d, {}).collections.requests['r-1'];
+    expect(merged.name).toBe('Renamed by a teammate');
+    expect(merged.url).toBe('https://alice:hunter22@api.example.com/v1');
+    expect(merged.auth).toEqual({
+      type: 'custom-header',
+      key: 'X-Service-Token',
+      value: 'local-secret',
+    });
+  });
+
+  it('takes the remote URL when a teammate really changed it', () => {
+    const localRequest: ApiRequest = {
+      ...req('r-1', 'Get'),
+      url: 'https://alice:hunter22@api.example.com/v1',
+    };
+    const remoteRequest: ApiRequest = { ...localRequest, url: 'https://api.example.com/v2' };
+    const local = withRequests(localRequest);
+    const remote = withRequests(remoteRequest);
+    const merged = applyMerge(local, remote, computeThreeWayDiff(local, local, remote), {});
+    expect(merged.collections.requests['r-1'].url).toBe('https://api.example.com/v2');
+  });
+
+  it('keeps a folder-level custom auth header value a pull brings back blank', () => {
+    const folder = (value: string): WorkspaceSynced =>
+      baseDoc({
+        collections: {
+          tree: { id: 'r', type: 'root', children: [{ kind: 'folder', id: 'f-1' }] },
+          requests: {},
+          folders: {
+            'f-1': {
+              id: 'f-1',
+              name: value === '' ? 'Renamed' : 'Admin',
+              parentId: null,
+              auth: { type: 'custom-header', key: 'X-Admin-Key', value },
+            },
+          },
+        },
+      });
+    const local = folder('local-secret');
+    const remote = folder('');
+    const merged = applyMerge(local, remote, computeThreeWayDiff(local, local, remote), {});
+    expect(merged.collections.folders['f-1'].name).toBe('Renamed');
+    expect(merged.collections.folders['f-1'].auth).toEqual({
+      type: 'custom-header',
+      key: 'X-Admin-Key',
+      value: 'local-secret',
+    });
+  });
+
   it('marks identical changes on both sides as both-equal (auto-resolvable)', () => {
     const base = withRequests();
     const local = withRequests(req('r-1', 'X'));

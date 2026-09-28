@@ -1,5 +1,6 @@
 import { act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SecretsInPushError } from '@apicircle/core';
 import { putAttachment } from '../persistence/attachments';
 import { formatGitError } from '../panels/workspace/gitErrorMessage';
 import { NothingWrittenError } from './nothingWritten';
@@ -931,5 +932,150 @@ describe('workspaceStore.pushWorkspace', () => {
     expect(branch.lastPushedSha).toBeNull();
     // Local headSha untouched.
     expect(branch.headSha).toBe('sha-old-local');
+  });
+});
+
+// A push writes the workspace to a repository teammates — or, on a public
+// repo, anyone — can read. `redactForGit` blanks the credential fields it knows
+// about; what it cannot vouch for (a literal token in a header row, a plaintext
+// environment variable) is scanned for, and the push asks before writing it.
+describe('workspaceStore.pushWorkspace — values shaped like secrets', () => {
+  // Fake, and assembled so this literal is not flagged by repo scanners.
+  const TOKEN = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+
+  beforeEach(async () => {
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrate();
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const pushResponses = (): ResponseSpec[] => [
+    { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'sha-main' } } },
+    { body: { message: 'Not Found' }, status: 404 },
+    { body: { sha: 'sha-main', message: 'initial', tree: { sha: 'tree-old' } } },
+    { body: { sha: 'tree-new' } },
+    { body: { sha: 'commit-new', message: 'sync', tree: { sha: 'tree-new' } } },
+    { body: { ref: 'refs/heads/apicircle/wb-aaa', object: { sha: 'commit-new' } } },
+  ];
+
+  /** The workspace.json the push wrote, from the createTree call. */
+  const pushedWorkspaceJson = (fetchMock: ReturnType<typeof vi.fn>): string => {
+    const tree = JSON.parse((fetchMock.mock.calls[3][1] as RequestInit).body as string) as {
+      tree: { path: string; content?: string }[];
+    };
+    return tree.tree.find((t) => t.path.endsWith('/workspace.json'))!.content!;
+  };
+
+  function addLeakyRequest(): string {
+    const id = useWorkspaceStore.getState().addRequest(null);
+    useWorkspaceStore
+      .getState()
+      .setRequestHeaders(id, [{ key: 'Authorization', value: `Bearer ${TOKEN}`, enabled: true }]);
+    return id;
+  }
+
+  async function refusedPush(
+    options?: Parameters<ReturnType<typeof useWorkspaceStore.getState>['pushWorkspace']>[1],
+  ) {
+    const error: unknown = await useWorkspaceStore
+      .getState()
+      .pushWorkspace(undefined, options)
+      .then(
+        () => null,
+        (err: unknown) => err,
+      );
+    expect(error).toBeInstanceOf(SecretsInPushError);
+    return error as SecretsInPushError;
+  }
+
+  it('stops before writing anything — no request, no snapshot — naming where, never what', async () => {
+    await setupConnectedBranch();
+    addLeakyRequest();
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const snapshotsBefore = useWorkspaceStore.getState().local!.snapshots.entries.length;
+
+    const error = await refusedPush();
+
+    expect(error.findings).toHaveLength(1);
+    expect(error.findings[0].location).toMatch(/› Header "Authorization"$/);
+    expect(error.findings[0].reason).toBe('looks like a GitHub token');
+    expect(JSON.stringify(error.findings)).not.toContain(TOKEN);
+    expect(error.message).not.toContain(TOKEN);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(useWorkspaceStore.getState().local!.snapshots.entries).toHaveLength(snapshotsBefore);
+    expect(useWorkspaceStore.getState().local!.workingBranch!.lastPushedSha).toBeNull();
+  });
+
+  it('pushes once the findings are acknowledged', async () => {
+    await setupConnectedBranch();
+    addLeakyRequest();
+    vi.stubGlobal('fetch', vi.fn());
+    const { findings } = await refusedPush();
+
+    const fetchMock = queuedFetch(pushResponses());
+    vi.stubGlobal('fetch', fetchMock);
+    const { commitSha } = await useWorkspaceStore
+      .getState()
+      .pushWorkspace('push anyway', { acknowledgedSecretFindings: findings });
+
+    expect(commitSha).toBe('commit-new');
+    // What the user chose to push is what was pushed.
+    expect(pushedWorkspaceJson(fetchMock)).toContain(TOKEN);
+  });
+
+  it('asks again when a value appears that the acknowledgement did not cover', async () => {
+    await setupConnectedBranch();
+    addLeakyRequest();
+    vi.stubGlobal('fetch', vi.fn());
+    const { findings } = await refusedPush();
+
+    const second = useWorkspaceStore.getState().addRequest(null);
+    useWorkspaceStore
+      .getState()
+      .setRequestQuery(second, [{ key: 'api_key', value: 'l1ve-k3y-value', enabled: true }]);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const again = await refusedPush({ acknowledgedSecretFindings: findings });
+    expect(again.findings).toHaveLength(2);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('never writes a custom auth header value or a URL password — and does not ask about them', async () => {
+    await setupConnectedBranch();
+    const id = useWorkspaceStore.getState().addRequest(null);
+    useWorkspaceStore.getState().setRequestUrl(id, 'https://alice:hunter22@api.example.com/v1');
+    useWorkspaceStore.getState().setRequestAuth(id, {
+      type: 'custom-header',
+      key: 'X-Service-Token',
+      value: 's3rvice-t0ken',
+    });
+    const fetchMock = queuedFetch(pushResponses());
+    vi.stubGlobal('fetch', fetchMock);
+
+    await useWorkspaceStore.getState().pushWorkspace();
+
+    const pushed = JSON.parse(pushedWorkspaceJson(fetchMock)) as {
+      collections: { requests: Record<string, { url: string; auth: unknown }> };
+    };
+    expect(pushed.collections.requests[id].url).toBe('https://api.example.com/v1');
+    expect(pushed.collections.requests[id].auth).toEqual({
+      type: 'custom-header',
+      key: 'X-Service-Token',
+      value: '',
+    });
+    // This device keeps both.
+    const kept = useWorkspaceStore.getState().synced!.collections.requests[id];
+    expect(kept.url).toBe('https://alice:hunter22@api.example.com/v1');
+    expect(kept.auth).toEqual({
+      type: 'custom-header',
+      key: 'X-Service-Token',
+      value: 's3rvice-t0ken',
+    });
   });
 });

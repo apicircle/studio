@@ -1,6 +1,7 @@
 import { act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { WorkspaceSynced } from '@apicircle/shared';
+import { redactForGit } from '@apicircle/core';
+import type { Request as ApiRequest, WorkspaceSynced } from '@apicircle/shared';
 import { useWorkspaceStore } from './workspaceStore';
 
 interface ResponseSpec {
@@ -1058,5 +1059,178 @@ describe('workspaceStore.refreshWorkspace', () => {
       expect(after.retiredBranch).toBeNull();
       expect(after.workingBranch?.name).toBe('apicircle/new-one');
     });
+  });
+});
+
+// A push blanks credentials and URL passwords (`redactForGit`), so the remote a
+// device pushed never holds them. Refresh must read that as "nothing changed" —
+// not as a remote change to merge on every refresh, nor, on a first pull, as a
+// conflict — and must leave the credentials this device keeps where they are.
+describe('workspaceStore.refreshWorkspace — credentials Git never holds', () => {
+  beforeEach(async () => {
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrate();
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function withCredentials(synced: WorkspaceSynced): WorkspaceSynced {
+    const request = (id: string, patch: Partial<ApiRequest>): ApiRequest => ({
+      id,
+      name: id,
+      folderId: null,
+      method: 'GET',
+      url: 'https://api.example.com',
+      headers: [],
+      query: [],
+      body: { type: 'none', content: '' },
+      auth: { type: 'none' },
+      contextVars: [],
+      extractions: [],
+      assertions: [],
+      createdAt: 't',
+      updatedAt: 't',
+      ...patch,
+    });
+    return {
+      ...synced,
+      collections: {
+        ...synced.collections,
+        requests: {
+          custom: request('custom', {
+            url: 'https://alice:hunter22@api.example.com/v1',
+            auth: { type: 'custom-header', key: 'X-Service-Token', value: 'local-secret' },
+          }),
+          bearer: request('bearer', { auth: { type: 'bearer', token: 'local-token' } }),
+        },
+      },
+    };
+  }
+
+  function setLocal(synced: WorkspaceSynced, lastPulledSnapshot: WorkspaceSynced | null): void {
+    const local = useWorkspaceStore.getState().local!;
+    useWorkspaceStore.setState({
+      synced,
+      local: { ...local, sync: { ...local.sync, lastPulledSnapshot } },
+    });
+  }
+
+  it('is up to date right after a push, and keeps them', async () => {
+    await setupConnectedBranch();
+    const local = withCredentials(useWorkspaceStore.getState().synced!);
+    // Right after a push, the baseline is the pushed doc as this device holds it.
+    setLocal(local, local);
+    vi.stubGlobal(
+      'fetch',
+      queuedFetch([branchHeadOk(), fileContents(redactForGit(local), 'sha-pushed')]),
+    );
+
+    const result = await useWorkspaceStore.getState().refreshWorkspace();
+
+    expect(result.status).toBe('up-to-date');
+    expect(useWorkspaceStore.getState().synced).toEqual(local);
+    // …and it stays that way on the next refresh, against the stored remote.
+    vi.stubGlobal(
+      'fetch',
+      queuedFetch([branchHeadOk(), fileContents(redactForGit(local), 'sha-pushed')]),
+    );
+    expect((await useWorkspaceStore.getState().refreshWorkspace()).status).toBe('up-to-date');
+    expect(useWorkspaceStore.getState().synced).toEqual(local);
+  });
+
+  it('does not see them as conflicts on a first pull', async () => {
+    await setupConnectedBranch();
+    const local = withCredentials(useWorkspaceStore.getState().synced!);
+    setLocal(local, null);
+    vi.stubGlobal(
+      'fetch',
+      queuedFetch([branchHeadOk(), fileContents(redactForGit(local), 'sha-first')]),
+    );
+
+    const result = await useWorkspaceStore.getState().refreshWorkspace();
+
+    expect(result.status).toBe('up-to-date');
+    expect(useWorkspaceStore.getState().synced).toEqual(local);
+  });
+
+  it('still merges a real remote change and keeps the local credentials in it', async () => {
+    await setupConnectedBranch();
+    const local = withCredentials(useWorkspaceStore.getState().synced!);
+    setLocal(local, local);
+    const pushed = redactForGit(local);
+    const remote: WorkspaceSynced = {
+      ...pushed,
+      collections: {
+        ...pushed.collections,
+        requests: {
+          ...pushed.collections.requests,
+          custom: { ...pushed.collections.requests.custom, name: 'Renamed by a teammate' },
+        },
+      },
+    };
+    vi.stubGlobal('fetch', queuedFetch([branchHeadOk(), fileContents(remote, 'sha-teammate')]));
+
+    const result = await useWorkspaceStore.getState().refreshWorkspace();
+
+    expect(result.status).toBe('merged');
+    const merged = useWorkspaceStore.getState().synced!.collections.requests.custom;
+    expect(merged.name).toBe('Renamed by a teammate');
+    expect(merged.url).toBe('https://alice:hunter22@api.example.com/v1');
+    expect(merged.auth).toEqual({
+      type: 'custom-header',
+      key: 'X-Service-Token',
+      value: 'local-secret',
+    });
+  });
+
+  it("never lets a value an older Studio still pushes overwrite this device's own", async () => {
+    await setupConnectedBranch();
+    const local = withCredentials(useWorkspaceStore.getState().synced!);
+    // The last pull came from a teammate on an older build, which pushed its
+    // custom header value; this device has since typed its own.
+    const olderPush: WorkspaceSynced = {
+      ...local,
+      collections: {
+        ...local.collections,
+        requests: {
+          ...local.collections.requests,
+          custom: {
+            ...local.collections.requests.custom,
+            auth: { type: 'custom-header', key: 'X-Service-Token', value: 'their-secret' },
+          },
+        },
+      },
+    };
+    setLocal(local, olderPush);
+    vi.stubGlobal('fetch', queuedFetch([branchHeadOk(), fileContents(olderPush, 'sha-older')]));
+
+    const result = await useWorkspaceStore.getState().refreshWorkspace();
+
+    expect(result.status).toBe('up-to-date');
+    expect(useWorkspaceStore.getState().synced!.collections.requests.custom.auth).toEqual({
+      type: 'custom-header',
+      key: 'X-Service-Token',
+      value: 'local-secret',
+    });
+  });
+
+  it('reads a remote request that has no auth at all', async () => {
+    await setupConnectedBranch();
+    const local = useWorkspaceStore.getState().synced!;
+    const bare = { id: 'bare', name: 'Bare', folderId: null, url: 'https://x' };
+    const remote = {
+      ...local,
+      collections: { ...local.collections, requests: { bare } },
+    } as unknown as WorkspaceSynced;
+    setLocal(local, null);
+    vi.stubGlobal('fetch', queuedFetch([branchHeadOk(), fileContents(remote, 'sha-bare')]));
+
+    const result = await useWorkspaceStore.getState().refreshWorkspace();
+
+    expect(result.status).toBe('merged');
+    expect(useWorkspaceStore.getState().synced!.collections.requests.bare).toEqual(bare);
   });
 });

@@ -191,29 +191,85 @@ describe('redactForGit - credential field blanking', () => {
     }
   });
 
-  it('passes through none / inherit / custom-header unchanged', () => {
+  it('passes through none / inherit unchanged', () => {
     const synced = syncedWith({
       a: reqWithAuth('a', { type: 'none' }),
       b: reqWithAuth('b', { type: 'inherit' }),
-      c: reqWithAuth('c', { type: 'custom-header', key: 'X-Trace', value: 'request-id' }),
     });
     const redacted = redactForGit(synced);
-    expect(redacted.collections.requests.a.auth.type).toBe('none');
-    expect(redacted.collections.requests.b.auth.type).toBe('inherit');
-    expect(redacted.collections.requests.c.auth).toEqual({
-      type: 'custom-header',
-      key: 'X-Trace',
-      value: 'request-id',
+    expect(redacted.collections.requests.a.auth).toEqual({ type: 'none' });
+    expect(redacted.collections.requests.b.auth).toEqual({ type: 'inherit' });
+  });
+
+  it('blanks a custom auth header value like an api-key value, keeping the header name', () => {
+    const synced = syncedWith({
+      c: reqWithAuth('c', { type: 'custom-header', key: 'X-Service-Token', value: 's3cr3t' }),
     });
+    expect(redactForGit(synced).collections.requests.c.auth).toEqual({
+      type: 'custom-header',
+      key: 'X-Service-Token',
+      value: '',
+    });
+  });
+
+  it('blanks a folder-level custom auth header value too', () => {
+    const synced = syncedWith({});
+    synced.collections.folders = {
+      f: {
+        id: 'f',
+        name: 'F',
+        parentId: null,
+        auth: { type: 'custom-header', key: 'X-Service-Token', value: 's3cr3t' },
+      },
+      plain: { id: 'plain', name: 'Plain', parentId: null },
+    };
+    const folders = redactForGit(synced).collections.folders;
+    expect(folders.f.auth).toEqual({ type: 'custom-header', key: 'X-Service-Token', value: '' });
+    expect(folders.plain).toEqual({ id: 'plain', name: 'Plain', parentId: null });
+  });
+
+  it('strips credential user-info from request URLs and nothing else', () => {
+    const withUrl = (url: string): ApiRequest => ({ ...reqWithAuth('r', { type: 'none' }), url });
+    const redactedUrl = (url: string) =>
+      redactForGit(syncedWith({ r: withUrl(url) })).collections.requests.r.url;
+
+    expect(redactedUrl('https://alice:hunter22@api.example.com/v1/{{id}}?q=1')).toBe(
+      'https://api.example.com/v1/{{id}}?q=1',
+    );
+    const token = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+    expect(redactedUrl(`https://${token}@github.com/org/repo.git`)).toBe(
+      'https://github.com/org/repo.git',
+    );
+    // Nothing secret in these — they stay exactly as written.
+    for (const url of [
+      'https://{{user}}:{{pass}}@api.example.com',
+      'https://alice@api.example.com',
+      '{{BASE_URL}}/v1',
+      'https://api.example.com/users/a@b',
+    ]) {
+      expect(redactedUrl(url)).toBe(url);
+    }
+  });
+
+  it('passes over a request with no auth at all (a remote document can hold one)', () => {
+    const request = { ...reqWithAuth('r', { type: 'none' }) } as Partial<ApiRequest>;
+    delete request.auth;
+    const redacted = redactForGit(syncedWith({ r: request as ApiRequest }));
+    expect(redacted.collections.requests.r.auth).toBeUndefined();
+    expect(redacted.collections.requests.r.url).toBe('https://api.example.com');
   });
 
   it('does not mutate the input', () => {
     const original = syncedWith({
-      r: reqWithAuth('r', { type: 'basic', username: 'u', password: 'p' }),
+      r: {
+        ...reqWithAuth('r', { type: 'basic', username: 'u', password: 'p' }),
+        url: 'https://u:p@api.example.com',
+      },
     });
     redactForGit(original);
     const auth = original.collections.requests.r.auth;
     if (auth.type === 'basic') expect(auth.password).toBe('p'); // input untouched
+    expect(original.collections.requests.r.url).toBe('https://u:p@api.example.com');
   });
 });
 

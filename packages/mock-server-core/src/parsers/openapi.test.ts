@@ -1093,3 +1093,153 @@ describe('parseOpenApiRequestBodies — unresolved external references', () => {
     expect(props.self).toBe(schema);
   });
 });
+
+// A dereferenced document can be cyclic: the browser resolver cuts an
+// in-document cycle with `{}`, and swagger-parser (the Node surfaces) leaves it
+// as a real object cycle. Either way, creating a mock from it must work.
+describe('parseOpenApiToEndpoints — recursive schemas', () => {
+  // Category { name, children: Category[] }, no `required`.
+  const categorySpec = JSON.stringify({
+    openapi: '3.0.0',
+    info: { title: 'Tree', version: '1.0.0' },
+    paths: {
+      '/categories': {
+        get: {
+          responses: {
+            '200': {
+              description: 'ok',
+              content: {
+                'application/json': { schema: { $ref: '#/components/schemas/Category' } },
+              },
+            },
+          },
+        },
+      },
+    },
+    components: {
+      schemas: {
+        Category: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+            children: { type: 'array', items: { $ref: '#/components/schemas/Category' } },
+          },
+        },
+      },
+    },
+  });
+
+  it('builds a mock for a self-referencing schema on the browser path', async () => {
+    const { endpoints, warnings } = await parseOpenApiToEndpoints(categorySpec, 'json');
+    expect(warnings).toEqual([]);
+    expect(endpoints).toHaveLength(1);
+    expect(JSON.parse(bodyContent(endpoints[0]))).toEqual({ name: 'string', children: [{}] });
+  });
+
+  it('builds the same mock when the dereferencer hands back a real object cycle', async () => {
+    const category: Record<string, unknown> = { type: 'object' };
+    category.properties = {
+      name: { type: 'string' },
+      children: { type: 'array', items: category },
+    };
+    const cyclicDoc = {
+      openapi: '3.0.0',
+      paths: {
+        '/categories': {
+          get: {
+            responses: {
+              '200': { description: 'ok', content: { 'application/json': { schema: category } } },
+            },
+          },
+        },
+      },
+    };
+    const { endpoints, warnings } = await parseOpenApiToEndpoints(
+      '{}',
+      'json',
+      {},
+      {
+        dereference: () => ({ doc: cyclicDoc, warnings: [] }),
+      },
+    );
+    expect(warnings).toEqual([]);
+    expect(JSON.parse(bodyContent(endpoints[0]))).toEqual({ name: 'string', children: [{}] });
+  });
+
+  it('serves an example that contains itself with the loop cut, in every position', async () => {
+    const example: Record<string, unknown> = { id: 1 };
+    example.self = example;
+    const cyclicDoc = {
+      openapi: '3.0.0',
+      paths: {
+        '/loop': {
+          get: {
+            parameters: [{ name: 'q', in: 'query', example }],
+            responses: {
+              '200': {
+                description: 'ok',
+                headers: { 'X-Meta': { example } },
+                content: { 'application/json': { example } },
+              },
+            },
+          },
+        },
+      },
+    };
+    const { endpoints } = await parseOpenApiToEndpoints(
+      '{}',
+      'json',
+      {},
+      {
+        dereference: () => ({ doc: cyclicDoc, warnings: [] }),
+      },
+    );
+    expect(JSON.parse(bodyContent(endpoints[0]))).toEqual({ id: 1, self: {} });
+    expect(headers(endpoints[0]).find((h) => h.key === 'X-Meta')?.value).toBe('{"id":1,"self":{}}');
+    expect(endpoints[0].requestSchema.queryParams[0].example).toBe('{"id":1,"self":{}}');
+  });
+});
+
+describe('parseOpenApiToEndpoints — one unreadable operation', () => {
+  it('skips it with a warning that names it, and keeps every other operation', async () => {
+    const throwsError: Record<string, unknown> = {};
+    Object.defineProperty(throwsError, 'responses', {
+      enumerable: true,
+      get() {
+        throw new Error('boom');
+      },
+    });
+    const throwsValue: Record<string, unknown> = {};
+    const notAnError: unknown = 'nope';
+    Object.defineProperty(throwsValue, 'responses', {
+      enumerable: true,
+      get() {
+        throw notAnError;
+      },
+    });
+    const brokenDoc = {
+      openapi: '3.0.0',
+      paths: {
+        '/broken': { get: throwsError, post: throwsValue },
+        '/ok': {
+          get: {
+            responses: { '200': { content: { 'application/json': { example: { ok: true } } } } },
+          },
+        },
+      },
+    };
+    const { endpoints, warnings } = await parseOpenApiToEndpoints(
+      '{}',
+      'json',
+      {},
+      {
+        dereference: () => ({ doc: brokenDoc, warnings: [] }),
+      },
+    );
+    expect(endpoints.map((e) => `${e.method} ${e.pathPattern}`)).toEqual(['GET /ok']);
+    expect(warnings).toEqual([
+      'Skipped GET /broken: its definition could not be read (boom).',
+      'Skipped POST /broken: its definition could not be read (nope).',
+    ]);
+  });
+});

@@ -21,7 +21,7 @@ VS Code is where the same engineers who use API Circle already live with Git. Ed
 
 - **Request templates** — six starter shapes via `API Circle: New Request from Template…` (Simple GET, JSON POST, Bearer-protected GET, Paginated GET, GraphQL query, REST CRUD scaffold).
 - **CodeLens helpers** — `▶ Send`, `✚ Add section…`, `⤵ New from template…` above each request YAML. In-flight requests swap to `⏳ Sending… · ✖ Cancel`.
-- **All 17 auth types** — none, bearer, basic, api-key, digest, NTLM, Hawk, AWS Signature v4, JWT bearer, and all OAuth 2.0 grants (Authorization Code, PKCE, Client Credentials, Password, Implicit, Device Code, private_key_jwt, token refresh).
+- **15 auth schemes (plus No Auth and Inherit)** — bearer, basic, api-key, custom header, digest, NTLM, Hawk, AWS Signature v4, JWT bearer, and all OAuth 2.0 grants (Authorization Code, PKCE, Client Credentials, Password, Implicit, Device Code, private_key_jwt, token refresh).
 - **Folder-wise auth** — set auth on a folder; child requests inherit via `◆ Inherits from <Folder>` CodeLens.
 - **URL-as-source-of-truth** — query parameters and path placeholders sync from the URL into structured sections on save.
 - **Response viewer** as a virtual `.run.yaml` opened side-by-side — appears instantly on ▶ Send, resolves in place.

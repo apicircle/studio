@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@apicircle/core"><img src="https://img.shields.io/npm/v/@apicircle/core?color=cb3837&logo=npm" alt="npm version" /></a>
-  <img src="https://img.shields.io/badge/auth%20schemes-17-blueviolet" alt="17 auth schemes" />
+  <img src="https://img.shields.io/badge/auth%20schemes-15-blueviolet" alt="15 auth schemes" />
   <img src="https://img.shields.io/badge/imports-OpenAPI%20%C2%B7%20Postman%20%C2%B7%20Insomnia%20%C2%B7%20cURL-blue" alt="Importers" />
   <img src="https://img.shields.io/badge/runtimes-Node%20%C2%B7%20Bun%20%C2%B7%20Browser-success" alt="Runtimes" />
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-brightgreen" alt="Node ≥ 20" />
@@ -76,7 +76,7 @@ other auth scheme — Bearer, Basic, API key, custom header, AWS SigV4, Digest
 (with `stale=true` nonce rotation), NTLM (with the full 3-message handshake +
 MIC), Hawk, JWT — works the same way: declarative config in, signed request out.
 
-### The 17 auth schemes, in one place
+### The 15 auth schemes (plus No Auth and Inherit), in one place
 
 | Family      | Schemes                                                                                                      |
 | ----------- | ------------------------------------------------------------------------------------------------------------ |

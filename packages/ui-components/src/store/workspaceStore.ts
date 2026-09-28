@@ -111,6 +111,10 @@ import {
   parseWorkspaceJson,
   redactForGit,
   assertNoPlaintextCredentials,
+  scanWorkspaceForSecrets,
+  unacknowledgedSecretFindings,
+  SecretsInPushError,
+  type SecretFinding,
   RemoteWorkspaceParseError,
   resolveInheritedAuth,
   resolveString,
@@ -727,6 +731,15 @@ export type RefreshOutcome =
   // deleted on GitHub). The store has cleared `workingBranch` and set
   // `local.retiredBranch` so the UI can surface a banner; nothing else to do.
   | { status: 'retired'; retired: RetiredBranch };
+
+interface PushWorkspaceOptions {
+  /**
+   * Secret-shaped values the user has seen listed and chosen to push anyway
+   * (from a `SecretsInPushError`). The push goes ahead only when every
+   * finding in the document it is about to write is among these.
+   */
+  acknowledgedSecretFindings?: readonly SecretFinding[];
+}
 
 /**
  * Tabs hosted by the right-side dock. Variables is read-mostly (filter +
@@ -1848,8 +1861,18 @@ type WorkspaceStore = {
    * Attachments whose bytes aren't in local IDB (e.g. pulled but not
    * downloaded) are skipped — `base_tree` keeps the existing entry
    * intact, so they don't get overwritten on the remote.
+   *
+   * Before anything is written — the pre-push snapshot included — the
+   * document about to be pushed is scanned for values shaped like secrets
+   * (`scanWorkspaceForSecrets`). When any finding is not in
+   * `options.acknowledgedSecretFindings`, the push throws
+   * `SecretsInPushError` carrying every current finding (where, never
+   * what); pushing again with those findings acknowledged goes ahead.
    */
-  pushWorkspace: (commitMessage?: string) => Promise<{ commitSha: string }>;
+  pushWorkspace: (
+    commitMessage?: string,
+    options?: PushWorkspaceOptions,
+  ) => Promise<{ commitSha: string }>;
 
   /**
    * Open a pull request from the working branch into its base. Requires a
@@ -5904,7 +5927,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     queueSaveLocal(next);
   },
 
-  pushWorkspace: async (commitMessage) => {
+  pushWorkspace: async (commitMessage, options) => {
     // Drain the debounced persistence queue before serialising for git.
     // If a keystroke landed in the last 250ms, its in-memory state is
     // ahead of what's on disk — and we serialize from in-memory `synced`,
@@ -5920,6 +5943,20 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!branch) throw new Error('Create a working branch in the Workspace panel before pushing');
     const repo = local.connectedRepo;
     if (!repo) throw new Error('No repo connected');
+
+    // Phase 8 security: redact every secret-bearing field BEFORE serialising
+    // (see step 3). Then look at what redaction cannot vouch for — a literal
+    // token in a header row, a plaintext environment variable — and stop
+    // before ANY write, the pre-push snapshot included, unless the user has
+    // seen each finding and chosen to push it anyway.
+    const redacted = redactForGit(synced);
+    const secretFindings = scanWorkspaceForSecrets(redacted);
+    if (
+      unacknowledgedSecretFindings(secretFindings, options?.acknowledgedSecretFindings ?? [])
+        .length > 0
+    ) {
+      throw new SecretsInPushError(secretFindings);
+    }
 
     // Capture a pre-push snapshot so the user can restore the local state
     // if the upstream gets in a weird shape after the push (force-push
@@ -5990,15 +6027,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       pushedSlotIds.push(slot.slotId);
     }
     // 3. Build the new tree, layering workspace.json + attachments over base_tree.
-    //    Phase 8 security: redact every secret-bearing field BEFORE
-    //    serialising. The push payload is visible to every collaborator
-    //    on this repo (and to the world for public repos) — passwords,
-    //    bearer tokens, refresh tokens, AWS keys etc. CANNOT travel via
-    //    git. `assertNoPlaintextCredentials` is a fail-closed lint pass
-    //    over the already-serialised bytes — if any redactor case got
-    //    missed (or a future RequestAuth variant is added without
-    //    wiring), the push is refused before we ever write a commit.
-    const redacted = redactForGit(synced);
+    //    Phase 8 security: serialise the document redacted (and scanned)
+    //    above. The push payload is visible to every collaborator on this
+    //    repo (and to the world for public repos) — passwords, bearer
+    //    tokens, refresh tokens, AWS keys etc. CANNOT travel via git.
+    //    `assertNoPlaintextCredentials` is a fail-closed lint pass over the
+    //    already-serialised bytes — if any redactor case got missed (or a
+    //    future RequestAuth variant is added without wiring), the push is
+    //    refused before we ever write a commit.
     const content = serializeWorkspaceForGit(redacted);
     assertNoPlaintextCredentials(content);
     // One deletion per queued attachment delete, so the working branch (and
@@ -7580,8 +7616,20 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       queueSaveLocal(advancedLocal);
     }
 
+    // Diff what Git can hold. A push blanks credential fields and URL
+    // passwords (`redactForGit`), so a remote this device pushed never has
+    // them; diffing the raw local doc would read every credential kept here
+    // as a change on every refresh — a phantom merge, or on a first pull a
+    // phantom conflict. So all three sides are compared redacted, the way
+    // `summarizeUnpushedChanges` compares them — the remote too, so a value
+    // an older Studio still pushes can't overwrite this device's own copy.
+    // The merge below applies to the live, unredacted doc, which keeps them.
     const base = liveLocal.sync.lastPulledSnapshot;
-    const diff = computeThreeWayDiff(base, liveSynced, remote);
+    const diff = computeThreeWayDiff(
+      base ? redactForGit(base) : null,
+      redactForGit(liveSynced),
+      redactForGit(remote),
+    );
 
     // Ancestry pre-flight: if we have a `lastPushedSha` baseline AND the
     // probe gave us the current remote HEAD, confirm the remote is a

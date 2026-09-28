@@ -6,11 +6,14 @@
 //
 // Design:
 //
-//   1. `redactForGit(synced)` walks every Request.auth and returns a copy
-//      with the credential-bearing fields blanked to `''`. Identity
-//      fields (clientId, username, tokenUrl, authUrl, etc.) are kept —
-//      they're not secrets and consumers need them to know which IdP to
-//      talk to.
+//   1. `redactForGit(synced)` walks every Request.auth (and Folder.auth) and
+//      returns a copy with the credential-bearing fields blanked to `''` —
+//      a custom auth header's value included; its header NAME is kept.
+//      Identity fields (clientId, username, tokenUrl, authUrl, etc.) are
+//      kept — they're not secrets and consumers need them to know which IdP
+//      to talk to. A request URL loses user-info that would leak a
+//      credential (`https://user:pass@host` → `https://host`); a plain user
+//      name or `{{variable}}` user-info stays.
 //
 //   2. `assertNoPlaintextCredentials(serialized)` is a fail-closed lint
 //      pass over the already-serialised JSON. If any credential-only
@@ -20,12 +23,19 @@
 //        - a future workspace-state field that ends up carrying secrets
 //        - any path that bypasses redactForGit by mistake
 //
+//   Free text no field name can vouch for — a literal token in a header
+//   row, a plaintext environment variable — is `scanWorkspaceForSecrets`'s
+//   job: the push path scans the redacted document and asks before writing.
+//
 // Pre-launch tradeoff: we accept that pulling from git will surface
 // requests with blank credentials. The user re-supplies them from the
-// Secret Vault locally. A future Phase 8 follow-up will introduce a
+// Secret Vault locally, and a pull keeps the local value of a field Git
+// only ever sees blank (`preserveLocalCredentialPlaceholders` in
+// `threeWayDiff.ts`). A future Phase 8 follow-up will introduce a
 // `{{!SECRET:<id>}}` placeholder system so the vault auto-fills on pull.
 
 import type { RequestAuth, WorkspaceSynced } from '@apicircle/shared';
+import { stripUrlCredentials } from './secretShapes';
 
 /** Field names that ALWAYS carry a credential when non-empty. Used by the
  *  serialised-output lint pass below. Names like `value`, `token` (in
@@ -46,13 +56,16 @@ const PLAINTEXT_CREDENTIAL_FIELD_NAMES = [
 
 /**
  * Return a copy of `synced` with every credential-bearing field in every
- * Request.auth blanked to ''. Identity fields are preserved. Pure — does
- * not mutate the input. Safe to call on partially-shaped workspaces.
+ * Request.auth blanked to '' and credential user-info removed from every
+ * request URL. Identity fields are preserved. Pure — does not mutate the
+ * input. Safe to call on partially-shaped workspaces.
  */
 export function redactForGit(synced: WorkspaceSynced): WorkspaceSynced {
   const requests: WorkspaceSynced['collections']['requests'] = {};
   for (const [id, req] of Object.entries(synced.collections.requests)) {
-    requests[id] = { ...req, auth: redactAuth(req.auth) };
+    // A remote document can hold a request without `auth` — nothing to blank.
+    const auth = req.auth ? redactAuth(req.auth) : req.auth;
+    requests[id] = { ...req, url: stripUrlCredentials(req.url), auth };
   }
   // Folders carry auth too (folder-level auth inheritance). Redact those.
   const folders: WorkspaceSynced['collections']['folders'] = {};
@@ -69,12 +82,11 @@ function redactAuth(auth: RequestAuth): RequestAuth {
   switch (auth.type) {
     case 'none':
     case 'inherit':
-    case 'custom-header':
-      // Custom header `value` is user-typed text — could be a secret but
-      // the redactor can't know. Users wanting secret semantics should
-      // use the Secret Vault + variable interpolation. Same applies to
-      // api-key.value below.
       return auth;
+    case 'custom-header':
+      // The header value IS the credential — exactly like api-key.value
+      // below. Keep the header name so teammates see which header to fill.
+      return { ...auth, value: '' };
     case 'basic':
       return { ...auth, password: '' };
     case 'bearer':

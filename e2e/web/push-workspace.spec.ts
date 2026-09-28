@@ -239,6 +239,58 @@ test.describe('Push to save (P4.3a)', () => {
       await expect(app.getByText(/up to date/)).toBeVisible();
     },
   );
+
+  test(
+    tc(
+      id('GitHub Flow :: GitHub flow: Workspace push includes secrets metadata only (not values)'),
+      'a push that would write a secret-shaped value asks first: Cancel writes nothing, Push anyway pushes',
+    ),
+    async ({ app }) => {
+      await setupConnectedBranch(app);
+      await wirePushFlow(app);
+      let treeWrites = 0;
+      app.on('request', (request) => {
+        if (request.method() === 'POST' && request.url().endsWith('/git/trees')) treeWrites += 1;
+      });
+      // Fake, and assembled so the literal is not flagged by repo scanners.
+      const token = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+      await app.evaluate((value) => {
+        const w = window as unknown as {
+          __apicircleStore: {
+            getState: () => {
+              addRequest: (folderId: string | null, name?: string) => string;
+              setRequestHeaders: (
+                id: string,
+                headers: Array<{ key: string; value: string; enabled: boolean }>,
+              ) => void;
+            };
+          };
+        };
+        const s = w.__apicircleStore.getState();
+        const requestId = s.addRequest(null, 'Leaky');
+        s.setRequestHeaders(requestId, [
+          { key: 'Authorization', value: `Bearer ${value}`, enabled: true },
+        ]);
+      }, token);
+
+      await app.getByRole('button', { name: /Push to save/ }).click();
+      const dialog = app.getByRole('dialog', { name: 'Push a value that looks like a secret?' });
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByRole('listitem')).toHaveText(
+        'Request "Leaky" › Header "Authorization" — looks like a GitHub token',
+      );
+      await expect(dialog).not.toContainText(token);
+
+      await dialog.getByRole('button', { name: 'Cancel' }).click();
+      await expect(dialog).toBeHidden();
+      expect(treeWrites).toBe(0);
+
+      await app.getByRole('button', { name: /Push to save/ }).click();
+      await dialog.getByRole('button', { name: 'Push anyway' }).click();
+      await expect(app.getByText(/Pushed/)).toBeVisible();
+      expect(treeWrites).toBe(1);
+    },
+  );
 });
 
 test.describe('Sync attachments (P4.6b)', () => {

@@ -1,4 +1,5 @@
 import type { RequestAuth, WorkspaceSynced } from '@apicircle/shared';
+import { stripUrlCredentials } from './secretShapes';
 
 // 3-way diff for the refresh / pull flow (plan §3.5). The "base" is the
 // snapshot from the last successful pull, captured in
@@ -528,6 +529,7 @@ function applyEntry(
           localRequest && remoteRequest.auth
             ? {
                 ...remoteRequest,
+                url: preserveLocalUrlCredentials(localRequest.url, remoteRequest.url),
                 auth: preserveLocalCredentialPlaceholders(localRequest.auth, remoteRequest.auth),
               }
             : remoteRequest;
@@ -657,6 +659,16 @@ function applyEntry(
   }
 }
 
+/**
+ * Git never sees credential user-info in a request URL — `redactForGit`
+ * strips it (`https://user:pass@host` → `https://host`). When the remote URL
+ * is exactly the local one minus that user-info, nobody changed the URL, so
+ * the local one stays, credentials included. Any other remote URL wins.
+ */
+function preserveLocalUrlCredentials(localUrl: string, remoteUrl: string): string {
+  return stripUrlCredentials(localUrl) === remoteUrl ? localUrl : remoteUrl;
+}
+
 function preserveLocalCredentialPlaceholders(
   localAuth: RequestAuth,
   remoteAuth: RequestAuth,
@@ -696,9 +708,10 @@ function preserveLocalCredentialPlaceholders(
       return preserveBlankStringFields(localAuth, remoteAuth, ['accessToken']);
     case 'oauth2-device':
       return preserveBlankStringFields(localAuth, remoteAuth, ['accessToken', 'refreshToken']);
+    case 'custom-header':
+      return preserveBlankStringFields(localAuth, remoteAuth, ['value']);
     case 'none':
     case 'inherit':
-    case 'custom-header':
       return remoteAuth;
     default: {
       const _exhaustive: never = remoteAuth;

@@ -17,11 +17,26 @@
 // over 201; if neither, take the first 2xx). Errors and 5xx are ignored
 // — mock servers should default to the success path; users override via
 // the editor when they want failure cases.
+//
+// Every example an operation gets — its response body, its response headers,
+// its parameter examples — is built on ONE `ExampleBudget` of its own. The
+// dereferenced document can be cyclic (Node) or a DAG whose expansion is far
+// larger than the document (both surfaces share one object per `$ref` target
+// and per YAML anchor), and the budget is what keeps that walk bounded. It is
+// per operation, never per document: an operation that exhausts it keeps its
+// endpoint, its example is cut short, and a warning names it.
 
 import yaml from 'js-yaml';
 import type { HttpMethod, MockEndpoint, MockRequestSchema } from '@apicircle/shared';
 import { makeDefaultRequestSchema } from '@apicircle/shared';
-import { schemaToExample, type JsonSchemaLike } from '../faker/schemaToExample';
+import {
+  EXAMPLE_MAX_DEPTH,
+  EXAMPLE_NODE_BUDGET,
+  ExampleBudget,
+  exampleFromData,
+  exampleFromSchema,
+  type JsonSchemaLike,
+} from '../faker/schemaToExample';
 import { paramDef } from './buildEndpoint';
 import { buildMockEndpoint } from './buildEndpoint';
 import { dereferenceInternal, type DereferenceResult } from './refDeref';
@@ -288,15 +303,18 @@ export async function parseOpenApiToEndpoints(
       const op = ops[method];
       if (!op || typeof op !== 'object') continue;
 
-      const built = buildEndpointFromOp(
-        path,
-        upper,
-        op,
-        pathItemParams,
-        opts,
-        warnings,
-        endpointId++,
-      );
+      // One operation the parser cannot read must not sink every other one:
+      // skip it, and say which it was.
+      let built: MockEndpoint | null;
+      try {
+        built = buildEndpointFromOp(path, upper, op, pathItemParams, opts, warnings, endpointId++);
+      } catch (err) {
+        warnings.push(
+          `Skipped ${upper} ${path}: its definition could not be read ` +
+            `(${err instanceof Error ? err.message : String(err)}).`,
+        );
+        continue;
+      }
       if (built) endpoints.push(built);
     }
   }
@@ -456,10 +474,12 @@ function resolvableSchemaOnly(
 }
 
 /** Merge path-item + operation parameters (operation wins by name+in) and map
- *  them into a `MockRequestSchema`. Pure. */
+ *  them into a `MockRequestSchema`. Pure apart from spending the operation's
+ *  example budget on parameter examples. */
 function buildRequestSchema(
   pathItemParams: OpenApiParameter[],
   op: OpenApiOperation,
+  budget: ExampleBudget,
 ): MockRequestSchema {
   const merged = new Map<string, OpenApiParameter>();
   for (const p of [...pathItemParams, ...(op.parameters ?? [])]) {
@@ -481,7 +501,7 @@ function buildRequestSchema(
           ? undefined
           : typeof exampleVal === 'string'
             ? exampleVal
-            : JSON.stringify(exampleVal),
+            : JSON.stringify(exampleFromData(exampleVal, budget)),
     });
     switch (p.in) {
       case 'path':
@@ -533,16 +553,30 @@ function buildEndpointFromOp(
     return null;
   }
 
-  const { contentType, body, exampleName } = pickResponsePayload(response, op);
+  // This operation's examples, and only this operation's, spend this budget.
+  const budget = new ExampleBudget();
 
-  const headers = pickResponseHeaders(response, contentType);
+  const { contentType, body, exampleName } = pickResponsePayload(response, op, budget);
+
+  const headers = pickResponseHeaders(response, contentType, budget);
+
+  const requestSchema = buildRequestSchema(pathItemParams, op, budget);
+
+  if (budget.truncated) {
+    warnings.push(
+      `The example for ${method} ${path} was cut short: it would expand past ` +
+        `${EXAMPLE_NODE_BUDGET.toLocaleString('en-US')} nodes or ${EXAMPLE_MAX_DEPTH} levels ` +
+        "of nesting, so the rest of it was left empty. Edit the endpoint's response to fill " +
+        'it in.',
+    );
+  }
 
   return buildMockEndpoint({
     id: `op-${index}-${method.toLowerCase()}-${slug(path)}`,
     method,
     pathPattern: path,
     example: exampleName,
-    requestSchema: buildRequestSchema(pathItemParams, op),
+    requestSchema,
     response: { status, headers, body },
   });
 }
@@ -550,6 +584,7 @@ function buildEndpointFromOp(
 function pickResponsePayload(
   response: OpenApiResponse,
   op: OpenApiOperation,
+  budget: ExampleBudget,
 ): { contentType: string; body: string; exampleName: string | undefined } {
   // OpenAPI 3.x: `response.content` is keyed by media type.
   if (response.content) {
@@ -564,7 +599,7 @@ function pickResponsePayload(
       if (example !== undefined) {
         return {
           contentType: preferred,
-          body: stringifyForContentType(example, preferred),
+          body: stringifyForContentType(exampleFromData(example, budget), preferred),
           exampleName: undefined,
         };
       }
@@ -580,7 +615,7 @@ function pickResponsePayload(
           const v = examples[firstExampleName];
           return {
             contentType: preferred,
-            body: stringifyForContentType(v?.value, preferred),
+            body: stringifyForContentType(exampleFromData(v?.value, budget), preferred),
             exampleName: firstExampleName,
           };
         }
@@ -588,7 +623,7 @@ function pickResponsePayload(
       if (entry.schema) {
         return {
           contentType: preferred,
-          body: stringifyForContentType(schemaToExample(entry.schema), preferred),
+          body: stringifyForContentType(exampleFromSchema(entry.schema, budget), preferred),
           exampleName: undefined,
         };
       }
@@ -600,7 +635,7 @@ function pickResponsePayload(
     const ct = (op.produces && op.produces[0]) ?? 'application/json';
     return {
       contentType: ct,
-      body: stringifyForContentType(schemaToExample(response.schema), ct),
+      body: stringifyForContentType(exampleFromSchema(response.schema, budget), ct),
       exampleName: undefined,
     };
   }
@@ -615,7 +650,7 @@ function pickResponsePayload(
       const v = examples[firstName];
       return {
         contentType: firstName,
-        body: stringifyForContentType(v, firstName),
+        body: stringifyForContentType(exampleFromData(v, budget), firstName),
         exampleName: firstName,
       };
     }
@@ -630,7 +665,11 @@ function pickResponsePayload(
 
 type ParsedHeader = { key: string; value: string };
 
-function pickResponseHeaders(response: OpenApiResponse, contentType: string): ParsedHeader[] {
+function pickResponseHeaders(
+  response: OpenApiResponse,
+  contentType: string,
+  budget: ExampleBudget,
+): ParsedHeader[] {
   const headers: ParsedHeader[] = [{ key: 'Content-Type', value: contentType }];
   if (response.headers) {
     for (const [name, def] of Object.entries(response.headers)) {
@@ -638,7 +677,10 @@ function pickResponseHeaders(response: OpenApiResponse, contentType: string): Pa
       // A referenced example is no example — sample the schema instead of
       // sending `{"$ref":"./x.json"}` as the header value.
       const example = dataOrUndefined(def.example);
-      const value = example !== undefined ? example : schemaToExample(def.schema);
+      const value =
+        example !== undefined
+          ? exampleFromData(example, budget)
+          : exampleFromSchema(def.schema, budget);
       if (value === undefined || value === null) continue;
       // Header values must be strings. Strings pass through; everything
       // else gets JSON-encoded — covers objects/arrays/numbers/booleans
@@ -680,8 +722,9 @@ function safeJsonParse(s: string): unknown {
 // An alias cap here would buy nothing: js-yaml returns ONE shared object per
 // anchor, so an alias-heavy document costs no more to load than its own length,
 // however many times each anchor is used. The whole cost of an alias graph falls
-// on whoever walks the loaded result — see `refDeref.ts` for that walk and the
-// unbounded-expansion limitation it still carries.
+// on whoever walks the loaded result, so both walks keep the sharing bounded:
+// `refDeref.ts` copies each shared node once, and every example is built on the
+// operation's `ExampleBudget` (`faker/schemaToExample.ts`).
 function safeYamlLoad(s: string): unknown {
   try {
     return yaml.load(s);

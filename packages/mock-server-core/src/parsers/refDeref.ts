@@ -10,9 +10,15 @@
 // This resolver handles the one case that matters for an in-memory,
 // single-document spec: **in-document JSON Pointer refs** (`#/components/...`
 // on OpenAPI 3, `#/definitions/...` on Swagger 2.0). It:
-//   • deep-clones the doc with every internal `$ref` inlined,
-//   • breaks reference cycles by substituting `{}` (so the downstream
-//     `schemaToExample` walk — which has no cycle guard — can never loop),
+//   • copies the doc with every internal `$ref` inlined — ONCE per node. Every
+//     use of a `$ref` shares one resolved object, and a node the input already
+//     shares (js-yaml hands back one object per YAML anchor) stays shared in the
+//     copy. The result is a DAG no larger than the input, so a few KB of `$ref`
+//     or alias fan-out can no longer expand past memory here. Whoever walks the
+//     result as a tree bounds that walk itself: `faker/schemaToExample.ts`
+//     spends a per-operation budget,
+//   • breaks reference cycles by substituting `{}` where the walk meets a node
+//     it is still copying, so the result never contains a cycle,
 //   • leaves external refs (anything not starting with `#/`) in place and
 //     reports each once as a warning. No surface follows them: a spec always
 //     reaches us as an in-memory string with no trustworthy base directory,
@@ -30,8 +36,8 @@ function decodeSegment(seg: string): string {
 
 /**
  * Resolve in-document `$ref`s against `root`. Pure — returns a new document
- * and never mutates the input. See the module header for the external-ref /
- * cycle contract.
+ * and never mutates the input. See the module header for the sharing /
+ * external-ref / cycle contract.
  */
 export function dereferenceInternal(root: unknown): DereferenceResult {
   const warnings: string[] = [];
@@ -54,51 +60,61 @@ export function dereferenceInternal(root: unknown): DereferenceResult {
     return cur;
   };
 
-  // `stack` holds the refs currently being expanded along THIS path, so a
-  // ref that points back into its own ancestry (a cycle) is caught and
-  // broken. A ref reused across sibling branches is not a cycle — each
-  // branch expands with its own stack copy.
-  const walk = (node: unknown, stack: Set<string>): unknown => {
-    if (Array.isArray(node)) return node.map((child) => walk(child, stack));
-    if (!node || typeof node !== 'object') return node;
+  // Each input node is copied once: `copies` maps it to its copy, so a node met
+  // again — the target of a `$ref` used many times, or a YAML alias — resolves
+  // to the copy already built. `onPath` holds the nodes being copied along the
+  // current path; meeting one of THOSE again is a cycle, broken with `{}`. A
+  // `$ref` object is a node like any other, so a chain of refs that leads back
+  // to itself is caught the same way.
+  const copies = new Map<object, unknown>();
+  const onPath = new Set<object>();
 
+  const resolveRef = (obj: Record<string, unknown>, ref: string): unknown => {
+    if (!ref.startsWith('#/')) {
+      if (!externalSeen.has(ref)) {
+        externalSeen.add(ref);
+        warnings.push(
+          `External $ref not resolved in the web app: "${ref}". Spec parsing never reads ` +
+            `files or opens network connections on any surface — inline the referenced ` +
+            `definition into this document.`,
+        );
+      }
+      return obj;
+    }
+    const target = resolvePointer(ref);
+    if (target === undefined) {
+      if (!unresolvedSeen.has(ref)) {
+        unresolvedSeen.add(ref);
+        warnings.push(`Unresolved internal $ref: "${ref}"`);
+      }
+      return {};
+    }
+    return walk(target);
+  };
+
+  const copy = (node: object): unknown => {
+    if (Array.isArray(node)) return node.map((child: unknown) => walk(child));
     const obj = node as Record<string, unknown>;
     const ref = obj.$ref;
-    if (typeof ref === 'string') {
-      if (!ref.startsWith('#/')) {
-        if (!externalSeen.has(ref)) {
-          externalSeen.add(ref);
-          warnings.push(
-            `External $ref not resolved in the web app: "${ref}". Spec parsing never reads ` +
-              `files or opens network connections on any surface — inline the referenced ` +
-              `definition into this document.`,
-          );
-        }
-        return obj;
-      }
-      if (stack.has(ref)) {
-        // Circular reference — break the cycle.
-        return {};
-      }
-      const target = resolvePointer(ref);
-      if (target === undefined) {
-        if (!unresolvedSeen.has(ref)) {
-          unresolvedSeen.add(ref);
-          warnings.push(`Unresolved internal $ref: "${ref}"`);
-        }
-        return {};
-      }
-      const nextStack = new Set(stack);
-      nextStack.add(ref);
-      return walk(target, nextStack);
-    }
-
+    if (typeof ref === 'string') return resolveRef(obj, ref);
     const out: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj)) {
-      out[key] = walk(value, stack);
+      out[key] = walk(value);
     }
     return out;
   };
 
-  return { doc: walk(root, new Set<string>()), warnings };
+  const walk = (node: unknown): unknown => {
+    if (!node || typeof node !== 'object') return node;
+    // Circular reference — break the cycle.
+    if (onPath.has(node)) return {};
+    if (copies.has(node)) return copies.get(node);
+    onPath.add(node);
+    const out = copy(node);
+    onPath.delete(node);
+    copies.set(node, out);
+    return out;
+  };
+
+  return { doc: walk(root), warnings };
 }

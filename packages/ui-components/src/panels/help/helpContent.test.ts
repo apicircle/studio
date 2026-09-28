@@ -40,6 +40,36 @@ describe('Help Center content', () => {
   });
 });
 
+describe('Workspace & Git article', () => {
+  it('explains what a push leaves out and when it stops to ask', () => {
+    const git = HELP_SECTIONS.find((s) => s.id === 'workspace-and-git')!;
+    expect(git.body).toContain('## What a push leaves out, and what it asks about');
+    expect(git.body).toContain('a custom auth header keeps its name but not its value');
+    expect(git.body).toContain('**Push anyway**');
+    expect(searchHelp('push anyway').map((s) => s.id)).toContain('workspace-and-git');
+  });
+});
+
+describe('mock articles', () => {
+  it('send a mock to the Desktop app or VS Code to run, and name no CLI', () => {
+    // Studio ships no CLI; `apicircle mock` was never a Studio command.
+    for (const id of ['mocks', 'mock-runtime']) {
+      const section = HELP_SECTIONS.find((s) => s.id === id)!;
+      expect(section.body, id).toMatch(/Desktop App/i);
+      expect(section.body, id).toMatch(/VS Code/);
+      expect(section.body, id).not.toMatch(/\bCLI\b|--port|command-line/);
+      expect(section.keywords ?? [], id).not.toContain('cli');
+    }
+  });
+
+  it('never offers `apicircle mock` as a command anywhere', () => {
+    for (const section of HELP_SECTIONS) {
+      expect(section.body, section.id).not.toMatch(/apicircle mock/);
+      expect(section.keywords ?? [], section.id).not.toContain('apicircle mock');
+    }
+  });
+});
+
 describe('VISIBLE_HELP_SECTIONS', () => {
   it('withholds the two workspace-sharing articles without deleting them', () => {
     const visible = VISIBLE_HELP_SECTIONS.map((x) => x.id);

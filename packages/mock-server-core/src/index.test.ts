@@ -63,6 +63,39 @@ describe('parseSourceToEndpoints', () => {
     expect(result.endpoints).toHaveLength(1);
   });
 
+  it('creates a mock from a spec with a recursive schema (the Desktop create path)', async () => {
+    // The YAML a user pastes into "create mock from spec" or serves as a
+    // contract. swagger-parser turns the self-reference into a real cycle.
+    const spec = [
+      'openapi: 3.0.0',
+      'info: { title: Tree, version: 1.0.0 }',
+      'paths:',
+      '  /categories/{id}:',
+      '    get:',
+      '      responses:',
+      "        '200':",
+      '          description: ok',
+      '          content:',
+      '            application/json:',
+      "              schema: { $ref: '#/components/schemas/Category' }",
+      'components:',
+      '  schemas:',
+      '    Category:',
+      '      type: object',
+      '      properties:',
+      '        name: { type: string }',
+      "        children: { type: array, items: { $ref: '#/components/schemas/Category' } }",
+    ].join('\n');
+    const result = await parseSourceToEndpoints({ kind: 'openapi', spec, format: 'yaml' });
+    expect(result.warnings).toEqual([]);
+    expect(result.endpoints).toHaveLength(1);
+    const body = result.endpoints[0].defaultResponse.body;
+    expect(body.type === 'json' ? JSON.parse(body.content) : null).toEqual({
+      name: 'string',
+      children: [{}],
+    });
+  });
+
   it('passes manual endpoints through verbatim', async () => {
     const result = await parseSourceToEndpoints({
       kind: 'manual',

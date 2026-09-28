@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import yaml from 'js-yaml';
 import { dereferenceInternal } from './refDeref';
 
 describe('dereferenceInternal', () => {
@@ -103,6 +104,71 @@ describe('dereferenceInternal', () => {
     expect(warnings).toEqual([]);
     expect((doc as typeof root).x).toEqual({ type: 'string' });
     expect((doc as typeof root).y).toEqual({ type: 'string' });
+    // Every use shares ONE resolved object — the copy never grows past the input.
+    expect((doc as typeof root).x).toBe((doc as typeof root).y);
+    expect((doc as typeof root).x).toBe((doc as typeof root).components.schemas.Id);
+  });
+
+  it('keeps a node the input shares (a YAML alias) shared in the copy', () => {
+    const root = yaml.load(
+      ['components: { schemas: { Id: &id { type: string } } }', 'a: *id', 'b: [*id, *id]'].join(
+        '\n',
+      ),
+    ) as { a: unknown; b: unknown[] };
+    const { doc } = dereferenceInternal(root);
+    const out = doc as typeof root;
+    expect(out.a).toEqual({ type: 'string' });
+    expect(out.b[0]).toBe(out.a);
+    expect(out.b[1]).toBe(out.a);
+    // Still a copy, never the input's own object.
+    expect(out.a).not.toBe(root.a);
+  });
+
+  it('breaks an object or array that contains itself with {}', () => {
+    const node: Record<string, unknown> = { a: 1 };
+    node.self = node;
+    const list: unknown[] = ['x'];
+    list.push(list);
+    const { doc, warnings } = dereferenceInternal({ node, list });
+    expect(warnings).toEqual([]);
+    expect((doc as { node: unknown }).node).toEqual({ a: 1, self: {} });
+    expect((doc as { list: unknown }).list).toEqual(['x', {}]);
+  });
+
+  it('breaks a chain of $refs that leads back to itself', () => {
+    const root = {
+      components: {
+        schemas: {
+          A: { $ref: '#/components/schemas/B' },
+          B: { $ref: '#/components/schemas/A' },
+        },
+      },
+      entry: { $ref: '#/components/schemas/A' },
+    };
+    const { doc, warnings } = dereferenceInternal(root);
+    expect(warnings).toEqual([]);
+    expect((doc as { entry: unknown }).entry).toEqual({});
+  });
+
+  it('resolves mutually recursive schemas once, cutting where the walk comes back', () => {
+    const root = {
+      paths: { a: { $ref: '#/components/schemas/A' }, b: { $ref: '#/components/schemas/B' } },
+      components: {
+        schemas: {
+          A: { type: 'object', properties: { b: { $ref: '#/components/schemas/B' } } },
+          B: { type: 'object', properties: { a: { $ref: '#/components/schemas/A' } } },
+        },
+      },
+    };
+    const { doc } = dereferenceInternal(root);
+    const paths = (doc as { paths: { a: unknown; b: unknown } }).paths;
+    // A was reached first, so the walk came back to it from inside B.
+    expect(paths.a).toEqual({
+      type: 'object',
+      properties: { b: { type: 'object', properties: { a: {} } } },
+    });
+    // B resolved once, inside A, and every later use shares that object.
+    expect(paths.b).toBe((paths.a as { properties: { b: unknown } }).properties.b);
   });
 
   it('does not mutate the input document', () => {

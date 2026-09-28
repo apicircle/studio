@@ -203,11 +203,7 @@ export function MockServersPanel() {
             <AlertTriangle size={12} className="mt-0.5 shrink-0 text-warning" aria-hidden="true" />
             <span>
               Definitions can be created and edited here. Running them needs the <DesktopAppLink />{' '}
-              or{' '}
-              <code className="rounded-sm bg-surface px-1 py-0.5 font-mono">
-                apicircle mock run &lt;id&gt;
-              </code>
-              .
+              or the VS Code extension — a browser tab can&apos;t listen on a port.
             </span>
           </div>
         </div>
@@ -261,11 +257,7 @@ function NoSelection({ empty, onCreate }: { empty: boolean; onCreate: () => void
           <p className="text-sm text-text-primary">No mock servers yet.</p>
           <p className="max-w-md text-xs text-text-muted">
             Create a definition by typing endpoints manually or by pasting an OpenAPI / Postman /
-            Insomnia spec. Run the mock from the <DesktopAppLink /> or via{' '}
-            <code className="rounded-sm bg-card px-1 py-0.5 font-mono">
-              apicircle mock run &lt;id&gt;
-            </code>
-            .
+            Insomnia spec. Run the mock from the <DesktopAppLink /> or the VS Code extension.
           </p>
           <button
             type="button"
@@ -412,7 +404,7 @@ function ServerSummary({
               title={
                 bridge
                   ? `Start ${server.name}`
-                  : 'Running mocks needs the Desktop App or `apicircle mock run`'
+                  : "Running mocks needs the Desktop App or the VS Code extension — a browser tab can't listen on a port"
               }
               className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-primary hover:bg-card-hover disabled:opacity-40"
             >
@@ -421,9 +413,7 @@ function ServerSummary({
             </button>
             {!bridge && (
               <span className="text-[0.6875rem] text-text-muted">
-                Needs the <DesktopAppLink /> or{' '}
-                <code className="rounded-sm bg-card px-1 py-0.5 font-mono">apicircle mock run</code>
-                .
+                Needs the <DesktopAppLink /> or the VS Code extension.
               </span>
             )}
           </>

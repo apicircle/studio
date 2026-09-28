@@ -85,10 +85,10 @@ teammates share them; _runtime_ state stays on the local machine.
 
 ### A complete request toolkit
 
-- **17 authentication schemes**, all end-to-end functional — Bearer, Basic,
-  API key, custom header, the full OAuth2 grant set (client credentials, auth
-  code, PKCE, password, implicit, device flow, with auto-refresh), AWS SigV4,
-  Digest, NTLM, Hawk, and JWT. Signing primitives are verified against the
+- **15 authentication schemes (plus No Auth and Inherit)**, all end-to-end
+  functional — Bearer, Basic, API key, custom header, the full OAuth2 grant
+  set (client credentials, auth code, PKCE, password, implicit, device flow,
+  with auto-refresh), AWS SigV4, Digest, NTLM, Hawk, and JWT. Signing primitives are verified against the
   relevant RFC and NIST reference vectors. **Folder-level auth** is editable
   on every surface: set an `auth:` block on a folder and any descendant
   request with `auth: { type: inherit }` picks it up automatically. In VS

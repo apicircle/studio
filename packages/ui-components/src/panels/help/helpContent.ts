@@ -146,6 +146,17 @@ If the base branch has no \`.apicircle/registry.json\` — a repo nothing has be
 
 Workspace names travel with a push. Every push writes your workspace's name into the branch's \`.apicircle/registry.json\` so teammates can recognise it, which means anyone who can read the repo can read the name.
 
+## What a push leaves out, and what it asks about
+
+A push never writes an auth credential: the passwords, tokens and keys of every auth type are blanked, a custom auth header keeps its name but not its value, and a request URL loses a \`user:password@\`. Your own copy keeps them, and a Refresh never blanks them here.
+
+A plain field can't be vouched for that way — a token typed into a header row, \`api_key=…\` in a query row, a session cookie, a plaintext environment variable. Before a push writes anything it looks for values shaped like secrets, and when it finds some it lists where each one sits and why — never the value — and asks:
+
+- **Cancel** — nothing is written. Move the value into an environment variable, bind that variable to the Secret Vault with **Encrypt** in the Environments panel, and write \`{{NAME}}\` where the value was.
+- **Push anyway** — pushes exactly what was listed.
+
+A workspace that keeps its secrets in \`{{variables}}\` and the Secret Vault pushes without being asked.
+
 ## Replacing your local workspace with what is on Git
 
 When you want to discard local edits and take the remote copy:
@@ -183,6 +194,8 @@ If the branch's PR is merged or the branch is deleted on GitHub, Refresh retires
       'conflict',
       'machine',
       'first pull',
+      'push anyway',
+      'redact',
     ],
   },
   {
@@ -970,7 +983,7 @@ Snapshots live only on this machine. They are kept within a size budget — pick
   {
     id: 'mocks',
     title: 'Mock servers',
-    body: `A mock server stands in for a real API — describe the endpoints and Studio answers requests on \`localhost\`. Definitions are data and live in the synced doc; running one needs the [Desktop App](https://github.com/apicircle/studio/releases/latest) or the CLI.
+    body: `A mock server stands in for a real API — describe the endpoints and Studio answers requests on \`localhost\`. Definitions are data and live in the synced doc; running one needs the [Desktop App](https://github.com/apicircle/studio/releases/latest) or the VS Code extension.
 
 ## Creating a mock server
 
@@ -999,7 +1012,7 @@ Validation and response rules can be disabled without deleting them; a rule's co
 
 ## Default port
 
-Each server has a **Default port** field on its summary card. Set it to a 1024–65535 integer to always bind that port, or leave blank to let the runtime pick a free port at each Start. The input is disabled while a mock is running — stop it first to change. A busy port surfaces a clear error: \`Port <n> on 127.0.0.1 is already in use. Stop the other process or pick a different port.\` Same field appears in the VS Code \`.mock.yaml\`, the \`apicircle.setMockPort\` command, and the CLI \`--port\` flag.
+Each server has a **Default port** field on its summary card. Set it to a 1024–65535 integer to always bind that port, or leave blank to let the runtime pick a free port at each Start. The input is disabled while a mock is running — stop it first to change. A busy port surfaces a clear error: \`Port <n> on 127.0.0.1 is already in use. Stop the other process or pick a different port.\` Same field appears in the VS Code \`.mock.yaml\` and the \`apicircle.setMockPort\` command.
 
 ## The web limitation, and how to run a mock
 
@@ -1008,7 +1021,8 @@ The **web app cannot run a mock server** — a browser tab cannot open a listeni
     Desktop app   Start/Stop on the Mocks panel; it prints the port:
                   Started "Payments mock" on http://127.0.0.1:4100
 
-    CLI           apicircle mock ./openapi.yaml --port 4100
+    VS Code       Start/Stop on a mock in the API Circle Mock view
+                  (F6 / Shift+F6); its port shows in the status bar
 
 Whichever you use, point your requests at the printed \`localhost\` address. Don't have the desktop build yet? [Download the Desktop App](https://github.com/apicircle/studio/releases/latest).`,
     keywords: [
@@ -1029,9 +1043,9 @@ Whichever you use, point your requests at the printed \`localhost\` address. Don
     title: 'Mock runtime',
     body: `A mock server lets you run an API on \`localhost\` before — or instead of — the real one. You **create** mock servers in the Mocks panel (see Mock servers); this page is about **running** one and pointing your requests at it.
 
-## Why running a mock needs the Desktop app or the CLI
+## Why running a mock needs the Desktop app or VS Code
 
-A server has to open a network port and listen on it, and a browser tab is not allowed to do that. So the **web app cannot run a mock** — it can only create and edit the definition, which is why the Mocks panel shows a "run it elsewhere" banner. To actually serve traffic, use the [Desktop App](https://github.com/apicircle/studio/releases/latest) or the \`apicircle\` command-line tool. The definition is the same either way; only the thing that runs it differs.
+A server has to open a network port and listen on it, and a browser tab is not allowed to do that. So the **web app cannot run a mock** — it can only create and edit the definition, which is why the Mocks panel shows a "run it elsewhere" banner. To actually serve traffic, use the [Desktop App](https://github.com/apicircle/studio/releases/latest) or the API Circle Studio extension for VS Code. The definition is the same either way; only the thing that runs it differs.
 
 ## Run a mock in the Desktop app
 
@@ -1041,21 +1055,13 @@ A server has to open a network port and listen on it, and a browser tab is not a
 
 Send requests to that address, and press **Stop** when you are done. The mock keeps running in the background while the Desktop app is open, so you can switch panels, edit requests, and keep hitting it.
 
-## Run a mock from the CLI
+## Run a mock in VS Code
 
-The CLI runs a mock straight from a spec file — no app needed, which is handy in a terminal workflow or for a teammate who only has the file:
+Open the same workspace in VS Code with the API Circle Studio extension, then in the API Circle **Mock** view select the mock server and press **Start** (F6 with the view focused). The status bar shows how many mocks are running and on which ports:
 
-    apicircle mock ./openapi.yaml
+    Mocks: 1 (:4100)
 
-It prints the address and how many endpoints it loaded, then waits for traffic:
-
-    Mock server listening on http://127.0.0.1:54113 with 12 endpoints (type=openapi). Press Ctrl-C to stop.
-
-By default it picks a free port — pin a specific one with \`--port\`:
-
-    apicircle mock ./openapi.yaml --port 4100
-
-Stop it with **Ctrl-C**. Other options: \`--host\` (default \`127.0.0.1\`), \`--type\` to force \`openapi\` / \`postman\` / \`insomnia\`, \`--format\` for OpenAPI \`json\` / \`yaml\`, and \`--cors\`.
+Press **Stop** (Shift+F6) when you are done. A mock with no Default port gets a free one at each Start — right-click it and choose **Set Mock Port…** to pin one.
 
 ## Point your requests at the running mock
 
@@ -1086,16 +1092,15 @@ For each incoming request the mock checks, in order: validation rules, then resp
 
 ## Common snags
 
-- **"Port already in use"** — another process holds that port. Stop it, or start the mock on a different \`--port\`.
-- **A browser client gets a CORS error** — turn CORS on for the server. The CLI enables it by default; in the app it is a toggle on the server card.
-- **The mock stops answering** — the Desktop app was closed, or the CLI process was stopped. A mock runs only as long as its host is alive.
+- **"Port already in use"** — another process holds that port. Stop it, or give the mock a different Default port.
+- **A browser client gets a CORS error** — turn CORS on for the server: a toggle on the server card, or \`cors\` in the VS Code \`.mock.yaml\`.
+- **The mock stops answering** — the Desktop app or the VS Code window that ran it was closed. A mock runs only as long as its host is alive.
 - **Don't have the Desktop app?** [Download it from GitHub Releases](https://github.com/apicircle/studio/releases/latest).`,
     keywords: [
       'mock runtime',
       'run mock',
       'desktop',
-      'cli',
-      'apicircle mock',
+      'vs code',
       'start',
       'stop',
       'cors',
@@ -1335,7 +1340,7 @@ The target server is unreachable, or a browser CORS policy blocked it. Try the [
 
 ## A mock server will not start
 
-Common causes: the port is already in use (stop the other server, or pass a different \`--port\`); the spec failed to parse (check the OpenAPI / Postman / Insomnia text is valid); or an OAuth2 callback never fired (browser-redirect grants need the [Desktop App](https://github.com/apicircle/studio/releases/latest)).
+Common causes: the port is already in use (stop the other server, or give the mock a different Default port); the spec failed to parse (check the OpenAPI / Postman / Insomnia text is valid); or an OAuth2 callback never fired (browser-redirect grants need the [Desktop App](https://github.com/apicircle/studio/releases/latest)).
 
 ## A plan step fails but the run continues
 

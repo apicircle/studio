@@ -173,10 +173,10 @@ function authCredentialFields(auth: RequestAuth): CredentialFieldDescriptor[] {
     case 'none':
     case 'inherit':
     case 'custom-header':
-      // `custom-header.value` could be a secret but `redactForGit` also
-      // refuses to redact it — users wanting secret semantics should
-      // route through Secret Vault + variable interpolation. Same
-      // policy here.
+      // `custom-header.value` could be a secret. A Git push blanks it
+      // (`redactForGit`); this export still carries it as written, so
+      // users wanting secret semantics should route it through the Secret
+      // Vault + variable interpolation.
       return [];
     case 'basic':
       return [{ field: 'password', label: 'Basic · password' }];
