@@ -92,6 +92,13 @@
 - **Auth copy counts 15 schemes (plus No Auth and Inherit), not 17** — the
   README, `docs/auth.md`, the onboarding tour, and the `@apicircle/core` and
   VS Code extension READMEs.
+- **The workspace-lock notice no longer promises a pricing date.** The default
+  `WorkspaceLockedNotice` — what a locked workspace, or New workspace at the
+  cap, opens when the edition supplies no notice of its own — said extra
+  workspaces were locked "while we finish API Circle pricing, releasing end of
+  September". It now says they are locked on this plan, and still says nothing
+  has been deleted and how to reach a human. An edition's
+  `workspaceAccess.lockedNotice` still replaces it wholesale.
 
 ### Added
 

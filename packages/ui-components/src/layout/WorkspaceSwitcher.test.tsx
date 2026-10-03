@@ -151,11 +151,33 @@ describe('WorkspaceSwitcher access policy', () => {
   it('explains the lock instead of switching, and says the data is safe', async () => {
     await openWith(1, 'ws-a', 'ws-b');
     await userEvent.click(screen.getByRole('option', { name: 'WS-B (locked)' }));
-    expect(await screen.findByText(/end of September/)).toBeInTheDocument();
-    expect(screen.getByText(/Nothing has been deleted/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'contact@apicircle.dev' })).toBeInTheDocument();
+    const notice = await screen.findByRole('dialog', { name: 'Workspace locked' });
+    expect(
+      within(notice).getByText(/Additional workspaces are locked on this plan\./),
+    ).toBeInTheDocument();
+    expect(within(notice).getByText(/Nothing has been deleted/)).toBeInTheDocument();
+    expect(within(notice).getByRole('link', { name: 'contact@apicircle.dev' })).toBeInTheDocument();
+    // It promises no date: the pricing release it once waited on has shipped.
+    expect(notice).not.toHaveTextContent(/end of September/);
     // and it did NOT switch
     expect(useWorkspaceStore.getState().workspaceRegistry?.activeWorkspaceId).toBe('ws-a');
+  });
+
+  it("shows an edition's own notice in place of the default", async () => {
+    // An edition with an upgrade path to offer replaces the default wholesale.
+    await renderWithStore(
+      <WorkspaceAccessProvider
+        value={{ maxWorkspaces: 1, lockedNotice: <button type="button">Upgrade</button> }}
+      >
+        <WorkspaceSwitcher />
+      </WorkspaceAccessProvider>,
+    );
+    useWorkspaceStore.setState({ workspaceRegistry: registryOf('ws-a') });
+    await userEvent.click(await screen.findByRole('button', { name: /Switch workspace/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'New workspace (locked)' }));
+    const notice = await screen.findByRole('dialog', { name: 'Workspace locked' });
+    expect(within(notice).getByRole('button', { name: 'Upgrade' })).toBeInTheDocument();
+    expect(within(notice).queryByText(/Additional workspaces are locked/)).not.toBeInTheDocument();
   });
 
   it('locks the create affordance at the cap', async () => {

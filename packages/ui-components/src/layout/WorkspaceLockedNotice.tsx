@@ -4,12 +4,13 @@ import { Lock } from 'lucide-react';
  * The default explanation shown when a workspace is locked, or when creating one
  * would exceed the cap.
  *
- * Deliberately has no call to action. There is no pricing page to send anyone to
- * yet, and a dead "Upgrade" button is worse than none — an edition replaces this
- * wholesale via `workspaceAccess.lockedNotice` once it has somewhere to point.
+ * Deliberately has no call to action. This build sells no plan of its own, and a
+ * dead "Upgrade" button is worse than none — an edition replaces this wholesale
+ * via `workspaceAccess.lockedNotice` with its own upgrade path.
  *
  * The two things this copy must carry are that the data is safe and that there
- * is a human to ask, because "locked" reads as "lost" otherwise.
+ * is a human to ask, because "locked" reads as "lost" otherwise. It names no
+ * date: a promised date in shipped copy goes stale the day it passes.
  */
 export function WorkspaceLockedNotice() {
   return (
@@ -22,14 +23,13 @@ export function WorkspaceLockedNotice() {
           <Lock size={13} />
         </span>
         <p className="text-xs leading-relaxed text-text-muted">
-          Additional workspaces are locked while we finish API Circle pricing, releasing{' '}
-          <strong className="text-text-primary">end of September</strong>. Nothing has been deleted
-          — your requests, environments and history are all still here, and unlock again with a plan
-          that includes them.
+          Additional workspaces are locked on this plan. Nothing has been deleted — your requests,
+          environments and history are all still here, and unlock again with a plan that includes
+          them.
         </p>
       </div>
       <p className="text-[0.6875rem] text-text-dim">
-        Need this sooner, or need a hand? Email{' '}
+        Need more workspaces, or a hand? Email{' '}
         <a className="text-accent hover:underline" href="mailto:contact@apicircle.dev">
           contact@apicircle.dev
         </a>
