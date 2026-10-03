@@ -1,8 +1,10 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerGitProvider, resetGitProviderRegistry, type GitProvider } from '@apicircle/git';
+import { createElement, type ReactNode } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
-import { useHostSelection } from './useHostSelection';
+import { GitHostAccessProvider, type GitHostAccess } from '../layout/gitHostAccess';
+import { useHostSelection, type HostSelectionOptions } from './useHostSelection';
 
 // The picker default. Hardcoding `'github'` opened the vault on GitHub for a
 // user whose only session was GitLab — so they were shown a CONNECT FORM instead
@@ -17,6 +19,13 @@ const SESSION = {
   lastVerifiedAt: null,
   canCreatePullRequests: null,
 };
+
+/** Render the hook under an edition's host-access policy. */
+function renderLocked(access: GitHostAccess, options?: HostSelectionOptions) {
+  const wrapper = ({ children }: { children: ReactNode }) =>
+    createElement(GitHostAccessProvider, { value: access }, children);
+  return renderHook(() => useHostSelection(options), { wrapper });
+}
 
 function stub(): GitProvider {
   return { getViewer: vi.fn() } as unknown as GitProvider;
@@ -184,6 +193,76 @@ describe('useHostSelection', () => {
       rerender({ connectedOnly: true });
       expect(result.current.hosts).toEqual(['gitlab', 'bitbucket']);
       expect(result.current.host).toBe('gitlab');
+    });
+  });
+
+  describe('locked hosts (gitHostAccess)', () => {
+    // An edition's plan can lock hosts it registered. They are reported, so a
+    // caller can say why one is unavailable, but only the vault's strip — which
+    // passes `includeLocked` — offers them.
+    it('leaves a locked host out of the offered list, but reports it', () => {
+      registerGitProvider('gitlab', stub);
+      registerGitProvider('bitbucket', stub);
+      const { result } = renderLocked({ lockedHosts: ['gitlab'] });
+      expect(result.current.registeredHosts).toEqual(['github', 'gitlab', 'bitbucket']);
+      expect(result.current.lockedHosts).toEqual(['gitlab']);
+      expect(result.current.hosts).toEqual(['github', 'bitbucket']);
+    });
+
+    it('offers locked hosts too when the caller asks for them', () => {
+      registerGitProvider('gitlab', stub);
+      const { result } = renderLocked({ lockedHosts: ['gitlab'] }, { includeLocked: true });
+      expect(result.current.hosts).toEqual(['github', 'gitlab']);
+      expect(result.current.lockedHosts).toEqual(['gitlab']);
+    });
+
+    it('never reports GitHub as locked, so the list is never empty', () => {
+      registerGitProvider('gitlab', stub);
+      const { result } = renderLocked({ lockedHosts: ['github', 'gitlab'] });
+      expect(result.current.lockedHosts).toEqual(['gitlab']);
+      expect(result.current.hosts).toEqual(['github']);
+      expect(result.current.host).toBe('github');
+    });
+
+    it('reports nothing locked for a host this build never registered', () => {
+      const { result } = renderLocked({ lockedHosts: ['azure-devops'] });
+      expect(result.current.lockedHosts).toEqual([]);
+      expect(result.current.hosts).toEqual(['github']);
+    });
+
+    it('does not select a locked session host the list leaves out', () => {
+      registerGitProvider('gitlab', stub);
+      seedSession('gitlab');
+      const { result } = renderLocked({ lockedHosts: ['gitlab'] });
+      expect(result.current.connectedHosts).toEqual(['gitlab']);
+      expect(result.current.host).toBe('github');
+    });
+
+    it('opens on the locked session host where the caller includes locked hosts', () => {
+      // The vault: a session saved on a host that later locked stays visible,
+      // so it can be removed.
+      registerGitProvider('gitlab', stub);
+      seedSession('gitlab');
+      const { result } = renderLocked({ lockedHosts: ['gitlab'] }, { includeLocked: true });
+      expect(result.current.host).toBe('gitlab');
+    });
+
+    it('connectedOnly leaves out a locked session, falling back to the unlocked hosts', () => {
+      registerGitProvider('gitlab', stub);
+      registerGitProvider('bitbucket', stub);
+      seedSession('bitbucket');
+      const { result } = renderLocked({ lockedHosts: ['bitbucket'] }, { connectedOnly: true });
+      expect(result.current.hosts).toEqual(['github', 'gitlab']);
+      expect(result.current.host).toBe('github');
+    });
+
+    it('connectedOnly offers the unlocked session when a locked one sits beside it', () => {
+      registerGitProvider('bitbucket', stub);
+      seedSession('github');
+      seedSession('bitbucket');
+      const { result } = renderLocked({ lockedHosts: ['bitbucket'] }, { connectedOnly: true });
+      expect(result.current.hosts).toEqual(['github']);
+      expect(result.current.host).toBe('github');
     });
   });
 });

@@ -2,8 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, LifeBuoy } from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { probeWorkspaceRecords } from './persistence/workspaceStorage';
-import { useWorkspaceStore } from './store/workspaceStore';
+import { connectedHostKind, useWorkspaceStore } from './store/workspaceStore';
 import { getDesktopWorkspaceFileBridge } from './desktop/bridge';
+import {
+  DEFAULT_GIT_HOST_ACCESS,
+  GitHostAccessProvider,
+  isGitHostLocked,
+  type GitHostAccess,
+} from './layout/gitHostAccess';
 
 /**
  * Re-run `refreshWorkspace` when the user comes back to the app from
@@ -23,15 +29,25 @@ import { getDesktopWorkspaceFileBridge } from './desktop/bridge';
  * Debounced to one refresh per ~10s so a user rapidly cycling Alt-Tab
  * doesn't spam the GitHub API. Skips when there's no working branch
  * (refreshWorkspace would throw) or when a refresh is already in flight.
+ *
+ * Never runs while the repo's host is locked (`gitHostAccess`): nothing runs
+ * against a locked host in the background. The flag sits in the effect's deps
+ * and is checked before `fire` exists, so a skipped probe never starts the
+ * debounce — an edition's access policy can load after hydration, and the
+ * cold-launch refresh must still happen the moment it unlocks the host. Takes
+ * the policy as an argument because it runs in `App`, above the provider.
  */
-function useFocusRefresh(): void {
+function useFocusRefresh(gitHostAccess: GitHostAccess): void {
   const refreshWorkspace = useWorkspaceStore((s) => s.refreshWorkspace);
   const hasBranch = useWorkspaceStore((s) => Boolean(s.local?.workingBranch));
+  const hostLocked = useWorkspaceStore((s) =>
+    isGitHostLocked(gitHostAccess, connectedHostKind(s.local)),
+  );
   const inFlightRef = useRef(false);
   const lastRefreshAtRef = useRef(0);
 
   useEffect(() => {
-    if (!hasBranch) return;
+    if (!hasBranch || hostLocked) return;
     const MIN_INTERVAL_MS = 10_000;
     const fire = () => {
       if (document.hidden) return;
@@ -62,7 +78,7 @@ function useFocusRefresh(): void {
       window.removeEventListener('focus', fire);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [hasBranch, refreshWorkspace]);
+  }, [hasBranch, hostLocked, refreshWorkspace]);
 }
 
 /**
@@ -193,6 +209,7 @@ export function App({
   sections = NO_SECTIONS,
   brand,
   workspaceAccess = DEFAULT_WORKSPACE_ACCESS,
+  gitHostAccess = DEFAULT_GIT_HOST_ACCESS,
 }: {
   /** Edition-contributed top-nav panels. Omitted in Studio → strict no-op. */
   extraPanels?: readonly ExtraPanelDef[];
@@ -206,6 +223,12 @@ export function App({
    * edition attached is the free tier. See `layout/workspaceAccess.tsx`.
    */
   workspaceAccess?: WorkspaceAccess;
+  /**
+   * Which registered Git hosts the user may use right now. Omitted in Studio →
+   * strict no-op: open core registers GitHub alone, and GitHub is never locked.
+   * See `layout/gitHostAccess.ts`.
+   */
+  gitHostAccess?: GitHostAccess;
 } = {}) {
   const ready = useWorkspaceStore((s) => s.ready);
   const hydrationError = useWorkspaceStore((s) => s.hydrationError);
@@ -307,7 +330,7 @@ export function App({
     void hydrate();
   }, [hydrate]);
 
-  useFocusRefresh();
+  useFocusRefresh(gitHostAccess);
   useExternalDiskRefresh();
 
   if (hydrationError) {
@@ -324,32 +347,34 @@ export function App({
 
   return (
     <WorkspaceAccessProvider value={workspaceAccess}>
-      <ExtraPanelsProvider value={extraPanels}>
-        <SectionsProvider value={{ sections, activeSectionId, setActiveSectionId }}>
-          <div className="flex h-full flex-col bg-surface text-text-primary">
-            <TopBar brand={brand} />
-            <PanelTabs />
-            <div className="flex flex-1 overflow-hidden">
-              <BodyArea />
-              <RightDockRail />
+      <GitHostAccessProvider value={gitHostAccess}>
+        <ExtraPanelsProvider value={extraPanels}>
+          <SectionsProvider value={{ sections, activeSectionId, setActiveSectionId }}>
+            <div className="flex h-full flex-col bg-surface text-text-primary">
+              <TopBar brand={brand} />
+              <PanelTabs />
+              <div className="flex flex-1 overflow-hidden">
+                <BodyArea />
+                <RightDockRail />
+              </div>
+              <UpdatePreviewModal />
+              <MissingScopeGate />
+              <AttachmentDownloadPromptModal />
+              <KeyboardShortcuts />
+              {/* Don't auto-start the Studio tour for an edition that has its own
+                first-run mode landing (Lens) — it would stack over and disable it.
+                Studio-standalone (no sections) keeps auto-start. Replay is always
+                available via the Help Center. */}
+              <OnboardingTour autoStart={sections.length <= 1} />
+              <ToastSlot />
+              <UpdateAvailableBanner />
+              <PassphrasePromptModalGate />
+              <CloseConfirmModal />
+              {sections.length > 1 && <SectionLanding />}
             </div>
-            <UpdatePreviewModal />
-            <MissingScopeGate />
-            <AttachmentDownloadPromptModal />
-            <KeyboardShortcuts />
-            {/* Don't auto-start the Studio tour for an edition that has its own
-              first-run mode landing (Lens) — it would stack over and disable it.
-              Studio-standalone (no sections) keeps auto-start. Replay is always
-              available via the Help Center. */}
-            <OnboardingTour autoStart={sections.length <= 1} />
-            <ToastSlot />
-            <UpdateAvailableBanner />
-            <PassphrasePromptModalGate />
-            <CloseConfirmModal />
-            {sections.length > 1 && <SectionLanding />}
-          </div>
-        </SectionsProvider>
-      </ExtraPanelsProvider>
+          </SectionsProvider>
+        </ExtraPanelsProvider>
+      </GitHostAccessProvider>
     </WorkspaceAccessProvider>
   );
 }

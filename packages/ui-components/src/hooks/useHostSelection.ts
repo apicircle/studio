@@ -6,6 +6,7 @@ import {
   useWorkspaceStore,
   workspaceSessionFor,
 } from '../store/workspaceStore';
+import { isGitHostLocked, useGitHostAccess } from '../layout/gitHostAccess';
 
 export interface HostSelectionOptions {
   /**
@@ -18,6 +19,15 @@ export interface HostSelectionOptions {
    * always has something to render.
    */
   connectedOnly?: boolean;
+  /**
+   * Also offer the hosts an edition has locked (`gitHostAccess`).
+   *
+   * Only the vault's host strip wants them: it is where a user sees which hosts
+   * exist and why one is unavailable. Every other picker leaves them out — a
+   * locked host can be neither connected nor used, so offering it could only
+   * lead to a refusal.
+   */
+  includeLocked?: boolean;
 }
 
 export interface HostSelection {
@@ -27,6 +37,8 @@ export interface HostSelection {
   registeredHosts: readonly GitHostKind[];
   /** The registered hosts that hold a workspace session right now. */
   connectedHosts: readonly GitHostKind[];
+  /** The registered hosts an edition has locked — `[]` in open-core Studio. */
+  lockedHosts: readonly GitHostKind[];
   /** The selected host — always one of `hosts`. */
   host: GitHostKind;
   setHost: (host: GitHostKind) => void;
@@ -56,21 +68,26 @@ export interface HostSelection {
  * offer a host this build cannot resolve: open-core Studio registers GitHub
  * alone and the caller renders no picker at all. `connectedOnly` narrows that
  * further to the hosts holding a session, for the surfaces that can only act
- * through one.
+ * through one. Hosts the edition has locked are left out of `hosts` unless the
+ * caller passes `includeLocked`; GitHub is never locked, so the list is never
+ * empty.
  *
- * Under `connectedOnly` the selection is also held to the offered list: an
- * explicit choice that falls outside it — a host picked before its session was
- * disconnected, say — yields to the session host rather than being honoured,
- * because a selection the list does not contain would name one host in the
- * label while the picker showed another. Without the option the selection is
- * simply the choice, else the session host — a session on a host this build
- * does not register still surfaces, so the user can see (and disconnect) it.
+ * Whenever the list is narrowed — `connectedOnly`, or a locked host left out —
+ * the selection is also held to the offered list: an explicit choice that falls
+ * outside it — a host picked before its session was disconnected, say — yields
+ * to the session host rather than being honoured, because a selection the list
+ * does not contain would name one host in the label while the picker showed
+ * another. When nothing narrows the list the selection is simply the choice,
+ * else the session host — a session on a host this build does not register
+ * still surfaces, so the user can see (and disconnect) it.
  */
 export function useHostSelection(options: HostSelectionOptions = {}): HostSelection {
   // Not memoised on purpose: the registry is populated once at module load, so
   // this is a cheap filter over four entries, and a `useMemo` with an empty dep
   // array would freeze the list if registration ever moved later.
   const registeredHosts = GIT_HOST_KINDS.filter((kind) => hasGitProvider(kind));
+  const access = useGitHostAccess();
+  const lockedHosts = registeredHosts.filter((kind) => isGitHostLocked(access, kind));
   const connectedHosts = useWorkspaceStore(
     useShallow((s) =>
       registeredHosts.filter((kind) => workspaceSessionFor(s.local, kind) !== null),
@@ -78,15 +95,20 @@ export function useHostSelection(options: HostSelectionOptions = {}): HostSelect
   );
   const sessionHost = useWorkspaceStore((s) => hostOfWorkspaceSession(s.local));
   const [chosen, setChosen] = useState<GitHostKind | null>(null);
+  const offerable = options.includeLocked
+    ? registeredHosts
+    : registeredHosts.filter((kind) => !lockedHosts.includes(kind));
+  const connectedOfferable = connectedHosts.filter((kind) => offerable.includes(kind));
   const hosts =
-    options.connectedOnly && connectedHosts.length > 0 ? connectedHosts : registeredHosts;
+    options.connectedOnly && connectedOfferable.length > 0 ? connectedOfferable : offerable;
+  const narrowed = options.connectedOnly || offerable.length < registeredHosts.length;
   const preferred = chosen ?? sessionHost;
-  const host = !options.connectedOnly
+  const host = !narrowed
     ? preferred
     : hosts.includes(preferred)
       ? preferred
       : hosts.includes(sessionHost)
         ? sessionHost
         : hosts[0];
-  return { hosts, registeredHosts, connectedHosts, host, setHost: setChosen };
+  return { hosts, registeredHosts, connectedHosts, lockedHosts, host, setHost: setChosen };
 }

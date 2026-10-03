@@ -638,13 +638,23 @@ keeps the two in one logical codebase with **no duplication** is recorded in
   extension points. The MCP server's DI (`WorkspaceProvider` / `Workspaces` /
   `MockController` + `createMcpServer({ tools })`) is the template every new
   seam follows.
-- **UI shell seams (`packages/ui-components`).** Two additive, no-op-when-empty
-  `App` props let an edition extend the shell without forking it: `extraPanels`
-  (`ExtraPanelDef[]` — edition top-nav panels, `layout/extraPanels.ts`) and
-  `sections` (`SectionDef[]` — top-level "modes" that group panels, with a first-run
-  landing + a top-bar toggle and per-workspace mode persistence, `layout/sections.ts`).
-  Both render byte-identically when Studio passes nothing; a section's sign-in gating
-  lives in the edition (`requiresAuth`), never in core.
+- **UI shell seams (`packages/ui-components`).** Optional `App` props let an
+  edition extend the shell without forking it:
+  - **No-op when omitted:**
+    - `extraPanels` (`ExtraPanelDef[]`): edition top-nav panels, `layout/extraPanels.ts`.
+    - `sections` (`SectionDef[]`): top-level "modes" that group panels, with a
+      first-run landing, a top-bar toggle and per-workspace mode persistence,
+      `layout/sections.ts`.
+    - `brand` (`BrandDef`): the header brand.
+    - `gitHostAccess` (`GitHostAccess`, `layout/gitHostAccess.ts`): the registered
+      Git hosts the user may not use. Each is shown locked, and its use is refused
+      by the edition's own provider factory.
+  - **Not a no-op:** `workspaceAccess` (`layout/workspaceAccess.ts`) defaults to a
+    cap of one workspace, because a build with no edition is the free tier.
+
+  The no-op props render byte-identically when Studio passes nothing. A section's
+  sign-in gating lives in the edition (`requiresAuth`), never in core.
+
 - **Workspace-directory sidecar contract.** `.apicircle/workspace-<id>/` is
   shared space: API Circle owns `workspace.json` / `workspace.local.json` /
   `attachments/`, but external tools may store sibling files there. Every

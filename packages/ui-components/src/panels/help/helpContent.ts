@@ -820,6 +820,8 @@ A token needs \`repo\` (read + push) and \`pull_request\` (open PRs). If \`pull_
 
 Builds that register more than one Git host (GitLab, Bitbucket Cloud, Azure DevOps) show a host strip at the top of the tab. Each pill carries a dot — filled when that host already holds a session — and picking one shows that host's required scopes and either its connect form or its session card. Arrow keys move between hosts.
 
+A host your plan doesn't include shows a **lock** in place of the dot. Picking it explains why instead of offering a connect form. A session you saved on it earlier is kept and can be disconnected, but nothing is pushed, pulled or refreshed through it until the host is unlocked.
+
 Bitbucket Cloud offers two credential types. An **API token** is created on your Atlassian account and entered together with your account email; a workspace, project or repository **access token** is pasted on its own. The scope list changes with the type you pick. App passwords were retired by Atlassian and no longer work.
 
 The Workspace panel's repo browser lists repos only through hosts that hold a session — connect the host first, then pick the repo.

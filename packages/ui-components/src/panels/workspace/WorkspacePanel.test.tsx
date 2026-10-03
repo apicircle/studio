@@ -10,6 +10,7 @@ import { WorkspacePanel } from './WorkspacePanel';
 import { renderWithStore } from '../../../test/renderWithStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import * as workspaceSharing from '../../layout/workspaceSharing';
+import { GitHostAccessProvider, type GitHostAccess } from '../../layout/gitHostAccess';
 
 // This suite covers the workspace-sharing cluster, which is switched OFF in
 // shipped builds (`WORKSPACE_SHARING_ENABLED`). Forcing the accessor to `true`
@@ -285,6 +286,244 @@ describe('WorkspacePanel', () => {
       // A new filter is a new list: the window starts over.
       await userEvent.type(filter, 'repo-1');
       expect(within(listbox).getAllByRole('option')).toHaveLength(31);
+    });
+
+    describe('with hosts the edition has locked (gitHostAccess)', () => {
+      // What a plan without the extra hosts sees. A locked host stays visible —
+      // so the user knows it exists — but nothing that would CALL it renders:
+      // no repo browser, no branch controls, no pull prompt.
+      const LOCK_ALL_BUT_GITHUB: GitHostAccess = {
+        lockedHosts: ['gitlab', 'bitbucket', 'azure-devops'],
+      };
+
+      function renderLocked(access: GitHostAccess = LOCK_ALL_BUT_GITHUB) {
+        return renderWithStore(
+          <GitHostAccessProvider value={access}>
+            <WorkspacePanel />
+          </GitHostAccessProvider>,
+        );
+      }
+
+      function connectRepoOn(host: 'gitlab' | 'bitbucket', withBranch = false): void {
+        act(() => {
+          const local = useWorkspaceStore.getState().local!;
+          useWorkspaceStore.setState({
+            local: {
+              ...local,
+              connectedRepo: {
+                fullName: 'acme/api',
+                owner: 'acme',
+                name: 'api',
+                defaultBranch: 'main',
+                visibility: 'private',
+                isPrivate: true,
+                pushable: true,
+                connectedAt: '2026-09-01T00:00:00.000Z',
+                hostKind: host,
+              },
+              workingBranch: withBranch
+                ? {
+                    name: 'apicircle/payments-a3f9c2',
+                    baseBranch: 'main',
+                    repoFullName: 'acme/api',
+                    repoOwner: 'acme',
+                    repoName: 'api',
+                    headSha: 'abc123',
+                    createdAt: '2026-09-01T00:00:00.000Z',
+                    lastPushedSha: 'abc123',
+                    diffSummary: null,
+                    openPrUrl: null,
+                    hostKind: host,
+                  }
+                : null,
+            },
+          });
+        });
+      }
+
+      it('marks the locked hosts among the supported ones, and says why', async () => {
+        registerAllHosts();
+        await renderLocked();
+        const hosts = screen.getByRole('list', { name: 'Supported Git hosts' });
+        // The "(locked)" is visually hidden text: sighted users read the lock icon.
+        expect(hosts.textContent).toBe(
+          'GitHubGitLab (locked)Bitbucket (locked)Azure DevOps (locked)',
+        );
+        expect(screen.getByText(/Hosts with a lock aren.t available on this plan/)).toBeVisible();
+      });
+
+      it('says nothing about locks when nothing is locked', async () => {
+        registerAllHosts();
+        await renderLocked({ lockedHosts: [] });
+        expect(screen.getByRole('list', { name: 'Supported Git hosts' }).textContent).toBe(
+          'GitHubGitLabBitbucketAzure DevOps',
+        );
+        expect(screen.queryByText(/Hosts with a lock/)).not.toBeInTheDocument();
+      });
+
+      it('shows a session on a locked host as locked, and never lists repos through it', async () => {
+        registerAllHosts();
+        const listAccessibleRepos = vi.fn(async () => [repo('acme/api')]);
+        await renderLocked();
+        useWorkspaceStore.setState({ listAccessibleRepos });
+        seedSessions(['bitbucket']);
+
+        expect(screen.getByText('Bitbucket locked')).toBeInTheDocument();
+        expect(screen.queryByText('Bitbucket Connected')).not.toBeInTheDocument();
+        expect(screen.getByText('bitbucket-user')).toBeInTheDocument();
+        expect(screen.getByText('Locked')).toBeInTheDocument();
+        // The notice stands where the repo browser would be: that browser lists
+        // repos on mount, through a session the lock says is not used.
+        expect(screen.getByText(/Bitbucket isn.t available on this plan/)).toBeInTheDocument();
+        expect(screen.queryByText(/Connect a repo on/)).not.toBeInTheDocument();
+        expect(listAccessibleRepos).not.toHaveBeenCalled();
+      });
+
+      it('lists repos through the unlocked session alone, and suggests no locked host', async () => {
+        registerAllHosts();
+        const listAccessibleRepos = vi.fn(async () => [repo('me/gh-api')]);
+        await renderLocked();
+        useWorkspaceStore.setState({ listAccessibleRepos });
+        seedSessions(['github', 'bitbucket']);
+
+        expect(screen.getByText('GitHub Connected')).toBeInTheDocument();
+        expect(screen.getByText('Connect a repo on GitHub')).toBeInTheDocument();
+        // Bitbucket holds a session but is locked, so there is nothing to pick.
+        expect(screen.queryByRole('combobox', { name: 'Git host' })).not.toBeInTheDocument();
+        // Every other host is locked: "connect another host" would be advice
+        // nobody can follow.
+        expect(screen.queryByText(/To connect a repo on another host/)).not.toBeInTheDocument();
+        await waitFor(() =>
+          expect(listAccessibleRepos).toHaveBeenCalledWith({ host: 'github', baseUrl: undefined }),
+        );
+        expect(listAccessibleRepos).not.toHaveBeenCalledWith(
+          expect.objectContaining({ host: 'bitbucket' }),
+        );
+      });
+
+      it('still suggests another host while one remains unlocked', async () => {
+        registerAllHosts();
+        await renderLocked({ lockedHosts: ['azure-devops'] });
+        useWorkspaceStore.setState({ listAccessibleRepos: vi.fn(async () => []) });
+        seedSessions(['github']);
+        expect(screen.getByText(/To connect a repo on another host/)).toBeInTheDocument();
+      });
+
+      it('keeps a repo on a locked host and its Disconnect repo, but no branch controls', async () => {
+        registerAllHosts();
+        const listRepoBranches = vi.fn(async () => []);
+        const listBranchWorkspaces = vi.fn(async () => []);
+        await renderLocked();
+        useWorkspaceStore.setState({ listRepoBranches, listBranchWorkspaces });
+        seedSessions(['bitbucket']);
+        connectRepoOn('bitbucket');
+
+        expect(screen.getByText('acme/api')).toBeInTheDocument();
+        expect(screen.getByText('Bitbucket locked')).toBeInTheDocument();
+        expect(screen.getByText(/Bitbucket isn.t available on this plan/)).toBeInTheDocument();
+        // The create-branch form reads the repo's branches on mount; it must not exist.
+        expect(
+          screen.queryByRole('button', { name: /Create working branch/ }),
+        ).not.toBeInTheDocument();
+        expect(listRepoBranches).not.toHaveBeenCalled();
+        expect(listBranchWorkspaces).not.toHaveBeenCalled();
+
+        // Disconnecting the repo is local-only, so it stays — the way off the
+        // locked host without throwing the saved token away.
+        await userEvent.click(screen.getByRole('button', { name: /Disconnect repo/ }));
+        await userEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+        expect(useWorkspaceStore.getState().local!.connectedRepo).toBeNull();
+      });
+
+      it('renders no push, pull or PR control for a working branch on a locked host', async () => {
+        registerAllHosts();
+        await renderLocked();
+        seedSessions(['gitlab']);
+        connectRepoOn('gitlab', true);
+        act(() =>
+          useWorkspaceStore.setState({
+            firstPullPrompt: { branchName: 'apicircle/payments-a3f9c2', remoteSha: 'abc123' },
+          }),
+        );
+
+        expect(screen.getByText('GitLab locked')).toBeInTheDocument();
+        expect(screen.queryByText('Branch ready')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /^Push/ })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Refresh/ })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Create PR/ })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Sync attachments/ })).not.toBeInTheDocument();
+        // The first-pull prompt pulls from the host; it waits for the unlock too.
+        expect(screen.queryByText('This branch already has content')).not.toBeInTheDocument();
+      });
+
+      it('keeps every branch control for a working branch on an unlocked host', async () => {
+        // The control for the test above: the same state, one host over, so its
+        // absences are the lock's doing and not a matcher that never matched.
+        registerAllHosts();
+        await renderLocked({ lockedHosts: ['bitbucket'] });
+        seedSessions(['gitlab']);
+        connectRepoOn('gitlab', true);
+        act(() =>
+          useWorkspaceStore.setState({
+            firstPullPrompt: { branchName: 'apicircle/payments-a3f9c2', remoteSha: 'abc123' },
+          }),
+        );
+
+        expect(screen.getByText('Branch ready')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Push/ })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Refresh/ })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Create PR/ })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Sync attachments/ })).toBeInTheDocument();
+        expect(screen.getByText('This branch already has content')).toBeInTheDocument();
+      });
+
+      it('drops the push-access warning on a locked host, keeping it on an unlocked one', async () => {
+        // "Reconnect with a token that grants push access" is advice about a
+        // host the user cannot use; the lock notice already says what to do.
+        function makeReadOnly(): void {
+          act(() => {
+            const local = useWorkspaceStore.getState().local!;
+            useWorkspaceStore.setState({
+              local: { ...local, connectedRepo: { ...local.connectedRepo!, pushable: false } },
+            });
+          });
+        }
+        registerAllHosts();
+        useWorkspaceStore.setState({
+          listRepoBranches: vi.fn(async () => []),
+          listBranchWorkspaces: vi.fn(async () => []),
+        });
+        const view = await renderLocked({ lockedHosts: ['bitbucket'] });
+        seedSessions(['gitlab', 'bitbucket']);
+        connectRepoOn('gitlab');
+        makeReadOnly();
+        expect(screen.getByText(/You don.t have push access to this repo/)).toBeInTheDocument();
+        view.unmount();
+
+        // A fresh render re-hydrates the store, so the sessions are seeded again.
+        await renderLocked({ lockedHosts: ['bitbucket'] });
+        seedSessions(['gitlab', 'bitbucket']);
+        connectRepoOn('bitbucket');
+        makeReadOnly();
+        expect(screen.getByText(/Bitbucket isn.t available on this plan/)).toBeInTheDocument();
+        expect(screen.queryByText(/You don.t have push access/)).not.toBeInTheDocument();
+      });
+
+      it('renders a repo on an unlocked host exactly as before', async () => {
+        registerAllHosts();
+        await renderLocked({ lockedHosts: ['bitbucket'] });
+        useWorkspaceStore.setState({
+          listRepoBranches: vi.fn(async () => []),
+          listBranchWorkspaces: vi.fn(async () => []),
+        });
+        seedSessions(['gitlab']);
+        connectRepoOn('gitlab');
+        expect(screen.getByText('Repo connected')).toBeInTheDocument();
+        expect(screen.queryByText(/isn.t available on this plan/)).not.toBeInTheDocument();
+        expect(
+          await screen.findByRole('button', { name: /Create working branch/ }),
+        ).toBeInTheDocument();
+      });
     });
   });
 

@@ -47,6 +47,7 @@ import {
 import { validatePRTitle } from '@apicircle/shared';
 import {
   anyWorkspaceSession,
+  connectedHostKind,
   hostOfWorkspaceSession,
   useWorkspaceStore,
   type BranchWorkspaceSummary,
@@ -64,6 +65,8 @@ import { cn } from '../../primitives/cn';
 import { formatRelativeTime } from '../../primitives/relativeTime';
 import { formatGitError, type GitErrorView } from './gitErrorMessage';
 import { isWorkspaceSharingEnabled } from '../../layout/workspaceSharing';
+import { isGitHostLocked, useGitHostAccess } from '../../layout/gitHostAccess';
+import { GitHostLockedNotice } from '../../layout/GitHostLockedNotice';
 
 export function WorkspacePanel() {
   const workspaceName = useWorkspaceStore((s) => {
@@ -80,8 +83,19 @@ export function WorkspacePanel() {
   const sessionHost = useWorkspaceStore((s) => hostOfWorkspaceSession(s.local));
   const connectedRepo = useWorkspaceStore((s) => s.local?.connectedRepo ?? null);
   const workingBranch = useWorkspaceStore((s) => s.local?.workingBranch ?? null);
+  const repoHost = useWorkspaceStore((s) => connectedHostKind(s.local));
+  // A locked host (`gitHostAccess`) keeps its session and repo, but nothing that
+  // would call it renders: no repo browser, no branch controls, no pull prompt.
+  const access = useGitHostAccess();
+  const { connectedHosts, lockedHosts } = useHostSelection();
 
   const isLocalOnly = session === null;
+  const activeHost = connectedRepo ? repoHost : sessionHost;
+  const repoLocked = connectedRepo !== null && isGitHostLocked(access, repoHost);
+  // Every host holding a session is locked: there is nothing to browse repos
+  // through, and the form would list them on mount.
+  const onlyLockedSessions =
+    connectedHosts.length > 0 && connectedHosts.every((kind) => lockedHosts.includes(kind));
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
@@ -91,7 +105,8 @@ export function WorkspacePanel() {
           isLocalOnly={isLocalOnly}
           hasRepo={!!connectedRepo}
           hasBranch={!!workingBranch}
-          host={sessionHost}
+          host={activeHost}
+          locked={!isLocalOnly && isGitHostLocked(access, activeHost)}
         />
       </header>
 
@@ -129,8 +144,14 @@ export function WorkspacePanel() {
           <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-dim">
             Repo &amp; Working Branch
           </h2>
-          {!connectedRepo ? <ConnectRepoForm /> : <RepoCard />}
-          <FirstPullPromptBanner />
+          {connectedRepo ? (
+            <RepoCard locked={repoLocked} />
+          ) : onlyLockedSessions ? (
+            <GitHostLockedNotice host={sessionHost} />
+          ) : (
+            <ConnectRepoForm />
+          )}
+          {!repoLocked && <FirstPullPromptBanner />}
         </section>
       )}
 
@@ -688,19 +709,27 @@ function StateBadge({
   hasRepo,
   hasBranch,
   host,
+  locked,
 }: {
   isLocalOnly: boolean;
   hasRepo: boolean;
   hasBranch: boolean;
-  /** The host holding the session — named in the badge, so a Bitbucket session
-   *  does not report as "GitHub Connected". */
+  /** The workspace's host — the repo's when one is connected, else the one
+   *  holding the session — named in the badge, so a Bitbucket session does not
+   *  report as "GitHub Connected". */
   host: GitHostKind;
+  /** That host is locked: "Branch ready" above a notice saying nothing can be
+   *  pushed would contradict it. */
+  locked: boolean;
 }) {
   let label: string;
   let className: string;
   if (isLocalOnly) {
     label = 'Local Workspace';
     className = 'border-border bg-card text-text-muted';
+  } else if (locked) {
+    label = `${GIT_HOST_LABELS[host]} locked`;
+    className = 'border-warning/40 bg-warning/10 text-warning';
   } else if (hasBranch) {
     label = 'Branch ready';
     className = 'border-success/40 bg-success/10 text-success';
@@ -729,7 +758,7 @@ function NoSessionCard() {
   // and keeps naming GitHub's two scopes here; a multi-host build cannot list
   // one host's scopes under a card that offers four, so it names the hosts and
   // sends the reader to the per-host guidance the vault already carries.
-  const { registeredHosts } = useHostSelection();
+  const { registeredHosts, lockedHosts } = useHostSelection();
   const multiHost = registeredHosts.length > 1;
   return (
     <div className="rounded-sm border border-border bg-card p-4">
@@ -745,12 +774,24 @@ function NoSessionCard() {
         <>
           <p className="mb-2 text-xs text-text-muted">Supported hosts:</p>
           <ul className="mb-3 flex flex-wrap gap-1.5" aria-label="Supported Git hosts">
-            {registeredHosts.map((kind) => (
-              <li key={kind}>
-                <Badge>{GIT_HOST_LABELS[kind]}</Badge>
-              </li>
-            ))}
+            {registeredHosts.map((kind) => {
+              const kindLocked = lockedHosts.includes(kind);
+              return (
+                <li key={kind}>
+                  <Badge>
+                    {kindLocked && <Lock size={9} aria-hidden="true" />}
+                    {GIT_HOST_LABELS[kind]}
+                    {kindLocked && <span className="sr-only"> (locked)</span>}
+                  </Badge>
+                </li>
+              );
+            })}
           </ul>
+          {lockedHosts.length > 0 && (
+            <p className="mb-2 text-xs text-text-muted">
+              Hosts with a lock aren&apos;t available on this plan.
+            </p>
+          )}
           <p className="mb-4 text-xs text-text-muted">
             Each host lists the token scopes it needs under Secret Vault → Sessions.
           </p>
@@ -792,6 +833,8 @@ function SessionCard() {
   const session = useWorkspaceStore((s) => anyWorkspaceSession(s.local));
   const host = useWorkspaceStore((s) => hostOfWorkspaceSession(s.local));
   const openRightDockTab = useWorkspaceStore((s) => s.openRightDockTab);
+  const access = useGitHostAccess();
+  const locked = isGitHostLocked(access, host);
   // The gate guarantees this, but the gate lives in another component; a card
   // that renders nothing is a far better failure than one that throws.
   if (!session) return null;
@@ -801,6 +844,12 @@ function SessionCard() {
         <GitBranch size={14} className="text-accent" />
         {session.accountLogin}
         <span className="text-[0.6875rem] text-text-dim">on {GIT_HOST_LABELS[host]}</span>
+        {locked && (
+          <Badge tone="warning">
+            <Lock size={9} aria-hidden="true" />
+            Locked
+          </Badge>
+        )}
       </div>
       <dl className="grid grid-cols-[120px_1fr] gap-y-1.5 text-xs">
         <dt className="text-text-dim">Granted scopes</dt>
@@ -851,8 +900,12 @@ function ConnectRepoForm() {
   // answer. `registeredHosts` still says whether this is a multi-host build: the
   // self-managed base URL belongs to that, not to how many sessions exist. In
   // open-core Studio both lists are `['github']` and nothing extra renders.
-  const { hosts, registeredHosts, host, setHost } = useHostSelection({ connectedOnly: true });
+  const { hosts, registeredHosts, lockedHosts, host, setHost } = useHostSelection({
+    connectedOnly: true,
+  });
   const multiHostBuild = registeredHosts.length > 1;
+  // "Connect another host" is advice only while another host CAN be connected.
+  const otherHostConnectable = registeredHosts.length - lockedHosts.length > 1;
   const [apiBaseUrl, setApiBaseUrl] = useState('');
 
   const [repos, setRepos] = useState<GitHubRepo[] | null>(null);
@@ -1001,7 +1054,7 @@ function ConnectRepoForm() {
           )}
         </div>
       )}
-      {multiHostBuild && hosts.length === 1 && (
+      {otherHostConnectable && hosts.length === 1 && (
         // One session, so no picker — but a multi-host build should still say
         // how to reach the other hosts, or the missing picker reads as a bug.
         <p className="text-[0.6875rem] text-text-dim">
@@ -1138,7 +1191,7 @@ function ConnectRepoForm() {
   );
 }
 
-function RepoCard() {
+function RepoCard({ locked }: { locked: boolean }) {
   const repo = useWorkspaceStore((s) => s.local!.connectedRepo!);
   // The ENTRY POINTS have to agree with what the dialog behind them will offer.
   // Gating only the dialog's contents left "Edit topics" inviting an edit that a
@@ -1154,9 +1207,18 @@ function RepoCard() {
   const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
 
   return (
-    <div className="space-y-3 rounded-sm border border-success/30 bg-success/5 p-4">
+    <div
+      className={cn(
+        'space-y-3 rounded-sm border p-4',
+        locked ? 'border-border bg-card' : 'border-success/30 bg-success/5',
+      )}
+    >
       <div className="flex items-center gap-2 text-sm text-text-primary">
-        <GitMerge size={14} className="text-success" aria-hidden="true" />
+        <GitMerge
+          size={14}
+          className={locked ? 'text-text-muted' : 'text-success'}
+          aria-hidden="true"
+        />
         <span className="font-medium">{repo.fullName}</span>
         {repo.isPrivate ? (
           <span
@@ -1187,11 +1249,13 @@ function RepoCard() {
         <dd className="text-text-primary">{new Date(repo.connectedAt).toLocaleString()}</dd>
       </dl>
 
-      <BranchSection />
+      {/* Locked: the notice stands where the branch controls were. They call the
+          host — some on mount — and the host is locked, so none of them render. */}
+      {locked ? <GitHostLockedNotice host={repoHost} /> : <BranchSection />}
 
       {/* The banner points at "Edit topics below" and at a marketplace, both of
           which this build doesn't ship — so it goes with them. */}
-      {!repo.isPrivate && isWorkspaceSharingEnabled() && (
+      {!repo.isPrivate && isWorkspaceSharingEnabled() && !locked && (
         <div className="flex items-start gap-2 rounded-sm border border-accent/30 bg-accent/5 p-2 text-[0.6875rem] leading-snug text-text-muted">
           <Globe size={12} className="mt-0.5 shrink-0 text-accent" aria-hidden="true" />
           <span>
@@ -1209,7 +1273,7 @@ function RepoCard() {
         {/* Both openers of ReleaseAndTopicsModal, gated together so
             "Disconnect repo" is left as the only button in the row rather than
             sitting beside a gap. */}
-        {isWorkspaceSharingEnabled() && (
+        {isWorkspaceSharingEnabled() && !locked && (
           <>
             <button
               type="button"
@@ -1247,7 +1311,7 @@ function RepoCard() {
           Disconnect repo
         </button>
       </div>
-      {!branch && !repo.pushable && (
+      {!branch && !repo.pushable && !locked && (
         <p className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-[0.6875rem] text-warning">
           You don&apos;t have push access to this repo. Working branches can&apos;t be created.
           Reconnect with a token that grants push access (typically the <code>repo</code> scope on a

@@ -8,6 +8,7 @@ import { renderWithStore } from '../../../test/renderWithStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { registerGitProvider, resetGitProviderRegistry } from '@apicircle/git';
 import * as workspaceSharing from '../workspaceSharing';
+import { GitHostAccessProvider, type GitHostAccess } from '../gitHostAccess';
 
 // This suite covers the workspace-sharing cluster, which is switched OFF in
 // shipped builds (`WORKSPACE_SHARING_ENABLED`). Forcing the accessor to `true`
@@ -215,6 +216,133 @@ describe('SecretVaultDockPanel', () => {
         'href',
         'https://gitlab.com/-/user_settings/personal_access_tokens',
       );
+    });
+
+    describe('with hosts the edition has locked (gitHostAccess)', () => {
+      // What a plan without the extra hosts sees. The strip still names every
+      // host — it is where the user learns a host exists and why it is not
+      // available — but a locked host offers no way to connect it.
+      async function openLockedSessions(access: GitHostAccess): Promise<void> {
+        await renderWithStore(
+          <GitHostAccessProvider value={access}>
+            <SecretVaultDockPanel />
+          </GitHostAccessProvider>,
+        );
+        await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+      }
+
+      it('marks a locked host in the strip, keeps it reachable, and offers no connect form', async () => {
+        registerGitProvider('gitlab', () => ({}) as never);
+        registerGitProvider('bitbucket', () => ({}) as never);
+        await openLockedSessions({ lockedHosts: ['gitlab', 'bitbucket'] });
+
+        const strip = screen.getByRole('tablist', { name: 'Session Git host' });
+        // ", locked" goes LAST, so a match on the status half still finds the tab.
+        expect(
+          within(strip)
+            .getAllByRole('tab')
+            .map((t) => t.getAttribute('aria-label')),
+        ).toEqual([
+          'GitHub, not connected',
+          'GitLab, not connected, locked',
+          'Bitbucket, not connected, locked',
+        ]);
+        // A lock stands in the dot's place on the locked hosts only.
+        expect(screen.getByTestId('session-host-lock-gitlab')).toBeInTheDocument();
+        expect(screen.getByTestId('session-host-lock-bitbucket')).toBeInTheDocument();
+        expect(screen.queryByTestId('session-host-lock-github')).not.toBeInTheDocument();
+        // GitHub is untouched.
+        expect(screen.getByLabelText('GitHub PAT')).toBeInTheDocument();
+
+        // Not `disabled`: arrow keys still reach a locked host.
+        screen.getByRole('tab', { name: 'GitHub, not connected' }).focus();
+        await userEvent.keyboard('{ArrowRight}');
+        expect(screen.getByRole('tab', { name: 'GitLab, not connected, locked' })).toHaveAttribute(
+          'aria-selected',
+          'true',
+        );
+        expect(screen.getByText(/GitLab isn.t available on this plan/)).toBeInTheDocument();
+        // No scope guidance and no connect form: neither can be acted on.
+        expect(screen.queryByText('Required GitLab token scopes')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('GitLab PAT')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Connect' })).not.toBeInTheDocument();
+      });
+
+      it('never locks GitHub, even when told to', async () => {
+        registerGitProvider('gitlab', () => ({}) as never);
+        await openLockedSessions({ lockedHosts: ['github'] });
+        expect(screen.getByRole('tab', { name: 'GitHub, not connected' })).toBeInTheDocument();
+        expect(screen.getByLabelText('GitHub PAT')).toBeInTheDocument();
+      });
+
+      it("shows the edition's notice in place of the default", async () => {
+        registerGitProvider('gitlab', () => ({}) as never);
+        await openLockedSessions({
+          lockedHosts: ['gitlab'],
+          lockedNotice: <p>Included in the paid plan.</p>,
+        });
+        await userEvent.click(screen.getByRole('tab', { name: 'GitLab, not connected, locked' }));
+        expect(screen.getByText('Included in the paid plan.')).toBeInTheDocument();
+        expect(screen.queryByText(/isn.t available on this plan/)).not.toBeInTheDocument();
+      });
+
+      it('keeps a session saved on a locked host, offering only Disconnect', async () => {
+        registerGitProvider('bitbucket', () => ({}) as never);
+        await openLockedSessions({ lockedHosts: ['bitbucket'] });
+        seedBitbucketSession();
+
+        // Opens on the host that holds the session, as it always has.
+        expect(screen.getByRole('tab', { name: 'Bitbucket, connected, locked' })).toHaveAttribute(
+          'aria-selected',
+          'true',
+        );
+        expect(screen.getByText(/Saved session: bb-user on Bitbucket/)).toBeInTheDocument();
+        expect(screen.getByText(/not used while Bitbucket is locked/)).toBeInTheDocument();
+        // No repo on this host, so disconnecting clears nothing else.
+        expect(screen.queryByText(/also clears this workspace/)).not.toBeInTheDocument();
+        // Test and Update would call the host.
+        expect(
+          screen.queryByRole('button', { name: 'Test Bitbucket connection' }),
+        ).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Update token' })).not.toBeInTheDocument();
+        expect(screen.queryByText(/Connected as bb-user/)).not.toBeInTheDocument();
+
+        await userEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+        await userEvent.click(screen.getByRole('button', { name: 'Confirm disconnect' }));
+        await waitFor(() =>
+          expect(
+            useWorkspaceStore.getState().local!.sessions.hosts?.bitbucket?.workspace ?? null,
+          ).toBeNull(),
+        );
+      });
+
+      it('says when disconnecting also clears the repo on that host', async () => {
+        registerGitProvider('bitbucket', () => ({}) as never);
+        await openLockedSessions({ lockedHosts: ['bitbucket'] });
+        seedBitbucketSession();
+        act(() => {
+          const local = useWorkspaceStore.getState().local!;
+          useWorkspaceStore.setState({
+            local: {
+              ...local,
+              connectedRepo: {
+                fullName: 'acme/api',
+                owner: 'acme',
+                name: 'api',
+                defaultBranch: 'main',
+                visibility: 'private',
+                isPrivate: true,
+                pushable: true,
+                connectedAt: '2026-09-01T00:00:00.000Z',
+                hostKind: 'bitbucket',
+              },
+            },
+          });
+        });
+        expect(
+          screen.getByText(/also clears this workspace.s Bitbucket repo and working branch/),
+        ).toBeInTheDocument();
+      });
     });
 
     it('replaces a Bitbucket token through the same two-field form', async () => {

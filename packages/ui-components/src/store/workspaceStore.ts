@@ -2423,8 +2423,9 @@ function tokenLabelPrefix(host: GitHostKind): string {
 //     per-host session slot would store a foreign token in the GitHub slot.
 // ---------------------------------------------------------------------------
 
-/** Host kind for the workspace's OWN repo. */
-function connectedHostKind(local: WorkspaceLocal | null | undefined): GitHostKind {
+/** Host kind for the workspace's OWN repo. Exported for the shell's host-lock
+ *  checks, which must name the same host every repo action resolves. */
+export function connectedHostKind(local: WorkspaceLocal | null | undefined): GitHostKind {
   return local?.connectedRepo?.hostKind ?? local?.workingBranch?.hostKind ?? 'github';
 }
 

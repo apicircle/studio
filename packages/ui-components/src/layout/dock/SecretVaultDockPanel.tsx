@@ -19,8 +19,13 @@ import {
 import type { LinkedWorkspace, SecretEntry, SecretKeyMeta } from '@apicircle/shared';
 import { safeExternalHref } from '@apicircle/shared';
 import { type GitHostKind, GIT_HOST_LABELS } from '@apicircle/git';
-import { BITBUCKET_ACCESS_TOKEN_SCOPES, SCOPE_GUIDANCE_BY_HOST } from '../../store/workspaceStore';
+import {
+  BITBUCKET_ACCESS_TOKEN_SCOPES,
+  SCOPE_GUIDANCE_BY_HOST,
+  connectedHostKind,
+} from '../../store/workspaceStore';
 import { useHostSelection } from '../../hooks/useHostSelection';
+import { GitHostLockedNotice } from '../GitHostLockedNotice';
 import { Radio } from '../../primitives/Radio';
 import { Tabs, tabPanelProps } from '../../primitives/Tabs';
 import { useShallow } from 'zustand/react/shallow';
@@ -854,8 +859,12 @@ function SecretRow({ entry }: SecretRowProps) {
 function SessionsTab() {
   // Opens on the host that HAS a session, not on GitHub — see `useHostSelection`.
   // Defaulting to GitHub showed a GitLab-only user a connect form instead of the
-  // session they already had.
-  const { hosts, connectedHosts, host, setHost } = useHostSelection();
+  // session they already had. Locked hosts stay in the strip: this is where a
+  // user sees which hosts exist and why one is unavailable.
+  const { hosts, connectedHosts, lockedHosts, host, setHost } = useHostSelection({
+    includeLocked: true,
+  });
+  const locked = lockedHosts.includes(host);
   const local = useWorkspaceStore((s) => s.local);
   const workspaceSession =
     host === 'github'
@@ -894,7 +903,10 @@ function SessionsTab() {
                 whole section below it (guidance + form or session card), the
                 connection status of every host is visible at once instead of
                 hidden inside a closed dropdown, and arrow keys move between
-                hosts. The dot is the status; the accessible name spells it out. */}
+                hosts. The dot is the status; the accessible name spells it out.
+                A locked host shows a lock in the dot's place and keeps its tab —
+                not `disabled`, which arrow keys skip — and ", locked" goes LAST
+                in its name so a match on the status half still finds it. */}
             <Tabs
               label="Session Git host"
               idBase="session-host"
@@ -903,40 +915,68 @@ function SessionsTab() {
               className="flex-wrap"
               tabs={hosts.map((kind) => {
                 const connected = connectedHosts.includes(kind);
+                const kindLocked = lockedHosts.includes(kind);
                 return {
                   id: kind,
                   label: (
                     <span className="inline-flex items-center gap-1.5">
-                      <span
-                        aria-hidden="true"
-                        className={cn(
-                          'h-1.5 w-1.5 shrink-0 rounded-full',
-                          connected ? 'bg-success' : 'bg-border-strong',
-                        )}
-                      />
+                      {kindLocked ? (
+                        <Lock
+                          size={10}
+                          aria-hidden="true"
+                          data-testid={`session-host-lock-${kind}`}
+                          className={cn('shrink-0', connected ? 'text-success' : 'text-text-dim')}
+                        />
+                      ) : (
+                        <span
+                          aria-hidden="true"
+                          className={cn(
+                            'h-1.5 w-1.5 shrink-0 rounded-full',
+                            connected ? 'bg-success' : 'bg-border-strong',
+                          )}
+                        />
+                      )}
                       {GIT_HOST_LABELS[kind]}
                     </span>
                   ),
-                  ariaLabel: `${GIT_HOST_LABELS[kind]}, ${connected ? 'connected' : 'not connected'}`,
+                  ariaLabel: `${GIT_HOST_LABELS[kind]}, ${connected ? 'connected' : 'not connected'}${kindLocked ? ', locked' : ''}`,
                 };
               })}
             />
           </div>
         )}
         <div className="space-y-2" {...(multiHost ? tabPanelProps('session-host', host) : {})}>
-          <ScopeGuidance host={host} bitbucketKind={bitbucketKind} />
-          {workspaceSession ? (
-            <ActiveSessionCard
-              host={host}
-              bitbucketKind={bitbucketKind}
-              onBitbucketKindChange={setBitbucketKind}
-            />
+          {locked ? (
+            // No scope guidance and no connect form: neither can be acted on. A
+            // session saved before the lock stays visible, so it can be removed.
+            <>
+              <GitHostLockedNotice host={host} />
+              {workspaceSession && (
+                <ActiveSessionCard
+                  host={host}
+                  locked
+                  bitbucketKind={bitbucketKind}
+                  onBitbucketKindChange={setBitbucketKind}
+                />
+              )}
+            </>
           ) : (
-            <ConnectForm
-              host={host}
-              bitbucketKind={bitbucketKind}
-              onBitbucketKindChange={setBitbucketKind}
-            />
+            <>
+              <ScopeGuidance host={host} bitbucketKind={bitbucketKind} />
+              {workspaceSession ? (
+                <ActiveSessionCard
+                  host={host}
+                  bitbucketKind={bitbucketKind}
+                  onBitbucketKindChange={setBitbucketKind}
+                />
+              ) : (
+                <ConnectForm
+                  host={host}
+                  bitbucketKind={bitbucketKind}
+                  onBitbucketKindChange={setBitbucketKind}
+                />
+              )}
+            </>
           )}
         </div>
       </div>
@@ -1586,10 +1626,16 @@ type ConnectionTestResult =
 
 function ActiveSessionCard({
   host,
+  locked = false,
   bitbucketKind,
   onBitbucketKindChange,
 }: {
   host: GitHostKind;
+  /**
+   * The host is locked (`gitHostAccess`): the session is kept but not used, so
+   * the card offers only Disconnect — Test and Update would call the host.
+   */
+  locked?: boolean;
   bitbucketKind: BitbucketCredentialKind;
   onBitbucketKindChange: (kind: BitbucketCredentialKind) => void;
 }) {
@@ -1609,6 +1655,11 @@ function ActiveSessionCard({
   const verifyHost = useWorkspaceStore((s) => s.verifyHostScopes);
   const updateHost = useWorkspaceStore((s) => s.updateHostToken);
   const disconnectHost = useWorkspaceStore((s) => s.disconnectHostSession);
+  // Disconnecting also drops the workspace's repo + working branch when they
+  // live on this host (`disconnectHostSession`); the locked card says so.
+  const ownsRepo = useWorkspaceStore(
+    (s) => Boolean(s.local?.connectedRepo) && connectedHostKind(s.local) === host,
+  );
   const verify = () => verifyHost(host);
   const updateToken = (token: string) => updateHost(token, host);
   const disconnect = () => disconnectHost(host);
@@ -1716,6 +1767,47 @@ function ActiveSessionCard({
   // The Sessions tab only renders this card when a session exists, but that gate
   // lives in another component — a card that renders nothing beats one that throws.
   if (!session) return null;
+
+  const disconnectButton = (
+    <button
+      type="button"
+      onClick={() => {
+        if (confirmDisconnect) {
+          void disconnect();
+          setConfirmDisconnect(false);
+        } else {
+          setConfirmDisconnect(true);
+        }
+      }}
+      className={cn(
+        'inline-flex h-7 items-center rounded-sm border px-3 text-xs',
+        confirmDisconnect
+          ? 'border-danger/40 bg-danger/10 text-danger hover:bg-danger/20'
+          : 'border-border bg-surface text-text-muted hover:text-text-primary',
+      )}
+    >
+      {confirmDisconnect ? 'Confirm disconnect' : 'Disconnect'}
+    </button>
+  );
+
+  if (locked) {
+    return (
+      <div className="space-y-2 rounded-sm border border-border bg-card p-3">
+        <div className="flex items-center gap-2">
+          <Lock size={14} className="text-text-muted" aria-hidden="true" />
+          <span className="text-sm font-medium text-text-primary">
+            Saved session: {session.accountLogin} on {GIT_HOST_LABELS[host]}
+          </span>
+        </div>
+        <p className="text-xs text-text-muted">
+          Kept, but not used while {GIT_HOST_LABELS[host]} is locked.
+          {ownsRepo &&
+            ` Disconnecting also clears this workspace's ${GIT_HOST_LABELS[host]} repo and working branch.`}
+        </p>
+        <div className="flex flex-wrap gap-2">{disconnectButton}</div>
+      </div>
+    );
+  }
 
   // Scope CHIPS are GitHub's alone. Only GitHub reports a token's granted scopes;
   // the other three answer `getViewer` with an empty list, so every chip would
@@ -1892,25 +1984,7 @@ function ActiveSessionCard({
           >
             Update token
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (confirmDisconnect) {
-                void disconnect();
-                setConfirmDisconnect(false);
-              } else {
-                setConfirmDisconnect(true);
-              }
-            }}
-            className={cn(
-              'inline-flex h-7 items-center rounded-sm border px-3 text-xs',
-              confirmDisconnect
-                ? 'border-danger/40 bg-danger/10 text-danger hover:bg-danger/20'
-                : 'border-border bg-surface text-text-muted hover:text-text-primary',
-            )}
-          >
-            {confirmDisconnect ? 'Confirm disconnect' : 'Disconnect'}
-          </button>
+          {disconnectButton}
         </div>
       )}
     </div>

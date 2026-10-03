@@ -35,6 +35,20 @@ unaffected:
   (`ExtraPanelDef`, `layout/extraPanels.tsx`), rendered through `PanelTabs` /
   `PanelContent` / `Sidebar`. Additive and a no-op when empty — Studio registers
   none, so its panels are unchanged.
+- **Git host access** — the optional `App` `gitHostAccess` prop
+  (`GitHostAccess`, `layout/gitHostAccess.ts`) names the hosts an edition
+  registered that the current user may not use, plus an optional notice that
+  explains the lock. A locked host stays listed, with a lock, but is never
+  offered for a new connection or repo. A session saved on it is kept and can
+  be disconnected, but is not used, and nothing refreshes against it in the
+  background. The edition that registered the host enforces its use, because its
+  provider factory refuses a locked host. Additive and a no-op when omitted:
+  open core registers GitHub alone, and GitHub is never locked.
+- **Workspace access** — the optional `App` `workspaceAccess` prop
+  (`WorkspaceAccess`, `layout/workspaceAccess.ts`) caps how many workspaces stay
+  open; those beyond the cap are locked, never deleted. This seam is NOT a no-op
+  when omitted: the default is a cap of one, because a build with no edition
+  attached is the free tier.
 
 - **Workspace-sharing switch** — `WORKSPACE_SHARING_ENABLED`
   (`packages/shared/src/types.ts`), read through `isWorkspaceSharingEnabled()`
@@ -47,7 +61,7 @@ unaffected:
   surface while leaving the types, patch variants and core helpers live, so the
   data round-trips and re-enabling is a code change rather than a migration.
 
-The historical MCP dependency-injection template moved to API Circle Lens with the current MCP server. New Studio seams should remain additive and no-op when nothing plugs in — the workspace-sharing switch above is the one deliberate exception, and its rationale is why.
+The historical MCP dependency-injection template moved to API Circle Lens with the current MCP server. New Studio seams should remain additive and no-op when nothing plugs in. Two deliberate exceptions are above, each with its rationale: the workspace-sharing switch, and the workspace cap's default of one.
 
 ## Workspace-directory sidecar contract
 

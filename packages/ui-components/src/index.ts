@@ -48,3 +48,9 @@ export {
   type WorkspaceAccess,
 } from './layout/workspaceAccess';
 export { WorkspaceLockedNotice } from './layout/WorkspaceLockedNotice';
+export {
+  DEFAULT_GIT_HOST_ACCESS,
+  GitHostAccessProvider,
+  useGitHostAccess,
+  type GitHostAccess,
+} from './layout/gitHostAccess';

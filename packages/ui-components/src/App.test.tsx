@@ -327,4 +327,83 @@ describe('App', () => {
       expect(localStorage.getItem(`${SECTION_KEY}${wsId}`)).toBe('lens');
     });
   });
+
+  describe('background refresh and locked Git hosts (gitHostAccess)', () => {
+    // The focus / cold-launch refresh pulls the working branch from its host.
+    // Nothing runs against a locked host in the background — and because an
+    // edition's policy can arrive after hydration, the cold-launch refresh must
+    // still happen the moment the host unlocks.
+    function seedBranchOn(host: 'github' | 'gitlab', refreshWorkspace: () => Promise<never>): void {
+      act(() => {
+        const local = useWorkspaceStore.getState().local!;
+        useWorkspaceStore.setState({
+          refreshWorkspace,
+          local: {
+            ...local,
+            connectedRepo: {
+              fullName: 'acme/api',
+              owner: 'acme',
+              name: 'api',
+              defaultBranch: 'main',
+              visibility: 'private',
+              isPrivate: true,
+              pushable: true,
+              connectedAt: '2026-09-01T00:00:00.000Z',
+              hostKind: host,
+            },
+            workingBranch: {
+              name: 'apicircle/payments-a3f9c2',
+              baseBranch: 'main',
+              repoFullName: 'acme/api',
+              repoOwner: 'acme',
+              repoName: 'api',
+              headSha: 'abc123',
+              createdAt: '2026-09-01T00:00:00.000Z',
+              lastPushedSha: null,
+              diffSummary: null,
+              openPrUrl: null,
+              hostKind: host,
+            },
+          },
+        });
+      });
+    }
+
+    // Never settles: the in-flight guard then holds every later trigger off,
+    // so each count below is exactly the number of refreshes the hook started.
+    const pending = () => vi.fn(() => new Promise<never>(() => {}));
+
+    it('refreshes a working branch once on launch when nothing is locked', async () => {
+      render(<App />);
+      await waitFor(() => screen.getByText('API Circle Studio'));
+      const refreshWorkspace = pending();
+      seedBranchOn('gitlab', refreshWorkspace);
+      expect(refreshWorkspace).toHaveBeenCalledTimes(1);
+    });
+
+    it('never refreshes a branch on a locked host, then refreshes once it unlocks', async () => {
+      const view = render(<App gitHostAccess={{ lockedHosts: ['gitlab'] }} />);
+      await waitFor(() => screen.getByText('API Circle Studio'));
+      const refreshWorkspace = pending();
+      seedBranchOn('gitlab', refreshWorkspace);
+      act(() => {
+        window.dispatchEvent(new Event('focus'));
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      expect(refreshWorkspace).not.toHaveBeenCalled();
+
+      // The policy changes (an entitlement finished loading, say). The skipped
+      // probes started no debounce, so the cold-launch refresh runs now.
+      view.rerender(<App gitHostAccess={{ lockedHosts: [] }} />);
+      expect(refreshWorkspace).toHaveBeenCalledTimes(1);
+    });
+
+    it('still refreshes a GitHub branch while other hosts are locked', async () => {
+      render(<App gitHostAccess={{ lockedHosts: ['gitlab', 'bitbucket', 'azure-devops'] }} />);
+      await waitFor(() => screen.getByText('API Circle Studio'));
+      const refreshWorkspace = pending();
+      seedBranchOn('github', refreshWorkspace);
+      expect(refreshWorkspace).toHaveBeenCalledTimes(1);
+    });
+  });
 });

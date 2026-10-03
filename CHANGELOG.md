@@ -93,6 +93,27 @@
   README, `docs/auth.md`, the onboarding tour, and the `@apicircle/core` and
   VS Code extension READMEs.
 
+### Added
+
+- **An edition can lock the Git hosts it adds: `<App gitHostAccess>`.** A new
+  optional `App` prop, `{ lockedHosts, lockedNotice? }`, names the registered
+  hosts the current user may not use, the way `workspaceAccess` caps the
+  workspace count.
+  - **A locked host stays listed** in Secret Vault → Sessions. Its tab shows a
+    lock and its name ends in ", locked", and it shows a notice in place of its
+    connect form.
+  - **A session already saved on a locked host is kept** and can be
+    disconnected, but it is not tested, updated or used.
+  - **A repo on a locked host keeps its card and Disconnect repo**, but loses
+    its branch, push, pull and pull-request controls.
+  - **The focus and cold-launch refresh skips a locked host.** It runs as soon
+    as the host unlocks.
+  - **Omitting the prop changes nothing.** GitHub is never locked, and Studio
+    registers GitHub alone.
+
+  The edition that registered a host enforces its use, because its provider
+  factory refuses a locked host.
+
 ### Changed
 
 - **`dereferenceInternal` returns shared objects.** Every use of a `$ref` is
