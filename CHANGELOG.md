@@ -63,6 +63,14 @@
   Git holds them, as the unpushed-changes strip already did, while the merge
   still keeps this device's credentials; a credential an older Studio pushed can
   no longer overwrite the one this device has.
+- **Refresh's "up to date" notice counts what is unpushed after the refresh.**
+  When the remote matched the workspace, the notice counted the unpushed
+  changes from before the refresh. But the refresh makes the remote the
+  last-pulled baseline, so the unpushed-changes strip above the notice said
+  "No unpushed changes" while the notice said "Remote has no new changes. 2
+  unpushed local changes still pending." The notice now counts from the
+  summary the strip shows, so it reads "Up to date with the remote." there, and
+  it keeps agreeing with the strip after later edits or a push.
 
 - **Creating a mock from a spec with a recursive schema no longer crashes on
   Desktop, in the VS Code host or in the Lens CLI / MCP tools.** swagger-parser
@@ -99,6 +107,18 @@
   September". It now says they are locked on this plan, and still says nothing
   has been deleted and how to reach a human. An edition's
   `workspaceAccess.lockedNotice` still replaces it wholesale.
+- **The workspace cap no longer locks the workspace you have open.** The cap
+  kept the oldest workspaces unlocked without asking which one was open. A newer
+  workspace could already be open: a Studio from before the cap left it open, an
+  edition's plan came down, or its account had not loaded yet. Deleting the open
+  workspace could also open a newer one. That workspace stayed open and
+  editable, but the switcher listed it as locked, with no "active" badge, and
+  its slot went to a workspace the user was not in. Now the open workspace
+  always keeps a slot. The remaining slots still go oldest first, and the
+  switcher locks the rest. Leave a workspace that is past the cap and it locks.
+  Nothing switches, nothing is written, and a locked workspace is still never
+  deleted. `unlockedWorkspaceIds` takes the open workspace's id as a new
+  optional third argument; without it, the result is unchanged.
 
 ### Added
 
@@ -129,6 +149,46 @@
   does. Where two schemas refer to each other, the cycle is cut where the walk
   first comes back to one of them, so an operation reached through the other can
   get an example one level shallower than before.
+
+### Tests
+
+- **The Playwright web suite passes again.** Twenty specs had been failing
+  because they checked old markup or old behaviour. None of them found a
+  product bug.
+  - **Tab selectors.** The editor and response tab strips have been real ARIA
+    tablists since S-007. Five a11y sweep cells still clicked the editor tabs
+    as plain buttons, and the History detail and security-headers cells still
+    looked for the response tabs in a `group`. They now select `tablist` →
+    `tab`.
+  - **Missing GitHub mocks in the rename specs.** Their first push reads
+    `.apicircle/registry.json`. Nothing mocked that read, so it reached the
+    real `api.github.com`, which rejected the fake token with a 401. The specs
+    passed only while push treated a failed registry read as an empty
+    registry; push now refuses one. They now answer contents reads with
+    GitHub's 404, as a fresh branch would, and answer the working-branch probe
+    locally, as `push-workspace.spec.ts` already did.
+  - **Ten workspace-management cells assumed no cap.** Standalone Studio is the
+    free tier, one workspace, so their New workspace opened the lock notice.
+    The cells test naming, switching, recents and delete, so they now run
+    under an unlimited cap, set with `test.use({ maxWorkspaces: Infinity })`,
+    a new option on the `app` fixture. Three new cells pin the cap itself:
+    - at the free tier, New workspace opens the lock notice;
+    - workspaces past the cap stay listed, but cannot be opened or deleted;
+    - an edition's finite cap counts the first workspace.
+- **The cap override works only on the Vite dev server.** `apps/web/src/main.tsx`
+  reads it only when `import.meta.env.DEV` is true. `vite build` replaces that
+  with `false`, so the deployed web app and the packaged desktop app still get
+  the free-tier default.
+- **The Refresh specs in `push-workspace.spec.ts` no longer race a background
+  refresh.** Creating a working branch starts two background reads of it: the
+  first-pull probe and the cold-launch refresh (`useFocusRefresh` in
+  `App.tsx`). When the refresh read the branch after a spec had mocked its
+  remote, it saw that remote before the Refresh the spec clicks. In TC-GT-0040
+  its conflicts opened the resolver over the Refresh button; in TC-GT-0012 it
+  moved the last-pulled baseline before the click. `setupConnectedBranch` now
+  waits until both reads of the empty branch are done. TC-GT-0012 also
+  asserted the stale notice fixed above; it now expects "Up to date with the
+  remote." with the strip agreeing.
 
 ## 2.0.0 - 2026-09-20
 

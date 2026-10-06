@@ -65,6 +65,10 @@ First time here? An onboarding tour runs on first launch — replay it any time 
 - **On disk** — every workspace lives in a per-id subdirectory under \`~/.apicircle/workspaces/\` plus a single \`~/.apicircle/registry.json\` index. Studio desktop and web read these files directly. CLI and MCP automation moved to API Circle Lens; Lens can open the same \`.apicircle\` workspaces.
 - **In Git** — each workspace can link to its own GitHub repo + branch. Switching workspaces switches which repo the Workspace panel talks to.
 
+## How many stay open
+
+Each plan keeps a set number of workspaces open; Studio on its own keeps one. The workspace you have open always keeps working. Past the limit, the switcher shows the others with a lock: they can't be opened or deleted, and nothing inside them is deleted. They unlock again with a plan that includes them. Leave a workspace that is past the limit and it locks behind you. **New workspace** is locked once you are at the limit.
+
 ## Disk layout
 
 All workspace data lives under \`~/.apicircle/\` (the user's home directory on every OS):
@@ -98,6 +102,8 @@ Existing Studio \`.apicircle\` workspaces remain compatible. Open the same repo 
       'switcher',
       'workspace id',
       'workspace name',
+      'locked workspace',
+      'workspace limit',
       'cli workspace',
       'mcp multi-workspace',
       'workspace.list',

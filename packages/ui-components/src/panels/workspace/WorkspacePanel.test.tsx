@@ -1877,3 +1877,102 @@ describe('WorkspacePanel push: values that look like secrets', () => {
     });
   });
 });
+
+// When the remote matches, Refresh's notice also counts what is still unpushed,
+// and that count has to be the strip's. The refresh makes the remote the
+// last-pulled baseline, so a count taken before it named changes the strip no
+// longer showed.
+describe('WorkspacePanel refresh notice', () => {
+  /** What an up-to-date refresh does to the store: the matching remote becomes the baseline. */
+  function pullCurrentDoc(): void {
+    const { local, synced } = useWorkspaceStore.getState();
+    useWorkspaceStore.setState({
+      local: {
+        ...local!,
+        sync: {
+          ...local!.sync,
+          lastPulledSnapshot: synced,
+          lastPulledSha: 'remote-sha',
+          lastPulledAt: new Date().toISOString(),
+        },
+      },
+    });
+  }
+
+  async function renderBranchWith(requestNames: string[]): Promise<string[]> {
+    await renderWithStore(<WorkspacePanel />);
+    let ids: string[] = [];
+    await act(async () => {
+      setupPushableBranch();
+      ids = requestNames.map((name) => useWorkspaceStore.getState().addRequest(null, name));
+    });
+    return ids;
+  }
+
+  async function refreshWith(refreshWorkspace: ReturnType<typeof vi.fn>): Promise<void> {
+    act(() => useWorkspaceStore.setState({ refreshWorkspace }));
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+  }
+
+  it('says the branch is up to date when the refresh leaves nothing unpushed', async () => {
+    await renderBranchWith(['Users', 'Orders']);
+    // Nothing has been pulled yet, so the strip counts both requests as unpushed.
+    expect(screen.getByRole('button', { name: 'Show unpushed changes preview' })).toBeVisible();
+
+    await refreshWith(
+      vi.fn(async () => {
+        pullCurrentDoc();
+        return { status: 'up-to-date' as const };
+      }),
+    );
+
+    expect(await screen.findByText('Up to date with the remote.')).toBeInTheDocument();
+    expect(
+      screen.getByText('No unpushed changes — workspace matches the last pull.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Remote has no new changes/)).not.toBeInTheDocument();
+  });
+
+  it('counts a change made while the refresh ran', async () => {
+    const [users] = await renderBranchWith(['Users', 'Orders']);
+
+    await refreshWith(
+      vi.fn(async () => {
+        pullCurrentDoc();
+        // An edit that lands after the refresh moved the baseline.
+        useWorkspaceStore.getState().renameRequest(users, 'Users v2');
+        return { status: 'up-to-date' as const };
+      }),
+    );
+
+    expect(
+      await screen.findByText('Remote has no new changes. 1 unpushed local change still pending.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show unpushed changes preview' })).toHaveTextContent(
+      '~1 unpushed change · click to preview',
+    );
+  });
+
+  it('keeps agreeing with the strip as the workspace changes after the refresh', async () => {
+    const [users, orders] = await renderBranchWith(['Users', 'Orders']);
+    await refreshWith(
+      vi.fn(async () => {
+        pullCurrentDoc();
+        return { status: 'up-to-date' as const };
+      }),
+    );
+    expect(await screen.findByText('Up to date with the remote.')).toBeInTheDocument();
+
+    act(() => {
+      useWorkspaceStore.getState().renameRequest(users, 'Users v2');
+      useWorkspaceStore.getState().renameRequest(orders, 'Orders v2');
+    });
+
+    expect(
+      screen.getByText('Remote has no new changes. 2 unpushed local changes still pending.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show unpushed changes preview' })).toHaveTextContent(
+      '~2 unpushed changes · click to preview',
+    );
+  });
+});

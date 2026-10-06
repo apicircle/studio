@@ -41,13 +41,23 @@ export type AccessibleWorkspace = Pick<WorkspaceRegistryEntry, 'id' | 'createdAt
 /**
  * Which workspace ids stay unlocked under `maxWorkspaces`.
  *
- * OLDEST FIRST, by `createdAt`. Three properties follow from that choice, and
- * all three matter:
+ * THE OPEN WORKSPACE FIRST, when the caller names it (`activeWorkspaceId`, the
+ * registry's). However the user came to have more workspaces than the cap — a
+ * plan that came down, an edition whose account has not loaded yet, a Studio
+ * from before the cap — the workspace on screen keeps working, and the cap
+ * locks the others. The cap never locks the user out of what they are editing
+ * and never moves them somewhere else; that would be a cap that takes work away
+ * mid-session instead of one that limits what else they can open.
  *
- * 1. The workspace the user started with is never the one that locks — which is
- *    what makes "your data is still here" true rather than a slogan.
+ * The remaining slots go OLDEST FIRST, by `createdAt`. Three properties follow
+ * from that choice, and all three matter:
+ *
+ * 1. Locks fall on the newest workspaces. The one the user started with locks
+ *    only when the open workspace took the cap's last slot.
  * 2. The set does not churn. Ordering by `lastOpenedAt` would silently swap
- *    which workspaces are reachable every time the user switched.
+ *    which workspaces are reachable every time the user switched. The open
+ *    workspace moves the set only while it sits past the oldest ones, and
+ *    switching away from it then locks it: the cap doing its job once.
  * 3. Deleting an unlocked workspace promotes the next-oldest automatically, so
  *    the cap frees up without any extra bookkeeping.
  *
@@ -57,12 +67,19 @@ export type AccessibleWorkspace = Pick<WorkspaceRegistryEntry, 'id' | 'createdAt
 export function unlockedWorkspaceIds(
   workspaces: readonly AccessibleWorkspace[],
   maxWorkspaces: number,
+  activeWorkspaceId?: string | null,
 ): Set<string> {
   if (!Number.isFinite(maxWorkspaces)) return new Set(workspaces.map((w) => w.id));
-  const ordered = [...workspaces].sort(
-    (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
-  );
-  return new Set(ordered.slice(0, Math.max(0, maxWorkspaces)).map((w) => w.id));
+  const slots = Math.max(0, maxWorkspaces);
+  // The open workspace counts against the cap like any other, so it can only
+  // take a slot when there is one to give.
+  const active = slots > 0 ? workspaces.find((w) => w.id === activeWorkspaceId) : undefined;
+  const rest = workspaces
+    .filter((w) => w.id !== active?.id)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+    .slice(0, active ? slots - 1 : slots)
+    .map((w) => w.id);
+  return new Set(active ? [active.id, ...rest] : rest);
 }
 
 /** Is there room to create another workspace? */

@@ -128,10 +128,10 @@ test.describe('Security', () => {
       await app.getByRole('button', { name: /^Send$/ }).click();
       await expect(app.getByText('200').first()).toBeVisible({ timeout: 10_000 });
       // The response panel has a Headers tab — scope to the response
-      // section group so we don't also match the request editor's
+      // sections tablist so we don't also match the request editor's
       // Headers tab (strict-mode collision).
       await app
-        .getByRole('group', { name: 'Response sections' })
+        .getByRole('tablist', { name: 'Response sections' })
         .getByRole('tab', { name: 'Headers', exact: true })
         .click();
       await expect(app.getByText('content-security-policy')).toBeVisible();

@@ -47,10 +47,16 @@ export function WorkspaceSwitcher() {
 
   if (!registry) return null;
 
-  // Which workspaces stay reachable under the plan's cap. Everything else stays
-  // on disk and renders locked rather than being hidden - a workspace that
-  // silently vanished would read as data loss.
-  const unlocked = unlockedWorkspaceIds(registry.workspaces, access.maxWorkspaces);
+  // Which workspaces stay reachable under the plan's cap. The active one keeps
+  // its slot whenever the cap allows any, so the row for the workspace the user
+  // is in never reads "locked". Everything else stays on disk and renders locked
+  // rather than being hidden - a workspace that silently vanished would read as
+  // data loss.
+  const unlocked = unlockedWorkspaceIds(
+    registry.workspaces,
+    access.maxWorkspaces,
+    registry.activeWorkspaceId,
+  );
   const canCreate = canCreateWorkspace(registry.workspaces.length, access.maxWorkspaces);
 
   const sorted = [...registry.workspaces].sort((a, b) =>

@@ -2,7 +2,7 @@
 // + WorkspaceLocal + WorkspaceRegistry into the browser's IndexedDB so
 // the app hydrates with a known workspace on next navigation.
 //
-// Two entry points:
+// Three entry points:
 //
 //   seedAndOpen(page, variant)
 //     For tests that start cold. Navigates to `/oauth-callback.html`
@@ -13,6 +13,11 @@
 //     For tests that already have the app loaded. Clears IDB, writes the
 //     seed, then reloads — useful when a single test needs to compare
 //     pre- and post-seed state.
+//
+//   seedWorkspacesAndOpen(page, names, { active? })
+//     Several empty workspaces in one registry, oldest first, the first
+//     one active unless `active` names another — what a build with a
+//     higher workspace cap leaves behind. Starts cold, like `seedAndOpen`.
 //
 // Variants:
 //   - 'empty'        — single workspace, zero entities.
@@ -206,10 +211,8 @@ function registryFor(workspaceId: string, name: string): WorkspaceRegistryShape 
   };
 }
 
-function buildEmpty(): SeedData {
-  const workspaceId = detId('empty', 'workspace');
-  const rootFolderId = detId('empty', 'rootFolder');
-  const synced: WorkspaceSynced = {
+function emptySynced(workspaceId: string, rootFolderId: string): WorkspaceSynced {
+  return {
     schemaVersion: 1,
     workspaceId,
     collections: {
@@ -228,8 +231,13 @@ function buildEmpty(): SeedData {
     secretCrypto: null,
     meta: { createdAt: NOW, updatedAt: NOW, appVersion: '0.1.0' },
   };
+}
+
+function buildEmpty(): SeedData {
+  const workspaceId = detId('empty', 'workspace');
+  const rootFolderId = detId('empty', 'rootFolder');
   return {
-    synced,
+    synced: emptySynced(workspaceId, rootFolderId),
     local: emptyLocal(workspaceId, null),
     registry: registryFor(workspaceId, 'Empty Workspace'),
     ids: {
@@ -498,8 +506,17 @@ export function seedIds(variant: SeedVariant): SeedIds {
 }
 
 async function writeSeedToIdb(page: Page, data: SeedData): Promise<void> {
+  await writeWorkspacesToIdb(page, [data], data.registry);
+}
+
+/** Replace IDB with these workspaces' records and this registry. */
+async function writeWorkspacesToIdb(
+  page: Page,
+  workspaces: ReadonlyArray<Pick<SeedData, 'synced' | 'local'>>,
+  registry: WorkspaceRegistryShape,
+): Promise<void> {
   await page.evaluate(
-    async ({ dbName, dbVersion, synced, local, registry }) => {
+    async ({ dbName, dbVersion, records, registry }) => {
       const db: IDBDatabase = await new Promise((resolve, reject) => {
         const req = indexedDB.open(dbName, dbVersion);
         req.onupgradeneeded = () => {
@@ -516,8 +533,10 @@ async function writeSeedToIdb(page: Page, data: SeedData): Promise<void> {
         tx.objectStore('synced').clear();
         tx.objectStore('local').clear();
         tx.objectStore('registry').clear();
-        tx.objectStore('synced').put(synced, (synced as { workspaceId: string }).workspaceId);
-        tx.objectStore('local').put(local, (local as { workspaceId: string }).workspaceId);
+        for (const { synced, local } of records) {
+          tx.objectStore('synced').put(synced, (synced as { workspaceId: string }).workspaceId);
+          tx.objectStore('local').put(local, (local as { workspaceId: string }).workspaceId);
+        }
         tx.objectStore('registry').put(registry, 'meta');
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
@@ -528,9 +547,11 @@ async function writeSeedToIdb(page: Page, data: SeedData): Promise<void> {
     {
       dbName: DB_NAME,
       dbVersion: DB_VERSION,
-      synced: data.synced as unknown as Record<string, unknown>,
-      local: data.local as unknown as Record<string, unknown>,
-      registry: data.registry,
+      records: workspaces.map((w) => ({
+        synced: w.synced as unknown as Record<string, unknown>,
+        local: w.local as unknown as Record<string, unknown>,
+      })),
+      registry,
     },
   );
 }
@@ -567,4 +588,45 @@ export async function seedWorkspace(page: Page, variant: SeedVariant): Promise<S
   await page.reload();
   await expect(page.getByText('API Circle Studio', { exact: true })).toBeVisible();
   return seed.ids;
+}
+
+/**
+ * Cold-start with several empty workspaces in one registry, oldest first and
+ * the first one active: what IndexedDB holds once a build with a higher
+ * workspace cap (an edition, or a Studio from before the cap) has created
+ * them. Safe to call from a booted app — it navigates away before writing, so
+ * the running app cannot write over the seed. Returns the ids in order.
+ *
+ * `active` names a different workspace to leave active instead — the user
+ * was last in a newer one when the cap came down.
+ */
+export async function seedWorkspacesAndOpen(
+  page: Page,
+  names: readonly string[],
+  options: { active?: string } = {},
+): Promise<string[]> {
+  const workspaces = names.map((name, i) => {
+    const workspaceId = detId('empty', `workspace-${name}`);
+    // A minute apart, so the oldest-first unlock order is the order given.
+    const createdAt = new Date(Date.parse(NOW) + i * 60_000).toISOString();
+    return {
+      synced: emptySynced(workspaceId, detId('empty', `rootFolder-${name}`)),
+      local: emptyLocal(workspaceId, null),
+      entry: { id: workspaceId, name, createdAt, lastOpenedAt: createdAt },
+    };
+  });
+  const [oldest] = workspaces;
+  if (!oldest) throw new Error('seedWorkspacesAndOpen needs at least one name');
+  const active =
+    options.active === undefined ? oldest : workspaces.find((w) => w.entry.name === options.active);
+  if (!active) throw new Error(`seedWorkspacesAndOpen: no workspace named "${options.active}"`);
+  await page.goto('/oauth-callback.html');
+  await writeWorkspacesToIdb(page, workspaces, {
+    schemaVersion: 1,
+    activeWorkspaceId: active.entry.id,
+    workspaces: workspaces.map((w) => w.entry),
+  });
+  await page.goto('/');
+  await expect(page.getByText('API Circle Studio', { exact: true })).toBeVisible();
+  return workspaces.map((w) => w.entry.id);
 }

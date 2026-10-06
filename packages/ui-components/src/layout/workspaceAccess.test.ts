@@ -68,6 +68,53 @@ describe('unlockedWorkspaceIds', () => {
   });
 });
 
+describe('unlockedWorkspaceIds with the open workspace named', () => {
+  it('keeps the open workspace unlocked even when it is the newest', () => {
+    // A plan that came down, an account still loading, or a Studio from before
+    // the cap left `c` open. The cap locks the others, never the open one.
+    expect(unlockedWorkspaceIds(THREE, 1, 'c')).toEqual(new Set(['c']));
+  });
+
+  it('gives the slots left over to the oldest of the others', () => {
+    expect(unlockedWorkspaceIds(THREE, 2, 'c')).toEqual(new Set(['c', 'a']));
+  });
+
+  it('changes nothing while the open workspace is among the oldest', () => {
+    // No churn: moving between unlocked workspaces never moves the set.
+    expect(unlockedWorkspaceIds(THREE, 2, 'a')).toEqual(unlockedWorkspaceIds(THREE, 2));
+    expect(unlockedWorkspaceIds(THREE, 2, 'b')).toEqual(unlockedWorkspaceIds(THREE, 2));
+  });
+
+  it('locks a workspace past the cap once another is open', () => {
+    expect(unlockedWorkspaceIds(THREE, 2, 'c').has('c')).toBe(true);
+    expect(unlockedWorkspaceIds(THREE, 2, 'a').has('c')).toBe(false);
+  });
+
+  it('never unlocks more than the cap, and always the open workspace', () => {
+    for (const open of ['a', 'b', 'c']) {
+      for (const max of [1, 2, 3]) {
+        const unlocked = unlockedWorkspaceIds(THREE, max, open);
+        expect(unlocked.size).toBe(max);
+        expect(unlocked.has(open)).toBe(true);
+      }
+    }
+  });
+
+  it('ignores an open id the registry does not list', () => {
+    expect(unlockedWorkspaceIds(THREE, 1, 'gone')).toEqual(new Set(['a']));
+    expect(unlockedWorkspaceIds(THREE, 1, null)).toEqual(new Set(['a']));
+  });
+
+  it('gives the open workspace no slot when the cap has none', () => {
+    expect(unlockedWorkspaceIds(THREE, 0, 'c')).toEqual(new Set());
+    expect(unlockedWorkspaceIds(THREE, -1, 'c')).toEqual(new Set());
+  });
+
+  it('unlocks everything when unlimited', () => {
+    expect(unlockedWorkspaceIds(THREE, Infinity, 'c')).toEqual(new Set(['a', 'b', 'c']));
+  });
+});
+
 describe('canCreateWorkspace', () => {
   it('allows creation strictly below the cap', () => {
     expect(canCreateWorkspace(0, 1)).toBe(true);

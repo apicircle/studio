@@ -54,17 +54,19 @@ test.describe('a11y sweep', () => {
   for (const tab of EDITOR_TABS) {
     test(`Editor → ${tab} tab has zero WCAG 2.1 AA violations`, async ({ app, sidebar }) => {
       // Editor is the default panel — create a request so the editor
-      // surface is fully rendered, then click the inner tab. The Body
-      // tab name collides with the response viewer's body tab post-Send,
-      // but pre-Send only the editor tab strip is rendered.
+      // surface is fully rendered, then click the inner tab.
       await sidebar.createRequest(`a11y-${tab.toLowerCase()}`);
-      // exact:true disambiguates inner tabs from the response viewer's
-      // tab strip; auth's accessible name is "Auth · Inherit" (or the
-      // current scheme), so we match it loosely instead.
+      // The inner tabs are a real ARIA tablist ("Request sections", the
+      // Tabs primitive), so they are role="tab", not plain buttons.
+      // Scoping to that tablist keeps the response viewer's own Body /
+      // Headers / Assertions tabs out of the match. Auth's accessible
+      // name carries the current scheme ("Auth · Inherit"), so it is
+      // matched loosely; the rest are matched exactly.
+      const requestTabs = app.getByRole('tablist', { name: 'Request sections' });
       const tabButton =
         tab === 'Auth'
-          ? app.getByRole('tab', { name: /^Auth(\s·\s|$)/ }).first()
-          : app.getByRole('button', { name: tab, exact: true }).first();
+          ? requestTabs.getByRole('tab', { name: /^Auth(\s·\s|$)/ })
+          : requestTabs.getByRole('tab', { name: tab, exact: true });
       await tabButton.click();
       const results = await new AxeBuilder({ page: app })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

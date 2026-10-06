@@ -72,6 +72,16 @@ async function setupConnectedBranch(app: Page): Promise<void> {
     name: 'main',
     commit: { sha: 'sha-main' },
   });
+  // The refresh that runs as soon as the working branch exists probes it with
+  // getBranchHead. Answer it here so the probe finds the branch alive;
+  // unmocked, it would ask the real api.github.com, which rejects the fake
+  // token.
+  await fulfillJson(
+    app,
+    'https://api.github.com/repos/me/api/branches/apicircle%2Fwb-rename',
+    200,
+    { name: 'apicircle/wb-rename', commit: { sha: 'sha-main' } },
+  );
   await app.route('https://api.github.com/repos/me/api/git/refs', async (route) => {
     if (route.request().method() === 'POST') {
       await route.fulfill({
@@ -85,6 +95,21 @@ async function setupConnectedBranch(app: Page): Promise<void> {
       return;
     }
     await route.fallback();
+  });
+  // The new branch carries no `.apicircle/` files yet, so answer every
+  // contents read with GitHub's 404. The first push reads registry.json to
+  // keep sibling workspaces' entries, and refuses to push when that read
+  // fails, because it would overwrite the branch's workspace list. Unmocked,
+  // the read went to the real api.github.com, which rejects the fake token
+  // with a 401, so the push never ran. The first-pull probe on branch
+  // creation and the refresh read the same paths. This mirrors
+  // push-workspace.spec.ts.
+  await app.route('https://api.github.com/repos/me/api/contents/.apicircle/**', async (route) => {
+    await route.fulfill({
+      status: 404,
+      headers: { 'content-type': 'application/json', ...corsHeaders },
+      body: JSON.stringify({ message: 'Not Found' }),
+    });
   });
 
   await app.getByRole('button', { name: /Open Secret Vault/ }).click();

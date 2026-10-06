@@ -650,7 +650,12 @@ keeps the two in one logical codebase with **no duplication** is recorded in
       Git hosts the user may not use. Each is shown locked, and its use is refused
       by the edition's own provider factory.
   - **Not a no-op:** `workspaceAccess` (`layout/workspaceAccess.ts`) defaults to a
-    cap of one workspace, because a build with no edition is the free tier.
+    cap of one workspace, because a build with no edition is the free tier. The
+    open workspace always keeps a slot, the remaining slots go oldest first, and
+    the rest lock (`unlockedWorkspaceIds`); nothing switches. The
+    Playwright web suite raises it per describe block with
+    `test.use({ maxWorkspaces })`, through a hook `apps/web/src/main.tsx` reads
+    on the dev server only (see `docs/qa/README.md`).
 
   The no-op props render byte-identically when Studio passes nothing. A section's
   sign-in gating lives in the edition (`requiresAuth`), never in core.

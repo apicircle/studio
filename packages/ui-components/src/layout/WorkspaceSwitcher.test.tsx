@@ -140,6 +140,31 @@ describe('WorkspaceSwitcher access policy', () => {
     expect(screen.getByRole('option', { name: 'WS-C (locked)' })).toBeInTheDocument();
   });
 
+  it('keeps the open workspace unlocked when it sits past the cap', async () => {
+    // The user is in WS-C, the newest. The cap locks the others instead of it.
+    await renderWithStore(
+      <WorkspaceAccessProvider value={{ maxWorkspaces: 1 }}>
+        <WorkspaceSwitcher />
+      </WorkspaceAccessProvider>,
+    );
+    useWorkspaceStore.setState({
+      workspaceRegistry: { ...registryOf('ws-a', 'ws-b', 'ws-c'), activeWorkspaceId: 'ws-c' },
+    });
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Switch workspace (current: WS-C)' }),
+    );
+    const open = screen.getByRole('option', { name: 'Switch to WS-C' });
+    expect(open).toHaveAttribute('aria-selected', 'true');
+    expect(within(open).getByText('active')).toBeInTheDocument();
+    expect(within(open).queryByText('locked')).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'WS-A (locked)' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'WS-B (locked)' })).toBeInTheDocument();
+    // The open workspace keeps its delete; the locked ones have none.
+    expect(screen.getByRole('button', { name: 'Delete WS-C' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete WS-A' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete WS-B' })).not.toBeInTheDocument();
+  });
+
   it('offers no delete on a locked row', async () => {
     // The user cannot open a locked workspace to see what is inside, so a
     // destructive action on it is not a choice they can make informedly.

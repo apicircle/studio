@@ -46,9 +46,11 @@ unaffected:
   open core registers GitHub alone, and GitHub is never locked.
 - **Workspace access** — the optional `App` `workspaceAccess` prop
   (`WorkspaceAccess`, `layout/workspaceAccess.ts`) caps how many workspaces stay
-  open; those beyond the cap are locked, never deleted. This seam is NOT a no-op
-  when omitted: the default is a cap of one, because a build with no edition
-  attached is the free tier.
+  open; those beyond the cap are locked, never deleted. The workspace that is
+  open always keeps a slot, so a cap that comes down (or has not loaded yet)
+  never locks the user out of what they are editing; the remaining slots go
+  oldest first. This seam is NOT a no-op when omitted: the default is a cap of
+  one, because a build with no edition attached is the free tier.
 
 - **Workspace-sharing switch** — `WORKSPACE_SHARING_ENABLED`
   (`packages/shared/src/types.ts`), read through `isWorkspaceSharingEnabled()`

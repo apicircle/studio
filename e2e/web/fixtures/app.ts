@@ -124,9 +124,22 @@ interface Fixtures {
   e2eMock: E2eMock;
 }
 
-export const test = base.extend<Fixtures>({
+interface Options {
+  /**
+   * Boot the shell under this workspace cap instead of standalone Studio's
+   * free-tier default of one. Leave it unset to test what Studio ships; set
+   * it with `test.use({ maxWorkspaces: Infinity })` for specs that drive the
+   * multi-workspace flows an edition unlocks. It reaches `<App
+   * workspaceAccess>` through the dev-server-only hook in
+   * `apps/web/src/devWorkspaceAccess.ts`.
+   */
+  maxWorkspaces: number | undefined;
+}
+
+export const test = base.extend<Fixtures & Options>({
+  maxWorkspaces: [undefined, { option: true }],
   // eslint-disable-next-line no-empty-pattern
-  app: async ({ page }, use) => {
+  app: async ({ page, maxWorkspaces }, use) => {
     // Suppress the first-run onboarding tour. It renders a full-screen
     // spotlight overlay that blocks every click on the app behind it, so
     // it must be marked done before the renderer boots. addInitScript runs
@@ -139,6 +152,14 @@ export const test = base.extend<Fixtures>({
         /* storage disabled — onboarding will just render */
       }
     });
+    if (maxWorkspaces !== undefined) {
+      // Source text rather than an init-script argument: arguments travel as
+      // JSON, which has no Infinity. Like the key above, it re-runs on every
+      // navigation, so the cap survives a reload.
+      await page.addInitScript({
+        content: `window.__apicircleE2eWorkspaceAccess = { maxWorkspaces: ${maxWorkspaces} };`,
+      });
+    }
     await page.goto('/');
     // The shell renders the brand once the workspace is hydrated. Use
     // exact match because a welcome banner ("Welcome to API Circle Studio")

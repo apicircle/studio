@@ -11,7 +11,7 @@ import type { Page } from '@playwright/test';
 import { tc } from './fixtures/tcCoverage';
 import { tcMapWS } from './fixtures/tcMapWS';
 import type { TcId } from './fixtures/tcCoverage';
-import { seedWorkspace } from './fixtures/idbSeed';
+import { seedWorkspace, seedWorkspacesAndOpen } from './fixtures/idbSeed';
 
 void tcMapWS;
 
@@ -41,7 +41,9 @@ async function openSwitcher(app: Page): Promise<void> {
 
 async function openNewWorkspaceModal(app: Page): Promise<void> {
   await openSwitcher(app);
-  await app.getByRole('button', { name: 'New workspace' }).click();
+  // Exact: at the cap the same row is "New workspace (locked)" and opens the
+  // lock notice, not this modal.
+  await app.getByRole('button', { name: 'New workspace', exact: true }).click();
   // Modal is mounted; the name input has aria-label "New workspace name".
   await expect(app.getByLabel('New workspace name', { exact: true })).toBeVisible({
     timeout: 3_000,
@@ -108,216 +110,235 @@ test.describe('Workspace management', () => {
   });
 
   // ---------------------------------------------------------------
-  // Create — live tests via the WorkspaceSwitcher modal
+  // Create / Switcher / Delete — the multi-workspace flows
+  //
+  // Standalone Studio is the free tier: one workspace, so there New
+  // workspace opens the lock notice instead of the create modal (pinned
+  // in 'Workspace management — workspace cap' below). These cells are
+  // about naming, switching, recents and delete, the flows an edition's
+  // higher cap unlocks, so they run under an unlimited cap, the way
+  // WorkspaceSwitcher.test.tsx renders them inside an explicit unlimited
+  // policy.
   // ---------------------------------------------------------------
 
-  test(
-    tc(id('Create :: Create new local workspace'), 'create local workspace'),
-    async ({ app }) => {
-      const name = `ws-create-${Math.random().toString(36).slice(2, 8)}`;
-      await createWorkspace(app, name);
-    },
-  );
+  test.describe('multi-workspace flows', () => {
+    test.use({ maxWorkspaces: Infinity });
 
-  test(tc(id('Create :: Reject blank name'), 'blank name disables create'), async ({ app }) => {
-    await openNewWorkspaceModal(app);
-    // Name is empty — the "Create workspace" button is disabled.
-    const createBtn = app.getByRole('button', { name: /^Create workspace$/ });
-    await expect(createBtn).toBeDisabled();
-  });
+    // ---------------------------------------------------------------
+    // Create — live tests via the WorkspaceSwitcher modal
+    // ---------------------------------------------------------------
 
-  test(
-    tc(id('Create :: Unicode + emoji name'), 'unicode + emoji name accepted'),
-    async ({ app }) => {
-      const name = 'WS-🚀-日本語';
-      await createWorkspace(app, name);
-    },
-  );
+    test(
+      tc(id('Create :: Create new local workspace'), 'create local workspace'),
+      async ({ app }) => {
+        const name = `ws-create-${Math.random().toString(36).slice(2, 8)}`;
+        await createWorkspace(app, name);
+      },
+    );
 
-  test(
-    tc(id('Create :: Whitespace-only name rejected'), 'whitespace-only name rejected'),
-    async ({ app }) => {
+    test(tc(id('Create :: Reject blank name'), 'blank name disables create'), async ({ app }) => {
       await openNewWorkspaceModal(app);
-      const input = app.getByLabel('New workspace name', { exact: true });
-      await input.fill('   ');
-      // The button trims internally — with whitespace-only input it
-      // stays disabled (`!name.trim()` guard in NewWorkspaceModal).
+      // Name is empty — the "Create workspace" button is disabled.
       const createBtn = app.getByRole('button', { name: /^Create workspace$/ });
       await expect(createBtn).toBeDisabled();
-    },
-  );
+    });
 
-  test(
-    tc(id('Create :: 256-char name truncation/rejection'), '256-char name handled'),
-    async ({ app }) => {
-      const name = 'x'.repeat(256);
-      await openNewWorkspaceModal(app);
-      await app.getByLabel('New workspace name', { exact: true }).fill(name);
-      await app.getByRole('button', { name: /^Create workspace$/ }).click();
-      // Either succeeds (the registry accepts long names) OR surfaces an
-      // error; both are workbook-acceptable. Assert the UI doesn't lock
-      // up — the create flow either succeeds (switcher updates) or the
-      // error banner appears.
-      await app.waitForTimeout(500);
-      const switcherText = await app
-        .getByRole('button', { name: /^Switch workspace/ })
-        .first()
-        .textContent();
-      // Either: the switcher reflects (a prefix of) the 256-char name, OR
-      // an error banner is visible.
-      const hasError = await app
-        .getByRole('alert')
-        .filter({ hasText: /error|failed|too long|invalid/i })
-        .count();
-      expect(switcherText?.includes('x') || hasError > 0).toBe(true);
-    },
-  );
+    test(
+      tc(id('Create :: Unicode + emoji name'), 'unicode + emoji name accepted'),
+      async ({ app }) => {
+        const name = 'WS-🚀-日本語';
+        await createWorkspace(app, name);
+      },
+    );
 
-  test.fixme(
-    tc(
-      id('Create :: Duplicate workspace name allowed (UUID id)'),
-      'duplicate name allowed (UUID disambiguation)',
-    ),
-    async () => {
-      // The current workspace registry rejects duplicate display names
-      // — the modal stays open with an error rather than creating a
-      // second workspace with the same name. Workbook expectation is
-      // that duplicates ARE allowed (disambiguated by UUID), so either:
-      //   (a) the registry needs to accept duplicates, OR
-      //   (b) the workbook expectation is updated to reject.
-      // Pinning that decision before enabling. Real-implementation
-      // TODO: align WorkspaceRegistry.createNewWorkspace with the
-      // workbook semantics.
-    },
-  );
+    test(
+      tc(id('Create :: Whitespace-only name rejected'), 'whitespace-only name rejected'),
+      async ({ app }) => {
+        await openNewWorkspaceModal(app);
+        const input = app.getByLabel('New workspace name', { exact: true });
+        await input.fill('   ');
+        // The button trims internally — with whitespace-only input it
+        // stays disabled (`!name.trim()` guard in NewWorkspaceModal).
+        const createBtn = app.getByRole('button', { name: /^Create workspace$/ });
+        await expect(createBtn).toBeDisabled();
+      },
+    );
 
-  // ---------------------------------------------------------------
-  // Switcher
-  // ---------------------------------------------------------------
+    test(
+      tc(id('Create :: 256-char name truncation/rejection'), '256-char name handled'),
+      async ({ app }) => {
+        const name = 'x'.repeat(256);
+        await openNewWorkspaceModal(app);
+        await app.getByLabel('New workspace name', { exact: true }).fill(name);
+        await app.getByRole('button', { name: /^Create workspace$/ }).click();
+        // Either succeeds (the registry accepts long names) OR surfaces an
+        // error; both are workbook-acceptable. Assert the UI doesn't lock
+        // up — the create flow either succeeds (switcher updates) or the
+        // error banner appears.
+        await app.waitForTimeout(500);
+        const switcherText = await app
+          .getByRole('button', { name: /^Switch workspace/ })
+          .first()
+          .textContent();
+        // Either: the switcher reflects (a prefix of) the 256-char name, OR
+        // an error banner is visible.
+        const hasError = await app
+          .getByRole('alert')
+          .filter({ hasText: /error|failed|too long|invalid/i })
+          .count();
+        expect(switcherText?.includes('x') || hasError > 0).toBe(true);
+      },
+    );
 
-  test(
-    tc(id('Switcher :: Switch between two workspaces'), 'switch between workspaces'),
-    async ({ app }) => {
-      const a = `switch-A-${Math.random().toString(36).slice(2, 6)}`;
-      const b = `switch-B-${Math.random().toString(36).slice(2, 6)}`;
-      await createWorkspace(app, a);
-      await createWorkspace(app, b);
-      // Switch back to A.
-      await openSwitcher(app);
-      await app.getByRole('option', { name: `Switch to ${a}` }).click();
-      await expect(
-        app
-          .getByRole('button', { name: new RegExp(`Switch workspace.*${escapeRegex(a)}`) })
-          .first(),
-      ).toBeVisible({ timeout: 5_000 });
-    },
-  );
+    test.fixme(
+      tc(
+        id('Create :: Duplicate workspace name allowed (UUID id)'),
+        'duplicate name allowed (UUID disambiguation)',
+      ),
+      async () => {
+        // The current workspace registry rejects duplicate display names
+        // — the modal stays open with an error rather than creating a
+        // second workspace with the same name. Workbook expectation is
+        // that duplicates ARE allowed (disambiguated by UUID), so either:
+        //   (a) the registry needs to accept duplicates, OR
+        //   (b) the workbook expectation is updated to reject.
+        // Pinning that decision before enabling. Real-implementation
+        // TODO: align WorkspaceRegistry.createNewWorkspace with the
+        // workbook semantics.
+      },
+    );
 
-  test(
-    tc(
-      id('Switcher :: Recent list shows last-active first'),
-      'active workspace pinned to top of list',
-    ),
-    async ({ app }) => {
-      const x = `recent-X-${Math.random().toString(36).slice(2, 6)}`;
-      const y = `recent-Y-${Math.random().toString(36).slice(2, 6)}`;
-      await createWorkspace(app, x);
-      await createWorkspace(app, y); // Y becomes active
-      await openSwitcher(app);
-      // The first option in the listbox should be the active one (Y).
-      const firstOption = app.getByRole('option').first();
-      await expect(firstOption).toHaveAttribute('aria-selected', 'true');
-      await expect(firstOption).toHaveAccessibleName(`Switch to ${y}`);
-    },
-  );
+    // ---------------------------------------------------------------
+    // Switcher
+    // ---------------------------------------------------------------
 
-  test(
-    tc(id('Switcher :: Recent workspaces persist across restart'), 'recents persist across reload'),
-    async ({ app }) => {
-      const suffix = Math.random().toString(36).slice(2, 6);
-      const a = `persist-A-${suffix}`;
-      const b = `persist-B-${suffix}`;
-      const c = `persist-C-${suffix}`;
+    test(
+      tc(id('Switcher :: Switch between two workspaces'), 'switch between workspaces'),
+      async ({ app }) => {
+        const a = `switch-A-${Math.random().toString(36).slice(2, 6)}`;
+        const b = `switch-B-${Math.random().toString(36).slice(2, 6)}`;
+        await createWorkspace(app, a);
+        await createWorkspace(app, b);
+        // Switch back to A.
+        await openSwitcher(app);
+        await app.getByRole('option', { name: `Switch to ${a}` }).click();
+        await expect(
+          app
+            .getByRole('button', { name: new RegExp(`Switch workspace.*${escapeRegex(a)}`) })
+            .first(),
+        ).toBeVisible({ timeout: 5_000 });
+      },
+    );
 
-      await createWorkspace(app, a);
-      await app.waitForTimeout(10);
-      await createWorkspace(app, b);
-      await app.waitForTimeout(10);
-      await createWorkspace(app, c);
+    test(
+      tc(
+        id('Switcher :: Recent list shows last-active first'),
+        'active workspace pinned to top of list',
+      ),
+      async ({ app }) => {
+        const x = `recent-X-${Math.random().toString(36).slice(2, 6)}`;
+        const y = `recent-Y-${Math.random().toString(36).slice(2, 6)}`;
+        await createWorkspace(app, x);
+        await createWorkspace(app, y); // Y becomes active
+        await openSwitcher(app);
+        // The first option in the listbox should be the active one (Y).
+        const firstOption = app.getByRole('option').first();
+        await expect(firstOption).toHaveAttribute('aria-selected', 'true');
+        await expect(firstOption).toHaveAccessibleName(`Switch to ${y}`);
+      },
+    );
 
-      // Make B the most recent workspace, with C next and A third.
-      await openSwitcher(app);
-      await app.getByRole('option', { name: `Switch to ${b}` }).click();
-      await expect(
-        app
-          .getByRole('button', { name: new RegExp(`Switch workspace.*${escapeRegex(b)}`) })
-          .first(),
-      ).toBeVisible({ timeout: 5_000 });
+    test(
+      tc(
+        id('Switcher :: Recent workspaces persist across restart'),
+        'recents persist across reload',
+      ),
+      async ({ app }) => {
+        const suffix = Math.random().toString(36).slice(2, 6);
+        const a = `persist-A-${suffix}`;
+        const b = `persist-B-${suffix}`;
+        const c = `persist-C-${suffix}`;
 
-      await app.reload();
-      await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+        await createWorkspace(app, a);
+        await app.waitForTimeout(10);
+        await createWorkspace(app, b);
+        await app.waitForTimeout(10);
+        await createWorkspace(app, c);
 
-      await openSwitcher(app);
-      const optionNames = await app
-        .getByRole('option')
-        .evaluateAll((options) => options.map((option) => option.getAttribute('aria-label')));
-      expect(optionNames.slice(0, 3)).toEqual([
-        `Switch to ${b}`,
-        `Switch to ${c}`,
-        `Switch to ${a}`,
-      ]);
-    },
-  );
+        // Make B the most recent workspace, with C next and A third.
+        await openSwitcher(app);
+        await app.getByRole('option', { name: `Switch to ${b}` }).click();
+        await expect(
+          app
+            .getByRole('button', { name: new RegExp(`Switch workspace.*${escapeRegex(b)}`) })
+            .first(),
+        ).toBeVisible({ timeout: 5_000 });
 
-  // ---------------------------------------------------------------
-  // Delete
-  // ---------------------------------------------------------------
+        await app.reload();
+        await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
 
-  test(
-    tc(id('Delete :: Delete requires confirmation'), 'delete shows confirm dialog'),
-    async ({ app }) => {
-      // The delete button appears per-row in the switcher only when
-      // there's more than one workspace. Create a disposable, open the
-      // switcher, click delete, and cancel.
-      const name = `ws-confirm-${Math.random().toString(36).slice(2, 6)}`;
-      await createWorkspace(app, name);
-      await openSwitcher(app);
-      await app.getByRole('button', { name: `Delete ${name}` }).click();
-      // ConfirmDialog renders as a dialog whose accessible name is
-      // "Delete <name>?". Cancel via the dialog's built-in cancel.
-      await expect(
-        app.getByRole('dialog', { name: new RegExp(`Delete ${escapeRegex(name)}\\?`) }),
-      ).toBeVisible({ timeout: 3_000 });
-      // ConfirmDialog primitive uses "Cancel" as the dismiss label.
-      await app.getByRole('button', { name: /^Cancel$/ }).click();
-      // Workspace still present.
-      await openSwitcher(app);
-      await expect(app.getByRole('option', { name: `Switch to ${name}` })).toBeVisible();
-    },
-  );
+        await openSwitcher(app);
+        const optionNames = await app
+          .getByRole('option')
+          .evaluateAll((options) => options.map((option) => option.getAttribute('aria-label')));
+        expect(optionNames.slice(0, 3)).toEqual([
+          `Switch to ${b}`,
+          `Switch to ${c}`,
+          `Switch to ${a}`,
+        ]);
+      },
+    );
 
-  test(
-    tc(
-      id('Delete :: Confirm deletion removes from registry'),
-      'confirm deletion removes workspace',
-    ),
-    async ({ app }) => {
-      const name = `ws-delete-${Math.random().toString(36).slice(2, 6)}`;
-      await createWorkspace(app, name);
-      // Need a second workspace to keep the delete affordance available
-      // (the switcher hides delete when only 1 workspace remains).
-      const keep = `ws-keep-${Math.random().toString(36).slice(2, 6)}`;
-      await createWorkspace(app, keep);
-      await openSwitcher(app);
-      await app.getByRole('button', { name: `Delete ${name}` }).click();
-      await app.getByRole('button', { name: /^Delete workspace$/ }).click();
-      await openSwitcher(app);
-      // The deleted workspace is gone from the listbox.
-      await expect(app.getByRole('option', { name: `Switch to ${name}` })).toHaveCount(0, {
-        timeout: 3_000,
-      });
-    },
-  );
+    // ---------------------------------------------------------------
+    // Delete
+    // ---------------------------------------------------------------
+
+    test(
+      tc(id('Delete :: Delete requires confirmation'), 'delete shows confirm dialog'),
+      async ({ app }) => {
+        // The delete button appears per-row in the switcher only when
+        // there's more than one workspace. Create a disposable, open the
+        // switcher, click delete, and cancel.
+        const name = `ws-confirm-${Math.random().toString(36).slice(2, 6)}`;
+        await createWorkspace(app, name);
+        await openSwitcher(app);
+        await app.getByRole('button', { name: `Delete ${name}` }).click();
+        // ConfirmDialog renders as a dialog whose accessible name is
+        // "Delete <name>?". Cancel via the dialog's built-in cancel.
+        await expect(
+          app.getByRole('dialog', { name: new RegExp(`Delete ${escapeRegex(name)}\\?`) }),
+        ).toBeVisible({ timeout: 3_000 });
+        // ConfirmDialog primitive uses "Cancel" as the dismiss label.
+        await app.getByRole('button', { name: /^Cancel$/ }).click();
+        // Workspace still present.
+        await openSwitcher(app);
+        await expect(app.getByRole('option', { name: `Switch to ${name}` })).toBeVisible();
+      },
+    );
+
+    test(
+      tc(
+        id('Delete :: Confirm deletion removes from registry'),
+        'confirm deletion removes workspace',
+      ),
+      async ({ app }) => {
+        const name = `ws-delete-${Math.random().toString(36).slice(2, 6)}`;
+        await createWorkspace(app, name);
+        // Need a second workspace to keep the delete affordance available
+        // (the switcher hides delete when only 1 workspace remains).
+        const keep = `ws-keep-${Math.random().toString(36).slice(2, 6)}`;
+        await createWorkspace(app, keep);
+        await openSwitcher(app);
+        await app.getByRole('button', { name: `Delete ${name}` }).click();
+        await app.getByRole('button', { name: /^Delete workspace$/ }).click();
+        await openSwitcher(app);
+        // The deleted workspace is gone from the listbox.
+        await expect(app.getByRole('option', { name: `Switch to ${name}` })).toHaveCount(0, {
+          timeout: 3_000,
+        });
+      },
+    );
+  });
 
   // ---------------------------------------------------------------
   // Cells deferred to S3+ infrastructure work
@@ -443,6 +464,74 @@ test.describe('Workspace management', () => {
       await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
     },
   );
+});
+
+// The workspace cap itself. Standalone Studio passes no `workspaceAccess`,
+// which is the free tier: one workspace. Workspaces past the cap are locked,
+// never deleted: they stay listed, explain the lock, and offer nothing
+// destructive. The unlock rule (oldest first, ties on id) is unit-tested in
+// packages/ui-components/src/layout/workspaceAccess.test.ts; these cells pin
+// what the running shell shows.
+test.describe('Workspace management — workspace cap', () => {
+  test.describe.configure({ mode: 'parallel' });
+
+  test('free tier: New workspace opens the lock notice, not the create modal', async ({ app }) => {
+    await openSwitcher(app);
+    // The workspace every install starts with already fills the one slot.
+    await app.getByRole('button', { name: 'New workspace (locked)', exact: true }).click();
+    const notice = app.getByRole('dialog', { name: 'Workspace locked' });
+    await expect(notice).toContainText('Nothing has been deleted');
+    await expect(app.getByLabel('New workspace name', { exact: true })).toHaveCount(0);
+    await app.keyboard.press('Escape');
+    await expect(notice).toBeHidden();
+    // Still the one workspace. Scoped to the switcher: the method picker's
+    // <option>s carry the option role too.
+    await openSwitcher(app);
+    const rows = app.getByRole('listbox', { name: 'Workspaces' }).getByRole('option');
+    await expect(rows).toHaveCount(1);
+  });
+
+  test('free tier: workspaces past the cap stay listed but cannot be opened or deleted', async ({
+    app,
+  }) => {
+    // Three workspaces left by a build with a higher cap. Only the oldest
+    // stays open.
+    await seedWorkspacesAndOpen(app, ['Alpha', 'Beta', 'Gamma']);
+    await openSwitcher(app);
+    await expect(app.getByRole('option', { name: 'Switch to Alpha' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await expect(app.getByRole('option', { name: 'Beta (locked)' })).toBeVisible();
+    await expect(app.getByRole('option', { name: 'Gamma (locked)' })).toBeVisible();
+    // Nothing destructive on a row the user cannot open to look inside.
+    await expect(app.getByRole('button', { name: /^Delete (Beta|Gamma)\b/ })).toHaveCount(0);
+    // Picking one explains the lock and stays where it was.
+    await app.getByRole('option', { name: 'Gamma (locked)' }).click();
+    await expect(app.getByRole('dialog', { name: 'Workspace locked' })).toContainText(
+      'Nothing has been deleted',
+    );
+    await app.keyboard.press('Escape');
+    await expect(
+      app.getByRole('button', { name: 'Switch workspace (current: Alpha)' }),
+    ).toBeVisible();
+  });
+
+  test.describe('an edition cap of two', () => {
+    test.use({ maxWorkspaces: 2 });
+
+    test('New workspace locks once the cap is reached, counting the first workspace', async ({
+      app,
+    }) => {
+      const name = `ws-cap-${Math.random().toString(36).slice(2, 6)}`;
+      await createWorkspace(app, name);
+      await openSwitcher(app);
+      // Both open: the cap is two, and the install's first workspace counts.
+      await expect(app.getByRole('option', { name: /^Switch to / })).toHaveCount(2);
+      await app.getByRole('button', { name: 'New workspace (locked)', exact: true }).click();
+      await expect(app.getByRole('dialog', { name: 'Workspace locked' })).toBeVisible();
+    });
+  });
 });
 
 // Multi-tab cells — uses the `twoTabs` fixture.

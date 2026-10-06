@@ -50,6 +50,16 @@ describe('Workspace & Git article', () => {
   });
 });
 
+describe('Multi-workspace article', () => {
+  it('explains the cap: the open workspace keeps working, the rest lock, nothing is deleted', () => {
+    const section = HELP_SECTIONS.find((s) => s.id === 'multi-workspace')!;
+    expect(section.body).toContain('## How many stay open');
+    expect(section.body).toContain('The workspace you have open always keeps working.');
+    expect(section.body).toContain('nothing inside them is deleted');
+    expect(searchHelp('locked workspace').map((s) => s.id)).toContain('multi-workspace');
+  });
+});
+
 describe('mock articles', () => {
   it('send a mock to the Desktop app or VS Code to run, and name no CLI', () => {
     // Studio ships no CLI; `apicircle mock` was never a Studio command.

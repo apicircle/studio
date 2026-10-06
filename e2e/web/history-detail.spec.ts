@@ -59,8 +59,8 @@ test.describe('History — C11', () => {
       // tab with the explanation we added in C9 build).
       await expect(app.getByText('200 OK').first()).toBeVisible();
       // The Headers + Assertions tabs from ResponseViewer are visible.
-      // ResponseViewer's tab row is a labelled group "Response sections".
-      const responseTabs = app.getByRole('group', { name: 'Response sections' }).first();
+      // ResponseViewer's tab row is a tablist labelled "Response sections".
+      const responseTabs = app.getByRole('tablist', { name: 'Response sections' }).first();
       await expect(responseTabs.getByRole('tab', { name: 'Headers', exact: true })).toBeVisible();
       await expect(responseTabs.getByRole('tab', { name: /Assertions/ })).toBeVisible();
     },

@@ -1364,6 +1364,20 @@ function BranchSection() {
   );
 }
 
+/**
+ * Stored in BranchCard's notice state in place of the text of the up-to-date
+ * Refresh notice. That text counts the unpushed changes, so the card words it
+ * at render time with `upToDateNotice`.
+ */
+const UP_TO_DATE_NOTICE = Symbol('up-to-date');
+
+/** The notice for a refresh that found nothing new on the remote. */
+function upToDateNotice(unpushedTotal: number): string {
+  return unpushedTotal > 0
+    ? `Remote has no new changes. ${unpushedTotal} unpushed local change${unpushedTotal === 1 ? '' : 's'} still pending.`
+    : 'Up to date with the remote.';
+}
+
 function BranchCard() {
   const branch = useWorkspaceStore((s) => s.local!.workingBranch!);
   const session = useWorkspaceStore((s) => s.local?.sessions.github.workspace ?? null);
@@ -1385,7 +1399,14 @@ function BranchCard() {
   const [showMessageField, setShowMessageField] = useState(false);
   const [pushing, setPushing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [refreshNotice, setRefreshNotice] = useState<string | null>(null);
+  // An up-to-date refresh stores UP_TO_DATE_NOTICE rather than text, so the
+  // notice's count of unpushed changes is the strip's own, read at render time.
+  // Counted in onRefresh, it came from the render before the click, before the
+  // refresh made the remote the last-pulled baseline, and named changes the
+  // strip no longer showed.
+  const [refreshNotice, setRefreshNotice] = useState<string | typeof UP_TO_DATE_NOTICE | null>(
+    null,
+  );
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorView, setErrorView] = useState<GitErrorView | null>(null);
@@ -1408,6 +1429,8 @@ function BranchCard() {
         : { added: 0, modified: 0, removed: 0, total: 0, changes: [], computedAt: '' },
     [lastPulledSnapshot, syncedDoc],
   );
+  const refreshNoticeText =
+    refreshNotice === UP_TO_DATE_NOTICE ? upToDateNotice(unpushed.total) : refreshNotice;
 
   const onSyncAttachments = async () => {
     setSyncing(true);
@@ -1450,11 +1473,7 @@ function BranchCard() {
           setRefreshNotice('No workspace.json on the working branch yet — push first.');
           break;
         case 'up-to-date':
-          setRefreshNotice(
-            unpushed.total > 0
-              ? `Remote has no new changes. ${unpushed.total} unpushed local change${unpushed.total === 1 ? '' : 's'} still pending.`
-              : 'Up to date with the remote.',
-          );
+          setRefreshNotice(UP_TO_DATE_NOTICE);
           break;
         case 'merged':
           setRefreshNotice('Pulled remote changes — fast-forward merge applied.');
@@ -1627,10 +1646,10 @@ function BranchCard() {
           Pushed <code>{justPushedSha.slice(0, 7)}</code>
         </p>
       )}
-      {refreshNotice && !error && (
+      {refreshNoticeText && !error && (
         <p className="mt-2 inline-flex items-center gap-1 text-[0.6875rem] text-text-muted">
           <RefreshCw size={11} aria-hidden="true" />
-          {refreshNotice}
+          {refreshNoticeText}
         </p>
       )}
 

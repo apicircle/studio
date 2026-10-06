@@ -39,7 +39,9 @@ function buildRegistryResponse(): string {
 
 /**
  * Mock the two-step workspace fetch: registry.json -> workspace-<id>/workspace.json.
- * Intercepts all requests under `.apicircle/` for the given repo.
+ * Intercepts all requests under `.apicircle/` for the given repo. Install it
+ * after setupConnectedBranch returns: that waits out the background reads of
+ * the new branch, so the Refresh a test clicks is the first to see this remote.
  */
 async function mockWorkspaceFetch(
   page: Page,
@@ -147,18 +149,30 @@ async function setupConnectedBranch(app: Page): Promise<void> {
     }
     await route.fallback();
   });
-  // createWorkingBranch's first-pull-prompt probe also calls getContents on
-  // the working branch before the test installs its own route override.
-  // Answer 404 here so the probe is a fast no-op; the test-specific route
-  // (registered after this function returns) takes precedence for the
-  // assertions that actually need a populated remote. The production code
-  // fetches registry.json first, so match all .apicircle/** contents.
+  // The new branch has no `.apicircle/` files, so answer every contents read
+  // with GitHub's 404. A test-specific route registered after this function
+  // returns takes precedence for the assertions that need a populated remote.
+  //
+  // Creating the branch starts two reads of it in the background:
+  // createWorkingBranch's first-pull probe, and the refresh that App's
+  // useFocusRefresh fires as soon as a working branch exists (its cold-launch
+  // probe). On this empty branch each one reads workspace.json, falls back to
+  // registry.json, and stops. Count those registry reads, so this function can
+  // return only after both readers are done.
+  let branchRegistryReads = 0;
   await app.route('https://api.github.com/repos/me/api/contents/.apicircle/**', async (route) => {
     await route.fulfill({
       status: 404,
       headers: { 'content-type': 'application/json', ...corsHeaders },
       body: JSON.stringify({ message: 'Not Found' }),
     });
+    const url = new URL(route.request().url());
+    if (
+      url.pathname.endsWith('/.apicircle/registry.json') &&
+      url.searchParams.get('ref') === 'apicircle/wb-test'
+    ) {
+      branchRegistryReads += 1;
+    }
   });
 
   // Drive the connect flow through the live UI.
@@ -181,6 +195,15 @@ async function setupConnectedBranch(app: Page): Promise<void> {
   await branchInput.fill('apicircle/wb-test');
   await app.getByRole('button', { name: /Create working branch/ }).click();
   await expect(app.getByText('Branch ready')).toBeVisible();
+  // Let both background readers finish. A remote a test mocks any earlier can
+  // reach the cold-launch refresh before the Refresh the test clicks: its
+  // conflicts open the resolver over the button, and an up-to-date result
+  // moves the last-pulled baseline before the click.
+  await expect
+    .poll(() => branchRegistryReads, {
+      message: 'the first-pull probe and the cold-launch refresh each read registry.json',
+    })
+    .toBe(2);
 }
 
 async function wirePushFlow(app: Page): Promise<void> {
@@ -322,14 +345,22 @@ test.describe('Refresh + 3-way conflict resolver (P4.5)', () => {
         return JSON.stringify(w.__apicircleStore!.getState().synced);
       });
       await mockWorkspaceFetch(app, 'me/api', localJson);
+      // Nothing has been pulled yet, so the strip counts the whole workspace
+      // as unpushed.
+      await expect(
+        app.getByRole('button', { name: /Show unpushed changes preview/ }),
+      ).toBeVisible();
 
       await app.getByRole('button', { name: /^Refresh$/ }).click();
-      // The freshly-connected workspace still has unpushed local changes, so
-      // the up-to-date refresh notice reads "Remote has no new changes."
-      // rather than the zero-unpushed "Up to date with the remote." copy.
-      // The refresh path resolves several mocked GitHub endpoints serially,
-      // so allow more time than the default 5s expect timeout.
-      await expect(app.getByText(/Remote has no new changes/)).toBeVisible({ timeout: 15_000 });
+      // The remote matches, so the refresh makes it the last-pulled baseline
+      // and nothing is left unpushed. The notice counts after the refresh, so
+      // it agrees with the strip. The refresh path resolves several mocked
+      // GitHub endpoints serially, so allow more time than the default 5s
+      // expect timeout.
+      await expect(app.getByText('Up to date with the remote.')).toBeVisible({ timeout: 15_000 });
+      await expect(
+        app.getByText('No unpushed changes — workspace matches the last pull.'),
+      ).toBeVisible();
       await expect(app.getByText(/Last pulled:/)).toBeVisible();
     },
   );

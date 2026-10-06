@@ -216,6 +216,31 @@ as `--fail-under`. Keep it ~5pp below the running strict-live so a single
 bad merge fails the delta gate (≥2pp) before the floor gate. Bump it as
 genuine per-cell assertions land.
 
+### The workspace cap in specs
+
+The web suite drives what standalone Studio ships, which is the free tier: one
+workspace, so **New workspace** opens the lock notice. A spec that drives the
+multi-workspace flows an edition unlocks (create, switch, recents, delete)
+raises the cap for its describe block:
+
+```ts
+test.describe('multi-workspace flows', () => {
+  test.use({ maxWorkspaces: Infinity }); // or a plan's finite cap
+  // …
+});
+```
+
+`maxWorkspaces` is an option on the `app` fixture
+([`e2e/web/fixtures/app.ts`](../../e2e/web/fixtures/app.ts)). It sets a window
+global from an init script, which `apps/web/src/main.tsx` reads only on the Vite
+dev server (`import.meta.env.DEV`) and hands to `<App workspaceAccess>`. A
+production build drops the read, so neither the deployed web app nor the
+packaged desktop app can be unlocked this way. The cap itself is pinned by
+"Workspace management — workspace cap" in `workspace-management.spec.ts`, and
+what it does to the workspace that is open by "Workspace cap — the open
+workspace" in `workspace-cap-active.spec.ts`. To start with a newer workspace
+open, pass `{ active }` to `seedWorkspacesAndOpen`.
+
 ---
 
 ## Coverage modes (strict vs lenient)
@@ -285,6 +310,12 @@ scatter residue rationales across specs.
 4. **Coverage gate failed** — most often a `test()` got converted to
    `test.fixme()` or deleted. The strict JSON's `gap` array lists every
    TC-ID that lost coverage; cross-reference with the diff.
+5. **A Git-flow spec reports "GitHub rejected the token"** — a GitHub call the
+   spec never mocked reached the real `api.github.com`, which answers the
+   specs' fake tokens with a 401. Find the unmocked URL in the trace's network
+   tab and answer it the way GitHub would (a fresh working branch has no
+   `.apicircle/` files, so contents reads get a 404), or drive the flow through
+   the stateful mock GitHub in `fixtures/gitFixture.ts`.
 
 ---
 
