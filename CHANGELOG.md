@@ -189,6 +189,13 @@
   waits until both reads of the empty branch are done. TC-GT-0012 also
   asserted the stale notice fixed above; it now expects "Up to date with the
   remote." with the strip agreeing.
+- **The desktop E2E suite passes again.** Two `desktop-specific.spec.ts` cells
+  (TC-DS-0026, TC-DS-0027) clicked an MCP panel, and Studio has not shipped one
+  since the MCP server moved to Lens. The click waited for a button that never
+  appears until the test timed out, which failed the desktop job on every run.
+  Neither cell could find a product bug: with the panel missing, each only
+  recorded a manual-check note. Both are removed; their rows stay in the desktop
+  workbook as manual cases.
 
 ## 2.0.0 - 2026-09-20
 
