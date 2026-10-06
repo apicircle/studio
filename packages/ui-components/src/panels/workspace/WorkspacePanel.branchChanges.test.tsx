@@ -159,7 +159,10 @@ describe('working-branch card with edition changes', () => {
             ...pulled.environments,
             items: {
               ...pulled.environments.items,
-              Staging: { name: 'Staging', variables: [{ key: 'host', value: 'x', enabled: true }] },
+              Staging: {
+                name: 'Staging',
+                variables: [{ key: 'host', value: 'x', encrypted: false }],
+              },
             },
           },
         } as typeof pulled,
