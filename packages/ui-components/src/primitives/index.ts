@@ -7,6 +7,16 @@ export { Radio } from './Radio';
 export { Tabs, tabPanelProps, type TabDef } from './Tabs';
 export { SchemaView, describeType, type JsonSchemaNode, type SchemaViewProps } from './SchemaView';
 export { Tooltip } from './Tooltip';
+export {
+  FLOATING_Z,
+  useAnchoredPosition,
+  useDismissableLayer,
+  type AnchoredPositionState,
+  type FloatingAlign,
+  type FloatingSide,
+  type UseAnchoredPositionOptions,
+} from './floating';
+export { FloatingPortal } from './FloatingPortal';
 export { Badge } from './Badge';
 export { Skeleton } from './Skeleton';
 export { Modal } from './Modal';

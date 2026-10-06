@@ -1565,6 +1565,19 @@ export interface WorkingBranch {
   diffSummary: { ahead: number; behind: number; staleAt: string } | null;
   openPrUrl: string | null;
   /**
+   * Number of the open pull request, recorded when it is created. The number
+   * is what the PR-state probe asks the host about, so it is kept even when
+   * the host returned no page URL. Absent on a PR opened before this was
+   * recorded: the number is then read from `openPrUrl`.
+   */
+  openPrNumber?: number | null;
+  /**
+   * The last pull request from this branch that was closed without merging —
+   * kept so the card can say so and offer to open a new one. Cleared when a
+   * new PR is opened or the notice is dismissed.
+   */
+  closedPr?: { number: number | null; url: string | null; closedAt: string } | null;
+  /**
    * Which Git host this branch lives on. Absent ⇒ `'github'` (every branch
    * created before multi-host support).
    *

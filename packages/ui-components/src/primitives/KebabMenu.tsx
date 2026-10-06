@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
 import { MoreVertical } from 'lucide-react';
 import { cn } from './cn';
+import { FLOATING_Z, useAnchoredPosition } from './floating';
+import { FloatingPortal } from './FloatingPortal';
 
 // Vertical three-dot menu primitive. Replaces the row-of-icons pattern in
 // dense sidebars where users would otherwise have to memorize 5+ icons or
@@ -12,6 +14,7 @@ import { cn } from './cn';
 //   • Arrow Down/Up: cycle items (wraps).
 //   • Home/End: jump to first/last.
 //   • Escape, click outside, or item activate: close menu, return focus to trigger.
+//   • Tab / Shift+Tab: close menu; focus moves on from the trigger's place.
 //   • Items can be marked `tone: 'danger'` for destructive actions (red text).
 //   • Items can be `disabled` (greyed out, not focusable).
 //
@@ -19,6 +22,10 @@ import { cn } from './cn';
 //   • Trigger: button + aria-haspopup="menu" + aria-expanded.
 //   • Menu: role="menu" + aria-label.
 //   • Items: role="menuitem" + tabIndex managed via the active index.
+//
+// The menu renders on the floating layer (`./floating`): portalled to the
+// document body, so a scrolling sidebar can't clip it, and kept on screen —
+// below the trigger and lined up with its right edge, unless there's no room.
 
 export interface KebabMenuItem {
   /** Stable id for the item — used as the React key + aria-label fallback. */
@@ -63,6 +70,18 @@ export function KebabMenu({
   // tracker still uses the raw item array index so item refs line up.
   const enabledIndexes = items.map((it, i) => (it.disabled ? -1 : i)).filter((i) => i >= 0);
 
+  const placement = useAnchoredPosition(triggerRef, menuRef, {
+    open,
+    side: 'bottom',
+    align: 'end',
+    capToRoom: true,
+  });
+
+  // A menu whose trigger scrolled out of view would float detached from it.
+  useEffect(() => {
+    if (open && placement.anchorHidden) setOpen(false);
+  }, [open, placement.anchorHidden]);
+
   useEffect(() => {
     if (!open) return;
     const onPointer = (e: PointerEvent) => {
@@ -76,18 +95,21 @@ export function KebabMenu({
     return () => window.removeEventListener('pointerdown', onPointer);
   }, [open]);
 
+  // Keyed on the index (a number), not on `enabledIndexes`: that array is
+  // rebuilt every render, so depending on it re-ran this on every arrow key
+  // and snapped focus back to the first item.
+  const firstEnabled = enabledIndexes[0];
   useEffect(() => {
     if (!open) return;
     // Focus the first enabled item; if everything is disabled, fall back
     // to the menu container itself so keyboard users can still escape.
-    const first = enabledIndexes[0];
-    if (first !== undefined) {
-      itemRefs.current[first]?.focus();
-      setActiveIndex(first);
+    if (firstEnabled !== undefined) {
+      itemRefs.current[firstEnabled]?.focus();
+      setActiveIndex(firstEnabled);
     } else {
       menuRef.current?.focus();
     }
-  }, [open, enabledIndexes]);
+  }, [open, firstEnabled]);
 
   const closeAndReturnFocus = () => {
     setOpen(false);
@@ -118,6 +140,15 @@ export function KebabMenu({
     if (e.key === 'Escape') {
       e.preventDefault();
       closeAndReturnFocus();
+      return;
+    }
+    if (e.key === 'Tab') {
+      // The menu sits outside the page's tab order (on the floating layer).
+      // Hand focus back to the trigger so Tab carries on from its place in
+      // the page; Shift+Tab stops on the trigger itself.
+      if (e.shiftKey) e.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
       return;
     }
     if (e.key === 'ArrowDown') {
@@ -189,66 +220,73 @@ export function KebabMenu({
         <MoreVertical size={size === 'sm' ? 13 : 15} aria-hidden="true" />
       </button>
       {open && (
-        <div
-          ref={menuRef}
-          role="menu"
-          aria-label={ariaLabel}
-          tabIndex={-1}
-          onKeyDown={onMenuKey}
-          className="absolute right-0 top-full z-30 mt-1 min-w-[180px] overflow-hidden rounded-sm border border-border bg-card shadow-lg"
-        >
-          {items.map((item, i) => (
-            <button
-              key={item.id}
-              ref={(el) => {
-                itemRefs.current[i] = el;
-              }}
-              type="button"
-              role="menuitem"
-              tabIndex={i === activeIndex ? 0 : -1}
-              disabled={item.disabled}
-              onClick={() => {
-                if (item.disabled) return;
-                // Run the action first so it can synchronously commit state
-                // that mounts a follow-up element (inline rename/create
-                // input, modal, etc). Then close the menu. Focus return is
-                // conditional — see below.
-                item.onSelect();
-                setOpen(false);
-                // Only return focus to the trigger if the action didn't
-                // park focus somewhere meaningful. If onSelect mounted a
-                // dialog or auto-focused input, document.activeElement is
-                // already that target; reclaiming focus to the kebab would
-                // blur and dismiss it (this exact bug surfaced in the
-                // editor sidebar's New request / New folder flow). After
-                // setOpen(false) the menuitem unmounts, so a no-op action
-                // shows up here as activeElement === document.body.
-                requestAnimationFrame(() => {
-                  if (document.activeElement === document.body) {
-                    triggerRef.current?.focus();
-                  }
-                });
-              }}
-              title={item.title}
-              className={cn(
-                'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors',
-                item.disabled
-                  ? 'cursor-not-allowed text-text-faint'
-                  : item.tone === 'danger'
-                    ? 'text-danger hover:bg-danger/10 focus:bg-danger/10'
-                    : 'text-text-primary hover:bg-surface focus:bg-surface',
-                'focus:outline-none focus:ring-1 focus:ring-accent/40',
-              )}
-            >
-              {item.icon && (
-                <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center self-center text-text-faint">
-                  {item.icon}
-                </span>
-              )}
-              <span className="flex-1 self-center">{item.label}</span>
-            </button>
-          ))}
-        </div>
+        <FloatingPortal>
+          <div
+            ref={menuRef}
+            role="menu"
+            aria-label={ariaLabel}
+            tabIndex={-1}
+            onKeyDown={onMenuKey}
+            data-side={placement.side}
+            style={placement.style}
+            className={cn(
+              'min-w-[180px] overflow-y-auto rounded-sm border border-border bg-card shadow-lg',
+              FLOATING_Z.menu,
+            )}
+          >
+            {items.map((item, i) => (
+              <button
+                key={item.id}
+                ref={(el) => {
+                  itemRefs.current[i] = el;
+                }}
+                type="button"
+                role="menuitem"
+                tabIndex={i === activeIndex ? 0 : -1}
+                disabled={item.disabled}
+                onClick={() => {
+                  if (item.disabled) return;
+                  // Run the action first so it can synchronously commit state
+                  // that mounts a follow-up element (inline rename/create
+                  // input, modal, etc). Then close the menu. Focus return is
+                  // conditional — see below.
+                  item.onSelect();
+                  setOpen(false);
+                  // Only return focus to the trigger if the action didn't
+                  // park focus somewhere meaningful. If onSelect mounted a
+                  // dialog or auto-focused input, document.activeElement is
+                  // already that target; reclaiming focus to the kebab would
+                  // blur and dismiss it (this exact bug surfaced in the
+                  // editor sidebar's New request / New folder flow). After
+                  // setOpen(false) the menuitem unmounts, so a no-op action
+                  // shows up here as activeElement === document.body.
+                  requestAnimationFrame(() => {
+                    if (document.activeElement === document.body) {
+                      triggerRef.current?.focus();
+                    }
+                  });
+                }}
+                title={item.title}
+                className={cn(
+                  'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors',
+                  item.disabled
+                    ? 'cursor-not-allowed text-text-faint'
+                    : item.tone === 'danger'
+                      ? 'text-danger hover:bg-danger/10 focus:bg-danger/10'
+                      : 'text-text-primary hover:bg-surface focus:bg-surface',
+                  'focus:outline-none focus:ring-1 focus:ring-accent/40',
+                )}
+              >
+                {item.icon && (
+                  <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center self-center text-text-faint">
+                    {item.icon}
+                  </span>
+                )}
+                <span className="flex-1 self-center">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </FloatingPortal>
       )}
     </div>
   );

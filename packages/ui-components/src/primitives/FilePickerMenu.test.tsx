@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { GlobalFileAsset } from '@apicircle/shared';
@@ -195,5 +195,118 @@ describe('FilePickerMenu', () => {
     // Clicking does not open the menu.
     fireEvent.click(trigger);
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+  it('moves through items with the arrow keys, Home and End', () => {
+    render(
+      <FilePickerMenu
+        libraryFiles={[makeAsset({ id: 'l1', name: 'Logo' })]}
+        onPickLocal={() => {}}
+        onPickLibrary={() => {}}
+        ariaLabel="Pick file"
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Pick file/i }));
+    const menu = screen.getByRole('menu');
+    const upload = screen.getByRole('menuitem', { name: /Upload new file/i });
+    const logo = screen.getByRole('menuitem', { name: /Logo/i });
+    expect(upload).toHaveFocus();
+    fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    expect(logo).toHaveFocus();
+    fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    expect(upload).toHaveFocus();
+    fireEvent.keyDown(menu, { key: 'ArrowUp' });
+    expect(logo).toHaveFocus();
+    fireEvent.keyDown(menu, { key: 'Home' });
+    expect(upload).toHaveFocus();
+    fireEvent.keyDown(menu, { key: 'End' });
+    expect(logo).toHaveFocus();
+    expect(logo).toHaveAttribute('tabindex', '0');
+  });
+
+  describe('on the floating layer', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    function mockLayout(trigger: { top: number; left: number; width: number; height: number }) {
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+        this: HTMLElement,
+      ) {
+        const b =
+          this.getAttribute('aria-haspopup') === 'menu'
+            ? trigger
+            : { top: 0, left: 0, width: 0, height: 0 };
+        return {
+          ...b,
+          x: b.left,
+          y: b.top,
+          right: b.left + b.width,
+          bottom: b.top + b.height,
+        } as DOMRect;
+      });
+      // A long library: the list's natural height is well past 300px.
+      vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (
+        this: HTMLElement,
+      ) {
+        return this.getAttribute('role') === 'menu' ? 480 : 0;
+      });
+    }
+
+    const picker = (props: { fullWidth?: boolean } = {}) => (
+      <>
+        <div style={{ overflow: 'auto' }}>
+          <FilePickerMenu
+            libraryFiles={[makeAsset()]}
+            onPickLocal={() => {}}
+            onPickLibrary={() => {}}
+            ariaLabel="Pick file"
+            {...props}
+          />
+        </div>
+        <button type="button">after</button>
+      </>
+    );
+
+    it('renders on the document body, below the trigger, at the comfortable width', () => {
+      render(picker());
+      fireEvent.click(screen.getByRole('button', { name: /Pick file/i }));
+      const menu = screen.getByRole('menu');
+      expect(menu.parentElement).toBe(document.body);
+      expect(menu).toHaveAttribute('data-side', 'bottom');
+      expect(menu.style.position).toBe('fixed');
+      expect(menu.className).toMatch(/z-\[55\]/);
+      expect(menu.className).toMatch(/\bmin-w-\[220px\]/);
+    });
+
+    it('caps a long list at 300px and matches a full-width trigger', () => {
+      mockLayout({ top: 100, left: 40, width: 260, height: 28 });
+      render(picker({ fullWidth: true }));
+      fireEvent.click(screen.getByRole('button', { name: /Pick file/i }));
+      const menu = screen.getByRole('menu');
+      expect(menu.style.maxHeight).toBe('300px');
+      expect(menu.style.width).toBe('260px');
+      expect(menu.style.top).toBe(`${100 + 28 + 4}px`);
+      expect(menu.className).not.toMatch(/min-w-\[220px\]/);
+    });
+
+    it('Tab closes the menu and hands focus to the trigger; Shift+Tab stops there', () => {
+      render(picker());
+      const trigger = screen.getByRole('button', { name: /Pick file/i });
+      fireEvent.click(trigger);
+      expect(fireEvent.keyDown(screen.getByRole('menu'), { key: 'Tab' })).toBe(true);
+      expect(trigger).toHaveFocus();
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+      fireEvent.click(trigger);
+      expect(fireEvent.keyDown(screen.getByRole('menu'), { key: 'Tab', shiftKey: true })).toBe(
+        false,
+      );
+      expect(trigger).toHaveFocus();
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    it('closes when its trigger is scrolled out of view', () => {
+      mockLayout({ top: 2000, left: 40, width: 120, height: 28 });
+      render(picker());
+      fireEvent.click(screen.getByRole('button', { name: /Pick file/i }));
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
   });
 });

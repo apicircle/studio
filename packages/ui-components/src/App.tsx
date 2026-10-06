@@ -10,6 +10,11 @@ import {
   isGitHostLocked,
   type GitHostAccess,
 } from './layout/gitHostAccess';
+import {
+  BranchChangeSourcesProvider,
+  NO_BRANCH_CHANGE_SOURCES,
+  type BranchChangeSource,
+} from './layout/branchChanges';
 
 /**
  * Re-run `refreshWorkspace` when the user comes back to the app from
@@ -210,6 +215,7 @@ export function App({
   brand,
   workspaceAccess = DEFAULT_WORKSPACE_ACCESS,
   gitHostAccess = DEFAULT_GIT_HOST_ACCESS,
+  branchChangeSources = NO_BRANCH_CHANGE_SOURCES,
 }: {
   /** Edition-contributed top-nav panels. Omitted in Studio → strict no-op. */
   extraPanels?: readonly ExtraPanelDef[];
@@ -229,6 +235,12 @@ export function App({
    * See `layout/gitHostAccess.ts`.
    */
   gitHostAccess?: GitHostAccess;
+  /**
+   * Changes an edition makes on the working branch besides Studio's own (the
+   * Lens edition's code). They join the working-branch card's preview, push and
+   * pull request. Omitted in Studio → strict no-op. See `layout/branchChanges.ts`.
+   */
+  branchChangeSources?: readonly BranchChangeSource[];
 } = {}) {
   const ready = useWorkspaceStore((s) => s.ready);
   const hydrationError = useWorkspaceStore((s) => s.hydrationError);
@@ -348,32 +360,34 @@ export function App({
   return (
     <WorkspaceAccessProvider value={workspaceAccess}>
       <GitHostAccessProvider value={gitHostAccess}>
-        <ExtraPanelsProvider value={extraPanels}>
-          <SectionsProvider value={{ sections, activeSectionId, setActiveSectionId }}>
-            <div className="flex h-full flex-col bg-surface text-text-primary">
-              <TopBar brand={brand} />
-              <PanelTabs />
-              <div className="flex flex-1 overflow-hidden">
-                <BodyArea />
-                <RightDockRail />
-              </div>
-              <UpdatePreviewModal />
-              <MissingScopeGate />
-              <AttachmentDownloadPromptModal />
-              <KeyboardShortcuts />
-              {/* Don't auto-start the Studio tour for an edition that has its own
+        <BranchChangeSourcesProvider value={branchChangeSources}>
+          <ExtraPanelsProvider value={extraPanels}>
+            <SectionsProvider value={{ sections, activeSectionId, setActiveSectionId }}>
+              <div className="flex h-full flex-col bg-surface text-text-primary">
+                <TopBar brand={brand} />
+                <PanelTabs />
+                <div className="flex flex-1 overflow-hidden">
+                  <BodyArea />
+                  <RightDockRail />
+                </div>
+                <UpdatePreviewModal />
+                <MissingScopeGate />
+                <AttachmentDownloadPromptModal />
+                <KeyboardShortcuts />
+                {/* Don't auto-start the Studio tour for an edition that has its own
                 first-run mode landing (Lens) — it would stack over and disable it.
                 Studio-standalone (no sections) keeps auto-start. Replay is always
                 available via the Help Center. */}
-              <OnboardingTour autoStart={sections.length <= 1} />
-              <ToastSlot />
-              <UpdateAvailableBanner />
-              <PassphrasePromptModalGate />
-              <CloseConfirmModal />
-              {sections.length > 1 && <SectionLanding />}
-            </div>
-          </SectionsProvider>
-        </ExtraPanelsProvider>
+                <OnboardingTour autoStart={sections.length <= 1} />
+                <ToastSlot />
+                <UpdateAvailableBanner />
+                <PassphrasePromptModalGate />
+                <CloseConfirmModal />
+                {sections.length > 1 && <SectionLanding />}
+              </div>
+            </SectionsProvider>
+          </ExtraPanelsProvider>
+        </BranchChangeSourcesProvider>
       </GitHostAccessProvider>
     </WorkspaceAccessProvider>
   );

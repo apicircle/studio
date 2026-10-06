@@ -649,6 +649,11 @@ keeps the two in one logical codebase with **no duplication** is recorded in
     - `gitHostAccess` (`GitHostAccess`, `layout/gitHostAccess.ts`): the registered
       Git hosts the user may not use. Each is shown locked, and its use is refused
       by the edition's own provider factory.
+    - `branchChangeSources` (`BranchChangeSource[]`, `layout/branchChanges.ts`):
+      changes an edition makes on the working branch besides Studio's own (Lens's
+      code). Each source adds a section to the working-branch card's preview, a
+      part to its push (`pushBranchChanges`: Studio's commit first, then each
+      source, then `recordBranchPush`) and a part to the PR description.
   - **Not a no-op:** `workspaceAccess` (`layout/workspaceAccess.ts`) defaults to a
     cap of one workspace, because a build with no edition is the free tier. The
     open workspace always keeps a slot, the remaining slots go oldest first, and

@@ -119,8 +119,70 @@
   Nothing switches, nothing is written, and a locked workspace is still never
   deleted. `unlockedWorkspaceIds` takes the open workspace's id as a new
   optional third argument; without it, the result is unchanged.
+- **Row menus and file pickers are no longer cut off by the panel they open
+  in.** The kebab menus in the Editor, Environments, Execution and Mocks
+  sidebars, and the file picker in the form-data, binary-body and mock-response
+  editors, opened inside their panel's box, so a scrolling sidebar or editor
+  clipped them — a row near the bottom showed half a menu. They now open on the
+  floating layer (below): under the trigger as before, above it when there is
+  no room below, slid back on screen at an edge, and scrolling inside when the
+  window is short. Tab now closes the menu and carries on from its trigger
+  (it used to leave the menu open behind), and a menu whose trigger scrolls out
+  of view closes.
+- **The arrow keys move through a kebab menu again.** Every arrow key snapped
+  focus back to the first item: the effect that focuses it when the menu opens
+  ran again on every keystroke.
+- **A pull request closed without merging no longer leaves "PR open" on the
+  working branch for good.** Refresh only ever looked for a merge, so a closed
+  PR kept its link on the card and Create PR stayed hidden. The card now says
+  the PR was closed (with a link, and Dismiss) and offers Create PR again; the
+  branch itself keeps going.
+- **Push no longer stays "diverged" on a branch that has no workspace yet.**
+  When something other than Studio pushed to a working branch that holds no
+  `workspace.json`, Refresh returned before adopting the branch's new head, so
+  every push — and every Refresh after it — was refused as diverged. Refresh
+  now adopts the head on that path too.
+- **A pull request is remembered by its number.** The PR number is recorded when
+  the PR is opened, so the merge check no longer depends on reading it back out
+  of a github.com URL: a merged PR on a GitLab, Bitbucket or Azure DevOps host an
+  edition registers is now detected, and a host that answers with no page URL
+  no longer makes the card forget the PR. A PR opened before this keeps working
+  from its URL, now read in every host's spelling.
 
 ### Added
+
+- **A floating layer for popovers: `useAnchoredPosition`, `FloatingPortal`,
+  `useDismissableLayer` and `FLOATING_Z`.** A popover positioned inside its
+  trigger's box is clipped by any scrolling or `overflow-hidden` ancestor, and
+  no z-index escapes that. The layer renders into the document body and places
+  the popover from its trigger's position on screen: on the preferred side,
+  flipped to the other side when that one has no room, slid along the trigger
+  at a screen edge, optionally capped to the room it has, and tracked through
+  scrolling and resizing. `useDismissableLayer` closes a popover on a press
+  outside it, counting a press inside a portalled child as inside.
+  - **`Tooltip` renders on it.** Same props — `side` and `align` are now
+    preferences. The tooltip node carries `data-side` / `data-align` (where it
+    actually opened) and its trigger's wrapper `data-tooltip-anchor` (the
+    tooltip's id), since the two are no longer DOM siblings. Studio itself
+    renders no `Tooltip`; editions that do get tooltips nothing can cut off.
+  - **The kebab menu and the file picker use it** (see Fixed).
+
+- **An edition can join the working branch's review, push and pull request:
+  `<App branchChangeSources>`.** An edition that changes other files on the
+  working branch — the Lens Code editor saves code into a local clone — passes
+  sources (`BranchChangeSource`, `layout/branchChanges.ts`). Each one adds its
+  own section to the unpushed-changes preview (beside "Studio changes", which
+  gains an "Include Studio changes" choice), its count to the strip, its part to
+  Push and its part to the pull-request description. One Push sends the whole
+  branch through the new store action `pushBranchChanges`: Studio's commit first
+  — its secret scan and divergence check still run before anything is written —
+  then each source, then `recordBranchPush`, which adopts the commit the edition
+  pushed (so a PR can be opened for code-only changes) and refreshes. A part that
+  fails after Studio's landed is reported part by part, with a retry. Also
+  exported: `UnpushedChangesList` and `PushSecretsDialog`, so an edition's own
+  review shows Studio's changes and asks about secrets the same way.
+  **Omitting the prop changes nothing**: the card, its preview and the PR modal
+  render byte for byte as before (`BranchCardGolden.test.tsx`).
 
 - **An edition can lock the Git hosts it adds: `<App gitHostAccess>`.** A new
   optional `App` prop, `{ lockedHosts, lockedNotice? }`, names the registered

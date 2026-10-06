@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GitHubClient, GitHubError } from '@apicircle/git';
 import type { WorkingBranch } from '@apicircle/shared';
-import { decideRetirement, parsePrNumberFromUrl, probeBranchRetirement } from './branchRetirement';
+import {
+  decideClosedPullRequest,
+  decideRetirement,
+  openPrNumberOf,
+  parsePrNumberFromUrl,
+  probeBranchRetirement,
+} from './branchRetirement';
 
 function workingBranchFixture(overrides: Partial<WorkingBranch> = {}): WorkingBranch {
   return {
@@ -47,6 +53,83 @@ describe('parsePrNumberFromUrl', () => {
 
   it('rejects negative or zero numbers (defensive — GitHub never assigns these)', () => {
     expect(parsePrNumberFromUrl('https://github.com/me/api/pull/0')).toBeNull();
+  });
+
+  it('reads the page URL of every host an edition can register', () => {
+    expect(parsePrNumberFromUrl('https://gitlab.com/acme/api/-/merge_requests/12')).toBe(12);
+    expect(parsePrNumberFromUrl('https://gitlab.example.com/a/b/c/-/merge_requests/5/diffs')).toBe(
+      5,
+    );
+    expect(parsePrNumberFromUrl('https://bitbucket.org/ws/api/pull-requests/31')).toBe(31);
+    expect(
+      parsePrNumberFromUrl('https://dev.azure.com/org/proj/_git/api/pullrequest/77?_a=files'),
+    ).toBe(77);
+    // GitLab's issue and Bitbucket's branch pages are not PRs.
+    expect(parsePrNumberFromUrl('https://gitlab.com/acme/api/-/issues/12')).toBeNull();
+    expect(parsePrNumberFromUrl('https://bitbucket.org/ws/api/branch/pull-requests')).toBeNull();
+  });
+});
+
+describe('openPrNumberOf', () => {
+  it('prefers the number recorded when the PR was opened', () => {
+    expect(
+      openPrNumberOf(
+        workingBranchFixture({ openPrNumber: 9, openPrUrl: 'https://github.com/me/api/pull/4' }),
+      ),
+    ).toBe(9);
+  });
+
+  it('falls back to the page URL for a PR opened before the number was recorded', () => {
+    expect(
+      openPrNumberOf(workingBranchFixture({ openPrUrl: 'https://github.com/me/api/pull/4' })),
+    ).toBe(4);
+    expect(
+      openPrNumberOf(
+        workingBranchFixture({ openPrNumber: null, openPrUrl: 'https://github.com/me/api/pull/4' }),
+      ),
+    ).toBe(4);
+  });
+
+  it('is null with neither', () => {
+    expect(openPrNumberOf(workingBranchFixture())).toBeNull();
+  });
+});
+
+describe('decideClosedPullRequest', () => {
+  const branch = workingBranchFixture({
+    openPrUrl: 'https://github.com/me/api/pull/42',
+    openPrNumber: 42,
+  });
+  const now = new Date('2026-10-03T12:00:00.000Z');
+  const probe = (prState: { merged: boolean; state: 'open' | 'closed' } | null) => ({
+    branchExists: true,
+    branchHeadSha: 'abc',
+    prState,
+  });
+
+  it('records a PR closed without merging', () => {
+    expect(decideClosedPullRequest(branch, probe({ merged: false, state: 'closed' }), now)).toEqual(
+      {
+        number: 42,
+        url: 'https://github.com/me/api/pull/42',
+        closedAt: now.toISOString(),
+      },
+    );
+  });
+
+  it('records nothing for a merged, open, or unknown PR', () => {
+    expect(
+      decideClosedPullRequest(branch, probe({ merged: true, state: 'closed' }), now),
+    ).toBeNull();
+    expect(
+      decideClosedPullRequest(branch, probe({ merged: false, state: 'open' }), now),
+    ).toBeNull();
+    expect(decideClosedPullRequest(branch, probe(null), now)).toBeNull();
+  });
+
+  it('defaults the time to now', () => {
+    const closed = decideClosedPullRequest(branch, probe({ merged: false, state: 'closed' }));
+    expect(Date.parse(closed!.closedAt)).not.toBeNaN();
   });
 });
 
@@ -227,6 +310,18 @@ describe('probeBranchRetirement', () => {
     ]);
     const probe = await probeBranchRetirement(client, 'tok', branch);
     expect(probe.prState).toBeNull();
+  });
+
+  it('probes by the recorded number when the host returned no page URL', async () => {
+    // Bitbucket and Azure can answer a create with no link: the number is all there is.
+    const branch = workingBranchFixture({ openPrUrl: null, openPrNumber: 6 });
+    const client = clientWithSequence([
+      jsonResponse({ name: branch.name, commit: { sha: 'abc' } }),
+      jsonResponse({ number: 6, html_url: '', state: 'closed', merged: true }),
+    ]);
+    const probe = await probeBranchRetirement(client, 'tok', branch);
+    expect(probe.prState).toEqual({ merged: true, state: 'closed' });
+    expect(decideRetirement(branch, probe)?.prNumber).toBe(6);
   });
 
   it('skips the PR probe when the PR URL is malformed (no number)', async () => {

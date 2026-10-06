@@ -54,7 +54,13 @@ import {
   probePrCapability,
   resolvePrCapability,
 } from './githubPrCapability';
-import { decideRetirement, probeBranchRetirement } from './branchRetirement';
+import {
+  decideClosedPullRequest,
+  decideRetirement,
+  probeBranchRetirement,
+} from './branchRetirement';
+import { describeStudioChanges, studioHasPendingChanges } from './branchPush';
+import type { BranchChangeSource } from '../layout/branchChanges';
 import { beforeAnyWrite } from './nothingWritten';
 import { splitRepoFullName } from './repoCoordinate';
 import { summarizeUploadedSpec } from './specUpload';
@@ -112,6 +118,7 @@ import {
   redactForGit,
   assertNoPlaintextCredentials,
   scanWorkspaceForSecrets,
+  summarizeUnpushedChanges,
   unacknowledgedSecretFindings,
   SecretsInPushError,
   type SecretFinding,
@@ -740,6 +747,39 @@ interface PushWorkspaceOptions {
    */
   acknowledgedSecretFindings?: readonly SecretFinding[];
 }
+
+/**
+ * One part of a push of the whole working branch: Studio's own workspace
+ * (`id: 'studio'`) or a branch change source an edition registered.
+ *   - `pushed`        — landed; `commitSha` is the branch head it left.
+ *   - `skipped`       — nothing to push (or Studio's part was left out).
+ *   - `failed`        — `error` says why, for the user.
+ *   - `not-attempted` — an earlier part failed, so this one never ran.
+ */
+export interface BranchPushPart {
+  id: string;
+  label: string;
+  status: 'pushed' | 'skipped' | 'failed' | 'not-attempted';
+  commitSha?: string;
+  error?: string;
+}
+
+export interface BranchPushOutcome {
+  parts: BranchPushPart[];
+  /** The branch head after the push, or `null` when nothing was pushed. */
+  headSha: string | null;
+  /**
+   * How the follow-up refresh went, after an edition's part landed: the
+   * workspace re-reads the branch so a teammate's workspace edits are merged
+   * rather than overwritten by the next push. `null` when no edition pushed.
+   */
+  refresh: RefreshOutcome['status'] | null;
+  /** Why the follow-up refresh failed, when it did. */
+  refreshError?: string;
+}
+
+/** The label of Studio's own part in a push of the whole branch. */
+export const STUDIO_BRANCH_PUSH_LABEL = 'Studio changes';
 
 /**
  * Tabs hosted by the right-side dock. Variables is read-mostly (filter +
@@ -1891,6 +1931,57 @@ type WorkspaceStore = {
     draft?: boolean;
   }) => Promise<{ number: number; htmlUrl: string }>;
 
+  /** Forget the "pull request closed without merging" notice on the working branch. */
+  dismissClosedPullRequest: () => void;
+
+  /**
+   * Whether a push of the whole branch (`pushBranchChanges`) carries Studio's
+   * own changes. Shared, so the working-branch card and an edition's review of
+   * the same branch agree; reset to `true` after a push lands.
+   */
+  branchPushIncludeStudio: boolean;
+  setBranchPushIncludeStudio: (include: boolean) => void;
+  /** A push of the whole branch is running — every surface that offers one disables it. */
+  branchPushInFlight: boolean;
+
+  /**
+   * Push the working branch as ONE change: Studio's workspace first (when it
+   * is included and has something to push — `pushWorkspace` always writes a
+   * commit), then each edition source's part in order, then `recordBranchPush`
+   * for the head the last source left.
+   *
+   * Studio goes first so its secret scan and divergence pre-flight run before
+   * anything is written, and so an edition's part lands on top of it.
+   *
+   * Throws only what `pushWorkspace` throws — `SecretsInPushError` (ask, then
+   * retry with `acknowledgedSecretFindings`), a divergence, an auth error —
+   * when NOTHING was written. Once Studio's part has landed, a failing source
+   * is reported in the outcome (`failed`, the rest `not-attempted`) rather than
+   * thrown, so the caller can show what landed and offer a retry, which skips
+   * Studio's now-empty part.
+   */
+  pushBranchChanges: (args: {
+    message?: string;
+    sources: readonly BranchChangeSource[];
+    acknowledgedSecretFindings?: readonly SecretFinding[];
+  }) => Promise<BranchPushOutcome>;
+
+  /**
+   * Adopt a commit an edition pushed onto the working branch itself (outside
+   * `pushWorkspace`). The remote branch must be at that commit or past it;
+   * otherwise this throws and changes nothing. Records it as the last push —
+   * which is what lets a pull request be opened for code-only changes — then
+   * refreshes, so a teammate's workspace edits on the branch are merged in.
+   */
+  recordBranchPush: (commitSha: string) => Promise<RefreshOutcome>;
+
+  /**
+   * Markdown for the Studio part of the pull-request description: what the
+   * working branch changes in the workspace compared with its base branch, or
+   * `null` when it changes nothing (or the base could not be read).
+   */
+  describeStudioChangesForPullRequest: () => Promise<string | null>;
+
   /**
    * Walk every attachment slot referenced in the synced doc; for each
    * one whose bytes aren't in local IDB (or whose recorded sha256 has
@@ -2723,6 +2814,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
   firstPullPrompt: null,
   acknowledgeFirstPull: () => set({ firstPullPrompt: null }),
+  branchPushIncludeStudio: true,
+  setBranchPushIncludeStudio: (include) => set({ branchPushIncludeStudio: include }),
+  branchPushInFlight: false,
   activePlanId: null,
   lastRun: {},
   lastPlanResults: {},
@@ -7533,6 +7627,27 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return { status: 'retired', retired };
     }
 
+    // A PR closed without merging leaves the branch working but without an
+    // open PR. Keeping `openPrUrl` would show "PR open" — and hide Create PR —
+    // for good; the card says it was closed instead, until a new one opens.
+    const closedPr = decideClosedPullRequest(branch, probe);
+    if (closedPr) {
+      const current = get().local;
+      if (current?.workingBranch) {
+        const next: WorkspaceLocal = {
+          ...current,
+          workingBranch: {
+            ...current.workingBranch,
+            openPrUrl: null,
+            openPrNumber: null,
+            closedPr,
+          },
+        };
+        set({ local: next });
+        queueSaveLocal(next);
+      }
+    }
+
     let file = await client.getContents(
       token,
       branch.repoOwner,
@@ -7572,6 +7687,23 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       }
     }
     if (file === null) {
+      // No workspace.json yet, but the branch can still have moved — something
+      // other than Studio (an edition, a teammate) pushed to it. Adopt that head
+      // as below: the push pre-flight compares against it, and without this
+      // Studio's first push was refused as diverged on every try, Refresh included.
+      const current = get().local;
+      if (
+        probe.branchHeadSha &&
+        current?.workingBranch &&
+        current.workingBranch.headSha !== probe.branchHeadSha
+      ) {
+        const next: WorkspaceLocal = {
+          ...current,
+          workingBranch: { ...current.workingBranch, headSha: probe.branchHeadSha },
+        };
+        set({ local: next });
+        queueSaveLocal(next);
+      }
       return { status: 'no-remote' };
     }
 
@@ -7848,8 +7980,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!branch.lastPushedSha) {
       throw new Error('Push to save before opening a PR');
     }
-    if (branch.openPrUrl) {
-      throw new Error(`A pull request is already open for this branch: ${branch.openPrUrl}`);
+    if (branch.openPrUrl || branch.openPrNumber) {
+      throw new Error(
+        `A pull request is already open for this branch: ${branch.openPrUrl ?? `#${branch.openPrNumber}`}`,
+      );
     }
 
     const token = await decryptSessionToken(local);
@@ -7862,11 +7996,172 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       draft: args?.draft ?? false,
     });
 
-    const updatedBranch: WorkingBranch = { ...branch, openPrUrl: pr.htmlUrl };
+    // The number is what the state probe asks about; a host may answer with no
+    // page URL (an empty string), which must not read as "no PR".
+    const updatedBranch: WorkingBranch = {
+      ...branch,
+      openPrUrl: pr.htmlUrl || null,
+      openPrNumber: pr.number,
+      closedPr: null,
+    };
     const next: WorkspaceLocal = { ...get().local!, workingBranch: updatedBranch };
     set({ local: next });
     queueSaveLocal(next);
     return { number: pr.number, htmlUrl: pr.htmlUrl };
+  },
+
+  dismissClosedPullRequest: () => {
+    const local = get().local;
+    if (!local?.workingBranch?.closedPr) return;
+    const next: WorkspaceLocal = {
+      ...local,
+      workingBranch: { ...local.workingBranch, closedPr: null },
+    };
+    set({ local: next });
+    queueSaveLocal(next);
+  },
+
+  pushBranchChanges: async ({ message, sources, acknowledgedSecretFindings }) => {
+    if (get().branchPushInFlight) throw new Error('A push to this branch is already running.');
+    set({ branchPushInFlight: true });
+    try {
+      const local = get().local;
+      const synced = get().synced;
+      if (!local || !synced) throw new Error('Workspace not ready');
+      if (!local.workingBranch) throw new Error('Create a working branch before pushing');
+
+      const parts: BranchPushPart[] = [];
+      let headSha: string | null = null;
+      if (get().branchPushIncludeStudio && studioHasPendingChanges(local, synced)) {
+        // Throws with nothing written — the caller asks (secrets) or advises.
+        const { commitSha } = await get().pushWorkspace(
+          message,
+          acknowledgedSecretFindings ? { acknowledgedSecretFindings } : undefined,
+        );
+        parts.push({ id: 'studio', label: STUDIO_BRANCH_PUSH_LABEL, status: 'pushed', commitSha });
+        headSha = commitSha;
+      } else {
+        parts.push({ id: 'studio', label: STUDIO_BRANCH_PUSH_LABEL, status: 'skipped' });
+      }
+
+      let sourceHead: string | null = null;
+      let failed = false;
+      for (const source of sources) {
+        if (failed) {
+          parts.push({ id: source.id, label: source.label, status: 'not-attempted' });
+          continue;
+        }
+        const summary = source.summary.getSnapshot();
+        const branch = get().local?.workingBranch;
+        if (!summary || summary.included === 0 || summary.blockedReason || !branch) {
+          parts.push({ id: source.id, label: source.label, status: 'skipped' });
+          continue;
+        }
+        try {
+          const pushed = await source.push({ branch, message: message ?? '' });
+          if (pushed) {
+            parts.push({
+              id: source.id,
+              label: source.label,
+              status: 'pushed',
+              commitSha: pushed.headSha,
+            });
+            sourceHead = pushed.headSha;
+            headSha = pushed.headSha;
+          } else {
+            parts.push({ id: source.id, label: source.label, status: 'skipped' });
+          }
+        } catch (err) {
+          failed = true;
+          parts.push({
+            id: source.id,
+            label: source.label,
+            status: 'failed',
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      if (sourceHead === null) {
+        if (headSha !== null) set({ branchPushIncludeStudio: true });
+        return { parts, headSha, refresh: null };
+      }
+      try {
+        const refreshed = await get().recordBranchPush(sourceHead);
+        set({ branchPushIncludeStudio: true });
+        return { parts, headSha, refresh: refreshed.status };
+      } catch (err) {
+        return {
+          parts,
+          headSha,
+          refresh: null,
+          refreshError: err instanceof Error ? err.message : String(err),
+        };
+      }
+    } finally {
+      set({ branchPushInFlight: false });
+    }
+  },
+
+  recordBranchPush: async (commitSha) => {
+    const local = get().local;
+    if (!local) throw new Error('Workspace not ready');
+    const branch = local.workingBranch;
+    if (!branch) throw new Error('Create a working branch first');
+    const token = await decryptSessionToken(local);
+    const client = workspaceProvider(local);
+    const head = await client.getBranchHead(token, branch.repoOwner, branch.repoName, branch.name);
+    if (
+      head.commitSha !== commitSha &&
+      !(await client.isAncestor(
+        token,
+        branch.repoOwner,
+        branch.repoName,
+        commitSha,
+        head.commitSha,
+      ))
+    ) {
+      throw new Error(
+        `"${branch.name}" on the remote does not contain ${commitSha.slice(0, 7)}. Refresh, then push again.`,
+      );
+    }
+    const current = get().local!;
+    if (current.workingBranch) {
+      // The pushed commit, not the remote head: a later push by someone else is
+      // for the refresh below to merge, not for this record to skip past.
+      const next: WorkspaceLocal = {
+        ...current,
+        workingBranch: { ...current.workingBranch, headSha: commitSha, lastPushedSha: commitSha },
+      };
+      set({ local: next });
+      queueSaveLocal(next);
+    }
+    return get().refreshWorkspace();
+  },
+
+  describeStudioChangesForPullRequest: async () => {
+    const local = get().local;
+    const synced = get().synced;
+    const branch = local?.workingBranch;
+    if (!local || !synced || !branch) return null;
+    let base: WorkspaceSynced | null;
+    try {
+      const token = await decryptSessionToken(local);
+      const client = workspaceProvider(local);
+      const file = await client.getContents(
+        token,
+        branch.repoOwner,
+        branch.repoName,
+        workspaceJsonPath(synced.workspaceId),
+        branch.baseBranch,
+      );
+      base = file ? parseWorkspaceJson(file.content) : null;
+    } catch {
+      // Without the base there is no telling what the PR changes: say nothing
+      // rather than describe the wrong diff.
+      return null;
+    }
+    return describeStudioChanges(summarizeUnpushedChanges(base, synced));
   },
 
   removeRequestRun: (runId) => {

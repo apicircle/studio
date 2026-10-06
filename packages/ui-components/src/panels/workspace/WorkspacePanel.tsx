@@ -44,12 +44,13 @@ import {
   summarizeUnpushedChanges,
   validateBranchName,
 } from '@apicircle/core';
-import { validatePRTitle } from '@apicircle/shared';
+import { validatePRTitle, type WorkingBranch } from '@apicircle/shared';
 import {
   anyWorkspaceSession,
   connectedHostKind,
   hostOfWorkspaceSession,
   useWorkspaceStore,
+  type BranchPushOutcome,
   type BranchWorkspaceSummary,
 } from '../../store/workspaceStore';
 import { importWorkspaceLabels } from './importWorkspaceLabels';
@@ -67,6 +68,13 @@ import { formatGitError, type GitErrorView } from './gitErrorMessage';
 import { isWorkspaceSharingEnabled } from '../../layout/workspaceSharing';
 import { isGitHostLocked, useGitHostAccess } from '../../layout/gitHostAccess';
 import { GitHostLockedNotice } from '../../layout/GitHostLockedNotice';
+import {
+  useActiveBranchChanges,
+  useBranchChangeSources,
+  type ActiveBranchChange,
+  type BranchChangeSource,
+} from '../../layout/branchChanges';
+import { UnpushedChangesList } from './UnpushedChangesList';
 
 export function WorkspacePanel() {
   const workspaceName = useWorkspaceStore((s) => {
@@ -1395,6 +1403,17 @@ function BranchCard() {
   const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
   const syncAttachments = useWorkspaceStore((s) => s.syncAttachments);
   const pushToast = useWorkspaceStore((s) => s.pushToast);
+  // Changes an edition makes on this branch besides Studio's own (the Lens
+  // Code editor's code). None registered — Studio standalone — and every path
+  // below that looks at them is skipped: the card is exactly what it was.
+  const sources = useBranchChangeSources();
+  const activeSources = useActiveBranchChanges();
+  const includeStudio = useWorkspaceStore((s) => s.branchPushIncludeStudio);
+  const setIncludeStudio = useWorkspaceStore((s) => s.setBranchPushIncludeStudio);
+  const pushBranchChanges = useWorkspaceStore((s) => s.pushBranchChanges);
+  const branchPushInFlight = useWorkspaceStore((s) => s.branchPushInFlight);
+  const dismissClosedPullRequest = useWorkspaceStore((s) => s.dismissClosedPullRequest);
+  const [pushOutcome, setPushOutcome] = useState<BranchPushOutcome | null>(null);
   const [message, setMessage] = useState('');
   const [showMessageField, setShowMessageField] = useState(false);
   const [pushing, setPushing] = useState(false);
@@ -1420,7 +1439,7 @@ function BranchCard() {
   // user can't fire conflicting requests (push during refresh, discard
   // during push, etc.). Each individual handler still flips its own flag,
   // but the disabled gate uses the union.
-  const anyInFlight = pushing || refreshing || syncing;
+  const anyInFlight = pushing || refreshing || syncing || branchPushInFlight;
 
   const unpushed = useMemo(
     () =>
@@ -1462,6 +1481,7 @@ function BranchCard() {
   };
 
   const onRefresh = async () => {
+    if (sources.length > 0) void refreshBranchChangeSources(sources);
     setRefreshing(true);
     setError(null);
     setErrorView(null);
@@ -1511,6 +1531,10 @@ function BranchCard() {
   };
 
   const onPush = async (acknowledged?: readonly SecretFinding[]) => {
+    if (sources.length > 0) {
+      await onPushBranch(acknowledged);
+      return;
+    }
     setPushing(true);
     setError(null);
     setErrorView(null);
@@ -1545,7 +1569,61 @@ function BranchCard() {
     }
   };
 
+  // The whole branch — Studio's workspace plus every edition source — as one
+  // push. A source that fails after Studio's part landed is reported part by
+  // part (and pushing again skips Studio's now-empty part); a failure before
+  // anything is written is handled exactly like Studio's own push.
+  const onPushBranch = async (acknowledged?: readonly SecretFinding[]) => {
+    setPushing(true);
+    setError(null);
+    setErrorView(null);
+    setJustPushedSha(null);
+    setPushOutcome(null);
+    try {
+      const outcome = await pushBranchChanges({
+        message: message || undefined,
+        sources,
+        ...(acknowledged ? { acknowledgedSecretFindings: acknowledged } : {}),
+      });
+      setPushOutcome(outcome);
+      if (outcome.headSha) setJustPushedSha(outcome.headSha);
+      const failed = outcome.parts.some((p) => p.status === 'failed');
+      if (!failed) {
+        setMessage('');
+        setShowMessageField(false);
+      }
+      if (outcome.headSha) {
+        pushToast({
+          tone: failed ? 'info' : 'success',
+          title: failed ? 'Pushed in part' : 'Branch pushed',
+          detail: outcome.parts
+            .filter((p) => p.status === 'pushed')
+            .map((p) => `${p.label}: ${p.commitSha!.slice(0, 7)}`)
+            .join(' · '),
+        });
+      }
+    } catch (err) {
+      if (err instanceof SecretsInPushError) {
+        setSecretFindings(err.findings);
+        return;
+      }
+      const view = formatGitError(err, 'Push');
+      if (view.action.kind === 'request-scopes') {
+        surfaceMissingScope(view.action.missingScopes);
+      } else {
+        setError(view.message);
+        setErrorView(view);
+      }
+    } finally {
+      setPushing(false);
+    }
+  };
+
   const isClean = branch.headSha === branch.lastPushedSha;
+  // With edition sources, "clean" also means none of them has anything to push.
+  const pushClean =
+    isClean && !activeSources.some((a) => a.summary.included > 0 && !a.summary.blockedReason);
+  const prOpen = branch.openPrUrl !== null || (branch.openPrNumber ?? null) !== null;
   // Block Create PR only when capability has been positively disproven
   // (probe returned 403). `null` means the probe hasn't run yet — leave
   // the button enabled and let the API call surface MissingScopeError if
@@ -1553,8 +1631,7 @@ function BranchCard() {
   // `true` at session connect, so the button enables as soon as a push
   // has landed.
   const prCapability = session?.canCreatePullRequests ?? null;
-  const canCreatePr =
-    branch.lastPushedSha !== null && branch.openPrUrl === null && prCapability !== false;
+  const canCreatePr = branch.lastPushedSha !== null && !prOpen && prCapability !== false;
 
   return (
     <div className="rounded-sm border border-border bg-card p-3">
@@ -1584,7 +1661,11 @@ function BranchCard() {
           . Refresh to pull remote changes.
         </p>
       )}
-      <UnpushedChangesStrip summary={unpushed} onOpen={() => setDiffOpen(true)} />
+      <UnpushedChangesStrip
+        summary={unpushed}
+        sources={activeSources}
+        onOpen={() => setDiffOpen(true)}
+      />
       <UnpushedChangesModal
         open={diffOpen}
         onClose={() => setDiffOpen(false)}
@@ -1594,6 +1675,10 @@ function BranchCard() {
             ? `last pulled ${formatRelativeTime(lastPulledAt)}`
             : 'first push (no upstream)'
         }
+        branch={branch}
+        sources={activeSources}
+        includeStudio={includeStudio}
+        onIncludeStudioChange={setIncludeStudio}
       />
 
       {showMessageField && (
@@ -1640,7 +1725,7 @@ function BranchCard() {
           )}
         </div>
       )}
-      {justPushedSha && !error && !branch.openPrUrl && (
+      {justPushedSha && !error && !prOpen && (
         <p className="mt-2 inline-flex items-center gap-1 text-[0.6875rem] text-success">
           <CheckCircle2 size={11} aria-hidden="true" />
           Pushed <code>{justPushedSha.slice(0, 7)}</code>
@@ -1652,6 +1737,8 @@ function BranchCard() {
           {refreshNoticeText}
         </p>
       )}
+
+      {pushOutcome && <BranchPushResults outcome={pushOutcome} onRetry={() => void onPush()} />}
 
       {branch.openPrUrl && (
         <div className="flex items-center gap-1 text-[0.6875rem] text-accent">
@@ -1668,6 +1755,47 @@ function BranchCard() {
           </a>
         </div>
       )}
+      {!branch.openPrUrl && branch.openPrNumber != null && (
+        // A host that answered with no page URL: the number is all there is.
+        <div className="flex items-center gap-1 text-[0.6875rem] text-accent">
+          <GitPullRequest size={11} aria-hidden="true" />
+          <span>PR open: #{branch.openPrNumber}</span>
+        </div>
+      )}
+      {branch.closedPr && (
+        <div
+          role="status"
+          className="mt-1 flex items-center gap-2 text-[0.6875rem] text-text-muted"
+        >
+          <GitPullRequest size={11} aria-hidden="true" />
+          <span>
+            {branch.closedPr.url ? (
+              <a
+                href={branch.closedPr.url}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="underline hover:text-text-primary"
+              >
+                {branch.closedPr.number != null
+                  ? `PR #${branch.closedPr.number}`
+                  : 'The pull request'}
+              </a>
+            ) : branch.closedPr.number != null ? (
+              `PR #${branch.closedPr.number}`
+            ) : (
+              'The pull request'
+            )}{' '}
+            was closed without merging. Push more changes and open a new one when you are ready.
+          </span>
+          <button
+            type="button"
+            onClick={dismissClosedPullRequest}
+            className="ml-auto inline-flex h-6 items-center rounded-sm border border-border bg-surface px-2 text-[0.625rem] text-text-muted hover:border-border-strong hover:text-text-primary"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <p className="mt-2 text-[0.6875rem] text-text-dim">
         File assets synced from workspace.json are local to this machine. Sync them here, or Studio
@@ -1680,7 +1808,7 @@ function BranchCard() {
           onClick={() => void onPush()}
           disabled={anyInFlight}
           className={
-            isClean
+            pushClean
               ? 'inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary disabled:opacity-50'
               : 'inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:opacity-50'
           }
@@ -1708,7 +1836,7 @@ function BranchCard() {
           <Download size={11} className={syncing ? 'animate-spin' : undefined} />
           {syncing ? 'Syncing…' : 'Sync attachments'}
         </button>
-        {!branch.openPrUrl && (
+        {!prOpen && (
           <button
             type="button"
             onClick={() => setPrModalOpen(true)}
@@ -1720,7 +1848,7 @@ function BranchCard() {
             Create PR
           </button>
         )}
-        {!isClean && (
+        {!pushClean && (
           <button
             type="button"
             onClick={() => setShowMessageField((v) => !v)}
@@ -1779,11 +1907,39 @@ function BranchCard() {
 
 function UnpushedChangesStrip({
   summary,
+  sources,
   onOpen,
 }: {
   summary: { added: number; modified: number; removed: number; total: number };
+  sources: readonly ActiveBranchChange[];
   onOpen: () => void;
 }) {
+  const withChanges = sources.filter((a) => a.summary.total > 0);
+  if (withChanges.length > 0) {
+    // Studio's count first (when it has one), then each edition source's.
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label="Show unpushed changes preview"
+        className="mt-1 inline-flex flex-wrap items-center gap-2 rounded-sm border border-warning/40 bg-warning/5 px-2 py-1 text-[0.6875rem] text-warning hover:bg-warning/10"
+      >
+        <FileDiff size={11} aria-hidden="true" />
+        {summary.total > 0 && (
+          <span>
+            Studio: {summary.total} change{summary.total === 1 ? '' : 's'}
+          </span>
+        )}
+        {withChanges.map(({ source, summary: s }) => (
+          <span key={source.id}>
+            {source.label}: {s.total}
+            {s.included < s.total ? ` (${s.included} to push)` : ''}
+          </span>
+        ))}
+        <span>· click to review</span>
+      </button>
+    );
+  }
   if (summary.total === 0) {
     return (
       <p className="mt-1 inline-flex items-center gap-1 text-[0.6875rem] text-success">
@@ -1818,6 +1974,10 @@ function UnpushedChangesModal({
   onClose,
   summary,
   baseLabel,
+  branch,
+  sources,
+  includeStudio,
+  onIncludeStudioChange,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1829,8 +1989,25 @@ function UnpushedChangesModal({
     changes: UnpushedChange[];
   };
   baseLabel: string;
+  branch: WorkingBranch;
+  sources: readonly ActiveBranchChange[];
+  includeStudio: boolean;
+  onIncludeStudioChange: (include: boolean) => void;
 }) {
   if (!open) return null;
+  if (sources.length > 0) {
+    return (
+      <BranchChangesReview
+        onClose={onClose}
+        summary={summary}
+        baseLabel={baseLabel}
+        branch={branch}
+        sources={sources}
+        includeStudio={includeStudio}
+        onIncludeStudioChange={onIncludeStudioChange}
+      />
+    );
+  }
   return (
     <Modal open onClose={onClose} title="Unpushed changes preview" className="max-w-3xl">
       <div className="flex flex-col gap-3">
@@ -1853,11 +2030,7 @@ function UnpushedChangesModal({
             Nothing to push.
           </p>
         ) : (
-          <ul className="max-h-96 space-y-1 overflow-y-auto" aria-label="Unpushed changes">
-            {summary.changes.map((c) => (
-              <UnpushedChangeRow key={`${c.bucket}:${c.key}`} change={c} />
-            ))}
-          </ul>
+          <UnpushedChangesList changes={summary.changes} />
         )}
         <div className="flex justify-end pt-1">
           <button
@@ -1874,101 +2047,153 @@ function UnpushedChangesModal({
 }
 
 /**
- * Pull a method/URL pair out of whichever side of the diff entry has data,
- * so the row can show enough information to tell two similarly-named
- * entries apart. Falls back gracefully when the change isn't a request
- * (mockServer endpoints, plans, etc. have their own identity that the
- * `label` column already covers).
+ * The changes preview when an edition changes the branch too: one section for
+ * Studio's own changes — with the choice to leave them out of the next push —
+ * and one per edition source, rendered by the source itself.
  */
-function getDisambiguation(change: UnpushedChange): { method?: string; url?: string } | null {
-  if (change.bucket !== 'request') return null;
-  const source = (change.local ?? change.base) as
-    | { method?: string; url?: string }
-    | null
-    | undefined;
-  if (!source || typeof source !== 'object') return null;
-  return {
-    method: typeof source.method === 'string' ? source.method : undefined,
-    url: typeof source.url === 'string' ? source.url : undefined,
+function BranchChangesReview({
+  onClose,
+  summary,
+  baseLabel,
+  branch,
+  sources,
+  includeStudio,
+  onIncludeStudioChange,
+}: {
+  onClose: () => void;
+  summary: {
+    added: number;
+    modified: number;
+    removed: number;
+    total: number;
+    changes: UnpushedChange[];
   };
+  baseLabel: string;
+  branch: WorkingBranch;
+  sources: readonly ActiveBranchChange[];
+  includeStudio: boolean;
+  onIncludeStudioChange: (include: boolean) => void;
+}) {
+  return (
+    <Modal open onClose={onClose} title="Unpushed changes preview" className="max-w-3xl">
+      <div className="flex flex-col gap-4">
+        <p className="text-[0.6875rem] text-text-dim">
+          Everything Push sends to <code className="text-text-muted">{branch.name}</code>, by where
+          it was changed. A pull request from this branch carries all of it.
+        </p>
+        <section aria-label="Studio changes" className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <h3 className="text-xs font-medium text-text-primary">Studio changes</h3>
+            <span className="text-[0.6875rem] text-text-dim">
+              {summary.total === 0
+                ? 'none since the last pull'
+                : `+${summary.added} ~${summary.modified} -${summary.removed} · against ${baseLabel}`}
+            </span>
+            {summary.total > 0 && (
+              <label className="ml-auto inline-flex items-center gap-1.5 text-[0.6875rem] text-text-muted">
+                <input
+                  type="checkbox"
+                  checked={includeStudio}
+                  onChange={(e) => onIncludeStudioChange(e.target.checked)}
+                />
+                Include Studio changes
+              </label>
+            )}
+          </div>
+          {summary.total > 0 && <UnpushedChangesList changes={summary.changes} />}
+        </section>
+        {sources.map(({ source }) => (
+          <section key={source.id} aria-label={source.label} className="flex flex-col gap-2">
+            <h3 className="text-xs font-medium text-text-primary">{source.label}</h3>
+            <source.Section branch={branch} />
+          </section>
+        ))}
+        <div className="flex justify-end pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
 }
 
-function UnpushedChangeRow({ change }: { change: UnpushedChange }) {
-  const [open, setOpen] = useState(false);
-  const tone =
-    change.kind === 'added'
-      ? 'border-success/40 bg-success/5 text-success'
-      : change.kind === 'modified'
-        ? 'border-warning/40 bg-warning/5 text-warning'
-        : 'border-danger/40 bg-danger/5 text-danger';
-  // Disambiguate similarly-named entries (multiple "Sample: GET /anything"
-  // requests, two folders named "v1", etc.) by surfacing the data that
-  // makes them unique: method + URL for requests, plus a short id badge
-  // anchored to the entry's id. Without these, the only column shown was
-  // `label` and the user had no way to tell which entry the diff meant.
-  const disambig = getDisambiguation(change);
-  const shortId = change.key ? change.key.slice(0, 8) : null;
+/** How each part of a push of the whole branch went, with a retry when one failed. */
+function BranchPushResults({
+  outcome,
+  onRetry,
+}: {
+  outcome: BranchPushOutcome;
+  onRetry: () => void;
+}) {
+  const failed = outcome.parts.some((p) => p.status === 'failed');
+  const shown = outcome.parts.filter((p) => p.status !== 'skipped');
+  if (shown.length === 0 && !outcome.refreshError) return null;
   return (
-    <li className="rounded-sm border border-border bg-surface">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2 px-2 py-1 text-left text-xs"
-        aria-expanded={open}
-        aria-label={`Toggle ${change.kind} ${change.label}`}
-      >
-        <span
-          className={`shrink-0 rounded-sm border px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wider ${tone}`}
+    <div className="mt-2 space-y-0.5 text-[0.6875rem]" aria-label="Push results">
+      {shown.map((p) => (
+        <p
+          key={p.id}
+          className={
+            p.status === 'pushed'
+              ? 'text-success'
+              : p.status === 'failed'
+                ? 'text-danger'
+                : 'text-text-dim'
+          }
         >
-          {change.kind}
-        </span>
-        <span className="rounded-sm border border-border bg-card px-1.5 py-0.5 text-[0.625rem] text-text-dim">
-          {change.bucket}
-        </span>
-        {disambig?.method && (
-          <span className="shrink-0 rounded-sm border border-accent/30 bg-accent/5 px-1.5 py-0.5 text-[0.625rem] font-mono text-accent">
-            {disambig.method}
-          </span>
-        )}
-        <code className="flex-1 truncate text-text-primary">{change.label}</code>
-        {disambig?.url && (
-          <code
-            className="hidden max-w-[20rem] shrink-0 truncate text-[0.625rem] text-text-muted md:inline"
-            title={disambig.url}
-          >
-            {disambig.url}
-          </code>
-        )}
-        {shortId && (
-          <code
-            className="shrink-0 rounded-sm bg-card px-1 py-0.5 font-mono text-[0.625rem] text-text-faint"
-            title={`Entry id: ${change.key}`}
-          >
-            {shortId}
-          </code>
-        )}
-        <span className="text-[0.625rem] text-text-dim">{open ? '−' : '+'}</span>
-      </button>
-      {open && (
-        <div className="grid grid-cols-2 gap-2 border-t border-border-subtle p-2 text-[0.625rem]">
-          <div>
-            <p className="mb-1 text-text-dim">Before (last pull)</p>
-            <pre className="max-h-40 overflow-y-auto rounded-sm border border-border bg-card p-1.5 font-mono text-text-muted">
-              {change.base === undefined
-                ? '— (did not exist)'
-                : JSON.stringify(change.base, null, 2)}
-            </pre>
-          </div>
-          <div>
-            <p className="mb-1 text-text-dim">After (current)</p>
-            <pre className="max-h-40 overflow-y-auto rounded-sm border border-border bg-card p-1.5 font-mono text-text-primary">
-              {change.local === undefined ? '— (deleted)' : JSON.stringify(change.local, null, 2)}
-            </pre>
-          </div>
-        </div>
+          {p.label}:{' '}
+          {p.status === 'pushed'
+            ? `pushed ${p.commitSha!.slice(0, 7)}`
+            : p.status === 'failed'
+              ? `not pushed — ${p.error}`
+              : 'not attempted'}
+        </p>
+      ))}
+      {outcome.refreshError && (
+        <p className="text-warning">
+          Pushed, but re-reading the branch failed: {outcome.refreshError}. Refresh before pushing
+          again.
+        </p>
       )}
-    </li>
+      {failed && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="inline-flex h-6 items-center gap-1 rounded-sm border border-accent/40 bg-accent/10 px-2 text-[0.6875rem] text-accent hover:bg-accent/20"
+        >
+          <RefreshCw size={10} aria-hidden="true" />
+          Retry the rest
+        </button>
+      )}
+    </div>
   );
+}
+
+/** Re-read every edition source; one failing to refresh never blocks the others. */
+async function refreshBranchChangeSources(sources: readonly BranchChangeSource[]): Promise<void> {
+  await Promise.allSettled(sources.map((s) => (s.refresh ? s.refresh() : Promise.resolve())));
+}
+
+/** The pull-request description: Studio's part, then each edition source's. */
+async function describePullRequest(
+  branch: WorkingBranch,
+  describeStudioChanges: () => Promise<string | null>,
+  sources: readonly ActiveBranchChange[],
+): Promise<string> {
+  const parts = await Promise.all([
+    describeStudioChanges().catch(() => null),
+    ...sources.map(({ source }) =>
+      source.describeForPullRequest
+        ? source.describeForPullRequest(branch).catch(() => null)
+        : Promise.resolve(null),
+    ),
+  ]);
+  return parts.filter((part): part is string => Boolean(part)).join('\n\n');
 }
 
 /**
@@ -2015,11 +2240,29 @@ function CreatePrModal({ open, onClose }: { open: boolean; onClose: () => void }
   const branch = useWorkspaceStore((s) => s.local?.workingBranch ?? null);
   const createPullRequest = useWorkspaceStore((s) => s.createPullRequest);
   const surfaceMissingScope = useWorkspaceStore((s) => s.surfaceMissingScope);
+  const describeStudioChanges = useWorkspaceStore((s) => s.describeStudioChangesForPullRequest);
+  const sources = useBranchChangeSources();
+  const activeSources = useActiveBranchChanges();
 
   const [title, setTitle] = useState('API Circle workspace updates');
   const [body, setBody] = useState('');
+  const [bodyEdited, setBodyEdited] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // With an edition changing the branch too, the description starts out saying
+  // what the PR carries — Studio's part and each source's — unless the user has
+  // already started writing their own.
+  useEffect(() => {
+    if (!open || !branch || sources.length === 0 || bodyEdited) return;
+    let cancelled = false;
+    void describePullRequest(branch, describeStudioChanges, activeSources).then((described) => {
+      if (!cancelled && described) setBody(described);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, branch, sources, activeSources, describeStudioChanges, bodyEdited]);
 
   if (!branch) return null;
 
@@ -2031,6 +2274,7 @@ function CreatePrModal({ open, onClose }: { open: boolean; onClose: () => void }
       onClose();
       setTitle('API Circle workspace updates');
       setBody('');
+      setBodyEdited(false);
     } catch (err) {
       if (err instanceof MissingScopeError) {
         onClose();
@@ -2063,7 +2307,10 @@ function CreatePrModal({ open, onClose }: { open: boolean; onClose: () => void }
           <textarea
             id="pr-body-input"
             value={body}
-            onChange={(e) => setBody(e.target.value)}
+            onChange={(e) => {
+              setBody(e.target.value);
+              setBodyEdited(true);
+            }}
             aria-label="PR body"
             rows={6}
             className="mt-1 w-full resize-y rounded-sm border border-border bg-surface px-2 py-1.5 text-xs text-text-primary focus:border-accent focus:outline-none"
