@@ -83,4 +83,21 @@ describe('TopBar', () => {
     await userEvent.click(screen.getByRole('tab', { name: /Lens/ }));
     expect(setActiveSectionId).toHaveBeenCalledWith('lens');
   });
+
+  it('renders nothing beside the workspace switcher in Studio (no status passed)', async () => {
+    await renderWithStore(<TopBar />);
+    const switcher = screen.getByRole('button', { name: /Switch workspace/ });
+    const settings = screen.getByRole('button', { name: /Open workspace settings/ });
+    // The switcher's wrapper is followed directly by the settings picker's.
+    expect(switcher.closest('.relative')!.nextElementSibling).toBe(settings.closest('.relative'));
+  });
+
+  it('renders an edition workspace status between the switcher and Settings', async () => {
+    await renderWithStore(<TopBar workspaceStatus={<span data-testid="status">on main</span>} />);
+    const status = screen.getByTestId('status');
+    const switcher = screen.getByRole('button', { name: /Switch workspace/ });
+    const settings = screen.getByRole('button', { name: /Open workspace settings/ });
+    expect(switcher.closest('.relative')!.nextElementSibling).toBe(status);
+    expect(status.nextElementSibling).toBe(settings.closest('.relative'));
+  });
 });

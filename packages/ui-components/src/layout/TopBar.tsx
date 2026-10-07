@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { AppIcon } from './AppIcon';
 import { SettingsPicker } from './SettingsPicker';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
@@ -15,7 +16,18 @@ export interface BrandDef {
   tagline?: string | null;
 }
 
-export function TopBar({ brand }: { brand?: BrandDef } = {}) {
+export function TopBar({
+  brand,
+  workspaceStatus,
+}: {
+  brand?: BrandDef;
+  /**
+   * Shown beside the workspace switcher — the workspace's status at a glance,
+   * such as `WorkspaceStatusChip`. An additive seam: Studio passes nothing and
+   * the top bar renders exactly as before.
+   */
+  workspaceStatus?: ReactNode;
+} = {}) {
   const name = brand?.name ?? 'API Circle Studio';
   const tagline = brand?.tagline === undefined ? 'Built in India. Open to world' : brand.tagline;
   return (
@@ -31,6 +43,7 @@ export function TopBar({ brand }: { brand?: BrandDef } = {}) {
           </div>
         </div>
         <WorkspaceSwitcher />
+        {workspaceStatus}
         <SettingsPicker />
       </div>
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, LifeBuoy } from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { probeWorkspaceRecords } from './persistence/workspaceStorage';
@@ -192,12 +192,16 @@ import {
 import {
   SectionsProvider,
   readStoredSection,
+  readStoredSectionPanel,
   writeStoredSection,
+  writeStoredSectionPanel,
   resolveActiveSection,
+  resolveSectionPanel,
   NO_SECTIONS,
   type SectionDef,
 } from './layout/sections';
 import { SectionLanding } from './layout/SectionLanding';
+import { isShownPanel } from './layout/visibleTabs';
 import {
   DEFAULT_WORKSPACE_ACCESS,
   WorkspaceAccessProvider,
@@ -210,6 +214,7 @@ export function App({
   brand,
   workspaceAccess = DEFAULT_WORKSPACE_ACCESS,
   gitHostAccess = DEFAULT_GIT_HOST_ACCESS,
+  workspaceStatus,
 }: {
   /** Edition-contributed top-nav panels. Omitted in Studio → strict no-op. */
   extraPanels?: readonly ExtraPanelDef[];
@@ -229,6 +234,11 @@ export function App({
    * See `layout/gitHostAccess.ts`.
    */
   gitHostAccess?: GitHostAccess;
+  /**
+   * Shown beside the workspace switcher in the top bar — the workspace's status
+   * at a glance, such as `WorkspaceStatusChip`. Omitted in Studio → strict no-op.
+   */
+  workspaceStatus?: ReactNode;
 } = {}) {
   const ready = useWorkspaceStore((s) => s.ready);
   const hydrationError = useWorkspaceStore((s) => s.hydrationError);
@@ -237,28 +247,52 @@ export function App({
   const setActivePanel = useWorkspaceStore((s) => s.setActivePanel);
 
   // Active section ("mode"), persisted per-workspace. Inert in Studio (no
-  // sections registered) — the seam is a strict no-op.
-  const [activeSectionId, setActiveSectionIdState] = useState('');
+  // sections registered) — the seam is a strict no-op. The id is held with the
+  // workspace it was resolved for: for the one render after a workspace switch
+  // the two disagree, and nothing may be remembered against the new workspace
+  // from the old one's mode.
+  const [activeSection, setActiveSection] = useState({ workspaceId: '', id: '' });
+  const activeSectionId = activeSection.id;
+  const extraPanelsRef = useRef(extraPanels);
+  extraPanelsRef.current = extraPanels;
+  // A remembered panel the shell cannot show yet. An edition may contribute a
+  // panel only once its account has loaded, which can be after the restore
+  // below has run; `fallback` is where that restore landed in the meantime.
+  const pendingLandingRef = useRef<{ panelId: string; fallback: string } | null>(null);
   useEffect(() => {
     // Re-resolve the stored mode when the active workspace changes (or sections
     // first register) so switching workspaces restores that workspace's mode.
     if (sections.length <= 1 || !workspaceId) return;
     const storedSectionId = readStoredSection(workspaceId, sections);
-    setActiveSectionIdState(storedSectionId);
+    setActiveSection({ workspaceId, id: storedSectionId });
     // Reconcile the active panel with the restored mode. `activePanel` is
     // persisted globally and `readStoredPanel` only round-trips core panel ids,
     // so a cold launch into an edition section (e.g. Lens) would otherwise leave
     // a core panel (Editor) showing under the wrong mode — the tab strip shows
     // that section's tabs while the body renders a panel the section doesn't
-    // list. Land on the section's first panel whenever the current one isn't
-    // part of the restored section (the same move `setActiveSectionId` makes on
-    // an explicit mode switch). Read the panel via getState so this effect
-    // reconciles on load/workspace-change only, and never fights the user as
-    // they switch panels within a mode.
+    // list. Land on the panel the section was left on, or its first one,
+    // whenever the current panel isn't part of the restored section (the same
+    // move `setActiveSectionId` makes on an explicit mode switch). Read the panel
+    // via getState so this effect reconciles on load/workspace-change only, and
+    // never fights the user as they switch panels within a mode.
     const section = resolveActiveSection(storedSectionId, sections);
     const currentPanel = useWorkspaceStore.getState().activePanel;
-    if (section && section.panelIds.length > 0 && !section.panelIds.includes(currentPanel)) {
-      setActivePanel(section.panelIds[0]);
+    pendingLandingRef.current = null;
+    if (section && !section.panelIds.includes(currentPanel)) {
+      const remembered = readStoredSectionPanel(workspaceId, section.id);
+      const landing = resolveSectionPanel(section, remembered, (id) =>
+        isShownPanel(id, extraPanelsRef.current),
+      );
+      if (landing) {
+        if (
+          remembered !== null &&
+          remembered !== landing &&
+          section.panelIds.includes(remembered)
+        ) {
+          pendingLandingRef.current = { panelId: remembered, fallback: landing };
+        }
+        setActivePanel(landing);
+      }
     }
   }, [workspaceId, sections, setActivePanel]);
 
@@ -291,9 +325,43 @@ export function App({
     if (resolveActiveSection(sectionId, registered)?.panelIds.includes(activePanel)) return;
     const owner = registered.find((s) => s.panelIds.includes(activePanel));
     if (!owner) return;
-    setActiveSectionIdState(owner.id);
+    setActiveSection({ workspaceId: ws, id: owner.id });
     writeStoredSection(ws, owner.id);
   }, [activePanel]);
+
+  // Each section remembers the panel last open in it, so a mode switch can
+  // return there. Recorded whenever the active section lists the panel on
+  // screen — a tab click, an edition's own navigation, the panel a launch
+  // restored — and only once that section belongs to the workspace on screen.
+  // Studio registers no sections, so there this is a strict no-op.
+  useEffect(() => {
+    if (sectionsRef.current.length <= 1 || !workspaceId) return;
+    if (activeSection.workspaceId !== workspaceId || !activeSection.id) return;
+    const section = sectionsRef.current.find((s) => s.id === activeSection.id);
+    if (section?.panelIds.includes(activePanel)) {
+      writeStoredSectionPanel(workspaceId, section.id, activePanel);
+    }
+  }, [activePanel, activeSection, workspaceId]);
+
+  // Finish the launch restore when a remembered panel arrives late — only while
+  // the user is still on the panel the restore fell back to. Any move of their
+  // own, to another panel or another mode, drops it: by then they have chosen.
+  // The panel is read from the store, not from this render: the restore above
+  // moves it in the same pass, before this render's value catches up.
+  useEffect(() => {
+    const pending = pendingLandingRef.current;
+    if (pending && useWorkspaceStore.getState().activePanel !== pending.fallback) {
+      pendingLandingRef.current = null;
+    }
+  }, [activePanel]);
+  // Runs after the effect above, so a restore still pending here is one the
+  // user has not moved away from.
+  useEffect(() => {
+    const pending = pendingLandingRef.current;
+    if (!pending || !isShownPanel(pending.panelId, extraPanels)) return;
+    pendingLandingRef.current = null;
+    setActivePanel(pending.panelId);
+  }, [extraPanels, setActivePanel]);
 
   // Reconcile a persisted `activePanel` this build no longer shows.
   //
@@ -316,12 +384,20 @@ export function App({
 
   const setActiveSectionId = useCallback(
     (id: string) => {
-      setActiveSectionIdState(id);
+      pendingLandingRef.current = null;
+      setActiveSection({ workspaceId, id });
       writeStoredSection(workspaceId, id);
       // Keep the tab strip + content consistent: move the active panel into the
-      // newly-selected section.
-      const firstPanel = sections.find((s) => s.id === id)?.panelIds[0];
-      if (firstPanel) setActivePanel(firstPanel);
+      // newly-selected section — the panel it was left on, so a trip to the
+      // other mode and back lands where it started, else its first one.
+      const section = sections.find((s) => s.id === id);
+      if (!section) return;
+      const landing = resolveSectionPanel(
+        section,
+        readStoredSectionPanel(workspaceId, id),
+        (panelId) => isShownPanel(panelId, extraPanelsRef.current),
+      );
+      if (landing) setActivePanel(landing);
     },
     [workspaceId, sections, setActivePanel],
   );
@@ -351,7 +427,7 @@ export function App({
         <ExtraPanelsProvider value={extraPanels}>
           <SectionsProvider value={{ sections, activeSectionId, setActiveSectionId }}>
             <div className="flex h-full flex-col bg-surface text-text-primary">
-              <TopBar brand={brand} />
+              <TopBar brand={brand} workspaceStatus={workspaceStatus} />
               <PanelTabs />
               <div className="flex flex-1 overflow-hidden">
                 <BodyArea />

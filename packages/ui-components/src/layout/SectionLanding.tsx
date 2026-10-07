@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { cn } from '../primitives/cn';
-import { useSections } from './sections';
+import { useWorkspaceStore } from '../store/workspaceStore';
+import { useSections, type SectionDef } from './sections';
 
 const LANDING_DISMISSED_KEY = 'apicircle:section-landing-done-v1';
 
@@ -26,11 +27,13 @@ function markDismissed(): void {
  * First-run landing, shown once on first app entry when an edition registers
  * >=2 sections — lets the user pick a starting mode (e.g. Studio vs Lens).
  * Strict no-op in Studio: App only mounts it when `sections.length > 1`, and it
- * renders `null` once dismissed. Picking a card enters that section and dismisses
- * the landing; the always-present top toggle switches modes thereafter.
+ * renders `null` once dismissed. Picking a card enters that section at its first
+ * panel and dismisses the landing; the always-present top toggle switches modes
+ * thereafter, returning to the panel each mode was left on.
  */
 export function SectionLanding() {
   const { sections, setActiveSectionId } = useSections();
+  const setActivePanel = useWorkspaceStore((s) => s.setActivePanel);
   const [dismissed, setDismissed] = useState(landingDismissed);
 
   if (dismissed) return null;
@@ -40,8 +43,12 @@ export function SectionLanding() {
     markDismissed();
   };
 
-  const choose = (id: string) => {
-    setActiveSectionId(id);
+  const choose = (section: SectionDef) => {
+    setActiveSectionId(section.id);
+    // A card is a fresh start, not a return trip: open the section at its first
+    // panel, whichever panel the shell happened to restore underneath the landing.
+    const firstPanel = section.panelIds[0];
+    if (firstPanel) setActivePanel(firstPanel);
     dismiss();
   };
 
@@ -66,7 +73,7 @@ export function SectionLanding() {
               <button
                 key={section.id}
                 type="button"
-                onClick={() => choose(section.id)}
+                onClick={() => choose(section)}
                 data-section-card={section.id}
                 className={cn(
                   'flex flex-col items-start gap-2 rounded-md border border-border bg-surface p-4 text-left transition-colors',

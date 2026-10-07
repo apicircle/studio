@@ -31,6 +31,7 @@ export type { PanelDef } from './layout/panels';
 export type { ExtraPanelDef } from './layout/extraPanels';
 export type { SectionDef } from './layout/sections';
 export type { BrandDef } from './layout/TopBar';
+export { WorkspaceStatusChip } from './layout/WorkspaceStatusChip';
 export { getDesktopMockBridge, getDesktopWorkspaceFileBridge } from './desktop/bridge';
 export type {
   DesktopBridgeContract,

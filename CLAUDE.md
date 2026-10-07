@@ -644,8 +644,17 @@ keeps the two in one logical codebase with **no duplication** is recorded in
     - `extraPanels` (`ExtraPanelDef[]`): edition top-nav panels, `layout/extraPanels.ts`.
     - `sections` (`SectionDef[]`): top-level "modes" that group panels, with a
       first-run landing, a top-bar toggle and per-workspace mode persistence,
-      `layout/sections.ts`.
+      `layout/sections.ts`. Each mode remembers the panel it was left on, per
+      workspace, and the toggle returns there. A panel listed by more than one
+      section stays in the strip across those modes, set off by a divider.
+      `layout/visibleTabs.ts` is the one list `PanelTabs` renders and
+      `KeyboardShortcuts` numbers, so `Ctrl/Cmd + N` follows the strip on screen.
     - `brand` (`BrandDef`): the header brand.
+    - `workspaceStatus` (`ReactNode`): shown beside the workspace switcher in the
+      top bar. `WorkspaceStatusChip` (`layout/WorkspaceStatusChip.tsx`) is the
+      one Studio ships for it: repository, working branch and unpushed count, or
+      the step still missing, and one click to the Workspace page. Studio itself
+      renders it nowhere.
     - `gitHostAccess` (`GitHostAccess`, `layout/gitHostAccess.ts`): the registered
       Git hosts the user may not use. Each is shown locked, and its use is refused
       by the edition's own provider factory.

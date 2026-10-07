@@ -5,7 +5,7 @@ import { Compass, Server } from 'lucide-react';
 import { App } from './App';
 import { useWorkspaceStore } from './store/workspaceStore';
 import type { ExtraPanelDef } from './layout/extraPanels';
-import type { SectionDef } from './layout/sections';
+import { useSections, type SectionDef } from './layout/sections';
 
 describe('App', () => {
   it('shows loading state, then renders the chrome once hydrated', async () => {
@@ -148,9 +148,32 @@ describe('App', () => {
     ).not.toBeInTheDocument();
     expect(useWorkspaceStore.getState().activePanel).toBe('lens.discover');
 
-    // The always-present top toggle switches back to Studio (activePanel → first Studio panel).
+    // The always-present top toggle switches back to Studio, onto the panel Studio
+    // was showing under the landing — not its first one.
     await userEvent.click(screen.getByRole('tab', { name: /^Studio$/ }));
+    expect(useWorkspaceStore.getState().activePanel).toBe('editor');
+  });
+
+  it('the first-run landing opens a mode at its first panel, not the one the shell restored', async () => {
+    localStorage.removeItem('apicircle:section-landing-done-v1');
+    const sections: SectionDef[] = [
+      { id: 'studio', label: 'Studio', icon: Compass, panelIds: ['workspace', 'editor'] },
+      { id: 'lens', label: 'Lens', icon: Server, panelIds: ['lens.discover'] },
+    ];
+    render(<App sections={sections} />);
+    await waitFor(() => screen.getByText('API Circle Studio'));
+    expect(useWorkspaceStore.getState().activePanel).toBe('editor');
+
+    const dialog = screen.getByRole('dialog', { name: /Choose how you want to start/ });
+    await userEvent.click(within(dialog).getByText('Studio'));
+
     expect(useWorkspaceStore.getState().activePanel).toBe('workspace');
+  });
+
+  it('renders an edition workspace status in the top bar', async () => {
+    render(<App workspaceStatus={<span>ON BRANCH MAIN</span>} />);
+    await waitFor(() => screen.getByText('API Circle Studio'));
+    expect(screen.getByText('ON BRANCH MAIN')).toBeInTheDocument();
   });
 
   it('registers no landing or toggle in Studio (no sections — strict no-op)', async () => {
@@ -325,6 +348,271 @@ describe('App', () => {
 
       expect(sectionWrites(setItem)).toEqual([]);
       expect(localStorage.getItem(`${SECTION_KEY}${wsId}`)).toBe('lens');
+    });
+  });
+
+  // A mode switch used to open the mode's first panel every time, so a trip to
+  // the other mode and back cost a second click to get back where you were.
+  describe('each mode remembers the panel it was left on', () => {
+    const SECTION_KEY = 'apicircle-v2:active-section:';
+    const PANEL_KEY = 'apicircle-v2:section-panel:';
+    // 'workspace' is listed by both modes; 'lens.gone' is listed with no panel behind it.
+    const sections: SectionDef[] = [
+      { id: 'studio', label: 'Studio', icon: Compass, panelIds: ['workspace', 'editor', 'env'] },
+      {
+        id: 'lens',
+        label: 'Lens',
+        icon: Server,
+        panelIds: ['lens.discover', 'lens.review', 'lens.gone', 'workspace'],
+      },
+    ];
+    const extraPanels: ExtraPanelDef[] = [
+      { id: 'lens.discover', label: 'Index', icon: Compass, Panel: () => <div>INDEX BODY</div> },
+      { id: 'lens.review', label: 'Review', icon: Server, Panel: () => <div>REVIEW BODY</div> },
+    ];
+
+    function modeTab(name: RegExp): HTMLElement {
+      return within(screen.getByRole('tablist', { name: /Mode/ })).getByRole('tab', { name });
+    }
+
+    const activePanel = () => useWorkspaceStore.getState().activePanel;
+
+    function openPanel(panel: string): void {
+      act(() => {
+        useWorkspaceStore.getState().setActivePanel(panel);
+      });
+    }
+
+    /** Mounts the two-mode shell past the landing, in Studio on the Editor. */
+    async function renderEdition(maxWorkspaces = 1): Promise<string> {
+      localStorage.setItem('apicircle:section-landing-done-v1', 'true'); // skip the landing
+      render(
+        <App sections={sections} extraPanels={extraPanels} workspaceAccess={{ maxWorkspaces }} />,
+      );
+      await waitFor(() => expect(modeTab(/^Studio$/)).toHaveAttribute('aria-selected', 'true'));
+      return useWorkspaceStore.getState().synced!.workspaceId;
+    }
+
+    it('switching modes returns to the panel each was left on', async () => {
+      const wsId = await renderEdition();
+      openPanel('env');
+
+      await userEvent.click(modeTab(/^Lens$/));
+      openPanel('lens.review');
+      expect(screen.getByText('REVIEW BODY')).toBeInTheDocument();
+
+      await userEvent.click(modeTab(/^Studio$/));
+      expect(activePanel()).toBe('env');
+      await userEvent.click(modeTab(/^Lens$/));
+      expect(activePanel()).toBe('lens.review');
+
+      expect(localStorage.getItem(`${PANEL_KEY}${wsId}:studio`)).toBe('env');
+      expect(localStorage.getItem(`${PANEL_KEY}${wsId}:lens`)).toBe('lens.review');
+    });
+
+    it('opens a mode at its first panel until it has been used', async () => {
+      await renderEdition();
+      await userEvent.click(modeTab(/^Lens$/));
+      expect(activePanel()).toBe('lens.discover');
+    });
+
+    it('a section id nothing registered moves no panel', async () => {
+      // Reached only through the seam, never the toggle, which renders registered
+      // sections alone. The panel on screen has to survive it.
+      function ModeProbe() {
+        const { setActiveSectionId } = useSections();
+        return (
+          <button type="button" onClick={() => setActiveSectionId('ghost')}>
+            ENTER GHOST
+          </button>
+        );
+      }
+      localStorage.setItem('apicircle:section-landing-done-v1', 'true'); // skip the landing
+      render(
+        <App
+          sections={sections}
+          extraPanels={[{ id: 'lens.discover', label: 'Index', icon: Compass, Panel: ModeProbe }]}
+        />,
+      );
+      await waitFor(() => expect(modeTab(/^Studio$/)).toHaveAttribute('aria-selected', 'true'));
+      await userEvent.click(modeTab(/^Lens$/));
+      expect(activePanel()).toBe('lens.discover');
+
+      await userEvent.click(screen.getByRole('button', { name: 'ENTER GHOST' }));
+
+      expect(activePanel()).toBe('lens.discover');
+    });
+
+    it('clicking the mode already active keeps the panel on screen', async () => {
+      await renderEdition();
+      openPanel('env');
+      await userEvent.click(modeTab(/^Studio$/));
+      expect(activePanel()).toBe('env');
+    });
+
+    it('a panel both modes list is remembered by the mode it was opened in', async () => {
+      const wsId = await renderEdition();
+      await userEvent.click(modeTab(/^Lens$/));
+      const setItem = vi.spyOn(Storage.prototype, 'setItem');
+
+      openPanel('workspace');
+
+      // Lens lists it, so the mode does not follow it to Studio...
+      expect(modeTab(/^Lens$/)).toHaveAttribute('aria-selected', 'true');
+      expect(setItem.mock.calls.filter(([key]) => key.startsWith(SECTION_KEY))).toEqual([]);
+      // ...and the strip still shows the Lens tabs around it.
+      expect(screen.getByRole('button', { name: /^Review$/ })).toBeInTheDocument();
+      expect(localStorage.getItem(`${PANEL_KEY}${wsId}:lens`)).toBe('workspace');
+
+      // Studio was left on the Editor, and returns there rather than staying put.
+      await userEvent.click(modeTab(/^Studio$/));
+      expect(activePanel()).toBe('editor');
+      await userEvent.click(modeTab(/^Lens$/));
+      expect(activePanel()).toBe('workspace');
+      expect(localStorage.getItem(`${PANEL_KEY}${wsId}:studio`)).toBe('editor');
+    });
+
+    it('falls back to the first panel when the remembered one is no longer shown', async () => {
+      const wsId = await renderEdition();
+      // Remembered by an earlier session, when the edition still contributed it.
+      localStorage.setItem(`${PANEL_KEY}${wsId}:lens`, 'lens.gone');
+
+      await userEvent.click(modeTab(/^Lens$/));
+
+      expect(activePanel()).toBe('lens.discover');
+    });
+
+    it('a cold launch into a mode restores the panel it was left on', async () => {
+      localStorage.setItem('apicircle:section-landing-done-v1', 'true'); // skip the landing
+      // The first launch only learns the hydrated workspace id.
+      const first = render(<App sections={sections} extraPanels={extraPanels} />);
+      await waitFor(() => screen.getByText('API Circle Studio'));
+      const wsId = useWorkspaceStore.getState().synced!.workspaceId;
+      first.unmount();
+
+      // Lens on Review is what the last session left. The globally stored panel
+      // cannot hold an edition id, so the store comes back on a core panel.
+      localStorage.setItem(`${SECTION_KEY}${wsId}`, 'lens');
+      localStorage.setItem(`${PANEL_KEY}${wsId}:lens`, 'lens.review');
+      useWorkspaceStore.getState().setActivePanel('editor');
+
+      render(<App sections={sections} extraPanels={extraPanels} />);
+      await waitFor(() => expect(modeTab(/^Lens$/)).toHaveAttribute('aria-selected', 'true'));
+      await waitFor(() => expect(activePanel()).toBe('lens.review'));
+    });
+
+    it('a workspace switch remembers nothing against the new workspace from the old mode', async () => {
+      const wsA = await renderEdition(3);
+      await userEvent.click(modeTab(/^Lens$/));
+      openPanel('lens.review');
+
+      await act(async () => {
+        await useWorkspaceStore.getState().createNewWorkspace('Second', 3);
+      });
+      const wsB = useWorkspaceStore.getState().synced!.workspaceId;
+      expect(wsB).not.toBe(wsA);
+
+      // The new workspace has no stored mode, so it opens in Studio at its first panel.
+      await waitFor(() => expect(modeTab(/^Studio$/)).toHaveAttribute('aria-selected', 'true'));
+      await waitFor(() => expect(activePanel()).toBe('workspace'));
+      // The render between the switch and that restore still carried the old
+      // workspace's mode (Lens) with the Review panel on screen. Nothing of it
+      // may be filed under the new workspace.
+      expect(localStorage.getItem(`${PANEL_KEY}${wsB}:lens`)).toBeNull();
+      expect(localStorage.getItem(`${PANEL_KEY}${wsB}:studio`)).toBe('workspace');
+      expect(localStorage.getItem(`${PANEL_KEY}${wsA}:lens`)).toBe('lens.review');
+    });
+
+    it('records nothing without sections (Studio standalone)', async () => {
+      render(<App />);
+      await waitFor(() => screen.getByText('API Circle Studio'));
+
+      openPanel('history');
+
+      expect(Object.keys(localStorage).filter((key) => key.startsWith(PANEL_KEY))).toEqual([]);
+    });
+
+    // An edition may contribute a panel only once its account has loaded, which
+    // can be after the launch restore ran. Without this the one tab that arrives
+    // late would be the one tab a relaunch never returns to.
+    describe('a remembered panel the edition contributes only after launch', () => {
+      const withoutReview = extraPanels.filter((p) => p.id !== 'lens.review');
+
+      /** Cold-launches into Lens with Review remembered but not contributed yet. */
+      async function launchBeforeReviewArrives() {
+        localStorage.setItem('apicircle:section-landing-done-v1', 'true'); // skip the landing
+        const first = render(<App sections={sections} extraPanels={withoutReview} />);
+        await waitFor(() => screen.getByText('API Circle Studio'));
+        const wsId = useWorkspaceStore.getState().synced!.workspaceId;
+        first.unmount();
+
+        localStorage.setItem(`${SECTION_KEY}${wsId}`, 'lens');
+        localStorage.setItem(`${PANEL_KEY}${wsId}:lens`, 'lens.review');
+        useWorkspaceStore.getState().setActivePanel('editor');
+
+        const view = render(<App sections={sections} extraPanels={withoutReview} />);
+        // Review is not there to land on, so the launch falls back to the first Lens panel.
+        await waitFor(() => expect(activePanel()).toBe('lens.discover'));
+        return view;
+      }
+
+      /** Lets a re-render's effects run, for the cases asserting that nothing moved. */
+      const settle = () => act(async () => {});
+
+      it('is restored once it arrives, while the user is still where the launch left them', async () => {
+        const view = await launchBeforeReviewArrives();
+
+        view.rerender(<App sections={sections} extraPanels={extraPanels} />);
+
+        await waitFor(() => expect(activePanel()).toBe('lens.review'));
+        expect(screen.getByText('REVIEW BODY')).toBeInTheDocument();
+      });
+
+      it('waits through a panel change that does not bring it', async () => {
+        const view = await launchBeforeReviewArrives();
+
+        view.rerender(<App sections={sections} extraPanels={[...withoutReview]} />);
+        await settle();
+        expect(activePanel()).toBe('lens.discover');
+
+        view.rerender(<App sections={sections} extraPanels={extraPanels} />);
+        await waitFor(() => expect(activePanel()).toBe('lens.review'));
+      });
+
+      it('is not restored once the user has opened another panel, even back on the fallback', async () => {
+        const view = await launchBeforeReviewArrives();
+        openPanel('workspace');
+        openPanel('lens.discover');
+
+        view.rerender(<App sections={sections} extraPanels={extraPanels} />);
+        await settle();
+
+        expect(activePanel()).toBe('lens.discover');
+      });
+
+      it('is not restored after an explicit mode switch', async () => {
+        const view = await launchBeforeReviewArrives();
+        await userEvent.click(modeTab(/^Lens$/));
+
+        view.rerender(<App sections={sections} extraPanels={extraPanels} />);
+        await settle();
+
+        expect(activePanel()).toBe('lens.discover');
+      });
+
+      it('restores at most once', async () => {
+        const view = await launchBeforeReviewArrives();
+        view.rerender(<App sections={sections} extraPanels={extraPanels} />);
+        await waitFor(() => expect(activePanel()).toBe('lens.review'));
+
+        // The user goes back to the fallback; a later change to the panel list
+        // must not pull them to Review a second time.
+        openPanel('lens.discover');
+        view.rerender(<App sections={sections} extraPanels={[...extraPanels]} />);
+        await settle();
+
+        expect(activePanel()).toBe('lens.discover');
+      });
     });
   });
 

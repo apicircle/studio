@@ -49,12 +49,11 @@ export const PANELS: ReadonlyArray<PanelDef> = [
  * value persisted by an earlier build round-trips instead of crashing the
  * shell. This is the list for anything user-facing.
  *
- * Frozen at module scope rather than filtered per call, because
- * `KeyboardShortcuts` indexes it inside a `useEffect` — a fresh array identity
- * per render would re-subscribe the global keydown listener every render. It is
- * also the single list `PanelTabs` and `KeyboardShortcuts` both read, which is
- * what makes "Ctrl+N always selects the Nth visible tab" true by construction
- * rather than by two places agreeing to count the same way.
+ * Frozen at module scope rather than filtered per call, so its identity never
+ * changes. `visibleTabs` builds the tab strip from it — the one list `PanelTabs`
+ * renders and `KeyboardShortcuts` indexes, which is what makes "Ctrl+N always
+ * selects the Nth visible tab" true by construction rather than by two places
+ * agreeing to count the same way.
  */
 export const VISIBLE_PANELS: ReadonlyArray<PanelDef> = Object.freeze(visibleUnderSharing(PANELS));
 

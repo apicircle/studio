@@ -4,6 +4,7 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { Compass, Server } from 'lucide-react';
 import { SectionLanding } from './SectionLanding';
 import { SectionsProvider, type SectionDef } from './sections';
+import { useWorkspaceStore } from '../store/workspaceStore';
 
 const DISMISS_KEY = 'apicircle:section-landing-done-v1';
 
@@ -44,6 +45,34 @@ describe('SectionLanding', () => {
     expect(setActiveSectionId).toHaveBeenCalledWith('lens');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(localStorage.getItem(DISMISS_KEY)).toBe('true');
+  });
+
+  it('choosing a card opens the section at its first panel', async () => {
+    // A card is a fresh start: it opens the section's first panel whichever
+    // panel the shell restored underneath the landing.
+    useWorkspaceStore.getState().setActivePanel('history');
+    renderLanding();
+    await userEvent.click(screen.getByText('Lens'));
+    expect(useWorkspaceStore.getState().activePanel).toBe('lens.discover');
+  });
+
+  it('choosing a card for a section with no panels leaves the panel alone', async () => {
+    useWorkspaceStore.getState().setActivePanel('history');
+    const setActiveSectionId = vi.fn();
+    render(
+      <SectionsProvider
+        value={{
+          sections: [studio, { ...lens, panelIds: [] }],
+          activeSectionId: 'studio',
+          setActiveSectionId,
+        }}
+      >
+        <SectionLanding />
+      </SectionsProvider>,
+    );
+    await userEvent.click(screen.getByText('Lens'));
+    expect(setActiveSectionId).toHaveBeenCalledWith('lens');
+    expect(useWorkspaceStore.getState().activePanel).toBe('history');
   });
 
   it('Skip dismisses without choosing a section', async () => {

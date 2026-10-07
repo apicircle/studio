@@ -35,6 +35,23 @@ unaffected:
   (`ExtraPanelDef`, `layout/extraPanels.tsx`), rendered through `PanelTabs` /
   `PanelContent` / `Sidebar`. Additive and a no-op when empty — Studio registers
   none, so its panels are unchanged.
+- **Sections (modes)** — the optional `App` `sections` prop (`SectionDef`,
+  `layout/sections.ts`) groups the panels into top-level modes with a first-run
+  landing and a top-bar toggle. The mode is stored per workspace, and so is the
+  panel each mode was left on: the toggle returns there, and a landing card
+  opens a mode at its first panel. A panel may be listed by more than one
+  section; it then stays in the tab strip across those modes, set off by a
+  divider, and opening it never changes the mode. `layout/visibleTabs.ts` builds
+  the strip once for `PanelTabs` and `KeyboardShortcuts`, so `Ctrl/Cmd + N`
+  selects the Nth tab on screen in every mode. Additive and a no-op when empty.
+- **Workspace status** — the optional `App` `workspaceStatus` prop is a node the
+  top bar shows beside the workspace switcher. `WorkspaceStatusChip` is exported
+  for it: the workspace's repository, working branch and unpushed-change count
+  (the Workspace page's own figure, recounted once the workspace has been still
+  for a moment), or the step still missing — no Git host, no repository, no
+  working branch, or a host the edition has locked. One click opens the
+  Workspace page. Additive and a no-op when omitted: Studio passes nothing and
+  its top bar is unchanged.
 - **Git host access** — the optional `App` `gitHostAccess` prop
   (`GitHostAccess`, `layout/gitHostAccess.ts`) names the hosts an edition
   registered that the current user may not use, plus an optional notice that

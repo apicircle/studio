@@ -24,6 +24,15 @@ import type { LucideIcon } from 'lucide-react';
  * that does and stores it as the workspace's mode, as a toggle click would. A
  * panel no section lists leaves the mode where it is, and following never
  * changes the active panel itself.
+ *
+ * A panel may be listed by more than one section. It then stays in the tab
+ * strip across those modes, set off from the rest by a divider, and opening it
+ * never moves the mode: the active section already lists it.
+ *
+ * Each section remembers the panel last open in it, per workspace. Switching to
+ * a section returns to that panel instead of the section's first one, so a trip
+ * to the other mode and back lands where it started. The first-run landing is
+ * the exception: its cards open a section at its first panel.
  */
 export interface SectionDef {
   /** Edition-namespaced id, e.g. `lens.studio` / `lens.lens`. */
@@ -37,6 +46,7 @@ export interface SectionDef {
    * section. `PanelTabs` shows only the active section's panels; a panel id not
    * listed in any section is simply hidden while that section is active.
    * Opening a panel that another section lists switches the mode to it.
+   * The first id is where the section opens until it has a remembered panel.
    */
   panelIds: readonly string[];
   /**
@@ -116,4 +126,55 @@ export function writeStoredSection(workspaceId: string, id: string): void {
   } catch {
     /* ignore */
   }
+}
+
+// ── per-section last-panel persistence ───────────────────────────────────────
+// The panel last open in a section, keyed by workspace AND section, so every
+// workspace remembers where each of its modes was left. Per-device, like the
+// mode itself.
+
+const SECTION_PANEL_STORAGE_PREFIX = 'apicircle-v2:section-panel:';
+
+function sectionPanelKey(workspaceId: string, sectionId: string): string {
+  return `${SECTION_PANEL_STORAGE_PREFIX}${workspaceId}:${sectionId}`;
+}
+
+/** The panel last open in a workspace's section, or `null` when none is stored. */
+export function readStoredSectionPanel(workspaceId: string, sectionId: string): string | null {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    return localStorage.getItem(sectionPanelKey(workspaceId, sectionId));
+  } catch {
+    return null;
+  }
+}
+
+/** Remember the panel open in a workspace's section (no-op without localStorage). */
+export function writeStoredSectionPanel(
+  workspaceId: string,
+  sectionId: string,
+  panelId: string,
+): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(sectionPanelKey(workspaceId, sectionId), panelId);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * The panel a section opens on: the remembered one while the section still
+ * lists it and the shell still shows it, else the section's first panel
+ * (`undefined` for a section with no panels). `isShown` is what keeps a stale
+ * memory from opening a panel that is no longer there, such as an edition panel
+ * the account has since lost.
+ */
+export function resolveSectionPanel(
+  section: SectionDef,
+  stored: string | null,
+  isShown: (panelId: string) => boolean,
+): string | undefined {
+  if (stored !== null && section.panelIds.includes(stored) && isShown(stored)) return stored;
+  return section.panelIds[0];
 }

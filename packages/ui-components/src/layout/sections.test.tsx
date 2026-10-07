@@ -7,7 +7,10 @@ import {
   useSections,
   resolveActiveSection,
   readStoredSection,
+  readStoredSectionPanel,
+  resolveSectionPanel,
   writeStoredSection,
+  writeStoredSectionPanel,
   type SectionDef,
   type SectionsContextValue,
 } from './sections';
@@ -117,6 +120,73 @@ describe('sections seam', () => {
       expect(readStoredSection('ws1', two)).toBe('studio');
       expect(() => writeStoredSection('ws1', 'lens')).not.toThrow();
       vi.unstubAllGlobals();
+    });
+  });
+
+  describe('readStoredSectionPanel / writeStoredSectionPanel', () => {
+    beforeEach(() => localStorage.clear());
+
+    it('returns null when nothing is stored', () => {
+      expect(readStoredSectionPanel('ws1', 'lens')).toBeNull();
+    });
+
+    it('round-trips a panel, keyed per workspace and per section', () => {
+      writeStoredSectionPanel('ws1', 'lens', 'lens.review');
+      expect(readStoredSectionPanel('ws1', 'lens')).toBe('lens.review');
+      // Another section of the same workspace, and the same section of another
+      // workspace, each keep their own.
+      expect(readStoredSectionPanel('ws1', 'studio')).toBeNull();
+      expect(readStoredSectionPanel('ws2', 'lens')).toBeNull();
+    });
+
+    it('does not share a key with the stored mode', () => {
+      writeStoredSectionPanel('ws1', 'lens', 'lens.review');
+      expect(readStoredSection('ws1', two)).toBe('studio');
+    });
+
+    it('is a safe default / no-op when localStorage is unavailable (SSR guard)', () => {
+      vi.stubGlobal('localStorage', undefined);
+      expect(readStoredSectionPanel('ws1', 'lens')).toBeNull();
+      expect(() => writeStoredSectionPanel('ws1', 'lens', 'lens.review')).not.toThrow();
+      vi.unstubAllGlobals();
+    });
+
+    it('treats a throwing localStorage as "nothing stored" and write as a no-op', () => {
+      vi.stubGlobal('localStorage', {
+        getItem: () => {
+          throw new Error('boom');
+        },
+        setItem: () => {
+          throw new Error('boom');
+        },
+      });
+      expect(readStoredSectionPanel('ws1', 'lens')).toBeNull();
+      expect(() => writeStoredSectionPanel('ws1', 'lens', 'lens.review')).not.toThrow();
+      vi.unstubAllGlobals();
+    });
+  });
+
+  describe('resolveSectionPanel', () => {
+    const shown = () => true;
+
+    it('returns the remembered panel while the section lists it and the shell shows it', () => {
+      expect(resolveSectionPanel(studio, 'workspace', shown)).toBe('workspace');
+    });
+
+    it('falls back to the first panel when nothing is remembered', () => {
+      expect(resolveSectionPanel(studio, null, shown)).toBe('editor');
+    });
+
+    it('falls back to the first panel when the section no longer lists the remembered one', () => {
+      expect(resolveSectionPanel(studio, 'lens.discover', shown)).toBe('editor');
+    });
+
+    it('falls back to the first panel when the shell no longer shows the remembered one', () => {
+      expect(resolveSectionPanel(studio, 'workspace', (id) => id !== 'workspace')).toBe('editor');
+    });
+
+    it('returns undefined for a section with no panels', () => {
+      expect(resolveSectionPanel({ ...lens, panelIds: [] }, null, shown)).toBeUndefined();
     });
   });
 });

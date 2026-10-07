@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render } from '@testing-library/react';
+import { Compass, Server } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { KeyboardShortcuts } from './KeyboardShortcuts';
+import { ExtraPanelsProvider, type ExtraPanelDef } from './extraPanels';
+import { SectionsProvider, type SectionDef } from './sections';
 
 function pressKey(opts: {
   key: string;
@@ -156,5 +159,74 @@ describe('KeyboardShortcuts', () => {
       pressKey({ key: '+', ctrl: true, shift: true });
       expect(useWorkspaceStore.getState().local!.ui.fontSizePercent).toBe(110);
     });
+  });
+});
+
+// An edition narrows the strip to one mode's tabs and adds its own. The
+// numbering has to follow what is on screen: counting the core panels alone
+// sent Ctrl+2 to Studio's Editor from a mode whose second tab was something else.
+describe('KeyboardShortcuts in an edition', () => {
+  const extraPanels: ExtraPanelDef[] = [
+    { id: 'lens.discover', label: 'Index', icon: Compass, Panel: () => null },
+    { id: 'lens.review', label: 'Review', icon: Server, Panel: () => null },
+  ];
+  const sections: SectionDef[] = [
+    { id: 'studio', label: 'Studio', icon: Compass, panelIds: ['workspace', 'editor', 'env'] },
+    {
+      id: 'lens',
+      label: 'Lens',
+      icon: Server,
+      panelIds: ['lens.discover', 'lens.review', 'workspace'],
+    },
+  ];
+
+  async function renderEdition(activeSectionId: string, registered = sections): Promise<void> {
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrate();
+    });
+    render(
+      <ExtraPanelsProvider value={extraPanels}>
+        <SectionsProvider
+          value={{ sections: registered, activeSectionId, setActiveSectionId: () => {} }}
+        >
+          <KeyboardShortcuts />
+        </SectionsProvider>
+      </ExtraPanelsProvider>,
+    );
+  }
+
+  it("Ctrl+N selects the Nth tab of the active mode's strip", async () => {
+    await renderEdition('lens');
+    // The Lens strip reads Workspace · Index · Review: core panels first.
+    pressKey({ key: '1', ctrl: true });
+    expect(useWorkspaceStore.getState().activePanel).toBe('workspace');
+    pressKey({ key: '2', ctrl: true });
+    expect(useWorkspaceStore.getState().activePanel).toBe('lens.discover');
+    pressKey({ key: '3', ctrl: true });
+    expect(useWorkspaceStore.getState().activePanel).toBe('lens.review');
+  });
+
+  it('a number past the end of the mode strip is a no-op, not a panel of the other mode', async () => {
+    await renderEdition('lens');
+    useWorkspaceStore.getState().setActivePanel('lens.review');
+    const notPrevented = pressKey({ key: '4', ctrl: true });
+    expect(notPrevented).toBe(true);
+    expect(useWorkspaceStore.getState().activePanel).toBe('lens.review');
+  });
+
+  it('follows the other mode once it is the active one', async () => {
+    await renderEdition('studio');
+    pressKey({ key: '2', ctrl: true });
+    expect(useWorkspaceStore.getState().activePanel).toBe('editor');
+    pressKey({ key: '3', ctrl: true });
+    expect(useWorkspaceStore.getState().activePanel).toBe('env');
+  });
+
+  it('counts edition panels after the core ones when no sections are registered', async () => {
+    await renderEdition('', []);
+    pressKey({ key: '8', ctrl: true });
+    expect(useWorkspaceStore.getState().activePanel).toBe('lens.discover');
+    pressKey({ key: '9', ctrl: true });
+    expect(useWorkspaceStore.getState().activePanel).toBe('lens.review');
   });
 });

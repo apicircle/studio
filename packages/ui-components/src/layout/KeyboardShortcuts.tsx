@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { FONT_SIZE_PERCENT_DEFAULT, FONT_SIZE_PERCENT_STEP } from '@apicircle/shared';
 import { useWorkspaceStore } from '../store/workspaceStore';
-import { VISIBLE_PANELS } from './panels';
+import { useVisibleTabs } from './visibleTabs';
 
 /**
  * Plan §11.2 keyboard shortcuts. Mounted once at the App root —
@@ -12,6 +12,7 @@ import { VISIBLE_PANELS } from './panels';
  * Bindings:
  *   Ctrl/Cmd + Enter            → Send the active request
  *   Ctrl/Cmd + 1..9             → Switch to the Nth tab in the top nav, left to right
+ *                                 (the tabs on screen: the active mode's, in an edition)
  *   Ctrl/Cmd + K                → Open the Vault tab in the workspace inspector dock
  *   Ctrl/Cmd + Shift + R        → Refresh the working branch (plain Ctrl+R is the browser's reload)
  *   Ctrl/Cmd + N                → New request (only when the Editor panel is active)
@@ -32,6 +33,7 @@ export function KeyboardShortcuts() {
   const refreshWorkspace = useWorkspaceStore((s) => s.refreshWorkspace);
   const addRequest = useWorkspaceStore((s) => s.addRequest);
   const setFontSizePercent = useWorkspaceStore((s) => s.setFontSizePercent);
+  const tabs = useVisibleTabs();
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -110,15 +112,15 @@ export function KeyboardShortcuts() {
 
       // Panel switch by POSITION in the tab strip. Numeric keys ignore the
       // shift modifier so both rows of the top number row work consistently
-      // across layouts. Indexing `VISIBLE_PANELS` — the same list `PanelTabs`
-      // renders — is what keeps "Ctrl+N selects the Nth tab" true when a panel
-      // is hidden, instead of leaving a shortcut pointing at a tab nobody can
-      // see and every later one off by one.
+      // across layouts. Indexing the list `PanelTabs` renders is what keeps
+      // "Ctrl+N selects the Nth tab" true when a panel is hidden or an edition
+      // is showing one mode's tabs, instead of leaving a shortcut pointing at a
+      // tab nobody can see and every later one off by one.
       if (e.key >= '1' && e.key <= '9') {
         const index = Number(e.key) - 1;
-        if (index < VISIBLE_PANELS.length) {
+        if (index < tabs.length) {
           e.preventDefault();
-          setActivePanel(VISIBLE_PANELS[index].id);
+          setActivePanel(tabs[index].id);
         }
       }
     };
@@ -131,6 +133,7 @@ export function KeyboardShortcuts() {
     refreshWorkspace,
     addRequest,
     setFontSizePercent,
+    tabs,
   ]);
 
   return null;

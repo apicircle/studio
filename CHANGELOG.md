@@ -54,6 +54,13 @@
 
 ### Fixed
 
+- **`Ctrl/Cmd + 1`–`9` follows the tab strip in an edition.** The shortcut
+  counted Studio's core panels whatever the strip showed, so in an edition's
+  own mode `Ctrl/Cmd + 2` opened Studio's Editor instead of that mode's second
+  tab, and an edition's panels could not be reached by number at all. The
+  shortcut and the strip now read one list (`layout/visibleTabs.ts`). Studio
+  standalone numbers its seven tabs exactly as before.
+
 - **Refresh no longer reports a phantom change for credentials Git never
   holds.** A push blanks auth credentials (and now custom-header values and URL
   passwords), so the remote never has them — yet Refresh compared the raw local
@@ -141,7 +148,36 @@
   The edition that registered a host enforces its use, because its provider
   factory refuses a locked host.
 
+- **An edition can show the workspace's Git status in the top bar:
+  `<App workspaceStatus>`.** A new optional `App` prop takes a node and renders
+  it beside the workspace switcher. `WorkspaceStatusChip` is exported for it.
+  - **On a working branch** it names the repository and the branch, and counts
+    the changes waiting to be pushed. The count is the Workspace page's own
+    figure, taken once the workspace has been still for a moment, so typing
+    never waits on it.
+  - **Before that** it names the step still missing: no Git host connected, no
+    repository chosen, no working branch, or a host the edition has locked.
+  - **One click opens the Workspace page** from any panel.
+  - **Omitting the prop changes nothing.** Studio passes none, so its own top
+    bar is unchanged.
+
+- **A panel can belong to more than one section.** An edition that lists the
+  same panel in two `sections` keeps that tab in the strip in both modes, in the
+  same position, with a divider after it. Opening it leaves the mode where it
+  is. Studio registers no sections, so its strip is unchanged.
+
 ### Changed
+
+- **Switching modes returns to the panel each mode was left on** (editions with
+  `sections` only). The toggle used to open a mode's first panel every time, so
+  a trip to the other mode and back cost a second click to find your place. Each
+  mode now remembers its panel per workspace, across launches. A mode that has
+  not been used yet, and one whose remembered panel is no longer shown, still
+  opens at its first panel. So does a first-run landing card. Clicking the mode
+  that is already active now leaves the panel alone. A remembered panel that an
+  edition contributes only after launch (once its account has loaded) is opened
+  when it arrives, unless the user has moved in the meantime. Studio standalone
+  has no modes and is unaffected.
 
 - **`dereferenceInternal` returns shared objects.** Every use of a `$ref` is
   now the same resolved object (the result is a DAG, still without cycles), so a
