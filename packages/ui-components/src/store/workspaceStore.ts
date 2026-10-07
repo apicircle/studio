@@ -253,6 +253,7 @@ import { recomputeUsedIn } from './usedInAggregator';
 import { recomputeAssetUsage } from './assetUsageAggregator';
 import { deleteSecretPayload, getSecretPayload, putSecretPayload } from '../persistence/secrets';
 import { assertSecretsProtected } from '../persistence/platformSecretGate';
+import { PANELS } from '../layout/panels';
 import { isWorkspaceSharingEnabled } from '../layout/workspaceSharing';
 
 const attachmentResolver: AttachmentResolver = async (slotId) => {
@@ -515,20 +516,15 @@ function isGlobalFileSlot(synced: WorkspaceSynced, slotId: string): boolean {
 
 const PANEL_STORAGE_KEY = 'apicircle-v2:active-panel';
 // Every panel id that may legitimately appear in localStorage — NOT the list
-// of panels this build shows. 'link-workspace' stays here on purpose even
-// though workspace sharing is off: this answers "is the stored value a real
-// panel id?", and dropping it would make `readStoredPanel` silently rewrite a
-// value written by a sharing-enabled build. `App` reconciles a restored id
-// that isn't currently visible; see `VISIBLE_PANELS` in `layout/panels.ts`.
-const VALID_PANELS: PanelId[] = [
-  'workspace',
-  'link-workspace',
-  'editor',
-  'env',
-  'execution',
-  'history',
-  'help',
-];
+// of panels this build shows. Read from the `PANELS` registry rather than
+// listed again here: a hand-kept copy went without 'mocks', so a user whose
+// last tab was Mocks relaunched on the Editor. It is `PANELS` and not
+// `VISIBLE_PANELS` on purpose — 'link-workspace' stays valid even though
+// workspace sharing is off: this answers "is the stored value a real panel
+// id?", and dropping it would make `readStoredPanel` silently rewrite a value
+// written by a sharing-enabled build. `App` reconciles a restored id that
+// isn't currently visible; see `VISIBLE_PANELS` in `layout/panels.ts`.
+const VALID_PANELS: PanelId[] = PANELS.map((panel) => panel.id);
 // Cap on the number of request runs kept in local history. Older runs get
 // dropped — execution history is a circular buffer to keep IDB writes cheap.
 const MAX_REQUEST_RUNS = 500;

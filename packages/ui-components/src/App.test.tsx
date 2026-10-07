@@ -90,6 +90,16 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: 'Link Workspace' })).not.toBeInTheDocument();
   });
 
+  it('keeps a restored panel this build does show', async () => {
+    // The other half of the reconcile: only a panel with no tab is moved. A
+    // user whose last tab was Mocks relaunches on Mocks, not on the Editor.
+    useWorkspaceStore.setState({ activePanel: 'mocks' });
+    render(<App />);
+    await waitFor(() => screen.getByText('API Circle Studio'));
+    expect(useWorkspaceStore.getState().activePanel).toBe('mocks');
+    expect(screen.getByRole('button', { name: /^Mocks$/ })).toHaveAttribute('aria-current', 'page');
+  });
+
   it('leaves an edition-contributed panel id alone', async () => {
     // `lens.discover` is not in VISIBLE_PANELS either, but it is not a CORE
     // panel — stomping it would break the edition whose section owns it. That

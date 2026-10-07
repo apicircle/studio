@@ -126,6 +126,12 @@
   Nothing switches, nothing is written, and a locked workspace is still never
   deleted. `unlockedWorkspaceIds` takes the open workspace's id as a new
   optional third argument; without it, the result is unchanged.
+- **Relaunching or reloading on the Mocks tab reopens Mocks.** The app
+  remembers the panel you were on and reopens it, but the list of panel ids it
+  accepted back was kept by hand and never gained Mocks. The id was stored, then
+  rejected at the next start, and the app opened on the Editor. The list is now
+  read from the panel registry (`PANELS`), so a panel added later is remembered
+  from the day it is added. Every other tab already reopened correctly.
 
 ### Added
 

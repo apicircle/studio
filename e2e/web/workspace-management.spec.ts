@@ -93,6 +93,30 @@ test.describe('Workspace management', () => {
     },
   );
 
+  test(
+    tc(
+      id('Refresh :: Browser refresh preserves workspace state'),
+      'page reload reopens the panel that was open',
+    ),
+    async ({ app }) => {
+      // Mocks, because it is the panel a reload used to drop: the stored id
+      // was written, then rejected on the way back in, and the app reopened on
+      // the Editor.
+      const mocksTab = app.getByRole('button', { name: 'Mocks', exact: true });
+      await mocksTab.click();
+      await expect(mocksTab).toHaveAttribute('aria-current', 'page');
+
+      await app.reload();
+      await expect(app.getByText('API Circle Studio', { exact: true })).toBeVisible();
+
+      await expect(mocksTab).toHaveAttribute('aria-current', 'page');
+      await expect(app.getByRole('button', { name: 'Editor', exact: true })).not.toHaveAttribute(
+        'aria-current',
+        'page',
+      );
+    },
+  );
+
   test(tc(id('Offline'), 'context.setOffline propagates to app'), async ({ app }) => {
     await app.context().setOffline(true);
     await app.waitForTimeout(150);
