@@ -2,22 +2,37 @@ import { GitHubError, type GitProvider } from '@apicircle/git';
 import type { RetiredBranch, WorkingBranch } from '@apicircle/shared';
 
 /**
- * Extract the PR number from a GitHub PR HTML URL like
- * `https://github.com/owner/name/pull/42`. Returns `null` for any URL
- * that doesn't match the standard pattern (forked clones, stale state,
- * malformed input). The caller decides whether to skip the PR-state probe
- * or fall back to listing PRs by branch name when this returns `null`.
+ * Extract the PR number from a pull-request page URL, on any host an edition
+ * can register:
+ *   - GitHub        `https://github.com/owner/name/pull/42`
+ *   - GitLab        `https://gitlab.com/group/name/-/merge_requests/42`
+ *   - Bitbucket     `https://bitbucket.org/ws/name/pull-requests/42`
+ *   - Azure DevOps  `https://dev.azure.com/org/proj/_git/name/pullrequest/42`
+ * Returns `null` for any URL that doesn't match (stale state, malformed
+ * input). Only GitHub's spelling used to be read, so a merged GitLab,
+ * Bitbucket or Azure PR was never detected.
  *
- * The match anchors on `/pull/<digits>` and ignores anything after — PR
- * URLs sometimes carry `/files`, `/commits`, fragments etc., and we don't
- * want those to stop us from finding the number.
+ * The match anchors on the number and ignores anything after — PR URLs
+ * sometimes carry `/files`, `/commits`, fragments etc., and we don't want
+ * those to stop us from finding the number.
  */
 export function parsePrNumberFromUrl(url: string | null | undefined): number | null {
   if (!url) return null;
-  const match = url.match(/\/pull\/(\d+)(?:\/|#|\?|$)/);
+  const match = url.match(
+    /\/(?:pull|-\/merge_requests|pull-requests|pullrequest)\/(\d+)(?:\/|#|\?|$)/,
+  );
   if (!match) return null;
   const n = Number.parseInt(match[1], 10);
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * The number of the branch's open pull request: the one recorded when it was
+ * created, else the one in its page URL (a PR opened before the number was
+ * recorded).
+ */
+export function openPrNumberOf(branch: WorkingBranch): number | null {
+  return branch.openPrNumber ?? parsePrNumberFromUrl(branch.openPrUrl);
 }
 
 /**
@@ -89,8 +104,7 @@ async function probePrState(
   token: string,
   branch: WorkingBranch,
 ): Promise<{ merged: boolean; state: 'open' | 'closed' } | null> {
-  if (!branch.openPrUrl) return null;
-  const prNumber = parsePrNumberFromUrl(branch.openPrUrl);
+  const prNumber = openPrNumberOf(branch);
   if (prNumber === null) return null;
   try {
     const pr = await client.getPullRequest(token, branch.repoOwner, branch.repoName, prNumber);
@@ -121,7 +135,7 @@ export function decideRetirement(
   probe: BranchProbeResult,
   now: Date = new Date(),
 ): RetiredBranch | null {
-  const prNumber = parsePrNumberFromUrl(branch.openPrUrl);
+  const prNumber = openPrNumberOf(branch);
   if (probe.prState?.merged === true) {
     return {
       branchName: branch.name,
@@ -141,4 +155,22 @@ export function decideRetirement(
     };
   }
   return null;
+}
+
+/**
+ * The open pull request was closed without being merged: the record of it to
+ * keep (so the card can say so and offer a new one), or `null` when it wasn't.
+ *
+ * The branch itself carries on — closing without merging is a normal state,
+ * and the user may push fixes and open a new PR — but it no longer HAS an
+ * open PR. Keeping `openPrUrl` set would hide "Create PR" for good.
+ */
+export function decideClosedPullRequest(
+  branch: WorkingBranch,
+  probe: BranchProbeResult,
+  now: Date = new Date(),
+): NonNullable<WorkingBranch['closedPr']> | null {
+  if (probe.prState === null || probe.prState.state !== 'closed' || probe.prState.merged)
+    return null;
+  return { number: openPrNumberOf(branch), url: branch.openPrUrl, closedAt: now.toISOString() };
 }

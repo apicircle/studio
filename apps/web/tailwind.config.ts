@@ -24,6 +24,14 @@ const config: Config = {
         warning: 'rgb(var(--warning) / <alpha-value>)',
         danger: 'rgb(var(--danger) / <alpha-value>)',
         info: 'rgb(var(--info) / <alpha-value>)',
+        // Readable-on-its-own-tint foregrounds, generated per theme by
+        // scripts/gen-status-fg.mjs. Use `text-<tone>-fg` for tone-coloured text;
+        // the bare tone stays for borders, fills and icons.
+        'accent-fg': 'rgb(var(--accent-fg) / <alpha-value>)',
+        'success-fg': 'rgb(var(--success-fg) / <alpha-value>)',
+        'warning-fg': 'rgb(var(--warning-fg) / <alpha-value>)',
+        'danger-fg': 'rgb(var(--danger-fg) / <alpha-value>)',
+        'info-fg': 'rgb(var(--info-fg) / <alpha-value>)',
         purple: 'rgb(var(--purple) / <alpha-value>)',
         blue: 'rgb(var(--blue) / <alpha-value>)',
         green: 'rgb(var(--green) / <alpha-value>)',

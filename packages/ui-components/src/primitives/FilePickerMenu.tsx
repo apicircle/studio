@@ -3,6 +3,8 @@ import type { ReactNode } from 'react';
 import { ChevronDown, FileArchive, Upload } from 'lucide-react';
 import type { GlobalFileAsset } from '@apicircle/shared';
 import { cn } from './cn';
+import { FLOATING_Z, useAnchoredPosition } from './floating';
+import { FloatingPortal } from './FloatingPortal';
 
 // Consolidated file-picker affordance used by the form-data row, binary
 // body, and mock-response binary editors. Replaces the older pattern of
@@ -27,7 +29,11 @@ import { cn } from './cn';
 //     each entry calls `onPickLibrary(file.id)`.
 //
 // Keyboard model mirrors `KebabMenu`: Enter / Space / Arrow Down open;
-// Escape / outside-click close; Arrow Up/Down cycle through items.
+// Escape / outside-click close; Arrow Up/Down cycle through items; Tab closes
+// and moves on from the trigger.
+//
+// Like `KebabMenu`, the menu renders on the floating layer (`./floating`), so
+// the editor or dock it sits in can't clip it.
 
 export interface FilePickerMenuProps {
   libraryFiles: GlobalFileAsset[];
@@ -78,6 +84,21 @@ export function FilePickerMenu({
   // so library entries start at index 1.
   const itemCount = 1 + libraryFiles.length;
 
+  const placement = useAnchoredPosition(triggerRef, menuRef, {
+    open,
+    side: 'bottom',
+    align: 'start',
+    capToRoom: true,
+    maxHeight: 300,
+    // A full-width trigger IS the field: the options line up with it.
+    matchAnchorWidth: fullWidth ? 'exact' : undefined,
+  });
+
+  // A menu whose trigger scrolled out of view would float detached from it.
+  useEffect(() => {
+    if (open && placement.anchorHidden) setOpen(false);
+  }, [open, placement.anchorHidden]);
+
   useEffect(() => {
     if (!open) return;
     const onPointer = (e: PointerEvent) => {
@@ -112,6 +133,14 @@ export function FilePickerMenu({
     if (e.key === 'Escape') {
       e.preventDefault();
       closeAndReturnFocus();
+      return;
+    }
+    if (e.key === 'Tab') {
+      // The menu sits outside the page's tab order (on the floating layer):
+      // hand focus back to the trigger so Tab carries on from its place.
+      if (e.shiftKey) e.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
       return;
     }
     if (e.key === 'ArrowDown') {
@@ -210,66 +239,74 @@ export function FilePickerMenu({
         )}
       </button>
       {open && (
-        <div
-          id={menuId}
-          ref={menuRef}
-          role="menu"
-          aria-label={ariaLabel}
-          tabIndex={-1}
-          onKeyDown={onMenuKey}
-          className={cn(
-            'absolute left-0 top-full z-30 mt-1 max-h-[300px] overflow-auto rounded-sm border border-border bg-card shadow-lg',
-            // When the trigger is full-width, the menu matches the
-            // trigger's width so options align with the field. When
-            // content-sized, fall back to the comfortable default.
-            fullWidth ? 'w-full' : 'min-w-[220px]',
-          )}
-        >
-          {/* Upload new file — always available. */}
-          <button
-            ref={(el) => {
-              itemRefs.current[0] = el;
-            }}
-            type="button"
-            role="menuitem"
-            tabIndex={activeIndex === 0 ? 0 : -1}
-            onClick={() => {
-              setOpen(false);
-              onPickLocal();
-            }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-text-primary hover:bg-surface focus:bg-surface focus:outline-none focus:ring-1 focus:ring-accent/40"
+        <FloatingPortal>
+          <div
+            id={menuId}
+            ref={menuRef}
+            role="menu"
+            aria-label={ariaLabel}
+            tabIndex={-1}
+            onKeyDown={onMenuKey}
+            data-side={placement.side}
+            style={placement.style}
+            className={cn(
+              'overflow-auto rounded-sm border border-border bg-card shadow-lg',
+              FLOATING_Z.menu,
+              // Full width takes the trigger's width (placement sets it); a
+              // content-sized trigger falls back to the comfortable default.
+              !fullWidth && 'min-w-[220px]',
+            )}
           >
-            <Upload size={12} aria-hidden="true" className="shrink-0 text-text-faint" />
-            Upload new file…
-          </button>
-          {libraryFiles.length > 0 && (
-            <>
-              <div className="border-t border-border-subtle px-3 pt-2 pb-1 text-[0.625rem] uppercase tracking-wider text-text-faint">
-                From library
-              </div>
-              {libraryFiles.map((file, i) => (
-                <button
-                  key={file.id}
-                  ref={(el) => {
-                    itemRefs.current[i + 1] = el;
-                  }}
-                  type="button"
-                  role="menuitem"
-                  tabIndex={activeIndex === i + 1 ? 0 : -1}
-                  onClick={() => {
-                    setOpen(false);
-                    onPickLibrary(file.id);
-                  }}
-                  title={`${file.filename} · ${file.mimeType}`}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-text-primary hover:bg-surface focus:bg-surface focus:outline-none focus:ring-1 focus:ring-accent/40"
-                >
-                  <FileArchive size={12} aria-hidden="true" className="shrink-0 text-text-faint" />
-                  <span className="flex-1 truncate">{file.name}</span>
-                </button>
-              ))}
-            </>
-          )}
-        </div>
+            {/* Upload new file — always available. */}
+            <button
+              ref={(el) => {
+                itemRefs.current[0] = el;
+              }}
+              type="button"
+              role="menuitem"
+              tabIndex={activeIndex === 0 ? 0 : -1}
+              onClick={() => {
+                setOpen(false);
+                onPickLocal();
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-text-primary hover:bg-surface focus:bg-surface focus:outline-none focus:ring-1 focus:ring-accent/40"
+            >
+              <Upload size={12} aria-hidden="true" className="shrink-0 text-text-faint" />
+              Upload new file…
+            </button>
+            {libraryFiles.length > 0 && (
+              <>
+                <div className="border-t border-border-subtle px-3 pt-2 pb-1 text-[0.625rem] uppercase tracking-wider text-text-faint">
+                  From library
+                </div>
+                {libraryFiles.map((file, i) => (
+                  <button
+                    key={file.id}
+                    ref={(el) => {
+                      itemRefs.current[i + 1] = el;
+                    }}
+                    type="button"
+                    role="menuitem"
+                    tabIndex={activeIndex === i + 1 ? 0 : -1}
+                    onClick={() => {
+                      setOpen(false);
+                      onPickLibrary(file.id);
+                    }}
+                    title={`${file.filename} · ${file.mimeType}`}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-text-primary hover:bg-surface focus:bg-surface focus:outline-none focus:ring-1 focus:ring-accent/40"
+                  >
+                    <FileArchive
+                      size={12}
+                      aria-hidden="true"
+                      className="shrink-0 text-text-faint"
+                    />
+                    <span className="flex-1 truncate">{file.name}</span>
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+        </FloatingPortal>
       )}
     </div>
   );

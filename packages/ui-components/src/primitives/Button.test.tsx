@@ -38,6 +38,16 @@ describe('Button', () => {
     expect(btn.className).toMatch(/h-7/);
   });
 
+  // A tinted button is tone-coloured text on a tint of the same tone, which the
+  // raw tone fails to read on in many themes — the label takes the `-fg` twin.
+  it.each([
+    ['primary', 'text-accent-fg'],
+    ['danger', 'text-danger-fg'],
+  ] as const)('labels the %s variant in its readable foreground', (variant, cls) => {
+    render(<Button variant={variant}>Go</Button>);
+    expect(screen.getByRole('button', { name: 'Go' })).toHaveClass(cls);
+  });
+
   it('renders left and right icons around the label', () => {
     render(
       <Button leftIcon={<span data-testid="l" />} rightIcon={<span data-testid="r" />}>

@@ -34,7 +34,7 @@ export function TopBar({
     <div className="flex h-12 shrink-0 items-center justify-between border-b border-border-subtle bg-card px-3">
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
-          <AppIcon size={24} className="text-text-secondary" />
+          <AppIcon size={24} className="text-text-primary" />
           <div className="flex flex-col gap-0.5">
             <span className="text-sm font-medium leading-none text-text-primary">{name}</span>
             {tagline !== null ? (

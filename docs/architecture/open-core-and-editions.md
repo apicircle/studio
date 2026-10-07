@@ -61,6 +61,17 @@ unaffected:
   background. The edition that registered the host enforces its use, because its
   provider factory refuses a locked host. Additive and a no-op when omitted:
   open core registers GitHub alone, and GitHub is never locked.
+- **Branch change sources** — the optional `App` `branchChangeSources` prop
+  (`BranchChangeSource[]`, `layout/branchChanges.ts`) lets an edition that
+  changes OTHER files on the working branch — the Lens Code editor saves code
+  into a local clone — join Studio's review, push and pull request. A source
+  reports a live summary, renders its own section of the changes preview,
+  pushes its part after Studio's commit (`pushBranchChanges` in the store:
+  Studio first, so its secret scan and divergence check run before anything is
+  written; then each source; then `recordBranchPush`, which adopts the new head
+  and refreshes) and adds its part to the PR description. Additive and a no-op
+  when omitted: with no source the working-branch card is byte-identical
+  (pinned by `BranchCardGolden.test.tsx`).
 - **Workspace access** — the optional `App` `workspaceAccess` prop
   (`WorkspaceAccess`, `layout/workspaceAccess.ts`) caps how many workspaces stay
   open; those beyond the cap are locked, never deleted. The workspace that is

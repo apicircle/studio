@@ -13,16 +13,17 @@ describe('Badge', () => {
     expect(screen.getByText('n')).toHaveClass('text-text-muted');
   });
 
-  it.each([
-    ['accent', 'text-accent'],
-    ['success', 'text-success'],
-    ['warning', 'text-warning'],
-    ['danger', 'text-danger'],
-    ['info', 'text-info'],
-  ] as const)('applies the %s tone', (tone, cls) => {
-    render(<Badge tone={tone}>{tone}</Badge>);
-    expect(screen.getByText(tone)).toHaveClass(cls);
-  });
+  // The tint and border are the tone; the text is its readable `-fg` twin, since
+  // the raw tone on its own tint fails contrast in most light themes.
+  it.each(['accent', 'success', 'warning', 'danger', 'info'] as const)(
+    'applies the %s tone, with its readable foreground for the text',
+    (tone) => {
+      render(<Badge tone={tone}>{tone}</Badge>);
+      const el = screen.getByText(tone);
+      expect(el).toHaveClass(`text-${tone}-fg`, `bg-${tone}/10`, `border-${tone}/40`);
+      expect(el).not.toHaveClass(`text-${tone}`);
+    },
+  );
 
   it('adds uppercase micro-caps styling when asked', () => {
     render(<Badge uppercase>get</Badge>);

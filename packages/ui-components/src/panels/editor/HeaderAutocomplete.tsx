@@ -6,6 +6,10 @@
 // rendered as an inline popover that opens when the value input is focused
 // and closes on blur. Replaces the older chevron-driven popover so the UX
 // matches the key column.
+//
+// Both lists are drawn on the floating layer (`primitives/floating`): a header
+// row sits in a scrolling table inside a resizable panel, and a list drawn
+// inside the row was cut off at the bottom of whichever of those clipped first.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Lock, Sparkles } from 'lucide-react';
@@ -16,6 +20,7 @@ import {
   type HeaderSuggestionMode,
 } from '@apicircle/core';
 import { cn } from '../../primitives/cn';
+import { AnchoredPopover } from '../../primitives/AnchoredPopover';
 
 interface HeaderKeyAutocompleteProps {
   value: string;
@@ -42,6 +47,7 @@ export function HeaderKeyAutocomplete({
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   // When the input is empty (focused but un-typed), surface the full
@@ -64,7 +70,10 @@ export function HeaderKeyAutocomplete({
   useEffect(() => {
     if (!visible) return;
     const onDoc = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+      // The list is portalled, so it is not inside the wrapper in the DOM.
+      const target = e.target as Node;
+      if (wrapRef.current?.contains(target) || listRef.current?.contains(target)) return;
+      setOpen(false);
     };
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
@@ -117,13 +126,16 @@ export function HeaderKeyAutocomplete({
         spellCheck={false}
         className="h-8 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
       />
-      {visible && (
-        <ul
-          id={`${ariaLabel}-listbox`}
-          role="listbox"
-          aria-label="Header suggestions"
-          className="absolute left-0 top-8 z-30 max-h-64 w-full min-w-[260px] overflow-y-auto rounded-sm border border-border bg-card shadow-lg"
-        >
+      <AnchoredPopover
+        ref={listRef}
+        open={visible}
+        anchorRef={wrapRef}
+        matchAnchorWidth="min"
+        maxHeight={256}
+        onAnchorHidden={() => setOpen(false)}
+        className="min-w-[260px] overflow-y-auto rounded-sm border border-border bg-card shadow-lg"
+      >
+        <ul id={`${ariaLabel}-listbox`} role="listbox" aria-label="Header suggestions">
           {matches.map((entry, i) => (
             <li key={entry.name}>
               <button
@@ -163,7 +175,7 @@ export function HeaderKeyAutocomplete({
             </li>
           ))}
         </ul>
-      )}
+      </AnchoredPopover>
     </div>
   );
 }
@@ -203,6 +215,10 @@ export function HeaderValueRecommendations({
 }: HeaderValueRecommendationsProps) {
   const entry = getHeaderEntry(headerKey);
   const values = useMemo(() => entry?.values ?? [], [entry]);
+  // The list opens under the box its caller put it in — the `relative` wrapper
+  // around the value input — so that box is the anchor. A marker element finds
+  // it, which keeps the anchor out of every caller's props.
+  const anchorRef = useRef<HTMLElement | null>(null);
 
   const filtered = useMemo(() => {
     if (values.length === 0) return [];
@@ -213,36 +229,46 @@ export function HeaderValueRecommendations({
     return values.filter((v) => v.toLowerCase().includes(prefix));
   }, [values, currentValue]);
 
-  if (!isFocused) return null;
-  if (values.length === 0) return null;
-  if (filtered.length === 0) return null;
   // Yield to the `{{var}}` autocomplete in VariableAutocompleteField when
   // the user is mid-token — only one popover should show at a time.
-  if (hasOpenVariableToken(currentValue)) return null;
+  const open =
+    isFocused && values.length > 0 && filtered.length > 0 && !hasOpenVariableToken(currentValue);
 
   return (
-    <ul
-      role="listbox"
-      aria-label={ariaLabel}
-      className="absolute left-0 top-full z-30 mt-0.5 flex max-h-56 w-full min-w-[180px] flex-col overflow-y-auto rounded-sm border border-border bg-card shadow-lg"
-    >
-      {filtered.map((v) => (
-        <li key={v}>
-          <button
-            type="button"
-            // onMouseDown + preventDefault keeps focus on the input so the
-            // parent's onBlur (which closes this popover) doesn't fire
-            // before the click registers.
-            onMouseDown={(e) => {
-              e.preventDefault();
-              onPick(v);
-            }}
-            className="block w-full px-2 py-1 text-left text-[0.6875rem] text-text-muted hover:bg-surface hover:text-text-primary"
-          >
-            {v}
-          </button>
-        </li>
-      ))}
-    </ul>
+    <>
+      <span
+        hidden
+        ref={(el) => {
+          anchorRef.current = el?.parentElement ?? null;
+        }}
+      />
+      <AnchoredPopover
+        open={open}
+        anchorRef={anchorRef}
+        matchAnchorWidth="min"
+        maxHeight={224}
+        className="min-w-[180px] overflow-y-auto rounded-sm border border-border bg-card shadow-lg"
+      >
+        <ul role="listbox" aria-label={ariaLabel} className="flex flex-col">
+          {filtered.map((v) => (
+            <li key={v}>
+              <button
+                type="button"
+                // onMouseDown + preventDefault keeps focus on the input so the
+                // parent's onBlur (which closes this popover) doesn't fire
+                // before the click registers.
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onPick(v);
+                }}
+                className="block w-full px-2 py-1 text-left text-[0.6875rem] text-text-muted hover:bg-surface hover:text-text-primary"
+              >
+                {v}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </AnchoredPopover>
+    </>
   );
 }

@@ -185,7 +185,9 @@ The synced half travels through Git; the local half does not. On a second machin
 
 ## When a branch ends
 
-If the branch's PR is merged or the branch is deleted on GitHub, Refresh retires it and shows a banner ("PR #12 was merged"). Create a fresh working branch to keep going.`,
+If the branch's PR is merged or the branch is deleted on GitHub, Refresh retires it and shows a banner ("PR #12 was merged"). Create a fresh working branch to keep going.
+
+If the PR is closed without merging, the branch keeps going: the card says the PR was closed, and **Create PR** is offered again for when you are ready to open a new one.`,
     keywords: [
       'github',
       'pat',
@@ -1321,6 +1323,10 @@ The first-pull banner: the branch has a \`workspace.json\` you have never pulled
 ## "Branch was retired" / "PR #N was merged"
 
 Refresh found the working branch merged or deleted on GitHub. Create a fresh working branch to continue.
+
+## "PR #N was closed without merging"
+
+Refresh found the branch's pull request closed without being merged. The branch is still yours: push more changes and use **Create PR** to open a new one, or **Dismiss** the notice.
 
 ## "Attachment too large"
 

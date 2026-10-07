@@ -132,8 +132,112 @@
   rejected at the next start, and the app opened on the Editor. The list is now
   read from the panel registry (`PANELS`), so a panel added later is remembered
   from the day it is added. Every other tab already reopened correctly.
+- **Row menus and file pickers are no longer cut off by the panel they open
+  in.** The kebab menus in the Editor, Environments, Execution and Mocks
+  sidebars, and the file picker in the form-data, binary-body and mock-response
+  editors, opened inside their panel's box, so a scrolling sidebar or editor
+  clipped them — a row near the bottom showed half a menu. They now open on the
+  floating layer (below): under the trigger as before, above it when there is
+  no room below, slid back on screen at an edge, and scrolling inside when the
+  window is short. Tab now closes the menu and carries on from its trigger
+  (it used to leave the menu open behind), and a menu whose trigger scrolls out
+  of view closes.
+- **Variable and header suggestions are no longer cut off either.** The `{{`
+  variable list (URL, params, headers, anywhere `VariableAutocompleteField` is
+  used) and the Headers tab's two lists — header names, and the common values
+  for a header — were drawn inside their row, so the scrolling table or the
+  panel around it clipped them. They open on the floating layer too, as wide as
+  the field at least, and scroll inside when the window is short. The variable
+  list now closes when its field loses focus (it used to stay open over whatever
+  you went to); picking an option still keeps focus in the field. The
+  Environments panel's secret-key picker moved with them: it was cut off for
+  the last variables in a long list. New primitive: `AnchoredPopover`, for
+  anything that opens next to a control and is not a kebab menu or a tooltip.
+- **Editor hover cards, suggestions and the find box are no longer cut off by a
+  short editor.** Monaco drew them inside the editor's own box, which clips;
+  in a one-line body or a variable value they lost everything below the first
+  line. They are positioned against the window now (`fixedOverflowWidgets`).
+- **The arrow keys move through a kebab menu again.** Every arrow key snapped
+  focus back to the first item: the effect that focuses it when the menu opens
+  ran again on every keystroke.
+- **A pull request closed without merging no longer leaves "PR open" on the
+  working branch for good.** Refresh only ever looked for a merge, so a closed
+  PR kept its link on the card and Create PR stayed hidden. The card now says
+  the PR was closed (with a link, and Dismiss) and offers Create PR again; the
+  branch itself keeps going.
+- **Push no longer stays "diverged" on a branch that has no workspace yet.**
+  When something other than Studio pushed to a working branch that holds no
+  `workspace.json`, Refresh returned before adopting the branch's new head, so
+  every push — and every Refresh after it — was refused as diverged. Refresh
+  now adopts the head on that path too.
+- **A pull request is remembered by its number.** The PR number is recorded when
+  the PR is opened, so the merge check no longer depends on reading it back out
+  of a github.com URL: a merged PR on a GitLab, Bitbucket or Azure DevOps host an
+  edition registers is now detected, and a host that answers with no page URL
+  no longer makes the card forget the PR. A PR opened before this keeps working
+  from its URL, now read in every host's spelling.
 
 ### Added
+
+- **A floating layer for popovers: `useAnchoredPosition`, `FloatingPortal`,
+  `useDismissableLayer` and `FLOATING_Z`.** A popover positioned inside its
+  trigger's box is clipped by any scrolling or `overflow-hidden` ancestor, and
+  no z-index escapes that. The layer renders into the document body and places
+  the popover from its trigger's position on screen: on the preferred side,
+  flipped to the other side when that one has no room, slid along the trigger
+  at a screen edge, optionally capped to the room it has, and tracked through
+  scrolling and resizing. `useDismissableLayer` closes a popover on a press
+  outside it, counting a press inside a portalled child as inside.
+  - **`Tooltip` renders on it.** Same props — `side` and `align` are now
+    preferences. The tooltip node carries `data-side` / `data-align` (where it
+    actually opened) and its trigger's wrapper `data-tooltip-anchor` (the
+    tooltip's id), since the two are no longer DOM siblings. Studio itself
+    renders no `Tooltip`; editions that do get tooltips nothing can cut off.
+  - **The kebab menu and the file picker use it** (see Fixed).
+
+- **Readable tone-coloured text in every theme: the `-fg` tokens.** A status
+  chip, a tinted button and the active tab are tone-coloured text on a tint of
+  the same tone, and the raw tone is not readable there in many themes — amber
+  on a pale amber tint measures under 2:1 on several light ones, and the active
+  tab failed WCAG AA on 37 of the 60. Each theme now carries
+  `--accent-fg` `--success-fg` `--warning-fg` `--danger-fg` `--info-fg`
+  (`text-<tone>-fg`): the tone itself where that already meets AA (4.5:1),
+  otherwise the tone mixed toward the theme's `text-primary` by the least that
+  gets there, on the bare surfaces and on the 10% and 15% tints. They are
+  generated — `node scripts/gen-status-fg.mjs`, with `--check` — and
+  `theme-contrast.test.ts` fails when a theme is added or edited without
+  running it. `Badge`, `Button` (primary, danger) and `Tabs` (the active pill
+  and its count) use them for their text; borders and tints keep the tone.
+- **`Z`, one stacking scale** (`primitives/floating.ts`): pane-sticky, panel
+  card, panel popover, dock, banner, modal, menu, toast, tooltip. The dock takes
+  its level from it; `FLOATING_Z` is now two of its entries.
+- **`Tooltip` explains a disabled control, and takes `disabled` and
+  `className`.** Hover and focus are read on the wrapper, so a tooltip around a
+  disabled button opens — the wrapper takes the pointer and a tab stop in the
+  button's place, and the button is described by the tooltip at all times. A
+  trigger that opens a popup (`aria-haspopup`) keeps its tooltip shut while the
+  popup is open (`aria-expanded`), so a hint no longer covers the menu it
+  opened; a row that only expands in place keeps its hint. `disabled` keeps the tooltip
+  shut and unmounted for a hint that only applies sometimes (the full text of a
+  label that is not cut short); `className` styles the wrapper, for a trigger
+  that has to shrink or grow in its row.
+
+- **An edition can join the working branch's review, push and pull request:
+  `<App branchChangeSources>`.** An edition that changes other files on the
+  working branch — the Lens Code editor saves code into a local clone — passes
+  sources (`BranchChangeSource`, `layout/branchChanges.ts`). Each one adds its
+  own section to the unpushed-changes preview (beside "Studio changes", which
+  gains an "Include Studio changes" choice), its count to the strip, its part to
+  Push and its part to the pull-request description. One Push sends the whole
+  branch through the new store action `pushBranchChanges`: Studio's commit first
+  — its secret scan and divergence check still run before anything is written —
+  then each source, then `recordBranchPush`, which adopts the commit the edition
+  pushed (so a PR can be opened for code-only changes) and refreshes. A part that
+  fails after Studio's landed is reported part by part, with a retry. Also
+  exported: `UnpushedChangesList` and `PushSecretsDialog`, so an edition's own
+  review shows Studio's changes and asks about secrets the same way.
+  **Omitting the prop changes nothing**: the card, its preview and the PR modal
+  render byte for byte as before (`BranchCardGolden.test.tsx`).
 
 - **An edition can lock the Git hosts it adds: `<App gitHostAccess>`.** A new
   optional `App` prop, `{ lockedHosts, lockedNotice? }`, names the registered
@@ -174,6 +278,12 @@
 
 ### Changed
 
+- **Five built-in themes set their own status colours.** Graphite Dark,
+  Midnight Blue, Workbench Light, Paper Light and High Contrast Dark never
+  defined `success` / `warning` / `danger` / `info` and showed the default dark
+  theme's — on the two light ones that was a dark theme's amber and green on
+  white, at 2.4:1. Each now takes them from its own palette, and every theme
+  is required to define all four.
 - **Switching modes returns to the panel each mode was left on** (editions with
   `sections` only). The toggle used to open a mode's first panel every time, so
   a trip to the other mode and back cost a second click to find your place. Each

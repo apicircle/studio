@@ -20,16 +20,38 @@ export {
   tabPanelProps,
   SchemaView,
   Tooltip,
+  FLOATING_Z,
+  Z,
+  FloatingPortal,
+  AnchoredPopover,
+  useAnchoredPosition,
+  useDismissableLayer,
   Badge,
   Skeleton,
   Modal,
   cn,
 } from './primitives';
-export type { FieldControlProps, TabDef } from './primitives';
+export type {
+  FieldControlProps,
+  TabDef,
+  AnchoredPopoverProps,
+  AnchoredPositionState,
+  FloatingAlign,
+  FloatingSide,
+  UseAnchoredPositionOptions,
+} from './primitives';
 export { PANELS, VISIBLE_PANELS, getPanel } from './layout/panels';
 export type { PanelDef } from './layout/panels';
 export type { ExtraPanelDef } from './layout/extraPanels';
 export type { SectionDef } from './layout/sections';
+export type {
+  BranchChangeSource,
+  BranchChangeSummary,
+  BranchChangeSectionProps,
+} from './layout/branchChanges';
+export type { BranchPushOutcome, BranchPushPart } from './store/workspaceStore';
+export { UnpushedChangesList } from './panels/workspace/UnpushedChangesList';
+export { PushSecretsDialog } from './panels/workspace/PushSecretsDialog';
 export type { BrandDef } from './layout/TopBar';
 export { WorkspaceStatusChip } from './layout/WorkspaceStatusChip';
 export { getDesktopMockBridge, getDesktopWorkspaceFileBridge } from './desktop/bridge';

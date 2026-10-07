@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Tooltip } from './Tooltip';
 
 describe('Tooltip', () => {
@@ -87,83 +87,347 @@ describe('Tooltip', () => {
     expect(btn.getAttribute('aria-describedby')).toMatch(/\bpre\b/);
   });
 
-  describe('placement', () => {
-    const BASE =
-      'pointer-events-none absolute z-50 w-max max-w-xs rounded-sm border border-border bg-card px-2 py-1 ' +
-      'text-[0.6875rem] leading-snug text-text-primary shadow-md transition-opacity';
-
-    // The centred placement every existing call site renders, pinned verbatim:
-    // omitting `align` (or passing "center") must keep producing exactly these.
-    const CENTRED = {
-      top: 'bottom-full left-1/2 mb-1 -translate-x-1/2',
-      bottom: 'top-full left-1/2 mt-1 -translate-x-1/2',
-      left: 'right-full top-1/2 mr-1 -translate-y-1/2',
-      right: 'left-full top-1/2 ml-1 -translate-y-1/2',
-    } as const;
-
-    it('defaults to the top side, centred', () => {
+  describe('a disabled trigger', () => {
+    // A disabled button takes no pointer or focus events, so a tooltip that
+    // listens on the button can never explain why it is disabled.
+    function renderDisabled() {
       render(
-        <Tooltip content="tip">
-          <button>T</button>
+        <Tooltip content="Add an API key first">
+          <button disabled className="h-7">
+            Index with AI
+          </button>
         </Tooltip>,
       );
-      expect(screen.getByRole('tooltip').className).toBe(`${BASE} ${CENTRED.top} opacity-0`);
+      const btn = screen.getByRole('button', { name: 'Index with AI' });
+      return { btn, wrapper: btn.parentElement!, tip: screen.getByRole('tooltip') };
+    }
+
+    it('opens when the pointer is over it — the wrapper is the hit target', async () => {
+      const { btn, wrapper, tip } = renderDisabled();
+      expect(btn).toHaveClass('pointer-events-none', 'h-7');
+      expect(wrapper).toHaveClass('cursor-not-allowed');
+      expect(tip.className).toMatch(/\bopacity-0\b/);
+      await userEvent.hover(wrapper);
+      expect(tip.className).toMatch(/\bopacity-100\b/);
+      await userEvent.unhover(wrapper);
+      expect(tip.className).toMatch(/\bopacity-0\b/);
     });
 
-    it.each(['top', 'bottom', 'left', 'right'] as const)(
-      'keeps the centred %s classes unchanged when align is omitted or "center"',
-      (side) => {
-        const expected = `${BASE} ${CENTRED[side]} opacity-0`;
-        const { unmount } = render(
-          <Tooltip content="tip" side={side}>
-            <button>T</button>
-          </Tooltip>,
-        );
-        expect(screen.getByRole('tooltip').className).toBe(expected);
-        unmount();
+    it('gives the keyboard a tab stop in the button’s place', async () => {
+      const { wrapper, tip } = renderDisabled();
+      expect(wrapper).toHaveAttribute('tabindex', '0');
+      await userEvent.tab();
+      expect(wrapper).toHaveFocus();
+      expect(tip.className).toMatch(/\bopacity-100\b/);
+      await userEvent.tab();
+      expect(tip.className).toMatch(/\bopacity-0\b/);
+    });
 
-        render(
-          <Tooltip content="tip" side={side} align="center">
-            <button>T</button>
-          </Tooltip>,
-        );
-        expect(screen.getByRole('tooltip').className).toBe(expected);
-      },
-    );
+    it('is described by the tooltip at all times, not only while it shows', () => {
+      const { btn, tip } = renderDisabled();
+      expect(btn).toHaveAttribute('aria-describedby', tip.id);
+    });
 
-    it.each([
-      ['top', 'start', 'bottom-full left-0 mb-1'],
-      ['top', 'end', 'bottom-full right-0 mb-1'],
-      ['bottom', 'start', 'top-full left-0 mt-1'],
-      ['bottom', 'end', 'top-full right-0 mt-1'],
-      ['left', 'start', 'right-full top-0 mr-1'],
-      ['left', 'end', 'right-full bottom-0 mr-1'],
-      ['right', 'start', 'left-full top-0 ml-1'],
-      ['right', 'end', 'left-full bottom-0 ml-1'],
-    ] as const)(
-      'side="%s" align="%s" anchors to that edge instead of centring',
-      (side, align, placement) => {
-        render(
-          <Tooltip content="tip" side={side} align={align}>
-            <button>T</button>
-          </Tooltip>,
-        );
-        const className = screen.getByRole('tooltip').className;
-        expect(className).toBe(`${BASE} ${placement} opacity-0`);
-        expect(className).not.toMatch(/translate|1\/2/);
-      },
-    );
-
-    it('an edge-anchored tooltip still opens on hover', async () => {
+    it('an enabled trigger keeps its own tab stop and pointer', () => {
       render(
-        <Tooltip content="tip" side="bottom" align="end">
-          <button>T</button>
+        <Tooltip content="tip">
+          <button className="h-7">Go</button>
         </Tooltip>,
       );
-      await userEvent.hover(screen.getByRole('button', { name: 'T' }));
-      expect(screen.getByRole('tooltip').className).toBe(
-        `${BASE} top-full right-0 mt-1 opacity-100`,
+      const btn = screen.getByRole('button', { name: 'Go' });
+      expect(btn.parentElement).not.toHaveAttribute('tabindex');
+      expect(btn.parentElement).not.toHaveClass('cursor-not-allowed');
+      expect(btn).not.toHaveClass('pointer-events-none');
+    });
+  });
+
+  describe('a trigger that opens a menu', () => {
+    // The menu opens where the tooltip would be, and the tooltip stacks above
+    // menus — left open, it covers the first items of what the user just opened.
+    it.each([[true], ['true']] as const)(
+      'stays shut while the trigger reports aria-expanded=%s',
+      async (expanded) => {
+        render(
+          <Tooltip content="Chat options">
+            <button aria-haspopup="menu" aria-expanded={expanded}>
+              Options
+            </button>
+          </Tooltip>,
+        );
+        const btn = screen.getByRole('button', { name: 'Options' });
+        await userEvent.hover(btn);
+        expect(screen.getByRole('tooltip').className).toMatch(/\bopacity-0\b/);
+        expect(btn).not.toHaveAttribute('aria-describedby');
+      },
+    );
+
+    it('opens as usual while the menu is closed', async () => {
+      render(
+        <Tooltip content="Chat options">
+          <button aria-haspopup="menu" aria-expanded={false}>
+            Options
+          </button>
+        </Tooltip>,
       );
+      await userEvent.hover(screen.getByRole('button', { name: 'Options' }));
+      expect(screen.getByRole('tooltip').className).toMatch(/\bopacity-100\b/);
+    });
+
+    it.each(['listbox', 'dialog', true, 'true'] as const)(
+      'counts any popup kind (aria-haspopup=%s)',
+      async (kind) => {
+        render(
+          <Tooltip content="Pick a spec">
+            <button aria-haspopup={kind} aria-expanded>
+              Spec
+            </button>
+          </Tooltip>,
+        );
+        await userEvent.hover(screen.getByRole('button', { name: 'Spec' }));
+        expect(screen.getByRole('tooltip').className).toMatch(/\bopacity-0\b/);
+      },
+    );
+
+    // A row that expands in place opens nothing over its own hint, and the hint
+    // ("examine this before you unblock it") is as true expanded as collapsed.
+    it.each([[undefined], [false], ['false']] as const)(
+      'a plain disclosure keeps its hint while expanded (aria-haspopup=%s)',
+      async (kind) => {
+        render(
+          <Tooltip content="Examine the trace">
+            <button aria-haspopup={kind} aria-expanded>
+              GET /users
+            </button>
+          </Tooltip>,
+        );
+        await userEvent.hover(screen.getByRole('button', { name: 'GET /users' }));
+        expect(screen.getByRole('tooltip').className).toMatch(/\bopacity-100\b/);
+      },
+    );
+  });
+
+  describe('disabled (the hint does not apply right now)', () => {
+    it('mounts no tooltip and never opens, but keeps the trigger in place', async () => {
+      const { rerender } = render(
+        <Tooltip content="/api/articles/:slug" disabled className="min-w-0 flex-1">
+          <button>Path</button>
+        </Tooltip>,
+      );
+      const btn = screen.getByRole('button', { name: 'Path' });
+      expect(screen.queryByRole('tooltip')).toBeNull();
+      expect(btn.parentElement).toHaveClass('relative', 'inline-flex', 'min-w-0', 'flex-1');
+      await userEvent.hover(btn);
+      expect(screen.queryByRole('tooltip')).toBeNull();
+      expect(btn).not.toHaveAttribute('aria-describedby');
+
+      // Turning the hint on must not remount the trigger (it may hold focus).
+      rerender(
+        <Tooltip content="/api/articles/:slug" className="min-w-0 flex-1">
+          <button>Path</button>
+        </Tooltip>,
+      );
+      expect(screen.getByRole('button', { name: 'Path' })).toBe(btn);
+      expect(screen.getByRole('tooltip')).toHaveTextContent('/api/articles/:slug');
+      expect(btn.parentElement).toHaveClass('min-w-0', 'flex-1');
+    });
+
+    it('opens at once when the hint starts to apply under a pointer that is already there', async () => {
+      // "Show the full text only when it is cut off" measures on hover — the
+      // pointer is already inside by the time the answer is known.
+      const { rerender } = render(
+        <Tooltip content="full text" disabled>
+          <button>Path</button>
+        </Tooltip>,
+      );
+      const btn = screen.getByRole('button', { name: 'Path' });
+      expect(btn.parentElement).not.toHaveAttribute('data-tooltip-anchor');
+      await userEvent.hover(btn);
+      rerender(
+        <Tooltip content="full text">
+          <button>Path</button>
+        </Tooltip>,
+      );
+      const tip = screen.getByRole('tooltip');
+      expect(tip.className).toMatch(/\bopacity-100\b/);
+      expect(btn).toHaveAttribute('aria-describedby', tip.id);
+      expect(btn.parentElement).toHaveAttribute('data-tooltip-anchor', tip.id);
+    });
+
+    it('leaves a disabled trigger alone: no stand-in tab stop, no borrowed pointer', () => {
+      render(
+        <Tooltip content="unused" disabled>
+          <button disabled className="h-7">
+            Off
+          </button>
+        </Tooltip>,
+      );
+      const btn = screen.getByRole('button', { name: 'Off' });
+      expect(btn).not.toHaveClass('pointer-events-none');
+      expect(btn).not.toHaveAttribute('aria-describedby');
+      expect(btn.parentElement).not.toHaveAttribute('tabindex');
+      expect(btn.parentElement).not.toHaveClass('cursor-not-allowed');
+    });
+  });
+
+  describe('the floating layer', () => {
+    // jsdom has no layout: give the trigger's wrapper a box on screen and the
+    // tooltip a size, so placement can be computed the way a browser would.
+    // The viewport is jsdom's 1024 × 768.
+    interface Box {
+      top: number;
+      left: number;
+      width: number;
+      height: number;
+    }
+    let anchorBox: Box;
+    const tipSize = { width: 80, height: 24 };
+    const frames: FrameRequestCallback[] = [];
+
+    function mockLayout(anchor: Box) {
+      anchorBox = anchor;
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+        this: HTMLElement,
+      ) {
+        const b = this.hasAttribute('data-tooltip-anchor')
+          ? anchorBox
+          : { top: 0, left: 0, width: 0, height: 0 };
+        return {
+          ...b,
+          x: b.left,
+          y: b.top,
+          right: b.left + b.width,
+          bottom: b.top + b.height,
+          toJSON: () => b,
+        } as DOMRect;
+      });
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (
+        this: HTMLElement,
+      ) {
+        return this.getAttribute('role') === 'tooltip' ? tipSize.width : 0;
+      });
+      vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (
+        this: HTMLElement,
+      ) {
+        return this.getAttribute('role') === 'tooltip' ? tipSize.height : 0;
+      });
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+        frames.push(cb);
+        return frames.length;
+      });
+      vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+    }
+
+    function flushFrames() {
+      act(() => {
+        while (frames.length > 0) frames.shift()!(0);
+      });
+    }
+
+    afterEach(() => {
+      frames.length = 0;
+      vi.restoreAllMocks();
+    });
+
+    function renderTip(
+      props: {
+        side?: 'top' | 'bottom' | 'left' | 'right';
+        align?: 'start' | 'center' | 'end';
+      } = {},
+    ) {
+      render(
+        <div style={{ overflow: 'hidden' }}>
+          <Tooltip content="Read the list again" {...props}>
+            <button>Refresh</button>
+          </Tooltip>
+        </div>,
+      );
+      return {
+        btn: screen.getByRole('button', { name: 'Refresh' }),
+        tip: screen.getByRole('tooltip'),
+      };
+    }
+
+    it('renders on the document body, out of the clipping ancestor, linked to its trigger', () => {
+      const { btn, tip } = renderTip();
+      expect(tip.parentElement).toBe(document.body);
+      expect(btn.closest('div')!.contains(tip)).toBe(false);
+      expect(btn.parentElement).toHaveAttribute('data-tooltip-anchor', tip.id);
+      expect(tip.style.position).toBe('fixed');
+    });
+
+    it('waits off screen while closed, and sits above modals and toasts', () => {
+      const { tip } = renderTip();
+      expect(tip.className).toMatch(/\bopacity-0\b/);
+      expect(tip.className).toMatch(/z-\[70\]/);
+      expect(tip.style.top).toBe('-10000px');
+    });
+
+    it('keeps the requested placement when there is no layout to measure', async () => {
+      const { btn, tip } = renderTip({ side: 'bottom', align: 'end' });
+      expect(tip).toHaveAttribute('data-side', 'bottom');
+      expect(tip).toHaveAttribute('data-align', 'end');
+      await userEvent.hover(btn);
+      expect(tip).toHaveAttribute('data-side', 'bottom');
+      expect(tip.className).toMatch(/\bopacity-100\b/);
+    });
+
+    it('defaults to the top side, centred', () => {
+      const { tip } = renderTip();
+      expect(tip).toHaveAttribute('data-side', 'top');
+      expect(tip).toHaveAttribute('data-align', 'center');
+    });
+
+    it('opens above its trigger, centred, 4px away', async () => {
+      mockLayout({ top: 100, left: 100, width: 40, height: 20 });
+      const { btn, tip } = renderTip();
+      await userEvent.hover(btn);
+      expect(tip).toHaveAttribute('data-side', 'top');
+      expect(tip.style.top).toBe(`${100 - 4 - tipSize.height}px`);
+      expect(tip.style.left).toBe(`${100 + (40 - tipSize.width) / 2}px`);
+      expect(tip.className).toMatch(/\bopacity-100\b/);
+    });
+
+    it('flips below when there is no room above — the clipped refresh-button case', async () => {
+      mockLayout({ top: 10, left: 300, width: 24, height: 24 });
+      const { btn, tip } = renderTip();
+      await userEvent.hover(btn);
+      expect(tip).toHaveAttribute('data-side', 'bottom');
+      expect(tip.style.top).toBe(`${10 + 24 + 4}px`);
+    });
+
+    it('slides back on screen instead of hanging off the right edge', async () => {
+      mockLayout({ top: 300, left: 1000, width: 20, height: 20 });
+      const { btn, tip } = renderTip();
+      await userEvent.hover(btn);
+      expect(tip.style.left).toBe(`${1024 - 8 - tipSize.width}px`);
+    });
+
+    it('lines up with one edge of the trigger for align="end"', async () => {
+      mockLayout({ top: 300, left: 400, width: 100, height: 20 });
+      const { btn, tip } = renderTip({ side: 'bottom', align: 'end' });
+      await userEvent.hover(btn);
+      expect(tip.style.left).toBe(`${400 + 100 - tipSize.width}px`);
+      expect(tip.style.top).toBe(`${300 + 20 + 4}px`);
+    });
+
+    it('follows its trigger when an ancestor scrolls', async () => {
+      mockLayout({ top: 300, left: 400, width: 40, height: 20 });
+      const { btn, tip } = renderTip();
+      await userEvent.hover(btn);
+      expect(tip.style.top).toBe('272px');
+      anchorBox = { top: 200, left: 400, width: 40, height: 20 };
+      act(() => {
+        btn.closest('div')!.dispatchEvent(new Event('scroll'));
+      });
+      flushFrames();
+      expect(tip.style.top).toBe('172px');
+    });
+
+    it('hides while its trigger is scrolled out of view', async () => {
+      mockLayout({ top: -100, left: 400, width: 40, height: 20 });
+      const { btn, tip } = renderTip();
+      await userEvent.hover(btn);
+      expect(tip.className).toMatch(/\bopacity-0\b/);
     });
   });
 });

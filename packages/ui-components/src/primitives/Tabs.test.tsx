@@ -40,6 +40,14 @@ describe('Tabs', () => {
     expect(screen.getByRole('tab', { name: /Params/ })).toHaveTextContent('1');
   });
 
+  it('labels the active pill, and its count, in the readable accent foreground', () => {
+    render(<Harness />);
+    const active = screen.getByRole('tab', { name: /Params/ });
+    expect(active).toHaveClass('bg-accent/15', 'text-accent-fg');
+    expect(active.querySelector('span')).toHaveClass('text-accent-fg');
+    expect(screen.getByRole('tab', { name: 'Headers' })).not.toHaveClass('text-accent-fg');
+  });
+
   it('selects on click', async () => {
     const onChange = vi.fn();
     render(<Harness onChange={onChange} />);

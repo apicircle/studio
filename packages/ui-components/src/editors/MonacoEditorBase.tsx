@@ -201,6 +201,12 @@ function MonacoEditorBaseComponent({
       minimap: { enabled: false },
       fontSize: scaledFontSize,
       automaticLayout: true,
+      // Hover cards, the suggestion list and the find widget are positioned
+      // against the window instead of inside the editor's box. The container
+      // below is `overflow: hidden` (it has to be, for the fixed height), and
+      // a short editor — a one-line body, a variable value — cut every one of
+      // them off at its own bottom edge.
+      fixedOverflowWidgets: true,
       scrollBeyondLastLine: false,
       wordWrap: isLargePayload ? 'off' : 'on',
       fontFamily:
