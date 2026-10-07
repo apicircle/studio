@@ -129,6 +129,21 @@
   window is short. Tab now closes the menu and carries on from its trigger
   (it used to leave the menu open behind), and a menu whose trigger scrolls out
   of view closes.
+- **Variable and header suggestions are no longer cut off either.** The `{{`
+  variable list (URL, params, headers, anywhere `VariableAutocompleteField` is
+  used) and the Headers tab's two lists — header names, and the common values
+  for a header — were drawn inside their row, so the scrolling table or the
+  panel around it clipped them. They open on the floating layer too, as wide as
+  the field at least, and scroll inside when the window is short. The variable
+  list now closes when its field loses focus (it used to stay open over whatever
+  you went to); picking an option still keeps focus in the field. The
+  Environments panel's secret-key picker moved with them: it was cut off for
+  the last variables in a long list. New primitive: `AnchoredPopover`, for
+  anything that opens next to a control and is not a kebab menu or a tooltip.
+- **Editor hover cards, suggestions and the find box are no longer cut off by a
+  short editor.** Monaco drew them inside the editor's own box, which clips;
+  in a one-line body or a variable value they lost everything below the first
+  line. They are positioned against the window now (`fixedOverflowWidgets`).
 - **The arrow keys move through a kebab menu again.** Every arrow key snapped
   focus back to the first item: the effect that focuses it when the menu opens
   ran again on every keystroke.
@@ -166,6 +181,33 @@
     tooltip's id), since the two are no longer DOM siblings. Studio itself
     renders no `Tooltip`; editions that do get tooltips nothing can cut off.
   - **The kebab menu and the file picker use it** (see Fixed).
+
+- **Readable tone-coloured text in every theme: the `-fg` tokens.** A status
+  chip, a tinted button and the active tab are tone-coloured text on a tint of
+  the same tone, and the raw tone is not readable there in many themes — amber
+  on a pale amber tint measures under 2:1 on several light ones, and the active
+  tab failed WCAG AA on 37 of the 60. Each theme now carries
+  `--accent-fg` `--success-fg` `--warning-fg` `--danger-fg` `--info-fg`
+  (`text-<tone>-fg`): the tone itself where that already meets AA (4.5:1),
+  otherwise the tone mixed toward the theme's `text-primary` by the least that
+  gets there, on the bare surfaces and on the 10% and 15% tints. They are
+  generated — `node scripts/gen-status-fg.mjs`, with `--check` — and
+  `theme-contrast.test.ts` fails when a theme is added or edited without
+  running it. `Badge`, `Button` (primary, danger) and `Tabs` (the active pill
+  and its count) use them for their text; borders and tints keep the tone.
+- **`Z`, one stacking scale** (`primitives/floating.ts`): pane-sticky, panel
+  card, panel popover, dock, banner, modal, menu, toast, tooltip. The dock takes
+  its level from it; `FLOATING_Z` is now two of its entries.
+- **`Tooltip` explains a disabled control, and takes `disabled` and
+  `className`.** Hover and focus are read on the wrapper, so a tooltip around a
+  disabled button opens — the wrapper takes the pointer and a tab stop in the
+  button's place, and the button is described by the tooltip at all times. A
+  trigger that opens a popup (`aria-haspopup`) keeps its tooltip shut while the
+  popup is open (`aria-expanded`), so a hint no longer covers the menu it
+  opened; a row that only expands in place keeps its hint. `disabled` keeps the tooltip
+  shut and unmounted for a hint that only applies sometimes (the full text of a
+  label that is not cut short); `className` styles the wrapper, for a trigger
+  that has to shrink or grow in its row.
 
 - **An edition can join the working branch's review, push and pull request:
   `<App branchChangeSources>`.** An edition that changes other files on the
@@ -205,6 +247,12 @@
 
 ### Changed
 
+- **Five built-in themes set their own status colours.** Graphite Dark,
+  Midnight Blue, Workbench Light, Paper Light and High Contrast Dark never
+  defined `success` / `warning` / `danger` / `info` and showed the default dark
+  theme's — on the two light ones that was a dark theme's amber and green on
+  white, at 2.4:1. Each now takes them from its own palette, and every theme
+  is required to define all four.
 - **`dereferenceInternal` returns shared objects.** Every use of a `$ref` is
   now the same resolved object (the result is a DAG, still without cycles), so a
   consumer that walks it as a tree should bound its own walk, as the mock parser

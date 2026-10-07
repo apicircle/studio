@@ -19,8 +19,8 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
  * surrounding screen shifting.
  */
 const VARIANT: Record<Variant, string> = {
-  primary: 'border border-accent/40 bg-accent/15 text-accent-strong hover:bg-accent/25',
-  danger: 'border border-danger/40 bg-danger/15 text-danger hover:bg-danger/25',
+  primary: 'border border-accent/40 bg-accent/15 text-accent-fg hover:bg-accent/25',
+  danger: 'border border-danger/40 bg-danger/15 text-danger-fg hover:bg-danger/25',
   ghost:
     'border border-border bg-surface text-text-muted hover:border-accent hover:text-text-primary',
   subtle: 'border border-border-subtle bg-card text-text-muted hover:bg-card/80',

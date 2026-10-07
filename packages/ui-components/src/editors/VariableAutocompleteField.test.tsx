@@ -84,4 +84,70 @@ describe('VariableAutocompleteField', () => {
     await userEvent.click(option);
     expect(spy).toHaveBeenLastCalledWith('{{CTX_VAR}}');
   });
+
+  // These fields live in scrolling tables inside resizable panels. A list drawn
+  // inside the field was cut off by the first ancestor that clips.
+  it('opens the list on the floating layer, outside any clipping ancestor, still wired to the field', async () => {
+    render(
+      <div style={{ overflow: 'hidden' }} data-testid="clip">
+        <Harness />
+      </div>,
+    );
+    const input = screen.getByLabelText('URL');
+    await userEvent.click(input);
+    await userEvent.type(input, '{{{{');
+    const list = screen.getByRole('listbox', { name: 'URL suggestions' });
+    expect(screen.getByTestId('clip').contains(list)).toBe(false);
+    const popover = list.parentElement!;
+    expect(popover.parentElement).toBe(document.body);
+    expect(popover.style.position).toBe('fixed');
+    expect(popover.className).toMatch(/z-\[55\]/);
+    // Scrolls inside itself, capped by the layer rather than by a `max-h-*` class.
+    expect(popover).toHaveClass('overflow-y-auto', 'min-w-[240px]');
+    expect(popover.className).not.toMatch(/\bmax-h-/);
+    expect(input).toHaveAttribute('aria-controls', list.id);
+    expect(input).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('closes when the field loses focus, so the list never outlives it over other content', async () => {
+    render(
+      <>
+        <Harness />
+        <button>elsewhere</button>
+      </>,
+    );
+    const input = screen.getByLabelText('URL');
+    await userEvent.click(input);
+    await userEvent.type(input, '{{{{');
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'elsewhere' }));
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    // Typing again brings it back.
+    await userEvent.click(input);
+    await userEvent.type(input, 'B');
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+  });
+
+  it('closes when the field scrolls out of view', async () => {
+    const rect = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        const b = this.classList.contains('relative')
+          ? { top: -400, left: 20, width: 300, height: 32 }
+          : { top: 0, left: 0, width: 0, height: 0 };
+        return {
+          ...b,
+          x: b.left,
+          y: b.top,
+          right: b.left + b.width,
+          bottom: b.top + b.height,
+        } as DOMRect;
+      });
+    render(<Harness />);
+    const input = screen.getByLabelText('URL');
+    await userEvent.click(input);
+    await userEvent.type(input, '{{{{');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    rect.mockRestore();
+  });
 });

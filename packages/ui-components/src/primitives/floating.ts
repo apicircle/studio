@@ -322,13 +322,36 @@ export function useAnchoredPosition(
 }
 
 /**
- * Stacking for the floating layer. A menu opens above a modal (`z-50`) — a
- * menu inside a dialog must not sit under its overlay — and below toasts
- * (`z-[60]`); a tooltip sits above everything.
+ * The stacking scale, lowest first. One list, because every stacking bug so far
+ * was two layers picking the same number in different files and leaving the
+ * winner to DOM order.
+ *
+ * The first three are for layers INSIDE a panel (a panel root should be
+ * `isolate`, so nothing in it can out-stack the dock beside it); the rest are
+ * app-wide. A menu opens above a modal — a menu inside a dialog must not sit
+ * under its overlay — and below toasts; a tooltip sits above everything.
  */
-export const FLOATING_Z = {
+export const Z = {
+  /** A sticky header inside a scrolling pane. */
+  paneSticky: 'z-10',
+  /** A card floated over a panel's content (a side sheet that is not modal). */
+  panelCard: 'z-20',
+  /** A popover that belongs to a panel card and must clear it. */
+  panelPopover: 'z-30',
+  /** The inspector dock, in both of its layout modes. */
+  dock: 'z-30',
+  /** A notice pinned over the app that a dialog must still cover. */
+  banner: 'z-40',
+  modal: 'z-50',
   menu: 'z-[55]',
+  toast: 'z-[60]',
   tooltip: 'z-[70]',
+} as const;
+
+/** The floating layer's two entries in {@link Z}, under the names its users import. */
+export const FLOATING_Z = {
+  menu: Z.menu,
+  tooltip: Z.tooltip,
 } as const;
 
 /**

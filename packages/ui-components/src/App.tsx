@@ -186,6 +186,7 @@ import { ConfirmDialog } from './primitives/ConfirmDialog';
 import { Modal } from './primitives/Modal';
 import { ToastViewport } from './primitives/Toast';
 import { UpdateAvailableBanner } from './primitives/UpdateAvailableBanner';
+import { Z } from './primitives/floating';
 import { PassphrasePromptModalGate } from './onboarding/PassphrasePromptModalGate';
 import {
   ExtraPanelsProvider,
@@ -430,7 +431,7 @@ function ToastSlot() {
  *
  * `relative` is what makes `z-30` apply: a z-index on a statically-positioned element is ignored.
  */
-const DOCK_Z = 'z-30';
+const DOCK_Z = Z.dock;
 
 function BodyArea() {
   const activePanel = useWorkspaceStore((s) => s.activePanel);

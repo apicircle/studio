@@ -50,7 +50,7 @@ const TAB_VARIANT: Record<'pill' | 'underline', string> = {
 
 const TAB_STATE: Record<'pill' | 'underline', { active: string; idle: string }> = {
   pill: {
-    active: 'border-accent/40 bg-accent/15 text-accent',
+    active: 'border-accent/40 bg-accent/15 text-accent-fg',
     idle: 'border-transparent text-text-muted hover:bg-surface hover:text-text-primary',
   },
   underline: {
@@ -154,7 +154,7 @@ export function Tabs({
           >
             {t.label}
             {t.count != null ? (
-              <span className={cn('text-[0.625rem]', active ? 'text-accent/80' : 'text-text-dim')}>
+              <span className={cn('text-[0.625rem]', active ? 'text-accent-fg' : 'text-text-dim')}>
                 {t.count}
               </span>
             ) : null}

@@ -15,14 +15,18 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
  * text-[0.625rem]` chip; this collapses them onto a tone scale that reads the
  * same in every theme. Semantic tones (success/warning/danger/info) carry
  * meaning; `accent` is emphasis; `neutral` is the default quiet chip.
+ *
+ * The text is the tone's `-fg` token, not the tone: a chip is 10px text on a
+ * tint of its own colour, and the raw tone is unreadable there in most light
+ * themes. Border and tint keep the tone, so the chip is still that colour.
  */
 const TONE: Record<Tone, string> = {
   neutral: 'border-border bg-surface text-text-muted',
-  accent: 'border-accent/40 bg-accent/10 text-accent',
-  success: 'border-success/40 bg-success/10 text-success',
-  warning: 'border-warning/40 bg-warning/10 text-warning',
-  danger: 'border-danger/40 bg-danger/10 text-danger',
-  info: 'border-info/40 bg-info/10 text-info',
+  accent: 'border-accent/40 bg-accent/10 text-accent-fg',
+  success: 'border-success/40 bg-success/10 text-success-fg',
+  warning: 'border-warning/40 bg-warning/10 text-warning-fg',
+  danger: 'border-danger/40 bg-danger/10 text-danger-fg',
+  info: 'border-info/40 bg-info/10 text-info-fg',
 };
 
 export function Badge({ tone = 'neutral', uppercase, className, children, ...rest }: BadgeProps) {

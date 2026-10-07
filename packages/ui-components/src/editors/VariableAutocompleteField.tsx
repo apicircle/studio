@@ -3,7 +3,11 @@
 // but the user still wants suggestions.
 //
 // Keyboard: ArrowUp/Down to move, Enter/Tab to insert, Escape to dismiss.
-// Mouse: click a suggestion to insert. Click outside the popup to dismiss.
+// Mouse: click a suggestion to insert. Leaving the field dismisses the popup.
+//
+// The popup is on the floating layer (`primitives/floating`): these fields sit
+// in scrolling tables (params, headers) inside resizable panels, and a list
+// drawn inside the field was cut off at the first ancestor that clips.
 
 import {
   useEffect,
@@ -21,6 +25,7 @@ import {
   type VariableSuggestion,
 } from '@apicircle/core';
 import { cn } from '../primitives/cn';
+import { AnchoredPopover } from '../primitives/AnchoredPopover';
 
 interface BaseProps {
   value: string;
@@ -86,6 +91,7 @@ export function VariableAutocompleteField({
   const localId = useId();
   const elementId = id ?? `var-input-${localId.replace(/:/g, '_')}`;
   const internalRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const setRef = (el: HTMLInputElement | HTMLTextAreaElement | null) => {
     internalRef.current = el;
     if (typeof inputRef === 'function') inputRef(el);
@@ -178,6 +184,10 @@ export function VariableAutocompleteField({
       setCursor(e.target.selectionStart ?? e.target.value.length);
       setDismissed(false);
     },
+    // Picking an option keeps focus here (its mousedown is prevented), so a
+    // blur means the user went elsewhere — and a list on the floating layer
+    // that outlived its field would hang over whatever they went to.
+    onBlur: () => setDismissed(true),
     style,
     className: cn(
       'h-8 w-full rounded-sm border border-border bg-card px-2 text-xs text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30',
@@ -186,7 +196,7 @@ export function VariableAutocompleteField({
   };
 
   return (
-    <div className="relative w-full">
+    <div ref={wrapRef} className="relative w-full">
       {multiline ? (
         <textarea
           {...sharedProps}
@@ -197,13 +207,15 @@ export function VariableAutocompleteField({
       ) : (
         <input {...sharedProps} ref={setRef} />
       )}
-      {suggestions.length > 0 && (
-        <ul
-          id={`${elementId}-listbox`}
-          role="listbox"
-          aria-label={`${ariaLabel} suggestions`}
-          className="absolute left-0 top-full z-30 mt-1 max-h-56 w-full min-w-[240px] overflow-y-auto rounded-sm border border-border bg-card text-xs shadow-elevated"
-        >
+      <AnchoredPopover
+        open={suggestions.length > 0}
+        anchorRef={wrapRef}
+        matchAnchorWidth="min"
+        maxHeight={224}
+        onAnchorHidden={() => setDismissed(true)}
+        className="min-w-[240px] overflow-y-auto rounded-sm border border-border bg-card text-xs shadow-elevated"
+      >
+        <ul id={`${elementId}-listbox`} role="listbox" aria-label={`${ariaLabel} suggestions`}>
           {suggestions.map((s, i) => {
             const isActive = i === active;
             return (
@@ -228,7 +240,7 @@ export function VariableAutocompleteField({
             );
           })}
         </ul>
-      )}
+      </AnchoredPopover>
     </div>
   );
 }

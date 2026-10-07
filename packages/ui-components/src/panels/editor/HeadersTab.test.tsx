@@ -62,4 +62,54 @@ describe('HeadersTab', () => {
     // At least one match should mention Content-Type.
     expect(listbox.textContent).toMatch(/Content-Type/);
   });
+
+  // A header row sits in a scrolling table inside a resizable panel; a list
+  // drawn inside the row was cut off at whichever of those clipped first.
+  describe('the suggestion lists are on the floating layer', () => {
+    it('the header-name list: outside the tab’s DOM, a pick still lands, a press elsewhere closes', async () => {
+      const id = makeRequestId();
+      const user = userEvent.setup();
+      const { container } = render(<LiveHeadersTab requestId={id} />);
+      await user.click(screen.getByRole('button', { name: /Add row/ }));
+      const key = screen.getByLabelText('Headers key 1');
+      await user.type(key, 'Cont');
+      const listbox = await screen.findByRole('listbox', { name: 'Header suggestions' });
+      expect(container.contains(listbox)).toBe(false);
+      expect(listbox.parentElement!.parentElement).toBe(document.body);
+      expect(listbox.parentElement!.style.position).toBe('fixed');
+      expect(key).toHaveAttribute('aria-controls', listbox.id);
+
+      // The list is no longer inside the field's wrapper, so a press on an
+      // option must not be read as a press outside before the pick lands.
+      await user.click(screen.getByRole('option', { name: /Content-Type/ }));
+      expect(useWorkspaceStore.getState().synced!.collections.requests[id].headers[0].key).toBe(
+        'Content-Type',
+      );
+      expect(screen.queryByRole('listbox', { name: 'Header suggestions' })).toBeNull();
+
+      await user.clear(key);
+      await user.type(key, 'Acc');
+      expect(
+        await screen.findByRole('listbox', { name: 'Header suggestions' }),
+      ).toBeInTheDocument();
+      await user.click(screen.getByLabelText('Auto-fed headers'));
+      expect(screen.queryByRole('listbox', { name: 'Header suggestions' })).toBeNull();
+    });
+
+    it('the common-values list: opens under its row from the floating layer, and a pick fills the value', async () => {
+      const id = makeRequestId();
+      const user = userEvent.setup();
+      const { container } = render(<LiveHeadersTab requestId={id} />);
+      await user.click(screen.getByRole('button', { name: /Add row/ }));
+      await user.type(screen.getByLabelText('Headers key 1'), 'Content-Type');
+      await user.click(screen.getByLabelText('Headers value 1'));
+      const values = await screen.findByRole('listbox', { name: 'Common values for header 1' });
+      expect(container.contains(values)).toBe(false);
+      expect(values.parentElement!.parentElement).toBe(document.body);
+      await user.click(values.querySelector('button')!);
+      expect(
+        useWorkspaceStore.getState().synced!.collections.requests[id].headers[0].value,
+      ).not.toBe('');
+    });
+  });
 });

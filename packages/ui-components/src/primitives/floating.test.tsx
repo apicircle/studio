@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   FLOATING_Z,
+  Z,
   computeAnchoredPosition,
   useAnchoredPosition,
   useDismissableLayer,
@@ -358,6 +359,26 @@ describe('FloatingPortal', () => {
 
   it('names a stacking level for menus and tooltips', () => {
     expect(FLOATING_Z).toEqual({ menu: 'z-[55]', tooltip: 'z-[70]' });
+  });
+
+  it('orders the whole stacking scale: panel layers, dock, banner, modal, menu, toast, tooltip', () => {
+    const level = (cls: string) => Number(/\d+/.exec(cls)![0]);
+    const order = [
+      Z.paneSticky,
+      Z.panelCard,
+      Z.panelPopover,
+      Z.banner,
+      Z.modal,
+      Z.menu,
+      Z.toast,
+      Z.tooltip,
+    ].map(level);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(new Set(order).size).toBe(order.length);
+    // The dock ties with a panel's own popover on purpose: a panel root is
+    // `isolate`, so nothing inside one is ever compared with the dock.
+    expect(Z.dock).toBe(Z.panelPopover);
+    expect(FLOATING_Z).toEqual({ menu: Z.menu, tooltip: Z.tooltip });
   });
 });
 

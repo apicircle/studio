@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { AlertTriangle, KeyRound, Layers, Lock, Plus, Trash2, Unlock, X } from 'lucide-react';
 import type { Environment, EnvironmentVariable, SecretEntry } from '@apicircle/shared';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '../../primitives/cn';
 import { Button } from '../../primitives/Button';
 import { ConfirmDialog } from '../../primitives/ConfirmDialog';
+import { AnchoredPopover } from '../../primitives/AnchoredPopover';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { LinkedEnvironmentsSection } from './LinkedEnvironmentsSection';
 
@@ -334,6 +335,8 @@ function VariableRow({
   const secretEntries = useWorkspaceStore((s) => s.local?.secretIndex.entries ?? {});
   const [draftValue, setDraftValue] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // The row the key picker opens under, flush with its right edge.
+  const rowRef = useRef<HTMLDivElement | null>(null);
 
   const liveValue = draftValue ?? row.value;
   const onValueBlur = () => {
@@ -353,7 +356,10 @@ function VariableRow({
           value it replaces. The CTA column has a fixed 96px width so the
           Encrypt and Unbind buttons render at identical widths. Min-widths
           keep the layout readable when the right-side dock crowds the panel. */}
-      <div className="relative grid grid-cols-[minmax(120px,1fr)_minmax(160px,2fr)_96px_28px] items-center gap-2">
+      <div
+        ref={rowRef}
+        className="relative grid grid-cols-[minmax(120px,1fr)_minmax(160px,2fr)_96px_28px] items-center gap-2"
+      >
         <input
           type="text"
           value={row.key}
@@ -435,6 +441,7 @@ function VariableRow({
         </button>
         {pickerOpen && (
           <SecretKeyPicker
+            anchorRef={rowRef}
             onClose={() => setPickerOpen(false)}
             onPick={(id) => {
               onBindKey(id);
@@ -453,11 +460,13 @@ function VariableRow({
 }
 
 interface SecretKeyPickerProps {
+  /** The variable row it opens under. */
+  anchorRef: RefObject<HTMLElement | null>;
   onClose: () => void;
   onPick: (id: string) => void;
 }
 
-function SecretKeyPicker({ onClose, onPick }: SecretKeyPickerProps) {
+function SecretKeyPicker({ anchorRef, onClose, onPick }: SecretKeyPickerProps) {
   const entries = useWorkspaceStore((s) => s.local?.secretIndex.entries ?? {});
   const addSecret = useWorkspaceStore((s) => s.addSecret);
   const list: SecretEntry[] = useMemo(
@@ -484,11 +493,17 @@ function SecretKeyPicker({ onClose, onPick }: SecretKeyPickerProps) {
     }
   };
 
+  // On the floating layer: the variables table scrolls inside a resizable
+  // panel, and a picker drawn inside its row was cut off for the last rows.
   return (
-    <div
+    <AnchoredPopover
+      open
+      anchorRef={anchorRef}
+      align="end"
+      onAnchorHidden={onClose}
       role="dialog"
       aria-label="Pick or create a Secret Vault key"
-      className="absolute right-0 top-8 z-30 flex w-80 flex-col gap-2 rounded-sm border border-border bg-card p-2 shadow-lg"
+      className="flex w-80 flex-col gap-2 overflow-y-auto rounded-sm border border-border bg-card p-2 shadow-lg"
       onMouseDown={(e) => e.stopPropagation()}
     >
       <div className="flex items-center justify-between">
@@ -591,7 +606,7 @@ function SecretKeyPicker({ onClose, onPick }: SecretKeyPickerProps) {
           </div>
         </div>
       )}
-    </div>
+    </AnchoredPopover>
   );
 }
 

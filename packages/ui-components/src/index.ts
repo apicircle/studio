@@ -21,7 +21,9 @@ export {
   SchemaView,
   Tooltip,
   FLOATING_Z,
+  Z,
   FloatingPortal,
+  AnchoredPopover,
   useAnchoredPosition,
   useDismissableLayer,
   Badge,
@@ -32,6 +34,7 @@ export {
 export type {
   FieldControlProps,
   TabDef,
+  AnchoredPopoverProps,
   AnchoredPositionState,
   FloatingAlign,
   FloatingSide,

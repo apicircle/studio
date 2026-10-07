@@ -1,6 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import {
+  FG_MIN_CONTRAST,
+  FG_TINTS,
+  FG_TONES,
+  composite,
+  generate,
+} from '../../../../scripts/gen-status-fg.mjs';
 
 // WCAG 2.1 colour-contrast guarantee for the theme tokens (UX-S-010). The e2e
 // a11y sweep runs axe's `color-contrast` on the *default* theme only; this unit
@@ -19,6 +26,11 @@ import { describe, expect, it } from 'vitest';
 //    which the real palettes render at sub-AA too — matching them is the point.
 //    Only `tokyo-night-day` dips below 3:1; it is allow-listed and pinned so any
 //    NEW severe drop fails.
+//  - Tone-coloured text (`text-<tone>-fg`: status chips, primary buttons, the
+//    active tab) MUST meet AA in EVERY theme, on the bare surfaces and on the
+//    10% / 15% tints of its own tone the primitives paint behind it. Those
+//    tokens are generated (scripts/gen-status-fg.mjs), so this also fails when
+//    a theme was edited or added without regenerating them.
 
 const css = readFileSync(resolve(__dirname, '../styles/global.css'), 'utf8');
 
@@ -99,5 +111,38 @@ describe('theme colour contrast (WCAG 2.1 AA)', () => {
     expect(failing(['text-primary', 'text-muted', 'text-dim'], LARGE, () => true)).toEqual([
       'tokyo-night-day text-dim/card',
     ]);
+  });
+
+  it('every theme sets its own status tones — none are inherited from the default theme', () => {
+    const missing: string[] = [];
+    for (const { id, tokens } of themes) {
+      for (const tone of FG_TONES) {
+        if (!tokens[tone]) missing.push(`${id} --${tone}`);
+        if (!tokens[`${tone}-fg`]) missing.push(`${id} --${tone}-fg`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it('tone-coloured text meets AA on both surfaces and on its own 10% / 15% tint in EVERY theme', () => {
+    const out: string[] = [];
+    for (const { id, tokens } of themes) {
+      for (const tone of FG_TONES) {
+        const fg = tokens[`${tone}-fg`];
+        for (const bg of SURFACES) {
+          for (const alpha of FG_TINTS) {
+            const backdrop = composite(tokens[tone], tokens[bg], alpha) as RGB;
+            if (contrast(fg, backdrop) < FG_MIN_CONTRAST) {
+              out.push(`${id} ${tone}-fg on ${tone}/${alpha * 100} over ${bg}`);
+            }
+          }
+        }
+      }
+    }
+    expect(out).toEqual([]);
+  });
+
+  it('the generated foregrounds are current (run `node scripts/gen-status-fg.mjs` after editing a theme)', () => {
+    expect(generate(css)).toBe(css);
   });
 });

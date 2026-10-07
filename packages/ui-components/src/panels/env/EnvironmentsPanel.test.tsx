@@ -90,6 +90,11 @@ describe('EnvironmentsPanel', () => {
     const dialog = await screen.findByRole('dialog', {
       name: /Pick or create a Secret Vault key/i,
     });
+    // On the floating layer, not inside the scrolling variables table that
+    // used to cut it off for the last rows.
+    expect(dialog.parentElement).toBe(document.body);
+    expect(dialog.style.position).toBe('fixed');
+    expect(screen.getByRole('group', { name: 'Variables for dev' }).contains(dialog)).toBe(false);
     await userEvent.click(within(dialog, /PROD_TOKEN/i));
 
     await waitFor(() => {

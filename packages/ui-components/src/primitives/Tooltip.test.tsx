@@ -87,6 +87,188 @@ describe('Tooltip', () => {
     expect(btn.getAttribute('aria-describedby')).toMatch(/\bpre\b/);
   });
 
+  describe('a disabled trigger', () => {
+    // A disabled button takes no pointer or focus events, so a tooltip that
+    // listens on the button can never explain why it is disabled.
+    function renderDisabled() {
+      render(
+        <Tooltip content="Add an API key first">
+          <button disabled className="h-7">
+            Index with AI
+          </button>
+        </Tooltip>,
+      );
+      const btn = screen.getByRole('button', { name: 'Index with AI' });
+      return { btn, wrapper: btn.parentElement!, tip: screen.getByRole('tooltip') };
+    }
+
+    it('opens when the pointer is over it — the wrapper is the hit target', async () => {
+      const { btn, wrapper, tip } = renderDisabled();
+      expect(btn).toHaveClass('pointer-events-none', 'h-7');
+      expect(wrapper).toHaveClass('cursor-not-allowed');
+      expect(tip.className).toMatch(/\bopacity-0\b/);
+      await userEvent.hover(wrapper);
+      expect(tip.className).toMatch(/\bopacity-100\b/);
+      await userEvent.unhover(wrapper);
+      expect(tip.className).toMatch(/\bopacity-0\b/);
+    });
+
+    it('gives the keyboard a tab stop in the button’s place', async () => {
+      const { wrapper, tip } = renderDisabled();
+      expect(wrapper).toHaveAttribute('tabindex', '0');
+      await userEvent.tab();
+      expect(wrapper).toHaveFocus();
+      expect(tip.className).toMatch(/\bopacity-100\b/);
+      await userEvent.tab();
+      expect(tip.className).toMatch(/\bopacity-0\b/);
+    });
+
+    it('is described by the tooltip at all times, not only while it shows', () => {
+      const { btn, tip } = renderDisabled();
+      expect(btn).toHaveAttribute('aria-describedby', tip.id);
+    });
+
+    it('an enabled trigger keeps its own tab stop and pointer', () => {
+      render(
+        <Tooltip content="tip">
+          <button className="h-7">Go</button>
+        </Tooltip>,
+      );
+      const btn = screen.getByRole('button', { name: 'Go' });
+      expect(btn.parentElement).not.toHaveAttribute('tabindex');
+      expect(btn.parentElement).not.toHaveClass('cursor-not-allowed');
+      expect(btn).not.toHaveClass('pointer-events-none');
+    });
+  });
+
+  describe('a trigger that opens a menu', () => {
+    // The menu opens where the tooltip would be, and the tooltip stacks above
+    // menus — left open, it covers the first items of what the user just opened.
+    it.each([[true], ['true']] as const)(
+      'stays shut while the trigger reports aria-expanded=%s',
+      async (expanded) => {
+        render(
+          <Tooltip content="Chat options">
+            <button aria-haspopup="menu" aria-expanded={expanded}>
+              Options
+            </button>
+          </Tooltip>,
+        );
+        const btn = screen.getByRole('button', { name: 'Options' });
+        await userEvent.hover(btn);
+        expect(screen.getByRole('tooltip').className).toMatch(/\bopacity-0\b/);
+        expect(btn).not.toHaveAttribute('aria-describedby');
+      },
+    );
+
+    it('opens as usual while the menu is closed', async () => {
+      render(
+        <Tooltip content="Chat options">
+          <button aria-haspopup="menu" aria-expanded={false}>
+            Options
+          </button>
+        </Tooltip>,
+      );
+      await userEvent.hover(screen.getByRole('button', { name: 'Options' }));
+      expect(screen.getByRole('tooltip').className).toMatch(/\bopacity-100\b/);
+    });
+
+    it.each(['listbox', 'dialog', true, 'true'] as const)(
+      'counts any popup kind (aria-haspopup=%s)',
+      async (kind) => {
+        render(
+          <Tooltip content="Pick a spec">
+            <button aria-haspopup={kind} aria-expanded>
+              Spec
+            </button>
+          </Tooltip>,
+        );
+        await userEvent.hover(screen.getByRole('button', { name: 'Spec' }));
+        expect(screen.getByRole('tooltip').className).toMatch(/\bopacity-0\b/);
+      },
+    );
+
+    // A row that expands in place opens nothing over its own hint, and the hint
+    // ("examine this before you unblock it") is as true expanded as collapsed.
+    it.each([[undefined], [false], ['false']] as const)(
+      'a plain disclosure keeps its hint while expanded (aria-haspopup=%s)',
+      async (kind) => {
+        render(
+          <Tooltip content="Examine the trace">
+            <button aria-haspopup={kind} aria-expanded>
+              GET /users
+            </button>
+          </Tooltip>,
+        );
+        await userEvent.hover(screen.getByRole('button', { name: 'GET /users' }));
+        expect(screen.getByRole('tooltip').className).toMatch(/\bopacity-100\b/);
+      },
+    );
+  });
+
+  describe('disabled (the hint does not apply right now)', () => {
+    it('mounts no tooltip and never opens, but keeps the trigger in place', async () => {
+      const { rerender } = render(
+        <Tooltip content="/api/articles/:slug" disabled className="min-w-0 flex-1">
+          <button>Path</button>
+        </Tooltip>,
+      );
+      const btn = screen.getByRole('button', { name: 'Path' });
+      expect(screen.queryByRole('tooltip')).toBeNull();
+      expect(btn.parentElement).toHaveClass('relative', 'inline-flex', 'min-w-0', 'flex-1');
+      await userEvent.hover(btn);
+      expect(screen.queryByRole('tooltip')).toBeNull();
+      expect(btn).not.toHaveAttribute('aria-describedby');
+
+      // Turning the hint on must not remount the trigger (it may hold focus).
+      rerender(
+        <Tooltip content="/api/articles/:slug" className="min-w-0 flex-1">
+          <button>Path</button>
+        </Tooltip>,
+      );
+      expect(screen.getByRole('button', { name: 'Path' })).toBe(btn);
+      expect(screen.getByRole('tooltip')).toHaveTextContent('/api/articles/:slug');
+      expect(btn.parentElement).toHaveClass('min-w-0', 'flex-1');
+    });
+
+    it('opens at once when the hint starts to apply under a pointer that is already there', async () => {
+      // "Show the full text only when it is cut off" measures on hover — the
+      // pointer is already inside by the time the answer is known.
+      const { rerender } = render(
+        <Tooltip content="full text" disabled>
+          <button>Path</button>
+        </Tooltip>,
+      );
+      const btn = screen.getByRole('button', { name: 'Path' });
+      expect(btn.parentElement).not.toHaveAttribute('data-tooltip-anchor');
+      await userEvent.hover(btn);
+      rerender(
+        <Tooltip content="full text">
+          <button>Path</button>
+        </Tooltip>,
+      );
+      const tip = screen.getByRole('tooltip');
+      expect(tip.className).toMatch(/\bopacity-100\b/);
+      expect(btn).toHaveAttribute('aria-describedby', tip.id);
+      expect(btn.parentElement).toHaveAttribute('data-tooltip-anchor', tip.id);
+    });
+
+    it('leaves a disabled trigger alone: no stand-in tab stop, no borrowed pointer', () => {
+      render(
+        <Tooltip content="unused" disabled>
+          <button disabled className="h-7">
+            Off
+          </button>
+        </Tooltip>,
+      );
+      const btn = screen.getByRole('button', { name: 'Off' });
+      expect(btn).not.toHaveClass('pointer-events-none');
+      expect(btn).not.toHaveAttribute('aria-describedby');
+      expect(btn.parentElement).not.toHaveAttribute('tabindex');
+      expect(btn.parentElement).not.toHaveClass('cursor-not-allowed');
+    });
+  });
+
   describe('the floating layer', () => {
     // jsdom has no layout: give the trigger's wrapper a box on screen and the
     // tooltip a size, so placement can be computed the way a browser would.
