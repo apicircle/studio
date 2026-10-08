@@ -39,7 +39,11 @@ unaffected:
   `layout/sections.ts`) groups the panels into top-level modes with a first-run
   landing. With two or more, each mode is a header in the tab strip: the active
   mode is unfolded to its own tabs beside its header, the others are folded, and
-  pressing a header opens that mode. The mode is stored per workspace, and so is
+  pressing a header opens that mode. Pressing the active mode's header from one
+  of its own tabs folds them into the header until the next press, or until
+  another panel or mode opens; that fold is view state of the strip, stored
+  nowhere, and it changes neither the mode nor the panel. The mode is stored per
+  workspace, and so is
   the panel of its own each mode was left on: its header returns there, and a
   landing card opens a mode at the first panel of its own. A panel may be listed
   by more than one section; it is then shared, leads the tab strip in every

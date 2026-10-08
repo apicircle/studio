@@ -647,6 +647,11 @@ keeps the two in one logical codebase with **no duplication** is recorded in
       With two or more, `PanelTabs` draws each mode as a header in the tab strip:
       the active mode is unfolded to its own tabs, the others are folded, and
       pressing a header opens that mode (there is no switch in the top bar).
+      A header is a button in every state, with a chevron that points the way
+      its tabs will move (right when folded, left when showing). Pressing the
+      active mode's header from one of its own tabs folds them into the header
+      and the next press brings them back; the mode and the panel stay put, and
+      the fold ends when another panel or mode opens.
       Each mode remembers which of its own panels it was left on, per workspace,
       and its header returns there. A panel listed by more than one section is
       shared: it leads the strip in every mode, set off by a divider, and no

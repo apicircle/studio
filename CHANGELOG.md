@@ -310,6 +310,34 @@
   - Studio standalone registers no sections: its top bar and its tab strip are
     unchanged.
 
+- **A mode's header looks like the button it is, and its chevron points the
+  way its tabs move** (editions with two or more `sections` only). The headers
+  were bare text until hovered, and the unfolded one carried a chevron pointing
+  down at tabs that sit beside it.
+  - **Every header is an outlined button, in every state** (the `Button`
+    primitive): a neutral handle at the head of the unfolded run, the ordinary
+    outlined button for a folded mode, each with the mode's icon in the accent
+    and an accent border and tint on hover. The accent fill stays with the tab
+    on screen, so the strip still has one "you are here".
+  - **One chevron that turns.** It points right while a mode's tabs are folded
+    (they open out to the right) and left while they are showing (they fold
+    back into the header), turning between the two instead of swapping icons,
+    and it leans the way a press will go when the header is hovered.
+  - **The tabs open out of the header.** An unfolding mode's tabs grow from the
+    header and fade in over 200 ms, pushing the rest of the strip along instead
+    of jumping (`@starting-style`; an engine without it draws them in place).
+    The turn and the reveal are both off under `prefers-reduced-motion`.
+  - **The active mode's header folds its tabs.** Pressed from one of the mode's
+    own tabs, it folds them into the header and the next press brings them
+    back. The mode and the panel on screen do not change, and nothing is
+    stored: the fold ends as soon as another panel or mode opens, however it
+    was opened. Folded, the header takes the accent and `aria-current="true"`,
+    standing for the page whose tab it hides. From a shared tab the press still
+    opens the mode, as before; that press used to do nothing from an own tab.
+  - **A hint says what the press will do**: "Open Lens", "Hide Studio tabs",
+    "Show Studio tabs" (the `Tooltip` primitive, on hover and on keyboard
+    focus). The header's accessible name is still the mode's name alone.
+
 - **The working branch's changes preview is where an edition's push is chosen
   and made** (editions with `branchChangeSources` only). The preview had a
   section per source and a Close button; pushing meant closing it and pressing

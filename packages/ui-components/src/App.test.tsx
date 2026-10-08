@@ -452,6 +452,31 @@ describe('App', () => {
       expect(localStorage.getItem(`${PANEL_KEY}${wsId}:lens`)).toBe('lens.review');
     });
 
+    it("folding the active mode's tabs moves neither the mode nor the panel", async () => {
+      const wsId = await renderEdition();
+      openPanel('env');
+      const stored = () => ({
+        mode: localStorage.getItem(`${SECTION_KEY}${wsId}`),
+        studio: localStorage.getItem(`${PANEL_KEY}${wsId}:studio`),
+        lens: localStorage.getItem(`${PANEL_KEY}${wsId}:lens`),
+      });
+      const before = stored();
+
+      // The header of the mode on screen, pressed from one of its own tabs.
+      await userEvent.click(modeTab(/^Studio$/));
+
+      expect(modeTab(/^Studio$/)).toHaveAttribute('aria-expanded', 'false');
+      expect(modeTab(/^Lens$/)).toHaveAttribute('aria-expanded', 'false');
+      expect(activePanel()).toBe('env');
+      expect(stored()).toEqual(before);
+
+      // The next press brings the tabs back, around the same panel.
+      await userEvent.click(modeTab(/^Studio$/));
+      expect(modeTab(/^Studio$/)).toHaveAttribute('aria-expanded', 'true');
+      expect(activePanel()).toBe('env');
+      expect(stored()).toEqual(before);
+    });
+
     it('opens a mode at its first panel until it has been used', async () => {
       await renderEdition();
       await userEvent.click(modeTab(/^Lens$/));
@@ -680,12 +705,35 @@ describe('App', () => {
 
       it('is not restored after an explicit mode switch', async () => {
         const view = await launchBeforeReviewArrives();
+        // Out to Studio and back: Lens is now where the user opened it, by hand.
+        await userEvent.click(modeTab(/^Studio$/));
         await userEvent.click(modeTab(/^Lens$/));
+        expect(activePanel()).toBe('lens.discover');
 
         view.rerender(<App sections={sections} extraPanels={extraPanels} />);
         await settle();
 
         expect(activePanel()).toBe('lens.discover');
+      });
+
+      it('is still restored after the tabs were folded away, which is not a move', async () => {
+        const view = await launchBeforeReviewArrives();
+        // The active mode's header, from one of its own tabs: the strip folds
+        // and the user is still exactly where the launch left them.
+        await userEvent.click(modeTab(/^Lens$/));
+        expect(modeTab(/^Lens$/)).toHaveAttribute('aria-expanded', 'false');
+        expect(activePanel()).toBe('lens.discover');
+
+        view.rerender(<App sections={sections} extraPanels={extraPanels} />);
+
+        await waitFor(() => expect(activePanel()).toBe('lens.review'));
+        // And the strip opens again around the tab the restore landed on.
+        expect(modeTab(/^Lens$/)).toHaveAttribute('aria-expanded', 'true');
+        expect(
+          within(screen.getByRole('navigation', { name: 'Top navigation' })).getByRole('button', {
+            name: 'Review',
+          }),
+        ).toHaveAttribute('aria-current', 'page');
       });
 
       it('restores at most once', async () => {

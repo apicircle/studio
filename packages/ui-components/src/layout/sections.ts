@@ -30,6 +30,12 @@ import type { LucideIcon } from 'lucide-react';
  * own panels; the others stay folded to their header. Pressing a header makes
  * that section the active one, which unfolds it and folds the rest.
  *
+ * Pressing the active section's header from one of its own panels folds its
+ * panels back into the header instead, and the next press unfolds them. That
+ * fold is the strip's alone (`PanelTabs` holds it): the active section and the
+ * panel on screen do not change, nothing here stores it, and it ends as soon as
+ * another panel or section opens.
+ *
  * A panel may be listed by more than one section. It is then **shared**: it
  * belongs to the workspace rather than to a mode, so it sits ahead of every
  * group, set off by a divider, and opening it never moves the mode — the active

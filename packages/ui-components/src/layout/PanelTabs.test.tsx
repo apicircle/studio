@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { Compass, Server } from 'lucide-react';
@@ -129,19 +129,176 @@ describe('PanelTabs with sections', () => {
     expect(header('Lens')).toHaveAttribute('aria-expanded', 'false');
   });
 
-  it('opens a mode when its header is pressed, the active one included', async () => {
+  it("opens another mode when its header is pressed, and leaves this one's tabs alone", async () => {
     const setActiveSectionId = vi.fn();
-    await renderWithStore(
+    const { container } = await renderWithStore(
       <SectionsProvider value={{ ...value, setActiveSectionId }}>
         <PanelTabs />
       </SectionsProvider>,
     );
     await userEvent.click(header('Lens'));
+    expect(setActiveSectionId).toHaveBeenCalledTimes(1);
     expect(setActiveSectionId).toHaveBeenLastCalledWith('lens');
-    await userEvent.click(header('Studio'));
-    expect(setActiveSectionId).toHaveBeenLastCalledWith('studio');
-    // A header opens a mode; it is never itself the panel on screen.
+    // Opening is App's move to make: until the mode changes the strip is as it was.
+    expect(strip(container)).toEqual(['Studio', 'Workspace', 'Editor', 'Mocks', 'Lens']);
+    // A header opens a mode; with a tab on screen it is never itself the page.
     expect(header('Studio')).not.toHaveAttribute('aria-current');
+    expect(header('Lens')).not.toHaveAttribute('aria-current');
+  });
+
+  describe("the active mode's header", () => {
+    const chevron = (name: string) => header(name).querySelector('[data-section-chevron]');
+
+    it('folds its tabs away on a press from one of its own, and moves nothing else', async () => {
+      const setActiveSectionId = vi.fn();
+      const { container } = await renderWithStore(
+        <SectionsProvider value={{ ...value, setActiveSectionId }}>
+          <PanelTabs />
+        </SectionsProvider>,
+      );
+      // Default is 'editor' per the store default: one of Studio's own tabs.
+      await userEvent.click(header('Studio'));
+
+      expect(strip(container)).toEqual(['Studio', 'Lens']);
+      expect(header('Studio')).toHaveAttribute('aria-expanded', 'false');
+      expect(header('Studio')).not.toHaveAttribute('aria-controls');
+      expect(screen.queryByRole('group')).toBeNull();
+      // Folding is not navigation: the mode and the panel on screen stay put.
+      expect(setActiveSectionId).not.toHaveBeenCalled();
+      expect(useWorkspaceStore.getState().activePanel).toBe('editor');
+      // With its tab out of sight the header is what marks the page on screen.
+      expect(header('Studio')).toHaveAttribute('aria-current', 'true');
+      expect(header('Lens')).not.toHaveAttribute('aria-current');
+      // A header alone is pinned in reach, whichever mode it belongs to.
+      expect(container.querySelector('[data-section-group="studio"]')).toHaveClass('sticky');
+    });
+
+    it('brings the tabs back on the next press', async () => {
+      const setActiveSectionId = vi.fn();
+      const { container } = await renderWithStore(
+        <SectionsProvider value={{ ...value, setActiveSectionId }}>
+          <PanelTabs />
+        </SectionsProvider>,
+      );
+      await userEvent.click(header('Studio'));
+      await userEvent.click(header('Studio'));
+
+      expect(strip(container)).toEqual(['Studio', 'Workspace', 'Editor', 'Mocks', 'Lens']);
+      expect(header('Studio')).toHaveAttribute('aria-expanded', 'true');
+      expect(header('Studio')).not.toHaveAttribute('aria-current');
+      expect(screen.getByRole('button', { name: 'Editor' })).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
+      expect(setActiveSectionId).not.toHaveBeenCalled();
+    });
+
+    it('shows the tabs again when another panel opens, and stays open on the way back', async () => {
+      const { container } = await renderWithStore(
+        <SectionsProvider value={value}>
+          <PanelTabs />
+        </SectionsProvider>,
+      );
+      await userEvent.click(header('Studio'));
+      expect(strip(container)).toEqual(['Studio', 'Lens']);
+
+      // Opened some other way than a tab: a shortcut, or a link inside a panel.
+      act(() => useWorkspaceStore.getState().setActivePanel('mocks'));
+      expect(strip(container)).toEqual(['Studio', 'Workspace', 'Editor', 'Mocks', 'Lens']);
+      expect(screen.getByRole('button', { name: 'Mocks' })).toHaveAttribute('aria-current', 'page');
+
+      // The fold belonged to that visit; returning to the panel does not repeat it.
+      act(() => useWorkspaceStore.getState().setActivePanel('editor'));
+      expect(strip(container)).toEqual(['Studio', 'Workspace', 'Editor', 'Mocks', 'Lens']);
+      expect(header('Studio')).toHaveAttribute('aria-expanded', 'true');
+    });
+
+    it('shows the tabs again when the mode changes, and stays open on the way back', async () => {
+      const tree = (activeSectionId: string) => (
+        <SectionsProvider value={{ ...value, activeSectionId }}>
+          <PanelTabs />
+        </SectionsProvider>
+      );
+      const { container, rerender } = await renderWithStore(tree('studio'));
+      await userEvent.click(header('Studio'));
+      expect(strip(container)).toEqual(['Studio', 'Lens']);
+
+      rerender(tree('lens'));
+      expect(strip(container)).toEqual(['Studio', 'Lens', 'History']);
+      expect(header('Lens')).toHaveAttribute('aria-expanded', 'true');
+
+      rerender(tree('studio'));
+      expect(strip(container)).toEqual(['Studio', 'Workspace', 'Editor', 'Mocks', 'Lens']);
+    });
+
+    it('points its chevron left over its tabs and right once they are folded', async () => {
+      await renderWithStore(
+        <SectionsProvider value={value}>
+          <PanelTabs />
+        </SectionsProvider>,
+      );
+      // One icon that turns, not two that swap: the turn is what gets animated.
+      expect(chevron('Studio')).toHaveClass('lucide-chevron-right', 'rotate-180');
+      expect(chevron('Lens')).toHaveClass('lucide-chevron-right');
+      expect(chevron('Lens')).not.toHaveClass('rotate-180');
+      // Decoration: the state is the button's own `aria-expanded`.
+      expect(chevron('Studio')).toHaveAttribute('aria-hidden', 'true');
+
+      await userEvent.click(header('Studio'));
+      expect(chevron('Studio')).not.toHaveClass('rotate-180');
+    });
+
+    it('holds the turn and the reveal still for a reader who asked for less motion', async () => {
+      await renderWithStore(
+        <SectionsProvider value={value}>
+          <PanelTabs />
+        </SectionsProvider>,
+      );
+      expect(chevron('Studio')).toHaveClass(
+        'transition-transform',
+        'motion-reduce:transition-none',
+      );
+      expect(screen.getByRole('group', { name: 'Studio panels' })).toHaveClass(
+        'transition-[grid-template-columns,opacity]',
+        'motion-reduce:transition-none',
+      );
+    });
+
+    it('says what a press will do, in each state', async () => {
+      await renderWithStore(
+        <SectionsProvider value={value}>
+          <PanelTabs />
+        </SectionsProvider>,
+      );
+      await userEvent.hover(header('Studio'));
+      expect(header('Studio')).toHaveAccessibleDescription('Hide Studio tabs');
+      await userEvent.hover(header('Lens'));
+      expect(header('Lens')).toHaveAccessibleDescription('Open Lens');
+
+      await userEvent.click(header('Studio'));
+      await userEvent.hover(header('Studio'));
+      expect(header('Studio')).toHaveAccessibleDescription('Show Studio tabs');
+      // The hint describes the header; its name is still the mode's alone.
+      expect(header('Studio')).toHaveAccessibleName('Studio');
+    });
+
+    it('is drawn as a button whether its tabs are showing, folded, or another mode is', async () => {
+      await renderWithStore(
+        <SectionsProvider value={value}>
+          <PanelTabs />
+        </SectionsProvider>,
+      );
+      // Unfolded: a neutral handle, so the accent stays with the tab on screen.
+      expect(header('Studio')).toHaveClass('border', 'border-border-strong', 'bg-card');
+      expect(header('Studio')).not.toHaveClass('bg-accent/15');
+      // Another mode: the same outline, on the ordinary button fill.
+      expect(header('Lens')).toHaveClass('border', 'border-border-strong', 'bg-surface');
+
+      await userEvent.click(header('Studio'));
+      // Folded over the page on screen: the accent that page's tab would carry.
+      expect(header('Studio')).toHaveClass('border', 'border-accent/40', 'bg-accent/15');
+      expect(header('Studio')).not.toHaveClass('border-border-strong');
+    });
   });
 
   it("names the unfolded mode's tabs as one group the header controls", async () => {
@@ -245,6 +402,26 @@ describe('PanelTabs with sections', () => {
       expect(screen.getByRole('button', { name: 'History' })).not.toHaveAttribute('aria-current');
     });
 
+    it('opens the active mode from the shared page, where a press folds nothing', async () => {
+      useWorkspaceStore.getState().setActivePanel('workspace');
+      const setActiveSectionId = vi.fn();
+      const { container } = await renderWithStore(
+        <SectionsProvider value={{ ...shared, setActiveSectionId }}>
+          <PanelTabs />
+        </SectionsProvider>,
+      );
+      await userEvent.hover(header('Studio'));
+      expect(header('Studio')).toHaveAccessibleDescription('Open Studio');
+
+      await userEvent.click(header('Studio'));
+      // The shared page is no tab of Studio's: the press goes to Studio itself,
+      // and App lands it on the panel Studio was left on.
+      expect(setActiveSectionId).toHaveBeenCalledTimes(1);
+      expect(setActiveSectionId).toHaveBeenLastCalledWith('studio');
+      expect(strip(container)).toEqual(['Workspace', '|', 'Studio', 'Editor', 'Lens']);
+      expect(header('Studio')).toHaveAttribute('aria-expanded', 'true');
+    });
+
     it('hides the divider from assistive technology', async () => {
       const { container } = await renderWithStore(
         <SectionsProvider value={shared}>
@@ -262,8 +439,9 @@ describe('PanelTabs with sections', () => {
           { id: 'lens', label: 'Lens', icon: Server, panelIds: ['workspace'] },
         ],
       };
+      const setActiveSectionId = vi.fn();
       const { container } = await renderWithStore(
-        <SectionsProvider value={onlyShared}>
+        <SectionsProvider value={{ ...onlyShared, setActiveSectionId }}>
           <PanelTabs />
         </SectionsProvider>,
       );
@@ -272,6 +450,17 @@ describe('PanelTabs with sections', () => {
       expect(header('Studio')).toHaveAttribute('aria-expanded', 'true');
       expect(header('Studio')).not.toHaveAttribute('aria-controls');
       expect(screen.queryByRole('group')).toBeNull();
+      // The header is all there is of the mode on screen, so it carries the mark,
+      // and its chevron never turns to tabs that are not there.
+      expect(header('Studio')).toHaveAttribute('aria-current', 'true');
+      expect(header('Studio').querySelector('[data-section-chevron]')).not.toHaveClass(
+        'rotate-180',
+      );
+
+      // With no tabs to fold, a press is still "open this mode".
+      await userEvent.click(header('Studio'));
+      expect(setActiveSectionId).toHaveBeenLastCalledWith('studio');
+      expect(header('Studio')).toHaveAttribute('aria-expanded', 'true');
     });
   });
 });
