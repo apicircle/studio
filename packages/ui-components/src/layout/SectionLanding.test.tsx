@@ -56,6 +56,33 @@ describe('SectionLanding', () => {
     expect(useWorkspaceStore.getState().activePanel).toBe('lens.discover');
   });
 
+  it("choosing a card opens the first panel that is the section's own and shown", async () => {
+    // Studio lists the Workspace page both modes share, then a panel this build
+    // hides. A card opens the mode, so it lands on the Editor behind them.
+    useWorkspaceStore.getState().setActivePanel('history');
+    render(
+      <SectionsProvider
+        value={{
+          sections: [
+            { ...studio, panelIds: ['workspace', 'link-workspace', 'editor', 'env'] },
+            { ...lens, panelIds: ['lens.discover', 'workspace'] },
+          ],
+          activeSectionId: 'lens',
+          setActiveSectionId: vi.fn(),
+        }}
+      >
+        <SectionLanding />
+      </SectionsProvider>,
+    );
+    await userEvent.click(screen.getByText('Studio'));
+    expect(useWorkspaceStore.getState().activePanel).toBe('editor');
+  });
+
+  it('says where the modes are switched afterwards', () => {
+    renderLanding();
+    expect(screen.getByText(/each one has its own group in the tab bar/)).toBeInTheDocument();
+  });
+
   it('choosing a card for a section with no panels leaves the panel alone', async () => {
     useWorkspaceStore.getState().setActivePanel('history');
     const setActiveSectionId = vi.fn();

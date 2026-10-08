@@ -203,6 +203,7 @@ import {
   writeStoredSectionPanel,
   resolveActiveSection,
   resolveSectionPanel,
+  ownPanelIds,
   NO_SECTIONS,
   type SectionDef,
 } from './layout/sections';
@@ -293,7 +294,7 @@ export function App({
     pendingLandingRef.current = null;
     if (section && !section.panelIds.includes(currentPanel)) {
       const remembered = readStoredSectionPanel(workspaceId, section.id);
-      const landing = resolveSectionPanel(section, remembered, (id) =>
+      const landing = resolveSectionPanel(section, sections, remembered, (id) =>
         isShownPanel(id, extraPanelsRef.current),
       );
       if (landing) {
@@ -311,13 +312,14 @@ export function App({
 
   // The mode follows the visible panel. An edition's own navigation opens panels
   // through the store — Lens calls `setActivePanel('editor')` from its Lens
-  // section — which left the Editor on screen under the Lens tab strip and Mode
-  // toggle. When the active panel isn't in the active section, select the first
-  // section that lists it and store that, as a toggle click would. It never
-  // changes `activePanel` itself.
+  // section — which left the Editor on screen with the Lens group unfolded in
+  // the tab strip. When the active panel isn't in the active section, select
+  // the first section that lists it and store that, as pressing its header
+  // would. It never changes `activePanel` itself, so a panel opened this way is
+  // the panel shown — not the one its section remembered.
   //
   // Keyed on `activePanel` alone, with everything else read through refs, so a
-  // toggle click or a workspace switch (the restore effect's job) never re-runs
+  // header press or a workspace switch (the restore effect's job) never re-runs
   // it — and a click into a section with no panels leaves `activePanel` as it
   // is, so it can't flip the mode back. It waits until the restore effect has
   // resolved a section (`activeSectionId` is '' before that), so a cold launch
@@ -342,16 +344,20 @@ export function App({
     writeStoredSection(ws, owner.id);
   }, [activePanel]);
 
-  // Each section remembers the panel last open in it, so a mode switch can
-  // return there. Recorded whenever the active section lists the panel on
-  // screen — a tab click, an edition's own navigation, the panel a launch
-  // restored — and only once that section belongs to the workspace on screen.
-  // Studio registers no sections, so there this is a strict no-op.
+  // Each section remembers which of its own panels was last open, so pressing
+  // its header in the tab strip can return there. Recorded whenever the panel
+  // on screen is one only the active section lists — a tab click, an edition's
+  // own navigation, the panel a launch restored — and only once that section
+  // belongs to the workspace on screen. A panel the modes share (the Workspace
+  // page in an edition) is never recorded: it is no mode's own, and a header
+  // pressed from it must open that mode, not stay where it is. Studio registers
+  // no sections, so there this is a strict no-op.
   useEffect(() => {
-    if (sectionsRef.current.length <= 1 || !workspaceId) return;
+    const registered = sectionsRef.current;
+    if (registered.length <= 1 || !workspaceId) return;
     if (activeSection.workspaceId !== workspaceId || !activeSection.id) return;
-    const section = sectionsRef.current.find((s) => s.id === activeSection.id);
-    if (section?.panelIds.includes(activePanel)) {
+    const section = registered.find((s) => s.id === activeSection.id);
+    if (section && ownPanelIds(section, registered).includes(activePanel)) {
       writeStoredSectionPanel(workspaceId, section.id, activePanel);
     }
   }, [activePanel, activeSection, workspaceId]);
@@ -401,12 +407,15 @@ export function App({
       setActiveSection({ workspaceId, id });
       writeStoredSection(workspaceId, id);
       // Keep the tab strip + content consistent: move the active panel into the
-      // newly-selected section — the panel it was left on, so a trip to the
-      // other mode and back lands where it started, else its first one.
+      // newly-selected section — the panel of its own it was left on, so a trip
+      // to the other mode and back lands where it started, else its first one.
+      // Pressing the header of the mode already active does the same from a
+      // shared panel, and nothing from one of the mode's own.
       const section = sections.find((s) => s.id === id);
       if (!section) return;
       const landing = resolveSectionPanel(
         section,
+        sections,
         readStoredSectionPanel(workspaceId, id),
         (panelId) => isShownPanel(panelId, extraPanelsRef.current),
       );

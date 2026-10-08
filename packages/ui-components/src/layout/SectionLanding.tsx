@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { cn } from '../primitives/cn';
 import { useWorkspaceStore } from '../store/workspaceStore';
-import { useSections, type SectionDef } from './sections';
+import { useExtraPanels } from './extraPanels';
+import { resolveSectionPanel, useSections, type SectionDef } from './sections';
+import { isShownPanel } from './visibleTabs';
 
 const LANDING_DISMISSED_KEY = 'apicircle:section-landing-done-v1';
 
@@ -27,12 +29,13 @@ function markDismissed(): void {
  * First-run landing, shown once on first app entry when an edition registers
  * >=2 sections — lets the user pick a starting mode (e.g. Studio vs Lens).
  * Strict no-op in Studio: App only mounts it when `sections.length > 1`, and it
- * renders `null` once dismissed. Picking a card enters that section at its first
- * panel and dismisses the landing; the always-present top toggle switches modes
- * thereafter, returning to the panel each mode was left on.
+ * renders `null` once dismissed. Picking a card enters that section at the first
+ * panel of its own and dismisses the landing; the mode groups in the tab strip
+ * switch modes thereafter, returning to the panel each mode was left on.
  */
 export function SectionLanding() {
   const { sections, setActiveSectionId } = useSections();
+  const extraPanels = useExtraPanels();
   const setActivePanel = useWorkspaceStore((s) => s.setActivePanel);
   const [dismissed, setDismissed] = useState(landingDismissed);
 
@@ -45,9 +48,12 @@ export function SectionLanding() {
 
   const choose = (section: SectionDef) => {
     setActiveSectionId(section.id);
-    // A card is a fresh start, not a return trip: open the section at its first
-    // panel, whichever panel the shell happened to restore underneath the landing.
-    const firstPanel = section.panelIds[0];
+    // A card is a fresh start, not a return trip: open the section at the first
+    // panel of its own, whichever panel the shell happened to restore underneath
+    // the landing. Nothing remembered is passed, so nothing remembered is used.
+    const firstPanel = resolveSectionPanel(section, sections, null, (panelId) =>
+      isShownPanel(panelId, extraPanels),
+    );
     if (firstPanel) setActivePanel(firstPanel);
     dismiss();
   };
@@ -64,7 +70,7 @@ export function SectionLanding() {
           Choose how you want to start
         </h1>
         <p className="mb-5 text-xs text-text-muted">
-          You can switch anytime from the toggle in the top bar.
+          You can switch anytime: each one has its own group in the tab bar.
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           {sections.map((section) => {

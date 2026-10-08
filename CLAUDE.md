@@ -643,12 +643,16 @@ keeps the two in one logical codebase with **no duplication** is recorded in
   - **No-op when omitted:**
     - `extraPanels` (`ExtraPanelDef[]`): edition top-nav panels, `layout/extraPanels.ts`.
     - `sections` (`SectionDef[]`): top-level "modes" that group panels, with a
-      first-run landing, a top-bar toggle and per-workspace mode persistence,
-      `layout/sections.ts`. Each mode remembers the panel it was left on, per
-      workspace, and the toggle returns there. A panel listed by more than one
-      section stays in the strip across those modes, set off by a divider.
-      `layout/visibleTabs.ts` is the one list `PanelTabs` renders and
-      `KeyboardShortcuts` numbers, so `Ctrl/Cmd + N` follows the strip on screen.
+      first-run landing and per-workspace mode persistence, `layout/sections.ts`.
+      With two or more, `PanelTabs` draws each mode as a header in the tab strip:
+      the active mode is unfolded to its own tabs, the others are folded, and
+      pressing a header opens that mode (there is no switch in the top bar).
+      Each mode remembers which of its own panels it was left on, per workspace,
+      and its header returns there. A panel listed by more than one section is
+      shared: it leads the strip in every mode, set off by a divider, and no
+      mode remembers it (`ownPanelIds`). `layout/visibleTabs.ts` is the one list
+      `PanelTabs` renders and `KeyboardShortcuts` numbers, so `Ctrl/Cmd + N`
+      follows the strip on screen.
     - `brand` (`BrandDef`): the header brand.
     - `workspaceStatus` (`ReactNode`): shown beside the workspace switcher in the
       top bar. `WorkspaceStatusChip` (`layout/WorkspaceStatusChip.tsx`) is the
@@ -662,7 +666,10 @@ keeps the two in one logical codebase with **no duplication** is recorded in
       changes an edition makes on the working branch besides Studio's own (Lens's
       code). Each source adds a section to the working-branch card's preview, a
       part to its push (`pushBranchChanges`: Studio's commit first, then each
-      source, then `recordBranchPush`) and a part to the PR description.
+      source, then `recordBranchPush`) and a part to the PR description. With a
+      source registered the preview is where the push is chosen and made (its
+      own "Push N changes" and commit message), and `WorkspaceStatusChip` adds
+      what each source has included to its unpushed count.
   - **Not a no-op:** `workspaceAccess` (`layout/workspaceAccess.ts`) defaults to a
     cap of one workspace, because a build with no edition is the free tier. The
     open workspace always keeps a slot, the remaining slots go oldest first, and

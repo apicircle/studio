@@ -119,6 +119,7 @@ describe('working-branch card with edition changes', () => {
     await renderCard([source]);
     const strip = screen.getByRole('button', { name: 'Show unpushed changes preview' });
     expect(strip).toHaveTextContent('Code changes: 2 (1 to push)');
+    expect(strip).toHaveTextContent('click to review and push');
     expect(strip).not.toHaveTextContent('Studio:');
 
     act(() => useWorkspaceStore.getState().addEnvironment('Staging'));
@@ -134,6 +135,12 @@ describe('working-branch card with edition changes', () => {
     expect(useWorkspaceStore.getState().branchPushIncludeStudio).toBe(false);
     const code = within(dialog).getByRole('region', { name: 'Code changes' });
     expect(code).toHaveTextContent('Lens files for apicircle/review');
+    // How much of the source this push carries, beside its heading.
+    expect(code).toHaveTextContent('1 of 2 in this push');
+    // The preview names where the push goes: the branch, and the repository it is on.
+    expect(dialog).toHaveTextContent(
+      'Choose what the next push sends to apicircle/review on me/api',
+    );
 
     // Studio unchanged: its section says so and offers no choice.
     act(() => set({ ...TWO }));
@@ -143,6 +150,116 @@ describe('working-branch card with edition changes', () => {
     );
     await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  describe('pushing from the preview', () => {
+    const DONE: BranchPushOutcome = {
+      parts: [
+        { id: 'studio', label: 'Studio changes', status: 'pushed', commitSha: 's1234567' },
+        { id: 'lens', label: 'Code changes', status: 'pushed', commitSha: 'c0de1234' },
+      ],
+      headSha: 'c0de1234',
+      refresh: 'up-to-date',
+    };
+
+    async function openPreview(): Promise<HTMLElement> {
+      await userEvent.click(screen.getByRole('button', { name: 'Show unpushed changes preview' }));
+      return screen.findByRole('dialog', { name: 'Unpushed changes preview' });
+    }
+
+    it('pushes what is chosen: the button counts it, the preview closes, the card reports', async () => {
+      const { source } = lensSource({ ...TWO, total: 3, included: 2 });
+      await renderCard([source]);
+      const pushBranchChanges = vi.fn().mockResolvedValue(DONE);
+      act(() => useWorkspaceStore.setState({ pushBranchChanges }));
+      act(() => useWorkspaceStore.getState().addEnvironment('Staging'));
+
+      const dialog = await openPreview();
+      // Studio's two changes and the two ticked files: the unticked third is not counted.
+      const push = within(dialog).getByRole('button', { name: 'Push 4 changes' });
+
+      // Leaving Studio's changes out takes them off the button.
+      await userEvent.click(
+        within(dialog).getByRole('checkbox', { name: 'Include Studio changes' }),
+      );
+      expect(within(dialog).getByRole('button', { name: 'Push 2 changes' })).toBe(push);
+
+      await userEvent.click(push);
+
+      expect(pushBranchChanges).toHaveBeenCalledWith({ message: undefined, sources: [source] });
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(await screen.findByLabelText('Push results')).toHaveTextContent(
+        'Code changes: pushed c0de123',
+      );
+    });
+
+    it('counts one change in the singular', async () => {
+      const { source } = lensSource({ ...TWO, total: 1, included: 1 });
+      await renderCard([source]);
+      const dialog = await openPreview();
+      expect(within(dialog).getByRole('button', { name: 'Push 1 change' })).toBeEnabled();
+    });
+
+    it('takes the commit message in the preview, where the card does not repeat it', async () => {
+      const { source } = lensSource(TWO);
+      await renderCard([source]);
+      const pushBranchChanges = vi.fn().mockResolvedValue(DONE);
+      act(() => useWorkspaceStore.setState({ pushBranchChanges }));
+      // The card's own field is open, with something already typed into it.
+      await userEvent.click(screen.getByRole('button', { name: 'Custom commit message' }));
+      await userEvent.type(screen.getByRole('textbox', { name: 'Commit message' }), 'feat: ');
+
+      const dialog = await openPreview();
+      // One field, holding what was typed on the card.
+      const field = screen.getByRole('textbox', { name: 'Commit message' });
+      expect(dialog).toContainElement(field);
+      expect(field).toHaveValue('feat: ');
+      await userEvent.type(field, 'users');
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Push 2 changes' }));
+
+      expect(pushBranchChanges).toHaveBeenCalledWith({ message: 'feat: users', sources: [source] });
+    });
+
+    it('offers no push when nothing is chosen', async () => {
+      const { source } = lensSource({ ...TWO, included: 0 });
+      await renderCard([source]);
+      const dialog = await openPreview();
+      expect(within(dialog).getByRole('button', { name: 'Nothing to push' })).toBeDisabled();
+    });
+
+    it('says why a source cannot be pushed, and leaves it off the button', async () => {
+      const { source } = lensSource({
+        ...TWO,
+        blockedReason: 'A merge is in progress in this folder.',
+      });
+      await renderCard([source]);
+      act(() => useWorkspaceStore.getState().addEnvironment('Staging'));
+      const dialog = await openPreview();
+      const code = within(dialog).getByRole('region', { name: 'Code changes' });
+      expect(within(code).getByRole('status')).toHaveTextContent(
+        'Not pushed for now: A merge is in progress in this folder.',
+      );
+      // Studio's two changes still go.
+      expect(within(dialog).getByRole('button', { name: 'Push 2 changes' })).toBeEnabled();
+    });
+
+    it('shows no count beside a source that has nothing changed', async () => {
+      const { source } = lensSource({ ...TWO, total: 0, included: 0 });
+      await renderCard([source]);
+      act(() => useWorkspaceStore.getState().addEnvironment('Staging'));
+      const dialog = await openPreview();
+      expect(within(dialog).getByRole('region', { name: 'Code changes' })).not.toHaveTextContent(
+        'in this push',
+      );
+    });
+
+    it('cannot start a second push while one is running', async () => {
+      const { source } = lensSource(TWO);
+      await renderCard([source]);
+      act(() => useWorkspaceStore.setState({ branchPushInFlight: true }));
+      const dialog = await openPreview();
+      expect(within(dialog).getByRole('button', { name: 'Pushing…' })).toBeDisabled();
+    });
   });
 
   it('counts a single Studio change in the singular', async () => {

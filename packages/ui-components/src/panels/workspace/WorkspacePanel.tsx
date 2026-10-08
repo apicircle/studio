@@ -1450,6 +1450,12 @@ function BranchCard() {
   );
   const refreshNoticeText =
     refreshNotice === UP_TO_DATE_NOTICE ? upToDateNotice(unpushed.total) : refreshNotice;
+  // What a push of the whole branch carries right now: Studio's changes unless
+  // they are left out, and from each edition source what it has included — but
+  // nothing from a source that cannot push at the moment.
+  const branchPushCount =
+    (includeStudio ? unpushed.total : 0) +
+    activeSources.reduce((sum, a) => sum + (a.summary.blockedReason ? 0 : a.summary.included), 0);
 
   const onSyncAttachments = async () => {
     setSyncing(true);
@@ -1679,9 +1685,24 @@ function BranchCard() {
         sources={activeSources}
         includeStudio={includeStudio}
         onIncludeStudioChange={setIncludeStudio}
+        push={{
+          count: branchPushCount,
+          busy: pushing || branchPushInFlight,
+          disabled: anyInFlight,
+          message,
+          onMessageChange: setMessage,
+          onPush: () => {
+            // The card reports the push — its progress, each part's result, the
+            // question a secret-shaped value raises — so the preview steps aside.
+            setDiffOpen(false);
+            void onPush();
+          },
+        }}
       />
 
-      {showMessageField && (
+      {/* With an edition source the preview has this field too, bound to the
+          same message; while it is open, one is enough. */}
+      {showMessageField && !(diffOpen && activeSources.length > 0) && (
         <div className="mt-2">
           <label htmlFor="commit-message-input" className="block text-[0.6875rem] text-text-dim">
             Commit message (optional)
@@ -1936,7 +1957,7 @@ function UnpushedChangesStrip({
             {s.included < s.total ? ` (${s.included} to push)` : ''}
           </span>
         ))}
-        <span>· click to review</span>
+        <span>· click to review and push</span>
       </button>
     );
   }
@@ -1978,6 +1999,7 @@ function UnpushedChangesModal({
   sources,
   includeStudio,
   onIncludeStudioChange,
+  push,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1993,6 +2015,7 @@ function UnpushedChangesModal({
   sources: readonly ActiveBranchChange[];
   includeStudio: boolean;
   onIncludeStudioChange: (include: boolean) => void;
+  push: BranchPreviewPush;
 }) {
   if (!open) return null;
   if (sources.length > 0) {
@@ -2005,6 +2028,7 @@ function UnpushedChangesModal({
         sources={sources}
         includeStudio={includeStudio}
         onIncludeStudioChange={onIncludeStudioChange}
+        push={push}
       />
     );
   }
@@ -2046,10 +2070,25 @@ function UnpushedChangesModal({
   );
 }
 
+/** The push the changes preview offers when an edition changes the branch too. */
+interface BranchPreviewPush {
+  /** How many changes the next push carries, across Studio and every source. */
+  count: number;
+  /** A push of this branch is running. */
+  busy: boolean;
+  /** Anything else on the card is running, so a push cannot start. */
+  disabled: boolean;
+  message: string;
+  onMessageChange: (next: string) => void;
+  onPush: () => void;
+}
+
 /**
  * The changes preview when an edition changes the branch too: one section for
  * Studio's own changes — with the choice to leave them out of the next push —
- * and one per edition source, rendered by the source itself.
+ * and one per edition source, rendered by the source itself, which is where its
+ * own changes are ticked in or out. It is also where the push is made: what is
+ * chosen here is exactly what the button under it sends.
  */
 function BranchChangesReview({
   onClose,
@@ -2059,6 +2098,7 @@ function BranchChangesReview({
   sources,
   includeStudio,
   onIncludeStudioChange,
+  push,
 }: {
   onClose: () => void;
   summary: {
@@ -2073,13 +2113,15 @@ function BranchChangesReview({
   sources: readonly ActiveBranchChange[];
   includeStudio: boolean;
   onIncludeStudioChange: (include: boolean) => void;
+  push: BranchPreviewPush;
 }) {
   return (
     <Modal open onClose={onClose} title="Unpushed changes preview" className="max-w-3xl">
       <div className="flex flex-col gap-4">
         <p className="text-[0.6875rem] text-text-dim">
-          Everything Push sends to <code className="text-text-muted">{branch.name}</code>, by where
-          it was changed. A pull request from this branch carries all of it.
+          Choose what the next push sends to <code className="text-text-muted">{branch.name}</code>{' '}
+          on <code className="text-text-muted">{branch.repoFullName}</code>, by where it was
+          changed. A pull request from this branch carries everything pushed to it.
         </p>
         <section aria-label="Studio changes" className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
@@ -2102,19 +2144,60 @@ function BranchChangesReview({
           </div>
           {summary.total > 0 && <UnpushedChangesList changes={summary.changes} />}
         </section>
-        {sources.map(({ source }) => (
+        {sources.map(({ source, summary: part }) => (
           <section key={source.id} aria-label={source.label} className="flex flex-col gap-2">
-            <h3 className="text-xs font-medium text-text-primary">{source.label}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-medium text-text-primary">{source.label}</h3>
+              {part.total > 0 && (
+                <span className="text-[0.6875rem] text-text-dim">
+                  {part.included} of {part.total} in this push
+                </span>
+              )}
+            </div>
+            {part.blockedReason && (
+              <p role="status" className="text-[0.6875rem] text-warning">
+                Not pushed for now: {part.blockedReason}
+              </p>
+            )}
             <source.Section branch={branch} />
           </section>
         ))}
-        <div className="flex justify-end pt-1">
+        <div>
+          <label
+            htmlFor="branch-preview-message-input"
+            className="block text-[0.6875rem] text-text-dim"
+          >
+            Commit message (optional)
+          </label>
+          <input
+            id="branch-preview-message-input"
+            value={push.message}
+            onChange={(e) => push.onMessageChange(e.target.value)}
+            placeholder="chore: sync workspace via API Circle Studio"
+            aria-label="Commit message"
+            className="mt-1 h-7 w-full rounded-sm border border-border bg-surface px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+          />
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
           <button
             type="button"
             onClick={onClose}
             className="inline-flex h-7 items-center rounded-sm border border-border bg-surface px-3 text-xs text-text-muted hover:border-border-strong hover:text-text-primary"
           >
             Close
+          </button>
+          <button
+            type="button"
+            onClick={push.onPush}
+            disabled={push.disabled || push.count === 0}
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-accent/40 bg-accent/10 px-3 text-xs text-accent hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Upload size={11} aria-hidden="true" />
+            {push.busy
+              ? 'Pushing…'
+              : push.count === 0
+                ? 'Nothing to push'
+                : `Push ${push.count} change${push.count === 1 ? '' : 's'}`}
           </button>
         </div>
       </div>

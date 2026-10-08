@@ -48,6 +48,15 @@ export function Modal({ open, onClose, title, children, className, bodyClassName
   // when the modal closes so the user lands back where they were —
   // typically the button that launched the dialog.
   const launcherRef = useRef<HTMLElement | null>(null);
+  // Read through a ref so the effect below runs when the dialog opens and
+  // closes, and at no other time. Callers pass `onClose` inline, so it is a new
+  // function on every render of theirs; with it in the effect's dependencies,
+  // any such render — a keystroke in a field whose state the caller holds, a
+  // tick in a list it counts — tore the effect down and set it up again, which
+  // sent focus to the launcher behind the overlay and then to the dialog's
+  // first control, away from what the user was typing in.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
@@ -67,7 +76,7 @@ export function Modal({ open, onClose, title, children, className, bodyClassName
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== 'Tab') return;
@@ -106,7 +115,7 @@ export function Modal({ open, onClose, title, children, className, bodyClassName
         queueMicrotask(() => launcher.focus({ preventScroll: true }));
       }
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

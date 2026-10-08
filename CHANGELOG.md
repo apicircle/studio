@@ -54,6 +54,14 @@
 
 ### Fixed
 
+- **A dialog no longer takes focus away while you type in it.** `Modal` re-ran
+  its focus handling whenever the component that opened it re-rendered, because
+  the `onClose` it was handed is a new function on each render. A field whose
+  value that component holds therefore lost focus after one character, and
+  ticking a row in a list it counts sent focus to the dialog's first control.
+  The dialog now sets focus when it opens, restores it when it closes, and at no
+  other time; `Escape` still calls the latest `onClose`.
+
 - **`Ctrl/Cmd + 1`–`9` follows the tab strip in an edition.** The shortcut
   counted Studio's core panels whatever the strip showed, so in an edition's
   own mode `Ctrl/Cmd + 2` opened Studio's Editor instead of that mode's second
@@ -272,11 +280,55 @@
     bar is unchanged.
 
 - **A panel can belong to more than one section.** An edition that lists the
-  same panel in two `sections` keeps that tab in the strip in both modes, in the
-  same position, with a divider after it. Opening it leaves the mode where it
-  is. Studio registers no sections, so its strip is unchanged.
+  same panel in two `sections` keeps that tab in the strip in both modes, ahead
+  of the mode groups, with a divider after it. Opening it leaves the mode where
+  it is. Studio registers no sections, so its strip is unchanged.
 
 ### Changed
+
+- **An edition's modes are groups in the tab strip, not a switch in the top
+  bar** (editions with two or more `sections` only). The Studio ⇄ edition
+  segmented toggle is gone from the right end of the top bar. Each mode is now
+  a header in the tab strip, after the tabs every mode shares:
+  - **The active mode is unfolded** to its own tabs beside its header, in one
+    bordered run; every other mode is folded to its header. Pressing a header
+    opens that mode and folds the rest, on the same line.
+  - **A mode opens where it was left**, as before, or on the first panel of its
+    own that the shell shows. A panel the modes share is no longer what a mode
+    remembers, so pressing "Studio" from the shared Workspace page opens the
+    Editor (or the Studio panel last used) instead of staying on Workspace. A
+    first-run landing card opens a mode the same way.
+  - **A panel opened directly is the panel shown.** An edition that sends the
+    user to a panel through the store (`setActivePanel('editor')`) lands on that
+    panel, and its mode unfolds around it, whatever that mode remembered.
+  - **Shared tabs lead the strip** in every mode, then the divider, then the
+    groups. `visibleTabs` orders them that way, so `Ctrl/Cmd + N` still selects
+    the Nth tab on screen. A mode header is not a tab and takes no number.
+  - The headers are disclosure buttons (`aria-expanded`, `aria-controls` on the
+    unfolded one) and each unfolded run is a named group; they keep the
+    `data-section-toggle` attribute the top-bar toggle had.
+  - Studio standalone registers no sections: its top bar and its tab strip are
+    unchanged.
+
+- **The working branch's changes preview is where an edition's push is chosen
+  and made** (editions with `branchChangeSources` only). The preview had a
+  section per source and a Close button; pushing meant closing it and pressing
+  "Push to save" on the card.
+  - It now ends in **Push N changes**, counting exactly what is chosen: Studio's
+    changes unless "Include Studio changes" is unticked, plus what each source
+    has included. Pressing it closes the preview and the card reports the push
+    as before, part by part. With nothing chosen it reads "Nothing to push".
+  - It takes the **commit message** (the same one as the card's field, which
+    steps aside while the preview is open) and names **where the push goes**:
+    the working branch and the repository it is on.
+  - Each source's heading says how many of its changes this push carries, and a
+    source that cannot push right now says why (`blockedReason`), which the card
+    never showed.
+  - `WorkspaceStatusChip` counts what each source has included alongside
+    Studio's own unpushed changes, so the top bar says the same thing the
+    preview's button does.
+  - Studio standalone registers no source: its preview, its card and the chip's
+    count are unchanged.
 
 - **Five built-in themes set their own status colours.** Graphite Dark,
   Midnight Blue, Workbench Light, Paper Light and High Contrast Dark never
@@ -285,12 +337,12 @@
   white, at 2.4:1. Each now takes them from its own palette, and every theme
   is required to define all four.
 - **Switching modes returns to the panel each mode was left on** (editions with
-  `sections` only). The toggle used to open a mode's first panel every time, so
+  `sections` only). Opening a mode used to show its first panel every time, so
   a trip to the other mode and back cost a second click to find your place. Each
   mode now remembers its panel per workspace, across launches. A mode that has
   not been used yet, and one whose remembered panel is no longer shown, still
-  opens at its first panel. So does a first-run landing card. Clicking the mode
-  that is already active now leaves the panel alone. A remembered panel that an
+  opens at its first panel. So does a first-run landing card. Pressing the mode
+  that is already active leaves one of its own panels alone. A remembered panel that an
   edition contributes only after launch (once its account has loaded) is opened
   when it arrives, unless the user has moved in the meantime. Studio standalone
   has no modes and is unaffected.

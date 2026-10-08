@@ -1,6 +1,5 @@
 import { screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Compass, Server } from 'lucide-react';
 import { TopBar } from './TopBar';
 import { renderWithStore } from '../../test/renderWithStore';
@@ -58,30 +57,26 @@ describe('TopBar', () => {
     expect(screen.queryByRole('button', { name: /Choose font family/ })).toBeNull();
   });
 
-  it('renders no mode toggle in Studio (no sections — byte-identical top bar)', async () => {
-    await renderWithStore(<TopBar />);
-    expect(screen.queryByRole('tablist', { name: /Mode/ })).toBeNull();
-  });
-
-  it('renders a segmented toggle and switches section when >1 section', async () => {
-    const setActiveSectionId = vi.fn();
+  it("carries no mode switch — an edition's modes are groups in the tab strip", async () => {
+    // The switch used to sit at the right end of this bar. It is navigation, so
+    // it lives with the tabs (`PanelTabs`); the bar must not grow a second one.
     const value: SectionsContextValue = {
       sections: [
         { id: 'studio', label: 'Studio', icon: Compass, panelIds: ['editor'] },
         { id: 'lens', label: 'Lens', icon: Server, panelIds: ['lens.discover'] },
       ],
       activeSectionId: 'studio',
-      setActiveSectionId,
+      setActiveSectionId: () => {},
     };
-    await renderWithStore(
+    const { container } = await renderWithStore(
       <SectionsProvider value={value}>
         <TopBar />
       </SectionsProvider>,
     );
-    expect(screen.getByRole('tablist', { name: /Mode/ })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /Studio/ })).toHaveAttribute('aria-selected', 'true');
-    await userEvent.click(screen.getByRole('tab', { name: /Lens/ }));
-    expect(setActiveSectionId).toHaveBeenCalledWith('lens');
+    expect(container.querySelector('[data-section-toggle]')).toBeNull();
+    expect(screen.queryByRole('tablist')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Lens' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Studio' })).toBeNull();
   });
 
   it('renders nothing beside the workspace switcher in Studio (no status passed)', async () => {

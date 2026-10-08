@@ -7,12 +7,12 @@ import type { LucideIcon } from 'lucide-react';
  * alongside an edition's "Lens" section — without forking the shell. Like
  * {@link ./extraPanels} this is **additive and a strict no-op when nothing is
  * registered**: Studio passes no sections, so the default context value is a
- * frozen empty array, the first-run landing + the top toggle never render, and
+ * frozen empty array, the first-run landing + the mode groups never render, and
  * `PanelTabs` shows every panel exactly as before.
  *
  * The edition supplies sections via `<App sections={[…]} />`; App wires them into
  * `SectionsContext` (sourcing the active section from per-workspace persistence),
- * and `PanelTabs` / `TopBar` / `SectionLanding` read them from there. Sign-in
+ * and `PanelTabs` / `SectionLanding` read them from there. Sign-in
  * gating for a section lives inside the edition (it renders its own gate when the
  * section carries `requiresAuth`); the seam only carries the flag, so no
  * entitlement concept leaks into Studio.
@@ -25,14 +25,24 @@ import type { LucideIcon } from 'lucide-react';
  * panel no section lists leaves the mode where it is, and following never
  * changes the active panel itself.
  *
- * A panel may be listed by more than one section. It then stays in the tab
- * strip across those modes, set off from the rest by a divider, and opening it
- * never moves the mode: the active section already lists it.
+ * With two or more sections the tab strip is one line of groups. Each section is
+ * a header in it, and the active section's header is followed by that section's
+ * own panels; the others stay folded to their header. Pressing a header makes
+ * that section the active one, which unfolds it and folds the rest.
  *
- * Each section remembers the panel last open in it, per workspace. Switching to
- * a section returns to that panel instead of the section's first one, so a trip
- * to the other mode and back lands where it started. The first-run landing is
- * the exception: its cards open a section at its first panel.
+ * A panel may be listed by more than one section. It is then **shared**: it
+ * belongs to the workspace rather than to a mode, so it sits ahead of every
+ * group, set off by a divider, and opening it never moves the mode — the active
+ * section already lists it. A panel only one section lists is that section's
+ * **own** ({@link ownPanelIds}).
+ *
+ * Each section remembers which of its own panels was last open, per workspace.
+ * Pressing its header returns there instead of to its first panel, so a trip to
+ * the other mode and back lands where it started. A shared panel is never what
+ * a section remembers: pressing "Studio" from a shared page must open Studio.
+ * Opening a panel directly through the store goes to that panel, whatever its
+ * section remembered. The first-run landing opens a section at its first own
+ * panel.
  */
 export interface SectionDef {
   /** Edition-namespaced id, e.g. `lens.studio` / `lens.lens`. */
@@ -46,7 +56,8 @@ export interface SectionDef {
    * section. `PanelTabs` shows only the active section's panels; a panel id not
    * listed in any section is simply hidden while that section is active.
    * Opening a panel that another section lists switches the mode to it.
-   * The first id is where the section opens until it has a remembered panel.
+   * The section opens on the first id only it lists, until it has a remembered
+   * panel.
    */
   panelIds: readonly string[];
   /**
@@ -164,17 +175,37 @@ export function writeStoredSectionPanel(
 }
 
 /**
- * The panel a section opens on: the remembered one while the section still
- * lists it and the shell still shows it, else the section's first panel
- * (`undefined` for a section with no panels). `isShown` is what keeps a stale
- * memory from opening a panel that is no longer there, such as an edition panel
- * the account has since lost.
+ * The panels only this section lists, in its own order. A panel another section
+ * lists too is shared between modes and is left out.
+ */
+export function ownPanelIds(section: SectionDef, sections: readonly SectionDef[]): string[] {
+  return section.panelIds.filter(
+    (panelId) =>
+      !sections.some((other) => other.id !== section.id && other.panelIds.includes(panelId)),
+  );
+}
+
+/**
+ * The panel a section opens on: the remembered one while it is still one of the
+ * section's own and the shell still shows it, else the first of its own panels
+ * the shell shows (`undefined` for a section with no panels). `isShown` is what
+ * keeps a stale memory from opening a panel that is no longer there, such as an
+ * edition panel the account has since lost, and what skips a panel this build
+ * hides when picking the first one.
+ *
+ * A section whose every panel is shared has none of its own; it opens on the
+ * panels it lists instead. When the shell shows none of the candidates yet — an
+ * edition can contribute a panel after launch — the first one is still named,
+ * so the caller can wait for it.
  */
 export function resolveSectionPanel(
   section: SectionDef,
+  sections: readonly SectionDef[],
   stored: string | null,
   isShown: (panelId: string) => boolean,
 ): string | undefined {
-  if (stored !== null && section.panelIds.includes(stored) && isShown(stored)) return stored;
-  return section.panelIds[0];
+  const own = ownPanelIds(section, sections);
+  const candidates = own.length > 0 ? own : section.panelIds;
+  if (stored !== null && candidates.includes(stored) && isShown(stored)) return stored;
+  return candidates.find(isShown) ?? candidates[0];
 }

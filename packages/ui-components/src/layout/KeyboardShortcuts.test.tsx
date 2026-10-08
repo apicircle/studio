@@ -197,7 +197,7 @@ describe('KeyboardShortcuts in an edition', () => {
 
   it("Ctrl+N selects the Nth tab of the active mode's strip", async () => {
     await renderEdition('lens');
-    // The Lens strip reads Workspace · Index · Review: core panels first.
+    // The Lens strip reads Workspace · Index · Review: the shared tab, then the mode's own.
     pressKey({ key: '1', ctrl: true });
     expect(useWorkspaceStore.getState().activePanel).toBe('workspace');
     pressKey({ key: '2', ctrl: true });

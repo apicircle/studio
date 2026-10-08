@@ -4,6 +4,7 @@ import { Compass, Server } from 'lucide-react';
 import {
   NO_SECTIONS,
   SectionsProvider,
+  ownPanelIds,
   useSections,
   resolveActiveSection,
   readStoredSection,
@@ -166,27 +167,82 @@ describe('sections seam', () => {
     });
   });
 
+  describe('ownPanelIds', () => {
+    const studioSharing: SectionDef = { ...studio, panelIds: ['workspace', 'editor', 'env'] };
+    const lensSharing: SectionDef = { ...lens, panelIds: ['lens.discover', 'workspace'] };
+
+    it('is every panel while no other section lists any of them', () => {
+      expect(ownPanelIds(studio, two)).toEqual(['editor', 'workspace']);
+      expect(ownPanelIds(lens, two)).toEqual(['lens.discover']);
+    });
+
+    it("leaves out a panel another section lists too, keeping the section's order", () => {
+      const sharing = [studioSharing, lensSharing];
+      expect(ownPanelIds(studioSharing, sharing)).toEqual(['editor', 'env']);
+      expect(ownPanelIds(lensSharing, sharing)).toEqual(['lens.discover']);
+    });
+
+    it('is empty for a section whose every panel is shared', () => {
+      const onlyShared: SectionDef = { ...lens, panelIds: ['workspace'] };
+      expect(ownPanelIds(onlyShared, [studioSharing, onlyShared])).toEqual([]);
+    });
+
+    it('does not count the section against itself', () => {
+      expect(ownPanelIds(studio, [studio])).toEqual(['editor', 'workspace']);
+    });
+  });
+
   describe('resolveSectionPanel', () => {
     const shown = () => true;
+    // The Workspace page is listed by both, and first by Studio.
+    const studioSharing: SectionDef = { ...studio, panelIds: ['workspace', 'editor', 'env'] };
+    const lensSharing: SectionDef = { ...lens, panelIds: ['lens.discover', 'workspace'] };
+    const sharing = [studioSharing, lensSharing];
 
-    it('returns the remembered panel while the section lists it and the shell shows it', () => {
-      expect(resolveSectionPanel(studio, 'workspace', shown)).toBe('workspace');
+    it("returns the remembered panel while it is the section's own and the shell shows it", () => {
+      expect(resolveSectionPanel(studioSharing, sharing, 'env', shown)).toBe('env');
     });
 
-    it('falls back to the first panel when nothing is remembered', () => {
-      expect(resolveSectionPanel(studio, null, shown)).toBe('editor');
+    it('opens on the first own panel when nothing is remembered', () => {
+      expect(resolveSectionPanel(studioSharing, sharing, null, shown)).toBe('editor');
+      expect(resolveSectionPanel(studio, two, null, shown)).toBe('editor');
     });
 
-    it('falls back to the first panel when the section no longer lists the remembered one', () => {
-      expect(resolveSectionPanel(studio, 'lens.discover', shown)).toBe('editor');
+    it('never returns to a panel the modes share, even when one was stored', () => {
+      // An earlier build stored whichever listed panel was on screen.
+      expect(resolveSectionPanel(studioSharing, sharing, 'workspace', shown)).toBe('editor');
     });
 
-    it('falls back to the first panel when the shell no longer shows the remembered one', () => {
-      expect(resolveSectionPanel(studio, 'workspace', (id) => id !== 'workspace')).toBe('editor');
+    it('falls back to the first own panel when the section no longer lists the remembered one', () => {
+      expect(resolveSectionPanel(studioSharing, sharing, 'lens.discover', shown)).toBe('editor');
+    });
+
+    it('falls back to the first own panel when the shell no longer shows the remembered one', () => {
+      expect(resolveSectionPanel(studioSharing, sharing, 'env', (id: string) => id !== 'env')).toBe(
+        'editor',
+      );
+    });
+
+    it('skips an own panel the shell does not show when picking the first', () => {
+      expect(
+        resolveSectionPanel(studioSharing, sharing, null, (id: string) => id !== 'editor'),
+      ).toBe('env');
+    });
+
+    it('still names the first own panel when the shell shows none of them yet', () => {
+      // An edition can contribute its panels after launch; the caller waits.
+      expect(resolveSectionPanel(lensSharing, sharing, null, () => false)).toBe('lens.discover');
+    });
+
+    it('opens a section that has no panel of its own on a panel it lists', () => {
+      const onlyShared: SectionDef = { ...lens, panelIds: ['workspace'] };
+      expect(resolveSectionPanel(onlyShared, [studioSharing, onlyShared], null, shown)).toBe(
+        'workspace',
+      );
     });
 
     it('returns undefined for a section with no panels', () => {
-      expect(resolveSectionPanel({ ...lens, panelIds: [] }, null, shown)).toBeUndefined();
+      expect(resolveSectionPanel({ ...lens, panelIds: [] }, two, null, shown)).toBeUndefined();
     });
   });
 });

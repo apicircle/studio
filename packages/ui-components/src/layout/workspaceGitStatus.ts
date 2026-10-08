@@ -7,6 +7,7 @@ import {
   hostOfWorkspaceSession,
   useWorkspaceStore,
 } from '../store/workspaceStore';
+import { useActiveBranchChanges } from './branchChanges';
 import { isGitHostLocked, useGitHostAccess } from './gitHostAccess';
 
 /**
@@ -28,7 +29,11 @@ export type WorkspaceGitStatus =
       host: GitHostKind;
       repo: string;
       branch: string;
-      /** Changes the next push would carry; `null` until they have been counted. */
+      /**
+       * Changes the next push would carry: Studio's own, plus what each of an
+       * edition's branch change sources has included. `null` until Studio's have
+       * been counted.
+       */
       unpushed: number | null;
     };
 
@@ -78,7 +83,16 @@ export function useWorkspaceGitStatus(): WorkspaceGitStatus {
   // the same choice the Workspace page makes, so the two never name different hosts.
   const host = repo !== null ? repoHost : sessionHost;
   const locked = connected && isGitHostLocked(access, host);
-  const unpushed = useUnpushedCount(connected && !locked && branch !== null);
+  const studioUnpushed = useUnpushedCount(connected && !locked && branch !== null);
+  // An edition's changes on the branch (the Lens edition's code) go out in the
+  // same push, so they are waiting to be pushed exactly as Studio's are. A
+  // source that cannot push right now carries nothing. Studio registers no
+  // source: this adds zero.
+  const editionUnpushed = useActiveBranchChanges().reduce(
+    (sum, { summary }) => sum + (summary.blockedReason ? 0 : summary.included),
+    0,
+  );
+  const unpushed = studioUnpushed === null ? null : studioUnpushed + editionUnpushed;
 
   if (!connected) return { kind: 'local' };
   if (locked) return { kind: 'locked', host };

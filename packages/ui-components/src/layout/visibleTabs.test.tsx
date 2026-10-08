@@ -66,6 +66,24 @@ describe('visibleTabs', () => {
     ]);
   });
 
+  it("puts what the modes share first, then the mode's own, each in the shell's order", () => {
+    // History comes after the Editor in the shell, and both modes list it: it
+    // leads the strip in both, where the divider and the mode groups follow it.
+    const sharingHistory: SectionDef[] = [
+      { id: 'studio', label: 'Studio', icon: Compass, panelIds: ['editor', 'history', 'env'] },
+      { id: 'lens', label: 'Lens', icon: Server, panelIds: ['lens.review', 'history'] },
+    ];
+    expect(ids(visibleTabs(extraPanels, sharingHistory, 'studio'))).toEqual([
+      'history',
+      'editor',
+      'env',
+    ]);
+    expect(ids(visibleTabs(extraPanels, sharingHistory, 'lens'))).toEqual([
+      'history',
+      'lens.review',
+    ]);
+  });
+
   it('marks a panel shared only when more than one section lists it', () => {
     const tabs = visibleTabs(extraPanels, sections, 'lens');
     expect(tabs.map((t) => [t.id, t.shared])).toEqual([

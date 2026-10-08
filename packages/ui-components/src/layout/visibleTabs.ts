@@ -9,13 +9,17 @@ export interface VisibleTab {
   id: string;
   label: string;
   icon: LucideIcon;
-  /** Listed by more than one section, so it stays in the strip across modes. */
+  /**
+   * Listed by more than one section: it belongs to the workspace rather than to
+   * a mode, sits ahead of the mode groups and stays in the strip across modes.
+   */
   shared: boolean;
 }
 
 /**
- * The tabs the strip shows, left to right: core panels first, then the
- * edition's, narrowed to the active section when sections are registered.
+ * The tabs the strip shows, left to right. With no sections: core panels, then
+ * the edition's. With sections: the panels every mode shares first, then the
+ * active section's own — each run in the shell's panel order.
  *
  * `PanelTabs` renders this list and `KeyboardShortcuts` indexes it, which is
  * what makes "Ctrl+N selects the Nth tab" true by construction in every mode,
@@ -29,12 +33,13 @@ export function visibleTabs(
   const all = [...VISIBLE_PANELS, ...extraPanels];
   const section = resolveActiveSection(activeSectionId, sections);
   const shown = section ? all.filter((p) => section.panelIds.includes(p.id)) : all;
-  return shown.map(({ id, label, icon }) => ({
+  const tabs = shown.map(({ id, label, icon }) => ({
     id,
     label,
     icon,
     shared: sections.filter((s) => s.panelIds.includes(id)).length > 1,
   }));
+  return [...tabs.filter((tab) => tab.shared), ...tabs.filter((tab) => !tab.shared)];
 }
 
 /**
