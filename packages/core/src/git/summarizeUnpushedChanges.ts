@@ -5,7 +5,8 @@ import { type EntityBucket, computeThreeWayDiff } from './threeWayDiff';
 // Pre-push diff summary: compares the consumer's currently-edited synced
 // doc against the last-pulled snapshot to enumerate every uncommitted
 // change. Powers the BranchCard's "+N added · ~M modified · -K removed"
-// strip (B.3) and the side-by-side preview modal beneath it.
+// strip (B.3) and the preview modal beneath it, which draws each change as
+// a diff of `base` against `local`.
 //
 // Pure — caller decides when to recompute (typically on every store
 // mutation; cheap enough to skip debouncing for typical workspace

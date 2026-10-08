@@ -330,6 +330,23 @@
   - Studio standalone registers no source: its preview, its card and the chip's
     count are unchanged.
 
+- **An unpushed change opens to a diff, not to two copies of its JSON.** A row
+  of the unpushed-changes preview opened to the whole entry twice, "Before
+  (last pull)" beside "After (current)", in two small boxes; finding the field
+  that changed meant reading both. It now opens to a unified diff of that JSON:
+  the lines the push removes (−) and the lines it adds (+), numbered, with three
+  unchanged lines around each change and a `@@` header per hunk.
+  - **Each row says how large the change is before it is opened**: `+1 −1`,
+    the lines of JSON added and removed, beside a "Diff" chevron.
+  - An added entry reads as all added lines and a removed one as all removed; a
+    side that is `null` (the release ledger before its first publish) counts as
+    not existing.
+  - A diff taller or wider than its box scrolls, from the keyboard too. One
+    longer than 1,000 lines draws the first 1,000 and counts the rest.
+  - The row's badges, its accessible name (`Toggle <kind> <label>`) and the
+    list's (`Unpushed changes`) are unchanged. `UnpushedChangesList` is the same
+    export, so an edition's preview shows its Studio section the same way.
+
 - **Five built-in themes set their own status colours.** Graphite Dark,
   Midnight Blue, Workbench Light, Paper Light and High Contrast Dark never
   defined `success` / `warning` / `danger` / `info` and showed the default dark

@@ -262,6 +262,18 @@ test.describe('Rename surfaces in unpushed-changes UI (regression)', () => {
       const list = modal.getByRole('list', { name: 'Unpushed changes' });
       await expect(list).toContainText('mockServer');
       await expect(list).toContainText('Renamed Mock');
+
+      // The row says how large the change is, and opens to it as a diff: the
+      // old name removed and the new one added — not the mock server twice.
+      const row = list.getByRole('button', { name: 'Toggle modified Renamed Mock' });
+      await expect(row).toContainText(/\+\d+ −\d+/);
+      await expect(row).toContainText('Diff');
+      await row.click();
+      const diff = modal.getByRole('region', { name: 'Change to Renamed Mock' });
+      await expect(diff).toContainText(/@@ -\d+,\d+ \+\d+,\d+ @@/);
+      await expect(diff).toContainText('− "name": "Original Mock"');
+      await expect(diff).toContainText('+ "name": "Renamed Mock"');
+      await expect(diff).not.toContainText('Before (last pull)');
     },
   );
 

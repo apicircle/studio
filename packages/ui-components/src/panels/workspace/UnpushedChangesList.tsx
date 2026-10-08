@@ -1,11 +1,22 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { UnpushedChange } from '@apicircle/core';
+import { cn } from '../../primitives/cn';
+import {
+  MAX_DRAWN_LINES,
+  capHunks,
+  countChangedLines,
+  diffLines,
+  toHunks,
+  type DiffLine,
+} from './lineDiff';
 
 /**
- * The list of Studio's unpushed changes — one expandable row per entity, with
- * its before/after JSON. Rendered by the working-branch card's preview, and
- * exported so an edition's own review of the branch shows Studio's changes the
- * same way.
+ * The list of Studio's unpushed changes — one row per entity, which opens to
+ * the change as a unified diff of its JSON: the lines the push removes and the
+ * lines it adds, with a few unchanged lines around them. Rendered by the
+ * working-branch card's preview, and exported so an edition's own review of
+ * the branch shows Studio's changes the same way.
  */
 export function UnpushedChangesList({ changes }: { changes: readonly UnpushedChange[] }) {
   return (
@@ -15,6 +26,16 @@ export function UnpushedChangesList({ changes }: { changes: readonly UnpushedCha
       ))}
     </ul>
   );
+}
+
+/**
+ * One side of a change as the lines of its JSON. A side that does not exist —
+ * the entry was added, or it was removed — has no lines, so the diff reads as
+ * all added or all removed.
+ */
+function jsonLines(value: unknown): string[] {
+  if (value === undefined || value === null) return [];
+  return JSON.stringify(value, null, 2).split('\n');
 }
 
 /**
@@ -39,6 +60,13 @@ function getDisambiguation(change: UnpushedChange): { method?: string; url?: str
 
 function UnpushedChangeRow({ change }: { change: UnpushedChange }) {
   const [open, setOpen] = useState(false);
+  // Worked out for every row, open or not: the row says how many lines the
+  // change adds and removes before it is opened.
+  const lines = useMemo(
+    () => diffLines(jsonLines(change.base), jsonLines(change.local)),
+    [change.base, change.local],
+  );
+  const { additions, deletions } = countChangedLines(lines);
   const tone =
     change.kind === 'added'
       ? 'border-success/40 bg-success/5 text-success'
@@ -52,6 +80,7 @@ function UnpushedChangeRow({ change }: { change: UnpushedChange }) {
   // `label` and the user had no way to tell which entry the diff meant.
   const disambig = getDisambiguation(change);
   const shortId = change.key ? change.key.slice(0, 8) : null;
+  const Chevron = open ? ChevronDown : ChevronRight;
   return (
     <li className="rounded-sm border border-border bg-surface">
       <button
@@ -91,26 +120,76 @@ function UnpushedChangeRow({ change }: { change: UnpushedChange }) {
             {shortId}
           </code>
         )}
-        <span className="text-[0.625rem] text-text-dim">{open ? '−' : '+'}</span>
+        <span
+          className="shrink-0 font-mono text-[0.625rem]"
+          title="Lines of JSON this change adds and removes"
+        >
+          <span className="text-success">+{additions}</span>{' '}
+          <span className="text-danger">−{deletions}</span>
+        </span>
+        <span className="inline-flex shrink-0 items-center gap-0.5 text-[0.625rem] text-text-dim">
+          <Chevron size={11} aria-hidden="true" />
+          Diff
+        </span>
       </button>
-      {open && (
-        <div className="grid grid-cols-2 gap-2 border-t border-border-subtle p-2 text-[0.625rem]">
-          <div>
-            <p className="mb-1 text-text-dim">Before (last pull)</p>
-            <pre className="max-h-40 overflow-y-auto rounded-sm border border-border bg-card p-1.5 font-mono text-text-muted">
-              {change.base === undefined
-                ? '— (did not exist)'
-                : JSON.stringify(change.base, null, 2)}
-            </pre>
-          </div>
-          <div>
-            <p className="mb-1 text-text-dim">After (current)</p>
-            <pre className="max-h-40 overflow-y-auto rounded-sm border border-border bg-card p-1.5 font-mono text-text-primary">
-              {change.local === undefined ? '— (deleted)' : JSON.stringify(change.local, null, 2)}
-            </pre>
-          </div>
-        </div>
-      )}
+      {open && <ChangeDiff label={change.label} lines={lines} />}
     </li>
+  );
+}
+
+const LINE_TONE: Record<DiffLine['kind'], string> = {
+  add: 'bg-success/10',
+  del: 'bg-danger/10',
+  context: '',
+};
+const LINE_MARKER: Record<DiffLine['kind'], string> = { add: '+', del: '−', context: ' ' };
+
+/**
+ * One change as a unified diff, under its row: against the last pull, what the
+ * push takes out (−) and what it puts in (+). Each line is numbered by the
+ * side it is on — a removed line by the old text, the others by the new.
+ */
+function ChangeDiff({ label, lines }: { label: string; lines: readonly DiffLine[] }) {
+  const { hunks, hidden } = capHunks(toHunks(lines), MAX_DRAWN_LINES);
+  return (
+    <div
+      role="region"
+      aria-label={`Change to ${label}`}
+      // Focusable, so the keyboard can scroll a diff taller or wider than its box.
+      tabIndex={0}
+      className="max-h-72 overflow-auto border-t border-border-subtle font-mono text-[0.6875rem] leading-relaxed focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/70"
+    >
+      {hunks.length === 0 ? (
+        <p className="p-2 font-sans text-text-dim">No difference to show.</p>
+      ) : (
+        hunks.map((hunk) => (
+          <div key={hunk.header}>
+            <div className="bg-card px-2 py-0.5 text-text-dim">{hunk.header}</div>
+            {hunk.lines.map((line) => {
+              const number = line.kind === 'del' ? line.oldLine : line.newLine;
+              return (
+                <div
+                  key={`${line.kind}:${number}`}
+                  className={cn('flex items-start gap-2 px-2', LINE_TONE[line.kind])}
+                >
+                  <span className="w-8 shrink-0 select-none text-right text-text-dim">
+                    {number}
+                  </span>
+                  <span className="whitespace-pre text-text-primary">
+                    {LINE_MARKER[line.kind]}
+                    {line.text}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ))
+      )}
+      {hidden > 0 && (
+        <p className="px-2 py-1 font-sans text-text-dim">
+          {hidden} more {hidden === 1 ? 'line' : 'lines'} not shown.
+        </p>
+      )}
+    </div>
   );
 }
