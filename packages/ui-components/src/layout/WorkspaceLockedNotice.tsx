@@ -1,3 +1,4 @@
+import { CONTACT_EMAIL, CONTACT_MAILTO_URL } from '@apicircle/shared';
 import { Lock } from 'lucide-react';
 
 /**
@@ -30,8 +31,15 @@ export function WorkspaceLockedNotice() {
       </div>
       <p className="text-[0.6875rem] text-text-dim">
         Need more workspaces, or a hand? Email{' '}
-        <a className="text-accent hover:underline" href="mailto:contact@apicircle.dev">
-          contact@apicircle.dev
+        {/* `target="_blank"` is how a desktop build hands the link to the mail
+            app: a plain link is a navigation, and the shell cancels those. */}
+        <a
+          className="text-accent hover:underline"
+          href={CONTACT_MAILTO_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {CONTACT_EMAIL}
         </a>
         .
       </p>

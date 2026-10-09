@@ -23,6 +23,13 @@ export {
 } from './envPriority';
 export { splitRepoFullName } from './repoFullName';
 export {
+  CONTACT_EMAIL,
+  CONTACT_MAILTO_URL,
+  CONTACT_MAILTO_URLS,
+  HELP_FEEDBACK_MAILTO_URL,
+  HELP_FEEDBACK_SUBJECT,
+} from './contact';
+export {
   RUN_BODY_PREVIEW_LIMIT,
   FONT_SIZE_PERCENT_MIN,
   FONT_SIZE_PERCENT_MAX,

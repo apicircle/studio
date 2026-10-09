@@ -162,7 +162,7 @@ const STEPS: ReadonlyArray<TourStep> = [
   {
     id: 'help',
     title: 'Help Center',
-    body: 'Searchable documentation for every feature. You can re-launch this tour anytime from the button at the bottom of a help article.',
+    body: 'Searchable documentation for every feature, one click away from any panel. You can re-launch this tour anytime from the button at the bottom of a help article.',
     panel: 'help',
     target: 'nav-help',
   },

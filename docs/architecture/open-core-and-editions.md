@@ -60,6 +60,16 @@ unaffected:
   working branch, or a host the edition has locked. One click opens the
   Workspace page. Additive and a no-op when omitted: Studio passes nothing and
   its top bar is unchanged.
+- **Top bar end** — the optional `App` `topBarEnd` prop is a node the top bar
+  shows at its far end, after the Help icon: an edition's account menu. The far
+  end is for what is reached from anywhere and is no stage of the work. Studio's
+  own entry there is the Help Center: a core panel tagged `topBar`
+  (`layout/panels.ts`) gets an icon button in the bar instead of a tab in the
+  strip, so it has no `Ctrl/Cmd + N`. Such a panel is in place under every
+  mode. An edition's sections should list tabs only (`PANELS` without `topBar`),
+  so that opening it never moves the mode, and the shell does not move a reader
+  off it when the workspace changes. Additive and a no-op when omitted: Studio
+  passes nothing, and Help is then the last thing in its top bar.
 - **Git host access** — the optional `App` `gitHostAccess` prop
   (`GitHostAccess`, `layout/gitHostAccess.ts`) names the hosts an edition
   registered that the current user may not use, plus an optional notice that

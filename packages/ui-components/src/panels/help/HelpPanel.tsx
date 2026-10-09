@@ -1,8 +1,8 @@
 import { useMemo, type ReactNode } from 'react';
-import { ExternalLink, HelpCircle, Lightbulb } from 'lucide-react';
+import { HELP_FEEDBACK_MAILTO_URL } from '@apicircle/shared';
+import { HelpCircle, Lightbulb, Mail } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { replayOnboarding } from '../../onboarding/OnboardingTour';
-import { GITHUB_ISSUES_NEW_URL } from '../../primitives/externalLinks';
 import { searchHelp, type HelpSection } from './helpContent';
 
 // Right pane of the Help Center. The search input + section list lives in
@@ -172,7 +172,11 @@ function renderInline(text: string): ReactNode[] {
 /**
  * Footer rendered below every help article. Two affordances:
  *  - Re-launch the onboarding tour (audit gap A16: it was dismiss-once-forever)
- *  - Open an issue / docs link for missing-help feedback
+ *  - Open an issue for missing-help feedback: a message to our contact address,
+ *    its subject filled in. It opens in the mail app, so a desktop build has to
+ *    allow this exact link (`isContactMailto` in `@apicircle/desktop-shell`).
+ *    `target="_blank"` is what routes it there on desktop, and on the web it
+ *    keeps a webmail handler from replacing the app with its compose page.
  */
 function HelpFooter() {
   return (
@@ -186,12 +190,12 @@ function HelpFooter() {
         Re-launch onboarding tour
       </button>
       <a
-        href={GITHUB_ISSUES_NEW_URL}
+        href={HELP_FEEDBACK_MAILTO_URL}
         target="_blank"
         rel="noopener noreferrer"
         className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border bg-card px-2 text-[0.6875rem] text-text-muted hover:border-accent hover:text-text-primary"
       >
-        <ExternalLink size={11} aria-hidden="true" />
+        <Mail size={11} aria-hidden="true" />
         Was this helpful? Open an issue
       </a>
     </footer>

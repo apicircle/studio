@@ -394,8 +394,10 @@ lives in `apps/desktop/src/main/mcp/mcpInstaller.ts`; IPC wiring in
   (`layout/panels.ts`): Workspace, Link Workspace, Editor, Environments,
   Execution, History, Mocks, MCP, Help Center. Editors are Monaco-based. Link
   Workspace is filtered out of the visible list (`VISIBLE_PANELS`) while
-  workspace sharing is off, so the strip shows seven tabs and `Ctrl/Cmd+N`
-  numbers against those.
+  workspace sharing is off. The Help Center is tagged `topBar`: it is opened
+  from an icon at the far end of the top bar (`TOP_BAR_PANELS`, drawn by
+  `layout/TopBar.tsx`) and is not a tab, so the strip shows six tabs
+  (`TAB_PANELS`) and `Ctrl/Cmd+N` numbers against those.
 - **Settings popover** (`layout/SettingsPicker.tsx`) hangs off the top bar —
   behavioral toggles, theme + font pickers, and the **Community section**
   (`community/CommunitySection.tsx`) that fetches live GitHub stats with a

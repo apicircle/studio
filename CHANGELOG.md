@@ -286,6 +286,40 @@
 
 ### Changed
 
+- **The Help Center is an icon at the far end of the top bar, not a tab.** It
+  is a place to look something up from anywhere, not a stage of the work, so
+  the **?** sits in the top bar on every panel and the strip is the six stages:
+  Workspace, Editor, Environments, Execution, History, Mocks.
+  - It opens the same Help Center, search rail and article, and is marked as
+    the current page while it shows; no tab is current then, and any tab leaves
+    it. Its accessible name is still "Help Center".
+  - It takes no number: **Ctrl/Cmd + 1** to **6** select the tabs, and
+    **Ctrl/Cmd + 7** no longer does anything in Studio.
+  - The onboarding tour's Help step points at the icon.
+  - `PanelDef` gains `topBar`; `layout/panels.ts` exports `TAB_PANELS` (what
+    `visibleTabs` builds the strip from) and `TOP_BAR_PANELS` (what `TopBar`
+    draws a button for). `VISIBLE_PANELS` is still every panel a user can open.
+  - Editions: a section's `panelIds` should list tabs only (`PANELS` without
+    `topBar`). The Help Center then belongs to no mode, so opening it never
+    switches mode, and a workspace switch or a relaunch leaves a reader on it.
+    The new `App` `topBarEnd` prop places a node after the Help icon, at the
+    very end of the bar, for an account menu. Studio passes nothing.
+
+- **"Was this helpful? Open an issue" writes to us instead of opening GitHub.**
+  The link under every help article now starts a message to
+  `contact@apicircle.dev` in your mail app, with the subject filled in, so
+  reporting a problem needs no GitHub account. Settings → Community still links
+  to the issue tracker.
+  - On desktop the link is handed to the mail app by the window-open handler,
+    which until now refused everything but http(s). It allows exactly the two
+    `mailto:` links the app ships (`isContactMailto` / `assertOpenableUrl` in
+    `@apicircle/desktop-shell`, the links themselves in `@apicircle/shared`'s
+    `contact.ts`); a message to any other address, or one of ours with a
+    recipient or a body added, is refused as before.
+  - The `contact@apicircle.dev` link in the locked-workspace notice takes the
+    same path. It was a plain link, which is a navigation, and the desktop
+    shell cancels every navigation away from the app.
+
 - **An edition's modes are groups in the tab strip, not a switch in the top
   bar** (editions with two or more `sections` only). The Studio ⇄ edition
   segmented toggle is gone from the right end of the top bar. Each mode is now

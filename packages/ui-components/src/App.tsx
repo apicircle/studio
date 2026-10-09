@@ -170,7 +170,7 @@ function useExternalDiskRefresh(): void {
 }
 
 import { TopBar, type BrandDef } from './layout/TopBar';
-import { PANELS, VISIBLE_PANELS } from './layout/panels';
+import { PANELS, VISIBLE_PANELS, isTopBarPanel } from './layout/panels';
 import { PanelTabs } from './layout/PanelTabs';
 import { Sidebar } from './layout/Sidebar';
 import { PanelContent } from './layout/PanelContent';
@@ -222,6 +222,7 @@ export function App({
   workspaceAccess = DEFAULT_WORKSPACE_ACCESS,
   gitHostAccess = DEFAULT_GIT_HOST_ACCESS,
   workspaceStatus,
+  topBarEnd,
   branchChangeSources = NO_BRANCH_CHANGE_SOURCES,
 }: {
   /** Edition-contributed top-nav panels. Omitted in Studio → strict no-op. */
@@ -247,6 +248,11 @@ export function App({
    * at a glance, such as `WorkspaceStatusChip`. Omitted in Studio → strict no-op.
    */
   workspaceStatus?: ReactNode;
+  /**
+   * Shown at the far end of the top bar, after Help — an edition's account
+   * menu. Omitted in Studio → strict no-op.
+   */
+  topBarEnd?: ReactNode;
   /**
    * Changes an edition makes on the working branch besides Studio's own (the
    * Lens edition's code). They join the working-branch card's preview, push and
@@ -289,10 +295,15 @@ export function App({
     // move `setActiveSectionId` makes on an explicit mode switch). Read the panel
     // via getState so this effect reconciles on load/workspace-change only, and
     // never fights the user as they switch panels within a mode.
+    //
+    // A panel opened from the top bar (Help Center) is the exception: it is
+    // reached from every mode and no section has to list it, so it is in place
+    // under any of them. Without this, switching workspace while reading help —
+    // the switcher is in the same bar — would drop the reader onto a mode tab.
     const section = resolveActiveSection(storedSectionId, sections);
     const currentPanel = useWorkspaceStore.getState().activePanel;
     pendingLandingRef.current = null;
-    if (section && !section.panelIds.includes(currentPanel)) {
+    if (section && !isTopBarPanel(currentPanel) && !section.panelIds.includes(currentPanel)) {
       const remembered = readStoredSectionPanel(workspaceId, section.id);
       const landing = resolveSectionPanel(section, sections, remembered, (id) =>
         isShownPanel(id, extraPanelsRef.current),
@@ -450,7 +461,7 @@ export function App({
           <ExtraPanelsProvider value={extraPanels}>
             <SectionsProvider value={{ sections, activeSectionId, setActiveSectionId }}>
               <div className="flex h-full flex-col bg-surface text-text-primary">
-                <TopBar brand={brand} workspaceStatus={workspaceStatus} />
+                <TopBar brand={brand} workspaceStatus={workspaceStatus} topBarEnd={topBarEnd} />
                 <PanelTabs />
                 <div className="flex flex-1 overflow-hidden">
                   <BodyArea />

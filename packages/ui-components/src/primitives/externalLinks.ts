@@ -1,7 +1,9 @@
 // Canonical external URLs surfaced from the UI. Centralised so a host or
 // release-channel change only touches this file. Every UI surface that
-// opens GitHub (Help footer, Settings → Community, banners, error toasts)
-// imports from here — no inline `github.com/apicircle/studio` literals.
+// opens GitHub (Settings → Community, banners, error toasts) imports from
+// here — no inline `github.com/apicircle/studio` literals. The links that write
+// to us instead (the Help footer's "Open an issue") are in `@apicircle/shared`
+// (`contact.ts`), where the desktop shell can read them too.
 
 const GITHUB_REPO_BASE = 'https://github.com/apicircle/studio';
 

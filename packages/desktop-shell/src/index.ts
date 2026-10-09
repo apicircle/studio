@@ -21,3 +21,4 @@ export * from './windowState';
 // Security helpers (shared by the bridges and the app's window-open handler)
 export * from './security/assertTrustedSender';
 export * from './security/assertHttpUrl';
+export * from './security/contactMailto';

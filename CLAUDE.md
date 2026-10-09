@@ -465,8 +465,10 @@ The install/uninstall logic lives in
   (`layout/panels.ts`): Workspace, Link Workspace, Editor, Environments,
   Execution, History, Mocks, MCP, Help Center. Editors are Monaco-based. Link
   Workspace is filtered out of the visible list (`VISIBLE_PANELS`) while
-  workspace sharing is off, so the strip shows seven tabs and `Ctrl/Cmd+N`
-  numbers against those.
+  workspace sharing is off. The Help Center is tagged `topBar`: it is opened
+  from an icon at the far end of the top bar (`TOP_BAR_PANELS`, drawn by
+  `layout/TopBar.tsx`) and is not a tab, so the strip shows six tabs
+  (`TAB_PANELS`) and `Ctrl/Cmd+N` numbers against those.
 - **Settings popover** (`layout/SettingsPicker.tsx`) hangs off the top bar —
   behavioral toggles, theme + font pickers, and the **Community section**
   (`community/CommunitySection.tsx`) that fetches live GitHub stats with a
@@ -664,6 +666,10 @@ keeps the two in one logical codebase with **no duplication** is recorded in
       one Studio ships for it: repository, working branch and unpushed count, or
       the step still missing, and one click to the Workspace page. Studio itself
       renders it nowhere.
+    - `topBarEnd` (`ReactNode`): shown at the far end of the top bar, after the
+      Help icon — an edition's account menu. A panel opened from the top bar is
+      in place under every mode: an edition's sections list tabs only
+      (`PANELS` without `topBar`), so opening Help never moves the mode.
     - `gitHostAccess` (`GitHostAccess`, `layout/gitHostAccess.ts`): the registered
       Git hosts the user may not use. Each is shown locked, and its use is refused
       by the edition's own provider factory.

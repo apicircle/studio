@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { VISIBLE_PANELS } from './panels';
+import { TAB_PANELS, VISIBLE_PANELS } from './panels';
 import { useExtraPanels, type ExtraPanelDef } from './extraPanels';
 import { resolveActiveSection, useSections, type SectionDef } from './sections';
 
@@ -24,13 +24,16 @@ export interface VisibleTab {
  * `PanelTabs` renders this list and `KeyboardShortcuts` indexes it, which is
  * what makes "Ctrl+N selects the Nth tab" true by construction in every mode,
  * instead of by two places agreeing to count the same way.
+ *
+ * A core panel opened from the top bar (Help Center) is never in it, whatever a
+ * section lists: its button is in `TopBar`.
  */
 export function visibleTabs(
   extraPanels: readonly ExtraPanelDef[],
   sections: readonly SectionDef[],
   activeSectionId: string,
 ): VisibleTab[] {
-  const all = [...VISIBLE_PANELS, ...extraPanels];
+  const all = [...TAB_PANELS, ...extraPanels];
   const section = resolveActiveSection(activeSectionId, sections);
   const shown = section ? all.filter((p) => section.panelIds.includes(p.id)) : all;
   const tabs = shown.map(({ id, label, icon }) => ({

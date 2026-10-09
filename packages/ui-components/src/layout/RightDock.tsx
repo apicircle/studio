@@ -53,7 +53,7 @@ export function RightDock() {
   const dockRef = useRef<HTMLElement | null>(null);
   // The dock inspects the workspace (Variables / Vault / Assets), which only
   // applies to the Studio core panels. On an edition's own panel (e.g. a Lens
-  // Index / Review / Account panel, contributed via `extraPanels`) it doesn't
+  // Review panel, contributed via `extraPanels`) it doesn't
   // apply — hide it. In Studio-standalone every panel is a core panel, so this
   // is a no-op.
   const onCorePanel = PANELS.some((p) => p.id === activePanel);

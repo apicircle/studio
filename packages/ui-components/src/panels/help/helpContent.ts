@@ -50,6 +50,7 @@ A quick rule: if a teammate should see it, it is synced; if it is private to thi
 - **Inspector dock** — a resizable right-side dock with three tabs: Variables, Vault, and Assets. **Ctrl/Cmd + K** jumps to the Vault tab.
 - **Workspace switcher** — the \`/ name\` chip in the top bar. One browser can hold several independent workspaces.
 - **Settings** — the gear in the top bar: theme, font, text size, and behaviour toggles.
+- **Help Center** — the **?** at the far end of the top bar, from any panel. It is not a tab, so it has no number.
 
 First time here? An onboarding tour runs on first launch — replay it any time from the button at the bottom of this Help Center.`,
     keywords: ['intro', 'about', 'overview', 'getting started', 'panels', 'dock', 'two document'],

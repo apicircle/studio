@@ -125,16 +125,7 @@ describe('App', () => {
         id: 'studio',
         label: 'Studio',
         icon: Compass,
-        panelIds: [
-          'workspace',
-          'link-workspace',
-          'editor',
-          'env',
-          'execution',
-          'history',
-          'mocks',
-          'help',
-        ],
+        panelIds: ['workspace', 'link-workspace', 'editor', 'env', 'execution', 'history', 'mocks'],
       },
       {
         id: 'lens',
@@ -186,6 +177,54 @@ describe('App', () => {
     expect(screen.getByText('ON BRANCH MAIN')).toBeInTheDocument();
   });
 
+  it("renders an edition's node at the far end of the top bar, after Help", async () => {
+    render(<App topBarEnd={<button type="button">ACCOUNT MENU</button>} />);
+    await waitFor(() => screen.getByText('API Circle Studio'));
+    const help = screen.getByRole('button', { name: 'Help Center' });
+    const account = screen.getByRole('button', { name: 'ACCOUNT MENU' });
+    expect(help.compareDocumentPosition(account) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Both are in the bar, not in the tab strip below it.
+    const strip = screen.getByRole('navigation', { name: 'Top navigation' });
+    expect(strip).not.toContainElement(help);
+    expect(strip).not.toContainElement(account);
+  });
+
+  it('opens the Help Center from the top bar: the same page, and no tab is current', async () => {
+    render(<App />);
+    await waitFor(() => screen.getByText('API Circle Studio'));
+    const strip = screen.getByRole('navigation', { name: 'Top navigation' });
+    expect(within(strip).queryByRole('button', { name: 'Help Center' })).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Help Center' }));
+
+    expect(useWorkspaceStore.getState().activePanel).toBe('help');
+    // The article and the search rail, as the tab used to open them.
+    expect(await screen.findByRole('heading', { level: 2, name: 'Welcome' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Search help')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Help Center' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    for (const tab of within(strip).getAllByRole('button')) {
+      expect(tab).not.toHaveAttribute('aria-current');
+    }
+
+    // A tab leaves it.
+    await userEvent.click(within(strip).getByRole('button', { name: /^Mocks$/ }));
+    expect(useWorkspaceStore.getState().activePanel).toBe('mocks');
+    expect(screen.getByRole('button', { name: 'Help Center' })).not.toHaveAttribute('aria-current');
+  });
+
+  it('keeps a relaunch on the Help Center when that is where the app was left', async () => {
+    // It has no tab, but it is a shown panel: the repair below moves only a
+    // panel this build does not show at all.
+    useWorkspaceStore.setState({ activePanel: 'help' });
+    render(<App />);
+    await waitFor(() => screen.getByText('API Circle Studio'));
+    expect(useWorkspaceStore.getState().activePanel).toBe('help');
+    expect(await screen.findByRole('heading', { level: 2, name: 'Welcome' })).toBeInTheDocument();
+  });
+
   it('registers no landing or mode groups in Studio (no sections — strict no-op)', async () => {
     localStorage.removeItem('apicircle:section-landing-done-v1');
     render(<App />);
@@ -212,7 +251,7 @@ describe('App', () => {
     localStorage.setItem('apicircle:section-landing-done-v1', 'true'); // skip the landing
     const sections: SectionDef[] = [
       { id: 'studio', label: 'Studio', icon: Compass, panelIds: ['editor', 'workspace'] },
-      { id: 'lens', label: 'Lens', icon: Server, panelIds: ['lens.discover', 'help'] },
+      { id: 'lens', label: 'Lens', icon: Server, panelIds: ['lens.discover', 'history'] },
     ];
     const extraPanels: ExtraPanelDef[] = [
       { id: 'lens.discover', label: 'Index', icon: Compass, Panel: () => <div>Index panel</div> },
@@ -242,7 +281,7 @@ describe('App', () => {
     localStorage.setItem('apicircle:section-landing-done-v1', 'true'); // skip the landing
     const sections: SectionDef[] = [
       { id: 'studio', label: 'Studio', icon: Compass, panelIds: ['editor', 'workspace'] },
-      { id: 'lens', label: 'Lens', icon: Server, panelIds: ['lens.discover', 'help'] },
+      { id: 'lens', label: 'Lens', icon: Server, panelIds: ['lens.discover', 'history'] },
     ];
     const first = render(<App sections={sections} />);
     await waitFor(() => screen.getByText('API Circle Studio'));
@@ -254,7 +293,7 @@ describe('App', () => {
 
     render(<App sections={sections} />);
     await waitFor(() => screen.getByText('API Circle Studio'));
-    await waitFor(() => expect(useWorkspaceStore.getState().activePanel).toBe('help'));
+    await waitFor(() => expect(useWorkspaceStore.getState().activePanel).toBe('history'));
   });
 
   // An edition opens panels straight through the store — Lens's "Send to Studio
@@ -351,6 +390,56 @@ describe('App', () => {
       expect(modeTab(/^Lens$/)).toHaveAttribute('aria-expanded', 'true');
       expect(sectionWrites(setItem)).toEqual([]);
       expect(useWorkspaceStore.getState().activePanel).toBe('history');
+    });
+
+    it('the Help Center, opened from the top bar, leaves the mode alone in either mode', async () => {
+      // No section lists it, as an edition's Studio section lists only tabs. It
+      // is reached from every mode, so opening it must not move the mode.
+      await renderEdition();
+      await userEvent.click(modeTab(/^Lens$/));
+      const setItem = vi.spyOn(Storage.prototype, 'setItem');
+
+      await userEvent.click(screen.getByRole('button', { name: 'Help Center' }));
+
+      expect(useWorkspaceStore.getState().activePanel).toBe('help');
+      expect(modeTab(/^Lens$/)).toHaveAttribute('aria-expanded', 'true');
+      expect(modeTab(/^Studio$/)).toHaveAttribute('aria-expanded', 'false');
+      expect(sectionWrites(setItem)).toEqual([]);
+      // The active mode's header leads back to the panel that mode was left on.
+      await userEvent.click(modeTab(/^Lens$/));
+      expect(useWorkspaceStore.getState().activePanel).toBe('lens.discover');
+
+      // And from Studio it stays Studio.
+      await userEvent.click(modeTab(/^Studio$/));
+      await userEvent.click(screen.getByRole('button', { name: 'Help Center' }));
+      expect(useWorkspaceStore.getState().activePanel).toBe('help');
+      expect(modeTab(/^Studio$/)).toHaveAttribute('aria-expanded', 'true');
+    });
+
+    it('a cold launch on the Help Center stays there, under the stored mode', async () => {
+      localStorage.setItem('apicircle:section-landing-done-v1', 'true'); // skip the landing
+      const first = render(<App sections={sections} extraPanels={extraPanels} />);
+      await waitFor(() => screen.getByText('API Circle Studio'));
+      const wsId = useWorkspaceStore.getState().synced!.workspaceId;
+      first.unmount();
+
+      // Lens is the stored mode, and help is where the app was left. Help is not
+      // one of Lens's panels, but it is in place under any mode.
+      localStorage.setItem(`${SECTION_KEY}${wsId}`, 'lens');
+      useWorkspaceStore.getState().setActivePanel('help');
+      const beforeRelaunch = useWorkspaceStore.getState().synced;
+
+      render(<App sections={sections} extraPanels={extraPanels} />);
+      await waitFor(() => expect(modeTab(/^Lens$/)).toHaveAttribute('aria-expanded', 'true'));
+      expect(useWorkspaceStore.getState().activePanel).toBe('help');
+      // The relaunch reads the workspace again. Wait for that to land: it is the
+      // last thing that could move the panel, and a read still running when the
+      // test ends would finish inside the next one.
+      await waitFor(() => expect(useWorkspaceStore.getState().synced).not.toBe(beforeRelaunch));
+      expect(useWorkspaceStore.getState().synced!.workspaceId).toBe(wsId);
+      expect(useWorkspaceStore.getState().activePanel).toBe('help');
+      expect(modeTab(/^Lens$/)).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.queryByText('INDEX PANEL BODY')).toBeNull();
     });
 
     it('writes nothing without sections (Studio standalone)', async () => {
@@ -634,6 +723,29 @@ describe('App', () => {
       expect(localStorage.getItem(`${PANEL_KEY}${wsB}:lens`)).toBeNull();
       expect(localStorage.getItem(`${PANEL_KEY}${wsB}:studio`)).toBe('editor');
       expect(localStorage.getItem(`${PANEL_KEY}${wsA}:lens`)).toBe('lens.review');
+    });
+
+    it('a workspace switch leaves a reader on the Help Center', async () => {
+      // The switcher is in the same bar as Help. The restore that follows a
+      // switch lands on a mode's panel whenever the panel on screen is not one
+      // of that mode's, and help is listed by no mode.
+      const wsA = await renderEdition(3);
+      await userEvent.click(modeTab(/^Lens$/));
+      await userEvent.click(screen.getByRole('button', { name: 'Help Center' }));
+      expect(activePanel()).toBe('help');
+
+      await act(async () => {
+        await useWorkspaceStore.getState().createNewWorkspace('Second', 3);
+      });
+      const wsB = useWorkspaceStore.getState().synced!.workspaceId;
+      expect(wsB).not.toBe(wsA);
+
+      // The new workspace opens in its own mode (Studio, having none stored)...
+      await waitFor(() => expect(modeTab(/^Studio$/)).toHaveAttribute('aria-expanded', 'true'));
+      // ...with help still on screen, and nothing remembered for it.
+      expect(activePanel()).toBe('help');
+      expect(localStorage.getItem(`${PANEL_KEY}${wsB}:studio`)).toBeNull();
+      expect(localStorage.getItem(`${PANEL_KEY}${wsB}:lens`)).toBeNull();
     });
 
     it('records nothing without sections (Studio standalone)', async () => {

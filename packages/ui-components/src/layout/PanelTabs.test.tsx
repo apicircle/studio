@@ -8,7 +8,7 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 import { SectionsProvider, type SectionsContextValue } from './sections';
 
 describe('PanelTabs', () => {
-  it('renders the agreed tab set (no Settings, no Commands, no Link Workspace)', async () => {
+  it('renders the agreed tab set (no Settings, no Commands, no Link Workspace, no Help)', async () => {
     await renderWithStore(<PanelTabs />);
     const tabs = screen.getAllByRole('button');
     const labels = tabs.map((t) => t.textContent);
@@ -21,9 +21,18 @@ describe('PanelTabs', () => {
       'Execution',
       'History',
       'Mocks',
-      'Help Center',
     ]);
     expect(labels).not.toContain('Link Workspace');
+    // The Help Center is opened from the top bar.
+    expect(labels).not.toContain('Help Center');
+  });
+
+  it('marks no tab current while a top-bar panel is on screen', async () => {
+    await renderWithStore(<PanelTabs />);
+    act(() => useWorkspaceStore.getState().setActivePanel('help'));
+    for (const tab of screen.getAllByRole('button')) {
+      expect(tab).not.toHaveAttribute('aria-current');
+    }
   });
 
   it('marks the active tab with aria-current="page"', async () => {

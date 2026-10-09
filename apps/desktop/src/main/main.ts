@@ -19,7 +19,7 @@ import {
   readWindowBounds,
   writeWindowBounds,
   assertTrustedSender,
-  assertHttpUrl,
+  assertOpenableUrl,
 } from '@apicircle/desktop-shell';
 import { registerAutoUpdater } from './autoUpdater';
 
@@ -97,9 +97,11 @@ function createWindow(): BrowserWindow {
   // Block window.open() from the renderer entirely. Any URL the renderer
   // would have opened in a new BrowserWindow (which would inherit our
   // preload!) is routed through the system browser after scheme validation.
+  // The one other thing that opens is a message to our own contact address,
+  // in the mail app: the links the UI ships for it, matched to the character.
   win.webContents.setWindowOpenHandler(({ url }) => {
     try {
-      const validated = assertHttpUrl(url, 'window.open url');
+      const validated = assertOpenableUrl(url, 'window.open url');
       void shell.openExternal(validated);
     } catch (err) {
       console.error('[main] refused window.open:', err);

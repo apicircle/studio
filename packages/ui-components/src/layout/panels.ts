@@ -18,12 +18,17 @@ export interface PanelDef extends SharingTagged {
   label: string;
   icon: LucideIcon;
   hasSidebar: boolean;
+  /**
+   * Opened from a button in the top bar instead of a tab in the strip. Such a
+   * panel is a place to look something up from anywhere, not a stage of the
+   * work, so it has no position among the tabs and no `Ctrl/Cmd + N`.
+   */
+  topBar?: true;
 }
 
-// Top nav per revisions: 'Workspace' (was Git) → 'Link Workspace' (was API
-// Connections) → Editor → Environments → Execution → History → Mocks → MCP →
-// Help Center. Settings panel removed; Secret Vault and Theme moved to TopBar.
-// Mocks + MCP added in P27 (Phase 2 — mock server runtime + AI client wiring).
+// The panels, in tab order: Workspace → Link Workspace → Editor → Environments
+// → Execution → History → Mocks. Help Center is last and is not a tab: it is
+// opened from the top bar (`topBar`).
 export const PANELS: ReadonlyArray<PanelDef> = [
   { id: 'workspace', label: 'Workspace', icon: Workflow, hasSidebar: false },
   {
@@ -38,11 +43,12 @@ export const PANELS: ReadonlyArray<PanelDef> = [
   { id: 'execution', label: 'Execution', icon: PlayCircle, hasSidebar: true },
   { id: 'history', label: 'History', icon: History, hasSidebar: true },
   { id: 'mocks', label: 'Mocks', icon: Server, hasSidebar: true },
-  { id: 'help', label: 'Help Center', icon: HelpCircle, hasSidebar: true },
+  { id: 'help', label: 'Help Center', icon: HelpCircle, hasSidebar: true, topBar: true },
 ];
 
 /**
- * The panels this build actually shows, in tab order.
+ * The panels this build actually shows — everything a user can open, wherever
+ * its entry is.
  *
  * `PANELS` keeps every entry on purpose — `getPanel`, `resolveActivePanel` and
  * the store's `VALID_PANELS` all still have to resolve `'link-workspace'` so a
@@ -50,12 +56,36 @@ export const PANELS: ReadonlyArray<PanelDef> = [
  * shell. This is the list for anything user-facing.
  *
  * Frozen at module scope rather than filtered per call, so its identity never
- * changes. `visibleTabs` builds the tab strip from it — the one list `PanelTabs`
- * renders and `KeyboardShortcuts` indexes, which is what makes "Ctrl+N always
- * selects the Nth visible tab" true by construction rather than by two places
- * agreeing to count the same way.
+ * changes.
  */
 export const VISIBLE_PANELS: ReadonlyArray<PanelDef> = Object.freeze(visibleUnderSharing(PANELS));
+
+/**
+ * The shown panels that are tabs, in tab order: `VISIBLE_PANELS` without the
+ * ones opened from the top bar.
+ *
+ * `visibleTabs` builds the tab strip from it — the one list `PanelTabs` renders
+ * and `KeyboardShortcuts` indexes, which is what makes "Ctrl+N always selects
+ * the Nth visible tab" true by construction rather than by two places agreeing
+ * to count the same way. Frozen at module scope for the same reason as above.
+ */
+export const TAB_PANELS: ReadonlyArray<PanelDef> = Object.freeze(
+  VISIBLE_PANELS.filter((p) => !p.topBar),
+);
+
+/**
+ * The shown panels opened from the top bar, in the order their buttons sit.
+ * `TopBar` draws one button for each, so tagging a panel `topBar` is all it
+ * takes to move it there.
+ */
+export const TOP_BAR_PANELS: ReadonlyArray<PanelDef> = Object.freeze(
+  VISIBLE_PANELS.filter((p) => p.topBar === true),
+);
+
+/** Whether `id` is a panel opened from the top bar instead of a tab. */
+export function isTopBarPanel(id: string): boolean {
+  return TOP_BAR_PANELS.some((p) => p.id === id);
+}
 
 export function getPanel(id: PanelId): PanelDef {
   const panel = PANELS.find((p) => p.id === id);

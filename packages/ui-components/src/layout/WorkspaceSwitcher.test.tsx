@@ -181,7 +181,12 @@ describe('WorkspaceSwitcher access policy', () => {
       within(notice).getByText(/Additional workspaces are locked on this plan\./),
     ).toBeInTheDocument();
     expect(within(notice).getByText(/Nothing has been deleted/)).toBeInTheDocument();
-    expect(within(notice).getByRole('link', { name: 'contact@apicircle.dev' })).toBeInTheDocument();
+    const email = within(notice).getByRole('link', { name: 'contact@apicircle.dev' });
+    expect(email).toHaveAttribute('href', 'mailto:contact@apicircle.dev');
+    // A new window, not a navigation: a desktop build cancels navigations, and
+    // hands exactly this link to the mail app.
+    expect(email).toHaveAttribute('target', '_blank');
+    expect(email).toHaveAttribute('rel', 'noopener noreferrer');
     // It promises no date: the pricing release it once waited on has shipped.
     expect(notice).not.toHaveTextContent(/end of September/);
     // and it did NOT switch

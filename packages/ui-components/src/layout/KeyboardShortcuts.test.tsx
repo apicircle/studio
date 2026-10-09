@@ -55,23 +55,30 @@ describe('KeyboardShortcuts', () => {
     expect(useWorkspaceStore.getState().activePanel).toBe('history');
     pressKey({ key: '6', ctrl: true });
     expect(useWorkspaceStore.getState().activePanel).toBe('mocks');
-    pressKey({ key: '7', ctrl: true });
-    expect(useWorkspaceStore.getState().activePanel).toBe('help');
   });
 
-  it('Ctrl+8 and Ctrl+9 are no-ops — there are only seven visible tabs', () => {
+  it('Ctrl+7 to Ctrl+9 are no-ops — there are only six tabs', () => {
+    // Seven used to be the Help Center. It is opened from the top bar now, so it
+    // has no place in the strip for a number to name.
     useWorkspaceStore.getState().setActivePanel('history');
-    pressKey({ key: '8', ctrl: true });
-    expect(useWorkspaceStore.getState().activePanel).toBe('history');
-    pressKey({ key: '9', ctrl: true });
-    expect(useWorkspaceStore.getState().activePanel).toBe('history');
+    for (const key of ['7', '8', '9']) {
+      expect(pressKey({ key, ctrl: true })).toBe(true);
+      expect(useWorkspaceStore.getState().activePanel).toBe('history');
+    }
   });
 
   it('never selects a panel the tab strip does not show', () => {
     for (const key of ['1', '2', '3', '4', '5', '6', '7', '8', '9']) {
       pressKey({ key, ctrl: true });
       expect(useWorkspaceStore.getState().activePanel).not.toBe('link-workspace');
+      expect(useWorkspaceStore.getState().activePanel).not.toBe('help');
     }
+  });
+
+  it('still numbers the tabs from a panel that is not one of them', () => {
+    useWorkspaceStore.getState().setActivePanel('help');
+    pressKey({ key: '2', ctrl: true });
+    expect(useWorkspaceStore.getState().activePanel).toBe('editor');
   });
 
   it('Ctrl+K opens the Vault tab in the workspace inspector dock', () => {
@@ -224,9 +231,10 @@ describe('KeyboardShortcuts in an edition', () => {
 
   it('counts edition panels after the core ones when no sections are registered', async () => {
     await renderEdition('', []);
-    pressKey({ key: '8', ctrl: true });
+    // Six core tabs, then the edition's two.
+    pressKey({ key: '7', ctrl: true });
     expect(useWorkspaceStore.getState().activePanel).toBe('lens.discover');
-    pressKey({ key: '9', ctrl: true });
+    pressKey({ key: '8', ctrl: true });
     expect(useWorkspaceStore.getState().activePanel).toBe('lens.review');
   });
 });

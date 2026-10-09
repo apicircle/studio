@@ -1,6 +1,7 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
+import { CONTACT_EMAIL, HELP_FEEDBACK_MAILTO_URL } from '@apicircle/shared';
 import { HelpPanel } from './HelpPanel';
 import { HelpSidebar } from './HelpSidebar';
 import { VISIBLE_HELP_SECTIONS } from './helpContent';
@@ -77,6 +78,27 @@ describe('HelpPanel', () => {
     await renderWithStore(<HelpFixture />);
     await user.type(screen.getByLabelText('Search help'), 'zzz-no-such-thing-zzz');
     expect(screen.getAllByText('No matching sections.')[0]).toBeInTheDocument();
+  });
+
+  it('ends every article with the tour replay and a message to our contact address', async () => {
+    const user = userEvent.setup();
+    await renderWithStore(<HelpFixture />);
+    for (const title of ['Welcome', 'Troubleshooting']) {
+      await user.click(screen.getByRole('button', { name: title }));
+      const footer = within(screen.getByRole('region')).getByRole('contentinfo');
+      expect(
+        within(footer).getByRole('button', { name: 'Re-launch onboarding tour' }),
+      ).toBeInTheDocument();
+      const issue = within(footer).getByRole('link', { name: 'Was this helpful? Open an issue' });
+      // The exact link a desktop build allows: this address, a subject, nothing else.
+      expect(issue).toHaveAttribute('href', HELP_FEEDBACK_MAILTO_URL);
+      expect(issue.getAttribute('href')).toBe(
+        `mailto:${CONTACT_EMAIL}?subject=API%20Circle%3A%20issue%20report`,
+      );
+      // A new window is how the desktop shell hands it to the mail app.
+      expect(issue).toHaveAttribute('target', '_blank');
+      expect(issue).toHaveAttribute('rel', 'noopener noreferrer');
+    }
   });
 
   // The inline spans are compiled by one regex whose alternatives are tried

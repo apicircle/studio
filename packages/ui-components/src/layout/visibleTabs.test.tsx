@@ -25,7 +25,7 @@ const sections: SectionDef[] = [
 const ids = (tabs: readonly { id: string }[]) => tabs.map((t) => t.id);
 
 describe('visibleTabs', () => {
-  it('is every visible core panel, then the edition panels, with no sections', () => {
+  it('is every core tab, then the edition panels, with no sections', () => {
     const tabs = visibleTabs(extraPanels, [], '');
     expect(ids(tabs)).toEqual([
       'workspace',
@@ -34,7 +34,6 @@ describe('visibleTabs', () => {
       'execution',
       'history',
       'mocks',
-      'help',
       'lens.discover',
       'lens.review',
     ]);
@@ -43,6 +42,16 @@ describe('visibleTabs', () => {
 
   it('never includes a panel this build hides', () => {
     expect(ids(visibleTabs([], [], ''))).not.toContain('link-workspace');
+  });
+
+  it('never includes a panel opened from the top bar, even when a section lists it', () => {
+    expect(ids(visibleTabs(extraPanels, [], ''))).not.toContain('help');
+    const listingHelp: SectionDef[] = [
+      { id: 'studio', label: 'Studio', icon: Compass, panelIds: ['editor', 'help'] },
+      { id: 'lens', label: 'Lens', icon: Server, panelIds: ['lens.review', 'help'] },
+    ];
+    expect(ids(visibleTabs(extraPanels, listingHelp, 'studio'))).toEqual(['editor']);
+    expect(ids(visibleTabs(extraPanels, listingHelp, 'lens'))).toEqual(['lens.review']);
   });
 
   it("narrows to the active section's panels, in the shell's order", () => {
@@ -113,7 +122,7 @@ describe('useVisibleTabs', () => {
     };
   }
 
-  it('is every core panel with no providers (Studio)', () => {
+  it('is every core tab with no providers (Studio)', () => {
     const { result } = renderHook(() => useVisibleTabs());
     expect(ids(result.current)).toEqual([
       'workspace',
@@ -122,7 +131,6 @@ describe('useVisibleTabs', () => {
       'execution',
       'history',
       'mocks',
-      'help',
     ]);
   });
 
@@ -147,6 +155,10 @@ describe('isShownPanel', () => {
   it('is true for a visible core panel and for a registered edition panel', () => {
     expect(isShownPanel('workspace', [])).toBe(true);
     expect(isShownPanel('lens.review', extraPanels)).toBe(true);
+  });
+
+  it('is true for a panel opened from the top bar: it is shown, only not as a tab', () => {
+    expect(isShownPanel('help', [])).toBe(true);
   });
 
   it('is false for a core panel this build hides', () => {

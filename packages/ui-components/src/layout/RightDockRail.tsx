@@ -33,8 +33,8 @@ export function RightDockRail() {
   const activePanel = useWorkspaceStore((s) => s.activePanel);
 
   // The rail opens the workspace inspector, which only applies to the Studio
-  // core panels. Hide it on an edition's own panels (e.g. Lens Index / Review /
-  // Account, contributed via `extraPanels`) — including the signed-out gate that
+  // core panels. Hide it on an edition's own panels (e.g. Lens Review,
+  // contributed via `extraPanels`) — including the signed-out gate that
   // renders in their place. No-op in Studio-standalone (every panel is core).
   if (!PANELS.some((p) => p.id === activePanel)) return null;
 
