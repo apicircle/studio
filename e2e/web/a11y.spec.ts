@@ -25,8 +25,8 @@ const TABS = [
   'Editor',
   'Environments',
   'Execution',
-  'History',
   'Mocks',
+  'History',
   'Help Center',
 ];
 

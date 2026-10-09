@@ -34,8 +34,8 @@ const PANELS = [
   { name: 'Editor', label: 'editor' },
   { name: 'Environments', label: 'environments' },
   { name: 'Execution', label: 'execution' },
-  { name: 'History', label: 'history' },
   { name: 'Mocks', label: 'mocks' },
+  { name: 'History', label: 'history' },
   { name: 'Help Center', label: 'help-center' },
 ] as const;
 

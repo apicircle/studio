@@ -392,7 +392,7 @@ lives in `apps/desktop/src/main/mcp/mcpInstaller.ts`; IPC wiring in
   OS keychain; on web a workspace passphrase model is used instead.
 - **UI:** `packages/ui-components/src/` — `App.tsx` + 9 panels
   (`layout/panels.ts`): Workspace, Link Workspace, Editor, Environments,
-  Execution, History, Mocks, MCP, Help Center. Editors are Monaco-based. Link
+  Execution, Mocks, History, MCP, Help Center. Editors are Monaco-based. Link
   Workspace is filtered out of the visible list (`VISIBLE_PANELS`) while
   workspace sharing is off. The Help Center is tagged `topBar`: it is opened
   from an icon at the far end of the top bar (`TOP_BAR_PANELS`, drawn by

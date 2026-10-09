@@ -27,7 +27,7 @@ export interface PanelDef extends SharingTagged {
 }
 
 // The panels, in tab order: Workspace → Link Workspace → Editor → Environments
-// → Execution → History → Mocks. Help Center is last and is not a tab: it is
+// → Execution → Mocks → History. Help Center is last and is not a tab: it is
 // opened from the top bar (`topBar`).
 export const PANELS: ReadonlyArray<PanelDef> = [
   { id: 'workspace', label: 'Workspace', icon: Workflow, hasSidebar: false },
@@ -41,8 +41,8 @@ export const PANELS: ReadonlyArray<PanelDef> = [
   { id: 'editor', label: 'Editor', icon: PencilLine, hasSidebar: true },
   { id: 'env', label: 'Environments', icon: Layers, hasSidebar: true },
   { id: 'execution', label: 'Execution', icon: PlayCircle, hasSidebar: true },
-  { id: 'history', label: 'History', icon: History, hasSidebar: true },
   { id: 'mocks', label: 'Mocks', icon: Server, hasSidebar: true },
+  { id: 'history', label: 'History', icon: History, hasSidebar: true },
   { id: 'help', label: 'Help Center', icon: HelpCircle, hasSidebar: true, topBar: true },
 ];
 

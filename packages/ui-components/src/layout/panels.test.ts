@@ -11,17 +11,18 @@ import {
 describe('panels registry', () => {
   it('lists the agreed panel set in the agreed order', () => {
     // Workspace / Link Workspace / Editor / Env / Execution / History — the
-    // P1 navigation bones. Mocks is a P27 addition; Help Center stays last as
-    // the catch-all reference panel, and is opened from the top bar rather than
-    // a tab. MCP was removed when the MCP surface left the open-core repo.
+    // P1 navigation bones. Mocks is a P27 addition and sits ahead of History,
+    // which closes the strip. Help Center stays last as the catch-all reference
+    // panel, and is opened from the top bar rather than a tab. MCP was removed
+    // when the MCP surface left the open-core repo.
     expect(PANELS.map((p) => p.id)).toEqual([
       'workspace',
       'link-workspace',
       'editor',
       'env',
       'execution',
-      'history',
       'mocks',
+      'history',
       'help',
     ]);
   });
@@ -49,8 +50,8 @@ describe('VISIBLE_PANELS', () => {
       'editor',
       'env',
       'execution',
-      'history',
       'mocks',
+      'history',
       'help',
     ]);
   });
@@ -78,8 +79,8 @@ describe('tabs and top-bar panels', () => {
       'editor',
       'env',
       'execution',
-      'history',
       'mocks',
+      'history',
     ]);
     expect(TOP_BAR_PANELS.map((p) => p.id)).toEqual(['help']);
     expect([...TAB_PANELS, ...TOP_BAR_PANELS].map((p) => p.id).sort()).toEqual(

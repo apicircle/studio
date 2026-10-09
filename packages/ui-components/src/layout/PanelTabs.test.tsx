@@ -19,8 +19,8 @@ describe('PanelTabs', () => {
       'Editor',
       'Environments',
       'Execution',
-      'History',
       'Mocks',
+      'History',
     ]);
     expect(labels).not.toContain('Link Workspace');
     // The Help Center is opened from the top bar.

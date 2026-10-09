@@ -32,8 +32,8 @@ describe('visibleTabs', () => {
       'editor',
       'env',
       'execution',
-      'history',
       'mocks',
+      'history',
       'lens.discover',
       'lens.review',
     ]);
@@ -129,8 +129,8 @@ describe('useVisibleTabs', () => {
       'editor',
       'env',
       'execution',
-      'history',
       'mocks',
+      'history',
     ]);
   });
 

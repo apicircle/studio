@@ -52,9 +52,9 @@ describe('KeyboardShortcuts', () => {
     pressKey({ key: '4', ctrl: true });
     expect(useWorkspaceStore.getState().activePanel).toBe('execution');
     pressKey({ key: '5', ctrl: true });
-    expect(useWorkspaceStore.getState().activePanel).toBe('history');
-    pressKey({ key: '6', ctrl: true });
     expect(useWorkspaceStore.getState().activePanel).toBe('mocks');
+    pressKey({ key: '6', ctrl: true });
+    expect(useWorkspaceStore.getState().activePanel).toBe('history');
   });
 
   it('Ctrl+7 to Ctrl+9 are no-ops — there are only six tabs', () => {

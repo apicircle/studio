@@ -167,7 +167,7 @@ Full design record: [`docs/architecture/platform.md`](../architecture/platform.m
   model is used instead.
 - **UI:** `packages/ui-components/src/` — `App.tsx` + 8 panels
   (`layout/panels.ts`): Workspace, Link Workspace, Editor, Environments,
-  Execution, History, Mocks, Help Center. Editors are Monaco-based. Link
+  Execution, Mocks, History, Help Center. Editors are Monaco-based. Link
   Workspace is filtered out of the visible list (`VISIBLE_PANELS`) while
   workspace sharing is off. The Help Center is opened from an icon at the
   far end of the top bar, not from a tab, leaving six tabs (`TAB_PANELS`).

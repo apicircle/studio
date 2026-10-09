@@ -125,7 +125,7 @@ describe('App', () => {
         id: 'studio',
         label: 'Studio',
         icon: Compass,
-        panelIds: ['workspace', 'link-workspace', 'editor', 'env', 'execution', 'history', 'mocks'],
+        panelIds: ['workspace', 'link-workspace', 'editor', 'env', 'execution', 'mocks', 'history'],
       },
       {
         id: 'lens',

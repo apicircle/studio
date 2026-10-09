@@ -286,6 +286,14 @@
 
 ### Changed
 
+- **Mocks sits before History in the tab strip.** The tabs now read Workspace,
+  Editor, Environments, Execution, Mocks, History.
+  - The shortcuts follow the strip: **Ctrl/Cmd + 5** opens Mocks and
+    **Ctrl/Cmd + 6** opens History, where they opened the other way round.
+  - The onboarding tour visits Mocks before History, in the order of the tabs.
+  - The order is the one in `PANELS` (`layout/panels.ts`), so an edition that
+    builds its Studio section from it gets the same order.
+
 - **The locked-workspace notice links to the plans instead of asking you to
   email us.** A locked workspace, or **New workspace** at the cap, opened a
   notice whose only way forward was a message to `contact@apicircle.dev`. It
@@ -302,7 +310,7 @@
 - **The Help Center is an icon at the far end of the top bar, not a tab.** It
   is a place to look something up from anywhere, not a stage of the work, so
   the **?** sits in the top bar on every panel and the strip is the six stages:
-  Workspace, Editor, Environments, Execution, History, Mocks.
+  Workspace, Editor, Environments, Execution, Mocks, History.
   - It opens the same Help Center, search rail and article, and is marked as
     the current page while it shows; no tab is current then, and any tab leaves
     it. Its accessible name is still "Help Center".

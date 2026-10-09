@@ -134,18 +134,18 @@ const STEPS: ReadonlyArray<TourStep> = [
     target: 'nav-execution',
   },
   {
-    id: 'history',
-    title: 'History',
-    body: 'Every request you send is recorded here. Inspect a past response or replay any earlier run.',
-    panel: 'history',
-    target: 'nav-history',
-  },
-  {
     id: 'mocks',
     title: 'Mocks',
     body: 'Turn an OpenAPI, Postman, or Insomnia spec into a mock server and scan endpoints in the same compact method-and-path style as the Editor.',
     panel: 'mocks',
     target: 'nav-mocks',
+  },
+  {
+    id: 'history',
+    title: 'History',
+    body: 'Every request you send is recorded here. Inspect a past response or replay any earlier run.',
+    panel: 'history',
+    target: 'nav-history',
   },
   {
     id: 'workspace-switcher',
