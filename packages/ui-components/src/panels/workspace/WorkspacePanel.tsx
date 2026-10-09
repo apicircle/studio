@@ -1329,13 +1329,24 @@ function RepoCard({ locked }: { locked: boolean }) {
           Disconnect repo
         </button>
       </div>
-      {!branch && !repo.pushable && !locked && (
-        <p className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-[0.6875rem] text-warning">
-          You don&apos;t have push access to this repo. Working branches can&apos;t be created.
-          Reconnect with a token that grants push access (typically the <code>repo</code> scope on a
-          token owned by a collaborator).
-        </p>
-      )}
+      {!branch &&
+        !repo.pushable &&
+        !locked &&
+        (repoHost === 'github' ? (
+          <p className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-[0.6875rem] text-warning">
+            You don&apos;t have push access to this repo. Working branches can&apos;t be created.
+            Reconnect with a token that grants push access (typically the <code>repo</code> scope on
+            a token owned by a collaborator).
+          </p>
+        ) : (
+          // The `repo` scope is GitHub's name. Another host has its own, and the
+          // vault lists them beside the session it manages.
+          <p className="rounded-sm border border-warning/40 bg-warning/10 p-2 text-[0.6875rem] text-warning">
+            You don&apos;t have push access to this repo. Working branches can&apos;t be created.
+            Reconnect with a token that grants push access, from an account that can write to this
+            repo. Secret Vault → Sessions lists the token scopes {repoHostLabel} needs.
+          </p>
+        ))}
       <ReleaseAndTopicsModal
         open={releaseAndTopicsOpen}
         onClose={() => setReleaseAndTopicsOpen(false)}
@@ -2449,6 +2460,7 @@ function CreatePrModal({ open, onClose }: { open: boolean; onClose: () => void }
 
 function CreateBranchForm() {
   const repo = useWorkspaceStore((s) => s.local!.connectedRepo!);
+  const repoHostLabel = GIT_HOST_LABELS[repo.hostKind ?? 'github'];
   const displayName = useWorkspaceStore((s) => {
     const reg = s.workspaceRegistry;
     if (!reg) return 'workspace';
@@ -2605,7 +2617,7 @@ function CreateBranchForm() {
       });
     } catch (err) {
       if (err instanceof GitHubError && err.status === 422) {
-        setError(`Branch \`${name}\` already exists on GitHub. Pick a different name.`);
+        setError(`Branch \`${name}\` already exists on ${repoHostLabel}. Pick a different name.`);
       } else if (err instanceof GitHubError && err.status === 404) {
         setError(
           `Base branch \`${baseBranch}\` no longer exists on ${repo.fullName}. Pick a different base branch.`,
@@ -2860,13 +2872,15 @@ function CreateBranchForm() {
 /**
  * Surfaced above CreateBranchForm when `refreshWorkspace` discovered the
  * previous working branch is over — the PR was merged, or the branch ref
- * was deleted on GitHub. The banner tells the user *why* their branch is
+ * was deleted on the repo's host. The banner tells the user *why* their branch is
  * gone (so the disappearance isn't surprising) and points them at the
  * still-visible CreateBranchForm below to start fresh. Auto-dismissed
  * when the user successfully creates a new working branch.
  */
 function RetiredBranchBanner() {
   const retired = useWorkspaceStore((s) => s.local?.retiredBranch ?? null);
+  // The branch was on the repo's host, and the re-check asks that host.
+  const hostLabel = useWorkspaceStore((s) => GIT_HOST_LABELS[connectedHostKind(s.local)]);
   const dismiss = useWorkspaceStore((s) => s.dismissRetiredBranch);
   const recheck = useWorkspaceStore((s) => s.recheckRetiredBranch);
   const pushToast = useWorkspaceStore((s) => s.pushToast);
@@ -2876,7 +2890,7 @@ function RetiredBranchBanner() {
   const isMerged = retired.reason === 'pr-merged';
   const headline = isMerged
     ? `PR #${retired.prNumber ?? '—'} was merged`
-    : `Branch ${retired.branchName} was deleted on GitHub`;
+    : `Branch ${retired.branchName} was deleted on ${hostLabel}`;
   const detail = isMerged
     ? `The branch ${retired.branchName} has been retired. Create a new working branch below to continue, or re-check if the PR was reopened upstream.`
     : 'Create a new working branch below to continue, or re-check if the branch has been restored upstream.';
@@ -2894,10 +2908,10 @@ function RetiredBranchBanner() {
       } else if (result.status === 'still-retired') {
         const why =
           result.reason === 'merged'
-            ? 'The PR is still marked merged on GitHub.'
+            ? `The PR is still marked merged on ${hostLabel}.`
             : result.reason === 'deleted'
-              ? 'The branch is still missing from GitHub.'
-              : 'No definitive signal from GitHub yet — try again shortly.';
+              ? `The branch is still missing from ${hostLabel}.`
+              : `No definitive signal from ${hostLabel} yet — try again shortly.`;
         pushToast({ tone: 'info', title: 'Still retired', detail: why });
       } else {
         pushToast({ tone: 'error', title: 'Re-check failed', detail: result.message });

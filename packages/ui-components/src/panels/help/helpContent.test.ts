@@ -68,6 +68,22 @@ describe('Sessions article', () => {
   });
 });
 
+describe('a rejected token', () => {
+  // Both articles promised a Reconnect button on the Workspace panel. It has
+  // none: it prints one line under the error, and the token is replaced in the
+  // vault.
+  it.each(['sessions', 'troubleshooting'])(
+    'the %s article sends the reader to the session card, not to a button',
+    (id) => {
+      const { body } = HELP_SECTIONS.find((s) => s.id === id)!;
+      expect(body).not.toContain('**Reconnect** button');
+      expect(body).toContain('"Open the GitHub session card above to reconnect."');
+      expect(body).toContain('**Manage session**');
+      expect(body).toContain('**Update token**');
+    },
+  );
+});
+
 describe('Multi-workspace article', () => {
   it('explains the cap: the open workspace keeps working, the rest lock, nothing is deleted', () => {
     const section = HELP_SECTIONS.find((s) => s.id === 'multi-workspace')!;

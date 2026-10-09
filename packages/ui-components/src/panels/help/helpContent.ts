@@ -868,7 +868,7 @@ The token is **encrypted with AES-256-GCM under your master key** and written to
 
 ## If the token is revoked
 
-Revoke or expire the token on GitHub and the next push/pull/refresh fails with an "unauthorized" error; the Workspace panel shows a **Reconnect** button. The session is **not** wiped automatically — your branch and repo connection are kept — so reconnecting with a fresh token resumes exactly where you were.
+Revoke or expire the token on GitHub and the next push/pull/refresh fails with an "unauthorized" error; under it the Workspace panel says "Open the GitHub session card above to reconnect." **Manage session** on that card opens the Sessions tab, and **Update token** there takes a fresh one. The session is **not** wiped automatically — your branch and repo connection are kept — so reconnecting with a fresh token resumes exactly where you were.
 
 ## Disconnecting
 
@@ -1342,7 +1342,7 @@ Your PAT lacks \`repo\` or \`pull_request\`. Secret Vault → Sessions → updat
 
 ## "GitHub rejected the token" / unauthorized
 
-The token was revoked, expired, or had its scopes changed on GitHub. The Workspace panel shows a **Reconnect** button — sign in again; your branch and repo connection are kept. For a repo on another host the message names that host ("GitLab rejected the token"), and the same applies to that host's session.
+The token was revoked, expired, or had its scopes changed on GitHub. Under the error the Workspace panel says "Open the GitHub session card above to reconnect." Use **Manage session** on that card, then **Update token** under Secret Vault → Sessions; your branch and repo connection are kept. For a repo on another host the message names that host ("GitLab rejected the token"), and the same applies to that host's session.
 
 ## "Workspace conflicted"
 

@@ -11,7 +11,7 @@ import {
 } from '@apicircle/git';
 import { SecretsInPushError, type SecretFinding } from '@apicircle/core';
 import { NothingWrittenError } from '../../store/nothingWritten';
-import type { GitHostSession } from '@apicircle/shared';
+import type { GitHostSession, WorkspaceLocal } from '@apicircle/shared';
 import { WorkspacePanel } from './WorkspacePanel';
 import { renderWithStore } from '../../../test/renderWithStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
@@ -2442,6 +2442,132 @@ describe('WorkspacePanel names the host the repo is on', () => {
       const link = await prLinkFor('gitlab', 'https://gitlab.com/');
 
       expect(link).toHaveTextContent('https://gitlab.com/');
+    });
+  });
+
+  /**
+   * A repo on `host` with a session there and no working branch, which is where
+   * the create-branch form, the retired-branch banner and the push-access
+   * warning are. The form lists the repo's branches as it mounts, so that call
+   * is answered before the repo appears.
+   */
+  async function renderRepoWithoutBranchOn(
+    host: GitHostKind,
+    change: (local: WorkspaceLocal) => Partial<WorkspaceLocal> = () => ({}),
+  ): Promise<void> {
+    await renderWithStore(<WorkspacePanel />);
+    await act(async () => {
+      useWorkspaceStore.setState({
+        listRepoBranches: vi.fn(async () => [{ name: 'main', commitSha: 'abc1234' }]),
+      });
+      setupPushedBranchOn(host, { [host]: true });
+      const local = useWorkspaceStore.getState().local!;
+      useWorkspaceStore.setState({ local: { ...local, workingBranch: null, ...change(local) } });
+    });
+  }
+
+  // The form turns a 422 from creating the branch into a sentence, and the
+  // sentence said the branch was on GitHub.
+  describe('when the new branch name is taken', () => {
+    it.each(HOSTS)('a %s repo says the branch already exists on %s', async (host, label) => {
+      await renderRepoWithoutBranchOn(host);
+      act(() =>
+        useWorkspaceStore.setState({
+          createWorkingBranch: vi
+            .fn()
+            .mockRejectedValue(new GitHubError('Reference already exists', 422)),
+        }),
+      );
+      const name = screen.getByLabelText('Branch name');
+      await userEvent.clear(name);
+      await userEvent.type(name, 'apicircle/taken');
+      const create = screen.getByRole('button', { name: 'Create working branch' });
+      await waitFor(() => expect(create).toBeEnabled());
+      await userEvent.click(create);
+
+      expect((await screen.findByRole('alert')).textContent).toBe(
+        `Branch \`apicircle/taken\` already exists on ${label}. Pick a different name.`,
+      );
+    });
+  });
+
+  // A branch that is gone was deleted on the host the repo is on, and the
+  // re-check asks that host.
+  describe('in the retired branch banner', () => {
+    const deleted = (): Partial<WorkspaceLocal> => ({
+      retiredBranch: {
+        branchName: 'apicircle/abandoned',
+        reason: 'branch-deleted',
+        retiredAt: '2026-05-09T12:00:00.000Z',
+        prUrl: null,
+        prNumber: null,
+      },
+    });
+
+    it.each(HOSTS)('a branch of a %s repo was deleted on %s', async (host, label) => {
+      await renderRepoWithoutBranchOn(host, deleted);
+
+      expect(
+        screen.getByText(`Branch apicircle/abandoned was deleted on ${label}`),
+      ).toBeInTheDocument();
+    });
+
+    const STILL_RETIRED = [
+      ['merged', (label: string) => `The PR is still marked merged on ${label}.`],
+      ['deleted', (label: string) => `The branch is still missing from ${label}.`],
+      [
+        'inconclusive',
+        (label: string) => `No definitive signal from ${label} yet — try again shortly.`,
+      ],
+    ] as const;
+
+    it.each(
+      HOSTS.flatMap(([host, label]) =>
+        STILL_RETIRED.map(([reason, detail]) => [host, reason, detail(label)] as const),
+      ),
+    )('re-checking a %s repo that answers "%s" says: %s', async (host, reason, detail) => {
+      await renderRepoWithoutBranchOn(host, deleted);
+      act(() =>
+        useWorkspaceStore.setState({
+          recheckRetiredBranch: vi.fn(async () => ({ status: 'still-retired' as const, reason })),
+        }),
+      );
+      await userEvent.click(screen.getByRole('button', { name: 'Re-check branch state' }));
+
+      await waitFor(() =>
+        expect(useWorkspaceStore.getState().toasts).toContainEqual(
+          expect.objectContaining({ tone: 'info', title: 'Still retired', detail }),
+        ),
+      );
+    });
+  });
+
+  // "The `repo` scope" is GitHub's name. Another host has its own, and the
+  // vault lists them beside the session it manages.
+  describe('in the warning on a repo the account cannot push to', () => {
+    const warning = () => screen.getByText(/You don't have push access to this repo/);
+    const readOnly = (local: WorkspaceLocal): Partial<WorkspaceLocal> => ({
+      connectedRepo: { ...local.connectedRepo!, pushable: false },
+    });
+
+    it.each(OTHER_HOSTS)('does not recite the GitHub scope for a %s repo', async (host, label) => {
+      await renderRepoWithoutBranchOn(host, readOnly);
+
+      expect(warning().textContent).toBe(
+        "You don't have push access to this repo. Working branches can't be created. " +
+          'Reconnect with a token that grants push access, from an account that can write to ' +
+          `this repo. Secret Vault → Sessions lists the token scopes ${label} needs.`,
+      );
+    });
+
+    it('keeps the wording a GitHub repo has always had', async () => {
+      await renderRepoWithoutBranchOn('github', readOnly);
+
+      expect(warning().textContent).toBe(
+        "You don't have push access to this repo. Working branches can't be created. " +
+          'Reconnect with a token that grants push access (typically the repo scope on a token ' +
+          'owned by a collaborator).',
+      );
     });
   });
 });

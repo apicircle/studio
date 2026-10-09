@@ -187,8 +187,26 @@
     `https://github.com/` and every other host's address in full. It now drops
     the origin of any address, so a GitLab merge request reads
     `acme/api/-/merge_requests/7`. The link still goes to the whole address.
-  - GitHub alone is unchanged: the same messages, the same warning, the same
-    dialogs and the same link text.
+  - Creating a working branch under a name that is taken read "already exists
+    on GitHub". The sentence names the repo's host. It is shown for a 422 from
+    creating the branch, which is how GitHub reports a taken name.
+  - The banner for a working branch that is gone read "was deleted on GitHub",
+    and its re-check answered "still marked merged on GitHub", "still missing
+    from GitHub" or "No definitive signal from GitHub yet". All four name the
+    repo's host.
+  - The warning on a repo the account cannot push to told every host to use
+    "the `repo` scope on a token owned by a collaborator". For another host it
+    now asks for a token from an account that can write to the repo, and points
+    at Secret Vault → Sessions for the scopes that host needs.
+  - GitHub alone is unchanged: the same messages, the same warnings, the same
+    dialogs, the same banner and the same link text.
+
+- **The Help Center no longer promises a Reconnect button.** The Sessions and
+  Troubleshooting articles said the Workspace panel shows one when the host
+  rejects a token. The panel has no such button. It prints "Open the GitHub
+  session card above to reconnect." under the error, and both articles now say
+  that and where the token is replaced: **Manage session** on that card, then
+  **Update token** under Secret Vault → Sessions.
 
 - **A dialog no longer takes focus away while you type in it.** `Modal` re-ran
   its focus handling whenever the component that opened it re-rendered, because
