@@ -6,11 +6,13 @@
 
 import {
   BranchDivergedError,
+  GIT_HOST_LABELS,
   GitHubError,
   MissingScopeError,
   RateLimitedError,
   TimeoutError,
   UnauthorizedError,
+  type GitHostKind,
 } from '@apicircle/git';
 import { NothingWrittenError } from '../../store/nothingWritten';
 
@@ -30,14 +32,25 @@ export interface GitErrorView {
   partialWrite: boolean;
 }
 
-export function formatGitError(err: unknown, opName: string): GitErrorView {
+/**
+ * `host` is the host the failed call went to. Every host's client throws these
+ * same error classes (`GitHubError` is only named after the first of them), so
+ * the error cannot say whose answer it was and the caller, which knows the
+ * repo's host, has to. It defaults to GitHub, the one host Studio registers.
+ */
+export function formatGitError(
+  err: unknown,
+  opName: string,
+  host: GitHostKind = 'github',
+): GitErrorView {
+  const hostLabel = GIT_HOST_LABELS[host];
   if (err instanceof NothingWrittenError) {
     // The call site proved the operation had not written anything yet, so the
     // partial-write warning would be false however bad the underlying error is
     // -- and it would send the user to Refresh when a retry is the safe act.
     // Everything else about the failure still holds: a 401 still asks for a
     // reconnect, a rate limit still says when to come back.
-    return { ...formatGitError(err.underlying, opName), partialWrite: false };
+    return { ...formatGitError(err.underlying, opName, host), partialWrite: false };
   }
   if (err instanceof BranchDivergedError) {
     return {
@@ -67,7 +80,7 @@ export function formatGitError(err: unknown, opName: string): GitErrorView {
   if (err instanceof UnauthorizedError) {
     return {
       message:
-        'GitHub rejected the token. It may have been revoked, expired, or had its scopes changed. ' +
+        `${hostLabel} rejected the token. It may have been revoked, expired, or had its scopes changed. ` +
         'Reconnect your session to continue.',
       action: { kind: 'reconnect-token' },
       partialWrite: false,
@@ -82,7 +95,7 @@ export function formatGitError(err: unknown, opName: string): GitErrorView {
   }
   if (err instanceof GitHubError) {
     return {
-      message: `GitHub ${err.status}: ${err.message}`,
+      message: `${hostLabel} ${err.status}: ${err.message}`,
       action: { kind: 'none' },
       // 5xx writes might have partially landed; 4xx writes other than 401 are usually rejection upfront.
       partialWrite: err.status >= 500,

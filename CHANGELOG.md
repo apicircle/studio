@@ -54,6 +54,21 @@
 
 ### Fixed
 
+- **The Workspace page shows the account the repo is used through.** With
+  sessions on more than one host, the Git source card showed the first host
+  holding one, in the order GitHub, GitLab, Bitbucket, Azure DevOps. A repo on
+  GitLab with a GitHub session beside it was headed by the GitHub account, with
+  GitHub's scopes, last-verified time, pull-request warning and lock badge, and
+  "Manage session" opened GitHub's card in the Secret Vault. The card now shows
+  the session on the repo's host, and the vault's Sessions tab opens on that
+  host until you pick another.
+  - Before a repo is connected nothing changes: the first host holding a
+    session is shown, and the repo form still offers every connected host.
+  - A workspace with a session on one host, or with GitHub alone, is unchanged.
+  - Store: `hostOfWorkspaceSession` answers the connected repo's host when that
+    host holds a session, and `anyWorkspaceSession` returns the session on it.
+    Both fall back to host order when it holds none.
+
 - **A fine-grained GitHub token connects.** The Help Center and the token
   field's placeholder (`ghp_… or github_pat_…`) both offered one, and Connect
   refused every one with "Token is missing required scope(s): repo". GitHub
@@ -152,6 +167,28 @@
     reconnect." It said GitHub on every host.
   - GitHub alone is unchanged: the same session, the same button, the same
     line.
+
+- **The Workspace page names the host the repo is on.** Several lines on it
+  said GitHub whatever host the repo was on. A repo on GitLab, Bitbucket or
+  Azure DevOps exists only in a build that registers those hosts, so this is
+  where they showed.
+  - A failed push, refresh or attachment sync read "GitHub rejected the token"
+    or "GitHub 502: …" for a call another host had answered, directly above
+    "Open the GitLab session card above to reconnect." The message now names
+    the repo's host. `formatGitError` takes that host as an optional third
+    argument, and says GitHub without it.
+  - "This token can't create pull requests" on the Git source card went on to
+    name GitHub's `pull_request` permission and `repo` scope for every host.
+    For another host it now points at Secret Vault → Sessions, which lists the
+    scopes that host needs.
+  - The Disconnect repo and Discard branch dialogs said the remote "on GitHub"
+    is not touched. They name the repo's host.
+  - The open pull request link showed a GitHub address without
+    `https://github.com/` and every other host's address in full. It now drops
+    the origin of any address, so a GitLab merge request reads
+    `acme/api/-/merge_requests/7`. The link still goes to the whole address.
+  - GitHub alone is unchanged: the same messages, the same warning, the same
+    dialogs and the same link text.
 
 - **A dialog no longer takes focus away while you type in it.** `Modal` re-ran
   its focus handling whenever the component that opened it re-rendered, because

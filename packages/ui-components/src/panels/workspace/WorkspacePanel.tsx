@@ -874,13 +874,22 @@ function SessionCard() {
           )}
         </dd>
       </dl>
-      {session.canCreatePullRequests === false && (
-        <p className="mt-3 rounded-sm border border-warning/40 bg-warning/10 p-2 text-[0.6875rem] text-warning">
-          This token can&apos;t create pull requests. Push will work; PR creation from the app will
-          fail until the token is updated with the <code>pull_request</code> permission
-          (fine-grained PATs) or the full <code>repo</code> scope (classic PATs).
-        </p>
-      )}
+      {session.canCreatePullRequests === false &&
+        (host === 'github' ? (
+          <p className="mt-3 rounded-sm border border-warning/40 bg-warning/10 p-2 text-[0.6875rem] text-warning">
+            This token can&apos;t create pull requests. Push will work; PR creation from the app
+            will fail until the token is updated with the <code>pull_request</code> permission
+            (fine-grained PATs) or the full <code>repo</code> scope (classic PATs).
+          </p>
+        ) : (
+          // That permission and that scope are GitHub's names. Another host has
+          // its own, and the vault lists them beside the session it manages.
+          <p className="mt-3 rounded-sm border border-warning/40 bg-warning/10 p-2 text-[0.6875rem] text-warning">
+            This token can&apos;t create pull requests. Push will work; PR creation from the app
+            will fail until the token is updated. Secret Vault → Sessions lists the token scopes{' '}
+            {GIT_HOST_LABELS[host]} needs.
+          </p>
+        ))}
       <button
         type="button"
         onClick={() => openRightDockTab('vault', { vaultSubtab: 'sessions' })}
@@ -1337,9 +1346,9 @@ function RepoCard({ locked }: { locked: boolean }) {
         title={`Disconnect ${repo.fullName}?`}
         description={
           <p>
-            Removes the repo connection from this workspace. The remote repo on GitHub is not
-            touched. Any working branch state for this repo is also discarded — re-connecting starts
-            from the default branch again.
+            Removes the repo connection from this workspace. The remote repo on {repoHostLabel} is
+            not touched. Any working branch state for this repo is also discarded — re-connecting
+            starts from the default branch again.
           </p>
         }
         confirmLabel="Disconnect"
@@ -1482,7 +1491,7 @@ function BranchCard() {
         );
       }
     } catch (err) {
-      const view = formatGitError(err, 'Sync');
+      const view = formatGitError(err, 'Sync', repoHost);
       if (view.action.kind === 'request-scopes') {
         surfaceMissingScope(view.action.missingScopes);
       } else {
@@ -1532,7 +1541,7 @@ function BranchCard() {
           break;
       }
     } catch (err) {
-      const view = formatGitError(err, 'Refresh');
+      const view = formatGitError(err, 'Refresh', repoHost);
       if (view.action.kind === 'request-scopes') {
         surfaceMissingScope(view.action.missingScopes);
       } else {
@@ -1571,7 +1580,7 @@ function BranchCard() {
         setSecretFindings(err.findings);
         return;
       }
-      const view = formatGitError(err, 'Push');
+      const view = formatGitError(err, 'Push', repoHost);
       if (view.action.kind === 'request-scopes') {
         surfaceMissingScope(view.action.missingScopes);
       } else {
@@ -1621,7 +1630,7 @@ function BranchCard() {
         setSecretFindings(err.findings);
         return;
       }
-      const view = formatGitError(err, 'Push');
+      const view = formatGitError(err, 'Push', repoHost);
       if (view.action.kind === 'request-scopes') {
         surfaceMissingScope(view.action.missingScopes);
       } else {
@@ -1779,7 +1788,10 @@ function BranchCard() {
             rel="noreferrer noopener"
             className="inline-flex items-center gap-1 underline hover:text-accent/80"
           >
-            {branch.openPrUrl.replace(/^https:\/\/github\.com\//, '')}
+            {/* The address without its origin, on whichever host. Dropping only
+                `https://github.com/` left every other host's link showing all
+                of it. The link itself goes to the whole address. */}
+            {branch.openPrUrl.replace(/^https?:\/\/[^/]+\/(?=.)/, '')}
             <ExternalLink size={10} aria-hidden="true" />
           </a>
         </div>
@@ -1918,7 +1930,7 @@ function BranchCard() {
           <p>
             Removes the local working-branch state. Any unpushed changes are kept on the synced doc,
             but the branch handle is forgotten — you can create a new working branch afterwards. The
-            remote branch on GitHub is not touched.
+            remote branch on {GIT_HOST_LABELS[repoHost]} is not touched.
           </p>
         }
         confirmLabel="Discard branch"

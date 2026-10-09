@@ -2743,27 +2743,39 @@ function withWorkspaceSession(
  * Exported because the panels need it: reading `sessions.github.workspace`
  * directly is what made a GitLab-only workspace look local-only, so there is one
  * predicate rather than a slot lookup repeated per surface.
+ *
+ * Null only when no host holds a session. When more than one does, the session
+ * returned is the one on `hostOfWorkspaceSession`, so a surface that shows it
+ * shows the account the workspace's repo is used through.
  */
 export function anyWorkspaceSession(
   local: WorkspaceLocal | null | undefined,
 ): GitHostSession | null {
-  if (!local) return null;
-  for (const host of GIT_HOST_KINDS) {
-    const session = workspaceSessionFor(local, host);
-    if (session) return session;
-  }
-  return null;
+  return workspaceSessionFor(local, hostOfWorkspaceSession(local));
 }
 
 /**
  * Which host `anyWorkspaceSession` found — so a card rendering that session can
  * say whose account it is showing.
  *
+ * The connected repo's host when that host holds a session, else the first host
+ * that holds one. Host order alone was the whole rule, and it is still the only
+ * rule there can be before a repo is connected. But with a GitHub session beside
+ * the one a GitLab repo is used through, it answered GitHub: the Workspace page
+ * headed that repo with GitHub's account, and "Manage session" opened GitHub's
+ * card. A repo on a host that holds no session (no action leaves one, a stored
+ * workspace can be) falls back to host order, so a workspace holding any
+ * session never reads as local-only.
+ *
  * Exported alongside it deliberately: the two are always read together, and a
  * surface that shows an account without naming its host is exactly how a user
  * comes to believe their GitLab session is connected when it is GitHub's.
  */
 export function hostOfWorkspaceSession(local: WorkspaceLocal | null | undefined): GitHostKind {
+  if (local?.connectedRepo) {
+    const repoHost = connectedHostKind(local);
+    if (workspaceSessionFor(local, repoHost)) return repoHost;
+  }
   return GIT_HOST_KINDS.find((host) => workspaceSessionFor(local, host)) ?? 'github';
 }
 

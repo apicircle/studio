@@ -1342,7 +1342,7 @@ Your PAT lacks \`repo\` or \`pull_request\`. Secret Vault → Sessions → updat
 
 ## "GitHub rejected the token" / unauthorized
 
-The token was revoked, expired, or had its scopes changed on GitHub. The Workspace panel shows a **Reconnect** button — sign in again; your branch and repo connection are kept.
+The token was revoked, expired, or had its scopes changed on GitHub. The Workspace panel shows a **Reconnect** button — sign in again; your branch and repo connection are kept. For a repo on another host the message names that host ("GitLab rejected the token"), and the same applies to that host's session.
 
 ## "Workspace conflicted"
 

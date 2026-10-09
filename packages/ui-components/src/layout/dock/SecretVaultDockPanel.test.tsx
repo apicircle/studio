@@ -128,6 +128,68 @@ describe('SecretVaultDockPanel', () => {
       expect(screen.getByLabelText('GitLab PAT')).toBeInTheDocument();
     });
 
+    it("opens on the repo's host when another host holds a session beside it", async () => {
+      // "Manage session" on the Workspace page lands here. With the repo used
+      // through Bitbucket it has to land on Bitbucket's card: the first host
+      // holding a session is GitHub, whose card manages a different token.
+      registerGitProvider('gitlab', () => ({}) as never);
+      registerGitProvider('bitbucket', () => ({}) as never);
+      await openSessions();
+      act(() => {
+        const local = useWorkspaceStore.getState().local!;
+        useWorkspaceStore.setState({
+          local: {
+            ...local,
+            sessions: {
+              github: {
+                workspace: {
+                  ...BB_SESSION,
+                  accountLogin: 'gh-user',
+                  tokenSecretId: 'sec_gh',
+                  grantedScopes: ['repo'],
+                  canCreatePullRequests: true,
+                },
+                links: {},
+              },
+              hosts: { bitbucket: { workspace: BB_SESSION, links: {} } },
+            },
+          },
+        });
+      });
+      // No repo yet: the first host holding a session, as before.
+      expect(screen.getByRole('tab', { name: 'GitHub, connected' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      expect(screen.getByText(/Connected as gh-user on GitHub/)).toBeInTheDocument();
+
+      act(() => {
+        const local = useWorkspaceStore.getState().local!;
+        useWorkspaceStore.setState({
+          local: {
+            ...local,
+            connectedRepo: {
+              fullName: 'acme/api',
+              owner: 'acme',
+              name: 'api',
+              defaultBranch: 'main',
+              visibility: 'private',
+              isPrivate: true,
+              pushable: true,
+              connectedAt: '2026-09-01T00:00:00.000Z',
+              hostKind: 'bitbucket',
+            },
+          },
+        });
+      });
+      expect(screen.getByRole('tab', { name: 'Bitbucket, connected' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      expect(screen.getByText(/Connected as bb-user on Bitbucket/)).toBeInTheDocument();
+      expect(screen.queryByText(/Connected as gh-user/)).not.toBeInTheDocument();
+    });
+
     it('does not render the strip with a single registered host', async () => {
       await openSessions();
       expect(screen.queryByRole('tablist', { name: 'Session Git host' })).not.toBeInTheDocument();

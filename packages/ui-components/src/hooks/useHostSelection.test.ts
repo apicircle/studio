@@ -48,6 +48,27 @@ function seedSession(host: 'github' | 'gitlab' | 'bitbucket'): void {
   });
 }
 
+/** Record a connected repo on `host` without going through connect. */
+function seedRepo(host: 'github' | 'gitlab' | 'bitbucket'): void {
+  const local = useWorkspaceStore.getState().local!;
+  useWorkspaceStore.setState({
+    local: {
+      ...local,
+      connectedRepo: {
+        fullName: 'acme/api',
+        owner: 'acme',
+        name: 'api',
+        defaultBranch: 'main',
+        visibility: 'private',
+        isPrivate: true,
+        pushable: true,
+        connectedAt: 't',
+        hostKind: host,
+      },
+    },
+  });
+}
+
 describe('useHostSelection', () => {
   beforeEach(async () => {
     resetGitProviderRegistry();
@@ -101,6 +122,55 @@ describe('useHostSelection', () => {
     // moving the picker under someone mid-entry is its own defect.
     act(() => seedSession('github'));
     expect(result.current.host).toBe('github');
+  });
+
+  describe('with sessions on more than one host', () => {
+    // "The host that has a session" is one host only while one host has one.
+    // With two, the first in host order won, so the vault opened on GitHub's
+    // card for a workspace whose repo is used through GitLab.
+    it("opens on the repo's host, not on the first host holding a session", () => {
+      registerGitProvider('gitlab', stub);
+      registerGitProvider('bitbucket', stub);
+      seedSession('github');
+      seedSession('gitlab');
+      seedSession('bitbucket');
+      seedRepo('bitbucket');
+      const { result } = renderHook(() => useHostSelection());
+      expect(result.current.connectedHosts).toEqual(['github', 'gitlab', 'bitbucket']);
+      expect(result.current.host).toBe('bitbucket');
+    });
+
+    it('opens on the first host holding a session while no repo is connected', () => {
+      registerGitProvider('gitlab', stub);
+      seedSession('github');
+      seedSession('gitlab');
+      const { result } = renderHook(() => useHostSelection());
+      expect(result.current.host).toBe('github');
+    });
+
+    it('follows a repo connected after first render, until the user picks', () => {
+      registerGitProvider('gitlab', stub);
+      seedSession('github');
+      seedSession('gitlab');
+      const { result } = renderHook(() => useHostSelection());
+      expect(result.current.host).toBe('github');
+
+      act(() => seedRepo('gitlab'));
+      expect(result.current.host).toBe('gitlab');
+
+      act(() => result.current.setHost('github'));
+      act(() => seedRepo('gitlab'));
+      expect(result.current.host).toBe('github');
+    });
+
+    it('stays on GitHub for a GitHub repo with another host connected beside it', () => {
+      registerGitProvider('gitlab', stub);
+      seedSession('github');
+      seedSession('gitlab');
+      seedRepo('github');
+      const { result } = renderHook(() => useHostSelection({ connectedOnly: true }));
+      expect(result.current.host).toBe('github');
+    });
   });
 
   it('reports the registered hosts and which of them hold a session', () => {

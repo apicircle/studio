@@ -9,7 +9,8 @@ import {
   type GitHostKind,
   type GitProvider,
 } from '@apicircle/git';
-import { useWorkspaceStore } from './workspaceStore';
+import type { GitHostSession, WorkspaceLocal } from '@apicircle/shared';
+import { anyWorkspaceSession, hostOfWorkspaceSession, useWorkspaceStore } from './workspaceStore';
 import * as workspaceSharing from '../layout/workspaceSharing';
 
 // This suite covers the workspace-sharing cluster, which is switched OFF in
@@ -810,5 +811,115 @@ describe('workspaceStore — connecting a repo settles pull-request capability o
     expect(calls).toEqual([]);
     expect(sessionOn('github').canCreatePullRequests).toBe(true);
     expect(sessionOn('gitlab').canCreatePullRequests).toBeNull();
+  });
+});
+
+describe("workspaceStore — the workspace's session is the one on its repo's host", () => {
+  // `anyWorkspaceSession` and `hostOfWorkspaceSession` are what a surface reads
+  // to show "the" session of a workspace. They answered with the first host
+  // holding one, in host order. That is the only answer there is while no repo
+  // is connected. Once one is, the workspace is used through ONE host's session,
+  // and with a GitHub session beside it the Workspace page showed GitHub's
+  // account, scopes and pull-request warning over a repo on another host.
+  function sessionOf(host: GitHostKind): GitHostSession {
+    return {
+      accountLogin: `${host}-user`,
+      tokenSecretId: `sec_${host}`,
+      grantedScopes: [],
+      addedAt: 't',
+      lastVerifiedAt: null,
+      canCreatePullRequests: null,
+    };
+  }
+
+  /**
+   * A workspace with a session on each of `sessionHosts`, and a repo on
+   * `repoHost`. `'unrecorded'` is a repo with no `hostKind`, which is what a
+   * workspace persisted before multi-host carries and means GitHub.
+   */
+  function localWith(
+    sessionHosts: readonly GitHostKind[],
+    repoHost: GitHostKind | 'unrecorded' | null,
+  ): WorkspaceLocal {
+    const base = useWorkspaceStore.getState().local!;
+    const others = sessionHosts
+      .filter((host) => host !== 'github')
+      .map((host) => [host, { workspace: sessionOf(host), links: {} }] as const);
+    return {
+      ...base,
+      sessions: {
+        github: {
+          workspace: sessionHosts.includes('github') ? sessionOf('github') : null,
+          links: {},
+        },
+        ...(others.length > 0 ? { hosts: Object.fromEntries(others) } : {}),
+      },
+      connectedRepo:
+        repoHost === null
+          ? null
+          : {
+              fullName: 'acme/api',
+              owner: 'acme',
+              name: 'api',
+              defaultBranch: 'main',
+              visibility: 'private',
+              isPrivate: true,
+              pushable: true,
+              connectedAt: 't',
+              ...(repoHost === 'unrecorded' ? {} : { hostKind: repoHost }),
+            },
+      workingBranch: null,
+    };
+  }
+
+  beforeEach(async () => {
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrate();
+    });
+  });
+
+  it.each([
+    // The repo's host, whichever hosts hold a session beside it.
+    [['github', 'gitlab'], 'gitlab', 'gitlab'],
+    [['github', 'bitbucket'], 'bitbucket', 'bitbucket'],
+    [['github', 'azure-devops'], 'azure-devops', 'azure-devops'],
+    [['gitlab', 'bitbucket'], 'bitbucket', 'bitbucket'],
+    [['github', 'gitlab', 'bitbucket', 'azure-devops'], 'bitbucket', 'bitbucket'],
+    // A GitHub repo is GitHub's, recorded or not.
+    [['github', 'gitlab'], 'github', 'github'],
+    [['github', 'gitlab'], 'unrecorded', 'github'],
+    // No repo yet: the first host holding a session, as before.
+    [['github', 'gitlab'], null, 'github'],
+    [['gitlab', 'bitbucket'], null, 'gitlab'],
+    [['bitbucket'], null, 'bitbucket'],
+    // A single session is the session, whatever the repo record says.
+    [['gitlab'], 'gitlab', 'gitlab'],
+    [['github'], 'github', 'github'],
+  ] as const)('with sessions on %j and the repo on %s, it is %s', (sessions, repoHost, host) => {
+    const local = localWith(sessions, repoHost);
+    expect(hostOfWorkspaceSession(local)).toBe(host);
+    expect(anyWorkspaceSession(local)).toEqual(sessionOf(host));
+  });
+
+  it.each([
+    [['github'], 'gitlab', 'github'],
+    [['bitbucket'], 'unrecorded', 'bitbucket'],
+    [['gitlab', 'azure-devops'], 'bitbucket', 'gitlab'],
+  ] as const)(
+    'with sessions on %j and a repo on %s, which holds none, it falls back to %s',
+    (sessions, repoHost, host) => {
+      // No action leaves a workspace like this, but a stored one can be. While
+      // any host holds a session the workspace must not read as local-only.
+      const local = localWith(sessions, repoHost);
+      expect(hostOfWorkspaceSession(local)).toBe(host);
+      expect(anyWorkspaceSession(local)).toEqual(sessionOf(host));
+    },
+  );
+
+  it('answers GitHub, and no session, when nothing is connected', () => {
+    for (const local of [localWith([], null), localWith([], 'gitlab'), null, undefined]) {
+      expect(hostOfWorkspaceSession(local)).toBe('github');
+      expect(anyWorkspaceSession(local)).toBeNull();
+    }
   });
 });

@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { MissingScopeError } from '@apicircle/git';
+import { MissingScopeError, UnauthorizedError } from '@apicircle/git';
 import { SecretsInPushError } from '@apicircle/core';
 import type { WorkingBranch } from '@apicircle/shared';
 import { WorkspacePanel } from './WorkspacePanel';
@@ -412,6 +412,18 @@ describe('working-branch card with edition changes', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: 'Push to save' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Remote branch has moved');
+  });
+
+  it('names the host the repo is on when it rejects the token of a whole-branch push', async () => {
+    const { source } = lensSource(TWO);
+    await renderCard([source], { hostKind: 'gitlab' });
+    act(() =>
+      useWorkspaceStore.setState({
+        pushBranchChanges: vi.fn().mockRejectedValue(new UnauthorizedError('Unauthorized', 401)),
+      }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Push to save' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/^GitLab rejected the token\./);
   });
 
   it('asks for a token scope when the push lacked one', async () => {

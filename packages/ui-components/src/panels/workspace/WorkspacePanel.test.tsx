@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GitHostKind, GitHubRepo, GitProvider } from '@apicircle/git';
 import {
+  GIT_HOST_LABELS,
   GitHubError,
   UnauthorizedError,
   registerGitProvider,
@@ -293,6 +294,62 @@ describe('WorkspacePanel', () => {
       expect(within(listbox).getAllByRole('option')).toHaveLength(31);
     });
 
+    describe('with sessions on more than one host', () => {
+      // The card showed the first host holding a session, in host order. Beside
+      // a GitHub session, a repo used through another host was headed by
+      // GitHub's account, scopes and pull-request warning.
+      const OTHER_HOSTS = ['gitlab', 'bitbucket', 'azure-devops'] as const;
+
+      /** The "Git source" section: the session card and nothing else. */
+      function gitSource() {
+        return within(screen.getByRole('heading', { name: 'Git source' }).parentElement!);
+      }
+
+      it.each(OTHER_HOSTS)('shows the %s account for a repo on that host', async (host) => {
+        registerAllHosts();
+        await renderWithStore(<WorkspacePanel />);
+        act(() => setupPushedBranchOn(host, { github: true, [host]: true }));
+
+        expect(gitSource().getByText(`${host}-user`)).toBeInTheDocument();
+        expect(gitSource().getByText(`on ${GIT_HOST_LABELS[host]}`)).toBeInTheDocument();
+        expect(gitSource().queryByText('github-user')).not.toBeInTheDocument();
+      });
+
+      it('shows the GitHub account for a GitHub repo, with another host connected beside it', async () => {
+        registerAllHosts();
+        await renderWithStore(<WorkspacePanel />);
+        act(() => setupPushedBranchOn('github', { github: true, gitlab: true }));
+
+        expect(gitSource().getByText('github-user')).toBeInTheDocument();
+        expect(gitSource().getByText('on GitHub')).toBeInTheDocument();
+        expect(gitSource().queryByText('gitlab-user')).not.toBeInTheDocument();
+      });
+
+      it('shows the first host holding a session while no repo is connected', async () => {
+        registerAllHosts();
+        await renderWithStore(<WorkspacePanel />);
+        useWorkspaceStore.setState({ listAccessibleRepos: vi.fn(async () => []) });
+        seedSessions(['gitlab', 'bitbucket']);
+
+        expect(gitSource().getByText('gitlab-user')).toBeInTheDocument();
+        expect(gitSource().getByText('on GitLab')).toBeInTheDocument();
+      });
+
+      it("warns about pull requests from the repo's session, not from the one beside it", async () => {
+        registerAllHosts();
+        const view = await renderWithStore(<WorkspacePanel />);
+        // GitHub's token cannot open pull requests, and the repo is not GitHub's.
+        act(() => setupPushedBranchOn('gitlab', { github: false, gitlab: true }));
+        expect(gitSource().queryByText(/can't create pull requests/i)).not.toBeInTheDocument();
+        view.unmount();
+
+        // A fresh render re-hydrates the store. Now it is the repo's own token.
+        await renderWithStore(<WorkspacePanel />);
+        act(() => setupPushedBranchOn('gitlab', { github: true, gitlab: false }));
+        expect(gitSource().getByText(/can't create pull requests/i)).toBeInTheDocument();
+      });
+    });
+
     describe('with hosts the edition has locked (gitHostAccess)', () => {
       // What a plan without the extra hosts sees. A locked host stays visible —
       // so the user knows it exists — but nothing that would CALL it renders:
@@ -480,6 +537,32 @@ describe('WorkspacePanel', () => {
         expect(screen.getByRole('button', { name: /Create PR/ })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Sync attachments/ })).toBeInTheDocument();
         expect(screen.getByText('This branch already has content')).toBeInTheDocument();
+      });
+
+      it("marks the Git source locked by the repo's host, not by the first session's", async () => {
+        const gitSource = () =>
+          within(screen.getByRole('heading', { name: 'Git source' }).parentElement!);
+        registerAllHosts();
+        // The repo is used through GitLab, which is locked. GitHub's session,
+        // first in host order, is not.
+        const view = await renderLocked({ lockedHosts: ['gitlab'] });
+        seedSessions(['github', 'gitlab']);
+        connectRepoOn('gitlab');
+        expect(gitSource().getByText('gitlab-user')).toBeInTheDocument();
+        expect(gitSource().getByText('Locked')).toBeInTheDocument();
+        view.unmount();
+
+        // The other way round: the locked session is the first one, and the repo
+        // is used through Bitbucket, which is not locked.
+        await renderLocked({ lockedHosts: ['gitlab'] });
+        useWorkspaceStore.setState({
+          listRepoBranches: vi.fn(async () => []),
+          listBranchWorkspaces: vi.fn(async () => []),
+        });
+        seedSessions(['gitlab', 'bitbucket']);
+        connectRepoOn('bitbucket');
+        expect(gitSource().getByText('bitbucket-user')).toBeInTheDocument();
+        expect(gitSource().queryByText('Locked')).not.toBeInTheDocument();
       });
 
       it('drops the push-access warning on a locked host, keeping it on an unlocked one', async () => {
@@ -2189,5 +2272,176 @@ describe('WorkspacePanel refresh notice', () => {
     expect(screen.getByRole('button', { name: 'Show unpushed changes preview' })).toHaveTextContent(
       '~2 unpushed changes · click to preview',
     );
+  });
+});
+
+// What the panel says about a repo names the host the repo is on. GitLab,
+// Bitbucket and Azure DevOps are registered by a multi-host build only, so with
+// GitHub alone every line below reads as it always did, and the GitHub rows pin
+// that.
+describe('WorkspacePanel names the host the repo is on', () => {
+  const HOSTS = [
+    ['github', 'GitHub'],
+    ['gitlab', 'GitLab'],
+    ['bitbucket', 'Bitbucket'],
+    ['azure-devops', 'Azure DevOps'],
+  ] as const;
+  const OTHER_HOSTS = HOSTS.slice(1);
+
+  beforeEach(() => {
+    const calls: string[] = [];
+    for (const [host] of OTHER_HOSTS) registerGitProvider(host, () => stubProvider(calls, host));
+  });
+
+  afterEach(() => {
+    resetGitProviderRegistry();
+  });
+
+  /** A repo on `host` with a pushed branch, and a session on that host alone. */
+  async function renderRepoOn(
+    host: GitHostKind,
+    canCreatePullRequests: boolean | null = true,
+  ): Promise<void> {
+    await renderWithStore(<WorkspacePanel />);
+    await act(async () => {
+      setupPushedBranchOn(host, { [host]: canCreatePullRequests });
+    });
+  }
+
+  // Every host's client throws the same error classes, so the message took its
+  // host from nowhere and said GitHub: "GitHub rejected the token" stood right
+  // above "Open the GitLab session card above to reconnect."
+  describe('in the message of a failed call', () => {
+    const rejected = () => new UnauthorizedError('Unauthorized', 401);
+
+    it.each([
+      ['Push to save', () => ({ pushWorkspace: vi.fn().mockRejectedValue(rejected()) })],
+      ['Refresh', () => ({ refreshWorkspace: vi.fn().mockRejectedValue(rejected()) })],
+      ['Sync attachments', () => ({ syncAttachments: vi.fn().mockRejectedValue(rejected()) })],
+    ] as const)('%s on a GitLab repo says GitLab rejected the token', async (button, failing) => {
+      await renderRepoOn('gitlab');
+      act(() => useWorkspaceStore.setState(failing()));
+      await userEvent.click(screen.getByRole('button', { name: button }));
+
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent(/^GitLab rejected the token\./);
+      expect(alert).not.toHaveTextContent('GitHub');
+    });
+
+    it.each(HOSTS)('a failed call to a %s repo is prefixed with %s', async (host, label) => {
+      await renderRepoOn(host);
+      act(() =>
+        useWorkspaceStore.setState({
+          pushWorkspace: vi.fn().mockRejectedValue(new GitHubError('Server Error', 502)),
+        }),
+      );
+      await userEvent.click(screen.getByRole('button', { name: 'Push to save' }));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        new RegExp(`^${label} 502: Server Error$`),
+      );
+    });
+
+    it('still says GitHub rejected the token of a GitHub repo', async () => {
+      await renderRepoOn('github');
+      act(() =>
+        useWorkspaceStore.setState({ pushWorkspace: vi.fn().mockRejectedValue(rejected()) }),
+      );
+      await userEvent.click(screen.getByRole('button', { name: 'Push to save' }));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(/^GitHub rejected the token\./);
+    });
+  });
+
+  // The `pull_request` permission and the `repo` scope are GitHub's. The other
+  // hosts name theirs differently, and the vault lists them per host.
+  describe("in the session card's pull-request warning", () => {
+    const warning = () => screen.getByText(/This token can't create pull requests/);
+
+    it.each(OTHER_HOSTS)('does not recite GitHub scopes to a %s token', async (host, label) => {
+      await renderRepoOn(host, false);
+
+      expect(warning().textContent).toBe(
+        "This token can't create pull requests. Push will work; PR creation from the app will " +
+          `fail until the token is updated. Secret Vault → Sessions lists the token scopes ${label} needs.`,
+      );
+    });
+
+    it('keeps the wording a GitHub token has always had', async () => {
+      await renderRepoOn('github', false);
+
+      expect(warning().textContent).toBe(
+        "This token can't create pull requests. Push will work; PR creation from the app will " +
+          'fail until the token is updated with the pull_request permission (fine-grained PATs) ' +
+          'or the full repo scope (classic PATs).',
+      );
+    });
+  });
+
+  describe('in the dialogs that leave the remote alone', () => {
+    it.each(HOSTS)('disconnecting a %s repo says the repo on %s stays', async (host, label) => {
+      await renderRepoOn(host);
+      await userEvent.click(screen.getByRole('button', { name: 'Disconnect repo' }));
+
+      expect(await screen.findByRole('dialog', { name: 'Disconnect acme/api?' })).toHaveTextContent(
+        `The remote repo on ${label} is not touched.`,
+      );
+    });
+
+    it.each(HOSTS)(
+      'discarding the branch of a %s repo says the branch on %s stays',
+      async (host, label) => {
+        await renderRepoOn(host);
+        await userEvent.click(screen.getByRole('button', { name: 'Discard working branch' }));
+
+        expect(
+          await screen.findByRole('dialog', { name: 'Discard working branch "apicircle/test"?' }),
+        ).toHaveTextContent(`The remote branch on ${label} is not touched.`);
+      },
+    );
+  });
+
+  // The link's text was the address without `https://github.com/`, so only a
+  // GitHub pull request was shortened and every other host showed all of it.
+  describe('in the open pull request link', () => {
+    async function prLinkFor(host: GitHostKind, openPrUrl: string): Promise<HTMLElement> {
+      await renderRepoOn(host);
+      act(() => {
+        const local = useWorkspaceStore.getState().local!;
+        useWorkspaceStore.setState({
+          local: { ...local, workingBranch: { ...local.workingBranch!, openPrUrl } },
+        });
+      });
+      return within(screen.getByText('PR open:').parentElement!).getByRole('link');
+    }
+
+    it.each([
+      ['github', 'https://github.com/acme/api/pull/7', 'acme/api/pull/7'],
+      ['gitlab', 'https://gitlab.com/acme/api/-/merge_requests/7', 'acme/api/-/merge_requests/7'],
+      ['gitlab', 'https://git.acme.dev/acme/api/-/merge_requests/7', 'acme/api/-/merge_requests/7'],
+      [
+        'gitlab',
+        'http://localhost:8929/acme/api/-/merge_requests/7',
+        'acme/api/-/merge_requests/7',
+      ],
+      ['bitbucket', 'https://bitbucket.org/acme/api/pull-requests/7', 'acme/api/pull-requests/7'],
+      [
+        'azure-devops',
+        'https://dev.azure.com/acme/shop/_git/api/pullrequest/7',
+        'acme/shop/_git/api/pullrequest/7',
+      ],
+    ] as const)('a %s pull request at %s reads %s', async (host, url, text) => {
+      const link = await prLinkFor(host, url);
+
+      expect(link).toHaveTextContent(new RegExp(`^${text}$`));
+      // Only the text is shortened. The link goes to the whole address.
+      expect(link).toHaveAttribute('href', url);
+    });
+
+    it('shows an address with nothing after the host whole, not as an empty link', async () => {
+      const link = await prLinkFor('gitlab', 'https://gitlab.com/');
+
+      expect(link).toHaveTextContent('https://gitlab.com/');
+    });
   });
 });

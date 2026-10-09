@@ -91,4 +91,51 @@ describe('formatGitError', () => {
     expect(view.action).toEqual({ kind: 'reconnect-token' });
     expect(view.partialWrite).toBe(false);
   });
+
+  // Every host's client throws these same classes, so the class cannot say
+  // whose answer it was. The caller can: it knows the host the repo is on.
+  describe('naming the host', () => {
+    const REJECTED =
+      'rejected the token. It may have been revoked, expired, or had its scopes changed. ' +
+      'Reconnect your session to continue.';
+
+    it('names GitHub when no host is given, as it always did', () => {
+      expect(formatGitError(new UnauthorizedError('bad token', 401), 'Push').message).toBe(
+        `GitHub ${REJECTED}`,
+      );
+      expect(formatGitError(new GitHubError('Server Error', 502), 'Push').message).toBe(
+        'GitHub 502: Server Error',
+      );
+    });
+
+    it.each([
+      ['github', 'GitHub'],
+      ['gitlab', 'GitLab'],
+      ['bitbucket', 'Bitbucket'],
+      ['azure-devops', 'Azure DevOps'],
+    ] as const)('names %s as the host that rejected the token', (host, label) => {
+      const view = formatGitError(new UnauthorizedError('Unauthorized', 401), 'Push', host);
+
+      expect(view.message).toBe(`${label} ${REJECTED}`);
+      expect(view.action).toEqual({ kind: 'reconnect-token' });
+    });
+
+    it('prefixes a failed call with the host that answered it', () => {
+      const view = formatGitError(new GitHubError('Server Error', 502), 'Push', 'gitlab');
+
+      expect(view.message).toBe('GitLab 502: Server Error');
+      expect(view.partialWrite).toBe(true);
+    });
+
+    it('keeps the host when the call site proved nothing was written', () => {
+      const view = formatGitError(
+        new NothingWrittenError(new GitHubError('Server Error', 502)),
+        'Push',
+        'bitbucket',
+      );
+
+      expect(view.message).toBe('Bitbucket 502: Server Error');
+      expect(view.partialWrite).toBe(false);
+    });
+  });
 });
