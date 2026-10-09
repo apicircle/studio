@@ -505,6 +505,11 @@ test.describe('Workspace management — workspace cap', () => {
     await app.getByRole('button', { name: 'New workspace (locked)', exact: true }).click();
     const notice = app.getByRole('dialog', { name: 'Workspace locked' });
     await expect(notice).toContainText('Nothing has been deleted');
+    // Its one action is the pricing page, opened beside the app, not over it.
+    const plans = notice.getByRole('link', { name: 'See plans', exact: true });
+    await expect(plans).toHaveAttribute('href', 'https://apicircle.dev/pricing');
+    await expect(plans).toHaveAttribute('target', '_blank');
+    await expect(notice.getByRole('link')).toHaveCount(1);
     await expect(app.getByLabel('New workspace name', { exact: true })).toHaveCount(0);
     await app.keyboard.press('Escape');
     await expect(notice).toBeHidden();

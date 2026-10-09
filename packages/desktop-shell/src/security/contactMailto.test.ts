@@ -46,6 +46,10 @@ describe('assertOpenableUrl', () => {
     expect(assertOpenableUrl('https://apicircle.dev/docs', 'url')).toBe(
       'https://apicircle.dev/docs',
     );
+    // The locked-workspace notice's "See plans" link, as `PRICING_URL` spells it.
+    expect(assertOpenableUrl('https://apicircle.dev/pricing', 'url')).toBe(
+      'https://apicircle.dev/pricing',
+    );
     expect(() => assertOpenableUrl('mailto:someone@example.com', 'url')).toThrow(
       /must use https: or http:/,
     );

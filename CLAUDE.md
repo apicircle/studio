@@ -684,7 +684,9 @@ keeps the two in one logical codebase with **no duplication** is recorded in
   - **Not a no-op:** `workspaceAccess` (`layout/workspaceAccess.ts`) defaults to a
     cap of one workspace, because a build with no edition is the free tier. The
     open workspace always keeps a slot, the remaining slots go oldest first, and
-    the rest lock (`unlockedWorkspaceIds`); nothing switches. The
+    the rest lock (`unlockedWorkspaceIds`); nothing switches. What a locked
+    workspace opens is `lockedNotice`; the default (`WorkspaceLockedNotice`)
+    says nothing is deleted and links to the pricing page (`PRICING_URL`). The
     Playwright web suite raises it per describe block with
     `test.use({ maxWorkspaces })`, through a hook `apps/web/src/main.tsx` reads
     on the dev server only (see `docs/qa/README.md`).

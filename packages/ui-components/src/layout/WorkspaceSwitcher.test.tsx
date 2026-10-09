@@ -173,7 +173,7 @@ describe('WorkspaceSwitcher access policy', () => {
     expect(screen.getByRole('button', { name: 'Delete WS-A' })).toBeInTheDocument();
   });
 
-  it('explains the lock instead of switching, and says the data is safe', async () => {
+  it('explains the lock instead of switching, says the data is safe, and links to the plans', async () => {
     await openWith(1, 'ws-a', 'ws-b');
     await userEvent.click(screen.getByRole('option', { name: 'WS-B (locked)' }));
     const notice = await screen.findByRole('dialog', { name: 'Workspace locked' });
@@ -181,12 +181,17 @@ describe('WorkspaceSwitcher access policy', () => {
       within(notice).getByText(/Additional workspaces are locked on this plan\./),
     ).toBeInTheDocument();
     expect(within(notice).getByText(/Nothing has been deleted/)).toBeInTheDocument();
-    const email = within(notice).getByRole('link', { name: 'contact@apicircle.dev' });
-    expect(email).toHaveAttribute('href', 'mailto:contact@apicircle.dev');
+    // Its one action is the pricing page, which leads on to the account site.
+    // Spelled out here, not read from `PRICING_URL`: a wrong constant must fail.
+    const plans = within(notice).getByRole('link', { name: 'See plans' });
+    expect(plans).toHaveAttribute('href', 'https://apicircle.dev/pricing');
     // A new window, not a navigation: a desktop build cancels navigations, and
-    // hands exactly this link to the mail app.
-    expect(email).toHaveAttribute('target', '_blank');
-    expect(email).toHaveAttribute('rel', 'noopener noreferrer');
+    // hands an http(s) link like this one to the browser.
+    expect(plans).toHaveAttribute('target', '_blank');
+    expect(plans).toHaveAttribute('rel', 'noopener noreferrer');
+    // It is the only link: the notice no longer sends people to our inbox.
+    expect(within(notice).getAllByRole('link')).toEqual([plans]);
+    expect(notice).not.toHaveTextContent(/contact@apicircle\.dev/);
     // It promises no date: the pricing release it once waited on has shipped.
     expect(notice).not.toHaveTextContent(/end of September/);
     // and it did NOT switch

@@ -70,6 +70,8 @@ First time here? An onboarding tour runs on first launch — replay it any time 
 
 Each plan keeps a set number of workspaces open; Studio on its own keeps one. The workspace you have open always keeps working. Past the limit, the switcher shows the others with a lock: they can't be opened or deleted, and nothing inside them is deleted. They unlock again with a plan that includes them. Leave a workspace that is past the limit and it locks behind you. **New workspace** is locked once you are at the limit.
 
+Picking a locked workspace, or **New workspace** at the limit, opens a notice that says so and shows the way to a plan. The plans, and how many workspaces each keeps open, are at [apicircle.dev/pricing](https://apicircle.dev/pricing).
+
 ## Disk layout
 
 All workspace data lives under \`~/.apicircle/\` (the user's home directory on every OS):

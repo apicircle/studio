@@ -5,6 +5,14 @@
 // to us instead (the Help footer's "Open an issue") are in `@apicircle/shared`
 // (`contact.ts`), where the desktop shell can read them too.
 
+/**
+ * Plans and prices, on the website. Each plan there says how many workspaces it
+ * keeps open, and its buttons lead on to the account site for whoever wants
+ * one. Studio has no account of its own to sign in to, so this is as far as it
+ * can take somebody.
+ */
+export const PRICING_URL = 'https://apicircle.dev/pricing';
+
 const GITHUB_REPO_BASE = 'https://github.com/apicircle/studio';
 
 /** Canonical owner/repo slug. Used by the GitHub REST client + tests. */

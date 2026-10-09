@@ -100,7 +100,11 @@ unaffected:
   open always keeps a slot, so a cap that comes down (or has not loaded yet)
   never locks the user out of what they are editing; the remaining slots go
   oldest first. This seam is NOT a no-op when omitted: the default is a cap of
-  one, because a build with no edition attached is the free tier.
+  one, because a build with no edition attached is the free tier. A locked
+  workspace, or New workspace at the cap, opens the policy's `lockedNotice`.
+  The default (`WorkspaceLockedNotice`) says nothing has been deleted and links
+  to the pricing page, since open core has no account to upgrade; an edition
+  passes its own notice with its own upgrade path.
 
 - **Workspace-sharing switch** — `WORKSPACE_SHARING_ENABLED`
   (`packages/shared/src/types.ts`), read through `isWorkspaceSharingEnabled()`

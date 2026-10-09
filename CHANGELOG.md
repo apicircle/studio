@@ -120,8 +120,8 @@
   cap, opens when the edition supplies no notice of its own — said extra
   workspaces were locked "while we finish API Circle pricing, releasing end of
   September". It now says they are locked on this plan, and still says nothing
-  has been deleted and how to reach a human. An edition's
-  `workspaceAccess.lockedNotice` still replaces it wholesale.
+  has been deleted. An edition's `workspaceAccess.lockedNotice` still replaces
+  it wholesale.
 - **The workspace cap no longer locks the workspace you have open.** The cap
   kept the oldest workspaces unlocked without asking which one was open. A newer
   workspace could already be open: a Studio from before the cap left it open, an
@@ -286,6 +286,19 @@
 
 ### Changed
 
+- **The locked-workspace notice links to the plans instead of asking you to
+  email us.** A locked workspace, or **New workspace** at the cap, opened a
+  notice whose only way forward was a message to `contact@apicircle.dev`. It
+  now has one action, **See plans**, which opens
+  [apicircle.dev/pricing](https://apicircle.dev/pricing) in the browser: each
+  plan there says how many workspaces it keeps open, and its buttons lead on to
+  the account site to subscribe. The email link is gone from the notice; it
+  still says nothing has been deleted.
+  - Desktop opens it in the system browser. It is a new-window link, and the
+    window-open handler already hands http(s) links to the browser.
+  - The link is `PRICING_URL` in `primitives/externalLinks.ts`. An edition's
+    `workspaceAccess.lockedNotice` still replaces the notice wholesale.
+
 - **The Help Center is an icon at the far end of the top bar, not a tab.** It
   is a place to look something up from anywhere, not a stage of the work, so
   the **?** sits in the top bar on every panel and the strip is the six stages:
@@ -316,9 +329,9 @@
     `@apicircle/desktop-shell`, the links themselves in `@apicircle/shared`'s
     `contact.ts`); a message to any other address, or one of ours with a
     recipient or a body added, is refused as before.
-  - The `contact@apicircle.dev` link in the locked-workspace notice takes the
-    same path. It was a plain link, which is a navigation, and the desktop
-    shell cancels every navigation away from the app.
+  - The locked-workspace notice had a plain `contact@apicircle.dev` link, which
+    is a navigation, and the desktop shell cancels every navigation away from
+    the app. That notice now links to the pricing page instead (see above).
 
 - **An edition's modes are groups in the tab strip, not a switch in the top
   bar** (editions with two or more `sections` only). The Studio ⇄ edition
