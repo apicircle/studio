@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  HelpCircle,
   KeyRound,
   Lock,
   Plus,
@@ -36,6 +37,13 @@ import {
   UnauthorizedError,
 } from '@apicircle/git';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import {
+  SCOPES_NEEDED_WHEN_REPORTED,
+  scopesAreReported,
+  summarizePreflight,
+  type HostPreflightReport,
+  type PreflightStatus,
+} from '../../store/hostPreflight';
 import { SecretsNotProtectedError } from '../../persistence/platformSecretGate';
 import { cn } from '../../primitives/cn';
 import { safeCopyToClipboard } from '../../primitives/clipboard';
@@ -1161,11 +1169,16 @@ function BitbucketCredentialKindPicker({
 /**
  * What to create the token WITH.
  *
- * GitHub's two scopes are the only ones the product can actually verify — it is
- * the one host that reports a token's scopes back. For the others this is
- * guidance and nothing more: they do not expose scopes, so the connect step
+ * GitHub's two scopes are the only ones the connect step can verify — it is the
+ * one host that reports a token's scopes on its identity call. It reports them
+ * for a classic token only: a fine-grained one carries permissions, which
+ * GitHub reports nowhere, so its guidance names what to grant and says it is
+ * not checked. For the other hosts this is guidance too: the connect step
  * cannot check them and deliberately does not pretend to. Saying so here is the
  * difference between a user understanding a later 403 and being baffled by it.
+ * A host whose scopes Test connection can read afterwards
+ * (`SCOPES_NEEDED_WHEN_REPORTED`) says that instead, and names the one it looks
+ * for.
  *
  * Bitbucket's guidance follows the credential kind the user picked: the two
  * kinds use different scope vocabularies and are created in different places,
@@ -1222,12 +1235,34 @@ function ScopeGuidance({
           ))
         )}
       </ul>
-      {host !== 'github' && (
+      {host === 'github' && (
+        // The two scopes above are a classic token's. A fine-grained token has
+        // none to check, so what it needs is said here rather than enforced.
         <p className="mt-2">
-          {GIT_HOST_LABELS[host]} does not report a token&apos;s scopes, so these cannot be checked
-          when you connect — a token missing one fails at the first write instead.
+          A fine-grained token (<code className="text-text-primary">github_pat_…</code>) has
+          permissions instead of scopes: give it{' '}
+          <strong className="text-text-primary">Contents</strong> and{' '}
+          <strong className="text-text-primary">Pull requests</strong>, read and write, on the
+          repository. GitHub does not report those, so they are not checked when you connect — a
+          token missing one fails at the first push or pull request instead.
         </p>
       )}
+      {host !== 'github' &&
+        (SCOPES_NEEDED_WHEN_REPORTED[host].length > 0 ? (
+          <p className="mt-2">
+            These are not checked when you connect. Once connected, Test connection checks for{' '}
+            <code className="text-text-primary">
+              {SCOPES_NEEDED_WHEN_REPORTED[host].join(', ')}
+            </code>{' '}
+            where {GIT_HOST_LABELS[host]} reports the token&apos;s scopes; a token missing another
+            one fails at the first clone or push.
+          </p>
+        ) : (
+          <p className="mt-2">
+            {GIT_HOST_LABELS[host]} does not report a token&apos;s scopes, so these cannot be
+            checked when you connect — a token missing one fails at the first write instead.
+          </p>
+        ))}
       {host === 'bitbucket' &&
         // Bitbucket's two credentials need DIFFERENT auth schemes: an API token
         // authenticates as `email:token` over Basic, an access token as a Bearer
@@ -1585,11 +1620,12 @@ function DeviceFlowCard({
   );
 }
 
-// Required scopes for the in-app linking + push flow. Surfaced on the
-// session card so the user can see at a glance whether their token
-// covers everything before they hit a 403 mid-link.
-const REQUIRED_SESSION_SCOPES = ['repo'] as const;
+// The scopes the in-app linking + push flow needs are surfaced on the session
+// card, so the user can see at a glance whether their token covers everything
+// before they hit a 403 mid-link. The required ones are per host
+// (`SCOPES_NEEDED_WHEN_REPORTED`); `pull_request` is GitHub's alone.
 const RECOMMENDED_SESSION_SCOPES = ['pull_request'] as const;
+const NO_RECOMMENDED_SCOPES: readonly string[] = [];
 
 function ScopeChip({ name, ok, required }: { name: string; ok: boolean; required?: boolean }) {
   const tone = ok
@@ -1616,13 +1652,80 @@ function ScopeChip({ name, ok, required }: { name: string; ok: boolean; required
   );
 }
 
+// A test either reaches the host and comes back with a report — which may
+// itself hold failed checks — or never gets past the token.
 type ConnectionTestResult =
-  | { kind: 'pass'; grantedScopes: string[] }
+  | { kind: 'report'; report: HostPreflightReport }
   | {
       kind: 'fail';
       reason: 'unauthorized' | 'rate-limited' | 'scope' | 'network' | 'other';
       message: string;
     };
+
+const PREFLIGHT_STATUS_WORD: Record<PreflightStatus, string> = {
+  pass: 'Passed',
+  fail: 'Failed',
+  unknown: 'Not checked',
+};
+
+function PreflightStatusIcon({ status }: { status: PreflightStatus }) {
+  if (status === 'pass') {
+    return <CheckCircle2 size={12} aria-hidden="true" className="mt-0.5 shrink-0 text-success" />;
+  }
+  if (status === 'fail') {
+    return <XCircle size={12} aria-hidden="true" className="mt-0.5 shrink-0 text-danger" />;
+  }
+  return <HelpCircle size={12} aria-hidden="true" className="mt-0.5 shrink-0 text-text-dim" />;
+}
+
+/**
+ * What a connection test found: one line for the verdict, then every check with
+ * its own outcome. "Healthy" means nothing failed; a check that could not be
+ * made is counted apart, never folded into the passes.
+ */
+function PreflightResult({ report }: { report: HostPreflightReport }) {
+  const { pass, fail, unknown } = summarizePreflight(report);
+  const healthy = fail === 0;
+  const checks = (n: number) => `${n} ${n === 1 ? 'check' : 'checks'}`;
+  const unchecked = unknown > 0 ? `, ${unknown} could not be checked` : '';
+  return (
+    <div className="space-y-1.5">
+      <p
+        role="status"
+        className={
+          healthy
+            ? 'flex items-start gap-1.5 rounded-sm border border-success/40 bg-success/10 p-2 text-[0.6875rem] text-success'
+            : 'flex items-start gap-1.5 rounded-sm border border-danger/40 bg-danger/10 p-2 text-[0.6875rem] text-danger'
+        }
+      >
+        {healthy ? (
+          <CheckCircle2 size={12} aria-hidden="true" className="mt-0.5 shrink-0" />
+        ) : (
+          <XCircle size={12} aria-hidden="true" className="mt-0.5 shrink-0" />
+        )}
+        <span>
+          {healthy
+            ? `Connection healthy — ${checks(pass)} passed${unchecked}.`
+            : `${fail} of ${checks(report.checks.length)} failed${unchecked}.`}
+        </span>
+      </p>
+      <ul
+        aria-label={`${GIT_HOST_LABELS[report.host]} connection checks`}
+        className="space-y-1 text-[0.6875rem]"
+      >
+        {report.checks.map((check) => (
+          <li key={check.id} className="flex items-start gap-1.5">
+            <PreflightStatusIcon status={check.status} />
+            <span className={check.status === 'fail' ? 'text-danger' : 'text-text-muted'}>
+              <span className="sr-only">{PREFLIGHT_STATUS_WORD[check.status]}: </span>
+              <span className="font-medium text-text-primary">{check.label}</span> — {check.detail}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function ActiveSessionCard({
   host,
@@ -1652,7 +1755,7 @@ function ActiveSessionCard({
       ? (s.local?.sessions.github.workspace ?? null)
       : (s.local?.sessions.hosts?.[host]?.workspace ?? null),
   );
-  const verifyHost = useWorkspaceStore((s) => s.verifyHostScopes);
+  const preflightHost = useWorkspaceStore((s) => s.preflightHostConnection);
   const updateHost = useWorkspaceStore((s) => s.updateHostToken);
   const disconnectHost = useWorkspaceStore((s) => s.disconnectHostSession);
   // Disconnecting also drops the workspace's repo + working branch when they
@@ -1660,7 +1763,7 @@ function ActiveSessionCard({
   const ownsRepo = useWorkspaceStore(
     (s) => Boolean(s.local?.connectedRepo) && connectedHostKind(s.local) === host,
   );
-  const verify = () => verifyHost(host);
+  const verify = () => preflightHost(host);
   const updateToken = (token: string) => updateHost(token, host);
   const disconnect = () => disconnectHost(host);
 
@@ -1681,9 +1784,9 @@ function ActiveSessionCard({
     setError(null);
     setTestResult(null);
     try {
-      const granted = await verify();
+      const report = await verify();
       // verify() returns null when there's no session at all. Treat as fail.
-      if (granted === null) {
+      if (report === null) {
         setTestResult({
           kind: 'fail',
           reason: 'other',
@@ -1691,22 +1794,24 @@ function ActiveSessionCard({
         });
         return;
       }
-      setTestResult({ kind: 'pass', grantedScopes: granted });
+      setTestResult({ kind: 'report', report });
     } catch (err) {
-      // Map error types to user-friendly reasons so the user knows what
-      // to fix instead of guessing from a raw stack trace.
+      // Only a token the host would not identify lands here; everything the
+      // checks find past that point is a row in the report. Map error types to
+      // user-friendly reasons so the user knows what to fix instead of guessing
+      // from a raw stack trace.
+      const hostName = GIT_HOST_LABELS[host];
       if (err instanceof UnauthorizedError) {
         setTestResult({
           kind: 'fail',
           reason: 'unauthorized',
-          message:
-            'Token rejected by GitHub (401). The PAT may be revoked or expired — reconnect to refresh.',
+          message: `Token rejected by ${hostName} (${err.status}). The token may be revoked or expired — reconnect to refresh.`,
         });
       } else if (err instanceof RateLimitedError) {
         setTestResult({
           kind: 'fail',
           reason: 'rate-limited',
-          message: 'GitHub rate-limited the verify call. Try again in a few minutes.',
+          message: `${hostName} rate-limited the check. Try again in a few minutes.`,
         });
       } else if (err instanceof MissingScopeError) {
         setTestResult({
@@ -1718,7 +1823,7 @@ function ActiveSessionCard({
         setTestResult({
           kind: 'fail',
           reason: 'other',
-          message: `GitHub error ${err.status}: ${err.message}`,
+          message: `${hostName} error ${err.status}: ${err.message}`,
         });
       } else if (err instanceof Error) {
         // Network error / fetch failure / DNS — TypeError from fetch.
@@ -1809,13 +1914,20 @@ function ActiveSessionCard({
     );
   }
 
-  // Scope CHIPS are GitHub's alone. Only GitHub reports a token's granted scopes;
-  // the other three answer `getViewer` with an empty list, so every chip would
-  // render as "missing" and tell a user with a perfectly good token that it is
-  // broken. Showing nothing is the honest answer where nothing is knowable.
-  const scopesAreKnowable = host === 'github';
+  // Scope CHIPS need the host to say which scopes a token has. GitHub does for
+  // a classic token, and GitLab does for a token it can describe. A host that
+  // answers `getViewer` with an empty list has said nothing, and neither has
+  // GitHub about a fine-grained token (`scopesReported: false`): every chip
+  // would render as "missing" and tell a user with a perfectly good token that
+  // it is broken. Showing nothing is the honest answer where nothing is knowable.
+  const scopesAreKnowable = scopesAreReported(host, session.grantedScopes, session.scopesReported);
+  const requiredScopes = SCOPES_NEEDED_WHEN_REPORTED[host];
+  const recommendedScopes = host === 'github' ? RECOMMENDED_SESSION_SCOPES : NO_RECOMMENDED_SCOPES;
+  // A host that reports scopes this app needs none of in particular gets the
+  // granted list alone, not an empty "Required scopes" row.
+  const showScopeChips = scopesAreKnowable && requiredScopes.length > 0;
   const missingRequired = scopesAreKnowable
-    ? REQUIRED_SESSION_SCOPES.filter((s) => !session.grantedScopes.includes(s))
+    ? requiredScopes.filter((s) => !session.grantedScopes.includes(s))
     : [];
   // The recommended `pull_request` permission is satisfied either by the
   // scope appearing in the granted list (fine-grained PATs that surface
@@ -1839,27 +1951,44 @@ function ActiveSessionCard({
           <>
             <dt className="text-text-dim">Scopes</dt>
             <dd className="text-text-muted">
-              {GIT_HOST_LABELS[host]} does not report a token&apos;s scopes, so they cannot be shown
-              or checked here.
+              {host === 'github' ? (
+                // GitHub does report a classic token's scopes, so the sentence is
+                // about THIS token, and says what kind of token gets none.
+                <>
+                  GitHub does not report this token&apos;s scopes, so they cannot be shown or
+                  checked here. A fine-grained token carries permissions instead, and Test
+                  connection checks what it can reach.
+                </>
+              ) : (
+                <>
+                  {GIT_HOST_LABELS[host]} does not report a token&apos;s scopes, so they cannot be
+                  shown or checked here.
+                </>
+              )}
             </dd>
           </>
         )}
-        {scopesAreKnowable && <dt className="text-text-dim">Required scopes</dt>}
-        <dd
-          className="flex flex-wrap items-center gap-1.5 text-text-primary"
-          hidden={!scopesAreKnowable}
-        >
-          {REQUIRED_SESSION_SCOPES.map((s) => (
-            <ScopeChip key={s} name={s} ok={session.grantedScopes.includes(s)} required />
-          ))}
-          {RECOMMENDED_SESSION_SCOPES.map((s) => (
-            <ScopeChip
-              key={s}
-              name={s}
-              ok={s === 'pull_request' ? prScopeSatisfied : session.grantedScopes.includes(s)}
-            />
-          ))}
-        </dd>
+        {/* Left out, not `hidden`: the row is `flex`, and a class that sets
+            `display` beats the `hidden` attribute. A hidden row still showed its
+            chips ("repo missing" beside "scopes are not reported") and, taking a
+            cell of the grid, pushed every label below it into the value column. */}
+        {showScopeChips && (
+          <>
+            <dt className="text-text-dim">Required scopes</dt>
+            <dd className="flex flex-wrap items-center gap-1.5 text-text-primary">
+              {requiredScopes.map((s) => (
+                <ScopeChip key={s} name={s} ok={session.grantedScopes.includes(s)} required />
+              ))}
+              {recommendedScopes.map((s) => (
+                <ScopeChip
+                  key={s}
+                  name={s}
+                  ok={s === 'pull_request' ? prScopeSatisfied : session.grantedScopes.includes(s)}
+                />
+              ))}
+            </dd>
+          </>
+        )}
         <dt className="text-text-dim">Granted scopes</dt>
         <dd className="text-text-primary">
           {session.grantedScopes.length > 0 ? session.grantedScopes.join(', ') : '—'}
@@ -1881,25 +2010,14 @@ function ActiveSessionCard({
           app will fail until you update the token.
         </p>
       )}
-      {testResult && (
+      {testResult?.kind === 'report' && <PreflightResult report={testResult.report} />}
+      {testResult?.kind === 'fail' && (
         <p
           role="status"
-          className={
-            testResult.kind === 'pass'
-              ? 'flex items-start gap-1.5 rounded-sm border border-success/40 bg-success/10 p-2 text-[0.6875rem] text-success'
-              : 'flex items-start gap-1.5 rounded-sm border border-danger/40 bg-danger/10 p-2 text-[0.6875rem] text-danger'
-          }
+          className="flex items-start gap-1.5 rounded-sm border border-danger/40 bg-danger/10 p-2 text-[0.6875rem] text-danger"
         >
-          {testResult.kind === 'pass' ? (
-            <CheckCircle2 size={12} aria-hidden="true" className="mt-0.5 shrink-0" />
-          ) : (
-            <XCircle size={12} aria-hidden="true" className="mt-0.5 shrink-0" />
-          )}
-          <span>
-            {testResult.kind === 'pass'
-              ? `Connection healthy — token verified, scopes refreshed.`
-              : testResult.message}
-          </span>
+          <XCircle size={12} aria-hidden="true" className="mt-0.5 shrink-0" />
+          <span>{testResult.message}</span>
         </p>
       )}
       {error && (

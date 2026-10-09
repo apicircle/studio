@@ -825,7 +825,32 @@ Either way the token is verified with a \`GET /user\` call before it is accepted
     Scopes        repo, pull_request
     Verified      2 minutes ago
 
-A token needs \`repo\` (read + push) and \`pull_request\` (open PRs). If \`pull_request\` is missing the tab warns you.
+A classic token needs \`repo\` (read + push) and \`pull_request\` (open PRs). A classic token without \`repo\` is refused when you connect. If \`pull_request\` is missing the tab warns you.
+
+A fine-grained token has permissions instead of scopes. Give it **Contents** and **Pull requests**, read and write, on the repository. GitHub does not report a fine-grained token's permissions, so they are not checked when you connect, and the tab shows no scopes for it:
+
+    Signed in as  ada-dev
+    Scopes        GitHub does not report this token's scopes
+    Verified      2 minutes ago
+
+A fine-grained token missing a permission fails at the first push or pull request, with GitHub's own message ("Resource not accessible by personal access token"). Edit the token's permissions on GitHub and try again — the token itself does not change, so there is nothing to paste again.
+
+## Testing the connection
+
+**Test connection** on the session card asks the host about the token, and about the repo this workspace is connected to. It lists each answer:
+
+    Token          the account the token belongs to
+    Scopes         whether it has the scopes the app needs
+    Repository     whether it can reach the connected repo
+    Push access    whether this account may push to it
+    Branches       whether its branches can be read
+    Pull requests  whether its pull requests can be read
+
+Each check passes, fails, or is marked **not checked**. A failed check says what it will break. A check is not checked when there was nothing to ask (no repo is connected yet), when the host does not report the answer (not every host says which scopes a token has, or whether an account may push), or when the call was rate limited.
+
+For a fine-grained GitHub token two checks are left as not checked. GitHub reports no scopes for it, and what it reports about push access describes your account, not the token's own permissions. The Branches and Pull requests checks still ask the repo, so a token missing **Contents** or **Pull requests** fails there, and the check names the permission. It is counted apart from the passes.
+
+Every call is a read — nothing is written to the host. Write access is taken from what the host reports, so where a host reports nothing the first push is still the real test.
 
 ## More than one host
 
@@ -860,6 +885,10 @@ The GitHub repository, the branch, and your commits are untouched on GitHub — 
       'github',
       'token',
       'pat',
+      'classic token',
+      'fine-grained',
+      'github_pat',
+      'permissions',
       'sign in',
       'device flow',
       'disconnect',

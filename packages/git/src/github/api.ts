@@ -63,6 +63,23 @@ export interface GitHubViewer {
 export interface ScopeInfo {
   granted: string[];
   acceptedRequired?: string[];
+  /**
+   * Whether the host said which scopes the token has.
+   *
+   * GitHub answers in an `x-oauth-scopes` header, and sends it only for a token
+   * that has scopes to speak of: a classic personal access token or an OAuth
+   * token. A fine-grained token (`github_pat_…`) and a GitHub App's token carry
+   * permissions instead, and their responses have no such header at all.
+   *
+   *   - `false` — no header. `granted` is empty because nothing was reported,
+   *               not because the token has no scopes.
+   *   - `true`  — the header was there. An empty `granted` is then a classic
+   *               token with no scopes.
+   *
+   * Optional because the other hosts' clients return a `ScopeInfo` too and do
+   * not say; a reader falls back to its own rule for them.
+   */
+  reported?: boolean;
 }
 
 export interface GitHubRepo {
@@ -1462,8 +1479,11 @@ function normalizeRepo(raw: RawRepo): GitHubRepo {
 }
 
 function parseScopes(headers: Headers): ScopeInfo {
-  const raw = headers.get('x-oauth-scopes') ?? '';
-  const granted = raw
+  // `null` is a header that was never sent; `''` is one that was sent empty.
+  // Only the first means GitHub said nothing about this token's scopes.
+  const scopesHeader = headers.get('x-oauth-scopes');
+  const reported = scopesHeader !== null;
+  const granted = (scopesHeader ?? '')
     .split(',')
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
@@ -1472,7 +1492,9 @@ function parseScopes(headers: Headers): ScopeInfo {
     .split(',')
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
-  return acceptedRequired.length > 0 ? { granted, acceptedRequired } : { granted };
+  return acceptedRequired.length > 0
+    ? { granted, acceptedRequired, reported }
+    : { granted, reported };
 }
 
 function classifyError(
@@ -1512,14 +1534,20 @@ function classifyError(
       .split(',')
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
-    const granted = (response.headers.get('x-oauth-scopes') ?? '')
+    const scopesHeader = response.headers.get('x-oauth-scopes');
+    const granted = (scopesHeader ?? '')
       .split(',')
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
+    // A refusal with no `x-oauth-scopes` header went to a token that has no
+    // scopes to be missing — a fine-grained token, or a GitHub App's. It lacks
+    // a permission, and GitHub's own message says so. Naming the caller's
+    // `repo` would send the user looking for a scope their token cannot have.
+    const expected = scopesHeader === null ? [] : callerRequiredScopes;
     const missing =
       accepted.length > 0
         ? accepted.filter((s) => !granted.includes(s))
-        : callerRequiredScopes.filter((s) => !granted.includes(s));
+        : expected.filter((s) => !granted.includes(s));
     if (missing.length > 0) {
       return new MissingScopeError(
         `GitHub denied this action: missing scopes ${missing.join(', ')}.`,

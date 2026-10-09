@@ -1285,6 +1285,18 @@ export interface GitHubSession {
   // Scopes the token currently grants, e.g. ['repo', 'pull_request'].
   // Refreshed by an explicit "Test connection" call (GET /user via API).
   grantedScopes: string[];
+  /**
+   * Whether the host said which scopes the token has, when its client can tell
+   * (`ScopeInfo.reported`). `false` means `grantedScopes` is empty because
+   * nothing was reported, not because the token has none: GitHub sends no scope
+   * list for a fine-grained token, which carries permissions instead.
+   *
+   * Absent on a session recorded before the client said, and on every host
+   * whose client does not say. A reader then applies the per-host rule
+   * (`scopesAreReported` in ui-components), which is what it did before this
+   * field existed.
+   */
+  scopesReported?: boolean;
   addedAt: string;
   lastVerifiedAt: string | null;
   /**

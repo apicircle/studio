@@ -785,6 +785,37 @@ describe('workspaceStorage — multi-host backfill on hydrate', () => {
     expect(local.sessions.hosts?.gitlab?.workspace?.canCreatePullRequests).toBe(true);
   });
 
+  it('round-trips whether a session’s scopes were reported, and invents no answer where none was stored', async () => {
+    // `scopesReported: false` is what keeps a fine-grained GitHub token's empty
+    // scope list from reading as "a token with no scopes" after a reload.
+    const fineGrained = {
+      accountLogin: 'dev',
+      tokenSecretId: 'sec-1',
+      grantedScopes: [],
+      scopesReported: false,
+      addedAt: 't',
+      lastVerifiedAt: 't',
+      canCreatePullRequests: null,
+    };
+    // Written before the field existed.
+    const older = {
+      accountLogin: 'dev',
+      tokenSecretId: 'sec-2',
+      grantedScopes: ['repo'],
+      addedAt: 't',
+      lastVerifiedAt: 't',
+      canCreatePullRequests: true,
+    };
+    const local = await hydrateLocal((seed) => ({
+      ...seed,
+      sessions: { github: { workspace: fineGrained, links: { 'link-1': older } } },
+    }));
+
+    expect(local.sessions.github.workspace).toEqual(fineGrained);
+    expect(local.sessions.github.links['link-1']).toEqual(older);
+    expect(local.sessions.github.links['link-1']).not.toHaveProperty('scopesReported');
+  });
+
   it('skips a malformed hosts entry rather than guessing at its shape', async () => {
     const local = await hydrateLocal((seed) => ({
       ...seed,

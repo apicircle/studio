@@ -6,7 +6,13 @@ import { __setWebBuildForTests } from './webBuild';
 import { __setGitHubDeviceFlowAvailableForTests } from './githubDeviceFlow';
 import { renderWithStore } from '../../../test/renderWithStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
-import { registerGitProvider, resetGitProviderRegistry } from '@apicircle/git';
+import { deleteSecretPayload } from '../../persistence/secrets';
+import {
+  registerGitProvider,
+  resetGitProviderRegistry,
+  UnauthorizedError,
+  type GitProvider,
+} from '@apicircle/git';
 import * as workspaceSharing from '../workspaceSharing';
 import { GitHostAccessProvider, type GitHostAccess } from '../gitHostAccess';
 
@@ -345,6 +351,131 @@ describe('SecretVaultDockPanel', () => {
       });
     });
 
+    describe('scopes and the connection test on a non-GitHub host', () => {
+      function seedHostSession(host: 'gitlab' | 'bitbucket', grantedScopes: string[]): void {
+        act(() => {
+          const local = useWorkspaceStore.getState().local!;
+          useWorkspaceStore.setState({
+            local: {
+              ...local,
+              sessions: {
+                ...local.sessions,
+                hosts: {
+                  [host]: {
+                    workspace: { ...BB_SESSION, accountLogin: `${host}-user`, grantedScopes },
+                    links: {},
+                  },
+                },
+              },
+            },
+          });
+        });
+      }
+
+      it('says so when the host reports no scopes, and shows no chips', async () => {
+        registerGitProvider('gitlab', () => ({}) as never);
+        await openSessions();
+        seedHostSession('gitlab', []);
+
+        // The card's own sentence; the connect guidance above it has another.
+        expect(
+          screen.getByText(/GitLab does not report a token.s scopes, so they cannot be shown/),
+        ).toBeVisible();
+        expect(screen.queryByText('Required scopes')).not.toBeInTheDocument();
+        expect(screen.queryByText(/Required scope\(s\) missing/)).not.toBeInTheDocument();
+        // Not in the document at all. The row used to be rendered with the
+        // `hidden` attribute, which its own `flex` class overrode in a real
+        // browser: a red `api` chip sat under the sentence above.
+        expect(screen.queryByLabelText(/scope (present|missing)/)).not.toBeInTheDocument();
+      });
+
+      it('checks GitLab for `api` once GitLab reports the token scopes', async () => {
+        registerGitProvider('gitlab', () => ({}) as never);
+        await openSessions();
+        seedHostSession('gitlab', ['read_api', 'read_repository']);
+
+        expect(screen.queryByText(/cannot be shown or checked here/)).not.toBeInTheDocument();
+        expect(screen.getByText('Required scopes')).toBeVisible();
+        expect(screen.getByLabelText('api scope missing (required)')).toBeVisible();
+        expect(screen.getByText(/Required scope\(s\) missing:/)).toHaveTextContent(
+          'Required scope(s) missing: api.',
+        );
+        // `pull_request` is GitHub's word; no other host is asked for it.
+        expect(screen.queryByLabelText(/pull_request scope/)).not.toBeInTheDocument();
+      });
+
+      it('shows a GitLab token that has `api` as covered', async () => {
+        registerGitProvider('gitlab', () => ({}) as never);
+        await openSessions();
+        seedHostSession('gitlab', ['api']);
+
+        expect(screen.getByLabelText('api scope present')).toBeVisible();
+        expect(screen.queryByText(/Required scope\(s\) missing/)).not.toBeInTheDocument();
+        // GitLab's guidance names the scope the test looks for, instead of
+        // saying nothing can be checked.
+        expect(screen.getByText(/Once connected, Test connection checks for/)).toHaveTextContent(
+          "These are not checked when you connect. Once connected, Test connection checks for api where GitLab reports the token's scopes; a token missing another one fails at the first clone or push.",
+        );
+      });
+
+      it('lists reported scopes without a required row where none is required', async () => {
+        registerGitProvider('bitbucket', () => ({}) as never);
+        await openSessions();
+        seedHostSession('bitbucket', ['repository', 'pullrequest']);
+
+        expect(screen.getByText('repository, pullrequest')).toBeVisible();
+        expect(screen.queryByText('Required scopes')).not.toBeInTheDocument();
+        // The connect guidance still says what is true of connecting to Bitbucket.
+        expect(
+          screen.getByText(
+            /Bitbucket does not report a token.s scopes, so these cannot be checked/,
+          ),
+        ).toBeVisible();
+        expect(screen.queryByText(/cannot be shown or checked here/)).not.toBeInTheDocument();
+      });
+
+      it('names the host, and the status it answered with, when it rejects the token', async () => {
+        let reject = false;
+        registerGitProvider(
+          'gitlab',
+          () =>
+            ({
+              getViewer: async () => {
+                if (reject) throw new UnauthorizedError('nope', 403);
+                return { viewer: { login: 'gl-user', id: 7 }, scopes: { granted: [] } };
+              },
+            }) as unknown as GitProvider,
+        );
+        await openSessions();
+        await act(async () => {
+          await useWorkspaceStore.getState().connectHostSession('glpat-x', 'gitlab');
+        });
+        await screen.findByText(/Connected as gl-user on GitLab/);
+
+        await userEvent.click(screen.getByRole('button', { name: 'Test GitLab connection' }));
+        expect(
+          await screen.findByText('Connection healthy — 1 check passed, 2 could not be checked.'),
+        ).toBeVisible();
+        expect(
+          within(screen.getByRole('list', { name: 'GitLab connection checks' })).getAllByRole(
+            'listitem',
+          )[1],
+        ).toHaveTextContent(
+          "Not checked: Scopes — GitLab does not report this token's scopes, so they cannot be checked.",
+        );
+
+        reject = true;
+        await userEvent.click(screen.getByRole('button', { name: 'Test GitLab connection' }));
+        expect(
+          await screen.findByText(
+            'Token rejected by GitLab (403). The token may be revoked or expired — reconnect to refresh.',
+          ),
+        ).toBeVisible();
+        // A failed test replaces the last report; it does not sit beside it.
+        expect(screen.queryByRole('list', { name: 'GitLab connection checks' })).toBeNull();
+      });
+    });
+
     it('replaces a Bitbucket token through the same two-field form', async () => {
       registerGitProvider('bitbucket', () => ({}) as never);
       const updateHostToken = vi.fn(async () => BB_SESSION);
@@ -611,6 +742,193 @@ describe('SecretVaultDockPanel', () => {
       // surfaces the pass banner.
       await userEvent.click(screen.getByRole('button', { name: 'Test GitHub connection' }));
       expect(await screen.findByText(/Connection healthy/)).toBeVisible();
+      // With no repo connected there is nothing to ask about one, and the
+      // verdict says a check was left open rather than counting it as passed.
+      expect(
+        screen.getByText('Connection healthy — 2 checks passed, 1 could not be checked.'),
+      ).toBeVisible();
+      const checks = within(screen.getByRole('list', { name: 'GitHub connection checks' }));
+      expect(checks.getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+        'Passed: Token — Signed in as me.',
+        'Passed: Scopes — Has repo.',
+        'Not checked: Repository — No GitHub repository is connected yet, so access to one was not checked.',
+      ]);
+    });
+
+    /**
+     * GitHub answering by path: the branch and pull-request listings go out
+     * together, so a queue of responses would hand each the other's.
+     */
+    function stubGitHubByPath(
+      overrides: Record<
+        string,
+        { status?: number; body: unknown; headers?: Record<string, string> }
+      >,
+    ): void {
+      const defaults: typeof overrides = {
+        '/user': { body: { login: 'me', id: 1 }, headers: { 'x-oauth-scopes': 'repo' } },
+        '/repos/me/api': {
+          body: {
+            full_name: 'me/api',
+            name: 'api',
+            owner: { login: 'me' },
+            default_branch: 'main',
+            visibility: 'private',
+            permissions: { push: true, admin: false },
+          },
+        },
+        '/repos/me/api/branches': { body: [{ name: 'main', commit: { sha: 'a' } }] },
+        '/repos/me/api/pulls': { body: [] },
+      };
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: string | URL) => {
+          const path = new URL(input).pathname;
+          const canned = overrides[path] ?? defaults[path];
+          if (!canned) throw new Error(`no canned GitHub response for ${path}`);
+          return new Response(JSON.stringify(canned.body), {
+            status: canned.status ?? 200,
+            headers: { 'content-type': 'application/json', ...(canned.headers ?? {}) },
+          });
+        }),
+      );
+    }
+
+    /** Connect a GitHub session and its repo, then open the Sessions tab on it. */
+    async function openConnectedGitHubCard(): Promise<void> {
+      stubGitHubByPath({});
+      // Rendering hydrates the store, which the connect actions need.
+      await renderWithStore(<SecretVaultDockPanel />);
+      await act(async () => {
+        await useWorkspaceStore.getState().connectGitHubSession('tok');
+        await useWorkspaceStore.getState().connectRepo('me', 'api');
+      });
+      await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+      await screen.findByText(/Connected as me/);
+    }
+
+    it('test-connection — with a repo connected, every check is listed and passes', async () => {
+      await openConnectedGitHubCard();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Test GitHub connection' }));
+
+      expect(await screen.findByText('Connection healthy — 6 checks passed.')).toBeVisible();
+      const checks = within(screen.getByRole('list', { name: 'GitHub connection checks' }));
+      expect(checks.getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+        'Passed: Token — Signed in as me.',
+        'Passed: Scopes — Has repo.',
+        'Passed: Repository — me/api is reachable.',
+        'Passed: Push access — This account can push to me/api.',
+        'Passed: Branches — Branches can be read.',
+        'Passed: Pull requests — Pull requests can be read.',
+      ]);
+    });
+
+    it('test-connection — a failed check is named, and the connection is not called healthy', async () => {
+      await openConnectedGitHubCard();
+      // Since connecting: the token lost `repo`, and the account lost push access.
+      stubGitHubByPath({
+        '/user': { body: { login: 'me', id: 1 }, headers: { 'x-oauth-scopes': 'gist' } },
+        '/repos/me/api': {
+          body: {
+            full_name: 'me/api',
+            name: 'api',
+            owner: { login: 'me' },
+            default_branch: 'main',
+            visibility: 'private',
+            permissions: { push: false, admin: false },
+          },
+        },
+      });
+
+      await userEvent.click(screen.getByRole('button', { name: 'Test GitHub connection' }));
+
+      expect(await screen.findByText('2 of 6 checks failed.')).toBeVisible();
+      expect(screen.queryByText(/Connection healthy/)).not.toBeInTheDocument();
+      const checks = within(screen.getByRole('list', { name: 'GitHub connection checks' }));
+      const rows = checks.getAllByRole('listitem').map((li) => li.textContent);
+      expect(rows[1]).toBe(
+        'Failed: Scopes — Missing repo. Push to save and pull requests will fail until the token is updated.',
+      );
+      expect(rows[3]).toBe(
+        'Failed: Push access — This account has read-only access to me/api. Push to save will fail.',
+      );
+      // The card's own scope chip agrees with the checklist: one source, one answer.
+      expect(screen.getByLabelText('repo scope missing (required)')).toBeInTheDocument();
+    });
+
+    it('test-connection — one check left open and one failed are both counted', async () => {
+      await openConnectedGitHubCard();
+      stubGitHubByPath({
+        '/repos/me/api/branches': { status: 502, body: { message: 'Bad gateway' } },
+        '/repos/me/api/pulls': { status: 403, body: { message: 'Resource not accessible' } },
+      });
+
+      await userEvent.click(screen.getByRole('button', { name: 'Test GitHub connection' }));
+
+      expect(
+        await screen.findByText('1 of 6 checks failed, 1 could not be checked.'),
+      ).toBeVisible();
+    });
+
+    it('test-connection — a single passed check reads in the singular', async () => {
+      // A classic token with no scopes: the token is real, and that is all.
+      stubGitHubByPath({});
+      await renderWithStore(<SecretVaultDockPanel />);
+      await act(async () => {
+        await useWorkspaceStore.getState().connectGitHubSession('tok');
+      });
+      await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+      await screen.findByText(/Connected as me/);
+      stubGitHubByPath({
+        '/user': { body: { login: 'me', id: 1 }, headers: { 'x-oauth-scopes': '' } },
+      });
+
+      await userEvent.click(screen.getByRole('button', { name: 'Test GitHub connection' }));
+
+      expect(
+        await screen.findByText('1 of 3 checks failed, 1 could not be checked.'),
+      ).toBeVisible();
+    });
+
+    it('test-connection — a rate limit on the token check says to try again', async () => {
+      await openConnectedGitHubCard();
+      stubGitHubByPath({
+        '/user': {
+          status: 403,
+          body: { message: 'API rate limit exceeded' },
+          headers: {
+            'x-ratelimit-remaining': '0',
+            'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 60),
+          },
+        },
+      });
+
+      await userEvent.click(screen.getByRole('button', { name: 'Test GitHub connection' }));
+
+      expect(
+        await screen.findByText('GitHub rate-limited the check. Try again in a few minutes.'),
+      ).toBeVisible();
+      expect(screen.queryByRole('list', { name: 'GitHub connection checks' })).toBeNull();
+    });
+
+    it('test-connection — a host error on the token check is shown with its status', async () => {
+      await openConnectedGitHubCard();
+      stubGitHubByPath({ '/user': { status: 500, body: { message: 'Server on fire' } } });
+
+      await userEvent.click(screen.getByRole('button', { name: 'Test GitHub connection' }));
+
+      expect(await screen.findByText('GitHub error 500: Server on fire')).toBeVisible();
+    });
+
+    it('test-connection — a token missing from the vault asks for a reconnect', async () => {
+      await openConnectedGitHubCard();
+      const { tokenSecretId } = useWorkspaceStore.getState().local!.sessions.github.workspace!;
+      await deleteSecretPayload(tokenSecretId);
+
+      await userEvent.click(screen.getByRole('button', { name: 'Test GitHub connection' }));
+
+      expect(await screen.findByText('No session to test — reconnect.')).toBeVisible();
     });
 
     it('B.2 test-connection — fail: 401 surfaces a "Token rejected" banner with reconnect copy', async () => {
@@ -673,6 +991,161 @@ describe('SecretVaultDockPanel', () => {
       expect(screen.getByLabelText('pull_request scope present')).toBeInTheDocument();
       // No yellow banner.
       expect(screen.queryByText(/can't create pull requests/i)).not.toBeInTheDocument();
+    });
+
+    it('update token — a replacement without `repo` is refused, and the card names the scope', async () => {
+      await openConnectedGitHubCard();
+      const before = useWorkspaceStore.getState().local!.sessions.github.workspace!;
+      // The replacement was created without `repo`.
+      stubGitHubByPath({
+        '/user': { body: { login: 'me', id: 1 }, headers: { 'x-oauth-scopes': 'public_repo' } },
+      });
+
+      await userEvent.click(screen.getByRole('button', { name: 'Update token' }));
+      await userEvent.type(screen.getByLabelText('New GitHub PAT'), 'ghp_no_repo');
+      await userEvent.click(screen.getByRole('button', { name: 'Update' }));
+
+      expect(await screen.findByText('New token still missing scope(s): repo')).toHaveAttribute(
+        'role',
+        'alert',
+      );
+      // The form stays open for another try, on a session that still works.
+      expect(screen.getByLabelText('New GitHub PAT')).toHaveValue('ghp_no_repo');
+      expect(useWorkspaceStore.getState().local!.sessions.github.workspace).toEqual(before);
+      expect(screen.getByLabelText('repo scope present')).toBeInTheDocument();
+    });
+
+    it('update token — a replacement with `repo` is taken, and the form closes', async () => {
+      await openConnectedGitHubCard();
+      const before = useWorkspaceStore.getState().local!.sessions.github.workspace!;
+      stubGitHubByPath({
+        '/user': { body: { login: 'me', id: 1 }, headers: { 'x-oauth-scopes': 'repo, gist' } },
+      });
+
+      await userEvent.click(screen.getByRole('button', { name: 'Update token' }));
+      await userEvent.type(screen.getByLabelText('New GitHub PAT'), 'ghp_with_repo');
+      await userEvent.click(screen.getByRole('button', { name: 'Update' }));
+
+      await waitFor(() => expect(screen.queryByLabelText('New GitHub PAT')).toBeNull());
+      expect(screen.queryByRole('alert')).toBeNull();
+      const after = useWorkspaceStore.getState().local!.sessions.github.workspace!;
+      expect(after.grantedScopes).toEqual(['repo', 'gist']);
+      expect(after.tokenSecretId).toBe(before.tokenSecretId);
+    });
+
+    // GitHub sends no `x-oauth-scopes` header for a fine-grained token: it has
+    // permissions, not scopes. Connect refused every one for lacking `repo`
+    // while the token field's own placeholder offered `github_pat_…`.
+    describe('a fine-grained token, whose scopes GitHub does not report', () => {
+      /** `GET /user` with no scope header; every other path as a healthy repo. */
+      const FINE_GRAINED = { '/user': { body: { login: 'me', id: 1 } } };
+
+      it('says what to give one, and that it is not checked on connect', async () => {
+        await renderWithStore(<SecretVaultDockPanel />);
+        await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+
+        expect(screen.getByLabelText('GitHub PAT')).toHaveAttribute(
+          'placeholder',
+          'ghp_… or github_pat_…',
+        );
+        expect(screen.getByText(/A fine-grained token/)).toHaveTextContent(
+          'A fine-grained token (github_pat_…) has permissions instead of scopes: give it Contents and Pull requests, read and write, on the repository. GitHub does not report those, so they are not checked when you connect — a token missing one fails at the first push or pull request instead.',
+        );
+      });
+
+      it('connects through the form, and the card shows no scope it could not read', async () => {
+        stubGitHubByPath(FINE_GRAINED);
+        await renderWithStore(<SecretVaultDockPanel />);
+        await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+
+        await userEvent.type(screen.getByLabelText('GitHub PAT'), 'github_pat_x');
+        await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+
+        expect(await screen.findByText('Connected as me on GitHub')).toBeVisible();
+        expect(screen.queryByRole('alert')).toBeNull();
+        expect(
+          screen.getByText(/GitHub does not report this token.s scopes, so they cannot be shown/),
+        ).toHaveTextContent(
+          "GitHub does not report this token's scopes, so they cannot be shown or checked here. A fine-grained token carries permissions instead, and Test connection checks what it can reach.",
+        );
+        // No chip claims a scope is missing, and nothing warns about one.
+        expect(screen.queryByText('Required scopes')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText(/scope (present|missing)/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/Required scope\(s\) missing/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/can't create pull requests/i)).not.toBeInTheDocument();
+      });
+
+      it('test-connection leaves the scope check open and checks the repo itself', async () => {
+        stubGitHubByPath(FINE_GRAINED);
+        await renderWithStore(<SecretVaultDockPanel />);
+        await act(async () => {
+          await useWorkspaceStore.getState().connectGitHubSession('github_pat_x');
+          await useWorkspaceStore.getState().connectRepo('me', 'api');
+        });
+        await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+        await screen.findByText(/Connected as me/);
+
+        await userEvent.click(screen.getByRole('button', { name: 'Test GitHub connection' }));
+
+        expect(
+          await screen.findByText('Connection healthy — 4 checks passed, 2 could not be checked.'),
+        ).toBeVisible();
+        const checks = within(screen.getByRole('list', { name: 'GitHub connection checks' }));
+        expect(checks.getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+          'Passed: Token — Signed in as me.',
+          "Not checked: Scopes — GitHub does not report this token's scopes, so they cannot be checked. A fine-grained token carries permissions instead, and GitHub does not report those either.",
+          'Passed: Repository — me/api is reachable.',
+          "Not checked: Push access — This account can push to me/api, but GitHub does not report whether this token's permissions allow it. The first push is the real test.",
+          'Passed: Branches — Branches can be read.',
+          'Passed: Pull requests — Pull requests can be read.',
+        ]);
+        // The card still shows no chips after the test refreshed the session.
+        expect(screen.queryByLabelText(/scope (present|missing)/)).not.toBeInTheDocument();
+      });
+
+      it('still reads a classic token GitHub reported with no scopes as missing `repo`', async () => {
+        // An empty list that WAS reported. A session saved before the client
+        // said which it was (no `scopesReported`) reads the same way, so
+        // nothing already stored changes meaning.
+        await renderWithStore(<SecretVaultDockPanel />);
+        await userEvent.click(screen.getByRole('button', { name: /Sessions/ }));
+        const seed = (scopesReported?: boolean) =>
+          act(async () => {
+            const local = useWorkspaceStore.getState().local!;
+            useWorkspaceStore.setState({
+              local: {
+                ...local,
+                sessions: {
+                  github: {
+                    workspace: {
+                      accountLogin: 'me',
+                      tokenSecretId: 'sec',
+                      grantedScopes: [],
+                      ...(scopesReported === undefined ? {} : { scopesReported }),
+                      addedAt: 't',
+                      lastVerifiedAt: 't',
+                      canCreatePullRequests: null,
+                    },
+                    links: {},
+                  },
+                },
+              },
+            });
+          });
+
+        for (const scopesReported of [true, undefined]) {
+          await seed(scopesReported);
+          expect(screen.getByLabelText('repo scope missing (required)')).toBeVisible();
+          expect(screen.getByText(/Required scope\(s\) missing:/)).toHaveTextContent(
+            'Required scope(s) missing: repo.',
+          );
+          expect(screen.queryByText(/cannot be shown or checked here/)).not.toBeInTheDocument();
+        }
+
+        await seed(false);
+        expect(screen.queryByLabelText(/scope (present|missing)/)).not.toBeInTheDocument();
+        expect(screen.getByText(/cannot be shown or checked here/)).toBeVisible();
+      });
     });
 
     it('disconnect requires confirmation then clears the session', async () => {

@@ -32,7 +32,7 @@
 // Control plane (tests use these to seed + inspect the mock):
 //   POST   /__gh/repos                  — create or replace a mock repo
 //   GET    /__gh/repos/:owner/:repo     — read mock repo state
-//   POST   /__gh/scopes                 — replace OAuth scope header
+//   POST   /__gh/scopes                 — replace OAuth scope header (null = send none)
 //   POST   /__gh/auth-failure           — force authenticated endpoints to fail
 //   DELETE /__gh/auth-failure           — clear forced auth failure
 //   DELETE /__gh                        — reset all state
@@ -103,8 +103,10 @@ interface MockRepo {
 
 interface MockState {
   viewer: { login: string; id: number; name: string | null; avatarUrl: string | null };
-  scopes: string;
-  tokenScopes: Map<string, string>;
+  // `null` is a token GitHub reports no scopes for — a fine-grained one, which
+  // carries permissions instead. Its responses get no `x-oauth-scopes` header.
+  scopes: string | null;
+  tokenScopes: Map<string, string | null>;
   authFailure: { status: 401 | 403; message: string; acceptedScopes?: string } | null;
   tokenAuthFailures: Map<string, { status: 401 | 403; message: string; acceptedScopes?: string }>;
   repos: Map<string, MockRepo>; // key = "owner/name"
@@ -185,9 +187,24 @@ function bearerToken(c: { req: { header: (name: string) => string | undefined } 
   return match?.[1] ?? null;
 }
 
-function scopesFor(c: { req: { header: (name: string) => string | undefined } }): string {
+function scopesFor(c: { req: { header: (name: string) => string | undefined } }): string | null {
   const token = bearerToken(c);
-  return (token ? state.tokenScopes.get(token) : undefined) ?? state.scopes;
+  // `has`, not `get() ??`: a token mapped to `null` must not fall back to the default.
+  if (token !== null && state.tokenScopes.has(token)) return state.tokenScopes.get(token) ?? null;
+  return state.scopes;
+}
+
+/**
+ * Send the scope header GitHub would send for the calling token: its scopes,
+ * or no header at all for a token whose scopes are `null`. An absent header and
+ * an empty one are different answers, and the client tells them apart.
+ */
+function setScopeHeader(c: {
+  req: { header: (name: string) => string | undefined };
+  header: (name: string, value: string) => void;
+}): void {
+  const scopes = scopesFor(c);
+  if (scopes !== null) c.header('x-oauth-scopes', scopes);
 }
 
 function authFailureFor(c: {
@@ -330,7 +347,8 @@ export function buildGithubRoutes(): Hono {
   });
 
   app.post('/__gh/scopes', async (c) => {
-    const body = await c.req.json<{ scopes: string | string[]; token?: string }>();
+    // `scopes: null` makes the token one GitHub reports no scopes for.
+    const body = await c.req.json<{ scopes: string | string[] | null; token?: string }>();
     const scopes = Array.isArray(body.scopes) ? body.scopes.join(',') : body.scopes;
     if (body.token) {
       state.tokenScopes.set(body.token, scopes);
@@ -377,7 +395,7 @@ export function buildGithubRoutes(): Hono {
       await next();
       return;
     }
-    c.header('x-oauth-scopes', scopesFor(c));
+    setScopeHeader(c);
     if (authFailure.acceptedScopes) {
       c.header('x-accepted-oauth-scopes', authFailure.acceptedScopes);
     }
@@ -388,7 +406,7 @@ export function buildGithubRoutes(): Hono {
   // User
   // --------------------------------------------------------------------
   app.get('/_gh/user', (c) => {
-    c.header('x-oauth-scopes', scopesFor(c));
+    setScopeHeader(c);
     return c.json({
       login: state.viewer.login,
       id: state.viewer.id,

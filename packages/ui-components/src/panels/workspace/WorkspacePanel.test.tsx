@@ -1,8 +1,13 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { GitHubRepo } from '@apicircle/git';
-import { GitHubError, registerGitProvider, resetGitProviderRegistry } from '@apicircle/git';
+import type { GitHostKind, GitHubRepo, GitProvider } from '@apicircle/git';
+import {
+  GitHubError,
+  UnauthorizedError,
+  registerGitProvider,
+  resetGitProviderRegistry,
+} from '@apicircle/git';
 import { SecretsInPushError, type SecretFinding } from '@apicircle/core';
 import { NothingWrittenError } from '../../store/nothingWritten';
 import type { GitHostSession } from '@apicircle/shared';
@@ -1542,6 +1547,91 @@ describe('WorkspacePanel', () => {
       const button = screen.getByRole('button', { name: /Create PR/ });
       expect(button).not.toBeDisabled();
     });
+
+    // A session is per host: GitHub's lives in `sessions.github`, every other
+    // host's in `sessions.hosts[host]`. The card read GitHub's whatever host the
+    // repo was on, so the answer a GitLab session recorded was never looked at,
+    // and the one GitHub recorded decided for a repo GitHub does not hold.
+    describe('on the host the repo lives on', () => {
+      const OTHER_HOSTS = ['gitlab', 'bitbucket', 'azure-devops'] as const;
+      let calls: string[];
+
+      beforeEach(() => {
+        calls = [];
+        for (const host of OTHER_HOSTS) registerGitProvider(host, () => stubProvider(calls, host));
+      });
+
+      afterEach(() => {
+        resetGitProviderRegistry();
+      });
+
+      async function createPrButtonOn(
+        host: GitHostKind,
+        capability: Partial<Record<GitHostKind, boolean | null>>,
+      ): Promise<HTMLElement> {
+        await renderWithStore(<WorkspacePanel />);
+        await act(async () => {
+          setupPushedBranchOn(host, capability);
+        });
+        return screen.getByRole('button', { name: /Create PR/ });
+      }
+
+      it.each(OTHER_HOSTS)(
+        'Create PR is disabled when the %s session cannot create pull requests',
+        async (host) => {
+          const button = await createPrButtonOn(host, { [host]: false });
+          expect(button).toBeDisabled();
+          // The gate is the answer the store recorded. Nothing is asked of the
+          // host to draw the button.
+          expect(calls).toEqual([]);
+        },
+      );
+
+      it.each([true, null])(
+        'Create PR is enabled when the GitLab session recorded %s',
+        async (capability) => {
+          const button = await createPrButtonOn('gitlab', { gitlab: capability });
+          expect(button).not.toBeDisabled();
+        },
+      );
+
+      it('a GitHub session that cannot create pull requests does not decide for a GitLab repo', async () => {
+        const button = await createPrButtonOn('gitlab', { github: false, gitlab: true });
+        expect(button).not.toBeDisabled();
+      });
+
+      it('a GitLab session that cannot create pull requests does not decide for a GitHub repo', async () => {
+        const button = await createPrButtonOn('github', { github: true, gitlab: false });
+        expect(button).not.toBeDisabled();
+      });
+
+      it('a GitHub repo still answers to its own session beside one on another host', async () => {
+        const button = await createPrButtonOn('github', { github: false, gitlab: true });
+        expect(button).toBeDisabled();
+      });
+    });
+
+    // The three cases above this block leave `hostKind` off the repo, which is
+    // what a workspace persisted before multi-host carries. A repo connected
+    // since records `hostKind: 'github'`; with GitHub the only host registered
+    // and no `sessions.hosts` at all, it reads the same session to the same end.
+    it.each([
+      [true, false],
+      [false, true],
+      [null, false],
+    ] as const)(
+      'a GitHub-only workspace is unchanged: capability=%s leaves Create PR disabled=%s',
+      async (capability, disabled) => {
+        await renderWithStore(<WorkspacePanel />);
+        await act(async () => {
+          setupPushedBranchOn('github', { github: capability });
+        });
+        expect(useWorkspaceStore.getState().local!.sessions.hosts).toBeUndefined();
+        const button = screen.getByRole('button', { name: /Create PR/ });
+        if (disabled) expect(button).toBeDisabled();
+        else expect(button).not.toBeDisabled();
+      },
+    );
   });
 
   // The retirement banner appears above CreateBranchForm when refreshWorkspace
@@ -1741,6 +1831,100 @@ function setupPushableBranch(): void {
   });
 }
 
+/**
+ * A host that answers and records what it was asked, after the `stubProvider`
+ * of `store/multiHostConnect.test.ts`. The other hosts' real providers are
+ * registered by the Lens shell, not by this package.
+ */
+function stubProvider(calls: string[], host: string): GitProvider {
+  return {
+    getViewer: vi.fn(async () => {
+      calls.push(`${host}:getViewer`);
+      return { viewer: { login: `${host}-user`, id: 7 }, scopes: { granted: [], missing: [] } };
+    }),
+    getRepo: vi.fn(async (_token: string, owner: string, name: string) => {
+      calls.push(`${host}:getRepo`);
+      return {
+        fullName: `${owner}/${name}`,
+        owner,
+        name,
+        defaultBranch: 'main',
+        visibility: 'private' as const,
+        isPrivate: true,
+        pushable: true,
+      };
+    }),
+    listPullRequests: vi.fn(async () => {
+      calls.push(`${host}:listPullRequests`);
+      return [];
+    }),
+  } as unknown as GitProvider;
+}
+
+/**
+ * A repo on `host` with a pushed working branch and no open PR, which is the
+ * state where only the session's answer can disable Create PR. Each entry of
+ * `capability` is a workspace session on that host recording the value as
+ * `canCreatePullRequests`: GitHub's in `sessions.github`, any other host's in
+ * `sessions.hosts[host]`, the two slots the card has to choose between.
+ */
+function setupPushedBranchOn(
+  host: GitHostKind,
+  capability: Partial<Record<GitHostKind, boolean | null>>,
+): void {
+  const sessionOn = (kind: GitHostKind): GitHostSession | null => {
+    const canCreatePullRequests = capability[kind];
+    if (canCreatePullRequests === undefined) return null;
+    return {
+      accountLogin: `${kind}-user`,
+      tokenSecretId: `sec_${kind}`,
+      grantedScopes: [],
+      addedAt: 't',
+      lastVerifiedAt: 't',
+      canCreatePullRequests,
+    };
+  };
+  const others = (['gitlab', 'bitbucket', 'azure-devops'] as const).flatMap((kind) => {
+    const workspace = sessionOn(kind);
+    return workspace ? [[kind, { workspace, links: {} }] as const] : [];
+  });
+  const local = useWorkspaceStore.getState().local!;
+  useWorkspaceStore.setState({
+    local: {
+      ...local,
+      sessions: {
+        github: { workspace: sessionOn('github'), links: {} },
+        // A workspace that never held another host's session has no `hosts`.
+        ...(others.length > 0 ? { hosts: Object.fromEntries(others) } : {}),
+      },
+      connectedRepo: {
+        fullName: 'acme/api',
+        owner: 'acme',
+        name: 'api',
+        defaultBranch: 'main',
+        visibility: 'private',
+        isPrivate: true,
+        pushable: true,
+        connectedAt: 't',
+        hostKind: host,
+      },
+      workingBranch: {
+        name: 'apicircle/test',
+        baseBranch: 'main',
+        repoFullName: 'acme/api',
+        repoOwner: 'acme',
+        repoName: 'api',
+        headSha: 'abc1234',
+        createdAt: 't',
+        lastPushedSha: 'abc1234',
+        diffSummary: null,
+        openPrUrl: null,
+        hostKind: host,
+      },
+    },
+  });
+}
+
 // A 5xx alone cannot say whether anything was written: out of `createCommit` it
 // might have left an orphan commit, out of a pre-flight read it wrote nothing at
 // all. The store marks the second case; this is where that marking has to show.
@@ -1769,6 +1953,37 @@ describe('WorkspacePanel push failure advice', () => {
     // retry that is actually safe.
     expect(await screen.findByText('GitHub 502: Server Error')).toBeInTheDocument();
     expect(screen.queryByText(/may have partially landed/i)).not.toBeInTheDocument();
+  });
+
+  it('sends a rejected GitHub token to the GitHub session card', async () => {
+    await pushRejectingWith(new UnauthorizedError('Bad credentials', 401));
+
+    expect(
+      await screen.findByText('Open the GitHub session card above to reconnect.'),
+    ).toBeInTheDocument();
+  });
+
+  it('names the host the repo is on when that host rejects the token', async () => {
+    // The card above reads "gitlab-user on GitLab"; there is no GitHub one.
+    const calls: string[] = [];
+    registerGitProvider('gitlab', () => stubProvider(calls, 'gitlab'));
+    try {
+      await renderWithStore(<WorkspacePanel />);
+      await act(async () => {
+        setupPushedBranchOn('gitlab', { gitlab: true });
+        useWorkspaceStore.setState({
+          pushWorkspace: vi.fn().mockRejectedValue(new UnauthorizedError('Unauthorized', 401)),
+        });
+      });
+      await userEvent.click(screen.getByRole('button', { name: 'Push to save' }));
+
+      expect(
+        await screen.findByText('Open the GitLab session card above to reconnect.'),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/GitHub session card/)).not.toBeInTheDocument();
+    } finally {
+      resetGitProviderRegistry();
+    }
   });
 });
 

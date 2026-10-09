@@ -34,8 +34,11 @@ export interface MockGithubControl {
   reset: () => Promise<void>;
   /** Create or replace a mock repo. */
   seedRepo: (seed: MockRepoSeed) => Promise<void>;
-  /** Replace the mock OAuth scope header returned by GitHub API calls. */
-  setScopes: (scopes: string | string[], token?: string) => Promise<void>;
+  /**
+   * Replace the mock OAuth scope header returned by GitHub API calls. `null`
+   * sends no header at all, which is what GitHub does for a fine-grained token.
+   */
+  setScopes: (scopes: string | string[] | null, token?: string) => Promise<void>;
   /** Force authenticated GitHub API calls to return a 401/403 response. */
   setAuthFailure: (failure?: {
     status?: 401 | 403;

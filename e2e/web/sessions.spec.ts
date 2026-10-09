@@ -27,7 +27,8 @@ function id(key: string): TcId {
 interface UserMockOptions {
   login: string;
   id: number;
-  scopes: string;
+  /** `null` sends no scope header at all, as GitHub does for a fine-grained token. */
+  scopes: string | null;
 }
 
 async function mockGitHubUser(page: Page, opts: UserMockOptions): Promise<void> {
@@ -39,7 +40,7 @@ async function mockGitHubUser(page: Page, opts: UserMockOptions): Promise<void> 
         'access-control-allow-origin': '*',
         'access-control-expose-headers':
           'x-oauth-scopes, x-accepted-oauth-scopes, x-ratelimit-remaining, x-ratelimit-reset',
-        'x-oauth-scopes': opts.scopes,
+        ...(opts.scopes === null ? {} : { 'x-oauth-scopes': opts.scopes }),
       },
       body: JSON.stringify({ login: opts.login, id: opts.id }),
     });
@@ -135,6 +136,56 @@ test.describe('Sessions (Secret Vault)', () => {
 
   test(
     tc(
+      id('Link to Git :: OAuth scope denial blocks linking'),
+      'a fine-grained token, whose scopes GitHub does not report, connects',
+    ),
+    async ({ app }) => {
+      // GitHub sends no `x-oauth-scopes` header for a fine-grained token: it
+      // carries permissions, not scopes. Connect refused every one for lacking
+      // `repo`, under a token field whose placeholder offered `github_pat_…`.
+      await mockGitHubUser(app, { login: 'me', id: 1, scopes: null });
+
+      await app.getByRole('button', { name: /Open Secret Vault/ }).click();
+      await app.getByRole('button', { name: /Sessions/ }).click();
+      await expect(app.getByLabel('GitHub PAT')).toHaveAttribute(
+        'placeholder',
+        'ghp_… or github_pat_…',
+      );
+      // The guidance says what to give such a token, and that it is not checked.
+      await expect(app.getByText(/A fine-grained token/)).toHaveText(
+        'A fine-grained token (github_pat_…) has permissions instead of scopes: give it Contents and Pull requests, read and write, on the repository. GitHub does not report those, so they are not checked when you connect — a token missing one fails at the first push or pull request instead.',
+      );
+
+      await app.getByLabel('GitHub PAT').fill('github_pat_fine_grained');
+      await app.getByRole('button', { name: 'Connect', exact: true }).click();
+
+      await expect(app.getByText('Connected as me on GitHub')).toBeVisible();
+      await expect(
+        app.getByText(
+          "GitHub does not report this token's scopes, so they cannot be shown or checked here. A fine-grained token carries permissions instead, and Test connection checks what it can reach.",
+        ),
+      ).toBeVisible();
+      // No chip claims a scope is missing, and nothing warns about one.
+      await expect(app.getByLabel(/scope (present|missing)/)).toHaveCount(0);
+      await expect(app.getByText(/Required scope\(s\) missing/)).toHaveCount(0);
+
+      // The connection test leaves the scope check open rather than failing it.
+      await app.getByRole('button', { name: 'Test GitHub connection' }).click();
+      await expect(
+        app.getByText('Connection healthy — 1 check passed, 2 could not be checked.'),
+      ).toBeVisible();
+      await expect(
+        app.getByRole('list', { name: 'GitHub connection checks' }).getByRole('listitem'),
+      ).toHaveText([
+        'Passed: Token — Signed in as me.',
+        "Not checked: Scopes — GitHub does not report this token's scopes, so they cannot be checked. A fine-grained token carries permissions instead, and GitHub does not report those either.",
+        'Not checked: Repository — No GitHub repository is connected yet, so access to one was not checked.',
+      ]);
+    },
+  );
+
+  test(
+    tc(
       id('Link to Git :: Token revoked surfaces re-auth prompt'),
       'B.2 Test-connection — pass surfaces "Connection healthy" banner',
     ),
@@ -149,6 +200,18 @@ test.describe('Sessions (Secret Vault)', () => {
 
       await app.getByRole('button', { name: 'Test GitHub connection' }).click();
       await expect(app.getByText(/Connection healthy/)).toBeVisible();
+      // No repo is connected, so there is nothing to ask about one — and the
+      // verdict counts that check as left open, not as passed.
+      await expect(
+        app.getByText('Connection healthy — 2 checks passed, 1 could not be checked.'),
+      ).toBeVisible();
+      await expect(
+        app.getByRole('list', { name: 'GitHub connection checks' }).getByRole('listitem'),
+      ).toHaveText([
+        'Passed: Token — Signed in as me.',
+        'Passed: Scopes — Has repo.',
+        'Not checked: Repository — No GitHub repository is connected yet, so access to one was not checked.',
+      ]);
     },
   );
 

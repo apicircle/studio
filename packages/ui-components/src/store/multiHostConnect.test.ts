@@ -1,9 +1,12 @@
 import { act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  GitHubError,
   MissingScopeError,
+  RateLimitedError,
   registerGitProvider,
   resetGitProviderRegistry,
+  type GitHostKind,
   type GitProvider,
 } from '@apicircle/git';
 import { useWorkspaceStore } from './workspaceStore';
@@ -384,6 +387,29 @@ describe('workspaceStore — the session lifecycle is host-aware (S3b)', () => {
     expect(local.sessions.github.workspace?.accountLogin).toBe('gh-user');
   });
 
+  it.each(['gitlab', 'bitbucket', 'azure-devops'] as const)(
+    'replaces a %s token that reports no scopes',
+    async (host) => {
+      // A replacement goes through the connect gate, and the connect gate asks
+      // nothing of a host that reports nothing. A rotation that worked before
+      // the gate reached this action still works.
+      registerGitProvider(host, () => stubProvider(calls, host, []));
+      const original = await useWorkspaceStore.getState().connectHostSession('first', host);
+      await new Promise((r) => setTimeout(r, 5));
+
+      const updated = await useWorkspaceStore.getState().updateHostToken('second', host);
+
+      expect(updated.tokenSecretId).toBe(original.tokenSecretId);
+      expect(updated.grantedScopes).toEqual([]);
+      expect(new Date(updated.lastVerifiedAt!).getTime()).toBeGreaterThan(
+        new Date(original.lastVerifiedAt!).getTime(),
+      );
+      expect(useWorkspaceStore.getState().local!.sessions.hosts?.[host]?.workspace).toEqual(
+        updated,
+      );
+    },
+  );
+
   it('disconnects ONLY the named host, and keeps a repo that belongs to another', async () => {
     // The destructive one. Disconnect clears the connected repo + working branch,
     // which is right when they belong to the host being disconnected and is data
@@ -570,5 +596,219 @@ describe('workspaceStore — connecting a non-GitHub host (S3)', () => {
     await expect(
       useWorkspaceStore.getState().connectRepo('group', 'api', { host: 'gitlab' }),
     ).rejects.toThrow(/No GitLab session/);
+  });
+});
+
+describe('workspaceStore — connecting a repo settles pull-request capability on its own host', () => {
+  // A non-GitHub token connects with `canCreatePullRequests: null`, because
+  // nothing its host reports about the token settles it. Connecting a repo is the
+  // first moment there is something to ask, and `connectRepo` did ask — but it
+  // read and wrote `sessions.github.workspace` whatever host the repo was on. On
+  // GitLab, Bitbucket or Azure DevOps that slot is empty, so nothing was asked
+  // and the session stayed undecided until someone pressed Test connection.
+  const OTHER_HOSTS = ['gitlab', 'bitbucket', 'azure-devops'] as const;
+  type OtherHost = (typeof OTHER_HOSTS)[number];
+  let calls: string[];
+
+  /** `stubProvider`, with the pull-request listing answering as `listing` does. */
+  function providerListing(host: OtherHost, listing: (token: string) => Promise<unknown[]>) {
+    return () =>
+      ({
+        ...stubProvider(calls, host, []),
+        listPullRequests: vi.fn(async (token: string) => {
+          calls.push(`${host}:listPullRequests`);
+          return listing(token);
+        }),
+      }) as unknown as GitProvider;
+  }
+
+  function sessionOn(host: GitHostKind) {
+    const { sessions } = useWorkspaceStore.getState().local!;
+    return host === 'github' ? sessions.github.workspace! : sessions.hosts![host]!.workspace!;
+  }
+
+  /** Put GitHub's session back to "undecided", which connect itself never leaves it in. */
+  function undecideGitHub() {
+    const local = useWorkspaceStore.getState().local!;
+    useWorkspaceStore.setState({
+      local: {
+        ...local,
+        sessions: {
+          ...local.sessions,
+          github: {
+            ...local.sessions.github,
+            workspace: { ...local.sessions.github.workspace!, canCreatePullRequests: null },
+          },
+        },
+      },
+    });
+  }
+
+  beforeEach(async () => {
+    calls = [];
+    resetGitProviderRegistry();
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrate();
+    });
+  });
+
+  afterEach(() => {
+    resetGitProviderRegistry();
+    vi.unstubAllGlobals();
+  });
+
+  it.each(OTHER_HOSTS)('asks %s, with its own token, and records that it can', async (host) => {
+    const tokens: string[] = [];
+    registerGitProvider(
+      host,
+      providerListing(host, async (token) => {
+        tokens.push(token);
+        return [];
+      }),
+    );
+    await useWorkspaceStore.getState().connectHostSession('HOST-SECRET', host);
+    expect(sessionOn(host).canCreatePullRequests).toBeNull();
+    calls.length = 0;
+
+    await useWorkspaceStore.getState().connectRepo('group', 'api', { host });
+
+    expect(calls).toEqual([`${host}:getRepo`, `${host}:listPullRequests`]);
+    expect(tokens).toEqual(['HOST-SECRET']);
+    expect(sessionOn(host).canCreatePullRequests).toBe(true);
+    // The rest of the session, and the GitHub slot, are as they were.
+    expect(sessionOn(host).accountLogin).toBe(`${host}-user`);
+    expect(useWorkspaceStore.getState().local!.sessions.github.workspace).toBeNull();
+  });
+
+  it.each(OTHER_HOSTS)('records that it cannot when %s refuses the listing', async (host) => {
+    registerGitProvider(
+      host,
+      providerListing(host, async () => {
+        throw new GitHubError('Forbidden', 403);
+      }),
+    );
+    await useWorkspaceStore.getState().connectHostSession('HOST-SECRET', host);
+
+    const repo = await useWorkspaceStore.getState().connectRepo('group', 'api', { host });
+
+    expect(sessionOn(host).canCreatePullRequests).toBe(false);
+    // A token that cannot open pull requests can still be connected to push.
+    expect(repo.hostKind).toBe(host);
+    expect(useWorkspaceStore.getState().local!.connectedRepo?.fullName).toBe('group/api');
+  });
+
+  it.each([
+    ['is rate limited', new RateLimitedError('Slow down', 403, Date.now() + 60_000)],
+    ['fails on the server', new GitHubError('Bad gateway', 502)],
+    ['never arrives', new TypeError('Failed to fetch')],
+  ])('leaves it undecided, and still connects, when the listing %s', async (_name, failure) => {
+    registerGitProvider(
+      'gitlab',
+      providerListing('gitlab', async () => {
+        throw failure;
+      }),
+    );
+    await useWorkspaceStore.getState().connectHostSession('HOST-SECRET', 'gitlab');
+
+    await useWorkspaceStore.getState().connectRepo('group', 'api', { host: 'gitlab' });
+
+    expect(calls).toContain('gitlab:listPullRequests');
+    expect(sessionOn('gitlab').canCreatePullRequests).toBeNull();
+    expect(useWorkspaceStore.getState().local!.connectedRepo?.fullName).toBe('group/api');
+  });
+
+  it.each([true, false])('does not ask again once the answer is %s', async (decided) => {
+    registerGitProvider(
+      'gitlab',
+      providerListing('gitlab', async () => []),
+    );
+    await useWorkspaceStore.getState().connectHostSession('HOST-SECRET', 'gitlab');
+    const local = useWorkspaceStore.getState().local!;
+    useWorkspaceStore.setState({
+      local: {
+        ...local,
+        sessions: {
+          ...local.sessions,
+          hosts: {
+            ...local.sessions.hosts,
+            gitlab: {
+              ...local.sessions.hosts!.gitlab!,
+              workspace: { ...sessionOn('gitlab'), canCreatePullRequests: decided },
+            },
+          },
+        },
+      },
+    });
+    calls.length = 0;
+
+    await useWorkspaceStore.getState().connectRepo('group', 'api', { host: 'gitlab' });
+
+    expect(calls).toEqual(['gitlab:getRepo']);
+    expect(sessionOn('gitlab').canCreatePullRequests).toBe(decided);
+  });
+
+  it("does not write one host's answer onto another host's session", async () => {
+    // GitHub's session is undecided too, and the repo being connected is on
+    // GitLab. Reading the GitHub slot here asked GitLab about pull requests with
+    // the GitLab token and filed the answer under GitHub.
+    stubGitHubFetch('repo');
+    await useWorkspaceStore.getState().connectGitHubSession('GITHUB-SECRET');
+    vi.unstubAllGlobals();
+    undecideGitHub();
+    registerGitProvider(
+      'gitlab',
+      providerListing('gitlab', async () => {
+        throw new GitHubError('Forbidden', 403);
+      }),
+    );
+    await useWorkspaceStore.getState().connectHostSession('GITLAB-SECRET', 'gitlab');
+
+    await useWorkspaceStore.getState().connectRepo('group', 'api', { host: 'gitlab' });
+
+    expect(sessionOn('gitlab').canCreatePullRequests).toBe(false);
+    expect(sessionOn('github').canCreatePullRequests).toBeNull();
+  });
+
+  it('still settles GitHub from GitHub, with another host connected beside it', async () => {
+    // GitHub's half, unchanged: its own probe, its own slot, and the session
+    // on the other host is not touched by it.
+    registerGitProvider(
+      'gitlab',
+      providerListing('gitlab', async () => []),
+    );
+    await useWorkspaceStore.getState().connectHostSession('GITLAB-SECRET', 'gitlab');
+    stubGitHubFetch('repo');
+    await useWorkspaceStore.getState().connectGitHubSession('GITHUB-SECRET');
+    undecideGitHub();
+    const paths: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL) => {
+        const path = new URL(input).pathname;
+        paths.push(path);
+        const body = path.endsWith('/pulls')
+          ? []
+          : {
+              full_name: 'me/api',
+              name: 'api',
+              owner: { login: 'me' },
+              default_branch: 'main',
+              visibility: 'private',
+              permissions: { push: true, admin: false },
+            };
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+    calls.length = 0;
+
+    await useWorkspaceStore.getState().connectRepo('me', 'api', { host: 'github' });
+
+    expect(paths).toEqual(['/repos/me/api', '/repos/me/api/pulls']);
+    expect(calls).toEqual([]);
+    expect(sessionOn('github').canCreatePullRequests).toBe(true);
+    expect(sessionOn('gitlab').canCreatePullRequests).toBeNull();
   });
 });

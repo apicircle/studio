@@ -43,6 +43,7 @@ import {
   type GitHubRepo,
   type GitProvider,
   type GitProviderOptions,
+  type ScopeInfo,
   BranchDivergedError,
   getGitProvider,
   GIT_HOST_KINDS,
@@ -54,6 +55,7 @@ import {
   probePrCapability,
   resolvePrCapability,
 } from './githubPrCapability';
+import { runHostPreflight, scopesAreReported, type HostPreflightReport } from './hostPreflight';
 import {
   decideClosedPullRequest,
   decideRetirement,
@@ -1798,11 +1800,31 @@ type WorkspaceStore = {
    */
   verifyHostScopes: (host?: GitHostKind) => Promise<string[] | null>;
   /**
+   * What "Test connection" runs: check a host's stored token against the host
+   * and, when the workspace's repo lives there, against that repo — scopes,
+   * reachability, push access, branches and pull requests (`runHostPreflight`).
+   *
+   * Refreshes the session's scopes, last-verified time and pull-request
+   * capability, and the connected repo's push flag where the host reports one.
+   * Returns null when the host holds no session. Throws what `getViewer` throws
+   * when the token itself is rejected; every later problem is a row in the
+   * report. Read-only on the host.
+   */
+  preflightHostConnection: (host?: GitHostKind) => Promise<HostPreflightReport | null>;
+  /**
    * Replace the PAT for the active session without losing branch/PR state.
    * Re-verifies + refreshes scopes in the same pass.
    */
   updateGitHubToken: (token: string) => Promise<GitHubSession>;
-  /** Rotate a host's token in place. `updateGitHubToken` delegates here. */
+  /**
+   * Rotate a host's token in place. `updateGitHubToken` delegates here.
+   *
+   * The replacement passes the gate a first token passes in
+   * `connectHostSession`: it throws `MissingScopeError` when the host reports
+   * the token without a required scope (GitHub: `repo`). A refused replacement
+   * is not stored — the token already in the vault stays, and so does the
+   * session.
+   */
   updateHostToken: (token: string, host?: GitHostKind) => Promise<GitHostSession>;
   /** Disconnect: free the encrypted token, clear the session entry. */
   disconnectGitHubSession: () => Promise<void>;
@@ -1828,6 +1850,10 @@ type WorkspaceStore = {
    * already holds a session, so every existing two-argument call is unchanged.
    * `opts.baseUrl` targets a self-managed instance and is persisted onto the
    * connected repo so later calls reach the same server.
+   *
+   * When that host's session does not yet know whether it can create pull
+   * requests, the repo's pull-request listing is read once to find out, and the
+   * answer is recorded on that host's session.
    */
   connectRepo: (
     owner: string,
@@ -2414,6 +2440,12 @@ type WorkspaceStore = {
  * scopes — `GET /user` returns them in `x-oauth-scopes`, so the check has
  * something real to check against.
  *
+ * It reports them for a classic or OAuth token. A fine-grained token
+ * (`github_pat_…`) carries permissions instead of scopes and gets no
+ * `x-oauth-scopes` header at all, so for that token GitHub is one more host
+ * that said nothing, and `assertRequiredScopes` requires nothing of it. The
+ * client says which case it saw (`ScopeInfo.reported`).
+ *
  * Every other host reports NOTHING. GitLab, Bitbucket Cloud and Azure DevOps
  * each answer `getViewer` with `scopes: { granted: [] }`, because none of them
  * expose a token's scopes on their user endpoint. Requiring any scope name for
@@ -2440,6 +2472,50 @@ const REQUIRED_SCOPES_BY_HOST: Record<GitHostKind, readonly string[]> = {
 /** GitHub's required scopes, kept under its original name for the call sites
  *  that are legitimately GitHub-only (the OAuth device grant's scope string). */
 const REQUIRED_BASE_SCOPES = REQUIRED_SCOPES_BY_HOST.github;
+
+/**
+ * The gate a workspace token passes before it is stored: refuse one whose host
+ * reports it without a scope `REQUIRED_SCOPES_BY_HOST` requires.
+ *
+ * One function for both actions that store a token — connecting one and
+ * replacing one — so the two cannot come to require different things. While
+ * only connect checked, "Update token" stored a token Connect had refused.
+ *
+ * `scopes` is what the host answered `getViewer` with. Throws the
+ * `MissingScopeError` the session card reads `missingScopes` from.
+ *
+ * A host that said nothing about the token's scopes has not reported one
+ * missing, so nothing is refused: requiring `repo` of a fine-grained GitHub
+ * token refused every one of them for a scope that kind of token cannot carry.
+ * What such a token may do is learned the way it is on the other hosts — from
+ * the repo, once one is connected (`connectRepo`, `runHostPreflight`).
+ */
+function assertRequiredScopes(host: GitHostKind, scopes: ScopeInfo): void {
+  if (!scopesAreReported(host, scopes.granted, scopes.reported)) return;
+  const missing = REQUIRED_SCOPES_BY_HOST[host].filter((scope) => !scopes.granted.includes(scope));
+  if (missing.length === 0) return;
+  throw new MissingScopeError(
+    `Token is missing required base scopes: ${missing.join(', ')}.`,
+    403,
+    missing,
+    [...scopes.granted],
+  );
+}
+
+/**
+ * What a session records of a host's answer about a token's scopes: the list,
+ * and whether it is an answer at all, where the host's client can tell
+ * (`ScopeInfo.reported`). A client that does not say adds no field, so a
+ * session on such a host is written exactly as it was before.
+ */
+function recordedScopes(scopes: {
+  granted: string[];
+  reported?: boolean;
+}): Pick<GitHubSession, 'grantedScopes' | 'scopesReported'> {
+  return scopes.reported === undefined
+    ? { grantedScopes: scopes.granted }
+    : { grantedScopes: scopes.granted, scopesReported: scopes.reported };
+}
 
 /**
  * What to tell a user to create their token WITH, per host. Guidance, never
@@ -5314,21 +5390,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // which is what makes a non-GitHub PAT connectable at all. Omitting `host`
     // resolves to `'github'`, so every existing caller is unchanged.
     const client = getGitProvider(host, opts?.baseUrl ? { baseUrl: opts.baseUrl } : undefined);
-    const required = REQUIRED_SCOPES_BY_HOST[host];
     const { viewer, scopes } = await client.getViewer(trimmed, {
-      requiredScopes: [...required],
+      requiredScopes: [...REQUIRED_SCOPES_BY_HOST[host]],
     });
-    // Empty for every host but GitHub — see REQUIRED_SCOPES_BY_HOST for why a
-    // scope check none of them can answer is worse than no check at all.
-    const missingBase = required.filter((s) => !scopes.granted.includes(s));
-    if (missingBase.length > 0) {
-      throw new MissingScopeError(
-        `Token is missing required base scopes: ${missingBase.join(', ')}.`,
-        403,
-        [...missingBase],
-        scopes.granted,
-      );
-    }
+    // Requires nothing of any host but GitHub — see REQUIRED_SCOPES_BY_HOST for
+    // why a scope check none of them can answer is worse than no check at all.
+    assertRequiredScopes(host, scopes);
 
     // Persist the PAT in the secret vault (re-using the master-key flow).
     const tokenSecretId = generateId();
@@ -5351,14 +5418,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const session: GitHubSession = {
       accountLogin: viewer.login,
       tokenSecretId,
-      grantedScopes: scopes.granted,
+      ...recordedScopes(scopes),
       addedAt: new Date().toISOString(),
       lastVerifiedAt: new Date().toISOString(),
       // Scope-only check at connect time. Since REQUIRED_BASE_SCOPES already
-      // mandates `repo`, this typically resolves to `true` immediately for
-      // both classic PATs (where `repo` covers PR ops) and fine-grained
-      // PATs that surface `pull_request` directly. A `null` here means the
-      // token uses a permission model the scope check can't read; the
+      // mandates `repo` of a token whose scopes are reported, this resolves
+      // to `true` immediately for a classic PAT (where `repo` covers PR ops).
+      // A `null` here means the token uses a permission model the scope
+      // check can't read — a fine-grained PAT, which reports no scopes; the
       // probe runs once a repo is connected (see `connectRepo`).
       // Unchanged for GitHub. Every other host reports no scopes, so this
       // returns `null` (unknown) and `connectRepo`'s existing probe resolves it
@@ -5398,7 +5465,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     });
     const updated: GitHubSession = {
       ...session,
-      grantedScopes: scopes.granted,
+      ...recordedScopes(scopes),
       lastVerifiedAt: new Date().toISOString(),
       canCreatePullRequests: capability,
     };
@@ -5406,6 +5473,60 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set({ local: next });
     queueSaveLocal(next);
     return scopes.granted;
+  },
+
+  preflightHostConnection: async (host = 'github') => {
+    const local = get().local;
+    const session = workspaceSessionFor(local, host);
+    if (!local || !session) return null;
+    const payload = await getSecretPayload(session.tokenSecretId);
+    if (!payload) return null;
+    const masterKey = await getMasterKey();
+    const token = await decryptString(payload, masterKey);
+    const client = getGitProvider(host, hostProviderOptions(local, host));
+    // Only a repo on THIS host is asked about. With sessions on two hosts, the
+    // connected repo belongs to one of them; probing its owner/name on the other
+    // would report a healthy token as unable to reach its repository.
+    const repo =
+      local.connectedRepo && connectedHostKind(local) === host ? local.connectedRepo : null;
+    const outcome = await runHostPreflight({
+      client,
+      token,
+      host,
+      repo,
+      priorPrCapability: session.canCreatePullRequests,
+    });
+
+    // The checks take several calls, long enough for the session to be
+    // disconnected or the workspace switched underneath them. The answer is
+    // written onto what the store holds NOW, and only while it still holds the
+    // session that was tested.
+    const latest = get().local;
+    const current = workspaceSessionFor(latest, host);
+    if (!latest || current?.tokenSecretId !== session.tokenSecretId) return outcome.report;
+    const updated: GitHubSession = {
+      ...current,
+      ...recordedScopes({
+        granted: outcome.report.grantedScopes,
+        reported: outcome.report.scopesReported,
+      }),
+      lastVerifiedAt: new Date().toISOString(),
+      canCreatePullRequests: outcome.canCreatePullRequests,
+    };
+    const withSession = withWorkspaceSession(latest, host, updated);
+    // The push flag is refreshed only where the host reports one, and only onto
+    // the repo that was asked about.
+    const connected = withSession.connectedRepo;
+    const next: WorkspaceLocal =
+      outcome.pushable !== null &&
+      connected !== null &&
+      connected.fullName === repo?.fullName &&
+      connectedHostKind(withSession) === host
+        ? { ...withSession, connectedRepo: { ...connected, pushable: outcome.pushable } }
+        : withSession;
+    set({ local: next });
+    queueSaveLocal(next);
+    return outcome.report;
   },
 
   updateGitHubToken: async (token) => get().updateHostToken(token, 'github'),
@@ -5420,12 +5541,17 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // Host-aware since S3b — see `verifyHostScopes` for why a pinned client here
     // would rotate the wrong slot and send the new token to the wrong server.
     const client = getGitProvider(host, hostProviderOptions(local, host));
-    const { viewer, scopes } = await client.getViewer(trimmed);
+    const { viewer, scopes } = await client.getViewer(trimmed, {
+      requiredScopes: [...REQUIRED_SCOPES_BY_HOST[host]],
+    });
     if (viewer.login !== session.accountLogin) {
       throw new Error(
         `Token belongs to ${viewer.login} but the active session is for ${session.accountLogin}. Disconnect first.`,
       );
     }
+    // The connect gate, before anything is stored: a replacement refused here
+    // leaves the working token in the vault and the session as it was.
+    assertRequiredScopes(host, scopes);
     // Rotate the ciphertext under the existing slot id; branch/PR state
     // (working branch, ahead/behind, etc) is preserved verbatim.
     const masterKey = await getMasterKey();
@@ -5440,7 +5566,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     });
     const updated: GitHubSession = {
       ...session,
-      grantedScopes: scopes.granted,
+      ...recordedScopes(scopes),
       lastVerifiedAt: new Date().toISOString(),
       canCreatePullRequests: capability,
     };
@@ -5566,7 +5692,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // PAT whose permissions aren't surfaced via x-oauth-scopes), now that
     // we have a repo to probe against, run it. Scope-confirmed sessions
     // (the common case — every classic PAT with `repo`) skip this step.
-    let updatedSession = local.sessions.github.workspace;
+    //
+    // Read from, and written back to, the slot of the host the repo is on.
+    // A token on any other host connects undecided (nothing its host reports
+    // about the token settles it), so this is where its answer first becomes
+    // available — and reading the GitHub slot skipped the question for all three.
+    let updatedSession = workspaceSessionFor(local, host);
     if (updatedSession && updatedSession.canCreatePullRequests === null) {
       try {
         const probed = await probePrCapability(client, token, repo.owner, repo.name);
@@ -5578,11 +5709,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
 
     const next: WorkspaceLocal = {
-      ...local,
-      sessions: {
-        ...local.sessions,
-        github: { ...local.sessions.github, workspace: updatedSession },
-      },
+      ...withWorkspaceSession(local, host, updatedSession),
       connectedRepo: connected,
       // If the user re-connects to a different repo, drop any branch tied
       // to the old one — pushing to the wrong repo would be a disaster.
@@ -7023,7 +7150,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const session: GitHubSession = {
       accountLogin: viewer.login,
       tokenSecretId,
-      grantedScopes: scopes.granted,
+      ...recordedScopes(scopes),
       addedAt: existing?.addedAt ?? new Date().toISOString(),
       lastVerifiedAt: new Date().toISOString(),
       canCreatePullRequests: null,
@@ -8877,7 +9004,7 @@ async function doLinkWorkspace(
     dedicatedSession = {
       accountLogin: viewer.login,
       tokenSecretId: dedicatedTokenSecretId,
-      grantedScopes: scopes.granted,
+      ...recordedScopes(scopes),
       addedAt: new Date().toISOString(),
       lastVerifiedAt: new Date().toISOString(),
       // Linking sessions are read-only by intent — PR creation isn't part

@@ -1,5 +1,7 @@
 import { act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { GitHubError, MissingScopeError } from '@apicircle/git';
+import { getSecretPayload } from '../persistence/secrets';
 import { useWorkspaceStore } from './workspaceStore';
 
 // Tests for the GitHub session store actions. We mock global fetch with
@@ -86,6 +88,180 @@ describe('workspaceStore — GitHub session', () => {
       await expect(useWorkspaceStore.getState().connectGitHubSession('bad')).rejects.toThrow(
         /credentials/i,
       );
+    });
+  });
+
+  // GitHub sends `x-oauth-scopes` only for a token that has scopes: a classic
+  // or OAuth one. A fine-grained token (`github_pat_…`) carries permissions and
+  // gets no such header, on a success or on a refusal — seen live on `GET
+  // /user`. Requiring `repo` of one refused every fine-grained token, while the
+  // Help Center and the token field's placeholder said they were supported.
+  describe('a token whose scopes GitHub does not report (fine-grained)', () => {
+    type Canned = MockResponseSpec | ((path: string) => MockResponseSpec);
+
+    /** Answer GitHub by path; `scopes: null` is a response with no scope header. */
+    function stubGitHub(
+      scopes: string | null,
+      routes: { login?: string; repo?: Canned; pulls?: Canned } = {},
+    ): string[] {
+      const paths: string[] = [];
+      vi.unstubAllGlobals();
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: string | URL) => {
+          const path = new URL(input).pathname;
+          paths.push(path);
+          const pick = (canned: Canned | undefined, fallback: MockResponseSpec) =>
+            typeof canned === 'function' ? canned(path) : (canned ?? fallback);
+          const spec =
+            path === '/user'
+              ? { body: { login: routes.login ?? 'me', id: 1 } }
+              : path.endsWith('/pulls')
+                ? pick(routes.pulls, { body: [] })
+                : pick(routes.repo, {
+                    body: {
+                      full_name: 'me/api',
+                      name: 'api',
+                      owner: { login: 'me' },
+                      default_branch: 'main',
+                      visibility: 'private',
+                      permissions: { push: true, admin: false },
+                    },
+                  });
+          return new Response(JSON.stringify(spec.body), {
+            status: spec.status ?? 200,
+            headers: {
+              'content-type': 'application/json',
+              ...(scopes === null ? {} : { 'x-oauth-scopes': scopes }),
+              ...(spec.headers ?? {}),
+            },
+          });
+        }),
+      );
+      return paths;
+    }
+
+    const workspaceSession = () => useWorkspaceStore.getState().local!.sessions.github.workspace;
+
+    it('connects, and records that nothing was reported', async () => {
+      stubGitHub(null);
+      const session = await useWorkspaceStore.getState().connectGitHubSession('github_pat_x');
+
+      expect(session.accountLogin).toBe('me');
+      expect(session.grantedScopes).toEqual([]);
+      expect(session.scopesReported).toBe(false);
+      // No scope list to settle it from; the connected repo will.
+      expect(session.canCreatePullRequests).toBeNull();
+      expect(workspaceSession()).toEqual(session);
+      expect(
+        useWorkspaceStore.getState().local!.secretIndex.entries[session.tokenSecretId]?.label,
+      ).toBe('github-token:me');
+    });
+
+    it('still refuses a classic token with no scopes, whose empty list GitHub did report', async () => {
+      // The header is there and empty. That is an answer, and `repo` is not in it.
+      stubGitHub('');
+      const refusal: unknown = await useWorkspaceStore
+        .getState()
+        .connectGitHubSession('ghp_x')
+        .catch((e) => e);
+
+      expect(refusal).toBeInstanceOf(MissingScopeError);
+      expect((refusal as MissingScopeError).missingScopes).toEqual(['repo']);
+      expect(workspaceSession()).toBeNull();
+    });
+
+    it('records that a classic token’s scopes were reported', async () => {
+      stubGitHub('repo');
+      const session = await useWorkspaceStore.getState().connectGitHubSession('ghp_x');
+      expect(session.grantedScopes).toEqual(['repo']);
+      expect(session.scopesReported).toBe(true);
+    });
+
+    it('learns whether it can create pull requests from the repo it connects', async () => {
+      // The whole path a fine-grained token takes, with nothing forced by
+      // setState: connect undecided, then the probe against the real repo.
+      stubGitHub(null);
+      await useWorkspaceStore.getState().connectGitHubSession('github_pat_x');
+      const paths = stubGitHub(null);
+      await useWorkspaceStore.getState().connectRepo('me', 'api');
+
+      expect(paths).toEqual(['/repos/me/api', '/repos/me/api/pulls']);
+      expect(workspaceSession()?.canCreatePullRequests).toBe(true);
+      expect(workspaceSession()?.scopesReported).toBe(false);
+    });
+
+    it('reads a refused pull-request listing as "cannot", in GitHub’s words and not as a missing scope', async () => {
+      // What a fine-grained token without the Pull requests permission gets.
+      stubGitHub(null);
+      await useWorkspaceStore.getState().connectGitHubSession('github_pat_x');
+      stubGitHub(null, {
+        pulls: {
+          status: 403,
+          body: { message: 'Resource not accessible by personal access token' },
+          headers: { 'x-accepted-github-permissions': 'pull_requests=read' },
+        },
+      });
+      await useWorkspaceStore.getState().connectRepo('me', 'api');
+
+      expect(workspaceSession()?.canCreatePullRequests).toBe(false);
+    });
+
+    it('passes on a refusal of the token itself as GitHub worded it', async () => {
+      // The identity call declares `repo` as required. With no scope header on
+      // the refusal there is no scope to call missing.
+      vi.stubGlobal(
+        'fetch',
+        mockFetchOnce({
+          status: 403,
+          body: { message: 'Resource not accessible by personal access token' },
+        }),
+      );
+      const refusal: unknown = await useWorkspaceStore
+        .getState()
+        .connectGitHubSession('github_pat_x')
+        .catch((e) => e);
+
+      expect(refusal).toBeInstanceOf(GitHubError);
+      expect(refusal).not.toBeInstanceOf(MissingScopeError);
+      expect((refusal as GitHubError).message).toBe(
+        'Resource not accessible by personal access token',
+      );
+      expect(workspaceSession()).toBeNull();
+    });
+
+    it('keeps the record when the connection is verified again', async () => {
+      stubGitHub(null);
+      await useWorkspaceStore.getState().connectGitHubSession('github_pat_x');
+
+      expect(await useWorkspaceStore.getState().verifyGitHubScopes()).toEqual([]);
+      expect(workspaceSession()?.scopesReported).toBe(false);
+    });
+
+    it('accepts a fine-grained replacement for a classic token, through the same gate', async () => {
+      stubGitHub('repo');
+      const original = await useWorkspaceStore.getState().connectGitHubSession('ghp_x');
+      expect(original.scopesReported).toBe(true);
+
+      stubGitHub(null);
+      const updated = await useWorkspaceStore.getState().updateGitHubToken('github_pat_x');
+
+      expect(updated.tokenSecretId).toBe(original.tokenSecretId);
+      expect(updated.grantedScopes).toEqual([]);
+      // The old token's answer does not outlive it.
+      expect(updated.scopesReported).toBe(false);
+      expect(updated.canCreatePullRequests).toBeNull();
+    });
+
+    it('refuses a classic replacement without `repo` for a fine-grained token, and keeps the session', async () => {
+      stubGitHub(null);
+      const before = await useWorkspaceStore.getState().connectGitHubSession('github_pat_x');
+
+      stubGitHub('public_repo');
+      await expect(useWorkspaceStore.getState().updateGitHubToken('ghp_x')).rejects.toBeInstanceOf(
+        MissingScopeError,
+      );
+      expect(workspaceSession()).toEqual(before);
     });
   });
 
@@ -179,6 +355,89 @@ describe('workspaceStore — GitHub session', () => {
       await expect(useWorkspaceStore.getState().updateGitHubToken('tok')).rejects.toThrow(
         /No active session/,
       );
+    });
+
+    // A replacement goes through the gate a first token goes through. Without
+    // it, "Update token" was the way to store a token Connect had refused.
+    describe('required scopes', () => {
+      /** `GET /user` answering with `scopes`, recording the token each call carried. */
+      function stubViewer(scopes: string, login = 'me'): string[] {
+        const sent: string[] = [];
+        vi.unstubAllGlobals();
+        vi.stubGlobal(
+          'fetch',
+          vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+            sent.push((init?.headers as Record<string, string>).Authorization);
+            return new Response(JSON.stringify({ login, id: 1 }), {
+              status: 200,
+              headers: { 'content-type': 'application/json', 'x-oauth-scopes': scopes },
+            });
+          }),
+        );
+        return sent;
+      }
+
+      it('refuses a replacement without `repo`, with the error connect raises for it', async () => {
+        stubViewer('repo');
+        await useWorkspaceStore.getState().connectGitHubSession('t1');
+        const before = useWorkspaceStore.getState().local!.sessions.github.workspace!;
+
+        stubViewer('public_repo');
+        const store = useWorkspaceStore.getState();
+        const fromConnect: unknown = await store.connectGitHubSession('t2').catch((e) => e);
+        const fromUpdate: unknown = await store.updateGitHubToken('t2').catch((e) => e);
+
+        expect(fromUpdate).toBeInstanceOf(MissingScopeError);
+        const refusal = fromUpdate as MissingScopeError;
+        expect(refusal.missingScopes).toEqual(['repo']);
+        expect(refusal.grantedScopes).toEqual(['public_repo']);
+        // One gate, two entry points: the same sentence and status either way.
+        expect(fromConnect).toBeInstanceOf(MissingScopeError);
+        expect(refusal.message).toBe((fromConnect as MissingScopeError).message);
+        expect(refusal.status).toBe((fromConnect as MissingScopeError).status);
+        // Nothing about the session moved, the refused token's scopes included.
+        expect(useWorkspaceStore.getState().local!.sessions.github.workspace).toEqual(before);
+      });
+
+      it('leaves the working token in the vault when the replacement is refused', async () => {
+        stubViewer('repo');
+        const { tokenSecretId } = await useWorkspaceStore.getState().connectGitHubSession('t1');
+        const stored = await getSecretPayload(tokenSecretId);
+        expect(stored).not.toBeNull();
+
+        stubViewer('public_repo');
+        await expect(useWorkspaceStore.getState().updateGitHubToken('t2')).rejects.toBeInstanceOf(
+          MissingScopeError,
+        );
+
+        expect(await getSecretPayload(tokenSecretId)).toEqual(stored);
+        // And it is the token the next call to GitHub carries.
+        const sent = stubViewer('repo');
+        await useWorkspaceStore.getState().verifyGitHubScopes();
+        expect(sent).toEqual(['Bearer t1']);
+      });
+
+      it('sends an accepted replacement from then on', async () => {
+        // The control for the test above: the same reading sees a rotation.
+        stubViewer('repo');
+        await useWorkspaceStore.getState().connectGitHubSession('t1');
+        await useWorkspaceStore.getState().updateGitHubToken('t2');
+
+        const sent = stubViewer('repo');
+        await useWorkspaceStore.getState().verifyGitHubScopes();
+        expect(sent).toEqual(['Bearer t2']);
+      });
+
+      it('names another account before it names a missing scope', async () => {
+        // The token is the wrong one altogether; its scopes are beside the point.
+        stubViewer('repo', 'first');
+        await useWorkspaceStore.getState().connectGitHubSession('t1');
+
+        stubViewer('public_repo', 'second');
+        await expect(useWorkspaceStore.getState().updateGitHubToken('t2')).rejects.toThrow(
+          /Token belongs to second .* Disconnect first/,
+        );
+      });
     });
   });
 

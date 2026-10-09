@@ -392,3 +392,55 @@ describe('auth — jwt-bearer (HS256)', () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe('github mock — the scope header', () => {
+  const user = (token: string) =>
+    fetchMock('/_gh/user', { headers: { Authorization: `Bearer ${token}` } });
+  const setScopes = (scopes: string | string[] | null, token: string) =>
+    fetchMock('/__gh/scopes', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ scopes, token }),
+    });
+
+  it('sends the default scopes for a token nobody configured', async () => {
+    const res = await user('ghp_default');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-oauth-scopes')).toBe('repo,read:user');
+  });
+
+  it('sends the scopes set for one token, and only for it', async () => {
+    await setScopes(['read:user'], 'ghp_narrow');
+    expect((await user('ghp_narrow')).headers.get('x-oauth-scopes')).toBe('read:user');
+    expect((await user('ghp_default')).headers.get('x-oauth-scopes')).toBe('repo,read:user');
+  });
+
+  it('sends an empty header for a classic token with no scopes', async () => {
+    await setScopes('', 'ghp_no_scopes');
+    expect((await user('ghp_no_scopes')).headers.get('x-oauth-scopes')).toBe('');
+  });
+
+  it('sends no header at all for a token whose scopes are null (fine-grained)', async () => {
+    await setScopes(null, 'github_pat_fine');
+    const res = await user('github_pat_fine');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-oauth-scopes')).toBeNull();
+  });
+
+  it('keeps the header off a forced refusal for that token too', async () => {
+    await setScopes(null, 'github_pat_denied');
+    await fetchMock('/__gh/auth-failure', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        status: 403,
+        message: 'Resource not accessible by personal access token',
+        token: 'github_pat_denied',
+      }),
+    });
+    const res = await user('github_pat_denied');
+    expect(res.status).toBe(403);
+    expect(res.headers.get('x-oauth-scopes')).toBeNull();
+    await fetchMock('/__gh/auth-failure?token=github_pat_denied', { method: 'DELETE' });
+  });
+});

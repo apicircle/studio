@@ -36,6 +36,49 @@ describe('GitHubClient.getViewer', () => {
       avatarUrl: 'https://x',
     });
     expect(result.scopes.granted).toEqual(['repo', 'pull_request']);
+    expect(result.scopes.reported).toBe(true);
+  });
+
+  // GitHub sends `x-oauth-scopes` only for a token that has scopes to speak of.
+  // Seen live on `GET /user`: a classic token gets the header, a fine-grained
+  // one gets none (and `x-accepted-github-permissions` in its place). The two
+  // empty lists below are different answers, and `reported` is what tells them
+  // apart.
+  it('says the scopes were not reported when there is no scope header (a fine-grained token)', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse(
+        { login: 'u', id: 1 },
+        { headers: { 'x-accepted-github-permissions': 'allows_permissionless_access=true' } },
+      ),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const { scopes } = await client.getViewer('github_pat_x');
+    expect(scopes).toEqual({ granted: [], reported: false });
+  });
+
+  it('reads an empty scope header as a token with no scopes, which was reported', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({ login: 'u', id: 1 }, { headers: { 'x-oauth-scopes': '' } }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const { scopes } = await client.getViewer('ghp_x');
+    expect(scopes).toEqual({ granted: [], reported: true });
+  });
+
+  it('carries the scopes the endpoint accepts beside the ones granted', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse(
+        { login: 'u', id: 1 },
+        { headers: { 'x-oauth-scopes': 'repo', 'x-accepted-oauth-scopes': 'user, read:user' } },
+      ),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    const { scopes } = await client.getViewer('ghp_x');
+    expect(scopes).toEqual({
+      granted: ['repo'],
+      acceptedRequired: ['user', 'read:user'],
+      reported: true,
+    });
   });
 
   it('treats null name + missing avatar as null fields', async () => {
@@ -106,6 +149,44 @@ describe('GitHubClient.getViewer', () => {
     } catch (err) {
       expect(err).toBeInstanceOf(MissingScopeError);
       expect((err as MissingScopeError).missingScopes).toEqual(['pull_request']);
+    }
+  });
+
+  it('still names the caller-supplied scopes for a classic token that has none', async () => {
+    // The header is there and empty: GitHub reported a token with no scopes.
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse({ message: 'Forbidden' }, { status: 403, headers: { 'x-oauth-scopes': '' } }),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    try {
+      await client.getViewer('tok', { requiredScopes: ['repo'] });
+      throw new Error('expected throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(MissingScopeError);
+      expect((err as MissingScopeError).missingScopes).toEqual(['repo']);
+      expect((err as MissingScopeError).grantedScopes).toEqual([]);
+    }
+  });
+
+  it('does not blame a missing scope when the refusal carries no scope header', async () => {
+    // What a fine-grained token gets when it lacks a permission, as seen live:
+    // 403, GitHub's own message, and no `x-oauth-scopes` at all. The token has
+    // no scopes to be missing, so the caller's `repo` must not be named.
+    const fetchImpl: typeof fetch = vi.fn(async () =>
+      jsonResponse(
+        { message: 'Resource not accessible by personal access token' },
+        { status: 403, headers: { 'x-accepted-github-permissions': 'contents=write' } },
+      ),
+    );
+    const client = new GitHubClient({ fetchImpl });
+    try {
+      await client.createBranch('github_pat_x', 'me', 'api', 'wb', 'sha');
+      throw new Error('expected throw');
+    } catch (err) {
+      expect(err).not.toBeInstanceOf(MissingScopeError);
+      expect(err).toBeInstanceOf(GitHubError);
+      expect((err as GitHubError).status).toBe(403);
+      expect((err as Error).message).toBe('Resource not accessible by personal access token');
     }
   });
 

@@ -50,6 +50,24 @@ describe('Workspace & Git article', () => {
   });
 });
 
+describe('Sessions article', () => {
+  it('says both kinds of GitHub token connect, and what each one needs', () => {
+    // The article offered a fine-grained token while Connect refused every one.
+    // What it promises here is what `connectHostSession` now does.
+    const sessions = HELP_SECTIONS.find((s) => s.id === 'sessions')!;
+    expect(sessions.body).toContain('a classic `ghp_...` or fine-grained `github_pat_...` token');
+    expect(sessions.body).toContain('A classic token without `repo` is refused when you connect.');
+    expect(sessions.body).toContain(
+      'Give it **Contents** and **Pull requests**, read and write, on the repository.',
+    );
+    expect(sessions.body).toContain(
+      "GitHub does not report a fine-grained token's permissions, so they are not checked when you connect",
+    );
+    expect(searchHelp('fine-grained').map((s) => s.id)).toContain('sessions');
+    expect(searchHelp('github_pat').map((s) => s.id)).toContain('sessions');
+  });
+});
+
 describe('Multi-workspace article', () => {
   it('explains the cap: the open workspace keeps working, the rest lock, nothing is deleted', () => {
     const section = HELP_SECTIONS.find((s) => s.id === 'multi-workspace')!;

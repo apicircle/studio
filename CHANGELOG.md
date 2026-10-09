@@ -54,6 +54,105 @@
 
 ### Fixed
 
+- **A fine-grained GitHub token connects.** The Help Center and the token
+  field's placeholder (`ghp_… or github_pat_…`) both offered one, and Connect
+  refused every one with "Token is missing required scope(s): repo". GitHub
+  reports a token's scopes in an `x-oauth-scopes` header, and sends that header
+  only for a token that has scopes: a classic or OAuth one. A fine-grained token
+  carries permissions instead and gets no such header, so its scope list read
+  as empty and `repo` was never in it. Connect and Update token now require
+  `repo` only of a token whose scopes GitHub reported.
+  - A classic token is treated as before: without `repo` it is refused by both,
+    with the same message. That includes a classic token with no scopes at all,
+    which GitHub reports as an empty list, not as nothing.
+  - The session card says "GitHub does not report this token's scopes" for a
+    fine-grained token, where it would have marked `repo` missing.
+  - Test connection leaves two checks as not checked for such a token. Scopes,
+    because none are reported. Push access, because what GitHub reports there
+    is the account's access and not the token's own permissions: a live
+    fine-grained token was refused the branch listing of a repo its account
+    could push to. An account that is itself read-only still fails the check.
+    The Branches and Pull requests checks ask the repo as before, and a refusal
+    names the permission a fine-grained token needs (Contents, Pull requests).
+  - Whether the token can create pull requests is read from the repo's
+    pull-request listing once a repo is connected, as it already was for any
+    token whose scopes did not settle it.
+  - The connect guidance and the Help Center's Sessions article say what to give
+    a fine-grained token: Contents and Pull requests, read and write, on the
+    repository. They are not checked when you connect, because GitHub reports a
+    token's permissions nowhere.
+  - A refused call no longer blames a scope such a token cannot have. A 403 with
+    no scope header is passed on in GitHub's own words ("Resource not accessible
+    by personal access token"), where it read "missing scopes repo".
+  - Checked against a live fine-grained token: the missing header on a success
+    and on a refusal, the identity call, and the repo listing. A push and a pull
+    request with one have not been tried; what they need is taken from GitHub's
+    permission tables.
+  - `@apicircle/git`: `ScopeInfo` gains an optional `reported`, false when the
+    response had no `x-oauth-scopes` header at all. `GitHubSession` gains an
+    optional `scopesReported`, written only where the host's client says, so a
+    session on another host is stored as before and one saved earlier reads as
+    it did. `scopesAreReported` takes the client's word when it gives one.
+
+- **A session card draws no scope chips for a token whose scopes were not
+  reported.** The chip row was given the `hidden` attribute, but it is a `flex`
+  row, and a class that sets `display` beats that attribute. So the row stayed
+  on screen: a GitLab, Bitbucket or Azure DevOps session showed `repo` marked
+  missing directly under "does not report a token's scopes", and every label
+  below it sat in the value column. The row is now left out. Tests in jsdom
+  could not see this, because jsdom applies no stylesheet; a Playwright case now
+  asserts it in a browser.
+
+- **Update token no longer takes a replacement that lacks a required scope.**
+  Connect refuses a GitHub token without `repo`. "Update token" on the session
+  card (Secret Vault → Sessions) did not look: any token for the same account
+  was stored over the one that worked, and the first push after that failed. A
+  replacement now passes the check a first token passes. A refused one is not
+  stored, so the token in the vault and the session stay as they were, and the
+  card says "New token still missing scope(s): repo", a message it already had
+  and could not reach.
+  - GitLab, Bitbucket and Azure DevOps replacements are taken as before. The
+    check requires nothing of a host that does not always report a token's
+    scopes.
+  - A token that belongs to a different account is still named as that first.
+  - Store: `updateHostToken` throws the `MissingScopeError` that
+    `connectHostSession` throws, before it writes the ciphertext. Both go
+    through one gate (`assertRequiredScopes`).
+
+- **Connecting a repo on GitLab, Bitbucket or Azure DevOps finds out whether
+  the token can create pull requests.** A token on those hosts connects with
+  that question open, because nothing the host reports about the token answers
+  it. Connecting a repo is where it gets answered, by reading the repo's
+  pull-request listing once. But `connectRepo` read and wrote the GitHub session
+  whatever host the repo was on, so on the other three nothing was asked and the
+  answer stayed open until Test connection was pressed. It now reads and writes
+  the session of the repo's own host, and a token the host refuses the listing
+  to gets "This token can't create pull requests" on its session card as soon
+  as the repo is connected.
+  - With sessions on two hosts, one host's answer is no longer recorded on the
+    other's session. Connecting a GitLab repo while the GitHub session was
+    itself undecided asked GitLab and filed the answer under GitHub.
+  - A listing that is rate limited or fails for another reason leaves the
+    question open, and the repo still connects.
+  - GitHub alone is unchanged: the same probe, the same session, and no probe
+    when the token's scopes already answer.
+
+- **Create PR follows the session of the host the repo is on.** The working
+  branch card switches Create PR off once the session's token is known not to
+  create pull requests. It read that from the GitHub session whatever host the
+  repo was on. A repo on GitLab, Bitbucket or Azure DevOps keeps its session
+  somewhere else, so the answer recorded there was never read and the button
+  stayed on for a token the host would refuse. The card now reads the session
+  of the repo's own host.
+  - With sessions on two hosts, a GitHub token that cannot create pull requests
+    no longer switches Create PR off for a repo on another host.
+  - A session that has not been asked yet still leaves the button on, as before.
+  - When a push fails because the host rejected the token, the line under the
+    error names the repo's host: "Open the GitLab session card above to
+    reconnect." It said GitHub on every host.
+  - GitHub alone is unchanged: the same session, the same button, the same
+    line.
+
 - **A dialog no longer takes focus away while you type in it.** `Modal` re-ran
   its focus handling whenever the component that opened it re-rendered, because
   the `onClose` it was handed is a new function on each render. A field whose
@@ -285,6 +384,47 @@
   it is. Studio registers no sections, so its strip is unchanged.
 
 ### Changed
+
+- **Test connection checks whether the token can do the work, not only whose
+  it is.** The button on the session card (Secret Vault → Sessions) made one
+  call, asking the host who the token belongs to, and reported "Connection
+  healthy" when it answered. A token that had lost its `repo` scope, or an
+  account dropped to read-only on the repo, still tested healthy and failed
+  later in the middle of a push. It now asks six questions and lists each
+  answer:
+  - **Token** — the account the host says it belongs to.
+  - **Scopes** — whether it carries the scopes the app needs, where the host
+    says which scopes a token has. GitHub always does (`repo`).
+  - **Repository** — whether the token can reach the repo this workspace is
+    connected to.
+  - **Push access** — whether this account may push to it, where the host's
+    repo record says so.
+  - **Branches** and **Pull requests** — whether each can be read.
+
+  Each check passes, fails, or is marked not checked. "Not checked" covers a
+  question nobody could answer: no repo is connected yet, the host does not
+  report it, or the call was rate limited or dropped. It is counted apart and
+  never as a pass, so the verdict reads "Connection healthy — 4 checks passed,
+  2 could not be checked" or "2 of 6 checks failed". A failed check says what
+  it will break.
+  - Every call is a read. Write access is taken from what the host reports,
+    never tested by writing, so where a host reports nothing the first push is
+    still the real test.
+  - A test also refreshes what the app has recorded: the token's scopes, whether
+    it can create pull requests (a refused pull-request listing now overrules a
+    scope list that claims it can), and the repo's push flag, which was read
+    once when the repo was connected and never again.
+  - With sessions on two hosts, a test asks a host only about a repo that lives
+    on it.
+  - A rejected token is named by its host and by the status the host answered
+    with ("Token rejected by GitLab (403)"), where the message said GitHub and
+    401 for every host.
+  - Store: `preflightHostConnection(host)` runs the checks
+    (`store/hostPreflight.ts`). `verifyHostScopes` and `verifyGitHubScopes` are
+    unchanged. A host whose provider reports a token's scopes gets its scope
+    check and its scope chips from the same table
+    (`SCOPES_NEEDED_WHEN_REPORTED`); a host that reports none keeps the
+    sentence saying so.
 
 - **Mocks sits before History in the tab strip.** The tabs now read Workspace,
   Editor, Environments, Execution, Mocks, History.

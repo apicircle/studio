@@ -50,6 +50,7 @@ interface StoreApi {
       github?: {
         workspace?: {
           grantedScopes?: string[];
+          scopesReported?: boolean;
           canCreatePullRequests?: boolean | null;
         } | null;
       };
@@ -238,6 +239,152 @@ test.describe('GitHub integration', () => {
         );
       });
       expect(capability).toBe(true);
+    },
+  );
+
+  // "Test connection" on the session card (Secret Vault → Sessions). It asks the
+  // host about the token AND about the connected repo, and lists each answer.
+  test(
+    tc(id('PR Capability'), 'Test connection lists every check for a token that can do the work'),
+    async ({ appWithGithubMock, mockGithub }) => {
+      const owner = 'mock-user';
+      const name = `int-preflight-${test.info().workerIndex}`;
+      await mockGithub.seedRepo({ owner, name });
+      await linkAndAuth(appWithGithubMock, owner, name);
+
+      await appWithGithubMock.getByRole('button', { name: /Open Secret Vault/ }).click();
+      await appWithGithubMock.getByRole('button', { name: /Sessions/ }).click();
+      await appWithGithubMock.getByRole('button', { name: 'Test GitHub connection' }).click();
+
+      await expect(
+        appWithGithubMock.getByText('Connection healthy — 6 checks passed.'),
+      ).toBeVisible();
+      const checks = appWithGithubMock
+        .getByRole('list', { name: 'GitHub connection checks' })
+        .getByRole('listitem');
+      await expect(checks).toHaveText([
+        /^Passed: Token — Signed in as /,
+        'Passed: Scopes — Has repo.',
+        `Passed: Repository — ${owner}/${name} is reachable.`,
+        `Passed: Push access — This account can push to ${owner}/${name}.`,
+        'Passed: Branches — Branches can be read.',
+        'Passed: Pull requests — Pull requests can be read.',
+      ]);
+    },
+  );
+
+  test(
+    tc(
+      id('GitHub Flow :: GitHub flow: OAuth scope downgrade after linking'),
+      'Test connection names the missing scope and the read-only repo',
+    ),
+    async ({ appWithGithubMock, mockGithub }) => {
+      const owner = 'mock-user';
+      const name = `int-preflight-fail-${test.info().workerIndex}`;
+      const token = `ghp_mock_preflight_${test.info().workerIndex}`;
+      // Read-only on the repo from the start; the scope is lost after linking.
+      await mockGithub.seedRepo({ owner, name, pushable: false });
+      await appWithGithubMock.evaluate(
+        async ({ ownerArg, nameArg, tokenArg }) => {
+          const w = window as unknown as { __apicircleStore?: { getState: () => StoreApi } };
+          const s = w.__apicircleStore!.getState();
+          await s.connectGitHubSession(tokenArg);
+          await s.connectRepo(ownerArg, nameArg);
+        },
+        { ownerArg: owner, nameArg: name, tokenArg: token },
+      );
+      try {
+        await mockGithub.setScopes(['read:user'], token);
+
+        await appWithGithubMock.getByRole('button', { name: /Open Secret Vault/ }).click();
+        await appWithGithubMock.getByRole('button', { name: /Sessions/ }).click();
+        await appWithGithubMock.getByRole('button', { name: 'Test GitHub connection' }).click();
+
+        await expect(appWithGithubMock.getByText('2 of 6 checks failed.')).toBeVisible();
+        await expect(appWithGithubMock.getByText(/Connection healthy/)).toHaveCount(0);
+        const checks = appWithGithubMock
+          .getByRole('list', { name: 'GitHub connection checks' })
+          .getByRole('listitem');
+        await expect(checks.nth(1)).toHaveText(
+          'Failed: Scopes — Missing repo. Push to save and pull requests will fail until the token is updated.',
+        );
+        await expect(checks.nth(3)).toHaveText(
+          `Failed: Push access — This account has read-only access to ${owner}/${name}. Push to save will fail.`,
+        );
+        // The card's own scope chip tells the same story as the checklist.
+        await expect(appWithGithubMock.getByLabel('repo scope missing (required)')).toBeVisible();
+      } finally {
+        // setScopes mutates token-keyed state on the shared, long-lived mock
+        // server; restore it so a later run that reuses this token can connect.
+        await mockGithub.setScopes(['repo', 'read:user'], token);
+      }
+    },
+  );
+
+  // GitHub sends no `x-oauth-scopes` header for a fine-grained token: it carries
+  // permissions, not scopes. Connect refused every such token for lacking `repo`
+  // while the Help Center said they were supported.
+  test(
+    tc(id('PR Capability'), 'a fine-grained token connects, and is tested against its repo'),
+    async ({ appWithGithubMock, mockGithub }) => {
+      const owner = 'mock-user';
+      const name = `int-fine-grained-${test.info().workerIndex}`;
+      const token = `github_pat_mock_${test.info().workerIndex}`;
+      await mockGithub.seedRepo({ owner, name });
+      // `null`: the mock sends this token's responses with no scope header.
+      await mockGithub.setScopes(null, token);
+      try {
+        const session = await appWithGithubMock.evaluate(
+          async ({ ownerArg, nameArg, tokenArg }) => {
+            const w = window as unknown as { __apicircleStore?: { getState: () => StoreApi } };
+            const s = w.__apicircleStore!.getState();
+            await s.connectGitHubSession(tokenArg);
+            await s.connectRepo(ownerArg, nameArg);
+            return w.__apicircleStore!.getState().local?.sessions?.github?.workspace ?? null;
+          },
+          { ownerArg: owner, nameArg: name, tokenArg: token },
+        );
+        // Nothing was reported, and the session says so rather than recording a
+        // token with no scopes. The repo's pull-request listing settled the rest.
+        expect(session?.grantedScopes).toEqual([]);
+        expect(session?.scopesReported).toBe(false);
+        expect(session?.canCreatePullRequests).toBe(true);
+
+        await appWithGithubMock.getByRole('button', { name: /Open Secret Vault/ }).click();
+        await appWithGithubMock.getByRole('button', { name: /Sessions/ }).click();
+        await expect(
+          appWithGithubMock.getByText(
+            "GitHub does not report this token's scopes, so they cannot be shown or checked here. A fine-grained token carries permissions instead, and Test connection checks what it can reach.",
+          ),
+        ).toBeVisible();
+        // No chip for a scope nobody reported. Asserted in a real browser on
+        // purpose: the row was once only `hidden`, and its `flex` class showed it.
+        await expect(appWithGithubMock.getByLabel(/scope (present|missing)/)).toHaveCount(0);
+        await expect(appWithGithubMock.getByText(/Required scope\(s\) missing/)).toHaveCount(0);
+
+        await appWithGithubMock.getByRole('button', { name: 'Test GitHub connection' }).click();
+        await expect(
+          appWithGithubMock.getByText(
+            'Connection healthy — 4 checks passed, 2 could not be checked.',
+          ),
+        ).toBeVisible();
+        const checks = appWithGithubMock
+          .getByRole('list', { name: 'GitHub connection checks' })
+          .getByRole('listitem');
+        await expect(checks).toHaveText([
+          /^Passed: Token — Signed in as /,
+          "Not checked: Scopes — GitHub does not report this token's scopes, so they cannot be checked. A fine-grained token carries permissions instead, and GitHub does not report those either.",
+          `Passed: Repository — ${owner}/${name} is reachable.`,
+          // The repo record speaks for the account, not for the token's permissions.
+          `Not checked: Push access — This account can push to ${owner}/${name}, but GitHub does not report whether this token's permissions allow it. The first push is the real test.`,
+          'Passed: Branches — Branches can be read.',
+          'Passed: Pull requests — Pull requests can be read.',
+        ]);
+      } finally {
+        // setScopes mutates token-keyed state on the shared, long-lived mock
+        // server; put this token back on the default so nothing else inherits it.
+        await mockGithub.setScopes(['repo', 'read:user'], token);
+      }
     },
   );
 

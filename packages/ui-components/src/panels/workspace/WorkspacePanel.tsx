@@ -50,6 +50,7 @@ import {
   connectedHostKind,
   hostOfWorkspaceSession,
   useWorkspaceStore,
+  workspaceSessionFor,
   type BranchPushOutcome,
   type BranchWorkspaceSummary,
 } from '../../store/workspaceStore';
@@ -1388,7 +1389,14 @@ function upToDateNotice(unpushedTotal: number): string {
 
 function BranchCard() {
   const branch = useWorkspaceStore((s) => s.local!.workingBranch!);
-  const session = useWorkspaceStore((s) => s.local?.sessions.github.workspace ?? null);
+  // The session of the host this repo is on. A session is per host, and whether
+  // its token can create pull requests is recorded on the repo's own. Reading
+  // GitHub's slot here left a GitLab repo's answer unread, and let GitHub's
+  // answer decide for it when both hosts held a session.
+  const repoHost = useWorkspaceStore((s) => connectedHostKind(s.local));
+  const session = useWorkspaceStore((s) =>
+    workspaceSessionFor(s.local, connectedHostKind(s.local)),
+  );
   const lastPulledAt = useWorkspaceStore((s) => s.local?.sync.lastPulledAt ?? null);
   const discardWorkingBranch = useWorkspaceStore((s) => s.discardWorkingBranch);
   const pushWorkspace = useWorkspaceStore((s) => s.pushWorkspace);
@@ -1735,7 +1743,7 @@ function BranchCard() {
           )}
           {errorView?.action.kind === 'reconnect-token' && (
             <p className="text-[0.6875rem] text-text-dim">
-              Open the GitHub session card above to reconnect.
+              Open the {GIT_HOST_LABELS[repoHost]} session card above to reconnect.
             </p>
           )}
           {errorView?.partialWrite && (
