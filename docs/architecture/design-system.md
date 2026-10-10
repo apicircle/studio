@@ -75,6 +75,59 @@ was added or edited without running it. Every theme must set its own `success`
 Two tones can share a colour in a theme (`info` equals `accent` in thirteen), so
 a status never rests on hue alone: give it a label or an icon as well.
 
+### A line of a diff uses the diff-row classes
+
+An added or a removed line is marked with the classes in
+`primitives/diffRow.ts` (`DIFF_ROW`, `DIFF_ROW_TONE`, `DIFF_ROW_NUMBER`,
+`DIFF_ROW_MARKER`, exported from `@apicircle/ui-components`). Do not write
+`bg-success/10` on a row of code.
+
+Why not a tint: a tint is the tone painted thin over the page, and over a page
+of the opposite hue the two cancel. 10% of Solarized Dark's red over its teal
+page lands 2.0 from the page in OKLab ×100, where about 2 is the least an eye
+can tell apart, and 49 of the 120 added/removed rows across the 60 themes sat
+under 5. A WCAG contrast ratio cannot see this, because it compares lightness
+alone. No single share of the tone fixes it either: 20% leaves that row at 5.3,
+and 25% takes the code on a row under AA in Everforest Dark.
+
+So a marked line carries four things:
+
+| Part   | Class                                  | What it is for                                                                                            |
+| ------ | -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Tint   | `bg-diff-add` / `bg-diff-del`          | The theme's own backdrop for the line. Says "not the page".                                               |
+| Edge   | `border-l-success` / `border-l-danger` | Two pixels of the tone itself. Says **which** of the two, where the tint of each is nearly the same grey. |
+| Number | `text-text-muted`                      | A step stronger than an unchanged line's `text-text-dim`, which falls to 2.4:1 on a tint.                 |
+| Sign   | `+` / `−`                              | The mark that does not depend on colour at all.                                                           |
+
+An unchanged line has the edge's width in `border-l-transparent`, so the code
+starts at the same column on every row.
+
+`--diff-add` and `--diff-del` are **generated** per theme by the same script as
+the `-fg` tokens. Each is a solid colour: the tone (`success` / `danger`) over
+`surface`, by this rule:
+
+- Start at 20% of the tone.
+- Where that is under 10 from the surface (OKLab ×100), take the least more that
+  reaches 10.
+- Never take a share at which `text-primary` on it drops under AA (4.5:1) or
+  `text-muted` under 3:1. Readable text comes before the target.
+- Never go under 20% to reach the target sooner. On a black page 2% of a green
+  is `2 5 2`, which the measure scores at 10 and no display shows.
+
+Today 70 of the 120 rows keep 20% and 50, in 37 themes, are raised, to 33% at
+most (Nord, removed). The weakest of each measure: tint from page 10.0, code on
+tint 4.51:1 (Kanagawa Lotus), number on tint 3.27:1, edge from page 31, added
+edge from removed edge 19.
+
+The tokens are solved for a row on `surface`. Draw a diff on `bg-surface`: on
+`card` the same colour can sit as little as 3.8 from its backdrop.
+
+Two tests hold this. `theme-contrast.test.ts` measures a row made of those parts
+on every theme and holds the five measures (10, 4.5:1, 3:1, 25, 15). It fails,
+naming the theme and the measure, when a theme is added or a tone changed that a
+diff no longer shows on. `primitives/diffRow.test.ts` fails when a class in
+`diffRow.ts` stops being one of the parts the themes were measured for.
+
 ## Stacking
 
 One scale, exported as `Z` from the primitives (`primitives/floating.ts`), lowest

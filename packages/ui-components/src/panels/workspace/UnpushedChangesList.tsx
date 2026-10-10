@@ -3,6 +3,12 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { UnpushedChange } from '@apicircle/core';
 import { cn } from '../../primitives/cn';
 import {
+  DIFF_ROW,
+  DIFF_ROW_MARKER,
+  DIFF_ROW_NUMBER,
+  DIFF_ROW_TONE,
+} from '../../primitives/diffRow';
+import {
   MAX_DRAWN_LINES,
   capHunks,
   countChangedLines,
@@ -137,17 +143,11 @@ function UnpushedChangeRow({ change }: { change: UnpushedChange }) {
   );
 }
 
-const LINE_TONE: Record<DiffLine['kind'], string> = {
-  add: 'bg-success/10',
-  del: 'bg-danger/10',
-  context: '',
-};
-const LINE_MARKER: Record<DiffLine['kind'], string> = { add: '+', del: '−', context: ' ' };
-
 /**
  * One change as a unified diff, under its row: against the last pull, what the
  * push takes out (−) and what it puts in (+). Each line is numbered by the
- * side it is on — a removed line by the old text, the others by the new.
+ * side it is on — a removed line by the old text, the others by the new. How a
+ * line is marked — its tint, its edge, its number — is `primitives/diffRow`.
  */
 function ChangeDiff({ label, lines }: { label: string; lines: readonly DiffLine[] }) {
   const { hunks, hidden } = capHunks(toHunks(lines), MAX_DRAWN_LINES);
@@ -170,13 +170,18 @@ function ChangeDiff({ label, lines }: { label: string; lines: readonly DiffLine[
               return (
                 <div
                   key={`${line.kind}:${number}`}
-                  className={cn('flex items-start gap-2 px-2', LINE_TONE[line.kind])}
+                  className={cn('flex items-start gap-2', DIFF_ROW, DIFF_ROW_TONE[line.kind])}
                 >
-                  <span className="w-8 shrink-0 select-none text-right text-text-dim">
+                  <span
+                    className={cn(
+                      'w-8 shrink-0 select-none text-right',
+                      DIFF_ROW_NUMBER[line.kind],
+                    )}
+                  >
                     {number}
                   </span>
                   <span className="whitespace-pre text-text-primary">
-                    {LINE_MARKER[line.kind]}
+                    {DIFF_ROW_MARKER[line.kind]}
                     {line.text}
                   </span>
                 </div>

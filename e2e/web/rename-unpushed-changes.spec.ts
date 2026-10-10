@@ -8,6 +8,8 @@ import { tcMapGT } from './fixtures/tcMapGT';
 
 // Coverage credit: workbook module CP.
 import { tcMapCP } from './fixtures/tcMapCP';
+// Coverage credit: workbook module ST (the diff's rows, held to a theme).
+import { tcMapST } from './fixtures/tcMapST';
 void Object.keys(tcMapCP);
 void Object.keys(tcMapGT);
 
@@ -274,6 +276,94 @@ test.describe('Rename surfaces in unpushed-changes UI (regression)', () => {
       await expect(diff).toContainText('− "name": "Original Mock"');
       await expect(diff).toContainText('+ "name": "Renamed Mock"');
       await expect(diff).not.toContainText('Before (last pull)');
+    },
+  );
+
+  test(
+    tc(
+      tcMapST['Theme :: High-contrast WCAG 2.1'],
+      'an added and a removed line of the diff show on a theme whose page cancels a thin tint',
+    ),
+    async ({ app }) => {
+      await setupConnectedBranch(app);
+      await wirePushFlow(app);
+      const { mockId } = await seedAndPushBaseline(app);
+
+      await app.evaluate((id) => {
+        const w = window as unknown as {
+          __apicircleStore: {
+            getState: () => {
+              setMockServerName: (id: string, name: string) => void;
+              setThemeId: (id: string) => void;
+            };
+          };
+        };
+        w.__apicircleStore.getState().setMockServerName(id, 'Renamed Mock');
+        // Solarized Dark: 10% of its red over its teal page was a grey the eye
+        // could not tell from the page.
+        w.__apicircleStore.getState().setThemeId('solarized-dark');
+      }, mockId);
+      await expect(app.locator('html')).toHaveAttribute('data-theme', 'solarized-dark');
+
+      await app.getByRole('button', { name: /Show unpushed changes preview/ }).click();
+      const modal = app.getByRole('dialog', { name: /Unpushed changes preview/ });
+      await modal.getByRole('button', { name: 'Toggle modified Renamed Mock' }).click();
+      const diff = modal.getByRole('region', { name: 'Change to Renamed Mock' });
+      await expect(diff).toContainText('+ "name": "Renamed Mock"');
+
+      // What the browser paints: each row's backdrop and left edge, the page
+      // they lie on, and the theme's own tokens to hold them to.
+      const painted = await diff.evaluate((region) => {
+        const theme = getComputedStyle(document.documentElement);
+        const token = (name: string): string =>
+          `rgb(${theme.getPropertyValue(name).trim().split(/\s+/).join(', ')})`;
+        const rowOf = (code: string) => {
+          const span = [...region.querySelectorAll('span')].find((el) =>
+            el.textContent?.includes(code),
+          );
+          const row = span?.parentElement;
+          if (!row) throw new Error(`no diff row for ${code}`);
+          const style = getComputedStyle(row);
+          return {
+            backdrop: style.backgroundColor,
+            edge: style.borderLeftColor,
+            edgeWidth: style.borderLeftWidth,
+          };
+        };
+        const page = region.closest('li');
+        if (!page) throw new Error('the diff is not in a list row');
+        return {
+          page: getComputedStyle(page).backgroundColor,
+          removed: rowOf('"name": "Original Mock"'),
+          added: rowOf('"name": "Renamed Mock"'),
+          kept: rowOf('"id":'),
+          tokens: {
+            surface: token('--surface'),
+            add: token('--diff-add'),
+            del: token('--diff-del'),
+            success: token('--success'),
+            danger: token('--danger'),
+          },
+        };
+      });
+
+      // The page is the theme's surface, and each marked row is the theme's own
+      // backdrop for it: a solid colour that is not the page, nor the other row's.
+      expect(painted.page).toBe(painted.tokens.surface);
+      expect(painted.removed.backdrop).toBe(painted.tokens.del);
+      expect(painted.added.backdrop).toBe(painted.tokens.add);
+      expect(painted.removed.backdrop).not.toBe(painted.page);
+      expect(painted.added.backdrop).not.toBe(painted.page);
+      expect(painted.removed.backdrop).not.toBe(painted.added.backdrop);
+      // The edge is the tone itself, two pixels of it, down the row's left.
+      expect(painted.removed.edge).toBe(painted.tokens.danger);
+      expect(painted.added.edge).toBe(painted.tokens.success);
+      expect(painted.removed.edgeWidth).toBe('2px');
+      expect(painted.added.edgeWidth).toBe('2px');
+      // An unchanged line keeps the edge's width, so the code lines up, and no colour.
+      expect(painted.kept.edgeWidth).toBe('2px');
+      expect(painted.kept.edge).toBe('rgba(0, 0, 0, 0)');
+      expect(painted.kept.backdrop).toBe('rgba(0, 0, 0, 0)');
     },
   );
 

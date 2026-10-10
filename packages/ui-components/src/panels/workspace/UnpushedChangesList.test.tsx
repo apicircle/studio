@@ -112,6 +112,48 @@ describe('UnpushedChangesList', () => {
     expect(screen.queryByRole('region')).toBeNull();
   });
 
+  it('marks an added and a removed line with a tint and an edge, and leaves the rest clear', async () => {
+    render(
+      <UnpushedChangesList
+        changes={[
+          change({ base: { name: 'Old', method: 'GET' }, local: { name: 'New', method: 'GET' } }),
+        ]}
+      />,
+    );
+    const diff = await openDiff('List users');
+    // A row is its line number and its code; the code is the marker and the text.
+    const rowOf = (code: string): { row: HTMLElement; number: HTMLElement } => {
+      const row = within(diff).getByText(code).parentElement;
+      const number = row?.firstElementChild;
+      if (!(row instanceof HTMLElement) || !(number instanceof HTMLElement)) {
+        throw new Error(`no diff row for "${code}"`);
+      }
+      return { row, number };
+    };
+
+    const removed = rowOf('− "name": "Old",');
+    expect(removed.row).toHaveClass('border-l-2', 'border-l-danger', 'bg-diff-del');
+    expect(removed.number).toHaveClass('text-text-muted');
+    expect(removed.number).toHaveTextContent('2');
+
+    const added = rowOf('+ "name": "New",');
+    expect(added.row).toHaveClass('border-l-2', 'border-l-success', 'bg-diff-add');
+    expect(added.number).toHaveClass('text-text-muted');
+
+    // An unchanged line has the edge's width and no colour, so its code starts
+    // at the same column, and its number is the dimmer one.
+    const kept = rowOf('"method": "GET"');
+    expect(kept.row).toHaveClass('border-l-2', 'border-l-transparent');
+    expect(kept.row.className).not.toMatch(/\bbg-/);
+    expect(kept.number).toHaveClass('text-text-dim');
+
+    // No row is marked with the tone painted thin over the page: that is the
+    // tint a theme of the opposite hue cancels.
+    for (const { row } of [removed, added, kept]) {
+      expect(row.className).not.toMatch(/bg-(success|danger)\//);
+    }
+  });
+
   it('reads an added entry as all added lines and a removed one as all removed', async () => {
     render(
       <UnpushedChangesList

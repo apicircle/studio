@@ -38,6 +38,8 @@
   --danger-fg: 247 96 89;
   --info-fg: 88 166 255;
   --accent-fg: 103 179 255;
+  --diff-add: 23 52 40;
+  --diff-del: 60 31 39;
   --purple: 188 140 255;
   --blue: 88 166 255;
   --green: 63 185 80;
@@ -74,6 +76,8 @@
   --danger-fg: 232 113 113;
   --info-fg: 124 168 232;
   --accent-fg: 168 178 197;
+  --diff-add: 39 55 44;
+  --diff-del: 61 34 37;
   --http-get: 124 198 134;
   --http-post: 124 168 232;
   --http-put: 220 168 86;
@@ -105,6 +109,8 @@
   --danger-fg: 255 132 132;
   --info-fg: 110 190 255;
   --accent-fg: 124 156 255;
+  --diff-add: 26 54 52;
+  --diff-del: 57 36 47;
   --http-get: 96 220 156;
   --http-post: 124 156 255;
   --http-put: 250 196 96;
@@ -136,6 +142,8 @@
   --danger-fg: 191 36 50;
   --info-fg: 15 110 136;
   --accent-fg: 24 100 199;
+  --diff-add: 202 225 215;
+  --diff-del: 239 207 212;
   --http-get: 22 130 76;
   --http-post: 24 119 242;
   --http-put: 168 110 26;
@@ -167,6 +175,8 @@
   --danger-fg: 178 56 56;
   --info-fg: 56 96 168;
   --accent-fg: 155 85 33;
+  --diff-add: 214 221 202;
+  --diff-del: 237 211 207;
   --http-get: 88 124 60;
   --http-post: 56 96 168;
   --http-put: 192 102 36;
@@ -198,6 +208,8 @@
   --danger-fg: 255 100 100;
   --info-fg: 100 200 255;
   --accent-fg: 255 215 0;
+  --diff-add: 16 48 24;
+  --diff-del: 51 20 20;
   --http-get: 80 240 120;
   --http-post: 100 200 255;
   --http-put: 255 215 0;
@@ -229,6 +241,8 @@
   --danger-fg: 196 0 0;
   --info-fg: 0 0 200;
   --accent-fg: 0 0 200;
+  --diff-add: 204 224 204;
+  --diff-del: 245 204 204;
   --http-get: 0 110 30;
   --http-post: 0 60 200;
   --http-put: 130 80 0;
@@ -262,6 +276,8 @@
   --danger-fg: 251 175 171;
   --info-fg: 139 233 253;
   --accent-fg: 216 193 246;
+  --diff-add: 48 84 68;
+  --diff-del: 89 52 61;
   --purple: 189 147 249;
   --blue: 139 233 253;
   --green: 80 250 123;
@@ -298,6 +314,8 @@
   --danger-fg: 215 174 181;
   --info-fg: 177 196 216;
   --accent-fg: 165 206 218;
+  --diff-add: 71 81 80;
+  --diff-del: 94 67 78;
   --purple: 180 142 173;
   --blue: 129 161 193;
   --green: 163 190 140;
@@ -334,6 +352,8 @@
   --danger-fg: 242 126 151;
   --info-fg: 125 207 255;
   --accent-fg: 125 164 247;
+  --diff-add: 52 63 52;
+  --diff-del: 70 45 59;
   --purple: 187 154 247;
   --blue: 122 162 247;
   --green: 158 206 106;
@@ -370,6 +390,8 @@
   --danger-fg: 223 139 147;
   --info-fg: 86 182 194;
   --accent-fg: 97 175 239;
+  --diff-add: 62 74 66;
+  --diff-del: 86 60 68;
   --purple: 198 120 221;
   --blue: 97 175 239;
   --green: 152 195 121;
@@ -406,6 +428,8 @@
   --danger-fg: 255 119 152;
   --info-fg: 120 220 232;
   --accent-fg: 255 119 152;
+  --diff-add: 70 78 60;
+  --diff-del: 89 54 65;
   --purple: 171 157 242;
   --blue: 120 220 232;
   --green: 169 220 118;
@@ -442,6 +466,8 @@
   --danger-fg: 243 150 119;
   --info-fg: 172 186 162;
   --accent-fg: 247 162 82;
+  --diff-add: 69 69 40;
+  --diff-del: 89 48 43;
   --purple: 211 134 155;
   --blue: 131 165 152;
   --green: 184 187 38;
@@ -478,6 +504,8 @@
   --danger-fg: 228 126 117;
   --info-fg: 105 184 172;
   --accent-fg: 116 175 211;
+  --diff-add: 29 67 42;
+  --diff-del: 70 45 52;
   --purple: 108 113 196;
   --blue: 38 139 210;
   --green: 133 153 0;
@@ -514,6 +542,8 @@
   --danger-fg: 237 152 181;
   --info-fg: 138 181 250;
   --accent-fg: 203 166 247;
+  --diff-add: 57 69 69;
+  --diff-del: 73 52 70;
   --purple: 203 166 247;
   --blue: 137 180 250;
   --green: 166 227 161;
@@ -550,6 +580,8 @@
   --danger-fg: 221 171 195;
   --info-fg: 163 188 244;
   --accent-fg: 199 178 246;
+  --diff-add: 62 75 76;
+  --diff-del: 76 58 76;
   --purple: 198 160 246;
   --blue: 138 173 244;
   --green: 166 218 149;
@@ -586,6 +618,8 @@
   --danger-fg: 249 126 114;
   --info-fg: 3 237 249;
   --accent-fg: 255 126 219;
+  --diff-add: 56 75 82;
+  --diff-del: 83 52 68;
   --purple: 184 147 206;
   --blue: 3 237 249;
   --green: 114 241 184;
@@ -622,6 +656,8 @@
   --danger-fg: 255 128 162;
   --info-fg: 84 175 255;
   --accent-fg: 255 198 0;
+  --diff-add: 32 86 58;
+  --diff-del: 83 64 90;
   --purple: 255 126 219;
   --blue: 0 136 255;
   --green: 128 255 187;
@@ -658,6 +694,8 @@
   --danger-fg: 235 111 146;
   --info-fg: 156 207 216;
   --accent-fg: 196 167 231;
+  --diff-add: 32 51 68;
+  --diff-del: 67 41 58;
   --purple: 196 167 231;
   --blue: 156 207 216;
   --green: 49 116 143;
@@ -694,6 +732,8 @@
   --danger-fg: 242 135 121;
   --info-fg: 115 208 255;
   --accent-fg: 255 174 87;
+  --diff-add: 62 75 64;
+  --diff-del: 73 56 63;
   --purple: 212 191 255;
   --blue: 115 208 255;
   --green: 186 230 126;
@@ -730,6 +770,8 @@
   --danger-fg: 238 89 86;
   --info-fg: 127 219 202;
   --accent-fg: 130 170 255;
+  --diff-add: 35 61 52;
+  --diff-del: 51 35 48;
   --purple: 199 146 234;
   --blue: 130 170 255;
   --green: 173 219 103;
@@ -766,6 +808,8 @@
   --danger-fg: 247 89 82;
   --info-fg: 88 166 255;
   --accent-fg: 88 166 255;
+  --diff-add: 23 51 34;
+  --diff-del: 60 30 33;
   --purple: 210 168 255;
   --blue: 88 166 255;
   --green: 63 185 80;
@@ -802,6 +846,8 @@
   --danger-fg: 228 142 155;
   --info-fg: 137 221 255;
   --accent-fg: 199 152 234;
+  --diff-add: 72 82 78;
+  --diff-del: 87 61 75;
   --purple: 199 146 234;
   --blue: 130 170 255;
   --green: 195 232 141;
@@ -840,6 +886,8 @@
   --danger-fg: 153 61 63;
   --info-fg: 52 103 106;
   --accent-fg: 50 99 129;
+  --diff-add: 221 221 166;
+  --diff-del: 246 205 189;
   --purple: 108 113 196;
   --blue: 38 139 210;
   --green: 133 153 0;
@@ -876,6 +924,8 @@
   --danger-fg: 188 35 46;
   --info-fg: 12 97 197;
   --accent-fg: 12 97 197;
+  --diff-add: 209 229 215;
+  --diff-del: 245 211 213;
   --purple: 130 80 223;
   --blue: 9 105 218;
   --green: 26 127 55;
@@ -912,6 +962,8 @@
   --danger-fg: 171 28 66;
   --info-fg: 42 87 185;
   --accent-fg: 113 59 195;
+  --diff-add: 194 220 192;
+  --diff-del: 233 196 207;
   --purple: 136 57 239;
   --blue: 30 102 245;
   --green: 64 160 43;
@@ -948,6 +1000,8 @@
   --danger-fg: 141 87 94;
   --info-fg: 56 107 146;
   --accent-fg: 134 95 72;
+  --diff-add: 219 231 183;
+  --diff-del: 247 209 209;
   --purple: 163 122 204;
   --blue: 57 158 230;
   --green: 134 179 0;
@@ -984,6 +1038,8 @@
   --danger-fg: 160 70 65;
   --info-fg: 13 104 145;
   --accent-fg: 56 94 179;
+  --diff-add: 204 226 204;
+  --diff-del: 245 209 206;
   --purple: 166 38 164;
   --blue: 64 120 242;
   --green: 80 161 79;
@@ -1020,6 +1076,8 @@
   --danger-fg: 137 85 112;
   --info-fg: 75 106 129;
   --accent-fg: 109 95 137;
+  --diff-add: 204 213 214;
+  --diff-del: 231 205 206;
   --purple: 144 122 169;
   --blue: 86 148 159;
   --green: 40 105 131;
@@ -1056,6 +1114,8 @@
   --danger-fg: 130 50 106;
   --info-fg: 18 84 130;
   --accent-fg: 40 81 154;
+  --diff-add: 189 198 186;
+  --diff-del: 230 184 201;
   --purple: 120 71 189;
   --blue: 46 125 233;
   --green: 88 117 57;
@@ -1094,6 +1154,8 @@
   --danger-fg: 233 118 118;
   --info-fg: 102 163 214;
   --accent-fg: 85 158 207;
+  --diff-add: 40 64 59;
+  --diff-del: 75 39 39;
   --purple: 197 134 192;
   --blue: 86 156 214;
   --green: 106 153 85;
@@ -1130,6 +1192,8 @@
   --danger-fg: 217 149 150;
   --info-fg: 124 176 240;
   --accent-fg: 124 176 240;
+  --diff-add: 46 68 56;
+  --diff-del: 81 50 53;
   --purple: 211 153 255;
   --blue: 83 155 245;
   --green: 87 171 90;
@@ -1166,6 +1230,8 @@
   --danger-fg: 255 95 95;
   --info-fg: 82 208 255;
   --accent-fg: 80 255 150;
+  --diff-add: 20 65 40;
+  --diff-del: 55 33 29;
   --purple: 190 150 255;
   --blue: 82 208 255;
   --green: 80 255 150;
@@ -1202,6 +1268,8 @@
   --danger-fg: 255 110 96;
   --info-fg: 92 190 255;
   --accent-fg: 255 190 88;
+  --diff-add: 40 54 31;
+  --diff-del: 69 33 24;
   --purple: 205 150 255;
   --blue: 92 190 255;
   --green: 112 213 130;
@@ -1238,6 +1306,8 @@
   --danger-fg: 255 95 95;
   --info-fg: 0 225 255;
   --accent-fg: 0 225 255;
+  --diff-add: 16 48 30;
+  --diff-del: 51 19 19;
   --purple: 190 150 255;
   --blue: 0 225 255;
   --green: 80 240 150;
@@ -1274,6 +1344,8 @@
   --danger-fg: 249 109 116;
   --info-fg: 93 148 251;
   --accent-fg: 93 148 251;
+  --diff-add: 31 56 38;
+  --diff-del: 68 33 35;
   --purple: 190 135 255;
   --blue: 15 98 254;
   --green: 66 190 101;
@@ -1310,6 +1382,8 @@
   --danger-fg: 248 122 123;
   --info-fg: 56 189 248;
   --accent-fg: 56 189 248;
+  --diff-add: 27 63 59;
+  --diff-del: 62 41 56;
   --purple: 192 132 252;
   --blue: 96 165 250;
   --green: 74 222 128;
@@ -1346,6 +1420,8 @@
   --danger-fg: 240 116 116;
   --info-fg: 28 170 234;
   --accent-fg: 132 204 22;
+  --diff-add: 26 59 40;
+  --diff-del: 69 33 36;
   --purple: 168 85 247;
   --blue: 14 165 233;
   --green: 34 197 94;
@@ -1382,6 +1458,8 @@
   --danger-fg: 217 177 158;
   --info-fg: 185 195 173;
   --accent-fg: 185 196 162;
+  --diff-add: 69 81 73;
+  --diff-del: 89 71 76;
   --purple: 211 134 155;
   --blue: 127 187 179;
   --green: 167 192 128;
@@ -1418,6 +1496,8 @@
   --danger-fg: 223 139 137;
   --info-fg: 127 180 202;
   --accent-fg: 143 167 211;
+  --diff-add: 55 62 54;
+  --diff-del: 72 47 56;
   --purple: 149 127 184;
   --blue: 126 156 216;
   --green: 152 187 108;
@@ -1454,6 +1534,8 @@
   --danger-fg: 196 130 129;
   --info-fg: 123 162 172;
   --accent-fg: 139 164 176;
+  --diff-add: 46 49 40;
+  --diff-del: 64 37 37;
   --purple: 147 121 169;
   --blue: 123 162 172;
   --green: 135 159 112;
@@ -1490,6 +1572,8 @@
   --danger-fg: 227 128 128;
   --info-fg: 38 180 230;
   --accent-fg: 227 126 150;
+  --diff-add: 31 64 61;
+  --diff-del: 73 42 49;
   --purple: 181 126 220;
   --blue: 38 180 230;
   --green: 41 199 153;
@@ -1526,6 +1610,8 @@
   --danger-fg: 238 133 143;
   --info-fg: 94 196 255;
   --accent-fg: 94 196 255;
+  --diff-add: 40 70 62;
+  --diff-del: 75 51 59;
   --purple: 187 154 247;
   --blue: 94 196 255;
   --green: 83 203 132;
@@ -1562,6 +1648,8 @@
   --danger-fg: 218 140 145;
   --info-fg: 101 179 213;
   --accent-fg: 133 169 217;
+  --diff-add: 46 68 76;
+  --diff-del: 71 50 60;
   --purple: 184 146 224;
   --blue: 113 156 214;
   --green: 129 200 190;
@@ -1598,6 +1686,8 @@
   --danger-fg: 247 94 87;
   --info-fg: 56 189 248;
   --accent-fg: 34 197 94;
+  --diff-add: 18 54 38;
+  --diff-del: 61 31 34;
   --purple: 168 85 247;
   --blue: 56 189 248;
   --green: 34 197 94;
@@ -1634,6 +1724,8 @@
   --danger-fg: 251 113 133;
   --info-fg: 96 165 250;
   --accent-fg: 123 126 242;
+  --diff-add: 18 50 43;
+  --diff-del: 57 31 39;
   --purple: 167 139 250;
   --blue: 96 165 250;
   --green: 52 211 153;
@@ -1670,6 +1762,8 @@
   --danger-fg: 248 114 114;
   --info-fg: 103 232 249;
   --accent-fg: 45 212 191;
+  --diff-add: 26 66 50;
+  --diff-del: 61 44 47;
   --purple: 196 181 253;
   --blue: 103 232 249;
   --green: 74 222 128;
@@ -1706,6 +1800,8 @@
   --danger-fg: 255 113 112;
   --info-fg: 103 190 230;
   --accent-fg: 236 123 111;
+  --diff-add: 50 62 45;
+  --diff-del: 79 41 39;
   --purple: 200 145 220;
   --blue: 103 190 230;
   --green: 111 207 128;
@@ -1742,6 +1838,8 @@
   --danger-fg: 187 16 31;
   --info-fg: 7 102 166;
   --accent-fg: 7 102 166;
+  --diff-add: 207 227 219;
+  --diff-del: 243 207 210;
   --purple: 111 66 193;
   --blue: 0 122 204;
   --green: 38 127 91;
@@ -1778,6 +1876,8 @@
   --danger-fg: 187 51 51;
   --info-fg: 7 100 201;
   --accent-fg: 1 99 197;
+  --diff-add: 204 226 211;
+  --diff-del: 243 210 211;
   --purple: 125 82 190;
   --blue: 0 102 204;
   --green: 36 138 61;
@@ -1814,6 +1914,8 @@
   --danger-fg: 190 18 60;
   --info-fg: 10 107 158;
   --accent-fg: 36 91 211;
+  --diff-add: 198 221 211;
+  --diff-del: 236 201 210;
   --purple: 126 34 206;
   --blue: 37 99 235;
   --green: 22 128 80;
@@ -1850,6 +1952,8 @@
   --danger-fg: 182 51 52;
   --info-fg: 16 109 136;
   --accent-fg: 16 113 107;
+  --diff-add: 198 223 216;
+  --diff-del: 236 210 211;
   --purple: 124 58 160;
   --blue: 37 99 235;
   --green: 22 132 94;
@@ -1886,6 +1990,8 @@
   --danger-fg: 183 42 59;
   --info-fg: 13 110 139;
   --accent-fg: 52 94 194;
+  --diff-add: 195 221 214;
+  --diff-del: 235 206 213;
   --purple: 124 77 191;
   --blue: 56 103 214;
   --green: 32 134 88;
@@ -1922,6 +2028,8 @@
   --danger-fg: 126 83 82;
   --info-fg: 64 99 116;
   --accent-fg: 64 99 116;
+  --diff-add: 196 207 179;
+  --diff-del: 230 194 178;
   --purple: 143 104 164;
   --blue: 45 121 166;
   --green: 75 137 93;
@@ -1958,6 +2066,8 @@
   --danger-fg: 122 83 96;
   --info-fg: 79 97 115;
   --accent-fg: 90 86 145;
+  --diff-add: 200 206 156;
+  --diff-del: 227 197 163;
   --purple: 93 87 163;
   --blue: 51 106 167;
   --green: 91 128 75;
@@ -1994,6 +2104,8 @@
   --danger-fg: 191 36 39;
   --info-fg: 5 108 164;
   --accent-fg: 5 108 164;
+  --diff-add: 194 229 209;
+  --diff-del: 242 208 209;
   --purple: 124 58 237;
   --blue: 37 99 235;
   --green: 22 163 74;
@@ -2030,6 +2142,8 @@
   --danger-fg: 132 79 89;
   --info-fg: 69 99 115;
   --accent-fg: 73 96 126;
+  --diff-add: 194 212 202;
+  --diff-del: 223 199 205;
   --purple: 129 118 170;
   --blue: 94 129 172;
   --green: 92 145 100;
@@ -2066,6 +2180,8 @@
   --danger-fg: 171 60 68;
   --info-fg: 42 110 117;
   --accent-fg: 57 111 93;
+  --diff-add: 196 221 205;
+  --diff-del: 232 206 205;
   --purple: 112 93 150;
   --blue: 48 100 170;
   --green: 44 138 86;
@@ -2102,6 +2218,8 @@
   --danger-fg: 255 123 114;
   --info-fg: 55 134 247;
   --accent-fg: 55 134 247;
+  --diff-add: 13 40 23;
+  --diff-del: 52 28 30;
   --purple: 210 168 255;
   --blue: 47 129 247;
   --green: 63 185 80;
@@ -2138,6 +2256,8 @@
   --danger-fg: 164 14 38;
   --info-fg: 3 73 180;
   --accent-fg: 3 73 180;
+  --diff-add: 207 224 212;
+  --diff-del: 237 207 212;
   --purple: 101 53 167;
   --blue: 3 73 180;
   --green: 17 99 41;

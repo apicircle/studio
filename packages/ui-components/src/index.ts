@@ -30,8 +30,14 @@ export {
   Skeleton,
   Modal,
   cn,
+  // The marking of a diff line, for an edition that draws diffs of its own.
+  DIFF_ROW,
+  DIFF_ROW_MARKER,
+  DIFF_ROW_NUMBER,
+  DIFF_ROW_TONE,
 } from './primitives';
 export type {
+  DiffRowKind,
   FieldControlProps,
   TabDef,
   AnchoredPopoverProps,

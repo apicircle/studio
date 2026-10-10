@@ -28,4 +28,11 @@ export { SecretInput } from './SecretInput';
 export { ToastViewport, type ToastRecord, type ToastTone } from './Toast';
 export { useAsyncOp } from './useAsyncOp';
 export { cn } from './cn';
+export {
+  DIFF_ROW,
+  DIFF_ROW_MARKER,
+  DIFF_ROW_NUMBER,
+  DIFF_ROW_TONE,
+  type DiffRowKind,
+} from './diffRow';
 export { DesktopAppLink, DESKTOP_RELEASES_URL } from './desktopDownload';

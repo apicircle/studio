@@ -6,7 +6,7 @@
     ".": {
       "entry": ["scripts/**/*.mjs"],
       "ignoreDependencies": ["png2icons"],
-      "ignore": ["scripts/vscode-bundle-budget.d.mts"]
+      "ignore": ["scripts/vscode-bundle-budget.d.mts", "scripts/gen-status-fg.d.mts"]
     },
     "apps/desktop": {
       "entry": ["src/main/main.ts", "src/main/preload.ts", "scripts/*.mjs"],

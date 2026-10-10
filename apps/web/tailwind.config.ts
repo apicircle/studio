@@ -32,6 +32,12 @@ const config: Config = {
         'warning-fg': 'rgb(var(--warning-fg) / <alpha-value>)',
         'danger-fg': 'rgb(var(--danger-fg) / <alpha-value>)',
         'info-fg': 'rgb(var(--info-fg) / <alpha-value>)',
+        // The backdrop of an added / a removed line of a diff, generated per
+        // theme by the same script. Use them through the row classes in
+        // ui-components' primitives/diffRow.ts, which add the edge that says
+        // which of the two a line is.
+        'diff-add': 'rgb(var(--diff-add) / <alpha-value>)',
+        'diff-del': 'rgb(var(--diff-del) / <alpha-value>)',
         purple: 'rgb(var(--purple) / <alpha-value>)',
         blue: 'rgb(var(--blue) / <alpha-value>)',
         green: 'rgb(var(--green) / <alpha-value>)',
